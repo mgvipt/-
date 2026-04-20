@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Смета — калькулятор</title>
+<style>
+:root {
+  --bg: #f4f6fa;
+  --surface: #ffffff;
+  --border: #e3e7ef;
+  --border-strong: #c8cfdd;
+  --text: #1d2433;
+  --text-muted: #6b7388;
+  --accent: #2f66f3;
+  --accent-hover: #244fc0;
+  --danger: #d64545;
+  --success: #1f9d55;
+  --shadow: 0 1px 2px rgba(20, 30, 60, 0.04), 0 4px 16px rgba(20, 30, 60, 0.06);
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.app-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.app-header h1 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+.header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-top: 18px;
+  box-shadow: var(--shadow);
+}
+
+.meta-card { margin-top: 20px; }
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 640px) {
+  .grid-2 { grid-template-columns: 1fr; }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field > span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.field input,
+.inline-field input,
+.items-table input {
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+  width: 100%;
+}
+.field input:focus,
+.inline-field input:focus,
+.items-table input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(47, 102, 243, 0.15);
+}
+
+.sections { display: flex; flex-direction: column; }
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.section-title {
+  flex: 1;
+  font-size: 17px;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  padding: 6px 4px;
+  border-bottom: 1px dashed var(--border-strong);
+  border-radius: 0;
+}
+.section-title:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+  box-shadow: none;
+}
+
+.table-wrap { overflow-x: auto; }
+
+.items-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+.items-table th,
+.items-table td {
+  padding: 8px 8px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+.items-table th {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: #fafbfd;
+}
+.items-table tfoot td {
+  border-top: 1px solid var(--border-strong);
+  border-bottom: none;
+  padding-top: 12px;
+  font-weight: 600;
+}
+.section-subtotal-label { text-align: right; color: var(--text-muted); }
+.section-subtotal { text-align: right; font-variant-numeric: tabular-nums; }
+
+.col-idx { width: 44px; color: var(--text-muted); text-align: center; }
+.col-unit { width: 90px; }
+.col-qty  { width: 110px; }
+.col-price { width: 130px; }
+.col-sum { width: 140px; text-align: right; font-variant-numeric: tabular-nums; }
+.col-tools { width: 40px; }
+
+.items-table input[type="number"] { text-align: right; }
+
+.section-footer {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.actions-row {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.totals-card h2 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+.totals-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.total-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.total-line:last-child { border-bottom: none; }
+.total-line strong { font-variant-numeric: tabular-nums; }
+.total-line.grand {
+  padding-top: 12px;
+  border-top: 2px solid var(--text);
+  margin-top: 6px;
+  font-size: 18px;
+}
+.total-line.grand strong { font-size: 22px; }
+
+.inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+}
+.inline-field input {
+  width: 80px;
+  text-align: right;
+}
+
+.in-words {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 14px;
+}
+
+.app-footer {
+  margin: 24px 0 40px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.btn {
+  font: inherit;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  background: var(--surface);
+}
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-secondary {
+  background: #eef3ff;
+  color: var(--accent);
+  border-color: #d8e3ff;
+}
+.btn-secondary:hover { background: #e0eaff; }
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.btn-ghost:hover { background: #eef1f7; }
+
+.btn-icon {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+}
+.btn-icon:hover { background: #fde7e7; color: var(--danger); }
+
+@media print {
+  body { background: #fff; }
+  .no-print { display: none !important; }
+  .app-header { position: static; border: none; }
+  .card {
+    box-shadow: none;
+    border: 1px solid #000;
+    break-inside: avoid;
+  }
+  .items-table { min-width: 0; }
+  .container { max-width: none; padding: 0; }
+  .section-title { border: none; }
+  input { border: none !important; box-shadow: none !important; padding: 0 !important; }
+  .items-table input { text-align: inherit; }
+}
+
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div class="container header-inner">
+    <h1>Смета</h1>
+    <div class="header-actions no-print">
+      <button id="btn-new" class="btn btn-ghost" type="button">Новая</button>
+      <button id="btn-import" class="btn btn-ghost" type="button">Импорт JSON</button>
+      <button id="btn-export-json" class="btn btn-ghost" type="button">Экспорт JSON</button>
+      <button id="btn-export-csv" class="btn btn-ghost" type="button">Экспорт CSV</button>
+      <button id="btn-print" class="btn btn-primary" type="button">Печать / PDF</button>
+      <input id="file-input" type="file" accept="application/json" hidden />
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  <section class="card meta-card">
+    <div class="grid-2">
+      <label class="field">
+        <span>Название объекта</span>
+        <input id="project-title" type="text" placeholder="Например, ремонт квартиры на ул. Ленина" />
+      </label>
+      <label class="field">
+        <span>Заказчик</span>
+        <input id="project-client" type="text" placeholder="ФИО или организация" />
+      </label>
+      <label class="field">
+        <span>Исполнитель</span>
+        <input id="project-contractor" type="text" placeholder="ФИО или организация" />
+      </label>
+      <label class="field">
+        <span>Дата</span>
+        <input id="project-date" type="date" />
+      </label>
+    </div>
+  </section>
+
+  <section id="sections-root" class="sections"></section>
+
+  <div class="actions-row no-print">
+    <button id="btn-add-section" class="btn btn-secondary" type="button">+ Добавить раздел</button>
+  </div>
+
+  <section class="card totals-card">
+    <h2>Итоги</h2>
+    <div class="totals-grid">
+      <div class="total-line">
+        <span>Сумма по позициям</span>
+        <strong id="total-subtotal">0,00 ₽</strong>
+      </div>
+
+      <div class="total-line">
+        <label class="inline-field">
+          <span>Накладные расходы</span>
+          <input id="overhead-rate" type="number" min="0" step="0.1" value="0" /> %
+        </label>
+        <strong id="total-overhead">0,00 ₽</strong>
+      </div>
+
+      <div class="total-line">
+        <label class="inline-field">
+          <span>Скидка</span>
+          <input id="discount-rate" type="number" min="0" step="0.1" value="0" /> %
+        </label>
+        <strong id="total-discount">−0,00 ₽</strong>
+      </div>
+
+      <div class="total-line">
+        <label class="inline-field">
+          <span>НДС</span>
+          <input id="vat-rate" type="number" min="0" step="0.1" value="20" /> %
+        </label>
+        <strong id="total-vat">0,00 ₽</strong>
+      </div>
+
+      <div class="total-line grand">
+        <span>ИТОГО к оплате</span>
+        <strong id="total-grand">0,00 ₽</strong>
+      </div>
+    </div>
+    <p id="total-in-words" class="in-words"></p>
+  </section>
+
+  <footer class="app-footer no-print">
+    <small>Данные сохраняются локально в браузере. Нажмите «Печать / PDF» для сохранения в PDF через диалог печати.</small>
+  </footer>
+</main>
+
+<template id="section-template">
+  <article class="card section">
+    <header class="section-header">
+      <input class="section-title" type="text" placeholder="Название раздела, например «Черновые работы»" />
+      <div class="section-actions no-print">
+        <button type="button" class="btn-icon btn-remove-section" title="Удалить раздел" aria-label="Удалить раздел">✕</button>
+      </div>
+    </header>
+    <div class="table-wrap">
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th class="col-idx">№</th>
+            <th class="col-name">Наименование</th>
+            <th class="col-unit">Ед.</th>
+            <th class="col-qty">Кол-во</th>
+            <th class="col-price">Цена</th>
+            <th class="col-sum">Сумма</th>
+            <th class="col-tools no-print"></th>
+          </tr>
+        </thead>
+        <tbody class="items-body"></tbody>
+        <tfoot>
+          <tr>
+            <td colspan="5" class="section-subtotal-label">Итого по разделу</td>
+            <td class="section-subtotal">0,00 ₽</td>
+            <td class="no-print"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <div class="section-footer no-print">
+      <button type="button" class="btn btn-secondary btn-add-item">+ Добавить позицию</button>
+    </div>
+  </article>
+</template>
+
+<template id="item-template">
+  <tr class="item-row">
+    <td class="col-idx item-idx"></td>
+    <td class="col-name"><input class="item-name" type="text" placeholder="Работа или материал" /></td>
+    <td class="col-unit"><input class="item-unit" type="text" placeholder="шт / м² / м³" /></td>
+    <td class="col-qty"><input class="item-qty" type="number" min="0" step="0.001" value="0" /></td>
+    <td class="col-price"><input class="item-price" type="number" min="0" step="0.01" value="0" /></td>
+    <td class="col-sum item-sum">0,00 ₽</td>
+    <td class="col-tools no-print">
+      <button type="button" class="btn-icon btn-remove-item" title="Удалить позицию" aria-label="Удалить позицию">✕</button>
+    </td>
+  </tr>
+</template>
+
+<script>
+(() => {
+  "use strict";
+
+  const STORAGE_KEY = "smeta.state.v1";
+
+  const state = {
+    meta: { title: "", client: "", contractor: "", date: "" },
+    sections: [],
+    overheadRate: 0,
+    discountRate: 0,
+    vatRate: 20,
+  };
+
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+  const uid = () => Math.random().toString(36).slice(2, 10);
+
+  const fmtRUB = new Intl.NumberFormat("ru-RU", {
+    style: "currency",
+    currency: "RUB",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  const sectionsRoot = $("#sections-root");
+  const sectionTpl = $("#section-template");
+  const itemTpl = $("#item-template");
+
+  function makeItem(partial = {}) {
+    return {
+      id: uid(),
+      name: "",
+      unit: "",
+      qty: 0,
+      price: 0,
+      ...partial,
+    };
+  }
+
+  function makeSection(partial = {}) {
+    return {
+      id: uid(),
+      title: "",
+      items: [makeItem()],
+      ...partial,
+    };
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (err) {
+      console.warn("Не удалось сохранить состояние:", err);
+    }
+  }
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      Object.assign(state, parsed);
+      if (!Array.isArray(state.sections) || state.sections.length === 0) {
+        state.sections = [makeSection({ title: "Основные работы" })];
+      }
+      return true;
+    } catch (err) {
+      console.warn("Не удалось загрузить состояние:", err);
+      return false;
+    }
+  }
+
+  function renderAll() {
+    $("#project-title").value = state.meta.title || "";
+    $("#project-client").value = state.meta.client || "";
+    $("#project-contractor").value = state.meta.contractor || "";
+    $("#project-date").value = state.meta.date || "";
+    $("#overhead-rate").value = state.overheadRate;
+    $("#discount-rate").value = state.discountRate;
+    $("#vat-rate").value = state.vatRate;
+
+    sectionsRoot.innerHTML = "";
+    state.sections.forEach(renderSection);
+    recalcTotals();
+  }
+
+  function renderSection(section) {
+    const node = sectionTpl.content.firstElementChild.cloneNode(true);
+    node.dataset.sectionId = section.id;
+    const titleInput = $(".section-title", node);
+    titleInput.value = section.title || "";
+    titleInput.addEventListener("input", () => {
+      section.title = titleInput.value;
+      save();
+    });
+
+    $(".btn-remove-section", node).addEventListener("click", () => {
+      if (state.sections.length === 1) {
+        if (!confirm("Удалить единственный раздел? Будет создан пустой.")) return;
+        state.sections = [makeSection({ title: "" })];
+      } else {
+        state.sections = state.sections.filter((s) => s.id !== section.id);
+      }
+      renderAll();
+      save();
+    });
+
+    $(".btn-add-item", node).addEventListener("click", () => {
+      const item = makeItem();
+      section.items.push(item);
+      const row = renderItem(section, item);
+      $(".items-body", node).appendChild(row);
+      reindexRows(node);
+      recalcSection(section, node);
+      recalcTotals();
+      save();
+      $(".item-name", row).focus();
+    });
+
+    const body = $(".items-body", node);
+    section.items.forEach((item) => body.appendChild(renderItem(section, item)));
+    reindexRows(node);
+    recalcSection(section, node);
+
+    sectionsRoot.appendChild(node);
+  }
+
+  function renderItem(section, item) {
+    const row = itemTpl.content.firstElementChild.cloneNode(true);
+    row.dataset.itemId = item.id;
+
+    const nameInput = $(".item-name", row);
+    const unitInput = $(".item-unit", row);
+    const qtyInput = $(".item-qty", row);
+    const priceInput = $(".item-price", row);
+
+    nameInput.value = item.name || "";
+    unitInput.value = item.unit || "";
+    qtyInput.value = item.qty;
+    priceInput.value = item.price;
+
+    nameInput.addEventListener("input", () => { item.name = nameInput.value; save(); });
+    unitInput.addEventListener("input", () => { item.unit = unitInput.value; save(); });
+    qtyInput.addEventListener("input", () => {
+      item.qty = toNumber(qtyInput.value);
+      onAmountChanged(section, row);
+    });
+    priceInput.addEventListener("input", () => {
+      item.price = toNumber(priceInput.value);
+      onAmountChanged(section, row);
+    });
+
+    $(".btn-remove-item", row).addEventListener("click", () => {
+      section.items = section.items.filter((i) => i.id !== item.id);
+      const sectionNode = row.closest(".section");
+      row.remove();
+      if (section.items.length === 0) {
+        const empty = makeItem();
+        section.items.push(empty);
+        $(".items-body", sectionNode).appendChild(renderItem(section, empty));
+      }
+      reindexRows(sectionNode);
+      recalcSection(section, sectionNode);
+      recalcTotals();
+      save();
+    });
+
+    updateRowSum(item, row);
+    return row;
+  }
+
+  function onAmountChanged(section, row) {
+    const item = findItem(section, row.dataset.itemId);
+    updateRowSum(item, row);
+    recalcSection(section, row.closest(".section"));
+    recalcTotals();
+    save();
+  }
+
+  function updateRowSum(item, row) {
+    const sum = (item.qty || 0) * (item.price || 0);
+    $(".item-sum", row).textContent = fmtRUB.format(sum);
+  }
+
+  function reindexRows(sectionNode) {
+    $(".item-row", sectionNode).forEach((row, i) => {
+      $(".item-idx", row).textContent = String(i + 1);
+    });
+  }
+
+  function recalcSection(section, sectionNode) {
+    const subtotal = section.items.reduce(
+      (acc, it) => acc + (it.qty || 0) * (it.price || 0),
+      0
+    );
+    $(".section-subtotal", sectionNode).textContent = fmtRUB.format(subtotal);
+    return subtotal;
+  }
+
+  function computeTotals() {
+    const subtotal = state.sections.reduce(
+      (acc, s) =>
+        acc + s.items.reduce((a, it) => a + (it.qty || 0) * (it.price || 0), 0),
+      0
+    );
+    const overhead = subtotal * (state.overheadRate / 100);
+    const afterOverhead = subtotal + overhead;
+    const discount = afterOverhead * (state.discountRate / 100);
+    const afterDiscount = afterOverhead - discount;
+    const vat = afterDiscount * (state.vatRate / 100);
+    const grand = afterDiscount + vat;
+    return { subtotal, overhead, discount, vat, grand };
+  }
+
+  function recalcTotals() {
+    const t = computeTotals();
+    $("#total-subtotal").textContent = fmtRUB.format(t.subtotal);
+    $("#total-overhead").textContent = fmtRUB.format(t.overhead);
+    $("#total-discount").textContent = "−" + fmtRUB.format(t.discount);
+    $("#total-vat").textContent = fmtRUB.format(t.vat);
+    $("#total-grand").textContent = fmtRUB.format(t.grand);
+    $("#total-in-words").textContent = t.grand > 0 ? "Прописью: " + amountInWords(t.grand) : "";
+  }
+
+  function findItem(section, id) {
+    return section.items.find((i) => i.id === id);
+  }
+
+  function toNumber(v) {
+    const n = parseFloat(String(v).replace(",", "."));
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+
+  function bindMeta() {
+    $("#project-title").addEventListener("input", (e) => { state.meta.title = e.target.value; save(); });
+    $("#project-client").addEventListener("input", (e) => { state.meta.client = e.target.value; save(); });
+    $("#project-contractor").addEventListener("input", (e) => { state.meta.contractor = e.target.value; save(); });
+    $("#project-date").addEventListener("input", (e) => { state.meta.date = e.target.value; save(); });
+
+    $("#overhead-rate").addEventListener("input", (e) => {
+      state.overheadRate = toNumber(e.target.value);
+      recalcTotals(); save();
+    });
+    $("#discount-rate").addEventListener("input", (e) => {
+      state.discountRate = toNumber(e.target.value);
+      recalcTotals(); save();
+    });
+    $("#vat-rate").addEventListener("input", (e) => {
+      state.vatRate = toNumber(e.target.value);
+      recalcTotals(); save();
+    });
+  }
+
+  function bindTopActions() {
+    $("#btn-add-section").addEventListener("click", () => {
+      const section = makeSection({ title: "" });
+      state.sections.push(section);
+      renderSection(section);
+      recalcTotals();
+      save();
+      const nodes = $(".section");
+      $(".section-title", nodes[nodes.length - 1]).focus();
+    });
+
+    $("#btn-new").addEventListener("click", () => {
+      if (!confirm("Создать новую смету? Текущая будет очищена из памяти.")) return;
+      resetState();
+      renderAll();
+      save();
+    });
+
+    $("#btn-print").addEventListener("click", () => window.print());
+
+    $("#btn-export-json").addEventListener("click", exportJSON);
+    $("#btn-export-csv").addEventListener("click", exportCSV);
+
+    const fileInput = $("#file-input");
+    $("#btn-import").addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(String(reader.result));
+          if (!parsed || typeof parsed !== "object") throw new Error("Некорректный формат");
+          Object.assign(state, {
+            meta: parsed.meta || state.meta,
+            sections: Array.isArray(parsed.sections) ? parsed.sections : state.sections,
+            overheadRate: toNumber(parsed.overheadRate),
+            discountRate: toNumber(parsed.discountRate),
+            vatRate: toNumber(parsed.vatRate),
+          });
+          renderAll();
+          save();
+        } catch (err) {
+          alert("Не удалось импортировать файл: " + err.message);
+        }
+      };
+      reader.readAsText(file);
+      fileInput.value = "";
+    });
+  }
+
+  function resetState() {
+    state.meta = { title: "", client: "", contractor: "", date: todayISO() };
+    state.sections = [makeSection({ title: "Основные работы" })];
+    state.overheadRate = 0;
+    state.discountRate = 0;
+    state.vatRate = 20;
+  }
+
+  function todayISO() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  function exportJSON() {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    downloadBlob(blob, filenameFor("json"));
+  }
+
+  function exportCSV() {
+    const rows = [];
+    rows.push(["Раздел", "№", "Наименование", "Ед.", "Кол-во", "Цена", "Сумма"]);
+    state.sections.forEach((s) => {
+      s.items.forEach((it, i) => {
+        const sum = (it.qty || 0) * (it.price || 0);
+        rows.push([
+          s.title || "",
+          String(i + 1),
+          it.name || "",
+          it.unit || "",
+          String(it.qty || 0),
+          String(it.price || 0),
+          sum.toFixed(2),
+        ]);
+      });
+    });
+    const t = computeTotals();
+    rows.push([]);
+    rows.push(["Сумма по позициям", "", "", "", "", "", t.subtotal.toFixed(2)]);
+    rows.push([`Накладные ${state.overheadRate}%`, "", "", "", "", "", t.overhead.toFixed(2)]);
+    rows.push([`Скидка ${state.discountRate}%`, "", "", "", "", "", (-t.discount).toFixed(2)]);
+    rows.push([`НДС ${state.vatRate}%`, "", "", "", "", "", t.vat.toFixed(2)]);
+    rows.push(["ИТОГО", "", "", "", "", "", t.grand.toFixed(2)]);
+
+    const csv = rows.map((r) => r.map(csvEscape).join(";")).join("\r\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    downloadBlob(blob, filenameFor("csv"));
+  }
+
+  function csvEscape(v) {
+    const s = String(v ?? "");
+    if (/[";\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  function downloadBlob(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function filenameFor(ext) {
+    const safe = (state.meta.title || "smeta")
+      .replace(/[\\/:*?"<>|]+/g, "")
+      .trim() || "smeta";
+    const d = state.meta.date || todayISO();
+    return `${safe}_${d}.${ext}`;
+  }
+
+  // --- Сумма прописью (рубли и копейки) ---
+  function amountInWords(amount) {
+    const rub = Math.floor(amount);
+    const kop = Math.round((amount - rub) * 100);
+    const rubWord = pluralRu(rub, ["рубль", "рубля", "рублей"]);
+    const kopWord = pluralRu(kop, ["копейка", "копейки", "копеек"]);
+    const rubText = numToWordsRu(rub, "m");
+    const kopText = String(kop).padStart(2, "0");
+    const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+    return `${cap(rubText)} ${rubWord} ${kopText} ${kopWord}`;
+  }
+
+  function pluralRu(n, forms) {
+    const a = Math.abs(n) % 100;
+    const b = a % 10;
+    if (a > 10 && a < 20) return forms[2];
+    if (b > 1 && b < 5) return forms[1];
+    if (b === 1) return forms[0];
+    return forms[2];
+  }
+
+  function numToWordsRu(num, gender = "m") {
+    if (num === 0) return "ноль";
+    const units_m = ["", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"];
+    const units_f = ["", "одна", "две", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"];
+    const teens = ["десять", "одиннадцать", "двенадцать", "тринадцать", "четырнадцать", "пятнадцать", "шестнадцать", "семнадцать", "восемнадцать", "девятнадцать"];
+    const tens = ["", "", "двадцать", "тридцать", "сорок", "пятьдесят", "шестьдесят", "семьдесят", "восемьдесят", "девяносто"];
+    const hundreds = ["", "сто", "двести", "триста", "четыреста", "пятьсот", "шестьсот", "семьсот", "восемьсот", "девятьсот"];
+
+    function triad(n, g) {
+      const units = g === "f" ? units_f : units_m;
+      const parts = [];
+      const h = Math.floor(n / 100);
+      const rem = n % 100;
+      const t = Math.floor(rem / 10);
+      const u = rem % 10;
+      if (h) parts.push(hundreds[h]);
+      if (t === 1) parts.push(teens[u]);
+      else {
+        if (t) parts.push(tens[t]);
+        if (u) parts.push(units[u]);
+      }
+      return parts.join(" ");
+    }
+
+    const scales = [
+      { div: 1, g: gender === "f" ? "f" : "m", forms: null },
+      { div: 1000, g: "f", forms: ["тысяча", "тысячи", "тысяч"] },
+      { div: 1_000_000, g: "m", forms: ["миллион", "миллиона", "миллионов"] },
+      { div: 1_000_000_000, g: "m", forms: ["миллиард", "миллиарда", "миллиардов"] },
+    ];
+
+    let n = Math.floor(num);
+    const chunks = [];
+    let i = 0;
+    while (n > 0) {
+      chunks.push(n % 1000);
+      n = Math.floor(n / 1000);
+      i++;
+    }
+
+    const parts = [];
+    for (let j = chunks.length - 1; j >= 0; j--) {
+      const value = chunks[j];
+      if (value === 0) continue;
+      const scale = scales[j];
+      parts.push(triad(value, scale.g));
+      if (scale.forms) parts.push(pluralRu(value, scale.forms));
+    }
+    return parts.join(" ").trim();
+  }
+
+  // --- bootstrap ---
+  function init() {
+    const loaded = load();
+    if (!loaded) resetState();
+    if (!state.meta.date) state.meta.date = todayISO();
+    bindMeta();
+    bindTopActions();
+    renderAll();
+  }
+
+  document.addEventListener("DOMContentLoaded", init);
+})();
+
+</script>
+</body>
+</html>
