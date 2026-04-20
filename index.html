@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Смета — калькулятор</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="app-header">
+  <div class="container header-inner">
+    <h1>Смета</h1>
+    <div class="header-actions no-print">
+      <button id="btn-new" class="btn btn-ghost" type="button">Новая</button>
+      <button id="btn-import" class="btn btn-ghost" type="button">Импорт JSON</button>
+      <button id="btn-export-json" class="btn btn-ghost" type="button">Экспорт JSON</button>
+      <button id="btn-export-csv" class="btn btn-ghost" type="button">Экспорт CSV</button>
+      <button id="btn-print" class="btn btn-primary" type="button">Печать / PDF</button>
+      <input id="file-input" type="file" accept="application/json" hidden />
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  <section class="card meta-card">
+    <div class="grid-2">
+      <label class="field">
+        <span>Название объекта</span>
+        <input id="project-title" type="text" placeholder="Например, ремонт квартиры на ул. Ленина" />
+      </label>
+      <label class="field">
+        <span>Заказчик</span>
+        <input id="project-client" type="text" placeholder="ФИО или организация" />
+      </label>
+      <label class="field">
+        <span>Исполнитель</span>
+        <input id="project-contractor" type="text" placeholder="ФИО или организация" />
+      </label>
+      <label class="field">
+        <span>Дата</span>
+        <input id="project-date" type="date" />
+      </label>
+    </div>
+  </section>
+
+  <section id="sections-root" class="sections"></section>
+
+  <div class="actions-row no-print">
+    <button id="btn-add-section" class="btn btn-secondary" type="button">+ Добавить раздел</button>
+  </div>
+
+  <section class="card totals-card">
+    <h2>Итоги</h2>
+    <div class="totals-grid">
+      <div class="total-line">
+        <span>Сумма по позициям</span>
+        <strong id="total-subtotal">0,00 ₽</strong>
+      </div>
+
+      <div class="total-line">
+        <label class="inline-field">
+          <span>Накладные расходы</span>
+          <input id="overhead-rate" type="number" min="0" step="0.1" value="0" /> %
+        </label>
+        <strong id="total-overhead">0,00 ₽</strong>
+      </div>
+
+      <div class="total-line">
+        <label class="inline-field">
+          <span>Скидка</span>
+          <input id="discount-rate" type="number" min="0" step="0.1" value="0" /> %
+        </label>
+        <strong id="total-discount">−0,00 ₽</strong>
+      </div>
+
+      <div class="total-line">
+        <label class="inline-field">
+          <span>НДС</span>
+          <input id="vat-rate" type="number" min="0" step="0.1" value="20" /> %
+        </label>
+        <strong id="total-vat">0,00 ₽</strong>
+      </div>
+
+      <div class="total-line grand">
+        <span>ИТОГО к оплате</span>
+        <strong id="total-grand">0,00 ₽</strong>
+      </div>
+    </div>
+    <p id="total-in-words" class="in-words"></p>
+  </section>
+
+  <footer class="app-footer no-print">
+    <small>Данные сохраняются локально в браузере. Нажмите «Печать / PDF» для сохранения в PDF через диалог печати.</small>
+  </footer>
+</main>
+
+<template id="section-template">
+  <article class="card section">
+    <header class="section-header">
+      <input class="section-title" type="text" placeholder="Название раздела, например «Черновые работы»" />
+      <div class="section-actions no-print">
+        <button type="button" class="btn-icon btn-remove-section" title="Удалить раздел" aria-label="Удалить раздел">✕</button>
+      </div>
+    </header>
+    <div class="table-wrap">
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th class="col-idx">№</th>
+            <th class="col-name">Наименование</th>
+            <th class="col-unit">Ед.</th>
+            <th class="col-qty">Кол-во</th>
+            <th class="col-price">Цена</th>
+            <th class="col-sum">Сумма</th>
+            <th class="col-tools no-print"></th>
+          </tr>
+        </thead>
+        <tbody class="items-body"></tbody>
+        <tfoot>
+          <tr>
+            <td colspan="5" class="section-subtotal-label">Итого по разделу</td>
+            <td class="section-subtotal">0,00 ₽</td>
+            <td class="no-print"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <div class="section-footer no-print">
+      <button type="button" class="btn btn-secondary btn-add-item">+ Добавить позицию</button>
+    </div>
+  </article>
+</template>
+
+<template id="item-template">
+  <tr class="item-row">
+    <td class="col-idx item-idx"></td>
+    <td class="col-name"><input class="item-name" type="text" placeholder="Работа или материал" /></td>
+    <td class="col-unit"><input class="item-unit" type="text" placeholder="шт / м² / м³" /></td>
+    <td class="col-qty"><input class="item-qty" type="number" min="0" step="0.001" value="0" /></td>
+    <td class="col-price"><input class="item-price" type="number" min="0" step="0.01" value="0" /></td>
+    <td class="col-sum item-sum">0,00 ₽</td>
+    <td class="col-tools no-print">
+      <button type="button" class="btn-icon btn-remove-item" title="Удалить позицию" aria-label="Удалить позицию">✕</button>
+    </td>
+  </tr>
+</template>
+
+<script src="app.js"></script>
+</body>
+</html>
