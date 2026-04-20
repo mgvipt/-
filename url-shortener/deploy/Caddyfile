@@ -1,0 +1,23 @@
+# Caddyfile — положите в /etc/caddy/Caddyfile и замените домен
+# Caddy автоматически получит Let's Encrypt-сертификат.
+
+your-domain.example {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:3000
+
+    # Заголовки безопасности
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer-when-downgrade
+        X-Frame-Options DENY
+    }
+
+    # Ограничиваем запросы к админке по IP (раскомментируйте и поправьте)
+    # @admin path /admin /api/*
+    # handle @admin {
+    #     @allowed remote_ip 203.0.113.5/32 2001:db8::/32
+    #     handle @allowed { reverse_proxy 127.0.0.1:3000 }
+    #     respond 403
+    # }
+}

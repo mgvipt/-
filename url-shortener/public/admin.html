@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · URL Shortener</title>
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="container topbar-inner">
+    <h1>Короткие ссылки</h1>
+    <div class="topbar-actions">
+      <span id="status" class="status"></span>
+      <button id="btn-logout" type="button" class="btn btn-ghost" hidden>Выйти</button>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  <section id="auth-card" class="card" hidden>
+    <h2>Вход</h2>
+    <p class="muted">Введите админ-токен, заданный в <code>ADMIN_TOKEN</code> на сервере.</p>
+    <form id="auth-form" class="stack">
+      <label class="field">
+        <span>Admin token</span>
+        <input id="auth-token" type="password" autocomplete="off" required />
+      </label>
+      <label class="check">
+        <input id="auth-remember" type="checkbox" />
+        <span>Запомнить в этом браузере</span>
+      </label>
+      <button class="btn btn-primary" type="submit">Войти</button>
+    </form>
+  </section>
+
+  <section id="create-card" class="card" hidden>
+    <h2>Создать короткую ссылку</h2>
+    <form id="create-form" class="stack">
+      <label class="field">
+        <span>Длинный URL</span>
+        <input id="create-url" type="url" placeholder="https://example.com/very/long/path" required />
+      </label>
+      <div class="grid-2">
+        <label class="field">
+          <span>Короткий код (опционально)</span>
+          <input id="create-slug" type="text" placeholder="например: promo" pattern="[A-Za-z0-9_-]{1,40}" />
+        </label>
+        <label class="field">
+          <span>Заметка (опционально)</span>
+          <input id="create-note" type="text" maxlength="500" placeholder="для кого/о чём" />
+        </label>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary" type="submit">Сократить</button>
+        <span id="create-result" class="result"></span>
+      </div>
+    </form>
+  </section>
+
+  <section id="list-card" class="card" hidden>
+    <div class="row between">
+      <h2>Ссылки</h2>
+      <button id="btn-refresh" class="btn btn-ghost" type="button">Обновить</button>
+    </div>
+    <div class="table-wrap">
+      <table class="links-table">
+        <thead>
+          <tr>
+            <th>Короткая</th>
+            <th>Цель</th>
+            <th>Создана</th>
+            <th class="num">Клики</th>
+            <th>Заметка</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="links-body"></tbody>
+      </table>
+    </div>
+    <p id="list-empty" class="muted" hidden>Пока ничего нет. Создайте первую ссылку выше.</p>
+  </section>
+</main>
+
+<script src="/static/admin.js"></script>
+</body>
+</html>

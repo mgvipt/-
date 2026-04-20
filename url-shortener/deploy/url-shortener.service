@@ -1,0 +1,28 @@
+[Unit]
+Description=URL Shortener (Node.js)
+After=network.target
+
+[Service]
+Type=simple
+User=shortener
+Group=shortener
+WorkingDirectory=/opt/url-shortener
+EnvironmentFile=/opt/url-shortener/.env
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+# Ограничения
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/url-shortener/data
+LockPersonality=true
+RestrictRealtime=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target
