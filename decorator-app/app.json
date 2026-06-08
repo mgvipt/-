@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Калькулятор декоратора",
+    "slug": "decorator-calc",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "decoratorcalc",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0b0b0f",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0b0b0f"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.decorator.calc"
+    },
+    "android": {
+      "package": "com.decorator.calc",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0b0b0f"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
