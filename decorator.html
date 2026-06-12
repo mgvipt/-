@@ -24,6 +24,9 @@
   .item-name::placeholder{color:var(--muted);}.item-name:focus{outline:none;}
   select.catalog{width:100%;background:#101017 url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' stroke='%239a9aa8' stroke-width='1.5' fill='none'/></svg>") no-repeat right 12px center;border:1px solid var(--line);border-radius:11px;color:var(--accent-2);padding:11px 34px 11px 12px;font-size:15px;margin-bottom:10px;-webkit-appearance:none;appearance:none;}
   select.catalog:focus{outline:none;border-color:var(--accent);}
+  .catalog-search{width:100%;background:#101017;border:1px solid var(--line);border-radius:11px;color:var(--accent-2);padding:11px 12px;font-size:15px;margin-bottom:10px;}
+  .catalog-search::placeholder{color:var(--muted);}
+  .catalog-search:focus{outline:none;border-color:var(--accent);}
   .item-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
   .mini-field{display:flex;flex-direction:column;gap:4px;}.mini-field span{font-size:11px;color:var(--muted);padding-left:4px;}
   input[type="number"],input[type="text"],textarea{width:100%;background:#101017;border:1px solid var(--line);border-radius:11px;color:var(--text);padding:11px 12px;font-size:16px;font-variant-numeric:tabular-nums;font-family:inherit;}
@@ -93,9 +96,11 @@
   <section class="card">
     <h2>Параметри</h2>
     <div class="totals">
-      <div class="row"><label>Вартість матеріалів<span class="hint-q">постачає Виконавець, окремо</span></label><div class="ctl"><input type="number" id="materials" inputmode="decimal" min="0" step="100" value="0" /><span class="unit">₴</span></div></div>
+      <div class="row"><label>Додаткові матеріали (вручну)<span class="hint-q">понад вибрані з каталогу</span></label><div class="ctl"><input type="number" id="materials" inputmode="decimal" min="0" step="100" value="0" /><span class="unit">₴</span></div></div>
       <div class="row"><label>Прорабські / організація<span class="hint-q">% від суми робіт</span></label><div class="ctl"><input type="number" id="mgmt" inputmode="decimal" min="0" step="1" value="0" /><span class="unit">%</span></div></div>
-      <div class="row"><label>Транспортні витрати</label><div class="ctl"><input type="number" id="transport" inputmode="decimal" min="0" step="100" value="0" /><span class="unit">₴</span></div></div>
+      <div class="row"><label>Транспорт: відстань<span class="hint-q">в один бік</span></label><div class="ctl"><input type="number" id="km" inputmode="decimal" min="0" step="1" value="0" /><span class="unit">км</span></div></div>
+      <div class="row"><label>Тариф за км</label><div class="ctl"><input type="number" id="kmRate" inputmode="decimal" min="0" step="1" value="15" /><span class="unit">₴</span></div></div>
+      <div class="row"><label>Мін. виїзд<span class="hint-q">мінімум, якщо роботи/їзди мало</span></label><div class="ctl"><input type="number" id="transportMin" inputmode="decimal" min="0" step="50" value="500" /><span class="unit">₴</span></div></div>
       <div class="row"><label>Аванс отримано</label><div class="ctl"><input type="number" id="advance" inputmode="decimal" min="0" step="1000" value="0" /><span class="unit">₴</span></div></div>
       <div class="row"><label>Знижка клієнту</label><div class="ctl"><input type="number" id="discount" inputmode="decimal" min="0" step="1" value="0" /><span class="unit">%</span></div></div>
     </div>
@@ -165,28 +170,85 @@
   const KEY = "wallcov.calc.v2";
   const $ = (s, r = document) => r.querySelector(s);
 
-  // Реальний каталог декоративних робіт Wallcov (грн)
+  // Каталог робіт Wallcov + матеріали з прайсу (з розходом кг/м²)
   const CATALOG = [
-    { group: "Підготовка поверхонь", items: [
-      { name: "Нанесення мілкого кварц-ґрунта (фондо)", unit: "м²", price: 70 },
+    { group: "Захист поверхонь (підготовка)", kind: "work", items: [
+      { name: "Захист підлоги плівкою", unit: "м²", price: 15 },
+      { name: "Захист стелі плівкою", unit: "м²", price: 25 },
+      { name: "Обклеювання/захист плінтусів, вікон, дверей", unit: "м.п.", price: 20 },
+      { name: "Укриття меблів плівкою", unit: "послуга", price: 300 },
+      { name: "Оклейка малярним скотчем + плівка", unit: "м.п.", price: 20 },
+      { name: "Відклейка/прибирання захисту", unit: "м²", price: 10 },
+    ]},
+    { group: "Малярні / підготовчі роботи", kind: "work", items: [
+      { name: "Нанесення кварц-ґрунта (фондо)", unit: "м²", price: 70 },
       { name: "Ґрунтування стін (1 шар)", unit: "м²", price: 30 },
       { name: "Ґрунтування стін (2 рази)", unit: "м²", price: 60 },
       { name: "Шпаклювання стін під склополотно", unit: "м²", price: 300 },
       { name: "Поклейка склополотна (стеклохолст)", unit: "м²", price: 200 },
-      { name: "Шпаклювання склополотна під фарбування", unit: "м²", price: 350 },
+      { name: "Поклейка флізеліну", unit: "м²", price: 180 },
+      { name: "Поклейка шпалер", unit: "м²", price: 150 },
+      { name: "Шпаклювання під фарбування", unit: "м²", price: 150 },
+      { name: "Шпаклівка під шпалери", unit: "м²", price: 100 },
+      { name: "Фарбування стін/стелі (2 шари)", unit: "м²", price: 120 },
     ]},
-    { group: "Декоративні покриття (робота)", items: [
-      { name: "Декор «Мокрий шовк»", unit: "м²", price: 800, note: "матеріал ~210 грн/м²" },
+    { group: "Декоративні покриття (робота)", kind: "work", items: [
+      { name: "Декор «Мокрий шовк»", unit: "м²", price: 800, note: "матеріал ~190 грн/м²" },
       { name: "Декор «Декоративний пісок Галатея»", unit: "м²", price: 800, note: "матеріал ~280 грн/м²" },
       { name: "Декор «Венеціанка полірована»", unit: "м²", price: 1250, note: "матеріал ~450 грн/м²" },
       { name: "Декор «Матовий марморин»", unit: "м²", price: 1200, note: "матеріал ~445 грн/м²" },
     ]},
-    { group: "Демонтаж / підготовчі", items: [
+    { group: "Демонтаж / інше", kind: "work", items: [
       { name: "Демонтаж барельєфа", unit: "послуга", price: 0, note: "ціну узгодити" },
       { name: "Демонтаж шпалер", unit: "м²", price: 40 },
       { name: "Демонтаж плитки", unit: "м²", price: 90 },
       { name: "Демонтаж старої штукатурки", unit: "м²", price: 80 },
       { name: "Винесення / вивіз сміття", unit: "послуга", price: 2500 },
+    ]},
+    { group: "Матеріали: декор (шовк/пісок)", kind: "material", items: [
+      { name: "Матовий оксамитово-шовковий — світла база", unit: "м²", price: 254, note: "розхід ~0.33 кг/м²" },
+      { name: "Матовий оксамитово-шовковий — золотистий", unit: "м²", price: 231, note: "розхід ~0.33 кг/м²" },
+      { name: "Матовий оксамитово-шовковий — сріблястий", unit: "м²", price: 231, note: "розхід ~0.33 кг/м²" },
+      { name: "Мокрий шовк — біла база", unit: "м²", price: 190, note: "розхід ~0.15 кг/м²" },
+      { name: "Мокрий шовк — золотистий", unit: "м²", price: 180, note: "розхід ~0.15 кг/м²" },
+      { name: "Мокрий шовк — перламутровий", unit: "м²", price: 180, note: "розхід ~0.15 кг/м²" },
+      { name: "Мокрий шовк — сріблястий", unit: "м²", price: 162, note: "розхід ~0.15 кг/м²" },
+      { name: "Піщані дюни з блиском — сріблястий", unit: "м²", price: 137, note: "розхід ~0.15 кг/м²" },
+      { name: "Піщаний ефект зі склосферами", unit: "м²", price: 196, note: "розхід ~0.19 кг/м²" },
+    ]},
+    { group: "Матеріали: фактурні", kind: "material", items: [
+      { name: "Фактурний оксамит — сіро-бежева база", unit: "м²", price: 481, note: "розхід ~0.47 кг/м²" },
+      { name: "Фактурний оксамит — біла база", unit: "м²", price: 546, note: "розхід ~0.47 кг/м²" },
+      { name: "Фактура з мармуровою крихтою (перламутр)", unit: "м²", price: 247, note: "розхід ~0.33 кг/м²" },
+      { name: "Ефект натурального каменю зі слюдою", unit: "м²", price: 432, note: "розхід ~1.6 кг/м²" },
+      { name: "Дрібнозерниста фактурна база", unit: "м²", price: 168, note: "розхід ~0.8 кг/м²" },
+      { name: "Крупнозерниста фактурна база", unit: "м²", price: 578, note: "розхід ~2.75 кг/м²" },
+      { name: "Середньозерниста фактурна база", unit: "м²", price: 273, note: "розхід ~1.3 кг/м²" },
+      { name: "Ефект глини", unit: "м²", price: 463, note: "розхід ~1.45 кг/м²" },
+    ]},
+    { group: "Матеріали: венеціанка/марморино", kind: "material", items: [
+      { name: "Венеціанський мармуровий ефект", unit: "м²", price: 194, note: "розхід ~0.55 кг/м²" },
+      { name: "Венеціанський мармуровий — матовий", unit: "м²", price: 594, note: "розхід ~0.85 кг/м²" },
+      { name: "Венеціанський мармуровий — біла база", unit: "м²", price: 557, note: "розхід ~1.35 кг/м²" },
+      { name: "Гладкий мармуровий ефект", unit: "м²", price: 244, note: "розхід ~0.6 кг/м²" },
+      { name: "Ефект травертину", unit: "м²", price: 423, note: "розхід ~1.5 кг/м²" },
+      { name: "Ефект травертину — теплий пісочний", unit: "м²", price: 357, note: "розхід ~1.5 кг/м²" },
+      { name: "Ефект марморино", unit: "м²", price: 276, note: "розхід ~1.05 кг/м²" },
+    ]},
+    { group: "Матеріали: захист/лаки", kind: "material", items: [
+      { name: "Захисний віск для матової венеціанки", unit: "м²", price: 260, note: "розхід ~0.4 кг/м²" },
+      { name: "Захисний віск з іскристою добавкою", unit: "м²", price: 264, note: "розхід ~0.4 кг/м²" },
+      { name: "Перламутровий захисний фініш", unit: "м²", price: 100, note: "розхід ~0.12 кг/м²" },
+      { name: "Глянцевий захисний віск", unit: "м²", price: 167, note: "розхід ~0.05 кг/м²" },
+      { name: "Пастоподібний захисний віск", unit: "м²", price: 222, note: "розхід ~0.08 кг/м²" },
+      { name: "Сатинова захист для декоративних стін", unit: "м²", price: 114, note: "розхід ~0.45 кг/м²" },
+      { name: "Глянцевий декоративний лак", unit: "м²", price: 113, note: "розхід ~0.12 кг/м²" },
+    ]},
+    { group: "Матеріали: ґрунти/бази", kind: "material", items: [
+      { name: "База під тонкошарові покриття", unit: "м²", price: 45, note: "розхід ~0.23 кг/м²" },
+      { name: "Кварцовий ґрунт під фактурні матеріали", unit: "м²", price: 45, note: "розхід ~0.23 кг/м²" },
+      { name: "Ґрунт глибокого проникнення", unit: "м²", price: 14, note: "розхід ~0.03 кг/м²" },
+      { name: "Ґрунт-фарба з дрібним кварцом", unit: "м²", price: 45, note: "розхід ~0.23 кг/м²" },
     ]},
   ];
 
@@ -206,7 +268,7 @@
   const escA = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
   let state = {
-    items: [], materials: 0, mgmt: 0, transport: 0, advance: 0, discount: 0,
+    items: [], materials: 0, mgmt: 0, km: 0, kmRate: 15, transportMin: 500, advance: 0, discount: 0,
     doc: { object: "", no: "", city: "", date: "", cName: "", cTax: "", cPhone: "", cAddr: "",
       eName: EXEC_DEFAULT.name, eTax: EXEC_DEFAULT.tax, eAddr: EXEC_DEFAULT.addr, eIban: EXEC_DEFAULT.iban, eBank: EXEC_DEFAULT.bank, ePhone: EXEC_DEFAULT.phone },
   };
@@ -220,20 +282,23 @@
   }
 
   const itemsRoot = $("#items");
-  function catalogOptions(){
-    let h = '<option value="">📋 Обрати з каталогу…</option>';
-    CATALOG.forEach((g, gi) => { h += `<optgroup label="${g.group}">`;
-      g.items.forEach((it, ii) => { h += `<option value="${gi}.${ii}">${it.name} — ${it.price} ₴/${it.unit}</option>`; });
-      h += `</optgroup>`; });
-    return h;
-  }
+  // Індекс пошуку + datalist (автопідбір при введенні кількох літер)
+  const CAT_INDEX = {};
+  (function(){ let opts = "";
+    CATALOG.forEach((g) => g.items.forEach((it) => {
+      const label = `${it.name} — ${it.price} ₴/${it.unit}`;
+      CAT_INDEX[label] = { name: it.name, unit: it.unit, price: it.price, kind: g.kind };
+      opts += `<option value="${escA(label)}"></option>`; }));
+    const dl = document.createElement("datalist"); dl.id = "cat-list"; dl.innerHTML = opts;
+    document.body.appendChild(dl);
+  })();
   function renderItems(){
     itemsRoot.innerHTML = "";
     state.items.forEach((item, i) => {
       const el = document.createElement("div"); el.className = "item";
       const u = item.unit ? ` (${item.unit})` : "";
       el.innerHTML = `
-        <select class="catalog" data-i="${i}">${catalogOptions()}</select>
+        <input class="catalog-search" type="text" list="cat-list" data-i="${i}" placeholder="🔍 Пошук роботи/матеріалу — кілька літер" />
         <div class="item-top">
           <input class="item-name" type="text" placeholder="Назва роботи" value="${escA(item.name)}" data-i="${i}" data-f="name" />
           <button class="icon-btn" data-del="${i}">✕</button>
@@ -248,10 +313,13 @@
   }
 
   function compute(){
-    const works = state.items.reduce((a, it) => a + num(it.qty)*num(it.price), 0);
+    let works = 0, matLines = 0;
+    state.items.forEach((it) => { const s = num(it.qty)*num(it.price);
+      if(it.kind === "material") matLines += s; else works += s; });
     const mgmt = works * (num(state.mgmt)/100);
-    const transport = num(state.transport);
-    const materials = num(state.materials);
+    const km = num(state.km);
+    const transport = km > 0 ? Math.max(km * num(state.kmRate), num(state.transportMin)) : 0;
+    const materials = matLines + num(state.materials);
     const before = works + mgmt + transport + materials;
     const discount = before * (num(state.discount)/100);
     const advance = num(state.advance);
@@ -274,17 +342,17 @@
   }
 
   itemsRoot.addEventListener("input", (e) => {
-    const t = e.target, i = t.dataset.i, f = t.dataset.f;
+    const t = e.target;
+    if(t.classList.contains("catalog-search")){
+      const ref = CAT_INDEX[t.value]; if(!ref) return;
+      const i = +t.dataset.i;
+      state.items[i] = { name: ref.name, unit: ref.unit, kind: ref.kind, qty: num(state.items[i].qty) || 1, price: ref.price };
+      renderItems(); renderTotals(); save(); return;
+    }
+    const i = t.dataset.i, f = t.dataset.f;
     if(i === undefined || f === undefined) return;
     state.items[+i][f] = f === "name" ? t.value : num(t.value);
     refreshSums(); save();
-  });
-  itemsRoot.addEventListener("change", (e) => {
-    const t = e.target; if(!t.classList.contains("catalog")) return;
-    const i = +t.dataset.i, v = t.value; if(!v) return;
-    const [gi, ii] = v.split(".").map(Number); const src = CATALOG[gi].items[ii];
-    state.items[i] = { name: src.name, unit: src.unit, qty: num(state.items[i].qty) || 1, price: src.price };
-    renderItems(); renderTotals(); save();
   });
   itemsRoot.addEventListener("click", (e) => {
     const d = e.target.dataset.del; if(d === undefined) return;
@@ -297,7 +365,7 @@
     const ins = itemsRoot.querySelectorAll(".item-name"); ins[ins.length-1].focus();
   });
 
-  ["materials","mgmt","transport","advance","discount"].forEach((id) => {
+  ["materials","mgmt","km","kmRate","transportMin","advance","discount"].forEach((id) => {
     const el = $("#"+id); el.value = state[id];
     el.addEventListener("input", () => { state[id] = num(el.value); renderTotals(); save(); });
   });
@@ -319,7 +387,7 @@
   $("#reset").addEventListener("click", () => {
     if(!confirm("Очистити кошторис? Реквізити Виконавця залишаться.")) return;
     const keepExec = { eName:state.doc.eName,eTax:state.doc.eTax,eAddr:state.doc.eAddr,eIban:state.doc.eIban,eBank:state.doc.eBank,ePhone:state.doc.ePhone };
-    state = { items:[{name:"",unit:"",qty:1,price:0}], materials:0,mgmt:0,transport:0,advance:0,discount:0,
+    state = { items:[{name:"",unit:"",qty:1,price:0}], materials:0,mgmt:0,km:0,kmRate:15,transportMin:500,advance:0,discount:0,
       doc:Object.assign({object:"",no:"",city:"",date:"",cName:"",cTax:"",cPhone:"",cAddr:""}, keepExec) };
     renderAll(); save();
   });
@@ -552,7 +620,7 @@
 
   function renderAll(){
     renderItems();
-    ["materials","mgmt","transport","advance","discount"].forEach((id)=>{ $("#"+id).value = state[id]; });
+    ["materials","mgmt","km","kmRate","transportMin","advance","discount"].forEach((id)=>{ $("#"+id).value = state[id]; });
     Object.keys(docMap).forEach((id)=>{ $("#"+id).value = state.doc[docMap[id]] || ""; });
     renderTotals();
   }
