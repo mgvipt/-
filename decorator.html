@@ -27,6 +27,8 @@
   .catalog-search{width:100%;background:#101017;border:1px solid var(--line);border-radius:11px;color:var(--accent-2);padding:11px 12px;font-size:15px;margin-bottom:10px;}
   .catalog-search::placeholder{color:var(--muted);}
   .catalog-search:focus{outline:none;border-color:var(--accent);}
+  .picker{display:flex;gap:8px;margin-bottom:10px;}
+  .picker select.catalog{flex:1;margin-bottom:0;min-width:0;}
   .item-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
   .mini-field{display:flex;flex-direction:column;gap:4px;}.mini-field span{font-size:11px;color:var(--muted);padding-left:4px;}
   input[type="number"],input[type="text"],textarea{width:100%;background:#101017;border:1px solid var(--line);border-radius:11px;color:var(--text);padding:11px 12px;font-size:16px;font-variant-numeric:tabular-nums;font-family:inherit;}
@@ -180,16 +182,21 @@
       { name: "Оклейка малярним скотчем + плівка", unit: "м.п.", price: 20 },
       { name: "Відклейка/прибирання захисту", unit: "м²", price: 10 },
     ]},
-    { group: "Малярні / підготовчі роботи", kind: "work", items: [
+    { group: "Ґрунтування / підготовка", kind: "work", items: [
       { name: "Нанесення кварц-ґрунта (фондо)", unit: "м²", price: 70 },
       { name: "Ґрунтування стін (1 шар)", unit: "м²", price: 30 },
       { name: "Ґрунтування стін (2 рази)", unit: "м²", price: 60 },
+    ]},
+    { group: "Штукатурні / шпаклювальні роботи", kind: "work", items: [
+      { name: "Штукатурка стін по маяках", unit: "м²", price: 150 },
       { name: "Шпаклювання стін під склополотно", unit: "м²", price: 300 },
+      { name: "Шпаклювання під фарбування", unit: "м²", price: 150 },
+      { name: "Шпаклівка під шпалери", unit: "м²", price: 100 },
+    ]},
+    { group: "Малярні роботи", kind: "work", items: [
       { name: "Поклейка склополотна (стеклохолст)", unit: "м²", price: 200 },
       { name: "Поклейка флізеліну", unit: "м²", price: 180 },
       { name: "Поклейка шпалер", unit: "м²", price: 150 },
-      { name: "Шпаклювання під фарбування", unit: "м²", price: 150 },
-      { name: "Шпаклівка під шпалери", unit: "м²", price: 100 },
       { name: "Фарбування стін/стелі (2 шари)", unit: "м²", price: 120 },
     ]},
     { group: "Декоративні покриття (робота)", kind: "work", items: [
@@ -292,6 +299,8 @@
     const dl = document.createElement("datalist"); dl.id = "cat-list"; dl.innerHTML = opts;
     document.body.appendChild(dl);
   })();
+  // Опції категорій (для вибору «категорія → робота»)
+  const CAT_OPTS = CATALOG.map((g, gi) => `<option value="${gi}">${g.group}</option>`).join("");
   function renderItems(){
     itemsRoot.innerHTML = "";
     state.items.forEach((item, i) => {
@@ -299,6 +308,10 @@
       const u = item.unit ? ` (${item.unit})` : "";
       el.innerHTML = `
         <input class="catalog-search" type="text" list="cat-list" data-i="${i}" placeholder="🔍 Пошук роботи/матеріалу — кілька літер" />
+        <div class="picker">
+          <select class="catalog cat-select" data-i="${i}"><option value="">📂 Категорія…</option>${CAT_OPTS}</select>
+          <select class="catalog work-select" data-i="${i}"><option value="">— робота —</option></select>
+        </div>
         <div class="item-top">
           <input class="item-name" type="text" placeholder="Назва роботи" value="${escA(item.name)}" data-i="${i}" data-f="name" />
           <button class="icon-btn" data-del="${i}">✕</button>
@@ -353,6 +366,22 @@
     if(i === undefined || f === undefined) return;
     state.items[+i][f] = f === "name" ? t.value : num(t.value);
     refreshSums(); save();
+  });
+  itemsRoot.addEventListener("change", (e) => {
+    const t = e.target;
+    if(t.classList.contains("cat-select")){
+      const row = t.closest(".item"); const ws = row.querySelector(".work-select"); const gi = t.value;
+      if(gi === ""){ ws.innerHTML = '<option value="">— робота —</option>'; return; }
+      const g = CATALOG[+gi];
+      ws.innerHTML = '<option value="">— робота —</option>' + g.items.map((it, ii) => `<option value="${gi}.${ii}">${escA(it.name)} — ${it.price} ₴/${it.unit}</option>`).join("");
+      return;
+    }
+    if(t.classList.contains("work-select")){
+      const v = t.value; if(!v) return;
+      const [gi, ii] = v.split(".").map(Number); const g = CATALOG[gi], src = g.items[ii], i = +t.dataset.i;
+      state.items[i] = { name: src.name, unit: src.unit, kind: g.kind, qty: num(state.items[i].qty) || 1, price: src.price };
+      renderItems(); renderTotals(); save();
+    }
   });
   itemsRoot.addEventListener("click", (e) => {
     const d = e.target.dataset.del; if(d === undefined) return;
