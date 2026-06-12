@@ -34,7 +34,18 @@
   .catalog-search:focus{outline:none;border-color:var(--accent);}
   .picker{display:flex;gap:8px;margin-bottom:10px;}
   .picker select.catalog{flex:1;margin-bottom:0;min-width:0;}
-  .area-out{margin:10px 0;text-align:center;color:var(--accent-2);font-size:15px;font-weight:600;}
+  .area-out{margin:10px 0;text-align:center;color:var(--accent-2);font-size:13px;font-weight:600;}
+  .room{border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:14px;background:var(--card-2);}
+  .room-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+  .room-name{flex:1;background:var(--field);border:1px solid var(--line);border-radius:11px;color:var(--text);padding:11px 12px;font-size:17px;font-weight:700;}
+  .dims{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+  .area-btns{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:12px;}
+  .area-btns button{border:1px solid var(--accent-2);color:var(--accent-2);background:rgba(255,177,92,.08);border-radius:10px;padding:9px 4px;font-size:12px;font-weight:700;}
+  .area-btns button:active{background:rgba(255,177,92,.2);}
+  .room-items .item{background:var(--card);}
+  .room-add{font-size:15px;padding:12px;}
+  .room-sub{margin-top:10px;text-align:right;color:var(--muted);font-size:14px;}
+  .room-sub b{color:var(--text);font-size:16px;}
   .item-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
   .mini-field{display:flex;flex-direction:column;gap:4px;}.mini-field span{font-size:11px;color:var(--muted);padding-left:4px;}
   input[type="number"],input[type="text"],textarea{width:100%;background:var(--field);border:1px solid var(--line);border-radius:11px;color:var(--text);padding:11px 12px;font-size:16px;font-variant-numeric:tabular-nums;font-family:inherit;}
@@ -102,25 +113,10 @@
   </div>
 
   <section class="card">
-    <h2>📐 Площа кімнати</h2>
-    <div class="item-grid" style="grid-template-columns:1fr 1fr 1fr">
-      <label class="mini-field"><span>Довжина, м</span><input id="rL" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0" /></label>
-      <label class="mini-field"><span>Ширина, м</span><input id="rW" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0" /></label>
-      <label class="mini-field"><span>Висота, м</span><input id="rH" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0" /></label>
-    </div>
-    <div class="area-out" id="areaOut">Стіни 0 м² · Підлога 0 м² · Стеля 0 м²</div>
-    <div class="doc-btns" style="grid-template-columns:1fr 1fr 1fr">
-      <div class="doc-btn" data-area="walls">+ Стіни</div>
-      <div class="doc-btn" data-area="floor">+ Підлога</div>
-      <div class="doc-btn" data-area="ceil">+ Стеля</div>
-    </div>
-    <p class="hint" style="margin-top:8px">Додасть позицію з готовою площею у «Кількість» — далі оберіть роботу.</p>
-  </section>
-
-  <section class="card">
-    <h2>Позиції (роботи)</h2>
-    <div id="items"></div>
-    <button class="btn btn-add" id="add">+ Додати позицію</button>
+    <h2>Кімнати та позиції</h2>
+    <p class="hint" style="text-align:left;margin:0 0 12px">Вкажіть розміри кімнати — площа стін/підлоги/стелі та периметр порахуються самі. Кнопки додають позицію з готовою площею.</p>
+    <div id="rooms"></div>
+    <button class="btn btn-add" id="add-room">+ Додати кімнату</button>
   </section>
 
   <section class="card">
@@ -227,6 +223,16 @@
       { name: "Поклейка шпалер", unit: "м²", price: 150 },
       { name: "Фарбування стін/стелі (2 шари)", unit: "м²", price: 120 },
     ]},
+    { group: "Плінтуси / багети / ліпний декор", kind: "work", items: [
+      { name: "Поклейка плінтуса МДФ", unit: "м.п.", price: 100 },
+      { name: "Поклейка плінтуса дюрополімер", unit: "м.п.", price: 90 },
+      { name: "Поклейка плінтуса (пластик/ПВХ)", unit: "м.п.", price: 60 },
+      { name: "Поклейка стельового багета / галтелі", unit: "м.п.", price: 90 },
+      { name: "Поклейка молдингів / ліпного декору", unit: "м.п.", price: 120 },
+      { name: "Монтаж карниза під штори (ніша)", unit: "м.п.", price: 110 },
+      { name: "Фарбування плінтуса / багета", unit: "м.п.", price: 50 },
+      { name: "Шпаклювання/підготовка багета під фарбу", unit: "м.п.", price: 40 },
+    ]},
     { group: "Декоративні покриття (робота)", kind: "work", items: [
       { name: "Декор «Мокрий шовк»", unit: "м²", price: 800, note: "матеріал ~190 грн/м²" },
       { name: "Декор «Декоративний пісок Галатея»", unit: "м²", price: 800, note: "матеріал ~280 грн/м²" },
@@ -302,21 +308,33 @@
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const escA = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
+  const uid = () => Math.random().toString(36).slice(2, 9);
+  const makeItem = () => ({ name:"", unit:"", qty:1, price:0 });
+  const makeRoom = (name) => ({ id: uid(), name: name || "", L:0, W:0, H:0, items:[makeItem()] });
+
   let state = {
-    items: [], materials: 0, mgmt: 0, km: 0, kmRate: 15, transportMin: 500, advance: 0, discount: 0,
+    rooms: [], materials: 0, mgmt: 0, km: 0, kmRate: 15, transportMin: 500, advance: 0, discount: 0,
     doc: { object: "", no: "", city: "", date: "", cName: "", cTax: "", cPhone: "", cAddr: "",
       eName: EXEC_DEFAULT.name, eTax: EXEC_DEFAULT.tax, eAddr: EXEC_DEFAULT.addr, eIban: EXEC_DEFAULT.iban, eBank: EXEC_DEFAULT.bank, ePhone: EXEC_DEFAULT.phone },
   };
 
+  const allItems = () => { const a = []; state.rooms.forEach((r) => r.items.forEach((it) => a.push(it))); return a; };
+
   function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(_){} }
   function load(){
     try{ const r = localStorage.getItem(KEY); if(r) state = Object.assign(state, JSON.parse(r)); }catch(_){}
-    if(!Array.isArray(state.items) || !state.items.length) state.items = [{ name:"", unit:"", qty:1, price:0 }];
+    // міграція зі старого формату (плоский items → одна кімната)
+    if(Array.isArray(state.items) && state.items.length && (!Array.isArray(state.rooms) || !state.rooms.length)){
+      state.rooms = [{ id: uid(), name: "Кімната 1", L:0, W:0, H:0, items: state.items }];
+    }
+    delete state.items;
+    if(!Array.isArray(state.rooms) || !state.rooms.length) state.rooms = [makeRoom("Кімната 1")];
+    state.rooms.forEach((r) => { if(!Array.isArray(r.items) || !r.items.length) r.items = [makeItem()]; });
     state.doc = Object.assign({ object:"",no:"",city:"",date:"",cName:"",cTax:"",cPhone:"",cAddr:"",
       eName:EXEC_DEFAULT.name,eTax:EXEC_DEFAULT.tax,eAddr:EXEC_DEFAULT.addr,eIban:EXEC_DEFAULT.iban,eBank:EXEC_DEFAULT.bank,ePhone:EXEC_DEFAULT.phone }, state.doc || {});
   }
 
-  const itemsRoot = $("#items");
+  const roomsRoot = $("#rooms");
   // Індекс пошуку + datalist (автопідбір при введенні кількох літер)
   const CAT_INDEX = {};
   (function(){ let opts = "";
@@ -340,42 +358,71 @@
         const it = g.items.find((x) => x.name === DECOR_MAT[k]); if(it) return { name: it.name, unit: it.unit, price: it.price, kind: "material" }; } } }
     return null;
   }
-  function fillItem(i, ref){
-    const qty = num(state.items[i].qty) || 1;
-    state.items[i] = { name: ref.name, unit: ref.unit, kind: ref.kind, qty, price: ref.price };
+  function fillItem(r, i, ref){
+    const cur = state.rooms[r].items[i];
+    const qty = num(cur.qty) || 1;
+    state.rooms[r].items[i] = { name: ref.name, unit: ref.unit, kind: ref.kind, qty, price: ref.price };
     if(ref.kind !== "material" && ref.name.indexOf("Декор") === 0){
       const m = matRef(ref.name);
-      if(m && !state.items.some((x) => x.kind === "material" && x.name === m.name)) state.items.splice(i + 1, 0, Object.assign({}, m, { qty }));
+      if(m && !state.rooms[r].items.some((x) => x.kind === "material" && x.name === m.name)) state.rooms[r].items.splice(i + 1, 0, Object.assign({}, m, { qty }));
     }
-    renderItems(); renderTotals(); save();
+    renderRooms(); renderTotals(); save();
   }
-  function renderItems(){
-    itemsRoot.innerHTML = "";
-    state.items.forEach((item, i) => {
-      const el = document.createElement("div"); el.className = "item";
-      const u = item.unit ? ` (${item.unit})` : "";
-      el.innerHTML = `
-        <input class="catalog-search" type="text" list="cat-list" data-i="${i}" placeholder="🔍 Пошук роботи/матеріалу — кілька літер" />
-        <div class="picker">
-          <select class="catalog cat-select" data-i="${i}"><option value="">📂 Категорія…</option>${CAT_OPTS}</select>
-          <select class="catalog work-select" data-i="${i}"><option value="">— робота —</option></select>
+  function roomAreas(rm){ const L=num(rm.L),W=num(rm.W),H=num(rm.H);
+    return { walls:+(2*(L+W)*H).toFixed(2), floor:+(L*W).toFixed(2), ceil:+(L*W).toFixed(2), perim:+(2*(L+W)).toFixed(2) }; }
+  function roomSub(rm){ return rm.items.reduce((a,it)=>a+num(it.qty)*num(it.price),0); }
+  function areaLine(rm){ const a=roomAreas(rm); return `Стіни ${a.walls} · Підлога ${a.floor} · Стеля ${a.ceil} м² · Периметр ${a.perim} м.п.`; }
+
+  function renderRooms(){
+    roomsRoot.innerHTML = "";
+    state.rooms.forEach((rm, r) => {
+      const card = document.createElement("div"); card.className = "room"; card.dataset.r = r;
+      const itemsHtml = rm.items.map((item, i) => {
+        const u = item.unit ? ` (${item.unit})` : "";
+        return `<div class="item" data-r="${r}" data-i="${i}">
+          <input class="catalog-search" type="text" list="cat-list" data-r="${r}" data-i="${i}" placeholder="🔍 Пошук роботи/матеріалу" />
+          <div class="picker">
+            <select class="catalog cat-select" data-r="${r}" data-i="${i}"><option value="">📂 Категорія…</option>${CAT_OPTS}</select>
+            <select class="catalog work-select" data-r="${r}" data-i="${i}"><option value="">— робота —</option></select>
+          </div>
+          <div class="item-top">
+            <input class="item-name" type="text" placeholder="Назва роботи" value="${escA(item.name)}" data-r="${r}" data-i="${i}" data-f="name" />
+            <button class="icon-btn" data-del="${r}.${i}">✕</button>
+          </div>
+          <div class="item-grid">
+            <label class="mini-field"><span>Кількість${u}</span><input type="number" inputmode="decimal" min="0" step="0.1" value="${item.qty}" data-r="${r}" data-i="${i}" data-f="qty" /></label>
+            <label class="mini-field"><span>Ціна за од., ₴</span><input type="number" inputmode="decimal" min="0" step="10" value="${item.price}" data-r="${r}" data-i="${i}" data-f="price" /></label>
+          </div>
+          <div class="item-sum">Сума: <b>${fmtShort(num(item.qty)*num(item.price))}</b></div>
+        </div>`;
+      }).join("");
+      card.innerHTML = `
+        <div class="room-head">
+          <input class="room-name" type="text" placeholder="Назва кімнати" value="${escA(rm.name)}" data-r="${r}" />
+          <button class="icon-btn" data-delroom="${r}">✕</button>
         </div>
-        <div class="item-top">
-          <input class="item-name" type="text" placeholder="Назва роботи" value="${escA(item.name)}" data-i="${i}" data-f="name" />
-          <button class="icon-btn" data-del="${i}">✕</button>
+        <div class="dims">
+          <label class="mini-field"><span>Довжина, м</span><input type="number" inputmode="decimal" min="0" step="0.1" value="${rm.L||""}" data-r="${r}" data-dim="L" placeholder="0" /></label>
+          <label class="mini-field"><span>Ширина, м</span><input type="number" inputmode="decimal" min="0" step="0.1" value="${rm.W||""}" data-r="${r}" data-dim="W" placeholder="0" /></label>
+          <label class="mini-field"><span>Висота, м</span><input type="number" inputmode="decimal" min="0" step="0.1" value="${rm.H||""}" data-r="${r}" data-dim="H" placeholder="0" /></label>
         </div>
-        <div class="item-grid">
-          <label class="mini-field"><span>Кількість${u}</span><input type="number" inputmode="decimal" min="0" step="0.1" value="${item.qty}" data-i="${i}" data-f="qty" /></label>
-          <label class="mini-field"><span>Ціна за од., ₴</span><input type="number" inputmode="decimal" min="0" step="10" value="${item.price}" data-i="${i}" data-f="price" /></label>
+        <div class="area-out">${areaLine(rm)}</div>
+        <div class="area-btns">
+          <button data-area="walls" data-r="${r}">+ Стіни</button>
+          <button data-area="floor" data-r="${r}">+ Підлога</button>
+          <button data-area="ceil" data-r="${r}">+ Стеля</button>
+          <button data-area="perim" data-r="${r}">+ Периметр</button>
         </div>
-        <div class="item-sum">Сума: <b>${fmtShort(num(item.qty)*num(item.price))}</b></div>`;
-      itemsRoot.appendChild(el);
+        <div class="room-items">${itemsHtml}</div>
+        <button class="btn btn-add room-add" data-addr="${r}">+ Позицію в кімнату</button>
+        <div class="room-sub">Разом по кімнаті: <b>${fmtShort(roomSub(rm))}</b></div>`;
+      roomsRoot.appendChild(card);
     });
   }
 
   function compute(){
     let works = 0, matLines = 0;
-    state.items.forEach((it) => { const s = num(it.qty)*num(it.price);
+    allItems().forEach((it) => { const s = num(it.qty)*num(it.price);
       if(it.kind === "material") matLines += s; else works += s; });
     const mgmt = works * (num(state.mgmt)/100);
     const km = num(state.km);
@@ -398,25 +445,33 @@
     $("#t-grand").textContent = fmtShort(t.grand);
   }
   function refreshSums(){
-    document.querySelectorAll(".item").forEach((el, i) => { const it = state.items[i]; el.querySelector(".item-sum b").textContent = fmtShort(num(it.qty)*num(it.price)); });
+    document.querySelectorAll(".room").forEach((card) => {
+      const r = +card.dataset.r, rm = state.rooms[r]; if(!rm) return;
+      card.querySelectorAll(".item").forEach((el) => { const it = rm.items[+el.dataset.i]; if(it) el.querySelector(".item-sum b").textContent = fmtShort(num(it.qty)*num(it.price)); });
+      const sub = card.querySelector(".room-sub b"); if(sub) sub.textContent = fmtShort(roomSub(rm));
+      const ao = card.querySelector(".area-out"); if(ao) ao.textContent = areaLine(rm);
+    });
     renderTotals();
   }
+  function focusLastSearch(r){ const card = roomsRoot.querySelectorAll(".room")[r]; if(!card) return; const ins = card.querySelectorAll(".catalog-search"); if(ins.length) ins[ins.length-1].focus(); }
 
-  itemsRoot.addEventListener("input", (e) => {
+  roomsRoot.addEventListener("input", (e) => {
     const t = e.target;
     if(t.classList.contains("catalog-search")){
       const ref = CAT_INDEX[t.value]; if(!ref) return;
-      fillItem(+t.dataset.i, ref); return;
+      fillItem(+t.dataset.r, +t.dataset.i, ref); return;
     }
-    const i = t.dataset.i, f = t.dataset.f;
-    if(i === undefined || f === undefined) return;
-    state.items[+i][f] = f === "name" ? t.value : num(t.value);
+    if(t.classList.contains("room-name")){ state.rooms[+t.dataset.r].name = t.value; save(); return; }
+    if(t.dataset.dim){ state.rooms[+t.dataset.r][t.dataset.dim] = num(t.value); refreshSums(); save(); return; }
+    const r = t.dataset.r, i = t.dataset.i, f = t.dataset.f;
+    if(r === undefined || i === undefined || f === undefined) return;
+    state.rooms[+r].items[+i][f] = f === "name" ? t.value : num(t.value);
     refreshSums(); save();
   });
-  itemsRoot.addEventListener("change", (e) => {
+  roomsRoot.addEventListener("change", (e) => {
     const t = e.target;
     if(t.classList.contains("cat-select")){
-      const row = t.closest(".item"); const ws = row.querySelector(".work-select"); const gi = t.value;
+      const itEl = t.closest(".item"); const ws = itEl.querySelector(".work-select"); const gi = t.value;
       if(gi === ""){ ws.innerHTML = '<option value="">— робота —</option>'; return; }
       const g = CATALOG[+gi];
       ws.innerHTML = '<option value="">— робота —</option>' + g.items.map((it, ii) => `<option value="${gi}.${ii}">${escA(it.name)} — ${it.price} ₴/${it.unit}</option>`).join("");
@@ -425,18 +480,29 @@
     if(t.classList.contains("work-select")){
       const v = t.value; if(!v) return;
       const [gi, ii] = v.split(".").map(Number); const g = CATALOG[gi], src = g.items[ii];
-      fillItem(+t.dataset.i, { name: src.name, unit: src.unit, price: src.price, kind: g.kind });
+      fillItem(+t.dataset.r, +t.dataset.i, { name: src.name, unit: src.unit, price: src.price, kind: g.kind });
     }
   });
-  itemsRoot.addEventListener("click", (e) => {
-    const d = e.target.dataset.del; if(d === undefined) return;
-    state.items.splice(+d, 1); if(!state.items.length) state.items.push({ name:"", unit:"", qty:1, price:0 });
-    renderItems(); renderTotals(); save();
+  roomsRoot.addEventListener("click", (e) => {
+    const t = e.target;
+    if(t.dataset.del !== undefined){ const [r, i] = t.dataset.del.split(".").map(Number);
+      state.rooms[r].items.splice(i, 1); if(!state.rooms[r].items.length) state.rooms[r].items.push(makeItem());
+      renderRooms(); renderTotals(); save(); return; }
+    if(t.dataset.delroom !== undefined){ const r = +t.dataset.delroom;
+      if(state.rooms.length === 1){ if(!confirm("Видалити єдину кімнату? Буде створена порожня.")) return; state.rooms = [makeRoom("Кімната 1")]; }
+      else { if(!confirm("Видалити кімнату разом з позиціями?")) return; state.rooms.splice(r, 1); }
+      renderRooms(); renderTotals(); save(); return; }
+    if(t.dataset.addr !== undefined){ const r = +t.dataset.addr;
+      state.rooms[r].items.push(makeItem()); renderRooms(); renderTotals(); save(); focusLastSearch(r); return; }
+    if(t.dataset.area !== undefined){ const r = +t.dataset.r, a = roomAreas(state.rooms[r]), q = a[t.dataset.area];
+      if(!q){ alert("Спочатку введіть розміри кімнати"); return; }
+      const unit = t.dataset.area === "perim" ? "м.п." : "м²";
+      state.rooms[r].items.push({ name:"", unit, qty:q, price:0 });
+      renderRooms(); renderTotals(); save(); focusLastSearch(r); return; }
   });
-  $("#add").addEventListener("click", () => {
-    state.items.push({ name:"", unit:"", qty:1, price:0 });
-    renderItems(); renderTotals(); save();
-    const ins = itemsRoot.querySelectorAll(".item-name"); ins[ins.length-1].focus();
+  $("#add-room").addEventListener("click", () => {
+    state.rooms.push(makeRoom("Кімната " + (state.rooms.length + 1)));
+    renderRooms(); renderTotals(); save();
   });
 
   ["materials","mgmt","km","kmRate","transportMin","advance","discount"].forEach((id) => {
@@ -461,7 +527,7 @@
   $("#reset").addEventListener("click", () => {
     if(!confirm("Очистити кошторис? Реквізити Виконавця залишаться.")) return;
     const keepExec = { eName:state.doc.eName,eTax:state.doc.eTax,eAddr:state.doc.eAddr,eIban:state.doc.eIban,eBank:state.doc.eBank,ePhone:state.doc.ePhone };
-    state = { items:[{name:"",unit:"",qty:1,price:0}], materials:0,mgmt:0,km:0,kmRate:15,transportMin:500,advance:0,discount:0,
+    state = { rooms:[makeRoom("Кімната 1")], materials:0,mgmt:0,km:0,kmRate:15,transportMin:500,advance:0,discount:0,
       doc:Object.assign({object:"",no:"",city:"",date:"",cName:"",cTax:"",cPhone:"",cAddr:""}, keepExec) };
     renderAll(); save();
   });
@@ -469,9 +535,13 @@
   $("#share").addEventListener("click", async () => {
     const t = compute();
     const L = ["Кошторис · Wallcov", ""];
-    state.items.forEach((it) => { if(!num(it.qty) && !num(it.price) && !it.name) return;
-      const u = it.unit ? " "+it.unit : "";
-      L.push(`• ${it.name||"Позиція"} — ${num(it.qty)}${u} × ${fmtShort(num(it.price))} = ${fmtShort(num(it.qty)*num(it.price))}`); });
+    state.rooms.forEach((rm) => {
+      const its = rm.items.filter((it) => it.name || num(it.qty) || num(it.price));
+      if(!its.length) return;
+      L.push(`▸ ${rm.name || "Кімната"}`);
+      its.forEach((it) => { const u = it.unit ? " "+it.unit : "";
+        L.push(`  • ${it.name||"Позиція"} — ${num(it.qty)}${u} × ${fmtShort(num(it.price))} = ${fmtShort(num(it.qty)*num(it.price))}`); });
+    });
     L.push("", `Роботи: ${fmtShort(t.works)}`);
     if(t.mgmt) L.push(`Прорабські: ${fmtShort(t.mgmt)}`);
     if(t.transport) L.push(`Транспорт: ${fmtShort(t.transport)}`);
@@ -517,10 +587,17 @@
     return `<div class="sign"><div class="col">${esc(exec)}</div><div class="col">${esc(cli)}</div></div>`;
   }
   function estimateRows(){
-    let r = "", n = 0;
-    state.items.forEach((it) => { if(!it.name && !num(it.qty) && !num(it.price)) return; n++;
-      r += `<tr><td>${n}</td><td>${esc(it.name)}</td><td>${esc(it.unit||"")}</td><td class="r">${num(it.qty)}</td><td class="r">${num(it.price).toFixed(2)}</td><td class="r">${(num(it.qty)*num(it.price)).toFixed(2)}</td></tr>`; });
-    return r;
+    let html = "", n = 0;
+    state.rooms.forEach((rm) => {
+      const its = rm.items.filter((it) => it.name || num(it.qty) || num(it.price));
+      if(!its.length) return;
+      html += `<tr class="group-row"><td colspan="6">${esc(rm.name || "Кімната")}</td></tr>`;
+      its.forEach((it) => { n++;
+        html += `<tr><td>${n}</td><td>${esc(it.name)}</td><td>${esc(it.unit||"")}</td><td class="r">${num(it.qty)}</td><td class="r">${num(it.price).toFixed(2)}</td><td class="r">${(num(it.qty)*num(it.price)).toFixed(2)}</td></tr>`; });
+      const sub = its.reduce((a, it) => a + num(it.qty)*num(it.price), 0);
+      html += `<tr><td colspan="5" class="r">Разом по «${esc(rm.name || "Кімната")}»</td><td class="r">${sub.toFixed(2)}</td></tr>`;
+    });
+    return html;
   }
 
   function docEstimate(){
@@ -673,7 +750,7 @@
       <div class="head-row"><span>${esc(d.city)||"м. ____________"}</span><span>${esc(d.date)||"«___» ____________ 2026 р."}</span></div>
       <p>Виконавець ${esc(d.eName)} здав, а Замовник ${esc(d.cName)||"____________"} прийняв(ла) послуги за Договором № ${esc(d.no)||"_______"} на Об'єкті за адресою: ${esc(d.object)||"____________________________"}</p>
       <table><thead><tr><th>№</th><th>Найменування виконаних робіт</th><th>Од.</th><th class="r">К-сть</th><th class="r">Сума, грн</th></tr></thead>
-      <tbody>${(()=>{let r="",n=0;state.items.forEach(it=>{if(!it.name&&!num(it.qty))return;n++;r+=`<tr><td>${n}</td><td>${esc(it.name)}</td><td>${esc(it.unit||"")}</td><td class="r">${num(it.qty)}</td><td class="r">${(num(it.qty)*num(it.price)).toFixed(2)}</td></tr>`;});return r;})()}
+      <tbody>${(()=>{let r="",n=0;allItems().forEach(it=>{if(!it.name&&!num(it.qty))return;n++;r+=`<tr><td>${n}</td><td>${esc(it.name)}</td><td>${esc(it.unit||"")}</td><td class="r">${num(it.qty)}</td><td class="r">${(num(it.qty)*num(it.price)).toFixed(2)}</td></tr>`;});return r;})()}
       <tr class="group-row"><td colspan="4">РАЗОМ</td><td class="r">${t.works.toFixed(2)}</td></tr></tbody></table>
       <p>Загальна вартість наданих послуг (за фактичним обміром): ${fmt(t.total)} (${moneyWords(t.total)}).</p>
       <p>Сплачено Замовником${t.advance?` (вкл. аванс ${fmt(t.advance)})`:""}: ____________ грн. Залишок: ${fmt(t.grand)}.</p>
@@ -692,20 +769,8 @@
     });
   });
 
-  // Площа кімнати
-  function areas(){ const L = num($("#rL").value), W = num($("#rW").value), H = num($("#rH").value);
-    return { walls: +(2*(L+W)*H).toFixed(2), floor: +(L*W).toFixed(2), ceil: +(L*W).toFixed(2) }; }
-  function renderArea(){ const a = areas(); $("#areaOut").textContent = `Стіни ${a.walls} м² · Підлога ${a.floor} м² · Стеля ${a.ceil} м²`; }
-  ["rL","rW","rH"].forEach((id) => $("#"+id).addEventListener("input", renderArea));
-  document.querySelectorAll("[data-area]").forEach((b) => b.addEventListener("click", () => {
-    const a = areas(), q = a[b.dataset.area]; if(!q){ alert("Введіть розміри кімнати"); return; }
-    state.items.push({ name: "", unit: "м²", qty: q, price: 0 });
-    renderItems(); renderTotals(); save();
-    const ins = itemsRoot.querySelectorAll(".catalog-search"); ins[ins.length-1].focus();
-  }));
-
   function renderAll(){
-    renderItems();
+    renderRooms();
     ["materials","mgmt","km","kmRate","transportMin","advance","discount"].forEach((id)=>{ $("#"+id).value = state[id]; });
     Object.keys(docMap).forEach((id)=>{ $("#"+id).value = state.doc[docMap[id]] || ""; });
     renderTotals();
