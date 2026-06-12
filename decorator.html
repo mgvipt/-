@@ -29,6 +29,7 @@
   .catalog-search:focus{outline:none;border-color:var(--accent);}
   .picker{display:flex;gap:8px;margin-bottom:10px;}
   .picker select.catalog{flex:1;margin-bottom:0;min-width:0;}
+  .area-out{margin:10px 0;text-align:center;color:var(--accent-2);font-size:15px;font-weight:600;}
   .item-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
   .mini-field{display:flex;flex-direction:column;gap:4px;}.mini-field span{font-size:11px;color:var(--muted);padding-left:4px;}
   input[type="number"],input[type="text"],textarea{width:100%;background:#101017;border:1px solid var(--line);border-radius:11px;color:var(--text);padding:11px 12px;font-size:16px;font-variant-numeric:tabular-nums;font-family:inherit;}
@@ -90,6 +91,22 @@
   <p class="subtitle">Кошторис декоративних робіт · договір та акти · ₴ грн</p>
 
   <section class="card">
+    <h2>📐 Площа кімнати</h2>
+    <div class="item-grid" style="grid-template-columns:1fr 1fr 1fr">
+      <label class="mini-field"><span>Довжина, м</span><input id="rL" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0" /></label>
+      <label class="mini-field"><span>Ширина, м</span><input id="rW" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0" /></label>
+      <label class="mini-field"><span>Висота, м</span><input id="rH" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0" /></label>
+    </div>
+    <div class="area-out" id="areaOut">Стіни 0 м² · Підлога 0 м² · Стеля 0 м²</div>
+    <div class="doc-btns" style="grid-template-columns:1fr 1fr 1fr">
+      <div class="doc-btn" data-area="walls">+ Стіни</div>
+      <div class="doc-btn" data-area="floor">+ Підлога</div>
+      <div class="doc-btn" data-area="ceil">+ Стеля</div>
+    </div>
+    <p class="hint" style="margin-top:8px">Додасть позицію з готовою площею у «Кількість» — далі оберіть роботу.</p>
+  </section>
+
+  <section class="card">
     <h2>Позиції (роботи)</h2>
     <div id="items"></div>
     <button class="btn btn-add" id="add">+ Додати позицію</button>
@@ -125,7 +142,7 @@
       <div class="field"><label>Об'єкт (адреса)</label><input type="text" id="d-object" placeholder="м. ..., вул. ..., буд. ..." /></div>
       <div class="item-grid">
         <div class="field"><label>№ договору</label><input type="text" id="d-no" placeholder="01/2026" /></div>
-        <div class="field"><label>Дата (місто)</label><input type="text" id="d-city" placeholder="м. Київ" /></div>
+        <div class="field"><label>Місто підписання</label><input type="text" id="d-city" placeholder="м. Київ" /></div>
       </div>
       <div class="field"><label>Дата договору</label><input type="text" id="d-date" placeholder="«12» червня 2026 р." /></div>
 
@@ -301,6 +318,26 @@
   })();
   // Опції категорій (для вибору «категорія → робота»)
   const CAT_OPTS = CATALOG.map((g, gi) => `<option value="${gi}">${g.group}</option>`).join("");
+
+  // Автопідбір матеріалу до декору
+  const DECOR_MAT = { "мокрий шовк": "Мокрий шовк — біла база", "галатея": "Піщаний ефект зі склосферами",
+    "пісок": "Піщаний ефект зі склосферами", "венеціан": "Венеціанський мармуровий ефект", "марморин": "Ефект марморино" };
+  function matRef(name){
+    const low = name.toLowerCase();
+    for(const k in DECOR_MAT){ if(low.includes(k)){
+      for(const g of CATALOG){ if(g.kind !== "material") continue;
+        const it = g.items.find((x) => x.name === DECOR_MAT[k]); if(it) return { name: it.name, unit: it.unit, price: it.price, kind: "material" }; } } }
+    return null;
+  }
+  function fillItem(i, ref){
+    const qty = num(state.items[i].qty) || 1;
+    state.items[i] = { name: ref.name, unit: ref.unit, kind: ref.kind, qty, price: ref.price };
+    if(ref.kind !== "material" && ref.name.indexOf("Декор") === 0){
+      const m = matRef(ref.name);
+      if(m && !state.items.some((x) => x.kind === "material" && x.name === m.name)) state.items.splice(i + 1, 0, Object.assign({}, m, { qty }));
+    }
+    renderItems(); renderTotals(); save();
+  }
   function renderItems(){
     itemsRoot.innerHTML = "";
     state.items.forEach((item, i) => {
@@ -358,9 +395,7 @@
     const t = e.target;
     if(t.classList.contains("catalog-search")){
       const ref = CAT_INDEX[t.value]; if(!ref) return;
-      const i = +t.dataset.i;
-      state.items[i] = { name: ref.name, unit: ref.unit, kind: ref.kind, qty: num(state.items[i].qty) || 1, price: ref.price };
-      renderItems(); renderTotals(); save(); return;
+      fillItem(+t.dataset.i, ref); return;
     }
     const i = t.dataset.i, f = t.dataset.f;
     if(i === undefined || f === undefined) return;
@@ -378,9 +413,8 @@
     }
     if(t.classList.contains("work-select")){
       const v = t.value; if(!v) return;
-      const [gi, ii] = v.split(".").map(Number); const g = CATALOG[gi], src = g.items[ii], i = +t.dataset.i;
-      state.items[i] = { name: src.name, unit: src.unit, kind: g.kind, qty: num(state.items[i].qty) || 1, price: src.price };
-      renderItems(); renderTotals(); save();
+      const [gi, ii] = v.split(".").map(Number); const g = CATALOG[gi], src = g.items[ii];
+      fillItem(+t.dataset.i, { name: src.name, unit: src.unit, price: src.price, kind: g.kind });
     }
   });
   itemsRoot.addEventListener("click", (e) => {
@@ -646,6 +680,18 @@
       setTimeout(() => window.print(), 60);
     });
   });
+
+  // Площа кімнати
+  function areas(){ const L = num($("#rL").value), W = num($("#rW").value), H = num($("#rH").value);
+    return { walls: +(2*(L+W)*H).toFixed(2), floor: +(L*W).toFixed(2), ceil: +(L*W).toFixed(2) }; }
+  function renderArea(){ const a = areas(); $("#areaOut").textContent = `Стіни ${a.walls} м² · Підлога ${a.floor} м² · Стеля ${a.ceil} м²`; }
+  ["rL","rW","rH"].forEach((id) => $("#"+id).addEventListener("input", renderArea));
+  document.querySelectorAll("[data-area]").forEach((b) => b.addEventListener("click", () => {
+    const a = areas(), q = a[b.dataset.area]; if(!q){ alert("Введіть розміри кімнати"); return; }
+    state.items.push({ name: "", unit: "м²", qty: q, price: 0 });
+    renderItems(); renderTotals(); save();
+    const ins = itemsRoot.querySelectorAll(".catalog-search"); ins[ins.length-1].focus();
+  }));
 
   function renderAll(){
     renderItems();
