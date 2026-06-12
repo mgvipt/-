@@ -178,11 +178,8 @@
       <div class="field"><label>IBAN</label><input type="text" id="e-iban" /></div>
       <div class="field"><label>Банк</label><input type="text" id="e-bank" /></div>
 
-      <h2 style="margin-top:14px">Фото обстеження основи</h2>
-      <p class="hint" style="text-align:left;margin:0 0 8px">Знімки вставляться в «Акт обстеження основи» (Додаток № 2).</p>
-      <button type="button" class="btn btn-add" id="photo-add">📷 Додати фото (камера або галерея)</button>
       <input type="file" id="photo-input" accept="image/*" multiple hidden />
-      <div class="photo-thumbs" id="photo-thumbs"></div>
+      <p class="hint" style="text-align:left;margin:6px 0 0">Фото основи додаються у кожній кімнаті (блок «Обстеження основи»). Вони підуть в «Акт обстеження основи» поруч із описом саме цієї кімнати.</p>
 
       <div class="doc-btns" style="margin-top:14px">
         <div class="doc-btn" data-doc="estimate">📄 Кошторис</div>
@@ -323,7 +320,7 @@
 
   const uid = () => Math.random().toString(36).slice(2, 9);
   const makeItem = () => ({ name:"", unit:"", qty:1, price:0 });
-  const makeRoom = (name) => ({ id: uid(), name: name || "", L:0, W:0, H:0, items:[makeItem()] });
+  const makeRoom = (name) => ({ id: uid(), name: name || "", L:0, W:0, H:0, inspect:"", photos:[], items:[makeItem()] });
 
   let state = {
     rooms: [], materials: 0, mgmt: 0, km: 0, kmRate: 15, transportMin: 500, advance: 0, discount: 0,
@@ -342,10 +339,13 @@
     }
     delete state.items;
     if(!Array.isArray(state.rooms) || !state.rooms.length) state.rooms = [makeRoom("Кімната 1")];
-    state.rooms.forEach((r) => { if(!Array.isArray(r.items) || !r.items.length) r.items = [makeItem()]; });
-    state.doc = Object.assign({ object:"",no:"",city:"",date:"",cName:"",cTax:"",cPhone:"",cAddr:"",photos:[],
+    state.rooms.forEach((r) => { if(!Array.isArray(r.items) || !r.items.length) r.items = [makeItem()];
+      if(typeof r.inspect !== "string") r.inspect = ""; if(!Array.isArray(r.photos)) r.photos = []; });
+    state.doc = Object.assign({ object:"",no:"",city:"",date:"",cName:"",cTax:"",cPhone:"",cAddr:"",
       eName:EXEC_DEFAULT.name,eTax:EXEC_DEFAULT.tax,eAddr:EXEC_DEFAULT.addr,eIban:EXEC_DEFAULT.iban,eBank:EXEC_DEFAULT.bank,ePhone:EXEC_DEFAULT.phone }, state.doc || {});
-    if(!Array.isArray(state.doc.photos)) state.doc.photos = [];
+    // міграція старих глобальних фото → у першу кімнату
+    if(Array.isArray(state.doc.photos) && state.doc.photos.length && state.rooms[0]){ state.rooms[0].photos = state.rooms[0].photos.concat(state.doc.photos); }
+    delete state.doc.photos;
   }
 
   const roomsRoot = $("#rooms");
@@ -429,7 +429,13 @@
         </div>
         <div class="room-items">${itemsHtml}</div>
         <button class="btn btn-add room-add" data-addr="${r}">+ Позицію в кімнату</button>
-        <div class="room-sub">Разом по кімнаті: <b>${fmtShort(roomSub(rm))}</b></div>`;
+        <div class="room-sub">Разом по кімнаті: <b>${fmtShort(roomSub(rm))}</b></div>
+        <div class="inspect">
+          <label class="mini-field" style="margin-top:8px"><span>🧱 Обстеження основи (стан, дефекти, тріщини)</span>
+            <textarea data-r="${r}" data-insp="1" placeholder="Опишіть стан поверхонь цієї кімнати">${esc(rm.inspect || "")}</textarea></label>
+          <button type="button" class="btn btn-add room-photo" data-photoroom="${r}" style="margin-top:8px">📷 Фото основи кімнати</button>
+          <div class="photo-thumbs">${(rm.photos || []).map((s, pi) => `<div class="ph"><img src="${s}"/><button data-delph="${r}.${pi}">✕</button></div>`).join("")}</div>
+        </div>`;
       roomsRoot.appendChild(card);
     });
   }
@@ -476,6 +482,7 @@
       fillItem(+t.dataset.r, +t.dataset.i, ref); return;
     }
     if(t.classList.contains("room-name")){ state.rooms[+t.dataset.r].name = t.value; save(); return; }
+    if(t.dataset.insp){ state.rooms[+t.dataset.r].inspect = t.value; save(); return; }
     if(t.dataset.dim){ state.rooms[+t.dataset.r][t.dataset.dim] = num(t.value); refreshSums(); save(); return; }
     const r = t.dataset.r, i = t.dataset.i, f = t.dataset.f;
     if(r === undefined || i === undefined || f === undefined) return;
@@ -508,6 +515,9 @@
       renderRooms(); renderTotals(); save(); return; }
     if(t.dataset.addr !== undefined){ const r = +t.dataset.addr;
       state.rooms[r].items.push(makeItem()); renderRooms(); renderTotals(); save(); focusLastSearch(r); return; }
+    if(t.dataset.photoroom !== undefined){ photoTargetRoom = +t.dataset.photoroom; $("#photo-input").click(); return; }
+    if(t.dataset.delph !== undefined){ const [r, pi] = t.dataset.delph.split(".").map(Number);
+      state.rooms[r].photos.splice(pi, 1); renderRooms(); save(); return; }
     if(t.dataset.area !== undefined){ const r = +t.dataset.r, a = roomAreas(state.rooms[r]), q = a[t.dataset.area];
       if(!q){ alert("Спочатку введіть розміри кімнати"); return; }
       const unit = t.dataset.area === "perim" ? "м.п." : "м²";
@@ -745,14 +755,15 @@
       <h1>АКТ ОБСТЕЖЕННЯ ОСНОВИ (ПОВЕРХОНЬ)</h1>
       <div class="doc-sub">Додаток № 2 до Договору № ${esc(d.no)||"_______"} від ${esc(d.date)||"«___» _______ 2026 р."}</div>
       <div class="head-row"><span>${esc(d.city)||"м. ____________"}</span><span>${esc(d.date)||"«___» ____________ 2026 р."}</span></div>
-      <p>Складено до початку Робіт. Сторони провели спільний візуальний огляд Основи на Об'єкті за адресою: ${esc(d.object)||"____________________________________________"} та зафіксували стан:</p>
-      <table><thead><tr><th>№</th><th>Приміщення / поверхня</th><th>Зафіксований стан, дефекти, тріщини, вологість, готовність</th></tr></thead>
-      <tbody>${[1,2,3,4,5,6].map(i=>`<tr><td>${i}</td><td style="height:22pt"></td><td></td></tr>`).join("")}</tbody></table>
-      <p>Поверхні з наявними тріщинами: ________________________________________________________</p>
+      <p>Складено до початку Робіт. Сторони провели спільний візуальний огляд Основи на Об'єкті за адресою: ${esc(d.object)||"____________________________________________"} та зафіксували стан по кожному приміщенню:</p>
+      ${state.rooms.map((rm, idx) => `
+        <h2>${idx+1}. ${esc(rm.name) || "Приміщення"}</h2>
+        <p>${esc(rm.inspect) || "Стан основи, дефекти, тріщини, вологість, готовність: ______________________________________________________"}</p>
+        ${(rm.photos && rm.photos.length) ? `<div class="photos">${rm.photos.map((s) => `<img src="${s}" />`).join("")}</div>` : ""}
+      `).join("")}
       <p>Сторони підтверджують застосування п. 7.5 Договору: тріщини армуються Виконавцем; армування мінімізує, але не виключає ризик повторної появи тріщин у разі рухів/усадки/деформації конструкцій. Замовник проінформований і приймає цей ризик.</p>
       <p>Рішення Замовника щодо виявлених недоліків Основи: ☐ усунути силами Виконавця (п. 3.9); ☐ усунути самостійно до продовження Робіт; ☐ продовжити Роботи без усунення — Замовник попереджений і приймає ризики (п. 7.6).</p>
       <p>Замовник підтверджує, що ознайомлений зі станом Основи, погоджується з ним та приймає ризик прихованих недоліків Основи (п. 7.4 Договору).</p>
-      ${(state.doc.photos && state.doc.photos.length) ? `<h2>Фотофіксація стану основи</h2><div class="photos">${state.doc.photos.map((s) => `<img src="${s}" />`).join("")}</div>` : ""}
       ${reqBlocks()}
     </div>`;
   }
@@ -784,16 +795,9 @@
     });
   });
 
-  // Фото обстеження основи
-  function renderThumbs(){
-    const root = $("#photo-thumbs"); if(!root) return; root.innerHTML = "";
-    (state.doc.photos || []).forEach((src, i) => {
-      const d = document.createElement("div"); d.className = "ph";
-      d.innerHTML = `<img src="${src}" alt=""/><button data-ph="${i}">✕</button>`;
-      root.appendChild(d);
-    });
-  }
-  function addPhotoFiles(files){
+  // Фото обстеження основи — по кімнатах
+  let photoTargetRoom = 0;
+  function addPhotoFiles(files, r){
     Array.from(files).forEach((file) => {
       if(!file.type || !file.type.startsWith("image/")) return;
       const reader = new FileReader();
@@ -803,21 +807,17 @@
         const c = document.createElement("canvas"); c.width = w; c.height = h;
         c.getContext("2d").drawImage(img, 0, 0, w, h);
         let data; try{ data = c.toDataURL("image/jpeg", 0.6); }catch(_){ data = reader.result; }
-        if(!state.doc.photos) state.doc.photos = [];
-        state.doc.photos.push(data); renderThumbs();
+        if(!state.rooms[r]) return; if(!Array.isArray(state.rooms[r].photos)) state.rooms[r].photos = [];
+        state.rooms[r].photos.push(data); renderRooms();
         try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(_){ alert("Пам'ять заповнена — видаліть зайві фото."); }
       }; img.src = reader.result; };
       reader.readAsDataURL(file);
     });
   }
-  $("#photo-add").addEventListener("click", () => $("#photo-input").click());
-  $("#photo-input").addEventListener("change", (e) => { addPhotoFiles(e.target.files); e.target.value = ""; });
-  $("#photo-thumbs").addEventListener("click", (e) => { const i = e.target.dataset.ph; if(i === undefined) return;
-    state.doc.photos.splice(+i, 1); renderThumbs(); save(); });
+  $("#photo-input").addEventListener("change", (e) => { addPhotoFiles(e.target.files, photoTargetRoom); e.target.value = ""; });
 
   function renderAll(){
     renderRooms();
-    renderThumbs();
     ["materials","mgmt","km","kmRate","transportMin","advance","discount"].forEach((id)=>{ $("#"+id).value = state[id]; });
     Object.keys(docMap).forEach((id)=>{ $("#"+id).value = state.doc[docMap[id]] || ""; });
     renderTotals();
