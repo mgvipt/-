@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="uk">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#0b0b0f" />
-<!-- iOS: запуск как приложение с домашнего экрана -->
+<!-- iOS: запуск як застосунок з домашнього екрана -->
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Декоратор" />
-<title>Калькулятор декоратора</title>
+<meta name="apple-mobile-web-app-title" content="Кошторис" />
+<title>Калькулятор кошторису</title>
 <style>
   :root {
     --bg: #0b0b0f;
@@ -19,365 +19,234 @@
     --muted: #9a9aa8;
     --accent: #ff5c8a;
     --accent-2: #ffb15c;
-    --green: #34d399;
     --radius: 18px;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
-
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-
   html, body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
+    margin: 0; background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
-    font-size: 17px;
-    -webkit-text-size-adjust: 100%;
+    font-size: 17px; -webkit-text-size-adjust: 100%;
   }
-
-  body {
-    padding:
-      calc(var(--safe-top) + 14px)
-      16px
-      calc(var(--safe-bottom) + 120px);
-    max-width: 560px;
-    margin: 0 auto;
-  }
-
-  h1 {
-    font-size: 26px;
-    font-weight: 800;
-    margin: 4px 0 2px;
-    letter-spacing: -0.3px;
-  }
+  body { padding: calc(var(--safe-top) + 14px) 16px calc(var(--safe-bottom) + 120px); max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 25px; font-weight: 800; margin: 4px 0 2px; letter-spacing: -0.3px; }
   .subtitle { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 12px; font-weight: 700; }
 
-  .card {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 14px;
-    margin-bottom: 14px;
-  }
-  .card h2 {
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--muted);
-    margin: 0 0 12px;
-    font-weight: 700;
-  }
-
-  /* Позиция сметы */
-  .item {
-    background: var(--card-2);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 12px;
-    margin-bottom: 10px;
-  }
-  .item-top {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin-bottom: 10px;
-  }
-  .item-name {
-    flex: 1;
-    background: transparent;
-    border: none;
-    color: var(--text);
-    font-size: 17px;
-    font-weight: 600;
-    padding: 6px 0;
-  }
+  .item { background: var(--card-2); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 10px; }
+  .item-top { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .item-name { flex: 1; background: transparent; border: none; color: var(--text); font-size: 17px; font-weight: 600; padding: 6px 0; }
   .item-name::placeholder { color: var(--muted); }
   .item-name:focus { outline: none; }
 
-  .item-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
+  select.catalog {
+    width: 100%;
+    background: #101017 url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' stroke='%239a9aa8' stroke-width='1.5' fill='none'/></svg>") no-repeat right 12px center;
+    border: 1px solid var(--line); border-radius: 11px; color: var(--accent-2);
+    padding: 11px 34px 11px 12px; font-size: 15px; margin-bottom: 10px;
+    -webkit-appearance: none; appearance: none;
   }
+  select.catalog:focus { outline: none; border-color: var(--accent); }
+
+  .item-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .mini-field { display: flex; flex-direction: column; gap: 4px; }
   .mini-field span { font-size: 11px; color: var(--muted); padding-left: 4px; }
-
   input[type="number"], input[type="text"] {
-    width: 100%;
-    background: #101017;
-    border: 1px solid var(--line);
-    border-radius: 11px;
-    color: var(--text);
-    padding: 11px 12px;
-    font-size: 17px;
-    font-variant-numeric: tabular-nums;
+    width: 100%; background: #101017; border: 1px solid var(--line); border-radius: 11px;
+    color: var(--text); padding: 11px 12px; font-size: 17px; font-variant-numeric: tabular-nums;
   }
   input:focus { outline: none; border-color: var(--accent); }
-  /* убираем стрелки у числовых полей */
-  input[type="number"]::-webkit-inner-spin-button,
-  input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-
-  .item-sum {
-    margin-top: 10px;
-    text-align: right;
-    font-size: 15px;
-    color: var(--muted);
-  }
+  input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .item-sum { margin-top: 10px; text-align: right; font-size: 15px; color: var(--muted); }
   .item-sum b { color: var(--text); font-size: 17px; font-variant-numeric: tabular-nums; }
 
-  .icon-btn {
-    flex: 0 0 auto;
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    border: 1px solid var(--line);
-    background: #101017;
-    color: var(--muted);
-    font-size: 18px;
-    line-height: 1;
-    display: grid;
-    place-items: center;
-  }
+  .icon-btn { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: #101017; color: var(--muted); font-size: 18px; line-height: 1; display: grid; place-items: center; }
   .icon-btn:active { background: #2a2a35; }
 
-  .btn {
-    display: block;
-    width: 100%;
-    border: none;
-    border-radius: 14px;
-    padding: 15px;
-    font-size: 17px;
-    font-weight: 700;
-    color: #fff;
-    background: var(--card-2);
-    border: 1px dashed var(--line);
-    margin-top: 2px;
-  }
+  .btn { display: block; width: 100%; border: none; border-radius: 14px; padding: 15px; font-size: 17px; font-weight: 700; color: #fff; background: var(--card-2); border: 1px dashed var(--line); margin-top: 2px; }
   .btn:active { transform: scale(0.99); }
-  .btn-add {
-    color: var(--accent);
-    border-color: var(--accent);
-    background: rgba(255, 92, 138, 0.08);
-  }
+  .btn-add { color: var(--accent); border-color: var(--accent); background: rgba(255, 92, 138, 0.08); }
 
-  /* Параметры (наценка/работа/доставка) */
-  .row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 11px 0;
-    border-bottom: 1px solid var(--line);
-  }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
   .row:last-child { border-bottom: none; }
   .row label { font-size: 16px; }
-  .row .ctl { display: flex; align-items: center; gap: 6px; }
+  .row .hint-q { color: var(--muted); font-size: 12px; display: block; margin-top: 2px; }
+  .row .ctl { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
   .row .ctl input { width: 110px; text-align: right; }
-  .row .unit { color: var(--muted); font-size: 14px; width: 18px; }
+  .row .unit { color: var(--muted); font-size: 14px; width: 28px; }
 
-  /* Итоги */
-  .totals .line {
-    display: flex;
-    justify-content: space-between;
-    padding: 7px 0;
-    color: var(--muted);
-    font-size: 15px;
-  }
+  .totals .line { display: flex; justify-content: space-between; padding: 7px 0; color: var(--muted); font-size: 15px; }
   .totals .line b { color: var(--text); font-variant-numeric: tabular-nums; }
-  .grand {
-    margin-top: 10px;
-    padding-top: 14px;
-    border-top: 1px solid var(--line);
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-  }
+  .grand { margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: baseline; }
   .grand span { font-size: 16px; font-weight: 700; }
-  .grand b {
-    font-size: 30px;
-    font-weight: 800;
-    background: linear-gradient(90deg, var(--accent), var(--accent-2));
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-variant-numeric: tabular-nums;
-  }
+  .grand b { font-size: 28px; font-weight: 800; background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-variant-numeric: tabular-nums; }
 
-  /* Нижняя панель действий */
-  .bottombar {
-    position: fixed;
-    left: 0; right: 0; bottom: 0;
-    background: rgba(11, 11, 15, 0.85);
-    backdrop-filter: saturate(180%) blur(14px);
-    -webkit-backdrop-filter: saturate(180%) blur(14px);
-    border-top: 1px solid var(--line);
-    padding: 12px 16px calc(var(--safe-bottom) + 12px);
-    display: flex;
-    gap: 10px;
-    max-width: 560px;
-    margin: 0 auto;
-  }
-  .bottombar button {
-    flex: 1;
-    border: none;
-    border-radius: 14px;
-    padding: 14px;
-    font-size: 15px;
-    font-weight: 700;
-  }
+  .bottombar { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(11, 11, 15, 0.85); backdrop-filter: saturate(180%) blur(14px); -webkit-backdrop-filter: saturate(180%) blur(14px); border-top: 1px solid var(--line); padding: 12px 16px calc(var(--safe-bottom) + 12px); display: flex; gap: 10px; max-width: 560px; margin: 0 auto; }
+  .bottombar button { flex: 1; border: none; border-radius: 14px; padding: 14px; font-size: 15px; font-weight: 700; }
   .b-share { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #fff; }
   .b-reset { background: var(--card-2); color: var(--muted); border: 1px solid var(--line); flex: 0 0 auto; padding: 14px 18px; }
-
   .hint { color: var(--muted); font-size: 12px; text-align: center; margin: 6px 0 0; }
 </style>
 </head>
 <body>
-  <h1>Калькулятор декоратора</h1>
-  <p class="subtitle">Быстрый расчёт сметы оформления прямо с телефона</p>
+  <h1>Калькулятор кошторису</h1>
+  <p class="subtitle">Швидкий розрахунок кошторису ремонтних робіт · ₴ грн</p>
 
   <section class="card">
-    <h2>Позиции (материалы и услуги)</h2>
+    <h2>Позиції (роботи та матеріали)</h2>
     <div id="items"></div>
-    <button class="btn btn-add" id="add">+ Добавить позицию</button>
+    <button class="btn btn-add" id="add">+ Додати позицію</button>
   </section>
 
   <section class="card">
-    <h2>Параметры</h2>
+    <h2>Параметри</h2>
     <div class="totals">
       <div class="row">
-        <label>Наценка на материалы</label>
-        <div class="ctl">
-          <input type="number" id="markup" inputmode="decimal" min="0" step="1" value="0" />
-          <span class="unit">%</span>
-        </div>
+        <label>Націнка на матеріали</label>
+        <div class="ctl"><input type="number" id="markup" inputmode="decimal" min="0" step="1" value="0" /><span class="unit">%</span></div>
       </div>
       <div class="row">
-        <label>Работа / монтаж</label>
-        <div class="ctl">
-          <input type="number" id="labor" inputmode="decimal" min="0" step="100" value="0" />
-          <span class="unit">₽</span>
-        </div>
+        <label>Прорабські / організація робіт<span class="hint-q">% від суми позицій</span></label>
+        <div class="ctl"><input type="number" id="mgmt" inputmode="decimal" min="0" step="1" value="0" /><span class="unit">%</span></div>
       </div>
       <div class="row">
-        <label>Доставка</label>
-        <div class="ctl">
-          <input type="number" id="delivery" inputmode="decimal" min="0" step="100" value="0" />
-          <span class="unit">₽</span>
-        </div>
+        <label>Транспортні витрати</label>
+        <div class="ctl"><input type="number" id="transport" inputmode="decimal" min="0" step="100" value="0" /><span class="unit">₴</span></div>
       </div>
       <div class="row">
-        <label>Скидка клиенту</label>
-        <div class="ctl">
-          <input type="number" id="discount" inputmode="decimal" min="0" step="1" value="0" />
-          <span class="unit">%</span>
-        </div>
+        <label>Доставка матеріалів</label>
+        <div class="ctl"><input type="number" id="delivery" inputmode="decimal" min="0" step="100" value="0" /><span class="unit">₴</span></div>
+      </div>
+      <div class="row">
+        <label>Знижка клієнту</label>
+        <div class="ctl"><input type="number" id="discount" inputmode="decimal" min="0" step="1" value="0" /><span class="unit">%</span></div>
       </div>
     </div>
   </section>
 
   <section class="card totals">
-    <h2>Итого</h2>
-    <div class="line"><span>Материалы</span><b id="t-materials">0 ₽</b></div>
-    <div class="line"><span>Наценка</span><b id="t-markup">0 ₽</b></div>
-    <div class="line"><span>Работа</span><b id="t-labor">0 ₽</b></div>
-    <div class="line"><span>Доставка</span><b id="t-delivery">0 ₽</b></div>
-    <div class="line"><span>Скидка</span><b id="t-discount">0 ₽</b></div>
-    <div class="grand"><span>К ОПЛАТЕ</span><b id="t-grand">0 ₽</b></div>
+    <h2>Підсумок</h2>
+    <div class="line"><span>Позиції</span><b id="t-positions">0 ₴</b></div>
+    <div class="line"><span>Націнка на матеріали</span><b id="t-markup">0 ₴</b></div>
+    <div class="line"><span>Прорабські / організація</span><b id="t-mgmt">0 ₴</b></div>
+    <div class="line"><span>Транспортні витрати</span><b id="t-transport">0 ₴</b></div>
+    <div class="line"><span>Доставка</span><b id="t-delivery">0 ₴</b></div>
+    <div class="line"><span>Знижка</span><b id="t-discount">0 ₴</b></div>
+    <div class="grand"><span>ДО СПЛАТИ</span><b id="t-grand">0 ₴</b></div>
   </section>
 
-  <p class="hint">Данные сохраняются на этом устройстве. Добавьте страницу на экран «Домой» — будет как приложение.</p>
+  <p class="hint">Ціни в каталозі — орієнтовні (Київ, 2026), їх можна змінювати. Дані зберігаються на цьому пристрої.</p>
 
   <div class="bottombar">
-    <button class="b-share" id="share">Поделиться сметой</button>
-    <button class="b-reset" id="reset">Сброс</button>
+    <button class="b-share" id="share">Поділитися кошторисом</button>
+    <button class="b-reset" id="reset">Скинути</button>
   </div>
 
 <script>
 (() => {
   "use strict";
 
-  const KEY = "decorator.calc.v1";
+  const KEY = "smeta.calc.ua.v1";
   const $ = (s) => document.querySelector(s);
 
+  // Каталог робіт з орієнтовними цінами по Україні (грн), джерело: прайси ремонтних компаній Києва 2026
+  const CATALOG = [
+    { group: "Підготовчі / демонтаж", items: [
+      { name: "Демонтаж шпалер", unit: "м²", price: 40 },
+      { name: "Демонтаж плитки", unit: "м²", price: 90 },
+      { name: "Демонтаж старої штукатурки", unit: "м²", price: 80 },
+      { name: "Демонтаж стяжки підлоги", unit: "м²", price: 170 },
+      { name: "Демонтаж дерев'яної підлоги", unit: "м²", price: 160 },
+      { name: "Демонтаж перегородки (цегла)", unit: "м²", price: 280 },
+      { name: "Демонтаж гіпсокартону", unit: "м²", price: 70 },
+    ]},
+    { group: "Чорнові / підготовка поверхонь", items: [
+      { name: "Ґрунтовка стін (1 шар)", unit: "м²", price: 35 },
+      { name: "Штукатурка стін по маяках", unit: "м²", price: 150 },
+      { name: "Шпаклівка стін під шпалери", unit: "м²", price: 100 },
+      { name: "Шпаклівка стін під фарбу", unit: "м²", price: 150 },
+      { name: "Стяжка підлоги", unit: "м²", price: 230 },
+    ]},
+    { group: "Додаткові послуги", items: [
+      { name: "Винесення сміття (мішок)", unit: "шт", price: 40 },
+      { name: "Вивіз сміття (Газель 3 м³)", unit: "послуга", price: 2500 },
+      { name: "Транспортні витрати / доставка матеріалів", unit: "послуга", price: 1200 },
+      { name: "Прибирання після ремонту", unit: "м²", price: 60 },
+    ]},
+  ];
+
   const fmt = (n) =>
-    new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(Math.round(n)) + " ₽";
+    new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 0 }).format(Math.round(n)) + " ₴";
+  const num = (v) => { const n = parseFloat(String(v).replace(",", ".")); return Number.isFinite(n) && n >= 0 ? n : 0; };
 
-  const num = (v) => {
-    const n = parseFloat(String(v).replace(",", "."));
-    return Number.isFinite(n) && n >= 0 ? n : 0;
-  };
+  let state = { items: [], markup: 0, mgmt: 0, transport: 0, delivery: 0, discount: 0 };
 
-  let state = {
-    items: [],
-    markup: 0,
-    labor: 0,
-    delivery: 0,
-    discount: 0,
-  };
-
-  function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {}
-  }
-
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
   function load() {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) state = Object.assign(state, JSON.parse(raw));
-    } catch (_) {}
-    if (!Array.isArray(state.items) || state.items.length === 0) {
-      state.items = [{ name: "", qty: 1, price: 0 }];
-    }
+    try { const raw = localStorage.getItem(KEY); if (raw) state = Object.assign(state, JSON.parse(raw)); } catch (_) {}
+    if (!Array.isArray(state.items) || state.items.length === 0) state.items = [{ name: "", unit: "", qty: 1, price: 0 }];
   }
 
   const itemsRoot = $("#items");
+
+  function catalogOptions() {
+    let html = '<option value="">📋 Обрати роботу з каталогу…</option>';
+    CATALOG.forEach((g, gi) => {
+      html += `<optgroup label="${g.group}">`;
+      g.items.forEach((it, ii) => {
+        html += `<option value="${gi}.${ii}">${it.name} — ${it.price} ₴/${it.unit}</option>`;
+      });
+      html += `</optgroup>`;
+    });
+    return html;
+  }
 
   function renderItems() {
     itemsRoot.innerHTML = "";
     state.items.forEach((item, i) => {
       const el = document.createElement("div");
       el.className = "item";
+      const unitLbl = item.unit ? ` (${item.unit})` : "";
       el.innerHTML = `
+        <select class="catalog" data-i="${i}">${catalogOptions()}</select>
         <div class="item-top">
-          <input class="item-name" type="text" placeholder="Например: пионовидные розы" value="${escapeAttr(item.name)}" data-i="${i}" data-f="name" />
-          <button class="icon-btn" data-del="${i}" aria-label="Удалить">✕</button>
+          <input class="item-name" type="text" placeholder="Назва роботи або матеріалу" value="${escapeAttr(item.name)}" data-i="${i}" data-f="name" />
+          <button class="icon-btn" data-del="${i}" aria-label="Видалити">✕</button>
         </div>
         <div class="item-grid">
-          <label class="mini-field">
-            <span>Кол-во</span>
-            <input type="number" inputmode="decimal" min="0" step="1" value="${item.qty}" data-i="${i}" data-f="qty" />
-          </label>
-          <label class="mini-field">
-            <span>Цена за ед., ₽</span>
-            <input type="number" inputmode="decimal" min="0" step="10" value="${item.price}" data-i="${i}" data-f="price" />
-          </label>
+          <label class="mini-field"><span>Кількість${unitLbl}</span>
+            <input type="number" inputmode="decimal" min="0" step="1" value="${item.qty}" data-i="${i}" data-f="qty" /></label>
+          <label class="mini-field"><span>Ціна за од., ₴</span>
+            <input type="number" inputmode="decimal" min="0" step="10" value="${item.price}" data-i="${i}" data-f="price" /></label>
         </div>
-        <div class="item-sum">Сумма: <b>${fmt(num(item.qty) * num(item.price))}</b></div>
+        <div class="item-sum">Сума: <b>${fmt(num(item.qty) * num(item.price))}</b></div>
       `;
       itemsRoot.appendChild(el);
     });
   }
 
-  function escapeAttr(s) {
-    return String(s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-  }
+  function escapeAttr(s) { return String(s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;"); }
 
   function compute() {
-    const materials = state.items.reduce((a, it) => a + num(it.qty) * num(it.price), 0);
-    const markup = materials * (num(state.markup) / 100);
-    const labor = num(state.labor);
+    const positions = state.items.reduce((a, it) => a + num(it.qty) * num(it.price), 0);
+    const markup = positions * (num(state.markup) / 100);
+    const mgmt = positions * (num(state.mgmt) / 100);
+    const transport = num(state.transport);
     const delivery = num(state.delivery);
-    const beforeDiscount = materials + markup + labor + delivery;
-    const discount = beforeDiscount * (num(state.discount) / 100);
-    const grand = beforeDiscount - discount;
-    return { materials, markup, labor, delivery, discount, grand };
+    const before = positions + markup + mgmt + transport + delivery;
+    const discount = before * (num(state.discount) / 100);
+    const grand = before - discount;
+    return { positions, markup, mgmt, transport, delivery, discount, grand };
   }
 
   function renderTotals() {
     const t = compute();
-    $("#t-materials").textContent = fmt(t.materials);
+    $("#t-positions").textContent = fmt(t.positions);
     $("#t-markup").textContent = fmt(t.markup);
-    $("#t-labor").textContent = fmt(t.labor);
+    $("#t-mgmt").textContent = fmt(t.mgmt);
+    $("#t-transport").textContent = fmt(t.transport);
     $("#t-delivery").textContent = fmt(t.delivery);
     $("#t-discount").textContent = "−" + fmt(t.discount);
     $("#t-grand").textContent = fmt(t.grand);
@@ -391,88 +260,78 @@
     renderTotals();
   }
 
-  // Делегирование ввода по позициям
   itemsRoot.addEventListener("input", (e) => {
-    const t = e.target;
-    const i = t.dataset.i, f = t.dataset.f;
-    if (i === undefined) return;
+    const t = e.target; const i = t.dataset.i, f = t.dataset.f;
+    if (i === undefined || f === undefined) return;
     state.items[+i][f] = f === "name" ? t.value : num(t.value);
-    refreshSums();
-    save();
+    refreshSums(); save();
+  });
+
+  itemsRoot.addEventListener("change", (e) => {
+    const t = e.target;
+    if (!t.classList.contains("catalog")) return;
+    const i = +t.dataset.i; const v = t.value;
+    if (!v) return;
+    const [gi, ii] = v.split(".").map(Number);
+    const src = CATALOG[gi].items[ii];
+    state.items[i] = { name: src.name, unit: src.unit, qty: num(state.items[i].qty) || 1, price: src.price };
+    renderItems(); renderTotals(); save();
   });
 
   itemsRoot.addEventListener("click", (e) => {
-    const del = e.target.dataset.del;
-    if (del === undefined) return;
+    const del = e.target.dataset.del; if (del === undefined) return;
     state.items.splice(+del, 1);
-    if (state.items.length === 0) state.items.push({ name: "", qty: 1, price: 0 });
-    renderItems();
-    renderTotals();
-    save();
+    if (state.items.length === 0) state.items.push({ name: "", unit: "", qty: 1, price: 0 });
+    renderItems(); renderTotals(); save();
   });
 
   $("#add").addEventListener("click", () => {
-    state.items.push({ name: "", qty: 1, price: 0 });
-    renderItems();
-    renderTotals();
-    save();
+    state.items.push({ name: "", unit: "", qty: 1, price: 0 });
+    renderItems(); renderTotals(); save();
     const inputs = itemsRoot.querySelectorAll(".item-name");
     inputs[inputs.length - 1].focus();
   });
 
-  // Параметры
-  ["markup", "labor", "delivery", "discount"].forEach((id) => {
-    const el = $("#" + id);
-    el.value = state[id];
-    el.addEventListener("input", () => {
-      state[id] = num(el.value);
-      renderTotals();
-      save();
-    });
+  ["markup", "mgmt", "transport", "delivery", "discount"].forEach((id) => {
+    const el = $("#" + id); el.value = state[id];
+    el.addEventListener("input", () => { state[id] = num(el.value); renderTotals(); save(); });
   });
 
   $("#reset").addEventListener("click", () => {
-    if (!confirm("Очистить смету?")) return;
-    state = { items: [{ name: "", qty: 1, price: 0 }], markup: 0, labor: 0, delivery: 0, discount: 0 };
-    renderAll();
-    save();
+    if (!confirm("Очистити кошторис?")) return;
+    state = { items: [{ name: "", unit: "", qty: 1, price: 0 }], markup: 0, mgmt: 0, transport: 0, delivery: 0, discount: 0 };
+    renderAll(); save();
   });
 
   $("#share").addEventListener("click", async () => {
     const t = compute();
-    const lines = ["Смета оформления", ""];
+    const lines = ["Кошторис ремонтних робіт", ""];
     state.items.forEach((it) => {
       if (!num(it.qty) && !num(it.price) && !it.name) return;
-      lines.push(`• ${it.name || "Позиция"} — ${num(it.qty)} × ${fmt(num(it.price))} = ${fmt(num(it.qty) * num(it.price))}`);
+      const u = it.unit ? " " + it.unit : "";
+      lines.push(`• ${it.name || "Позиція"} — ${num(it.qty)}${u} × ${fmt(num(it.price))} = ${fmt(num(it.qty) * num(it.price))}`);
     });
     lines.push("");
-    lines.push(`Материалы: ${fmt(t.materials)}`);
-    if (t.markup) lines.push(`Наценка: ${fmt(t.markup)}`);
-    if (t.labor) lines.push(`Работа: ${fmt(t.labor)}`);
+    lines.push(`Позиції: ${fmt(t.positions)}`);
+    if (t.markup) lines.push(`Націнка на матеріали: ${fmt(t.markup)}`);
+    if (t.mgmt) lines.push(`Прорабські / організація: ${fmt(t.mgmt)}`);
+    if (t.transport) lines.push(`Транспортні витрати: ${fmt(t.transport)}`);
     if (t.delivery) lines.push(`Доставка: ${fmt(t.delivery)}`);
-    if (t.discount) lines.push(`Скидка: −${fmt(t.discount)}`);
-    lines.push(`ИТОГО К ОПЛАТЕ: ${fmt(t.grand)}`);
+    if (t.discount) lines.push(`Знижка: −${fmt(t.discount)}`);
+    lines.push(`ДО СПЛАТИ: ${fmt(t.grand)}`);
     const text = lines.join("\n");
-
-    if (navigator.share) {
-      try { await navigator.share({ title: "Смета оформления", text }); return; } catch (_) {}
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      alert("Смета скопирована в буфер обмена");
-    } catch (_) {
-      prompt("Скопируйте смету:", text);
-    }
+    if (navigator.share) { try { await navigator.share({ title: "Кошторис", text }); return; } catch (_) {} }
+    try { await navigator.clipboard.writeText(text); alert("Кошторис скопійовано в буфер обміну"); }
+    catch (_) { prompt("Скопіюйте кошторис:", text); }
   });
 
   function renderAll() {
     renderItems();
-    ["markup", "labor", "delivery", "discount"].forEach((id) => { $("#" + id).value = state[id]; });
+    ["markup", "mgmt", "transport", "delivery", "discount"].forEach((id) => { $("#" + id).value = state[id]; });
     renderTotals();
   }
 
-  load();
-  renderAll();
+  load(); renderAll();
 })();
 </script>
 </body>
