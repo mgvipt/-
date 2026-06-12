@@ -1,10 +1,11 @@
-// Wallcov AI backend — каркас.
-// Потік: відео по кімнаті → витяг аудіо (ffmpeg) → транскрибація (Whisper)
-//        → ИИ Claude (смета + опис осмотра + таймкоди дефектів)
-//        → кадри ffmpeg на таймкодах → повертаємо JSON у застосунок.
+// Wallcov AI backend.
+// Поток: видео по комнате → ffmpeg (аудио) → whisper.cpp (текст с таймкодами, БЕСПЛАТНО, локально)
+//        → Claude (смета + описание осмотра + таймкоды дефектов)
+//        → ffmpeg вырезает кадры дефектов → возвращаем JSON приложению.
 //
-// ПОТРІБНІ ключі (env): ANTHROPIC_API_KEY, OPENAI_API_KEY (для Whisper).
-// ПОТРІБЕН ffmpeg у системі (apt-get install -y ffmpeg).
+// ENV: ANTHROPIC_API_KEY (обязателен), API_TOKEN (защита эндпоинта),
+//      WHISPER_BIN, WHISPER_MODEL, WHISPER_LANG (по умолчанию auto), ANTHROPIC_MODEL.
+// Нужны в системе: ffmpeg и собранный whisper.cpp (в Docker уже всё есть).
 
 import express from "express";
 import cors from "cors";
@@ -12,58 +13,70 @@ import multer from "multer";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs/promises";
-import { createReadStream } from "node:fs";
 import os from "node:os";
-import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
-import OpenAI from "openai";
 import { SYSTEM_PROMPT } from "./prompt.js";
 
 const execFileP = promisify(execFile);
 const app = express();
 app.use(cors());
-const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 200 * 1024 * 1024 } });
+const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 250 * 1024 * 1024 } });
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6"; // або claude-opus-4-8 для кращої якості
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6"; // или claude-opus-4-8
+const WHISPER_BIN = process.env.WHISPER_BIN || "/opt/whisper/build/bin/whisper-cli";
+const WHISPER_MODEL = process.env.WHISPER_MODEL || "/opt/whisper/models/ggml-small.bin";
+const WHISPER_LANG = process.env.WHISPER_LANG || "auto";
+const THREADS = String(os.cpus().length || 2);
+
+// Захист токеном (крім /health)
+app.use((req, res, next) => {
+  if (req.path === "/health") return next();
+  const tok = process.env.API_TOKEN;
+  if (tok && req.get("authorization") !== `Bearer ${tok}`) return res.status(401).json({ error: "unauthorized" });
+  next();
+});
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
-// POST /process  (multipart: field "video", optional "roomName")
+// whisper.cpp → сегменти з таймкодами (секунди)
+async function transcribe(wavPath) {
+  const prefix = wavPath + ".out";
+  await execFileP(WHISPER_BIN, ["-m", WHISPER_MODEL, "-f", wavPath, "-l", WHISPER_LANG, "-t", THREADS, "-oj", "-of", prefix], { maxBuffer: 64 * 1024 * 1024 });
+  const json = JSON.parse(await fs.readFile(prefix + ".json", "utf8"));
+  await fs.unlink(prefix + ".json").catch(() => {});
+  return (json.transcription || []).map((s) => ({
+    start: Math.round((s.offsets?.from ?? 0) / 1000),
+    text: (s.text || "").trim(),
+  }));
+}
+
+// POST /process (multipart: video, roomName?)
 app.post("/process", upload.single("video"), async (req, res) => {
   const videoPath = req.file?.path;
   if (!videoPath) return res.status(400).json({ error: "no video" });
-  const audioPath = videoPath + ".mp3";
+  const wavPath = videoPath + ".wav";
   try {
-    // 1) Витяг аудіо
-    await execFileP("ffmpeg", ["-y", "-i", videoPath, "-vn", "-ac", "1", "-ar", "16000", audioPath]);
+    // 1) аудіо у wav 16k моно (для whisper.cpp)
+    await execFileP("ffmpeg", ["-y", "-i", videoPath, "-vn", "-ac", "1", "-ar", "16000", wavPath]);
 
-    // 2) Транскрибація з таймкодами (сегменти)
-    const tr = await openai.audio.transcriptions.create({
-      file: createReadStream(audioPath),
-      model: "whisper-1",
-      response_format: "verbose_json",
-      timestamp_granularities: ["segment"],
-    });
-    const transcript = (tr.segments || [])
-      .map((s) => `[${Math.round(s.start)}s] ${s.text.trim()}`)
-      .join("\n") || tr.text || "";
+    // 2) транскрибація з таймкодами
+    const segments = await transcribe(wavPath);
+    const transcript = segments.map((s) => `[${s.start}s] ${s.text}`).join("\n");
+    if (!transcript) return res.status(422).json({ error: "empty transcript" });
 
-    // 3) ИИ Claude → структурований JSON
+    // 3) Claude → структурований JSON
     const userContent =
       (req.body.roomName ? `Кімната за замовчуванням: ${req.body.roomName}\n\n` : "") +
-      `Транскрипт відеообходу (з таймкодами в секундах):\n${transcript}`;
+      `Транскрипт відеообходу (таймкоди в секундах):\n${transcript}`;
     const msg = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 4000,
-      system: SYSTEM_PROMPT,
+      model: MODEL, max_tokens: 4000, system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userContent }],
     });
     const raw = msg.content.map((c) => (c.type === "text" ? c.text : "")).join("");
     const json = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
 
-    // 4) Кадри ffmpeg на таймкодах дефектів → base64, прикріплюємо до кімнати
+    // 4) кадри дефектів на таймкодах
     for (const room of json.rooms || []) {
       room.photos = [];
       for (const d of room.defects || []) {
@@ -77,16 +90,15 @@ app.post("/process", upload.single("video"), async (req, res) => {
         } catch (_) {}
       }
     }
-
     res.json(json);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: String(e.message || e) });
   } finally {
     await fs.unlink(videoPath).catch(() => {});
-    await fs.unlink(audioPath).catch(() => {});
+    await fs.unlink(wavPath).catch(() => {});
   }
 });
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`Wallcov AI backend на :${PORT}`));
+app.listen(PORT, () => console.log(`Wallcov AI backend на :${PORT} (whisper.cpp, model=${WHISPER_MODEL})`));
