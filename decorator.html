@@ -4,98 +4,88 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#0b0b0f" />
-<!-- iOS: запуск як застосунок з домашнього екрана -->
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Кошторис" />
-<title>Калькулятор кошторису</title>
+<meta name="apple-mobile-web-app-title" content="Wallcov" />
+<title>Wallcov — кошторис і документи</title>
 <style>
-  :root {
-    --bg: #0b0b0f;
-    --card: #16161d;
-    --card-2: #1e1e27;
-    --line: #2a2a35;
-    --text: #f4f4f6;
-    --muted: #9a9aa8;
-    --accent: #ff5c8a;
-    --accent-2: #ffb15c;
-    --radius: 18px;
-    --safe-top: env(safe-area-inset-top, 0px);
-    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  :root{--bg:#0b0b0f;--card:#16161d;--card-2:#1e1e27;--line:#2a2a35;--text:#f4f4f6;--muted:#9a9aa8;--accent:#ff5c8a;--accent-2:#ffb15c;--radius:18px;--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;font-size:17px;-webkit-text-size-adjust:100%;}
+  body{padding:calc(var(--safe-top) + 14px) 16px calc(var(--safe-bottom) + 130px);max-width:560px;margin:0 auto;}
+  h1{font-size:25px;font-weight:800;margin:4px 0 2px;letter-spacing:-.3px;}
+  .subtitle{color:var(--muted);font-size:14px;margin:0 0 18px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-bottom:14px;}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 12px;font-weight:700;}
+  .card h2 .toggle{float:right;color:var(--accent-2);font-weight:700;}
+  .item{background:var(--card-2);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px;}
+  .item-top{display:flex;gap:8px;align-items:center;margin-bottom:10px;}
+  .item-name{flex:1;background:transparent;border:none;color:var(--text);font-size:17px;font-weight:600;padding:6px 0;}
+  .item-name::placeholder{color:var(--muted);}.item-name:focus{outline:none;}
+  select.catalog{width:100%;background:#101017 url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' stroke='%239a9aa8' stroke-width='1.5' fill='none'/></svg>") no-repeat right 12px center;border:1px solid var(--line);border-radius:11px;color:var(--accent-2);padding:11px 34px 11px 12px;font-size:15px;margin-bottom:10px;-webkit-appearance:none;appearance:none;}
+  select.catalog:focus{outline:none;border-color:var(--accent);}
+  .item-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .mini-field{display:flex;flex-direction:column;gap:4px;}.mini-field span{font-size:11px;color:var(--muted);padding-left:4px;}
+  input[type="number"],input[type="text"],textarea{width:100%;background:#101017;border:1px solid var(--line);border-radius:11px;color:var(--text);padding:11px 12px;font-size:16px;font-variant-numeric:tabular-nums;font-family:inherit;}
+  textarea{min-height:54px;resize:vertical;}
+  input:focus,textarea:focus{outline:none;border-color:var(--accent);}
+  input[type="number"]::-webkit-inner-spin-button,input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+  .item-sum{margin-top:10px;text-align:right;font-size:15px;color:var(--muted);}.item-sum b{color:var(--text);font-size:17px;}
+  .icon-btn{flex:0 0 auto;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:#101017;color:var(--muted);font-size:18px;display:grid;place-items:center;}
+  .icon-btn:active{background:#2a2a35;}
+  .btn{display:block;width:100%;border:none;border-radius:14px;padding:15px;font-size:17px;font-weight:700;color:#fff;background:var(--card-2);border:1px dashed var(--line);margin-top:2px;}
+  .btn:active{transform:scale(.99);}
+  .btn-add{color:var(--accent);border-color:var(--accent);background:rgba(255,92,138,.08);}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);}
+  .row:last-child{border-bottom:none;}.row label{font-size:16px;}
+  .row .hint-q{color:var(--muted);font-size:12px;display:block;margin-top:2px;}
+  .row .ctl{display:flex;align-items:center;gap:6px;flex:0 0 auto;}.row .ctl input{width:110px;text-align:right;}
+  .row .unit{color:var(--muted);font-size:14px;width:28px;}
+  .field{display:flex;flex-direction:column;gap:5px;margin-bottom:10px;}
+  .field label{font-size:12px;color:var(--muted);padding-left:4px;}
+  .doc-btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px;}
+  .doc-btn{border:1px solid var(--accent-2);color:var(--accent-2);background:rgba(255,177,92,.08);border-radius:13px;padding:14px 10px;font-size:14px;font-weight:700;text-align:center;}
+  .doc-btn:active{background:rgba(255,177,92,.18);}
+  .totals .line{display:flex;justify-content:space-between;padding:7px 0;color:var(--muted);font-size:15px;}
+  .totals .line b{color:var(--text);}
+  .grand{margin-top:10px;padding-top:14px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline;}
+  .grand span{font-size:16px;font-weight:700;}
+  .grand b{font-size:27px;font-weight:800;background:linear-gradient(90deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+  .bottombar{position:fixed;left:0;right:0;bottom:0;background:rgba(11,11,15,.85);backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);border-top:1px solid var(--line);padding:12px 16px calc(var(--safe-bottom) + 12px);display:flex;gap:10px;max-width:560px;margin:0 auto;}
+  .bottombar button{flex:1;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:700;}
+  .b-share{background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#fff;}
+  .b-reset{background:var(--card-2);color:var(--muted);border:1px solid var(--line);flex:0 0 auto;padding:14px 18px;}
+  .hint{color:var(--muted);font-size:12px;text-align:center;margin:6px 0 0;}
+  .collapsed{display:none;}
+
+  /* ---- Документ для друку/PDF ---- */
+  #print-root{position:fixed;left:-10000px;top:0;width:210mm;background:#fff;color:#000;}
+  #print-root .doc{font-family:"Times New Roman",Georgia,serif;font-size:11pt;line-height:1.4;color:#000;padding:14mm 15mm;}
+  #print-root .doc h1{font-size:14pt;text-align:center;margin:0 0 2pt;color:#000;}
+  #print-root .doc .doc-sub{text-align:center;font-size:11pt;margin:0 0 10pt;}
+  #print-root .doc h2{font-size:11pt;text-transform:none;letter-spacing:0;color:#000;margin:10pt 0 4pt;font-weight:bold;}
+  #print-root .doc .head-row{display:flex;justify-content:space-between;margin:8pt 0;}
+  #print-root .doc p{margin:4pt 0;text-align:justify;}
+  #print-root .doc table{width:100%;border-collapse:collapse;margin:6pt 0;font-size:9.5pt;}
+  #print-root .doc th,#print-root .doc td{border:1px solid #000;padding:3pt 5pt;text-align:left;vertical-align:top;}
+  #print-root .doc td.r,#print-root .doc th.r{text-align:right;}
+  #print-root .doc .group-row td{background:#eee;font-weight:bold;}
+  #print-root .doc .sign{display:flex;justify-content:space-between;gap:20pt;margin-top:14pt;}
+  #print-root .doc .sign .col{width:48%;font-size:10pt;white-space:pre-line;}
+  #print-root .doc .muted{color:#444;}
+  @media print{
+    body>*:not(#print-root){display:none !important;}
+    #print-root{position:static;left:0;width:auto;}
+    .doc{page-break-after:always;}
   }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
-    font-size: 17px; -webkit-text-size-adjust: 100%;
-  }
-  body { padding: calc(var(--safe-top) + 14px) 16px calc(var(--safe-bottom) + 120px); max-width: 560px; margin: 0 auto; }
-  h1 { font-size: 25px; font-weight: 800; margin: 4px 0 2px; letter-spacing: -0.3px; }
-  .subtitle { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; }
-  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 12px; font-weight: 700; }
-
-  .item { background: var(--card-2); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 10px; }
-  .item-top { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
-  .item-name { flex: 1; background: transparent; border: none; color: var(--text); font-size: 17px; font-weight: 600; padding: 6px 0; }
-  .item-name::placeholder { color: var(--muted); }
-  .item-name:focus { outline: none; }
-
-  select.catalog {
-    width: 100%;
-    background: #101017 url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' stroke='%239a9aa8' stroke-width='1.5' fill='none'/></svg>") no-repeat right 12px center;
-    border: 1px solid var(--line); border-radius: 11px; color: var(--accent-2);
-    padding: 11px 34px 11px 12px; font-size: 15px; margin-bottom: 10px;
-    -webkit-appearance: none; appearance: none;
-  }
-  select.catalog:focus { outline: none; border-color: var(--accent); }
-
-  .item-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .mini-field { display: flex; flex-direction: column; gap: 4px; }
-  .mini-field span { font-size: 11px; color: var(--muted); padding-left: 4px; }
-  input[type="number"], input[type="text"] {
-    width: 100%; background: #101017; border: 1px solid var(--line); border-radius: 11px;
-    color: var(--text); padding: 11px 12px; font-size: 17px; font-variant-numeric: tabular-nums;
-  }
-  input:focus { outline: none; border-color: var(--accent); }
-  input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-  .item-sum { margin-top: 10px; text-align: right; font-size: 15px; color: var(--muted); }
-  .item-sum b { color: var(--text); font-size: 17px; font-variant-numeric: tabular-nums; }
-
-  .icon-btn { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: #101017; color: var(--muted); font-size: 18px; line-height: 1; display: grid; place-items: center; }
-  .icon-btn:active { background: #2a2a35; }
-
-  .btn { display: block; width: 100%; border: none; border-radius: 14px; padding: 15px; font-size: 17px; font-weight: 700; color: #fff; background: var(--card-2); border: 1px dashed var(--line); margin-top: 2px; }
-  .btn:active { transform: scale(0.99); }
-  .btn-add { color: var(--accent); border-color: var(--accent); background: rgba(255, 92, 138, 0.08); }
-
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
-  .row:last-child { border-bottom: none; }
-  .row label { font-size: 16px; }
-  .row .hint-q { color: var(--muted); font-size: 12px; display: block; margin-top: 2px; }
-  .row .ctl { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
-  .row .ctl input { width: 110px; text-align: right; }
-  .row .unit { color: var(--muted); font-size: 14px; width: 28px; }
-
-  .totals .line { display: flex; justify-content: space-between; padding: 7px 0; color: var(--muted); font-size: 15px; }
-  .totals .line b { color: var(--text); font-variant-numeric: tabular-nums; }
-  .grand { margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: baseline; }
-  .grand span { font-size: 16px; font-weight: 700; }
-  .grand b { font-size: 28px; font-weight: 800; background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-variant-numeric: tabular-nums; }
-
-  .bottombar { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(11, 11, 15, 0.85); backdrop-filter: saturate(180%) blur(14px); -webkit-backdrop-filter: saturate(180%) blur(14px); border-top: 1px solid var(--line); padding: 12px 16px calc(var(--safe-bottom) + 12px); display: flex; gap: 10px; max-width: 560px; margin: 0 auto; }
-  .bottombar button { flex: 1; border: none; border-radius: 14px; padding: 14px; font-size: 15px; font-weight: 700; }
-  .b-share { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #fff; }
-  .b-reset { background: var(--card-2); color: var(--muted); border: 1px solid var(--line); flex: 0 0 auto; padding: 14px 18px; }
-  .hint { color: var(--muted); font-size: 12px; text-align: center; margin: 6px 0 0; }
 </style>
 </head>
 <body>
-  <h1>Калькулятор кошторису</h1>
-  <p class="subtitle">Швидкий розрахунок кошторису ремонтних робіт · ₴ грн</p>
+  <h1>Wallcov · Кошторис</h1>
+  <p class="subtitle">Кошторис декоративних робіт · договір та акти · ₴ грн</p>
 
   <section class="card">
-    <h2>Позиції (роботи та матеріали)</h2>
+    <h2>Позиції (роботи)</h2>
     <div id="items"></div>
     <button class="btn btn-add" id="add">+ Додати позицію</button>
   </section>
@@ -103,234 +93,469 @@
   <section class="card">
     <h2>Параметри</h2>
     <div class="totals">
-      <div class="row">
-        <label>Націнка на матеріали</label>
-        <div class="ctl"><input type="number" id="markup" inputmode="decimal" min="0" step="1" value="0" /><span class="unit">%</span></div>
-      </div>
-      <div class="row">
-        <label>Прорабські / організація робіт<span class="hint-q">% від суми позицій</span></label>
-        <div class="ctl"><input type="number" id="mgmt" inputmode="decimal" min="0" step="1" value="0" /><span class="unit">%</span></div>
-      </div>
-      <div class="row">
-        <label>Транспортні витрати</label>
-        <div class="ctl"><input type="number" id="transport" inputmode="decimal" min="0" step="100" value="0" /><span class="unit">₴</span></div>
-      </div>
-      <div class="row">
-        <label>Доставка матеріалів</label>
-        <div class="ctl"><input type="number" id="delivery" inputmode="decimal" min="0" step="100" value="0" /><span class="unit">₴</span></div>
-      </div>
-      <div class="row">
-        <label>Знижка клієнту</label>
-        <div class="ctl"><input type="number" id="discount" inputmode="decimal" min="0" step="1" value="0" /><span class="unit">%</span></div>
-      </div>
+      <div class="row"><label>Вартість матеріалів<span class="hint-q">постачає Виконавець, окремо</span></label><div class="ctl"><input type="number" id="materials" inputmode="decimal" min="0" step="100" value="0" /><span class="unit">₴</span></div></div>
+      <div class="row"><label>Прорабські / організація<span class="hint-q">% від суми робіт</span></label><div class="ctl"><input type="number" id="mgmt" inputmode="decimal" min="0" step="1" value="0" /><span class="unit">%</span></div></div>
+      <div class="row"><label>Транспортні витрати</label><div class="ctl"><input type="number" id="transport" inputmode="decimal" min="0" step="100" value="0" /><span class="unit">₴</span></div></div>
+      <div class="row"><label>Аванс отримано</label><div class="ctl"><input type="number" id="advance" inputmode="decimal" min="0" step="1000" value="0" /><span class="unit">₴</span></div></div>
+      <div class="row"><label>Знижка клієнту</label><div class="ctl"><input type="number" id="discount" inputmode="decimal" min="0" step="1" value="0" /><span class="unit">%</span></div></div>
     </div>
   </section>
 
   <section class="card totals">
     <h2>Підсумок</h2>
-    <div class="line"><span>Позиції</span><b id="t-positions">0 ₴</b></div>
-    <div class="line"><span>Націнка на матеріали</span><b id="t-markup">0 ₴</b></div>
+    <div class="line"><span>Роботи (позиції)</span><b id="t-works">0 ₴</b></div>
     <div class="line"><span>Прорабські / організація</span><b id="t-mgmt">0 ₴</b></div>
     <div class="line"><span>Транспортні витрати</span><b id="t-transport">0 ₴</b></div>
-    <div class="line"><span>Доставка</span><b id="t-delivery">0 ₴</b></div>
+    <div class="line"><span>Матеріали</span><b id="t-materials">0 ₴</b></div>
     <div class="line"><span>Знижка</span><b id="t-discount">0 ₴</b></div>
-    <div class="grand"><span>ДО СПЛАТИ</span><b id="t-grand">0 ₴</b></div>
+    <div class="line"><span>Аванс</span><b id="t-advance">0 ₴</b></div>
+    <div class="grand"><span>ЗАЛИШОК ДО СПЛАТИ</span><b id="t-grand">0 ₴</b></div>
   </section>
 
-  <p class="hint">Ціни в каталозі — орієнтовні (Київ, 2026), їх можна змінювати. Дані зберігаються на цьому пристрої.</p>
+  <section class="card">
+    <h2>Документи та реквізити <span class="toggle" id="toggle-doc">показати ▾</span></h2>
+    <div id="doc-body" class="collapsed">
+      <div class="field"><label>Об'єкт (адреса)</label><input type="text" id="d-object" placeholder="м. ..., вул. ..., буд. ..." /></div>
+      <div class="item-grid">
+        <div class="field"><label>№ договору</label><input type="text" id="d-no" placeholder="01/2026" /></div>
+        <div class="field"><label>Дата (місто)</label><input type="text" id="d-city" placeholder="м. Київ" /></div>
+      </div>
+      <div class="field"><label>Дата договору</label><input type="text" id="d-date" placeholder="«12» червня 2026 р." /></div>
+
+      <h2 style="margin-top:14px">Замовник</h2>
+      <div class="field"><label>ПІБ</label><input type="text" id="c-name" placeholder="Прізвище Ім'я По батькові" /></div>
+      <div class="item-grid">
+        <div class="field"><label>РНОКПП</label><input type="text" id="c-tax" placeholder="__________" /></div>
+        <div class="field"><label>Телефон</label><input type="text" id="c-phone" placeholder="+380..." /></div>
+      </div>
+      <div class="field"><label>Адреса / паспорт</label><input type="text" id="c-addr" placeholder="адреса реєстрації" /></div>
+
+      <h2 style="margin-top:14px">Виконавець</h2>
+      <div class="field"><label>Назва</label><input type="text" id="e-name" /></div>
+      <div class="item-grid">
+        <div class="field"><label>РНОКПП</label><input type="text" id="e-tax" /></div>
+        <div class="field"><label>Телефон</label><input type="text" id="e-phone" /></div>
+      </div>
+      <div class="field"><label>Адреса</label><input type="text" id="e-addr" /></div>
+      <div class="field"><label>IBAN</label><input type="text" id="e-iban" /></div>
+      <div class="field"><label>Банк</label><input type="text" id="e-bank" /></div>
+
+      <div class="doc-btns">
+        <div class="doc-btn" data-doc="estimate">📄 Кошторис</div>
+        <div class="doc-btn" data-doc="contract">📑 Договір</div>
+        <div class="doc-btn" data-doc="actbase">🧱 Акт обстеження основи</div>
+        <div class="doc-btn" data-doc="actdone">✅ Акт здачі-приймання</div>
+      </div>
+      <p class="hint" style="margin-top:10px">Натисніть документ → відкриється друк. На айфоні: «Поділитися» → «Друк» → розведіть пальцями → «Зберегти у Файли / PDF».</p>
+    </div>
+  </section>
+
+  <p class="hint">Ціни в каталозі — ваші робочі ставки (декор). Дані зберігаються на цьому пристрої.</p>
 
   <div class="bottombar">
     <button class="b-share" id="share">Поділитися кошторисом</button>
     <button class="b-reset" id="reset">Скинути</button>
   </div>
 
+  <div id="print-root"></div>
+
 <script>
 (() => {
   "use strict";
+  const KEY = "wallcov.calc.v2";
+  const $ = (s, r = document) => r.querySelector(s);
 
-  const KEY = "smeta.calc.ua.v1";
-  const $ = (s) => document.querySelector(s);
-
-  // Каталог робіт з орієнтовними цінами по Україні (грн), джерело: прайси ремонтних компаній Києва 2026
+  // Реальний каталог декоративних робіт Wallcov (грн)
   const CATALOG = [
-    { group: "Підготовчі / демонтаж", items: [
+    { group: "Підготовка поверхонь", items: [
+      { name: "Нанесення мілкого кварц-ґрунта (фондо)", unit: "м²", price: 70 },
+      { name: "Ґрунтування стін (1 шар)", unit: "м²", price: 30 },
+      { name: "Ґрунтування стін (2 рази)", unit: "м²", price: 60 },
+      { name: "Шпаклювання стін під склополотно", unit: "м²", price: 300 },
+      { name: "Поклейка склополотна (стеклохолст)", unit: "м²", price: 200 },
+      { name: "Шпаклювання склополотна під фарбування", unit: "м²", price: 350 },
+    ]},
+    { group: "Декоративні покриття (робота)", items: [
+      { name: "Декор «Мокрий шовк»", unit: "м²", price: 800, note: "матеріал ~210 грн/м²" },
+      { name: "Декор «Декоративний пісок Галатея»", unit: "м²", price: 800, note: "матеріал ~280 грн/м²" },
+      { name: "Декор «Венеціанка полірована»", unit: "м²", price: 1250, note: "матеріал ~450 грн/м²" },
+      { name: "Декор «Матовий марморин»", unit: "м²", price: 1200, note: "матеріал ~445 грн/м²" },
+    ]},
+    { group: "Демонтаж / підготовчі", items: [
+      { name: "Демонтаж барельєфа", unit: "послуга", price: 0, note: "ціну узгодити" },
       { name: "Демонтаж шпалер", unit: "м²", price: 40 },
       { name: "Демонтаж плитки", unit: "м²", price: 90 },
       { name: "Демонтаж старої штукатурки", unit: "м²", price: 80 },
-      { name: "Демонтаж стяжки підлоги", unit: "м²", price: 170 },
-      { name: "Демонтаж дерев'яної підлоги", unit: "м²", price: 160 },
-      { name: "Демонтаж перегородки (цегла)", unit: "м²", price: 280 },
-      { name: "Демонтаж гіпсокартону", unit: "м²", price: 70 },
-    ]},
-    { group: "Чорнові / підготовка поверхонь", items: [
-      { name: "Ґрунтовка стін (1 шар)", unit: "м²", price: 35 },
-      { name: "Штукатурка стін по маяках", unit: "м²", price: 150 },
-      { name: "Шпаклівка стін під шпалери", unit: "м²", price: 100 },
-      { name: "Шпаклівка стін під фарбу", unit: "м²", price: 150 },
-      { name: "Стяжка підлоги", unit: "м²", price: 230 },
-    ]},
-    { group: "Додаткові послуги", items: [
-      { name: "Винесення сміття (мішок)", unit: "шт", price: 40 },
-      { name: "Вивіз сміття (Газель 3 м³)", unit: "послуга", price: 2500 },
-      { name: "Транспортні витрати / доставка матеріалів", unit: "послуга", price: 1200 },
-      { name: "Прибирання після ремонту", unit: "м²", price: 60 },
+      { name: "Винесення / вивіз сміття", unit: "послуга", price: 2500 },
     ]},
   ];
 
-  const fmt = (n) =>
-    new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 0 }).format(Math.round(n)) + " ₴";
+  const EXEC_DEFAULT = {
+    name: "ФОП Кріжевський Олег",
+    tax: "3031640354",
+    addr: "м. Вишневе, вул. Івана Франка, 49",
+    iban: "UA983052990000026002046111493",
+    bank: 'АТ КБ "ПриватБанк"',
+    phone: "+380965527817",
+  };
+
+  const fmt = (n) => new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(n) + " грн";
+  const fmtShort = (n) => new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 0 }).format(Math.round(n)) + " ₴";
   const num = (v) => { const n = parseFloat(String(v).replace(",", ".")); return Number.isFinite(n) && n >= 0 ? n : 0; };
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const escA = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
-  let state = { items: [], markup: 0, mgmt: 0, transport: 0, delivery: 0, discount: 0 };
+  let state = {
+    items: [], materials: 0, mgmt: 0, transport: 0, advance: 0, discount: 0,
+    doc: { object: "", no: "", city: "", date: "", cName: "", cTax: "", cPhone: "", cAddr: "",
+      eName: EXEC_DEFAULT.name, eTax: EXEC_DEFAULT.tax, eAddr: EXEC_DEFAULT.addr, eIban: EXEC_DEFAULT.iban, eBank: EXEC_DEFAULT.bank, ePhone: EXEC_DEFAULT.phone },
+  };
 
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
-  function load() {
-    try { const raw = localStorage.getItem(KEY); if (raw) state = Object.assign(state, JSON.parse(raw)); } catch (_) {}
-    if (!Array.isArray(state.items) || state.items.length === 0) state.items = [{ name: "", unit: "", qty: 1, price: 0 }];
+  function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(_){} }
+  function load(){
+    try{ const r = localStorage.getItem(KEY); if(r) state = Object.assign(state, JSON.parse(r)); }catch(_){}
+    if(!Array.isArray(state.items) || !state.items.length) state.items = [{ name:"", unit:"", qty:1, price:0 }];
+    state.doc = Object.assign({ object:"",no:"",city:"",date:"",cName:"",cTax:"",cPhone:"",cAddr:"",
+      eName:EXEC_DEFAULT.name,eTax:EXEC_DEFAULT.tax,eAddr:EXEC_DEFAULT.addr,eIban:EXEC_DEFAULT.iban,eBank:EXEC_DEFAULT.bank,ePhone:EXEC_DEFAULT.phone }, state.doc || {});
   }
 
   const itemsRoot = $("#items");
-
-  function catalogOptions() {
-    let html = '<option value="">📋 Обрати роботу з каталогу…</option>';
-    CATALOG.forEach((g, gi) => {
-      html += `<optgroup label="${g.group}">`;
-      g.items.forEach((it, ii) => {
-        html += `<option value="${gi}.${ii}">${it.name} — ${it.price} ₴/${it.unit}</option>`;
-      });
-      html += `</optgroup>`;
-    });
-    return html;
+  function catalogOptions(){
+    let h = '<option value="">📋 Обрати з каталогу…</option>';
+    CATALOG.forEach((g, gi) => { h += `<optgroup label="${g.group}">`;
+      g.items.forEach((it, ii) => { h += `<option value="${gi}.${ii}">${it.name} — ${it.price} ₴/${it.unit}</option>`; });
+      h += `</optgroup>`; });
+    return h;
   }
-
-  function renderItems() {
+  function renderItems(){
     itemsRoot.innerHTML = "";
     state.items.forEach((item, i) => {
-      const el = document.createElement("div");
-      el.className = "item";
-      const unitLbl = item.unit ? ` (${item.unit})` : "";
+      const el = document.createElement("div"); el.className = "item";
+      const u = item.unit ? ` (${item.unit})` : "";
       el.innerHTML = `
         <select class="catalog" data-i="${i}">${catalogOptions()}</select>
         <div class="item-top">
-          <input class="item-name" type="text" placeholder="Назва роботи або матеріалу" value="${escapeAttr(item.name)}" data-i="${i}" data-f="name" />
-          <button class="icon-btn" data-del="${i}" aria-label="Видалити">✕</button>
+          <input class="item-name" type="text" placeholder="Назва роботи" value="${escA(item.name)}" data-i="${i}" data-f="name" />
+          <button class="icon-btn" data-del="${i}">✕</button>
         </div>
         <div class="item-grid">
-          <label class="mini-field"><span>Кількість${unitLbl}</span>
-            <input type="number" inputmode="decimal" min="0" step="1" value="${item.qty}" data-i="${i}" data-f="qty" /></label>
-          <label class="mini-field"><span>Ціна за од., ₴</span>
-            <input type="number" inputmode="decimal" min="0" step="10" value="${item.price}" data-i="${i}" data-f="price" /></label>
+          <label class="mini-field"><span>Кількість${u}</span><input type="number" inputmode="decimal" min="0" step="0.1" value="${item.qty}" data-i="${i}" data-f="qty" /></label>
+          <label class="mini-field"><span>Ціна за од., ₴</span><input type="number" inputmode="decimal" min="0" step="10" value="${item.price}" data-i="${i}" data-f="price" /></label>
         </div>
-        <div class="item-sum">Сума: <b>${fmt(num(item.qty) * num(item.price))}</b></div>
-      `;
+        <div class="item-sum">Сума: <b>${fmtShort(num(item.qty)*num(item.price))}</b></div>`;
       itemsRoot.appendChild(el);
     });
   }
 
-  function escapeAttr(s) { return String(s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;"); }
-
-  function compute() {
-    const positions = state.items.reduce((a, it) => a + num(it.qty) * num(it.price), 0);
-    const markup = positions * (num(state.markup) / 100);
-    const mgmt = positions * (num(state.mgmt) / 100);
+  function compute(){
+    const works = state.items.reduce((a, it) => a + num(it.qty)*num(it.price), 0);
+    const mgmt = works * (num(state.mgmt)/100);
     const transport = num(state.transport);
-    const delivery = num(state.delivery);
-    const before = positions + markup + mgmt + transport + delivery;
-    const discount = before * (num(state.discount) / 100);
-    const grand = before - discount;
-    return { positions, markup, mgmt, transport, delivery, discount, grand };
+    const materials = num(state.materials);
+    const before = works + mgmt + transport + materials;
+    const discount = before * (num(state.discount)/100);
+    const advance = num(state.advance);
+    const grand = before - discount - advance;
+    return { works, mgmt, transport, materials, discount, advance, before, total: before - discount, grand };
   }
-
-  function renderTotals() {
+  function renderTotals(){
     const t = compute();
-    $("#t-positions").textContent = fmt(t.positions);
-    $("#t-markup").textContent = fmt(t.markup);
-    $("#t-mgmt").textContent = fmt(t.mgmt);
-    $("#t-transport").textContent = fmt(t.transport);
-    $("#t-delivery").textContent = fmt(t.delivery);
-    $("#t-discount").textContent = "−" + fmt(t.discount);
-    $("#t-grand").textContent = fmt(t.grand);
+    $("#t-works").textContent = fmtShort(t.works);
+    $("#t-mgmt").textContent = fmtShort(t.mgmt);
+    $("#t-transport").textContent = fmtShort(t.transport);
+    $("#t-materials").textContent = fmtShort(t.materials);
+    $("#t-discount").textContent = "−" + fmtShort(t.discount);
+    $("#t-advance").textContent = "−" + fmtShort(t.advance);
+    $("#t-grand").textContent = fmtShort(t.grand);
   }
-
-  function refreshSums() {
-    document.querySelectorAll(".item").forEach((el, i) => {
-      const it = state.items[i];
-      el.querySelector(".item-sum b").textContent = fmt(num(it.qty) * num(it.price));
-    });
+  function refreshSums(){
+    document.querySelectorAll(".item").forEach((el, i) => { const it = state.items[i]; el.querySelector(".item-sum b").textContent = fmtShort(num(it.qty)*num(it.price)); });
     renderTotals();
   }
 
   itemsRoot.addEventListener("input", (e) => {
-    const t = e.target; const i = t.dataset.i, f = t.dataset.f;
-    if (i === undefined || f === undefined) return;
+    const t = e.target, i = t.dataset.i, f = t.dataset.f;
+    if(i === undefined || f === undefined) return;
     state.items[+i][f] = f === "name" ? t.value : num(t.value);
     refreshSums(); save();
   });
-
   itemsRoot.addEventListener("change", (e) => {
-    const t = e.target;
-    if (!t.classList.contains("catalog")) return;
-    const i = +t.dataset.i; const v = t.value;
-    if (!v) return;
-    const [gi, ii] = v.split(".").map(Number);
-    const src = CATALOG[gi].items[ii];
+    const t = e.target; if(!t.classList.contains("catalog")) return;
+    const i = +t.dataset.i, v = t.value; if(!v) return;
+    const [gi, ii] = v.split(".").map(Number); const src = CATALOG[gi].items[ii];
     state.items[i] = { name: src.name, unit: src.unit, qty: num(state.items[i].qty) || 1, price: src.price };
     renderItems(); renderTotals(); save();
   });
-
   itemsRoot.addEventListener("click", (e) => {
-    const del = e.target.dataset.del; if (del === undefined) return;
-    state.items.splice(+del, 1);
-    if (state.items.length === 0) state.items.push({ name: "", unit: "", qty: 1, price: 0 });
+    const d = e.target.dataset.del; if(d === undefined) return;
+    state.items.splice(+d, 1); if(!state.items.length) state.items.push({ name:"", unit:"", qty:1, price:0 });
     renderItems(); renderTotals(); save();
   });
-
   $("#add").addEventListener("click", () => {
-    state.items.push({ name: "", unit: "", qty: 1, price: 0 });
+    state.items.push({ name:"", unit:"", qty:1, price:0 });
     renderItems(); renderTotals(); save();
-    const inputs = itemsRoot.querySelectorAll(".item-name");
-    inputs[inputs.length - 1].focus();
+    const ins = itemsRoot.querySelectorAll(".item-name"); ins[ins.length-1].focus();
   });
 
-  ["markup", "mgmt", "transport", "delivery", "discount"].forEach((id) => {
-    const el = $("#" + id); el.value = state[id];
+  ["materials","mgmt","transport","advance","discount"].forEach((id) => {
+    const el = $("#"+id); el.value = state[id];
     el.addEventListener("input", () => { state[id] = num(el.value); renderTotals(); save(); });
   });
 
+  // Реквізити
+  const docMap = { "d-object":"object","d-no":"no","d-city":"city","d-date":"date",
+    "c-name":"cName","c-tax":"cTax","c-phone":"cPhone","c-addr":"cAddr",
+    "e-name":"eName","e-tax":"eTax","e-phone":"ePhone","e-addr":"eAddr","e-iban":"eIban","e-bank":"eBank" };
+  Object.keys(docMap).forEach((id) => {
+    const el = $("#"+id); el.value = state.doc[docMap[id]] || "";
+    el.addEventListener("input", () => { state.doc[docMap[id]] = el.value; save(); });
+  });
+
+  $("#toggle-doc").addEventListener("click", () => {
+    const b = $("#doc-body"); const c = b.classList.toggle("collapsed");
+    $("#toggle-doc").textContent = c ? "показати ▾" : "сховати ▴";
+  });
+
   $("#reset").addEventListener("click", () => {
-    if (!confirm("Очистити кошторис?")) return;
-    state = { items: [{ name: "", unit: "", qty: 1, price: 0 }], markup: 0, mgmt: 0, transport: 0, delivery: 0, discount: 0 };
+    if(!confirm("Очистити кошторис? Реквізити Виконавця залишаться.")) return;
+    const keepExec = { eName:state.doc.eName,eTax:state.doc.eTax,eAddr:state.doc.eAddr,eIban:state.doc.eIban,eBank:state.doc.eBank,ePhone:state.doc.ePhone };
+    state = { items:[{name:"",unit:"",qty:1,price:0}], materials:0,mgmt:0,transport:0,advance:0,discount:0,
+      doc:Object.assign({object:"",no:"",city:"",date:"",cName:"",cTax:"",cPhone:"",cAddr:""}, keepExec) };
     renderAll(); save();
   });
 
   $("#share").addEventListener("click", async () => {
     const t = compute();
-    const lines = ["Кошторис ремонтних робіт", ""];
-    state.items.forEach((it) => {
-      if (!num(it.qty) && !num(it.price) && !it.name) return;
-      const u = it.unit ? " " + it.unit : "";
-      lines.push(`• ${it.name || "Позиція"} — ${num(it.qty)}${u} × ${fmt(num(it.price))} = ${fmt(num(it.qty) * num(it.price))}`);
-    });
-    lines.push("");
-    lines.push(`Позиції: ${fmt(t.positions)}`);
-    if (t.markup) lines.push(`Націнка на матеріали: ${fmt(t.markup)}`);
-    if (t.mgmt) lines.push(`Прорабські / організація: ${fmt(t.mgmt)}`);
-    if (t.transport) lines.push(`Транспортні витрати: ${fmt(t.transport)}`);
-    if (t.delivery) lines.push(`Доставка: ${fmt(t.delivery)}`);
-    if (t.discount) lines.push(`Знижка: −${fmt(t.discount)}`);
-    lines.push(`ДО СПЛАТИ: ${fmt(t.grand)}`);
-    const text = lines.join("\n");
-    if (navigator.share) { try { await navigator.share({ title: "Кошторис", text }); return; } catch (_) {} }
-    try { await navigator.clipboard.writeText(text); alert("Кошторис скопійовано в буфер обміну"); }
-    catch (_) { prompt("Скопіюйте кошторис:", text); }
+    const L = ["Кошторис · Wallcov", ""];
+    state.items.forEach((it) => { if(!num(it.qty) && !num(it.price) && !it.name) return;
+      const u = it.unit ? " "+it.unit : "";
+      L.push(`• ${it.name||"Позиція"} — ${num(it.qty)}${u} × ${fmtShort(num(it.price))} = ${fmtShort(num(it.qty)*num(it.price))}`); });
+    L.push("", `Роботи: ${fmtShort(t.works)}`);
+    if(t.mgmt) L.push(`Прорабські: ${fmtShort(t.mgmt)}`);
+    if(t.transport) L.push(`Транспорт: ${fmtShort(t.transport)}`);
+    if(t.materials) L.push(`Матеріали: ${fmtShort(t.materials)}`);
+    if(t.discount) L.push(`Знижка: −${fmtShort(t.discount)}`);
+    if(t.advance) L.push(`Аванс: −${fmtShort(t.advance)}`);
+    L.push(`ДО СПЛАТИ: ${fmtShort(t.grand)}`);
+    const text = L.join("\n");
+    if(navigator.share){ try{ await navigator.share({ title:"Кошторис", text }); return; }catch(_){} }
+    try{ await navigator.clipboard.writeText(text); alert("Кошторис скопійовано"); }catch(_){ prompt("Кошторис:", text); }
   });
 
-  function renderAll() {
-    renderItems();
-    ["markup", "mgmt", "transport", "delivery", "discount"].forEach((id) => { $("#" + id).value = state[id]; });
-    renderTotals();
+  // ---------- Сума прописом (укр.) ----------
+  function plural(n, f){ const a=Math.abs(n)%100, b=a%10; if(a>10&&a<20)return f[2]; if(b>1&&b<5)return f[1]; if(b===1)return f[0]; return f[2]; }
+  function triad(n, fem){
+    const um=["","один","два","три","чотири","п'ять","шість","сім","вісім","дев'ять"];
+    const uf=["","одна","дві","три","чотири","п'ять","шість","сім","вісім","дев'ять"];
+    const te=["десять","одинадцять","дванадцять","тринадцять","чотирнадцять","п'ятнадцять","шістнадцять","сімнадцять","вісімнадцять","дев'ятнадцять"];
+    const tn=["","","двадцять","тридцять","сорок","п'ятдесят","шістдесят","сімдесят","вісімдесят","дев'яносто"];
+    const hu=["","сто","двісті","триста","чотириста","п'ятсот","шістсот","сімсот","вісімсот","дев'ятсот"];
+    const u = fem ? uf : um; const p=[]; const h=Math.floor(n/100), r=n%100, t=Math.floor(r/10), o=r%10;
+    if(h)p.push(hu[h]); if(t===1)p.push(te[o]); else{ if(t)p.push(tn[t]); if(o)p.push(u[o]); } return p.join(" ");
+  }
+  function words(num0){
+    let n=Math.floor(num0); if(n===0)return "нуль";
+    const sc=[{f:false},{f:true,w:["тисяча","тисячі","тисяч"]},{f:false,w:["мільйон","мільйони","мільйонів"]}];
+    const ch=[]; while(n>0){ ch.push(n%1000); n=Math.floor(n/1000); }
+    const p=[]; for(let j=ch.length-1;j>=0;j--){ const v=ch[j]; if(!v)continue; const s=sc[j]||sc[0]; p.push(triad(v, s.f)); if(s.w)p.push(plural(v,s.w)); }
+    return p.join(" ").trim();
+  }
+  function moneyWords(amount){
+    const grn=Math.floor(amount), kop=Math.round((amount-grn)*100);
+    const gw=plural(grn,["гривня","гривні","гривень"]); const kw=plural(kop,["копійка","копійки","копійок"]);
+    const cap=(s)=>s.charAt(0).toUpperCase()+s.slice(1);
+    return `${cap(words(grn))} ${gw} ${String(kop).padStart(2,"0")} ${kw}`;
   }
 
+  // ---------- Генерація документів ----------
+  function reqBlocks(){
+    const d = state.doc;
+    const exec = `ВИКОНАВЕЦЬ\n${d.eName}\nРНОКПП: ${d.eTax}\nАдреса: ${d.eAddr}\nIBAN: ${d.eIban}\nБанк: ${d.eBank}\nТел.: ${d.ePhone}\nЄдиний податок 2 гр. (без ПДВ)\n\n____________ /__________/\n(підпис)`;
+    const cli = `ЗАМОВНИК\n${d.cName || "________________________"}\nРНОКПП: ${d.cTax || "________________"}\nАдреса: ${d.cAddr || "________________"}\nТел.: ${d.cPhone || "________________"}\n\n____________ /__________/\n(підпис)`;
+    return `<div class="sign"><div class="col">${esc(exec)}</div><div class="col">${esc(cli)}</div></div>`;
+  }
+  function estimateRows(){
+    let r = "", n = 0;
+    state.items.forEach((it) => { if(!it.name && !num(it.qty) && !num(it.price)) return; n++;
+      r += `<tr><td>${n}</td><td>${esc(it.name)}</td><td>${esc(it.unit||"")}</td><td class="r">${num(it.qty)}</td><td class="r">${num(it.price).toFixed(2)}</td><td class="r">${(num(it.qty)*num(it.price)).toFixed(2)}</td></tr>`; });
+    return r;
+  }
+
+  function docEstimate(){
+    const d = state.doc, t = compute();
+    return `<div class="doc">
+      <h1>КОШТОРИС${d.no?` (Додаток № 1 до Договору № ${esc(d.no)})`:""}</h1>
+      <p>Об'єкт: ${esc(d.object)||"____________________________________________"}</p>
+      <p>Замовник: ${esc(d.cName)||"____________"} &nbsp; Виконавець: ${esc(d.eName)}</p>
+      <table><thead><tr><th>№</th><th>Найменування робіт</th><th>Од.</th><th class="r">К-сть</th><th class="r">Ціна, грн</th><th class="r">Сума, грн</th></tr></thead>
+      <tbody>${estimateRows()}
+      <tr class="group-row"><td colspan="5">РАЗОМ РОБОТИ</td><td class="r">${t.works.toFixed(2)}</td></tr>
+      ${t.mgmt?`<tr><td colspan="5">Прорабські / організація</td><td class="r">${t.mgmt.toFixed(2)}</td></tr>`:""}
+      ${t.transport?`<tr><td colspan="5">Транспортні витрати</td><td class="r">${t.transport.toFixed(2)}</td></tr>`:""}
+      ${t.materials?`<tr><td colspan="5">Матеріали (постачає Виконавець)</td><td class="r">${t.materials.toFixed(2)}</td></tr>`:""}
+      ${t.discount?`<tr><td colspan="5">Знижка</td><td class="r">−${t.discount.toFixed(2)}</td></tr>`:""}
+      <tr class="group-row"><td colspan="5">ЗАГАЛЬНА СУМА</td><td class="r">${t.total.toFixed(2)}</td></tr>
+      ${t.advance?`<tr><td colspan="5">Сплачено авансом</td><td class="r">−${t.advance.toFixed(2)}</td></tr><tr class="group-row"><td colspan="5">ЗАЛИШОК ДО СПЛАТИ</td><td class="r">${t.grand.toFixed(2)}</td></tr>`:""}
+      </tbody></table>
+      <p>Загальна сума: <b>${fmt(t.total)}</b> (${moneyWords(t.total)}).</p>
+      <p class="muted">Кошторис є попереднім прорахунком. Остаточна сума уточнюється за фактичним обміром площ та фактично виконаним обсягом Робіт.</p>
+      ${reqBlocks()}
+    </div>`;
+  }
+
+  function docContract(){
+    const d = state.doc, t = compute();
+    const no = esc(d.no)||"_______", date = esc(d.date)||"«___» __________ 2026 р.", city = esc(d.city)||"м. ____________";
+    const obj = esc(d.object)||"________________________________________";
+    const cName = esc(d.cName)||"________________________";
+    return `<div class="doc">
+      <h1>ДОГОВІР № ${no}</h1>
+      <div class="doc-sub">про надання послуг з виконання декоративних оздоблювальних робіт та підготовки поверхонь</div>
+      <div class="head-row"><span>${city}</span><span>${date}</span></div>
+      <p>${esc(d.eName)} (РНОКПП ${esc(d.eTax)}), платник єдиного податку другої групи, що діє на підставі виписки з ЄДР (надалі — «Виконавець»), з однієї сторони, та</p>
+      <p>${cName} (надалі — «Замовник»), з іншої сторони, разом — «Сторони», уклали цей Договір про таке:</p>
+
+      <h2>1. ТЕРМІНИ</h2>
+      <p>1.1. «Об'єкт» — приміщення за адресою: ${obj}, де виконуються Роботи.</p>
+      <p>1.2. «Роботи» — комплекс послуг з підготовки поверхонь та нанесення декоративних оздоблювальних покриттів, склад, обсяг і вартість яких визначені у Кошторисі (Додаток № 1).</p>
+      <p>1.3. «Основа» — стіни та інші поверхні Об'єкта разом із наявним на них шаром (штукатурка, шпаклівка, стяжка тощо).</p>
+      <p>1.4. «Матеріали» — декоративні та супутні матеріали, що постачаються Виконавцем.</p>
+      <p>1.5. «Прихований недолік Основи» — недолік основи чи конструкцій (вологість, тріщини під шаром оздоблення, відшарування попередніх шарів, деформація стяжки/конструкцій тощо), який неможливо було виявити при звичайному візуальному огляді під час підписання Акта обстеження основи (Додаток № 2).</p>
+      <p>1.6. «Узгоджені засоби зв'язку» — телефон, Viber, інші месенджери та електронна пошта Сторін, зазначені у реквізитах. Повідомлення, надіслані такими засобами, визнаються належними і мають силу письмових, крім випадків, коли законом вимагається інша форма.</p>
+
+      <h2>2. ПРЕДМЕТ ДОГОВОРУ</h2>
+      <p>2.1. Виконавець зобов'язується за завданням Замовника надати послуги з підготовки поверхонь та виконання декоративних оздоблювальних робіт на Об'єкті, а Замовник — прийняти та оплатити їх на умовах Договору.</p>
+      <p>2.2. Склад, обсяг, види декоративних покриттів, площі та вартість Робіт визначені у Кошторисі (Додаток № 1), що є невід'ємною частиною Договору.</p>
+      <p>2.3. Роботи виконуються у приміщеннях Об'єкта згідно з Кошторисом (Додаток № 1).</p>
+      <p>2.4. Виконавець має право залучати третіх осіб (найманих працівників), залишаючись відповідальним перед Замовником за результат у межах Договору.</p>
+
+      <h2>3. ВАРТІСТЬ ТА ПОРЯДОК РОЗРАХУНКІВ</h2>
+      <p>3.1. Договірна (орієнтовна) вартість Робіт за Кошторисом становить ${fmt(t.works)} (${moneyWords(t.works)}) — без вартості Матеріалів.</p>
+      <p>3.2. Орієнтовна вартість Матеріалів, що постачаються Виконавцем, становить ${fmt(t.materials)} (${moneyWords(t.materials)}) і оплачується окремо від вартості Робіт.</p>
+      <p>3.3. Загальна орієнтовна сума за Договором (Роботи + Матеріали) — ${fmt(t.total)} (${moneyWords(t.total)}).</p>
+      <p>3.4. Виконавець — платник єдиного податку другої групи, не платник ПДВ. Вартість Робіт ПДВ не оподатковується.</p>
+      <p>3.5. Порядок розрахунків: ${t.advance?`до укладення Договору Замовником сплачено аванс ${fmt(t.advance)}, що зараховується в рахунок оплати; `:""}вартість Матеріалів сплачується до закупівлі/постачання Матеріалів на Об'єкт; подальша оплата Робіт — поетапно, у міру виконання та прийняття Замовником обсягів/етапів; остаточний розрахунок — за фактом завершення Робіт, у день їх прийняття після перевірки (Акт здачі-приймання, Додаток № 3), без відстрочення.</p>
+      <p>3.6. Оплата — у безготівковій формі на рахунок Виконавця або готівкою з оформленням розрахункового документа.</p>
+      <p>3.7. Вартість є орієнтовною і уточнюється за фактичним обміром площ та фактично виконаним обсягом. Зміна оформлюється перерахунком в Акті здачі-приймання або додатковою угодою.</p>
+      <p>3.8. Вартість Робіт може бути переглянута у разі зміни цін на Матеріали з незалежних від Виконавця причин більш ніж на 3 % — за погодженням Сторін.</p>
+      <p>3.9. Додаткові роботи та матеріали, не передбачені Кошторисом (зокрема обклеювання/захист стелі, підлоги, плінтусів і відповідні матеріали, додаткові витратні матеріали), оплачуються окремо. Обсяг і вартість погоджуються Сторонами до виконання. Усні домовленості без погодження не створюють зобов'язань для Виконавця.</p>
+
+      <h2>4. СТРОКИ</h2>
+      <p>4.1. Орієнтовний строк виконання Робіт — 30 робочих днів. Етапи (за наявності) — у Додатку № 1.</p>
+      <p>4.2. Перебіг строку починається після оплати Матеріалів, підписання Акта обстеження основи (Додаток № 2) та забезпечення Замовником умов за п. 6.2.</p>
+      <p>4.3. Строк продовжується без санкцій для Виконавця у разі: прострочення оплати; ненадання доступу/умов; зміни обсягу Робіт; виявлення прихованих недоліків Основи; технологічних перерв; форс-мажору.</p>
+      <p>4.4. Технологічні перерви (висихання, набір міцності шарів) не вважаються простроченням Виконавця.</p>
+
+      <h2>5. ЗДАЧА ТА ПРИЙМАННЯ РОБІТ</h2>
+      <p>5.1. Роботи приймаються поетапно та/або в цілому. Виконавець попереджає Замовника про готовність до приймання за один день узгодженими засобами зв'язку.</p>
+      <p>5.2. Замовник у повідомлений день оглядає Роботи та підписує Акт здачі-приймання (Додаток № 3) або надає мотивовану відмову з переліком недоліків.</p>
+      <p>5.3. Підписання Акта здійснюється на папері або шляхом підтвердження Замовником прийняття Робіт узгодженими засобами зв'язку (Viber, інший месенджер). Таке підтвердження прирівнюється до підписання Акта.</p>
+      <p>5.4. Якщо Замовник без поважних причин ухиляється від приймання і не надає мотивовану відмову, Виконавець має право скласти односторонній акт; Роботи вважаються прийнятими.</p>
+      <p>5.5. Не є недоліками природні особливості декоративних покриттів: незначні відмінності відтінку, тону і фактури; індивідуальний малюнок і рельєф ручного нанесення; відмінність від зразка в межах ручної технології; зміна сприйняття кольору залежно від освітлення.</p>
+      <p>5.6. Підписання (підтвердження) Акта означає, що Роботи виконані якісно і в погодженому обсязі та претензій щодо обсягу і явних недоліків Замовник не має.</p>
+
+      <h2>6. ПРАВА ТА ОБОВ'ЯЗКИ СТОРІН</h2>
+      <p>6.1. Виконавець зобов'язується: виконати Роботи відповідно до Кошторису і технології; забезпечити Об'єкт Матеріалами за Кошторисом; до початку Робіт оформити Акт обстеження основи (Додаток № 2); попереджати про обставини, що загрожують якості; після завершення прибрати власні відходи та обладнання.</p>
+      <p>6.2. Замовник зобов'язується: забезпечити доступ до Об'єкта; забезпечити придатні умови (електро- та водопостачання, температурний і вологісний режим, звільнення робочих зон); забезпечити збереження результату; своєчасно оплачувати і приймати Роботи; надати достовірну інформацію про Основу. Замовник підтверджує право замовляти Роботи на Об'єкті.</p>
+      <p>6.3. Виконавець має право не розпочинати/призупинити Роботи у разі несплати, ненадання доступу/умов чи загрози якості — до усунення, та самостійно визначати методи й послідовність Робіт у межах технології.</p>
+      <p>6.4. Замовник має право перевіряти хід і якість Робіт, не втручаючись у діяльність Виконавця, та отримати результат належної якості.</p>
+
+      <h2>7. МАТЕРІАЛИ. ОБСТЕЖЕННЯ ОСНОВИ. ТРІЩИНИ</h2>
+      <p>7.1. Матеріали постачає Виконавець. Частина декоративних Матеріалів — продукція власного виробництва Виконавця; інші Матеріали закуповуються у виробників/постачальників.</p>
+      <p>7.2. За Матеріали власного виробництва Виконавець відповідає в межах гарантії (п. 8). За Матеріали сторонніх виробників відповідальність за заводські дефекти обмежується гарантією відповідного виробника. Виконавець відповідає за відповідність застосованих Матеріалів технології нанесення.</p>
+      <p>7.3. Право власності на Матеріали та ризик випадкового знищення переходять до Замовника з моменту нанесення на Об'єкті.</p>
+      <p>7.4. До початку Робіт Сторони підписують Акт обстеження основи (Додаток № 2). Підписання без зауважень означає погодження стану Основи та прийняття ризику прихованих недоліків.</p>
+      <p>7.5. Тріщини. На окремих поверхнях Основи можуть бути наявні тріщини. Виконавець виконує армування тріщин за технологією. Армування мінімізує, але не виключає ризик повторної появи тріщин у разі рухів, усадки чи деформації конструкцій будівлі або Основи з причин, не пов'язаних із Роботами. Виконавець не несе відповідальності за появу тріщин декоративного шару, спричинену такими причинами після виконання Робіт.</p>
+      <p>7.6. Якщо Основа потребує підготовки понад передбачене Кошторисом, такі роботи виконуються як додаткові (п. 3.9) або Замовником самостійно. У разі відмови Замовника від необхідної підготовки Виконавець звільняється від відповідальності за недоліки, спричинені станом Основи.</p>
+      <p>7.7. Виконавець не відповідає за дефекти результату, спричинені прихованими недоліками Основи; недоліками, від усунення яких Замовник відмовився; деформацією/усадкою конструкцій, протіканнями, вологістю; діями третіх осіб; порушенням умов експлуатації.</p>
+
+      <h2>8. ГАРАНТІЯ ТА ДОГЛЯД</h2>
+      <p>8.1. Виконавець надає гарантію на якість виконаних Робіт строком 12 місяців з дати підписання (підтвердження) Акта здачі-приймання.</p>
+      <p>8.2. Протягом гарантійного строку Виконавець за власний рахунок усуває недоліки, що виникли виключно з вини Виконавця внаслідок порушення технології.</p>
+      <p>8.3. Гарантія не поширюється на недоліки, спричинені прихованими недоліками Основи; механічними/термічними/хімічними пошкодженнями після приймання; впливом вологи; деформацією конструкцій (п. 7.5); порушенням умов догляду; діями третіх осіб; природними особливостями покриттів (п. 5.5).</p>
+      <p>8.4. Догляд: очищення лише м'якими не агресивними засобами; заборонено абразиви, жорсткі щітки, агресивні розчинні засоби; уникати тривалого зволоження та механічних ударів. Недотримання припиняє гарантійні зобов'язання щодо відповідних дефектів.</p>
+      <p>8.5. Звернення за гарантією подається у вигляді претензії узгодженими засобами зв'язку або письмово. Якщо встановлено, що недолік не гарантійний, витрати на огляд несе Замовник.</p>
+
+      <h2>9. ВІДПОВІДАЛЬНІСТЬ ТА ОБМЕЖЕННЯ</h2>
+      <p>9.1. За неналежне виконання зобов'язань Сторони несуть відповідальність згідно з чинним законодавством України та цим Договором.</p>
+      <p>9.2. Загальна відповідальність Виконавця обмежується сумою, фактично сплаченою Замовником за Роботи, у межах, дозволених законодавством. Виконавець не відшкодовує упущену вигоду та збитки, не пов'язані безпосередньо з результатом Робіт.</p>
+      <p>9.3. Виконавець не відповідає за недоліки та зміщення строків з підстав, передбачених п. 4.3, 4.4, 7.5–7.7.</p>
+
+      <h2>10. ФОРС-МАЖОР</h2>
+      <p>10.1. Сторони звільняються від відповідальності, якщо невиконання спричинене обставинами непереборної сили: воєнні дії та їх наслідки, повітряні тривоги, відключення електроенергії/води, мобілізаційні заходи, надзвичайний/воєнний стан, рішення органів влади, стихійні лиха, пожежі тощо.</p>
+      <p>10.2. Строк виконання продовжується на період дії таких обставин та усунення наслідків.</p>
+
+      <h2>11. ЗМІНА ТА РОЗІРВАННЯ</h2>
+      <p>11.1. Договір змінюється/розривається за згодою Сторін та у випадках, передбачених законом.</p>
+      <p>11.2. У разі відмови Замовника від Договору до завершення Робіт Замовник оплачує фактично виконані Роботи, понесені витрати та вартість постачених Матеріалів. Аванс зараховується у розрахунки.</p>
+
+      <h2>12. ВИРІШЕННЯ СПОРІВ</h2>
+      <p>12.1. Спори вирішуються переговорами. У разі недосягнення згоди — у суді відповідно до законодавства України.</p>
+
+      <h2>13. ПЕРСОНАЛЬНІ ДАНІ</h2>
+      <p>13.1. Замовник надає згоду на обробку персональних даних з метою виконання Договору відповідно до Закону України «Про захист персональних даних».</p>
+
+      <h2>14. ІНШІ УМОВИ</h2>
+      <p>14.1. Договір набирає чинності з моменту підписання обома Сторонами і діє до повного виконання зобов'язань.</p>
+      <p>14.2. Зміни дійсні, якщо вчинені письмово та підписані обома Сторонами, крім погоджень, дозволених узгодженими засобами зв'язку.</p>
+      <p>14.3. Договір складено українською мовою у двох примірниках однакової юридичної сили.</p>
+      <p>14.4. Невід'ємні частини Договору: Додаток № 1 «Кошторис»; Додаток № 2 «Акт обстеження основи»; Додаток № 3 «Акт здачі-приймання».</p>
+
+      <h2>15. РЕКВІЗИТИ ТА ПІДПИСИ СТОРІН</h2>
+      ${reqBlocks()}
+    </div>`;
+  }
+
+  function docActBase(){
+    const d = state.doc;
+    return `<div class="doc">
+      <h1>АКТ ОБСТЕЖЕННЯ ОСНОВИ (ПОВЕРХОНЬ)</h1>
+      <div class="doc-sub">Додаток № 2 до Договору № ${esc(d.no)||"_______"} від ${esc(d.date)||"«___» _______ 2026 р."}</div>
+      <div class="head-row"><span>${esc(d.city)||"м. ____________"}</span><span>${esc(d.date)||"«___» ____________ 2026 р."}</span></div>
+      <p>Складено до початку Робіт. Сторони провели спільний візуальний огляд Основи на Об'єкті за адресою: ${esc(d.object)||"____________________________________________"} та зафіксували стан:</p>
+      <table><thead><tr><th>№</th><th>Приміщення / поверхня</th><th>Зафіксований стан, дефекти, тріщини, вологість, готовність</th></tr></thead>
+      <tbody>${[1,2,3,4,5,6].map(i=>`<tr><td>${i}</td><td style="height:22pt"></td><td></td></tr>`).join("")}</tbody></table>
+      <p>Поверхні з наявними тріщинами: ________________________________________________________</p>
+      <p>Сторони підтверджують застосування п. 7.5 Договору: тріщини армуються Виконавцем; армування мінімізує, але не виключає ризик повторної появи тріщин у разі рухів/усадки/деформації конструкцій. Замовник проінформований і приймає цей ризик.</p>
+      <p>Рішення Замовника щодо виявлених недоліків Основи: ☐ усунути силами Виконавця (п. 3.9); ☐ усунути самостійно до продовження Робіт; ☐ продовжити Роботи без усунення — Замовник попереджений і приймає ризики (п. 7.6).</p>
+      <p>Замовник підтверджує, що ознайомлений зі станом Основи, погоджується з ним та приймає ризик прихованих недоліків Основи (п. 7.4 Договору).</p>
+      ${reqBlocks()}
+    </div>`;
+  }
+
+  function docActDone(){
+    const d = state.doc, t = compute();
+    return `<div class="doc">
+      <h1>АКТ ЗДАЧІ-ПРИЙМАННЯ НАДАНИХ ПОСЛУГ</h1>
+      <div class="doc-sub">Додаток № 3 до Договору № ${esc(d.no)||"_______"} від ${esc(d.date)||"«___» _______ 2026 р."}</div>
+      <div class="head-row"><span>${esc(d.city)||"м. ____________"}</span><span>${esc(d.date)||"«___» ____________ 2026 р."}</span></div>
+      <p>Виконавець ${esc(d.eName)} здав, а Замовник ${esc(d.cName)||"____________"} прийняв(ла) послуги за Договором № ${esc(d.no)||"_______"} на Об'єкті за адресою: ${esc(d.object)||"____________________________"}</p>
+      <table><thead><tr><th>№</th><th>Найменування виконаних робіт</th><th>Од.</th><th class="r">К-сть</th><th class="r">Сума, грн</th></tr></thead>
+      <tbody>${(()=>{let r="",n=0;state.items.forEach(it=>{if(!it.name&&!num(it.qty))return;n++;r+=`<tr><td>${n}</td><td>${esc(it.name)}</td><td>${esc(it.unit||"")}</td><td class="r">${num(it.qty)}</td><td class="r">${(num(it.qty)*num(it.price)).toFixed(2)}</td></tr>`;});return r;})()}
+      <tr class="group-row"><td colspan="4">РАЗОМ</td><td class="r">${t.works.toFixed(2)}</td></tr></tbody></table>
+      <p>Загальна вартість наданих послуг (за фактичним обміром): ${fmt(t.total)} (${moneyWords(t.total)}).</p>
+      <p>Сплачено Замовником${t.advance?` (вкл. аванс ${fmt(t.advance)})`:""}: ____________ грн. Залишок: ${fmt(t.grand)}.</p>
+      <p>Роботи виконані в погодженому обсязі з належною якістю. Замовник претензій щодо обсягу та явних недоліків не має. Замовнику надано рекомендації з догляду (Додаток № 1).</p>
+      <p>Зауваження Замовника (за наявності): ___________________________________________________</p>
+      ${reqBlocks()}
+    </div>`;
+  }
+
+  const DOCS = { estimate: docEstimate, contract: docContract, actbase: docActBase, actdone: docActDone };
+  document.querySelectorAll(".doc-btn").forEach((b) => {
+    b.addEventListener("click", () => {
+      const fn = DOCS[b.dataset.doc]; if(!fn) return;
+      $("#print-root").innerHTML = fn();
+      setTimeout(() => window.print(), 60);
+    });
+  });
+
+  function renderAll(){
+    renderItems();
+    ["materials","mgmt","transport","advance","discount"].forEach((id)=>{ $("#"+id).value = state[id]; });
+    Object.keys(docMap).forEach((id)=>{ $("#"+id).value = state.doc[docMap[id]] || ""; });
+    renderTotals();
+  }
   load(); renderAll();
 })();
 </script>
