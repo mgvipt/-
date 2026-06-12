@@ -92,10 +92,16 @@
   #print-root .doc th,#print-root .doc td{border:1px solid #000;padding:3pt 5pt;text-align:left;vertical-align:top;}
   #print-root .doc td.r,#print-root .doc th.r{text-align:right;}
   #print-root .doc .group-row td{background:#fff;font-weight:bold;}
+  #print-root .doc .photos{display:flex;flex-wrap:wrap;gap:4mm;margin-top:6pt;}
+  #print-root .doc .photos img{width:90mm;height:auto;border:1px solid #000;}
+  .photo-thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
+  .photo-thumbs .ph{position:relative;width:74px;height:74px;border-radius:10px;overflow:hidden;border:1px solid var(--line);}
+  .photo-thumbs .ph img{width:100%;height:100%;object-fit:cover;}
+  .photo-thumbs .ph button{position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:12px;line-height:1;}
   #print-root .doc .sign{display:flex;justify-content:space-between;gap:20pt;margin-top:14pt;}
   #print-root .doc .sign .col{width:48%;font-size:10pt;white-space:pre-line;}
   #print-root .doc .muted{color:#444;}
-  @page{size:A4;margin:10mm;}
+  @page{size:A4;margin:8mm;}
   @media print{
     html,body{background:#fff !important;margin:0 !important;}
     body>*:not(#print-root){display:none !important;}
@@ -172,7 +178,13 @@
       <div class="field"><label>IBAN</label><input type="text" id="e-iban" /></div>
       <div class="field"><label>Банк</label><input type="text" id="e-bank" /></div>
 
-      <div class="doc-btns">
+      <h2 style="margin-top:14px">Фото обстеження основи</h2>
+      <p class="hint" style="text-align:left;margin:0 0 8px">Знімки вставляться в «Акт обстеження основи» (Додаток № 2).</p>
+      <button type="button" class="btn btn-add" id="photo-add">📷 Додати фото (камера або галерея)</button>
+      <input type="file" id="photo-input" accept="image/*" multiple hidden />
+      <div class="photo-thumbs" id="photo-thumbs"></div>
+
+      <div class="doc-btns" style="margin-top:14px">
         <div class="doc-btn" data-doc="estimate">📄 Кошторис</div>
         <div class="doc-btn" data-doc="contract">📑 Договір</div>
         <div class="doc-btn" data-doc="actbase">🧱 Акт обстеження основи</div>
@@ -331,8 +343,9 @@
     delete state.items;
     if(!Array.isArray(state.rooms) || !state.rooms.length) state.rooms = [makeRoom("Кімната 1")];
     state.rooms.forEach((r) => { if(!Array.isArray(r.items) || !r.items.length) r.items = [makeItem()]; });
-    state.doc = Object.assign({ object:"",no:"",city:"",date:"",cName:"",cTax:"",cPhone:"",cAddr:"",
+    state.doc = Object.assign({ object:"",no:"",city:"",date:"",cName:"",cTax:"",cPhone:"",cAddr:"",photos:[],
       eName:EXEC_DEFAULT.name,eTax:EXEC_DEFAULT.tax,eAddr:EXEC_DEFAULT.addr,eIban:EXEC_DEFAULT.iban,eBank:EXEC_DEFAULT.bank,ePhone:EXEC_DEFAULT.phone }, state.doc || {});
+    if(!Array.isArray(state.doc.photos)) state.doc.photos = [];
   }
 
   const roomsRoot = $("#rooms");
@@ -739,6 +752,7 @@
       <p>Сторони підтверджують застосування п. 7.5 Договору: тріщини армуються Виконавцем; армування мінімізує, але не виключає ризик повторної появи тріщин у разі рухів/усадки/деформації конструкцій. Замовник проінформований і приймає цей ризик.</p>
       <p>Рішення Замовника щодо виявлених недоліків Основи: ☐ усунути силами Виконавця (п. 3.9); ☐ усунути самостійно до продовження Робіт; ☐ продовжити Роботи без усунення — Замовник попереджений і приймає ризики (п. 7.6).</p>
       <p>Замовник підтверджує, що ознайомлений зі станом Основи, погоджується з ним та приймає ризик прихованих недоліків Основи (п. 7.4 Договору).</p>
+      ${(state.doc.photos && state.doc.photos.length) ? `<h2>Фотофіксація стану основи</h2><div class="photos">${state.doc.photos.map((s) => `<img src="${s}" />`).join("")}</div>` : ""}
       ${reqBlocks()}
     </div>`;
   }
@@ -770,8 +784,40 @@
     });
   });
 
+  // Фото обстеження основи
+  function renderThumbs(){
+    const root = $("#photo-thumbs"); if(!root) return; root.innerHTML = "";
+    (state.doc.photos || []).forEach((src, i) => {
+      const d = document.createElement("div"); d.className = "ph";
+      d.innerHTML = `<img src="${src}" alt=""/><button data-ph="${i}">✕</button>`;
+      root.appendChild(d);
+    });
+  }
+  function addPhotoFiles(files){
+    Array.from(files).forEach((file) => {
+      if(!file.type || !file.type.startsWith("image/")) return;
+      const reader = new FileReader();
+      reader.onload = () => { const img = new Image(); img.onload = () => {
+        const max = 1100; let w = img.width, h = img.height;
+        if(w > h && w > max){ h = Math.round(h*max/w); w = max; } else if(h >= w && h > max){ w = Math.round(w*max/h); h = max; }
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        let data; try{ data = c.toDataURL("image/jpeg", 0.6); }catch(_){ data = reader.result; }
+        if(!state.doc.photos) state.doc.photos = [];
+        state.doc.photos.push(data); renderThumbs();
+        try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(_){ alert("Пам'ять заповнена — видаліть зайві фото."); }
+      }; img.src = reader.result; };
+      reader.readAsDataURL(file);
+    });
+  }
+  $("#photo-add").addEventListener("click", () => $("#photo-input").click());
+  $("#photo-input").addEventListener("change", (e) => { addPhotoFiles(e.target.files); e.target.value = ""; });
+  $("#photo-thumbs").addEventListener("click", (e) => { const i = e.target.dataset.ph; if(i === undefined) return;
+    state.doc.photos.splice(+i, 1); renderThumbs(); save(); });
+
   function renderAll(){
     renderRooms();
+    renderThumbs();
     ["materials","mgmt","km","kmRate","transportMin","advance","discount"].forEach((id)=>{ $("#"+id).value = state[id]; });
     Object.keys(docMap).forEach((id)=>{ $("#"+id).value = state.doc[docMap[id]] || ""; });
     renderTotals();
