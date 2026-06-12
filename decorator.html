@@ -10,7 +10,12 @@
 <title>Wallcov — кошторис і документи</title>
 <style>
   :root{--bg:#0b0b0f;--card:#16161d;--card-2:#1e1e27;--line:#2a2a35;--text:#f4f4f6;--muted:#9a9aa8;--accent:#ff5c8a;--accent-2:#ffb15c;--radius:18px;--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);}
+  body.theme-light{--bg:#f3f4f6;--card:#ffffff;--card-2:#f0f1f4;--line:#e2e3e8;--text:#16161d;--muted:#6b6b78;}
+  body.theme-minimal{--bg:#ffffff;--card:#ffffff;--card-2:#fafafa;--line:#e8e8e8;--text:#1a1a1a;--muted:#999;--accent:#1a1a1a;--accent-2:#666;}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  .theme-switch{display:flex;gap:6px;margin:0 0 16px;}
+  .theme-switch button{flex:1;border:1px solid var(--line);background:var(--card-2);color:var(--muted);border-radius:10px;padding:9px 6px;font-size:13px;font-weight:700;}
+  .theme-switch button.active{border-color:var(--accent);color:var(--text);background:var(--card);}
   html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;font-size:17px;-webkit-text-size-adjust:100%;}
   body{padding:calc(var(--safe-top) + 14px) 16px calc(var(--safe-bottom) + 130px);max-width:560px;margin:0 auto;}
   h1{font-size:25px;font-weight:800;margin:4px 0 2px;letter-spacing:-.3px;}
@@ -66,7 +71,7 @@
 
   /* ---- Документ для друку/PDF ---- */
   #print-root{position:fixed;left:-10000px;top:0;width:210mm;background:#fff;color:#000;}
-  #print-root .doc{font-family:"Times New Roman",Georgia,serif;font-size:11pt;line-height:1.4;color:#000;padding:14mm 15mm;}
+  #print-root .doc{font-family:"Times New Roman",Georgia,serif;font-size:11pt;line-height:1.4;color:#000;background:#fff;padding:14mm 15mm;}
   #print-root .doc h1{font-size:14pt;text-align:center;margin:0 0 2pt;color:#000;}
   #print-root .doc .doc-sub{text-align:center;font-size:11pt;margin:0 0 10pt;}
   #print-root .doc h2{font-size:11pt;text-transform:none;letter-spacing:0;color:#000;margin:10pt 0 4pt;font-weight:bold;}
@@ -75,20 +80,26 @@
   #print-root .doc table{width:100%;border-collapse:collapse;margin:6pt 0;font-size:9.5pt;}
   #print-root .doc th,#print-root .doc td{border:1px solid #000;padding:3pt 5pt;text-align:left;vertical-align:top;}
   #print-root .doc td.r,#print-root .doc th.r{text-align:right;}
-  #print-root .doc .group-row td{background:#eee;font-weight:bold;}
+  #print-root .doc .group-row td{background:#fff;font-weight:bold;}
   #print-root .doc .sign{display:flex;justify-content:space-between;gap:20pt;margin-top:14pt;}
   #print-root .doc .sign .col{width:48%;font-size:10pt;white-space:pre-line;}
   #print-root .doc .muted{color:#444;}
   @media print{
+    html,body{background:#fff !important;}
     body>*:not(#print-root){display:none !important;}
-    #print-root{position:static;left:0;width:auto;}
-    .doc{page-break-after:always;}
+    #print-root{position:static;left:0;width:auto;background:#fff;}
+    .doc{page-break-after:always;background:#fff;}
   }
 </style>
 </head>
 <body>
   <h1>Wallcov · Кошторис</h1>
   <p class="subtitle">Кошторис декоративних робіт · договір та акти · ₴ грн</p>
+  <div class="theme-switch">
+    <button data-theme="dark">🌙 Темна</button>
+    <button data-theme="light">☀️ Світла</button>
+    <button data-theme="minimal">▫️ Мінімал</button>
+  </div>
 
   <section class="card">
     <h2>📐 Площа кімнати</h2>
@@ -699,6 +710,18 @@
     Object.keys(docMap).forEach((id)=>{ $("#"+id).value = state.doc[docMap[id]] || ""; });
     renderTotals();
   }
+  // Теми оформлення
+  const THEME_KEY = "wallcov.theme";
+  function applyTheme(t){
+    document.body.classList.remove("theme-light","theme-minimal");
+    if(t === "light") document.body.classList.add("theme-light");
+    if(t === "minimal") document.body.classList.add("theme-minimal");
+    document.querySelectorAll(".theme-switch button").forEach((b) => b.classList.toggle("active", b.dataset.theme === t));
+    try{ localStorage.setItem(THEME_KEY, t); }catch(_){}
+  }
+  document.querySelectorAll(".theme-switch button").forEach((b) => b.addEventListener("click", () => applyTheme(b.dataset.theme)));
+  applyTheme(localStorage.getItem(THEME_KEY) || "dark");
+
   load(); renderAll();
 })();
 </script>
