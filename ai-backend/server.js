@@ -9,6 +9,7 @@
 
 import express from "express";
 import cors from "cors";
+import crypto from "node:crypto";
 import multer from "multer";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -29,11 +30,21 @@ const WHISPER_MODEL = process.env.WHISPER_MODEL || "/opt/whisper/models/ggml-sma
 const WHISPER_LANG = process.env.WHISPER_LANG || "auto";
 const THREADS = String(os.cpus().length || 2);
 
-// Захист токеном (крім /health)
+// Захист: перевіряємо токен входу в кабінет (той самий JWT_SECRET, що й у cabinet-backend)
+const JWT_SECRET = process.env.JWT_SECRET || "";
+function verifyToken(tok) {
+  if (!tok || !JWT_SECRET) return null;
+  const [b, s] = tok.split(".");
+  if (!b || !s) return null;
+  const e = crypto.createHmac("sha256", JWT_SECRET).update(b).digest("base64url");
+  const A = Buffer.from(s), B = Buffer.from(e);
+  if (A.length !== B.length || !crypto.timingSafeEqual(A, B)) return null;
+  try { return JSON.parse(Buffer.from(b, "base64url").toString()); } catch (_) { return null; }
+}
 app.use((req, res, next) => {
   if (req.path === "/health") return next();
-  const tok = process.env.API_TOKEN;
-  if (tok && req.get("authorization") !== `Bearer ${tok}`) return res.status(401).json({ error: "unauthorized" });
+  const p = verifyToken((req.get("authorization") || "").replace(/^Bearer /, ""));
+  if (!p) return res.status(401).json({ error: "Потрібно увійти в кабінет" });
   next();
 });
 

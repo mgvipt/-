@@ -311,6 +311,7 @@
       <div class="field"><label>Банк</label><input type="text" id="e-bank" /></div>
 
       <input type="file" id="photo-input" accept="image/*" multiple hidden />
+      <input type="file" id="video-input" accept="video/*" hidden />
       <p class="hint" style="text-align:left;margin:6px 0 0">Фото основи додаються у кожній кімнаті (блок «Обстеження основи»). Вони підуть в «Акт обстеження основи» поруч із описом саме цієї кімнати.</p>
 
       <div class="doc-btns" style="margin-top:14px">
@@ -592,6 +593,7 @@
           <label class="mini-field" style="margin-top:8px"><span>Ширина відкосу, м (для перерахунку в м²)</span><input type="number" inputmode="decimal" min="0" step="0.01" value="${rm.revealDepth||""}" data-r="${r}" data-rev="1" placeholder="0.25" /></label>
         </details>
         <div class="area-out">${areaLine(rm)}</div>
+        <button type="button" class="btn btn-add room-video" data-vroom="${r}" style="margin-bottom:10px;color:var(--accent);border-color:var(--accent)">🎬 Відеообхід (ШІ) — авто-кошторис і опис</button>
         <div class="room-items">${itemsHtml}</div>
         <button type="button" class="btn btn-add room-add" data-addr="${r}">+ Позицію в кімнату</button>
         <div class="room-sub">Разом по кімнаті: <b>${fmtShort(roomSub(rm))}</b></div>
@@ -687,6 +689,7 @@
     if(t.dataset.addr !== undefined){ const r = +t.dataset.addr;
       state.rooms[r].items.push(makeItem()); renderRooms(); renderTotals(); save(); focusLastSearch(r); return; }
     if(t.dataset.photoroom !== undefined){ photoTargetRoom = +t.dataset.photoroom; $("#photo-input").click(); return; }
+    if(t.dataset.vroom !== undefined){ videoTargetRoom = +t.dataset.vroom; $("#video-input").click(); return; }
     if(t.dataset.delph !== undefined){ const [r, pi] = t.dataset.delph.split(".").map(Number);
       state.rooms[r].photos.splice(pi, 1); renderRooms(); save(); return; }
     if(t.dataset.q !== undefined){ const r=+t.dataset.r, i=+t.dataset.i, c=roomCalc(state.rooms[r]), val=c[t.dataset.q]||0;
@@ -991,6 +994,26 @@
     });
   }
   $("#photo-input").addEventListener("change", (e) => { addPhotoFiles(e.target.files, photoTargetRoom); e.target.value = ""; });
+  let videoTargetRoom = 0;
+  async function uploadVideo(file, r){
+    if(!cabToken){ alert("Спочатку увійдіть у кабінет"); return; }
+    const rm=state.rooms[r]; if(!rm) return;
+    setSync("🎬 Аналіз відео ШІ… (1–2 хв, не закривайте сторінку)");
+    try{
+      const fd=new FormData(); fd.append("video", file); fd.append("roomName", rm.name||"");
+      const res=await fetch("/ai/process", { method:"POST", headers:{ Authorization:"Bearer "+cabToken }, body: fd });
+      const j=await res.json().catch(()=>({})); if(!res.ok) throw new Error(j.error||("Помилка "+res.status));
+      const data=(j.rooms && j.rooms[0]) || null; if(!data){ setSync("ШІ не розпізнав даних з відео"); return; }
+      if(data.name) rm.name=data.name;
+      if(data.dimensions){ if(data.dimensions.L) rm.L=num(data.dimensions.L); if(data.dimensions.W) rm.W=num(data.dimensions.W); if(data.dimensions.H) rm.H=num(data.dimensions.H); }
+      if(data.inspect) rm.inspect=data.inspect;
+      if(Array.isArray(data.items) && data.items.length){ rm.items=data.items.map((it)=>({ name:it.name||"", unit:it.unit||"", qty:num(it.qty)||0, price:num(it.price)||0, kind: it.kind==="material"?"material":"work" })); }
+      if(Array.isArray(data.photos)){ data.photos.forEach((p)=>{ if(p && p.dataUrl){ rm.photos.push(p.dataUrl); if(p.caption) rm.inspect=(rm.inspect?rm.inspect+"\n":"")+"• "+p.caption; } }); }
+      renderRooms(); renderTotals(); save();
+      setSync("✅ ШІ заповнив кімнату з відео — перевірте й відкоригуйте");
+    }catch(e){ setSync("⚠ Відео-ШІ: "+e.message); alert("Помилка відео-аналізу: "+e.message+"\n\n(перевірте, що AI-бекенд розгорнуто на сервері)"); }
+  }
+  $("#video-input").addEventListener("change", (e)=>{ const f=e.target.files && e.target.files[0]; if(f) uploadVideo(f, videoTargetRoom); e.target.value=""; });
 
   if($("#h-add")) $("#h-add").addEventListener("click", ()=>{
     const date=$("#h-date").value || new Date().toISOString().slice(0,10);
