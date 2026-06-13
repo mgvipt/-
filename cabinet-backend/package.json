@@ -1,0 +1,13 @@
+{
+  "name": "wallcov-cabinet",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Личный кабинет + синхронизация смет между устройствами (Wallcov)",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0"
+  },
+  "engines": { "node": ">=20" }
+}

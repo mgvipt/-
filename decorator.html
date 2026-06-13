@@ -35,6 +35,11 @@
   .picker{display:flex;gap:8px;margin-bottom:10px;}
   .picker select.catalog{flex:1;margin-bottom:0;min-width:0;}
   .area-out{margin:10px 0;text-align:center;color:var(--accent-2);font-size:13px;font-weight:600;}
+  .obj-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);}
+  .obj-row:last-child{border-bottom:none;}
+  .obj-row .obj-open{flex:1;color:var(--text);}
+  .obj-row .obj-open small{color:var(--muted);}
+  .obj-row.active .obj-open{color:var(--accent-2);font-weight:700;}
   .room{border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:14px;background:var(--card-2);}
   .room-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
   .room-name{flex:1;background:var(--field);border:1px solid var(--line);border-radius:11px;color:var(--text);padding:11px 12px;font-size:17px;font-weight:700;}
@@ -118,6 +123,25 @@
     <button data-theme="light">☀️ Світла</button>
     <button data-theme="minimal">▫️ Мінімал</button>
   </div>
+
+  <section class="card" id="cabinet">
+    <h2>👤 Кабінет (синхронізація) <span class="toggle" id="toggle-cab">показати ▾</span></h2>
+    <div id="cab-body" class="collapsed">
+      <div id="cab-auth">
+        <div class="field"><label>Логін</label><input id="cab-login" type="text" autocomplete="username" /></div>
+        <div class="field"><label>Пароль</label><input id="cab-pass" type="password" autocomplete="current-password" /></div>
+        <div class="field" id="cab-code-wrap" style="display:none"><label>Код запрошення (для реєстрації)</label><input id="cab-code" type="text" /></div>
+        <div class="doc-btns"><div class="doc-btn" id="cab-login-btn">Увійти</div><div class="doc-btn" id="cab-reg-btn">Реєстрація</div></div>
+        <p class="hint" id="cab-msg" style="text-align:left"></p>
+      </div>
+      <div id="cab-in" style="display:none">
+        <p style="margin:0 0 10px">Ви: <b id="cab-who"></b> · <a id="cab-logout" style="color:var(--accent)">вийти</a></p>
+        <div id="cab-objects"></div>
+        <button class="btn btn-add" id="cab-new" style="margin-top:8px">➕ Новий об'єкт (зберегти поточний)</button>
+        <p class="hint" id="cab-sync" style="text-align:left"></p>
+      </div>
+    </div>
+  </section>
 
   <section class="card">
     <h2>Кімнати та позиції</h2>
@@ -322,31 +346,31 @@
   const makeItem = () => ({ name:"", unit:"", qty:1, price:0 });
   const makeRoom = (name) => ({ id: uid(), name: name || "", L:0, W:0, H:0, inspect:"", photos:[], items:[makeItem()] });
 
-  let state = {
-    rooms: [], materials: 0, mgmt: 0, km: 0, kmRate: 15, transportMin: 500, advance: 0, discount: 0,
-    doc: { object: "", no: "", city: "", date: "", cName: "", cTax: "", cPhone: "", cAddr: "",
-      eName: EXEC_DEFAULT.name, eTax: EXEC_DEFAULT.tax, eAddr: EXEC_DEFAULT.addr, eIban: EXEC_DEFAULT.iban, eBank: EXEC_DEFAULT.bank, ePhone: EXEC_DEFAULT.phone },
-  };
+  function freshState(){ return { rooms: [], materials:0, mgmt:0, km:0, kmRate:15, transportMin:500, advance:0, discount:0,
+    doc: { object:"", no:"", city:"", date:"", cName:"", cTax:"", cPhone:"", cAddr:"",
+      eName:EXEC_DEFAULT.name, eTax:EXEC_DEFAULT.tax, eAddr:EXEC_DEFAULT.addr, eIban:EXEC_DEFAULT.iban, eBank:EXEC_DEFAULT.bank, ePhone:EXEC_DEFAULT.phone } }; }
 
+  let state = freshState();
   const allItems = () => { const a = []; state.rooms.forEach((r) => r.items.forEach((it) => a.push(it))); return a; };
 
-  function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(_){} }
-  function load(){
-    try{ const r = localStorage.getItem(KEY); if(r) state = Object.assign(state, JSON.parse(r)); }catch(_){}
-    // міграція зі старого формату (плоский items → одна кімната)
-    if(Array.isArray(state.items) && state.items.length && (!Array.isArray(state.rooms) || !state.rooms.length)){
+  function normalizeState(){
+    if(Array.isArray(state.items) && state.items.length && (!Array.isArray(state.rooms) || !state.rooms.length))
       state.rooms = [{ id: uid(), name: "Кімната 1", L:0, W:0, H:0, items: state.items }];
-    }
     delete state.items;
     if(!Array.isArray(state.rooms) || !state.rooms.length) state.rooms = [makeRoom("Кімната 1")];
     state.rooms.forEach((r) => { if(!Array.isArray(r.items) || !r.items.length) r.items = [makeItem()];
       if(typeof r.inspect !== "string") r.inspect = ""; if(!Array.isArray(r.photos)) r.photos = []; });
-    state.doc = Object.assign({ object:"",no:"",city:"",date:"",cName:"",cTax:"",cPhone:"",cAddr:"",
-      eName:EXEC_DEFAULT.name,eTax:EXEC_DEFAULT.tax,eAddr:EXEC_DEFAULT.addr,eIban:EXEC_DEFAULT.iban,eBank:EXEC_DEFAULT.bank,ePhone:EXEC_DEFAULT.phone }, state.doc || {});
-    // міграція старих глобальних фото → у першу кімнату
-    if(Array.isArray(state.doc.photos) && state.doc.photos.length && state.rooms[0]){ state.rooms[0].photos = state.rooms[0].photos.concat(state.doc.photos); }
+    state.doc = Object.assign(freshState().doc, state.doc || {});
+    if(Array.isArray(state.doc.photos) && state.doc.photos.length && state.rooms[0]) state.rooms[0].photos = state.rooms[0].photos.concat(state.doc.photos);
     delete state.doc.photos;
   }
+  function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(_){} scheduleSync(); }
+  function load(){
+    try{ const r = localStorage.getItem(KEY); if(r) state = Object.assign(state, JSON.parse(r)); }catch(_){}
+    normalizeState();
+  }
+  function applyServerData(data){ state = Object.assign(freshState(), data || {}); normalizeState(); renderAll();
+    try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(_){} }
 
   const roomsRoot = $("#rooms");
   // Індекс пошуку + datalist (автопідбір при введенні кількох літер)
@@ -834,7 +858,80 @@
   document.querySelectorAll(".theme-switch button").forEach((b) => b.addEventListener("click", () => applyTheme(b.dataset.theme)));
   applyTheme(localStorage.getItem(THEME_KEY) || "dark");
 
+  // ---- Кабінет / синхронізація між пристроями ----
+  const TKEY="wallcov.cab.token", LKEY="wallcov.cab.login", AKEY="wallcov.cab.active";
+  let cabToken = localStorage.getItem(TKEY) || "", cabLogin = localStorage.getItem(LKEY) || "", activeId = localStorage.getItem(AKEY) || "";
+  let syncTimer = null;
+  async function apiReq(path, opts={}){
+    const headers = Object.assign({ "Content-Type":"application/json" }, opts.headers||{});
+    if(cabToken) headers.Authorization = "Bearer " + cabToken;
+    const r = await fetch(path, Object.assign({}, opts, { headers }));
+    let j = {}; try{ j = await r.json(); }catch(_){}
+    if(r.status === 401){ doLogout(); throw new Error("Сесія завершена — увійдіть знову"); }
+    if(!r.ok) throw new Error(j.error || ("Помилка " + r.status));
+    return j;
+  }
+  const setMsg = (t, ok)=>{ const m=$("#cab-msg"); if(m){ m.textContent=t||""; m.style.color = ok?"var(--accent-2)":"#ff6b6b"; } };
+  const setSync = (t)=>{ const s=$("#cab-sync"); if(s) s.textContent = t||""; };
+  function scheduleSync(){
+    if(!cabToken || !activeId) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(async ()=>{
+      try{ const o = await apiReq("/api/objects/"+activeId, { method:"PUT", body: JSON.stringify({ data: state }) });
+        setSync("Збережено на сервер ✓ " + new Date(o.updated_at).toLocaleTimeString("uk-UA")); }
+      catch(e){ setSync("⚠ " + e.message); }
+    }, 900);
+  }
+  function renderCab(){
+    const anon = !cabToken;
+    $("#cab-auth").style.display = anon ? "" : "none";
+    $("#cab-in").style.display = anon ? "none" : "";
+    if(!anon){ $("#cab-who").textContent = cabLogin; loadObjects().catch((e)=>setSync(e.message)); }
+  }
+  async function loadObjects(){
+    const list = await apiReq("/api/objects");
+    const root = $("#cab-objects"); root.innerHTML = "";
+    if(!list.length){ root.innerHTML = '<p class="hint" style="text-align:left">Об’єктів ще немає. Натисніть «Новий об’єкт».</p>'; return; }
+    list.forEach((o)=>{ const d=document.createElement("div"); d.className="obj-row"+(o.id===activeId?" active":"");
+      const dt=new Date(o.updated_at).toLocaleString("uk-UA");
+      d.innerHTML = `<span class="obj-open" data-open="${o.id}">${o.id===activeId?"● ":""}${escA(o.name)} <small>· ${dt}</small></span><button class="icon-btn" data-delobj="${o.id}">✕</button>`;
+      root.appendChild(d); });
+  }
+  async function openObject(id){
+    const o = await apiReq("/api/objects/"+id);
+    activeId = id; localStorage.setItem(AKEY, id);
+    applyServerData(o.data); setSync("Завантажено: " + o.name); renderCab();
+  }
+  async function newObject(){
+    const name = prompt("Назва об'єкта (адреса / клієнт):", state.doc.object || ("Об'єкт " + new Date().toLocaleDateString("uk-UA")));
+    if(name === null) return;
+    const o = await apiReq("/api/objects", { method:"POST", body: JSON.stringify({ name: name||"Об'єкт", data: state }) });
+    activeId = o.id; localStorage.setItem(AKEY, o.id); setSync("Створено: " + o.name); renderCab();
+  }
+  function doLogout(){ cabToken=cabLogin=activeId=""; [TKEY,LKEY,AKEY].forEach((k)=>localStorage.removeItem(k)); renderCab(); setSync(""); }
+  async function doAuth(kind){
+    const login=$("#cab-login").value.trim(), password=$("#cab-pass").value;
+    if(!login || !password){ setMsg("Вкажіть логін і пароль"); return; }
+    try{ const body={ login, password }; if(kind==="register") body.code=$("#cab-code").value.trim();
+      const j = await apiReq("/auth/"+kind, { method:"POST", body: JSON.stringify(body) });
+      cabToken=j.token; cabLogin=j.login; localStorage.setItem(TKEY,cabToken); localStorage.setItem(LKEY,cabLogin);
+      setMsg("", true); renderCab();
+    }catch(e){ setMsg(e.message); }
+  }
+  $("#toggle-cab").addEventListener("click", ()=>{ const c=$("#cab-body").classList.toggle("collapsed"); $("#toggle-cab").textContent = c?"показати ▾":"сховати ▴"; });
+  $("#cab-login-btn").addEventListener("click", ()=>doAuth("login"));
+  $("#cab-reg-btn").addEventListener("click", ()=>{ const w=$("#cab-code-wrap"); if(w.style.display==="none"){ w.style.display=""; setMsg("Введіть код запрошення і натисніть «Реєстрація» ще раз"); return; } doAuth("register"); });
+  $("#cab-logout").addEventListener("click", doLogout);
+  $("#cab-new").addEventListener("click", ()=>newObject().catch((e)=>setSync(e.message)));
+  $("#cab-objects").addEventListener("click", (e)=>{
+    const op=e.target.closest("[data-open]"); if(op){ openObject(op.dataset.open).catch((err)=>setSync(err.message)); return; }
+    const del=e.target.dataset.delobj; if(del){ if(!confirm("Видалити об'єкт?")) return;
+      apiReq("/api/objects/"+del,{ method:"DELETE" }).then(()=>{ if(del===activeId){ activeId=""; localStorage.removeItem(AKEY); } loadObjects(); }).catch((err)=>setSync(err.message)); }
+  });
+
   load(); renderAll();
+  renderCab();
+  if(cabToken && activeId){ openObject(activeId).catch(()=>{ activeId=""; localStorage.removeItem(AKEY); renderCab(); }); }
 })();
 </script>
 </body>
