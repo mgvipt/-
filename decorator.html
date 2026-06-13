@@ -46,6 +46,7 @@
   #client-view{display:none;}
   body.client .editor-only{display:none !important;}
   body.client #client-view{display:block;}
+  body.anon .editor-only, body.anon #client-view, body.anon .bottombar, body.anon .ro-banner{display:none !important;}
   .hist-row{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;}
   .hist-row:last-child{border-bottom:none;}
   .hist-row .h-meta{color:var(--muted);}
@@ -973,6 +974,9 @@
   }
   function renderCab(){
     const anon = !cabToken;
+    document.body.classList.toggle("anon", anon);
+    $("#toggle-cab").style.display = anon ? "none" : "";
+    if(anon) $("#cab-body").classList.remove("collapsed");
     $("#cab-auth").style.display = anon ? "" : "none";
     $("#cab-in").style.display = anon ? "none" : "";
     if(!anon){ $("#cab-who").textContent = cabLogin; $("#cab-acc-email").value = cabEmail || ""; loadObjects().catch((e)=>setSync(e.message)); }
@@ -984,7 +988,8 @@
     list.forEach((o)=>{ const d=document.createElement("div"); d.className="obj-row"+(o.id===activeId?" active":"");
       const dt=new Date(o.updated_at).toLocaleString("uk-UA");
       const tag = o.role==="client" ? " 🔒" : "";
-      d.innerHTML = `<span class="obj-open" data-open="${o.id}">${o.id===activeId?"● ":""}${escA(o.name)}${tag} <small>· ${dt}</small></span>${o.role==="owner"?`<button class="icon-btn" data-delobj="${o.id}">✕</button>`:""}`;
+      const owner = o.ownerLogin ? ` <span class="h-meta">(${escA(o.ownerLogin)})</span>` : "";
+      d.innerHTML = `<span class="obj-open" data-open="${o.id}">${o.id===activeId?"● ":""}${escA(o.name)}${tag}${owner} <small>· ${dt}</small></span>${o.role==="owner"?`<button class="icon-btn" data-delobj="${o.id}">✕</button>`:""}`;
       root.appendChild(d); });
   }
   async function openObject(id){

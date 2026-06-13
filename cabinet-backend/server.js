@@ -16,6 +16,7 @@ const SECRET = process.env.JWT_SECRET || "change-me-please";
 const SIGNUP_CODE = process.env.SIGNUP_CODE || "";
 const APP_URL = (process.env.APP_URL || "https://calc.wallcovdec.com.ua").replace(/\/$/, "");
 const DB_FILE = process.env.DB_FILE || "./data/db.json";
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
 
 fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 let db = { users: [], objects: [] };
@@ -59,6 +60,7 @@ function verify(tok) {
   try { return JSON.parse(Buffer.from(body, "base64url").toString()); } catch (_) { return null; }
 }
 const norm = (e) => String(e || "").toLowerCase().trim();
+const isAdmin = (u) => !!u && ADMIN_EMAILS.includes(u.email);
 
 const app = express();
 app.use(cors());
@@ -74,13 +76,13 @@ app.post("/auth/register", (req, res) => {
   if (db.users.find((u) => u.email === norm(email))) return res.status(409).json({ error: "Такий email вже зареєстровано" });
   const user = { id: crypto.randomUUID(), login, email: norm(email), pass: hashPw(password) };
   db.users.push(user); persist();
-  res.json({ token: sign({ uid: user.id, login }), login, email: user.email });
+  res.json({ token: sign({ uid: user.id, login }), login, email: user.email, admin: isAdmin(user) });
 });
 app.post("/auth/login", (req, res) => {
   const { login, password } = req.body || {};
   const user = db.users.find((u) => u.login === login || u.email === norm(login));
   if (!user || !checkPw(password, user.pass)) return res.status(401).json({ error: "Невірний логін або пароль" });
-  res.json({ token: sign({ uid: user.id, login: user.login }), login: user.login, email: user.email || "" });
+  res.json({ token: sign({ uid: user.id, login: user.login }), login: user.login, email: user.email || "", admin: isAdmin(user) });
 });
 app.post("/auth/forgot", async (req, res) => {
   const email = norm(req.body?.email);
@@ -122,13 +124,15 @@ app.put("/api/account", auth, (req, res) => {
 });
 
 // --- об'єкти (власник = виконавець; клієнт бачить об'єкти, де clientEmail === його email) ---
-const roleOf = (o, user) => (o.uid === user.id ? "owner" : (o.clientEmail && o.clientEmail === user.email ? "client" : null));
+const roleOf = (o, user) => ((o.uid === user.id || isAdmin(user)) ? "owner" : (o.clientEmail && o.clientEmail === user.email ? "client" : null));
 
 app.get("/api/objects", auth, (req, res) => {
+  const adm = isAdmin(req.user);
   const list = db.objects
     .map((o) => ({ o, role: roleOf(o, req.user) }))
     .filter((x) => x.role)
-    .map((x) => ({ id: x.o.id, name: x.o.name, updated_at: x.o.updated_at, role: x.role, clientEmail: x.role === "owner" ? (x.o.clientEmail || "") : undefined }))
+    .map((x) => { const r = { id: x.o.id, name: x.o.name, updated_at: x.o.updated_at, role: x.role, clientEmail: x.role === "owner" ? (x.o.clientEmail || "") : undefined };
+      if (adm) { const ow = db.users.find((u) => u.id === x.o.uid); r.ownerLogin = ow ? ow.login : ""; } return r; })
     .sort((a, b) => b.updated_at - a.updated_at);
   res.json(list);
 });
@@ -148,7 +152,7 @@ app.post("/api/objects", auth, (req, res) => {
 app.put("/api/objects/:id", auth, (req, res) => {
   const o = db.objects.find((o) => o.id === req.params.id);
   if (!o) return res.status(404).json({ error: "not found" });
-  if (o.uid !== req.user.id) return res.status(403).json({ error: "лише власник може редагувати" });
+  if (o.uid !== req.user.id && !isAdmin(req.user)) return res.status(403).json({ error: "лише власник може редагувати" });
   if (req.body?.name != null) o.name = req.body.name;
   if (req.body?.data != null) o.data = req.body.data;
   if (req.body?.clientEmail != null) o.clientEmail = norm(req.body.clientEmail);
@@ -159,7 +163,7 @@ app.put("/api/objects/:id", auth, (req, res) => {
 app.post("/api/objects/:id/invite", auth, async (req, res) => {
   const o = db.objects.find((o) => o.id === req.params.id);
   if (!o) return res.status(404).json({ error: "not found" });
-  if (o.uid !== req.user.id) return res.status(403).json({ error: "лише власник може запрошувати" });
+  if (o.uid !== req.user.id && !isAdmin(req.user)) return res.status(403).json({ error: "лише власник може запрошувати" });
   const email = norm(req.body?.clientEmail);
   if (!email) return res.status(400).json({ error: "Вкажіть email клієнта" });
   o.clientEmail = email; o.updated_at = Date.now();
@@ -177,7 +181,7 @@ app.post("/api/objects/:id/invite", auth, async (req, res) => {
 app.delete("/api/objects/:id", auth, (req, res) => {
   const i = db.objects.findIndex((o) => o.id === req.params.id);
   if (i < 0) return res.status(404).json({ error: "not found" });
-  if (db.objects[i].uid !== req.user.id) return res.status(403).json({ error: "лише власник може видаляти" });
+  if (db.objects[i].uid !== req.user.id && !isAdmin(req.user)) return res.status(403).json({ error: "лише власник може видаляти" });
   db.objects.splice(i, 1); persist();
   res.json({ ok: true });
 });
