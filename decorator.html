@@ -40,6 +40,10 @@
   .obj-row .obj-open{flex:1;color:var(--text);}
   .obj-row .obj-open small{color:var(--muted);}
   .obj-row.active .obj-open{color:var(--accent-2);font-weight:700;}
+  .ro-banner{display:none;}
+  body.ro .ro-banner{display:block;background:rgba(255,177,92,.15);border:1px solid var(--accent-2);color:var(--accent-2);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:14px;font-weight:700;text-align:center;}
+  body.ro input:not([id^="cab-"]), body.ro textarea:not([id^="cab-"]), body.ro select:not([id^="cab-"]){pointer-events:none;opacity:.6;}
+  body.ro .area-btns, body.ro .room-add, body.ro #add-room, body.ro .b-reset, body.ro .icon-btn, body.ro #cab-new, body.ro #cab-owner-tools{display:none !important;}
   .room{border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:14px;background:var(--card-2);}
   .room-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
   .room-name{flex:1;background:var(--field);border:1px solid var(--line);border-radius:11px;color:var(--text);padding:11px 12px;font-size:17px;font-weight:700;}
@@ -129,9 +133,11 @@
     <div id="cab-body" class="collapsed">
       <div id="cab-auth">
         <div class="field"><label>Логін</label><input id="cab-login" type="text" autocomplete="username" /></div>
+        <div class="field"><label>Email</label><input id="cab-email" type="email" autocomplete="email" placeholder="для реєстрації та відновлення" /></div>
         <div class="field"><label>Пароль</label><input id="cab-pass" type="password" autocomplete="current-password" /></div>
         <div class="field" id="cab-code-wrap" style="display:none"><label>Код запрошення (для реєстрації)</label><input id="cab-code" type="text" /></div>
         <div class="doc-btns"><div class="doc-btn" id="cab-login-btn">Увійти</div><div class="doc-btn" id="cab-reg-btn">Реєстрація</div></div>
+        <p class="hint" style="text-align:left"><a id="cab-forgot" style="color:var(--accent)">Забули пароль?</a></p>
         <p class="hint" id="cab-msg" style="text-align:left"></p>
       </div>
       <div id="cab-in" style="display:none">
@@ -139,9 +145,17 @@
         <div id="cab-objects"></div>
         <button class="btn btn-add" id="cab-new" style="margin-top:8px">➕ Новий об'єкт (зберегти поточний)</button>
         <p class="hint" id="cab-sync" style="text-align:left"></p>
+        <div id="cab-owner-tools">
+          <div class="field" style="margin-top:6px"><label>Доступ клієнту до активного об'єкта (email клієнта)</label><input id="cab-client-email" type="email" placeholder="клієнт бачитиме лише цей об'єкт" /></div>
+          <div class="doc-btn" id="cab-share">Надати клієнту доступ</div>
+        </div>
+        <div class="field" style="margin-top:12px"><label>Ваш email (для відновлення пароля)</label><input id="cab-acc-email" type="email" /></div>
+        <div class="doc-btn" id="cab-save-email" style="margin-top:6px">Зберегти email</div>
       </div>
     </div>
   </section>
+
+  <div class="ro-banner" id="ro-banner">👁 Режим перегляду (клієнт) — дані лише для перегляду, документи доступні</div>
 
   <section class="card">
     <h2>Кімнати та позиції</h2>
@@ -859,9 +873,10 @@
   applyTheme(localStorage.getItem(THEME_KEY) || "dark");
 
   // ---- Кабінет / синхронізація між пристроями ----
-  const TKEY="wallcov.cab.token", LKEY="wallcov.cab.login", AKEY="wallcov.cab.active";
-  let cabToken = localStorage.getItem(TKEY) || "", cabLogin = localStorage.getItem(LKEY) || "", activeId = localStorage.getItem(AKEY) || "";
+  const TKEY="wallcov.cab.token", LKEY="wallcov.cab.login", EKEY="wallcov.cab.email", AKEY="wallcov.cab.active";
+  let cabToken = localStorage.getItem(TKEY) || "", cabLogin = localStorage.getItem(LKEY) || "", cabEmail = localStorage.getItem(EKEY) || "", activeId = localStorage.getItem(AKEY) || "";
   let syncTimer = null;
+  function setReadOnly(flag){ document.body.classList.toggle("ro", !!flag); }
   async function apiReq(path, opts={}){
     const headers = Object.assign({ "Content-Type":"application/json" }, opts.headers||{});
     if(cabToken) headers.Authorization = "Bearer " + cabToken;
@@ -886,7 +901,7 @@
     const anon = !cabToken;
     $("#cab-auth").style.display = anon ? "" : "none";
     $("#cab-in").style.display = anon ? "none" : "";
-    if(!anon){ $("#cab-who").textContent = cabLogin; loadObjects().catch((e)=>setSync(e.message)); }
+    if(!anon){ $("#cab-who").textContent = cabLogin; $("#cab-acc-email").value = cabEmail || ""; loadObjects().catch((e)=>setSync(e.message)); }
   }
   async function loadObjects(){
     const list = await apiReq("/api/objects");
@@ -894,27 +909,33 @@
     if(!list.length){ root.innerHTML = '<p class="hint" style="text-align:left">Об’єктів ще немає. Натисніть «Новий об’єкт».</p>'; return; }
     list.forEach((o)=>{ const d=document.createElement("div"); d.className="obj-row"+(o.id===activeId?" active":"");
       const dt=new Date(o.updated_at).toLocaleString("uk-UA");
-      d.innerHTML = `<span class="obj-open" data-open="${o.id}">${o.id===activeId?"● ":""}${escA(o.name)} <small>· ${dt}</small></span><button class="icon-btn" data-delobj="${o.id}">✕</button>`;
+      const tag = o.role==="client" ? " 🔒" : "";
+      d.innerHTML = `<span class="obj-open" data-open="${o.id}">${o.id===activeId?"● ":""}${escA(o.name)}${tag} <small>· ${dt}</small></span>${o.role==="owner"?`<button class="icon-btn" data-delobj="${o.id}">✕</button>`:""}`;
       root.appendChild(d); });
   }
   async function openObject(id){
     const o = await apiReq("/api/objects/"+id);
     activeId = id; localStorage.setItem(AKEY, id);
-    applyServerData(o.data); setSync("Завантажено: " + o.name); renderCab();
+    applyServerData(o.data);
+    setReadOnly(o.role === "client");
+    if(o.role === "owner" && $("#cab-client-email")) $("#cab-client-email").value = o.clientEmail || "";
+    setSync((o.role==="client" ? "Перегляд: " : "Завантажено: ") + o.name); renderCab();
   }
   async function newObject(){
     const name = prompt("Назва об'єкта (адреса / клієнт):", state.doc.object || ("Об'єкт " + new Date().toLocaleDateString("uk-UA")));
     if(name === null) return;
     const o = await apiReq("/api/objects", { method:"POST", body: JSON.stringify({ name: name||"Об'єкт", data: state }) });
-    activeId = o.id; localStorage.setItem(AKEY, o.id); setSync("Створено: " + o.name); renderCab();
+    activeId = o.id; localStorage.setItem(AKEY, o.id); setReadOnly(false); setSync("Створено: " + o.name); renderCab();
   }
-  function doLogout(){ cabToken=cabLogin=activeId=""; [TKEY,LKEY,AKEY].forEach((k)=>localStorage.removeItem(k)); renderCab(); setSync(""); }
+  function doLogout(){ cabToken=cabLogin=cabEmail=activeId=""; [TKEY,LKEY,EKEY,AKEY].forEach((k)=>localStorage.removeItem(k)); setReadOnly(false); renderCab(); setSync(""); }
   async function doAuth(kind){
-    const login=$("#cab-login").value.trim(), password=$("#cab-pass").value;
+    const login=$("#cab-login").value.trim(), password=$("#cab-pass").value, email=$("#cab-email").value.trim();
     if(!login || !password){ setMsg("Вкажіть логін і пароль"); return; }
-    try{ const body={ login, password }; if(kind==="register") body.code=$("#cab-code").value.trim();
+    if(kind==="register" && !email){ setMsg("Для реєстрації вкажіть email"); return; }
+    try{ const body={ login, password }; if(kind==="register"){ body.email=email; body.code=$("#cab-code").value.trim(); }
       const j = await apiReq("/auth/"+kind, { method:"POST", body: JSON.stringify(body) });
-      cabToken=j.token; cabLogin=j.login; localStorage.setItem(TKEY,cabToken); localStorage.setItem(LKEY,cabLogin);
+      cabToken=j.token; cabLogin=j.login; cabEmail=j.email||"";
+      localStorage.setItem(TKEY,cabToken); localStorage.setItem(LKEY,cabLogin); localStorage.setItem(EKEY,cabEmail);
       setMsg("", true); renderCab();
     }catch(e){ setMsg(e.message); }
   }
@@ -923,6 +944,13 @@
   $("#cab-reg-btn").addEventListener("click", ()=>{ const w=$("#cab-code-wrap"); if(w.style.display==="none"){ w.style.display=""; setMsg("Введіть код запрошення і натисніть «Реєстрація» ще раз"); return; } doAuth("register"); });
   $("#cab-logout").addEventListener("click", doLogout);
   $("#cab-new").addEventListener("click", ()=>newObject().catch((e)=>setSync(e.message)));
+  $("#cab-forgot").addEventListener("click", async ()=>{ const email=$("#cab-email").value.trim();
+    if(!email){ setMsg("Введіть ваш email вище і натисніть «Забули пароль?»"); return; }
+    try{ await apiReq("/auth/forgot", { method:"POST", body: JSON.stringify({ email }) }); setMsg("Якщо такий email є — лист надіслано. Перевірте пошту.", true); }catch(e){ setMsg(e.message); } });
+  $("#cab-share").addEventListener("click", async ()=>{ if(!activeId){ setSync("Спочатку відкрийте або створіть об'єкт"); return; }
+    try{ await apiReq("/api/objects/"+activeId, { method:"PUT", body: JSON.stringify({ clientEmail: $("#cab-client-email").value.trim() }) }); setSync("Доступ клієнту збережено ✓"); }catch(e){ setSync(e.message); } });
+  $("#cab-save-email").addEventListener("click", async ()=>{
+    try{ const j=await apiReq("/api/account", { method:"PUT", body: JSON.stringify({ email: $("#cab-acc-email").value.trim() }) }); cabEmail=j.email||""; localStorage.setItem(EKEY,cabEmail); setSync("Email збережено ✓"); }catch(e){ setSync(e.message); } });
   $("#cab-objects").addEventListener("click", (e)=>{
     const op=e.target.closest("[data-open]"); if(op){ openObject(op.dataset.open).catch((err)=>setSync(err.message)); return; }
     const del=e.target.dataset.delobj; if(del){ if(!confirm("Видалити об'єкт?")) return;
@@ -931,6 +959,8 @@
 
   load(); renderAll();
   renderCab();
+  const resetTok = new URLSearchParams(location.search).get("reset");
+  if(resetTok){ const np = prompt("Введіть новий пароль:"); if(np){ apiReq("/auth/reset", { method:"POST", body: JSON.stringify({ token: resetTok, password: np }) }).then(()=>alert("Пароль змінено. Тепер увійдіть.")).catch((e)=>alert(e.message)); } history.replaceState(null, "", location.pathname); }
   if(cabToken && activeId){ openObject(activeId).catch(()=>{ activeId=""; localStorage.removeItem(AKEY); renderCab(); }); }
 })();
 </script>
