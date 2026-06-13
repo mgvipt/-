@@ -49,7 +49,12 @@
   body.anon .editor-only, body.anon #client-view, body.anon .bottombar, body.anon .ro-banner{display:none !important;}
   #admin-view{display:none;}
   body.adminview #admin-view{display:block;}
-  body.adminview .editor-only, body.adminview #cabinet, body.adminview #client-view, body.adminview .bottombar, body.adminview .ro-banner{display:none !important;}
+  body.adminview .editor-only, body.adminview #cabinet, body.adminview #client-view, body.adminview #projects-view, body.adminview .bottombar, body.adminview .ro-banner{display:none !important;}
+  #projects-view{display:none;}
+  body.projview #projects-view{display:block;}
+  body.projview .editor-only, body.projview #cabinet, body.projview #client-view, body.projview #admin-view, body.projview .bottombar, body.projview .ro-banner{display:none !important;}
+  .proj-group{margin-bottom:14px;}
+  .proj-gtitle{font-weight:800;font-size:14px;color:var(--accent-2);margin-bottom:6px;border-bottom:1px solid var(--line);padding-bottom:4px;}
   .adm-projects{padding-left:6px;}
   .req-box{border:1px solid var(--accent);background:rgba(255,92,138,.08);border-radius:12px;padding:8px 10px;margin-bottom:10px;}
   .req-title{color:var(--accent);font-weight:800;font-size:13px;margin-bottom:6px;}
@@ -171,9 +176,12 @@
         <p class="hint" id="cab-msg" style="text-align:left"></p>
       </div>
       <div id="cab-in" style="display:none">
-        <p style="margin:0 0 10px">Ви: <b id="cab-who"></b> · <a id="cab-logout" style="color:var(--accent)">вийти</a></p>
-        <div id="cab-objects"></div>
-        <button class="btn btn-add" id="cab-new" style="margin-top:8px">➕ Новий об'єкт (зберегти поточний)</button>
+        <p style="margin:0 0 8px">Ви: <b id="cab-who"></b> · <a id="cab-logout" style="color:var(--accent)">вийти</a></p>
+        <p class="hint" id="cab-current" style="text-align:left"></p>
+        <div class="doc-btns" style="grid-template-columns:1fr 1fr">
+          <div class="doc-btn" id="cab-projects">📁 Мої проєкти</div>
+          <div class="doc-btn" id="cab-new">➕ Новий проєкт</div>
+        </div>
         <p class="hint" id="cab-sync" style="text-align:left"></p>
         <div id="cab-req-master-wrap" style="display:none">
           <div class="doc-btn" id="cab-req-master">Подати запит на роль майстра</div>
@@ -188,10 +196,6 @@
           </div>
           <div class="field" style="margin-top:12px"><label>Ваш email (для відновлення пароля)</label><input id="cab-acc-email" type="email" /></div>
           <div class="doc-btn" id="cab-save-email" style="margin-top:6px">Зберегти email</div>
-        </details>
-        <details class="cab-set" id="cab-users-wrap" style="display:none">
-          <summary>👑 Користувачі (адмін) — ролі та доступ</summary>
-          <div id="cab-users" style="margin-top:8px"></div>
         </details>
       </div>
     </div>
@@ -217,6 +221,12 @@
     <h2>🛠 Адмін-панель <span class="toggle" id="admin-back">← вийти з панелі</span></h2>
     <p class="hint" style="text-align:left">Усі зареєстровані користувачі та їх проєкти. Натисніть на користувача → побачите його проєкти; натисніть на проєкт → відкриється для перегляду.</p>
     <div id="admin-users"></div>
+  </section>
+
+  <section class="card" id="projects-view">
+    <h2>📁 Мої проєкти <span class="toggle" id="proj-back">← назад</span></h2>
+    <button class="btn btn-add" id="proj-new" style="margin-bottom:10px">➕ Новий проєкт</button>
+    <div id="proj-list"></div>
   </section>
 
   <section class="card editor-only">
@@ -316,7 +326,12 @@
     </div>
   </section>
 
-  <p class="hint">Ціни в каталозі — ваші робочі ставки (декор). Дані зберігаються на цьому пристрої.</p>
+  <section class="card editor-only" id="save-card">
+    <button class="btn" id="save-now" style="background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#fff;border:none">💾 Зберегти проєкт на сервер</button>
+    <p class="hint" id="save-status" style="text-align:center;margin-top:8px"></p>
+  </section>
+
+  <p class="hint">Ціни в каталозі — ваші робочі ставки (декор). Дані зберігаються на сервері у вашому кабінеті.</p>
 
   <div class="bottombar">
     <button class="b-share" id="share">Поділитися кошторисом</button>
@@ -1011,7 +1026,7 @@
 
   // ---- Кабінет / синхронізація між пристроями ----
   const TKEY="wallcov.cab.token", LKEY="wallcov.cab.login", EKEY="wallcov.cab.email", RKEY="wallcov.cab.role", AKEY="wallcov.cab.active";
-  let cabToken = localStorage.getItem(TKEY) || "", cabLogin = localStorage.getItem(LKEY) || "", cabEmail = localStorage.getItem(EKEY) || "", cabRole = localStorage.getItem(RKEY) || "client", cabWants = false, activeId = localStorage.getItem(AKEY) || "";
+  let cabToken = localStorage.getItem(TKEY) || "", cabLogin = localStorage.getItem(LKEY) || "", cabEmail = localStorage.getItem(EKEY) || "", cabRole = localStorage.getItem(RKEY) || "client", cabWants = false, activeId = localStorage.getItem(AKEY) || "", activeName = "";
   let syncTimer = null;
   const ROLE_LABEL = { admin:"адмін", master:"майстер", client:"клієнт" };
   function setReadOnly(flag){ document.body.classList.toggle("ro", !!flag); document.body.classList.toggle("client", !!flag); }
@@ -1057,8 +1072,8 @@
       try{
         if(!activeId){ // ще не створено — створюємо автоматично
           const o = await apiReq("/api/objects", { method:"POST", body: JSON.stringify({ name: state.doc.object || ("Об'єкт " + new Date().toLocaleDateString("uk-UA")), data: state }) });
-          activeId = o.id; localStorage.setItem(AKEY, o.id);
-          setSync("Створено та збережено на сервер ✓"); if($("#cab-in").style.display !== "none") loadObjects().catch(()=>{}); return;
+          activeId = o.id; activeName = o.name; localStorage.setItem(AKEY, o.id);
+          setSync("Створено та збережено ✓"); updateCurrent(); return;
         }
         const o = await apiReq("/api/objects/"+activeId, { method:"PUT", body: JSON.stringify({ data: state }) });
         setSync("Збережено на сервер ✓ " + new Date(o.updated_at).toLocaleTimeString("uk-UA"));
@@ -1067,14 +1082,20 @@
   }
   function renderRoleUI(){
     $("#cab-who").textContent = cabLogin + " (" + (ROLE_LABEL[cabRole] || "клієнт") + ")";
-    $("#cab-new").style.display = cabRole === "client" ? "none" : "";
-    $("#cab-users-wrap").style.display = cabRole === "admin" ? "" : "none";
-    $("#cab-req-master-wrap").style.display = cabRole === "client" ? "" : "none";
+    const isClient = cabRole === "client";
+    $("#cab-new").style.display = isClient ? "none" : "";
+    $("#cab-projects").style.display = isClient ? "none" : "";
+    $("#cab-req-master-wrap").style.display = isClient ? "" : "none";
     $("#cab-req-master").style.display = cabWants ? "none" : "";
     $("#cab-req-msg").textContent = cabWants ? "Запит на роль майстра надіслано. Очікуйте підтвердження адміна." : "";
     $("#cab-admin-panel").style.display = cabRole === "admin" ? "" : "none";
-    if(cabRole === "admin") loadUsers().catch(()=>{});
+    if(cabRole === "admin") refreshBadge();
+    updateCurrent();
   }
+  function refreshBadge(){ apiReq("/api/users").then(updateReqBadge).catch(()=>{}); }
+  function updateCurrent(){ const el=$("#cab-current"); if(el) el.textContent = activeId ? ("Поточний проєкт: " + (activeName||"—")) : "Новий проєкт (збережеться автоматично)"; }
+  function enterProjects(){ document.body.classList.add("projview"); loadProjects().catch((e)=>setSync(e.message)); }
+  function exitProjects(){ document.body.classList.remove("projview"); }
   function enterAdmin(){ document.body.classList.add("adminview"); loadAdminUsers().catch((e)=>{}); }
   function exitAdmin(){ document.body.classList.remove("adminview"); }
   async function loadAdminUsers(){
@@ -1097,11 +1118,6 @@
   function updateReqBadge(list){ const n=list.filter((u)=>u.wantsMaster && u.role==="client").length; const b=$("#cab-admin-panel"); if(!b) return;
     b.textContent="🛠 Адмін-панель (усі користувачі)"+(n?` · ⏳ ${n}`:"");
     b.style.background=n?"rgba(255,92,138,.14)":""; b.style.borderColor=n?"var(--accent)":"var(--accent-2)"; b.style.color=n?"var(--accent)":"var(--accent-2)"; }
-  async function loadUsers(){
-    const root=$("#cab-users"); if(!root) return;
-    const list = await apiReq("/api/users"); updateReqBadge(list);
-    root.innerHTML = pendingHtml(list) + list.map((u)=>userRow(u,false)).join("");
-  }
   function renderCab(){
     const anon = !cabToken;
     document.body.classList.toggle("anon", anon);
@@ -1109,34 +1125,49 @@
     if(anon) $("#cab-body").classList.remove("collapsed");
     $("#cab-auth").style.display = anon ? "" : "none";
     $("#cab-in").style.display = anon ? "none" : "";
-    if(!anon){ $("#cab-acc-email").value = cabEmail || ""; renderRoleUI(); refreshMe(); loadObjects().catch((e)=>setSync(e.message)); }
+    if(!anon){ $("#cab-acc-email").value = cabEmail || ""; renderRoleUI(); refreshMe(); }
   }
-  async function loadObjects(){
+  async function loadProjects(){
+    const root = $("#proj-list"); if(!root) return;
     const list = await apiReq("/api/objects");
-    const root = $("#cab-objects"); root.innerHTML = "";
-    if(!list.length){ root.innerHTML = '<p class="hint" style="text-align:left">Об’єктів ще немає. Натисніть «Новий об’єкт».</p>'; return; }
-    list.forEach((o)=>{ const d=document.createElement("div"); d.className="obj-row"+(o.id===activeId?" active":"");
-      const dt=new Date(o.updated_at).toLocaleString("uk-UA");
-      const tag = o.role==="client" ? " 🔒" : "";
-      const owner = o.ownerLogin ? ` <span class="h-meta">(${escA(o.ownerLogin)})</span>` : "";
-      d.innerHTML = `<span class="obj-open" data-open="${o.id}">${o.id===activeId?"● ":""}${escA(o.name)}${tag}${owner} <small>· ${dt}</small></span>${o.role==="owner"?`<button class="icon-btn" data-delobj="${o.id}">✕</button>`:""}`;
-      root.appendChild(d); });
+    if(!list.length){ root.innerHTML = '<p class="hint" style="text-align:left">Проєктів ще немає. Натисніть «Новий проєкт».</p>'; return; }
+    const groups = {}; list.forEach((o)=>{ const k=o.clientEmail||""; (groups[k]=groups[k]||[]).push(o); });
+    let html = "";
+    Object.keys(groups).sort().forEach((k)=>{
+      const arr=groups[k]; const title = k ? ("👤 "+escA(k)) : "📂 Без клієнта";
+      html += `<div class="proj-group"><div class="proj-gtitle">${title} — ${arr.length} проєкт(ів)</div>` +
+        arr.map((o)=>`<div class="obj-row"${o.id===activeId?' style="background:rgba(255,177,92,.1)"':''}><span class="obj-open" data-openobj="${o.id}">${o.id===activeId?"● ":""}📄 ${escA(o.name)}${o.ownerLogin?` <small class="h-meta">(${escA(o.ownerLogin)})</small>`:""} <small class="h-meta">· ${new Date(o.updated_at).toLocaleString("uk-UA")}</small></span>${o.role==="owner"?`<button class="icon-btn" data-delobj="${o.id}">✕</button>`:""}</div>`).join("") +
+        `</div>`;
+    });
+    root.innerHTML = html;
   }
   async function openObject(id){
     const o = await apiReq("/api/objects/"+id);
-    activeId = id; localStorage.setItem(AKEY, id);
+    activeId = id; activeName = o.name; localStorage.setItem(AKEY, id);
     applyServerData(o.data);
     setReadOnly(o.role === "client");
     if(o.role === "owner" && $("#cab-client-email")) $("#cab-client-email").value = o.clientEmail || "";
-    setSync((o.role==="client" ? "Перегляд: " : "Завантажено: ") + o.name); renderCab();
+    setSync((o.role==="client" ? "Перегляд: " : "Відкрито: ") + o.name); updateCurrent();
+  }
+  async function saveNow(){
+    if(!cabToken || cabRole === "client") return;
+    const ss = $("#save-status");
+    try{
+      if(!activeId){ const o = await apiReq("/api/objects", { method:"POST", body: JSON.stringify({ name: state.doc.object || activeName || ("Об'єкт " + new Date().toLocaleDateString("uk-UA")), data: state }) }); activeId=o.id; activeName=o.name; localStorage.setItem(AKEY,o.id); }
+      else { const o = await apiReq("/api/objects/"+activeId, { method:"PUT", body: JSON.stringify({ name: state.doc.object || activeName, data: state }) }); activeName=o.name; }
+      const m = "Збережено ✓ " + new Date().toLocaleTimeString("uk-UA"); setSync(m); if(ss) ss.textContent=m; updateCurrent();
+    }catch(e){ setSync("⚠ "+e.message); if(ss) ss.textContent=e.message; }
   }
   async function newObject(){
-    const name = prompt("Назва об'єкта (адреса / клієнт):", state.doc.object || ("Об'єкт " + new Date().toLocaleDateString("uk-UA")));
+    const name = prompt("Назва нового проєкту (адреса / клієнт):", "");
     if(name === null) return;
-    const o = await apiReq("/api/objects", { method:"POST", body: JSON.stringify({ name: name||"Об'єкт", data: state }) });
-    activeId = o.id; localStorage.setItem(AKEY, o.id); setReadOnly(false); setSync("Створено: " + o.name); renderCab();
+    const ex = { eName:state.doc.eName, eTax:state.doc.eTax, eAddr:state.doc.eAddr, eIban:state.doc.eIban, eBank:state.doc.eBank, ePhone:state.doc.ePhone };
+    state = freshState(); Object.assign(state.doc, ex); state.doc.object = name || "";
+    normalizeState(); activeId = ""; activeName = name || "Новий проєкт"; localStorage.removeItem(AKEY);
+    renderAll(); setReadOnly(false);
+    await saveNow();
   }
-  function doLogout(){ cabToken=cabLogin=cabEmail=activeId=""; cabRole="client"; cabWants=false; [TKEY,LKEY,EKEY,RKEY,AKEY].forEach((k)=>localStorage.removeItem(k)); setReadOnly(false); renderCab(); setSync(""); }
+  function doLogout(){ cabToken=cabLogin=cabEmail=activeId=activeName=""; cabRole="client"; cabWants=false; [TKEY,LKEY,EKEY,RKEY,AKEY].forEach((k)=>localStorage.removeItem(k)); setReadOnly(false); document.body.classList.remove("projview","adminview"); renderCab(); setSync(""); }
   async function doAuth(kind){
     const login=$("#cab-login").value.trim(), password=$("#cab-pass").value, email=$("#cab-email").value.trim();
     if(!login || !password){ setMsg("Вкажіть логін і пароль"); return; }
@@ -1164,10 +1195,15 @@
     try{ const j=await apiReq("/api/account", { method:"PUT", body: JSON.stringify({ email: $("#cab-acc-email").value.trim() }) }); cabEmail=j.email||""; localStorage.setItem(EKEY,cabEmail); setSync("Email збережено ✓"); }catch(e){ setSync(e.message); } });
   $("#cab-req-master").addEventListener("click", async ()=>{
     try{ const j=await apiReq("/api/account", { method:"PUT", body: JSON.stringify({ requestMaster:true }) }); cabWants=!!j.wantsMaster; renderRoleUI(); }catch(e){ $("#cab-req-msg").textContent=e.message; } });
-  $("#cab-users").addEventListener("change", async (e)=>{ const t=e.target; if(!t.classList.contains("u-role")) return;
-    try{ await apiReq("/api/users/"+t.dataset.uid+"/role", { method:"PUT", body: JSON.stringify({ role: t.value }) }); loadUsers(); }catch(err){ alert(err.message); } });
-  $("#cab-users").addEventListener("click", (e)=>{ const mm=e.target.dataset.makemaster; if(!mm) return;
-    apiReq("/api/users/"+mm+"/role", { method:"PUT", body: JSON.stringify({ role:"master" }) }).then(()=>loadUsers()).catch((err)=>alert(err.message)); });
+  $("#cab-projects").addEventListener("click", enterProjects);
+  $("#proj-back").addEventListener("click", exitProjects);
+  $("#proj-new").addEventListener("click", ()=>newObject().then(()=>exitProjects()).catch((e)=>setSync(e.message)));
+  $("#save-now").addEventListener("click", saveNow);
+  $("#proj-list").addEventListener("click", (e)=>{
+    const op=e.target.closest("[data-openobj]"); if(op){ openObject(op.dataset.openobj).then(()=>exitProjects()).catch((err)=>setSync(err.message)); return; }
+    const del=e.target.dataset.delobj; if(del){ if(!confirm("Видалити проєкт?")) return;
+      apiReq("/api/objects/"+del,{ method:"DELETE" }).then(()=>{ if(del===activeId){ activeId=""; activeName=""; localStorage.removeItem(AKEY); updateCurrent(); } loadProjects(); }).catch((err)=>setSync(err.message)); }
+  });
   $("#cab-admin-panel").addEventListener("click", enterAdmin);
   $("#admin-back").addEventListener("click", exitAdmin);
   $("#admin-users").addEventListener("change", async (e)=>{ const t=e.target; if(!t.classList.contains("u-role")) return;
@@ -1183,11 +1219,6 @@
       return; }
     const op=e.target.closest("[data-openobj]");
     if(op){ openObject(op.dataset.openobj).then(()=>exitAdmin()).catch((err)=>alert(err.message)); }
-  });
-  $("#cab-objects").addEventListener("click", (e)=>{
-    const op=e.target.closest("[data-open]"); if(op){ openObject(op.dataset.open).catch((err)=>setSync(err.message)); return; }
-    const del=e.target.dataset.delobj; if(del){ if(!confirm("Видалити об'єкт?")) return;
-      apiReq("/api/objects/"+del,{ method:"DELETE" }).then(()=>{ if(del===activeId){ activeId=""; localStorage.removeItem(AKEY); } loadObjects(); }).catch((err)=>setSync(err.message)); }
   });
 
   load(); renderAll();
