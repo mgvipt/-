@@ -25,7 +25,7 @@ server {
   client_max_body_size 25M;
   location /api/  { proxy_pass http://127.0.0.1:8090/api/;  proxy_set_header Host \$host; proxy_read_timeout 120s; }
   location /auth/ { proxy_pass http://127.0.0.1:8090/auth/; proxy_set_header Host \$host; }
-  location /      { try_files \$uri /index.html; }
+  location /      { add_header Cache-Control "no-store" always; try_files \$uri /index.html; }
 }
 NGINX
 ln -sf "${NGINX_FILE}" "/etc/nginx/sites-enabled/${DOMAIN}"
