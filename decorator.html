@@ -155,6 +155,10 @@
         <div id="cab-objects"></div>
         <button class="btn btn-add" id="cab-new" style="margin-top:8px">➕ Новий об'єкт (зберегти поточний)</button>
         <p class="hint" id="cab-sync" style="text-align:left"></p>
+        <div id="cab-req-master-wrap" style="display:none">
+          <div class="doc-btn" id="cab-req-master">Подати запит на роль майстра</div>
+          <p class="hint" id="cab-req-msg" style="text-align:left"></p>
+        </div>
         <details class="cab-set">
           <summary>⚙ Доступ клієнту та налаштування акаунта</summary>
           <div id="cab-owner-tools">
@@ -163,6 +167,10 @@
           </div>
           <div class="field" style="margin-top:12px"><label>Ваш email (для відновлення пароля)</label><input id="cab-acc-email" type="email" /></div>
           <div class="doc-btn" id="cab-save-email" style="margin-top:6px">Зберегти email</div>
+        </details>
+        <details class="cab-set" id="cab-users-wrap" style="display:none">
+          <summary>👑 Користувачі (адмін) — ролі та доступ</summary>
+          <div id="cab-users" style="margin-top:8px"></div>
         </details>
       </div>
     </div>
@@ -924,9 +932,10 @@
   applyTheme(localStorage.getItem(THEME_KEY) || "dark");
 
   // ---- Кабінет / синхронізація між пристроями ----
-  const TKEY="wallcov.cab.token", LKEY="wallcov.cab.login", EKEY="wallcov.cab.email", AKEY="wallcov.cab.active";
-  let cabToken = localStorage.getItem(TKEY) || "", cabLogin = localStorage.getItem(LKEY) || "", cabEmail = localStorage.getItem(EKEY) || "", activeId = localStorage.getItem(AKEY) || "";
+  const TKEY="wallcov.cab.token", LKEY="wallcov.cab.login", EKEY="wallcov.cab.email", RKEY="wallcov.cab.role", AKEY="wallcov.cab.active";
+  let cabToken = localStorage.getItem(TKEY) || "", cabLogin = localStorage.getItem(LKEY) || "", cabEmail = localStorage.getItem(EKEY) || "", cabRole = localStorage.getItem(RKEY) || "client", cabWants = false, activeId = localStorage.getItem(AKEY) || "";
   let syncTimer = null;
+  const ROLE_LABEL = { admin:"адмін", master:"майстер", client:"клієнт" };
   function setReadOnly(flag){ document.body.classList.toggle("ro", !!flag); document.body.classList.toggle("client", !!flag); }
   function paidSum(){ return (state.history||[]).filter((h)=>h.type==="Аванс"||h.type==="Оплата").reduce((a,h)=>a+num(h.amount),0); }
   function histRowHtml(h, idx, withDel){
@@ -972,6 +981,27 @@
       catch(e){ setSync("⚠ " + e.message); }
     }, 900);
   }
+  function renderRoleUI(){
+    $("#cab-who").textContent = cabLogin + " (" + (ROLE_LABEL[cabRole] || "клієнт") + ")";
+    $("#cab-new").style.display = cabRole === "client" ? "none" : "";
+    $("#cab-users-wrap").style.display = cabRole === "admin" ? "" : "none";
+    $("#cab-req-master-wrap").style.display = cabRole === "client" ? "" : "none";
+    $("#cab-req-master").style.display = cabWants ? "none" : "";
+    $("#cab-req-msg").textContent = cabWants ? "Запит на роль майстра надіслано. Очікуйте підтвердження адміна." : "";
+    if(cabRole === "admin") loadUsers().catch(()=>{});
+  }
+  function refreshMe(){ apiReq("/api/me").then((j)=>{ cabRole=j.role; cabWants=!!j.wantsMaster; localStorage.setItem(RKEY,cabRole); renderRoleUI(); }).catch(()=>{}); }
+  async function loadUsers(){
+    const root=$("#cab-users"); if(!root) return;
+    const list = await apiReq("/api/users");
+    root.innerHTML = "";
+    list.forEach((u)=>{ const d=document.createElement("div"); d.className="obj-row";
+      const wants = (u.wantsMaster && u.role==="client") ? " · ⏳запит на майстра" : "";
+      const sel = u.env ? '<span class="h-meta">адмін (за замовч.)</span>'
+        : `<select class="catalog u-role" data-uid="${u.id}" style="width:auto;margin:0">${["client","master","admin"].map((r)=>`<option value="${r}"${u.role===r?" selected":""}>${ROLE_LABEL[r]}</option>`).join("")}</select>`;
+      d.innerHTML = `<span class="obj-open">${escA(u.login)} <small class="h-meta">${escA(u.email||"")} · об'єктів: ${u.objects}${wants}</small></span>${sel}`;
+      root.appendChild(d); });
+  }
   function renderCab(){
     const anon = !cabToken;
     document.body.classList.toggle("anon", anon);
@@ -979,7 +1009,7 @@
     if(anon) $("#cab-body").classList.remove("collapsed");
     $("#cab-auth").style.display = anon ? "" : "none";
     $("#cab-in").style.display = anon ? "none" : "";
-    if(!anon){ $("#cab-who").textContent = cabLogin; $("#cab-acc-email").value = cabEmail || ""; loadObjects().catch((e)=>setSync(e.message)); }
+    if(!anon){ $("#cab-acc-email").value = cabEmail || ""; renderRoleUI(); refreshMe(); loadObjects().catch((e)=>setSync(e.message)); }
   }
   async function loadObjects(){
     const list = await apiReq("/api/objects");
@@ -1006,15 +1036,15 @@
     const o = await apiReq("/api/objects", { method:"POST", body: JSON.stringify({ name: name||"Об'єкт", data: state }) });
     activeId = o.id; localStorage.setItem(AKEY, o.id); setReadOnly(false); setSync("Створено: " + o.name); renderCab();
   }
-  function doLogout(){ cabToken=cabLogin=cabEmail=activeId=""; [TKEY,LKEY,EKEY,AKEY].forEach((k)=>localStorage.removeItem(k)); setReadOnly(false); renderCab(); setSync(""); }
+  function doLogout(){ cabToken=cabLogin=cabEmail=activeId=""; cabRole="client"; cabWants=false; [TKEY,LKEY,EKEY,RKEY,AKEY].forEach((k)=>localStorage.removeItem(k)); setReadOnly(false); renderCab(); setSync(""); }
   async function doAuth(kind){
     const login=$("#cab-login").value.trim(), password=$("#cab-pass").value, email=$("#cab-email").value.trim();
     if(!login || !password){ setMsg("Вкажіть логін і пароль"); return; }
     if(kind==="register" && !email){ setMsg("Для реєстрації вкажіть email"); return; }
     try{ const body={ login, password }; if(kind==="register") body.email=email;
       const j = await apiReq("/auth/"+kind, { method:"POST", body: JSON.stringify(body) });
-      cabToken=j.token; cabLogin=j.login; cabEmail=j.email||"";
-      localStorage.setItem(TKEY,cabToken); localStorage.setItem(LKEY,cabLogin); localStorage.setItem(EKEY,cabEmail);
+      cabToken=j.token; cabLogin=j.login; cabEmail=j.email||""; cabRole=j.role||"client";
+      localStorage.setItem(TKEY,cabToken); localStorage.setItem(LKEY,cabLogin); localStorage.setItem(EKEY,cabEmail); localStorage.setItem(RKEY,cabRole);
       setMsg("", true); renderCab();
     }catch(e){ setMsg(e.message); }
   }
@@ -1032,6 +1062,10 @@
       setSync(j.mailed ? "Клієнту надіслано лист із доступом ✓" : "Доступ надано (лист не надіслано — пошта ще не налаштована)"); }catch(e){ setSync(e.message); } });
   $("#cab-save-email").addEventListener("click", async ()=>{
     try{ const j=await apiReq("/api/account", { method:"PUT", body: JSON.stringify({ email: $("#cab-acc-email").value.trim() }) }); cabEmail=j.email||""; localStorage.setItem(EKEY,cabEmail); setSync("Email збережено ✓"); }catch(e){ setSync(e.message); } });
+  $("#cab-req-master").addEventListener("click", async ()=>{
+    try{ const j=await apiReq("/api/account", { method:"PUT", body: JSON.stringify({ requestMaster:true }) }); cabWants=!!j.wantsMaster; renderRoleUI(); }catch(e){ $("#cab-req-msg").textContent=e.message; } });
+  $("#cab-users").addEventListener("change", async (e)=>{ const t=e.target; if(!t.classList.contains("u-role")) return;
+    try{ await apiReq("/api/users/"+t.dataset.uid+"/role", { method:"PUT", body: JSON.stringify({ role: t.value }) }); loadUsers(); }catch(err){ alert(err.message); } });
   $("#cab-objects").addEventListener("click", (e)=>{
     const op=e.target.closest("[data-open]"); if(op){ openObject(op.dataset.open).catch((err)=>setSync(err.message)); return; }
     const del=e.target.dataset.delobj; if(del){ if(!confirm("Видалити об'єкт?")) return;

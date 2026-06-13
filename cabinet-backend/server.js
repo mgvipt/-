@@ -60,7 +60,9 @@ function verify(tok) {
   try { return JSON.parse(Buffer.from(body, "base64url").toString()); } catch (_) { return null; }
 }
 const norm = (e) => String(e || "").toLowerCase().trim();
-const isAdmin = (u) => !!u && ADMIN_EMAILS.includes(u.email);
+const effRole = (u) => (u && (ADMIN_EMAILS.includes(u.email) || u.role === "admin")) ? "admin" : (u && u.role === "master" ? "master" : "client");
+const isAdmin = (u) => effRole(u) === "admin";
+const isMaster = (u) => effRole(u) !== "client";
 
 const app = express();
 app.use(cors());
@@ -74,15 +76,15 @@ app.post("/auth/register", (req, res) => {
   if (!login || !password || !email) return res.status(400).json({ error: "Вкажіть логін, email і пароль" });
   if (db.users.find((u) => u.login === login)) return res.status(409).json({ error: "Такий логін вже існує" });
   if (db.users.find((u) => u.email === norm(email))) return res.status(409).json({ error: "Такий email вже зареєстровано" });
-  const user = { id: crypto.randomUUID(), login, email: norm(email), pass: hashPw(password) };
+  const user = { id: crypto.randomUUID(), login, email: norm(email), pass: hashPw(password), role: "client", wantsMaster: false };
   db.users.push(user); persist();
-  res.json({ token: sign({ uid: user.id, login }), login, email: user.email, admin: isAdmin(user) });
+  res.json({ token: sign({ uid: user.id, login }), login, email: user.email, role: effRole(user) });
 });
 app.post("/auth/login", (req, res) => {
   const { login, password } = req.body || {};
   const user = db.users.find((u) => u.login === login || u.email === norm(login));
   if (!user || !checkPw(password, user.pass)) return res.status(401).json({ error: "Невірний логін або пароль" });
-  res.json({ token: sign({ uid: user.id, login: user.login }), login: user.login, email: user.email || "", admin: isAdmin(user) });
+  res.json({ token: sign({ uid: user.id, login: user.login }), login: user.login, email: user.email || "", role: effRole(user) });
 });
 app.post("/auth/forgot", async (req, res) => {
   const email = norm(req.body?.email);
@@ -113,6 +115,8 @@ function auth(req, res, next) {
   next();
 }
 
+app.get("/api/me", auth, (req, res) => res.json({ login: req.user.login, email: req.user.email || "", role: effRole(req.user), wantsMaster: !!req.user.wantsMaster }));
+
 app.put("/api/account", auth, (req, res) => {
   if (req.body?.email != null) {
     const e = norm(req.body.email);
@@ -120,7 +124,23 @@ app.put("/api/account", auth, (req, res) => {
     req.user.email = e;
   }
   if (req.body?.password) req.user.pass = hashPw(req.body.password);
-  persist(); res.json({ ok: true, email: req.user.email || "" });
+  if (req.body?.requestMaster) req.user.wantsMaster = true;
+  persist(); res.json({ ok: true, email: req.user.email || "", role: effRole(req.user), wantsMaster: !!req.user.wantsMaster });
+});
+
+// --- адмін: список користувачів і керування ролями ---
+function adminOnly(req, res, next) { if (!isAdmin(req.user)) return res.status(403).json({ error: "лише адмін" }); next(); }
+app.get("/api/users", auth, adminOnly, (req, res) => {
+  res.json(db.users.map((u) => ({ id: u.id, login: u.login, email: u.email || "", role: effRole(u),
+    wantsMaster: !!u.wantsMaster, env: ADMIN_EMAILS.includes(u.email), objects: db.objects.filter((o) => o.uid === u.id).length })));
+});
+app.put("/api/users/:id/role", auth, adminOnly, (req, res) => {
+  const u = db.users.find((x) => x.id === req.params.id);
+  if (!u) return res.status(404).json({ error: "not found" });
+  const role = req.body?.role;
+  if (!["client", "master", "admin"].includes(role)) return res.status(400).json({ error: "невірна роль" });
+  u.role = role; if (role !== "client") u.wantsMaster = false;
+  persist(); res.json({ ok: true, role: effRole(u) });
 });
 
 // --- об'єкти (власник = виконавець; клієнт бачить об'єкти, де clientEmail === його email) ---
@@ -144,6 +164,7 @@ app.get("/api/objects/:id", auth, (req, res) => {
   res.json({ id: o.id, name: o.name, data: o.data, updated_at: o.updated_at, role, clientEmail: role === "owner" ? (o.clientEmail || "") : undefined });
 });
 app.post("/api/objects", auth, (req, res) => {
+  if (!isMaster(req.user)) return res.status(403).json({ error: "Лише майстер може створювати об'єкти. Подайте запит адміну." });
   const o = { id: crypto.randomUUID(), uid: req.user.id, name: req.body?.name || "Об'єкт",
     clientEmail: norm(req.body?.clientEmail), data: req.body?.data || {}, updated_at: Date.now() };
   db.objects.push(o); persist();
