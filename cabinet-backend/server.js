@@ -134,6 +134,11 @@ app.get("/api/users", auth, adminOnly, (req, res) => {
   res.json(db.users.map((u) => ({ id: u.id, login: u.login, email: u.email || "", role: effRole(u),
     wantsMaster: !!u.wantsMaster, env: ADMIN_EMAILS.includes(u.email), objects: db.objects.filter((o) => o.uid === u.id).length })));
 });
+app.get("/api/users/:id/objects", auth, adminOnly, (req, res) => {
+  res.json(db.objects.filter((o) => o.uid === req.params.id)
+    .map((o) => ({ id: o.id, name: o.name, updated_at: o.updated_at, clientEmail: o.clientEmail || "" }))
+    .sort((a, b) => b.updated_at - a.updated_at));
+});
 app.put("/api/users/:id/role", auth, adminOnly, (req, res) => {
   const u = db.users.find((x) => x.id === req.params.id);
   if (!u) return res.status(404).json({ error: "not found" });

@@ -47,6 +47,10 @@
   body.client .editor-only{display:none !important;}
   body.client #client-view{display:block;}
   body.anon .editor-only, body.anon #client-view, body.anon .bottombar, body.anon .ro-banner{display:none !important;}
+  #admin-view{display:none;}
+  body.adminview #admin-view{display:block;}
+  body.adminview .editor-only, body.adminview #cabinet, body.adminview #client-view, body.adminview .bottombar, body.adminview .ro-banner{display:none !important;}
+  .adm-projects{padding-left:6px;}
   .hist-row{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;}
   .hist-row:last-child{border-bottom:none;}
   .hist-row .h-meta{color:var(--muted);}
@@ -159,6 +163,7 @@
           <div class="doc-btn" id="cab-req-master">Подати запит на роль майстра</div>
           <p class="hint" id="cab-req-msg" style="text-align:left"></p>
         </div>
+        <button class="btn btn-add" id="cab-admin-panel" style="display:none;margin-top:8px;color:var(--accent-2);border-color:var(--accent-2)">🛠 Адмін-панель (усі користувачі та проєкти)</button>
         <details class="cab-set">
           <summary>⚙ Доступ клієнту та налаштування акаунта</summary>
           <div id="cab-owner-tools">
@@ -190,6 +195,12 @@
     </div>
     <h2 style="margin-top:16px">Історія оплат і відвантажень</h2>
     <div id="cv-history"></div>
+  </section>
+
+  <section class="card" id="admin-view">
+    <h2>🛠 Адмін-панель <span class="toggle" id="admin-back">← вийти з панелі</span></h2>
+    <p class="hint" style="text-align:left">Усі зареєстровані користувачі та їх проєкти. Натисніть на користувача → побачите його проєкти; натисніть на проєкт → відкриється для перегляду.</p>
+    <div id="admin-users"></div>
   </section>
 
   <section class="card editor-only">
@@ -988,7 +999,19 @@
     $("#cab-req-master-wrap").style.display = cabRole === "client" ? "" : "none";
     $("#cab-req-master").style.display = cabWants ? "none" : "";
     $("#cab-req-msg").textContent = cabWants ? "Запит на роль майстра надіслано. Очікуйте підтвердження адміна." : "";
+    $("#cab-admin-panel").style.display = cabRole === "admin" ? "" : "none";
     if(cabRole === "admin") loadUsers().catch(()=>{});
+  }
+  function enterAdmin(){ document.body.classList.add("adminview"); loadAdminUsers().catch((e)=>{}); }
+  function exitAdmin(){ document.body.classList.remove("adminview"); }
+  async function loadAdminUsers(){
+    const root=$("#admin-users"); if(!root) return;
+    const list=await apiReq("/api/users"); root.innerHTML="";
+    list.forEach((u)=>{ const wrap=document.createElement("div");
+      const wants=(u.wantsMaster&&u.role==="client")?" · ⏳запит":"";
+      const sel=u.env?'<span class="h-meta">адмін</span>':`<select class="catalog u-role" data-uid="${u.id}" style="width:auto;margin:0">${["client","master","admin"].map((r)=>`<option value="${r}"${u.role===r?" selected":""}>${ROLE_LABEL[r]}</option>`).join("")}</select>`;
+      wrap.innerHTML=`<div class="obj-row"><span class="obj-open" data-projects="${u.id}">▸ ${escA(u.login)} <small class="h-meta">${escA(u.email||"")} · проєктів: ${u.objects}${wants}</small></span>${sel}</div><div class="adm-projects" id="ap-${u.id}"></div>`;
+      root.appendChild(wrap); });
   }
   function refreshMe(){ apiReq("/api/me").then((j)=>{ cabRole=j.role; cabWants=!!j.wantsMaster; localStorage.setItem(RKEY,cabRole); renderRoleUI(); }).catch(()=>{}); }
   async function loadUsers(){
@@ -1066,6 +1089,21 @@
     try{ const j=await apiReq("/api/account", { method:"PUT", body: JSON.stringify({ requestMaster:true }) }); cabWants=!!j.wantsMaster; renderRoleUI(); }catch(e){ $("#cab-req-msg").textContent=e.message; } });
   $("#cab-users").addEventListener("change", async (e)=>{ const t=e.target; if(!t.classList.contains("u-role")) return;
     try{ await apiReq("/api/users/"+t.dataset.uid+"/role", { method:"PUT", body: JSON.stringify({ role: t.value }) }); loadUsers(); }catch(err){ alert(err.message); } });
+  $("#cab-admin-panel").addEventListener("click", enterAdmin);
+  $("#admin-back").addEventListener("click", exitAdmin);
+  $("#admin-users").addEventListener("change", async (e)=>{ const t=e.target; if(!t.classList.contains("u-role")) return;
+    try{ await apiReq("/api/users/"+t.dataset.uid+"/role", { method:"PUT", body: JSON.stringify({ role: t.value }) }); loadAdminUsers(); }catch(err){ alert(err.message); } });
+  $("#admin-users").addEventListener("click", async (e)=>{
+    const p=e.target.closest("[data-projects]");
+    if(p){ const uid=p.dataset.projects, box=$("#ap-"+uid); if(!box) return;
+      if(box.innerHTML){ box.innerHTML=""; return; }
+      try{ const objs=await apiReq("/api/users/"+uid+"/objects");
+        box.innerHTML = objs.length ? objs.map((o)=>`<div class="obj-row" style="padding-left:14px"><span class="obj-open" data-openobj="${o.id}">📄 ${escA(o.name)} <small class="h-meta">· ${new Date(o.updated_at).toLocaleString("uk-UA")}</small></span></div>`).join("") : '<p class="hint" style="text-align:left;padding-left:14px">Немає проєктів</p>';
+      }catch(err){ box.innerHTML='<p class="hint" style="padding-left:14px">'+escA(err.message)+'</p>'; }
+      return; }
+    const op=e.target.closest("[data-openobj]");
+    if(op){ openObject(op.dataset.openobj).then(()=>exitAdmin()).catch((err)=>alert(err.message)); }
+  });
   $("#cab-objects").addEventListener("click", (e)=>{
     const op=e.target.closest("[data-open]"); if(op){ openObject(op.dataset.open).catch((err)=>setSync(err.message)); return; }
     const del=e.target.dataset.delobj; if(del){ if(!confirm("Видалити об'єкт?")) return;
