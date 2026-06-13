@@ -51,6 +51,8 @@
   body.adminview #admin-view{display:block;}
   body.adminview .editor-only, body.adminview #cabinet, body.adminview #client-view, body.adminview .bottombar, body.adminview .ro-banner{display:none !important;}
   .adm-projects{padding-left:6px;}
+  .req-box{border:1px solid var(--accent);background:rgba(255,92,138,.08);border-radius:12px;padding:8px 10px;margin-bottom:10px;}
+  .req-title{color:var(--accent);font-weight:800;font-size:13px;margin-bottom:6px;}
   .hist-row{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;}
   .hist-row:last-child{border-bottom:none;}
   .hist-row .h-meta{color:var(--muted);}
@@ -1048,24 +1050,28 @@
   function exitAdmin(){ document.body.classList.remove("adminview"); }
   async function loadAdminUsers(){
     const root=$("#admin-users"); if(!root) return;
-    const list=await apiReq("/api/users"); root.innerHTML="";
-    list.forEach((u)=>{ const wrap=document.createElement("div");
-      const wants=(u.wantsMaster&&u.role==="client")?" · ⏳запит":"";
-      const sel=u.env?'<span class="h-meta">адмін</span>':`<select class="catalog u-role" data-uid="${u.id}" style="width:auto;margin:0">${["client","master","admin"].map((r)=>`<option value="${r}"${u.role===r?" selected":""}>${ROLE_LABEL[r]}</option>`).join("")}</select>`;
-      wrap.innerHTML=`<div class="obj-row"><span class="obj-open" data-projects="${u.id}">▸ ${escA(u.login)} <small class="h-meta">${escA(u.email||"")} · проєктів: ${u.objects}${wants}</small></span>${sel}</div><div class="adm-projects" id="ap-${u.id}"></div>`;
-      root.appendChild(wrap); });
+    const list=await apiReq("/api/users"); updateReqBadge(list);
+    root.innerHTML = pendingHtml(list) + list.map((u)=>userRow(u,true)).join("");
   }
   function refreshMe(){ apiReq("/api/me").then((j)=>{ cabRole=j.role; cabWants=!!j.wantsMaster; localStorage.setItem(RKEY,cabRole); renderRoleUI(); }).catch(()=>{}); }
+  function pendingHtml(list){ const p=list.filter((u)=>u.wantsMaster && u.role==="client"); if(!p.length) return "";
+    return '<div class="req-box"><div class="req-title">⏳ Запити на роль майстра ('+p.length+')</div>' +
+      p.map((u)=>`<div class="obj-row"><span>${escA(u.login)} <small class="h-meta">${escA(u.email||"")}</small></span><button type="button" class="doc-btn" data-makemaster="${u.id}" style="width:auto;padding:7px 10px">✅ Зробити майстром</button></div>`).join("") + '</div>'; }
+  function userRow(u, withProjects){
+    const wants=(u.wantsMaster && u.role==="client")?" · ⏳запит":"";
+    const sel=u.env?'<span class="h-meta">адмін (за замовч.)</span>'
+      :`<select class="catalog u-role" data-uid="${u.id}" style="width:auto;margin:0">${["client","master","admin"].map((r)=>`<option value="${r}"${u.role===r?" selected":""}>${ROLE_LABEL[r]}</option>`).join("")}</select>`;
+    const head=withProjects?`<span class="obj-open" data-projects="${u.id}">▸ ${escA(u.login)} <small class="h-meta">${escA(u.email||"")} · проєктів: ${u.objects}${wants}</small></span>`
+      :`<span>${escA(u.login)} <small class="h-meta">${escA(u.email||"")} · проєктів: ${u.objects}${wants}</small></span>`;
+    return `<div class="obj-row">${head}${sel}</div>` + (withProjects?`<div class="adm-projects" id="ap-${u.id}"></div>`:"");
+  }
+  function updateReqBadge(list){ const n=list.filter((u)=>u.wantsMaster && u.role==="client").length; const b=$("#cab-admin-panel"); if(!b) return;
+    b.textContent="🛠 Адмін-панель (усі користувачі)"+(n?` · ⏳ ${n}`:"");
+    b.style.background=n?"rgba(255,92,138,.14)":""; b.style.borderColor=n?"var(--accent)":"var(--accent-2)"; b.style.color=n?"var(--accent)":"var(--accent-2)"; }
   async function loadUsers(){
     const root=$("#cab-users"); if(!root) return;
-    const list = await apiReq("/api/users");
-    root.innerHTML = "";
-    list.forEach((u)=>{ const d=document.createElement("div"); d.className="obj-row";
-      const wants = (u.wantsMaster && u.role==="client") ? " · ⏳запит на майстра" : "";
-      const sel = u.env ? '<span class="h-meta">адмін (за замовч.)</span>'
-        : `<select class="catalog u-role" data-uid="${u.id}" style="width:auto;margin:0">${["client","master","admin"].map((r)=>`<option value="${r}"${u.role===r?" selected":""}>${ROLE_LABEL[r]}</option>`).join("")}</select>`;
-      d.innerHTML = `<span class="obj-open">${escA(u.login)} <small class="h-meta">${escA(u.email||"")} · об'єктів: ${u.objects}${wants}</small></span>${sel}`;
-      root.appendChild(d); });
+    const list = await apiReq("/api/users"); updateReqBadge(list);
+    root.innerHTML = pendingHtml(list) + list.map((u)=>userRow(u,false)).join("");
   }
   function renderCab(){
     const anon = !cabToken;
@@ -1131,11 +1137,14 @@
     try{ const j=await apiReq("/api/account", { method:"PUT", body: JSON.stringify({ requestMaster:true }) }); cabWants=!!j.wantsMaster; renderRoleUI(); }catch(e){ $("#cab-req-msg").textContent=e.message; } });
   $("#cab-users").addEventListener("change", async (e)=>{ const t=e.target; if(!t.classList.contains("u-role")) return;
     try{ await apiReq("/api/users/"+t.dataset.uid+"/role", { method:"PUT", body: JSON.stringify({ role: t.value }) }); loadUsers(); }catch(err){ alert(err.message); } });
+  $("#cab-users").addEventListener("click", (e)=>{ const mm=e.target.dataset.makemaster; if(!mm) return;
+    apiReq("/api/users/"+mm+"/role", { method:"PUT", body: JSON.stringify({ role:"master" }) }).then(()=>loadUsers()).catch((err)=>alert(err.message)); });
   $("#cab-admin-panel").addEventListener("click", enterAdmin);
   $("#admin-back").addEventListener("click", exitAdmin);
   $("#admin-users").addEventListener("change", async (e)=>{ const t=e.target; if(!t.classList.contains("u-role")) return;
     try{ await apiReq("/api/users/"+t.dataset.uid+"/role", { method:"PUT", body: JSON.stringify({ role: t.value }) }); loadAdminUsers(); }catch(err){ alert(err.message); } });
   $("#admin-users").addEventListener("click", async (e)=>{
+    const mm=e.target.dataset.makemaster; if(mm){ try{ await apiReq("/api/users/"+mm+"/role", { method:"PUT", body: JSON.stringify({ role:"master" }) }); loadAdminUsers(); }catch(err){ alert(err.message); } return; }
     const p=e.target.closest("[data-projects]");
     if(p){ const uid=p.dataset.projects, box=$("#ap-"+uid); if(!box) return;
       if(box.innerHTML){ box.innerHTML=""; return; }
