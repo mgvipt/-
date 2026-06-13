@@ -40,6 +40,9 @@
   .obj-row .obj-open{flex:1;color:var(--text);}
   .obj-row .obj-open small{color:var(--muted);}
   .obj-row.active .obj-open{color:var(--accent-2);font-weight:700;}
+  .cab-set{margin-top:12px;border-top:1px solid var(--line);padding-top:10px;}
+  .cab-set summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:700;list-style:none;}
+  .cab-set summary::-webkit-details-marker{display:none;}
   .ro-banner{display:none;}
   body.ro .ro-banner{display:block;background:rgba(255,177,92,.15);border:1px solid var(--accent-2);color:var(--accent-2);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:14px;font-weight:700;text-align:center;}
   body.ro input:not([id^="cab-"]), body.ro textarea:not([id^="cab-"]), body.ro select:not([id^="cab-"]){pointer-events:none;opacity:.6;}
@@ -133,10 +136,9 @@
     <div id="cab-body" class="collapsed">
       <div id="cab-auth">
         <div class="field"><label>Логін</label><input id="cab-login" type="text" autocomplete="username" /></div>
-        <div class="field"><label>Email</label><input id="cab-email" type="email" autocomplete="email" placeholder="для реєстрації та відновлення" /></div>
+        <div class="field"><label>Email</label><input id="cab-email" type="email" autocomplete="email" placeholder="для входу та відновлення пароля" /></div>
         <div class="field"><label>Пароль</label><input id="cab-pass" type="password" autocomplete="current-password" /></div>
-        <div class="field" id="cab-code-wrap" style="display:none"><label>Код запрошення (для реєстрації)</label><input id="cab-code" type="text" /></div>
-        <div class="doc-btns"><div class="doc-btn" id="cab-login-btn">Увійти</div><div class="doc-btn" id="cab-reg-btn">Реєстрація</div></div>
+        <div class="doc-btns"><div class="doc-btn" id="cab-login-btn">Увійти</div><div class="doc-btn" id="cab-reg-btn">Зареєструватися</div></div>
         <p class="hint" style="text-align:left"><a id="cab-forgot" style="color:var(--accent)">Забули пароль?</a></p>
         <p class="hint" id="cab-msg" style="text-align:left"></p>
       </div>
@@ -145,12 +147,15 @@
         <div id="cab-objects"></div>
         <button class="btn btn-add" id="cab-new" style="margin-top:8px">➕ Новий об'єкт (зберегти поточний)</button>
         <p class="hint" id="cab-sync" style="text-align:left"></p>
-        <div id="cab-owner-tools">
-          <div class="field" style="margin-top:6px"><label>Запросити клієнта на активний об'єкт (його email)</label><input id="cab-client-email" type="email" placeholder="клієнт отримає лист і бачитиме лише цей об'єкт" /></div>
-          <div class="doc-btn" id="cab-share">📧 Надіслати клієнту доступ</div>
-        </div>
-        <div class="field" style="margin-top:12px"><label>Ваш email (для відновлення пароля)</label><input id="cab-acc-email" type="email" /></div>
-        <div class="doc-btn" id="cab-save-email" style="margin-top:6px">Зберегти email</div>
+        <details class="cab-set">
+          <summary>⚙ Доступ клієнту та налаштування акаунта</summary>
+          <div id="cab-owner-tools">
+            <div class="field" style="margin-top:8px"><label>Запросити клієнта на активний об'єкт (його email)</label><input id="cab-client-email" type="email" placeholder="клієнт отримає лист і бачитиме лише цей об'єкт" /></div>
+            <div class="doc-btn" id="cab-share">📧 Надіслати клієнту доступ</div>
+          </div>
+          <div class="field" style="margin-top:12px"><label>Ваш email (для відновлення пароля)</label><input id="cab-acc-email" type="email" /></div>
+          <div class="doc-btn" id="cab-save-email" style="margin-top:6px">Зберегти email</div>
+        </details>
       </div>
     </div>
   </section>
@@ -932,7 +937,7 @@
     const login=$("#cab-login").value.trim(), password=$("#cab-pass").value, email=$("#cab-email").value.trim();
     if(!login || !password){ setMsg("Вкажіть логін і пароль"); return; }
     if(kind==="register" && !email){ setMsg("Для реєстрації вкажіть email"); return; }
-    try{ const body={ login, password }; if(kind==="register"){ body.email=email; body.code=$("#cab-code").value.trim(); }
+    try{ const body={ login, password }; if(kind==="register") body.email=email;
       const j = await apiReq("/auth/"+kind, { method:"POST", body: JSON.stringify(body) });
       cabToken=j.token; cabLogin=j.login; cabEmail=j.email||"";
       localStorage.setItem(TKEY,cabToken); localStorage.setItem(LKEY,cabLogin); localStorage.setItem(EKEY,cabEmail);
@@ -941,7 +946,7 @@
   }
   $("#toggle-cab").addEventListener("click", ()=>{ const c=$("#cab-body").classList.toggle("collapsed"); $("#toggle-cab").textContent = c?"показати ▾":"сховати ▴"; });
   $("#cab-login-btn").addEventListener("click", ()=>doAuth("login"));
-  $("#cab-reg-btn").addEventListener("click", ()=>{ const w=$("#cab-code-wrap"); if(w.style.display==="none"){ w.style.display=""; setMsg("Введіть код запрошення і натисніть «Реєстрація» ще раз"); return; } doAuth("register"); });
+  $("#cab-reg-btn").addEventListener("click", ()=>doAuth("register"));
   $("#cab-logout").addEventListener("click", doLogout);
   $("#cab-new").addEventListener("click", ()=>newObject().catch((e)=>setSync(e.message)));
   $("#cab-forgot").addEventListener("click", async ()=>{ const email=$("#cab-email").value.trim();
