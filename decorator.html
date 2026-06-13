@@ -43,6 +43,13 @@
   .cab-set{margin-top:12px;border-top:1px solid var(--line);padding-top:10px;}
   .cab-set summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:700;list-style:none;}
   .cab-set summary::-webkit-details-marker{display:none;}
+  #client-view{display:none;}
+  body.client .editor-only{display:none !important;}
+  body.client #client-view{display:block;}
+  .hist-row{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;}
+  .hist-row:last-child{border-bottom:none;}
+  .hist-row .h-meta{color:var(--muted);}
+  .hist-row b{font-variant-numeric:tabular-nums;}
   .ro-banner{display:none;}
   body.ro .ro-banner{display:block;background:rgba(255,177,92,.15);border:1px solid var(--accent-2);color:var(--accent-2);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:14px;font-weight:700;text-align:center;}
   body.ro input:not([id^="cab-"]), body.ro textarea:not([id^="cab-"]), body.ro select:not([id^="cab-"]){pointer-events:none;opacity:.6;}
@@ -162,14 +169,28 @@
 
   <div class="ro-banner" id="ro-banner">👁 Режим перегляду (клієнт) — дані лише для перегляду, документи доступні</div>
 
-  <section class="card">
+  <section class="card client-only" id="client-view">
+    <h2 id="cv-title">Ваш об'єкт</h2>
+    <div class="totals" id="cv-summary"></div>
+    <h2 style="margin-top:16px">Документи</h2>
+    <div class="doc-btns">
+      <div class="doc-btn" data-doc="estimate">📄 Кошторис</div>
+      <div class="doc-btn" data-doc="contract">📑 Договір</div>
+      <div class="doc-btn" data-doc="actbase">🧱 Акт обстеження</div>
+      <div class="doc-btn" data-doc="actdone">✅ Акт виконаних робіт</div>
+    </div>
+    <h2 style="margin-top:16px">Історія оплат і відвантажень</h2>
+    <div id="cv-history"></div>
+  </section>
+
+  <section class="card editor-only">
     <h2>Кімнати та позиції</h2>
     <p class="hint" style="text-align:left;margin:0 0 12px">Вкажіть розміри кімнати — площа стін/підлоги/стелі та периметр порахуються самі. Кнопки додають позицію з готовою площею.</p>
     <div id="rooms"></div>
     <button class="btn btn-add" id="add-room">+ Додати кімнату</button>
   </section>
 
-  <section class="card">
+  <section class="card editor-only">
     <h2>Параметри</h2>
     <div class="totals">
       <div class="row"><label>Додаткові матеріали (вручну)<span class="hint-q">понад вибрані з каталогу</span></label><div class="ctl"><input type="number" id="materials" inputmode="decimal" min="0" step="100" value="0" /><span class="unit">₴</span></div></div>
@@ -182,7 +203,7 @@
     </div>
   </section>
 
-  <section class="card totals">
+  <section class="card totals editor-only">
     <h2>Підсумок</h2>
     <div class="line"><span>Роботи (позиції)</span><b id="t-works">0 ₴</b></div>
     <div class="line"><span>Прорабські / організація</span><b id="t-mgmt">0 ₴</b></div>
@@ -193,7 +214,19 @@
     <div class="grand"><span>ЗАЛИШОК ДО СПЛАТИ</span><b id="t-grand">0 ₴</b></div>
   </section>
 
-  <section class="card">
+  <section class="card editor-only">
+    <h2>Оплати та відвантаження</h2>
+    <div class="field"><label>Дата</label><input id="h-date" type="date" /></div>
+    <div class="field"><label>Тип</label><select id="h-type" class="catalog"><option>Аванс</option><option>Оплата</option><option>Відвантаження матеріалу</option></select></div>
+    <div class="item-grid">
+      <div class="field"><label>Сума, ₴</label><input id="h-amount" type="number" inputmode="decimal" min="0" placeholder="0" /></div>
+      <div class="field"><label>Опис / матеріал</label><input id="h-note" type="text" placeholder="напр. фарба, доставка" /></div>
+    </div>
+    <button class="btn btn-add" id="h-add">+ Додати запис</button>
+    <div id="hist-list" style="margin-top:10px"></div>
+  </section>
+
+  <section class="card editor-only">
     <h2>Документи та реквізити <span class="toggle" id="toggle-doc">показати ▾</span></h2>
     <div id="doc-body" class="collapsed">
       <div class="field"><label>Об'єкт (адреса)</label><input type="text" id="d-object" placeholder="м. ..., вул. ..., буд. ..." /></div>
@@ -365,7 +398,7 @@
   const makeItem = () => ({ name:"", unit:"", qty:1, price:0 });
   const makeRoom = (name) => ({ id: uid(), name: name || "", L:0, W:0, H:0, inspect:"", photos:[], items:[makeItem()] });
 
-  function freshState(){ return { rooms: [], materials:0, mgmt:0, km:0, kmRate:15, transportMin:500, advance:0, discount:0,
+  function freshState(){ return { rooms: [], history: [], materials:0, mgmt:0, km:0, kmRate:15, transportMin:500, advance:0, discount:0,
     doc: { object:"", no:"", city:"", date:"", cName:"", cTax:"", cPhone:"", cAddr:"",
       eName:EXEC_DEFAULT.name, eTax:EXEC_DEFAULT.tax, eAddr:EXEC_DEFAULT.addr, eIban:EXEC_DEFAULT.iban, eBank:EXEC_DEFAULT.bank, ePhone:EXEC_DEFAULT.phone } }; }
 
@@ -382,6 +415,7 @@
     state.doc = Object.assign(freshState().doc, state.doc || {});
     if(Array.isArray(state.doc.photos) && state.doc.photos.length && state.rooms[0]) state.rooms[0].photos = state.rooms[0].photos.concat(state.doc.photos);
     delete state.doc.photos;
+    if(!Array.isArray(state.history)) state.history = [];
   }
   function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(_){} scheduleSync(); }
   function load(){
@@ -859,11 +893,22 @@
   }
   $("#photo-input").addEventListener("change", (e) => { addPhotoFiles(e.target.files, photoTargetRoom); e.target.value = ""; });
 
+  if($("#h-add")) $("#h-add").addEventListener("click", ()=>{
+    const date=$("#h-date").value || new Date().toISOString().slice(0,10);
+    const type=$("#h-type").value, amount=num($("#h-amount").value), note=$("#h-note").value.trim();
+    if(!amount && type!=="Відвантаження матеріалу" && !note) return;
+    state.history.push({ date, type, amount, note });
+    $("#h-amount").value=""; $("#h-note").value="";
+    renderHistory(); renderClientView(); save();
+  });
+  if($("#hist-list")) $("#hist-list").addEventListener("click", (e)=>{ const i=e.target.dataset.delh; if(i===undefined) return; state.history.splice(+i,1); renderHistory(); renderClientView(); save(); });
+
   function renderAll(){
     renderRooms();
     ["materials","mgmt","km","kmRate","transportMin","advance","discount"].forEach((id)=>{ $("#"+id).value = state[id]; });
     Object.keys(docMap).forEach((id)=>{ $("#"+id).value = state.doc[docMap[id]] || ""; });
-    renderTotals();
+    renderTotals(); renderHistory(); renderClientView();
+    if($("#h-date") && !$("#h-date").value) $("#h-date").value = new Date().toISOString().slice(0,10);
   }
   // Теми оформлення
   const THEME_KEY = "wallcov.theme";
@@ -881,7 +926,31 @@
   const TKEY="wallcov.cab.token", LKEY="wallcov.cab.login", EKEY="wallcov.cab.email", AKEY="wallcov.cab.active";
   let cabToken = localStorage.getItem(TKEY) || "", cabLogin = localStorage.getItem(LKEY) || "", cabEmail = localStorage.getItem(EKEY) || "", activeId = localStorage.getItem(AKEY) || "";
   let syncTimer = null;
-  function setReadOnly(flag){ document.body.classList.toggle("ro", !!flag); }
+  function setReadOnly(flag){ document.body.classList.toggle("ro", !!flag); document.body.classList.toggle("client", !!flag); }
+  function paidSum(){ return (state.history||[]).filter((h)=>h.type==="Аванс"||h.type==="Оплата").reduce((a,h)=>a+num(h.amount),0); }
+  function histRowHtml(h, idx, withDel){
+    const right = h.type==="Відвантаження матеріалу" ? escA(h.note||"") : fmtShort(num(h.amount));
+    const meta = (h.date?escA(h.date):"") + (h.note && h.type!=="Відвантаження матеріалу" ? " · "+escA(h.note) : "");
+    const del = withDel ? ` <button class="icon-btn" data-delh="${idx}" style="width:26px;height:26px">✕</button>` : "";
+    return `<div class="hist-row"><span><b>${escA(h.type)}</b> <span class="h-meta">${meta}</span></span><span><b>${right}</b>${del}</span></div>`;
+  }
+  function renderHistory(){
+    const root=$("#hist-list"); if(!root) return; const list=state.history||[];
+    root.innerHTML = list.length ? list.map((h,i)=>histRowHtml(h,i,true)).join("") : '<p class="hint" style="text-align:left">Записів ще немає.</p>';
+  }
+  function renderClientView(){
+    if(!$("#client-view")) return;
+    const t=compute(), paid=paidSum(), bal=t.total - paid;
+    $("#cv-title").textContent = state.doc.object || "Ваш об'єкт";
+    $("#cv-summary").innerHTML =
+      `<div class="line"><span>Роботи</span><b>${fmtShort(t.works)}</b></div>` +
+      (t.materials?`<div class="line"><span>Матеріали</span><b>${fmtShort(t.materials)}</b></div>`:"") +
+      `<div class="line"><span>Загальна сума</span><b>${fmtShort(t.total)}</b></div>` +
+      `<div class="line"><span>Сплачено</span><b>${fmtShort(paid)}</b></div>` +
+      `<div class="grand"><span>ЗАЛИШОК</span><b>${fmtShort(bal)}</b></div>`;
+    const list=state.history||[];
+    $("#cv-history").innerHTML = list.length ? list.map((h)=>histRowHtml(h,0,false)).join("") : '<p class="hint" style="text-align:left">Поки що немає записів.</p>';
+  }
   async function apiReq(path, opts={}){
     const headers = Object.assign({ "Content-Type":"application/json" }, opts.headers||{});
     if(cabToken) headers.Authorization = "Bearer " + cabToken;
