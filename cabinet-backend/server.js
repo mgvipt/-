@@ -155,6 +155,25 @@ app.put("/api/objects/:id", auth, (req, res) => {
   o.updated_at = Date.now(); persist();
   res.json({ id: o.id, name: o.name, updated_at: o.updated_at, role: "owner", clientEmail: o.clientEmail });
 });
+// Запросити клієнта по email: прив'язати до об'єкта, створити акаунт (за потреби) і надіслати лист зі ссиланням на встановлення пароля
+app.post("/api/objects/:id/invite", auth, async (req, res) => {
+  const o = db.objects.find((o) => o.id === req.params.id);
+  if (!o) return res.status(404).json({ error: "not found" });
+  if (o.uid !== req.user.id) return res.status(403).json({ error: "лише власник може запрошувати" });
+  const email = norm(req.body?.clientEmail);
+  if (!email) return res.status(400).json({ error: "Вкажіть email клієнта" });
+  o.clientEmail = email; o.updated_at = Date.now();
+  let u = db.users.find((x) => x.email === email);
+  let invited = false;
+  if (!u) { u = { id: crypto.randomUUID(), login: email, email, pass: hashPw(crypto.randomBytes(9).toString("hex")) }; db.users.push(u); invited = true; }
+  const token = crypto.randomBytes(24).toString("hex");
+  u.reset = { token, exp: Date.now() + 7 * 24 * 3600000 }; persist();
+  const link = `${APP_URL}/?reset=${token}`;
+  const sent = await sendMail(email, "Доступ до кошторису Wallcov",
+    `Вам відкрито доступ до об'єкта «${o.name}».\n\nЛогін (email): ${email}\nВстановіть пароль за посиланням (діє 7 днів):\n${link}\n\nПісля цього заходьте: ${APP_URL}`).catch(() => false);
+  res.json({ ok: true, invited, mailed: !!sent });
+});
+
 app.delete("/api/objects/:id", auth, (req, res) => {
   const i = db.objects.findIndex((o) => o.id === req.params.id);
   if (i < 0) return res.status(404).json({ error: "not found" });

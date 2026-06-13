@@ -146,8 +146,8 @@
         <button class="btn btn-add" id="cab-new" style="margin-top:8px">➕ Новий об'єкт (зберегти поточний)</button>
         <p class="hint" id="cab-sync" style="text-align:left"></p>
         <div id="cab-owner-tools">
-          <div class="field" style="margin-top:6px"><label>Доступ клієнту до активного об'єкта (email клієнта)</label><input id="cab-client-email" type="email" placeholder="клієнт бачитиме лише цей об'єкт" /></div>
-          <div class="doc-btn" id="cab-share">Надати клієнту доступ</div>
+          <div class="field" style="margin-top:6px"><label>Запросити клієнта на активний об'єкт (його email)</label><input id="cab-client-email" type="email" placeholder="клієнт отримає лист і бачитиме лише цей об'єкт" /></div>
+          <div class="doc-btn" id="cab-share">📧 Надіслати клієнту доступ</div>
         </div>
         <div class="field" style="margin-top:12px"><label>Ваш email (для відновлення пароля)</label><input id="cab-acc-email" type="email" /></div>
         <div class="doc-btn" id="cab-save-email" style="margin-top:6px">Зберегти email</div>
@@ -948,7 +948,9 @@
     if(!email){ setMsg("Введіть ваш email вище і натисніть «Забули пароль?»"); return; }
     try{ await apiReq("/auth/forgot", { method:"POST", body: JSON.stringify({ email }) }); setMsg("Якщо такий email є — лист надіслано. Перевірте пошту.", true); }catch(e){ setMsg(e.message); } });
   $("#cab-share").addEventListener("click", async ()=>{ if(!activeId){ setSync("Спочатку відкрийте або створіть об'єкт"); return; }
-    try{ await apiReq("/api/objects/"+activeId, { method:"PUT", body: JSON.stringify({ clientEmail: $("#cab-client-email").value.trim() }) }); setSync("Доступ клієнту збережено ✓"); }catch(e){ setSync(e.message); } });
+    const email=$("#cab-client-email").value.trim(); if(!email){ setSync("Вкажіть email клієнта"); return; }
+    try{ const j=await apiReq("/api/objects/"+activeId+"/invite", { method:"POST", body: JSON.stringify({ clientEmail: email }) });
+      setSync(j.mailed ? "Клієнту надіслано лист із доступом ✓" : "Доступ надано (лист не надіслано — пошта ще не налаштована)"); }catch(e){ setSync(e.message); } });
   $("#cab-save-email").addEventListener("click", async ()=>{
     try{ const j=await apiReq("/api/account", { method:"PUT", body: JSON.stringify({ email: $("#cab-acc-email").value.trim() }) }); cabEmail=j.email||""; localStorage.setItem(EKEY,cabEmail); setSync("Email збережено ✓"); }catch(e){ setSync(e.message); } });
   $("#cab-objects").addEventListener("click", (e)=>{
