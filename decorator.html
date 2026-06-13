@@ -62,12 +62,18 @@
   .room{border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:14px;background:var(--card-2);}
   .room-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
   .room-name{flex:1;background:var(--field);border:1px solid var(--line);border-radius:11px;color:var(--text);padding:11px 12px;font-size:17px;font-weight:700;}
-  .dims{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
-  .area-btns{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:12px;}
-  .area-btns button{border:1px solid var(--accent-2);color:var(--accent-2);background:rgba(255,177,92,.08);border-radius:10px;padding:9px 4px;font-size:12px;font-weight:700;}
-  .area-btns button:active{background:rgba(255,177,92,.2);}
-  .room-items .item{background:var(--card);}
-  .room-add{font-size:15px;padding:12px;}
+  .dims{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;}
+  .op-block{margin:8px 0;border:1px solid var(--line);border-radius:12px;padding:9px 11px;background:var(--card);}
+  .op-block summary{cursor:pointer;color:var(--accent-2);font-size:13px;font-weight:700;list-style:none;}
+  .op-block summary::-webkit-details-marker{display:none;}
+  .op-row{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;margin-bottom:6px;align-items:center;}
+  .room-items .item{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px;}
+  .item-no{font-size:11px;color:var(--accent-2);font-weight:800;letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px;}
+  .qhint{font-size:11px;color:var(--muted);margin:6px 0 4px;}
+  .qchips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
+  .qchips button{flex:1 1 30%;min-width:84px;border:1px solid var(--line);background:var(--field);color:var(--accent-2);border-radius:9px;padding:9px 4px;font-size:12px;font-weight:700;text-align:center;line-height:1.15;}
+  .qchips button:active{background:rgba(255,177,92,.18);}
+  .room-add{font-size:15px;padding:12px;text-align:center;}
   .room-sub{margin-top:10px;text-align:right;color:var(--muted);font-size:14px;}
   .room-sub b{color:var(--text);font-size:16px;}
   .item-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
@@ -416,7 +422,7 @@
 
   const uid = () => Math.random().toString(36).slice(2, 9);
   const makeItem = () => ({ name:"", unit:"", qty:1, price:0 });
-  const makeRoom = (name) => ({ id: uid(), name: name || "", L:0, W:0, H:0, inspect:"", photos:[], items:[makeItem()] });
+  const makeRoom = (name) => ({ id: uid(), name: name || "", L:0, W:0, H:0, openings:[], revealDepth:0.25, inspect:"", photos:[], items:[makeItem()] });
 
   function freshState(){ return { rooms: [], history: [], materials:0, mgmt:0, km:0, kmRate:15, transportMin:500, advance:0, discount:0,
     doc: { object:"", no:"", city:"", date:"", cName:"", cTax:"", cPhone:"", cAddr:"",
@@ -431,7 +437,8 @@
     delete state.items;
     if(!Array.isArray(state.rooms) || !state.rooms.length) state.rooms = [makeRoom("Кімната 1")];
     state.rooms.forEach((r) => { if(!Array.isArray(r.items) || !r.items.length) r.items = [makeItem()];
-      if(typeof r.inspect !== "string") r.inspect = ""; if(!Array.isArray(r.photos)) r.photos = []; });
+      if(typeof r.inspect !== "string") r.inspect = ""; if(!Array.isArray(r.photos)) r.photos = [];
+      if(!Array.isArray(r.openings)) r.openings = []; if(typeof r.revealDepth !== "number") r.revealDepth = 0.25; });
     state.doc = Object.assign(freshState().doc, state.doc || {});
     if(Array.isArray(state.doc.photos) && state.doc.photos.length && state.rooms[0]) state.rooms[0].photos = state.rooms[0].photos.concat(state.doc.photos);
     delete state.doc.photos;
@@ -479,18 +486,31 @@
     }
     renderRooms(); renderTotals(); save();
   }
-  function roomAreas(rm){ const L=num(rm.L),W=num(rm.W),H=num(rm.H);
-    return { walls:+(2*(L+W)*H).toFixed(2), floor:+(L*W).toFixed(2), ceil:+(L*W).toFixed(2), perim:+(2*(L+W)).toFixed(2) }; }
+  function roomCalc(rm){
+    const L=num(rm.L),W=num(rm.W),H=num(rm.H);
+    const wallsGross=+(2*(L+W)*H).toFixed(2), floor=+(L*W).toFixed(2), perim=+(2*(L+W)).toFixed(2);
+    let openArea=0, slopeML=0;
+    (rm.openings||[]).forEach((o)=>{ const w=num(o.w),h=num(o.h),q=num(o.qty)||1; openArea+=w*h*q; slopeML+=(2*h+w)*q; });
+    openArea=+openArea.toFixed(2); slopeML=+slopeML.toFixed(2);
+    const wallsNet=+Math.max(0,wallsGross-openArea).toFixed(2);
+    const slopeM2=+(slopeML*num(rm.revealDepth)).toFixed(2);
+    return { wallsGross, wallsNet, floor, ceil:floor, perim, openArea, slopeML, slopeM2 };
+  }
+  // [ключ у roomCalc, підпис, одиниця]
+  const Q_DEFS = [["wallsGross","Стіни","м²"],["wallsNet","Стіни−проєми","м²"],["floor","Підлога","м²"],["ceil","Стеля","м²"],["perim","Периметр","м.п."],["slopeML","Відкоси пог.","м.п."],["slopeM2","Відкоси м²","м²"]];
   function roomSub(rm){ return rm.items.reduce((a,it)=>a+num(it.qty)*num(it.price),0); }
-  function areaLine(rm){ const a=roomAreas(rm); return `Стіни ${a.walls} · Підлога ${a.floor} · Стеля ${a.ceil} м² · Периметр ${a.perim} м.п.`; }
+  function areaLine(rm){ const a=roomCalc(rm);
+    return `Стіни ${a.wallsGross} м² · −проєми ${a.wallsNet} · Підлога/Стеля ${a.floor} · Периметр ${a.perim} м.п.` + (a.openArea?` · Відкоси ${a.slopeML} м.п. (${a.slopeM2} м²)`:""); }
 
   function renderRooms(){
     roomsRoot.innerHTML = "";
     state.rooms.forEach((rm, r) => {
       const card = document.createElement("div"); card.className = "room"; card.dataset.r = r;
+      const chips = (i)=> '<div class="qchips">' + Q_DEFS.map((d)=>`<button type="button" data-q="${d[0]}" data-unit="${d[2]}" data-r="${r}" data-i="${i}">${d[1]}</button>`).join("") + '</div>';
       const itemsHtml = rm.items.map((item, i) => {
         const u = item.unit ? ` (${item.unit})` : "";
         return `<div class="item" data-r="${r}" data-i="${i}">
+          <div class="item-no">Позиція ${i+1}</div>
           <input class="catalog-search" type="text" list="cat-list" data-r="${r}" data-i="${i}" placeholder="🔍 Пошук роботи/матеріалу" />
           <div class="picker">
             <select class="catalog cat-select" data-r="${r}" data-i="${i}"><option value="">📂 Категорія…</option>${CAT_OPTS}</select>
@@ -500,6 +520,8 @@
             <input class="item-name" type="text" placeholder="Назва роботи" value="${escA(item.name)}" data-r="${r}" data-i="${i}" data-f="name" />
             <button class="icon-btn" data-del="${r}.${i}">✕</button>
           </div>
+          <div class="qhint">Підставити площу кімнати в кількість:</div>
+          ${chips(i)}
           <div class="item-grid">
             <label class="mini-field"><span>Кількість${u}</span><input type="number" inputmode="decimal" min="0" step="0.1" value="${item.qty}" data-r="${r}" data-i="${i}" data-f="qty" /></label>
             <label class="mini-field"><span>Ціна за од., ₴</span><input type="number" inputmode="decimal" min="0" step="10" value="${item.price}" data-r="${r}" data-i="${i}" data-f="price" /></label>
@@ -507,6 +529,11 @@
           <div class="item-sum">Сума: <b>${fmtShort(num(item.qty)*num(item.price))}</b></div>
         </div>`;
       }).join("");
+      const opsHtml = (rm.openings||[]).map((o,oi)=>`<div class="op-row">
+        <input type="number" inputmode="decimal" min="0" step="0.1" placeholder="шир., м" value="${o.w||""}" data-r="${r}" data-oi="${oi}" data-op="w" />
+        <input type="number" inputmode="decimal" min="0" step="0.1" placeholder="вис., м" value="${o.h||""}" data-r="${r}" data-oi="${oi}" data-op="h" />
+        <input type="number" inputmode="decimal" min="0" step="1" placeholder="к-сть" value="${o.qty||1}" data-r="${r}" data-oi="${oi}" data-op="qty" />
+        <button class="icon-btn" data-delop="${r}.${oi}">✕</button></div>`).join("");
       card.innerHTML = `
         <div class="room-head">
           <input class="room-name" type="text" placeholder="Назва кімнати" value="${escA(rm.name)}" data-r="${r}" />
@@ -517,22 +544,24 @@
           <label class="mini-field"><span>Ширина, м</span><input type="number" inputmode="decimal" min="0" step="0.1" value="${rm.W||""}" data-r="${r}" data-dim="W" placeholder="0" /></label>
           <label class="mini-field"><span>Висота, м</span><input type="number" inputmode="decimal" min="0" step="0.1" value="${rm.H||""}" data-r="${r}" data-dim="H" placeholder="0" /></label>
         </div>
+        <details class="op-block">
+          <summary>🪟 Проєми та відкоси${(rm.openings&&rm.openings.length)?` (${rm.openings.length})`:""}</summary>
+          <p class="qhint">Вікна/двері: ширина × висота × к-сть. Низ не рахується (підвіконня). Відкоси: периметр «П» у м.п.</p>
+          ${opsHtml}
+          <button type="button" class="btn btn-add" data-addop="${r}" style="margin-top:6px">+ Проєм</button>
+          <label class="mini-field" style="margin-top:8px"><span>Ширина відкосу, м (для перерахунку в м²)</span><input type="number" inputmode="decimal" min="0" step="0.01" value="${rm.revealDepth||""}" data-r="${r}" data-rev="1" placeholder="0.25" /></label>
+        </details>
         <div class="area-out">${areaLine(rm)}</div>
-        <div class="area-btns">
-          <button data-area="walls" data-r="${r}">+ Стіни</button>
-          <button data-area="floor" data-r="${r}">+ Підлога</button>
-          <button data-area="ceil" data-r="${r}">+ Стеля</button>
-          <button data-area="perim" data-r="${r}">+ Периметр</button>
-        </div>
         <div class="room-items">${itemsHtml}</div>
-        <button class="btn btn-add room-add" data-addr="${r}">+ Позицію в кімнату</button>
+        <button type="button" class="btn btn-add room-add" data-addr="${r}">+ Позицію в кімнату</button>
         <div class="room-sub">Разом по кімнаті: <b>${fmtShort(roomSub(rm))}</b></div>
-        <div class="inspect">
-          <label class="mini-field" style="margin-top:8px"><span>🧱 Обстеження основи (стан, дефекти, тріщини)</span>
+        <details class="op-block" style="margin-top:10px">
+          <summary>🧱 Обстеження основи (фото, стан)</summary>
+          <label class="mini-field" style="margin-top:8px"><span>Стан, дефекти, тріщини</span>
             <textarea data-r="${r}" data-insp="1" placeholder="Опишіть стан поверхонь цієї кімнати">${esc(rm.inspect || "")}</textarea></label>
           <button type="button" class="btn btn-add room-photo" data-photoroom="${r}" style="margin-top:8px">📷 Фото основи кімнати</button>
           <div class="photo-thumbs">${(rm.photos || []).map((s, pi) => `<div class="ph"><img src="${s}"/><button data-delph="${r}.${pi}">✕</button></div>`).join("")}</div>
-        </div>`;
+        </details>`;
       roomsRoot.appendChild(card);
     });
   }
@@ -581,6 +610,8 @@
     if(t.classList.contains("room-name")){ state.rooms[+t.dataset.r].name = t.value; save(); return; }
     if(t.dataset.insp){ state.rooms[+t.dataset.r].inspect = t.value; save(); return; }
     if(t.dataset.dim){ state.rooms[+t.dataset.r][t.dataset.dim] = num(t.value); refreshSums(); save(); return; }
+    if(t.dataset.op){ const rr=+t.dataset.r, oi=+t.dataset.oi; state.rooms[rr].openings[oi][t.dataset.op]=num(t.value); refreshSums(); save(); return; }
+    if(t.dataset.rev){ state.rooms[+t.dataset.r].revealDepth=num(t.value); refreshSums(); save(); return; }
     const r = t.dataset.r, i = t.dataset.i, f = t.dataset.f;
     if(r === undefined || i === undefined || f === undefined) return;
     state.rooms[+r].items[+i][f] = f === "name" ? t.value : num(t.value);
@@ -615,11 +646,16 @@
     if(t.dataset.photoroom !== undefined){ photoTargetRoom = +t.dataset.photoroom; $("#photo-input").click(); return; }
     if(t.dataset.delph !== undefined){ const [r, pi] = t.dataset.delph.split(".").map(Number);
       state.rooms[r].photos.splice(pi, 1); renderRooms(); save(); return; }
-    if(t.dataset.area !== undefined){ const r = +t.dataset.r, a = roomAreas(state.rooms[r]), q = a[t.dataset.area];
-      if(!q){ alert("Спочатку введіть розміри кімнати"); return; }
-      const unit = t.dataset.area === "perim" ? "м.п." : "м²";
-      state.rooms[r].items.push({ name:"", unit, qty:q, price:0 });
-      renderRooms(); renderTotals(); save(); focusLastSearch(r); return; }
+    if(t.dataset.q !== undefined){ const r=+t.dataset.r, i=+t.dataset.i, c=roomCalc(state.rooms[r]), val=c[t.dataset.q]||0;
+      const it=state.rooms[r].items[i]; it.qty=val; it.unit=t.dataset.unit;
+      const itemEl=t.closest(".item");
+      const qInput=itemEl.querySelector('input[data-f="qty"]'); if(qInput) qInput.value=val;
+      const lbl=itemEl.querySelector('.item-grid .mini-field span'); if(lbl) lbl.textContent="Кількість ("+t.dataset.unit+")";
+      refreshSums(); save(); return; }
+    if(t.dataset.addop !== undefined){ const r=+t.dataset.addop; state.rooms[r].openings.push({ w:0,h:0,qty:1 }); renderRooms(); save();
+      const det=roomsRoot.querySelectorAll(".room")[r].querySelector(".op-block"); if(det) det.open=true; return; }
+    if(t.dataset.delop !== undefined){ const [r,oi]=t.dataset.delop.split(".").map(Number); state.rooms[r].openings.splice(oi,1); renderRooms(); renderTotals(); save();
+      const det=roomsRoot.querySelectorAll(".room")[r].querySelector(".op-block"); if(det) det.open=true; return; }
   });
   $("#add-room").addEventListener("click", () => {
     state.rooms.push(makeRoom("Кімната " + (state.rooms.length + 1)));
@@ -984,12 +1020,18 @@
   const setMsg = (t, ok)=>{ const m=$("#cab-msg"); if(m){ m.textContent=t||""; m.style.color = ok?"var(--accent-2)":"#ff6b6b"; } };
   const setSync = (t)=>{ const s=$("#cab-sync"); if(s) s.textContent = t||""; };
   function scheduleSync(){
-    if(!cabToken || !activeId) return;
+    if(!cabToken || cabRole === "client") return;   // клієнт не редагує
     clearTimeout(syncTimer);
     syncTimer = setTimeout(async ()=>{
-      try{ const o = await apiReq("/api/objects/"+activeId, { method:"PUT", body: JSON.stringify({ data: state }) });
-        setSync("Збережено на сервер ✓ " + new Date(o.updated_at).toLocaleTimeString("uk-UA")); }
-      catch(e){ setSync("⚠ " + e.message); }
+      try{
+        if(!activeId){ // ще не створено — створюємо автоматично
+          const o = await apiReq("/api/objects", { method:"POST", body: JSON.stringify({ name: state.doc.object || ("Об'єкт " + new Date().toLocaleDateString("uk-UA")), data: state }) });
+          activeId = o.id; localStorage.setItem(AKEY, o.id);
+          setSync("Створено та збережено на сервер ✓"); if($("#cab-in").style.display !== "none") loadObjects().catch(()=>{}); return;
+        }
+        const o = await apiReq("/api/objects/"+activeId, { method:"PUT", body: JSON.stringify({ data: state }) });
+        setSync("Збережено на сервер ✓ " + new Date(o.updated_at).toLocaleTimeString("uk-UA"));
+      }catch(e){ setSync("⚠ " + e.message); }
     }, 900);
   }
   function renderRoleUI(){
