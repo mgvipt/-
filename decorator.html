@@ -55,6 +55,11 @@
   body.projview .editor-only, body.projview #cabinet, body.projview #client-view, body.projview #admin-view, body.projview .bottombar, body.projview .ro-banner{display:none !important;}
   .proj-group{margin-bottom:14px;}
   .proj-gtitle{font-weight:800;font-size:14px;color:var(--accent-2);margin-bottom:6px;border-bottom:1px solid var(--line);padding-bottom:4px;}
+  body.client .bottombar{display:none !important;}
+  .proj-acc{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px;background:var(--card-2);}
+  .proj-acc>summary{cursor:pointer;font-weight:700;list-style:none;color:var(--text);}
+  .proj-acc>summary::-webkit-details-marker{display:none;}
+  .acc-body{margin-top:10px;}
   .adm-projects{padding-left:6px;}
   .req-box{border:1px solid var(--accent);background:rgba(255,92,138,.08);border-radius:12px;padding:8px 10px;margin-bottom:10px;}
   .req-title{color:var(--accent);font-weight:800;font-size:13px;margin-bottom:6px;}
@@ -204,17 +209,9 @@
   <div class="ro-banner" id="ro-banner">👁 Режим перегляду (клієнт) — дані лише для перегляду, документи доступні</div>
 
   <section class="card client-only" id="client-view">
-    <h2 id="cv-title">Ваш об'єкт</h2>
-    <div class="totals" id="cv-summary"></div>
-    <h2 style="margin-top:16px">Документи</h2>
-    <div class="doc-btns">
-      <div class="doc-btn" data-doc="estimate">📄 Кошторис</div>
-      <div class="doc-btn" data-doc="contract">📑 Договір</div>
-      <div class="doc-btn" data-doc="actbase">🧱 Акт обстеження</div>
-      <div class="doc-btn" data-doc="actdone">✅ Акт виконаних робіт</div>
-    </div>
-    <h2 style="margin-top:16px">Історія оплат і відвантажень</h2>
-    <div id="cv-history"></div>
+    <h2>Ваші проєкти та документи</h2>
+    <p class="hint" id="cv-empty" style="text-align:left;display:none">Поки що немає проєктів. Зверніться до виконавця.</p>
+    <div id="client-home"></div>
   </section>
 
   <section class="card" id="admin-view">
@@ -1042,7 +1039,7 @@
     root.innerHTML = list.length ? list.map((h,i)=>histRowHtml(h,i,true)).join("") : '<p class="hint" style="text-align:left">Записів ще немає.</p>';
   }
   function renderClientView(){
-    if(!$("#client-view")) return;
+    if(!$("#cv-title")) return;   // старий одно-об'єктний вид вимкнено (клієнт бачить список проєктів)
     const t=compute(), paid=paidSum(), bal=t.total - paid;
     $("#cv-title").textContent = state.doc.object || "Ваш об'єкт";
     $("#cv-summary").innerHTML =
@@ -1053,6 +1050,60 @@
       `<div class="grand"><span>ЗАЛИШОК</span><b>${fmtShort(bal)}</b></div>`;
     const list=state.history||[];
     $("#cv-history").innerHTML = list.length ? list.map((h)=>histRowHtml(h,0,false)).join("") : '<p class="hint" style="text-align:left">Поки що немає записів.</p>';
+  }
+  // ---- Клієнтський портал: усі проєкти, документи, історія ----
+  function computeOf(st){
+    let works=0, mat=0;
+    (st.rooms||[]).forEach((r)=>(r.items||[]).forEach((it)=>{ const s=num(it.qty)*num(it.price); if(it.kind==="material") mat+=s; else works+=s; }));
+    const mgmt=works*(num(st.mgmt)/100);
+    const transport= num(st.km)>0 ? Math.max(num(st.km)*num(st.kmRate), num(st.transportMin)) : 0;
+    const materials=mat+num(st.materials);
+    const before=works+mgmt+transport+materials;
+    const discount=before*(num(st.discount)/100);
+    return { works, materials, total: before-discount };
+  }
+  const paidOf=(st)=> (st.history||[]).filter((h)=>h.type==="Аванс"||h.type==="Оплата").reduce((a,h)=>a+num(h.amount),0);
+  function lineListHtml(st, material){
+    let rows="";
+    (st.rooms||[]).forEach((r)=>(r.items||[]).forEach((it)=>{ const isMat=it.kind==="material"; if(isMat!==material) return; if(!it.name && !num(it.qty)) return;
+      rows+=`<div class="hist-row"><span>${escA(it.name||"—")} <span class="h-meta">${num(it.qty)} ${escA(it.unit||"")}</span></span><b>${fmtShort(num(it.qty)*num(it.price))}</b></div>`; }));
+    return rows || '<p class="hint" style="text-align:left">—</p>';
+  }
+  const clientCache = {};
+  async function renderClientHome(){
+    const root=$("#client-home"); if(!root) return;
+    const list=await apiReq("/api/objects");
+    if(!list.length){ root.innerHTML=""; const e=$("#cv-empty"); if(e) e.style.display=""; return; }
+    const e=$("#cv-empty"); if(e) e.style.display="none";
+    root.innerHTML = list.map((o)=>`<details class="proj-acc" data-obj="${o.id}"><summary>📄 ${escA(o.name)} <small class="h-meta">· ${new Date(o.updated_at).toLocaleString("uk-UA")}</small></summary><div class="acc-body" id="cb-${o.id}"><p class="hint" style="text-align:left">Натисніть, щоб відкрити деталі…</p></div></details>`).join("");
+  }
+  async function loadClientProject(id){
+    const box=$("#cb-"+id); if(!box || box.dataset.loaded) return;
+    try{
+      const o=await apiReq("/api/objects/"+id); const st=clientCache[id]=o.data||{};
+      const c=computeOf(st), paid=paidOf(st), bal=c.total-paid;
+      const hist=(st.history||[]);
+      box.innerHTML =
+        `<details class="op-block"><summary>🔧 Роботи</summary>${lineListHtml(st,false)}</details>`+
+        `<details class="op-block"><summary>🧱 Матеріали</summary>${lineListHtml(st,true)}</details>`+
+        `<div class="totals" style="margin-top:8px">`+
+          `<div class="line"><span>Роботи</span><b>${fmtShort(c.works)}</b></div>`+
+          (c.materials?`<div class="line"><span>Матеріали</span><b>${fmtShort(c.materials)}</b></div>`:"")+
+          `<div class="line"><span>Загальна сума</span><b>${fmtShort(c.total)}</b></div>`+
+          `<div class="line"><span>Сплачено</span><b>${fmtShort(paid)}</b></div>`+
+          `<div class="grand"><span>ЗАЛИШОК</span><b>${fmtShort(bal)}</b></div>`+
+        `</div>`+
+        `<div class="qhint" style="margin-top:10px">Документи:</div>`+
+        `<div class="doc-btns"><div class="doc-btn" data-cdoc="estimate" data-obj="${id}">📄 Кошторис</div><div class="doc-btn" data-cdoc="contract" data-obj="${id}">📑 Договір</div><div class="doc-btn" data-cdoc="actbase" data-obj="${id}">🧱 Акт обстеження</div><div class="doc-btn" data-cdoc="actdone" data-obj="${id}">✅ Акт виконаних робіт</div></div>`+
+        `<div class="qhint" style="margin-top:10px">Історія оплат і відвантажень:</div>`+
+        (hist.length ? hist.map((h)=>histRowHtml(h,0,false)).join("") : '<p class="hint" style="text-align:left">Поки що немає записів.</p>');
+      box.dataset.loaded="1";
+    }catch(e){ box.innerHTML='<p class="hint" style="text-align:left">'+escA(e.message)+'</p>'; }
+  }
+  async function clientGenDoc(id, type){
+    try{ let data=clientCache[id]; if(!data){ const o=await apiReq("/api/objects/"+id); data=clientCache[id]=o.data||{}; }
+      applyServerData(data); const fn=DOCS[type]; if(fn){ $("#print-root").innerHTML=fn(); setTimeout(()=>window.print(),60); }
+    }catch(e){ alert(e.message); }
   }
   async function apiReq(path, opts={}){
     const headers = Object.assign({ "Content-Type":"application/json" }, opts.headers||{});
@@ -1103,7 +1154,10 @@
     const list=await apiReq("/api/users"); updateReqBadge(list);
     root.innerHTML = pendingHtml(list) + list.map((u)=>userRow(u,true)).join("");
   }
-  function refreshMe(){ apiReq("/api/me").then((j)=>{ cabRole=j.role; cabWants=!!j.wantsMaster; localStorage.setItem(RKEY,cabRole); renderRoleUI(); }).catch(()=>{}); }
+  function refreshMe(){ apiReq("/api/me").then((j)=>{ cabRole=j.role; cabWants=!!j.wantsMaster; localStorage.setItem(RKEY,cabRole); renderRoleUI();
+    if(cabRole==="client"){ setReadOnly(true); renderClientHome().catch((e)=>setSync(e.message)); }
+    else { setReadOnly(false); if(activeId) openObject(activeId).catch(()=>{ activeId=""; localStorage.removeItem(AKEY); updateCurrent(); }); }
+  }).catch(()=>{}); }
   function pendingHtml(list){ const p=list.filter((u)=>u.wantsMaster && u.role==="client"); if(!p.length) return "";
     return '<div class="req-box"><div class="req-title">⏳ Запити на роль майстра ('+p.length+')</div>' +
       p.map((u)=>`<div class="obj-row"><span>${escA(u.login)} <small class="h-meta">${escA(u.email||"")}</small></span><button type="button" class="doc-btn" data-makemaster="${u.id}" style="width:auto;padding:7px 10px">✅ Зробити майстром</button></div>`).join("") + '</div>'; }
@@ -1204,6 +1258,10 @@
     const del=e.target.dataset.delobj; if(del){ if(!confirm("Видалити проєкт?")) return;
       apiReq("/api/objects/"+del,{ method:"DELETE" }).then(()=>{ if(del===activeId){ activeId=""; activeName=""; localStorage.removeItem(AKEY); updateCurrent(); } loadProjects(); }).catch((err)=>setSync(err.message)); }
   });
+  $("#client-home").addEventListener("click", (e)=>{
+    const dbtn=e.target.closest("[data-cdoc]"); if(dbtn){ clientGenDoc(dbtn.dataset.obj, dbtn.dataset.cdoc); return; }
+    const sum=e.target.closest("summary"); if(sum){ const det=sum.parentElement; if(det && det.classList.contains("proj-acc")){ setTimeout(()=>{ if(det.open) loadClientProject(det.dataset.obj); },0); } }
+  });
   $("#cab-admin-panel").addEventListener("click", enterAdmin);
   $("#admin-back").addEventListener("click", exitAdmin);
   $("#admin-users").addEventListener("change", async (e)=>{ const t=e.target; if(!t.classList.contains("u-role")) return;
@@ -1225,7 +1283,7 @@
   renderCab();
   const resetTok = new URLSearchParams(location.search).get("reset");
   if(resetTok){ const np = prompt("Введіть новий пароль:"); if(np){ apiReq("/auth/reset", { method:"POST", body: JSON.stringify({ token: resetTok, password: np }) }).then(()=>alert("Пароль змінено. Тепер увійдіть.")).catch((e)=>alert(e.message)); } history.replaceState(null, "", location.pathname); }
-  if(cabToken && activeId){ openObject(activeId).catch(()=>{ activeId=""; localStorage.removeItem(AKEY); renderCab(); }); }
+  // відкриття активного проєкту / клієнтського порталу робить refreshMe() після визначення ролі
 })();
 </script>
 </body>
