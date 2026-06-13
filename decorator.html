@@ -68,7 +68,15 @@
   .op-block{margin:8px 0;border:1px solid var(--line);border-radius:12px;padding:9px 11px;background:var(--card);}
   .op-block summary{cursor:pointer;color:var(--accent-2);font-size:13px;font-weight:700;list-style:none;}
   .op-block summary::-webkit-details-marker{display:none;}
-  .op-row{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;margin-bottom:6px;align-items:center;}
+  .op-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;align-items:center;}
+  .op-row input[type="number"]{flex:1 1 60px;min-width:0;}
+  .op-slope{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);white-space:nowrap;}
+  .op-slope input{flex:0 0 auto;width:auto;}
+  .help-block{border:1px solid var(--line);border-radius:12px;padding:8px 11px;margin-bottom:12px;background:var(--card);}
+  .help-block summary{cursor:pointer;color:var(--accent-2);font-weight:700;font-size:13px;list-style:none;}
+  .help-block summary::-webkit-details-marker{display:none;}
+  .help-block ul{margin:8px 0 0;padding-left:18px;font-size:13px;color:var(--text);line-height:1.5;}
+  .help-block li{margin-bottom:4px;}
   .room-items .item{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px;}
   .item-no{font-size:11px;color:var(--accent-2);font-weight:800;letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px;}
   .qhint{font-size:11px;color:var(--muted);margin:6px 0 4px;}
@@ -213,7 +221,20 @@
 
   <section class="card editor-only">
     <h2>Кімнати та позиції</h2>
-    <p class="hint" style="text-align:left;margin:0 0 12px">Вкажіть розміри кімнати — площа стін/підлоги/стелі та периметр порахуються самі. Кнопки додають позицію з готовою площею.</p>
+    <p class="hint" style="text-align:left;margin:0 0 8px">Вкажіть розміри кімнати — площі та периметр порахуються самі. У кожній позиції кнопками підставляйте потрібний обсяг.</p>
+    <details class="help-block">
+      <summary>ℹ️ Як це працює — пояснення кнопок</summary>
+      <ul>
+        <li><b>Стіни</b> — повна площа стін (периметр × висота).</li>
+        <li><b>Стіни без проємів</b> — стіни мінус вікна/двері (коли відкоси не робимо і проєми не оплачуються).</li>
+        <li><b>Проєми м²</b> — площа самих проємів; для <b>ніш</b>, щоб порахувати роботу всередині.</li>
+        <li><b>Підлога / Стеля</b> — для підлогових та стельових покриттів.</li>
+        <li><b>Периметр</b> — для плінтусів і багетів (м.п.).</li>
+        <li><b>Відкоси пог.</b> — погонні метри відкосів (для робіт). Рахуються лише для проємів з галочкою «відкоси».</li>
+        <li><b>Відкоси м²</b> — площа відкосів = погонні × ширина відкосу (для матеріалів).</li>
+        <li>Галочка <b>«відкоси»</b> біля проєму: на дверях їх часто немає — тоді зніміть її.</li>
+      </ul>
+    </details>
     <div id="rooms"></div>
     <button class="btn btn-add" id="add-room">+ Додати кімнату</button>
   </section>
@@ -492,17 +513,21 @@
     const L=num(rm.L),W=num(rm.W),H=num(rm.H);
     const wallsGross=+(2*(L+W)*H).toFixed(2), floor=+(L*W).toFixed(2), perim=+(2*(L+W)).toFixed(2);
     let openArea=0, slopeML=0;
-    (rm.openings||[]).forEach((o)=>{ const w=num(o.w),h=num(o.h),q=num(o.qty)||1; openArea+=w*h*q; slopeML+=(2*h+w)*q; });
+    (rm.openings||[]).forEach((o)=>{ const w=num(o.w),h=num(o.h),q=num(o.qty)||1; openArea+=w*h*q; if(o.slope!==false) slopeML+=(2*h+w)*q; });
     openArea=+openArea.toFixed(2); slopeML=+slopeML.toFixed(2);
     const wallsNet=+Math.max(0,wallsGross-openArea).toFixed(2);
     const slopeM2=+(slopeML*num(rm.revealDepth)).toFixed(2);
     return { wallsGross, wallsNet, floor, ceil:floor, perim, openArea, slopeML, slopeM2 };
   }
-  // [ключ у roomCalc, підпис, одиниця]
-  const Q_DEFS = [["wallsGross","Стіни","м²"],["wallsNet","Стіни−проєми","м²"],["floor","Підлога","м²"],["ceil","Стеля","м²"],["perim","Периметр","м.п."],["slopeML","Відкоси пог.","м.п."],["slopeM2","Відкоси м²","м²"]];
+  // [ключ, підпис кнопки, одиниця]
+  const Q_DEFS = [["wallsGross","Стіни","м²"],["wallsNet","Стіни без проємів","м²"],["openArea","Проєми м²","м²"],["floor","Підлога","м²"],["ceil","Стеля","м²"],["perim","Периметр","м.п."],["slopeML","Відкоси пог.","м.п."],["slopeM2","Відкоси м²","м²"]];
   function roomSub(rm){ return rm.items.reduce((a,it)=>a+num(it.qty)*num(it.price),0); }
   function areaLine(rm){ const a=roomCalc(rm);
-    return `Стіни ${a.wallsGross} м² · −проєми ${a.wallsNet} · Підлога/Стеля ${a.floor} · Периметр ${a.perim} м.п.` + (a.openArea?` · Відкоси ${a.slopeML} м.п. (${a.slopeM2} м²)`:""); }
+    let s=`Стіни ${a.wallsGross} м² · без проємів ${a.wallsNet} м²`;
+    if(a.openArea) s+=` · проєми ${a.openArea} м²`;
+    s+=` · Підлога/Стеля ${a.floor} м² · Периметр ${a.perim} м.п.`;
+    if(a.slopeML) s+=` · Відкоси ${a.slopeML} м.п. (${a.slopeM2} м²)`;
+    return s; }
 
   function renderRooms(){
     roomsRoot.innerHTML = "";
@@ -535,6 +560,7 @@
         <input type="number" inputmode="decimal" min="0" step="0.1" placeholder="шир., м" value="${o.w||""}" data-r="${r}" data-oi="${oi}" data-op="w" />
         <input type="number" inputmode="decimal" min="0" step="0.1" placeholder="вис., м" value="${o.h||""}" data-r="${r}" data-oi="${oi}" data-op="h" />
         <input type="number" inputmode="decimal" min="0" step="1" placeholder="к-сть" value="${o.qty||1}" data-r="${r}" data-oi="${oi}" data-op="qty" />
+        <label class="op-slope"><input type="checkbox" data-r="${r}" data-oi="${oi}" data-op="slope" ${o.slope!==false?"checked":""} /> відкоси</label>
         <button class="icon-btn" data-delop="${r}.${oi}">✕</button></div>`).join("");
       card.innerHTML = `
         <div class="room-head">
@@ -612,7 +638,9 @@
     if(t.classList.contains("room-name")){ state.rooms[+t.dataset.r].name = t.value; save(); return; }
     if(t.dataset.insp){ state.rooms[+t.dataset.r].inspect = t.value; save(); return; }
     if(t.dataset.dim){ state.rooms[+t.dataset.r][t.dataset.dim] = num(t.value); refreshSums(); save(); return; }
-    if(t.dataset.op){ const rr=+t.dataset.r, oi=+t.dataset.oi; state.rooms[rr].openings[oi][t.dataset.op]=num(t.value); refreshSums(); save(); return; }
+    if(t.dataset.op){ const rr=+t.dataset.r, oi=+t.dataset.oi, o=state.rooms[rr].openings[oi];
+      if(t.dataset.op==="slope") o.slope=t.checked; else o[t.dataset.op]=num(t.value);
+      refreshSums(); save(); return; }
     if(t.dataset.rev){ state.rooms[+t.dataset.r].revealDepth=num(t.value); refreshSums(); save(); return; }
     const r = t.dataset.r, i = t.dataset.i, f = t.dataset.f;
     if(r === undefined || i === undefined || f === undefined) return;
@@ -621,6 +649,7 @@
   });
   roomsRoot.addEventListener("change", (e) => {
     const t = e.target;
+    if(t.dataset.op === "slope"){ state.rooms[+t.dataset.r].openings[+t.dataset.oi].slope = t.checked; refreshSums(); save(); return; }
     if(t.classList.contains("cat-select")){
       const itEl = t.closest(".item"); const ws = itEl.querySelector(".work-select"); const gi = t.value;
       if(gi === ""){ ws.innerHTML = '<option value="">— робота —</option>'; return; }
@@ -654,7 +683,7 @@
       const qInput=itemEl.querySelector('input[data-f="qty"]'); if(qInput) qInput.value=val;
       const lbl=itemEl.querySelector('.item-grid .mini-field span'); if(lbl) lbl.textContent="Кількість ("+t.dataset.unit+")";
       refreshSums(); save(); return; }
-    if(t.dataset.addop !== undefined){ const r=+t.dataset.addop; state.rooms[r].openings.push({ w:0,h:0,qty:1 }); renderRooms(); save();
+    if(t.dataset.addop !== undefined){ const r=+t.dataset.addop; state.rooms[r].openings.push({ w:0,h:0,qty:1,slope:true }); renderRooms(); save();
       const det=roomsRoot.querySelectorAll(".room")[r].querySelector(".op-block"); if(det) det.open=true; return; }
     if(t.dataset.delop !== undefined){ const [r,oi]=t.dataset.delop.split(".").map(Number); state.rooms[r].openings.splice(oi,1); renderRooms(); renderTotals(); save();
       const det=roomsRoot.querySelectorAll(".room")[r].querySelector(".op-block"); if(det) det.open=true; return; }
