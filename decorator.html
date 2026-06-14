@@ -228,6 +228,26 @@
   .vprog.err .vprog-msg{color:var(--danger);}
   .doc-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;}
   .doc-col-h{font-size:11px;font-weight:800;letter-spacing:.04em;color:var(--muted);text-transform:uppercase;margin-bottom:10px;}
+  /* ===== Дизайн-поліровка ===== */
+  :root{--accent-grad:linear-gradient(135deg,var(--accent),var(--accent-2));}
+  html,body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}
+  button,.doc-btn,.navtabs a,.metric,.qchips button,[data-addop],.icon-btn,input,select,textarea,.proj-acc,.item,.room{transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,color .16s ease,transform .08s ease,filter .16s ease;}
+  .logo,.room-num,.acct-ava{background:var(--accent-grad);}
+  .pb-btn.primary,.btn-add,#add-room,.b-share,.sum-actions .b-share{background:var(--accent-grad);}
+  .grand{background:var(--accent-grad);box-shadow:var(--shadow);}
+  .card{border-radius:20px;}
+  .card h2{margin-bottom:16px;}
+  .card h2 .hicon{box-shadow:inset 0 0 0 1px rgba(120,120,150,.14);}
+  .appbar{border-radius:16px;}
+  .metric{border-radius:12px;}
+  .navtabs a{border-radius:11px;}
+  @media (hover:hover){
+    .doc-btn:hover,.navtabs a:hover,.pb-btn:hover,.metric:hover,.icon-btn:hover,.proj-acc:hover{border-color:var(--accent);}
+    .pb-btn.primary:hover,.btn-add:hover,#add-room:hover,.b-share:hover,#save-now:hover,.grand:hover{filter:brightness(1.06);}
+    .qchips button:hover,[data-addop]:hover{filter:brightness(.97);}
+    .obj-row .obj-open:hover{color:var(--accent);cursor:pointer;}
+  }
+  button:active,.doc-btn:active,.qchips button:active,[data-addop]:active,.navtabs a:active{transform:scale(.985);}
 </style>
 </head>
 <body>
