@@ -62,6 +62,22 @@ async function transcribe(wavPath) {
   }));
 }
 
+// POST /polish — покращення формулювань опису (без зміни змісту)
+app.post("/polish", express.json({ limit: "1mb" }), async (req, res) => {
+  const text = String(req.body?.text || "").trim();
+  if (!text) return res.status(400).json({ error: "Порожній текст" });
+  const lang = req.body?.lang === "ru" ? "російською мовою" : "українською мовою";
+  try {
+    const msg = await anthropic.messages.create({
+      model: MODEL, max_tokens: 900,
+      system: `Ти — помічник майстра-оздоблювача. Тобі дають чернетку опису стану поверхонь (обстеження основи) для акта. Завдання: виправити граматику й орфографію, зробити формулювання професійними, чіткими та зрозумілими для документа. КАТЕГОРИЧНО НЕ МОЖНА: додавати нові факти, цифри чи деталі, яких немає в тексті; змінювати зміст або висновки автора; вигадувати. Збережи всі смисли як написав майстер. Поверни ЛИШЕ виправлений текст ${lang}, без коментарів і без лапок.`,
+      messages: [{ role: "user", content: text }],
+    });
+    const out = msg.content.map((c) => (c.type === "text" ? c.text : "")).join("").trim();
+    res.json({ text: out || text });
+  } catch (e) { console.error(e); res.status(500).json({ error: String(e.message || e) }); }
+});
+
 // POST /process (multipart: video, roomName?)
 app.post("/process", upload.single("video"), async (req, res) => {
   const videoPath = req.file?.path;

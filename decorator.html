@@ -26,6 +26,9 @@
   .theme-switch{display:inline-flex;background:var(--card-2);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px;margin:0;}
   .theme-switch button{flex:0 0 auto;border:none;background:transparent;color:var(--muted);border-radius:8px;width:34px;height:32px;font-size:15px;padding:0;}
   .theme-switch button.active{background:var(--card);color:var(--accent);box-shadow:var(--shadow-sm);}
+  .lang-switch{display:inline-flex;background:var(--card-2);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px;}
+  .lang-switch button{flex:0 0 auto;border:none;background:transparent;color:var(--muted);border-radius:8px;padding:6px 11px;font-size:12px;font-weight:800;}
+  .lang-switch button.active{background:var(--card);color:var(--accent);box-shadow:var(--shadow-sm);}
   .navtabs{display:flex;gap:8px;overflow-x:auto;margin-bottom:12px;padding-bottom:2px;}
   .navtabs a{flex:0 0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;color:var(--text);text-decoration:none;box-shadow:var(--shadow-sm);white-space:nowrap;}
   .navtabs a:active{background:var(--accent-soft);color:var(--accent);}
@@ -208,8 +211,12 @@
       <div class="logo">W</div>
       <div>
         <div class="brand-name">Wallcov</div>
-        <div class="brand-sub">Кошторис декоративних робіт</div>
+        <div class="brand-sub" data-i18n="tagline">Кошторис декоративних робіт</div>
       </div>
+    </div>
+    <div class="lang-switch">
+      <button data-lang="uk">UA</button>
+      <button data-lang="ru">RU</button>
     </div>
     <div class="theme-switch">
       <button data-theme="light" title="Світла">☀</button>
@@ -220,17 +227,17 @@
   </header>
 
   <nav class="navtabs editor-only">
-    <a href="#nav-rooms">Кімнати та позиції</a>
-    <a href="#nav-params">Параметри</a>
-    <a href="#nav-sum">Підсумок</a>
-    <a href="#nav-pay">Оплати та відвантаження</a>
-    <a href="#nav-docs">Документи та реквізити</a>
+    <a href="#nav-rooms" data-i18n="h_rooms">Кімнати та позиції</a>
+    <a href="#nav-params" data-i18n="h_params">Параметри</a>
+    <a href="#nav-sum" data-i18n="h_sum">Підсумок</a>
+    <a href="#nav-pay" data-i18n="h_pay">Оплати та відвантаження</a>
+    <a href="#nav-docs" data-i18n="h_docs">Документи та реквізити</a>
   </nav>
   <div class="projectbar editor-only">
     <div class="pb-title">📐 <span id="pb-name">Новий проєкт</span></div>
     <div class="pb-actions">
-      <button class="pb-btn" id="pb-projects">📁 Мої проєкти</button>
-      <button class="pb-btn primary" id="pb-save">💾 Зберегти</button>
+      <button class="pb-btn" id="pb-projects" data-i18n="pb_projects">📁 Мої проєкти</button>
+      <button class="pb-btn primary" id="pb-save" data-i18n="pb_save">💾 Зберегти</button>
     </div>
   </div>
 
@@ -293,7 +300,7 @@
 
   <div id="work-area">
   <section class="card editor-only" id="nav-rooms">
-    <h2><span class="hicon">🏠</span>Кімнати та позиції</h2>
+    <h2><span class="hicon">🏠</span><span data-i18n="h_rooms">Кімнати та позиції</span></h2>
     <p class="hint" style="text-align:left;margin:0 0 8px">Вкажіть розміри кімнати — площі та периметр порахуються самі. У кожній позиції кнопками підставляйте потрібний обсяг.</p>
     <details class="help-block">
       <summary>ℹ️ Як це працює — пояснення кнопок</summary>
@@ -313,7 +320,7 @@
   </section>
 
   <section class="card editor-only" id="nav-params">
-    <h2><span class="hicon">⚙️</span>Параметри</h2>
+    <h2><span class="hicon">⚙️</span><span data-i18n="h_params">Параметри</span></h2>
     <div class="totals">
       <div class="row"><label>Додаткові матеріали (вручну)<span class="hint-q">понад вибрані з каталогу</span></label><div class="ctl"><input type="number" id="materials" inputmode="decimal" min="0" step="100" value="0" /><span class="unit">₴</span></div></div>
       <div class="row"><label>Прорабські / організація<span class="hint-q">% від суми робіт</span></label><div class="ctl"><input type="number" id="mgmt" inputmode="decimal" min="0" step="1" value="0" /><span class="unit">%</span></div></div>
@@ -326,22 +333,22 @@
   </section>
 
   <section class="card totals editor-only" id="nav-sum">
-    <h2><span class="hicon">🧮</span>Підсумок</h2>
-    <div class="line"><span>Роботи (позиції)</span><b id="t-works">0 ₴</b></div>
-    <div class="line"><span>Прорабські / організація</span><b id="t-mgmt">0 ₴</b></div>
-    <div class="line"><span>Транспортні витрати</span><b id="t-transport">0 ₴</b></div>
-    <div class="line"><span>Матеріали</span><b id="t-materials">0 ₴</b></div>
-    <div class="line"><span>Знижка</span><b id="t-discount">0 ₴</b></div>
-    <div class="line"><span>Аванс</span><b id="t-advance">0 ₴</b></div>
-    <div class="grand"><span>ЗАЛИШОК ДО СПЛАТИ</span><b id="t-grand">0 ₴</b></div>
+    <h2><span class="hicon">🧮</span><span data-i18n="h_sum">Підсумок</span></h2>
+    <div class="line"><span data-i18n="sum_works">Роботи (позиції)</span><b id="t-works">0 ₴</b></div>
+    <div class="line"><span data-i18n="sum_org">Прорабські / організація</span><b id="t-mgmt">0 ₴</b></div>
+    <div class="line"><span data-i18n="sum_transport">Транспортні витрати</span><b id="t-transport">0 ₴</b></div>
+    <div class="line"><span data-i18n="sum_materials">Матеріали</span><b id="t-materials">0 ₴</b></div>
+    <div class="line"><span data-i18n="sum_discount">Знижка</span><b id="t-discount">0 ₴</b></div>
+    <div class="line"><span data-i18n="sum_advance">Аванс</span><b id="t-advance">0 ₴</b></div>
+    <div class="grand"><span data-i18n="sum_balance">ЗАЛИШОК ДО СПЛАТИ</span><b id="t-grand">0 ₴</b></div>
     <div class="sum-actions">
-      <button class="b-reset" id="reset">↺ Скинути</button>
-      <button class="b-share" id="share">↗ Поділитися</button>
+      <button class="b-reset" id="reset" data-i18n="act_reset">↺ Скинути</button>
+      <button class="b-share" id="share" data-i18n="act_share">↗ Поділитися</button>
     </div>
   </section>
 
   <section class="card editor-only" id="nav-pay">
-    <h2><span class="hicon">💳</span>Оплати та відвантаження</h2>
+    <h2><span class="hicon">💳</span><span data-i18n="h_pay">Оплати та відвантаження</span></h2>
     <div class="field"><label>Дата</label><input id="h-date" type="date" /></div>
     <div class="field"><label>Тип</label><select id="h-type" class="catalog"><option>Аванс</option><option>Оплата</option><option>Відвантаження матеріалу</option></select></div>
     <div class="item-grid">
@@ -353,7 +360,7 @@
   </section>
 
   <section class="card editor-only" id="nav-docs">
-    <h2><span class="hicon">📄</span>Документи та реквізити <span class="toggle" id="toggle-doc">показати ▾</span></h2>
+    <h2><span class="hicon">📄</span><span data-i18n="h_docs">Документи та реквізити</span> <span class="toggle" id="toggle-doc">показати ▾</span></h2>
     <div id="doc-body" class="collapsed">
       <div class="field"><label>Об'єкт (адреса)</label><input type="text" id="d-object" placeholder="м. ..., вул. ..., буд. ..." /></div>
       <div class="item-grid">
@@ -403,8 +410,8 @@
   <p class="hint">Ціни в каталозі — ваші робочі ставки (декор). Дані зберігаються на сервері у вашому кабінеті.</p>
 
   <div class="bottombar">
-    <div class="mt-left"><span>Залишок до сплати</span><b id="mt-grand">0 ₴</b></div>
-    <button class="b-share" id="mt-doc">📄 Кошторис</button>
+    <div class="mt-left"><span data-i18n="mt_balance">Залишок до сплати</span><b id="mt-grand">0 ₴</b></div>
+    <button class="b-share" id="mt-doc" data-i18n="mt_doc">📄 Кошторис</button>
   </div>
 
   <div id="print-root"></div>
@@ -678,6 +685,7 @@
           <summary>🧱 Обстеження основи (фото, стан)</summary>
           <label class="mini-field" style="margin-top:8px"><span>Стан, дефекти, тріщини</span>
             <textarea data-r="${r}" data-insp="1" placeholder="Опишіть стан поверхонь цієї кімнати">${esc(rm.inspect || "")}</textarea></label>
+          <button type="button" class="btn btn-add" data-polish="${r}" style="margin-top:8px;background:var(--accent-soft);color:var(--accent);box-shadow:none">✨ Покращити опис (ШІ)</button>
           <button type="button" class="btn btn-add room-photo" data-photoroom="${r}" style="margin-top:8px">📷 Фото основи кімнати</button>
           <div class="photo-thumbs">${(rm.photos || []).map((s, pi) => `<div class="ph"><img src="${s}"/><button data-delph="${r}.${pi}">✕</button></div>`).join("")}</div>
         </details>`;
@@ -769,6 +777,7 @@
       renderRooms(); renderTotals(); save(); return; }
     if(t.dataset.addr !== undefined){ const r = +t.dataset.addr;
       state.rooms[r].items.push(makeItem()); renderRooms(); renderTotals(); save(); focusLastSearch(r); return; }
+    if(t.dataset.polish !== undefined){ polishRoom(+t.dataset.polish); return; }
     if(t.dataset.photoroom !== undefined){ photoTargetRoom = +t.dataset.photoroom; $("#photo-input").click(); return; }
     if(t.dataset.vroom !== undefined){ videoTargetRoom = +t.dataset.vroom; $("#video-input").click(); return; }
     if(t.dataset.delph !== undefined){ const [r, pi] = t.dataset.delph.split(".").map(Number);
@@ -1084,6 +1093,21 @@
   }
   $("#photo-input").addEventListener("change", (e) => { addPhotoFiles(e.target.files, photoTargetRoom); e.target.value = ""; });
   let videoTargetRoom = 0;
+  async function polishRoom(r){
+    if(!cabToken){ alert("Спочатку увійдіть у кабінет"); return; }
+    const rm = state.rooms[r]; if(!rm) return;
+    const text = (rm.inspect || "").trim();
+    if(!text){ alert("Спочатку впишіть опис стану основи."); return; }
+    setSync("✨ ШІ покращує формулювання…");
+    try{
+      const lang = localStorage.getItem("wallcov.lang") || "uk";
+      const res = await fetch("/ai/polish", { method:"POST", headers:{ "Content-Type":"application/json", Authorization:"Bearer "+cabToken }, body: JSON.stringify({ text, lang }) });
+      const j = await res.json().catch(()=>({})); if(!res.ok) throw new Error(j.error || ("Помилка "+res.status));
+      rm.inspect = j.text || text; renderRooms(); save();
+      const d = roomsRoot.querySelectorAll(".room")[r]; const det = d && d.querySelector(".op-inspect"); if(det) det.open = true;
+      setSync("✅ Опис покращено — перевірте формулювання");
+    }catch(e){ setSync("⚠ "+e.message); alert("ШІ недоступний: "+e.message+"\n(перевірте, що AI-бекенд розгорнуто)"); }
+  }
   async function uploadVideo(file, r){
     if(!cabToken){ alert("Спочатку увійдіть у кабінет"); return; }
     const rm=state.rooms[r]; if(!rm) return;
@@ -1130,6 +1154,20 @@
   }
   document.querySelectorAll(".theme-switch button").forEach((b) => b.addEventListener("click", () => applyTheme(b.dataset.theme)));
   applyTheme(localStorage.getItem(THEME_KEY) || "light");
+
+  // ---- Мова інтерфейсу UA / RU ----
+  const LANG_KEY = "wallcov.lang";
+  const I18N = { ru: { tagline:"Смета декоративных работ", h_rooms:"Комнаты и позиции", h_params:"Параметры", h_sum:"Итог", h_pay:"Оплаты и отгрузки", h_docs:"Документы и реквизиты", pb_projects:"📁 Мои проекты", pb_save:"💾 Сохранить", sum_works:"Работы (позиции)", sum_org:"Прорабские / организация", sum_transport:"Транспортные расходы", sum_materials:"Материалы", sum_discount:"Скидка", sum_advance:"Аванс", sum_balance:"ОСТАТОК К ОПЛАТЕ", mt_balance:"Остаток к оплате", mt_doc:"📄 Смета", act_reset:"↺ Сбросить", act_share:"↗ Поделиться" } };
+  const _origLang = {};
+  function applyLang(l){
+    document.querySelectorAll("[data-i18n]").forEach((el) => { const k = el.getAttribute("data-i18n");
+      if(!(k in _origLang)) _origLang[k] = el.textContent;
+      el.textContent = (l === "ru" && I18N.ru[k]) ? I18N.ru[k] : _origLang[k]; });
+    document.querySelectorAll(".lang-switch button").forEach((b) => b.classList.toggle("active", b.dataset.lang === l));
+    try{ localStorage.setItem(LANG_KEY, l); }catch(_){}
+  }
+  document.querySelectorAll(".lang-switch button").forEach((b) => b.addEventListener("click", () => applyLang(b.dataset.lang)));
+  applyLang(localStorage.getItem(LANG_KEY) || "uk");
 
   // ---- Кабінет / синхронізація між пристроями ----
   const TKEY="wallcov.cab.token", LKEY="wallcov.cab.login", EKEY="wallcov.cab.email", RKEY="wallcov.cab.role", AKEY="wallcov.cab.active";
