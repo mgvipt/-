@@ -161,6 +161,16 @@
   #print-root .doc .sign{display:flex;justify-content:space-between;gap:20pt;margin-top:14pt;}
   #print-root .doc .sign .col{width:48%;font-size:10pt;white-space:pre-line;}
   #print-root .doc .muted{color:#444;}
+  /* ===== Десктопна (комп'ютерна) розкладка ===== */
+  @media (min-width:1000px){
+    body{max-width:1180px;padding-left:24px;padding-right:24px;padding-bottom:40px;}
+    #work-area{display:grid;grid-template-columns:1fr 350px;gap:18px;align-items:start;}
+    #work-area>.card{grid-column:1;margin-bottom:0;}
+    #work-area>.card.totals{grid-column:2;grid-row:1 / span 60;position:sticky;top:80px;align-self:start;}
+    .bottombar{display:none;}
+    h1{font-size:30px;}
+  }
+  @media (min-width:1320px){ body{max-width:1280px;} }
   @page{size:A4;margin:8mm;}
   @media print{
     html,body{background:#fff !important;margin:0 !important;}
@@ -244,6 +254,7 @@
     <div id="proj-list"></div>
   </section>
 
+  <div id="work-area">
   <section class="card editor-only">
     <h2>Кімнати та позиції</h2>
     <p class="hint" style="text-align:left;margin:0 0 8px">Вкажіть розміри кімнати — площі та периметр порахуються самі. У кожній позиції кнопками підставляйте потрібний обсяг.</p>
@@ -346,6 +357,7 @@
     <button class="btn" id="save-now" style="background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#fff;border:none">💾 Зберегти проєкт на сервер</button>
     <p class="hint" id="save-status" style="text-align:center;margin-top:8px"></p>
   </section>
+  </div>
 
   <p class="hint">Ціни в каталозі — ваші робочі ставки (декор). Дані зберігаються на сервері у вашому кабінеті.</p>
 
