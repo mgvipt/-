@@ -24,7 +24,7 @@ app.use(cors());
 const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 250 * 1024 * 1024 } });
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6"; // или claude-opus-4-8
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-4-8"; // краща якість; для економії — claude-sonnet-4-6 у .env
 const WHISPER_BIN = process.env.WHISPER_BIN || "/opt/whisper/build/bin/whisper-cli";
 const WHISPER_MODEL = process.env.WHISPER_MODEL || "/opt/whisper/models/ggml-small.bin";
 const WHISPER_LANG = process.env.WHISPER_LANG || "auto";
@@ -97,7 +97,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
       (req.body.roomName ? `Кімната за замовчуванням: ${req.body.roomName}\n\n` : "") +
       `Транскрипт відеообходу (таймкоди в секундах):\n${transcript}`;
     const msg = await anthropic.messages.create({
-      model: MODEL, max_tokens: 4000, system: SYSTEM_PROMPT,
+      model: MODEL, max_tokens: 8000, system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userContent }],
     });
     const raw = msg.content.map((c) => (c.type === "text" ? c.text : "")).join("");
