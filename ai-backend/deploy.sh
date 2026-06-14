@@ -6,7 +6,7 @@ set -euo pipefail
 DOMAIN="${DOMAIN:-ai.wallcovdec.com.ua}"
 WHISPER_MODEL_NAME="${WHISPER_MODEL_NAME:-small}"   # small (быстро) | medium (точнее, тяжелее)
 CONTAINER="wallcov-ai"
-PORT=8080
+PORT="${PORT:-8091}"   # 8080 на цьому сервері зайнятий іншим застосунком; беремо вільний
 
 echo "==> Проверка .env"
 if [ ! -f .env ]; then
@@ -25,7 +25,7 @@ docker build --build-arg WHISPER_MODEL_NAME="${WHISPER_MODEL_NAME}" -t "${CONTAI
 echo "==> Перезапуск контейнера"
 docker rm -f "${CONTAINER}" 2>/dev/null || true
 docker run -d --name "${CONTAINER}" --restart unless-stopped \
-  --env-file .env -p 127.0.0.1:${PORT}:${PORT} "${CONTAINER}"
+  --env-file .env -e PORT="${PORT}" -p 127.0.0.1:${PORT}:${PORT} "${CONTAINER}"
 
 sleep 2
 echo "==> Health-check"
