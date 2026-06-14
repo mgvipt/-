@@ -6,6 +6,7 @@ set -euo pipefail
 
 DOMAIN="${DOMAIN:-calc.wallcovdec.com.ua}"
 WEBROOT="/var/www/wallcov-calc"
+AI_PORT="${AI_PORT:-8099}"   # порт ШІ-бекенда (8080 і 8091 на сервері зайняті); має збігатися з PORT у deploy.sh
 
 if [ ! -f decorator.html ]; then
   echo "❌ Запускайте из папки репозитория, где есть decorator.html"; exit 1
@@ -25,7 +26,7 @@ server {
   client_max_body_size 25M;
   location /api/  { proxy_pass http://127.0.0.1:8090/api/;  proxy_set_header Host \$host; proxy_read_timeout 120s; }
   location /auth/ { proxy_pass http://127.0.0.1:8090/auth/; proxy_set_header Host \$host; }
-  location /ai/   { proxy_pass http://127.0.0.1:8091/; proxy_set_header Host \$host; client_max_body_size 350M; proxy_read_timeout 600s; }
+  location /ai/   { proxy_pass http://127.0.0.1:${AI_PORT}/; proxy_set_header Host \$host; client_max_body_size 350M; proxy_read_timeout 600s; }
   location /      { add_header Cache-Control "no-store" always; try_files \$uri /index.html; }
 }
 NGINX

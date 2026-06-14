@@ -6,7 +6,7 @@ set -euo pipefail
 DOMAIN="${DOMAIN:-ai.wallcovdec.com.ua}"
 WHISPER_MODEL_NAME="${WHISPER_MODEL_NAME:-small}"   # small (быстро) | medium (точнее, тяжелее)
 CONTAINER="wallcov-ai"
-PORT="${PORT:-8091}"   # 8080 на цьому сервері зайнятий іншим застосунком; беремо вільний
+PORT="${PORT:-8099}"   # 8080 і 8091 на цьому сервері зайняті; беремо вільний (перевірте ss -ltn)
 
 echo "==> Проверка .env"
 if [ ! -f .env ]; then

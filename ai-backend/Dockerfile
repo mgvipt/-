@@ -2,7 +2,7 @@ FROM node:20-slim
 
 # ffmpeg + збірка whisper.cpp (безкоштовна локальна транскрибація)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg git build-essential cmake ca-certificates && \
+      ffmpeg git build-essential cmake ca-certificates curl wget && \
     rm -rf /var/lib/apt/lists/*
 
 # whisper.cpp + модель (small ~466MB; для кращої якості укр/рос — medium, див. ARG)
