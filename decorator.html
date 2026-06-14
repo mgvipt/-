@@ -1496,19 +1496,25 @@
     setReadOnly(o.role === "client");
     if(o.role === "owner"){
       if($("#cab-client-email")) $("#cab-client-email").value = "";
-      if($("#cab-client-cur")) $("#cab-client-cur").textContent = o.clientEmail ? ("Клієнт: "+o.clientEmail+" — бачить цей проєкт у кабінеті") : "Клієнта не призначено";
+      setClientHint(o.clientEmail||"");
       loadClients(o.clientEmail||"");
     }
     setSync((o.role==="client" ? "Перегляд: " : "Відкрито: ") + o.name); updateCurrent();
   }
-  // Список клієнтів власника у випадаючому списку
+  const _ru = ()=> LANG === "ru";
+  function setClientHint(email){
+    const el=$("#cab-client-cur"); if(!el) return;
+    if(email){ el.textContent = (_ru()?"✅ Доступ предоставлен: ":"✅ Доступ надано: ")+email+(_ru()?" — клиент видит этот проект в своём кабинете.":" — клієнт бачить цей проєкт у своєму кабінеті."); el.style.color="var(--money)"; el.style.fontWeight="700"; }
+    else { el.textContent=_ru()?"Клиент не назначен.":"Клієнта не призначено."; el.style.color="var(--muted)"; el.style.fontWeight="400"; }
+  }
+  // Список усіх зареєстрованих клієнтів у випадаючому списку
   async function loadClients(selected){
     const sel=$("#cab-client-select"); if(!sel || cabRole==="client") return;
     const cur = selected!=null ? selected : sel.value;
     try{
       const list=await apiReq("/api/clients");
-      let html = '<option value="">— без клієнта —</option>' +
-        list.map((c)=>`<option value="${escA(c.email)}">${escA(c.email)}${c.registered?"":" (не зареєстр.)"} · ${c.projects} пр.</option>`).join("");
+      let html = `<option value="">${_ru()?"— без клиента —":"— без клієнта —"}</option>` +
+        list.map((c)=>`<option value="${escA(c.email)}">${escA(c.email)}${c.projects?` · ${c.projects} ${_ru()?"пр.":"пр."}`:""}</option>`).join("");
       if(cur && !list.some((c)=>c.email===cur)) html += `<option value="${escA(cur)}">${escA(cur)}</option>`;
       sel.innerHTML = html; sel.value = cur || "";
     }catch(_){}
@@ -1569,16 +1575,21 @@
     const email=e.target.value;
     try{
       await apiReq("/api/objects/"+activeId, { method:"PUT", body: JSON.stringify({ clientEmail: email }) });
-      if($("#cab-client-cur")) $("#cab-client-cur").textContent = email ? ("Клієнт: "+email+" — бачить цей проєкт у кабінеті") : "Клієнта не призначено";
-      setSync(email ? ("Проєкт прив'язано до клієнта: "+email) : "Клієнта відкріплено");
+      setClientHint(email);
+      setSync(email ? ((_ru()?"Проект привязан к клиенту: ":"Проєкт прив'язано до клієнта: ")+email) : (_ru()?"Клиент откреплён":"Клієнта відкріплено"));
     }catch(err){ setSync("⚠ "+err.message); }
   });
-  $("#cab-share").addEventListener("click", async ()=>{ if(!activeId){ setSync("Спочатку відкрийте або створіть об'єкт"); return; }
-    const email=$("#cab-client-email").value.trim(); if(!email){ setSync("Вкажіть email клієнта"); return; }
+  $("#cab-share").addEventListener("click", async ()=>{ if(!activeId){ alert(_ru()?"Сначала откройте или создайте проект":"Спочатку відкрийте або створіть об'єкт"); return; }
+    const email=$("#cab-client-email").value.trim(); if(!email){ alert(_ru()?"Укажите email клиента":"Вкажіть email клієнта"); return; }
     try{ const j=await apiReq("/api/objects/"+activeId+"/invite", { method:"POST", body: JSON.stringify({ clientEmail: email }) });
-      $("#cab-client-email").value=""; await loadClients(email);
-      if($("#cab-client-cur")) $("#cab-client-cur").textContent = "Клієнт: "+email+" — бачить цей проєкт у кабінеті";
-      setSync(j.mailed ? "Клієнту надіслано лист із доступом ✓" : "Доступ надано (лист не надіслано — пошта ще не налаштована)"); }catch(e){ setSync(e.message); } });
+      $("#cab-client-email").value=""; await loadClients(email); setClientHint(email);
+      const msg = j.mailed
+        ? (_ru()?("✅ Доступ предоставлен клиенту "+email+".\nНа его email отправлена ссылка для входа."):("✅ Доступ надано клієнту "+email+".\nНа його email надіслано посилання для входу."))
+        : (_ru()?("✅ Доступ предоставлен клиенту "+email+" — он уже видит этот проект в кабинете.\n\nПисьмо НЕ отправлено (почта на сервере не настроена). Если это новый клиент — передайте ему вход вручную: его email + пароль через «Забыли пароль?».")
+                :("✅ Доступ надано клієнту "+email+" — він уже бачить цей проєкт у кабінеті.\n\nЛист НЕ надіслано (пошта на сервері не налаштована). Якщо це новий клієнт — передайте йому вхід вручну: його email + пароль через «Забули пароль?»."));
+      setSync(j.mailed ? "Клієнту надіслано лист із доступом ✓" : "Доступ надано (лист не надіслано — пошта не налаштована)");
+      alert(msg);
+    }catch(e){ setSync(e.message); alert((_ru()?"Ошибка: ":"Помилка: ")+e.message); } });
   $("#cab-save-email").addEventListener("click", async ()=>{
     try{ const j=await apiReq("/api/account", { method:"PUT", body: JSON.stringify({ email: $("#cab-acc-email").value.trim() }) }); cabEmail=j.email||""; localStorage.setItem(EKEY,cabEmail); setSync("Email збережено ✓"); }catch(e){ setSync(e.message); } });
   $("#cab-req-master").addEventListener("click", async ()=>{

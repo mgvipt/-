@@ -208,18 +208,19 @@ app.post("/api/objects/:id/invite", auth, async (req, res) => {
   res.json({ ok: true, invited, mailed: !!sent });
 });
 
-// Список клієнтів власника (для випадаючого списку прив'язки до проєкту).
-// Береться з email-ів, яких власник уже додавав до своїх об'єктів (адмін бачить усіх).
+// Список усіх зареєстрованих клієнтів (для випадаючого списку прив'язки до проєкту).
+// Майстер може призначити будь-якого клієнта і переназначити за потреби.
 app.get("/api/clients", auth, (req, res) => {
   if (!isMaster(req.user)) return res.status(403).json({ error: "лише майстер" });
   const adm = isAdmin(req.user);
-  const emails = new Set();
-  db.objects.forEach((o) => { if ((adm || o.uid === req.user.id) && o.clientEmail) emails.add(o.clientEmail); });
-  const list = [...emails].sort().map((email) => {
-    const u = db.users.find((x) => x.email === email);
-    const projects = db.objects.filter((o) => (adm || o.uid === req.user.id) && o.clientEmail === email).length;
-    return { email, login: u ? u.login : "", registered: !!u, projects };
-  });
+  const list = db.users
+    .filter((u) => effRole(u) === "client" && u.email)
+    .map((u) => ({
+      email: u.email,
+      login: u.login || u.email,
+      projects: db.objects.filter((o) => (adm || o.uid === req.user.id) && o.clientEmail === u.email).length,
+    }))
+    .sort((a, b) => a.email.localeCompare(b.email));
   res.json(list);
 });
 
