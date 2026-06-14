@@ -115,7 +115,7 @@ function auth(req, res, next) {
   next();
 }
 
-app.get("/api/me", auth, (req, res) => res.json({ login: req.user.login, email: req.user.email || "", role: effRole(req.user), wantsMaster: !!req.user.wantsMaster }));
+app.get("/api/me", auth, (req, res) => res.json({ login: req.user.login, email: req.user.email || "", role: effRole(req.user), wantsMaster: !!req.user.wantsMaster, requisites: req.user.requisites || null }));
 
 app.put("/api/account", auth, (req, res) => {
   if (req.body?.email != null) {
@@ -125,7 +125,11 @@ app.put("/api/account", auth, (req, res) => {
   }
   if (req.body?.password) req.user.pass = hashPw(req.body.password);
   if (req.body?.requestMaster) req.user.wantsMaster = true;
-  persist(); res.json({ ok: true, email: req.user.email || "", role: effRole(req.user), wantsMaster: !!req.user.wantsMaster });
+  if (req.body?.requisites && typeof req.body.requisites === "object") {
+    const r = req.body.requisites, pick = (v) => String(v == null ? "" : v).slice(0, 300);
+    req.user.requisites = { name: pick(r.name), tax: pick(r.tax), addr: pick(r.addr), iban: pick(r.iban), bank: pick(r.bank), phone: pick(r.phone) };
+  }
+  persist(); res.json({ ok: true, email: req.user.email || "", role: effRole(req.user), wantsMaster: !!req.user.wantsMaster, requisites: req.user.requisites || null });
 });
 
 // --- адмін: список користувачів і керування ролями ---
