@@ -26,6 +26,21 @@
   .theme-switch{display:inline-flex;background:var(--card-2);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px;margin:0;}
   .theme-switch button{flex:0 0 auto;border:none;background:transparent;color:var(--muted);border-radius:8px;width:34px;height:32px;font-size:15px;padding:0;}
   .theme-switch button.active{background:var(--card);color:var(--accent);box-shadow:var(--shadow-sm);}
+  .navtabs{display:flex;gap:8px;overflow-x:auto;margin-bottom:12px;padding-bottom:2px;}
+  .navtabs a{flex:0 0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;color:var(--text);text-decoration:none;box-shadow:var(--shadow-sm);white-space:nowrap;}
+  .navtabs a:active{background:var(--accent-soft);color:var(--accent);}
+  .projectbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+  .pb-title{font-size:19px;font-weight:800;color:var(--text);margin-right:auto;display:flex;align-items:center;gap:8px;}
+  .pb-actions{display:flex;gap:10px;}
+  .pb-btn{border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:11px;padding:9px 14px;font-weight:700;font-size:13px;box-shadow:var(--shadow-sm);}
+  .pb-btn.primary{background:var(--accent);color:var(--accent-ink);border:none;}
+  .metrics{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;}
+  .metric{background:var(--card-2);border:1px solid var(--border);border-radius:10px;padding:6px 11px;}
+  .metric span{font-size:10px;color:var(--muted);display:block;text-transform:uppercase;letter-spacing:.03em;}
+  .metric b{font-size:14px;color:var(--text);font-variant-numeric:tabular-nums;}
+  .room-num{width:26px;height:26px;border-radius:8px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-weight:800;font-size:13px;flex:0 0 auto;}
+  section[id^="nav-"]{scroll-margin-top:84px;}
+  html{scroll-behavior:smooth;}
   html,body{margin:0;background:var(--bg);color:var(--text);font-family:'Manrope',-apple-system,BlinkMacSystemFont,system-ui,"Helvetica Neue",Arial,sans-serif;font-size:17px;-webkit-text-size-adjust:100%;}
   body{padding:calc(var(--safe-top) + 14px) 16px calc(var(--safe-bottom) + 130px);max-width:560px;margin:0 auto;}
   h1{font-size:25px;font-weight:800;margin:4px 0 2px;letter-spacing:-.3px;}
@@ -203,6 +218,21 @@
     <button class="acct-btn" id="acct-btn"><span class="acct-ava">W</span> Кабінет</button>
   </header>
 
+  <nav class="navtabs editor-only">
+    <a href="#nav-rooms">Кімнати та позиції</a>
+    <a href="#nav-params">Параметри</a>
+    <a href="#nav-sum">Підсумок</a>
+    <a href="#nav-pay">Оплати та відвантаження</a>
+    <a href="#nav-docs">Документи та реквізити</a>
+  </nav>
+  <div class="projectbar editor-only">
+    <div class="pb-title">📐 <span id="pb-name">Новий проєкт</span></div>
+    <div class="pb-actions">
+      <button class="pb-btn" id="pb-projects">📁 Мої проєкти</button>
+      <button class="pb-btn primary" id="pb-save">💾 Зберегти</button>
+    </div>
+  </div>
+
   <section class="card" id="cabinet">
     <h2>👤 Кабінет (синхронізація) <span class="toggle" id="toggle-cab">показати ▾</span></h2>
     <div id="cab-body" class="collapsed">
@@ -261,7 +291,7 @@
   </section>
 
   <div id="work-area">
-  <section class="card editor-only">
+  <section class="card editor-only" id="nav-rooms">
     <h2><span class="hicon">🏠</span>Кімнати та позиції</h2>
     <p class="hint" style="text-align:left;margin:0 0 8px">Вкажіть розміри кімнати — площі та периметр порахуються самі. У кожній позиції кнопками підставляйте потрібний обсяг.</p>
     <details class="help-block">
@@ -281,7 +311,7 @@
     <button class="btn btn-add" id="add-room">+ Додати кімнату</button>
   </section>
 
-  <section class="card editor-only">
+  <section class="card editor-only" id="nav-params">
     <h2><span class="hicon">⚙️</span>Параметри</h2>
     <div class="totals">
       <div class="row"><label>Додаткові матеріали (вручну)<span class="hint-q">понад вибрані з каталогу</span></label><div class="ctl"><input type="number" id="materials" inputmode="decimal" min="0" step="100" value="0" /><span class="unit">₴</span></div></div>
@@ -294,7 +324,7 @@
     </div>
   </section>
 
-  <section class="card totals editor-only">
+  <section class="card totals editor-only" id="nav-sum">
     <h2><span class="hicon">🧮</span>Підсумок</h2>
     <div class="line"><span>Роботи (позиції)</span><b id="t-works">0 ₴</b></div>
     <div class="line"><span>Прорабські / організація</span><b id="t-mgmt">0 ₴</b></div>
@@ -309,7 +339,7 @@
     </div>
   </section>
 
-  <section class="card editor-only">
+  <section class="card editor-only" id="nav-pay">
     <h2><span class="hicon">💳</span>Оплати та відвантаження</h2>
     <div class="field"><label>Дата</label><input id="h-date" type="date" /></div>
     <div class="field"><label>Тип</label><select id="h-type" class="catalog"><option>Аванс</option><option>Оплата</option><option>Відвантаження матеріалу</option></select></div>
@@ -321,7 +351,7 @@
     <div id="hist-list" style="margin-top:10px"></div>
   </section>
 
-  <section class="card editor-only">
+  <section class="card editor-only" id="nav-docs">
     <h2><span class="hicon">📄</span>Документи та реквізити <span class="toggle" id="toggle-doc">показати ▾</span></h2>
     <div id="doc-body" class="collapsed">
       <div class="field"><label>Об'єкт (адреса)</label><input type="text" id="d-object" placeholder="м. ..., вул. ..., буд. ..." /></div>
@@ -581,6 +611,10 @@
     s+=` · Підлога/Стеля ${a.floor} м² · Периметр ${a.perim} м.п.`;
     if(a.slopeML) s+=` · Відкоси ${a.slopeML} м.п. (${a.slopeM2} м²)`;
     return s; }
+  function metricsHtml(rm){ const a=roomCalc(rm);
+    const items=[["Стіни",a.wallsGross+" м²"],["без проємів",a.wallsNet+" м²"],["Підлога",a.floor+" м²"],["Стеля",a.ceil+" м²"],["Периметр",a.perim+" м.п."],["Відкоси пог.",a.slopeML+" м.п."]];
+    return items.map((it)=>`<div class="metric"><span>${it[0]}</span><b>${it[1]}</b></div>`).join("");
+  }
 
   function renderRooms(){
     roomsRoot.innerHTML = "";
@@ -617,8 +651,10 @@
         <button class="icon-btn" data-delop="${r}.${oi}">✕</button></div>`).join("");
       card.innerHTML = `
         <div class="room-head">
+          <span class="room-num">${r+1}</span>
           <input class="room-name" type="text" placeholder="Назва кімнати" value="${escA(rm.name)}" data-r="${r}" />
-          <button class="icon-btn" data-delroom="${r}">✕</button>
+          <button class="icon-btn" data-duproom="${r}" title="Дублювати">⧉</button>
+          <button class="icon-btn" data-delroom="${r}" title="Видалити">✕</button>
         </div>
         <div class="dims">
           <label class="mini-field"><span>Довжина, м</span><input type="number" inputmode="decimal" min="0" step="0.1" value="${rm.L||""}" data-r="${r}" data-dim="L" placeholder="0" /></label>
@@ -632,8 +668,8 @@
           <button type="button" class="btn btn-add" data-addop="${r}" style="margin-top:6px">+ Проєм</button>
           <label class="mini-field" style="margin-top:8px"><span>Ширина відкосу, м (для перерахунку в м²)</span><input type="number" inputmode="decimal" min="0" step="0.01" value="${rm.revealDepth||""}" data-r="${r}" data-rev="1" placeholder="0.25" /></label>
         </details>
-        <div class="area-out">${areaLine(rm)}</div>
-        <button type="button" class="btn btn-add room-video" data-vroom="${r}" style="margin-bottom:10px;color:var(--accent);border-color:var(--accent)">🎬 Відеообхід (ШІ) — авто-кошторис і опис</button>
+        <div class="metrics">${metricsHtml(rm)}</div>
+        <button type="button" class="btn btn-add room-video" data-vroom="${r}" style="margin-bottom:10px;background:var(--accent-soft);color:var(--accent);box-shadow:none">🎬 Відеообхід (ШІ) — авто-кошторис і опис</button>
         <div class="room-items">${itemsHtml}</div>
         <button type="button" class="btn btn-add room-add" data-addr="${r}">+ Позицію в кімнату</button>
         <div class="room-sub">Разом по кімнаті: <b>${fmtShort(roomSub(rm))}</b></div>
@@ -678,7 +714,7 @@
       const r = +card.dataset.r, rm = state.rooms[r]; if(!rm) return;
       card.querySelectorAll(".item").forEach((el) => { const it = rm.items[+el.dataset.i]; if(it) el.querySelector(".item-sum b").textContent = fmtShort(num(it.qty)*num(it.price)); });
       const sub = card.querySelector(".room-sub b"); if(sub) sub.textContent = fmtShort(roomSub(rm));
-      const ao = card.querySelector(".area-out"); if(ao) ao.textContent = areaLine(rm);
+      const ao = card.querySelector(".metrics"); if(ao) ao.innerHTML = metricsHtml(rm);
     });
     renderTotals();
   }
@@ -723,6 +759,9 @@
     if(t.dataset.del !== undefined){ const [r, i] = t.dataset.del.split(".").map(Number);
       state.rooms[r].items.splice(i, 1); if(!state.rooms[r].items.length) state.rooms[r].items.push(makeItem());
       renderRooms(); renderTotals(); save(); return; }
+    if(t.dataset.duproom !== undefined){ const r = +t.dataset.duproom;
+      const copy = JSON.parse(JSON.stringify(state.rooms[r])); copy.id = uid(); copy.name = (copy.name || "Кімната") + " (копія)";
+      state.rooms.splice(r+1, 0, copy); renderRooms(); renderTotals(); save(); return; }
     if(t.dataset.delroom !== undefined){ const r = +t.dataset.delroom;
       if(state.rooms.length === 1){ if(!confirm("Видалити єдину кімнату? Буде створена порожня.")) return; state.rooms = [makeRoom("Кімната 1")]; }
       else { if(!confirm("Видалити кімнату разом з позиціями?")) return; state.rooms.splice(r, 1); }
@@ -760,7 +799,7 @@
     "e-name":"eName","e-tax":"eTax","e-phone":"ePhone","e-addr":"eAddr","e-iban":"eIban","e-bank":"eBank" };
   Object.keys(docMap).forEach((id) => {
     const el = $("#"+id); el.value = state.doc[docMap[id]] || "";
-    el.addEventListener("input", () => { state.doc[docMap[id]] = el.value; save(); });
+    el.addEventListener("input", () => { state.doc[docMap[id]] = el.value; if(docMap[id]==="object") updateCurrent(); save(); });
   });
 
   $("#toggle-doc").addEventListener("click", () => {
@@ -1071,7 +1110,7 @@
     renderRooms();
     ["materials","mgmt","km","kmRate","transportMin","advance","discount"].forEach((id)=>{ $("#"+id).value = state[id]; });
     Object.keys(docMap).forEach((id)=>{ $("#"+id).value = state.doc[docMap[id]] || ""; });
-    renderTotals(); renderHistory(); renderClientView();
+    renderTotals(); renderHistory(); renderClientView(); updateCurrent();
     if($("#h-date") && !$("#h-date").value) $("#h-date").value = new Date().toISOString().slice(0,10);
   }
   // Теми оформлення
@@ -1207,7 +1246,8 @@
     updateCurrent();
   }
   function refreshBadge(){ apiReq("/api/users").then(updateReqBadge).catch(()=>{}); }
-  function updateCurrent(){ const el=$("#cab-current"); if(el) el.textContent = activeId ? ("Поточний проєкт: " + (activeName||"—")) : "Новий проєкт (збережеться автоматично)"; }
+  function updateCurrent(){ const el=$("#cab-current"); if(el) el.textContent = activeId ? ("Поточний проєкт: " + (activeName||"—")) : "Новий проєкт (збережеться автоматично)";
+    const pb=$("#pb-name"); if(pb) pb.textContent = state.doc.object || activeName || "Новий проєкт"; }
   function enterProjects(){ document.body.classList.add("projview"); loadProjects().catch((e)=>setSync(e.message)); }
   function exitProjects(){ document.body.classList.remove("projview"); }
   function enterAdmin(){ document.body.classList.add("adminview"); loadAdminUsers().catch((e)=>{}); }
@@ -1298,6 +1338,8 @@
   }
   $("#toggle-cab").addEventListener("click", ()=>{ const c=$("#cab-body").classList.toggle("collapsed"); $("#toggle-cab").textContent = c?"показати ▾":"сховати ▴"; });
   $("#acct-btn").addEventListener("click", ()=>{ $("#cab-body").classList.remove("collapsed"); $("#toggle-cab").textContent="сховати ▴"; $("#cabinet").scrollIntoView({ behavior:"smooth", block:"start" }); });
+  $("#pb-save").addEventListener("click", saveNow);
+  $("#pb-projects").addEventListener("click", enterProjects);
   $("#cab-login-btn").addEventListener("click", ()=>doAuth("login"));
   $("#cab-reg-btn").addEventListener("click", ()=>doAuth("register"));
   $("#cab-logout").addEventListener("click", doLogout);
