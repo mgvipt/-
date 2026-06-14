@@ -1511,10 +1511,14 @@
   async function loadClients(selected){
     const sel=$("#cab-client-select"); if(!sel || cabRole==="client") return;
     const cur = selected!=null ? selected : sel.value;
+    const none = _ru()?"— без клиента —":"— без клієнта —";
+    // базовий варіант одразу (щоб поточний клієнт показувався навіть якщо список не завантажиться)
+    sel.innerHTML = `<option value="">${none}</option>` + (cur?`<option value="${escA(cur)}">${escA(cur)}</option>`:"");
+    sel.value = cur||"";
     try{
       const list=await apiReq("/api/clients");
-      let html = `<option value="">${_ru()?"— без клиента —":"— без клієнта —"}</option>` +
-        list.map((c)=>`<option value="${escA(c.email)}">${escA(c.email)}${c.projects?` · ${c.projects} ${_ru()?"пр.":"пр."}`:""}</option>`).join("");
+      let html = `<option value="">${none}</option>` +
+        list.map((c)=>`<option value="${escA(c.email)}">${escA(c.email)}${c.projects?` · ${c.projects} пр.`:""}</option>`).join("");
       if(cur && !list.some((c)=>c.email===cur)) html += `<option value="${escA(cur)}">${escA(cur)}</option>`;
       sel.innerHTML = html; sel.value = cur || "";
     }catch(_){}
