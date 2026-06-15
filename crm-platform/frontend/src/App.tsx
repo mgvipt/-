@@ -6,6 +6,7 @@ import Leads from "./pages/Leads";
 import Deals from "./pages/Deals";
 import DealCard from "./pages/DealCard";
 import Roles from "./pages/Roles";
+import Inbox from "./pages/Inbox";
 import Placeholder from "./pages/Placeholder";
 
 function Shell() {
@@ -22,7 +23,7 @@ function Shell() {
           <Route path="/deals" element={<Deals />} />
           <Route path="/deals/:id" element={<DealCard />} />
           <Route path="/roles" element={<Roles />} />
-          <Route path="/inbox" element={<Placeholder title="Чаты · Открытые линии" note="Единый inbox мессенджеров (Telegram, Instagram, Facebook, WhatsApp, Viber, Google Business)." />} />
+          <Route path="/inbox" element={<Inbox />} />
           <Route path="/phone" element={<Placeholder title="Телефония" note="Связка с SIP-шлюзом на Hetzner: журнал звонков, запись, click-to-call из карточки." />} />
           <Route path="/warehouse" element={<Placeholder title="Товары · Склад" note="Партионный учёт (FIFO), приходные/расходные накладные, инвентаризация." />} />
           <Route path="/clients" element={<Placeholder title="Клиенты" note="Контакты и компании с историей сделок и каналами связи." />} />

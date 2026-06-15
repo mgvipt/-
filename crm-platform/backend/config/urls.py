@@ -5,6 +5,7 @@ from rest_framework.authtoken.views import obtain_auth_token
 
 from apps.crm import views as crm_views
 from apps.accounts import views as acc_views
+from apps.inbox import views as inbox_views
 
 router = DefaultRouter()
 router.register("contacts", crm_views.ContactViewSet)
@@ -16,6 +17,8 @@ router.register("deals", crm_views.DealViewSet)
 router.register("payments", crm_views.PaymentViewSet)
 router.register("roles", acc_views.RoleViewSet)
 router.register("users", acc_views.UserViewSet)
+router.register("channels", inbox_views.ChannelViewSet)
+router.register("conversations", inbox_views.ConversationViewSet)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -23,4 +26,5 @@ urlpatterns = [
     path("api/auth/", include("rest_framework.urls")),
     path("api/auth/token/", obtain_auth_token),  # POST username/password -> {token}
     path("api/me/", acc_views.MeView.as_view()),
+    path("api/inbox/telegram/webhook/<int:channel_id>/", inbox_views.TelegramWebhookView.as_view()),
 ]

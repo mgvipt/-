@@ -62,3 +62,13 @@ export interface Card {
   contact_name?: string; is_seen?: boolean;
 }
 export interface Paginated<T> { count: number; results: T[]; }
+
+export interface Conversation {
+  id: number; channel: number; channel_kind: string; channel_name: string;
+  contact_name?: string; title: string; status: string; unread: number;
+  last_message_at: string | null; last_text: string;
+}
+export interface ChatMessage {
+  id: number; conversation: number; direction: "in" | "out";
+  text: string; attachments: any[]; sender_name: string; created_at: string;
+}

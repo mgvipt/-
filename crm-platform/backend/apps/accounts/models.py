@@ -71,3 +71,11 @@ class User(AbstractUser):
             return None
         ids = list(self.role.funnels.values_list("id", flat=True))
         return ids or None
+
+    def allowed_channel_ids(self):
+        """Доступ к открытым линиям. None = все; иначе список id из role.open_lines.
+        Пусто = ограничение не задано (все линии)."""
+        if self.is_superuser or not self.role:
+            return None
+        ids = self.role.open_lines or []
+        return ids or None

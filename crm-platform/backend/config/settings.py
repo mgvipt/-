@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     # local
     "apps.accounts",
     "apps.crm",
+    "apps.inbox",
 ]
 
 MIDDLEWARE = [
