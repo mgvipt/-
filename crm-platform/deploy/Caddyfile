@@ -1,0 +1,23 @@
+# GMIdeas CRM — production reverse proxy с автоматическим HTTPS.
+# Домен берётся из переменной окружения DOMAIN (напр. crm.gmideas.com.ua).
+{$DOMAIN} {
+    encode gzip zstd
+
+    # API, админка и статика Django -> бэкенд (gunicorn)
+    handle /api/* {
+        reverse_proxy web:8000
+    }
+    handle /admin/* {
+        reverse_proxy web:8000
+    }
+    handle /static/* {
+        reverse_proxy web:8000
+    }
+
+    # всё остальное -> собранный SPA (React), с фолбэком на index.html
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}
