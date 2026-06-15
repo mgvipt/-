@@ -3,476 +3,300 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>GMIdeas CRM — интерактивное превью</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<title>GMIdeas CRM — превью</title>
 <style>
-  :root{
-    --brand:#2a6df4;
-    --brand-dark:#1f5fd6;
-    --sidebar:#15324f;
-    --sidebar-2:#1d4063;
-  }
-  *{font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;}
-  body{margin:0;overflow:hidden;}
-  ::-webkit-scrollbar{height:8px;width:8px;}
-  ::-webkit-scrollbar-thumb{background:rgba(0,0,0,.18);border-radius:8px;}
-  ::-webkit-scrollbar-track{background:transparent;}
-  .kanban-scroll{scrollbar-width:thin;}
-  .col-head{border-top:3px solid var(--c);}
-  .chip{font-size:11px;line-height:1;padding:4px 7px;border-radius:5px;font-weight:600;}
-  .ico-btn{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:#9aa7b8;}
-  .ico-btn:hover{background:#eef2f7;color:var(--brand);}
-  .nav-item{display:flex;align-items:center;gap:10px;padding:8px 16px;color:#c5d4e6;font-size:13.5px;cursor:pointer;border-left:3px solid transparent;}
-  .nav-item:hover{background:var(--sidebar-2);color:#fff;}
-  .nav-item.active{background:var(--sidebar-2);color:#fff;border-left-color:#56b0ff;}
-  .card{background:#fff;border:1px solid #e4e9f0;border-radius:8px;box-shadow:0 1px 2px rgba(20,40,80,.04);}
-  .card:hover{box-shadow:0 4px 14px rgba(20,40,80,.12);border-color:#cdd9ea;}
-  .stage{clip-path:polygon(0 0,calc(100% - 12px) 0,100% 50%,calc(100% - 12px) 100%,0 100%,12px 50%);}
-  .stage:first-child{clip-path:polygon(0 0,calc(100% - 12px) 0,100% 50%,calc(100% - 12px) 100%,0 100%);}
-  .fade{animation:fade .25s ease;}
-  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-  .tab.active{color:var(--brand);border-bottom:2px solid var(--brand);}
-  .toggle{width:34px;height:18px;border-radius:99px;background:#cbd5e1;position:relative;transition:.2s;cursor:pointer;}
-  .toggle.on{background:var(--brand);}
-  .toggle::after{content:'';position:absolute;width:14px;height:14px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.2s;}
-  .toggle.on::after{left:18px;}
+/* ===== Самодостаточные стили (без внешних CDN/картинок) ===== */
+:root{--brand:#2a6df4;--sidebar:#15324f;--sidebar2:#1d4063;--dt:#eef2f7;}
+*{box-sizing:border-box;font-family:'Inter','Segoe UI',system-ui,-apple-system,Arial,sans-serif;}
+html,body{margin:0;height:100%;overflow:hidden;color:#1e293b;background:#f1f5f9;}
+::-webkit-scrollbar{width:8px;height:8px;}::-webkit-scrollbar-thumb{background:rgba(0,0,0,.18);border-radius:8px;}
+.app{display:flex;height:100vh;width:100vw;}
+.hidden{display:none!important;}
+.fade{animation:fade .25s ease;}@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+
+/* sidebar */
+.sidebar{width:212px;flex:0 0 212px;background:var(--sidebar);display:flex;flex-direction:column;color:#c5d4e6;}
+.logo{height:52px;display:flex;align-items:center;gap:9px;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.1);}
+.logo-badge{width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,#38bdf8,#2563eb);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;}
+.logo b{color:#fff;font-size:15px;font-weight:600;}.logo span{color:#7dd3fc;}
+.nav{flex:1;overflow-y:auto;padding:8px 0;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;font-size:13.5px;cursor:pointer;border-left:3px solid transparent;}
+.nav-item .ic{width:18px;text-align:center;}
+.nav-item:hover{background:var(--sidebar2);color:#fff;}
+.nav-item.active{background:var(--sidebar2);color:#fff;border-left-color:#56b0ff;}
+.me{padding:10px 14px;border-top:1px solid rgba(255,255,255,.1);display:flex;align-items:center;gap:9px;font-size:12px;}
+
+/* main */
+.main{flex:1;display:flex;flex-direction:column;min-width:0;}
+.topbar{height:52px;background:#fff;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:12px;padding:0 16px;z-index:5;}
+.topbar h1{font-size:17px;font-weight:600;margin:0;}
+.spacer{flex:1;}
+.search{width:240px;height:32px;background:#f1f5f9;border:none;border-radius:7px;padding:0 12px;font-size:13px;outline:none;}
+.btn{height:32px;border:none;border-radius:7px;padding:0 12px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+.btn-light{background:#f1f5f9;}.btn-light:hover{background:#e2e8f0;}
+.btn-primary{background:var(--brand);color:#fff;}
+.btn-green{background:#10b981;color:#fff;}
+.clock{height:32px;padding:0 12px;border-radius:7px;background:#10b981;color:#fff;font-size:13px;display:flex;align-items:center;}
+.themebar{background:#fff;border-bottom:1px solid #e2e8f0;padding:8px 16px;display:flex;align-items:center;gap:8px;font-size:12px;flex-wrap:wrap;}
+.swatch{width:26px;height:26px;border-radius:6px;border:1px solid #cbd5e1;cursor:pointer;}
+.dot{width:20px;height:20px;border-radius:50%;border:none;cursor:pointer;}
+.muted{color:#94a3b8;}
+
+.view{flex:1;overflow:hidden;background:var(--dt);background-size:cover;}
+
+/* toolbar */
+.toolbar{background:rgba(255,255,255,.8);border-bottom:1px solid #e2e8f0;padding:8px 14px;display:flex;align-items:center;gap:8px;backdrop-filter:blur(4px);}
+.toolbar select,.toolbar input{height:32px;border:1px solid #e2e8f0;border-radius:7px;padding:0 10px;font-size:13px;background:#fff;outline:none;}
+
+/* kanban */
+.kanban{height:100%;display:flex;flex-direction:column;}
+.board{flex:1;overflow-x:auto;overflow-y:hidden;padding:12px;}
+.cols{display:flex;gap:12px;height:100%;}
+.col{width:262px;flex:0 0 262px;display:flex;flex-direction:column;}
+.col-head{background:#fff;border-top:3px solid var(--c);border-radius:8px 8px 0 0;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;}
+.col-head b{font-size:12.5px;font-weight:600;color:#334155;}
+.col-body{background:rgba(248,250,252,.7);border-radius:0 0 8px 8px;padding:8px;flex:1;overflow-y:auto;}
+.sum{text-align:center;font-size:12px;color:#64748b;margin-bottom:8px;font-weight:500;}
+.card{background:#fff;border:1px solid #e4e9f0;border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;box-shadow:0 1px 2px rgba(20,40,80,.05);}
+.card:hover{box-shadow:0 4px 14px rgba(20,40,80,.13);border-color:#cdd9ea;}
+.card .ttl{font-size:13px;font-weight:600;line-height:1.3;margin-bottom:4px;}
+.card .price{font-size:12px;color:#64748b;margin-bottom:6px;}
+.owner{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#475569;margin-top:6px;}
+.av{width:18px;height:18px;border-radius:50%;color:#fff;font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+.av-lg{width:64px;height:64px;font-size:22px;margin:0 auto 8px;}
+.av-md{width:36px;height:36px;font-size:13px;}
+.chip{display:inline-block;font-size:11px;line-height:1;padding:4px 7px;border-radius:5px;font-weight:600;color:#fff;}
+.chip-unseen{background:#fff3cd;color:#9a7d0a;}
+.cardfoot{display:flex;align-items:center;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9;font-size:14px;color:#94a3b8;}
+.cardfoot .t{margin-left:auto;font-size:10.5px;}
+
+/* stage (deals) */
+.stage{color:#fff;font-size:11.5px;font-weight:600;padding:6px 12px;margin-bottom:8px;white-space:nowrap;overflow:hidden;border-radius:4px;
+  clip-path:polygon(0 0,calc(100% - 11px) 0,100% 50%,calc(100% - 11px) 100%,0 100%,11px 50%);}
+
+/* deal card */
+.scroll{height:100%;overflow-y:auto;}
+.dealhead{display:flex;align-items:center;gap:12px;background:#fff;border-bottom:1px solid #e2e8f0;padding:12px 18px;}
+.back{background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8;}
+.stagebar{background:#fff;padding:8px 18px;display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid #e2e8f0;}
+.tabs{background:#fff;padding:0 18px;display:flex;gap:18px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#64748b;}
+.tab{padding:10px 0;cursor:pointer;}.tab.active{color:var(--brand);border-bottom:2px solid var(--brand);}
+.grid2{display:grid;grid-template-columns:340px 1fr;gap:16px;padding:16px;}
+.panel{background:#fff;border:1px solid #e4e9f0;border-radius:8px;padding:16px;margin-bottom:12px;}
+.label{font-size:11px;text-transform:uppercase;color:#94a3b8;margin-bottom:8px;letter-spacing:.3px;}
+.row{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;}
+.player{background:#f1f5f9;border-radius:10px;padding:12px;display:flex;align-items:center;gap:12px;}
+.play{width:36px;height:36px;border-radius:50%;background:var(--brand);color:#fff;border:none;cursor:pointer;}
+.bar{flex:1;height:6px;background:#e2e8f0;border-radius:6px;}.bar i{display:block;height:100%;width:25%;background:var(--brand);border-radius:6px;}
+
+/* inbox */
+.inbox{height:100%;display:grid;grid-template-columns:300px 1fr 280px;}
+.chanlist{background:#fff;border-right:1px solid #e2e8f0;display:flex;flex-direction:column;}
+.chanhead{padding:10px;border-bottom:1px solid #e2e8f0;display:flex;gap:6px;flex-wrap:wrap;}
+.chat-item{padding:10px 12px;border-bottom:1px solid #f1f5f9;display:flex;gap:9px;cursor:pointer;}
+.chat-item:hover,.chat-item.active{background:#eff6ff;}
+.chat-item .nm{font-size:13px;font-weight:500;}
+.chat-item .pv{font-size:12px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.badge-n{width:16px;height:16px;border-radius:50%;background:#3b82f6;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;align-self:center;}
+.conv{display:flex;flex-direction:column;background:#f8fafc;}
+.conv-head{height:52px;background:#fff;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:8px;padding:0 16px;}
+.msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;}
+.msg{max-width:70%;background:#fff;border-radius:10px 10px 10px 2px;padding:9px 11px;font-size:13px;box-shadow:0 1px 2px rgba(0,0,0,.05);}
+.msg.me{margin-left:auto;background:var(--brand);color:#fff;border-radius:10px 10px 2px 10px;}
+.composer{background:#fff;border-top:1px solid #e2e8f0;padding:12px;display:flex;gap:8px;align-items:center;}
+.composer input{flex:1;height:36px;background:#f1f5f9;border:none;border-radius:7px;padding:0 12px;font-size:13px;outline:none;}
+.clientcard{background:#fff;border-left:1px solid #e2e8f0;padding:16px;overflow-y:auto;}
+
+/* tables */
+.pad{padding:16px;}
+table{width:100%;border-collapse:collapse;font-size:13px;background:#fff;}
+thead{background:#f8fafc;color:#94a3b8;font-size:11px;text-transform:uppercase;}
+th{text-align:left;padding:8px 16px;font-weight:600;}
+td{padding:10px 16px;border-bottom:1px solid #f1f5f9;}
+tbody tr:hover{background:#f8fafc;}
+.tablewrap{background:#fff;border:1px solid #e4e9f0;border-radius:8px;overflow:hidden;}
+.tabletitle{padding:10px 16px;border-bottom:1px solid #e2e8f0;font-weight:600;font-size:14px;}
+.cards4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;}
+.stat .big{font-size:24px;font-weight:700;}.stat .lbl{font-size:12px;color:#94a3b8;}
+.note{background:#fff;border:1px solid #e4e9f0;border-radius:8px;padding:14px;margin-top:12px;font-size:12.5px;color:#64748b;}
+.warn{background:#fffbeb;border-color:#fde68a;color:#92400e;}
+/* toggle */
+.toggle{width:34px;height:18px;border-radius:99px;background:#cbd5e1;position:relative;cursor:pointer;display:inline-block;transition:.2s;}
+.toggle.on{background:var(--brand);}
+.toggle::after{content:'';position:absolute;width:14px;height:14px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.2s;}
+.toggle.on::after{left:18px;}
+.funnel-row{display:flex;align-items:center;gap:12px;margin-bottom:8px;}
+.funnel-row .nm{width:170px;font-size:12.5px;color:#475569;}
+.funnel-bar{flex:1;height:24px;background:#f1f5f9;border-radius:5px;overflow:hidden;}
+.funnel-bar i{display:flex;align-items:center;height:100%;color:#fff;font-size:11px;padding-left:8px;}
+.chart{display:flex;align-items:flex-end;gap:5px;height:160px;}
+.chart i{flex:1;border-radius:3px 3px 0 0;background:linear-gradient(var(--brand),#bcd4ff);}
+.integ{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.integ .it{background:#fff;border:1px solid #e4e9f0;border-radius:8px;padding:12px;display:flex;align-items:center;gap:12px;}
+.integ .ico{width:36px;height:36px;border-radius:9px;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
 </style>
 </head>
-<body class="bg-slate-100 text-slate-800">
-
-<div class="flex h-screen w-screen">
-
-  <!-- ============ SIDEBAR ============ -->
-  <aside class="w-[210px] shrink-0 flex flex-col" style="background:var(--sidebar)">
-    <div class="h-[52px] flex items-center gap-2 px-4 border-b border-white/10">
-      <div class="w-7 h-7 rounded-md bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center text-white font-bold text-sm">G</div>
-      <span class="text-white font-semibold text-[15px]">GMIdeas <span class="text-sky-300">CRM</span></span>
-    </div>
-    <nav id="nav" class="flex-1 overflow-y-auto py-2"></nav>
-    <div class="p-3 border-t border-white/10 flex items-center gap-2">
-      <img src="https://i.pravatar.cc/60?img=12" class="w-7 h-7 rounded-full"/>
-      <div class="text-[12px] leading-tight">
-        <div class="text-white">Кирилл О.</div>
-        <div class="text-sky-300/70">Администратор</div>
-      </div>
-    </div>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="logo"><div class="logo-badge">G</div><b>GMIdeas <span>CRM</span></b></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="me"><span class="av" style="background:#7c3aed;width:28px;height:28px;font-size:11px">КО</span>
+      <div><div style="color:#fff">Кирилл О.</div><div style="color:#7dd3fc">Администратор</div></div></div>
   </aside>
-
-  <!-- ============ MAIN ============ -->
-  <div class="flex-1 flex flex-col min-w-0" id="mainwrap">
-    <!-- top bar -->
-    <header class="h-[52px] bg-white border-b border-slate-200 flex items-center px-4 gap-3 shrink-0 z-10">
-      <h1 id="pageTitle" class="text-[17px] font-semibold">Лиды</h1>
-      <div class="flex-1"></div>
-      <div class="relative">
-        <input placeholder="Поиск по CRM…" class="w-64 h-8 bg-slate-100 rounded-md pl-8 pr-3 text-[13px] outline-none focus:ring-2 ring-blue-200"/>
-        <svg class="w-4 h-4 absolute left-2.5 top-2 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-      </div>
-      <button onclick="toggleTheme()" class="h-8 px-3 rounded-md bg-slate-100 hover:bg-slate-200 text-[13px] flex items-center gap-1.5">🎨 Тема</button>
-      <div class="h-8 px-3 rounded-md bg-emerald-500 text-white text-[13px] flex items-center font-medium">15:10</div>
+  <div class="main">
+    <header class="topbar">
+      <h1 id="pageTitle">Лиды</h1>
+      <div class="spacer"></div>
+      <input class="search" placeholder="🔍  Поиск по CRM…"/>
+      <button class="btn btn-light" onclick="document.getElementById('themebar').classList.toggle('hidden')">🎨 Тема</button>
+      <div class="clock">15:10</div>
     </header>
-
-    <!-- theme bar -->
-    <div id="themeBar" class="hidden bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-2 text-[12px] flex-wrap">
-      <span class="text-slate-500">Фон рабочего стола:</span>
-      <button onclick="setBg('#eef2f7')" class="w-7 h-7 rounded border" style="background:#eef2f7"></button>
-      <button onclick="setBg('linear-gradient(135deg,#e0f2fe,#ede9fe)')" class="w-7 h-7 rounded border" style="background:linear-gradient(135deg,#e0f2fe,#ede9fe)"></button>
-      <button onclick="setBg('linear-gradient(135deg,#1e3a8a,#0ea5e9)')" class="w-7 h-7 rounded border" style="background:linear-gradient(135deg,#1e3a8a,#0ea5e9)"></button>
-      <button onclick="setBg(beach)" class="w-7 h-7 rounded border bg-cover" style="background-image:url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=80')"></button>
-      <span class="text-slate-400 ml-3">Акцент:</span>
-      <button onclick="setAccent('#2a6df4')" class="w-5 h-5 rounded-full" style="background:#2a6df4"></button>
-      <button onclick="setAccent('#7c3aed')" class="w-5 h-5 rounded-full" style="background:#7c3aed"></button>
-      <button onclick="setAccent('#0ea5e9')" class="w-5 h-5 rounded-full" style="background:#0ea5e9"></button>
-      <button onclick="setAccent('#059669')" class="w-5 h-5 rounded-full" style="background:#059669"></button>
-      <span class="text-slate-400 ml-2 italic">(каждый сотрудник настраивает под себя — сохраняется в его профиле)</span>
+    <div class="themebar hidden" id="themebar">
+      <span class="muted">Фон:</span>
+      <button class="swatch" style="background:#eef2f7" onclick="bg('#eef2f7')"></button>
+      <button class="swatch" style="background:linear-gradient(135deg,#e0f2fe,#ede9fe)" onclick="bg('linear-gradient(135deg,#e0f2fe,#ede9fe)')"></button>
+      <button class="swatch" style="background:linear-gradient(135deg,#1e3a8a,#0ea5e9)" onclick="bg('linear-gradient(135deg,#1e3a8a,#0ea5e9)')"></button>
+      <button class="swatch" style="background:linear-gradient(135deg,#0ea5e9,#67e8f9)" onclick="bg('linear-gradient(135deg,#0ea5e9,#67e8f9)')"></button>
+      <span class="muted" style="margin-left:10px">Акцент:</span>
+      <button class="dot" style="background:#2a6df4" onclick="ac('#2a6df4')"></button>
+      <button class="dot" style="background:#7c3aed" onclick="ac('#7c3aed')"></button>
+      <button class="dot" style="background:#0ea5e9" onclick="ac('#0ea5e9')"></button>
+      <button class="dot" style="background:#059669" onclick="ac('#059669')"></button>
+      <span class="muted" style="margin-left:8px;font-style:italic">(каждый сотрудник настраивает под себя)</span>
     </div>
-
-    <!-- view content -->
-    <main id="view" class="flex-1 overflow-hidden"></main>
+    <main class="view" id="view"></main>
   </div>
 </div>
 
 <script>
-const beach="linear-gradient(rgba(255,255,255,.05),rgba(255,255,255,.05)),url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1600')";
-let curView='leads';
+function bg(v){var el=document.getElementById('view');el.style.background=v;el.style.backgroundSize='cover';}
+function ac(c){document.documentElement.style.setProperty('--brand',c);}
+function avc(s){var c=['#2563eb','#7c3aed','#db2777','#ea580c','#059669','#0891b2','#4f46e5'];var n=0;for(var i=0;i<s.length;i++)n+=s.charCodeAt(i);return c[n%c.length];}
+function initials(s){var p=s.trim().split(' ');return ((p[0]||'')[0]||'')+((p[1]||'')[0]||'');}
+function av(name,cls){return '<span class="av '+(cls||'')+'" style="background:'+avc(name)+'">'+initials(name).toUpperCase()+'</span>';}
 
-/* ---------- THEME ---------- */
-function toggleTheme(){document.getElementById('themeBar').classList.toggle('hidden');}
-function setBg(v){document.getElementById('view').style.background=v;document.getElementById('view').style.backgroundSize='cover';}
-function setAccent(c){document.documentElement.style.setProperty('--brand',c);}
+var SRC={tg:['Telegram','#27a7e7'],vb:['Viber','#7d4fc4'],ig:['Instagram','#e1306c'],fb:['Facebook','#1877f2'],wa:['WhatsApp','#25d366'],call:['Звонок','#16a34a'],gb:['Google','#ea4335']};
+function chip(k){return '<span class="chip" style="background:'+SRC[k][1]+'">'+SRC[k][0]+'</span>';}
+var skeys=Object.keys(SRC);
 
-/* ---------- NAV ---------- */
-const NAV=[
-  ['leads','Лиды','M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z'],
-  ['deals','Сделки','M3 7h18M3 12h18M3 17h18'],
-  ['inbox','Чаты · Открытые линии','M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'],
-  ['phone','Телефония','M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.13 1 .37 1.95.7 2.87a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.21-1.21a2 2 0 012.11-.45c.92.33 1.87.57 2.87.7A2 2 0 0122 16.92z'],
-  ['warehouse','Товары · Склад','M3 9l9-6 9 6v11a1 1 0 01-1 1H4a1 1 0 01-1-1z'],
-  ['clients','Клиенты','M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 7a4 4 0 100 8 4 4 0 000-8z'],
-  ['finance','Финансы','M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6'],
-  ['analytics','Аналитика','M3 3v18h18M7 14l4-4 3 3 5-6'],
-  ['roles','Сотрудники и права','M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z'],
-  ['settings','Настройки','M12 15a3 3 0 100-6 3 3 0 000 6z'],
-];
-function renderNav(){
-  document.getElementById('nav').innerHTML=NAV.map(([id,label,d])=>
-   `<div class="nav-item ${id===curView?'active':''}" onclick="go('${id}')">
-      <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="${d}"/></svg>
-      <span>${label}</span></div>`).join('');
-}
-function go(id){curView=id;renderNav();document.getElementById('pageTitle').textContent=NAV.find(n=>n[0]===id)[1];VIEWS[id]();}
+var NAV=[['leads','📋 Лиды'],['deals','🤝 Сделки'],['inbox','💬 Чаты · Открытые линии'],['phone','📞 Телефония'],
+['warehouse','📦 Товары · Склад'],['clients','👥 Клиенты'],['finance','💰 Финансы'],['analytics','📊 Аналитика'],
+['roles','🛡️ Сотрудники и права'],['settings','⚙️ Настройки']];
+var cur='leads';
+function renderNav(){document.getElementById('nav').innerHTML=NAV.map(function(n){
+  return '<div class="nav-item'+(n[0]===cur?' active':'')+'" onclick="go(\''+n[0]+'\')"><span class="ic">'+n[1].split(' ')[0]+'</span><span>'+n[1].split(' ').slice(1).join(' ')+'</span></div>';}).join('');}
+function go(id){cur=id;renderNav();document.getElementById('pageTitle').textContent=NAV.filter(function(n){return n[0]===id})[0][1].split(' ').slice(1).join(' ');VIEWS[id]();}
+function set(html){document.getElementById('view').innerHTML=html;}
 
-/* ---------- SAMPLE DATA ---------- */
-const SRC={tg:['Telegram','#27a7e7'],vb:['Viber','#7d4fc4'],ig:['Instagram','#e1306c'],fb:['Facebook','#1877f2'],wa:['WhatsApp','#25d366'],call:['Звонок','#16a34a'],gb:['Google Бизнес','#ea4335']};
-function srcBadge(k){const[t,c]=SRC[k];return `<span class="chip text-white" style="background:${c}">${t}</span>`;}
+var names=['Sergeevna Vladlena','Гість Клиент','Kakashvili Levan','Гродзевич Христя','Родич Світлана','Катя Кравчук','Андрій Бойко','Кошова Анна','Nastya Litvinova','Мерлич Ирина','Артур Сидір','Оксана Дяк'];
+var ops=['Ковальчук Илона','Оксаненко Кирилл','Крижевски Олег'];
+var leadCols=[['Лід отриманий','#f5b301',40],['Взято в роботу','#f5b301',221],['Контакт встановлений','#a3d039',326],['Кваліфікований','#a3d039',5],['Підбір рішення','#a3d039',52],['Не вдалося','#ef4444',93]];
 
-const leadCols=[
-  ['Лід отриманий','#f5b301',40],['Взято в роботу','#f5b301',221],['Контакт встановлений','#a3d039',326],
-  ['Кваліфікований','#a3d039',5],['Підбір рішення','#a3d039',52],['Не вдалося зв.','#ef4444',93]
-];
-const names=['Sergeevna Vladlena','Гість','Kakashvili Levan','Гродзевич Христя','Родич Світлана','Катя','Андрій','Кошова Анна','Nastya Litvinova','Мерлич Ирина','Артур','Оксана'];
-const ops=['Ковальчук Илона','Оксаненко Кирилл','Крижевски Олег'];
-const skeys=Object.keys(SRC);
-function leadCard(i){
-  const src=skeys[i%skeys.length];
-  const unseen=i%3===0;
-  return `<div class="card p-2.5 mb-2 fade cursor-pointer" onclick="openDeal()">
-    <div class="text-[13px] font-semibold text-slate-800 leading-snug mb-1">${names[i%names.length]} — Покриття для стін</div>
-    <div class="text-[12px] text-slate-500 mb-1">0 грн.</div>
-    <div class="mb-1.5">${srcBadge(src)}</div>
-    <div class="flex items-center gap-1.5 mb-1.5">
-      <img src="https://i.pravatar.cc/40?img=${20+i%30}" class="w-4 h-4 rounded-full"/>
-      <span class="text-[11.5px] text-slate-600">${ops[i%3]}</span>
-    </div>
-    ${unseen?`<span class="chip" style="background:#fff3cd;color:#9a7d0a">НЕПЕРЕГЛЯНУТІ</span>`:''}
-    <div class="flex items-center gap-0.5 mt-1.5 pt-1.5 border-t border-slate-100">
-      <div class="ico-btn">📞</div><div class="ico-btn">✉️</div><div class="ico-btn">💬</div>
-      <span class="ml-auto text-[10.5px] text-slate-400">сьогодні</span>
-    </div>
-  </div>`;
-}
+function leadCard(i){var src=skeys[i%skeys.length];var unseen=i%3===0;var nm=names[i%names.length];var op=ops[i%3];
+ return '<div class="card" onclick="openDeal()"><div class="ttl">'+nm+' — Покриття для стін</div><div class="price">0 грн.</div>'+
+ '<div style="margin-bottom:6px">'+chip(src)+'</div><div class="owner">'+av(op)+'<span>'+op+'</span></div>'+
+ (unseen?'<div style="margin-top:6px"><span class="chip chip-unseen">НЕПЕРЕГЛЯНУТІ</span></div>':'')+
+ '<div class="cardfoot">📞 ✉️ 💬<span class="t">сьогодні</span></div></div>';}
 
-/* ---------- VIEWS ---------- */
-const VIEWS={};
+var VIEWS={};
+VIEWS.leads=function(){set('<div class="kanban fade"><div class="toolbar">'+
+ '<button class="btn btn-primary">+ Создать</button><select><option>Канбан</option><option>Список</option></select>'+
+ '<input placeholder="Фильтр + поиск"/><div class="spacer"></div><span class="muted">28 Вхідні · 99+ Додатково</span></div>'+
+ '<div class="board"><div class="cols">'+leadCols.map(function(c,ci){
+   var cards='';for(var i=0;i<5+ci%3;i++)cards+=leadCard(i+ci);
+   return '<div class="col"><div class="col-head" style="--c:'+c[1]+'"><b>'+c[0]+'</b><span class="muted">'+c[2]+'</span></div>'+
+   '<div class="col-body"><div class="sum">0 грн.</div>'+cards+'</div></div>';}).join('')+'</div></div></div>');};
 
-VIEWS.leads=()=>{
-  document.getElementById('view').innerHTML=`
-  <div class="h-full flex flex-col">
-    <div class="bg-white/70 backdrop-blur border-b border-slate-200 px-4 py-2 flex items-center gap-2">
-      <button class="h-8 px-3 rounded-md text-white text-[13px] font-medium" style="background:var(--brand)">+ Создать</button>
-      <div class="h-8 px-3 rounded-md bg-slate-100 text-[13px] flex items-center gap-2">Канбан ▾</div>
-      <input placeholder="Фильтр + поиск" class="h-8 w-56 bg-slate-100 rounded-md px-3 text-[13px] outline-none"/>
-      <div class="flex-1"></div>
-      <span class="text-[12px] text-slate-500">28 Вхідні · 99+ Додатково</span>
-    </div>
-    <div class="flex-1 overflow-x-auto overflow-y-hidden kanban-scroll p-3">
-      <div class="flex gap-3 h-full">
-        ${leadCols.map((c,ci)=>`
-          <div class="w-[260px] shrink-0 flex flex-col">
-            <div class="col-head bg-white rounded-t-md px-3 py-2 flex items-center justify-between" style="--c:${c[1]}">
-              <span class="text-[12.5px] font-semibold text-slate-700">${c[0]}</span>
-              <span class="text-[11px] text-slate-400">${c[2]}</span>
-            </div>
-            <div class="bg-slate-50/60 rounded-b-md px-2 pt-2 flex-1 overflow-y-auto kanban-scroll">
-              <div class="text-center text-[12px] text-slate-400 mb-2">0 грн.</div>
-              ${Array.from({length:5+ci%3}).map((_,i)=>leadCard(i+ci)).join('')}
-            </div>
-          </div>`).join('')}
-      </div>
-    </div>
-  </div>`;
-};
+var funnels={'21':{name:'21 · Основний продукт',st:[['Дані для розрахунку','#3b82f6'],['Розрахунок','#6366f1'],['Домовились про оплату','#8b5cf6'],['Оплата отримана','#f59e0b'],['Заброньовано','#f59e0b'],['Відвантаження','#10b981'],['НП_ТТН','#10b981'],['Отримано','#059669'],['Завершити','#16a34a']]},
+'22':{name:'22 · Тестовий набір',st:[['Нова заявка','#3b82f6'],['Узгодження','#6366f1'],['Відправлено','#f59e0b'],['Завершено','#16a34a']]}};
+var cf='21';
+VIEWS.deals=function(){var f=funnels[cf];
+ set('<div class="kanban fade"><div class="toolbar"><button class="btn btn-primary">+ Сделка</button>'+
+ '<select onchange="cf=this.value;VIEWS.deals()">'+Object.keys(funnels).map(function(k){return '<option value="'+k+'"'+(k===cf?' selected':'')+'>'+funnels[k].name+'</option>';}).join('')+'</select>'+
+ '<div class="spacer"></div><span class="muted">Воронки ограничены правами · видно 2 из 5</span></div>'+
+ '<div class="board"><div class="cols">'+f.st.map(function(s,si){
+   var cards='';for(var i=0;i<2+si%3;i++){cards+='<div class="card" onclick="openDeal()"><div class="ttl">Угода #'+(52000+si*7+i)+'</div><div class="price">'+((2000+((si+i)*977)%9000)).toLocaleString()+' грн.</div>'+chip(skeys[(si+i)%skeys.length])+'<div class="owner">'+av(ops[i%3])+'<span>'+ops[i%3]+'</span></div></div>';}
+   return '<div class="col" style="width:232px;flex:0 0 232px"><div class="stage" style="background:'+s[1]+'">'+s[0]+'</div>'+
+   '<div class="col-body" style="background:transparent">'+cards+'</div></div>';}).join('')+'</div></div></div>');};
 
-const dealFunnels={
-  '21':{name:'21 · Основний продукт',stages:[['Дані для розрахунку','#3b82f6'],['Розрахунок','#6366f1'],['Домовились про оплату','#8b5cf6'],['Оплата отримана','#f59e0b'],['Заброньовано','#f59e0b'],['Відвантаження','#10b981'],['НП_ТТН створена','#10b981'],['Отримано','#059669'],['Завершити','#16a34a']]},
-  '22':{name:'22 · Тестовий набір',stages:[['Нова заявка','#3b82f6'],['Узгодження','#6366f1'],['Відправлено','#f59e0b'],['Завершено','#16a34a']]}
-};
-let curFunnel='21';
-VIEWS.deals=()=>{
-  const f=dealFunnels[curFunnel];
-  document.getElementById('view').innerHTML=`
-  <div class="h-full flex flex-col">
-    <div class="bg-white/70 backdrop-blur border-b border-slate-200 px-4 py-2 flex items-center gap-2">
-      <button class="h-8 px-3 rounded-md text-white text-[13px] font-medium" style="background:var(--brand)">+ Сделка</button>
-      <select onchange="curFunnel=this.value;VIEWS.deals()" class="h-8 px-2 rounded-md bg-slate-100 text-[13px] outline-none">
-        ${Object.entries(dealFunnels).map(([k,v])=>`<option value="${k}" ${k===curFunnel?'selected':''}>${v.name}</option>`).join('')}
-      </select>
-      <span class="text-[12px] text-slate-500 ml-auto">Воронки ограничены правами · вы видите 2 из 5</span>
-    </div>
-    <div class="flex-1 overflow-x-auto overflow-y-hidden kanban-scroll p-3">
-      <div class="flex gap-2.5 h-full">
-        ${f.stages.map((s,si)=>`
-          <div class="w-[230px] shrink-0 flex flex-col">
-            <div class="stage text-white text-[11.5px] font-semibold px-3 py-1.5 mb-2 whitespace-nowrap overflow-hidden" style="background:${s[1]}">${s[0]}</div>
-            <div class="flex-1 overflow-y-auto kanban-scroll px-0.5">
-              <div class="text-center text-[12px] text-slate-500 mb-2 font-medium">${(Math.random()*40000|0).toLocaleString()} грн.</div>
-              ${Array.from({length:2+si%3}).map((_,i)=>`
-                <div class="card p-2.5 mb-2 cursor-pointer fade" onclick="openDeal()">
-                  <div class="text-[13px] font-semibold mb-1">Угода #${52000+si*7+i}</div>
-                  <div class="text-[12px] text-slate-500 mb-1.5">${(2000+Math.random()*9000|0).toLocaleString()} грн.</div>
-                  ${srcBadge(skeys[(si+i)%skeys.length])}
-                  <div class="flex items-center gap-1.5 mt-1.5"><img src="https://i.pravatar.cc/40?img=${30+i}" class="w-4 h-4 rounded-full"/><span class="text-[11.5px] text-slate-600">${ops[i%3]}</span></div>
-                </div>`).join('')}
-            </div>
-          </div>`).join('')}
-      </div>
-    </div>
-  </div>`;
-};
+function openDeal(){var f=funnels['21'];
+ set('<div class="scroll fade"><div class="dealhead"><button class="back" onclick="go(\'deals\')">←</button>'+
+ '<b style="font-size:16px">Угода #52059</b><span class="muted">21 · Основний продукт</span><div class="spacer"></div><button class="btn btn-primary">Пропозиція ▾</button></div>'+
+ '<div class="stagebar">'+f.st.map(function(s,i){return '<div class="stage" style="background:'+(i<4?'var(--brand)':'#cbd5e1')+'">'+s[0]+'</div>';}).join('')+'</div>'+
+ '<div class="tabs">'+['Загальне','Товари','AI помічник','Cashflow','Історія','Дзвінки','Документи'].map(function(t,i){return '<div class="tab'+(i===0?' active':'')+'">'+t+'</div>';}).join('')+'</div>'+
+ '<div class="grid2"><div>'+
+   '<div class="panel"><div class="label">Клієнт</div><div style="font-weight:600;font-size:14px">Турок Ірина</div><div style="color:#64748b;font-size:13px;margin:4px 0 10px">+380 67 743 8953</div>'+
+   '<div style="display:flex;gap:8px"><button class="btn" style="flex:1;background:#ecfdf5;color:#047857">📞 Позвонить</button><button class="btn" style="flex:1;background:#eff6ff;color:#1d4ed8">💬 Чат</button></div></div>'+
+   '<div class="panel"><div class="label">Відповідальний</div><div class="owner" style="font-size:13px">'+av('Оксаненко Кирилл')+'Оксаненко Кирилл</div></div>'+
+   '<div class="panel"><div class="label">Сума та валюта</div><div style="font-size:22px;font-weight:700;margin-bottom:10px">0 <span style="font-size:14px;color:#94a3b8">грн.</span></div>'+
+   '<button class="btn btn-primary" style="width:100%;height:36px">Прийняти оплату</button>'+
+   '<div style="margin-top:12px"><div class="row"><span class="muted">Аванс</span><span>—</span></div><div class="row"><span class="muted">Борг</span><span>0.00 грн.</span></div><div class="row"><span class="muted">Джерело</span><span style="color:#db2777">Instagram Direct</span></div></div></div>'+
+ '</div><div>'+
+   '<div class="panel" style="display:flex;gap:8px;padding:12px">'+['Справу','Коментар','Повідомлення','Дзвінок','Зустріч'].map(function(t,i){return '<button class="btn" style="background:'+(i===0?'#eff6ff':'#fff')+';color:'+(i===0?'#1d4ed8':'#64748b')+'">'+t+'</button>';}).join('')+'</div>'+
+   '<div class="panel"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="av" style="background:#3b82f6;width:28px;height:28px">📞</span><b style="font-size:13px">Вихідний дзвінок завершено</b><span class="muted" style="margin-left:auto;font-size:11px">14:36</span></div>'+
+   '<div class="player"><button class="play">▶</button><div class="bar"><i></i></div><span class="muted" style="font-size:12px">6:10</span><button class="btn" style="background:#ede9fe;color:#6d28d9;font-size:11px;height:26px">→ Транскрипция AI</button></div>'+
+   '<div class="muted" style="font-size:11px;margin-top:8px">🔒 Запись в формате Opus · 1.4 МБ вместо 18 МБ</div></div>'+
+   '<div class="panel"><div style="display:flex;align-items:center;gap:8px"><span class="av" style="background:#10b981;width:28px;height:28px">⚙️</span><b style="font-size:13px">Бізнес-процес завершено</b><span class="chip" style="background:#10b981;margin-left:8px">OK</span></div><div style="font-size:12.5px;color:#64748b;margin:6px 0 0 36px">Wallcov: надіслати реквізити з токеном → клієнту відправлено LiqPay-посилання</div></div>'+
+   '<div class="panel"><div style="display:flex;align-items:center;gap:8px"><span class="av" style="background:#e1306c;width:28px;height:28px">💬</span><b style="font-size:13px">Instagram Direct</b><span class="muted" style="margin-left:auto;font-size:11px">12:29</span></div><div style="font-size:12.5px;color:#64748b;margin:6px 0 0 36px">«Доброго дня! Цікавить покриття для стін, скільки коштує м²?»</div></div>'+
+ '</div></div></div>');}
 
-function openDeal(){
-  document.getElementById('view').innerHTML=`
-  <div class="h-full overflow-y-auto fade" style="background:var(--dt,#eef2f7)">
-    <div class="flex items-center gap-3 bg-white border-b border-slate-200 px-5 py-3">
-      <button onclick="go('deals')" class="text-slate-400 hover:text-slate-700">←</button>
-      <span class="font-semibold text-[16px]">Угода #52059</span>
-      <span class="text-[12px] text-slate-400">21 · Основний продукт</span>
-      <div class="flex-1"></div>
-      <button class="h-8 px-3 rounded-md text-white text-[13px]" style="background:var(--brand)">Пропозиція ▾</button>
-    </div>
-    <!-- stage bar -->
-    <div class="bg-white px-5 py-2 flex gap-1 overflow-x-auto border-b border-slate-200">
-      ${dealFunnels['21'].stages.map((s,i)=>`<div class="stage text-white text-[11px] px-3 py-1.5 whitespace-nowrap" style="background:${i<4?'var(--brand)':'#cbd5e1'}">${s[0]}</div>`).join('')}
-    </div>
-    <!-- tabs -->
-    <div class="bg-white px-5 flex gap-5 border-b border-slate-200 text-[13px] text-slate-500">
-      ${['Загальне','Товари','AI помічник','Cashflow','Пропозиції','Історія','Дзвінки','Документи'].map((t,i)=>`<div class="tab py-2.5 cursor-pointer ${i===0?'active':''}">${t}</div>`).join('')}
-    </div>
-    <div class="grid grid-cols-[340px_1fr] gap-4 p-4">
-      <!-- left: client -->
-      <div class="space-y-3">
-        <div class="card p-4">
-          <div class="text-[11px] uppercase text-slate-400 mb-2">Клієнт</div>
-          <div class="flex items-center gap-2 mb-1"><span class="font-semibold text-[14px]">Турок Ірина</span></div>
-          <div class="text-[13px] text-slate-600 mb-2">+380 67 743 8953</div>
-          <div class="flex gap-2">
-            <button class="flex-1 h-8 rounded-md bg-emerald-50 text-emerald-700 text-[12px]">📞 Позвонить</button>
-            <button class="flex-1 h-8 rounded-md bg-blue-50 text-blue-700 text-[12px]">💬 Чат</button>
-          </div>
-        </div>
-        <div class="card p-4">
-          <div class="text-[11px] uppercase text-slate-400 mb-2">Відповідальний</div>
-          <div class="flex items-center gap-2"><img src="https://i.pravatar.cc/40?img=12" class="w-6 h-6 rounded-full"/><span class="text-[13px]">Оксаненко Кирилл</span></div>
-        </div>
-        <div class="card p-4">
-          <div class="text-[11px] uppercase text-slate-400 mb-2">Сума та валюта</div>
-          <div class="text-[22px] font-bold mb-2">0 <span class="text-[14px] text-slate-400">грн.</span></div>
-          <button class="w-full h-9 rounded-md text-white text-[13px]" style="background:var(--brand)">Прийняти оплату</button>
-          <div class="mt-3 space-y-1.5 text-[12.5px]">
-            <div class="flex justify-between"><span class="text-slate-400">Аванс</span><span>—</span></div>
-            <div class="flex justify-between"><span class="text-slate-400">Борг</span><span>0.00 грн.</span></div>
-            <div class="flex justify-between"><span class="text-slate-400">Джерело</span><span class="text-pink-600">Instagram Direct</span></div>
-          </div>
-        </div>
-      </div>
-      <!-- right: timeline -->
-      <div class="space-y-3">
-        <div class="card p-3 flex gap-2">
-          ${['Справу','Коментар','Повідомлення','Дзвінок','Зустріч','Лист'].map((t,i)=>`<button class="text-[12.5px] px-2 py-1 rounded ${i===0?'bg-blue-50 text-blue-700':'text-slate-500 hover:bg-slate-50'}">${t}</button>`).join('')}
-        </div>
-        <!-- call recording -->
-        <div class="card p-4">
-          <div class="flex items-center gap-2 mb-3"><span class="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center">📞</span><span class="text-[13px] font-medium">Вихідний дзвінок завершено</span><span class="text-[11px] text-slate-400 ml-auto">14:36</span></div>
-          <div class="bg-slate-50 rounded-lg p-3 flex items-center gap-3">
-            <button class="w-9 h-9 rounded-full text-white flex items-center justify-center" style="background:var(--brand)">▶</button>
-            <div class="flex-1"><div class="h-1.5 bg-slate-200 rounded-full"><div class="h-full w-1/4 rounded-full" style="background:var(--brand)"></div></div></div>
-            <span class="text-[12px] text-slate-400">6:10</span>
-            <button class="text-[11px] px-2 py-1 rounded bg-violet-100 text-violet-700">→ Транскрипция (AI)</button>
-          </div>
-          <div class="text-[11px] text-slate-400 mt-2">🔒 Запись хранится в сжатом формате Opus · 1.4 МБ вместо 18 МБ</div>
-        </div>
-        <!-- process -->
-        <div class="card p-4">
-          <div class="flex items-center gap-2 mb-1"><span class="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center">⚙️</span><span class="text-[13px] font-medium">Бізнес-процес завершено</span><span class="chip bg-emerald-100 text-emerald-700">ЗАВЕРШЕНО</span></div>
-          <div class="text-[12.5px] text-slate-600 ml-9">Wallcov: надіслати реквізити з токеном → клієнту відправлено LiqPay-посилання</div>
-        </div>
-        <div class="card p-4">
-          <div class="flex items-center gap-2 mb-1"><span class="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center">💬</span><span class="text-[13px] font-medium">Instagram Direct</span><span class="text-[11px] text-slate-400 ml-auto">сьогодні 12:29</span></div>
-          <div class="text-[12.5px] text-slate-600 ml-9">«Доброго дня! Цікавить покриття для стін, скільки коштує м²?»</div>
-        </div>
-      </div>
-    </div>
-  </div>`;
-}
+VIEWS.inbox=function(){var chats=[['Турок Ірина','ig','Дякую! Чекаю рахунок','2 хв',1],['Vladlena S.','tg','Доброго дня, є у наявності?','12 хв',0],['Катя','vb','А доставка в Київ скільки?','34 хв',3],['Levan K.','fb','Коментар: 🔥','1 год',0],['Anna','wa','Добрий день','2 год',0],['Магазин Google','gb','Запит з картки бізнесу','3 год',0]];
+ set('<div class="inbox fade"><div class="chanlist"><div class="chanhead">'+skeys.map(function(k){return chip(k);}).join('')+'</div><div style="flex:1;overflow-y:auto">'+
+ chats.map(function(c,i){return '<div class="chat-item'+(i===0?' active':'')+'" onclick="document.querySelectorAll(\'.chat-item\').forEach(function(e){e.classList.remove(\'active\')});this.classList.add(\'active\')">'+
+ '<div style="position:relative">'+av(c[0],'av-md')+'</div>'+
+ '<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between"><span class="nm">'+c[0]+'</span><span class="muted" style="font-size:10.5px">'+c[3]+'</span></div><div class="pv">'+chip(c[1])+' '+c[2]+'</div></div>'+
+ (c[4]?'<span class="badge-n">'+c[4]+'</span>':'')+'</div>';}).join('')+'</div></div>'+
+ '<div class="conv"><div class="conv-head"><b style="font-size:14px">Турок Ірина</b>'+chip('ig')+'<div class="spacer"></div><button class="btn btn-green">📞 Позвонить</button><button class="btn btn-light">Создать сделку</button></div>'+
+ '<div class="msgs"><div class="msg">Доброго дня! Цікавить покриття для стін 🙂</div><div class="msg">Скільки коштує м²?</div>'+
+ '<div class="msg me">Доброго дня! Від 450 грн/м². Надішлю каталог 📎</div>'+
+ '<div class="msg me">🎤 ▬▬▬ 0:14 <span style="font-size:10px;opacity:.8">→ текст</span></div>'+
+ '<div class="msg">Дякую! Чекаю рахунок 😊</div></div>'+
+ '<div class="composer"><button class="btn btn-light">📎</button><input placeholder="Написать сообщение… (ответ уйдёт в Instagram)"/><button class="btn btn-primary">Отправить</button></div></div>'+
+ '<div class="clientcard"><div style="text-align:center">'+av('Турок Ірина','av-lg')+'<div style="font-weight:600">Турок Ірина</div><div class="muted" style="font-size:12px">+380 67 743 8953</div></div>'+
+ '<div class="panel" style="margin-top:12px"><div class="label">Сделка</div><div style="font-size:13px">#52059 · 21 Основний</div></div>'+
+ '<div class="panel"><div class="label">Ответственный</div><div style="font-size:13px">Оксаненко Кирилл</div></div>'+
+ '<div class="panel"><div class="label">Каналы</div><div style="display:flex;gap:4px;flex-wrap:wrap">'+chip('ig')+chip('vb')+chip('call')+'</div></div></div></div>');};
 
-VIEWS.inbox=()=>{
-  const chats=[
-    ['Турок Ірина','ig','Дякую! Чекаю рахунок 😊','2 хв',1],
-    ['Vladlena S.','tg','Доброго дня, є у наявності?','12 хв',0],
-    ['Катя','vb','А доставка в Київ скільки?','34 хв',3],
-    ['Levan K.','fb','Коментар: 🔥🔥','1 год',0],
-    ['Anna','wa','Добрий день','2 год',0],
-    ['Магазин Google','gb','Запит з картки бізнесу','3 год',0],
-  ];
-  document.getElementById('view').innerHTML=`
-  <div class="h-full grid grid-cols-[300px_1fr_280px]">
-    <!-- channel list -->
-    <div class="bg-white border-r border-slate-200 flex flex-col">
-      <div class="p-3 border-b border-slate-200 flex gap-1.5 flex-wrap">
-        ${Object.entries(SRC).map(([k,[t,c]])=>`<span class="chip text-white" style="background:${c}">${t}</span>`).join('')}
-      </div>
-      <div class="flex-1 overflow-y-auto">
-        ${chats.map((c,i)=>`
-          <div onclick="this.parentNode.querySelectorAll('div').forEach(e=>e.style.background='');this.style.background='#eff6ff'" class="px-3 py-2.5 border-b border-slate-100 flex gap-2 cursor-pointer ${i===0?'bg-blue-50':''}">
-            <div class="relative"><img src="https://i.pravatar.cc/40?img=${40+i}" class="w-9 h-9 rounded-full"/>
-              <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white" style="background:${SRC[c[1]][1]}"></span></div>
-            <div class="flex-1 min-w-0">
-              <div class="flex justify-between"><span class="text-[13px] font-medium truncate">${c[0]}</span><span class="text-[10.5px] text-slate-400">${c[3]}</span></div>
-              <div class="text-[12px] text-slate-500 truncate">${c[2]}</div>
-            </div>
-            ${c[4]?`<span class="w-4 h-4 rounded-full bg-blue-500 text-white text-[10px] flex items-center justify-center self-center">${c[4]}</span>`:''}
-          </div>`).join('')}
-      </div>
-    </div>
-    <!-- conversation -->
-    <div class="flex flex-col bg-slate-50">
-      <div class="h-[52px] bg-white border-b border-slate-200 flex items-center px-4 gap-2">
-        <span class="font-medium text-[14px]">Турок Ірина</span>
-        ${srcBadge('ig')}
-        <div class="flex-1"></div>
-        <button class="h-8 px-3 rounded-md bg-emerald-50 text-emerald-700 text-[12px]">📞 Позвонить</button>
-        <button class="h-8 px-3 rounded-md bg-slate-100 text-[12px]">Создать сделку</button>
-      </div>
-      <div class="flex-1 overflow-y-auto p-4 space-y-2">
-        <div class="max-w-[70%] bg-white rounded-lg rounded-tl-none p-2.5 text-[13px] shadow-sm">Доброго дня! Цікавить покриття для стін 🙂</div>
-        <div class="max-w-[70%] bg-white rounded-lg rounded-tl-none p-2.5 text-[13px] shadow-sm">Скільки коштує м²?</div>
-        <div class="max-w-[70%] ml-auto text-white rounded-lg rounded-tr-none p-2.5 text-[13px]" style="background:var(--brand)">Доброго дня! Від 450 грн/м². Надішлю каталог 📎</div>
-        <div class="max-w-[70%] ml-auto rounded-lg rounded-tr-none p-2.5 shadow-sm bg-white">
-          <div class="flex items-center gap-2 text-[12px] text-slate-600">🎤 <div class="h-1 w-28 bg-slate-200 rounded-full"></div> 0:14 <span class="text-[10px] text-violet-600">→ текст</span></div>
-        </div>
-        <div class="max-w-[70%] bg-white rounded-lg rounded-tl-none p-2.5 text-[13px] shadow-sm">Дякую! Чекаю рахунок 😊</div>
-      </div>
-      <div class="bg-white border-t border-slate-200 p-3 flex items-center gap-2">
-        <button class="ico-btn">📎</button>
-        <input placeholder="Написать сообщение… (ответ уйдёт в Instagram)" class="flex-1 h-9 bg-slate-100 rounded-md px-3 text-[13px] outline-none"/>
-        <button class="h-9 px-4 rounded-md text-white text-[13px]" style="background:var(--brand)">Отправить</button>
-      </div>
-    </div>
-    <!-- client card -->
-    <div class="bg-white border-l border-slate-200 p-4 overflow-y-auto">
-      <div class="text-center mb-3"><img src="https://i.pravatar.cc/80?img=40" class="w-16 h-16 rounded-full mx-auto mb-2"/><div class="font-semibold">Турок Ірина</div><div class="text-[12px] text-slate-400">+380 67 743 8953</div></div>
-      <div class="card p-3 mb-2"><div class="text-[11px] uppercase text-slate-400 mb-1">Сделка</div><div class="text-[13px]">#52059 · 21 Основний продукт</div></div>
-      <div class="card p-3 mb-2"><div class="text-[11px] uppercase text-slate-400 mb-1">Ответственный</div><div class="text-[13px]">Оксаненко Кирилл</div></div>
-      <div class="card p-3"><div class="text-[11px] uppercase text-slate-400 mb-1">Каналы клиента</div><div class="flex gap-1 flex-wrap mt-1">${srcBadge('ig')}${srcBadge('vb')}${srcBadge('call')}</div></div>
-    </div>
-  </div>`;
-};
+VIEWS.phone=function(){var calls=[['вхідний','Турок Ірина','+380 67 743 8953','6:10','Оксаненко К.','#16a34a'],['вихідний','Vladlena','+380 50 111 2233','2:45','Ковальчук І.','#3b82f6'],['пропущений','Невідомий','+380 93 555 7788','—','—','#ef4444'],['вхідний','Катя','+380 97 328 2283','11:03','Ковальчук І.','#16a34a']];
+ set('<div class="scroll pad fade"><div class="cards4">'+[['Всего','312'],['Записано','298'],['Пропущено','14'],['Средн.','3:42']].map(function(s){return '<div class="panel stat" style="margin:0"><div class="lbl">'+s[0]+'</div><div class="big">'+s[1]+'</div></div>';}).join('')+'</div>'+
+ '<div class="tablewrap"><div class="tabletitle">Детализация звонков · SIP-шлюз (Hetzner)</div><table><thead><tr><th>Тип</th><th>Клиент</th><th>Номер</th><th>Длит.</th><th>Менеджер</th><th>Запись</th></tr></thead><tbody>'+
+ calls.map(function(c){return '<tr><td><span class="chip" style="background:'+c[5]+'">'+c[0]+'</span></td><td>'+c[1]+'</td><td class="muted">'+c[2]+'</td><td>'+c[3]+'</td><td>'+c[4]+'</td><td>'+(c[3]!=='—'?'<span style="color:#2563eb">▶ прослушать</span>':'<span class="muted">нет</span>')+'</td></tr>';}).join('')+'</tbody></table></div>'+
+ '<div class="note">💡 Записи перекодируются в <b>Opus 24kbps</b> и хранятся в MinIO/S3 (~10× экономия против WAV). Старше 12 мес — авто-архивация.</div></div>');};
 
-VIEWS.phone=()=>{
-  const calls=[['вхідний','Турок Ірина','+380 67 743 8953','6:10','Оксаненко К.','#16a34a'],['вихідний','Vladlena','+380 50 111 2233','2:45','Ковальчук І.','#3b82f6'],['пропущений','Невідомий','+380 93 555 7788','—','—','#ef4444'],['вхідний','Катя','+380 97 328 2283','11:03','Ковальчук І.','#16a34a']];
-  document.getElementById('view').innerHTML=`
-  <div class="h-full p-4 overflow-y-auto fade">
-    <div class="grid grid-cols-4 gap-3 mb-4">
-      ${[['Всего звонков','312','📞'],['Записано','298','🎙️'],['Пропущено','14','⚠️'],['Средн. длит.','3:42','⏱️']].map(s=>`<div class="card p-4"><div class="text-[12px] text-slate-400">${s[0]}</div><div class="text-[24px] font-bold">${s[1]}</div></div>`).join('')}
-    </div>
-    <div class="card overflow-hidden">
-      <div class="px-4 py-2.5 border-b border-slate-200 font-medium text-[14px]">Детализация звонков · SIP-шлюз (Hetzner)</div>
-      <table class="w-full text-[13px]">
-        <thead class="bg-slate-50 text-slate-400 text-[11px] uppercase"><tr><th class="text-left px-4 py-2">Тип</th><th class="text-left">Клиент</th><th class="text-left">Номер</th><th class="text-left">Длит.</th><th class="text-left">Менеджер</th><th class="text-left">Запись</th></tr></thead>
-        <tbody>
-          ${calls.map(c=>`<tr class="border-b border-slate-100 hover:bg-slate-50">
-            <td class="px-4 py-2.5"><span class="chip text-white" style="background:${c[5]}">${c[0]}</span></td>
-            <td>${c[1]}</td><td class="text-slate-500">${c[2]}</td><td>${c[3]}</td><td>${c[4]}</td>
-            <td>${c[3]!=='—'?`<button class="flex items-center gap-2 text-blue-600"><span class="w-6 h-6 rounded-full text-white flex items-center justify-center" style="background:var(--brand)">▶</span> прослушать</button>`:'<span class="text-slate-300">нет</span>'}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>
-    <div class="card p-4 mt-3 text-[12.5px] text-slate-500">💡 Записи перекодируются в <b>Opus 24kbps</b> и хранятся в объектном хранилище (MinIO/S3). Это ~10× экономия места против WAV. Старше 12 мес — авто-архивация в «холодное» хранилище.</div>
-  </div>`;
-};
+VIEWS.warehouse=function(){var p=[['Покриття «Wallcov» 5л','WC-05','450','128'],['Покриття «Wallcov» 10л','WC-10','820','64'],['Грунтовка глибокого проникнення','GR-01','180','203'],['Валик мікрофібра 25см','TL-25','95','340'],['Тестовий набір','SM-01','0','512']];
+ set('<div class="scroll pad fade"><div class="toolbar" style="border-radius:8px;border:1px solid #e2e8f0;margin-bottom:12px;background:#fff">'+
+ '<button class="btn btn-primary">+ Товар</button><button class="btn btn-light">📥 Приходная</button><button class="btn btn-light">📤 Расходная</button><button class="btn btn-light">📋 Инвентаризация</button><div class="spacer"></div><span class="muted">Остаток: <b style="color:#1e293b">1 247 шт</b></span></div>'+
+ '<div class="tablewrap"><table><thead><tr><th>Товар</th><th>Артикул</th><th>Цена</th><th>Остаток</th><th></th></tr></thead><tbody>'+
+ p.map(function(x){return '<tr><td style="font-weight:500">'+x[0]+'</td><td class="muted">'+x[1]+'</td><td>'+x[2]+' грн</td><td>'+(+x[3]<100?'<span style="color:#d97706;font-weight:600">'+x[3]+'</span>':x[3])+'</td><td><span style="color:#2563eb">+ в сделку</span></td></tr>';}).join('')+'</tbody></table></div>'+
+ '<div class="note">📦 Партионный учёт (FIFO): приходная накладная создаёт партию с себестоимостью, расход списывает по очереди. Инвентаризация фиксирует расхождение. Себестоимость тянется в Финансы для расчёта маржи.</div></div>');};
 
-VIEWS.warehouse=()=>{
-  const prod=[['Покриття для стін «Wallcov» 5л','WC-05','450','128','шт'],['Покриття «Wallcov» 10л','WC-10','820','64','шт'],['Грунтовка глибокого проникнення','GR-01','180','203','шт'],['Валик мікрофібра 25см','TL-25','95','340','шт'],['Тестовий набір (sample)','SM-01','0','512','шт']];
-  document.getElementById('view').innerHTML=`
-  <div class="h-full p-4 overflow-y-auto fade">
-    <div class="flex gap-2 mb-3">
-      <button class="h-9 px-3 rounded-md text-white text-[13px]" style="background:var(--brand)">+ Товар</button>
-      <button class="h-9 px-3 rounded-md bg-white border border-slate-200 text-[13px]">📥 Приходная накладная</button>
-      <button class="h-9 px-3 rounded-md bg-white border border-slate-200 text-[13px]">📤 Расходная накладная</button>
-      <button class="h-9 px-3 rounded-md bg-white border border-slate-200 text-[13px]">📋 Инвентаризация</button>
-      <div class="ml-auto flex gap-3 items-center text-[12px]"><span class="text-slate-400">Остаток на складе:</span><span class="font-bold text-[16px]">1 247 шт</span></div>
-    </div>
-    <div class="card overflow-hidden">
-      <table class="w-full text-[13px]">
-        <thead class="bg-slate-50 text-slate-400 text-[11px] uppercase"><tr><th class="text-left px-4 py-2">Товар</th><th class="text-left">Артикул</th><th class="text-left">Цена</th><th class="text-left">Остаток</th><th class="text-left">Ед.</th><th></th></tr></thead>
-        <tbody>${prod.map(p=>`<tr class="border-b border-slate-100 hover:bg-slate-50">
-          <td class="px-4 py-2.5 font-medium">${p[0]}</td><td class="text-slate-500">${p[1]}</td><td>${p[2]} грн</td>
-          <td><span class="${+p[3]<100?'text-amber-600 font-semibold':''}">${p[3]}</span></td><td>${p[4]}</td>
-          <td><button class="text-blue-600 text-[12px]">+ в сделку</button></td></tr>`).join('')}</tbody>
-      </table>
-    </div>
-    <div class="card p-4 mt-3 text-[12.5px] text-slate-500">📦 Логика складского учёта: <b>партионный учёт (FIFO)</b> — каждая приходная накладная создаёт партию с себестоимостью; расход списывает по очереди. Инвентаризация фиксирует факт/расхождение и создаёт корректирующий документ. Себестоимость автоматически тянется в Финансы для расчёта маржи.</div>
-  </div>`;
-};
+VIEWS.clients=function(){set('<div class="scroll pad fade"><div class="tablewrap"><div class="tabletitle">Клиенты (контакты + компании)</div><table><thead><tr><th>Имя</th><th>Телефон</th><th>Каналы</th><th>Сделок</th><th>Сумма</th></tr></thead><tbody>'+
+ names.slice(0,8).map(function(n,i){return '<tr><td style="font-weight:500">'+n+'</td><td class="muted">+380 6'+i+' '+i+i+i+' '+(10+i)+i+'</td><td>'+chip(skeys[i%skeys.length])+'</td><td>'+(1+i%4)+'</td><td>'+(i*1840).toLocaleString()+' грн</td></tr>';}).join('')+'</tbody></table></div></div>');};
 
-VIEWS.clients=()=>{
-  document.getElementById('view').innerHTML=`<div class="h-full p-4 overflow-y-auto fade"><div class="card overflow-hidden"><div class="px-4 py-2.5 border-b border-slate-200 font-medium">Клиенты (контакты + компании)</div>
-  <table class="w-full text-[13px]"><thead class="bg-slate-50 text-slate-400 text-[11px] uppercase"><tr><th class="text-left px-4 py-2">Имя</th><th class="text-left">Телефон</th><th class="text-left">Каналы</th><th class="text-left">Сделок</th><th class="text-left">Сумма</th></tr></thead>
-  <tbody>${names.slice(0,8).map((n,i)=>`<tr class="border-b border-slate-100 hover:bg-slate-50"><td class="px-4 py-2.5 font-medium">${n}</td><td class="text-slate-500">+380 ${60+i}${i}${i} ${100+i}${i} ${10+i}${i}</td><td><div class="flex gap-1">${srcBadge(skeys[i%skeys.length])}</div></td><td>${1+i%4}</td><td>${(i*1840).toLocaleString()} грн</td></tr>`).join('')}</tbody></table></div></div>`;
-};
+VIEWS.finance=function(){set('<div class="scroll pad fade"><div class="note warn">🔒 Раздел «Финансы» виден только ролям с правом <b>finance.view</b> (Администратор, Финансист). Менеджеры этот пункт меню не видят.</div>'+
+ '<div class="cards4" style="margin-top:12px">'+[['Остаток','842 100 ₴','#16a34a'],['Доход (июнь)','413 346 ₴','#2563eb'],['Расход','238 920 ₴','#ef4444'],['Прибыль','174 426 ₴','#7c3aed']].map(function(s){return '<div class="panel stat" style="margin:0"><div class="lbl">'+s[0]+'</div><div class="big" style="color:'+s[2]+'">'+s[1]+'</div></div>';}).join('')+'</div>'+
+ '<div style="display:grid;grid-template-columns:1fr 320px;gap:12px"><div class="panel" style="margin:0"><b style="font-size:14px">Денежный поток · по дням</b><div class="chart" style="margin-top:12px">'+
+ (function(){var h='';for(var i=0;i<30;i++){h+='<i style="height:'+(20+(i*37%80))+'%"></i>';}return h;})()+'</div></div>'+
+ '<div class="panel" style="margin:0"><b style="font-size:14px">Счета / Кассы</b>'+[['ФОП Картка','312 400 ₴'],['Готівка каса','48 200 ₴'],['LiqPay','201 500 ₴'],['Розрахунковий','280 000 ₴']].map(function(a){return '<div class="row" style="padding:8px 0;border-bottom:1px solid #f1f5f9"><span class="muted">'+a[0]+'</span><b>'+a[1]+'</b></div>';}).join('')+'</div></div>'+
+ '<div class="note">💡 Замена Finmap внутри CRM: каждая оплата (LiqPay/Checkbox/наличка) создаёт транзакцию. P&L, ДДС, прогноз кассового разрыва, маржа со складской себестоимостью.</div></div>');};
 
-VIEWS.finance=()=>{
-  document.getElementById('view').innerHTML=`
-  <div class="h-full p-4 overflow-y-auto fade">
-    <div class="card p-3 mb-3 bg-amber-50 border-amber-200 text-[12.5px] text-amber-800">🔒 Раздел «Финансы» виден только ролям с правом <b>finance.view</b> (Администратор, Финансист). Менеджеры этот пункт меню не видят вообще.</div>
-    <div class="grid grid-cols-4 gap-3 mb-4">
-      ${[['Остаток на счетах','842 100 ₴','#16a34a'],['Доход (июнь)','413 346 ₴','#3b82f6'],['Расход (июнь)','238 920 ₴','#ef4444'],['Чистая прибыль','174 426 ₴','#7c3aed']].map(s=>`<div class="card p-4"><div class="text-[12px] text-slate-400">${s[0]}</div><div class="text-[22px] font-bold" style="color:${s[2]}">${s[1]}</div></div>`).join('')}
-    </div>
-    <div class="grid grid-cols-[1fr_320px] gap-3">
-      <div class="card p-4">
-        <div class="font-medium text-[14px] mb-3">Денежный поток (Cashflow) · по дням</div>
-        <div class="flex items-end gap-1.5 h-40">${Array.from({length:30}).map((_,i)=>{const h=20+Math.random()*100;return `<div class="flex-1 rounded-t" style="height:${h}%;background:linear-gradient(var(--brand),#bcd4ff)"></div>`}).join('')}</div>
-      </div>
-      <div class="card p-4">
-        <div class="font-medium text-[14px] mb-3">Счета / Кассы</div>
-        ${[['ФОП Картка (Приват)','312 400 ₴'],['Готівка каса','48 200 ₴'],['LiqPay еквайринг','201 500 ₴'],['Розрахунковий рах.','280 000 ₴']].map(a=>`<div class="flex justify-between py-2 border-b border-slate-100 text-[13px]"><span class="text-slate-600">${a[0]}</span><span class="font-medium">${a[1]}</span></div>`).join('')}
-      </div>
-    </div>
-    <div class="card p-4 mt-3 text-[12.5px] text-slate-500">💡 Это замена Finmap, встроенная в CRM: каждая оплата по сделке (LiqPay/Checkbox/наличка) автоматически создаёт транзакцию. Категории доходов/расходов, P&L, ДДС, прогноз кассового разрыва — с привязкой к сделкам и складской себестоимости (маржа считается сама).</div>
-  </div>`;
-};
+VIEWS.analytics=function(){var st=[['Лід отриманий',1040,'#3b82f6'],['Взято в роботу',620,'#6366f1'],['Контакт встановлений',410,'#8b5cf6'],['Кваліфікований',210,'#f59e0b'],['Оплата',132,'#10b981'],['Завершено',98,'#16a34a']];
+ set('<div class="scroll pad fade"><div class="cards4">'+[['Конверсия','18.4%'],['Средний чек','4 820 ₴'],['Лидов/мес','1 040'],['Сделок','312']].map(function(s){return '<div class="panel stat" style="margin:0"><div class="lbl">'+s[0]+'</div><div class="big">'+s[1]+'</div></div>';}).join('')+'</div>'+
+ '<div class="panel" style="margin:0"><b style="font-size:14px">Воронка продаж · 21 Основний продукт</b><div style="margin-top:12px">'+
+ st.map(function(s){return '<div class="funnel-row"><span class="nm">'+s[0]+'</span><div class="funnel-bar"><i style="width:'+(s[1]/1040*100)+'%;background:'+s[2]+'">'+s[1]+'</i></div></div>';}).join('')+'</div></div></div>');};
 
-VIEWS.analytics=()=>{
-  document.getElementById('view').innerHTML=`<div class="h-full p-4 overflow-y-auto fade">
-    <div class="grid grid-cols-3 gap-3 mb-3">${[['Конверсия лид→сделка','18.4%'],['Средний чек','4 820 ₴'],['Лидов за месяц','1 040']].map(s=>`<div class="card p-4"><div class="text-[12px] text-slate-400">${s[0]}</div><div class="text-[24px] font-bold">${s[1]}</div></div>`).join('')}</div>
-    <div class="card p-4"><div class="font-medium mb-3">Воронка продаж · 21 Основний продукт</div>
-    ${[['Лід отриманий',1040,'#3b82f6'],['Взято в роботу',620,'#6366f1'],['Контакт встановлений',410,'#8b5cf6'],['Кваліфікований',210,'#f59e0b'],['Оплата',132,'#10b981'],['Завершено',98,'#16a34a']].map(s=>`<div class="flex items-center gap-3 mb-2"><span class="w-44 text-[12.5px] text-slate-600">${s[0]}</span><div class="flex-1 h-6 bg-slate-100 rounded"><div class="h-full rounded text-white text-[11px] flex items-center px-2" style="width:${s[1]/1040*100}%;background:${s[2]}">${s[1]}</div></div></div>`).join('')}
-    </div></div>`;
-};
+VIEWS.roles=function(){var perms=['Откр. линии','Свои лиды','Все лиды','Воронка 21','Воронка 22','Телефония','Финансы','Склад'];
+ var roles=[['Администратор',[1,1,1,1,1,1,1,1]],['Руководитель отдела',[1,1,1,1,1,1,0,1]],['Менеджер',[1,1,0,1,0,1,0,0]],['Финансист',[0,0,1,0,0,0,1,1]]];
+ set('<div class="scroll pad fade"><div class="note">Роли динамические: администратор создаёт роль и галочками выдаёт доступ. «Свои лиды» = только свои; «Все лиды» = руководитель видит отдел. Доступ к каждой линии и воронке — отдельно.</div>'+
+ '<div class="tablewrap" style="margin-top:12px"><table><thead><tr><th>Роль</th>'+perms.map(function(p){return '<th style="text-align:center">'+p+'</th>';}).join('')+'</tr></thead><tbody>'+
+ roles.map(function(r){return '<tr><td style="font-weight:500">'+r[0]+'</td>'+r[1].map(function(v){return '<td style="text-align:center"><span class="toggle'+(v?' on':'')+'" onclick="this.classList.toggle(\'on\')"></span></td>';}).join('')+'</tr>';}).join('')+'</tbody></table></div>'+
+ '<button class="btn btn-primary" style="margin-top:12px">+ Создать роль</button></div>');};
 
-VIEWS.roles=()=>{
-  const perms=['Открытые линии','Свои лиды','Все лиды','Воронка 21','Воронка 22','Телефония','Финансы','Склад'];
-  const roles=[['Администратор',[1,1,1,1,1,1,1,1]],['Руководитель отдела',[1,1,1,1,1,1,0,1]],['Менеджер',[1,1,0,1,0,1,0,0]],['Финансист',[0,0,1,0,0,0,1,1]]];
-  document.getElementById('view').innerHTML=`
-  <div class="h-full p-4 overflow-y-auto fade">
-    <div class="card p-3 mb-3 text-[12.5px] text-slate-500">Роли динамические: администратор создаёт любую роль и галочками выдаёт доступ. «Свои лиды» = сотрудник видит только свои; «Все лиды» = руководитель видит отдел. Доступ к каждой открытой линии и воронке — отдельно.</div>
-    <div class="card overflow-hidden">
-      <table class="w-full text-[13px]">
-        <thead class="bg-slate-50 text-slate-500 text-[11px] uppercase"><tr><th class="text-left px-4 py-2.5">Роль</th>${perms.map(p=>`<th class="px-2 text-center font-medium">${p}</th>`).join('')}</tr></thead>
-        <tbody>${roles.map(r=>`<tr class="border-b border-slate-100"><td class="px-4 py-3 font-medium">${r[0]}</td>${r[1].map(v=>`<td class="text-center"><div class="toggle ${v?'on':''} mx-auto" onclick="this.classList.toggle('on')"></div></td>`).join('')}</tr>`).join('')}</tbody>
-      </table>
-    </div>
-    <button class="h-9 px-3 rounded-md text-white text-[13px] mt-3" style="background:var(--brand)">+ Создать роль</button>
-  </div>`;
-};
+VIEWS.settings=function(){var integ=[['Telegram','tg','Подключено · Bot API'],['Viber','vb','Свой коннектор (личный номер)'],['Instagram Direct','ig','Meta Graph'],['Facebook Messenger+комментарии','fb','Meta Graph'],['WhatsApp','wa','Планируется · Cloud API'],['Google Бизнес чат','gb','Планируется'],['LiqPay','call','Перенесено из Bitrix · работает'],['Checkbox','call','Перенесено · работает'],['Новая Почта','call','Перенесено · ТТН работает'],['SIP-телефония Hetzner','call','Шлюз + запись звонков']];
+ set('<div class="scroll pad fade"><b style="font-size:15px">Интеграции и каналы</b><div class="integ" style="margin-top:12px">'+
+ integ.map(function(x){return '<div class="it"><span class="ico" style="background:'+SRC[x[1]][1]+'">'+SRC[x[1]][0].slice(0,2)+'</span><div style="flex:1"><div style="font-size:13.5px;font-weight:500">'+x[0]+'</div><div class="muted" style="font-size:11.5px">'+x[2]+'</div></div><span class="toggle'+(x[2].indexOf('Планируется')<0?' on':'')+'"></span></div>';}).join('')+'</div></div>');};
 
-VIEWS.settings=()=>{
-  const integ=[['Telegram','tg','Подключено · прямой Bot API'],['Viber','vb','Своя интеграция (Viber API)'],['Instagram Direct','ig','Подключено · Meta Graph'],['Facebook (Messenger+комментарии)','fb','Подключено · Meta Graph'],['WhatsApp','wa','Планируется · WhatsApp Cloud API'],['Google Бизнес чат','gb','Планируется · Business Messages'],['LiqPay','call','Перенесено из Bitrix · работает'],['Checkbox (фискализация)','call','Перенесено из Bitrix · работает'],['Новая Почта','call','Перенесено из Bitrix · ТТН работает'],['SIP-телефония (Hetzner)','call','Шлюз + запись звонков']];
-  document.getElementById('view').innerHTML=`
-  <div class="h-full p-4 overflow-y-auto fade">
-    <div class="font-medium text-[15px] mb-3">Интеграции и каналы</div>
-    <div class="grid grid-cols-2 gap-3">
-      ${integ.map(i=>`<div class="card p-3 flex items-center gap-3">
-        <span class="w-9 h-9 rounded-lg flex items-center justify-center text-white text-[11px] font-bold" style="background:${SRC[i[1]][1]}">${SRC[i[1]][0].slice(0,2)}</span>
-        <div class="flex-1"><div class="text-[13.5px] font-medium">${i[0]}</div><div class="text-[11.5px] text-slate-400">${i[2]}</div></div>
-        <span class="toggle ${i[2].includes('Планируется')?'':'on'}"></span>
-      </div>`).join('')}
-    </div>
-  </div>`;
-};
-
-/* init */
 renderNav();go('leads');
 </script>
 </body>
