@@ -38,6 +38,8 @@ class Command(BaseCommand):
         head = self._user("head", "Олег", "Руководитель", head_role, dept)
         m1 = self._user("ilona", "Илона", "Ковальчук", mgr_role, dept)
         m2 = self._user("kirill", "Кирилл", "Оксаненко", mgr_role, dept)
+        # директор: полный доступ (видит финансы, склад, интеграции) — для тестов
+        self._user("director", "Геннадий", "Директор", admin_role, dept)
 
         # воронки
         lead_f = self._funnel("Лиды", is_lead=True, order=0, stages=LEAD_STAGES)
