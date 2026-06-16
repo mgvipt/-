@@ -61,9 +61,75 @@ class Command(BaseCommand):
             Deal.objects.create(title="Угода #52059", funnel=f21,
                                 stage=f21.stages.first(), owner=m2, amount=4820)
 
+        # больше лидов, чтобы доски были «живыми»
+        if Lead.objects.count() < 12:
+            extra = ["Турок Ірина", "Андрій Бойко", "Оксана Дяк", "Levan K.",
+                     "Марія Пр.", "Артур С.", "Inna T.", "Nastya L."]
+            stages = list(lead_f.stages.all())
+            srcs = ["instagram", "telegram", "viber", "facebook", "call"]
+            for i, nm in enumerate(extra):
+                c = Contact.objects.create(first_name=nm, phone=f"+38050{i}{i}{i}1122",
+                                           channels=[srcs[i % len(srcs)]])
+                Lead.objects.create(title=f"{nm} — Покриття для стін", contact=c,
+                                    funnel=lead_f, stage=stages[i % len(stages)],
+                                    source=srcs[i % len(srcs)], amount=0,
+                                    owner=m1 if i % 2 else m2, is_seen=i % 3 != 0)
+
+        # сделки по стадиям воронки 21
+        if Deal.objects.count() < 6:
+            ds = list(f21.stages.all())
+            for i in range(8):
+                Deal.objects.create(title=f"Угода #{52060 + i}", funnel=f21,
+                                    stage=ds[i % len(ds)], owner=m1 if i % 2 else m2,
+                                    amount=1500 + i * 740, source="instagram")
+
+        self._seed_warehouse()
+        self._seed_finance()
+        self._seed_integrations()
+
         self.stdout.write(self.style.SUCCESS(
             "Демо-данные готовы. Логины: head/ilona/kirill, пароль 'demo12345'. "
-            "Менеджер видит только свои лиды и только воронку 21."))
+            "Склад, финансы, товары и интеграции заполнены."))
+
+    def _seed_warehouse(self):
+        from apps.warehouse.models import Warehouse, Product, StockDocument, StockMovement
+        wh, _ = Warehouse.objects.get_or_create(name="Основний склад", defaults={"is_default": True})
+        items = [("Покриття «Wallcov» 5л", "WC-05", 450, 230, 128),
+                 ("Покриття «Wallcov» 10л", "WC-10", 820, 410, 64),
+                 ("Грунтовка глибокого проникнення", "GR-01", 180, 90, 203),
+                 ("Валик мікрофібра 25см", "TL-25", 95, 40, 340),
+                 ("Тестовий набір", "SM-01", 0, 0, 512)]
+        for name, sku, price, cost, qty in items:
+            p, created = Product.objects.get_or_create(sku=sku, defaults={
+                "name": name, "price": price, "cost": cost})
+            if created:
+                doc = StockDocument.objects.create(kind="in", number=f"ПР-{sku}", warehouse=wh,
+                                                   comment="Початковий залишок")
+                StockMovement.objects.create(document=doc, product=p, quantity=qty, price=cost)
+
+    def _seed_finance(self):
+        from apps.finance.models import Account, Category, Transaction
+        accs = {}
+        for name, kind in [("ФОП Картка (Приват)", "bank"), ("Готівка каса", "cash"),
+                           ("LiqPay еквайринг", "acquiring")]:
+            accs[name], _ = Account.objects.get_or_create(name=name, defaults={"kind": kind})
+        cats = {}
+        for name, d in [("Продаж товару", "in"), ("Реклама", "out"),
+                        ("Закупівля товару", "out"), ("Зарплата", "out")]:
+            cats[name], _ = Category.objects.get_or_create(name=name, direction=d)
+        if Transaction.objects.count() < 5:
+            acc = accs["ФОП Картка (Приват)"]
+            data = [("in", 12400, "Продаж товару"), ("in", 8600, "Продаж товару"),
+                    ("out", 3200, "Реклама"), ("out", 15800, "Закупівля товару"),
+                    ("in", 5400, "Продаж товару"), ("out", 9000, "Зарплата")]
+            for d, amount, cat in data:
+                Transaction.objects.create(direction=d, amount=amount, account=acc,
+                                           category=cats[cat])
+
+    def _seed_integrations(self):
+        from apps.integrations.models import IntegrationSettings
+        for prov in ["liqpay", "checkbox", "novaposhta"]:
+            IntegrationSettings.objects.get_or_create(provider=prov, defaults={"is_active": False})
 
     def _user(self, username, fn, ln, role, dept):
         u, created = User.objects.get_or_create(

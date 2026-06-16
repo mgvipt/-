@@ -15,6 +15,7 @@ const NAV: [string, string, string, string | null][] = [
   ["/finance", "Финансы", "💰", "finance.view"],
   ["/analytics", "Аналитика", "📊", null],
   ["/roles", "Сотрудники и права", "🛡️", "roles.manage"],
+  ["/settings", "Настройки · Интеграции", "⚙️", "roles.manage"],
 ];
 
 const BGS = [

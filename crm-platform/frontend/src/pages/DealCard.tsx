@@ -8,6 +8,26 @@ export default function DealCard() {
   const nav = useNavigate();
   const [deal, setDeal] = useState<Card | null>(null);
   const [funnel, setFunnel] = useState<Funnel | null>(null);
+  const [payLink, setPayLink] = useState("");
+  const [ttn, setTtn] = useState("");
+  const [ttnStatus, setTtnStatus] = useState("");
+  const [msg, setMsg] = useState("");
+
+  async function makePayLink() {
+    setMsg("");
+    try {
+      const r = await api.post<{ link: string }>("/api/integrations/liqpay/link/", { deal: Number(id), amount: deal?.amount });
+      setPayLink(r.link);
+    } catch (e: any) { setMsg("LiqPay не настроен — задай ключи в Настройках."); }
+  }
+  async function trackTtn() {
+    setTtnStatus(""); setMsg("");
+    try {
+      const r = await api.post<any>("/api/integrations/novaposhta/track/", { ttn });
+      const st = r?.data?.[0]?.Status || "ТТН не найдена";
+      setTtnStatus(st);
+    } catch (e: any) { setMsg("Нова Пошта не настроена — задай ключ в Настройках."); }
+  }
 
   useEffect(() => {
     api.get<Card>(`/api/deals/${id}/`).then(async (d) => {
@@ -62,8 +82,23 @@ export default function DealCard() {
             <div style={{ fontSize: 22, fontWeight: 700 }}>
               {Number(deal.amount).toLocaleString("ru")} <span className="muted" style={{ fontSize: 14 }}>грн.</span>
             </div>
-            <button className="btn btn-primary" style={{ width: "100%", height: 36, marginTop: 10 }}>Прийняти оплату</button>
+            <button className="btn btn-primary" style={{ width: "100%", height: 36, marginTop: 10 }} onClick={makePayLink}>💳 Ссылка на оплату (LiqPay)</button>
+            {payLink && (
+              <div style={{ marginTop: 8, fontSize: 12, wordBreak: "break-all" }}>
+                <a href={payLink} target="_blank" rel="noreferrer" style={{ color: "var(--brand)" }}>{payLink}</a>
+              </div>
+            )}
           </div>
+          <div className="panel">
+            <div className="label">Нова Пошта</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input placeholder="Номер ТТН" value={ttn} onChange={(e) => setTtn(e.target.value)}
+                style={{ flex: 1, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px", fontSize: 13 }} />
+              <button className="btn btn-light" onClick={trackTtn}>Трек</button>
+            </div>
+            {ttnStatus && <div style={{ marginTop: 8, fontSize: 13 }}>📦 {ttnStatus}</div>}
+          </div>
+          {msg && <div className="err" style={{ marginBottom: 12 }}>{msg}</div>}
         </div>
         <div>
           <div className="panel">

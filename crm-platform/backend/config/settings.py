@@ -24,6 +24,9 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.crm",
     "apps.inbox",
+    "apps.warehouse",
+    "apps.finance",
+    "apps.integrations",
 ]
 
 MIDDLEWARE = [

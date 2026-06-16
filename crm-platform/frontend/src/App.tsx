@@ -7,6 +7,10 @@ import Deals from "./pages/Deals";
 import DealCard from "./pages/DealCard";
 import Roles from "./pages/Roles";
 import Inbox from "./pages/Inbox";
+import Warehouse from "./pages/Warehouse";
+import Finance from "./pages/Finance";
+import Clients from "./pages/Clients";
+import Settings from "./pages/Settings";
 import Placeholder from "./pages/Placeholder";
 
 function Shell() {
@@ -25,9 +29,10 @@ function Shell() {
           <Route path="/roles" element={<Roles />} />
           <Route path="/inbox" element={<Inbox />} />
           <Route path="/phone" element={<Placeholder title="Телефония" note="Связка с SIP-шлюзом на Hetzner: журнал звонков, запись, click-to-call из карточки." />} />
-          <Route path="/warehouse" element={<Placeholder title="Товары · Склад" note="Партионный учёт (FIFO), приходные/расходные накладные, инвентаризация." />} />
-          <Route path="/clients" element={<Placeholder title="Клиенты" note="Контакты и компании с историей сделок и каналами связи." />} />
-          <Route path="/finance" element={<Placeholder title="Финансы" note="Замена Finmap: cashflow, кассы, P&L. Виден только по праву finance.view." />} />
+          <Route path="/warehouse" element={<Warehouse />} />
+          <Route path="/clients" element={<Clients />} />
+          <Route path="/finance" element={<Finance />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="/analytics" element={<Placeholder title="Аналитика" note="Конверсия по воронкам, средний чек, отчёты по менеджерам." />} />
           <Route path="*" element={<Navigate to="/leads" replace />} />
         </Route>
