@@ -1,5 +1,15 @@
 from rest_framework import serializers
-from .models import Company, Contact, Funnel, Stage, Lead, Deal, Payment
+from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payment
+
+
+class DealItemSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = DealItem
+        fields = ["id", "deal", "product", "product_name", "quantity", "price", "total"]
+        read_only_fields = ["deal"]
 
 
 class CompanySerializer(serializers.ModelSerializer):
@@ -66,3 +76,16 @@ class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
         fields = "__all__"
+
+
+class DealDetailSerializer(DealSerializer):
+    """Расширенная карточка сделки: товары, оплаты, оплачено/осталось."""
+    items = DealItemSerializer(many=True, read_only=True)
+    payments = PaymentSerializer(many=True, read_only=True)
+    paid = serializers.SerializerMethodField()
+
+    class Meta(DealSerializer.Meta):
+        fields = DealSerializer.Meta.fields + ["items", "payments", "paid"]
+
+    def get_paid(self, obj):
+        return float(sum(p.amount for p in obj.payments.all() if p.is_paid))

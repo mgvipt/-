@@ -11,7 +11,8 @@ import Warehouse from "./pages/Warehouse";
 import Finance from "./pages/Finance";
 import Clients from "./pages/Clients";
 import Settings from "./pages/Settings";
-import Placeholder from "./pages/Placeholder";
+import Analytics from "./pages/Analytics";
+import Phone from "./pages/Phone";
 
 function Shell() {
   const { me, loading } = useAuth();
@@ -28,12 +29,12 @@ function Shell() {
           <Route path="/deals/:id" element={<DealCard />} />
           <Route path="/roles" element={<Roles />} />
           <Route path="/inbox" element={<Inbox />} />
-          <Route path="/phone" element={<Placeholder title="Телефония" note="Связка с SIP-шлюзом на Hetzner: журнал звонков, запись, click-to-call из карточки." />} />
+          <Route path="/phone" element={<Phone />} />
           <Route path="/warehouse" element={<Warehouse />} />
           <Route path="/clients" element={<Clients />} />
           <Route path="/finance" element={<Finance />} />
           <Route path="/settings" element={<Settings />} />
-          <Route path="/analytics" element={<Placeholder title="Аналитика" note="Конверсия по воронкам, средний чек, отчёты по менеджерам." />} />
+          <Route path="/analytics" element={<Analytics />} />
           <Route path="*" element={<Navigate to="/leads" replace />} />
         </Route>
       </Routes>

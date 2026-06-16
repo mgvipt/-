@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "apps.warehouse",
     "apps.finance",
     "apps.integrations",
+    "apps.telephony",
 ]
 
 MIDDLEWARE = [

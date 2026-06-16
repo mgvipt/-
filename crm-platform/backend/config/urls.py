@@ -9,6 +9,7 @@ from apps.inbox import views as inbox_views
 from apps.warehouse import views as wh_views
 from apps.finance import views as fin_views
 from apps.integrations import views as intg_views
+from apps.telephony import views as tel_views
 
 router = DefaultRouter()
 router.register("contacts", crm_views.ContactViewSet)
@@ -28,6 +29,7 @@ router.register("stock-documents", wh_views.StockDocumentViewSet)
 router.register("accounts", fin_views.AccountViewSet)
 router.register("categories", fin_views.CategoryViewSet)
 router.register("transactions", fin_views.TransactionViewSet)
+router.register("calls", tel_views.CallViewSet)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -37,6 +39,8 @@ urlpatterns = [
     path("api/me/", acc_views.MeView.as_view()),
     path("api/inbox/telegram/webhook/<int:channel_id>/", inbox_views.TelegramWebhookView.as_view()),
     path("api/finance/dashboard/", fin_views.FinanceDashboardView.as_view()),
+    path("api/analytics/", crm_views.AnalyticsView.as_view()),
+    path("api/telephony/webhook/", tel_views.CallWebhookView.as_view()),
     path("api/integrations/settings/", intg_views.IntegrationSettingsView.as_view()),
     path("api/integrations/liqpay/link/", intg_views.LiqpayLinkView.as_view()),
     path("api/integrations/novaposhta/track/", intg_views.NovaPoshtaTrackView.as_view()),

@@ -107,6 +107,21 @@ class Deal(TimestampedOwned):
         return self.title
 
 
+class DealItem(models.Model):
+    """Товар в сделке. Сумма сделки = сумма строк."""
+    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey("warehouse.Product", on_delete=models.PROTECT, related_name="deal_items")
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1)
+    price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    @property
+    def total(self):
+        return self.quantity * self.price
+
+    def __str__(self):
+        return f"{self.product} × {self.quantity}"
+
+
 class Payment(models.Model):
     """Перенос рабочих оплат: LiqPay / Checkbox / наличка. Питает финмодуль."""
     PROVIDERS = [("liqpay", "LiqPay"), ("checkbox", "Checkbox"), ("cash", "Наличные"), ("bank", "Банк")]

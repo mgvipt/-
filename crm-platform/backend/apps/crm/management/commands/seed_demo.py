@@ -92,6 +92,7 @@ class Command(BaseCommand):
         self._seed_warehouse()
         self._seed_finance()
         self._seed_integrations()
+        self._seed_calls()
 
         self.stdout.write(self.style.SUCCESS(
             "Демо-данные готовы. Логины: head/ilona/kirill, пароль 'demo12345'. "
@@ -136,6 +137,17 @@ class Command(BaseCommand):
         from apps.integrations.models import IntegrationSettings
         for prov in ["liqpay", "checkbox", "novaposhta"]:
             IntegrationSettings.objects.get_or_create(provider=prov, defaults={"is_active": False})
+
+    def _seed_calls(self):
+        from apps.telephony.models import Call
+        if Call.objects.exists():
+            return
+        data = [("in", "+380677438953", "", 370, True), ("out", "", "+380501112233", 165, True),
+                ("missed", "+380935557788", "", 0, False), ("in", "+380973282283", "", 663, True),
+                ("out", "", "+380671234567", 95, True)]
+        for d, frm, to, dur, rec in data:
+            Call.objects.create(direction=d, from_number=frm, to_number=to, duration=dur,
+                                recording_url="https://example.com/rec.mp3" if rec else "")
 
     def _user(self, username, fn, ln, role, dept):
         u, created = User.objects.get_or_create(
