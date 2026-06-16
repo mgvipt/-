@@ -34,9 +34,9 @@ services:
     build: { context: ., dockerfile: deploy/Dockerfile.caddy }
     environment:
       DOMAIN: ${DOMAIN}
-    # Слушаем только на localhost:8090 — публичные 80/443 у системного nginx,
-    # который проксирует сюда поддомен CRM и держит TLS-сертификат.
-    ports: ["127.0.0.1:8090:80"]
+    # Слушаем только на localhost (порт настраивается через EDGE_PORT, по умолч. 8137).
+    # Публичные 80/443 у системного nginx, который проксирует сюда поддомен CRM и держит TLS.
+    ports: ["127.0.0.1:${EDGE_PORT:-8137}:80"]
     depends_on: [web]
     restart: unless-stopped
 
