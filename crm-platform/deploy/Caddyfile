@@ -1,6 +1,8 @@
-# GMIdeas CRM — production reverse proxy с автоматическим HTTPS.
-# Домен берётся из переменной окружения DOMAIN (напр. crm.gmideas.com.ua).
-{$DOMAIN} {
+# GMIdeas CRM — внутренний reverse proxy.
+# На этом сервере 80/443 заняты системным nginx (он обслуживает другие проекты),
+# поэтому Caddy здесь слушает обычный HTTP на внутреннем порту, а TLS и публичные
+# 80/443 остаются за системным nginx, который проксирует сюда поддомен CRM.
+:80 {
     encode gzip zstd
 
     # API, админка и статика Django -> бэкенд (gunicorn)
