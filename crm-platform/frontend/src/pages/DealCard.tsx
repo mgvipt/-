@@ -65,7 +65,7 @@ export default function DealCard() {
         <div>
           <div className="panel">
             <div className="label">Клієнт</div>
-            <div style={{ fontWeight: 600 }}>{deal.contact_name || "—"}</div>
+            <div style={{ fontWeight: 600 }}>{deal.contact_name || "Без контакта"}</div>
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>📞 Позвонить</button>
               <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }}>💬 Чат</button>

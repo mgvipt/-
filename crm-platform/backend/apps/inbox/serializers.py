@@ -22,8 +22,11 @@ class MessageSerializer(serializers.ModelSerializer):
 class ConversationSerializer(serializers.ModelSerializer):
     channel_kind = serializers.CharField(source="channel.kind", read_only=True)
     channel_name = serializers.CharField(source="channel.name", read_only=True)
-    contact_name = serializers.CharField(source="contact.__str__", read_only=True)
+    contact_name = serializers.SerializerMethodField()
     last_text = serializers.SerializerMethodField()
+
+    def get_contact_name(self, obj):
+        return str(obj.contact) if obj.contact else (obj.title or "")
 
     class Meta:
         model = Conversation

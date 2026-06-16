@@ -36,7 +36,10 @@ class FunnelSerializer(serializers.ModelSerializer):
 
 class LeadSerializer(serializers.ModelSerializer):
     owner_name = serializers.CharField(source="owner.get_full_name", read_only=True)
-    contact_name = serializers.CharField(source="contact.__str__", read_only=True)
+    contact_name = serializers.SerializerMethodField()
+
+    def get_contact_name(self, obj):
+        return str(obj.contact) if obj.contact else ""
 
     class Meta:
         model = Lead
@@ -47,7 +50,10 @@ class LeadSerializer(serializers.ModelSerializer):
 
 class DealSerializer(serializers.ModelSerializer):
     owner_name = serializers.CharField(source="owner.get_full_name", read_only=True)
-    contact_name = serializers.CharField(source="contact.__str__", read_only=True)
+    contact_name = serializers.SerializerMethodField()
+
+    def get_contact_name(self, obj):
+        return str(obj.contact) if obj.contact else ""
 
     class Meta:
         model = Deal

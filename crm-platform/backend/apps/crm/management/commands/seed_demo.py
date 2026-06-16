@@ -77,11 +77,15 @@ class Command(BaseCommand):
                                     source=srcs[i % len(srcs)], amount=0,
                                     owner=m1 if i % 2 else m2, is_seen=i % 3 != 0)
 
-        # сделки по стадиям воронки 21
+        # сделки по стадиям воронки 21 (с привязанными контактами)
         if Deal.objects.count() < 6:
             ds = list(f21.stages.all())
+            buyers = ["Турок Ірина", "Андрій Бойко", "Оксана Дяк", "Світлана Родич",
+                      "Levan Kakashvili", "Марія Прокопенко", "Inna Shved", "Артур Сидір"]
             for i in range(8):
-                Deal.objects.create(title=f"Угода #{52060 + i}", funnel=f21,
+                bc = Contact.objects.create(first_name=buyers[i], phone=f"+38067{i}{i}{i}3344",
+                                            channels=["instagram"])
+                Deal.objects.create(title=f"Угода #{52060 + i}", funnel=f21, contact=bc,
                                     stage=ds[i % len(ds)], owner=m1 if i % 2 else m2,
                                     amount=1500 + i * 740, source="instagram")
 
