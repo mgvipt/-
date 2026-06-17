@@ -44,4 +44,6 @@ urlpatterns = [
     path("api/integrations/settings/", intg_views.IntegrationSettingsView.as_view()),
     path("api/integrations/liqpay/link/", intg_views.LiqpayLinkView.as_view()),
     path("api/integrations/novaposhta/track/", intg_views.NovaPoshtaTrackView.as_view()),
+    path("api/integrations/novaposhta/ttn/", intg_views.NovaPoshtaCreateView.as_view()),
+    path("api/ai/suggest/", inbox_views.AiSuggestView.as_view()),
 ]

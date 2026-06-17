@@ -72,6 +72,22 @@ class LeadViewSet(ScopedByRoleMixin, viewsets.ModelViewSet):
     filterset_fields = ["funnel", "stage", "source", "is_seen", "owner"]
     search_fields = ["title", "contact__phone", "contact__first_name", "contact__last_name"]
 
+    @action(detail=True, methods=["post"])
+    def convert(self, request, pk=None):
+        """Конвертация лида в сделку (как в Битриксе): переносим контакт/источник."""
+        lead = self.get_object()
+        sales = Funnel.objects.filter(is_lead_funnel=False).order_by("order").first()
+        if not sales:
+            return Response({"detail": "Нет воронки продаж"}, status=status.HTTP_400_BAD_REQUEST)
+        deal = Deal.objects.create(
+            title=lead.title.split(" — ")[0] + " — сделка", contact=lead.contact,
+            funnel=sales, stage=sales.stages.first(), source=lead.source,
+            owner=lead.owner or request.user, amount=lead.amount,
+        )
+        lead.is_seen = True
+        lead.save(update_fields=["is_seen"])
+        return Response({"deal": deal.id})
+
 
 class DealViewSet(ScopedByRoleMixin, viewsets.ModelViewSet):
     queryset = Deal.objects.select_related("owner", "contact", "funnel", "stage")

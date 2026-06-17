@@ -11,6 +11,7 @@ PROVIDERS = {
     "liqpay": ["public_key", "private_key", "currency"],
     "checkbox": ["token", "license_key"],
     "novaposhta": ["api_key", "sender_ref", "sender_city_ref", "sender_contact", "sender_phone"],
+    "ai": ["api_key", "model"],
 }
 
 
@@ -72,6 +73,17 @@ class NovaPoshtaTrackView(APIView):
     def post(self, request):
         try:
             data = adapters.np_track(request.data.get("ttn", ""))
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(data)
+
+
+class NovaPoshtaCreateView(APIView):
+    """Создание ТТН (экспресс-накладной) Новой Почты по сделке."""
+    def post(self, request):
+        props = request.data.get("props") or request.data
+        try:
+            data = adapters.np_create_ttn(props)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(data)

@@ -93,6 +93,7 @@ class Command(BaseCommand):
         self._seed_finance()
         self._seed_integrations()
         self._seed_calls()
+        self._seed_chats()
 
         self.stdout.write(self.style.SUCCESS(
             "Демо-данные готовы. Логины: head/ilona/kirill, пароль 'demo12345'. "
@@ -137,6 +138,35 @@ class Command(BaseCommand):
         from apps.integrations.models import IntegrationSettings
         for prov in ["liqpay", "checkbox", "novaposhta"]:
             IntegrationSettings.objects.get_or_create(provider=prov, defaults={"is_active": False})
+
+    def _seed_chats(self):
+        from apps.inbox.models import Channel, Conversation, Message
+        from django.utils import timezone
+        if Conversation.objects.exists():
+            return
+        ig, _ = Channel.objects.get_or_create(kind="instagram", name="Instagram Direct")
+        tg, _ = Channel.objects.get_or_create(kind="telegram", name="Telegram бот")
+        dialogs = [
+            (ig, "Ірина", "999001", [("in", "Доброго дня! Цікавить покриття для стін 🙂"),
+                                     ("in", "Скільки коштує м²?"),
+                                     ("out", "Вітаю! Від 450 грн/м². Надішлю каталог 📎")]),
+            (ig, "Катя", "999002", [("in", "А доставка в Київ скільки?"),
+                                    ("out", "Новою Поштою, 1–2 дні. Оформити ТТН?")]),
+            (ig, "Оксана", "999003", [("in", "Чи є в наявності 10л?")]),
+            (tg, "Андрій", "999004", [("in", "Привіт, потрібна консультація")]),
+        ]
+        for ch, name, chat_id, msgs in dialogs:
+            contact = Contact.objects.create(first_name=name, channels=[ch.kind])
+            conv = Conversation.objects.create(channel=ch, contact=contact, external_chat_id=chat_id,
+                                               title=name, last_message_at=timezone.now())
+            unread = 0
+            for d, t in msgs:
+                Message.objects.create(conversation=conv, direction=d, text=t,
+                                       sender_name=name if d == "in" else "Менеджер")
+                if d == "in":
+                    unread += 1
+            conv.unread = unread
+            conv.save(update_fields=["unread"])
 
     def _seed_calls(self):
         from apps.telephony.models import Call

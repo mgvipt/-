@@ -79,13 +79,27 @@ class PaymentSerializer(serializers.ModelSerializer):
 
 
 class DealDetailSerializer(DealSerializer):
-    """Расширенная карточка сделки: товары, оплаты, оплачено/осталось."""
+    """Расширенная карточка сделки: товары, оплаты, кешфлоу (доход/расход/прибыль)."""
     items = DealItemSerializer(many=True, read_only=True)
     payments = PaymentSerializer(many=True, read_only=True)
     paid = serializers.SerializerMethodField()
+    cashflow = serializers.SerializerMethodField()
 
     class Meta(DealSerializer.Meta):
-        fields = DealSerializer.Meta.fields + ["items", "payments", "paid"]
+        fields = DealSerializer.Meta.fields + ["items", "payments", "paid", "cashflow"]
 
     def get_paid(self, obj):
         return float(sum(p.amount for p in obj.payments.all() if p.is_paid))
+
+    def get_cashflow(self, obj):
+        """Кешфлоу по сделке: доход, расход (себестоимость), прибыль, маржа."""
+        income = sum(t.amount for t in obj.transactions.all() if t.direction == "in")
+        expense = sum(t.amount for t in obj.transactions.all() if t.direction == "out")
+        # потенциальная себестоимость по товарам (если ещё не отгружено)
+        cogs_planned = sum(i.quantity * i.product.cost for i in obj.items.all())
+        profit = float(income - expense)
+        margin = round(profit / float(income) * 100, 1) if income else 0
+        return {
+            "income": float(income), "expense": float(expense),
+            "profit": profit, "margin": margin, "cogs_planned": float(cogs_planned),
+        }

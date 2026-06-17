@@ -3,7 +3,7 @@ import { api } from "../api";
 
 interface Prov { provider: string; fields: string[]; values: Record<string, string>; is_active: boolean; }
 
-const TITLES: Record<string, string> = { liqpay: "LiqPay (оплаты)", checkbox: "Checkbox (фискализация)", novaposhta: "Нова Пошта" };
+const TITLES: Record<string, string> = { liqpay: "LiqPay (оплаты)", checkbox: "Checkbox (фискализация)", novaposhta: "Нова Пошта", ai: "AI-РОП (Anthropic ключ)" };
 
 export default function Settings() {
   const [provs, setProvs] = useState<Prov[]>([]);

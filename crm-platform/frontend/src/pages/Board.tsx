@@ -63,7 +63,7 @@ export default function Board({ endpoint, funnel }: { endpoint: string; funnel: 
                     className="card"
                     draggable
                     onDragStart={() => { dragId.current = c.id; }}
-                    onClick={() => !isLead && nav(`/deals/${c.id}`)}
+                    onClick={() => nav(isLead ? `/leads/${c.id}` : `/deals/${c.id}`)}
                   >
                     <div className="ttl">{c.title}</div>
                     <div className="price">{Number(c.amount).toLocaleString("ru")} грн.</div>

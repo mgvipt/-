@@ -11,6 +11,57 @@ from .adapters import get_adapter
 from .services import ingest, send_message
 
 
+class AiSuggestView(APIView):
+    """AI-РОП: подсказка ответа клиенту по переписке. Если в «Интеграциях» задан
+    ключ AI (Anthropic) — отвечает модель; иначе — разумная заготовка по смыслу."""
+    def post(self, request):
+        conv = get_object_or_404(Conversation, pk=request.data.get("conversation"))
+        last_in = conv.messages.filter(direction="in").last()
+        text = (last_in.text if last_in else "").lower()
+
+        # пытаемся через настоящий AI, если задан ключ
+        try:
+            from apps.integrations.models import IntegrationSettings
+            ai = IntegrationSettings.objects.filter(provider="ai", is_active=True).first()
+            if ai and ai.config.get("api_key"):
+                return Response({"suggestion": _ai_via_anthropic(ai.config, conv)})
+        except Exception:
+            pass
+
+        # запасной вариант — подсказки по ключевым словам (демо AI-РОП)
+        if any(w in text for w in ["цін", "цена", "скільки", "сколько", "вартість", "почем"]):
+            s = "Доброго дня! Вартість залежить від обʼєму. Підкажіть, скільки м² потрібно покрити — і я порахую точну ціну та підберу набір 🙂"
+        elif any(w in text for w in ["достав", "відправ", "пошт", "ттн"]):
+            s = "Відправляємо Новою Поштою по всій Україні, зазвичай 1–2 дні. Підкажіть місто та відділення — оформлю ТТН."
+        elif any(w in text for w in ["наявн", "є в", "склад", "остат"]):
+            s = "Так, товар у наявності. Можу одразу зарезервувати під вас — на яку кількість оформлюємо?"
+        elif any(w in text for w in ["привіт", "добр", "здрав", "вітаю"]):
+            s = "Вітаю! Дякую за звернення 🙌 Чим можу допомогти — цікавить конкретний товар чи потрібна консультація?"
+        else:
+            s = "Дякую за повідомлення! Уточніть, будь ласка, деталі — і я підберу найкращий варіант та розрахую вартість."
+        return Response({"suggestion": s, "demo": True})
+
+
+def _ai_via_anthropic(cfg, conv):
+    import json, urllib.request
+    msgs = [{"role": "assistant" if m.direction == "out" else "user",
+             "content": m.text} for m in conv.messages.all()[:20] if m.text]
+    body = json.dumps({
+        "model": cfg.get("model", "claude-haiku-4-5-20251001"),
+        "max_tokens": 300,
+        "system": "Ты — AI РОП (руководитель отдела продаж) компании по продаже покрытий для стен. "
+                  "Помогай менеджеру: предлагай вежливый, продающий ответ клиенту на украинском.",
+        "messages": msgs or [{"role": "user", "content": "Привітай клієнта"}],
+    }).encode()
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages", data=body,
+        headers={"content-type": "application/json", "x-api-key": cfg["api_key"],
+                 "anthropic-version": "2023-06-01"})
+    with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310
+        data = json.loads(r.read().decode())
+    return data["content"][0]["text"]
+
+
 class TelegramWebhookView(APIView):
     """Точка приёма апдейтов от Telegram. Публичная (Telegram дергает её сам).
     URL: /api/inbox/telegram/webhook/<channel_id>/
@@ -39,7 +90,7 @@ class ChannelViewSet(viewsets.ModelViewSet):
 class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Conversation.objects.select_related("channel", "contact", "assigned_to")
     serializer_class = ConversationSerializer
-    filterset_fields = ["channel", "status", "assigned_to"]
+    filterset_fields = ["channel", "status", "assigned_to", "contact"]
     search_fields = ["title", "contact__first_name", "contact__phone"]
 
     def get_queryset(self):
