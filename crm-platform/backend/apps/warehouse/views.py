@@ -3,7 +3,7 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.db.models.functions import Coalesce
 from apps.common.permissions import HasPermCode
 from .models import Warehouse, Product, ProductCategory, StockDocument, StockMovement
@@ -96,3 +96,43 @@ class InventoryAnalyticsView(APIView):
                              "cost": round(v["cost"]), "retail": round(v["retail"])}
                             for k, v in cats],
         })
+
+
+class InventorySheetView(APIView):
+    """Инвентаризационная ведомость за период:
+    Початковий залишок (до from) + Надходження − Продано(витрата) = Кінцевий обліковий.
+    Факт вносится вручную на фронте, Розбіжність = Факт − Кінцевий.
+    Параметры: ?ids=1,2,3 &from=YYYY-MM-DD &to=YYYY-MM-DD (по умолч. текущий месяц)."""
+
+    def get(self, request):
+        from datetime import date
+        from django.utils import timezone
+        ids = [int(x) for x in request.GET.get("ids", "").split(",") if x.strip().isdigit()]
+        if not ids:
+            return Response({"from": "", "to": "", "rows": []})
+        now = timezone.now()
+        d_from = request.GET.get("from") or now.replace(day=1).date().isoformat()
+        d_to = request.GET.get("to") or now.date().isoformat()
+        df = date.fromisoformat(d_from)
+        dt = date.fromisoformat(d_to)
+        agg = (StockMovement.objects.filter(product_id__in=ids).values("product_id").annotate(
+            opening=Coalesce(Sum("quantity", filter=Q(document__created_at__date__lt=df)), Decimal("0")),
+            received=Coalesce(Sum("quantity", filter=Q(quantity__gt=0,
+                document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
+            sold_neg=Coalesce(Sum("quantity", filter=Q(quantity__lt=0,
+                document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
+        ))
+        by_id = {a["product_id"]: a for a in agg}
+        order = {pid: i for i, pid in enumerate(ids)}
+        rows = []
+        for p in Product.objects.filter(id__in=ids):
+            a = by_id.get(p.id, {})
+            opening = a.get("opening") or Decimal("0")
+            received = a.get("received") or Decimal("0")
+            sold = abs(a.get("sold_neg") or Decimal("0"))
+            book = opening + received - sold
+            rows.append({"id": p.id, "name": p.name, "unit": p.unit,
+                         "opening": float(opening), "received": float(received),
+                         "sold": float(sold), "book": float(book)})
+        rows.sort(key=lambda x: order.get(x["id"], 9999))
+        return Response({"from": d_from, "to": d_to, "rows": rows})

@@ -30,7 +30,11 @@ interface Category { id: number; name: string; parent: number | null; order: num
 interface WH { id: number; name: string; is_default: boolean; }
 interface Movement { id: number; kind: string; kind_display: string; quantity: number; price: number; warehouse: string; date: string; number: string | number; }
 
+interface SheetRow { id: number; name: string; unit: string; opening: number; received: number; sold: number; book: number; }
 const PAGE_SIZES = [5, 20, 50, 100, 500];
+const pad = (n: number) => String(n).padStart(2, "0");
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`; };
 
 export default function Warehouse() {
   /* ─── [2] STATE ──────────────────────────────────────────────────────── */
@@ -52,6 +56,9 @@ export default function Warehouse() {
   const [invOpen, setInvOpen] = useState(false);
   const [facts, setFacts] = useState<Record<number, string>>({});
   const [invMsg, setInvMsg] = useState("");
+  const [sheet, setSheet] = useState<SheetRow[]>([]);
+  const [pFrom, setPFrom] = useState(monthStart());
+  const [pTo, setPTo] = useState(today());
 
   /* ─── [3] ЗАГРУЗКА ───────────────────────────────────────────────────── */
   useEffect(() => {
@@ -92,17 +99,26 @@ export default function Warehouse() {
     setMovements(mv);
   }
 
-  function openInventory() {
+  async function loadSheet(from: string, to: string) {
+    const ids = products.map((p) => p.id).join(",");
+    if (!ids) { setSheet([]); return; }
+    const q = new URLSearchParams({ ids, from, to });
+    const d = await api.get<{ rows: SheetRow[] }>(`/api/warehouse/inventory-sheet/?${q.toString()}`);
+    setSheet(d.rows);
     const init: Record<number, string> = {};
-    products.forEach((p) => { init[p.id] = String(p.stock); });
-    setFacts(init); setInvMsg(""); setInvOpen(true);
+    d.rows.forEach((r) => { init[r.id] = String(r.book); });
+    setFacts(init);
+  }
+  async function openInventory() {
+    setInvMsg(""); setInvOpen(true);
+    await loadSheet(pFrom, pTo);
   }
   async function conductInventory() {
-    const items = products
-      .filter((p) => facts[p.id] !== undefined && Number(facts[p.id]) !== Number(p.stock))
-      .map((p) => ({ product: p.id, quantity: Number(facts[p.id]), price: Number(p.cost) || 0 }));
-    if (!items.length) { setInvMsg("Нет изменений факта — нечего проводить."); return; }
-    await api.post("/api/stock-documents/", { kind: "inv", warehouse: whs[0]?.id, comment: "Інвентаризація", items });
+    const items = sheet
+      .filter((r) => facts[r.id] !== undefined && Number(facts[r.id]) !== Number(r.book))
+      .map((r) => ({ product: r.id, quantity: Number(facts[r.id]), price: 0 }));
+    if (!items.length) { setInvMsg("Нет расхождений факта с учётом — нечего проводить."); return; }
+    await api.post("/api/stock-documents/", { kind: "inv", warehouse: whs[0]?.id, comment: `Інвентаризація ${pFrom}…${pTo}`, items });
     setInvOpen(false); loadProducts();
   }
 
@@ -235,25 +251,35 @@ export default function Warehouse() {
       {/* ─── [9] ИНВЕНТАРИЗАЦИЯ ───────────────────────────────────────────── */}
       {invOpen && (
         <div onClick={() => setInvOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: "min(640px,94vw)", maxHeight: "86vh", display: "flex", flexDirection: "column" }}>
-            <h3 style={{ marginTop: 0 }}>Інвентаризація {cat ? "· обрана категорія" : "· поточна сторінка"}</h3>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>Впишіть фактичну кількість. Система створить документ і вирівняє залишок під факт.</div>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: "min(900px,96vw)", maxHeight: "88vh", display: "flex", flexDirection: "column" }}>
+            <h3 style={{ marginTop: 0 }}>Інвентаризаційна відомість {cat ? "· обрана категорія" : "· поточна сторінка"}</h3>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+              <span className="muted" style={{ fontSize: 12 }}>Період:</span>
+              <input type="date" value={pFrom} onChange={(e) => { setPFrom(e.target.value); loadSheet(e.target.value, pTo); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
+              <span className="muted">—</span>
+              <input type="date" value={pTo} onChange={(e) => { setPTo(e.target.value); loadSheet(pFrom, e.target.value); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
+              <span className="muted" style={{ fontSize: 12 }}>Початковий + Надходження − Продано = Кінцевий обліковий. Розбіжність = Факт − обліковий.</span>
+            </div>
             <div style={{ overflowY: "auto", flex: 1 }}>
               <table style={{ width: "100%", fontSize: 13 }}>
-                <thead><tr><th>Товар</th><th>Од.</th><th>Облік</th><th>Факт</th><th>Δ</th></tr></thead>
+                <thead><tr><th>Товар</th><th>Од.</th><th>Початковий</th><th>Надходж.</th><th>Продано</th><th>Кінцевий<br/>(облік)</th><th>Факт</th><th>Розбіжність</th></tr></thead>
                 <tbody>
-                  {products.map((p) => {
-                    const fact = facts[p.id] ?? String(p.stock);
-                    const delta = Number(fact) - Number(p.stock);
+                  {sheet.map((r) => {
+                    const fact = facts[r.id] ?? String(r.book);
+                    const delta = Number(fact) - Number(r.book);
                     return (
-                      <tr key={p.id}>
-                        <td>{p.name}</td><td className="muted">{p.unit}</td>
-                        <td>{Number(p.stock).toLocaleString("ru")}</td>
-                        <td><input type="number" value={fact} onChange={(e) => setFacts({ ...facts, [p.id]: e.target.value })} style={{ width: 80, height: 28, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
-                        <td style={{ color: delta < 0 ? "#dc2626" : delta > 0 ? "#16a34a" : "#94a3b8", fontWeight: 600 }}>{delta > 0 ? "+" : ""}{delta || 0}</td>
+                      <tr key={r.id}>
+                        <td>{r.name}</td><td className="muted">{r.unit}</td>
+                        <td>{r.opening.toLocaleString("ru")}</td>
+                        <td style={{ color: r.received ? "#16a34a" : "#94a3b8" }}>{r.received ? "+" + r.received.toLocaleString("ru") : "—"}</td>
+                        <td style={{ color: r.sold ? "#dc2626" : "#94a3b8" }}>{r.sold ? "−" + r.sold.toLocaleString("ru") : "—"}</td>
+                        <td style={{ fontWeight: 600 }}>{r.book.toLocaleString("ru")}</td>
+                        <td><input type="number" value={fact} onChange={(e) => setFacts({ ...facts, [r.id]: e.target.value })} style={{ width: 74, height: 28, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
+                        <td style={{ color: delta < 0 ? "#dc2626" : delta > 0 ? "#16a34a" : "#94a3b8", fontWeight: 600 }}>{delta > 0 ? "+" : ""}{Math.round(delta * 100) / 100 || 0}</td>
                       </tr>
                     );
                   })}
+                  {sheet.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 12 }}>Завантаження відомості…</td></tr>}
                 </tbody>
               </table>
             </div>
