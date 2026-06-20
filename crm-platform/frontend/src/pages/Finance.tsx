@@ -261,16 +261,25 @@ function Directions() {
   const [to, setTo] = useState(today());
   const [d, setD] = useState<any>(null);
   const [openId, setOpenId] = useState<number | null>(null);
-  useEffect(() => { setD(null); api.get<any>(`/api/finance/directions/?from=${from}&to=${to}`).then(setD); }, [from, to]);
+  const [edit, setEdit] = useState<any>(null); // напрямок для додавання/редагування або null
+  const reload = () => { setD(null); api.get<any>(`/api/finance/directions/?from=${from}&to=${to}`).then(setD); };
+  useEffect(() => { reload(); }, [from, to]);
+  async function delDir(id: number, name: string) {
+    if (!confirm(`Видалити напрямок «${name}»? Операції залишаться, але втратять привʼязку до напрямку.`)) return;
+    await api.del(`/api/fin-directions/${id}/`); reload();
+  }
   if (!d) return <div className="spin">Загрузка…</div>;
   const t = d.total;
   return (
     <div className="panel" style={{ margin: 0 }}>
-      <b style={{ fontSize: 14 }}>Напрямки бізнесу · доходи / витрати / прибуток (план із Finmap, факт із CRM)</b>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <b style={{ fontSize: 14, flex: 1 }}>Напрямки бізнесу · доходи / витрати / прибуток (план із Finmap, факт із CRM)</b>
+        <button className="btn btn-primary" style={{ fontSize: 13 }} title="Додати новий напрямок (проект). Зʼявиться у журналі, плануванні й аналітиці." onClick={() => setEdit({ name: "", plan_income: 0, plan_expense: 0 })}>+ Напрямок</button>
+      </div>
       <Period from={from} to={to} set={(f, tt) => { setFrom(f); setTo(tt); }} />
       <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>👆 Натисни на напрямок — нижче відкриється його журнал операцій за період.</div>
       <table style={{ width: "100%", marginTop: 4, fontSize: 13 }}>
-        <thead><tr><th></th><th>Напрямок</th><th>План дохід</th><th>План витрати</th><th>План прибуток</th><th>Рентаб.</th><th>Факт дохід</th><th>Факт прибуток</th></tr></thead>
+        <thead><tr><th></th><th>Напрямок</th><th>План дохід</th><th>План витрати</th><th>План прибуток</th><th>Рентаб.</th><th>Факт дохід</th><th>Факт прибуток</th><th></th></tr></thead>
         <tbody>
           {d.rows.map((r: any) => {
             const pr = r.plan_income ? Math.round(r.plan_profit / r.plan_income * 100) : 0;
@@ -286,9 +295,13 @@ function Directions() {
                   <td style={{ textAlign: "right", color: pr >= 0 ? "#16a34a" : "#dc2626" }}>{pr}%</td>
                   <td style={{ textAlign: "right" }} className="muted">{money(r.income)}</td>
                   <td style={{ textAlign: "right", color: r.profit >= 0 ? "#16a34a" : "#dc2626" }}>{money(r.profit)}</td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
+                    <span title="Редагувати напрямок" style={{ cursor: "pointer", marginRight: 10 }} onClick={() => setEdit({ id: r.id, name: r.name, plan_income: r.plan_income, plan_expense: r.plan_expense })}>✏️</span>
+                    <span title="Видалити напрямок" style={{ cursor: "pointer", color: "#ef4444" }} onClick={() => delDir(r.id, r.name)}>✕</span>
+                  </td>
                 </tr>
                 {isOpen && (
-                  <tr><td colSpan={8} style={{ padding: 0, background: "#f8fafc" }}><DirectionJournal directionId={r.id} from={from} to={to} /></td></tr>
+                  <tr><td colSpan={9} style={{ padding: 0, background: "#f8fafc" }}><DirectionJournal directionId={r.id} from={from} to={to} /></td></tr>
                 )}
               </Fragment>
             );
@@ -301,10 +314,48 @@ function Directions() {
             <td></td>
             <td style={{ textAlign: "right" }} className="muted">{money(t.income)}</td>
             <td style={{ textAlign: "right" }}>{money(t.profit)}</td>
+            <td></td>
           </tr>
         </tbody>
       </table>
-      <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>📋 Напрямки перенесені з Finmap (Проекти). «План» — орієнтир із Finmap. «Факт» рахується з транзакцій CRM, прив'язаних до напрямку.</div>
+      <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>📋 Напрямки перенесені з Finmap (Проекти). «План» — орієнтир із Finmap. «Факт» рахується з транзакцій CRM, прив'язаних до напрямку. Зміни тут синхронізуються у журналі, плануванні та аналітиці.</div>
+      {edit && <DirModal dir={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload(); }} />}
+    </div>
+  );
+}
+
+function DirModal({ dir, onClose, onSaved }: { dir: any; onClose: () => void; onSaved: () => void }) {
+  const [name, setName] = useState(dir.name || "");
+  const [inc, setInc] = useState(String(dir.plan_income || 0));
+  const [exp, setExp] = useState(String(dir.plan_expense || 0));
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    if (!name.trim()) return;
+    setBusy(true);
+    const body = { name: name.trim(), plan_income: Number(inc) || 0, plan_expense: Number(exp) || 0 };
+    try {
+      if (dir.id) await api.patch(`/api/fin-directions/${dir.id}/`, body);
+      else await api.post("/api/fin-directions/", { ...body, active: true });
+      onSaved();
+    } finally { setBusy(false); }
+  }
+  const inp = { width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10 } as React.CSSProperties;
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 22, width: 420 }}>
+        <h3 style={{ marginTop: 0 }}>{dir.id ? "Редагувати напрямок" : "Новий напрямок"}</h3>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>Напрямок (проект) — звідки гроші: ДЕКОР товари, Обʼєкти, Алмазне свердління, Рекуператори, Особисте тощо.</div>
+        <label className="label">Назва напрямку</label>
+        <input value={name} autoFocus onChange={(e) => setName(e.target.value)} placeholder="Напр. ДЕКОР товари" style={inp} />
+        <label className="label">План доходу (₴/міс)</label>
+        <input type="number" value={inc} onChange={(e) => setInc(e.target.value)} style={inp} />
+        <label className="label">План витрат (₴/міс)</label>
+        <input type="number" value={exp} onChange={(e) => setExp(e.target.value)} style={inp} />
+        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+          <button className="btn btn-light" style={{ flex: 1 }} onClick={onClose}>Скасувати</button>
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={save} disabled={busy || !name.trim()}>{busy ? "…" : "Зберегти"}</button>
+        </div>
+      </div>
     </div>
   );
 }
