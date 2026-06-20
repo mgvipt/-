@@ -102,34 +102,3 @@ def compute_breakeven(d_from, d_to):
         "projected_progress": round(projected / breakeven * 100, 1) if breakeven else 0,
         "to_breakeven": round(max(0, breakeven - revenue)),
     }
-
-
-def compute_channels(d_from, d_to):
-    """Доход по каналах (Deal.source): виручка/угод/сер.чек/маржа/spend/ROAS/частка."""
-    from apps.crm.models import Deal, Lead
-    from .models import ChannelSpend
-    from django.db.models import Sum, Count
-    arts = _fin_articles()
-    margin_pct = max(0.0, 100.0 - sum(float(a.value) for a in arts if a.category == "revenue_fund"))
-    won = Deal.objects.filter(stage__is_won=True,
-                              created_at__date__gte=d_from, created_at__date__lte=d_to)
-    rows = list(won.values("source").annotate(revenue=Sum("amount"), deals=Count("id")).order_by("-revenue"))
-    total = sum(float(r["revenue"] or 0) for r in rows) or 1
-    period = d_from.strftime("%Y-%m")
-    spend_map = {c.channel: float(c.spend) for c in ChannelSpend.objects.filter(period=period)}
-    labels = dict(Lead.SOURCES)
-    out = []
-    for r in rows:
-        rev = float(r["revenue"] or 0)
-        n = r["deals"]
-        spend = spend_map.get(r["source"], 0)
-        margin = rev * margin_pct / 100
-        out.append({
-            "source": r["source"], "label": labels.get(r["source"], r["source"]),
-            "revenue": round(rev), "deals": n,
-            "avg_check": round(rev / n) if n else 0,
-            "spend": round(spend), "roas": round(rev / spend, 1) if spend else None,
-            "margin": round(margin), "net": round(margin - spend),
-            "share": round(rev / total * 100, 1),
-        })
-    return {"rows": out, "margin_pct": round(margin_pct, 2), "total_revenue": round(total if rows else 0)}

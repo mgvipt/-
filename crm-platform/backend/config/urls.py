@@ -15,6 +15,7 @@ router = DefaultRouter()
 router.register("product-categories", wh_views.ProductCategoryViewSet)
 router.register("finmodel-articles", fin_views.FinModelArticleViewSet)
 router.register("fin-directions", fin_views.FinDirectionViewSet)
+router.register("channel-spend", fin_views.ChannelSpendViewSet)
 router.register("contacts", crm_views.ContactViewSet)
 router.register("companies", crm_views.CompanyViewSet)
 router.register("funnels", crm_views.FunnelViewSet)
@@ -45,6 +46,7 @@ urlpatterns = [
     path("api/finance/pnl/", fin_views.ProfitLossView.as_view()),
     path("api/finance/breakeven/", fin_views.BreakevenView.as_view()),
     path("api/finance/directions/", fin_views.DirectionsReportView.as_view()),
+    path("api/finance/channels/", fin_views.ChannelsView.as_view()),
     path("api/analytics/", crm_views.AnalyticsView.as_view()),
     path("api/analytics/inventory/", wh_views.InventoryAnalyticsView.as_view()),
     path("api/warehouse/inventory-sheet/", wh_views.InventorySheetView.as_view()),

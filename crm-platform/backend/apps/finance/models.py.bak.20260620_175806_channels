@@ -99,17 +99,3 @@ class FinDirection(models.Model):
 
     def __str__(self):
         return self.name
-
-
-class ChannelSpend(models.Model):
-    """Рекламні витрати по каналу за місяць (для ROAS). Авто з Meta-ads або вручну."""
-    channel = models.CharField(max_length=24)
-    period = models.CharField(max_length=7, help_text="YYYY-MM")
-    spend = models.DecimalField(max_digits=14, decimal_places=2, default=0)
-    src = models.CharField(max_length=10, default="manual", help_text="meta / manual")
-
-    class Meta:
-        unique_together = [("channel", "period")]
-
-    def __str__(self):
-        return f"{self.channel} {self.period}: {self.spend}"

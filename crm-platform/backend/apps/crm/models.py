@@ -81,6 +81,8 @@ class Lead(TimestampedOwned):
         ("telegram", "Telegram"), ("viber", "Viber"), ("instagram", "Instagram"),
         ("facebook", "Facebook"), ("whatsapp", "WhatsApp"), ("call", "Звонок"),
         ("google_business", "Google Бизнес"), ("other", "Другое"),
+        ("site", "Сайт wallcovdec"), ("wholesale", "Опт / дилери"),
+        ("designers", "Дизайнери / прораби"), ("tiktok", "TikTok"),
     ]
     title = models.CharField(max_length=255)
     contact = models.ForeignKey(Contact, null=True, blank=True, on_delete=models.SET_NULL, related_name="leads")

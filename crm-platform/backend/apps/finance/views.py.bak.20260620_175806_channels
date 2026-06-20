@@ -5,9 +5,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from apps.common.permissions import HasPermCode
-from .models import Account, Category, Transaction, FinModelArticle, FinDirection, ChannelSpend
+from .models import Account, Category, Transaction, FinModelArticle, FinDirection
 from .serializers import AccountSerializer, CategorySerializer, TransactionSerializer, FinModelArticleSerializer, FinDirectionSerializer
-from .services import compute_pnl, compute_breakeven, compute_channels
+from .services import compute_pnl, compute_breakeven
 
 
 class FinancePerm(HasPermCode):
@@ -140,25 +140,3 @@ class DirectionsReportView(APIView):
             "plan_expense": sum(r["plan_expense"] for r in rows),
         }
         return Response({"from": d_from.isoformat(), "to": d_to.isoformat(), "rows": rows, "total": total})
-
-
-class ChannelSpendSerializer_(__import__("rest_framework").serializers.ModelSerializer):
-    class Meta:
-        model = ChannelSpend
-        fields = ["id", "channel", "period", "spend", "src"]
-
-
-class ChannelSpendViewSet(viewsets.ModelViewSet):
-    queryset = ChannelSpend.objects.all()
-    serializer_class = ChannelSpendSerializer_
-    permission_classes = [FinanceManagePerm]
-    filterset_fields = ["channel", "period"]
-
-
-class ChannelsView(APIView):
-    """Доход по каналах (для росту доходу): /api/finance/channels/?from&to."""
-    permission_classes = [FinancePerm]
-
-    def get(self, request):
-        d_from, d_to = _period(request)
-        return Response({"from": d_from.isoformat(), "to": d_to.isoformat(), **compute_channels(d_from, d_to)})
