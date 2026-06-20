@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ChatMessage, Conversation, Paginated } from "../api";
 import { Avatar, SourceChip } from "../ui";
+import { useAuth } from "../auth";
 
 export default function Inbox() {
+  const { can } = useAuth();
+  const [scope, setScope] = useState<"mine" | "all" | "unassigned">("all");
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [active, setActive] = useState<Conversation | null>(null);
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
@@ -12,11 +15,12 @@ export default function Inbox() {
   const endRef = useRef<HTMLDivElement>(null);
 
   async function loadConvs() {
-    const d = await api.get<Paginated<Conversation>>("/api/conversations/");
+    const q = scope && scope !== "all" ? `?scope=${scope}` : "";
+    const d = await api.get<Paginated<Conversation>>(`/api/conversations/${q}`);
     setConvs(d.results);
-    if (!active && d.results[0]) openConv(d.results[0]);
+    if (d.results[0]) openConv(d.results[0]);
   }
-  useEffect(() => { loadConvs(); }, []);
+  useEffect(() => { loadConvs(); }, [scope]);
   useEffect(() => { endRef.current?.scrollIntoView(); }, [msgs]);
 
   async function openConv(c: Conversation) {
@@ -43,6 +47,14 @@ export default function Inbox() {
       {/* список диалогов */}
       <div style={{ background: "#fff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div style={{ padding: 12, borderBottom: "1px solid #e2e8f0", fontWeight: 600 }}>Диалоги</div>
+        <div style={{ display: "flex", gap: 6, padding: "8px 12px", borderBottom: "1px solid #f1f5f9" }}>
+          {(([["mine", "Мої"]].concat(can("conversation.view.all") ? [["all", "Всі"], ["unassigned", "Не призначені"]] : [])) as [string, string][]).map(([k, label]) => (
+            <button key={k} onClick={() => setScope(k as any)}
+              style={{ fontSize: 12, padding: "4px 10px", borderRadius: 14, cursor: "pointer",
+                border: "1px solid " + (scope === k ? "var(--brand)" : "#e2e8f0"),
+                background: scope === k ? "var(--brand)" : "#fff", color: scope === k ? "#fff" : "#475569" }}>{label}</button>
+          ))}
+        </div>
         <div style={{ flex: 1, overflowY: "auto" }}>
           {convs.length === 0 && <div className="spin">Пока нет диалогов. Напиши боту в Telegram — появится здесь.</div>}
           {convs.map((c) => (
@@ -56,6 +68,7 @@ export default function Inbox() {
                   <SourceChip source={c.channel_kind} />
                 </div>
                 <div className="muted" style={{ fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.last_text}</div>
+                <div style={{ fontSize: 11, color: c.assigned_to ? "#2563eb" : "#94a3b8" }}>{c.assigned_to ? "👤 " + c.assigned_to_name : "Не призначено"}</div>
               </div>
               {c.unread > 0 && <span style={{ width: 16, height: 16, borderRadius: "50%", background: "#3b82f6", color: "#fff", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", alignSelf: "center" }}>{c.unread}</span>}
             </div>
