@@ -1,7 +1,34 @@
+/* ============================================================================
+ *  КАРТОЧКА СДЕЛКИ  —  frontend/src/pages/DealCard.tsx
+ * ----------------------------------------------------------------------------
+ *  Открывается по клику на сделку в канбане (Board.tsx → /deals/:id).
+ *  Документация: docs/CODEMAP.md  → разд. 3 (экран) и разд. 4 («где менять»).
+ *
+ *  СТРУКТУРА ФАЙЛА (ищи по номеру блока):
+ *    [1] ТИПЫ            — интерфейсы Deal / Item / Pay / Product
+ *    [2] ХЕЛПЕРЫ         — формат чисел, стили чипов
+ *    [3] STATE           — состояние компонента
+ *    [4] ЗАГРУЗКА        — load() сделки и справочников
+ *    [5] ДЕЙСТВИЯ        — стадия, оплата, отгрузка, ТТН, чек (API-вызовы)
+ *    [6] ВЫЧИСЛЯЕМОЕ     — остаток, скидка, лента событий
+ *    [7] РЕНДЕР: шапка   — название, отгрузка, тосты
+ *    [8] РЕНДЕР: стадии  — полоса стадий + дни на текущей
+ *    [9] РЕНДЕР: действия— быстрые кнопки (оплата/ТТН/чек)
+ *    [10] РЕНДЕР: левая  — клиент, сумма, скидка, доставка, маржа, ответственный
+ *    [11] РЕНДЕР: правая — лента событий ИЛИ товары
+ *    [12] РЕНДЕР: модалка— приём оплаты
+ *    [13] СУБ-КОМПОНЕНТЫ — chip(), Inline (инлайн-редактор поля)
+ *
+ *  КАК ДОБАВИТЬ КНОПКУ-ДЕЙСТВИЕ: функция в [5] (api.post .../action/) + кнопка в [9].
+ *  КАК ДОБАВИТЬ ПОЛЕ СДЕЛКИ: тип в [1] + строка в нужном блоке-панели [10].
+ * ========================================================================== */
+
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, Funnel, Paginated } from "../api";
 import { Avatar } from "../ui";
+
+/* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
 interface Item { id: number; product: number; product_name: string; quantity: string; price: string; total: string; }
 interface Pay { id: number; provider: string; amount: string; is_paid: boolean; created_at: string; }
@@ -9,15 +36,21 @@ interface Deal {
   id: number; title: string; contact_name?: string; owner_name?: string;
   funnel: number; stage: number; amount: string; source: string;
   items: Item[]; payments: Pay[]; paid: number;
+  // поля merge-карточки (см. CODEMAP разд.2, модель Deal):
   discount_pct?: string; pay_type?: string; ttn?: string; checkbox_status?: string;
   margin?: number; bonus?: number; days_in_stage?: number;
   contact_loyalty?: string; contact_id?: number;
 }
 interface Product { id: number; name: string; price: string; stock: number; }
 
+/* ─── [2] ХЕЛПЕРЫ ──────────────────────────────────────────────────────── */
+
 const fmt = (n: number) => Number(n || 0).toLocaleString("ru");
+const LOYALTY_COLOR: Record<string, string> = { VIP: "#7c3aed", Активный: "#2563eb", Новый: "#16a34a", Спящий: "#64748b" };
 
 export default function DealCard() {
+
+  /* ─── [3] STATE ──────────────────────────────────────────────────────── */
   const { id } = useParams();
   const nav = useNavigate();
   const [deal, setDeal] = useState<Deal | null>(null);
@@ -30,22 +63,30 @@ export default function DealCard() {
   const [payAmount, setPayAmount] = useState("");
   const [msg, setMsg] = useState("");
 
+  /* ─── [4] ЗАГРУЗКА ───────────────────────────────────────────────────── */
   async function load() {
     const d = await api.get<Deal>(`/api/deals/${id}/`);
     setDeal(d);
     if (!funnel || funnel.id !== d.funnel) setFunnel(await api.get<Funnel>(`/api/funnels/${d.funnel}/`));
   }
-  useEffect(() => { load(); api.get<Paginated<Product>>("/api/products/?page_size=200").then((p) => setProducts(p.results)); }, [id]);
+  useEffect(() => {
+    load();
+    api.get<Paginated<Product>>("/api/products/?page_size=200").then((p) => setProducts(p.results));
+  }, [id]);
 
+  /* ─── [5] ДЕЙСТВИЯ ───────────────────────────────────────────────────── */
   const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(""), 2800); };
   async function patch(body: Record<string, unknown>) { await api.patch(`/api/deals/${id}/`, body); load(); }
+
   async function setStage(stageId: number) { await patch({ stage: stageId }); }
+
   async function addItem() {
     if (!addProd) return;
     setDeal(await api.post<Deal>(`/api/deals/${id}/add_item/`, { product: addProd, quantity: addQty }));
     setAddProd(0); setAddQty(1);
   }
   async function removeItem(item: number) { setDeal(await api.post<Deal>(`/api/deals/${id}/remove_item/`, { item })); }
+
   async function acceptPayment() {
     setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount }));
     setPayOpen(false); setPayAmount(""); flash("✓ Оплата проведена в финансы");
@@ -54,17 +95,20 @@ export default function DealCard() {
     try { const r = await api.post<any>(`/api/deals/${id}/ship/`, {}); setDeal(r.deal); flash(`✓ Отгружено. Себестоимость ${r.cogs} ₴ списана`); }
     catch { flash("В сделке нет товаров для отгрузки"); }
   }
+  // TODO боевой режим: завести @action в DealViewSet поверх integrations/adapters.py
+  //      (np_create_ttn / checkbox_create_receipt / liqpay_checkout_link). Сейчас — заглушки.
   async function createTTN() { await patch({ ttn: "НП " + Math.floor(2e13 + Math.random() * 1e13) }); flash("✓ ТТН Нова Пошта создана"); }
   async function issueCheckbox() { await patch({ checkbox_status: deal?.paid && deal.paid < Number(deal.amount) ? "аванс" : "финальный" }); flash("✓ Чек Checkbox сформирован"); }
+  function sendPayLink() { flash("✓ Ссылка на оплату отправлена клиенту · cashflow.wallcovdec.com.ua"); }
 
+  /* ─── [6] ВЫЧИСЛЯЕМОЕ ────────────────────────────────────────────────── */
   if (!deal) return <div className="spin">Загрузка сделки…</div>;
   const curOrder = funnel?.stages.find((s) => s.id === deal.stage)?.order ?? 0;
   const remaining = Number(deal.amount) - deal.paid;
   const disc = Number(deal.discount_pct || 0);
   const loyalty = deal.contact_loyalty || "";
-  const loyaltyColor: Record<string, string> = { VIP: "#7c3aed", Активный: "#2563eb", Новый: "#16a34a", Спящий: "#64748b" };
-
-  // Лента событий из реальных данных (оплаты + системные)
+  const hasCheck = !!deal.checkbox_status && deal.checkbox_status !== "none";
+  // Лента событий из реальных данных (оплаты + системное «создана»):
   const events = [
     ...deal.payments.map((p) => ({ t: p.created_at, kind: "pay", text: `Оплата ${fmt(Number(p.amount))} ₴ · ${p.provider}` })),
     { t: deal.payments[0]?.created_at || "", kind: "sys", text: "Сделка создана" },
@@ -72,6 +116,8 @@ export default function DealCard() {
 
   return (
     <div className="scroll fade">
+
+      {/* ─── [7] РЕНДЕР: шапка ─────────────────────────────────────────── */}
       <div className="dealhead">
         <button className="back" onClick={() => nav("/deals")}>←</button>
         <b style={{ fontSize: 16 }}>{deal.title}</b>
@@ -81,7 +127,7 @@ export default function DealCard() {
         <button className="btn btn-green" onClick={ship}>📦 Отгрузить</button>
       </div>
 
-      {/* кликабельные стадии + дни на текущей */}
+      {/* ─── [8] РЕНДЕР: стадии (клик = смена, на текущей — дни) ────────── */}
       {funnel && (
         <div className="stagebar">
           {funnel.stages.map((s) => {
@@ -96,9 +142,9 @@ export default function DealCard() {
         </div>
       )}
 
-      {/* быстрые действия «под рукой» */}
+      {/* ─── [9] РЕНДЕР: быстрые действия «под рукой» ──────────────────── */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "10px 0 4px" }}>
-        <button className="btn btn-primary" onClick={() => flash("✓ Ссылка на оплату отправлена клиенту · cashflow.wallcovdec.com.ua")}>💳 Ссылка на оплату</button>
+        <button className="btn btn-primary" onClick={sendPayLink}>💳 Ссылка на оплату</button>
         <button className="btn" onClick={createTTN}>🚚 Создать ТТН</button>
         <button className="btn" onClick={issueCheckbox}>🧾 Чек Checkbox</button>
       </div>
@@ -109,12 +155,15 @@ export default function DealCard() {
       </div>
 
       <div className="grid2">
+
+        {/* ─── [10] РЕНДЕР: левая колонка — данные заказа ───────────────── */}
         <div>
+          {/* 10.1 Клиент + лояльность */}
           <div className="panel">
             <div className="label">Клиент</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontWeight: 600 }}>{deal.contact_name || "Без контакта"}</span>
-              {loyalty && <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: (loyaltyColor[loyalty] || "#64748b") + "22", color: loyaltyColor[loyalty] || "#64748b" }}>{loyalty}</span>}
+              {loyalty && <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: (LOYALTY_COLOR[loyalty] || "#64748b") + "22", color: LOYALTY_COLOR[loyalty] || "#64748b" }}>{loyalty}</span>}
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>📞 Позвонить</button>
@@ -123,6 +172,7 @@ export default function DealCard() {
             </div>
           </div>
 
+          {/* 10.2 Сумма / оплачено / осталось (сумма — инлайн-edit) */}
           <div className="panel">
             <div className="label">Сумма сделки</div>
             <div style={{ fontSize: 22, fontWeight: 700 }}>
@@ -133,6 +183,7 @@ export default function DealCard() {
             <button className="btn btn-primary" style={{ width: "100%", height: 36, marginTop: 10 }} onClick={() => { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }}>💳 Принять оплату</button>
           </div>
 
+          {/* 10.3 Скидка (инлайн-edit) + авто-рекомендация для VIP */}
           <div className="panel">
             <div className="label">Скидка</div>
             <div className="row"><span className="muted">Текущая</span><b><Inline value={disc} fmt={(v) => v + " %"} onSave={(v) => patch({ discount_pct: v })} /></b></div>
@@ -144,30 +195,35 @@ export default function DealCard() {
             )}
           </div>
 
+          {/* 10.4 Доставка и документы (ТТН / чек + бейджи) */}
           <div className="panel">
             <div className="label">Доставка и документы</div>
             <div className="row"><span className="muted">ТТН Нова Пошта</span><b>{deal.ttn || "—"}</b></div>
-            <div className="row"><span className="muted">Чек Checkbox</span><b>{!deal.checkbox_status || deal.checkbox_status === "none" ? "—" : deal.checkbox_status}</b></div>
+            <div className="row"><span className="muted">Чек Checkbox</span><b>{hasCheck ? deal.checkbox_status : "—"}</b></div>
             <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
-              <span style={chip(deal.checkbox_status && deal.checkbox_status !== "none")}>Чек {deal.checkbox_status && deal.checkbox_status !== "none" ? "✓" : "—"}</span>
+              <span style={chip(hasCheck)}>Чек {hasCheck ? "✓" : "—"}</span>
               <span style={chip(!!deal.ttn)}>ТТН {deal.ttn ? "✓" : "—"}</span>
             </div>
           </div>
 
+          {/* 10.5 Маржа + бонус менеджера (для руководителя) */}
           <div className="panel">
             <div className="label">Маржа (видит РОП / руководитель)</div>
             <div className="row"><span className="muted">Маржа</span><b>{fmt(deal.margin || 0)} ₴{deal.margin && Number(deal.amount) ? ` · ${Math.round((deal.margin / Number(deal.amount)) * 100)}%` : ""}</b></div>
             <div className="row"><span className="muted">💰 Бонус менеджера ≈2%</span><b style={{ color: "#1d4ed8" }}>{fmt(deal.bonus || 0)} ₴</b></div>
           </div>
 
+          {/* 10.6 Ответственный */}
           <div className="panel">
             <div className="label">Ответственный</div>
             <div className="owner" style={{ fontSize: 13 }}><Avatar name={deal.owner_name || "—"} />{deal.owner_name || "—"}</div>
           </div>
         </div>
 
+        {/* ─── [11] РЕНДЕР: правая колонка — лента ИЛИ товары ───────────── */}
         <div>
           {tab === "general" ? (
+            /* 11.1 Лента событий + поле ввода (чат из inbox — следующий этап) */
             <div className="panel">
               <div className="label">Лента событий</div>
               {events.length === 0 ? (
@@ -188,6 +244,7 @@ export default function DealCard() {
               </div>
             </div>
           ) : (
+            /* 11.2 Товары в сделке (добавить/удалить → пересчёт суммы на бэке) */
             <div className="panel">
               <div className="label">Товары в сделке</div>
               <div style={{ display: "flex", gap: 6, margin: "8px 0 12px" }}>
@@ -211,6 +268,7 @@ export default function DealCard() {
         </div>
       </div>
 
+      {/* ─── [12] РЕНДЕР: модалка приёма оплаты ───────────────────────── */}
       {payOpen && (
         <div onClick={() => setPayOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 340 }}>
@@ -229,10 +287,14 @@ export default function DealCard() {
   );
 }
 
-function chip(on: boolean | string | undefined): React.CSSProperties {
+/* ─── [13] СУБ-КОМПОНЕНТЫ ──────────────────────────────────────────────── */
+
+// Стиль чипа-бейджа «выполнено / нет» (зелёный / серый).
+function chip(on: boolean): React.CSSProperties {
   return { fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: on ? "#dcfce7" : "#f1f5f9", color: on ? "#166534" : "#94a3b8" };
 }
 
+// Инлайн-редактор числового поля: клик по значению → input → Enter/blur сохраняет.
 function Inline({ value, fmt, onSave }: { value: number; fmt: (v: number) => string; onSave: (v: number) => void }) {
   const [edit, setEdit] = useState(false);
   const [v, setV] = useState(String(value));
