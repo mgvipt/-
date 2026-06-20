@@ -12,6 +12,7 @@ from apps.integrations import views as intg_views
 from apps.telephony import views as tel_views
 
 router = DefaultRouter()
+router.register("product-categories", wh_views.ProductCategoryViewSet)
 router.register("contacts", crm_views.ContactViewSet)
 router.register("companies", crm_views.CompanyViewSet)
 router.register("funnels", crm_views.FunnelViewSet)

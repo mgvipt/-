@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Warehouse, Product, StockDocument, StockMovement
+from .models import Warehouse, Product, ProductCategory, StockDocument, StockMovement
 
 
 class WarehouseSerializer(serializers.ModelSerializer):
@@ -8,12 +8,25 @@ class WarehouseSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "is_default"]
 
 
+class ProductCategorySerializer(serializers.ModelSerializer):
+    products_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProductCategory
+        fields = ["id", "name", "parent", "order", "products_count"]
+
+    def get_products_count(self, obj):
+        return obj.products.count()
+
+
 class ProductSerializer(serializers.ModelSerializer):
     stock = serializers.SerializerMethodField()
+    category_name = serializers.CharField(source="category.name", read_only=True, default="")
 
     class Meta:
         model = Product
-        fields = ["id", "name", "sku", "unit", "price", "cost", "is_active", "stock"]
+        fields = ["id", "name", "sku", "unit", "price", "cost", "currency",
+                  "is_active", "category", "category_name", "stock"]
 
     def get_stock(self, obj):
         return obj.stock()

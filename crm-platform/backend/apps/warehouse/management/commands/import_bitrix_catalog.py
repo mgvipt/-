@@ -14,6 +14,9 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from apps.warehouse.models import Product, ProductCategory
 
+# системные единицы Bitrix (код → название), т.к. в API у них пустой title
+STD_MEASURE = {"6": "м", "163": "г", "166": "кг", "796": "шт", "55": "м²", "113": "л"}
+
 
 class Command(BaseCommand):
     help = "Импорт каталога товаров из Bitrix JSON в склад"
@@ -59,7 +62,7 @@ class Command(BaseCommand):
                     "name": p["name"][:255],
                     "price": round(p["price"], 2),
                     "currency": p.get("currency", "UAH"),
-                    "unit": (p.get("measure") or "шт")[:16],
+                    "unit": STD_MEASURE.get(str(p.get("measure")), (p.get("measure") or "шт"))[:16],
                     "is_active": p.get("active", True),
                     "category": cat,
                     "sku": f"B24-{p['bitrix_id']}",
