@@ -20,6 +20,8 @@ class Contact(models.Model):
     email = models.EmailField(blank=True)
     company = models.ForeignKey(Company, null=True, blank=True, on_delete=models.SET_NULL, related_name="contacts")
     channels = models.JSONField(default=list, blank=True, help_text="['instagram','viber',...]")
+    loyalty_tag = models.CharField(max_length=24, blank=True, default="", help_text="Новый/Активный/VIP/Спящий")
+    birthday = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -98,6 +100,10 @@ class Deal(TimestampedOwned):
     stage = models.ForeignKey(Stage, on_delete=models.PROTECT, related_name="deals")
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     source = models.CharField(max_length=24, choices=Lead.SOURCES, default="other")
+    discount_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    pay_type = models.CharField(max_length=40, blank=True, default="", help_text="Полная/Предоплата 50%/Послеоплата НП")
+    ttn = models.CharField("ТТН Нова Пошта", max_length=40, blank=True, default="")
+    checkbox_status = models.CharField(max_length=16, blank=True, default="none", help_text="none/аванс/финальный")
     closed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:

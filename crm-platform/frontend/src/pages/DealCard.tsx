@@ -9,8 +9,13 @@ interface Deal {
   id: number; title: string; contact_name?: string; owner_name?: string;
   funnel: number; stage: number; amount: string; source: string;
   items: Item[]; payments: Pay[]; paid: number;
+  discount_pct?: string; pay_type?: string; ttn?: string; checkbox_status?: string;
+  margin?: number; bonus?: number; days_in_stage?: number;
+  contact_loyalty?: string; contact_id?: number;
 }
 interface Product { id: number; name: string; price: string; stock: number; }
+
+const fmt = (n: number) => Number(n || 0).toLocaleString("ru");
 
 export default function DealCard() {
   const { id } = useParams();
@@ -32,7 +37,9 @@ export default function DealCard() {
   }
   useEffect(() => { load(); api.get<Paginated<Product>>("/api/products/?page_size=200").then((p) => setProducts(p.results)); }, [id]);
 
-  async function setStage(stageId: number) { await api.patch(`/api/deals/${id}/`, { stage: stageId }); load(); }
+  const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(""), 2800); };
+  async function patch(body: Record<string, unknown>) { await api.patch(`/api/deals/${id}/`, body); load(); }
+  async function setStage(stageId: number) { await patch({ stage: stageId }); }
   async function addItem() {
     if (!addProd) return;
     setDeal(await api.post<Deal>(`/api/deals/${id}/add_item/`, { product: addProd, quantity: addQty }));
@@ -41,18 +48,27 @@ export default function DealCard() {
   async function removeItem(item: number) { setDeal(await api.post<Deal>(`/api/deals/${id}/remove_item/`, { item })); }
   async function acceptPayment() {
     setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount }));
-    setPayOpen(false); setPayAmount(""); setMsg("✓ Оплата проведена в финансы");
-    setTimeout(() => setMsg(""), 2500);
+    setPayOpen(false); setPayAmount(""); flash("✓ Оплата проведена в финансы");
   }
   async function ship() {
-    try { const r = await api.post<any>(`/api/deals/${id}/ship/`, {}); setDeal(r.deal); setMsg(`✓ Отгружено. Себестоимость ${r.cogs} ₴ списана`); }
-    catch { setMsg("В сделке нет товаров для отгрузки"); }
-    setTimeout(() => setMsg(""), 3000);
+    try { const r = await api.post<any>(`/api/deals/${id}/ship/`, {}); setDeal(r.deal); flash(`✓ Отгружено. Себестоимость ${r.cogs} ₴ списана`); }
+    catch { flash("В сделке нет товаров для отгрузки"); }
   }
+  async function createTTN() { await patch({ ttn: "НП " + Math.floor(2e13 + Math.random() * 1e13) }); flash("✓ ТТН Нова Пошта создана"); }
+  async function issueCheckbox() { await patch({ checkbox_status: deal?.paid && deal.paid < Number(deal.amount) ? "аванс" : "финальный" }); flash("✓ Чек Checkbox сформирован"); }
 
   if (!deal) return <div className="spin">Загрузка сделки…</div>;
   const curOrder = funnel?.stages.find((s) => s.id === deal.stage)?.order ?? 0;
   const remaining = Number(deal.amount) - deal.paid;
+  const disc = Number(deal.discount_pct || 0);
+  const loyalty = deal.contact_loyalty || "";
+  const loyaltyColor: Record<string, string> = { VIP: "#7c3aed", Активный: "#2563eb", Новый: "#16a34a", Спящий: "#64748b" };
+
+  // Лента событий из реальных данных (оплаты + системные)
+  const events = [
+    ...deal.payments.map((p) => ({ t: p.created_at, kind: "pay", text: `Оплата ${fmt(Number(p.amount))} ₴ · ${p.provider}` })),
+    { t: deal.payments[0]?.created_at || "", kind: "sys", text: "Сделка создана" },
+  ].filter((e) => e.t);
 
   return (
     <div className="scroll fade">
@@ -65,17 +81,30 @@ export default function DealCard() {
         <button className="btn btn-green" onClick={ship}>📦 Отгрузить</button>
       </div>
 
-      {/* кликабельные стадии */}
+      {/* кликабельные стадии + дни на текущей */}
       {funnel && (
         <div className="stagebar">
-          {funnel.stages.map((s) => (
-            <div key={s.id} className="stage" onClick={() => setStage(s.id)} style={{ cursor: "pointer", background: s.order <= curOrder ? "var(--brand)" : "#cbd5e1" }}>{s.name}</div>
-          ))}
+          {funnel.stages.map((s) => {
+            const cur = s.id === deal.stage;
+            return (
+              <div key={s.id} className="stage" onClick={() => setStage(s.id)}
+                style={{ cursor: "pointer", background: s.order <= curOrder ? "var(--brand)" : "#cbd5e1" }}>
+                {s.name}{cur && deal.days_in_stage != null ? ` · ${deal.days_in_stage}д` : ""}
+              </div>
+            );
+          })}
         </div>
       )}
 
+      {/* быстрые действия «под рукой» */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "10px 0 4px" }}>
+        <button className="btn btn-primary" onClick={() => flash("✓ Ссылка на оплату отправлена клиенту · cashflow.wallcovdec.com.ua")}>💳 Ссылка на оплату</button>
+        <button className="btn" onClick={createTTN}>🚚 Создать ТТН</button>
+        <button className="btn" onClick={issueCheckbox}>🧾 Чек Checkbox</button>
+      </div>
+
       <div className="tabs">
-        <div className={"tab" + (tab === "general" ? " active" : "")} onClick={() => setTab("general")}>Общее</div>
+        <div className={"tab" + (tab === "general" ? " active" : "")} onClick={() => setTab("general")}>Лента</div>
         <div className={"tab" + (tab === "items" ? " active" : "")} onClick={() => setTab("items")}>Товары ({deal.items.length})</div>
       </div>
 
@@ -83,30 +112,57 @@ export default function DealCard() {
         <div>
           <div className="panel">
             <div className="label">Клиент</div>
-            <div style={{ fontWeight: 600 }}>{deal.contact_name || "Без контакта"}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontWeight: 600 }}>{deal.contact_name || "Без контакта"}</span>
+              {loyalty && <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: (loyaltyColor[loyalty] || "#64748b") + "22", color: loyaltyColor[loyalty] || "#64748b" }}>{loyalty}</span>}
+            </div>
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>📞 Позвонить</button>
               <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }}>💬 Чат</button>
+              {deal.contact_id && <button className="btn" style={{ background: "#f1f5f9" }} onClick={() => nav(`/clients?contact=${deal.contact_id}`)}>Клиент →</button>}
             </div>
           </div>
+
+          <div className="panel">
+            <div className="label">Сумма сделки</div>
+            <div style={{ fontSize: 22, fontWeight: 700 }}>
+              <Inline value={Number(deal.amount)} fmt={(v) => fmt(v) + " грн."} onSave={(v) => patch({ amount: v })} />
+            </div>
+            <div className="row" style={{ marginTop: 8 }}><span className="muted">Оплачено</span><b style={{ color: "#16a34a" }}>{fmt(deal.paid)} ₴</b></div>
+            <div className="row"><span className="muted">Осталось</span><b style={{ color: remaining > 0 ? "#d97706" : "#16a34a" }}>{fmt(remaining)} ₴</b></div>
+            <button className="btn btn-primary" style={{ width: "100%", height: 36, marginTop: 10 }} onClick={() => { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }}>💳 Принять оплату</button>
+          </div>
+
+          <div className="panel">
+            <div className="label">Скидка</div>
+            <div className="row"><span className="muted">Текущая</span><b><Inline value={disc} fmt={(v) => v + " %"} onSave={(v) => patch({ discount_pct: v })} /></b></div>
+            {loyalty === "VIP" && disc < 10 && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginTop: 8, background: "#ecfdf5", color: "#047857", padding: "7px 9px", borderRadius: 8, fontSize: 12 }}>
+                <span>VIP: при полной оплате доступно 10%</span>
+                <button className="btn" style={{ padding: "3px 8px" }} onClick={() => patch({ discount_pct: 10 })}>Применить</button>
+              </div>
+            )}
+          </div>
+
+          <div className="panel">
+            <div className="label">Доставка и документы</div>
+            <div className="row"><span className="muted">ТТН Нова Пошта</span><b>{deal.ttn || "—"}</b></div>
+            <div className="row"><span className="muted">Чек Checkbox</span><b>{!deal.checkbox_status || deal.checkbox_status === "none" ? "—" : deal.checkbox_status}</b></div>
+            <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
+              <span style={chip(deal.checkbox_status && deal.checkbox_status !== "none")}>Чек {deal.checkbox_status && deal.checkbox_status !== "none" ? "✓" : "—"}</span>
+              <span style={chip(!!deal.ttn)}>ТТН {deal.ttn ? "✓" : "—"}</span>
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="label">Маржа (видит РОП / руководитель)</div>
+            <div className="row"><span className="muted">Маржа</span><b>{fmt(deal.margin || 0)} ₴{deal.margin && Number(deal.amount) ? ` · ${Math.round((deal.margin / Number(deal.amount)) * 100)}%` : ""}</b></div>
+            <div className="row"><span className="muted">💰 Бонус менеджера ≈2%</span><b style={{ color: "#1d4ed8" }}>{fmt(deal.bonus || 0)} ₴</b></div>
+          </div>
+
           <div className="panel">
             <div className="label">Ответственный</div>
             <div className="owner" style={{ fontSize: 13 }}><Avatar name={deal.owner_name || "—"} />{deal.owner_name || "—"}</div>
-          </div>
-          <div className="panel">
-            <div className="label">Сумма сделки</div>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>{Number(deal.amount).toLocaleString("ru")} <span className="muted" style={{ fontSize: 14 }}>грн.</span></div>
-            <div className="row" style={{ marginTop: 8 }}><span className="muted">Оплачено</span><b style={{ color: "#16a34a" }}>{deal.paid.toLocaleString("ru")} ₴</b></div>
-            <div className="row"><span className="muted">Осталось</span><b style={{ color: remaining > 0 ? "#d97706" : "#16a34a" }}>{remaining.toLocaleString("ru")} ₴</b></div>
-            <button className="btn btn-primary" style={{ width: "100%", height: 36, marginTop: 10 }} onClick={() => { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }}>💳 Принять оплату</button>
-            {deal.payments.length > 0 && (
-              <div style={{ marginTop: 10 }}>
-                <div className="label">История оплат</div>
-                {deal.payments.map((p) => (
-                  <div key={p.id} className="row"><span className="muted">{new Date(p.created_at).toLocaleDateString("ru")} · {p.provider}</span><b>{Number(p.amount).toLocaleString("ru")} ₴</b></div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
 
@@ -114,7 +170,22 @@ export default function DealCard() {
           {tab === "general" ? (
             <div className="panel">
               <div className="label">Лента событий</div>
-              <div className="muted" style={{ fontSize: 13 }}>Звонки, сообщения и оплаты появятся здесь. Оплаты уже идут в Финансы, отгрузка — в Склад.</div>
+              {events.length === 0 ? (
+                <div className="muted" style={{ fontSize: 13 }}>Звонки, сообщения и оплаты появятся здесь. Чат из inbox — следующий этап.</div>
+              ) : (
+                <div style={{ marginTop: 8 }}>
+                  {events.map((e, i) => (
+                    <div key={i} style={{ fontSize: 13, padding: "8px 10px", borderRadius: 8, marginBottom: 6, background: e.kind === "pay" ? "#ecfdf5" : "#f1f5f9", color: e.kind === "pay" ? "#047857" : "#334155" }}>
+                      {e.text}
+                      <span style={{ fontSize: 11, opacity: 0.6, display: "block", marginTop: 2 }}>{e.t ? new Date(e.t).toLocaleString("ru") : ""}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                <input placeholder="/ шаблон   [ имя   @ коллега" style={{ flex: 1, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px" }} />
+                <button className="btn btn-primary" onClick={() => flash("Чат с клиентом — на этапе подключения inbox")}>➤</button>
+              </div>
             </div>
           ) : (
             <div className="panel">
@@ -122,7 +193,7 @@ export default function DealCard() {
               <div style={{ display: "flex", gap: 6, margin: "8px 0 12px" }}>
                 <select value={addProd} onChange={(e) => setAddProd(Number(e.target.value))} style={{ flex: 1, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px" }}>
                   <option value={0}>+ добавить товар…</option>
-                  {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({Number(p.price).toLocaleString("ru")} ₴, ост. {p.stock})</option>)}
+                  {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({fmt(Number(p.price))} ₴, ост. {p.stock})</option>)}
                 </select>
                 <input type="number" value={addQty} min={1} onChange={(e) => setAddQty(Number(e.target.value))} style={{ width: 64, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px" }} />
                 <button className="btn btn-primary" onClick={addItem}>Добавить</button>
@@ -130,7 +201,7 @@ export default function DealCard() {
               {deal.items.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>Товаров пока нет.</div> : (
                 <table><thead><tr><th>Товар</th><th>Кол-во</th><th>Цена</th><th>Сумма</th><th></th></tr></thead>
                   <tbody>{deal.items.map((it) => (
-                    <tr key={it.id}><td>{it.product_name}</td><td>{Number(it.quantity)}</td><td>{Number(it.price).toLocaleString("ru")} ₴</td><td><b>{Number(it.total).toLocaleString("ru")} ₴</b></td>
+                    <tr key={it.id}><td>{it.product_name}</td><td>{Number(it.quantity)}</td><td>{fmt(Number(it.price))} ₴</td><td><b>{fmt(Number(it.total))} ₴</b></td>
                       <td><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => removeItem(it.id)}>✕</span></td></tr>
                   ))}</tbody>
                 </table>
@@ -156,4 +227,21 @@ export default function DealCard() {
       )}
     </div>
   );
+}
+
+function chip(on: boolean | string | undefined): React.CSSProperties {
+  return { fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: on ? "#dcfce7" : "#f1f5f9", color: on ? "#166534" : "#94a3b8" };
+}
+
+function Inline({ value, fmt, onSave }: { value: number; fmt: (v: number) => string; onSave: (v: number) => void }) {
+  const [edit, setEdit] = useState(false);
+  const [v, setV] = useState(String(value));
+  useEffect(() => setV(String(value)), [value]);
+  if (edit) return (
+    <input autoFocus value={v} onChange={(e) => setV(e.target.value)}
+      onBlur={() => { setEdit(false); if (Number(v) !== value) onSave(Number(v)); }}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { setV(String(value)); setEdit(false); } }}
+      style={{ width: 110, height: 28, borderRadius: 6, border: "1px solid var(--brand,#2563eb)", padding: "0 6px", fontSize: 14 }} />
+  );
+  return <span onClick={() => setEdit(true)} style={{ cursor: "text", borderBottom: "1px dashed #cbd5e1" }}>{fmt(value)}</span>;
 }
