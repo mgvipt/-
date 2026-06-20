@@ -11,6 +11,8 @@ PERMISSION_CHOICES = [
     ("finance.view", "Доступ к финансам"),
     ("warehouse.view", "Доступ к складу"),
     ("telephony.view", "Доступ к телефонии и записям"),
+    ("conversation.view.own", "Видеть только свои чаты"),
+    ("conversation.view.all", "Видеть все чаты (руководитель)"),
     ("roles.manage", "Управление ролями и сотрудниками"),
 ]
 
@@ -60,6 +62,9 @@ class User(AbstractUser):
 
     def can_see_all_deals(self) -> bool:
         return self.has_perm_code("deal.view.all")
+
+    def can_see_all_conversations(self) -> bool:
+        return self.has_perm_code("conversation.view.all")
 
     def allowed_funnel_ids(self):
         """None = все воронки (нет ограничения); иначе — список разрешённых id.

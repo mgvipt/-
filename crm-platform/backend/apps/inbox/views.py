@@ -1,3 +1,4 @@
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
@@ -44,10 +45,32 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        allowed = self.request.user.allowed_channel_ids()
+        user = self.request.user
+        allowed = user.allowed_channel_ids()
         if allowed is not None:
             qs = qs.filter(channel_id__in=allowed)
+        # RBAC: менеджер без права «все чаты» видит только свои —
+        # по ответственному чата ИЛИ по ответственному контакта.
+        if not user.can_see_all_conversations():
+            qs = qs.filter(Q(assigned_to=user) | Q(contact__owner=user))
+        # фильтр-чипы (поверх RBAC): Мої / Не призначені
+        scope = self.request.query_params.get("scope")
+        if scope == "mine":
+            qs = qs.filter(assigned_to=user)
+        elif scope == "unassigned":
+            qs = qs.filter(assigned_to__isnull=True)
         return qs
+
+    @action(detail=True, methods=["post"])
+    def assign(self, request, pk=None):
+        """Переброс чата на ответственного (только руководитель)."""
+        u = request.user
+        if not (u.can_see_all_conversations() or u.has_perm_code("roles.manage")):
+            return Response({"detail": "Нет прав на переброс чата"}, status=status.HTTP_403_FORBIDDEN)
+        conv = self.get_object()
+        conv.assigned_to_id = request.data.get("user_id") or None
+        conv.save(update_fields=["assigned_to"])
+        return Response(ConversationSerializer(conv).data)
 
     @action(detail=True, methods=["get"])
     def messages(self, request, pk=None):

@@ -16,6 +16,20 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
         conv.contact = contact
         conv.save(update_fields=["contact"])
 
+    # RBAC-привязка: чат → ответственному клиента (owner контакта либо owner его
+    # последней активной сделки). None = «Не призначені» — НЕ fallback на чужого юзера.
+    contact = conv.contact
+    if conv.assigned_to_id is None and contact is not None:
+        from apps.crm.models import Deal
+        owner_id = contact.owner_id or (
+            Deal.objects.filter(contact=contact).exclude(stage__is_lost=True)
+            .order_by("-created_at").values_list("owner_id", flat=True).first())
+        if owner_id:
+            conv.assigned_to_id = owner_id
+    if contact is not None and contact.pk:
+        contact.last_touch_at = timezone.now()
+        contact.save(update_fields=["last_touch_at"])
+
     msg = Message.objects.create(
         conversation=conv, direction="in", text=inc.text,
         attachments=inc.attachments, external_id=inc.external_id,
@@ -24,7 +38,7 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
     conv.unread += 1
     conv.last_message_at = msg.created_at
     conv.status = "open"
-    conv.save(update_fields=["unread", "last_message_at", "status"])
+    conv.save(update_fields=["unread", "last_message_at", "status", "assigned_to"])
     return msg
 
 

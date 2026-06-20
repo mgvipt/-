@@ -24,11 +24,11 @@ class Command(BaseCommand):
         # роли
         admin_role, _ = Role.objects.get_or_create(
             name="Администратор",
-            defaults={"permissions": ["lead.view.all", "deal.view.all", "finance.view",
+            defaults={"permissions": ["lead.view.all", "deal.view.all", "finance.view", "conversation.view.all",
                                       "warehouse.view", "telephony.view", "roles.manage"]})
         head_role, _ = Role.objects.get_or_create(
             name="Руководитель отдела",
-            defaults={"permissions": ["lead.view.all", "deal.view.all", "telephony.view"]})
+            defaults={"permissions": ["lead.view.all", "deal.view.all", "telephony.view", "conversation.view.all"]})
         mgr_role, _ = Role.objects.get_or_create(
             name="Менеджер",
             defaults={"permissions": ["lead.view.own", "deal.view.own", "telephony.view"]})
