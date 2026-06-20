@@ -203,7 +203,7 @@ function Directions() {
 const CAT_LABEL: Record<string, string> = {
   revenue_fund: "📊 ФОНДИ ВИРУЧКИ (% від кожної угоди)", payment_fee: "💳 ВИТРАТИ НА ОБРОБКУ (на кожну угоду)",
   variable: "💼 ПЕРЕМІННІ ВИТРАТИ (грн/міс)", fixed: "🏢 ПОСТІЙНІ ВИТРАТИ (грн/міс)",
-  warehouse_rate: "📦 СКЛАД / СТАВКИ", config: "⚙️ КОНФІГ / ЛІМІТИ",
+  warehouse_rate: "📦 СКЛАД / СТАВКИ", skd: "🚀 ФОНД СКД / РОЗВИТКУ (грн/міс)", config: "⚙️ КОНФІГ / ЛІМІТИ",
 };
 function FinModel() {
   const [arts, setArts] = useState<any[]>([]);

@@ -62,6 +62,7 @@ class FinModelArticle(models.Model):
         ("upr_cat2", "УПР обов'язкові (₴/міс, у ТБ)"),
         ("upr_cat3", "УПР відмовні (₴/міс)"),
         ("warehouse_rate", "Ставки складу"),
+        ("skd", "Фонд СКД / розвитку (грн/міс)"),
         ("config", "Конфіг / ліміти"),
     ]
     VALUE_TYPE = [
