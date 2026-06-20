@@ -262,7 +262,7 @@ export default function Warehouse() {
             </div>
             <div style={{ overflowY: "auto", flex: 1 }}>
               <table style={{ width: "100%", fontSize: 13 }}>
-                <thead><tr><th>Товар</th><th>Од.</th><th>Початковий</th><th>Надходж.</th><th>Продано</th><th>Кінцевий<br/>(облік)</th><th>Факт</th><th>Розбіжність</th></tr></thead>
+                <thead><tr>{["Товар", "Од.", "Початковий", "Надходж.", "Продано", "Кінцевий (облік)", "Факт", "Розбіжність"].map((h) => <th key={h} style={{ position: "sticky", top: 0, background: "#fff", zIndex: 2, boxShadow: "inset 0 -1px 0 #e2e8f0", textAlign: "left" }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {sheet.map((r) => {
                     const fact = facts[r.id] ?? String(r.book);
