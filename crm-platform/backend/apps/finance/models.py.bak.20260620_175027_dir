@@ -40,7 +40,6 @@ class Transaction(models.Model):
     comment = models.CharField(max_length=255, blank=True)
     deal = models.ForeignKey("crm.Deal", null=True, blank=True, on_delete=models.SET_NULL, related_name="transactions")
     payment = models.OneToOneField("crm.Payment", null=True, blank=True, on_delete=models.SET_NULL, related_name="transaction")
-    fin_direction = models.ForeignKey("FinDirection", null=True, blank=True, on_delete=models.SET_NULL, related_name="transactions")
     date = models.DateField(auto_now_add=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -83,19 +82,3 @@ class FinModelArticle(models.Model):
 
     def __str__(self):
         return f"{self.get_category_display()}: {self.name}"
-
-
-class FinDirection(models.Model):
-    """Напрямок бізнесу (проект Finmap): ДЕКОР Товари / Об'єкти / Hardwork / Маркетинг.
-    Дозволяє рахувати доходи/витрати/прибуток/рентабельність по кожному напрямку + план."""
-    name = models.CharField(max_length=160)
-    plan_income = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="План доходу (рік/період)")
-    plan_expense = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="План витрат")
-    sort_order = models.PositiveIntegerField(default=0)
-    active = models.BooleanField(default=True)
-
-    class Meta:
-        ordering = ["sort_order", "id"]
-
-    def __str__(self):
-        return self.name

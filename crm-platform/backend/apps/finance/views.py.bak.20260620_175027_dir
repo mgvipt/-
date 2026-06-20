@@ -5,8 +5,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from apps.common.permissions import HasPermCode
-from .models import Account, Category, Transaction, FinModelArticle, FinDirection
-from .serializers import AccountSerializer, CategorySerializer, TransactionSerializer, FinModelArticleSerializer, FinDirectionSerializer
+from .models import Account, Category, Transaction, FinModelArticle
+from .serializers import AccountSerializer, CategorySerializer, TransactionSerializer, FinModelArticleSerializer
 from .services import compute_pnl, compute_breakeven
 
 
@@ -105,38 +105,3 @@ class BreakevenView(APIView):
     def get(self, request):
         d_from, d_to = _period(request)
         return Response({"from": d_from.isoformat(), "to": d_to.isoformat(), **compute_breakeven(d_from, d_to)})
-
-
-class FinDirectionViewSet(viewsets.ModelViewSet):
-    queryset = FinDirection.objects.all()
-    serializer_class = FinDirectionSerializer
-    permission_classes = [FinanceManagePerm]
-
-
-class DirectionsReportView(APIView):
-    """Звіт по напрямках (як Finmap Проекти): доходи/витрати/прибуток/рентабельність + план/факт."""
-    permission_classes = [FinancePerm]
-
-    def get(self, request):
-        d_from, d_to = _period(request)
-        rows = []
-        for dr in FinDirection.objects.filter(active=True):
-            tx = Transaction.objects.filter(fin_direction=dr,
-                created_at__date__gte=d_from, created_at__date__lte=d_to)
-            inc = float(tx.filter(direction="in").aggregate(s=Sum("amount"))["s"] or 0)
-            exp = float(tx.filter(direction="out").aggregate(s=Sum("amount"))["s"] or 0)
-            profit = inc - exp
-            rows.append({
-                "id": dr.id, "name": dr.name,
-                "income": round(inc), "expense": round(exp), "profit": round(profit),
-                "profitability": round(profit / inc * 100, 1) if inc else 0,
-                "plan_income": float(dr.plan_income), "plan_expense": float(dr.plan_expense),
-                "plan_profit": float(dr.plan_income - dr.plan_expense),
-            })
-        total = {
-            "income": sum(r["income"] for r in rows), "expense": sum(r["expense"] for r in rows),
-            "profit": sum(r["profit"] for r in rows),
-            "plan_income": sum(r["plan_income"] for r in rows),
-            "plan_expense": sum(r["plan_expense"] for r in rows),
-        }
-        return Response({"from": d_from.isoformat(), "to": d_to.isoformat(), "rows": rows, "total": total})

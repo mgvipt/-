@@ -12,8 +12,8 @@ const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.g
 const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`; };
 
 export default function Finance() {
-  const [tab, setTab] = useState<"dash" | "pnl" | "be" | "model">("dash");
-  const tabs: [string, string][] = [["dash", "💰 Дашборд"], ["pnl", "📊 P&L (ATM)"], ["be", "🎯 Точка беззбитковості"], ["model", "⚙️ Фінмодель"]];
+  const [tab, setTab] = useState<"dash" | "pnl" | "be" | "dir" | "model">("dash");
+  const tabs: [string, string][] = [["dash", "💰 Дашборд"], ["pnl", "📊 P&L (ATM)"], ["be", "🎯 Точка беззбитковості"], ["dir", "🗂 Напрямки (проекти)"], ["model", "⚙️ Фінмодель"]];
   return (
     <div className="scroll pad fade">
       <div className="note warn">🔒 Розділ бачать тільки ролі з правом <b>finance.view</b>.</div>
@@ -23,6 +23,7 @@ export default function Finance() {
       {tab === "dash" && <Dashboard />}
       {tab === "pnl" && <PnL />}
       {tab === "be" && <Breakeven />}
+      {tab === "dir" && <Directions />}
       {tab === "model" && <FinModel />}
     </div>
   );
@@ -153,6 +154,48 @@ function Breakeven() {
         <div className="row" style={{ padding: "7px 0" }}><span className="muted">Днів залишилось</span><b>{d.days_left}</b></div>
       </div>
     </>
+  );
+}
+
+/* ─── ВКЛАДКА: НАПРЯМКИ (проекти Finmap) ───────────────────────────────── */
+function Directions() {
+  const [d, setD] = useState<any>(null);
+  useEffect(() => { api.get<any>("/api/finance/directions/").then(setD); }, []);
+  if (!d) return <div className="spin">Загрузка…</div>;
+  const t = d.total;
+  return (
+    <div className="panel" style={{ margin: 0 }}>
+      <b style={{ fontSize: 14 }}>Напрямки бізнесу · доходи / витрати / прибуток (план із Finmap, факт із CRM)</b>
+      <table style={{ width: "100%", marginTop: 8, fontSize: 13 }}>
+        <thead><tr><th>Напрямок</th><th>План дохід</th><th>План витрати</th><th>План прибуток</th><th>Рентаб.</th><th>Факт дохід</th><th>Факт прибуток</th></tr></thead>
+        <tbody>
+          {d.rows.map((r: any) => {
+            const pr = r.plan_income ? Math.round(r.plan_profit / r.plan_income * 100) : 0;
+            return (
+              <tr key={r.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                <td style={{ fontWeight: 500 }}>{r.name}</td>
+                <td style={{ textAlign: "right" }}>{money(r.plan_income)}</td>
+                <td style={{ textAlign: "right" }}>{money(r.plan_expense)}</td>
+                <td style={{ textAlign: "right", fontWeight: 600, color: r.plan_profit >= 0 ? "#16a34a" : "#dc2626" }}>{money(r.plan_profit)}</td>
+                <td style={{ textAlign: "right", color: pr >= 0 ? "#16a34a" : "#dc2626" }}>{pr}%</td>
+                <td style={{ textAlign: "right" }} className="muted">{money(r.income)}</td>
+                <td style={{ textAlign: "right", color: r.profit >= 0 ? "#16a34a" : "#dc2626" }}>{money(r.profit)}</td>
+              </tr>
+            );
+          })}
+          <tr style={{ borderTop: "2px solid #e2e8f0", fontWeight: 700 }}>
+            <td>РАЗОМ</td>
+            <td style={{ textAlign: "right" }}>{money(t.plan_income)}</td>
+            <td style={{ textAlign: "right" }}>{money(t.plan_expense)}</td>
+            <td style={{ textAlign: "right", color: (t.plan_income - t.plan_expense) >= 0 ? "#16a34a" : "#dc2626" }}>{money(t.plan_income - t.plan_expense)}</td>
+            <td></td>
+            <td style={{ textAlign: "right" }} className="muted">{money(t.income)}</td>
+            <td style={{ textAlign: "right" }}>{money(t.profit)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>📋 Напрямки перенесені з Finmap (Проекти). «План» — орієнтир із Finmap. «Факт» рахується з транзакцій CRM, прив'язаних до напрямку (тегуй платежі напрямком → факт авто).</div>
+    </div>
   );
 }
 

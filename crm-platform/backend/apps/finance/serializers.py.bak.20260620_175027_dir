@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import FinModelArticle, FinDirection, Account, Category, Transaction
+from .models import FinModelArticle, Account, Category, Transaction
 
 
 class AccountSerializer(serializers.ModelSerializer):
@@ -37,9 +37,3 @@ class FinModelArticleSerializer(serializers.ModelSerializer):
         model = FinModelArticle
         fields = ["id", "category", "category_display", "name", "value",
                   "value_type", "value_type_display", "unit", "sort_order", "active"]
-
-
-class FinDirectionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = FinDirection
-        fields = ["id", "name", "plan_income", "plan_expense", "sort_order", "active"]
