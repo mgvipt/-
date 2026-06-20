@@ -5,8 +5,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from apps.common.permissions import HasPermCode
-from .models import Account, Category, Transaction, FinModelArticle, FinDirection, ChannelSpend
-from .serializers import AccountSerializer, CategorySerializer, TransactionSerializer, FinModelArticleSerializer, FinDirectionSerializer
+from .models import Account, Category, Transaction, FinModelArticle, FinDirection, ChannelSpend, FundAllocation, ManagerPlan
+from .serializers import AccountSerializer, CategorySerializer, TransactionSerializer, FinModelArticleSerializer, FinDirectionSerializer, FundAllocationSerializer
 from .services import compute_pnl, compute_breakeven, compute_channels
 
 
@@ -42,10 +42,19 @@ class CategoryViewSet(viewsets.ModelViewSet):
 
 
 class TransactionViewSet(viewsets.ModelViewSet):
-    queryset = Transaction.objects.select_related("account", "category", "deal")
+    queryset = Transaction.objects.select_related("account", "category", "deal", "fin_direction", "fin_article")
     serializer_class = TransactionSerializer
     permission_classes = [FinancePerm]
-    filterset_fields = ["direction", "account", "category", "deal"]
+    filterset_fields = ["direction", "account", "category", "deal", "fin_direction", "fin_article", "channel"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        p = self.request.query_params
+        if p.get("from"):
+            qs = qs.filter(created_at__date__gte=p["from"])
+        if p.get("to"):
+            qs = qs.filter(created_at__date__lte=p["to"])
+        return qs
 
 
 class FinanceDashboardView(APIView):
@@ -162,3 +171,135 @@ class ChannelsView(APIView):
     def get(self, request):
         d_from, d_to = _period(request)
         return Response({"from": d_from.isoformat(), "to": d_to.isoformat(), **compute_channels(d_from, d_to)})
+
+
+class FundAllocationViewSet(viewsets.ModelViewSet):
+    queryset = FundAllocation.objects.select_related("fund", "account", "fin_direction")
+    serializer_class = FundAllocationSerializer
+    permission_classes = [FinancePerm]
+    filterset_fields = ["fund", "account", "fin_direction", "period"]
+
+
+_GROUP_META = [
+    ("revenue", "📊 Фонди виручки (ФВ)", "#2563eb"),
+    ("margin", "💎 Фонди маржі (ФМ)", "#7c3aed"),
+    ("skd", "🎯 Фонди СКД (ФСКД)", "#059669"),
+    ("upr", "🏛 Управлінські (УПР)", "#475569"),
+    ("other", "⚙️ Інше", "#64748b"),
+]
+
+
+def _fund_stats(period):
+    """Для кожного фонду: розподілено (allocations) − витрачено (Transaction out) = залишок."""
+    alloc = {r["fund"]: float(r["s"]) for r in
+             FundAllocation.objects.filter(period=period).values("fund").annotate(s=Sum("amount"))}
+    spent = {}
+    y, mo = int(period[:4]), int(period[5:7])
+    for r in (Transaction.objects.filter(direction="out", fin_article__isnull=False,
+                                          created_at__year=y, created_at__month=mo)
+              .values("fin_article").annotate(s=Sum("amount"))):
+        spent[r["fin_article"]] = float(r["s"])
+    return alloc, spent
+
+
+class FundsView(APIView):
+    """Планування по фондах-конвертах: залишок у кожному фонді (ФВ→ФМ→ФСКД)."""
+    permission_classes = [FinancePerm]
+
+    def get(self, request):
+        period = request.query_params.get("period") or date.today().strftime("%Y-%m")
+        alloc, spent = _fund_stats(period)
+
+        def node(a):
+            al = alloc.get(a.id, 0.0)
+            sp = spent.get(a.id, 0.0)
+            return {"id": a.id, "name": a.name, "category": a.category, "fund_group": a.fund_group,
+                    "margin_kind": a.margin_kind, "is_envelope": a.is_envelope,
+                    "value": float(a.value), "value_type": a.value_type,
+                    "allocated": round(al), "spent": round(sp), "balance": round(al - sp),
+                    "subfunds": [node(s) for s in a.subfunds.all()]}
+
+        arts = list(FinModelArticle.objects.filter(active=True, parent__isnull=True).prefetch_related("subfunds"))
+        groups = []
+        for key, label, color in _GROUP_META:
+            funds = [node(a) for a in arts if a.fund_group == key]
+            if funds:
+                groups.append({"key": key, "label": label, "color": color, "funds": funds})
+        accounts = [{"id": ac.id, "name": ac.name, "balance": round(float(ac.balance()))} for ac in Account.objects.filter(is_active=True)]
+        tot_al = sum(alloc.values()); tot_sp = sum(spent.values())
+        return Response({"period": period, "groups": groups, "accounts": accounts,
+                         "totals": {"allocated": round(tot_al), "spent": round(tot_sp), "balance": round(tot_al - tot_sp)}})
+
+    def post(self, request):
+        """Авто-розподіл виручки по фондах виручки: кожен ФВ отримує value% від суми.
+        body: {account, period, revenue, fin_direction?}"""
+        period = request.data.get("period") or date.today().strftime("%Y-%m")
+        revenue = float(request.data.get("revenue") or 0)
+        account_id = request.data.get("account")
+        direction_id = request.data.get("fin_direction")
+        created = []
+        for a in FinModelArticle.objects.filter(active=True, category="revenue_fund", value_type="percent"):
+            amt = round(revenue * float(a.value) / 100, 2)
+            if amt <= 0:
+                continue
+            FundAllocation.objects.create(fund=a, account_id=account_id, fin_direction_id=direction_id,
+                                          amount=amt, period=period, comment=f"Авто-розподіл виручки {revenue:.0f}₴")
+            created.append({"fund": a.name, "amount": amt})
+        return Response({"created": created})
+
+
+from rest_framework import serializers as _sz
+
+
+class ManagerPlanSerializer(_sz.ModelSerializer):
+    user_name = _sz.CharField(source="user.get_full_name", read_only=True)
+
+    class Meta:
+        model = ManagerPlan
+        fields = ["id", "user", "user_name", "period", "min_revenue", "target_revenue", "ambition_revenue"]
+
+
+class ManagerPlanViewSet(viewsets.ModelViewSet):
+    queryset = ManagerPlan.objects.select_related("user")
+    serializer_class = ManagerPlanSerializer
+    permission_classes = [FinancePerm]
+    filterset_fields = ["user", "period"]
+
+
+def _sales_team():
+    """Менеджери, які мають угоди або право продажів."""
+    from apps.crm.models import Deal
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    ids = set(Deal.objects.exclude(owner__isnull=True).values_list("owner_id", flat=True))
+    return User.objects.filter(id__in=ids) if ids else User.objects.filter(is_active=True)[:10]
+
+
+class SalaryView(APIView):
+    """ЗП/KPI менеджерів за місяць (стратегія РОП+психолог). /api/finance/salary/?period=YYYY-MM[&user=ID]"""
+    permission_classes = [FinancePerm]
+
+    def get(self, request):
+        from .services import compute_manager_salary, compute_breakeven
+        period = request.query_params.get("period") or date.today().strftime("%Y-%m")
+        uid = request.query_params.get("user")
+        if uid:
+            from django.contrib.auth import get_user_model
+            u = get_user_model().objects.filter(id=uid).first()
+            return Response(compute_manager_salary(u, period) if u else {})
+        rows = [compute_manager_salary(u, period) for u in _sales_team()]
+        rows.sort(key=lambda r: r["revenue"], reverse=True)
+        # покриття цілі компанії
+        y, mo = int(period[:4]), int(period[5:7])
+        d_from = date(y, mo, 1)
+        d_to = date(y + (mo // 12), (mo % 12) + 1, 1) - timedelta(days=1)
+        be = compute_breakeven(d_from, d_to)
+        company_target = round(be.get("breakeven", 0) * 1.3)
+        sum_targets = sum(r["plan_target"] or 0 for r in rows)
+        return Response({
+            "period": period, "rows": rows,
+            "company": {"breakeven": be.get("breakeven", 0), "target": company_target,
+                        "sum_plans": sum_targets,
+                        "coverage_pct": round(sum_targets / company_target * 100) if company_target else 0,
+                        "total_payroll": sum(r["total"] for r in rows)},
+        })

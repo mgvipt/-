@@ -90,3 +90,8 @@ tbody tr:hover{background:#f8fafc;}
 .login-box .btn{width:100%;height:42px;margin-top:16px;justify-content:center;font-size:15px;}
 .err{color:#dc2626;font-size:13px;margin-top:10px;}
 .spin{padding:40px;text-align:center;color:#64748b;}
+
+/* Багата шапка колонки воронки (сделки) */
+.stage-head-rich{color:#fff;border-radius:8px;padding:8px 12px;margin-bottom:8px;display:flex;flex-direction:column;gap:2px;box-shadow:0 4px 12px rgba(15,23,42,.14);}
+.stage-head-rich .sh-name{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.stage-head-rich .sh-meta{font-size:11px;font-weight:600;opacity:.85;}

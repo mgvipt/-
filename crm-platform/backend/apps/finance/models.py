@@ -66,6 +66,7 @@ class FinModelArticle(models.Model):
         ("warehouse_rate", "Ставки складу"),
         ("skd", "Фонд СКД / розвитку (грн/міс)"),
         ("config", "Конфіг / ліміти"),
+        ("salary", "ЗП менеджера (ставки)"),
     ]
     VALUE_TYPE = [
         ("percent", "%"),
@@ -80,9 +81,32 @@ class FinModelArticle(models.Model):
     unit = models.CharField(max_length=24, blank=True, default="")
     sort_order = models.PositiveIntegerField(default=0)
     active = models.BooleanField(default=True)
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE,
+        related_name="subfunds", help_text="Батьківський фонд (для підфондів)")
+    is_envelope = models.BooleanField(default=False,
+        help_text="Конверт: тримає гроші, отримує розподіл і робить з нього розхід")
+    code = models.CharField(max_length=40, blank=True, default="", help_text="Машинний код для службових параметрів (salary_base тощо)")
+
+    # Групи фондів у логіці Finmap: ФВ → ФМ → ФСКД
+    FUND_GROUP = {
+        "revenue_fund": "revenue",
+        "variable": "margin", "fixed": "margin",
+        "skd": "skd",
+        "upr_cat2": "upr", "upr_cat3": "upr",
+    }
 
     class Meta:
         ordering = ["category", "sort_order", "id"]
+
+    @property
+    def fund_group(self):
+        """revenue=Фонди виручки, margin=Фонди маржі, skd=Фонди СКД, upr, other."""
+        return self.FUND_GROUP.get(self.category, "other")
+
+    @property
+    def margin_kind(self):
+        """Для фондів маржі: variable=змінні, fixed=постійні."""
+        return {"variable": "variable", "fixed": "fixed"}.get(self.category, "")
 
     def __str__(self):
         return f"{self.get_category_display()}: {self.name}"
@@ -116,3 +140,39 @@ class ChannelSpend(models.Model):
 
     def __str__(self):
         return f"{self.channel} {self.period}: {self.spend}"
+
+
+class FundAllocation(models.Model):
+    """Розподіл грошей у фонд-конверт (планування за логікою Finmap).
+    Гроші приходять на рахунок → розподіляються по фондах. Залишок фонду =
+    сума розподілів − витрати з цього фонду (Transaction out з fin_article=fund)."""
+    fund = models.ForeignKey(FinModelArticle, on_delete=models.CASCADE, related_name="allocations")
+    account = models.ForeignKey(Account, null=True, blank=True, on_delete=models.SET_NULL, related_name="fund_allocations")
+    fin_direction = models.ForeignKey(FinDirection, null=True, blank=True, on_delete=models.SET_NULL, related_name="fund_allocations")
+    amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    period = models.CharField(max_length=7, help_text="YYYY-MM")
+    comment = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.fund.name} +{self.amount} ({self.period})"
+
+
+class ManagerPlan(models.Model):
+    """Персональний план менеджера на місяць (3 рівні). Замінює хардкод 400К.
+    Норма ≈ факт × 1.2 (rolling). Амбіція ≈ факт × 1.5."""
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="kpi_plans")
+    period = models.CharField(max_length=7, help_text="YYYY-MM")
+    min_revenue = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="Мінімум (поріг)")
+    target_revenue = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="Норма / ціль")
+    ambition_revenue = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="Амбіція (stretch)")
+
+    class Meta:
+        unique_together = [("user", "period")]
+        ordering = ["-period"]
+
+    def __str__(self):
+        return f"{self.user} {self.period}: ціль {self.target_revenue}"

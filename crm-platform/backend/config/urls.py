@@ -33,6 +33,8 @@ router.register("stock-documents", wh_views.StockDocumentViewSet)
 router.register("accounts", fin_views.AccountViewSet)
 router.register("categories", fin_views.CategoryViewSet)
 router.register("transactions", fin_views.TransactionViewSet)
+router.register("fund-allocations", fin_views.FundAllocationViewSet)
+router.register("manager-plans", fin_views.ManagerPlanViewSet)
 router.register("calls", tel_views.CallViewSet)
 
 urlpatterns = [
@@ -47,6 +49,8 @@ urlpatterns = [
     path("api/finance/breakeven/", fin_views.BreakevenView.as_view()),
     path("api/finance/directions/", fin_views.DirectionsReportView.as_view()),
     path("api/finance/channels/", fin_views.ChannelsView.as_view()),
+    path("api/finance/funds/", fin_views.FundsView.as_view()),
+    path("api/finance/salary/", fin_views.SalaryView.as_view()),
     path("api/analytics/", crm_views.AnalyticsView.as_view()),
     path("api/analytics/inventory/", wh_views.InventoryAnalyticsView.as_view()),
     path("api/warehouse/inventory-sheet/", wh_views.InventorySheetView.as_view()),

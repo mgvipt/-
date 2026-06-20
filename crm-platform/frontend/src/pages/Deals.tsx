@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Funnel } from "../api";
 import Board from "./Board";
+import FunnelEditor from "./FunnelEditor";
 
 export default function Deals() {
   const [funnels, setFunnels] = useState<Funnel[]>([]);
@@ -9,6 +10,7 @@ export default function Deals() {
   const [ver, setVer] = useState(0);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
+  const [editFunnel, setEditFunnel] = useState(false);
   const nav = useNavigate();
 
   useEffect(() => {
@@ -38,6 +40,7 @@ export default function Deals() {
         <select value={curId ?? ""} onChange={(e) => setCurId(Number(e.target.value))}>
           {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
         </select>
+        <button className="btn btn-light" onClick={() => setEditFunnel(true)}>⚙ Воронка</button>
         <div className="spacer" />
         <span className="muted">Воронок доступно: {funnels.length}</span>
       </div>
@@ -57,6 +60,11 @@ export default function Deals() {
             </div>
           </div>
         </div>
+      )}
+
+      {editFunnel && cur && (
+        <FunnelEditor funnel={cur} onClose={() => setEditFunnel(false)}
+          onSaved={(f) => { setFunnels((fs) => fs.map((x) => (x.id === f.id ? f : x))); setEditFunnel(false); setVer((v) => v + 1); }} />
       )}
     </div>
   );

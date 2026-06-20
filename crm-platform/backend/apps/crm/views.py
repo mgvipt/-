@@ -58,11 +58,50 @@ class FunnelViewSet(viewsets.ModelViewSet):
         allowed = self.request.user.allowed_funnel_ids()
         return qs if allowed is None else qs.filter(id__in=allowed)
 
+    @action(detail=True, methods=["post"])
+    def save_stages(self, request, pk=None):
+        """Зберегти весь набір стадій воронки (перейменування/колір/порядок/+/видалення)."""
+        funnel = self.get_object()
+        blocked = _save_funnel_stages(funnel, request.data.get("stages", []))
+        funnel.refresh_from_db()
+        data = FunnelSerializer(funnel).data
+        data["blocked"] = blocked
+        return Response(data)
+
 
 class StageViewSet(viewsets.ModelViewSet):
     queryset = Stage.objects.all()
     serializer_class = StageSerializer
     filterset_fields = ["funnel"]
+
+
+def _save_funnel_stages(funnel, items):
+    """Upsert стадій воронки одним запитом + безпечне видалення.
+    items: [{id?|null, name, color, order?, is_won?, is_lost?}] у потрібному порядку.
+    Стадію з картками (сделки/ліди) не видаляємо — повертаємо її назву у blocked."""
+    keep_ids = set()
+    for i, it in enumerate(items):
+        fields = dict(
+            name=(it.get("name") or "").strip() or "Стадія",
+            color=it.get("color") or "#3b82f6",
+            order=i,
+            is_won=bool(it.get("is_won")),
+            is_lost=bool(it.get("is_lost")),
+        )
+        sid = it.get("id")
+        if sid:
+            Stage.objects.filter(id=sid, funnel=funnel).update(**fields)
+            keep_ids.add(int(sid))
+        else:
+            st = Stage.objects.create(funnel=funnel, **fields)
+            keep_ids.add(st.id)
+    blocked = []
+    for st in funnel.stages.exclude(id__in=keep_ids):
+        if Deal.objects.filter(stage=st).exists() or Lead.objects.filter(stage=st).exists():
+            blocked.append(st.name)
+        else:
+            st.delete()
+    return blocked
 
 
 class LeadViewSet(ScopedByRoleMixin, viewsets.ModelViewSet):
@@ -133,6 +172,34 @@ class DealViewSet(ScopedByRoleMixin, viewsets.ModelViewSet):
         pay = Payment.objects.create(deal=deal, provider=provider, amount=amount, is_paid=True)
         record_income(amount, deal=deal, account=account, payment=pay)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
+    def ai_suggest(self, request, pk=None):
+        """AI-помічник: аналіз діалогу + готова відповідь клієнту (Claude)."""
+        deal = self.get_object()
+        msgs = []
+        if deal.contact_id:
+            from apps.inbox.models import Conversation
+            conv = Conversation.objects.filter(contact=deal.contact).order_by("-last_message_at").first()
+            if conv:
+                msgs = list(conv.messages.order_by("id").values("direction", "text"))[-30:]
+        dialog = "\n".join(
+            f"{'Клієнт' if m['direction'] == 'in' else 'Менеджер'}: {m['text']}"
+            for m in msgs if m.get("text"))
+        prompt = (
+            "Ти — досвідчений ввічливий продавець-консультант компанії Wallcov "
+            "(декоративні покриття та фарби для стін). "
+            f"Сделка: «{deal.title}», сума {deal.amount} грн. "
+            f"Ось переписка з клієнтом:\n{dialog or '(переписки ще немає)'}\n\n"
+            "Поверни СТРОГО JSON без пояснень: "
+            '{"context": "1-2 речення: про що діалог і що хоче клієнт", '
+            '"suggestion": "готова дружня відповідь клієнту тією ж мовою, що й він"}')
+        from .ai import claude_json
+        try:
+            data = claude_json(prompt)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response(data)
 
     @action(detail=True, methods=["post"])
     def ship(self, request, pk=None):

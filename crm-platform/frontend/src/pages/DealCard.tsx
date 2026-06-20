@@ -38,8 +38,8 @@ interface Deal {
   items: Item[]; payments: Pay[]; paid: number;
   // поля merge-карточки (см. CODEMAP разд.2, модель Deal):
   discount_pct?: string; pay_type?: string; ttn?: string; checkbox_status?: string;
-  margin?: number; bonus?: number; days_in_stage?: number;
-  contact_loyalty?: string; contact_id?: number;
+  margin?: number; bonus?: { total: number; from_revenue: number; from_margin: number; revenue_pct: number; margin_pct: number }; days_in_stage?: number;
+  contact_loyalty?: string; contact_id?: number; conversation_id?: number | null;
 }
 interface Product { id: number; name: string; price: string; stock: number; }
 
@@ -62,6 +62,11 @@ export default function DealCard() {
   const [payOpen, setPayOpen] = useState(false);
   const [payAmount, setPayAmount] = useState("");
   const [msg, setMsg] = useState("");
+  const [chat, setChat] = useState<{ id: number; direction: string; text: string; created_at: string }[]>([]);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [ai, setAi] = useState<{ context: string; suggestion: string } | null>(null);
+  const [aiLoad, setAiLoad] = useState(false);
 
   /* ─── [4] ЗАГРУЗКА ───────────────────────────────────────────────────── */
   async function load() {
@@ -73,6 +78,10 @@ export default function DealCard() {
     load();
     api.get<Paginated<Product>>("/api/products/?page_size=200").then((p) => setProducts(p.results));
   }, [id]);
+  useEffect(() => {
+    if (deal?.conversation_id) api.get<any>(`/api/conversations/${deal.conversation_id}/messages/`).then(setChat).catch(() => setChat([]));
+    else setChat([]);
+  }, [deal?.conversation_id]);
 
   /* ─── [5] ДЕЙСТВИЯ ───────────────────────────────────────────────────── */
   const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(""), 2800); };
@@ -100,6 +109,21 @@ export default function DealCard() {
   async function createTTN() { await patch({ ttn: "НП " + Math.floor(2e13 + Math.random() * 1e13) }); flash("✓ ТТН Нова Пошта создана"); }
   async function issueCheckbox() { await patch({ checkbox_status: deal?.paid && deal.paid < Number(deal.amount) ? "аванс" : "финальный" }); flash("✓ Чек Checkbox сформирован"); }
   function sendPayLink() { flash("✓ Ссылка на оплату отправлена клиенту · cashflow.wallcovdec.com.ua"); }
+  async function sendChat() {
+    if (!draft.trim() || !deal?.conversation_id) { if (!deal?.conversation_id) flash("Немає активного чату з клієнтом"); return; }
+    setSending(true);
+    try {
+      const m = await api.post<any>(`/api/conversations/${deal.conversation_id}/send/`, { text: draft.trim() });
+      setChat((c) => [...c, m]); setDraft("");
+    } catch { flash("Не вдалося відправити (канал/токен)"); }
+    finally { setSending(false); }
+  }
+  async function aiSuggest() {
+    setAiLoad(true); setAi(null);
+    try { setAi(await api.post<any>(`/api/deals/${id}/ai_suggest/`, {})); }
+    catch { flash("AI недоступний"); }
+    finally { setAiLoad(false); }
+  }
 
   /* ─── [6] ВЫЧИСЛЯЕМОЕ ────────────────────────────────────────────────── */
   if (!deal) return <div className="spin">Загрузка сделки…</div>;
@@ -167,7 +191,7 @@ export default function DealCard() {
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>📞 Позвонить</button>
-              <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }}>💬 Чат</button>
+              <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }} onClick={() => deal.conversation_id ? nav(`/inbox?c=${deal.conversation_id}`) : setTab("general")}>💬 Чат</button>
               {deal.contact_id && <button className="btn" style={{ background: "#f1f5f9" }} onClick={() => nav(`/clients?contact=${deal.contact_id}`)}>Клиент →</button>}
             </div>
           </div>
@@ -210,7 +234,8 @@ export default function DealCard() {
           <div className="panel">
             <div className="label">Маржа (видит РОП / руководитель)</div>
             <div className="row"><span className="muted">Маржа</span><b>{fmt(deal.margin || 0)} ₴{deal.margin && Number(deal.amount) ? ` · ${Math.round((deal.margin / Number(deal.amount)) * 100)}%` : ""}</b></div>
-            <div className="row"><span className="muted">💰 Бонус менеджера ≈2%</span><b style={{ color: "#1d4ed8" }}>{fmt(deal.bonus || 0)} ₴</b></div>
+            <div className="row" title={deal.bonus ? `${deal.bonus.revenue_pct}% з обороту + ${deal.bonus.margin_pct}% з маржі. Ставки міняються у Фінмоделі → ЗП.` : ""}><span className="muted">💰 Бонус менеджера з угоди</span><b style={{ color: "#1d4ed8" }}>{fmt(deal.bonus?.total || 0)} ₴</b></div>
+            {deal.bonus && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{deal.bonus.revenue_pct}% обороту = {fmt(deal.bonus.from_revenue)} ₴ + {deal.bonus.margin_pct}% маржі = {fmt(deal.bonus.from_margin)} ₴</div>}
           </div>
 
           {/* 10.6 Ответственный */}
@@ -223,24 +248,33 @@ export default function DealCard() {
         {/* ─── [11] РЕНДЕР: правая колонка — лента ИЛИ товары ───────────── */}
         <div>
           {tab === "general" ? (
-            /* 11.1 Лента событий + поле ввода (чат из inbox — следующий этап) */
+            /* 11.1 ЧАТ З КЛІЄНТОМ + події + AI-помічник */
             <div className="panel">
-              <div className="label">Лента событий</div>
-              {events.length === 0 ? (
-                <div className="muted" style={{ fontSize: 13 }}>Звонки, сообщения и оплаты появятся здесь. Чат из inbox — следующий этап.</div>
-              ) : (
-                <div style={{ marginTop: 8 }}>
-                  {events.map((e, i) => (
-                    <div key={i} style={{ fontSize: 13, padding: "8px 10px", borderRadius: 8, marginBottom: 6, background: e.kind === "pay" ? "#ecfdf5" : "#f1f5f9", color: e.kind === "pay" ? "#047857" : "#334155" }}>
-                      {e.text}
-                      <span style={{ fontSize: 11, opacity: 0.6, display: "block", marginTop: 2 }}>{e.t ? new Date(e.t).toLocaleString("ru") : ""}</span>
-                    </div>
-                  ))}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div className="label">Чат з клієнтом · {deal.contact_name || "—"}</div>
+                <button className="btn" style={{ fontSize: 12, padding: "3px 9px", background: "#f5f3ff", color: "#6d28d9" }} onClick={aiSuggest} disabled={aiLoad}>{aiLoad ? "AI думає…" : "✨ AI-помічник"}</button>
+              </div>
+              {ai && (
+                <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 8, padding: 10, margin: "8px 0", fontSize: 13 }}>
+                  <div style={{ color: "#6d28d9", fontWeight: 600, marginBottom: 4 }}>✨ Контекст діалогу</div>
+                  <div style={{ color: "#475569", marginBottom: 8 }}>{ai.context}</div>
+                  <div style={{ color: "#6d28d9", fontWeight: 600, marginBottom: 4 }}>Пропонована відповідь</div>
+                  <div style={{ color: "#1e293b" }}>{ai.suggestion}</div>
+                  <button className="btn btn-light" style={{ fontSize: 12, padding: "3px 9px", marginTop: 8 }} onClick={() => { setDraft(ai.suggestion); setAi(null); }}>↧ Вставити у відповідь</button>
                 </div>
               )}
+              <div style={{ maxHeight: 280, overflowY: "auto", marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                {chat.length === 0 && events.length === 0 && <div className="muted" style={{ fontSize: 13 }}>Повідомлень ще немає. Чат підтягнеться з відкритих ліній (inbox).</div>}
+                {chat.map((m) => (
+                  <div key={m.id} style={{ maxWidth: "85%", padding: "8px 11px", borderRadius: 10, fontSize: 13, alignSelf: m.direction === "out" ? "flex-end" : "flex-start", background: m.direction === "out" ? "var(--brand,#2563eb)" : "#f1f5f9", color: m.direction === "out" ? "#fff" : "#1e293b" }}>{m.text}</div>
+                ))}
+                {events.map((e, i) => (
+                  <div key={"e" + i} style={{ fontSize: 12, padding: "6px 9px", borderRadius: 8, background: e.kind === "pay" ? "#ecfdf5" : "#f8fafc", color: e.kind === "pay" ? "#047857" : "#64748b", alignSelf: "center" }}>{e.text}</div>
+                ))}
+              </div>
               <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-                <input placeholder="/ шаблон   [ имя   @ коллега" style={{ flex: 1, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px" }} />
-                <button className="btn btn-primary" onClick={() => flash("Чат с клиентом — на этапе подключения inbox")}>➤</button>
+                <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendChat()} placeholder={deal.conversation_id ? "Повідомлення клієнту…" : "Немає активного чату"} style={{ flex: 1, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px" }} />
+                <button className="btn btn-primary" onClick={sendChat} disabled={sending}>{sending ? "…" : "➤"}</button>
               </div>
             </div>
           ) : (
@@ -258,7 +292,7 @@ export default function DealCard() {
               {deal.items.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>Товаров пока нет.</div> : (
                 <table><thead><tr><th>Товар</th><th>Кол-во</th><th>Цена</th><th>Сумма</th><th></th></tr></thead>
                   <tbody>{deal.items.map((it) => (
-                    <tr key={it.id}><td>{it.product_name}</td><td>{Number(it.quantity)}</td><td>{fmt(Number(it.price))} ₴</td><td><b>{fmt(Number(it.total))} ₴</b></td>
+                    <tr key={it.id}><td><span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/warehouse?p=${it.product}`)}>{it.product_name}</span></td><td>{Number(it.quantity)}</td><td>{fmt(Number(it.price))} ₴</td><td><b>{fmt(Number(it.total))} ₴</b></td>
                       <td><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => removeItem(it.id)}>✕</span></td></tr>
                   ))}</tbody>
                 </table>

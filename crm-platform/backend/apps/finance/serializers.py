@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import FinModelArticle, FinDirection, Account, Category, Transaction
+from .models import FinModelArticle, FinDirection, Account, Category, Transaction, FundAllocation
 
 
 class AccountSerializer(serializers.ModelSerializer):
@@ -36,14 +36,28 @@ class TransactionSerializer(serializers.ModelSerializer):
 class FinModelArticleSerializer(serializers.ModelSerializer):
     category_display = serializers.CharField(source="get_category_display", read_only=True)
     value_type_display = serializers.CharField(source="get_value_type_display", read_only=True)
+    fund_group = serializers.CharField(read_only=True)
+    margin_kind = serializers.CharField(read_only=True)
 
     class Meta:
         model = FinModelArticle
         fields = ["id", "category", "category_display", "name", "value",
-                  "value_type", "value_type_display", "unit", "sort_order", "active"]
+                  "value_type", "value_type_display", "unit", "sort_order", "active",
+                  "parent", "is_envelope", "fund_group", "margin_kind"]
 
 
 class FinDirectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = FinDirection
         fields = ["id", "name", "plan_income", "plan_expense", "sort_order", "active"]
+
+
+class FundAllocationSerializer(serializers.ModelSerializer):
+    fund_name = serializers.CharField(source="fund.name", read_only=True)
+    account_name = serializers.CharField(source="account.name", read_only=True, default="")
+    fin_direction_name = serializers.CharField(source="fin_direction.name", read_only=True, default="")
+
+    class Meta:
+        model = FundAllocation
+        fields = ["id", "fund", "fund_name", "account", "account_name",
+                  "fin_direction", "fin_direction_name", "amount", "period", "comment", "created_at"]

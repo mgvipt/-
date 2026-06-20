@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, ChatMessage, Conversation, Paginated } from "../api";
 import { Avatar, SourceChip } from "../ui";
 import { useAuth } from "../auth";
 
 export default function Inbox() {
   const { can } = useAuth();
+  const [params] = useSearchParams();
   const [scope, setScope] = useState<"mine" | "all" | "unassigned">("all");
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [active, setActive] = useState<Conversation | null>(null);
@@ -21,6 +23,11 @@ export default function Inbox() {
     if (d.results[0]) openConv(d.results[0]);
   }
   useEffect(() => { loadConvs(); }, [scope]);
+  useEffect(() => {
+    const cid = params.get("c");
+    if (!cid) return;
+    api.get<Conversation>(`/api/conversations/${cid}/`).then((c) => { setConvs((cs) => cs.some((x) => x.id === c.id) ? cs : [c, ...cs]); openConv(c); }).catch(() => {});
+  }, [params]);
   useEffect(() => { endRef.current?.scrollIntoView(); }, [msgs]);
 
   async function openConv(c: Conversation) {
@@ -83,7 +90,11 @@ export default function Inbox() {
         ) : (
           <>
             <div style={{ height: 52, background: "#fff", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 8, padding: "0 16px" }}>
-              <b style={{ fontSize: 14 }}>{active.contact_name || active.title}</b>
+              <Avatar name={active.contact_name || active.title || "?"} cls="av-md" />
+              <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.25 }}>
+                <b style={{ fontSize: 14 }}>{active.contact_name || active.title}</b>
+                <span className="muted" style={{ fontSize: 11 }}>{active.assigned_to ? "👤 " + active.assigned_to_name : "Не призначено"} · {active.channel_name}</span>
+              </div>
               <SourceChip source={active.channel_kind} />
               <div className="spacer" />
               <button className="btn btn-green">📞 Позвонить</button>

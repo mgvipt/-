@@ -89,11 +89,19 @@ class DealDetailSerializer(DealSerializer):
     days_in_stage = serializers.SerializerMethodField()
     contact_loyalty = serializers.SerializerMethodField()
     contact_id = serializers.IntegerField(source="contact.id", read_only=True)
+    conversation_id = serializers.SerializerMethodField()
+
+    def get_conversation_id(self, obj):
+        if not obj.contact_id:
+            return None
+        from apps.inbox.models import Conversation
+        c = Conversation.objects.filter(contact=obj.contact).order_by("-last_message_at").first()
+        return c.id if c else None
 
     class Meta(DealSerializer.Meta):
         fields = DealSerializer.Meta.fields + [
             "items", "payments", "paid", "margin", "bonus",
-            "days_in_stage", "contact_loyalty", "contact_id",
+            "days_in_stage", "contact_loyalty", "contact_id", "conversation_id",
         ]
 
     def get_paid(self, obj):
@@ -109,8 +117,9 @@ class DealDetailSerializer(DealSerializer):
         return round(revenue - cogs, 2)
 
     def get_bonus(self, obj):
-        # Индикативный бонус менеджера ≈ 2% оборота (KPI Wallcov).
-        return round(float(obj.amount) * 0.02, 2)
+        # Бонус менеджера з цієї угоди = % обороту + % маржі (ставки з Фінмоделі, синхронно).
+        from apps.finance.services import deal_manager_bonus
+        return deal_manager_bonus(obj.amount, self.get_margin(obj))
 
     def get_days_in_stage(self, obj):
         from django.utils import timezone

@@ -48,7 +48,10 @@ export default function Board({ endpoint, funnel }: { endpoint: string; funnel: 
                   <b>{st.name}</b><span className="muted">{colCards.length}</span>
                 </div>
               ) : (
-                <div className="stage" style={{ background: st.color }}>{st.name}</div>
+                <div className="stage-head-rich" style={{ background: `linear-gradient(135deg, ${st.color}, ${st.color}cc)` }}>
+                  <span className="sh-name">{st.name}{st.is_won ? " ✓" : st.is_lost ? " ✕" : ""}</span>
+                  <span className="sh-meta">{colCards.length} · {sum.toLocaleString("ru")}₴</span>
+                </div>
               )}
               <div
                 className={"col-body" + (dropStage === st.id ? " drop" : "")}

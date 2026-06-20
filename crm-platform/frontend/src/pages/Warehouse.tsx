@@ -18,6 +18,7 @@
  *    [10] СУБ-КОМПОНЕНТ: EditCost
  * ========================================================================== */
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, Paginated } from "../api";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
@@ -61,10 +62,15 @@ export default function Warehouse() {
   const [pTo, setPTo] = useState(today());
 
   /* ─── [3] ЗАГРУЗКА ───────────────────────────────────────────────────── */
+  const [params] = useSearchParams();
   useEffect(() => {
     api.get<Category[]>("/api/product-categories/").then(setCats).catch(() => setCats([]));
     api.get<Paginated<WH>>("/api/warehouses/").then((w) => setWhs(w.results));
   }, []);
+  useEffect(() => {
+    const pid = params.get("p");
+    if (pid) api.get<Product>(`/api/products/${pid}/`).then(openCard).catch(() => {});
+  }, [params]);
 
   async function loadProducts() {
     setLoading(true);

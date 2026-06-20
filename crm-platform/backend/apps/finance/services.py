@@ -30,7 +30,8 @@ from django.db.models import Sum as _Sum
 
 def _fin_articles():
     from .models import FinModelArticle
-    return list(FinModelArticle.objects.filter(active=True))
+    # лише верхній рівень: підфонди — це під-розподіл конвертів, не коефіцієнти P&L
+    return list(FinModelArticle.objects.filter(active=True, parent__isnull=True))
 
 
 def _revenue(d_from, d_to):
@@ -133,3 +134,109 @@ def compute_channels(d_from, d_to):
             "share": round(rev / total * 100, 1),
         })
     return {"rows": out, "margin_pct": round(margin_pct, 2), "total_revenue": round(total if rows else 0)}
+
+
+# ============================================================================
+#  ЗП / KPI МЕНЕДЖЕРІВ — рушій на базі редагованих ставок (стратегія РОП+психолог)
+#  Параметри-ставки живуть у FinModelArticle (category="salary", по code) —
+#  власник міняє їх у Фінмоделі → бонус у картці сделки та ЗП оновлюються синхронно.
+# ============================================================================
+
+SALARY_DEFAULTS = {
+    "salary_base": 4000, "salary_revenue_pct": 3, "salary_margin_pct": 14,
+    "salary_kpi_premium": 1300, "salary_zero_error": 200,
+    "kpi_avg_check": 3500, "kpi_test_kits": 40, "kpi_conv_lt": 10, "kpi_conv_tm": 30,
+}
+
+
+def salary_params():
+    """Ставки ЗП/KPI з FinModelArticle (code). Якщо немає — дефолти стратегії."""
+    from .models import FinModelArticle
+    p = dict(SALARY_DEFAULTS)
+    for a in FinModelArticle.objects.filter(category="salary"):
+        if a.code:
+            p[a.code] = float(a.value)
+    return p
+
+
+def tier_multiplier(plan_pct):
+    """Тірований множник премій замість жорсткого GATE «100% або 0»."""
+    if plan_pct is None:
+        return 0.0
+    if plan_pct < 70:  return 0.3
+    if plan_pct < 90:  return 0.5
+    if plan_pct < 100: return 0.8
+    if plan_pct < 120: return 1.0
+    return 1.3
+
+
+def margin_tier_pct(plan_pct, p):
+    base = p.get("salary_margin_pct", 14)
+    if plan_pct is None or plan_pct < 100: return base
+    if plan_pct < 120: return base + 2
+    if plan_pct < 150: return base + 4
+    return base + 6
+
+
+def deal_manager_bonus(amount, margin):
+    """Скільки менеджер заробляє з ОДНІЄЇ угоди (для картки сделки). Синхронно зі ставками."""
+    p = salary_params()
+    rev_pct = p.get("salary_revenue_pct", 3)
+    mar_pct = p.get("salary_margin_pct", 14)
+    from_rev = float(amount) * rev_pct / 100
+    from_mar = float(margin or 0) * mar_pct / 100
+    return {
+        "total": round(from_rev + from_mar, 2),
+        "from_revenue": round(from_rev, 2), "from_margin": round(from_mar, 2),
+        "revenue_pct": rev_pct, "margin_pct": mar_pct,
+    }
+
+
+def compute_manager_salary(user, period):
+    """Повна ЗП менеджера за місяць (period=YYYY-MM) за стратегією РОП+психолог."""
+    from apps.crm.models import Deal
+    from .models import ManagerPlan
+    p = salary_params()
+    y, mo = int(period[:4]), int(period[5:7])
+    won = Deal.objects.filter(owner=user, stage__is_won=True, created_at__year=y, created_at__month=mo)
+    rev = float(won.aggregate(s=_Sum("amount"))["s"] or 0)
+    deals = won.count()
+    avg_check = rev / deals if deals else 0
+    # маржа período — приблизно через ставку маржі компанії (38.22% валова)
+    margin_amt = rev * 0.3822
+
+    plan = ManagerPlan.objects.filter(user=user, period=period).first()
+    target = float(plan.target_revenue) if plan and plan.target_revenue else None
+    plan_pct = round(rev / target * 100, 1) if target else None
+    mult = tier_multiplier(plan_pct)
+    margin_kpi = margin_tier_pct(plan_pct, p)
+
+    part_base = p.get("salary_base", 4000)
+    part_revenue = rev * p.get("salary_revenue_pct", 3) / 100
+    part_margin = margin_amt * margin_kpi / 100
+
+    # 5 KPI (кожна незалежно × mult). Конверсії поки немає даних → NA (не в оплату).
+    kpi = []
+    kpi.append({"name": "Виконання плану", "ok": plan_pct is not None and plan_pct >= 100, "na": plan_pct is None,
+                "detail": (f"{plan_pct}% / 100%" if plan_pct is not None else "план не встановлено")})
+    kpi.append({"name": "Середній чек", "ok": avg_check >= p.get("kpi_avg_check", 3500), "na": deals == 0,
+                "detail": f"{round(avg_check)} / {round(p.get('kpi_avg_check',3500))} ₴"})
+    kpi.append({"name": "Конв. Лід→Пробник", "ok": False, "na": True, "detail": "дані конверсій ще не підключені"})
+    kpi.append({"name": "Конв. Пробник→Осн", "ok": False, "na": True, "detail": "дані конверсій ще не підключені"})
+    kpi.append({"name": "К-сть пробників", "ok": False, "na": True, "detail": f"ціль {round(p.get('kpi_test_kits',40))}/міс"})
+    premium = p.get("salary_kpi_premium", 1300)
+    kpi_hits = sum(1 for k in kpi if k["ok"])
+    bonus_kpi = kpi_hits * premium * mult
+
+    total = part_base + part_revenue + part_margin + bonus_kpi
+    return {
+        "user_id": user.id, "user_name": user.get_full_name() or user.username, "period": period,
+        "revenue": round(rev), "deals": deals, "avg_check": round(avg_check),
+        "plan_target": round(target) if target else None, "plan_pct": plan_pct,
+        "tier_mult": mult, "margin_kpi_pct": margin_kpi,
+        "part_base": round(part_base), "part_revenue": round(part_revenue), "part_margin": round(part_margin),
+        "kpi": kpi, "kpi_hits": kpi_hits, "kpi_premium": premium, "bonus_kpi": round(bonus_kpi),
+        "total": round(total),
+        "min_revenue": round(float(plan.min_revenue)) if plan else None,
+        "ambition_revenue": round(float(plan.ambition_revenue)) if plan else None,
+    }
