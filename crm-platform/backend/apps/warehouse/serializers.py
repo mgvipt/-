@@ -26,10 +26,15 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = ["id", "name", "sku", "unit", "price", "cost", "currency",
-                  "is_active", "category", "category_name", "stock"]
+                  "is_active", "category", "category_name", "stock", "margin"]
 
     def get_stock(self, obj):
         return obj.stock()
+
+    margin = serializers.SerializerMethodField()
+
+    def get_margin(self, obj):
+        return float((obj.price or 0) - (obj.cost or 0))
 
 
 class MovementSerializer(serializers.ModelSerializer):
@@ -56,10 +61,16 @@ class StockDocumentSerializer(serializers.ModelSerializer):
         validated["author"] = self.context["request"].user
         doc = StockDocument.objects.create(**validated)
         for it in items:
-            qty = abs(it["quantity"])
-            # расход уменьшает остаток
-            if doc.kind == "out":
-                qty = -qty
-            StockMovement.objects.create(document=doc, product=it["product"],
-                                         quantity=qty, price=it.get("price", 0))
+            prod = it["product"]
+            counted = abs(it["quantity"])
+            if doc.kind == "inv":
+                # инвентаризация: движение = (факт - текущий остаток), сток становится фактом
+                qty = counted - prod.stock(doc.warehouse)
+            elif doc.kind == "out":
+                qty = -counted          # расход уменьшает остаток
+            else:
+                qty = counted           # приход увеличивает
+            if qty != 0:
+                StockMovement.objects.create(document=doc, product=prod,
+                                             quantity=qty, price=it.get("price", 0))
         return doc
