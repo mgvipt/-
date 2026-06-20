@@ -123,8 +123,8 @@ function Breakeven() {
   if (!d) return <div className="spin">Загрузка…</div>;
   const prog = Math.min(100, d.progress);
   const cards: [string, string][] = [
-    ["Маржа з кожної ₴", d.margin_pct + "%"], ["ТБ — потрібна виручка", money(d.breakeven)],
-    ["Факт виручка", money(d.revenue)], ["Витрати / міс", money(d.monthly_costs)], ["ТБ в угодах", d.tb_deals],
+    ["Сума фондів виручки", d.rev_funds_pct + " %"], ["Маржа з кожної ₴", d.margin_pct + " %"],
+    ["Точка беззбитковості", money(d.breakeven)], ["Виручка (факт)", money(d.revenue)], ["Витрати / міс", money(d.monthly_costs)],
   ];
   return (
     <>
@@ -141,14 +141,15 @@ function Breakeven() {
           <div style={{ width: `${prog}%`, height: "100%", background: prog >= 100 ? "#16a34a" : "linear-gradient(90deg,#f59e0b,#facc15)", borderRadius: 8, transition: "width .3s" }} />
         </div>
         <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-          {prog >= 100 ? "✅ Точку беззбитковості пройдено — далі чистий прибуток." : `Залишилось ${money(d.breakeven - d.revenue)} до беззбитковості.`}
+          {prog >= 100 ? "✅ Точку беззбитковості пройдено — далі чистий прибуток." : `Залишилось ${money(d.to_breakeven)} до беззбитковості.`}
         </div>
       </div>
-      <div className="panel" style={{ margin: 0, maxWidth: 520 }}>
-        <b style={{ fontSize: 14 }}>Прогноз</b>
-        <div className="row" style={{ padding: "7px 0", borderBottom: "1px solid #f1f5f9" }}><span className="muted">Темп виручки</span><b>{money(d.daily_pace)} / день</b></div>
-        <div className="row" style={{ padding: "7px 0", borderBottom: "1px solid #f1f5f9" }}><span className="muted">Прогноз на період</span><b>{money(d.projected)}</b></div>
-        <div className="row" style={{ padding: "7px 0", borderBottom: "1px solid #f1f5f9" }}><span className="muted">Треба робити / день</span><b style={{ color: "#d97706" }}>{money(d.required_daily)}</b></div>
+      <div className="panel" style={{ margin: 0, maxWidth: 560 }}>
+        <b style={{ fontSize: 14 }}>🔮 Прогноз за поточним темпом</b>
+        <div className="row" style={{ padding: "7px 0", borderBottom: "1px solid #f1f5f9" }}><span className="muted">Темп виручки (минуло {d.days_elapsed} з {d.days_total} дн)</span><b>{money(d.daily_pace)} / день</b></div>
+        <div className="row" style={{ padding: "7px 0", borderBottom: "1px solid #f1f5f9" }}><span className="muted">Прогноз на кінець періоду</span><b>{money(d.projected)}</b></div>
+        <div className="row" style={{ padding: "7px 0", borderBottom: "1px solid #f1f5f9" }}><span className="muted">Прогрес-прогноз</span><b style={{ color: d.projected_progress >= 100 ? "#16a34a" : "#d97706" }}>{d.projected_progress}%</b></div>
+        <div className="row" style={{ padding: "7px 0", borderBottom: "1px solid #f1f5f9" }}><span className="muted">Треба робити / день до ТБ</span><b style={{ color: "#d97706" }}>{money(d.required_daily)}</b></div>
         <div className="row" style={{ padding: "7px 0" }}><span className="muted">Днів залишилось</span><b>{d.days_left}</b></div>
       </div>
     </>
@@ -157,9 +158,9 @@ function Breakeven() {
 
 /* ─── ВКЛАДКА: ФІНМОДЕЛЬ (CRUD статей) ─────────────────────────────────── */
 const CAT_LABEL: Record<string, string> = {
-  revenue_fund: "📊 Фонди виручки (% з виручки)", payment_fee: "💳 Комісія еквайрингу (₴/угода)",
-  variable: "💼 Перемінні (% від маржі)", fixed: "🏢 Постійні витрати (₴/міс)",
-  upr_cat2: "🏭 УПР обов'язкові (у ТБ)", upr_cat3: "📁 УПР відмовні", warehouse_rate: "📦 Ставки складу", config: "⚙️ Конфіг",
+  revenue_fund: "📊 ФОНДИ ВИРУЧКИ (% від кожної угоди)", payment_fee: "💳 ВИТРАТИ НА ОБРОБКУ (на кожну угоду)",
+  variable: "💼 ПЕРЕМІННІ ВИТРАТИ (грн/міс)", fixed: "🏢 ПОСТІЙНІ ВИТРАТИ (грн/міс)",
+  warehouse_rate: "📦 СКЛАД / СТАВКИ", config: "⚙️ КОНФІГ / ЛІМІТИ",
 };
 function FinModel() {
   const [arts, setArts] = useState<any[]>([]);

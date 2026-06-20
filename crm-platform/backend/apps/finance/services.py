@@ -97,4 +97,8 @@ def compute_breakeven(d_from, d_to):
         "tb_deals": round(breakeven / avg_check, 1) if avg_check else 0,
         "daily_pace": round(daily_pace), "projected": round(projected),
         "required_daily": round(required_daily), "days_left": days_left,
+        "days_elapsed": days_elapsed, "days_total": days,
+        "rev_funds_pct": round(rev_funds, 2),
+        "projected_progress": round(projected / breakeven * 100, 1) if breakeven else 0,
+        "to_breakeven": round(max(0, breakeven - revenue)),
     }
