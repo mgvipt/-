@@ -125,16 +125,17 @@ export default function Warehouse() {
 
         <div className="tablewrap" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
           <table style={{ width: "100%" }}>
-            <thead><tr><th>Товар</th><th>Артикул</th><th>Категорія</th><th>Ціна</th><th>Од.</th><th>Залишок</th></tr></thead>
+            <thead><tr><th>Товар</th><th>Артикул</th><th>Категорія</th><th>Ціна</th><th>Закупка</th><th>Од.</th><th>Залишок</th></tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>Загрузка…</td></tr>}
-              {!loading && products.length === 0 && <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>Товаров не найдено</td></tr>}
+              {loading && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>Загрузка…</td></tr>}
+              {!loading && products.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>Товаров не найдено</td></tr>}
               {!loading && products.map((p) => (
                 <tr key={p.id}>
                   <td style={{ fontWeight: 500 }}>{p.name}</td>
                   <td className="muted">{p.sku}</td>
                   <td className="muted" style={{ fontSize: 12 }}>{p.category_name || "—"}</td>
                   <td>{Number(p.price).toLocaleString("ru")} {p.currency || "грн"}</td>
+                  <td><EditCost p={p} onSaved={(v) => setProducts((ps) => ps.map((x) => (x.id === p.id ? { ...x, cost: String(v) } : x)))} /></td>
                   <td>{p.unit}</td>
                   <td><span style={{ color: Number(p.stock) <= 0 ? "#dc2626" : Number(p.stock) < 100 ? "#d97706" : "#16a34a", fontWeight: 600 }}>{Number(p.stock).toLocaleString("ru")}</span></td>
                 </tr>
@@ -185,4 +186,19 @@ export default function Warehouse() {
       )}
     </div>
   );
+}
+
+/* ─── СУБ-КОМПОНЕНТ: инлайн-ввод закупочной цены (Bitrix её не хранит) ─── */
+function EditCost({ p, onSaved }: { p: Product; onSaved: (v: number) => void }) {
+  const [edit, setEdit] = useState(false);
+  const [v, setV] = useState(p.cost);
+  useEffect(() => setV(p.cost), [p.cost]);
+  if (edit) return (
+    <input autoFocus type="number" value={v} onChange={(e) => setV(e.target.value)}
+      onBlur={async () => { setEdit(false); if (Number(v) !== Number(p.cost)) { await api.patch(`/api/products/${p.id}/`, { cost: Number(v) }); onSaved(Number(v)); } }}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+      style={{ width: 84, height: 26, border: "1px solid var(--brand)", borderRadius: 5, padding: "0 5px", fontSize: 12 }} />
+  );
+  const c = Number(p.cost);
+  return <span onClick={() => setEdit(true)} style={{ cursor: "text", borderBottom: "1px dashed #cbd5e1", color: c > 0 ? "#1e293b" : "#94a3b8" }}>{c > 0 ? c.toLocaleString("ru") + " " + (p.currency || "грн") : "— вписати"}</span>;
 }
