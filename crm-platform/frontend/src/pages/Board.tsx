@@ -5,7 +5,7 @@ import { Avatar, SourceChip } from "../ui";
 
 // Универсальный канбан для лидов и сделок. Перетаскивание карточки между
 // колонками меняет стадию через PATCH к API.
-export default function Board({ endpoint, funnel }: { endpoint: string; funnel: Funnel }) {
+export default function Board({ endpoint, funnel, query }: { endpoint: string; funnel: Funnel; query?: string }) {
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [dropStage, setDropStage] = useState<number | null>(null);
@@ -15,11 +15,11 @@ export default function Board({ endpoint, funnel }: { endpoint: string; funnel: 
 
   async function load() {
     setLoading(true);
-    const data = await api.get<Paginated<Card>>(`${endpoint}?funnel=${funnel.id}&page_size=200`);
+    const data = await api.get<Paginated<Card>>(`${endpoint}?funnel=${funnel.id}&page_size=200${query || ""}`);
     setCards(data.results);
     setLoading(false);
   }
-  useEffect(() => { load(); }, [endpoint, funnel.id]);
+  useEffect(() => { load(); }, [endpoint, funnel.id, query]);
 
   async function onDrop(stageId: number) {
     const id = dragId.current;

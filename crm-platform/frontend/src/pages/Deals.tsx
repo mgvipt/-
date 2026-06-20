@@ -11,6 +11,10 @@ export default function Deals() {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [editFunnel, setEditFunnel] = useState(false);
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState("-created_at");
+  const [owner, setOwner] = useState("");
+  const [users, setUsers] = useState<{ id: number; name: string }[]>([]);
   const nav = useNavigate();
 
   useEffect(() => {
@@ -21,7 +25,10 @@ export default function Deals() {
     });
   }, []);
 
+  useEffect(() => { api.get<any>("/api/users/?page_size=100").then((d) => setUsers((d.results || d).map((u: any) => ({ id: u.id, name: u.get_full_name || `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.username })))).catch(() => {}); }, []);
+
   const cur = funnels.find((f) => f.id === curId);
+  const query = `&ordering=${sort}${search.trim() ? `&search=${encodeURIComponent(search.trim())}` : ""}${owner ? `&owner=${owner}` : ""}`;
 
   async function create() {
     if (!title.trim() || !cur) return;
@@ -44,7 +51,7 @@ export default function Deals() {
         <div className="spacer" />
         <span className="muted">Воронок доступно: {funnels.length}</span>
       </div>
-      <Board key={ver} endpoint="/api/deals/" funnel={cur} />
+      <Board key={ver} endpoint="/api/deals/" funnel={cur} query={query} />
 
       {creating && (
         <div onClick={() => setCreating(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>

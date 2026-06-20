@@ -20,14 +20,34 @@ class CompanySerializer(serializers.ModelSerializer):
 
 class ContactSerializer(serializers.ModelSerializer):
     display_name = serializers.SerializerMethodField()
+    owner_name = serializers.CharField(source="owner.get_full_name", read_only=True, default="")
 
     class Meta:
         model = Contact
         fields = ["id", "first_name", "last_name", "display_name", "phone",
-                  "email", "company", "channels", "loyalty_tag", "birthday", "created_at"]
+                  "email", "company", "channels", "loyalty_tag", "birthday",
+                  "source", "address", "comment", "owner", "owner_name", "created_at"]
 
     def get_display_name(self, obj):
         return str(obj)
+
+
+class ContactDetailSerializer(ContactSerializer):
+    """Картка клієнта: + історія сделок + сумарні витрати."""
+    deals = serializers.SerializerMethodField()
+    total_spent = serializers.SerializerMethodField()
+
+    class Meta(ContactSerializer.Meta):
+        fields = ContactSerializer.Meta.fields + ["deals", "total_spent"]
+
+    def get_deals(self, obj):
+        return [{"id": d.id, "title": d.title, "amount": float(d.amount),
+                 "stage": d.stage.name if d.stage else "", "is_won": d.stage.is_won if d.stage else False,
+                 "created_at": d.created_at} for d in obj.deals.select_related("stage").order_by("-created_at")[:50]]
+
+    def get_total_spent(self, obj):
+        from django.db.models import Sum
+        return float(obj.deals.filter(stage__is_won=True).aggregate(s=Sum("amount"))["s"] or 0)
 
 
 class StageSerializer(serializers.ModelSerializer):

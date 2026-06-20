@@ -67,6 +67,8 @@ export default function DealCard() {
   const [sending, setSending] = useState(false);
   const [ai, setAi] = useState<{ context: string; suggestion: string } | null>(null);
   const [aiLoad, setAiLoad] = useState(false);
+  const [ncOpen, setNcOpen] = useState(false);
+  const [nc, setNc] = useState({ name: "", phone: "", email: "" });
 
   /* ─── [4] ЗАГРУЗКА ───────────────────────────────────────────────────── */
   async function load() {
@@ -109,6 +111,12 @@ export default function DealCard() {
   async function createTTN() { await patch({ ttn: "НП " + Math.floor(2e13 + Math.random() * 1e13) }); flash("✓ ТТН Нова Пошта создана"); }
   async function issueCheckbox() { await patch({ checkbox_status: deal?.paid && deal.paid < Number(deal.amount) ? "аванс" : "финальный" }); flash("✓ Чек Checkbox сформирован"); }
   function sendPayLink() { flash("✓ Ссылка на оплату отправлена клиенту · cashflow.wallcovdec.com.ua"); }
+  async function createClient() {
+    const parts = nc.name.trim().split(" ");
+    const contact = await api.post<{ id: number }>(`/api/contacts/`, { first_name: parts[0] || nc.name, last_name: parts.slice(1).join(" "), phone: nc.phone, email: nc.email });
+    await api.patch(`/api/deals/${id}/`, { contact: contact.id });
+    setNcOpen(false); setNc({ name: "", phone: "", email: "" }); load();
+  }
   async function sendChat() {
     if (!draft.trim() || !deal?.conversation_id) { if (!deal?.conversation_id) flash("Немає активного чату з клієнтом"); return; }
     setSending(true);
@@ -192,7 +200,9 @@ export default function DealCard() {
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>📞 Позвонить</button>
               <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }} onClick={() => deal.conversation_id ? nav(`/inbox?c=${deal.conversation_id}`) : setTab("general")}>💬 Чат</button>
-              {deal.contact_id && <button className="btn" style={{ background: "#f1f5f9" }} onClick={() => nav(`/clients?contact=${deal.contact_id}`)}>Клиент →</button>}
+              {deal.contact_id
+                ? <button className="btn" style={{ background: "#f1f5f9" }} title="Відкрити картку клієнта з історією сделок" onClick={() => nav(`/clients/${deal.contact_id}`)}>Клієнт →</button>
+                : <button className="btn" style={{ background: "#eef2ff", color: "#4338ca" }} title="Створити клієнта з цієї сделки" onClick={() => setNcOpen(true)}>➕ Клієнт</button>}
             </div>
           </div>
 
@@ -301,6 +311,26 @@ export default function DealCard() {
           )}
         </div>
       </div>
+
+      {/* модалка створення клієнта зі сделки */}
+      {ncOpen && (
+        <div onClick={() => setNcOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 380 }}>
+            <h3 style={{ marginTop: 0 }}>Створити клієнта</h3>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>Створиться картка клієнта і прив'яжеться до цієї сделки.</div>
+            <label className="label">Ім'я та прізвище</label>
+            <input value={nc.name} autoFocus onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="Ірина Турок" style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10 }} />
+            <label className="label">Телефон</label>
+            <input value={nc.phone} onChange={(e) => setNc({ ...nc, phone: e.target.value })} placeholder="+380..." style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10 }} />
+            <label className="label">Email</label>
+            <input value={nc.email} onChange={(e) => setNc({ ...nc, email: e.target.value })} style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 14 }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setNcOpen(false)}>Скасувати</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={createClient} disabled={!nc.name.trim()}>Створити</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ─── [12] РЕНДЕР: модалка приёма оплаты ───────────────────────── */}
       {payOpen && (

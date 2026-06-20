@@ -11,6 +11,7 @@ import Inbox from "./pages/Inbox";
 import Warehouse from "./pages/Warehouse";
 import Finance from "./pages/Finance";
 import Clients from "./pages/Clients";
+import ClientCard from "./pages/ClientCard";
 import Settings from "./pages/Settings";
 import Analytics from "./pages/Analytics";
 import Phone from "./pages/Phone";
@@ -34,6 +35,7 @@ function Shell() {
           <Route path="/phone" element={<Phone />} />
           <Route path="/warehouse" element={<Warehouse />} />
           <Route path="/clients" element={<Clients />} />
+          <Route path="/clients/:id" element={<ClientCard />} />
           <Route path="/finance" element={<Finance />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/analytics" element={<Analytics />} />

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, Paginated } from "../api";
 import { SourceChip } from "../ui";
 
 interface Contact { id: number; display_name: string; phone: string; email: string; channels: string[]; }
 
 export default function Clients() {
+  const nav = useNavigate();
   const [rows, setRows] = useState<Contact[]>([]);
   const [q, setQ] = useState("");
 
@@ -25,8 +27,8 @@ export default function Clients() {
           <thead><tr><th>Имя</th><th>Телефон</th><th>Email</th><th>Каналы</th></tr></thead>
           <tbody>
             {rows.map((c) => (
-              <tr key={c.id}>
-                <td style={{ fontWeight: 500 }}>{c.display_name}</td>
+              <tr key={c.id} onClick={() => nav(`/clients/${c.id}`)} style={{ cursor: "pointer" }}>
+                <td style={{ fontWeight: 500, color: "#1d4ed8" }}>{c.display_name}</td>
                 <td className="muted">{c.phone || "—"}</td>
                 <td className="muted">{c.email || "—"}</td>
                 <td><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{(c.channels || []).map((ch) => <SourceChip key={ch} source={ch} />)}</div></td>

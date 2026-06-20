@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payment
 from .serializers import (
-    CompanySerializer, ContactSerializer, FunnelSerializer, StageSerializer,
+    CompanySerializer, ContactSerializer, ContactDetailSerializer, FunnelSerializer, StageSerializer,
     LeadSerializer, DealSerializer, DealDetailSerializer, PaymentSerializer,
 )
 
@@ -41,6 +41,11 @@ class ContactViewSet(viewsets.ModelViewSet):
     queryset = Contact.objects.all()
     serializer_class = ContactSerializer
     search_fields = ["first_name", "last_name", "phone", "email"]
+    filterset_fields = ["loyalty_tag", "source", "owner"]
+    ordering_fields = ["created_at", "first_name", "last_touch_at"]
+
+    def get_serializer_class(self):
+        return ContactDetailSerializer if self.action == "retrieve" else ContactSerializer
 
 
 class CompanyViewSet(viewsets.ModelViewSet):
@@ -130,7 +135,8 @@ class DealViewSet(ScopedByRoleMixin, viewsets.ModelViewSet):
     serializer_class = DealSerializer
     view_all_method = "can_see_all_deals"
     filterset_fields = ["funnel", "stage", "source", "owner"]
-    search_fields = ["title", "contact__phone"]
+    search_fields = ["title", "contact__phone", "contact__first_name", "contact__last_name"]
+    ordering_fields = ["amount", "created_at", "updated_at", "closed_at"]
 
     def get_serializer_class(self):
         # в карточке (retrieve) отдаём расширенные данные: товары, оплаты
