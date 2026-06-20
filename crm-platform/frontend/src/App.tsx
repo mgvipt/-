@@ -4,6 +4,7 @@ import Login from "./pages/Login";
 import Layout from "./pages/Layout";
 import Leads from "./pages/Leads";
 import Deals from "./pages/Deals";
+import LeadCard from "./pages/LeadCard";
 import DealCard from "./pages/DealCard";
 import Roles from "./pages/Roles";
 import Inbox from "./pages/Inbox";
@@ -25,6 +26,7 @@ function Shell() {
         <Route element={<Layout />}>
           <Route index element={<Navigate to="/leads" replace />} />
           <Route path="/leads" element={<Leads />} />
+          <Route path="/leads/:id" element={<LeadCard />} />
           <Route path="/deals" element={<Deals />} />
           <Route path="/deals/:id" element={<DealCard />} />
           <Route path="/roles" element={<Roles />} />

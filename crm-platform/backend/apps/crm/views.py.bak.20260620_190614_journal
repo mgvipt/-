@@ -69,19 +69,6 @@ class LeadViewSet(ScopedByRoleMixin, viewsets.ModelViewSet):
     queryset = Lead.objects.select_related("owner", "contact", "funnel", "stage")
     serializer_class = LeadSerializer
     view_all_method = "can_see_all_leads"
-
-    @action(detail=True, methods=["post"])
-    def convert(self, request, pk=None):
-        """Конвертувати лід у сделку (той самий контакт/owner)."""
-        lead = self.get_object()
-        funnel = Funnel.objects.filter(is_lead_funnel=False).order_by("order", "id").first()
-        if not funnel:
-            return Response({"detail": "Немає воронки продажів"}, status=status.HTTP_400_BAD_REQUEST)
-        stage = funnel.stages.order_by("order").first()
-        deal = Deal.objects.create(
-            title=lead.title, contact=lead.contact, funnel=funnel, stage=stage,
-            amount=lead.amount, source=lead.source, owner=lead.owner)
-        return Response({"deal_id": deal.id})
     filterset_fields = ["funnel", "stage", "source", "is_seen", "owner"]
     search_fields = ["title", "contact__phone", "contact__first_name", "contact__last_name"]
 

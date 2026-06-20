@@ -12,8 +12,8 @@ const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.g
 const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`; };
 
 export default function Finance() {
-  const [tab, setTab] = useState<"dash" | "journal" | "pnl" | "be" | "dir" | "model">("dash");
-  const tabs: [string, string][] = [["dash", "💰 Дашборд"], ["journal", "🧾 Журнал"], ["pnl", "📊 P&L (ATM)"], ["be", "🎯 Точка беззбитковості"], ["dir", "🗂 Напрямки (проекти)"], ["model", "⚙️ Фінмодель"]];
+  const [tab, setTab] = useState<"dash" | "pnl" | "be" | "dir" | "model">("dash");
+  const tabs: [string, string][] = [["dash", "💰 Дашборд"], ["pnl", "📊 P&L (ATM)"], ["be", "🎯 Точка беззбитковості"], ["dir", "🗂 Напрямки (проекти)"], ["model", "⚙️ Фінмодель"]];
   return (
     <div className="scroll pad fade">
       <div className="note warn">🔒 Розділ бачать тільки ролі з правом <b>finance.view</b>.</div>
@@ -21,7 +21,6 @@ export default function Finance() {
         {tabs.map(([k, l]) => <button key={k} className={tab === k ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab(k as any)}>{l}</button>)}
       </div>
       {tab === "dash" && <Dashboard />}
-      {tab === "journal" && <Journal />}
       {tab === "pnl" && <PnL />}
       {tab === "be" && <Breakeven />}
       {tab === "dir" && <Directions />}
@@ -39,100 +38,6 @@ function Period({ from, to, set }: { from: string; to: string; set: (f: string, 
       <span className="muted">—</span>
       <input type="date" value={to} onChange={(e) => set(from, e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px" }} />
     </div>
-  );
-}
-
-/* ─── ВКЛАДКА: ЖУРНАЛ ОПЕРАЦІЙ (як Finmap) ─────────────────────────────── */
-const CHANNELS = [
-  ["", "—"], ["instagram", "Instagram"], ["tiktok", "TikTok"], ["facebook", "Facebook"],
-  ["site", "Сайт"], ["salon", "Салон (офлайн)"], ["wholesale", "Опт"], ["designers", "Дизайнери/прораби"],
-  ["telegram", "Telegram"], ["call", "Дзвінок"], ["other", "Інше"],
-];
-function Journal() {
-  const [tx, setTx] = useState<any[]>([]);
-  const [accounts, setAccounts] = useState<any[]>([]);
-  const [arts, setArts] = useState<any[]>([]);
-  const [dirs, setDirs] = useState<any[]>([]);
-  const [open, setOpen] = useState(false);
-  const blank = { direction: "out", amount: "", account: 0, fin_article: 0, fin_direction: 0, channel: "", comment: "" };
-  const [f, setF] = useState<any>(blank);
-  const load = () => api.get<any>("/api/transactions/?page_size=100").then((d) => setTx(d.results || d));
-  useEffect(() => {
-    load();
-    api.get<any>("/api/accounts/").then((d) => setAccounts(d.results || d));
-    api.get<any>("/api/finmodel-articles/?page_size=50").then((d) => setArts(d.results || d));
-    api.get<any>("/api/fin-directions/").then((d) => setDirs(d.results || d));
-  }, []);
-  async function save() {
-    if (!Number(f.amount)) return;
-    const body: any = { direction: f.direction, amount: Number(f.amount), account: f.account || accounts[0]?.id, comment: f.comment, channel: f.channel };
-    if (f.fin_article) body.fin_article = f.fin_article;
-    if (f.fin_direction) body.fin_direction = f.fin_direction;
-    await api.post("/api/transactions/", body);
-    setOpen(false); setF(blank); load();
-  }
-  const inp = { height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", width: "100%", marginBottom: 10 } as React.CSSProperties;
-  return (
-    <>
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <button className="btn btn-primary" onClick={() => { setF({ ...blank, direction: "in" }); setOpen(true); }}>+ Дохід</button>
-        <button className="btn btn-light" onClick={() => { setF({ ...blank, direction: "out" }); setOpen(true); }}>− Витрата</button>
-        <span className="muted" style={{ marginLeft: "auto", alignSelf: "center", fontSize: 13 }}>Операцій: {tx.length}</span>
-      </div>
-      <div className="panel" style={{ margin: 0, padding: 0 }}>
-        <table style={{ width: "100%", fontSize: 13 }}>
-          <thead><tr><th style={{ padding: "8px 12px" }}>Дата</th><th>Сума</th><th>Рахунок</th><th>Фонд (стаття)</th><th>Напрямок</th><th>Канал</th><th>Коментар</th></tr></thead>
-          <tbody>
-            {tx.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 14 }}>Операцій ще немає. Додай вручну або вони зʼявляться при оплаті сделок.</td></tr>}
-            {tx.map((t) => (
-              <tr key={t.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                <td className="muted" style={{ padding: "8px 12px" }}>{new Date(t.date || t.created_at).toLocaleDateString("ru")}</td>
-                <td style={{ fontWeight: 600, color: t.direction === "in" ? "#16a34a" : "#dc2626" }}>{t.direction === "in" ? "+" : "−"}{Number(t.amount).toLocaleString("ru")} ₴</td>
-                <td className="muted">{t.account_name}</td>
-                <td>{t.fin_article_name || <span className="muted">—</span>}</td>
-                <td>{t.fin_direction_name || <span className="muted">—</span>}</td>
-                <td className="muted">{(CHANNELS.find((c) => c[0] === t.channel) || ["", "—"])[1]}</td>
-                <td className="muted" style={{ maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.comment}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {open && (
-        <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 420 }}>
-            <h3 style={{ marginTop: 0 }}>{f.direction === "in" ? "Дохід" : "Витрата"}</h3>
-            <label className="label">Сума, ₴</label>
-            <input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} style={inp} autoFocus />
-            <label className="label">Рахунок</label>
-            <select value={f.account} onChange={(e) => setF({ ...f, account: Number(e.target.value) })} style={inp}>
-              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru")} ₴)</option>)}
-            </select>
-            <label className="label">Фонд (для аналітики та точки беззбитковості)</label>
-            <select value={f.fin_article} onChange={(e) => setF({ ...f, fin_article: Number(e.target.value) })} style={inp}>
-              <option value={0}>— без фонду —</option>
-              {arts.map((a) => <option key={a.id} value={a.id}>{a.category_display}: {a.name}</option>)}
-            </select>
-            <label className="label">Напрямок (звідки гроші)</label>
-            <select value={f.fin_direction} onChange={(e) => setF({ ...f, fin_direction: Number(e.target.value) })} style={inp}>
-              <option value={0}>— без напрямку —</option>
-              {dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-            <label className="label">Канал</label>
-            <select value={f.channel} onChange={(e) => setF({ ...f, channel: e.target.value })} style={inp}>
-              {CHANNELS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-            </select>
-            <label className="label">Коментар</label>
-            <input value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} style={inp} />
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setOpen(false)}>Скасувати</button>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={save}>Зберегти</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
   );
 }
 
@@ -298,7 +203,7 @@ function Directions() {
 const CAT_LABEL: Record<string, string> = {
   revenue_fund: "📊 ФОНДИ ВИРУЧКИ (% від кожної угоди)", payment_fee: "💳 ВИТРАТИ НА ОБРОБКУ (на кожну угоду)",
   variable: "💼 ПЕРЕМІННІ ВИТРАТИ (грн/міс)", fixed: "🏢 ПОСТІЙНІ ВИТРАТИ (грн/міс)",
-  warehouse_rate: "📦 СКЛАД / СТАВКИ", config: "⚙️ КОНФІГ / ЛІМІТИ",
+  warehouse_rate: "📦 СКЛАД / СТАВКИ", skd: "🚀 ФОНД СКД / РОЗВИТКУ (грн/міс)", config: "⚙️ КОНФІГ / ЛІМІТИ",
 };
 function FinModel() {
   const [arts, setArts] = useState<any[]>([]);

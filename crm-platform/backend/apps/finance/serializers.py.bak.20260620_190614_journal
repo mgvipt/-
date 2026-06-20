@@ -22,15 +22,11 @@ class CategorySerializer(serializers.ModelSerializer):
 class TransactionSerializer(serializers.ModelSerializer):
     account_name = serializers.CharField(source="account.name", read_only=True)
     category_name = serializers.CharField(source="category.name", read_only=True)
-    fin_article_name = serializers.CharField(source="fin_article.name", read_only=True, default="")
-    fin_direction_name = serializers.CharField(source="fin_direction.name", read_only=True, default="")
 
     class Meta:
         model = Transaction
         fields = ["id", "direction", "amount", "account", "account_name",
-                  "category", "category_name", "fin_article", "fin_article_name",
-                  "fin_direction", "fin_direction_name", "channel",
-                  "comment", "deal", "date", "created_at"]
+                  "category", "category_name", "comment", "deal", "date", "created_at"]
 
 
 class FinModelArticleSerializer(serializers.ModelSerializer):
