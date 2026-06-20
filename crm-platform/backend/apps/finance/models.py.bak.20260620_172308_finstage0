@@ -48,36 +48,3 @@ class Transaction(models.Model):
 
     def __str__(self):
         return f"[{self.direction}] {self.amount}"
-
-
-class FinModelArticle(models.Model):
-    """Справочник финмодели (ATM): статьи для расчёта P&L и точки безубыточности.
-    Редактирует владелец в разделе Финансы → Налаштування фінмоделі."""
-    CATEGORY = [
-        ("revenue_fund", "Фонди виручки (% з виручки)"),
-        ("payment_fee", "Комісія еквайрингу (₴/угода)"),
-        ("variable", "Перемінні витрати (% від маржі)"),
-        ("fixed", "Постійні витрати (₴/міс)"),
-        ("upr_cat2", "УПР обов'язкові (₴/міс, у ТБ)"),
-        ("upr_cat3", "УПР відмовні (₴/міс)"),
-        ("warehouse_rate", "Ставки складу"),
-        ("config", "Конфіг / ліміти"),
-    ]
-    VALUE_TYPE = [
-        ("percent", "%"),
-        ("fixed_sum_per_month", "₴/місяць"),
-        ("fixed_per_deal", "₴/угода"),
-    ]
-    category = models.CharField(max_length=24, choices=CATEGORY)
-    name = models.CharField(max_length=160)
-    value = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    value_type = models.CharField(max_length=24, choices=VALUE_TYPE, default="percent")
-    unit = models.CharField(max_length=24, blank=True, default="")
-    sort_order = models.PositiveIntegerField(default=0)
-    active = models.BooleanField(default=True)
-
-    class Meta:
-        ordering = ["category", "sort_order", "id"]
-
-    def __str__(self):
-        return f"{self.get_category_display()}: {self.name}"

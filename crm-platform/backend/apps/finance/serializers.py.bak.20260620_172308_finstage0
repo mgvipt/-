@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import FinModelArticle, Account, Category, Transaction
+from .models import Account, Category, Transaction
 
 
 class AccountSerializer(serializers.ModelSerializer):
@@ -27,13 +27,3 @@ class TransactionSerializer(serializers.ModelSerializer):
         model = Transaction
         fields = ["id", "direction", "amount", "account", "account_name",
                   "category", "category_name", "comment", "deal", "date", "created_at"]
-
-
-class FinModelArticleSerializer(serializers.ModelSerializer):
-    category_display = serializers.CharField(source="get_category_display", read_only=True)
-    value_type_display = serializers.CharField(source="get_value_type_display", read_only=True)
-
-    class Meta:
-        model = FinModelArticle
-        fields = ["id", "category", "category_display", "name", "value",
-                  "value_type", "value_type_display", "unit", "sort_order", "active"]
