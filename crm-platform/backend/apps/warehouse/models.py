@@ -11,6 +11,21 @@ class Warehouse(models.Model):
         return self.name
 
 
+class ProductCategory(models.Model):
+    """Категория каталога (дерево папок). Перенос из Bitrix iblock 24."""
+    name = models.CharField(max_length=255)
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="children")
+    bitrix_id = models.IntegerField(null=True, blank=True, unique=True, db_index=True)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name_plural = "Product categories"
+
+    def __str__(self):
+        return self.name
+
+
 class Product(models.Model):
     name = models.CharField(max_length=255)
     sku = models.CharField("Артикул", max_length=64, blank=True, db_index=True)
@@ -18,6 +33,9 @@ class Product(models.Model):
     price = models.DecimalField("Цена продажи", max_digits=12, decimal_places=2, default=0)
     cost = models.DecimalField("Себестоимость", max_digits=12, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True)
+    category = models.ForeignKey("ProductCategory", null=True, blank=True, on_delete=models.SET_NULL, related_name="products")
+    currency = models.CharField(max_length=8, default="UAH")
+    bitrix_id = models.IntegerField("ID в Bitrix", null=True, blank=True, unique=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
