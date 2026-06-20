@@ -67,7 +67,6 @@ class FinModelArticle(models.Model):
         ("percent", "%"),
         ("fixed_sum_per_month", "₴/місяць"),
         ("fixed_per_deal", "₴/угода"),
-        ("auto_meta_ads", "Авто Meta-ads"),
     ]
     category = models.CharField(max_length=24, choices=CATEGORY)
     name = models.CharField(max_length=160)

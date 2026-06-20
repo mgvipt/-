@@ -86,12 +86,10 @@ function PnL() {
   useEffect(() => { load(from, to); }, []);
   if (!d) return <div className="spin">Загрузка…</div>;
   const rows: [string, number, string, string][] = [
-    ["Виручка", d.revenue, "#0f172a", ""],
-    ["− Прямі витрати", -d.direct, "#ef4444", d.direct_pct + "% від виручки"],
+    ["Виручка", d.revenue, "#0f172a", d.deals + " угод"],
+    ["− Прямі витрати", -d.direct, "#ef4444", d.direct_pct + "% з виручки + AI " + money(d.ai_total)],
     ["= Маржа", d.margin, "#16a34a", d.margin_pct + "%"],
-    ["− Перемінні", -d.variable, "#ef4444", d.variable_pct + "% від маржі"],
-    ["= СКД (сума до розподілу)", d.skd, "#2563eb", ""],
-    ["− УПР (постійні)", -d.upr, "#ef4444", "за період"],
+    ["− Операційні (постійні + змінні)", -d.operating, "#ef4444", "за період"],
     ["= Чистий прибуток", d.net, d.net >= 0 ? "#16a34a" : "#dc2626", d.net_pct + "%"],
   ];
   return (
@@ -126,7 +124,7 @@ function Breakeven() {
   const prog = Math.min(100, d.progress);
   const cards: [string, string][] = [
     ["Маржа з кожної ₴", d.margin_pct + "%"], ["ТБ — потрібна виручка", money(d.breakeven)],
-    ["Факт виручка", money(d.revenue)], ["ТБ в угодах", d.tb_deals], ["Ціль (ТБ +націнка)", money(d.company_target)],
+    ["Факт виручка", money(d.revenue)], ["Витрати / міс", money(d.monthly_costs)], ["ТБ в угодах", d.tb_deals],
   ];
   return (
     <>
