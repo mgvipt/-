@@ -55,6 +55,7 @@ export default function DealCard() {
   const nav = useNavigate();
   const [deal, setDeal] = useState<Deal | null>(null);
   const [funnel, setFunnel] = useState<Funnel | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [tab, setTab] = useState<"general" | "items" | "cashflow">("general");
   const [addProd, setAddProd] = useState(0);
@@ -73,9 +74,11 @@ export default function DealCard() {
 
   /* ─── [4] ЗАГРУЗКА ───────────────────────────────────────────────────── */
   async function load() {
-    const d = await api.get<Deal>(`/api/deals/${id}/`);
-    setDeal(d);
-    if (!funnel || funnel.id !== d.funnel) setFunnel(await api.get<Funnel>(`/api/funnels/${d.funnel}/`));
+    try {
+      const d = await api.get<Deal>(`/api/deals/${id}/`);
+      setDeal(d);
+      if (!funnel || funnel.id !== d.funnel) setFunnel(await api.get<Funnel>(`/api/funnels/${d.funnel}/`));
+    } catch { setNotFound(true); }
   }
   useEffect(() => {
     load();
@@ -143,6 +146,7 @@ export default function DealCard() {
   }
 
   /* ─── [6] ВЫЧИСЛЯЕМОЕ ────────────────────────────────────────────────── */
+  if (notFound) return <div className="scroll pad fade"><div className="panel" style={{ textAlign: "center", padding: 40 }}><h3>Сделку не знайдено</h3><div className="muted" style={{ marginBottom: 16 }}>Можливо, її видалено або змінено ID після перенесення з Бітрикса. Відкрий зі списку сделок.</div><button className="btn btn-primary" onClick={() => nav("/deals")}>← До списку сделок</button></div></div>;
   if (!deal) return <div className="spin">Загрузка сделки…</div>;
   const curOrder = funnel?.stages.find((s) => s.id === deal.stage)?.order ?? 0;
   const remaining = Number(deal.amount) - deal.paid;
