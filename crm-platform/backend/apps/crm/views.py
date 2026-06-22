@@ -286,7 +286,9 @@ class AnalyticsView(APIView):
         won = deals.filter(stage__is_won=True)
         revenue = won.aggregate(s=Sum("amount"))["s"] or 0
         avg_check = won.aggregate(a=Avg("amount"))["a"] or 0
-        conv = round((deals_total / leads_total * 100), 1) if leads_total else 0
+        won_c = deals.filter(stage__is_won=True).count()
+        lost_c = deals.filter(stage__is_lost=True).count()
+        conv = round(won_c / (won_c + lost_c) * 100, 1) if (won_c + lost_c) else 0
 
         stages = []
         if funnel:
