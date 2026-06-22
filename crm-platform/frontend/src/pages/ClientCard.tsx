@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { Avatar, SourceChip } from "../ui";
+import OwnerSelect from "../OwnerSelect";
 
 interface Deal { id: number; title: string; amount: number; stage: string; is_won: boolean; created_at: string; }
 interface Contact {
   id: number; first_name: string; last_name: string; display_name: string; phone: string; email: string;
   source: string; address: string; comment: string; loyalty_tag: string; birthday: string | null;
-  channels: string[]; owner_name?: string; deals: Deal[]; total_spent: number;
+  channels: string[]; owner?: number | null; owner_name?: string; deals: Deal[]; total_spent: number;
 }
 const money = (n: number) => Math.round(n || 0).toLocaleString("ru") + " ₴";
 const LOYALTY = ["", "Новий", "Активний", "VIP", "Сплячий"];
@@ -71,7 +72,7 @@ export default function ClientCard() {
               <textarea defaultValue={c.comment} onBlur={(e) => save({ comment: e.target.value })}
                 style={{ width: "100%", minHeight: 70, border: "1px solid #cbd5e1", borderRadius: 7, padding: 8 }} />
             </div>
-            {c.owner_name && <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>Відповідальний: {c.owner_name}</div>}
+            <div style={{ marginTop: 10 }}><div className="label">Відповідальний</div><OwnerSelect ownerId={c.owner} ownerName={c.owner_name} onSet={async (uid) => { await api.patch(`/api/contacts/${id}/`, { owner: uid }); load(); }} /></div>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 8 }}>{(c.channels || []).map((ch) => <SourceChip key={ch} source={ch} />)}</div>
           </div>
         </div>

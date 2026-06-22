@@ -26,6 +26,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, Funnel, Paginated } from "../api";
+import OwnerSelect from "../OwnerSelect";
 import { Avatar } from "../ui";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
@@ -33,7 +34,7 @@ import { Avatar } from "../ui";
 interface Item { id: number; product: number; product_name: string; quantity: string; price: string; total: string; }
 interface Pay { id: number; provider: string; amount: string; is_paid: boolean; created_at: string; }
 interface Deal {
-  id: number; title: string; contact_name?: string; owner_name?: string;
+  id: number; title: string; contact_name?: string; owner_name?: string; owner?: number | null;
   funnel: number; stage: number; amount: string; source: string;
   items: Item[]; payments: Pay[]; paid: number;
   // поля merge-карточки (см. CODEMAP разд.2, модель Deal):
@@ -327,7 +328,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           {/* 10.6 Ответственный */}
           <div className="panel">
             <div className="label">Ответственный</div>
-            <div className="owner" style={{ fontSize: 13 }}><Avatar name={deal.owner_name || "—"} />{deal.owner_name || "—"}</div>
+            <OwnerSelect ownerId={deal.owner} ownerName={deal.owner_name} onSet={(uid) => patch({ owner: uid })} />
           </div>
         </div>
 
