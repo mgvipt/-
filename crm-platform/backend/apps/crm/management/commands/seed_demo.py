@@ -21,6 +21,11 @@ class Command(BaseCommand):
     help = "Заполняет демо-данными (роли, воронки, лиды) для проверки прав."
 
     def handle(self, *args, **opts):
+        # захист: якщо вже є реальні дані (імпорт з Бітрикса) — НЕ підсівати демо
+        from apps.crm.models import Deal
+        if Deal.objects.count() > 200 and not opts.get("force"):
+            self.stdout.write("seed_demo пропущено: у системі вже реальні дані (>200 угод).")
+            return
         # роли
         admin_role, _ = Role.objects.get_or_create(
             name="Администратор",

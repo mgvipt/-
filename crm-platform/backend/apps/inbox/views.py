@@ -90,3 +90,31 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         except Exception as e:  # сеть/токен недоступны
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
         return Response(MessageSerializer(msg).data, status=status.HTTP_201_CREATED)
+
+
+from django.http import HttpResponse as _HttpResponse
+from rest_framework.permissions import AllowAny as _AllowAny
+
+
+class MetaWebhookView(APIView):
+    """Вебхук Meta (Instagram/Facebook) — приймає Direct і коменти напряму в CRM."""
+    permission_classes = [_AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        from .meta import VERIFY_TOKEN
+        if request.GET.get("hub.verify_token") == VERIFY_TOKEN and request.GET.get("hub.mode") == "subscribe":
+            return _HttpResponse(request.GET.get("hub.challenge", ""))
+        return _HttpResponse("forbidden", status=403)
+
+    def post(self, request):
+        import json as _json
+        from .meta import verify_signature, handle_webhook
+        raw = request.body
+        if not verify_signature(raw, request.headers.get("X-Hub-Signature-256", "")):
+            return _HttpResponse("bad signature", status=403)
+        try:
+            handle_webhook(_json.loads(raw or b"{}"))
+        except Exception:
+            pass  # завжди 200 — щоб Meta не ретраїла нескінченно
+        return _HttpResponse("EVENT_RECEIVED")

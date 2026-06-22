@@ -28,6 +28,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_HOST: db
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      META_PAGE_TOKEN: ${META_PAGE_TOKEN}
+      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN}
+      META_APP_SECRET: ${META_APP_SECRET}
+      META_IG_ID: ${META_IG_ID}
+      META_PAGE_ID: ${META_PAGE_ID}
     depends_on: [db]
     restart: unless-stopped
 

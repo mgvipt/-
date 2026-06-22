@@ -46,6 +46,7 @@ urlpatterns = [
     path("api/auth/token/", obtain_auth_token),  # POST username/password -> {token}
     path("api/me/", acc_views.MeView.as_view()),
     path("api/inbox/telegram/webhook/<int:channel_id>/", inbox_views.TelegramWebhookView.as_view()),
+    path("api/inbox/meta/webhook/", inbox_views.MetaWebhookView.as_view()),
     path("api/finance/dashboard/", fin_views.FinanceDashboardView.as_view()),
     path("api/finance/overview/", fin_views.OverviewView.as_view()),
     path("api/finance/pnl/", fin_views.ProfitLossView.as_view()),

@@ -69,10 +69,26 @@ class TelegramAdapter(ChannelAdapter):
         return str(resp.get("result", {}).get("message_id", ""))
 
 
+class MetaAdapter(ChannelAdapter):
+    """Instagram/Facebook напряму через Graph API (незалежно від Бітрикса)."""
+    kind = "meta"
+
+    def send(self, external_chat_id: str, text: str) -> str:
+        from .meta import send_message, reply_comment
+        if str(external_chat_id).startswith("comment:"):
+            r = reply_comment(str(external_chat_id).split(":", 1)[1], text)
+            return str(r.get("id", ""))
+        platform = "instagram" if "instagram" in (self.config or {}).get("platform", "instagram") else "facebook"
+        r = send_message(external_chat_id, text, platform=platform)
+        return str(r.get("message_id", ""))
+
+
 ADAPTERS = {TelegramAdapter.kind: TelegramAdapter}
 
 
 def get_adapter(channel) -> ChannelAdapter:
+    if (channel.config or {}).get("meta"):
+        return MetaAdapter(channel)
     cls = ADAPTERS.get(channel.kind)
     if not cls:
         raise NotImplementedError(f"Адаптер для канала '{channel.kind}' ещё не реализован")
