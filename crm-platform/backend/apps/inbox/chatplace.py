@@ -45,6 +45,28 @@ def send(chat_id, text):
     return _mcp("chats_send_message", {"chatId": chat_id, "text": text})
 
 
+def sync_one_chat(conv, per_chat=40):
+    """Підтягнути свіжі повідомлення ОДНОГО чату (live-оновлення відкритого діалогу)."""
+    from .models import Message
+    msgs = _mcp("chats_messages", {"chatId": conv.external_chat_id, "limit": per_chat})
+    if isinstance(msgs, dict):
+        msgs = msgs.get("items") or msgs.get("messages") or []
+    new = 0
+    for m in reversed(msgs or []):
+        ext = str(m.get("id"))
+        body = m.get("message") or m.get("text") or ""
+        if not body or body in _SYSTEM_MARKERS or "StatusLabel" in str(body):
+            continue
+        if Message.objects.filter(conversation=conv, external_id=ext).exists():
+            continue
+        side = (m.get("side") or "").lower()
+        direction = "out" if side in _STAFF_SIDES else "in"
+        Message.objects.create(conversation=conv, direction=direction, text=str(body)[:5000],
+                               external_id=ext, sender_name=("" if direction == "in" else side))
+        new += 1
+    return new
+
+
 def sync_chats(max_chats=40, per_chat=40):
     """Підтягнути останні чати + повідомлення з ChatPlace у inbox CRM."""
     from .models import Channel, Conversation, Message

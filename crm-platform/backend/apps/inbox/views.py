@@ -75,6 +75,13 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["get"])
     def messages(self, request, pk=None):
         conv = self.get_object()
+        if (conv.channel.config or {}).get("chatplace"):
+            try:
+                from .chatplace import sync_one_chat, configured
+                if configured():
+                    sync_one_chat(conv)
+            except Exception:
+                pass
         conv.unread = 0
         conv.save(update_fields=["unread"])
         return Response(MessageSerializer(conv.messages.all(), many=True).data)

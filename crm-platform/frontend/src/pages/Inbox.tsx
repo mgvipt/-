@@ -23,6 +23,22 @@ export default function Inbox() {
     if (d.results[0]) openConv(d.results[0]);
   }
   useEffect(() => { loadConvs(); }, [scope]);
+  // live-оновлення відкритого чату (без ручного refresh)
+  useEffect(() => {
+    if (!active) return;
+    const t = setInterval(async () => {
+      try {
+        const m = await api.get<ChatMessage[]>(`/api/conversations/${active.id}/messages/`);
+        setMsgs((prev) => (m.length !== prev.length ? m : prev));
+      } catch { /* ignore */ }
+    }, 6000);
+    return () => clearInterval(t);
+  }, [active]);
+  // періодичне оновлення списку чатів
+  useEffect(() => {
+    const t = setInterval(() => loadConvs(), 20000);
+    return () => clearInterval(t);
+  }, [scope]);
   useEffect(() => {
     const cid = params.get("c");
     if (!cid) return;
