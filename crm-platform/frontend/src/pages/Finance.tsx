@@ -685,28 +685,50 @@ function AllocList({ fundId, period, onChanged }: { fundId: number; period: stri
 }
 
 function SpendModal({ fund, accounts, dirs, onClose, onSaved }: any) {
+  /* spend-full-card: та сама картка, що й у Журналі (витрата) — синхронно з журналом */
   const [amount, setAmount] = useState("");
   const [account, setAccount] = useState(accounts[0]?.id || "");
   const [direction, setDirection] = useState("");
+  const [cat, setCat] = useState("");
+  const [counterparty, setCounterparty] = useState("");
+  const [currency, setCurrency] = useState("UAH");
+  const [rate, setRate] = useState(1);
   const [comment, setComment] = useState("");
+  const [cats, setCats] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
+  useEffect(() => { api.get<any>("/api/categories/").then((d) => setCats(d.results || d)).catch(() => setCats([])); }, []);
+  async function fetchRate(c: string) {
+    if (c === "UAH") { setCurrency(c); setRate(1); return; }
+    setCurrency(c);
+    try { const r = await api.get<any>(`/api/finance/fx-rate/?ccy=${c}`); if (r.rate) setRate(r.rate); } catch { /* ok */ }
+  }
   async function save() {
     if (!Number(amount)) return;
     setBusy(true);
     try {
       await api.post("/api/transactions/", { direction: "out", amount: Number(amount), account: account || null,
-        fin_article: fund.id, fin_direction: direction || null, currency: "UAH", rate: 1, comment: comment || `Розхід: ${fund.name}` });
+        fin_article: fund.id, fin_direction: direction || null, set_category: cat, counterparty,
+        currency, rate: Number(rate) || 1, comment: comment || `Розхід: ${fund.name}` });
       onSaved();
     } finally { setBusy(false); }
   }
   const inp = { width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10 } as React.CSSProperties;
+  const grnEq = Number(amount || 0) * (Number(rate) || 1);
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 22, width: 420 }}>
-        <h3 style={{ marginTop: 0 }}>Розхід з фонду</h3>
-        <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>💸 {fund.name} · витрата зменшить залишок фонду й наповнить «Витрачено».</div>
-        <label className="label">Сума, ₴</label>
-        <input type="number" value={amount} autoFocus onChange={(e) => setAmount(e.target.value)} style={inp} />
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 22, width: 440, maxHeight: "90vh", overflowY: "auto" }}>
+        <h3 style={{ marginTop: 0 }}>Витрата · фонд {fund.name}</h3>
+        <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>💸 Це звичайна витрата (як у Журналі), уже привʼязана до фонду. Зменшить залишок фонду, наповнить «Витрачено» і зʼявиться в Журналі.</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ flex: 2 }}><label className="label">Сума</label><input type="number" value={amount} autoFocus onChange={(e) => setAmount(e.target.value)} style={inp} /></div>
+          <div style={{ flex: 1 }}><label className="label">Валюта</label><select value={currency} onChange={(e) => fetchRate(e.target.value)} style={inp}>{["UAH", "USD", "EUR", "PLN"].map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
+        </div>
+        {currency !== "UAH" && <div style={{ fontSize: 13, marginBottom: 10 }}><span className="muted">Курс НБУ:</span> <input type="number" value={rate} onChange={(e) => setRate(Number(e.target.value))} style={{ width: 90, height: 30, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }} /> <b style={{ color: "#0ea5e9" }}>= {money(grnEq)}</b></div>}
+        <label className="label">Категорія</label>
+        <input value={cat} onChange={(e) => setCat(e.target.value)} list="spendcat" placeholder="Напр. Закупка, Оренда, Реклама…" style={inp} />
+        <datalist id="spendcat">{cats.map((c) => <option key={c.id} value={c.name} />)}</datalist>
+        <label className="label">Мій контрагент</label>
+        <input value={counterparty} onChange={(e) => setCounterparty(e.target.value)} placeholder="Постачальник, орендодавець…" style={inp} />
         <label className="label">З рахунку</label>
         <select value={account} onChange={(e) => setAccount(e.target.value)} style={inp}>
           <option value="">—</option>{accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -719,7 +741,7 @@ function SpendModal({ fund, accounts, dirs, onClose, onSaved }: any) {
         <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="За що витрата" style={inp} />
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-light" style={{ flex: 1 }} onClick={onClose}>Скасувати</button>
-          <button className="btn btn-primary" style={{ flex: 1 }} onClick={save} disabled={busy}>{busy ? "…" : "Провести розхід"}</button>
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={save} disabled={busy}>{busy ? "…" : "Провести витрату"}</button>
         </div>
       </div>
     </div>
