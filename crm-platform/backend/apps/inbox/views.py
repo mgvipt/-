@@ -118,3 +118,12 @@ class MetaWebhookView(APIView):
         except Exception:
             pass  # завжди 200 — щоб Meta не ретраїла нескінченно
         return _HttpResponse("EVENT_RECEIVED")
+
+
+class ChatPlaceSyncView(APIView):
+    """Ручний запуск синхронізації ChatPlace (також гониться кроном)."""
+    def post(self, request):
+        from .chatplace import sync_chats, configured
+        if not configured():
+            return Response({"detail": "CHATPLACE_API_KEY не налаштовано"}, status=400)
+        return Response(sync_chats())

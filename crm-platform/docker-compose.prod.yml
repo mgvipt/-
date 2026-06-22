@@ -33,6 +33,8 @@ services:
       META_APP_SECRET: ${META_APP_SECRET}
       META_IG_ID: ${META_IG_ID}
       META_PAGE_ID: ${META_PAGE_ID}
+      CHATPLACE_API_KEY: ${CHATPLACE_API_KEY}
+      CHATPLACE_MCP_URL: ${CHATPLACE_MCP_URL}
     depends_on: [db]
     restart: unless-stopped
 

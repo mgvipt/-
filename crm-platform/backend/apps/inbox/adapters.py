@@ -83,10 +83,22 @@ class MetaAdapter(ChannelAdapter):
         return str(r.get("message_id", ""))
 
 
+class ChatPlaceAdapter(ChannelAdapter):
+    """IG/Telegram через ChatPlace MCP (незалежно від Бітрикса)."""
+    kind = "chatplace"
+
+    def send(self, external_chat_id: str, text: str) -> str:
+        from .chatplace import send as cp_send
+        r = cp_send(external_chat_id, text)
+        return str(r.get("id", "")) if isinstance(r, dict) else ""
+
+
 ADAPTERS = {TelegramAdapter.kind: TelegramAdapter}
 
 
 def get_adapter(channel) -> ChannelAdapter:
+    if (channel.config or {}).get("chatplace"):
+        return ChatPlaceAdapter(channel)
     if (channel.config or {}).get("meta"):
         return MetaAdapter(channel)
     cls = ADAPTERS.get(channel.kind)
