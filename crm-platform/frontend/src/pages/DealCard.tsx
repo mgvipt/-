@@ -74,6 +74,9 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [nc, setNc] = useState({ name: "", phone: "", email: "" });
   const [ncMode, setNcMode] = useState<"pick" | "new">("pick");
   const [ncSearch, setNcSearch] = useState(""); const [ncResults, setNcResults] = useState<any[]>([]);
+  const [cliEdit, setCliEdit] = useState(false);
+  const [cliSearch, setCliSearch] = useState(""); const [cliResults, setCliResults] = useState<any[]>([]);
+  const [cliNew, setCliNew] = useState(false); const [cliN, setCliN] = useState({ name: "", phone: "" });
 
   /* ─── [4] ЗАГРУЗКА ───────────────────────────────────────────────────── */
   async function load() {
@@ -135,6 +138,14 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     await api.patch(`/api/deals/${id}/`, { contact: cid });
     setNcOpen(false); setNcSearch(""); setNcResults([]); load();
   }
+  useEffect(() => {
+    if (!cliSearch.trim()) { setCliResults([]); return; }
+    const t = setTimeout(() => api.get<any>(`/api/contacts/?search=${encodeURIComponent(cliSearch)}&page_size=8`).then((d) => setCliResults(d.results || d)).catch(() => setCliResults([])), 250);
+    return () => clearTimeout(t);
+  }, [cliSearch]);
+  async function setContact(cid: number) { await api.patch(`/api/deals/${id}/`, { contact: cid }); setCliEdit(false); setCliSearch(""); setCliResults([]); setCliNew(false); load(); }
+  async function removeContact() { if (!confirm("Прибрати клієнта зі сделки?")) return; await api.patch(`/api/deals/${id}/`, { contact: null }); load(); }
+  async function createInlineClient() { const p = cliN.name.trim().split(/\s+/); const c = await api.post<any>("/api/contacts/", { first_name: p[0] || cliN.name.trim(), last_name: p.slice(1).join(" "), phone: cliN.phone }); setContact(c.id); setCliN({ name: "", phone: "" }); }
   async function createClient() {
     const parts = nc.name.trim().split(" ");
     const contact = await api.post<{ id: number }>(`/api/contacts/`, { first_name: parts[0] || nc.name, last_name: parts.slice(1).join(" "), phone: nc.phone, email: nc.email });
@@ -216,20 +227,59 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
 
         {/* ─── [10] РЕНДЕР: левая колонка — данные заказа ───────────────── */}
         <div>
-          {/* 10.1 Клиент + лояльность */}
+          {/* 10.1 Клиент — інлайн вибір/зміна/прибирання (без попапів) */}
           <div className="panel">
-            <div className="label">Клиент</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontWeight: 600 }}>{deal.contact_name || "Без контакта"}</span>
-              {loyalty && <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: (LOYALTY_COLOR[loyalty] || "#64748b") + "22", color: LOYALTY_COLOR[loyalty] || "#64748b" }}>{loyalty}</span>}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="label">Клиент</div>
+              {deal.contact_id && !cliEdit && (
+                <span style={{ fontSize: 11, display: "flex", gap: 10 }}>
+                  <span style={{ color: "#2563eb", cursor: "pointer" }} onClick={() => { setCliEdit(true); setCliNew(false); }}>✏️ Змінити</span>
+                  <span style={{ color: "#dc2626", cursor: "pointer" }} onClick={removeContact}>✕ Прибрати</span>
+                </span>
+              )}
             </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>📞 Позвонить</button>
-              <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }} onClick={() => deal.conversation_id ? nav(`/inbox?c=${deal.conversation_id}`) : setTab("general")}>💬 Чат</button>
-              {deal.contact_id
-                ? <button className="btn" style={{ background: "#f1f5f9" }} title="Відкрити картку клієнта з історією сделок" onClick={() => nav(`/clients/${deal.contact_id}`)}>Клієнт →</button>
-                : <button className="btn" style={{ background: "#eef2ff", color: "#4338ca" }} title="Створити клієнта з цієї сделки" onClick={() => setNcOpen(true)}>➕ Клієнт</button>}
-            </div>
+            {deal.contact_id && !cliEdit ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontWeight: 600 }}>{deal.contact_name || "Без контакта"}</span>
+                  {loyalty && <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: (LOYALTY_COLOR[loyalty] || "#64748b") + "22", color: LOYALTY_COLOR[loyalty] || "#64748b" }}>{loyalty}</span>}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>📞 Позвонить</button>
+                  <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }} onClick={() => deal.conversation_id ? nav(`/inbox?c=${deal.conversation_id}`) : setTab("general")}>💬 Чат</button>
+                  <button className="btn" style={{ background: "#f1f5f9" }} title="Картка клієнта" onClick={() => nav(`/clients/${deal.contact_id}`)}>Клієнт →</button>
+                </div>
+              </>
+            ) : (
+              <div style={{ marginTop: 6 }}>
+                <input value={cliSearch} autoFocus onChange={(e) => setCliSearch(e.target.value)} placeholder="🔍 Телефон або імʼя клієнта…" style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px" }} />
+                {cliResults.length > 0 && (
+                  <div style={{ maxHeight: 200, overflowY: "auto", marginTop: 6, border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                    {cliResults.map((c) => (
+                      <div key={c.id} onClick={() => setContact(c.id)} style={{ padding: "7px 9px", borderBottom: "1px solid #f1f5f9", cursor: "pointer", fontSize: 13 }}>
+                        👤 <b>{c.display_name || `${c.first_name || ""} ${c.last_name || ""}`.trim() || "—"}</b> {c.phone ? <span className="muted">· {c.phone}</span> : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {cliSearch.trim() && cliResults.length === 0 && <div className="muted" style={{ fontSize: 12, padding: "6px 0" }}>Не знайдено — створи нового нижче.</div>}
+                {!cliNew ? (
+                  <div style={{ display: "flex", gap: 10, marginTop: 8, fontSize: 12 }}>
+                    <span style={{ color: "#16a34a", cursor: "pointer" }} onClick={() => setCliNew(true)}>➕ Створити нового</span>
+                    {deal.contact_id && <span style={{ color: "#64748b", cursor: "pointer", marginLeft: "auto" }} onClick={() => { setCliEdit(false); setCliSearch(""); }}>Скасувати</span>}
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 8 }}>
+                    <input value={cliN.name} onChange={(e) => setCliN({ ...cliN, name: e.target.value })} placeholder="Імʼя та прізвище" style={{ width: "100%", height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 9px", marginBottom: 6 }} />
+                    <input value={cliN.phone} onChange={(e) => setCliN({ ...cliN, phone: e.target.value })} placeholder="+380…" style={{ width: "100%", height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 9px", marginBottom: 6 }} />
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button className="btn btn-light" style={{ flex: 1, fontSize: 12 }} onClick={() => setCliNew(false)}>Назад</button>
+                      <button className="btn btn-primary" style={{ flex: 1, fontSize: 12 }} onClick={createInlineClient} disabled={!cliN.name.trim()}>Створити</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 10.2 Сумма / оплачено / осталось (сумма — инлайн-edit) */}
