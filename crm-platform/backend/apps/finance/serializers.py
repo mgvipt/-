@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import FinModelArticle, FinDirection, Account, Category, Transaction, FundAllocation
+from .models import FinModelArticle, FinDirection, Account, Category, Transaction, FundAllocation, AdvisoryReport
 
 
 class AccountSerializer(serializers.ModelSerializer):
@@ -22,6 +22,22 @@ class CategorySerializer(serializers.ModelSerializer):
 class TransactionSerializer(serializers.ModelSerializer):
     account_name = serializers.CharField(source="account.name", read_only=True)
     category_name = serializers.CharField(source="category.name", read_only=True)
+    set_category = serializers.CharField(write_only=True, required=False, allow_blank=True,
+        help_text="Назва категорії текстом — знайде або створить")
+
+    def _resolve_category(self, validated):
+        name = (validated.pop("set_category", "") or "").strip()
+        if name:
+            cat, _ = Category.objects.get_or_create(name=name, defaults={"direction": validated.get("direction", "out")})
+            validated["category"] = cat
+
+    def create(self, validated_data):
+        self._resolve_category(validated_data)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        self._resolve_category(validated_data)
+        return super().update(instance, validated_data)
     fin_article_name = serializers.CharField(source="fin_article.name", read_only=True, default="")
     fin_direction_name = serializers.CharField(source="fin_direction.name", read_only=True, default="")
 
@@ -30,7 +46,8 @@ class TransactionSerializer(serializers.ModelSerializer):
         fields = ["id", "direction", "amount", "account", "account_name",
                   "category", "category_name", "fin_article", "fin_article_name",
                   "fin_direction", "fin_direction_name", "channel",
-                  "comment", "deal", "date", "created_at"]
+                  "counterparty", "currency", "rate", "amount_uah",
+                  "comment", "deal", "date", "created_at", "set_category"]
 
 
 class FinModelArticleSerializer(serializers.ModelSerializer):
@@ -61,3 +78,9 @@ class FundAllocationSerializer(serializers.ModelSerializer):
         model = FundAllocation
         fields = ["id", "fund", "fund_name", "account", "account_name",
                   "fin_direction", "fin_direction_name", "amount", "period", "comment", "created_at"]
+
+
+class AdvisoryReportSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AdvisoryReport
+        fields = ["id", "kind", "title", "body", "created_at"]

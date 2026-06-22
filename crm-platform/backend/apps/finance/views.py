@@ -5,8 +5,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from apps.common.permissions import HasPermCode
-from .models import Account, Category, Transaction, FinModelArticle, FinDirection, ChannelSpend, FundAllocation, ManagerPlan
-from .serializers import AccountSerializer, CategorySerializer, TransactionSerializer, FinModelArticleSerializer, FinDirectionSerializer, FundAllocationSerializer
+from .models import Account, Category, Transaction, FinModelArticle, FinDirection, ChannelSpend, FundAllocation, AdvisoryReport, ManagerPlan
+from .serializers import AccountSerializer, CategorySerializer, TransactionSerializer, FinModelArticleSerializer, FinDirectionSerializer, FundAllocationSerializer, AdvisoryReportSerializer
 from .services import compute_pnl, compute_breakeven, compute_channels
 
 
@@ -303,3 +303,33 @@ class SalaryView(APIView):
                         "coverage_pct": round(sum_targets / company_target * 100) if company_target else 0,
                         "total_payroll": sum(r["total"] for r in rows)},
         })
+
+
+class AdvisoryReportViewSet(viewsets.ModelViewSet):
+    """Звіти радчої системи (план зростання прибутку). Читають усі з finance.view."""
+    queryset = AdvisoryReport.objects.all()
+    serializer_class = AdvisoryReportSerializer
+    permission_classes = [FinancePerm]
+    filterset_fields = ["kind"]
+
+
+class FxRateView(APIView):
+    """Живий курс валют від НБУ (bank.gov.ua) — UAH за 1 одиницю валюти.
+    GET /api/finance/fx-rate/?ccy=USD  → {ccy, rate, date}."""
+    permission_classes = [FinancePerm]
+
+    def get(self, request):
+        import json as _json, urllib.request
+        ccy = (request.query_params.get("ccy") or "USD").upper()
+        if ccy == "UAH":
+            return Response({"ccy": "UAH", "rate": 1.0, "date": date.today().isoformat()})
+        url = f"https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?valcode={ccy}&json"
+        try:
+            with urllib.request.urlopen(url, timeout=12) as r:
+                data = _json.load(r)
+            if not data:
+                return Response({"ccy": ccy, "rate": None, "detail": "немає курсу"}, status=404)
+            row = data[0]
+            return Response({"ccy": ccy, "rate": float(row.get("rate") or 0), "date": row.get("exchangedate", "")})
+        except Exception as e:
+            return Response({"ccy": ccy, "rate": None, "detail": str(e)}, status=502)

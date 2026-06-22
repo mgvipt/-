@@ -12,8 +12,8 @@ const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.g
 const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`; };
 
 export default function Finance() {
-  const [tab, setTab] = useState<"dash" | "journal" | "pnl" | "be" | "dir" | "plan" | "salary" | "mplan" | "model">("dash");
-  const tabs: [string, string][] = [["dash", "💰 Дашборд"], ["journal", "🧾 Журнал"], ["pnl", "📊 P&L (ATM)"], ["be", "🎯 Точка беззбитковості"], ["dir", "🗂 Напрямки (проекти)"], ["plan", "💼 Планування"], ["salary", "💰 ЗП/KPI"], ["mplan", "🎯 Плани"], ["model", "⚙️ Фінмодель"]];
+  const [tab, setTab] = useState<"dash" | "journal" | "pnl" | "be" | "dir" | "plan" | "grow" | "salary" | "mplan" | "model">("dash");
+  const tabs: [string, string][] = [["dash", "💰 Дашборд"], ["journal", "🧾 Журнал"], ["pnl", "📊 P&L (ATM)"], ["be", "🎯 Точка беззбитковості"], ["dir", "🗂 Напрямки (проекти)"], ["plan", "💼 Планування"], ["grow", "🚀 Зростання"], ["salary", "💰 ЗП/KPI"], ["mplan", "🎯 Плани"], ["model", "⚙️ Фінмодель"]];
   return (
     <div className="scroll pad fade">
       <div className="note warn">🔒 Розділ бачать тільки ролі з правом <b>finance.view</b>.</div>
@@ -26,6 +26,7 @@ export default function Finance() {
       {tab === "be" && <Breakeven />}
       {tab === "dir" && <Directions />}
       {tab === "plan" && <Planning />}
+      {tab === "grow" && <Growth />}
       {tab === "salary" && <Salary />}
       {tab === "mplan" && <MPlans />}
       {tab === "model" && <FinModel />}
@@ -56,46 +57,74 @@ function Journal() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [arts, setArts] = useState<any[]>([]);
   const [dirs, setDirs] = useState<any[]>([]);
+  const [cats, setCats] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
-  const blank = { direction: "out", amount: "", account: 0, fin_article: 0, fin_direction: 0, channel: "", comment: "" };
+  const blank = { id: 0, direction: "out", amount: "", account: 0, fin_article: 0, fin_direction: 0, channel: "", counterparty: "", set_category: "", currency: "UAH", rate: 1, comment: "" };
   const [f, setF] = useState<any>(blank);
-  const load = () => api.get<any>("/api/transactions/?page_size=100").then((d) => setTx(d.results || d));
+  const load = () => api.get<any>("/api/transactions/?page_size=200").then((d) => setTx(d.results || d));
   useEffect(() => {
     load();
     api.get<any>("/api/accounts/").then((d) => setAccounts(d.results || d));
-    api.get<any>("/api/finmodel-articles/?page_size=50").then((d) => setArts(d.results || d));
-    api.get<any>("/api/fin-directions/").then((d) => setDirs(d.results || d));
+    api.get<any>("/api/finmodel-articles/?page_size=200").then((d) => setArts(d.results || d));
+    api.get<any>("/api/fin-directions/?page_size=100").then((d) => setDirs(d.results || d));
+    api.get<any>("/api/categories/").then((d) => setCats(d.results || d)).catch(() => setCats([]));
   }, []);
+
+  function openNew(direction: string) { setF({ ...blank, direction }); setOpen(true); }
+  function openEdit(t: any) {
+    setF({ id: t.id, direction: t.direction, amount: t.amount, account: t.account || 0, fin_article: t.fin_article || 0, fin_direction: t.fin_direction || 0,
+      channel: t.channel || "", counterparty: t.counterparty || "", set_category: t.category_name || "", currency: t.currency || "UAH", rate: t.rate || 1, comment: t.comment || "" });
+    setOpen(true);
+  }
+  async function fetchRate(ccy: string) {
+    if (ccy === "UAH") { setF((x: any) => ({ ...x, currency: ccy, rate: 1 })); return; }
+    setF((x: any) => ({ ...x, currency: ccy }));
+    try { const r = await api.get<any>(`/api/finance/fx-rate/?ccy=${ccy}`); if (r.rate) setF((x: any) => ({ ...x, rate: r.rate })); } catch { /* лишаємо поточний */ }
+  }
   async function save() {
     if (!Number(f.amount)) return;
-    const body: any = { direction: f.direction, amount: Number(f.amount), account: f.account || accounts[0]?.id, comment: f.comment, channel: f.channel };
-    if (f.fin_article) body.fin_article = f.fin_article;
-    if (f.fin_direction) body.fin_direction = f.fin_direction;
-    await api.post("/api/transactions/", body);
+    const body: any = { direction: f.direction, amount: Number(f.amount), account: f.account || accounts[0]?.id, comment: f.comment,
+      channel: f.channel, counterparty: f.counterparty, set_category: f.set_category, currency: f.currency, rate: Number(f.rate) || 1 };
+    body.fin_article = f.fin_article || null;
+    body.fin_direction = f.fin_direction || null;
+    if (f.id) await api.patch(`/api/transactions/${f.id}/`, body);
+    else await api.post("/api/transactions/", body);
     setOpen(false); setF(blank); load();
   }
+  async function del() {
+    if (!f.id || !confirm("Видалити цю операцію?")) return;
+    await api.del(`/api/transactions/${f.id}/`); setOpen(false); setF(blank); load();
+  }
   const inp = { height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", width: "100%", marginBottom: 10 } as React.CSSProperties;
+  const grnEq = Number(f.amount || 0) * (Number(f.rate) || 1);
+
   return (
     <>
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <button className="btn btn-primary" onClick={() => { setF({ ...blank, direction: "in" }); setOpen(true); }}>+ Дохід</button>
-        <button className="btn btn-light" onClick={() => { setF({ ...blank, direction: "out" }); setOpen(true); }}>− Витрата</button>
-        <span className="muted" style={{ marginLeft: "auto", alignSelf: "center", fontSize: 13 }}>Операцій: {tx.length}</span>
+        <button className="btn btn-primary" title="Додати надходження грошей" onClick={() => openNew("in")}>+ Дохід</button>
+        <button className="btn btn-light" title="Додати витрату" onClick={() => openNew("out")}>− Витрата</button>
+        <span className="muted" style={{ marginLeft: "auto", alignSelf: "center", fontSize: 13 }} title="Натисни на будь-яку операцію, щоб подивитись/відредагувати її">Операцій: {tx.length} · клікни на рядок щоб відкрити</span>
       </div>
-      <div className="panel" style={{ margin: 0, padding: 0 }}>
+      <div className="panel" style={{ margin: 0, padding: 0, overflowX: "auto" }}>
         <table style={{ width: "100%", fontSize: 13 }}>
-          <thead><tr><th style={{ padding: "8px 12px" }}>Дата</th><th>Сума</th><th>Рахунок</th><th>Фонд (стаття)</th><th>Напрямок</th><th>Канал</th><th>Коментар</th></tr></thead>
+          <thead><tr>
+            <th style={{ padding: "8px 12px" }}>Дата</th><th>Сума</th><th>Вал.</th><th>₴</th><th>Категорія</th><th>Контрагент</th><th>Рахунок</th><th>Фонд</th><th>Напрямок</th><th>Канал</th><th>Коментар</th>
+          </tr></thead>
           <tbody>
-            {tx.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 14 }}>Операцій ще немає. Додай вручну або вони зʼявляться при оплаті сделок.</td></tr>}
+            {tx.length === 0 && <tr><td colSpan={11} className="muted" style={{ padding: 14 }}>Операцій ще немає. Додай вручну або вони зʼявляться при оплаті сделок.</td></tr>}
             {tx.map((t) => (
-              <tr key={t.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+              <tr key={t.id} onClick={() => openEdit(t)} title="Клікни, щоб переглянути та змінити" style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}>
                 <td className="muted" style={{ padding: "8px 12px" }}>{new Date(t.date || t.created_at).toLocaleDateString("ru")}</td>
-                <td style={{ fontWeight: 600, color: t.direction === "in" ? "#16a34a" : "#dc2626" }}>{t.direction === "in" ? "+" : "−"}{Number(t.amount).toLocaleString("ru")} ₴</td>
+                <td style={{ fontWeight: 600, color: t.direction === "in" ? "#16a34a" : "#dc2626" }}>{t.direction === "in" ? "+" : "−"}{Number(t.amount).toLocaleString("ru")}</td>
+                <td className="muted">{t.currency || "UAH"}</td>
+                <td className="muted">{Number(t.amount_uah || t.amount).toLocaleString("ru")} ₴</td>
+                <td>{t.category_name || <span className="muted">—</span>}</td>
+                <td>{t.counterparty || <span className="muted">—</span>}</td>
                 <td className="muted">{t.account_name}</td>
                 <td>{t.fin_article_name || <span className="muted">—</span>}</td>
                 <td>{t.fin_direction_name || <span className="muted">—</span>}</td>
                 <td className="muted">{(CHANNELS.find((c) => c[0] === t.channel) || ["", "—"])[1]}</td>
-                <td className="muted" style={{ maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.comment}</td>
+                <td className="muted" style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.comment}</td>
               </tr>
             ))}
           </tbody>
@@ -104,31 +133,54 @@ function Journal() {
 
       {open && (
         <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 420 }}>
-            <h3 style={{ marginTop: 0 }}>{f.direction === "in" ? "Дохід" : "Витрата"}</h3>
-            <label className="label">Сума, ₴</label>
-            <input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} style={inp} autoFocus />
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 440, maxHeight: "90vh", overflowY: "auto" }}>
+            <h3 style={{ marginTop: 0 }}>{f.id ? "Операція №" + f.id : (f.direction === "in" ? "Дохід" : "Витрата")}</h3>
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ flex: 2 }}>
+                <label className="label">Сума</label>
+                <input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} style={inp} autoFocus title="Сума у вибраній валюті" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label className="label">Валюта</label>
+                <select value={f.currency} onChange={(e) => fetchRate(e.target.value)} style={inp} title="Курс підтягнеться з НБУ автоматично">
+                  {["UAH", "USD", "EUR", "PLN", "GBP"].map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+            {f.currency !== "UAH" && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, fontSize: 13 }}>
+                <span className="muted">Курс НБУ:</span>
+                <input type="number" value={f.rate} onChange={(e) => setF({ ...f, rate: e.target.value })} style={{ width: 90, height: 30, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }} title="Курс грн за 1 одиницю валюти (можна виправити вручну)" />
+                <span style={{ fontWeight: 600, color: "#0ea5e9" }}>= {money(grnEq)}</span>
+              </div>
+            )}
+            <label className="label" title="Категорія операції (як у Фінмапі): Онлайн, Салон, Закупка, Оренда, Реклама…">Категорія</label>
+            <input value={f.set_category} onChange={(e) => setF({ ...f, set_category: e.target.value })} list="catlist" placeholder="Напр. Онлайн (Instagram/TikTok/сайт)" style={inp} />
+            <datalist id="catlist">{cats.map((c) => <option key={c.id} value={c.name} />)}</datalist>
+            <label className="label" title="Від кого надійшли / кому сплатили гроші">Мій контрагент</label>
+            <input value={f.counterparty} onChange={(e) => setF({ ...f, counterparty: e.target.value })} placeholder="Клієнт, постачальник, орендодавець…" style={inp} />
             <label className="label">Рахунок</label>
             <select value={f.account} onChange={(e) => setF({ ...f, account: Number(e.target.value) })} style={inp}>
               {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru")} ₴)</option>)}
             </select>
-            <label className="label">Фонд (для аналітики та точки беззбитковості)</label>
+            <label className="label" title="Фонд для аналітики та точки беззбитковості">Фонд (стаття)</label>
             <select value={f.fin_article} onChange={(e) => setF({ ...f, fin_article: Number(e.target.value) })} style={inp}>
               <option value={0}>— без фонду —</option>
               {arts.map((a) => <option key={a.id} value={a.id}>{a.category_display}: {a.name}</option>)}
             </select>
-            <label className="label">Напрямок (звідки гроші)</label>
+            <label className="label" title="Напрямок (проект): звідки/куди гроші">Напрямок</label>
             <select value={f.fin_direction} onChange={(e) => setF({ ...f, fin_direction: Number(e.target.value) })} style={inp}>
               <option value={0}>— без напрямку —</option>
               {dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
-            <label className="label">Канал</label>
+            <label className="label" title="Канал/джерело надходження">Канал</label>
             <select value={f.channel} onChange={(e) => setF({ ...f, channel: e.target.value })} style={inp}>
               {CHANNELS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
             <label className="label">Коментар</label>
             <input value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} style={inp} />
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              {f.id ? <button className="btn" style={{ background: "#fef2f2", color: "#dc2626" }} onClick={del} title="Видалити операцію">🗑</button> : null}
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setOpen(false)}>Скасувати</button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={save}>Зберегти</button>
             </div>
@@ -139,7 +191,6 @@ function Journal() {
   );
 }
 
-/* ─── ВКЛАДКА: ДАШБОРД (ДДС) ───────────────────────────────────────────── */
 function Dashboard() {
   const [d, setD] = useState<any>(null);
   useEffect(() => { api.get<any>("/api/finance/dashboard/").then(setD).catch(() => setD(null)); }, []);
@@ -710,6 +761,57 @@ const CAT_LABEL: Record<string, string> = {
   skd: "Фонди СКД / розвитку (грн/міс)", upr_cat2: "УПР обов'язкові (у ТБ)", upr_cat3: "УПР відмовні",
   warehouse_rate: "Склад / ставки", config: "Конфіг / ліміти", salary: "Ставки ЗП / KPI менеджера",
 };
+
+/* ─── ВКЛАДКА: ЗРОСТАННЯ (звіт радчої системи агентів) ─────────────────── */
+function mdToHtml(md: string): string {
+  const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = (t: string) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`(.+?)`/g, "<code>$1</code>");
+  const lines = md.split("\n");
+  let html = "", i = 0;
+  while (i < lines.length) {
+    const ln = lines[i];
+    if (/^\|(.+)\|\s*$/.test(ln) && i + 1 < lines.length && /^\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+      const head = ln.split("|").slice(1, -1).map((c) => `<th style="text-align:left;padding:6px 10px;border-bottom:2px solid #e2e8f0">${inline(c.trim())}</th>`).join("");
+      i += 2; let rows = "";
+      while (i < lines.length && /^\|(.+)\|\s*$/.test(lines[i])) {
+        rows += "<tr>" + lines[i].split("|").slice(1, -1).map((c) => `<td style="padding:6px 10px;border-bottom:1px solid #f1f5f9">${inline(c.trim())}</td>`).join("") + "</tr>"; i++;
+      }
+      html += `<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:13px"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+      continue;
+    }
+    if (/^###\s+/.test(ln)) html += `<h4 style="margin:14px 0 4px">${inline(ln.replace(/^###\s+/, ""))}</h4>`;
+    else if (/^##\s+/.test(ln)) html += `<h3 style="margin:18px 0 6px;color:#1e293b">${inline(ln.replace(/^##\s+/, ""))}</h3>`;
+    else if (/^#\s+/.test(ln)) html += `<h2 style="margin:6px 0 10px">${inline(ln.replace(/^#\s+/, ""))}</h2>`;
+    else if (/^[-*]\s+/.test(ln)) { let items = ""; while (i < lines.length && /^[-*]\s+/.test(lines[i])) { items += `<li>${inline(lines[i].replace(/^[-*]\s+/, ""))}</li>`; i++; } html += `<ul style="margin:6px 0 6px 18px">${items}</ul>`; continue; }
+    else if (/^\d+\.\s+/.test(ln)) { let items = ""; while (i < lines.length && /^\d+\.\s+/.test(lines[i])) { items += `<li>${inline(lines[i].replace(/^\d+\.\s+/, ""))}</li>`; i++; } html += `<ol style="margin:6px 0 6px 18px">${items}</ol>`; continue; }
+    else if (/^---+\s*$/.test(ln)) html += "<hr style='border:none;border-top:1px solid #e2e8f0;margin:14px 0'/>";
+    else if (ln.trim()) html += `<p style="margin:6px 0;line-height:1.55">${inline(ln)}</p>`;
+    i++;
+  }
+  return html;
+}
+
+function Growth() {
+  const [rep, setRep] = useState<any | null | undefined>(undefined);
+  useEffect(() => { api.get<any>("/api/advisory-reports/?page_size=1").then((d) => { const arr = d.results || d; setRep(arr[0] || null); }).catch(() => setRep(null)); }, []);
+  if (rep === undefined) return <div className="spin">Завантаження…</div>;
+  return (
+    <div className="panel" style={{ margin: 0 }}>
+      <div className="note">🚀 <b>Зростання прибутку</b> — план від радчої системи: бізнес-аналітик, фінаналітик, РОП, коуч по команді та маркетолог проаналізували бізнес і конкурентів, перевірили одне одного й склали безпечний план подвоєння чистого прибутку за 2-3 місяці.</div>
+      {!rep ? (
+        <div className="muted" style={{ fontSize: 14, padding: 20, textAlign: "center" }}>Звіт ще готується агентами або не сформований. Зайди трохи пізніше — він зʼявиться тут автоматично.</div>
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 8 }}>
+            <h2 style={{ margin: 0, fontSize: 20 }}>{rep.title}</h2>
+            <span className="muted" style={{ fontSize: 12 }}>{new Date(rep.created_at).toLocaleString("ru")}</span>
+          </div>
+          <div style={{ marginTop: 10 }} dangerouslySetInnerHTML={{ __html: mdToHtml(rep.body) }} />
+        </>
+      )}
+    </div>
+  );
+}
 
 const GROUP_HINT: Record<string, string> = {
   revenue: "ФВ — скільки відсотків з кожної виручки відкладається (податки, комісії, фонди). Зменшують маржу.",

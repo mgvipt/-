@@ -43,14 +43,22 @@ class Transaction(models.Model):
     fin_direction = models.ForeignKey("FinDirection", null=True, blank=True, on_delete=models.SET_NULL, related_name="transactions")
     fin_article = models.ForeignKey("FinModelArticle", null=True, blank=True, on_delete=models.SET_NULL, related_name="transactions", help_text="Фонд (стаття финмоделі)")
     channel = models.CharField(max_length=24, blank=True, default="", help_text="Канал/джерело надходження")
+    counterparty = models.CharField(max_length=160, blank=True, default="", help_text="Контрагент (від кого/кому)")
+    currency = models.CharField(max_length=3, default="UAH", help_text="Валюта операції")
+    rate = models.DecimalField(max_digits=12, decimal_places=4, default=1, help_text="Курс до гривні (1 одиниця валюти = N грн)")
+    amount_uah = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="Сума у гривні (amount × rate) — для аналітики")
     date = models.DateField(auto_now_add=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
 
+    def save(self, *args, **kwargs):
+        self.amount_uah = (self.amount or 0) * (self.rate or 1)
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"[{self.direction}] {self.amount}"
+        return f"[{self.direction}] {self.amount} {self.currency}"
 
 
 class FinModelArticle(models.Model):
@@ -176,3 +184,18 @@ class ManagerPlan(models.Model):
 
     def __str__(self):
         return f"{self.user} {self.period}: ціль {self.target_revenue}"
+
+
+class AdvisoryReport(models.Model):
+    """Звіт радчої системи (бізнес-аналітик/фінаналітик/РОП/коуч/маркетолог + конкуренти).
+    Показується у CRM у вкладці «Зростання» як план дій для власника."""
+    kind = models.CharField(max_length=32, default="profit_x2")
+    title = models.CharField(max_length=200, default="План зростання прибутку")
+    body = models.TextField(help_text="Markdown")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.title} ({self.created_at:%Y-%m-%d})"
