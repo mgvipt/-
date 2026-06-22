@@ -281,6 +281,8 @@ class FundsView(APIView):
         revenue = float(request.data.get("revenue") or 0)
         account_id = request.data.get("account")
         direction_id = request.data.get("fin_direction")
+        # ідемпотентність: прибрати попередній авто-розподіл цього періоду (повторний клік не дублює)
+        FundAllocation.objects.filter(period=period, comment__startswith="Авто-розподіл виручки").delete()
         created = []
         for a in FinModelArticle.objects.filter(active=True, category="revenue_fund", value_type="percent"):
             amt = round(revenue * float(a.value) / 100, 2)

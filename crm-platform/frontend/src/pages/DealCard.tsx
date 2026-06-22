@@ -408,6 +408,9 @@ function CashflowTab({ deal, remaining, onPay, createTTN, issueCheckbox, sendPay
   const f2 = (n: number) => Math.round(n || 0).toLocaleString("ru");
   const [sub, setSub] = useState<"pay" | "np" | "wh" | "arch" | "loy">("pay");
   const [payType, setPayType] = useState(deal.pay_type || "full");
+  const [loyData, setLoyData] = useState<any>(null);
+  useEffect(() => { if (sub === "loy") api.get<any>(`/api/deals/${deal.id}/loyalty/`).then(setLoyData).catch(() => setLoyData(null)); }, [sub]);
+  async function savePayType() { try { await api.patch(`/api/deals/${deal.id}/`, { pay_type: payType }); flash("✓ Тип оплати збережено"); } catch { flash("Помилка збереження"); } }
   const token = deal.b24_id ? `WC-${deal.b24_id}` : `WC-${deal.id}`;
   const subs: [string, string][] = [["pay", "📊 Платежі"], ["np", "🚚 Доставка НП"], ["wh", "📦 Склад"], ["arch", "🎨 Архів кольорів"], ["loy", "❤️ Лояльність"]];
   const paid = deal.paid || 0; const total = Number(deal.amount) || 0;
@@ -437,7 +440,7 @@ function CashflowTab({ deal, remaining, onPay, createTTN, issueCheckbox, sendPay
             </div>
           ))}
         </div>
-        <button className="btn btn-primary" style={{ marginBottom: 18 }} onClick={() => flash("✓ Тип оплати збережено")}>Зберегти тип оплати</button>
+        <button className="btn btn-primary" style={{ marginBottom: 18 }} onClick={savePayType}>Зберегти тип оплати</button>
         <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 8 }}>ПРОГРЕС ОПЛАТИ</div>
         <div style={{ height: 8, background: "#f1f5f9", borderRadius: 4, marginBottom: 12 }}><div style={{ width: `${total ? Math.min(100, paid / total * 100) : 0}%`, height: "100%", background: "#16a34a", borderRadius: 4 }} /></div>
         <div style={{ display: "flex", gap: 12, marginBottom: 18 }}>
@@ -503,10 +506,13 @@ function CashflowTab({ deal, remaining, onPay, createTTN, issueCheckbox, sendPay
       {sub === "loy" && (<>
         <div style={{ background: "#fef2f2", borderRadius: 12, padding: 16, marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}><b style={{ fontSize: 16 }}>👤 {deal.contact_name || "Клієнт"}</b><span style={{ background: "#16a34a", color: "#fff", borderRadius: 14, padding: "3px 12px", fontSize: 12 }}>{deal.contact_loyalty || "Новий"}</span></div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
-            <div><div className="muted" style={{ fontSize: 12 }}>💰 Сума цієї сделки</div><div style={{ fontSize: 20, fontWeight: 700 }}>{f2(total)} ₴</div></div>
-            <div><div className="muted" style={{ fontSize: 12 }}>Статус оплати</div><div style={{ fontSize: 20, fontWeight: 700, color: paid >= total ? "#16a34a" : "#d97706" }}>{paid >= total && total ? "Оплачено" : "Очікує"}</div></div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginTop: 12 }}>
+            <div><div className="muted" style={{ fontSize: 12 }}>🛒 Покупок (закритих)</div><div style={{ fontSize: 22, fontWeight: 700 }}>{loyData ? loyData.purchases : "…"}</div></div>
+            <div><div className="muted" style={{ fontSize: 12 }}>💰 Сума всіх покупок</div><div style={{ fontSize: 22, fontWeight: 700 }}>{loyData ? f2(loyData.total) : "…"} ₴</div></div>
+            <div><div className="muted" style={{ fontSize: 12 }}>📅 Перша покупка</div><div style={{ fontSize: 15, fontWeight: 600 }}>{loyData && loyData.first ? new Date(loyData.first).toLocaleDateString("ru") : "—"}</div></div>
+            <div><div className="muted" style={{ fontSize: 12 }}>📅 Остання покупка</div><div style={{ fontSize: 15, fontWeight: 600 }}>{loyData && loyData.last ? new Date(loyData.last).toLocaleDateString("ru") : "—"}</div></div>
           </div>
+          <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>Враховуються лише закриті (виграні) угоди клієнта. Сума цієї сделки: {f2(total)} ₴.</div>
         </div>
         <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 6 }}>🎯 ЗНИЖКА НА ЦЮ СДЕЛКУ</div>
         <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 12, marginBottom: 12 }}>Рекомендована знижка: <b style={{ color: "#16a34a" }}>{deal.contact_loyalty === "VIP" ? "10%" : deal.contact_loyalty === "Активный" ? "5%" : "0%"}</b> <button className="btn btn-light" style={{ fontSize: 12, padding: "3px 9px", marginLeft: 8 }} onClick={() => flash("Знижку застосовано до товарів сделки")}>Застосувати</button></div>

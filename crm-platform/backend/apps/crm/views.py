@@ -168,6 +168,18 @@ class DealViewSet(ScopedByRoleMixin, viewsets.ModelViewSet):
         self._recalc_amount(deal)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
+    @action(detail=True, methods=["get"])
+    def loyalty(self, request, pk=None):
+        """Реальна статистика лояльності клієнта (тільки виграні угоди)."""
+        from django.db.models import Count, Sum, Min, Max
+        deal = self.get_object()
+        if not deal.contact_id:
+            return Response({"purchases": 0, "total": 0, "first": None, "last": None, "tag": ""})
+        won = Deal.objects.filter(contact=deal.contact, stage__is_won=True)
+        a = won.aggregate(n=Count("id"), s=Sum("amount"), f=Min("closed_at"), l=Max("closed_at"))
+        return Response({"purchases": a["n"] or 0, "total": float(a["s"] or 0),
+                         "first": a["f"], "last": a["l"], "tag": deal.contact.loyalty_tag or ""})
+
     @action(detail=True, methods=["post"])
     def set_reserve(self, request, pk=None):
         """Перемкнути резерв позиції: {item, reserved}."""
