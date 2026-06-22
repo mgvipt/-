@@ -98,6 +98,27 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
         return Response(MessageSerializer(msg).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["post"])
+    def ai_reply(self, request, pk=None):
+        """AI-РОП: аналіз діалогу + підказка відповіді клієнту (Claude)."""
+        conv = self.get_object()
+        msgs = list(conv.messages.order_by("id").values("direction", "text"))[-30:]
+        dialog = "\n".join(
+            ("Клієнт: " if m["direction"] == "in" else "Менеджер/AI: ") + (m["text"] or "")
+            for m in msgs if m.get("text"))
+        prompt = (
+            "Ти — досвідчений РОП (керівник відділу продажів) компанії Wallcov "
+            "(декоративні покриття та фарби для стін). Проаналізуй переписку і допоможи менеджеру закрити продаж. "
+            "Переписка з клієнтом:\n" + (dialog or "(переписки ще немає)") + "\n\n"
+            "Поверни СТРОГО JSON без пояснень: "
+            '{"context": "1-2 речення: на якому етапі клієнт, що хоче, які заперечення/ризики", '
+            '"suggestion": "готова відповідь клієнту ТІЄЮ Ж мовою, що й він — ввічливо, по суті, з наступним кроком до продажу"}')
+        from apps.crm.ai import claude_json
+        try:
+            return Response(claude_json(prompt))
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
 
 from django.http import HttpResponse as _HttpResponse
 from rest_framework.permissions import AllowAny as _AllowAny

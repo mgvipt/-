@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, Funnel } from "../api";
 import { Avatar, SourceChip } from "../ui";
+import ClientChat from "../ClientChat";
 
 interface Lead {
   id: number; title: string; contact?: number; contact_name?: string; owner_name?: string;
@@ -85,7 +86,7 @@ export default function LeadCard() {
         <div>
           <div className="panel">
             <div className="label">Стрічка подій</div>
-            <div className="muted" style={{ fontSize: 13 }}>Дзвінки, повідомлення з мессенджерів та задачі зʼявляться тут. Натисни «Конвертувати», щоб створити сделку з тим самим клієнтом.</div>
+            <ClientChat contact={lead.contact} />
           </div>
         </div>
       </div>
