@@ -179,6 +179,7 @@ function Journal() {
             </select>
             <label className="label">Коментар</label>
             <input value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} style={inp} />
+            {f.id ? <Attachments txId={f.id} /> : <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>📎 Збережи операцію — тоді зможеш прикріпити фото/скан чека.</div>}
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
               {f.id ? <button className="btn" style={{ background: "#fef2f2", color: "#dc2626" }} onClick={del} title="Видалити операцію">🗑</button> : null}
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setOpen(false)}>Скасувати</button>
@@ -188,6 +189,45 @@ function Journal() {
         </div>
       )}
     </>
+  );
+}
+
+function Attachments({ txId }: { txId: number }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const reload = () => api.get<any>(`/api/transactions/${txId}/attachments/`).then((d) => setItems(d || [])).catch(() => setItems([]));
+  useEffect(() => { reload(); }, [txId]);
+  async function upload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; if (!file) return;
+    setErr(""); setBusy(true);
+    try { await api.upload(`/api/transactions/${txId}/attach/`, file); reload(); }
+    catch (x: any) { setErr(String(x).includes("10") ? "Файл більший за 10 МБ" : "Не вдалося завантажити"); }
+    finally { setBusy(false); e.target.value = ""; }
+  }
+  async function openFile(a: any) {
+    try { const url = await api.blobUrl(`/api/attachments/${a.id}/file/`); window.open(url, "_blank"); }
+    catch { setErr("Не вдалося відкрити"); }
+  }
+  async function del(id: number) { await api.del(`/api/attachments/${id}/file/`); reload(); }
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <label className="label" title="Прикріпи фото або скан чека. З телефона відкриється камера.">📎 Чек / документи</label>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+        {items.map((a) => (
+          <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 4, background: "#f1f5f9", borderRadius: 8, padding: "4px 8px", fontSize: 12 }}>
+            <span style={{ cursor: "pointer", color: "#1d4ed8", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title="Відкрити" onClick={() => openFile(a)}>{a.content_type?.startsWith("image/") ? "🖼" : "📄"} {a.filename}</span>
+            <span style={{ color: "#ef4444", cursor: "pointer" }} title="Видалити" onClick={() => del(a.id)}>✕</span>
+          </div>
+        ))}
+        {items.length === 0 && <span className="muted" style={{ fontSize: 12 }}>Чеків ще немає</span>}
+      </div>
+      <label className="btn btn-light" style={{ fontSize: 13, cursor: "pointer", display: "inline-block" }}>
+        {busy ? "Завантаження…" : "📷 Додати фото / файл"}
+        <input type="file" accept="image/*,application/pdf" capture="environment" onChange={upload} style={{ display: "none" }} disabled={busy} />
+      </label>
+      {err && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{err}</div>}
+    </div>
   );
 }
 

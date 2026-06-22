@@ -1,11 +1,14 @@
 from datetime import date, timedelta
 from django.db.models import Sum, Q
-from rest_framework import viewsets
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.http import HttpResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from apps.common.permissions import HasPermCode
-from .models import Account, Category, Transaction, FinModelArticle, FinDirection, ChannelSpend, FundAllocation, AdvisoryReport, ManagerPlan
+from .models import Account, Category, Transaction, FinModelArticle, FinDirection, ChannelSpend, FundAllocation, AdvisoryReport, TransactionAttachment, ManagerPlan
 from .serializers import AccountSerializer, CategorySerializer, TransactionSerializer, FinModelArticleSerializer, FinDirectionSerializer, FundAllocationSerializer, AdvisoryReportSerializer
 from .services import compute_pnl, compute_breakeven, compute_channels
 
@@ -55,6 +58,27 @@ class TransactionViewSet(viewsets.ModelViewSet):
         if p.get("to"):
             qs = qs.filter(created_at__date__lte=p["to"])
         return qs
+
+    @action(detail=True, methods=["get"])
+    def attachments(self, request, pk=None):
+        tx = self.get_object()
+        return Response([{"id": a.id, "filename": a.filename, "content_type": a.content_type,
+                          "size": a.size, "uploaded_at": a.uploaded_at} for a in tx.attachments.all()])
+
+    @action(detail=True, methods=["post"], parser_classes=[MultiPartParser, FormParser])
+    def attach(self, request, pk=None):
+        """Прикріпити фото/скан чека (multipart, поле file). Макс 10 МБ."""
+        tx = self.get_object()
+        f = request.FILES.get("file")
+        if not f:
+            return Response({"detail": "немає файлу"}, status=status.HTTP_400_BAD_REQUEST)
+        if f.size > 10 * 1024 * 1024:
+            return Response({"detail": "файл більший за 10 МБ"}, status=status.HTTP_400_BAD_REQUEST)
+        a = TransactionAttachment.objects.create(
+            transaction=tx, filename=f.name[:255],
+            content_type=f.content_type or "application/octet-stream",
+            size=f.size, data=f.read())
+        return Response({"id": a.id, "filename": a.filename, "content_type": a.content_type, "size": a.size})
 
 
 class FinanceDashboardView(APIView):
@@ -333,3 +357,21 @@ class FxRateView(APIView):
             return Response({"ccy": ccy, "rate": float(row.get("rate") or 0), "date": row.get("exchangedate", "")})
         except Exception as e:
             return Response({"ccy": ccy, "rate": None, "detail": str(e)}, status=502)
+
+
+class AttachmentFileView(APIView):
+    """Віддає байти файлу-вкладення (авторизовано). GET /api/attachments/<id>/file/."""
+    permission_classes = [FinancePerm]
+
+    def get(self, request, pk):
+        try:
+            a = TransactionAttachment.objects.get(pk=pk)
+        except TransactionAttachment.DoesNotExist:
+            return Response({"detail": "не знайдено"}, status=status.HTTP_404_NOT_FOUND)
+        resp = HttpResponse(bytes(a.data), content_type=a.content_type)
+        resp["Content-Disposition"] = f'inline; filename="{a.filename}"'
+        return resp
+
+    def delete(self, request, pk):
+        TransactionAttachment.objects.filter(pk=pk).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

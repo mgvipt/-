@@ -199,3 +199,20 @@ class AdvisoryReport(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.created_at:%Y-%m-%d})"
+
+
+class TransactionAttachment(models.Model):
+    """Фото/скан чека або документа до операції. Зберігаємо у БД (до 10 МБ),
+    щоб не залежати від файлового тому. Віддаємо через авторизований API."""
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name="attachments")
+    filename = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=120, default="application/octet-stream")
+    size = models.PositiveIntegerField(default=0)
+    data = models.BinaryField()
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-uploaded_at"]
+
+    def __str__(self):
+        return f"{self.filename} ({self.size} b)"

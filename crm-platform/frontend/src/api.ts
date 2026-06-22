@@ -27,12 +27,35 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   return res.json() as Promise<T>;
 }
 
+async function uploadFile<T>(url: string, file: File): Promise<T> {
+  const headers: Record<string, string> = {};
+  const tok = getToken();
+  if (tok) headers["Authorization"] = `Token ${tok}`;
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(url, { method: "POST", headers, body: fd });
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  return res.json() as Promise<T>;
+}
+
+// Завантажує захищений файл і повертає blob-URL (для <img>/перегляду)
+async function blobUrl(url: string): Promise<string> {
+  const headers: Record<string, string> = {};
+  const tok = getToken();
+  if (tok) headers["Authorization"] = `Token ${tok}`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return URL.createObjectURL(await res.blob());
+}
+
 export const api = {
   get: <T>(u: string) => request<T>("GET", u),
   post: <T>(u: string, b?: unknown) => request<T>("POST", u, b),
   patch: <T>(u: string, b?: unknown) => request<T>("PATCH", u, b),
   put: <T>(u: string, b?: unknown) => request<T>("PUT", u, b),
   del: <T>(u: string) => request<T>("DELETE", u),
+  upload: uploadFile,
+  blobUrl,
 };
 
 export async function login(username: string, password: string): Promise<string> {
