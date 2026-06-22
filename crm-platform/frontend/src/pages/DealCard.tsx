@@ -48,10 +48,11 @@ interface Product { id: number; name: string; price: string; stock: number; }
 const fmt = (n: number) => Number(n || 0).toLocaleString("ru");
 const LOYALTY_COLOR: Record<string, string> = { VIP: "#7c3aed", Активный: "#2563eb", Новый: "#16a34a", Спящий: "#64748b" };
 
-export default function DealCard() {
+export default function DealCard({ dealId, onClose }: { dealId?: number; onClose?: () => void } = {}) {
 
   /* ─── [3] STATE ──────────────────────────────────────────────────────── */
-  const { id } = useParams();
+  const params = useParams();
+  const id = dealId != null ? String(dealId) : params.id;
   const nav = useNavigate();
   const [deal, setDeal] = useState<Deal | null>(null);
   const [funnel, setFunnel] = useState<Funnel | null>(null);
@@ -164,7 +165,7 @@ export default function DealCard() {
 
       {/* ─── [7] РЕНДЕР: шапка ─────────────────────────────────────────── */}
       <div className="dealhead">
-        <button className="back" onClick={() => nav("/deals")}>←</button>
+        <button className="back" onClick={() => onClose ? onClose() : nav("/deals")}>←</button>
         <b style={{ fontSize: 16 }}>#{deal.id} · {deal.title}</b>
         <span className="muted">{funnel?.name}</span>
         <div className="spacer" />

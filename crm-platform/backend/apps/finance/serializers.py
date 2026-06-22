@@ -41,6 +41,7 @@ class TransactionSerializer(serializers.ModelSerializer):
     fin_article_name = serializers.CharField(source="fin_article.name", read_only=True, default="")
     fin_direction_name = serializers.CharField(source="fin_direction.name", read_only=True, default="")
     transfer_account_name = serializers.CharField(source="transfer_account.name", read_only=True, default="")
+    deal_title = serializers.CharField(source="deal.title", read_only=True, default="")
 
     class Meta:
         model = Transaction
@@ -48,7 +49,7 @@ class TransactionSerializer(serializers.ModelSerializer):
                   "category", "category_name", "fin_article", "fin_article_name",
                   "fin_direction", "fin_direction_name", "channel",
                   "counterparty", "currency", "rate", "amount_uah",
-                  "transfer_account", "transfer_account_name",
+                  "transfer_account", "transfer_account_name", "deal_title",
                   "comment", "deal", "date", "created_at", "set_category"]
 
 

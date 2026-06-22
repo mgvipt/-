@@ -5,6 +5,7 @@
  * ========================================================================== */
 import { Fragment, useEffect, useState } from "react";
 import { api } from "../api";
+import DealCard from "./DealCard";
 import { useNavigate } from "react-router-dom";
 function useNav() { return useNavigate(); }
 
@@ -106,6 +107,7 @@ function Journal() {
   const emptyCf = { direction: "", amount_min: "", amount_max: "", currency: "", cat: "", cp: "", account: "", fin_article: "", fin_direction: "", channel: "", comment: "" };
   const [cf, setCf] = useState<any>(emptyCf);
   const [selAcc, setSelAcc] = useState<number[]>([]);
+  const [drawerDeal, setDrawerDeal] = useState<number | null>(null);
   const load = (p = page) => {
     const qp = new URLSearchParams({ page: String(p), page_size: String(pageSize) });
     if (ff) qp.set("from", ff); if (ft) qp.set("to", ft); if (fq.trim()) qp.set("q", fq.trim());
@@ -223,10 +225,10 @@ function Journal() {
       <div className="panel" style={{ margin: 0, padding: 0, overflowX: "auto" }}>
         <table style={{ width: "100%", fontSize: 13 }}>
           <thead><tr>
-            <th style={{ padding: "8px 12px" }}>Дата</th><th>Сума</th><th>Вал.</th><th>₴</th><th>Категорія</th><th>Контрагент</th><th>Рахунок</th><th>Фонд</th><th>Напрямок</th><th>Канал</th><th>Коментар</th>
+            <th style={{ padding: "8px 12px" }}>Дата</th><th>Сума</th><th>Вал.</th><th>₴</th><th>Категорія</th><th>Контрагент</th><th>Рахунок</th><th>Сделка</th><th>Фонд</th><th>Напрямок</th><th>Канал</th><th>Коментар</th>
           </tr></thead>
           <tbody>
-            {tx.length === 0 && <tr><td colSpan={11} className="muted" style={{ padding: 14 }}>Операцій ще немає. Додай вручну або вони зʼявляться при оплаті сделок.</td></tr>}
+            {tx.length === 0 && <tr><td colSpan={12} className="muted" style={{ padding: 14 }}>Операцій ще немає. Додай вручну або вони зʼявляться при оплаті сделок.</td></tr>}
             {tx.map((t) => (
               <tr key={t.id} onClick={() => openEdit(t)} title="Клікни, щоб переглянути та змінити" style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}>
                 <td className="muted" style={{ padding: "8px 12px" }}>{new Date(t.date || t.created_at).toLocaleDateString("ru")}</td>
@@ -236,6 +238,7 @@ function Journal() {
                 <td>{t.direction === "transfer" ? <span style={{ color: "#6366f1" }}>→ {t.transfer_account_name}</span> : (t.category_name || <span className="muted">—</span>)}</td>
                 <td>{t.direction === "transfer" ? <span className="muted">переказ</span> : (t.counterparty || <span className="muted">—</span>)}</td>
                 <td className="muted">{t.account_name}</td>
+                <td onClick={(e) => { e.stopPropagation(); if (t.deal) setDrawerDeal(t.deal); }}>{t.deal ? <span style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600 }} title="Відкрити картку сделки">#{t.deal}{t.deal_title ? " · " + t.deal_title.slice(0, 16) : ""} · {Number(t.amount).toLocaleString("ru")}₴</span> : <span className="muted">—</span>}</td>
                 <td>{t.fin_article_name || <span className="muted">—</span>}</td>
                 <td>{t.fin_direction_name || <span className="muted">—</span>}</td>
                 <td className="muted">{(CHANNELS.find((c) => c[0] === t.channel) || ["", "—"])[1]}</td>
@@ -246,6 +249,17 @@ function Journal() {
         </table>
       </div>
       </div>
+
+      {drawerDeal && (
+        <div onClick={() => setDrawerDeal(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.35)", zIndex: 60 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 0, right: 0, height: "100%", width: "76%", background: "#f1f5f9", boxShadow: "-12px 0 40px rgba(15,23,42,.25)", overflowY: "auto" }}>
+            <div style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", justifyContent: "flex-end", padding: 8, background: "#fff", borderBottom: "1px solid #e2e8f0" }}>
+              <button className="btn btn-light" onClick={() => setDrawerDeal(null)}>✕ Закрити</button>
+            </div>
+            <DealCard dealId={drawerDeal} onClose={() => setDrawerDeal(null)} />
+          </div>
+        </div>
+      )}
 
       {open && (
         <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
