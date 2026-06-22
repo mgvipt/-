@@ -6,7 +6,7 @@ import { api, Funnel } from "../api";
 import { Avatar, SourceChip } from "../ui";
 
 interface Lead {
-  id: number; title: string; contact_name?: string; owner_name?: string;
+  id: number; title: string; contact?: number; contact_name?: string; owner_name?: string;
   funnel: number; stage: number; amount: string; source: string; is_seen: boolean;
 }
 
@@ -16,6 +16,16 @@ export default function LeadCard() {
   const [lead, setLead] = useState<Lead | null>(null);
   const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [msg, setMsg] = useState("");
+
+  async function openChat() {
+    if (!lead || !lead.contact) { setMsg("У ліда немає контакту"); return; }
+    try {
+      const r: any = await api.get<any>(`/api/conversations/?contact=${lead.contact}`);
+      const conv = (r.results || r || [])[0];
+      if (conv) nav(`/inbox?c=${conv.id}`);
+      else setMsg("Переписки ще немає — чат зʼявиться після першого повідомлення");
+    } catch { setMsg("Не вдалося відкрити чат"); }
+  }
 
   async function load() {
     const l = await api.get<Lead>(`/api/leads/${id}/`);
@@ -59,7 +69,7 @@ export default function LeadCard() {
             <div style={{ fontWeight: 600 }}>{lead.contact_name || "Без контакту"}</div>
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>📞 Подзвонити</button>
-              <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }}>💬 Чат</button>
+              <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }} onClick={openChat}>💬 Чат</button>
             </div>
           </div>
           <div className="panel">
