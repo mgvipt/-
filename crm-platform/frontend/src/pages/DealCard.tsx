@@ -39,7 +39,7 @@ interface Deal {
   // поля merge-карточки (см. CODEMAP разд.2, модель Deal):
   discount_pct?: string; pay_type?: string; ttn?: string; checkbox_status?: string;
   margin?: number; bonus?: { total: number; from_revenue: number; from_margin: number; revenue_pct: number; margin_pct: number }; days_in_stage?: number;
-  contact_loyalty?: string; contact_id?: number; conversation_id?: number | null;
+  contact_loyalty?: string; contact_id?: number; conversation_id?: number | null; b24_id?: string;
 }
 interface Product { id: number; name: string; price: string; stock: number; }
 
@@ -408,7 +408,7 @@ function CashflowTab({ deal, remaining, onPay, createTTN, issueCheckbox, sendPay
   const f2 = (n: number) => Math.round(n || 0).toLocaleString("ru");
   const [sub, setSub] = useState<"pay" | "np" | "wh" | "arch" | "loy">("pay");
   const [payType, setPayType] = useState(deal.pay_type || "full");
-  const token = `WC-${deal.id}-030B`;
+  const token = deal.b24_id ? `WC-${deal.b24_id}` : `WC-${deal.id}`;
   const subs: [string, string][] = [["pay", "📊 Платежі"], ["np", "🚚 Доставка НП"], ["wh", "📦 Склад"], ["arch", "🎨 Архів кольорів"], ["loy", "❤️ Лояльність"]];
   const paid = deal.paid || 0; const total = Number(deal.amount) || 0;
   const card = { border: "1px solid #e2e8f0", borderRadius: 12, padding: "16px 18px", flex: 1, cursor: "pointer" } as React.CSSProperties;

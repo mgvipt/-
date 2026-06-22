@@ -122,7 +122,7 @@ class DealDetailSerializer(DealSerializer):
     class Meta(DealSerializer.Meta):
         fields = DealSerializer.Meta.fields + [
             "items", "payments", "paid", "margin", "bonus",
-            "days_in_stage", "contact_loyalty", "contact_id", "conversation_id",
+            "days_in_stage", "contact_loyalty", "contact_id", "conversation_id", "b24_id",
         ]
 
     def get_paid(self, obj):
