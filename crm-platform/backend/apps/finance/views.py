@@ -532,8 +532,8 @@ class OverviewView(APIView):
 
         def sums(f, t):
             q = Transaction.objects.filter(created_at__date__gte=f, created_at__date__lte=t)
-            inc = float(q.filter(direction="in").aggregate(s=Sum("amount"))["s"] or 0)
-            exp = float(q.filter(direction="out").aggregate(s=Sum("amount"))["s"] or 0)
+            inc = float(q.filter(direction="in").aggregate(s=Sum("amount_uah"))["s"] or 0)
+            exp = float(q.filter(direction="out").aggregate(s=Sum("amount_uah"))["s"] or 0)
             return inc, exp
 
         # тренд 12 місяців до обраного
