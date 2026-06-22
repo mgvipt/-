@@ -61,6 +61,13 @@ class TransactionViewSet(viewsets.ModelViewSet):
             from django.db.models import Q as _Q
             term = p["q"]
             qs = qs.filter(_Q(comment__icontains=term) | _Q(counterparty__icontains=term) | _Q(account__name__icontains=term))
+        # фільтри по окремих стовпцях
+        if p.get("cat"): qs = qs.filter(category__name__icontains=p["cat"])
+        if p.get("cp"): qs = qs.filter(counterparty__icontains=p["cp"])
+        if p.get("comment"): qs = qs.filter(comment__icontains=p["comment"])
+        if p.get("currency"): qs = qs.filter(currency=p["currency"])
+        if p.get("amount_min"): qs = qs.filter(amount__gte=p["amount_min"])
+        if p.get("amount_max"): qs = qs.filter(amount__lte=p["amount_max"])
         return qs
 
     @action(detail=True, methods=["get"])

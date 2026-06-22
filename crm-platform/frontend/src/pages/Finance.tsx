@@ -66,18 +66,28 @@ function Journal() {
   const blank = { id: 0, direction: "out", amount: "", account: 0, transfer_account: 0, fin_article: 0, fin_direction: 0, channel: "", counterparty: "", set_category: "", currency: "UAH", rate: 1, comment: "" };
   const [f, setF] = useState<any>(blank);
   const [ff, setFf] = useState(""); const [ft, setFt] = useState(""); const [fq, setFq] = useState("");
-  const load = () => {
-    const qp = new URLSearchParams({ page_size: "500" });
+  const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50); const [count, setCount] = useState(0);
+  const [showCols, setShowCols] = useState(false);
+  const emptyCf = { direction: "", amount_min: "", amount_max: "", currency: "", cat: "", cp: "", account: "", fin_article: "", fin_direction: "", channel: "", comment: "" };
+  const [cf, setCf] = useState<any>(emptyCf);
+  const load = (p = page) => {
+    const qp = new URLSearchParams({ page: String(p), page_size: String(pageSize) });
     if (ff) qp.set("from", ff); if (ft) qp.set("to", ft); if (fq.trim()) qp.set("q", fq.trim());
-    return api.get<any>(`/api/transactions/?${qp.toString()}`).then((d) => setTx(d.results || d));
+    Object.entries(cf).forEach(([k, v]) => { if (v) qp.set(k, String(v)); });
+    return api.get<any>(`/api/transactions/?${qp.toString()}`).then((d) => { setTx(d.results || d); setCount(d.count ?? (d.results ? d.results.length : (d.length || 0))); });
   };
+  function apply() { setPage(1); load(1); }
+  function goPage(p: number) { setPage(p); load(p); }
+  function resetAll() { setFq(""); setFf(""); setFt(""); setCf(emptyCf); setPage(1); setTimeout(() => load(1), 0); }
   useEffect(() => {
-    load();
+    load(1);
     api.get<any>("/api/accounts/").then((d) => setAccounts(d.results || d));
     api.get<any>("/api/finmodel-articles/?page_size=200").then((d) => setArts(d.results || d));
     api.get<any>("/api/fin-directions/?page_size=100").then((d) => setDirs(d.results || d));
     api.get<any>("/api/categories/").then((d) => setCats(d.results || d)).catch(() => setCats([]));
   }, []);
+  useEffect(() => { load(1); setPage(1); }, [pageSize]);
+  const totalPages = Math.max(1, Math.ceil(count / pageSize));
 
   function openNew(direction: string) { setF({ ...blank, direction }); setOpen(true); }
   function openEdit(t: any) {
@@ -115,19 +125,45 @@ function Journal() {
 
   return (
     <>
-      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }} className="journal-filter">
-        <input value={fq} onChange={(e) => setFq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="🔍 Пошук: сума, контрагент, коментар, рахунок…" style={{ flex: "1 1 240px", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
-        <span className="muted" style={{ fontSize: 12 }}>Період:</span>
-        <input type="date" value={ff} onChange={(e) => setFf(e.target.value)} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 6px" }} />
-        <input type="date" value={ft} onChange={(e) => setFt(e.target.value)} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 6px" }} />
-        <button className="btn btn-primary" onClick={() => load()}>Знайти</button>
-        <button className="btn btn-light" onClick={() => { setFq(""); setFf(""); setFt(""); setTimeout(load, 0); }}>Скинути</button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }} className="journal-filter">
+        <input value={fq} onChange={(e) => setFq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && apply()} placeholder="🔍 Пошук по всьому: сума, контрагент, коментар, рахунок…" style={{ flex: "1 1 220px", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
+        <span className="muted" style={{ fontSize: 12 }} title="Окремий фільтр по даті операції">📅 Дата:</span>
+        <input type="date" value={ff} onChange={(e) => setFf(e.target.value)} title="Дата від" style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 6px" }} />
+        <input type="date" value={ft} onChange={(e) => setFt(e.target.value)} title="Дата до" style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 6px" }} />
+        <button className="btn btn-light" onClick={() => setShowCols((x) => !x)} title="Фільтри по кожному стовпцю">⚙ Стовпці {showCols ? "▲" : "▼"}</button>
+        <button className="btn btn-primary" onClick={apply}>Знайти</button>
+        <button className="btn btn-light" onClick={resetAll}>Скинути все</button>
       </div>
+      {showCols && (
+        <div className="panel journal-cols" style={{ margin: "0 0 8px", padding: 12, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+          {(() => { const cs = { height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", width: "100%" } as React.CSSProperties; const set = (k: string, v: any) => setCf((c: any) => ({ ...c, [k]: v })); return (<>
+            <select value={cf.direction} onChange={(e) => set("direction", e.target.value)} style={cs}><option value="">Тип: усі</option><option value="in">Дохід</option><option value="out">Витрата</option><option value="transfer">Переказ</option></select>
+            <input value={cf.amount_min} onChange={(e) => set("amount_min", e.target.value)} type="number" placeholder="Сума від" style={cs} />
+            <input value={cf.amount_max} onChange={(e) => set("amount_max", e.target.value)} type="number" placeholder="Сума до" style={cs} />
+            <select value={cf.currency} onChange={(e) => set("currency", e.target.value)} style={cs}><option value="">Валюта: усі</option>{["UAH","USD","EUR","PLN","GBP"].map((x) => <option key={x} value={x}>{x}</option>)}</select>
+            <input value={cf.cat} onChange={(e) => set("cat", e.target.value)} placeholder="Категорія" style={cs} />
+            <input value={cf.cp} onChange={(e) => set("cp", e.target.value)} placeholder="Контрагент" style={cs} />
+            <select value={cf.account} onChange={(e) => set("account", e.target.value)} style={cs}><option value="">Рахунок: усі</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+            <select value={cf.fin_article} onChange={(e) => set("fin_article", e.target.value)} style={cs}><option value="">Фонд: усі</option>{arts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+            <select value={cf.fin_direction} onChange={(e) => set("fin_direction", e.target.value)} style={cs}><option value="">Напрямок: усі</option>{dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
+            <select value={cf.channel} onChange={(e) => set("channel", e.target.value)} style={cs}><option value="">Канал: усі</option>{CHANNELS.filter((c) => c[0]).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+            <input value={cf.comment} onChange={(e) => set("comment", e.target.value)} placeholder="Коментар" style={cs} />
+            <button className="btn btn-primary" onClick={apply}>Застосувати фільтри</button>
+          </>); })()}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <button className="btn btn-primary" title="Додати надходження грошей" onClick={() => openNew("in")}>+ Дохід</button>
         <button className="btn btn-light" title="Додати витрату" onClick={() => openNew("out")}>− Витрата</button>
         <button className="btn btn-light" title="Переказ між рахунками — не рахується ні в дохід, ні у витрати" onClick={() => openNew("transfer")}>⇄ Переказ</button>
-        <span className="muted" style={{ marginLeft: "auto", alignSelf: "center", fontSize: 13 }} title="Натисни на будь-яку операцію, щоб подивитись/відредагувати її">Знайдено: {tx.length}{tx.length >= 500 ? "+ (звузь фільтром)" : ""} · клікни на рядок</span>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+          <span className="muted">На стор.:</span>
+          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6 }}>{[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}</select>
+          <span className="muted">Всього: <b>{count}</b></span>
+          <button className="btn btn-light" disabled={page <= 1} onClick={() => goPage(page - 1)}>←</button>
+          <span>стор. <b>{page}</b> з {totalPages}</span>
+          <button className="btn btn-light" disabled={page >= totalPages} onClick={() => goPage(page + 1)}>→</button>
+        </div>
       </div>
       <div className="panel" style={{ margin: 0, padding: 0, overflowX: "auto" }}>
         <table style={{ width: "100%", fontSize: 13 }}>
