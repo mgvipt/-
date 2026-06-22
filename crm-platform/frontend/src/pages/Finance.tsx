@@ -14,8 +14,8 @@ const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.g
 const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`; };
 
 export default function Finance() {
-  const [tab, setTab] = useState<"dash" | "journal" | "pnl" | "be" | "dir" | "plan" | "grow" | "salary" | "mplan" | "ref" | "model">("dash");
-  const tabs: [string, string][] = [["dash", "💰 Дашборд"], ["journal", "🧾 Журнал"], ["pnl", "📊 P&L (ATM)"], ["be", "🎯 Точка беззбитковості"], ["dir", "🗂 Напрямки (проекти)"], ["plan", "💼 Планування"], ["grow", "🚀 Зростання"], ["salary", "💰 ЗП/KPI"], ["mplan", "🎯 Плани"], ["ref", "📚 Довідники"], ["model", "⚙️ Фінмодель"]];
+  const [tab, setTab] = useState<"dash" | "journal" | "pnl" | "be" | "dir" | "plan" | "grow" | "salary" | "mplan" | "time" | "ref" | "model">("dash");
+  const tabs: [string, string][] = [["dash", "💰 Дашборд"], ["journal", "🧾 Журнал"], ["pnl", "📊 P&L (ATM)"], ["be", "🎯 Точка беззбитковості"], ["dir", "🗂 Напрямки (проекти)"], ["plan", "💼 Планування"], ["grow", "🚀 Зростання"], ["salary", "💰 ЗП/KPI"], ["mplan", "🎯 Плани"], ["time", "🕐 Табель"], ["ref", "📚 Довідники"], ["model", "⚙️ Фінмодель"]];
   return (
     <div className="scroll pad fade">
       <div className="note warn">🔒 Розділ бачать тільки ролі з правом <b>finance.view</b>.</div>
@@ -31,6 +31,7 @@ export default function Finance() {
       {tab === "grow" && <Growth />}
       {tab === "salary" && <Salary />}
       {tab === "mplan" && <MPlans />}
+      {tab === "time" && <Timesheet />}
       {tab === "ref" && <Reference />}
       {tab === "model" && <FinModel />}
     </div>
@@ -580,6 +581,78 @@ function DirectionJournal({ directionId, from, to }: { directionId: number; from
         </table>
       )}
     </div>
+  );
+}
+
+/* ─── ВКЛАДКА: ТАБЕЛЬ РОБОЧОГО ЧАСУ (як Бітрикс timeman) ────────────────── */
+const WD_STATUS: Record<string, { label: string; short: string; color: string }> = {
+  worked: { label: "Робочий день", short: "Р", color: "#16a34a" },
+  overtime: { label: "Перевиконання (вихід у вихідний)", short: "+", color: "#7c3aed" },
+  dayoff: { label: "Вихідний", short: "В", color: "#cbd5e1" },
+  sick: { label: "Лікарняний", short: "Л", color: "#f59e0b" },
+  vacation: { label: "Відпустка", short: "Від", color: "#0ea5e9" },
+  absent: { label: "Прогул", short: "✕", color: "#ef4444" },
+};
+const WD_CYCLE = ["worked", "overtime", "dayoff", "sick", "vacation", "absent", ""];
+
+function Timesheet() {
+  const now = new Date();
+  const [users, setUsers] = useState<any[]>([]);
+  const [uid, setUid] = useState<number | null>(null);
+  const [ym, setYm] = useState(`${now.getFullYear()}-${pad(now.getMonth() + 1)}`);
+  const [days, setDays] = useState<Record<string, string>>({});
+  useEffect(() => { api.get<any>("/api/users/").then((d) => { const us = d.results || d; setUsers(us); if (us[0]) setUid(us[0].id); }); }, []);
+  const [y, mo] = ym.split("-").map(Number);
+  const load = () => { if (!uid) return; api.get<any>(`/api/workdays/?user=${uid}&year=${y}&month=${mo}&page_size=40`).then((d) => { const r = d.results || d; const map: any = {}; r.forEach((w: any) => { map[w.date] = w.status; }); setDays(map); }); };
+  useEffect(() => { load(); }, [uid, ym]);
+  const daysInMonth = new Date(y, mo, 0).getDate();
+  async function cycle(dateStr: string) {
+    const cur = days[dateStr] || "";
+    const next = WD_CYCLE[(WD_CYCLE.indexOf(cur) + 1) % WD_CYCLE.length];
+    setDays((d) => ({ ...d, [dateStr]: next }));
+    await api.post("/api/workdays/set/", { user: uid, date: dateStr, status: next || "clear" });
+  }
+  const worked = Object.values(days).filter((s) => s === "worked" || s === "overtime").length;
+  const overtime = Object.values(days).filter((s) => s === "overtime").length;
+  return (
+    <>
+      <div className="note">🕐 <b>Табель робочого часу</b> (як у Бітриксі). Клік на день міняє статус по колу. Впливає на ЗП: оклад платиться пропорційно відпрацьованим дням, а <b>перевиконання</b> (вихід у вихідний) додає денну ставку зверху. Якщо табель не вести — оклад повний за замовчуванням.</div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "12px 0" }}>
+        <select value={uid ?? ""} onChange={(e) => setUid(Number(e.target.value))} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }}>
+          {users.map((u) => <option key={u.id} value={u.id}>{u.full_name || `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.username}</option>)}
+        </select>
+        <input type="month" value={ym} onChange={(e) => setYm(e.target.value)} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }} />
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 13 }}>Відпрацьовано: <b style={{ color: "#16a34a" }}>{worked}</b> · Перевиконань: <b style={{ color: "#7c3aed" }}>{overtime}</b></span>
+      </div>
+      <div className="panel" style={{ margin: 0 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
+          {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"].map((w) => <div key={w} className="muted" style={{ fontSize: 11, textAlign: "center", fontWeight: 600 }}>{w}</div>)}
+          {(() => {
+            const first = new Date(y, mo - 1, 1).getDay(); // 0=Sun
+            const offset = (first + 6) % 7; // Monday-first
+            const cells: any[] = [];
+            for (let i = 0; i < offset; i++) cells.push(<div key={"e" + i} />);
+            for (let d = 1; d <= daysInMonth; d++) {
+              const ds = `${y}-${pad(mo)}-${pad(d)}`;
+              const st = days[ds] || "";
+              const meta = WD_STATUS[st];
+              cells.push(
+                <div key={d} onClick={() => cycle(ds)} title={meta ? meta.label : "Не відмічено — клік щоб поставити"}
+                  style={{ cursor: "pointer", borderRadius: 8, padding: "8px 4px", textAlign: "center", minHeight: 44, border: "1px solid #e2e8f0", background: meta ? meta.color + "22" : "#fff" }}>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>{d}</div>
+                  {meta && <div style={{ fontSize: 11, fontWeight: 700, color: meta.color }}>{meta.short}</div>}
+                </div>
+              );
+            }
+            return cells;
+          })()}
+        </div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
+          {Object.entries(WD_STATUS).map(([k, v]) => <span key={k} style={{ fontSize: 12 }}><span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 3, background: v.color, marginRight: 4, verticalAlign: "middle" }} />{v.label}</span>)}
+        </div>
+      </div>
+    </>
   );
 }
 

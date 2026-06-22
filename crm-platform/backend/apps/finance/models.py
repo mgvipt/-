@@ -217,3 +217,27 @@ class TransactionAttachment(models.Model):
 
     def __str__(self):
         return f"{self.filename} ({self.size} b)"
+
+
+class WorkDay(models.Model):
+    """Табель робочого часу менеджера (як Бітрикс timeman). Впливає на оклад
+    (пропорційно відпрацьованим дням) і перевиконання (вихід у вихідний = +денна ставка)."""
+    STATUS = [
+        ("worked", "Робочий день"),
+        ("overtime", "Перевиконання (вихід у вихідний)"),
+        ("dayoff", "Вихідний"),
+        ("sick", "Лікарняний"),
+        ("vacation", "Відпустка"),
+        ("absent", "Прогул"),
+    ]
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="workdays")
+    date = models.DateField()
+    status = models.CharField(max_length=12, choices=STATUS, default="worked")
+    note = models.CharField(max_length=160, blank=True, default="")
+
+    class Meta:
+        unique_together = [("user", "date")]
+        ordering = ["-date"]
+
+    def __str__(self):
+        return f"{self.user_id} {self.date} {self.status}"

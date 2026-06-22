@@ -213,7 +213,22 @@ def compute_manager_salary(user, period):
     mult = tier_multiplier(plan_pct)
     margin_kpi = margin_tier_pct(plan_pct, p)
 
-    part_base = p.get("salary_base", 4000)
+    # --- табель робочого часу: пропорційний оклад + перевиконання ---
+    from .models import WorkDay
+    base_salary = p.get("salary_base", 4000)
+    norm = int(p.get("salary_norm_days", 22)) or 22
+    wd = WorkDay.objects.filter(user=user, date__year=y, date__month=mo)
+    has_ts = wd.exists()
+    worked = wd.filter(status__in=["worked", "overtime"]).count()
+    overtime_days = wd.filter(status="overtime").count()
+    daily_rate = base_salary / norm
+    if has_ts:
+        part_base = base_salary * min(worked, norm) / norm
+        overtime_bonus = overtime_days * daily_rate
+    else:
+        part_base = base_salary
+        worked = norm
+        overtime_bonus = 0.0
     part_revenue = rev * p.get("salary_revenue_pct", 3) / 100
     part_margin = margin_amt * margin_kpi / 100
 
@@ -230,13 +245,14 @@ def compute_manager_salary(user, period):
     kpi_hits = sum(1 for k in kpi if k["ok"])
     bonus_kpi = kpi_hits * premium * mult
 
-    total = part_base + part_revenue + part_margin + bonus_kpi
+    total = part_base + part_revenue + part_margin + bonus_kpi + overtime_bonus
     return {
         "user_id": user.id, "user_name": user.get_full_name() or user.username, "period": period,
         "revenue": round(rev), "deals": deals, "avg_check": round(avg_check),
         "plan_target": round(target) if target else None, "plan_pct": plan_pct,
         "tier_mult": mult, "margin_kpi_pct": margin_kpi,
         "part_base": round(part_base), "part_revenue": round(part_revenue), "part_margin": round(part_margin),
+        "worked_days": worked, "norm_days": norm, "overtime_days": overtime_days, "overtime_bonus": round(overtime_bonus),
         "kpi": kpi, "kpi_hits": kpi_hits, "kpi_premium": premium, "bonus_kpi": round(bonus_kpi),
         "total": round(total),
         "min_revenue": round(float(plan.min_revenue)) if plan else None,

@@ -8,7 +8,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from apps.common.permissions import HasPermCode
-from .models import Account, Category, Transaction, FinModelArticle, FinDirection, ChannelSpend, FundAllocation, AdvisoryReport, TransactionAttachment, ManagerPlan
+from .models import Account, Category, Transaction, FinModelArticle, FinDirection, ChannelSpend, FundAllocation, AdvisoryReport, TransactionAttachment, ManagerPlan, WorkDay
 from .serializers import AccountSerializer, CategorySerializer, TransactionSerializer, FinModelArticleSerializer, FinDirectionSerializer, FundAllocationSerializer, AdvisoryReportSerializer
 from .services import compute_pnl, compute_breakeven, compute_channels
 
@@ -458,3 +458,35 @@ class CounterpartiesView(APIView):
             out.append({"name": nm, "count": r["n"], "total": round(float(r["total"] or 0)),
                         "contact_id": contact_names.get(nm.strip().lower())})
         return Response(out)
+
+
+class WorkDaySerializer(_sz.ModelSerializer):
+    class Meta:
+        model = WorkDay
+        fields = ["id", "user", "date", "status", "note"]
+
+
+class WorkDayViewSet(viewsets.ModelViewSet):
+    queryset = WorkDay.objects.select_related("user")
+    serializer_class = WorkDaySerializer
+    permission_classes = [FinancePerm]
+    filterset_fields = ["user", "status"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        p = self.request.query_params
+        if p.get("year") and p.get("month"):
+            qs = qs.filter(date__year=p["year"], date__month=p["month"])
+        return qs
+
+    @action(detail=False, methods=["post"])
+    def set(self, request):
+        """Upsert статусу дня: {user, date, status}."""
+        uid = request.data.get("user"); d = request.data.get("date"); st = request.data.get("status")
+        if not (uid and d):
+            return Response({"detail": "user+date обовʼязкові"}, status=status.HTTP_400_BAD_REQUEST)
+        if st in (None, "", "clear"):
+            WorkDay.objects.filter(user_id=uid, date=d).delete()
+            return Response({"cleared": True})
+        obj, _ = WorkDay.objects.update_or_create(user_id=uid, date=d, defaults={"status": st})
+        return Response(WorkDaySerializer(obj).data)

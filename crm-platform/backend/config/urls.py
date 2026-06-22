@@ -36,6 +36,7 @@ router.register("transactions", fin_views.TransactionViewSet)
 router.register("fund-allocations", fin_views.FundAllocationViewSet)
 router.register("advisory-reports", fin_views.AdvisoryReportViewSet)
 router.register("manager-plans", fin_views.ManagerPlanViewSet)
+router.register("workdays", fin_views.WorkDayViewSet)
 router.register("calls", tel_views.CallViewSet)
 
 urlpatterns = [
