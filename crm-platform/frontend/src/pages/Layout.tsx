@@ -26,6 +26,32 @@ const BGS = [
 ];
 const ACCENTS = ["#2a6df4", "#7c3aed", "#0ea5e9", "#059669"];
 
+function WorkTimer() {
+  const [st, setSt] = useState<any>(null);
+  const [sec, setSec] = useState(0);
+  function load() { api.get<any>("/api/worktime/").then((d) => { setSt(d); setSec(d.worked_seconds || 0); }).catch(() => setSt({ active: false })); }
+  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!st?.active || st?.on_pause) return;
+    const t = setInterval(() => setSec((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, [st?.active, st?.on_pause]);
+  async function act(action: string) {
+    const d = await api.post<any>("/api/worktime/", { action });
+    if (action === "stop") { setSt({ active: false }); setSec(0); } else { setSt(d); setSec(d.worked_seconds || 0); }
+  }
+  const hhmmss = (n: number) => [Math.floor(n / 3600), Math.floor((n % 3600) / 60), n % 60].map((x) => String(x).padStart(2, "0")).join(":");
+  if (!st) return null;
+  if (!st.active) return <button className="btn btn-primary" style={{ height: 32, padding: "0 12px", fontSize: 13 }} onClick={() => act("start")} title="Почати робочий день — табель відмітиться сам">▶ Почати робочий день</button>;
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center", background: "#fff", borderRadius: 8, padding: "3px 8px", border: "1px solid #e2e8f0" }}>
+      <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 15, color: st.on_pause ? "#d97706" : "#16a34a" }} title="Відпрацьовано сьогодні">{st.on_pause ? "⏸ " : "🟢 "}{hhmmss(sec)}</span>
+      <button className="btn btn-light" style={{ height: 28, padding: "0 8px", fontSize: 12 }} onClick={() => act("pause")} title="Обід/пауза">{st.on_pause ? "▶ Продовжити" : "☕ Обід"}</button>
+      <button className="btn btn-light" style={{ height: 28, padding: "0 8px", fontSize: 12, color: "#dc2626" }} onClick={() => act("stop")} title="Завершити робочий день">⏹ Завершити</button>
+    </div>
+  );
+}
+
 export default function Layout() {
   const { me, logout, can } = useAuth();
   const loc = useLocation();
@@ -73,6 +99,7 @@ export default function Layout() {
           <h1>{title}</h1>
           <div className="spacer" />
           <input className="search" placeholder="🔍  Поиск по CRM…" />
+          <WorkTimer />
           <button className="btn btn-light" onClick={() => setShowTheme((v) => !v)}>🎨 Тема</button>
           <div className="clock">{new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</div>
         </header>

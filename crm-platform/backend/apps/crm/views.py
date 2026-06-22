@@ -44,6 +44,15 @@ class ContactViewSet(viewsets.ModelViewSet):
     filterset_fields = ["loyalty_tag", "source", "owner"]
     ordering_fields = ["created_at", "first_name", "last_touch_at"]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        li = self.request.query_params.get("loyalty_in")
+        if li:
+            qs = qs.filter(loyalty_tag__in=[x for x in li.split(",") if x])
+        if self.request.query_params.get("has_phone") == "1":
+            qs = qs.exclude(phone="")
+        return qs
+
     def get_serializer_class(self):
         return ContactDetailSerializer if self.action == "retrieve" else ContactSerializer
 

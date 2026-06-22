@@ -8,7 +8,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from apps.common.permissions import HasPermCode
-from .models import Account, Category, Transaction, FinModelArticle, FinDirection, ChannelSpend, FundAllocation, AdvisoryReport, TransactionAttachment, ManagerPlan, WorkDay
+from .models import Account, Category, Transaction, FinModelArticle, FinDirection, ChannelSpend, FundAllocation, AdvisoryReport, TransactionAttachment, ManagerPlan, WorkDay, WorkSession
 from .serializers import AccountSerializer, CategorySerializer, TransactionSerializer, FinModelArticleSerializer, FinDirectionSerializer, FundAllocationSerializer, AdvisoryReportSerializer
 from .services import compute_pnl, compute_breakeven, compute_channels
 
@@ -621,3 +621,42 @@ class OverviewView(APIView):
 
 def money_fmt(n):
     return f"{round(n):,}".replace(",", " ") + " ₴"
+
+
+class WorkTimeView(APIView):
+    """Таймер робочого дня. GET → поточна зміна; POST {action: start|pause|stop}."""
+    from rest_framework.permissions import IsAuthenticated as _IsAuth
+    permission_classes = [_IsAuth]
+
+    def _payload(self, ws):
+        if not ws:
+            return {"active": False}
+        return {"active": True, "id": ws.id, "started_at": ws.started_at,
+                "on_pause": bool(ws.paused_at), "paused_seconds": ws.paused_seconds,
+                "worked_seconds": ws.worked_seconds()}
+
+    def get(self, request):
+        ws = WorkSession.objects.filter(user=request.user, ended_at__isnull=True).first()
+        return Response(self._payload(ws))
+
+    def post(self, request):
+        from django.utils import timezone
+        from datetime import date as _date
+        action = request.data.get("action")
+        ws = WorkSession.objects.filter(user=request.user, ended_at__isnull=True).first()
+        if action == "start":
+            if not ws:
+                ws = WorkSession.objects.create(user=request.user)
+                WorkDay.objects.update_or_create(user=request.user, date=_date.today(), defaults={"status": "worked"})
+        elif action == "pause" and ws:
+            if ws.paused_at:
+                ws.paused_seconds += int((timezone.now() - ws.paused_at).total_seconds()); ws.paused_at = None
+            else:
+                ws.paused_at = timezone.now()
+            ws.save()
+        elif action == "stop" and ws:
+            if ws.paused_at:
+                ws.paused_seconds += int((timezone.now() - ws.paused_at).total_seconds()); ws.paused_at = None
+            ws.ended_at = timezone.now(); ws.save()
+            return Response({"active": False, "worked_seconds": ws.worked_seconds()})
+        return Response(self._payload(ws))

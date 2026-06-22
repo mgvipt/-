@@ -15,7 +15,7 @@ export default function Clients() {
   const [rows, setRows] = useState<Contact[]>([]);
   const [count, setCount] = useState(0);
   const [q, setQ] = useState("");
-  const [loy, setLoy] = useState("");
+  const [loys, setLoys] = useState<string[]>([]);
   const [src, setSrc] = useState("");
   const [withPhone, setWithPhone] = useState(false);
   const [page, setPage] = useState(1);
@@ -25,15 +25,14 @@ export default function Clients() {
   function load(p = page) {
     const qp = new URLSearchParams({ page: String(p), page_size: String(pageSize), ordering });
     if (q.trim()) qp.set("search", q.trim());
-    if (loy) qp.set("loyalty_tag", loy);
+    if (loys.length) qp.set("loyalty_in", loys.join(","));
+    if (withPhone) qp.set("has_phone", "1");
     if (src) qp.set("source", src);
     api.get<Paginated<Contact>>(`/api/contacts/?${qp.toString()}`).then((d) => {
-      let r = d.results;
-      if (withPhone) r = r.filter((c) => c.phone);
-      setRows(r); setCount(d.count ?? r.length);
+      setRows(d.results); setCount(d.count ?? d.results.length);
     });
   }
-  useEffect(() => { load(1); setPage(1); /* eslint-disable-next-line */ }, [pageSize, loy, src, ordering, withPhone]);
+  useEffect(() => { load(1); setPage(1); /* eslint-disable-next-line */ }, [pageSize, loys, src, ordering, withPhone]);
   const totalPages = Math.max(1, Math.ceil(count / pageSize));
   function apply() { setPage(1); load(1); }
   function go(p: number) { setPage(p); load(p); }
@@ -43,9 +42,13 @@ export default function Clients() {
       {/* фільтри */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10, background: "#fff", padding: 10, borderRadius: 8, border: "1px solid #e2e8f0" }}>
         <input placeholder="🔍 Імʼя / телефон / email" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && apply()} style={{ flex: "1 1 220px", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
-        <select value={loy} onChange={(e) => setLoy(e.target.value)} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7 }}>
-          <option value="">Лояльність: усі</option>{["VIP", "Активный", "Новый", "Спящий"].map((x) => <option key={x} value={x}>{x}</option>)}
-        </select>
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          <span className="muted" style={{ fontSize: 12 }}>Статус:</span>
+          {["VIP", "Активный", "Новый", "Спящий"].map((x) => {
+            const on = loys.includes(x);
+            return <span key={x} onClick={() => setLoys((c) => on ? c.filter((y) => y !== x) : [...c, x])} style={{ cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 14, border: "1px solid " + (on ? "#2563eb" : "#cbd5e1"), background: on ? "#2563eb" : "#fff", color: on ? "#fff" : "#475569" }}>{x}</span>;
+          })}
+        </div>
         <input placeholder="Джерело" value={src} onChange={(e) => setSrc(e.target.value)} onKeyDown={(e) => e.key === "Enter" && apply()} style={{ width: 130, height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }} />
         <select value={ordering} onChange={(e) => setOrdering(e.target.value)} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7 }}>
           <option value="-created_at">Спершу нові</option><option value="created_at">Спершу старі</option><option value="first_name">За імʼям А-Я</option>

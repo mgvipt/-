@@ -241,3 +241,24 @@ class WorkDay(models.Model):
 
     def __str__(self):
         return f"{self.user_id} {self.date} {self.status}"
+
+
+class WorkSession(models.Model):
+    """Робоча зміна (як Бітрикс timeman): старт дня, пауза (обід), завершення.
+    При старті автоматично відмічає WorkDay(worked) → табель заповнюється сам."""
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="work_sessions")
+    started_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    paused_seconds = models.PositiveIntegerField(default=0)
+    paused_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+
+    def worked_seconds(self):
+        from django.utils import timezone
+        end = self.ended_at or timezone.now()
+        total = (end - self.started_at).total_seconds() - self.paused_seconds
+        if self.paused_at:
+            total -= (timezone.now() - self.paused_at).total_seconds()
+        return max(0, int(total))
