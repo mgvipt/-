@@ -72,6 +72,8 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [aiLoad, setAiLoad] = useState(false);
   const [ncOpen, setNcOpen] = useState(false);
   const [nc, setNc] = useState({ name: "", phone: "", email: "" });
+  const [ncMode, setNcMode] = useState<"pick" | "new">("pick");
+  const [ncSearch, setNcSearch] = useState(""); const [ncResults, setNcResults] = useState<any[]>([]);
 
   /* ─── [4] ЗАГРУЗКА ───────────────────────────────────────────────────── */
   async function load() {
@@ -124,6 +126,15 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   async function createTTN() { await patch({ ttn: "НП " + Math.floor(2e13 + Math.random() * 1e13) }); flash("✓ ТТН Нова Пошта создана"); }
   async function issueCheckbox() { await patch({ checkbox_status: deal?.paid && deal.paid < Number(deal.amount) ? "аванс" : "финальный" }); flash("✓ Чек Checkbox сформирован"); }
   function sendPayLink() { flash("✓ Ссылка на оплату отправлена клиенту · cashflow.wallcovdec.com.ua"); }
+  useEffect(() => {
+    if (!ncOpen || ncMode !== "pick" || !ncSearch.trim()) { setNcResults([]); return; }
+    const t = setTimeout(() => api.get<any>(`/api/contacts/?search=${encodeURIComponent(ncSearch)}&page_size=8`).then((d) => setNcResults(d.results || d)).catch(() => setNcResults([])), 250);
+    return () => clearTimeout(t);
+  }, [ncOpen, ncMode, ncSearch]);
+  async function linkExisting(cid: number) {
+    await api.patch(`/api/deals/${id}/`, { contact: cid });
+    setNcOpen(false); setNcSearch(""); setNcResults([]); load();
+  }
   async function createClient() {
     const parts = nc.name.trim().split(" ");
     const contact = await api.post<{ id: number }>(`/api/contacts/`, { first_name: parts[0] || nc.name, last_name: parts.slice(1).join(" "), phone: nc.phone, email: nc.email });
@@ -347,18 +358,40 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       {ncOpen && (
         <div onClick={() => setNcOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 380 }}>
-            <h3 style={{ marginTop: 0 }}>Створити клієнта</h3>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>Створиться картка клієнта і прив'яжеться до цієї сделки.</div>
-            <label className="label">Ім'я та прізвище</label>
-            <input value={nc.name} autoFocus onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="Ірина Турок" style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10 }} />
-            <label className="label">Телефон</label>
-            <input value={nc.phone} onChange={(e) => setNc({ ...nc, phone: e.target.value })} placeholder="+380..." style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10 }} />
-            <label className="label">Email</label>
-            <input value={nc.email} onChange={(e) => setNc({ ...nc, email: e.target.value })} style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 14 }} />
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setNcOpen(false)}>Скасувати</button>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={createClient} disabled={!nc.name.trim()}>Створити</button>
+            <h3 style={{ marginTop: 0 }}>Клієнт сделки</h3>
+            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+              <button className={"btn" + (ncMode === "pick" ? " btn-primary" : " btn-light")} style={{ flex: 1 }} onClick={() => setNcMode("pick")}>🔍 Обрати існуючого</button>
+              <button className={"btn" + (ncMode === "new" ? " btn-primary" : " btn-light")} style={{ flex: 1 }} onClick={() => setNcMode("new")}>➕ Створити нового</button>
             </div>
+            {ncMode === "pick" ? (
+              <>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>Знайди клієнта серед існуючих (37 тис.) і привʼяжи до сделки.</div>
+                <input value={ncSearch} autoFocus onChange={(e) => setNcSearch(e.target.value)} placeholder="Імʼя, прізвище, телефон…" style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 8 }} />
+                <div style={{ maxHeight: 240, overflowY: "auto", marginBottom: 12 }}>
+                  {ncResults.map((c) => (
+                    <div key={c.id} onClick={() => linkExisting(c.id)} style={{ padding: "8px 10px", borderRadius: 8, cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
+                      👤 <b>{c.display_name || `${c.first_name || ""} ${c.last_name || ""}`.trim() || "—"}</b> {c.phone ? <span className="muted">· {c.phone}</span> : null}
+                    </div>
+                  ))}
+                  {ncSearch.trim() && ncResults.length === 0 && <div className="muted" style={{ fontSize: 13, padding: 8 }}>Нічого не знайдено. Створи нового на сусідній вкладці.</div>}
+                </div>
+                <button className="btn btn-light" style={{ width: "100%" }} onClick={() => setNcOpen(false)}>Закрити</button>
+              </>
+            ) : (
+              <>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>Створиться картка клієнта і привʼяжеться до цієї сделки.</div>
+                <label className="label">Ім'я та прізвище</label>
+                <input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="Ірина Турок" style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10 }} />
+                <label className="label">Телефон</label>
+                <input value={nc.phone} onChange={(e) => setNc({ ...nc, phone: e.target.value })} placeholder="+380..." style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10 }} />
+                <label className="label">Email</label>
+                <input value={nc.email} onChange={(e) => setNc({ ...nc, email: e.target.value })} style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 14 }} />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setNcOpen(false)}>Скасувати</button>
+                  <button className="btn btn-primary" style={{ flex: 1 }} onClick={createClient} disabled={!nc.name.trim()}>Створити</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
