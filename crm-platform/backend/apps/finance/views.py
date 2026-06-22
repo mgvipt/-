@@ -375,3 +375,64 @@ class AttachmentFileView(APIView):
     def delete(self, request, pk):
         TransactionAttachment.objects.filter(pk=pk).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class FxImpactView(APIView):
+    """Вплив курсу валют на прибуток + рекомендації.
+    Закупка декор-матеріалів привʼязана до валюти → падіння гривні зʼїдає маржу.
+    GET /api/finance/fx-impact/?ccy=USD&from&to"""
+    permission_classes = [FinancePerm]
+
+    def get(self, request):
+        import json as _json, urllib.request
+        ccy = (request.query_params.get("ccy") or "USD").upper()
+        d_from, d_to = _period(request)
+
+        # живий курс НБУ
+        live = None
+        try:
+            with urllib.request.urlopen(f"https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?valcode={ccy}&json", timeout=10) as r:
+                data = _json.load(r)
+            live = float(data[0]["rate"]) if data else None
+        except Exception:
+            live = None
+
+        # витрати у цій валюті за період
+        fx = Transaction.objects.filter(direction="out", currency=ccy,
+                                        created_at__date__gte=d_from, created_at__date__lte=d_to)
+        fx_orig = float(fx.aggregate(s=Sum("amount"))["s"] or 0)
+        fx_uah = float(fx.aggregate(s=Sum("amount_uah"))["s"] or 0)
+
+        # частка постачальників (імпорт-залежна) з фінмоделі — найбільший revenue_fund
+        sup = FinModelArticle.objects.filter(active=True, category="revenue_fund").order_by("-value").first()
+        supplier_pct = float(sup.value) if sup else 48.78
+        pnl = compute_pnl(d_from, d_to)
+        revenue = pnl["revenue"]
+        supplier_cost = revenue * supplier_pct / 100.0  # імпорт-залежна частина собівартості
+
+        # сценарії руху курсу: наскільки впаде прибуток
+        scenarios = []
+        for delta in (5, 10, 15, -5):
+            extra_cost = supplier_cost * delta / 100.0  # подорожчання закупки
+            new_margin_pct = pnl["margin_pct"] - (extra_cost / revenue * 100.0 if revenue else 0)
+            scenarios.append({
+                "delta_pct": delta,
+                "extra_cost": round(extra_cost),
+                "profit_change": round(-extra_cost),
+                "new_margin_pct": round(new_margin_pct, 1),
+            })
+
+        recs = [
+            f"Закупка завʼязана на курс: постачальники ≈ {supplier_pct:.0f}% виручки. Падіння гривні на 10% зʼїдає ≈ {round(supplier_cost*0.10):,} ₴ прибутку/період.".replace(",", " "),
+            "Додавай у договір/КП курсове застереження: ціна фіксується за курсом на день відвантаження, а не замовлення.",
+            "Тримай резерв 5-10% маржі на курсові коливання — не давай знижки, що зʼїдають цей буфер.",
+            "При падінні гривні на >5% — оновлюй прайс або закуповуй ходові позиції наперед (валютна подушка).",
+            "Частину виручки тримай у валюті — природний хедж проти подорожчання закупки.",
+        ]
+        return Response({
+            "ccy": ccy, "live_rate": live, "from": d_from.isoformat(), "to": d_to.isoformat(),
+            "fx_expense_orig": round(fx_orig), "fx_expense_uah": round(fx_uah),
+            "supplier_pct": round(supplier_pct, 2), "supplier_cost": round(supplier_cost),
+            "revenue": round(revenue), "margin_pct": pnl["margin_pct"],
+            "scenarios": scenarios, "recommendations": recs,
+        })

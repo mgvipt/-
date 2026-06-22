@@ -263,7 +263,54 @@ function Dashboard() {
           {d.accounts.map((a: any) => <div key={a.id} className="row" style={{ padding: "8px 0", borderBottom: "1px solid #f1f5f9" }}><span className="muted">{a.name}</span><b>{money(a.balance)}</b></div>)}
         </div>
       </div>
+      <FxImpact />
     </>
+  );
+}
+
+/* ─── Картка: ВПЛИВ КУРСУ ВАЛЮТ НА ПРИБУТОК ─────────────────────────────── */
+function FxImpact() {
+  const [ccy, setCcy] = useState("USD");
+  const [d, setD] = useState<any>(null);
+  useEffect(() => { setD(null); api.get<any>(`/api/finance/fx-impact/?ccy=${ccy}`).then(setD).catch(() => setD(null)); }, [ccy]);
+  return (
+    <div className="panel" style={{ margin: "12px 0 0", borderLeft: "4px solid #f59e0b" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <b style={{ fontSize: 14, flex: 1 }} title="Закупка декор-матеріалів завʼязана на курс. Падіння гривні зменшує маржу.">💱 Вплив курсу валют на прибуток</b>
+        <select value={ccy} onChange={(e) => setCcy(e.target.value)} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }}>
+          {["USD", "EUR", "PLN", "GBP"].map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+      {!d ? <div className="muted" style={{ fontSize: 13, marginTop: 8 }}>Завантаження курсу НБУ…</div> : (
+        <>
+          <div style={{ display: "flex", gap: 18, flexWrap: "wrap", margin: "10px 0", fontSize: 13 }}>
+            <span title="Поточний курс НБУ">Курс НБУ: <b>{d.live_rate ? d.live_rate.toFixed(2) : "—"} ₴/{d.ccy}</b></span>
+            <span title="Скільки витрачено у цій валюті за період">Витрати у {d.ccy}: <b>{money(d.fx_expense_uah)}</b></span>
+            <span title="Частка закупки у виручці (імпорт-залежна)">Закупка ≈ <b>{d.supplier_pct}%</b> виручки = {money(d.supplier_cost)}/період</span>
+          </div>
+          <div className="muted" style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Що буде з прибутком, якщо курс зміниться (закупка дорожчає/дешевшає):</div>
+          <table style={{ width: "100%", fontSize: 13, marginBottom: 8 }}>
+            <thead><tr><th style={{ textAlign: "left", padding: "4px 8px" }}>Зміна курсу</th><th style={{ textAlign: "right" }}>Δ собівартості</th><th style={{ textAlign: "right" }}>Δ прибутку</th><th style={{ textAlign: "right" }}>Нова маржа</th></tr></thead>
+            <tbody>
+              {d.scenarios.map((sc: any) => (
+                <tr key={sc.delta_pct} style={{ borderTop: "1px solid #f1f5f9", background: sc.delta_pct > 0 ? "#fff7ed" : "#f0fdf4" }}>
+                  <td style={{ padding: "4px 8px", fontWeight: 600 }}>{sc.delta_pct > 0 ? "+" : ""}{sc.delta_pct}% {sc.delta_pct > 0 ? "↑ гривня слабшає" : "↓ гривня міцніє"}</td>
+                  <td style={{ textAlign: "right" }}>{sc.delta_pct > 0 ? "+" : ""}{money(sc.extra_cost)}</td>
+                  <td style={{ textAlign: "right", fontWeight: 700, color: sc.profit_change >= 0 ? "#16a34a" : "#dc2626" }}>{sc.profit_change > 0 ? "+" : ""}{money(sc.profit_change)}</td>
+                  <td style={{ textAlign: "right" }}>{sc.new_margin_pct}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 12px" }}>
+            <div style={{ fontWeight: 600, fontSize: 12.5, color: "#b45309", marginBottom: 4 }}>💡 Рекомендації аналітика — щоб не втрачати на курсі:</div>
+            <ul style={{ margin: "0 0 0 16px", fontSize: 12.5, lineHeight: 1.5 }}>
+              {d.recommendations.map((r: string, i: number) => <li key={i}>{r}</li>)}
+            </ul>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

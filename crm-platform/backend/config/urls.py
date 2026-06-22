@@ -52,6 +52,7 @@ urlpatterns = [
     path("api/finance/channels/", fin_views.ChannelsView.as_view()),
     path("api/finance/funds/", fin_views.FundsView.as_view()),
     path("api/finance/fx-rate/", fin_views.FxRateView.as_view()),
+    path("api/finance/fx-impact/", fin_views.FxImpactView.as_view()),
     path("api/attachments/<int:pk>/file/", fin_views.AttachmentFileView.as_view()),
     path("api/finance/salary/", fin_views.SalaryView.as_view()),
     path("api/analytics/", crm_views.AnalyticsView.as_view()),
