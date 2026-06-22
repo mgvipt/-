@@ -52,7 +52,7 @@ class Transaction(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["-created_at", "id"]
 
     def save(self, *args, **kwargs):
         self.amount_uah = (self.amount or 0) * (self.rate or 1)

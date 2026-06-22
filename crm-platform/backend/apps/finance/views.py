@@ -68,6 +68,11 @@ class TransactionViewSet(viewsets.ModelViewSet):
         if p.get("currency"): qs = qs.filter(currency=p["currency"])
         if p.get("amount_min"): qs = qs.filter(amount__gte=p["amount_min"])
         if p.get("amount_max"): qs = qs.filter(amount__lte=p["amount_max"])
+        if p.get("accounts"):
+            from django.db.models import Q as _Qa
+            ids = [int(x) for x in str(p["accounts"]).split(",") if x.strip().isdigit()]
+            if ids:
+                qs = qs.filter(_Qa(account_id__in=ids) | _Qa(transfer_account_id__in=ids))
         return qs
 
     @action(detail=True, methods=["get"])

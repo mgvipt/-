@@ -70,10 +70,12 @@ function Journal() {
   const [showCols, setShowCols] = useState(false);
   const emptyCf = { direction: "", amount_min: "", amount_max: "", currency: "", cat: "", cp: "", account: "", fin_article: "", fin_direction: "", channel: "", comment: "" };
   const [cf, setCf] = useState<any>(emptyCf);
+  const [selAcc, setSelAcc] = useState<number[]>([]);
   const load = (p = page) => {
     const qp = new URLSearchParams({ page: String(p), page_size: String(pageSize) });
     if (ff) qp.set("from", ff); if (ft) qp.set("to", ft); if (fq.trim()) qp.set("q", fq.trim());
     Object.entries(cf).forEach(([k, v]) => { if (v) qp.set(k, String(v)); });
+    if (selAcc.length) qp.set("accounts", selAcc.join(","));
     return api.get<any>(`/api/transactions/?${qp.toString()}`).then((d) => { setTx(d.results || d); setCount(d.count ?? (d.results ? d.results.length : (d.length || 0))); });
   };
   function apply() { setPage(1); load(1); }
@@ -123,8 +125,26 @@ function Journal() {
   const inp = { height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", width: "100%", marginBottom: 10 } as React.CSSProperties;
   const grnEq = Number(f.amount || 0) * (Number(f.rate) || 1);
 
+  function toggleAcc(id: number) {
+    setSelAcc((cur) => { const n = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]; setTimeout(() => { setPage(1); const qp = new URLSearchParams({ page: "1", page_size: String(pageSize) }); if (ff) qp.set("from", ff); if (ft) qp.set("to", ft); if (fq.trim()) qp.set("q", fq.trim()); Object.entries(cf).forEach(([k, v]) => { if (v) qp.set(k, String(v)); }); if (n.length) qp.set("accounts", n.join(",")); api.get<any>(`/api/transactions/?${qp.toString()}`).then((d) => { setTx(d.results || d); setCount(d.count ?? 0); }); }, 0); return n; });
+  }
   return (
-    <>
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+      <div className="panel acc-sidebar" style={{ width: 220, flex: "0 0 220px", margin: 0, maxHeight: "80vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <b style={{ fontSize: 13 }}>🏦 Рахунки</b>
+          {selAcc.length > 0 && <span style={{ fontSize: 11, color: "#2563eb", cursor: "pointer" }} onClick={() => { setSelAcc([]); setTimeout(() => load(1), 0); }}>скинути</span>}
+        </div>
+        <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>Обери один або кілька — журнал відфільтрується.</div>
+        {accounts.map((a) => (
+          <label key={a.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 4px", borderRadius: 6, cursor: "pointer", fontSize: 12.5, background: selAcc.includes(a.id) ? "#eff6ff" : "transparent" }}>
+            <input type="checkbox" checked={selAcc.includes(a.id)} onChange={() => toggleAcc(a.id)} />
+            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
+            <b style={{ fontSize: 11, color: a.balance < 0 ? "#dc2626" : "#16a34a" }}>{money(a.balance)}</b>
+          </label>
+        ))}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }} className="journal-filter">
         <input value={fq} onChange={(e) => setFq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && apply()} placeholder="🔍 Пошук по всьому: сума, контрагент, коментар, рахунок…" style={{ flex: "1 1 220px", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
         <span className="muted" style={{ fontSize: 12 }} title="Окремий фільтр по даті операції">📅 Дата:</span>
@@ -189,6 +209,7 @@ function Journal() {
             ))}
           </tbody>
         </table>
+      </div>
       </div>
 
       {open && (
@@ -266,7 +287,7 @@ function Journal() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
