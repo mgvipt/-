@@ -56,7 +56,7 @@ export default function DealCard() {
   const [deal, setDeal] = useState<Deal | null>(null);
   const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
-  const [tab, setTab] = useState<"general" | "items">("general");
+  const [tab, setTab] = useState<"general" | "items" | "cashflow">("general");
   const [addProd, setAddProd] = useState(0);
   const [addQty, setAddQty] = useState(1);
   const [psearch, setPsearch] = useState(""); const [presults, setPresults] = useState<Product[]>([]); const [psel, setPsel] = useState<Product | null>(null); const [addReserve, setAddReserve] = useState(false);
@@ -161,7 +161,7 @@ export default function DealCard() {
       {/* ─── [7] РЕНДЕР: шапка ─────────────────────────────────────────── */}
       <div className="dealhead">
         <button className="back" onClick={() => nav("/deals")}>←</button>
-        <b style={{ fontSize: 16 }}>{deal.title}</b>
+        <b style={{ fontSize: 16 }}>#{deal.id} · {deal.title}</b>
         <span className="muted">{funnel?.name}</span>
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
@@ -196,8 +196,10 @@ export default function DealCard() {
       <div className="tabs">
         <div className={"tab" + (tab === "general" ? " active" : "")} onClick={() => setTab("general")}>Лента</div>
         <div className={"tab" + (tab === "items" ? " active" : "")} onClick={() => setTab("items")}>Товары ({deal.items.length})</div>
+        <div className={"tab" + (tab === "cashflow" ? " active" : "")} onClick={() => setTab("cashflow")}>💰 Wallcov Cashflow</div>
       </div>
 
+      {tab !== "cashflow" ? (
       <div className="grid2">
 
         {/* ─── [10] РЕНДЕР: левая колонка — данные заказа ───────────────── */}
@@ -338,6 +340,7 @@ export default function DealCard() {
           )}
         </div>
       </div>
+      ) : <CashflowTab deal={deal} remaining={remaining} onPay={() => { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }} createTTN={createTTN} issueCheckbox={issueCheckbox} sendPayLink={sendPayLink} flash={flash} />}
 
       {/* модалка створення клієнта зі сделки */}
       {ncOpen && (
@@ -397,4 +400,121 @@ function Inline({ value, fmt, onSave }: { value: number; fmt: (v: number) => str
       style={{ width: 110, height: 28, borderRadius: 6, border: "1px solid var(--brand,#2563eb)", padding: "0 6px", fontSize: 14 }} />
   );
   return <span onClick={() => setEdit(true)} style={{ cursor: "text", borderBottom: "1px dashed #cbd5e1" }}>{fmt(value)}</span>;
+}
+
+
+/* ─── WALLCOV CASHFLOW — перенесено з віджета finmap-bridge (5 вкладок) ───── */
+function CashflowTab({ deal, remaining, onPay, createTTN, issueCheckbox, sendPayLink, flash }: any) {
+  const f2 = (n: number) => Math.round(n || 0).toLocaleString("ru");
+  const [sub, setSub] = useState<"pay" | "np" | "wh" | "arch" | "loy">("pay");
+  const [payType, setPayType] = useState(deal.pay_type || "full");
+  const token = `WC-${deal.id}-030B`;
+  const subs: [string, string][] = [["pay", "📊 Платежі"], ["np", "🚚 Доставка НП"], ["wh", "📦 Склад"], ["arch", "🎨 Архів кольорів"], ["loy", "❤️ Лояльність"]];
+  const paid = deal.paid || 0; const total = Number(deal.amount) || 0;
+  const card = { border: "1px solid #e2e8f0", borderRadius: 12, padding: "16px 18px", flex: 1, cursor: "pointer" } as React.CSSProperties;
+  const lbl = { display: "block", fontSize: 11, fontWeight: 600, color: "#64748b", margin: "8px 0 3px" } as React.CSSProperties;
+  const inp = { width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" } as React.CSSProperties;
+  return (
+    <div className="panel" style={{ margin: 0 }}>
+      {/* статус-бар */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+        <span style={{ background: "#2563eb", color: "#fff", borderRadius: 20, padding: "8px 16px", fontWeight: 700 }}>{paid >= total && total > 0 ? "✅ Оплачено" : "🔵 Очікуємо оплату"}</span>
+        <span className="muted" style={{ fontSize: 13 }}>Токен: <b style={{ fontFamily: "monospace" }}>{token}</b></span>
+        <div style={{ flex: 1 }} />
+        <span style={{ background: "#6d28d9", color: "#fff", borderRadius: 20, padding: "6px 14px", fontSize: 13, fontWeight: 600 }}>🎛 Командний центр</span>
+      </div>
+      {/* під-вкладки */}
+      <div style={{ display: "flex", gap: 6, borderBottom: "1px solid #e2e8f0", marginBottom: 16, flexWrap: "wrap" }}>
+        {subs.map(([k, l]) => <div key={k} onClick={() => setSub(k as any)} style={{ padding: "8px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13, borderBottom: sub === k ? "2px solid #2563eb" : "2px solid transparent", color: sub === k ? "#2563eb" : "#475569" }}>{l}</div>)}
+      </div>
+
+      {sub === "pay" && (<>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 8 }}>ТИП ОПЛАТИ</div>
+        <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+          {[["full", "💯 Повна оплата", "Клієнт платить всю суму одразу"], ["prepay", "🚚 Передоплата + післяплата НП", "Аванс зараз, решта при отриманні Новою Поштою"], ["reserve", "🔒 Бронь", "Очікуємо повної оплати, відвантаження заблоковане"]].map(([k, t, d]) => (
+            <div key={k} onClick={() => setPayType(k)} style={{ ...card, borderColor: payType === k ? "#2563eb" : "#e2e8f0", background: payType === k ? "#eff6ff" : "#fff" }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>{t}</div><div className="muted" style={{ fontSize: 12 }}>{d}</div>
+            </div>
+          ))}
+        </div>
+        <button className="btn btn-primary" style={{ marginBottom: 18 }} onClick={() => flash("✓ Тип оплати збережено")}>Зберегти тип оплати</button>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 8 }}>ПРОГРЕС ОПЛАТИ</div>
+        <div style={{ height: 8, background: "#f1f5f9", borderRadius: 4, marginBottom: 12 }}><div style={{ width: `${total ? Math.min(100, paid / total * 100) : 0}%`, height: "100%", background: "#16a34a", borderRadius: 4 }} /></div>
+        <div style={{ display: "flex", gap: 12, marginBottom: 18 }}>
+          <div style={{ ...card, flex: 1 }}><div className="muted" style={{ fontSize: 11 }}>СПЛАЧЕНО</div><div style={{ fontSize: 22, fontWeight: 700, color: "#16a34a" }}>{f2(paid)} ₴</div></div>
+          <div style={{ ...card, flex: 1 }}><div className="muted" style={{ fontSize: 11 }}>УСЬОГО</div><div style={{ fontSize: 22, fontWeight: 700 }}>{f2(total)} ₴</div></div>
+          <div style={{ ...card, flex: 1, background: "#fffbeb" }}><div className="muted" style={{ fontSize: 11 }}>ЗАЛИШОК</div><div style={{ fontSize: 22, fontWeight: 700, color: "#d97706" }}>{f2(remaining)} ₴</div></div>
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 8 }}>ДІЇ</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn btn-primary" onClick={onPay}>💳 Прийняти платіж</button>
+          <button className="btn" onClick={sendPayLink}>📲 LiqPay</button>
+          <button className="btn" onClick={() => flash("QR Приват24 згенеровано")}>📷 QR Приват24</button>
+          <button className="btn" onClick={() => flash("Реквізити надіслано клієнту")}>📄 Реквізити</button>
+        </div>
+      </>)}
+
+      {sub === "np" && (<>
+        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 12, padding: 16 }}>
+          <b style={{ fontSize: 15 }}>📦 Створити ТТН Нова Пошта</b>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>Заповніть дані для відправлення — сервер сам викличе НП і запише ТТН в угоду.</div>
+          <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+            <div style={{ ...card, background: "#ecfdf5" }}><b>📍 Відділення (відправник)</b><input style={{ ...inp, marginTop: 6 }} defaultValue="Могилів-Подільський" /></div>
+            <div style={{ ...card }}><b>📍 Отримувач</b><input style={{ ...inp, marginTop: 6 }} defaultValue={deal.contact_name || ""} placeholder="ПІБ отримувача" /></div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div><span style={lbl}>МІСТО ОТРИМУВАЧА</span><input style={inp} placeholder="Кременчук, Київ…" /></div>
+            <div><span style={lbl}>ВІДДІЛЕННЯ / ПОШТОМАТ</span><input style={inp} placeholder="№…" /></div>
+            <div><span style={lbl}>ТЕЛЕФОН</span><input style={inp} placeholder="0XX…" /></div>
+            <div><span style={lbl}>ОГОЛОШЕНА ВАРТІСТЬ, ₴</span><input style={inp} defaultValue={Math.round(total)} /></div>
+            <div><span style={lbl}>ОПИС ВКЛАДЕННЯ</span><input style={inp} defaultValue="Декоративне покриття" /></div>
+            <div><span style={lbl}>МЕТОД ОПЛАТИ</span><select style={inp}><option>Готівка</option><option>Безготівка</option></select></div>
+          </div>
+          <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={createTTN}>🚚 Створити ТТН</button>
+        </div>
+      </>)}
+
+      {sub === "wh" && (<>
+        <b style={{ fontSize: 15 }}>📦 Склад · Бланк викраски</b>
+        <div style={{ background: "#f8fafc", borderLeft: "3px solid #6366f1", borderRadius: 8, padding: 12, margin: "8px 0 14px", fontSize: 13 }}>
+          Сделка: <b>#{deal.id}</b> «{deal.title}» · Клієнт: <b>{deal.contact_name || "—"}</b>
+        </div>
+        {deal.items.length === 0 ? <div className="muted">Додай товари у вкладці «Товары» — позиції бланку візьмуться звідти.</div> :
+          deal.items.map((it: any, i: number) => (
+            <div key={it.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 14, marginBottom: 10 }}>
+              <b>Позиція {i + 1}</b> <span className="muted">({it.product_name} · {Number(it.quantity)})</span>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}>
+                <div><span style={lbl}>МАТЕРІАЛ</span><input style={inp} defaultValue={it.product_name} /></div>
+                <div><span style={lbl}>ЗАПИТУВАНИЙ КОЛІР</span><input style={inp} placeholder="напр. як у тест-наборі" /></div>
+                <div><span style={lbl}>ОБʼЄМ</span><input style={inp} defaultValue={Number(it.quantity)} /></div>
+                <div><span style={lbl}>КАТАЛОГ / СТОРІНКА</span><input style={inp} placeholder="Своя…" /></div>
+              </div>
+            </div>
+          ))}
+      </>)}
+
+      {sub === "arch" && (<>
+        <b style={{ fontSize: 15 }}>🎨 Архів кольорів</b>
+        <div className="muted" style={{ fontSize: 13, margin: "4px 0 10px" }}>Архів цифрових записів викрасок — пошук по матеріалу, кольору, клієнту.</div>
+        <div style={{ display: "flex", gap: 8 }}><input style={{ ...inp, flex: 1 }} placeholder="Пошук: код кольору, імʼя клієнта, матеріал…" /><button className="btn btn-primary">🔍 Знайти</button></div>
+        <div style={{ background: "#f8fafc", borderRadius: 8, padding: 16, marginTop: 10, textAlign: "center" }} className="muted">Архів наповнюється коли тонувальник завантажить фото викраски.</div>
+      </>)}
+
+      {sub === "loy" && (<>
+        <div style={{ background: "#fef2f2", borderRadius: 12, padding: 16, marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><b style={{ fontSize: 16 }}>👤 {deal.contact_name || "Клієнт"}</b><span style={{ background: "#16a34a", color: "#fff", borderRadius: 14, padding: "3px 12px", fontSize: 12 }}>{deal.contact_loyalty || "Новий"}</span></div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+            <div><div className="muted" style={{ fontSize: 12 }}>💰 Сума цієї сделки</div><div style={{ fontSize: 20, fontWeight: 700 }}>{f2(total)} ₴</div></div>
+            <div><div className="muted" style={{ fontSize: 12 }}>Статус оплати</div><div style={{ fontSize: 20, fontWeight: 700, color: paid >= total ? "#16a34a" : "#d97706" }}>{paid >= total && total ? "Оплачено" : "Очікує"}</div></div>
+          </div>
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 6 }}>🎯 ЗНИЖКА НА ЦЮ СДЕЛКУ</div>
+        <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 12, marginBottom: 12 }}>Рекомендована знижка: <b style={{ color: "#16a34a" }}>{deal.contact_loyalty === "VIP" ? "10%" : deal.contact_loyalty === "Активный" ? "5%" : "0%"}</b> <button className="btn btn-light" style={{ fontSize: 12, padding: "3px 9px", marginLeft: 8 }} onClick={() => flash("Знижку застосовано до товарів сделки")}>Застосувати</button></div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 6 }}>🎁 ПРОМОКОДИ</div>
+        <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>Видаються автоматом за події (1-а покупка, 3-я, день народження).</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 6 }}>📅 ДЕНЬ НАРОДЖЕННЯ</div>
+        <div style={{ display: "flex", gap: 8 }}><input type="date" style={{ ...inp, width: 180 }} /><button className="btn btn-primary" onClick={() => flash("Дату збережено")}>Зберегти</button></div>
+      </>)}
+    </div>
+  );
 }
