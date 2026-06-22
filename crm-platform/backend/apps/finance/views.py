@@ -490,3 +490,118 @@ class WorkDayViewSet(viewsets.ModelViewSet):
             return Response({"cleared": True})
         obj, _ = WorkDay.objects.update_or_create(user_id=uid, date=d, defaults={"status": st})
         return Response(WorkDaySerializer(obj).data)
+
+
+class OverviewView(APIView):
+    """Зведений дашборд (FP&A): світлофор, тренд, топ-витрати, напрямки, рахунки, коеф., алерти.
+    GET /api/finance/overview/?period=YYYY-MM"""
+    permission_classes = [FinancePerm]
+
+    def get(self, request):
+        from datetime import date as _date, timedelta as _td
+        from django.db.models import Sum
+        per = request.query_params.get("period") or _date.today().strftime("%Y-%m")
+        y, mo = int(per[:4]), int(per[5:7])
+
+        def month_bounds(yy, mm):
+            f = _date(yy, mm, 1)
+            t = (_date(yy + (mm == 12), (mm % 12) + 1, 1) - _td(days=1))
+            return f, t
+
+        def sums(f, t):
+            q = Transaction.objects.filter(created_at__date__gte=f, created_at__date__lte=t)
+            inc = float(q.filter(direction="in").aggregate(s=Sum("amount"))["s"] or 0)
+            exp = float(q.filter(direction="out").aggregate(s=Sum("amount"))["s"] or 0)
+            return inc, exp
+
+        # тренд 12 місяців до обраного
+        months = []
+        yy, mm = y, mo
+        seq = []
+        for _ in range(12):
+            seq.append((yy, mm))
+            mm -= 1
+            if mm == 0:
+                mm = 12; yy -= 1
+        for (a, b) in reversed(seq):
+            f, t = month_bounds(a, b)
+            inc, exp = sums(f, t)
+            months.append({"ym": f"{a}-{b:02d}", "income": round(inc), "expense": round(exp), "net": round(inc - exp)})
+
+        cf, ct = month_bounds(y, mo)
+        cur_inc, cur_exp = sums(cf, ct)
+        pf, pt = month_bounds(*seq[1])
+        prev_inc, prev_exp = sums(pf, pt)
+        total_balance = sum(float(a.balance()) for a in Account.objects.all())
+
+        # топ-витрати (обраний місяць)
+        top_exp = [{"name": r["category__name"] or "(без категорії)", "sum": round(float(r["s"]))}
+                   for r in Transaction.objects.filter(direction="out", created_at__date__gte=cf, created_at__date__lte=ct)
+                   .values("category__name").annotate(s=Sum("amount")).order_by("-s")[:8]]
+
+        # напрямки (обраний місяць)
+        dirs = []
+        for d in FinDirection.objects.filter(active=True):
+            q = Transaction.objects.filter(fin_direction=d, created_at__date__gte=cf, created_at__date__lte=ct)
+            di = float(q.filter(direction="in").aggregate(s=Sum("amount"))["s"] or 0)
+            de = float(q.filter(direction="out").aggregate(s=Sum("amount"))["s"] or 0)
+            if di or de:
+                dirs.append({"name": d.name, "income": round(di), "expense": round(de), "net": round(di - de)})
+        dirs.sort(key=lambda x: -x["income"])
+
+        # рахунки
+        accounts = sorted([{"id": a.id, "name": a.name, "balance": round(float(a.balance()))}
+                           for a in Account.objects.all()], key=lambda x: -x["balance"])
+
+        # cashflow 30 днів
+        today = _date.today()
+        cashflow = []
+        for i in range(29, -1, -1):
+            dd = today - _td(days=i)
+            dq = Transaction.objects.filter(created_at__date=dd)
+            cashflow.append({"date": dd.isoformat(),
+                             "in": float(dq.filter(direction="in").aggregate(s=Sum("amount"))["s"] or 0),
+                             "out": float(dq.filter(direction="out").aggregate(s=Sum("amount"))["s"] or 0)})
+
+        # коефіцієнти
+        net = cur_inc - cur_exp
+        margin_pct = round(net / cur_inc * 100, 1) if cur_inc else 0
+        exp_ratio = round(cur_exp / cur_inc * 100, 1) if cur_inc else 0
+        personal = next((c["sum"] for c in top_exp if "особ" in c["name"].lower() or "личн" in c["name"].lower()), 0)
+        personal_pct = round(personal / cur_exp * 100, 1) if cur_exp else 0
+        avg_burn = sum(max(0, m["expense"] - m["income"]) for m in months[-3:]) / 3
+        burn_months = round(total_balance / avg_burn, 1) if avg_burn > 0 else None
+
+        # алерти
+        alerts = []
+        losing = sum(1 for m in months[-6:] if m["net"] < 0)
+        if losing >= 2:
+            alerts.append({"level": "warn", "text": f"{losing} збиткових місяці з останніх 6 — нестабільний прибуток"})
+        if personal_pct >= 10:
+            alerts.append({"level": "danger", "text": f"Особисті витрати = {personal_pct}% усіх витрат місяця ({money_fmt(personal)})"})
+        mk = next((c["sum"] for c in top_exp if "маркет" in c["name"].lower()), 0)
+        if cur_inc and mk / cur_inc * 100 >= 12:
+            alerts.append({"level": "warn", "text": f"Маркетинг {round(mk/cur_inc*100)}% від виручки — перевір окупність (ROI)"})
+        for a in accounts:
+            if -100 < a["balance"] < 500 and a["balance"] != 0:
+                alerts.append({"level": "warn", "text": f"Рахунок «{a['name']}» майже порожній ({money_fmt(a['balance'])})"})
+                break
+        if net < 0:
+            alerts.append({"level": "danger", "text": f"Поточний місяць у мінусі: {money_fmt(net)}"})
+        if not alerts:
+            alerts.append({"level": "ok", "text": "Критичних сигналів немає — бізнес у нормі"})
+
+        return Response({
+            "period": per,
+            "kpi": {"income": round(cur_inc), "expense": round(cur_exp), "net": round(net),
+                    "prev_net": round(prev_inc - prev_exp), "balance": round(total_balance)},
+            "months": months, "top_expense": top_exp, "directions": dirs,
+            "accounts": accounts, "cashflow": cashflow,
+            "ratios": {"margin_pct": margin_pct, "expense_ratio": exp_ratio,
+                       "personal_pct": personal_pct, "burn_months": burn_months},
+            "alerts": alerts,
+        })
+
+
+def money_fmt(n):
+    return f"{round(n):,}".replace(",", " ") + " ₴"

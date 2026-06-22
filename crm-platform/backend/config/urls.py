@@ -47,6 +47,7 @@ urlpatterns = [
     path("api/me/", acc_views.MeView.as_view()),
     path("api/inbox/telegram/webhook/<int:channel_id>/", inbox_views.TelegramWebhookView.as_view()),
     path("api/finance/dashboard/", fin_views.FinanceDashboardView.as_view()),
+    path("api/finance/overview/", fin_views.OverviewView.as_view()),
     path("api/finance/pnl/", fin_views.ProfitLossView.as_view()),
     path("api/finance/breakeven/", fin_views.BreakevenView.as_view()),
     path("api/finance/directions/", fin_views.DirectionsReportView.as_view()),

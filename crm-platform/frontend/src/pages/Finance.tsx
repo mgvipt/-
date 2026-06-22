@@ -261,37 +261,159 @@ function Attachments({ txId }: { txId: number }) {
 }
 
 function Dashboard() {
+  /* overview-dash: світлофор → тренд → потік → топ-витрати → напрямки → рахунки → алерти → коеф. */
+  const now = new Date();
+  const [period, setPeriod] = useState(`${now.getFullYear()}-${pad(now.getMonth() + 1)}`);
   const [d, setD] = useState<any>(null);
-  useEffect(() => { api.get<any>("/api/finance/dashboard/").then(setD).catch(() => setD(null)); }, []);
-  if (!d) return <div className="spin">Загрузка…</div>;
-  const max = Math.max(...d.cashflow.map((x: any) => Math.max(x.in, x.out)), 1);
-  const cards: [string, number, string][] = [
-    ["Залишок на рахунках", d.total_balance, "#16a34a"], ["Дохід (місяць)", d.month_income, "#2563eb"],
-    ["Витрати (місяць)", d.month_expense, "#ef4444"], ["Прибуток (місяць)", d.month_profit, "#7c3aed"],
+  const [allAcc, setAllAcc] = useState(false);
+  useEffect(() => { setD(null); api.get<any>(`/api/finance/overview/?period=${period}`).then(setD).catch(() => setD(null)); }, [period]);
+  if (!d) return <div className="spin">Завантаження дашборда…</div>;
+
+  const k = d.kpi; const dNet = k.net - k.prev_net;
+  const netColor = k.net > 0 ? "#16a34a" : k.net < 0 ? "#dc2626" : "#64748b";
+  const trafficKpi = [
+    { t: "Чистий прибуток (місяць)", v: k.net, c: netColor, sub: `${dNet >= 0 ? "▲" : "▼"} ${money(Math.abs(dNet))} vs мин. міс` },
+    { t: "Гроші на рахунках", v: k.balance, c: "#0ea5e9", sub: `${d.accounts.length} рахунків` },
+    { t: "Виручка (місяць)", v: k.income, c: "#2563eb", sub: `маржа ${d.ratios.margin_pct}%` },
+    { t: "Витрати (місяць)", v: k.expense, c: "#ef4444", sub: `${d.ratios.expense_ratio}% від виручки` },
   ];
+  const trendMax = Math.max(...d.months.map((m: any) => Math.abs(m.net)), 1);
+  const cfMax = Math.max(...d.cashflow.map((x: any) => Math.max(x.in, x.out)), 1);
+  const expMax = Math.max(...d.top_expense.map((e: any) => e.sum), 1);
+  const accShown = allAcc ? d.accounts : d.accounts.slice(0, 8);
+  const aColor = (l: string) => l === "danger" ? "#dc2626" : l === "warn" ? "#d97706" : "#16a34a";
+  const aBg = (l: string) => l === "danger" ? "#fef2f2" : l === "warn" ? "#fffbeb" : "#f0fdf4";
+
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 12 }}>
-        {cards.map(([t, v, c]) => <div key={t} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{t}</div><div style={{ fontSize: 22, fontWeight: 700, color: c }}>{money(v)}</div></div>)}
+      {/* період */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <span className="muted" style={{ fontSize: 13 }}>Місяць:</span>
+        <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }} />
+        <span className="muted" style={{ fontSize: 12 }}>дані з ФінМапа · 2024–2026</span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 12 }}>
+
+      {/* 1. СВІТЛОФОР */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
+        {trafficKpi.map((c) => (
+          <div key={c.t} className="panel" style={{ margin: 0, borderTop: `3px solid ${c.c}` }}>
+            <div className="muted" style={{ fontSize: 12 }}>{c.t}</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: c.c, fontVariantNumeric: "tabular-nums" }}>{money(c.v)}</div>
+            <div className="muted" style={{ fontSize: 11.5 }}>{c.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 7. АЛЕРТИ */}
+      {d.alerts.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+          {d.alerts.map((a: any, i: number) => (
+            <div key={i} style={{ background: aBg(a.level), border: `1px solid ${aColor(a.level)}33`, color: aColor(a.level), borderRadius: 8, padding: "8px 12px", fontSize: 13, fontWeight: 500 }}>
+              {a.level === "danger" ? "🔴" : a.level === "warn" ? "🟡" : "🟢"} {a.text}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {/* 2. ТРЕНД 12 МІС */}
         <div className="panel" style={{ margin: 0 }}>
-          <b style={{ fontSize: 14 }}>Грошовий потік · 30 днів</b>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 160, marginTop: 12 }}>
-            {d.cashflow.map((x: any, i: number) => (
-              <div key={i} title={`${x.date}: +${x.in} / -${x.out}`} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 1 }}>
-                <div style={{ height: `${(x.in / max) * 70}%`, background: "#22c55e", borderRadius: "2px 2px 0 0" }} />
-                <div style={{ height: `${(x.out / max) * 70}%`, background: "#f87171", borderRadius: "0 0 2px 2px" }} />
+          <b style={{ fontSize: 14 }}>Чистий прибуток по місяцях</b>
+          <div style={{ display: "flex", alignItems: "center", gap: 3, height: 150, marginTop: 14, borderBottom: "1px dashed #cbd5e1" }}>
+            {d.months.map((m: any) => (
+              <div key={m.ym} title={`${m.ym}: дохід ${m.income} / витрати ${m.expense} / чистий ${m.net}`} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: m.net >= 0 ? "flex-end" : "flex-start", height: "100%", position: "relative" }}>
+                <div style={{ height: `${Math.abs(m.net) / trendMax * 50}%`, background: m.net >= 0 ? "#16a34a" : "#dc2626", borderRadius: 3, alignSelf: "stretch", marginTop: m.net >= 0 ? "auto" : 0 }} />
               </div>
             ))}
           </div>
-          <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>🟢 дохід · 🔴 витрата по днях</div>
+          <div style={{ display: "flex", gap: 3, marginTop: 4 }}>
+            {d.months.map((m: any) => <div key={m.ym} className="muted" style={{ flex: 1, fontSize: 9, textAlign: "center" }}>{m.ym.slice(5)}</div>)}
+          </div>
         </div>
+
+        {/* 3. ГРОШОВИЙ ПОТІК 30 ДНІВ */}
         <div className="panel" style={{ margin: 0 }}>
-          <b style={{ fontSize: 14 }}>Рахунки / Каси</b>
-          {d.accounts.map((a: any) => <div key={a.id} className="row" style={{ padding: "8px 0", borderBottom: "1px solid #f1f5f9" }}><span className="muted">{a.name}</span><b>{money(a.balance)}</b></div>)}
+          <b style={{ fontSize: 14 }}>Грошовий потік · 30 днів</b>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 150, marginTop: 14 }}>
+            {d.cashflow.map((x: any, i: number) => (
+              <div key={i} title={`${x.date}: +${Math.round(x.in)} / -${Math.round(x.out)}`} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 1 }}>
+                <div style={{ height: `${x.in / cfMax * 70}%`, background: "#22c55e", borderRadius: "2px 2px 0 0" }} />
+                <div style={{ height: `${x.out / cfMax * 70}%`, background: "#f87171", borderRadius: "0 0 2px 2px" }} />
+              </div>
+            ))}
+          </div>
+          <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>🟢 надходження · 🔴 списання по днях</div>
         </div>
       </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+        {/* 4. ТОП ВИТРАТИ */}
+        <div className="panel" style={{ margin: 0 }}>
+          <b style={{ fontSize: 14 }}>Топ витрати місяця</b>
+          <div style={{ marginTop: 10 }}>
+            {d.top_expense.map((e: any) => (
+              <div key={e.name} style={{ marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 2 }}><span>{e.name}</span><b>{money(e.sum)}</b></div>
+                <div style={{ height: 8, background: "#f1f5f9", borderRadius: 4 }}><div style={{ width: `${e.sum / expMax * 100}%`, height: "100%", background: "#ef4444", borderRadius: 4 }} /></div>
+              </div>
+            ))}
+            {d.top_expense.length === 0 && <div className="muted" style={{ fontSize: 13 }}>Витрат за місяць немає.</div>}
+          </div>
+        </div>
+
+        {/* 5. НАПРЯМКИ */}
+        <div className="panel" style={{ margin: 0 }}>
+          <b style={{ fontSize: 14 }}>Доходи по напрямках</b>
+          <table style={{ width: "100%", fontSize: 12.5, marginTop: 10 }}>
+            <thead><tr><th style={{ textAlign: "left", padding: "4px 6px" }}>Напрямок</th><th>Дохід</th><th>Чистий</th></tr></thead>
+            <tbody>
+              {d.directions.map((dr: any) => (
+                <tr key={dr.name} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td style={{ padding: "5px 6px" }}>{dr.name}</td>
+                  <td style={{ textAlign: "right" }}>{money(dr.income)}</td>
+                  <td style={{ textAlign: "right", fontWeight: 600, color: dr.net >= 0 ? "#16a34a" : "#dc2626" }}>{money(dr.net)}</td>
+                </tr>
+              ))}
+              {d.directions.length === 0 && <tr><td colSpan={3} className="muted" style={{ padding: 8 }}>Немає даних по напрямках за місяць.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+        {/* 6. РАХУНКИ */}
+        <div className="panel" style={{ margin: 0 }}>
+          <b style={{ fontSize: 14 }}>Баланси рахунків</b>
+          <div style={{ marginTop: 8 }}>
+            {accShown.map((a: any) => (
+              <div key={a.id} className="row" style={{ padding: "6px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
+                <span style={{ flex: 1, fontSize: 13 }}>{a.name}</span>
+                <b style={{ fontVariantNumeric: "tabular-nums", color: a.balance < 0 ? "#dc2626" : a.balance < 500 ? "#d97706" : "#16a34a" }}>{money(a.balance)}</b>
+              </div>
+            ))}
+          </div>
+          {d.accounts.length > 8 && <button className="btn btn-light" style={{ fontSize: 12, marginTop: 8 }} onClick={() => setAllAcc((x) => !x)}>{allAcc ? "Згорнути" : `Показати всі ${d.accounts.length}`}</button>}
+        </div>
+
+        {/* 8. КОЕФІЦІЄНТИ */}
+        <div className="panel" style={{ margin: 0 }}>
+          <b style={{ fontSize: 14 }}>Ключові коефіцієнти</b>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
+            {[
+              { t: "Маржинальність", v: `${d.ratios.margin_pct}%`, c: d.ratios.margin_pct >= 0 ? "#16a34a" : "#dc2626", h: "Чистий / Виручка" },
+              { t: "Витрати / Доходи", v: `${d.ratios.expense_ratio}%`, c: d.ratios.expense_ratio <= 100 ? "#16a34a" : "#dc2626", h: "Скільки витрачаєш з кожної гривні" },
+              { t: "Особисті у витратах", v: `${d.ratios.personal_pct}%`, c: d.ratios.personal_pct >= 10 ? "#dc2626" : "#64748b", h: "Частка особистих витрат" },
+              { t: "Запас міцності", v: d.ratios.burn_months == null ? "∞" : `${d.ratios.burn_months} міс`, c: "#0ea5e9", h: "Скільки протримаєшся на залишку у збиткові міс" },
+            ].map((r) => (
+              <div key={r.t} style={{ background: "#f8fafc", borderRadius: 8, padding: "10px 12px" }} title={r.h}>
+                <div className="muted" style={{ fontSize: 11.5 }}>{r.t}</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: r.c }}>{r.v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <FxImpact />
     </>
   );
