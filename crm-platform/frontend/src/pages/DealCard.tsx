@@ -187,20 +187,16 @@ export default function DealCard() {
         </div>
       )}
 
-      {/* ─── [9] РЕНДЕР: підшапка-додатки (як у Бітриксі/Cashflow) ──────── */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "10px 0 4px", padding: "8px 10px", background: "linear-gradient(90deg,#f8fafc,#eef2ff)", borderRadius: 10, border: "1px solid #e2e8f0" }}>
-        <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Додатки:</span>
-        <button className="btn btn-primary" onClick={sendPayLink}>💳 Оплата</button>
-        <button className="btn" onClick={createTTN}>🚚 ТТН Нова Пошта</button>
-        <button className="btn" onClick={issueCheckbox}>🧾 Чек Checkbox</button>
-        <button className="btn" onClick={() => setTab("items")}>📦 Товари ({deal.items.length})</button>
-        <button className="btn" onClick={() => setTab("general")}>💬 Чат / Стрічка</button>
-      </div>
-
-      <div className="tabs">
-        <div className={"tab" + (tab === "general" ? " active" : "")} onClick={() => setTab("general")}>Лента</div>
-        <div className={"tab" + (tab === "items" ? " active" : "")} onClick={() => setTab("items")}>Товары ({deal.items.length})</div>
-        <div className={"tab" + (tab === "cashflow" ? " active" : "")} onClick={() => setTab("cashflow")}>💰 Wallcov Cashflow</div>
+      {/* ─── [9] РЕНДЕР: єдина панель — вкладки + дії (dealbar-unified) ──── */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "12px 0", padding: "8px 10px", background: "linear-gradient(90deg,#f8fafc,#eef2ff)", borderRadius: 10, border: "1px solid #e2e8f0" }}>
+        <button className={"btn" + (tab === "general" ? " btn-primary" : "")} onClick={() => setTab("general")}>💬 Лента / Чат</button>
+        <button className={"btn" + (tab === "items" ? " btn-primary" : "")} onClick={() => setTab("items")}>📦 Товари ({deal.items.length})</button>
+        <button className={"btn" + (tab === "cashflow" ? " btn-primary" : "")} onClick={() => setTab("cashflow")}>💰 Cashflow</button>
+        <div style={{ width: 1, height: 24, background: "#cbd5e1", margin: "0 6px" }} />
+        <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Дії:</span>
+        <button className="btn" onClick={sendPayLink}>💳 Оплата</button>
+        <button className="btn" onClick={createTTN}>🚚 ТТН</button>
+        <button className="btn" onClick={issueCheckbox}>🧾 Checkbox</button>
       </div>
 
       {tab !== "cashflow" ? (
