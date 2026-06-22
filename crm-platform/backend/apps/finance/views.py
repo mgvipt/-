@@ -132,10 +132,14 @@ class FinanceDashboardView(APIView):
 def _period(request):
     from datetime import date
     from django.utils import timezone
+    from rest_framework.exceptions import ValidationError
     now = timezone.now().date()
     d_from = request.GET.get("from") or now.replace(day=1).isoformat()
     d_to = request.GET.get("to") or now.isoformat()
-    return date.fromisoformat(d_from), date.fromisoformat(d_to)
+    try:
+        return date.fromisoformat(d_from), date.fromisoformat(d_to)
+    except (ValueError, TypeError):
+        raise ValidationError({"detail": "Невірний формат дати — очікується YYYY-MM-DD"})
 
 
 class ProfitLossView(APIView):
