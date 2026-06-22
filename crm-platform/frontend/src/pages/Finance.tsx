@@ -56,6 +56,41 @@ const CHANNELS = [
   ["site", "Сайт"], ["salon", "Салон (офлайн)"], ["wholesale", "Опт"], ["designers", "Дизайнери/прораби"],
   ["telegram", "Telegram"], ["call", "Дзвінок"], ["other", "Інше"],
 ];
+/* Поле контрагента зі звʼязком із клієнтами CRM: автокомпліт + створення клієнта */
+function CpField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [res, setRes] = useState<any[]>([]);
+  const [open, setOpen] = useState(false);
+  const [msg, setMsg] = useState("");
+  useEffect(() => {
+    if (!value.trim()) { setRes([]); return; }
+    const t = setTimeout(() => api.get<any>(`/api/contacts/?search=${encodeURIComponent(value)}&page_size=6`).then((d) => setRes(d.results || d)).catch(() => setRes([])), 250);
+    return () => clearTimeout(t);
+  }, [value]);
+  async function createClient() {
+    const parts = value.trim().split(/\s+/);
+    await api.post("/api/contacts/", { first_name: parts[0] || value.trim(), last_name: parts.slice(1).join(" ") });
+    setMsg("✓ Клієнта створено в CRM"); setOpen(false); setTimeout(() => setMsg(""), 2500);
+  }
+  const exact = res.some((c) => `${c.first_name || ""} ${c.last_name || ""}`.trim().toLowerCase() === value.trim().toLowerCase());
+  const inpS = { height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", width: "100%", marginBottom: 4 } as React.CSSProperties;
+  return (
+    <div style={{ position: "relative", marginBottom: 10 }}>
+      <input value={value} onChange={(e) => { onChange(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder="Клієнт / контрагент (звʼязок з CRM)…" style={inpS} />
+      {open && value.trim() && (res.length > 0 || !exact) && (
+        <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 30, maxHeight: 220, overflowY: "auto" }}>
+          {res.map((c) => (
+            <div key={c.id} onClick={() => { onChange(`${c.first_name || ""} ${c.last_name || ""}`.trim()); setOpen(false); }} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
+              👤 {`${c.first_name || ""} ${c.last_name || ""}`.trim() || "—"} {c.phone ? <span className="muted">· {c.phone}</span> : null}
+            </div>
+          ))}
+          {!exact && <div onClick={createClient} style={{ padding: "8px 10px", cursor: "pointer", fontSize: 13, color: "#16a34a", fontWeight: 600 }}>➕ Створити клієнта «{value.trim()}» у CRM</div>}
+        </div>
+      )}
+      {msg && <div style={{ fontSize: 12, color: "#16a34a" }}>{msg}</div>}
+    </div>
+  );
+}
+
 function Journal() {
   const [tx, setTx] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -254,8 +289,8 @@ function Journal() {
                 <label className="label" title="Категорія операції (як у Фінмапі): Онлайн, Салон, Закупка, Оренда, Реклама…">Категорія</label>
                 <input value={f.set_category} onChange={(e) => setF({ ...f, set_category: e.target.value })} list="catlist" placeholder="Напр. Онлайн (Instagram/TikTok/сайт)" style={inp} />
                 <datalist id="catlist">{cats.map((c) => <option key={c.id} value={c.name} />)}</datalist>
-                <label className="label" title="Від кого надійшли / кому сплатили гроші">Мій контрагент</label>
-                <input value={f.counterparty} onChange={(e) => setF({ ...f, counterparty: e.target.value })} placeholder="Клієнт, постачальник, орендодавець…" style={inp} />
+                <label className="label" title="Від кого надійшли / кому сплатили гроші. Звʼязок із клієнтами CRM.">Мій контрагент</label>
+                <CpField value={f.counterparty} onChange={(v) => setF({ ...f, counterparty: v })} />
                 <label className="label">Рахунок</label>
                 <select value={f.account} onChange={(e) => setF({ ...f, account: Number(e.target.value) })} style={inp}>
                   {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru")} ₴)</option>)}
@@ -1135,7 +1170,7 @@ function SpendModal({ fund, accounts, dirs, onClose, onSaved }: any) {
         <input value={cat} onChange={(e) => setCat(e.target.value)} list="spendcat" placeholder="Напр. Закупка, Оренда, Реклама…" style={inp} />
         <datalist id="spendcat">{cats.map((c) => <option key={c.id} value={c.name} />)}</datalist>
         <label className="label">Мій контрагент</label>
-        <input value={counterparty} onChange={(e) => setCounterparty(e.target.value)} placeholder="Постачальник, орендодавець…" style={inp} />
+        <CpField value={counterparty} onChange={setCounterparty} />
         <label className="label">З рахунку</label>
         <select value={account} onChange={(e) => setAccount(e.target.value)} style={inp}>
           <option value="">—</option>{accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
