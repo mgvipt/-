@@ -48,7 +48,7 @@ def send(chat_id, text):
 def sync_chats(max_chats=40, per_chat=40):
     """Підтягнути останні чати + повідомлення з ChatPlace у inbox CRM."""
     from .models import Channel, Conversation, Message
-    from apps.crm.models import Contact
+    from apps.crm.models import Contact, Lead, Funnel
     ch, _ = Channel.objects.get_or_create(name="ChatPlace · Instagram",
                                           defaults={"kind": "instagram", "config": {"chatplace": True}})
     if not (ch.config or {}).get("chatplace"):
@@ -56,6 +56,7 @@ def sync_chats(max_chats=40, per_chat=40):
     data = _mcp("chats_list", {"limit": max_chats})
     items = data.get("items", []) if isinstance(data, dict) else (data or [])
     new_conv = new_msg = 0
+    errors = []
     for it in items:
         cid = it.get("id")
         name = (it.get("clientName") or "Instagram").strip()
@@ -71,21 +72,33 @@ def sync_chats(max_chats=40, per_chat=40):
                                 or Contact.objects.create(first_name=parts[0][:120],
                                                           last_name=(parts[1] if len(parts) > 1 else "")[:120],
                                                           comment="З ChatPlace IG"))
-        msgs = _mcp("chats_messages", {"chatId": cid, "limit": per_chat})
-        if isinstance(msgs, dict):
-            msgs = msgs.get("items") or msgs.get("messages") or []
-        for m in reversed(msgs or []):
-            ext = str(m.get("id"))
-            body = m.get("message") or m.get("text") or ""
-            if not body or body in _SYSTEM_MARKERS or "StatusLabel" in str(body):
-                continue
-            if Message.objects.filter(conversation=conv, external_id=ext).exists():
-                continue
-            side = (m.get("side") or "").lower()
-            direction = "out" if side in _STAFF_SIDES else "in"
-            Message.objects.create(conversation=conv, direction=direction, text=str(body)[:5000],
-                                   external_id=ext, sender_name=("" if direction == "in" else side))
-            new_msg += 1
+            # авто-лід у воронці "Лиды" на кожен новий вхідний IG-чат
+            try:
+                f = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
+                st = f.stages.order_by("order").first() if f else None
+                if f and st:
+                    Lead.objects.create(title=("IG: " + name)[:255], contact=conv.contact,
+                                        funnel=f, stage=st, source="instagram", is_seen=False)
+            except Exception:
+                pass
+        try:
+            msgs = _mcp("chats_messages", {"chatId": cid, "limit": per_chat})
+            if isinstance(msgs, dict):
+                msgs = msgs.get("items") or msgs.get("messages") or []
+            for m in reversed(msgs or []):
+                ext = str(m.get("id"))
+                body = m.get("message") or m.get("text") or ""
+                if not body or body in _SYSTEM_MARKERS or "StatusLabel" in str(body):
+                    continue
+                if Message.objects.filter(conversation=conv, external_id=ext).exists():
+                    continue
+                side = (m.get("side") or "").lower()
+                direction = "out" if side in _STAFF_SIDES else "in"
+                Message.objects.create(conversation=conv, direction=direction, text=str(body)[:5000],
+                                       external_id=ext, sender_name=("" if direction == "in" else side))
+                new_msg += 1
+        except Exception as e:
+            errors.append(str(cid))
         ts = it.get("lastMessageAt")
         if ts:
             try:
@@ -94,4 +107,4 @@ def sync_chats(max_chats=40, per_chat=40):
                 pass
         conv.title = name[:160]
         conv.save()
-    return {"chats": len(items), "new_conversations": new_conv, "new_messages": new_msg}
+    return {"chats": len(items), "new_conversations": new_conv, "new_messages": new_msg, "errors": len(errors)}
