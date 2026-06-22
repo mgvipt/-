@@ -12,11 +12,11 @@ class Account(models.Model):
         return self.name
 
     def balance(self):
-        agg = self.transactions.aggregate(
-            income=Sum("amount", filter=models.Q(direction="in")),
-            expense=Sum("amount", filter=models.Q(direction="out")),
-        )
-        return (agg["income"] or 0) - (agg["expense"] or 0)
+        inc = self.transactions.filter(direction="in").aggregate(s=Sum("amount"))["s"] or 0
+        exp = self.transactions.filter(direction="out").aggregate(s=Sum("amount"))["s"] or 0
+        tr_out = self.transactions.filter(direction="transfer").aggregate(s=Sum("amount"))["s"] or 0
+        tr_in = self.incoming_transfers.aggregate(s=Sum("amount"))["s"] or 0
+        return inc + tr_in - exp - tr_out
 
 
 class Category(models.Model):
@@ -32,10 +32,11 @@ class Category(models.Model):
 
 
 class Transaction(models.Model):
-    DIRECTION = [("in", "Доход"), ("out", "Расход")]
-    direction = models.CharField(max_length=3, choices=DIRECTION)
+    DIRECTION = [("in", "Доход"), ("out", "Расход"), ("transfer", "Переказ")]
+    direction = models.CharField(max_length=10, choices=DIRECTION)
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     account = models.ForeignKey(Account, on_delete=models.PROTECT, related_name="transactions")
+    transfer_account = models.ForeignKey(Account, null=True, blank=True, on_delete=models.PROTECT, related_name="incoming_transfers", help_text="Рахунок-отримувач (для переказу)")
     category = models.ForeignKey(Category, null=True, blank=True, on_delete=models.SET_NULL, related_name="transactions")
     comment = models.CharField(max_length=255, blank=True)
     deal = models.ForeignKey("crm.Deal", null=True, blank=True, on_delete=models.SET_NULL, related_name="transactions")

@@ -35,11 +35,13 @@ def _fin_articles():
 
 
 def _revenue(d_from, d_to):
-    """Выручка = сумма выигранных (won) сделок за период по created_at."""
-    from apps.crm.models import Deal
-    won = Deal.objects.filter(stage__is_won=True,
-                              created_at__date__gte=d_from, created_at__date__lte=d_to)
-    return float(won.aggregate(s=_Sum("amount"))["s"] or 0), won.count()
+    """Выручка = реальні доходи-транзакції (direction=in) за період у гривні.
+    Перекази (transfer) НЕ враховуються. Дані перенесені з ФінМапа."""
+    from .models import Transaction
+    qs = Transaction.objects.filter(direction="in",
+                                    created_at__date__gte=d_from, created_at__date__lte=d_to)
+    rev = float(qs.aggregate(s=_Sum("amount_uah"))["s"] or 0)
+    return rev, qs.count()
 
 
 def compute_pnl(d_from, d_to):

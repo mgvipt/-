@@ -59,7 +59,7 @@ function Journal() {
   const [dirs, setDirs] = useState<any[]>([]);
   const [cats, setCats] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
-  const blank = { id: 0, direction: "out", amount: "", account: 0, fin_article: 0, fin_direction: 0, channel: "", counterparty: "", set_category: "", currency: "UAH", rate: 1, comment: "" };
+  const blank = { id: 0, direction: "out", amount: "", account: 0, transfer_account: 0, fin_article: 0, fin_direction: 0, channel: "", counterparty: "", set_category: "", currency: "UAH", rate: 1, comment: "" };
   const [f, setF] = useState<any>(blank);
   const load = () => api.get<any>("/api/transactions/?page_size=200").then((d) => setTx(d.results || d));
   useEffect(() => {
@@ -73,7 +73,7 @@ function Journal() {
   function openNew(direction: string) { setF({ ...blank, direction }); setOpen(true); }
   function openEdit(t: any) {
     setF({ id: t.id, direction: t.direction, amount: t.amount, account: t.account || 0, fin_article: t.fin_article || 0, fin_direction: t.fin_direction || 0,
-      channel: t.channel || "", counterparty: t.counterparty || "", set_category: t.category_name || "", currency: t.currency || "UAH", rate: t.rate || 1, comment: t.comment || "" });
+      transfer_account: t.transfer_account || 0, channel: t.channel || "", counterparty: t.counterparty || "", set_category: t.category_name || "", currency: t.currency || "UAH", rate: t.rate || 1, comment: t.comment || "" });
     setOpen(true);
   }
   async function fetchRate(ccy: string) {
@@ -83,10 +83,16 @@ function Journal() {
   }
   async function save() {
     if (!Number(f.amount)) return;
-    const body: any = { direction: f.direction, amount: Number(f.amount), account: f.account || accounts[0]?.id, comment: f.comment,
-      channel: f.channel, counterparty: f.counterparty, set_category: f.set_category, currency: f.currency, rate: Number(f.rate) || 1 };
-    body.fin_article = f.fin_article || null;
-    body.fin_direction = f.fin_direction || null;
+    const isT = f.direction === "transfer";
+    const body: any = { direction: f.direction, amount: Number(f.amount), account: f.account || accounts[0]?.id,
+      comment: f.comment, currency: f.currency, rate: Number(f.rate) || 1 };
+    if (isT) {
+      if (!f.transfer_account || f.transfer_account === f.account) { alert("Оберіть інший рахунок-отримувач"); return; }
+      body.transfer_account = f.transfer_account; body.fin_article = null; body.fin_direction = null;
+    } else {
+      body.channel = f.channel; body.counterparty = f.counterparty; body.set_category = f.set_category;
+      body.fin_article = f.fin_article || null; body.fin_direction = f.fin_direction || null; body.transfer_account = null;
+    }
     if (f.id) await api.patch(`/api/transactions/${f.id}/`, body);
     else await api.post("/api/transactions/", body);
     setOpen(false); setF(blank); load();
@@ -103,6 +109,7 @@ function Journal() {
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <button className="btn btn-primary" title="Додати надходження грошей" onClick={() => openNew("in")}>+ Дохід</button>
         <button className="btn btn-light" title="Додати витрату" onClick={() => openNew("out")}>− Витрата</button>
+        <button className="btn btn-light" title="Переказ між рахунками — не рахується ні в дохід, ні у витрати" onClick={() => openNew("transfer")}>⇄ Переказ</button>
         <span className="muted" style={{ marginLeft: "auto", alignSelf: "center", fontSize: 13 }} title="Натисни на будь-яку операцію, щоб подивитись/відредагувати її">Операцій: {tx.length} · клікни на рядок щоб відкрити</span>
       </div>
       <div className="panel" style={{ margin: 0, padding: 0, overflowX: "auto" }}>
@@ -115,11 +122,11 @@ function Journal() {
             {tx.map((t) => (
               <tr key={t.id} onClick={() => openEdit(t)} title="Клікни, щоб переглянути та змінити" style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}>
                 <td className="muted" style={{ padding: "8px 12px" }}>{new Date(t.date || t.created_at).toLocaleDateString("ru")}</td>
-                <td style={{ fontWeight: 600, color: t.direction === "in" ? "#16a34a" : "#dc2626" }}>{t.direction === "in" ? "+" : "−"}{Number(t.amount).toLocaleString("ru")}</td>
+                <td style={{ fontWeight: 600, color: t.direction === "in" ? "#16a34a" : t.direction === "transfer" ? "#6366f1" : "#dc2626" }}>{t.direction === "in" ? "+" : t.direction === "transfer" ? "⇄ " : "−"}{Number(t.amount).toLocaleString("ru")}</td>
                 <td className="muted">{t.currency || "UAH"}</td>
                 <td className="muted">{Number(t.amount_uah || t.amount).toLocaleString("ru")} ₴</td>
-                <td>{t.category_name || <span className="muted">—</span>}</td>
-                <td>{t.counterparty || <span className="muted">—</span>}</td>
+                <td>{t.direction === "transfer" ? <span style={{ color: "#6366f1" }}>→ {t.transfer_account_name}</span> : (t.category_name || <span className="muted">—</span>)}</td>
+                <td>{t.direction === "transfer" ? <span className="muted">переказ</span> : (t.counterparty || <span className="muted">—</span>)}</td>
                 <td className="muted">{t.account_name}</td>
                 <td>{t.fin_article_name || <span className="muted">—</span>}</td>
                 <td>{t.fin_direction_name || <span className="muted">—</span>}</td>
@@ -134,7 +141,7 @@ function Journal() {
       {open && (
         <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 440, maxHeight: "90vh", overflowY: "auto" }}>
-            <h3 style={{ marginTop: 0 }}>{f.id ? "Операція №" + f.id : (f.direction === "in" ? "Дохід" : "Витрата")}</h3>
+            <h3 style={{ marginTop: 0 }}>{f.id ? "Операція №" + f.id : (f.direction === "in" ? "Дохід" : f.direction === "transfer" ? "Переказ між рахунками" : "Витрата")}</h3>
             <div style={{ display: "flex", gap: 8 }}>
               <div style={{ flex: 2 }}>
                 <label className="label">Сума</label>
@@ -154,29 +161,47 @@ function Journal() {
                 <span style={{ fontWeight: 600, color: "#0ea5e9" }}>= {money(grnEq)}</span>
               </div>
             )}
-            <label className="label" title="Категорія операції (як у Фінмапі): Онлайн, Салон, Закупка, Оренда, Реклама…">Категорія</label>
-            <input value={f.set_category} onChange={(e) => setF({ ...f, set_category: e.target.value })} list="catlist" placeholder="Напр. Онлайн (Instagram/TikTok/сайт)" style={inp} />
-            <datalist id="catlist">{cats.map((c) => <option key={c.id} value={c.name} />)}</datalist>
-            <label className="label" title="Від кого надійшли / кому сплатили гроші">Мій контрагент</label>
-            <input value={f.counterparty} onChange={(e) => setF({ ...f, counterparty: e.target.value })} placeholder="Клієнт, постачальник, орендодавець…" style={inp} />
-            <label className="label">Рахунок</label>
-            <select value={f.account} onChange={(e) => setF({ ...f, account: Number(e.target.value) })} style={inp}>
-              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru")} ₴)</option>)}
-            </select>
-            <label className="label" title="Фонд для аналітики та точки беззбитковості">Фонд (стаття)</label>
-            <select value={f.fin_article} onChange={(e) => setF({ ...f, fin_article: Number(e.target.value) })} style={inp}>
-              <option value={0}>— без фонду —</option>
-              {arts.map((a) => <option key={a.id} value={a.id}>{a.category_display}: {a.name}</option>)}
-            </select>
-            <label className="label" title="Напрямок (проект): звідки/куди гроші">Напрямок</label>
-            <select value={f.fin_direction} onChange={(e) => setF({ ...f, fin_direction: Number(e.target.value) })} style={inp}>
-              <option value={0}>— без напрямку —</option>
-              {dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-            <label className="label" title="Канал/джерело надходження">Канал</label>
-            <select value={f.channel} onChange={(e) => setF({ ...f, channel: e.target.value })} style={inp}>
-              {CHANNELS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-            </select>
+            {f.direction === "transfer" ? (
+              <>
+                <label className="label" title="Звідки списуються гроші">З рахунку</label>
+                <select value={f.account} onChange={(e) => setF({ ...f, account: Number(e.target.value) })} style={inp}>
+                  <option value={0}>—</option>
+                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru")} ₴)</option>)}
+                </select>
+                <label className="label" title="Куди надходять гроші">На рахунок (отримувач)</label>
+                <select value={f.transfer_account} onChange={(e) => setF({ ...f, transfer_account: Number(e.target.value) })} style={inp}>
+                  <option value={0}>—</option>
+                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru")} ₴)</option>)}
+                </select>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>↔ Переказ не рахується ні в дохід, ні у витрати — лише рух між рахунками.</div>
+              </>
+            ) : (
+              <>
+                <label className="label" title="Категорія операції (як у Фінмапі): Онлайн, Салон, Закупка, Оренда, Реклама…">Категорія</label>
+                <input value={f.set_category} onChange={(e) => setF({ ...f, set_category: e.target.value })} list="catlist" placeholder="Напр. Онлайн (Instagram/TikTok/сайт)" style={inp} />
+                <datalist id="catlist">{cats.map((c) => <option key={c.id} value={c.name} />)}</datalist>
+                <label className="label" title="Від кого надійшли / кому сплатили гроші">Мій контрагент</label>
+                <input value={f.counterparty} onChange={(e) => setF({ ...f, counterparty: e.target.value })} placeholder="Клієнт, постачальник, орендодавець…" style={inp} />
+                <label className="label">Рахунок</label>
+                <select value={f.account} onChange={(e) => setF({ ...f, account: Number(e.target.value) })} style={inp}>
+                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru")} ₴)</option>)}
+                </select>
+                <label className="label" title="Фонд для аналітики та точки беззбитковості">Фонд (стаття)</label>
+                <select value={f.fin_article} onChange={(e) => setF({ ...f, fin_article: Number(e.target.value) })} style={inp}>
+                  <option value={0}>— без фонду —</option>
+                  {arts.map((a) => <option key={a.id} value={a.id}>{a.category_display}: {a.name}</option>)}
+                </select>
+                <label className="label" title="Напрямок (проект): звідки/куди гроші">Напрямок</label>
+                <select value={f.fin_direction} onChange={(e) => setF({ ...f, fin_direction: Number(e.target.value) })} style={inp}>
+                  <option value={0}>— без напрямку —</option>
+                  {dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+                <label className="label" title="Канал/джерело надходження">Канал</label>
+                <select value={f.channel} onChange={(e) => setF({ ...f, channel: e.target.value })} style={inp}>
+                  {CHANNELS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                </select>
+              </>
+            )}
             <label className="label">Коментар</label>
             <input value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} style={inp} />
             {f.id ? <Attachments txId={f.id} /> : <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>📎 Збережи операцію — тоді зможеш прикріпити фото/скан чека.</div>}
@@ -564,6 +589,7 @@ function Planning() {
   const [alloc, setAlloc] = useState<any>(null); // {fund} модалка ручного розподілу
   const [auto, setAuto] = useState(false);       // модалка авто-розподілу виручки
   const [openAlloc, setOpenAlloc] = useState<number | null>(null); // розгорнутий список розподілів фонду
+  const [spend, setSpend] = useState<any>(null); // фонд, з якого робимо розхід
   const load = () => api.get<any>(`/api/finance/funds/?period=${period}`).then(setData);
   useEffect(() => { load(); }, [period]);
   useEffect(() => { api.get<any>("/api/fin-directions/?page_size=100").then((d) => setDirs(d.results || d)); }, []);
@@ -580,6 +606,7 @@ function Planning() {
           <span style={{ width: 110, textAlign: "right", color: "#ef4444" }}>−{money(f.spent)}</span>
           <span style={{ width: 120, textAlign: "right", fontWeight: 700, color: neg ? "#dc2626" : "#059669" }}>{money(f.balance)}</span>
           <button className="btn btn-light" style={{ fontSize: 11, padding: "3px 8px", marginLeft: 8 }} title="Покласти грошей у цей фонд-конверт" onClick={() => setAlloc(f)}>+ розподіл</button>
+          <button className="btn btn-light" style={{ fontSize: 11, padding: "3px 8px", marginLeft: 4, color: "#dc2626" }} title="Зробити витрату з цього фонду (наповнює «Витрачено»)" onClick={() => setSpend(f)}>− розхід</button>
         </div>
         {open && <AllocList fundId={f.id} period={period} onChanged={load} />}
         {(f.subfunds || []).map((x: any) => <FundRow key={x.id} f={x} sub />)}
@@ -590,7 +617,7 @@ function Planning() {
   if (!data) return <div className="spin">Завантаження фондів…</div>;
   return (
     <>
-      <div className="note">💼 Гроші приходять на рахунок → розподіляєш по фондах-конвертах. У кожному фонді видно <b>залишок</b>, з нього робиш розхід. Порядок: <b>ФВ → ФМ → ФСКД</b>.</div>
+      <div className="note">💼 Гроші приходять на рахунок → розподіляєш по фондах-конвертах. У кожному фонді: <b>Розподілено</b> (скільки поклав) − <b>Витрачено</b> (скільки списав) = <b>Залишок</b>. Порядок: <b>ФВ → ФМ → ФСКД</b>.<br/><span style={{fontSize:12}}>📌 <b>«Витрачено»</b> наповнюється, коли створюєш витрату з цим фондом — кнопкою «<b>− розхід</b>» тут або у Журналі обираєш Фонд = цей. Тоді сума зʼявляється у стовпці.</span></div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "12px 0" }}>
         <span className="muted" style={{ fontSize: 13 }}>Місяць:</span>
         <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px" }} />
@@ -605,8 +632,12 @@ function Planning() {
             <div style={{ fontSize: 20, fontWeight: 700 }}>{money(a.balance)}</div>
           </div>
         ))}
+        <div className="panel" style={{ flex: "1 1 150px", padding: "10px 12px", background: "#eff6ff" }}>
+          <div className="muted" style={{ fontSize: 12 }} title="Гроші на рахунках, ще НЕ розкладені по фондах">До розподілу</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: "#2563eb" }}>{money(data.accounts.reduce((a: number, x: any) => a + x.balance, 0) - data.totals.balance)}</div>
+        </div>
         <div className="panel" style={{ flex: "1 1 150px", padding: "10px 12px", background: "#f0fdf4" }}>
-          <div className="muted" style={{ fontSize: 12 }}>Залишок у фондах</div>
+          <div className="muted" style={{ fontSize: 12 }} title="Сума залишків у всіх фондах-конвертах">Залишок у фондах</div>
           <div style={{ fontSize: 20, fontWeight: 700, color: "#059669" }}>{money(data.totals.balance)}</div>
         </div>
       </div>
@@ -626,6 +657,7 @@ function Planning() {
 
       {alloc && <AllocModal fund={alloc} period={period} accounts={data.accounts} dirs={dirs} onClose={() => setAlloc(null)} onSaved={() => { setAlloc(null); load(); }} />}
       {auto && <AutoModal period={period} accounts={data.accounts} dirs={dirs} onClose={() => setAuto(false)} onSaved={() => { setAuto(false); load(); }} />}
+      {spend && <SpendModal fund={spend} accounts={data.accounts} dirs={dirs} onClose={() => setSpend(null)} onSaved={() => { setSpend(null); load(); }} />}
     </>
   );
 }
@@ -648,6 +680,48 @@ function AllocList({ fundId, period, onChanged }: { fundId: number; period: stri
           <span style={{ color: "#ef4444", cursor: "pointer", paddingLeft: 12 }} title="Прибрати цей розподіл" onClick={() => del(a.id)}>✕</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function SpendModal({ fund, accounts, dirs, onClose, onSaved }: any) {
+  const [amount, setAmount] = useState("");
+  const [account, setAccount] = useState(accounts[0]?.id || "");
+  const [direction, setDirection] = useState("");
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    if (!Number(amount)) return;
+    setBusy(true);
+    try {
+      await api.post("/api/transactions/", { direction: "out", amount: Number(amount), account: account || null,
+        fin_article: fund.id, fin_direction: direction || null, currency: "UAH", rate: 1, comment: comment || `Розхід: ${fund.name}` });
+      onSaved();
+    } finally { setBusy(false); }
+  }
+  const inp = { width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10 } as React.CSSProperties;
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 22, width: 420 }}>
+        <h3 style={{ marginTop: 0 }}>Розхід з фонду</h3>
+        <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>💸 {fund.name} · витрата зменшить залишок фонду й наповнить «Витрачено».</div>
+        <label className="label">Сума, ₴</label>
+        <input type="number" value={amount} autoFocus onChange={(e) => setAmount(e.target.value)} style={inp} />
+        <label className="label">З рахунку</label>
+        <select value={account} onChange={(e) => setAccount(e.target.value)} style={inp}>
+          <option value="">—</option>{accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        <label className="label">Напрямок (необов.)</label>
+        <select value={direction} onChange={(e) => setDirection(e.target.value)} style={inp}>
+          <option value="">— усі —</option>{dirs.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+        <label className="label">Коментар</label>
+        <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="За що витрата" style={inp} />
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-light" style={{ flex: 1 }} onClick={onClose}>Скасувати</button>
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={save} disabled={busy}>{busy ? "…" : "Провести розхід"}</button>
+        </div>
+      </div>
     </div>
   );
 }
