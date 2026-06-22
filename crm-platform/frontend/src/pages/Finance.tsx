@@ -5,6 +5,8 @@
  * ========================================================================== */
 import { Fragment, useEffect, useState } from "react";
 import { api } from "../api";
+import { useNavigate } from "react-router-dom";
+function useNav() { return useNavigate(); }
 
 const money = (n: number) => Math.round(n || 0).toLocaleString("ru") + " ₴";
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -12,8 +14,8 @@ const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.g
 const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`; };
 
 export default function Finance() {
-  const [tab, setTab] = useState<"dash" | "journal" | "pnl" | "be" | "dir" | "plan" | "grow" | "salary" | "mplan" | "model">("dash");
-  const tabs: [string, string][] = [["dash", "💰 Дашборд"], ["journal", "🧾 Журнал"], ["pnl", "📊 P&L (ATM)"], ["be", "🎯 Точка беззбитковості"], ["dir", "🗂 Напрямки (проекти)"], ["plan", "💼 Планування"], ["grow", "🚀 Зростання"], ["salary", "💰 ЗП/KPI"], ["mplan", "🎯 Плани"], ["model", "⚙️ Фінмодель"]];
+  const [tab, setTab] = useState<"dash" | "journal" | "pnl" | "be" | "dir" | "plan" | "grow" | "salary" | "mplan" | "ref" | "model">("dash");
+  const tabs: [string, string][] = [["dash", "💰 Дашборд"], ["journal", "🧾 Журнал"], ["pnl", "📊 P&L (ATM)"], ["be", "🎯 Точка беззбитковості"], ["dir", "🗂 Напрямки (проекти)"], ["plan", "💼 Планування"], ["grow", "🚀 Зростання"], ["salary", "💰 ЗП/KPI"], ["mplan", "🎯 Плани"], ["ref", "📚 Довідники"], ["model", "⚙️ Фінмодель"]];
   return (
     <div className="scroll pad fade">
       <div className="note warn">🔒 Розділ бачать тільки ролі з правом <b>finance.view</b>.</div>
@@ -29,6 +31,7 @@ export default function Finance() {
       {tab === "grow" && <Growth />}
       {tab === "salary" && <Salary />}
       {tab === "mplan" && <MPlans />}
+      {tab === "ref" && <Reference />}
       {tab === "model" && <FinModel />}
     </div>
   );
@@ -576,6 +579,145 @@ function DirectionJournal({ directionId, from, to }: { directionId: number; from
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+/* ─── ВКЛАДКА: ДОВІДНИКИ (рахунки/категорії/напрямки/контрагенти/канали/валюти) ─ */
+function Reference() {
+  const [sub, setSub] = useState<"acc" | "cat" | "dir" | "cp" | "chan" | "ccy">("acc");
+  const subs: [string, string][] = [["acc", "🏦 Рахунки"], ["cat", "🏷 Категорії"], ["dir", "🗂 Напрямки"], ["cp", "👥 Контрагенти"], ["chan", "📡 Канали"], ["ccy", "💱 Валюти"]];
+  return (
+    <>
+      <div className="note">📚 Довідники CRM. Усе синхронно: зміни тут одразу доступні в Журналі, Плануванні й Аналітиці. Контрагенти підтягуються з операцій і звʼязані з клієнтами CRM.</div>
+      <div style={{ display: "flex", gap: 6, margin: "10px 0", flexWrap: "wrap" }}>
+        {subs.map(([k, l]) => <button key={k} className={sub === k ? "btn btn-primary" : "btn btn-light"} style={{ fontSize: 12.5 }} onClick={() => setSub(k as any)}>{l}</button>)}
+      </div>
+      {sub === "acc" && <RefAccounts />}
+      {sub === "cat" && <RefCategories />}
+      {sub === "dir" && <RefDirections />}
+      {sub === "cp" && <RefCounterparties />}
+      {sub === "chan" && <RefConst title="Канали продажу/джерела" items={CHANNELS.filter((c) => c[0]).map((c) => c[1])} hint="Канали зашиті в системі — обираються у картці операції та рахуються в аналітиці по каналах." />}
+      {sub === "ccy" && <RefConst title="Валюти" items={["UAH — гривня", "USD — долар", "EUR — євро", "PLN — злотий", "GBP — фунт"]} hint="Курс підтягується з НБУ автоматично при виборі валюти в операції." />}
+    </>
+  );
+}
+
+const tdS = { padding: "7px 10px", borderBottom: "1px solid #f1f5f9" } as React.CSSProperties;
+const inpS = { height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" } as React.CSSProperties;
+
+function RefAccounts() {
+  const [items, setItems] = useState<any[]>([]);
+  const [nn, setNn] = useState(""); const [nk, setNk] = useState("bank"); const [err, setErr] = useState("");
+  const load = () => api.get<any>("/api/accounts/").then((d) => setItems(d.results || d));
+  useEffect(() => { load(); }, []);
+  async function add() { if (!nn.trim()) return; await api.post("/api/accounts/", { name: nn.trim(), kind: nk, is_active: true }); setNn(""); load(); }
+  async function save(a: any, p: any) { await api.patch(`/api/accounts/${a.id}/`, p); load(); }
+  async function del(a: any) { setErr(""); try { await api.del(`/api/accounts/${a.id}/`); load(); } catch { setErr(`«${a.name}» має операції — видалення заблоковано. Зроби неактивним.`); } }
+  return (
+    <div className="panel" style={{ margin: 0 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <input value={nn} onChange={(e) => setNn(e.target.value)} placeholder="Новий рахунок / каса" style={{ ...inpS, flex: 1 }} />
+        <select value={nk} onChange={(e) => setNk(e.target.value)} style={inpS}><option value="bank">Банк</option><option value="cash">Готівка</option><option value="acquiring">Еквайринг</option></select>
+        <button className="btn btn-primary" onClick={add}>+ Додати</button>
+      </div>
+      {err && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 8 }}>{err}</div>}
+      <table style={{ width: "100%", fontSize: 13 }}>
+        <thead><tr><th style={{ textAlign: "left", ...tdS }}>Назва</th><th>Тип</th><th>Баланс</th><th>Активний</th><th></th></tr></thead>
+        <tbody>{items.map((a) => (
+          <tr key={a.id}>
+            <td style={tdS}><input defaultValue={a.name} onBlur={(e) => e.target.value !== a.name && save(a, { name: e.target.value })} style={{ ...inpS, width: "100%", border: "1px solid transparent" }} /></td>
+            <td style={{ ...tdS, textAlign: "center" }}>{a.kind}</td>
+            <td style={{ ...tdS, textAlign: "right", fontWeight: 600 }}>{money(a.balance)}</td>
+            <td style={{ ...tdS, textAlign: "center" }}><input type="checkbox" checked={a.is_active} onChange={(e) => save(a, { is_active: e.target.checked })} /></td>
+            <td style={{ ...tdS, textAlign: "center" }}><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => del(a)}>✕</span></td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function RefCategories() {
+  const [items, setItems] = useState<any[]>([]);
+  const [nn, setNn] = useState(""); const [nd, setNd] = useState("out");
+  const load = () => api.get<any>("/api/categories/?page_size=200").then((d) => setItems(d.results || d));
+  useEffect(() => { load(); }, []);
+  async function add() { if (!nn.trim()) return; await api.post("/api/categories/", { name: nn.trim(), direction: nd }); setNn(""); load(); }
+  async function del(id: number) { await api.del(`/api/categories/${id}/`); load(); }
+  return (
+    <div className="panel" style={{ margin: 0 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <input value={nn} onChange={(e) => setNn(e.target.value)} placeholder="Нова категорія" style={{ ...inpS, flex: 1 }} />
+        <select value={nd} onChange={(e) => setNd(e.target.value)} style={inpS}><option value="in">Дохід</option><option value="out">Витрата</option></select>
+        <button className="btn btn-primary" onClick={add}>+ Додати</button>
+      </div>
+      <table style={{ width: "100%", fontSize: 13 }}>
+        <thead><tr><th style={{ textAlign: "left", ...tdS }}>Назва</th><th>Тип</th><th></th></tr></thead>
+        <tbody>{items.map((c) => (
+          <tr key={c.id}><td style={tdS}>{c.name}</td><td style={{ ...tdS, textAlign: "center" }}>{c.direction === "in" ? "Дохід" : "Витрата"}</td>
+            <td style={{ ...tdS, textAlign: "center" }}><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => del(c.id)}>✕</span></td></tr>
+        ))}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function RefDirections() {
+  const [items, setItems] = useState<any[]>([]);
+  const [nn, setNn] = useState("");
+  const load = () => api.get<any>("/api/fin-directions/?page_size=100").then((d) => setItems(d.results || d));
+  useEffect(() => { load(); }, []);
+  async function add() { if (!nn.trim()) return; await api.post("/api/fin-directions/", { name: nn.trim(), active: true }); setNn(""); load(); }
+  async function save(d: any, p: any) { await api.patch(`/api/fin-directions/${d.id}/`, p); load(); }
+  async function del(id: number) { if (!confirm("Видалити напрямок? Операції лишаться, але втратять привʼязку.")) return; await api.del(`/api/fin-directions/${id}/`); load(); }
+  return (
+    <div className="panel" style={{ margin: 0 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <input value={nn} onChange={(e) => setNn(e.target.value)} placeholder="Новий напрямок (проект)" style={{ ...inpS, flex: 1 }} />
+        <button className="btn btn-primary" onClick={add}>+ Додати</button>
+      </div>
+      <table style={{ width: "100%", fontSize: 13 }}>
+        <thead><tr><th style={{ textAlign: "left", ...tdS }}>Напрямок</th><th>План дохід</th><th>План витрати</th><th></th></tr></thead>
+        <tbody>{items.map((d) => (
+          <tr key={d.id}>
+            <td style={tdS}><input defaultValue={d.name} onBlur={(e) => e.target.value !== d.name && save(d, { name: e.target.value })} style={{ ...inpS, width: "100%", border: "1px solid transparent" }} /></td>
+            <td style={{ ...tdS, textAlign: "right" }}><input type="number" defaultValue={d.plan_income} onBlur={(e) => save(d, { plan_income: Number(e.target.value) })} style={{ ...inpS, width: 110, textAlign: "right" }} /></td>
+            <td style={{ ...tdS, textAlign: "right" }}><input type="number" defaultValue={d.plan_expense} onBlur={(e) => save(d, { plan_expense: Number(e.target.value) })} style={{ ...inpS, width: 110, textAlign: "right" }} /></td>
+            <td style={{ ...tdS, textAlign: "center" }}><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => del(d.id)}>✕</span></td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function RefCounterparties() {
+  const [items, setItems] = useState<any[]>([]);
+  const nav = useNav();
+  useEffect(() => { api.get<any>("/api/finance/counterparties/").then(setItems).catch(() => setItems([])); }, []);
+  return (
+    <div className="panel" style={{ margin: 0 }}>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>Контрагенти зведені з операцій. 🔗 = звʼязаний із клієнтом CRM (клік відкриє).</div>
+      <table style={{ width: "100%", fontSize: 13 }}>
+        <thead><tr><th style={{ textAlign: "left", ...tdS }}>Контрагент</th><th>Операцій</th><th>Сума</th><th>Клієнт CRM</th></tr></thead>
+        <tbody>{items.slice(0, 300).map((c, i) => (
+          <tr key={i}><td style={tdS}>{c.name}</td><td style={{ ...tdS, textAlign: "center" }}>{c.count}</td>
+            <td style={{ ...tdS, textAlign: "right" }}>{money(c.total)}</td>
+            <td style={{ ...tdS, textAlign: "center" }}>{c.contact_id ? <span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/clients?contact=${c.contact_id}`)}>🔗 відкрити</span> : <span className="muted">—</span>}</td></tr>
+        ))}</tbody>
+      </table>
+      {items.length > 300 && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Показано перші 300 із {items.length}.</div>}
+    </div>
+  );
+}
+
+function RefConst({ title, items, hint }: { title: string; items: string[]; hint: string }) {
+  return (
+    <div className="panel" style={{ margin: 0 }}>
+      <b style={{ fontSize: 14 }}>{title}</b>
+      <div className="muted" style={{ fontSize: 12, margin: "4px 0 10px" }}>{hint}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{items.map((x) => <span key={x} style={{ background: "#f1f5f9", borderRadius: 14, padding: "5px 12px", fontSize: 13 }}>{x}</span>)}</div>
     </div>
   );
 }

@@ -436,3 +436,25 @@ class FxImpactView(APIView):
             "revenue": round(revenue), "margin_pct": pnl["margin_pct"],
             "scenarios": scenarios, "recommendations": recs,
         })
+
+
+class CounterpartiesView(APIView):
+    """Довідник контрагентів — зведення з операцій (унікальні + к-сть + сума).
+    GET /api/finance/counterparties/"""
+    permission_classes = [FinancePerm]
+
+    def get(self, request):
+        from django.db.models import Count, Sum
+        rows = (Transaction.objects.exclude(counterparty="")
+                .values("counterparty")
+                .annotate(n=Count("id"), total=Sum("amount_uah"))
+                .order_by("-n"))
+        # звʼязок із клієнтами CRM (по імені/назві)
+        from apps.crm.models import Contact
+        contact_names = {str(c).strip().lower(): c.id for c in Contact.objects.all()}
+        out = []
+        for r in rows:
+            nm = r["counterparty"]
+            out.append({"name": nm, "count": r["n"], "total": round(float(r["total"] or 0)),
+                        "contact_id": contact_names.get(nm.strip().lower())})
+        return Response(out)
