@@ -128,6 +128,7 @@ class DealItem(models.Model):
     product = models.ForeignKey("warehouse.Product", on_delete=models.PROTECT, related_name="deal_items")
     quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1)
     price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    reserved = models.BooleanField(default=False, help_text="Товар зарезервовано під цю сделку")
 
     @property
     def total(self):

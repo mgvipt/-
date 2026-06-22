@@ -4,11 +4,12 @@ from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payme
 
 class DealItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source="product.name", read_only=True)
+    product_stock = serializers.DecimalField(source="product.stock", max_digits=12, decimal_places=2, read_only=True, default=0)
     total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
 
     class Meta:
         model = DealItem
-        fields = ["id", "deal", "product", "product_name", "quantity", "price", "total"]
+        fields = ["id", "deal", "product", "product_name", "product_stock", "quantity", "price", "total", "reserved"]
         read_only_fields = ["deal"]
 
 

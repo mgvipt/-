@@ -155,8 +155,15 @@ class DealViewSet(ScopedByRoleMixin, viewsets.ModelViewSet):
         product = Product.objects.get(pk=request.data["product"])
         qty = Decimal(str(request.data.get("quantity", 1)))
         price = Decimal(str(request.data.get("price", product.price)))
-        DealItem.objects.create(deal=deal, product=product, quantity=qty, price=price)
+        DealItem.objects.create(deal=deal, product=product, quantity=qty, price=price, reserved=bool(request.data.get("reserved")))
         self._recalc_amount(deal)
+        return Response(DealDetailSerializer(deal, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
+    def set_reserve(self, request, pk=None):
+        """Перемкнути резерв позиції: {item, reserved}."""
+        deal = self.get_object()
+        DealItem.objects.filter(deal=deal, pk=request.data.get("item")).update(reserved=bool(request.data.get("reserved")))
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])

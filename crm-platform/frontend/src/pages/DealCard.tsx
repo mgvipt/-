@@ -59,6 +59,7 @@ export default function DealCard() {
   const [tab, setTab] = useState<"general" | "items">("general");
   const [addProd, setAddProd] = useState(0);
   const [addQty, setAddQty] = useState(1);
+  const [psearch, setPsearch] = useState(""); const [presults, setPresults] = useState<Product[]>([]); const [psel, setPsel] = useState<Product | null>(null); const [addReserve, setAddReserve] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [payAmount, setPayAmount] = useState("");
   const [msg, setMsg] = useState("");
@@ -92,9 +93,17 @@ export default function DealCard() {
   async function setStage(stageId: number) { await patch({ stage: stageId }); }
 
   async function addItem() {
-    if (!addProd) return;
-    setDeal(await api.post<Deal>(`/api/deals/${id}/add_item/`, { product: addProd, quantity: addQty }));
-    setAddProd(0); setAddQty(1);
+    if (!psel) return;
+    setDeal(await api.post<Deal>(`/api/deals/${id}/add_item/`, { product: psel.id, quantity: addQty, reserved: addReserve }));
+    setPsel(null); setPsearch(""); setPresults([]); setAddQty(1); setAddReserve(false);
+  }
+  useEffect(() => {
+    if (!psearch.trim() || psel) { setPresults([]); return; }
+    const t = setTimeout(() => api.get<Paginated<Product>>(`/api/products/?search=${encodeURIComponent(psearch)}&page_size=12`).then((d) => setPresults(d.results)).catch(() => setPresults([])), 250);
+    return () => clearTimeout(t);
+  }, [psearch, psel]);
+  async function toggleReserve(it: any) {
+    setDeal(await api.post<Deal>(`/api/deals/${id}/set_reserve/`, { item: it.id, reserved: !it.reserved }));
   }
   async function removeItem(item: number) { setDeal(await api.post<Deal>(`/api/deals/${id}/remove_item/`, { item })); }
 
@@ -174,11 +183,14 @@ export default function DealCard() {
         </div>
       )}
 
-      {/* ─── [9] РЕНДЕР: быстрые действия «под рукой» ──────────────────── */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "10px 0 4px" }}>
-        <button className="btn btn-primary" onClick={sendPayLink}>💳 Ссылка на оплату</button>
-        <button className="btn" onClick={createTTN}>🚚 Создать ТТН</button>
+      {/* ─── [9] РЕНДЕР: підшапка-додатки (як у Бітриксі/Cashflow) ──────── */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "10px 0 4px", padding: "8px 10px", background: "linear-gradient(90deg,#f8fafc,#eef2ff)", borderRadius: 10, border: "1px solid #e2e8f0" }}>
+        <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Додатки:</span>
+        <button className="btn btn-primary" onClick={sendPayLink}>💳 Оплата</button>
+        <button className="btn" onClick={createTTN}>🚚 ТТН Нова Пошта</button>
         <button className="btn" onClick={issueCheckbox}>🧾 Чек Checkbox</button>
+        <button className="btn" onClick={() => setTab("items")}>📦 Товари ({deal.items.length})</button>
+        <button className="btn" onClick={() => setTab("general")}>💬 Чат / Стрічка</button>
       </div>
 
       <div className="tabs">
@@ -291,20 +303,35 @@ export default function DealCard() {
             /* 11.2 Товары в сделке (добавить/удалить → пересчёт суммы на бэке) */
             <div className="panel">
               <div className="label">Товары в сделке</div>
-              <div style={{ display: "flex", gap: 6, margin: "8px 0 12px" }}>
-                <select value={addProd} onChange={(e) => setAddProd(Number(e.target.value))} style={{ flex: 1, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px" }}>
-                  <option value={0}>+ добавить товар…</option>
-                  {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({fmt(Number(p.price))} ₴, ост. {p.stock})</option>)}
-                </select>
-                <input type="number" value={addQty} min={1} onChange={(e) => setAddQty(Number(e.target.value))} style={{ width: 64, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px" }} />
-                <button className="btn btn-primary" onClick={addItem}>Добавить</button>
+              <div className="prod-search" style={{ position: "relative", margin: "8px 0 12px" }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input value={psearch} onChange={(e) => { setPsearch(e.target.value); setPsel(null); }} placeholder="🔍 Пошук товару з номенклатури за назвою…" style={{ flex: 1, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px" }} />
+                  <input type="number" value={addQty} min={1} onChange={(e) => setAddQty(Number(e.target.value))} title="Кількість" style={{ width: 56, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px" }} />
+                  <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, whiteSpace: "nowrap" }} title="Зарезервувати товар під сделку"><input type="checkbox" checked={addReserve} onChange={(e) => setAddReserve(e.target.checked)} />Резерв</label>
+                  <button className="btn btn-primary" onClick={addItem} disabled={!psel}>Додати</button>
+                </div>
+                {presults.length > 0 && (
+                  <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 260, overflowY: "auto" }}>
+                    {presults.map((p) => (
+                      <div key={p.id} onClick={() => { setPsel(p); setPsearch(p.name); setPresults([]); }} style={{ padding: "8px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
+                        <b>{p.name}</b> <span className="muted">· {fmt(Number(p.price))} ₴ · ост. {(p as any).stock}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {psel && <div style={{ fontSize: 12, color: "#16a34a", marginTop: 4 }}>✓ Обрано: {psel.name} · {fmt(Number(psel.price))} ₴ · сума {fmt(Number(psel.price) * addQty)} ₴</div>}
               </div>
               {deal.items.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>Товаров пока нет.</div> : (
-                <table><thead><tr><th>Товар</th><th>Кол-во</th><th>Цена</th><th>Сумма</th><th></th></tr></thead>
-                  <tbody>{deal.items.map((it) => (
-                    <tr key={it.id}><td><span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/warehouse?p=${it.product}`)}>{it.product_name}</span></td><td>{Number(it.quantity)}</td><td>{fmt(Number(it.price))} ₴</td><td><b>{fmt(Number(it.total))} ₴</b></td>
+                <table><thead><tr><th>Товар</th><th>Кол-во</th><th>Залишок</th><th>Цена</th><th>Сумма</th><th>Резерв</th><th></th></tr></thead>
+                  <tbody>{deal.items.map((it: any) => {
+                    const low = it.product_stock != null && Number(it.quantity) > Number(it.product_stock);
+                    return (
+                    <tr key={it.id}><td><span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/warehouse?p=${it.product}`)}>{it.product_name}</span></td><td>{Number(it.quantity)}</td>
+                      <td style={{ color: low ? "#dc2626" : "#64748b" }} title={low ? "Не вистачає на складі" : ""}>{it.product_stock != null ? Number(it.product_stock) : "—"}{low ? " ⚠" : ""}</td>
+                      <td>{fmt(Number(it.price))} ₴</td><td><b>{fmt(Number(it.total))} ₴</b></td>
+                      <td style={{ textAlign: "center" }}><input type="checkbox" checked={!!it.reserved} onChange={() => toggleReserve(it)} title="Зарезервувати під сделку" /></td>
                       <td><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => removeItem(it.id)}>✕</span></td></tr>
-                  ))}</tbody>
+                  ); })}</tbody>
                 </table>
               )}
             </div>
