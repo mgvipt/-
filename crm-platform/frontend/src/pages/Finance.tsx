@@ -65,7 +65,12 @@ function Journal() {
   const [open, setOpen] = useState(false);
   const blank = { id: 0, direction: "out", amount: "", account: 0, transfer_account: 0, fin_article: 0, fin_direction: 0, channel: "", counterparty: "", set_category: "", currency: "UAH", rate: 1, comment: "" };
   const [f, setF] = useState<any>(blank);
-  const load = () => api.get<any>("/api/transactions/?page_size=200").then((d) => setTx(d.results || d));
+  const [ff, setFf] = useState(""); const [ft, setFt] = useState(""); const [fq, setFq] = useState("");
+  const load = () => {
+    const qp = new URLSearchParams({ page_size: "500" });
+    if (ff) qp.set("from", ff); if (ft) qp.set("to", ft); if (fq.trim()) qp.set("q", fq.trim());
+    return api.get<any>(`/api/transactions/?${qp.toString()}`).then((d) => setTx(d.results || d));
+  };
   useEffect(() => {
     load();
     api.get<any>("/api/accounts/").then((d) => setAccounts(d.results || d));
@@ -110,11 +115,19 @@ function Journal() {
 
   return (
     <>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }} className="journal-filter">
+        <input value={fq} onChange={(e) => setFq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="🔍 Пошук: сума, контрагент, коментар, рахунок…" style={{ flex: "1 1 240px", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
+        <span className="muted" style={{ fontSize: 12 }}>Період:</span>
+        <input type="date" value={ff} onChange={(e) => setFf(e.target.value)} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 6px" }} />
+        <input type="date" value={ft} onChange={(e) => setFt(e.target.value)} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 6px" }} />
+        <button className="btn btn-primary" onClick={() => load()}>Знайти</button>
+        <button className="btn btn-light" onClick={() => { setFq(""); setFf(""); setFt(""); setTimeout(load, 0); }}>Скинути</button>
+      </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <button className="btn btn-primary" title="Додати надходження грошей" onClick={() => openNew("in")}>+ Дохід</button>
         <button className="btn btn-light" title="Додати витрату" onClick={() => openNew("out")}>− Витрата</button>
         <button className="btn btn-light" title="Переказ між рахунками — не рахується ні в дохід, ні у витрати" onClick={() => openNew("transfer")}>⇄ Переказ</button>
-        <span className="muted" style={{ marginLeft: "auto", alignSelf: "center", fontSize: 13 }} title="Натисни на будь-яку операцію, щоб подивитись/відредагувати її">Операцій: {tx.length} · клікни на рядок щоб відкрити</span>
+        <span className="muted" style={{ marginLeft: "auto", alignSelf: "center", fontSize: 13 }} title="Натисни на будь-яку операцію, щоб подивитись/відредагувати її">Знайдено: {tx.length}{tx.length >= 500 ? "+ (звузь фільтром)" : ""} · клікни на рядок</span>
       </div>
       <div className="panel" style={{ margin: 0, padding: 0, overflowX: "auto" }}>
         <table style={{ width: "100%", fontSize: 13 }}>

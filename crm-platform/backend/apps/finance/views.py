@@ -57,6 +57,10 @@ class TransactionViewSet(viewsets.ModelViewSet):
             qs = qs.filter(created_at__date__gte=p["from"])
         if p.get("to"):
             qs = qs.filter(created_at__date__lte=p["to"])
+        if p.get("q"):
+            from django.db.models import Q as _Q
+            term = p["q"]
+            qs = qs.filter(_Q(comment__icontains=term) | _Q(counterparty__icontains=term) | _Q(account__name__icontains=term))
         return qs
 
     @action(detail=True, methods=["get"])
