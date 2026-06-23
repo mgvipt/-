@@ -5,10 +5,11 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api, Funnel } from "../api";
 import { Avatar, SourceChip } from "../ui";
 import ClientChat from "../ClientChat";
+import NeedsForm from "../NeedsForm";
 
 interface Lead {
   id: number; title: string; contact?: number; contact_name?: string; owner_name?: string;
-  funnel: number; stage: number; amount: string; source: string; is_seen: boolean;
+  funnel: number; stage: number; amount: string; source: string; is_seen: boolean; qualification?: any;
 }
 
 export default function LeadCard() {
@@ -16,7 +17,16 @@ export default function LeadCard() {
   const nav = useNavigate();
   const [lead, setLead] = useState<Lead | null>(null);
   const [funnel, setFunnel] = useState<Funnel | null>(null);
+  const [chatW, setChatW] = useState(360);
   const [msg, setMsg] = useState("");
+
+  function startResize(e: any) {
+    e.preventDefault();
+    const startX = e.clientX, startW = chatW;
+    function mv(ev: MouseEvent) { setChatW(Math.min(760, Math.max(280, startW + (startX - ev.clientX)))); }
+    function up() { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); }
+    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+  }
 
   async function openChat() {
     if (!lead || !lead.contact) { setMsg("У ліда немає контакту"); return; }
@@ -63,14 +73,14 @@ export default function LeadCard() {
         </div>
       )}
 
-      <div className="grid2">
-        <div>
+      <div style={{ display: "flex", gap: 12, padding: "0 16px 16px", alignItems: "flex-start" }}>
+        <div style={{ width: 220, flexShrink: 0 }}>
           <div className="panel">
             <div className="label">Клієнт</div>
             <div style={{ fontWeight: 600 }}>{lead.contact_name || "Без контакту"}</div>
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>📞 Подзвонити</button>
-              <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }} onClick={openChat}>💬 Чат</button>
+              <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>📞</button>
+              <button className="btn" style={{ flex: 2, background: "#eff6ff", color: "#1d4ed8" }} onClick={openChat}>💬 Чат</button>
             </div>
           </div>
           <div className="panel">
@@ -83,9 +93,17 @@ export default function LeadCard() {
             <div style={{ marginTop: 8 }}><SourceChip source={lead.source} /></div>
           </div>
         </div>
-        <div>
+
+        <div style={{ flex: 1, minWidth: 300 }}>
+          <NeedsForm leadId={lead.id} initial={lead.qualification} />
+        </div>
+
+        <div onMouseDown={startResize} title="Тягни, щоб змінити ширину чату"
+          style={{ width: 6, alignSelf: "stretch", minHeight: 460, cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0 }} />
+
+        <div style={{ width: chatW, flexShrink: 0 }}>
           <div className="panel">
-            <div className="label">Стрічка подій</div>
+            <div className="label">💬 Чат з клієнтом</div>
             <ClientChat contact={lead.contact} />
           </div>
         </div>
