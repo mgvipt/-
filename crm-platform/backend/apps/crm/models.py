@@ -95,6 +95,7 @@ class Lead(TimestampedOwned):
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     is_seen = models.BooleanField(default=False, help_text="Снимает бейдж 'НЕПЕРЕГЛЯНУТІ'")
     qualification = models.JSONField(default=dict, blank=True, help_text="Анкета виявлення потреби (тип приміщення, площа, матеріал, бюджет тощо)")
+    card_fields = models.JSONField(default=list, blank=True, help_text="Кастомні поля/блоки картки (як у Бітриксі): [{label, value}]")
 
     class Meta:
         ordering = ["-created_at"]

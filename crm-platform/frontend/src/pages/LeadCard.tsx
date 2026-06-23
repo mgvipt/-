@@ -6,10 +6,11 @@ import { api, Funnel } from "../api";
 import { Avatar, SourceChip } from "../ui";
 import ClientChat from "../ClientChat";
 import NeedsForm from "../NeedsForm";
+import CardFields from "../CardFields";
 
 interface Lead {
   id: number; title: string; contact?: number; contact_name?: string; owner_name?: string;
-  funnel: number; stage: number; amount: string; source: string; is_seen: boolean; qualification?: any;
+  funnel: number; stage: number; amount: string; source: string; is_seen: boolean; qualification?: any; card_fields?: any[];
 }
 
 export default function LeadCard() {
@@ -18,7 +19,16 @@ export default function LeadCard() {
   const [lead, setLead] = useState<Lead | null>(null);
   const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [chatW, setChatW] = useState(360);
+  const [leftW, setLeftW] = useState(220);
   const [msg, setMsg] = useState("");
+
+  function startResizeLeft(e: any) {
+    e.preventDefault();
+    const startX = e.clientX, startW = leftW;
+    function mv(ev: MouseEvent) { setLeftW(Math.min(440, Math.max(170, startW + (ev.clientX - startX)))); }
+    function up() { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); }
+    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+  }
 
   function startResize(e: any) {
     e.preventDefault();
@@ -73,8 +83,8 @@ export default function LeadCard() {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 12, padding: "0 16px 16px", alignItems: "flex-start" }}>
-        <div style={{ width: 220, flexShrink: 0 }}>
+      <div style={{ display: "flex", gap: 12, padding: "0 16px 16px", alignItems: "stretch" }}>
+        <div style={{ width: leftW, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12 }}>
           <div className="panel">
             <div className="label">Клієнт</div>
             <div style={{ fontWeight: 600 }}>{lead.contact_name || "Без контакту"}</div>
@@ -92,19 +102,23 @@ export default function LeadCard() {
             <div style={{ fontSize: 22, fontWeight: 700 }}>{Number(lead.amount).toLocaleString("ru")} <span className="muted" style={{ fontSize: 14 }}>грн.</span></div>
             <div style={{ marginTop: 8 }}><SourceChip source={lead.source} /></div>
           </div>
+          <CardFields leadId={lead.id} initial={lead.card_fields} />
         </div>
+
+        <div onMouseDown={startResizeLeft} title="Тягни, щоб змінити ширину лівого блоку"
+          style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#eef2f7", borderRadius: 3, flexShrink: 0 }} />
 
         <div style={{ flex: 1, minWidth: 300 }}>
           <NeedsForm leadId={lead.id} initial={lead.qualification} />
         </div>
 
         <div onMouseDown={startResize} title="Тягни, щоб змінити ширину чату"
-          style={{ width: 6, alignSelf: "stretch", minHeight: 460, cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0 }} />
+          style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0 }} />
 
-        <div style={{ width: chatW, flexShrink: 0 }}>
-          <div className="panel">
+        <div style={{ width: chatW, flexShrink: 0, display: "flex" }}>
+          <div className="panel" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
             <div className="label">💬 Чат з клієнтом</div>
-            <ClientChat contact={lead.contact} />
+            <div style={{ flex: 1, minHeight: 0 }}><ClientChat contact={lead.contact} /></div>
           </div>
         </div>
       </div>
