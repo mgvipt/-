@@ -15,6 +15,17 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
         contact = Contact.objects.create(first_name=inc.sender_name, channels=[channel.kind])
         conv.contact = contact
         conv.save(update_fields=["contact"])
+        # авто-лід у воронці "Лиды" з джерелом = канал (розділення лідів по каналах)
+        try:
+            from apps.crm.models import Lead, Funnel
+            f = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
+            st = f.stages.order_by("order").first() if f else None
+            if f and st:
+                src = channel.kind if channel.kind in dict(Lead.SOURCES) else "other"
+                Lead.objects.create(title=(channel.kind + ": " + (inc.sender_name or ""))[:255],
+                                    contact=contact, funnel=f, stage=st, source=src, is_seen=False)
+        except Exception:
+            pass
 
     # RBAC-привязка: чат → ответственному клиента (owner контакта либо owner его
     # последней активной сделки). None = «Не призначені» — НЕ fallback на чужого юзера.
