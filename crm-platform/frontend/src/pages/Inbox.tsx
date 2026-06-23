@@ -14,6 +14,8 @@ export default function Inbox() {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState("");
+  const [ai, setAi] = useState<{ context?: string; points?: string[]; suggestion?: string } | null>(null);
+  const [aiLoad, setAiLoad] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   async function loadConvs() {
@@ -46,11 +48,19 @@ export default function Inbox() {
   }, [params]);
   useEffect(() => { endRef.current?.scrollIntoView(); }, [msgs]);
 
+  async function analyzeAI(id: number) {
+    setAiLoad(true);
+    try { setAi(await api.post<any>(`/api/conversations/${id}/ai_reply/`, {})); }
+    catch { setAi(null); }
+    setAiLoad(false);
+  }
+
   async function openConv(c: Conversation) {
-    setActive(c); setErr("");
+    setActive(c); setErr(""); setAi(null);
     const m = await api.get<ChatMessage[]>(`/api/conversations/${c.id}/messages/`);
     setMsgs(m);
     setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, unread: 0 } : x)));
+    analyzeAI(c.id);
   }
 
   async function send() {
@@ -66,7 +76,7 @@ export default function Inbox() {
   }
 
   return (
-    <div className="inbox fade" style={{ height: "100%", display: "grid", gridTemplateColumns: "320px 1fr" }}>
+    <div className="inbox fade" style={{ height: "100%", display: "grid", gridTemplateColumns: "300px 1fr 340px" }}>
       {/* список диалогов */}
       <div style={{ background: "#fff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div style={{ padding: 12, borderBottom: "1px solid #e2e8f0", fontWeight: 600 }}>Диалоги</div>
@@ -143,6 +153,38 @@ export default function Inbox() {
             </div>
           </>
         )}
+      </div>
+
+      {/* AI-РОП панель */}
+      <div style={{ background: "#fff", borderLeft: "1px solid #e2e8f0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ padding: "14px 14px 12px", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center" }}>
+          <b style={{ fontSize: 14 }}>🧠 AI-РОП</b>
+          <div style={{ flex: 1 }} />
+          {active && <button className="btn" style={{ fontSize: 12, padding: "3px 10px" }} onClick={() => analyzeAI(active.id)} disabled={aiLoad}>{aiLoad ? "…" : "🔄 Оновити"}</button>}
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+          {!active ? (
+            <div className="muted" style={{ fontSize: 13 }}>Обери діалог — AI-РОП підкаже тези й відповідь.</div>
+          ) : aiLoad && !ai ? (
+            <div className="muted" style={{ fontSize: 13 }}>AI-РОП аналізує діалог…</div>
+          ) : ai ? (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>Що в діалозі</div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.5 }}>
+                {(ai.points && ai.points.length ? ai.points : (ai.context ? [ai.context] : [])).map((p, i) => <li key={i} style={{ marginBottom: 5 }}>{p}</li>)}
+              </ul>
+              {ai.suggestion && (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", margin: "16px 0 8px" }}>Пропонована відповідь</div>
+                  <div style={{ fontSize: 13, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: 10, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{ai.suggestion}</div>
+                  <button className="btn btn-primary" style={{ width: "100%", marginTop: 8 }} onClick={() => setText(ai.suggestion || "")}>✍️ Вставити у відповідь</button>
+                </>
+              )}
+            </>
+          ) : (
+            <div className="muted" style={{ fontSize: 13 }}>Натисни «🔄 Оновити», щоб проаналізувати.</div>
+          )}
+        </div>
       </div>
     </div>
   );

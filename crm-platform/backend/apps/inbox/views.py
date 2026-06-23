@@ -111,11 +111,12 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             "(декоративні покриття та фарби для стін). Проаналізуй переписку і допоможи менеджеру закрити продаж. "
             "Переписка з клієнтом:\n" + (dialog or "(переписки ще немає)") + "\n\n"
             "Поверни СТРОГО JSON без пояснень: "
-            '{"context": "1-2 речення: на якому етапі клієнт, що хоче, які заперечення/ризики", '
+            '{"context": "1 коротке речення-підсумок", '
+            '"points": ["3-6 коротких тез: на якому етапі клієнт, що хоче, площа/матеріал/бюджет якщо згадані, заперечення, наступний крок"], '
             '"suggestion": "готова відповідь клієнту ТІЄЮ Ж мовою, що й він — ввічливо, по суті, з наступним кроком до продажу"}')
         from apps.crm.ai import claude_json
         try:
-            return Response(claude_json(prompt))
+            return Response(claude_json(prompt, max_tokens=1000))
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 
