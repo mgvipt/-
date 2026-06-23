@@ -114,7 +114,37 @@ class ChatPlaceAdapter(ChannelAdapter):
         return str(r.get("id", "")) if isinstance(r, dict) else ""
 
 
-ADAPTERS = {TelegramAdapter.kind: TelegramAdapter}
+class ViberAdapter(ChannelAdapter):
+    """Viber-бот (public account). Приём через webhook, отправка через chatapi.viber.com."""
+    kind = "viber"
+    API = "https://chatapi.viber.com/pa"
+
+    def parse_webhook(self, payload: dict):
+        if payload.get("event") != "message":
+            return None
+        sender = payload.get("sender", {}) or {}
+        msg = payload.get("message", {}) or {}
+        return IncomingMessage(
+            external_chat_id=str(sender.get("id", "")),
+            text=msg.get("text") or "",
+            sender_name=sender.get("name") or "",
+            external_id=str(payload.get("message_token", "")),
+        )
+
+    def send(self, external_chat_id: str, text: str) -> str:
+        token = self.config.get("auth_token")
+        if not token:
+            raise RuntimeError("В канале не задан auth_token Viber")
+        body = json.dumps({"receiver": external_chat_id, "type": "text", "text": text,
+                           "sender": {"name": "Wallcov"}}).encode()
+        req = urllib.request.Request(self.API + "/send_message", data=body,
+                                     headers={"Content-Type": "application/json", "X-Viber-Auth-Token": token})
+        with urllib.request.urlopen(req, timeout=15) as r:  # noqa: S310
+            resp = json.loads(r.read().decode())
+        return str(resp.get("message_token", ""))
+
+
+ADAPTERS = {TelegramAdapter.kind: TelegramAdapter, ViberAdapter.kind: ViberAdapter}
 
 
 def get_adapter(channel) -> ChannelAdapter:

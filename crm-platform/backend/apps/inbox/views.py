@@ -27,6 +27,22 @@ class TelegramWebhookView(APIView):
         return Response({"ok": True})
 
 
+class ViberWebhookView(APIView):
+    """Точка приёма событий Viber-бота. URL: /api/inbox/viber/webhook/<channel_id>/"""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request, channel_id):
+        channel = get_object_or_404(Channel, pk=channel_id, kind="viber", is_active=True)
+        event = request.data.get("event")
+        if event in ("webhook", "delivered", "seen", "failed", "subscribed", "unsubscribed"):
+            return Response({"status": 0})  # сервісні події — просто 200
+        inc = get_adapter(channel).parse_webhook(request.data)
+        if inc:
+            ingest(channel, inc)
+        return Response({"status": 0, "status_message": "ok"})
+
+
 class ChannelViewSet(viewsets.ModelViewSet):
     queryset = Channel.objects.all().order_by("name")
     serializer_class = ChannelSerializer
