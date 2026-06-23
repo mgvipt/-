@@ -14,6 +14,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
   const [err, setErr] = useState("");
   const [loaded, setLoaded] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   async function loadConv() {
     if (!contact) { setLoaded(true); return; }
@@ -47,6 +48,23 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
       setMsgs((p) => [...p, m]); setText("");
     } catch { setErr("Не вдалося надіслати — чат має бути відкритий оператором"); }
     setBusy(false);
+  }
+  // ── Надіслати фото/відео клієнту ──
+  async function sendFile(e: any) {
+    const f = e.target.files?.[0];
+    if (!f || !conv) return;
+    const kind = f.type.startsWith("video") ? "video" : f.type.startsWith("image") ? "photo" : "document";
+    setBusy(true); setErr("");
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send_media/`, { content_b64: reader.result, filename: f.name, kind });
+        setMsgs((p) => [...p, m]);
+      } catch { setErr("Не вдалося надіслати файл (цей канал може не підтримувати медіа)"); }
+      setBusy(false);
+    };
+    reader.readAsDataURL(f);
+    e.target.value = "";
   }
   async function analyze() {
     if (!conv) return;
@@ -100,7 +118,9 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
       {/* ПОЛЕ ВІДПОВІДІ — теж регульоване */}
       <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Відповідь клієнту…" rows={3}
         style={{ width: "100%", fontSize: 13, padding: 9, borderRadius: 10, border: "1px solid #e2e8f0", marginTop: 8, boxSizing: "border-box", resize: "vertical", minHeight: 56 }} />
+      <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={sendFile} />
       <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+        <button className="btn" style={{ background: "#f1f5f9" }} title="Надіслати фото / відео" onClick={() => fileRef.current?.click()} disabled={busy}>📎</button>
         <button className="btn" style={{ flex: 1, background: "#fef3c7", color: "#92400e" }} onClick={analyze} disabled={aiLoad}>{aiLoad ? "AI аналізує…" : "🧠 AI-РОП підказати відповідь"}</button>
         <button className="btn btn-primary" style={{ flex: 1 }} onClick={send} disabled={busy || !text.trim()}>{busy ? "…" : "Надіслати"}</button>
       </div>

@@ -30,6 +30,10 @@ class ChannelAdapter:
     def send(self, external_chat_id: str, text: str) -> str:
         raise NotImplementedError
 
+    def send_media(self, external_chat_id: str, content: bytes, filename: str, kind: str) -> str:
+        """Надіслати фото/відео/документ. kind: photo|video|document."""
+        raise NotImplementedError
+
 
 class TelegramAdapter(ChannelAdapter):
     kind = "telegram"
@@ -65,6 +69,23 @@ class TelegramAdapter(ChannelAdapter):
         data = json.dumps({"chat_id": external_chat_id, "text": text}).encode()
         req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=15) as r:  # noqa: S310
+            resp = json.loads(r.read().decode())
+        return str(resp.get("result", {}).get("message_id", ""))
+
+    def send_media(self, external_chat_id: str, content: bytes, filename: str, kind: str) -> str:
+        token = self.config.get("bot_token")
+        if not token:
+            raise RuntimeError("В канале не задан bot_token")
+        method = {"video": "sendVideo", "photo": "sendPhoto"}.get(kind, "sendDocument")
+        field = {"video": "video", "photo": "photo"}.get(kind, "document")
+        url = self.API.format(token=token, method=method)
+        boundary = "----wallcovmedia" + str(len(content))
+        b = boundary.encode()
+        body = b"--" + b + b'\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n' + str(external_chat_id).encode() + b"\r\n"
+        body += b"--" + b + b'\r\nContent-Disposition: form-data; name="' + field.encode() + b'"; filename="' + filename.encode() + b'"\r\nContent-Type: application/octet-stream\r\n\r\n' + content + b"\r\n"
+        body += b"--" + b + b"--\r\n"
+        req = urllib.request.Request(url, data=body, headers={"Content-Type": "multipart/form-data; boundary=" + boundary})
+        with urllib.request.urlopen(req, timeout=60) as r:  # noqa: S310
             resp = json.loads(r.read().decode())
         return str(resp.get("result", {}).get("message_id", ""))
 

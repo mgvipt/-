@@ -120,6 +120,27 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 
+    @action(detail=True, methods=["post"])
+    def send_media(self, request, pk=None):
+        """Надіслати клієнту фото/відео/документ (base64 у JSON)."""
+        import base64
+        conv = self.get_object()
+        b64 = request.data.get("content_b64") or ""
+        filename = request.data.get("filename") or "file"
+        kind = request.data.get("kind") or "document"
+        if not b64:
+            return Response({"detail": "Немає файлу"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            content = base64.b64decode(b64.split(",")[-1])
+            msg_id = get_adapter(conv.channel).send_media(conv.external_chat_id, content, filename, kind)
+        except NotImplementedError:
+            return Response({"detail": "Цей канал поки не підтримує надсилання медіа"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+        msg = Message.objects.create(conversation=conv, direction="out", text=f"[{kind}] {filename}",
+                                     external_id=str(msg_id or ""), attachments=[{"type": kind, "name": filename}])
+        return Response(MessageSerializer(msg).data, status=status.HTTP_201_CREATED)
+
 
 from django.http import HttpResponse as _HttpResponse
 from rest_framework.permissions import AllowAny as _AllowAny
