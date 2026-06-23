@@ -90,7 +90,7 @@ class DealSerializer(serializers.ModelSerializer):
         model = Deal
         fields = ["id", "title", "contact", "contact_name", "funnel", "stage",
                   "source", "amount", "discount_pct", "pay_type", "ttn", "checkbox_status",
-                  "owner", "owner_name", "closed_at",
+                  "qualification", "card_fields", "owner", "owner_name", "closed_at",
                   "created_at", "updated_at"]
 
 

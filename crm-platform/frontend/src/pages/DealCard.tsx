@@ -28,12 +28,15 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api, Funnel, Paginated } from "../api";
 import OwnerSelect from "../OwnerSelect";
 import { Avatar } from "../ui";
+import NeedsForm from "../NeedsForm";
+import CardFields from "../CardFields";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
 interface Item { id: number; product: number; product_name: string; quantity: string; price: string; total: string; }
 interface Pay { id: number; provider: string; amount: string; is_paid: boolean; created_at: string; }
 interface Deal {
+  qualification?: any; card_fields?: any[];
   id: number; title: string; contact_name?: string; owner_name?: string; owner?: number | null;
   funnel: number; stage: number; amount: string; source: string;
   items: Item[]; payments: Pay[]; paid: number;
@@ -335,7 +338,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         {/* ─── [11] РЕНДЕР: правая колонка — лента ИЛИ товары ───────────── */}
         <div>
           {tab === "general" ? (
-            /* 11.1 ЧАТ З КЛІЄНТОМ + події + AI-помічник */
+            <>
+              <NeedsForm leadId={deal.id} initial={deal.qualification} endpoint="/api/deals/" />
+              <CardFields leadId={deal.id} initial={deal.card_fields} endpoint="/api/deals/" />
+            {/* 11.1 ЧАТ З КЛІЄНТОМ + події + AI-помічник */}
             <div className="panel">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div className="label">Чат з клієнтом · {deal.contact_name || "—"}</div>
@@ -364,6 +370,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 <button className="btn btn-primary" onClick={sendChat} disabled={sending}>{sending ? "…" : "➤"}</button>
               </div>
             </div>
+            </>
           ) : (
             /* 11.2 Товары в сделке (добавить/удалить → пересчёт суммы на бэке) */
             <div className="panel">

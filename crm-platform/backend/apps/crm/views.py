@@ -133,7 +133,8 @@ class LeadViewSet(ScopedByRoleMixin, viewsets.ModelViewSet):
         stage = funnel.stages.order_by("order").first()
         deal = Deal.objects.create(
             title=lead.title, contact=lead.contact, funnel=funnel, stage=stage,
-            amount=lead.amount, source=lead.source, owner=lead.owner)
+            amount=lead.amount, source=lead.source, owner=lead.owner,
+            qualification=lead.qualification, card_fields=lead.card_fields)
         return Response({"deal_id": deal.id})
     filterset_fields = ["funnel", "stage", "source", "is_seen", "owner"]
     search_fields = ["title", "contact__phone", "contact__first_name", "contact__last_name"]

@@ -15,14 +15,14 @@ const APPLIER = ["Сам наноситиму", "Потрібен майстер
 
 const inp: React.CSSProperties = { width: "100%", fontSize: 13, padding: "7px 9px", borderRadius: 8, border: "1px solid #e2e8f0", boxSizing: "border-box", background: "#fff" };
 
-export default function NeedsForm({ leadId, initial }: { leadId: number; initial?: any }) {
+export default function NeedsForm({ leadId, initial, endpoint = "/api/leads/" }: { leadId: number; initial?: any; endpoint?: string }) {
   const [q, setQ] = useState<any>(initial || {});
   const [saved, setSaved] = useState(true);
   const [busy, setBusy] = useState(false);
   function set(k: string, v: any) { setQ((p: any) => ({ ...p, [k]: v })); setSaved(false); }
   async function save() {
     setBusy(true);
-    try { await api.patch(`/api/leads/${leadId}/`, { qualification: q }); setSaved(true); } catch { /* ignore */ }
+    try { await api.patch(`${endpoint}${leadId}/`, { qualification: q }); setSaved(true); } catch { /* ignore */ }
     setBusy(false);
   }
 

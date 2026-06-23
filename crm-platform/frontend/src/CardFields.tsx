@@ -5,7 +5,7 @@ import { api } from "./api";
 
 const inp: React.CSSProperties = { width: "100%", fontSize: 13, padding: "6px 8px", borderRadius: 7, border: "1px solid #e2e8f0", boxSizing: "border-box", background: "#fff" };
 
-export default function CardFields({ leadId, initial }: { leadId: number; initial?: { label: string; value: string }[] }) {
+export default function CardFields({ leadId, initial, endpoint = "/api/leads/" }: { leadId: number; initial?: { label: string; value: string }[]; endpoint?: string }) {
   const [fields, setFields] = useState<{ label: string; value: string }[]>(Array.isArray(initial) ? initial : []);
   const [saved, setSaved] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -15,7 +15,7 @@ export default function CardFields({ leadId, initial }: { leadId: number; initia
   function del(i: number) { setFields((f) => f.filter((_, j) => j !== i)); setSaved(false); }
   async function save() {
     setBusy(true);
-    try { await api.patch(`/api/leads/${leadId}/`, { card_fields: fields.filter((f) => f.label || f.value) }); setSaved(true); } catch { /* ignore */ }
+    try { await api.patch(`${endpoint}${leadId}/`, { card_fields: fields.filter((f) => f.label || f.value) }); setSaved(true); } catch { /* ignore */ }
     setBusy(false);
   }
 
