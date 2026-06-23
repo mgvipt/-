@@ -35,10 +35,29 @@ const FALLBACK: Channel[] = [
 export default function ContactCenter() {
   const [channels, setChannels] = useState<Channel[]>(FALLBACK);
   const [sel, setSel] = useState<Channel | null>(null);
+  const [msg, setMsg] = useState("");
 
   useEffect(() => {
     api.get<Channel[]>("/api/contact-center/").then((d) => { if (Array.isArray(d) && d.length) setChannels(d); }).catch(() => {});
   }, []);
+
+  // ─── Дія кнопки картки: ChatPlace-канали синхронізуємо, інші — інструкція ───
+  async function channelAction(ch: Channel) {
+    setMsg("…");
+    if (ch.via === "ChatPlace") {
+      try { const r = await api.post<any>("/api/inbox/chatplace/sync/", {}); setMsg(`✓ Синхронізовано: ${r.new_messages ?? 0} нових повідомлень, ${r.chats ?? 0} чатів`); }
+      catch { setMsg("Помилка синхронізації ChatPlace"); }
+    } else {
+      const need: Record<string, string> = {
+        facebook: "Потрібен Facebook Page Access Token (pages_messaging + pages_manage_engagement). Скинь у чат Wallcov.",
+        telegram_phone: "Telegram (номер): потрібен MTProto-доступ (api_id/api_hash). Краще — Telegram бот.",
+        viber_bot: "Viber бот: створи бота на partners.viber.com → токен.",
+        viber_phone: "Viber для бізнесу (номер): потрібен Viber Business / провайдер (360dialog).",
+        whatsapp: "WhatsApp: потрібен BSP (360dialog / Twilio / Meta Cloud API) + номер.",
+      };
+      setMsg(need[ch.key] || "Підключення цього каналу — дай токен/доступ.");
+    }
+  }
 
   return (
     <div className="scroll fade" style={{ padding: 20 }}>
@@ -85,9 +104,10 @@ export default function ContactCenter() {
               {sel.status === "connected"
                 ? <div style={{ color: "#16a34a", fontWeight: 600 }}>● Підключено{sel.via ? ` через ${sel.via}` : ""}</div>
                 : <div style={{ color: "#d97706", fontWeight: 600 }}>○ Не підключено</div>}
-              <button className="btn btn-primary" style={{ marginTop: 10 }}>
-                {sel.status === "connected" ? "↻ Переподключити кабінет" : "+ Підключити канал"}
+              <button className="btn btn-primary" style={{ marginTop: 10 }} onClick={() => channelAction(sel)}>
+                {sel.status === "connected" ? "↻ Синхронізувати / Переподключити" : "+ Підключити канал"}
               </button>
+              {msg && <div style={{ marginTop: 10, fontSize: 12.5, color: "#475569", background: "#f8fafc", borderRadius: 8, padding: "8px 10px" }}>{msg}</div>}
             </div>
 
             {/* Черга менеджерів + доступи (як у Бітриксі) */}
