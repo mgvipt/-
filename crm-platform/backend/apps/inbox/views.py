@@ -21,7 +21,25 @@ class TelegramWebhookView(APIView):
 
     def post(self, request, channel_id):
         channel = get_object_or_404(Channel, pk=channel_id, kind="telegram", is_active=True)
-        inc = get_adapter(channel).parse_webhook(request.data)
+        data = request.data
+        # бот підключили/відключили до Telegram-бізнесу
+        bc = data.get("business_connection")
+        if bc:
+            cfg = channel.config or {}
+            cfg["business_connection_id"] = bc.get("id")
+            cfg["business_enabled"] = bool(bc.get("is_enabled", True))
+            channel.config = cfg
+            channel.save(update_fields=["config"])
+            return Response({"ok": True})
+        # бізнес-повідомлення (написали на особистий номер) — запамʼятати bcid для цього чату
+        bm = data.get("business_message") or data.get("edited_business_message")
+        if bm:
+            cfg = channel.config or {}
+            bchats = cfg.setdefault("business_chats", {})
+            bchats[str((bm.get("chat") or {}).get("id"))] = bm.get("business_connection_id")
+            channel.config = cfg
+            channel.save(update_fields=["config"])
+        inc = get_adapter(channel).parse_webhook(data)
         if inc:
             ingest(channel, inc)
         return Response({"ok": True})

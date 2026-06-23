@@ -40,7 +40,8 @@ class TelegramAdapter(ChannelAdapter):
     API = "https://api.telegram.org/bot{token}/{method}"
 
     def parse_webhook(self, payload: dict) -> IncomingMessage | None:
-        msg = payload.get("message") or payload.get("edited_message")
+        msg = (payload.get("message") or payload.get("edited_message")
+               or payload.get("business_message") or payload.get("edited_business_message"))
         if not msg:
             return None
         chat = msg.get("chat", {})
@@ -66,7 +67,11 @@ class TelegramAdapter(ChannelAdapter):
         if not token:
             raise RuntimeError("В канале не задан bot_token")
         url = self.API.format(token=token, method="sendMessage")
-        data = json.dumps({"chat_id": external_chat_id, "text": text}).encode()
+        body = {"chat_id": external_chat_id, "text": text}
+        bcid = (self.config.get("business_chats") or {}).get(str(external_chat_id))
+        if bcid:
+            body["business_connection_id"] = bcid  # відповідь від імені особистого акаунту
+        data = json.dumps(body).encode()
         req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=15) as r:  # noqa: S310
             resp = json.loads(r.read().decode())
