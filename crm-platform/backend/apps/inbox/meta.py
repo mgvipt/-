@@ -56,6 +56,32 @@ def _kind(obj):
     return "instagram" if obj == "instagram" else "facebook"
 
 
+def _new_meta_lead(conv, kind, sender_id):
+    """Створити контакт + лід для нового вхідного чату Meta (FB/IG). Джерело = канал."""
+    from apps.crm.models import Contact, Lead, Funnel
+    name = ""
+    try:
+        if PAGE_TOKEN:
+            import urllib.request as _u
+            r = json.load(_u.urlopen(f"{GRAPH}/{sender_id}?fields=name&access_token={PAGE_TOKEN}", timeout=10))
+            name = r.get("name", "")
+    except Exception:
+        pass
+    if not conv.contact_id:
+        ct = Contact.objects.create(first_name=(name or kind)[:120], comment=f"З {kind} (Meta)")
+        conv.contact = ct
+        conv.save(update_fields=["contact"])
+    try:
+        f = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
+        st = f.stages.order_by("order").first() if f else None
+        if f and st:
+            src = "instagram" if kind == "instagram" else "facebook"
+            Lead.objects.create(title=(src + ": " + (name or str(sender_id)))[:255],
+                                contact=conv.contact, funnel=f, stage=st, source=src, is_seen=False)
+    except Exception:
+        pass
+
+
 def handle_webhook(payload: dict):
     """Розібрати вебхук Meta → створити/оновити Conversation+Message+Contact у CRM.
     Підтримує: IG/FB Direct (messaging) + IG/FB коменти (changes)."""
@@ -77,6 +103,8 @@ def handle_webhook(payload: dict):
             is_echo = msg.get("is_echo")  # надіслане нами
             ext_chat = sender if not is_echo else recipient
             conv, created = Conversation.objects.get_or_create(channel=ch, external_chat_id=str(ext_chat), defaults={"title": kind})
+            if created and not is_echo:
+                _new_meta_lead(conv, kind, sender)
             if Message.objects.filter(conversation=conv, external_id=mid).exists():
                 continue
             Message.objects.create(conversation=conv, direction=("out" if is_echo else "in"),
