@@ -204,3 +204,45 @@ class ContactCenterView(APIView):
             {"key": "whatsapp", "name": "WhatsApp", "sub": "Повідомлення", "icon": "W", "color": "#25D366", "status": status("whatsapp" in kinds), "via": None},
         ]
         return Response(catalog)
+
+
+# ============================================================================
+# ПОЛІТИКА КОНФІДЕНЦІЙНОСТІ — публічна сторінка (для Meta App / месенджерів)
+# ============================================================================
+_PRIVACY_HTML = """<!doctype html><html lang="uk"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Політика конфіденційності — Wallcov</title>
+<style>body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;color:#1e293b;line-height:1.6}h1{color:#C67D5F}h2{margin-top:28px}small{color:#64748b}</style>
+</head><body>
+<h1>Політика конфіденційності Wallcov</h1>
+<small>Оновлено: 2026</small>
+<p>Компанія <b>Wallcov</b> («Покриття для стін») поважає вашу приватність. Ця політика пояснює, які дані ми збираємо під час спілкування з клієнтами через месенджери та як їх використовуємо.</p>
+<h2>Які дані ми збираємо</h2>
+<ul>
+<li>Повідомлення, які ви надсилаєте нам у Instagram Direct, Facebook Messenger, Telegram;</li>
+<li>Ваше імʼя/нік у месенджері, ідентифікатор облікового запису;</li>
+<li>Зміст переписки, фото та файли, якими ви ділитесь у діалозі;</li>
+<li>Контактні дані, які ви добровільно надаєте (телефон, місто, обʼєкт).</li>
+</ul>
+<h2>Як ми використовуємо дані</h2>
+<ul>
+<li>Щоб відповідати на ваші запити та консультувати щодо декоративних покриттів;</li>
+<li>Щоб оформити та доставити замовлення;</li>
+<li>Для покращення якості обслуговування.</li>
+</ul>
+<h2>Зберігання та передача</h2>
+<p>Дані зберігаються у нашій внутрішній CRM-системі та використовуються лише співробітниками Wallcov. Ми <b>не продаємо</b> і не передаємо ваші дані третім особам, окрім випадків, передбачених законом, та сервісів, потрібних для обробки замовлення (доставка, оплата).</p>
+<h2>Ваші права</h2>
+<p>Ви можете запросити видалення своїх даних або відмовитись від спілкування, написавши нам у будь-якому месенджері або на пошту.</p>
+<h2>Контакти</h2>
+<p>Wallcov · сайт <a href="https://wallcovdec.com.ua">wallcovdec.com.ua</a> · Instagram @dekor_dlia_stin</p>
+</body></html>"""
+
+
+class PrivacyPolicyView(APIView):
+    """Публічна сторінка політики конфіденційності (для Meta App)."""
+    permission_classes = [_AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        return _HttpResponse(_PRIVACY_HTML, content_type="text/html; charset=utf-8")
