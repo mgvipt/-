@@ -122,6 +122,25 @@ function SalesTab() {
           <tbody>{d.managers.map((m, i) => <tr key={i}><td>{m.name.trim() || "—"}</td><td>{m.deals}</td><td><b>{fmt(m.sum)} ₴</b></td></tr>)}</tbody>
         </table>
       </div>
+
+      {/* ── КАНАЛИ (джерела лідів і сделок) ── */}
+      <div className="panel" style={{ margin: 0, marginTop: 12 }}>
+        <b style={{ fontSize: 14 }}>📣 Канали — джерела лідів і сделок</b>
+        <table style={{ marginTop: 8 }}>
+          <thead><tr><th>Канал</th><th>Ліди</th><th>Сделок</th><th>Виграно</th><th>Конверсія</th><th>Виручка</th></tr></thead>
+          <tbody>{((d as any).channels || []).map((c: any, i: number) => (
+            <tr key={i}>
+              <td><span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: CH_COLOR[c.source] || "#94a3b8" }} />{c.label}</span></td>
+              <td>{c.leads || 0}</td>
+              <td>{c.deals}</td>
+              <td>{c.won}</td>
+              <td><b style={{ color: c.conversion >= 30 ? "#16a34a" : c.conversion >= 10 ? "#d97706" : "#64748b" }}>{c.conversion}%</b></td>
+              <td><b>{fmt(c.revenue)} ₴</b></td>
+            </tr>
+          ))}</tbody>
+        </table>
+        <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>Живі ліди (Instagram / Telegram / Facebook) падають по джерелах автоматично. «Ліди» — нові звернення, «Сделок/Виграно» — за весь час. Конверсія = виграно / (виграно + програно).</div>
+      </div>
     </>
   );
 }

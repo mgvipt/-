@@ -298,6 +298,34 @@ class AnalyticsView(APIView):
                 amt = deals.filter(stage=st).aggregate(s=Sum("amount"))["s"] or 0
                 stages.append({"name": st.name, "color": st.color, "count": cnt, "amount": float(amt)})
 
+        # ── Розподіл по каналах (джерелах лідів/сделок) ──
+        from django.db.models import Q as _Q
+        _LBL = {"instagram": "Instagram", "telegram": "Telegram", "facebook": "Facebook",
+                "tiktok": "TikTok", "viber": "Viber", "call": "Дзвінок", "site": "Сайт",
+                "wholesale": "Опт / дилери", "designers": "Дизайнери", "whatsapp": "WhatsApp",
+                "google_business": "Google", "other": "Інше"}
+        _lead_src = dict(Lead.objects.values_list("source").annotate(n=Count("id")))
+        _channels = []
+        for _d in Deal.objects.values("source").annotate(
+                deals=Count("id"),
+                won=Count("id", filter=_Q(stage__is_won=True)),
+                lost=Count("id", filter=_Q(stage__is_lost=True)),
+                rev=Sum("amount", filter=_Q(stage__is_won=True))):
+            _s = _d["source"]; _wc = _d["won"] or 0; _lc = _d["lost"] or 0
+            _channels.append({
+                "source": _s, "label": _LBL.get(_s, _s or "—"),
+                "leads": _lead_src.get(_s, 0), "deals": _d["deals"], "won": _wc,
+                "revenue": float(_d["rev"] or 0),
+                "conversion": round(_wc / (_wc + _lc) * 100, 1) if (_wc + _lc) else 0,
+            })
+        # додати канали, що є лише в лідах (ще без сделок)
+        _seen = {c["source"] for c in _channels}
+        for _src, _n in _lead_src.items():
+            if _src not in _seen:
+                _channels.append({"source": _src, "label": _LBL.get(_src, _src or "—"),
+                                  "leads": _n, "deals": 0, "won": 0, "revenue": 0, "conversion": 0})
+        _channels.sort(key=lambda x: (-x["revenue"], -x["leads"]))
+
         # топ менеджеров
         managers = list(deals.values("owner__first_name", "owner__last_name")
                         .annotate(deals=Count("id"), sum=Sum("amount")).order_by("-sum")[:5])
@@ -307,5 +335,6 @@ class AnalyticsView(APIView):
             "funnel": funnel.name if funnel else "", "stages": stages,
             "managers": [{"name": (m["owner__first_name"] or "") + " " + (m["owner__last_name"] or ""),
                           "deals": m["deals"], "sum": float(m["sum"] or 0)} for m in managers],
+            "channels": _channels,
             "funnels": list(Funnel.objects.filter(is_lead_funnel=False).values("id", "name")),
         })
