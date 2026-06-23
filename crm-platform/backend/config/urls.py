@@ -47,6 +47,7 @@ urlpatterns = [
     path("api/me/", acc_views.MeView.as_view()),
     path("api/inbox/telegram/webhook/<int:channel_id>/", inbox_views.TelegramWebhookView.as_view()),
     path("api/inbox/meta/webhook/", inbox_views.MetaWebhookView.as_view()),
+    path("api/inbox/meta/webhook", inbox_views.MetaWebhookView.as_view()),
     path("api/inbox/chatplace/sync/", inbox_views.ChatPlaceSyncView.as_view()),
     path("api/contact-center/", inbox_views.ContactCenterView.as_view()),
     path("api/finance/dashboard/", fin_views.FinanceDashboardView.as_view()),
