@@ -52,6 +52,8 @@ urlpatterns = [
     path("api/contact-center/", inbox_views.ContactCenterView.as_view()),
     path("api/privacy/", inbox_views.PrivacyPolicyView.as_view()),
     path("api/privacy", inbox_views.PrivacyPolicyView.as_view()),
+    path("api/data-deletion/", inbox_views.DataDeletionView.as_view()),
+    path("api/data-deletion", inbox_views.DataDeletionView.as_view()),
     path("api/finance/dashboard/", fin_views.FinanceDashboardView.as_view()),
     path("api/finance/overview/", fin_views.OverviewView.as_view()),
     path("api/finance/pnl/", fin_views.ProfitLossView.as_view()),

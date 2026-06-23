@@ -246,3 +246,32 @@ class PrivacyPolicyView(APIView):
 
     def get(self, request):
         return _HttpResponse(_PRIVACY_HTML, content_type="text/html; charset=utf-8")
+
+
+# ============================================================================
+# ВИДАЛЕННЯ ДАНИХ КОРИСТУВАЧА — публічна сторінка (для Meta App)
+# ============================================================================
+_DATADEL_HTML = """<!doctype html><html lang="uk"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Видалення даних — Wallcov</title>
+<style>body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;color:#1e293b;line-height:1.6}h1{color:#C67D5F}</style>
+</head><body>
+<h1>Видалення ваших даних — Wallcov</h1>
+<p>Ви маєте право у будь-який момент попросити видалити всі дані, які Wallcov зберіг про вас (переписку, контактні дані, ідентифікатори месенджерів).</p>
+<h2>Як видалити свої дані</h2>
+<ol>
+<li>Напишіть нам у будь-якому месенджері (Instagram @dekor_dlia_stin, Facebook, Telegram) фразу «Видаліть мої дані» / «Удалите мои данные»;</li>
+<li>або надішліть запит на пошту <b>salonstukaturka@gmail.com</b> з темою «Видалення даних»;</li>
+<li>Ми видалимо всі ваші персональні дані з нашої CRM протягом <b>30 днів</b> і підтвердимо це у відповідь.</li>
+</ol>
+<p>Wallcov · <a href="https://wallcovdec.com.ua">wallcovdec.com.ua</a></p>
+</body></html>"""
+
+
+class DataDeletionView(APIView):
+    """Публічна сторінка інструкцій з видалення даних (для Meta App)."""
+    permission_classes = [_AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        return _HttpResponse(_DATADEL_HTML, content_type="text/html; charset=utf-8")
