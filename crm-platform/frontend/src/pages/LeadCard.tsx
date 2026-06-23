@@ -22,6 +22,11 @@ export default function LeadCard() {
   const [leftW, setLeftW] = useState(220);
   const [msg, setMsg] = useState("");
 
+  async function changeSource(src: string) {
+    if (!lead) return;
+    try { await api.patch(`/api/leads/${lead.id}/`, { source: src }); setLead({ ...lead, source: src }); } catch { /* ignore */ }
+  }
+
   function startResizeLeft(e: any) {
     e.preventDefault();
     const startX = e.clientX, startW = leftW;
@@ -100,7 +105,13 @@ export default function LeadCard() {
           <div className="panel">
             <div className="label">Сума · Джерело</div>
             <div style={{ fontSize: 22, fontWeight: 700 }}>{Number(lead.amount).toLocaleString("ru")} <span className="muted" style={{ fontSize: 14 }}>грн.</span></div>
-            <div style={{ marginTop: 8 }}><SourceChip source={lead.source} /></div>
+            <div style={{ marginTop: 8 }}>
+              <SourceChip source={lead.source} />
+              <select value={lead.source} onChange={(e) => changeSource(e.target.value)} title="Звідки лід (ChatPlace не розрізняє платформу — обери вручну)"
+                style={{ fontSize: 12, padding: "5px 8px", borderRadius: 7, border: "1px solid #e2e8f0", width: "100%", marginTop: 6 }}>
+                {([["instagram", "Instagram"], ["telegram", "Telegram"], ["tiktok", "TikTok"], ["facebook", "Facebook"], ["viber", "Viber"], ["call", "Дзвінок"], ["site", "Сайт"], ["wholesale", "Опт / дилери"], ["designers", "Дизайнери"], ["other", "Інше"]] as [string, string][]).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
           </div>
           <CardFields leadId={lead.id} initial={lead.card_fields} />
         </div>
