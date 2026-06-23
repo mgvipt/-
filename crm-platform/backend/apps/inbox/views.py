@@ -156,3 +156,30 @@ class ChatPlaceSyncView(APIView):
         if not configured():
             return Response({"detail": "CHATPLACE_API_KEY не налаштовано"}, status=400)
         return Response(sync_chats())
+
+
+# ============================================================================
+# КОНТАКТ-ЦЕНТР — каталог каналів звʼязку + статус підключення
+# ============================================================================
+class ContactCenterView(APIView):
+    """Список каналів для сторінки Контакт-центру. Статус connected визначаємо
+    за наявністю активного Channel у inbox (ChatPlace покриває IG/TG/TikTok)."""
+    def get(self, request):
+        from .models import Channel
+        cp = Channel.objects.filter(config__chatplace=True, is_active=True).exists()
+        kinds = set(Channel.objects.filter(is_active=True).values_list("kind", flat=True))
+
+        def status(connected):
+            return "connected" if connected else "available"
+
+        catalog = [
+            {"key": "instagram", "name": "Instagram", "sub": "Direct + Коментарі", "icon": "📸", "color": "#E1306C", "status": status(cp or "instagram" in kinds), "via": "ChatPlace" if cp else None},
+            {"key": "facebook", "name": "Facebook", "sub": "Messenger + Коментарі", "icon": "f", "color": "#1877F2", "status": status("facebook" in kinds), "via": None},
+            {"key": "telegram_bot", "name": "Telegram бот", "sub": "Бот для клієнтів", "icon": "✈", "color": "#229ED9", "status": status(cp or "telegram" in kinds), "via": "ChatPlace" if cp else None},
+            {"key": "telegram_phone", "name": "Telegram (номер)", "sub": "Клієнт пише на ваш номер", "icon": "✈", "color": "#229ED9", "status": "available", "via": None},
+            {"key": "tiktok", "name": "TikTok", "sub": "Повідомлення", "icon": "🎵", "color": "#111827", "status": status(cp or "tiktok" in kinds), "via": "ChatPlace" if cp else None},
+            {"key": "viber_bot", "name": "Viber бот", "sub": "Бот для клієнтів", "icon": "V", "color": "#7360F2", "status": status("viber" in kinds), "via": None},
+            {"key": "viber_phone", "name": "Viber (номер)", "sub": "Клієнт пише на ваш номер", "icon": "V", "color": "#7360F2", "status": "available", "via": None},
+            {"key": "whatsapp", "name": "WhatsApp", "sub": "Повідомлення", "icon": "W", "color": "#25D366", "status": status("whatsapp" in kinds), "via": None},
+        ]
+        return Response(catalog)

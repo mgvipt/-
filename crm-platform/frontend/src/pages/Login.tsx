@@ -20,7 +20,7 @@ export default function Login() {
   return (
     <div className="login-wrap">
       <form className="login-box" onSubmit={submit}>
-        <h2>GMIdeas <span style={{ color: "var(--brand)" }}>CRM</span></h2>
+        <h2>Wallcov</h2>
         <div className="muted" style={{ fontSize: 13 }}>Вход в систему</div>
         <input placeholder="Логин" value={u} onChange={(e) => setU(e.target.value)} autoFocus />
         <input placeholder="Пароль" type="password" value={p} onChange={(e) => setP(e.target.value)} />

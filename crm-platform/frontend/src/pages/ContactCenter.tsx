@@ -1,0 +1,105 @@
+/* ============================================================================
+ * КОНТАКТ-ЦЕНТР (як у Бітриксі) — каталог усіх каналів звʼязку з клієнтом.
+ * Кожна плитка = канал. Статус: підключено / доступно. Клік → панель налаштувань
+ * (черга менеджерів + доступи + підключення).
+ * Дані каналів: GET /api/contact-center/  (бекенд: ContactCenterView).
+ * ========================================================================== */
+import { useEffect, useState } from "react";
+import { api } from "../api";
+
+// ─── Тип каналу ────────────────────────────────────────────────────────────
+interface Channel {
+  key: string;
+  name: string;
+  sub: string;          // що саме (Direct + Коментарі тощо)
+  icon: string;
+  color: string;
+  status: "connected" | "available";
+  via?: string;         // через що підключено (ChatPlace / Meta API)
+  managers?: string[];  // черга відповідальних
+}
+
+// ─── Каталог каналів (порядок як у Бітриксі) ───────────────────────────────
+const FALLBACK: Channel[] = [
+  { key: "instagram", name: "Instagram", sub: "Direct + Коментарі", icon: "📸", color: "#E1306C", status: "connected", via: "ChatPlace" },
+  { key: "facebook", name: "Facebook", sub: "Messenger + Коментарі", icon: "f", color: "#1877F2", status: "available" },
+  { key: "telegram_bot", name: "Telegram бот", sub: "Бот для клієнтів", icon: "✈", color: "#229ED9", status: "connected", via: "ChatPlace" },
+  { key: "telegram_phone", name: "Telegram (номер)", sub: "Клієнт пише на ваш номер", icon: "✈", color: "#229ED9", status: "available" },
+  { key: "tiktok", name: "TikTok", sub: "Повідомлення", icon: "🎵", color: "#111827", status: "connected", via: "ChatPlace" },
+  { key: "viber_bot", name: "Viber бот", sub: "Бот для клієнтів", icon: "V", color: "#7360F2", status: "available" },
+  { key: "viber_phone", name: "Viber (номер)", sub: "Клієнт пише на ваш номер", icon: "V", color: "#7360F2", status: "available" },
+  { key: "whatsapp", name: "WhatsApp", sub: "Повідомлення", icon: "W", color: "#25D366", status: "available" },
+];
+
+// ─── Сторінка ──────────────────────────────────────────────────────────────
+export default function ContactCenter() {
+  const [channels, setChannels] = useState<Channel[]>(FALLBACK);
+  const [sel, setSel] = useState<Channel | null>(null);
+
+  useEffect(() => {
+    api.get<Channel[]>("/api/contact-center/").then((d) => { if (Array.isArray(d) && d.length) setChannels(d); }).catch(() => {});
+  }, []);
+
+  return (
+    <div className="scroll fade" style={{ padding: 20 }}>
+      {/* ── Заголовок ── */}
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, fontSize: 22 }}>🎛️ Контакт-центр</h2>
+        <span className="muted" style={{ marginLeft: 12, fontSize: 13 }}>Канали звʼязку з клієнтами · ліди з кожного каналу падають у CRM розділено</span>
+      </div>
+
+      {/* ── Сітка плиток каналів ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 14 }}>
+        {channels.map((ch) => (
+          <div key={ch.key} onClick={() => setSel(ch)}
+            style={{ position: "relative", background: ch.color, color: "#fff", borderRadius: 14, padding: "18px 16px", minHeight: 120, cursor: "pointer", boxShadow: "0 4px 14px rgba(15,23,42,.12)", transition: "transform .1s" }}
+            onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-2px)")}
+            onMouseLeave={(e) => (e.currentTarget.style.transform = "")}>
+            {/* статус-галочка */}
+            {ch.status === "connected" && (
+              <span style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderRadius: "50%", background: "#22c55e", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>✓</span>
+            )}
+            <div style={{ width: 42, height: 42, borderRadius: 12, background: "rgba(255,255,255,.22)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, marginBottom: 12 }}>{ch.icon}</div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>{ch.name}</div>
+            <div style={{ fontSize: 11.5, opacity: .9, marginTop: 3 }}>{ch.sub}</div>
+            <div style={{ fontSize: 11, marginTop: 8, opacity: .95 }}>{ch.status === "connected" ? `● Підключено${ch.via ? " · " + ch.via : ""}` : "○ Доступно для підключення"}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Панель налаштувань каналу (праворуч) ── */}
+      {sel && (
+        <div onClick={() => setSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.4)", zIndex: 50 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 0, right: 0, width: 460, maxWidth: "92vw", height: "100%", background: "#fff", boxShadow: "-8px 0 28px rgba(15,23,42,.18)", padding: 24, overflowY: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+              <div style={{ width: 48, height: 48, borderRadius: 12, background: sel.color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 700 }}>{sel.icon}</div>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{sel.name}</div>
+                <div className="muted" style={{ fontSize: 12.5 }}>{sel.sub}</div>
+              </div>
+            </div>
+
+            {/* Статус */}
+            <div className="panel" style={{ marginBottom: 14 }}>
+              <div className="label">Статус підключення</div>
+              {sel.status === "connected"
+                ? <div style={{ color: "#16a34a", fontWeight: 600 }}>● Підключено{sel.via ? ` через ${sel.via}` : ""}</div>
+                : <div style={{ color: "#d97706", fontWeight: 600 }}>○ Не підключено</div>}
+              <button className="btn btn-primary" style={{ marginTop: 10 }}>
+                {sel.status === "connected" ? "↻ Переподключити кабінет" : "+ Підключити канал"}
+              </button>
+            </div>
+
+            {/* Черга менеджерів + доступи (як у Бітриксі) */}
+            <div className="panel" style={{ marginBottom: 14 }}>
+              <div className="label">Черга відповідальних · доступ менеджерів</div>
+              <div className="muted" style={{ fontSize: 12.5 }}>Тут оберемо, які менеджери бачать і відповідають у цьому каналі. Налаштування доступів — наступним кроком (бекенд черги + ролі по каналах).</div>
+            </div>
+
+            <div className="muted" style={{ fontSize: 12 }}>Канал-ключ: <code>{sel.key}</code></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

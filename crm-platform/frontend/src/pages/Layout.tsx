@@ -9,6 +9,7 @@ const NAV: [string, string, string, string | null][] = [
   ["/leads", "Лиды", "📋", null],
   ["/deals", "Сделки", "🤝", null],
   ["/inbox", "Чаты · Открытые линии", "💬", null],
+  ["/contact-center", "Контакт-центр", "🎛️", "roles.manage"],
   ["/phone", "Телефония", "📞", "telephony.view"],
   ["/warehouse", "Товары · Склад", "📦", "warehouse.view"],
   ["/clients", "Клиенты", "👥", null],
@@ -77,7 +78,7 @@ export default function Layout() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <div className="logo"><div className="logo-badge">G</div><b>GMIdeas <span>CRM</span></b></div>
+        <div className="logo"><div className="logo-badge">W</div><b>Wallcov</b></div>
         <nav className="nav">
           {items.map(([path, label, icon]) => (
             <NavLink key={path} to={path} className="nav-item">
