@@ -76,7 +76,7 @@ def _new_meta_lead(conv, kind, sender_id):
         st = f.stages.order_by("order").first() if f else None
         if f and st:
             src = "instagram" if kind == "instagram" else "facebook"
-            Lead.objects.create(title=(src + ": " + (name or str(sender_id)))[:255],
+            Lead.objects.create(title=(name or str(sender_id))[:255],
                                 contact=conv.contact, funnel=f, stage=st, source=src, is_seen=False)
     except Exception:
         pass

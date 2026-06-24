@@ -64,10 +64,16 @@ export default function Board({ endpoint, funnel, query }: { endpoint: string; f
                   <div
                     key={c.id}
                     className="card"
+                    style={{ position: "relative" }}
                     draggable
                     onDragStart={() => { dragId.current = c.id; }}
                     onClick={() => nav(isLead ? `/leads/${c.id}` : `/deals/${c.id}`)}
                   >
+                    {(c as any).contact && (
+                      <span onClick={(e) => { e.stopPropagation(); nav(`/inbox?contact=${(c as any).contact}`); }}
+                        title="Відкрити чат з клієнтом"
+                        style={{ position: "absolute", top: 6, right: 8, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>💬</span>
+                    )}
                     <div className="ttl">{c.title}</div>
                     <div className="price">{Number(c.amount).toLocaleString("ru")} грн.</div>
                     <SourceChip source={c.source} />

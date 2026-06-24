@@ -94,12 +94,22 @@ def sync_chats(max_chats=40, per_chat=40):
                                 or Contact.objects.create(first_name=parts[0][:120],
                                                           last_name=(parts[1] if len(parts) > 1 else "")[:120],
                                                           comment="З ChatPlace IG"))
+            # посилання на IG-акаунт (username з chats_get)
+            try:
+                if conv.contact and not conv.contact.social_link:
+                    g = _mcp("chats_get", {"chatId": cid})
+                    un = (g or {}).get("username") if isinstance(g, dict) else None
+                    if un:
+                        conv.contact.social_link = f"https://instagram.com/{un}"
+                        conv.contact.save(update_fields=["social_link"])
+            except Exception:
+                pass
             # авто-лід у воронці "Лиды" на кожен новий вхідний IG-чат
             try:
                 f = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
                 st = f.stages.order_by("order").first() if f else None
                 if f and st:
-                    Lead.objects.create(title=("IG: " + name)[:255], contact=conv.contact,
+                    Lead.objects.create(title=(name or "Instagram")[:255], contact=conv.contact,
                                         funnel=f, stage=st, source="instagram", is_seen=False)
             except Exception:
                 pass

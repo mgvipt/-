@@ -10,7 +10,7 @@ import CardFields from "../CardFields";
 
 interface Lead {
   id: number; title: string; contact?: number; contact_name?: string; owner_name?: string;
-  funnel: number; stage: number; amount: string; source: string; is_seen: boolean; qualification?: any; card_fields?: any[];
+  funnel: number; stage: number; amount: string; source: string; is_seen: boolean; qualification?: any; card_fields?: any[]; contact_social_link?: string;
 }
 
 export default function LeadCard() {
@@ -97,6 +97,12 @@ export default function LeadCard() {
               <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>📞</button>
               <button className="btn" style={{ flex: 2, background: "#eff6ff", color: "#1d4ed8" }} onClick={openChat}>💬 Чат</button>
             </div>
+            {lead.contact_social_link && (
+              <a href={lead.contact_social_link} target="_blank" rel="noreferrer"
+                style={{ display: "block", marginTop: 8, fontSize: 12, color: "#1d4ed8", wordBreak: "break-all" }}>
+                🔗 {lead.contact_social_link}
+              </a>
+            )}
           </div>
           <div className="panel">
             <div className="label">Відповідальний</div>

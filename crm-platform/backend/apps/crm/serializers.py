@@ -68,6 +68,7 @@ class FunnelSerializer(serializers.ModelSerializer):
 class LeadSerializer(serializers.ModelSerializer):
     owner_name = serializers.CharField(source="owner.get_full_name", read_only=True)
     contact_name = serializers.SerializerMethodField()
+    contact_social_link = serializers.CharField(source="contact.social_link", read_only=True, default="")
 
     def get_contact_name(self, obj):
         return str(obj.contact) if obj.contact else ""
@@ -75,11 +76,12 @@ class LeadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lead
         fields = ["id", "title", "contact", "contact_name", "funnel", "stage",
-                  "source", "amount", "is_seen", "qualification", "card_fields", "owner", "owner_name",
+                  "source", "amount", "is_seen", "qualification", "card_fields", "contact_social_link", "owner", "owner_name",
                   "created_at", "updated_at"]
 
 
 class DealSerializer(serializers.ModelSerializer):
+    contact_social_link = serializers.CharField(source="contact.social_link", read_only=True, default="")
     owner_name = serializers.CharField(source="owner.get_full_name", read_only=True)
     contact_name = serializers.SerializerMethodField()
 
@@ -88,7 +90,7 @@ class DealSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Deal
-        fields = ["id", "title", "contact", "contact_name", "funnel", "stage",
+        fields = ["id", "title", "contact", "contact_name", "contact_social_link", "funnel", "stage",
                   "source", "amount", "discount_pct", "pay_type", "ttn", "checkbox_status",
                   "qualification", "card_fields", "owner", "owner_name", "closed_at",
                   "created_at", "updated_at"]

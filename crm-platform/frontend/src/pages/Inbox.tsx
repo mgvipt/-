@@ -43,6 +43,15 @@ export default function Inbox() {
     return () => clearInterval(t);
   }, [scope]);
   useEffect(() => {
+    const contactId = params.get("contact");
+    if (contactId) {
+      api.get<any>(`/api/conversations/?contact=${contactId}`).then((r) => {
+        const conv = ((r as any).results || [])[0];
+        if (conv) { setConvs((cs) => cs.some((x) => x.id === conv.id) ? cs : [conv, ...cs]); openConv(conv); }
+        else setErr("Переписки з цим клієнтом ще немає");
+      }).catch(() => {});
+      return;
+    }
     const cid = params.get("c");
     if (!cid) return;
     api.get<Conversation>(`/api/conversations/${cid}/`).then((c) => { setConvs((cs) => cs.some((x) => x.id === c.id) ? cs : [c, ...cs]); openConv(c); }).catch(() => {});

@@ -25,6 +25,7 @@ class Contact(models.Model):
     source = models.CharField(max_length=24, blank=True, default="", help_text="Звідки клієнт (instagram/site/...)")
     address = models.CharField(max_length=255, blank=True, default="", help_text="Адреса доставки / місто")
     comment = models.TextField(blank=True, default="", help_text="Нотатки менеджера про клієнта")
+    social_link = models.CharField(max_length=300, blank=True, default="", help_text="Посилання на акаунт клієнта в месенджері (IG/TG/FB)")
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="contacts_owned", help_text="Ответственный менеджер клиента")
