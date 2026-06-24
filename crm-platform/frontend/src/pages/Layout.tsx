@@ -3,22 +3,23 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
 import { api } from "../api";
 import { Avatar } from "../ui";
+import { useLang } from "../i18n";
 import IncomingCallPopup from "../IncomingCallPopup";
 import WebPhone from "../WebPhone";
 
 // [путь, заголовок, иконка, требуемое право (или null)]
-const NAV: [string, string, string, string | null][] = [
-  ["/leads", "Лиды", "📋", null],
-  ["/deals", "Сделки", "🤝", null],
-  ["/inbox", "Чаты · Открытые линии", "💬", null],
-  ["/contact-center", "Контакт-центр", "🎛️", "roles.manage"],
-  ["/phone", "Телефония", "📞", "telephony.view"],
-  ["/warehouse", "Товары · Склад", "📦", "warehouse.view"],
-  ["/clients", "Клиенты", "👥", null],
-  ["/finance", "Финансы", "💰", "finance.view"],
-  ["/analytics", "Аналитика", "📊", null],
-  ["/roles", "Сотрудники и права", "🛡️", "roles.manage"],
-  ["/settings", "Настройки · Интеграции", "⚙️", "roles.manage"],
+const NAV: [string, string, string, string, string | null][] = [
+  ["/leads", "Лиды", "Ліди", "📋", null],
+  ["/deals", "Сделки", "Угоди", "🤝", null],
+  ["/inbox", "Чаты · Открытые линии", "Чати · Відкриті лінії", "💬", null],
+  ["/contact-center", "Контакт-центр", "Контакт-центр", "🎛️", "roles.manage"],
+  ["/phone", "Телефония", "Телефонія", "📞", "telephony.view"],
+  ["/warehouse", "Товары · Склад", "Товари · Склад", "📦", "warehouse.view"],
+  ["/clients", "Клиенты", "Клієнти", "👥", null],
+  ["/finance", "Финансы", "Фінанси", "💰", "finance.view"],
+  ["/analytics", "Аналитика", "Аналітика", "📊", null],
+  ["/roles", "Сотрудники и права", "Співробітники і права", "🛡️", "roles.manage"],
+  ["/settings", "Настройки · Интеграции", "Налаштування · Інтеграції", "⚙️", "roles.manage"],
 ];
 
 const BGS = [
@@ -73,8 +74,10 @@ export default function Layout() {
     api.patch("/api/me/", { theme: t }).catch(() => {});
   }
 
-  const items = NAV.filter(([, , , perm]) => !perm || can(perm));
-  const title = NAV.find(([path]) => loc.pathname.startsWith(path))?.[1] ?? "CRM";
+  const { t } = useLang();
+  const items = NAV.filter(([, , , , perm]) => !perm || can(perm));
+  const _cur = NAV.find(([path]) => loc.pathname.startsWith(path));
+  const title = _cur ? t(_cur[1], _cur[2]) : "CRM";
   const fullName = me ? `${me.first_name} ${me.last_name}`.trim() || me.username : "";
 
   return (
@@ -82,9 +85,9 @@ export default function Layout() {
       <aside className="sidebar">
         <div className="logo"><div className="logo-badge">W</div><b>Wallcov</b></div>
         <nav className="nav">
-          {items.map(([path, label, icon]) => (
+          {items.map(([path, ru, uk, icon]) => (
             <NavLink key={path} to={path} className="nav-item">
-              <span style={{ width: 18, textAlign: "center" }}>{icon}</span><span>{label}</span>
+              <span style={{ width: 18, textAlign: "center" }}>{icon}</span><span>{t(ru, uk)}</span>
             </NavLink>
           ))}
         </nav>

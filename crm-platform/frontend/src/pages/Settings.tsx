@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { useLang } from "../i18n";
 
 interface Prov { provider: string; fields: string[]; values: Record<string, string>; is_active: boolean; }
 
 const TITLES: Record<string, string> = { liqpay: "LiqPay (оплаты)", checkbox: "Checkbox (фискализация)", novaposhta: "Нова Пошта" };
 
 export default function Settings() {
+  const { t, lang, setLang } = useLang();
   const [provs, setProvs] = useState<Prov[]>([]);
   const [edit, setEdit] = useState<Record<string, Record<string, string>>>({});
   const [saved, setSaved] = useState("");
@@ -27,6 +29,14 @@ export default function Settings() {
 
   return (
     <div className="scroll pad fade">
+      <div className="panel" style={{ margin: "0 0 12px", maxWidth: 360 }}>
+        <div className="label" style={{ marginBottom: 6 }}>🌐 {t("Язык интерфейса", "Мова інтерфейсу")}</div>
+        <select value={lang} onChange={(e) => setLang(e.target.value as "uk" | "ru")}
+          style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14 }}>
+          <option value="uk">Українська</option>
+          <option value="ru">Русский</option>
+        </select>
+      </div>
       <div className="note">Перенеси сюда ключи из Битрикса (один раз) — и оплаты, фискализация и Нова Пошта заработают вживую. Ключи хранятся на сервере и показываются замаскированными.</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         {provs.map((p) => (
