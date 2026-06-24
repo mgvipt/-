@@ -126,73 +126,92 @@ export default function KpDoc({ deal, onClose }: { deal: any; onClose: () => voi
     }
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("КП Декор");
-    ws.columns = [{ width: 6 }, { width: 50 }, { width: 10 }, { width: 7 }, { width: 13 }, { width: 15 }];
+    ws.columns = [{ width: 5 }, { width: 46 }, { width: 10 }, { width: 6 }, { width: 13 }, { width: 15 }];
     const thin = { style: "thin", color: { argb: "FF333333" } };
     const box = { top: thin, left: thin, bottom: thin, right: thin };
 
-    // ── QR Instagram (праворуч угорі, як у документі) ──
+    // ── QR Instagram ліворуч угорі (як у документі) ──
     try {
       const resp = await fetch(qr);
       if (resp.ok) {
         const ab = await resp.arrayBuffer();
         const imgId = wb.addImage({ buffer: ab, extension: "png" });
-        ws.addImage(imgId, { tl: { col: 4.15, row: 0.1 }, ext: { width: 96, height: 96 } });
-        ws.getCell("E7").value = "@" + SUP.ig.toUpperCase();
-        ws.getCell("E7").font = { size: 8 };
-        ws.getCell("E7").alignment = { horizontal: "center" };
+        ws.addImage(imgId, { tl: { col: 0, row: 0.15 }, ext: { width: 88, height: 88 } });
       }
     } catch { /* без QR — не ламаємо експорт */ }
+    for (let i = 1; i <= 5; i++) ws.getRow(i).height = 18;
 
-    // ── Постачальник / Отримувач ──
-    ws.addRow(["Постачальник:", SUP.name]); ws.getCell("A1").font = { bold: true };
-    ws.addRow(["IBAN", SUP.iban]);
-    ws.addRow([`${SUP.bank} РНУКПН: ${SUP.rnukpn}; МФО: ${SUP.mfo}`]);
-    ws.addRow(["тел.", SUP.phone]);
-    ws.addRow(["mail:", SUP.mail]);
-    ws.addRow(["Instagram:", "@" + SUP.ig.toUpperCase()]);
-    ws.addRow([]);
-    const rec = ws.addRow(["Отримувач:", clientName, clientPhone]);
-    ws.getCell(`A${rec.number}`).font = { bold: true };
-    ws.addRow([]);
+    // ── Постачальник (праворуч від QR — колонка B з відступом) ──
+    const sup: [string, boolean][] = [
+      ["Постачальник: " + SUP.name, true],
+      ["IBAN " + SUP.iban, false],
+      [`${SUP.bank} РНУКПН: ${SUP.rnukpn}; МФО: ${SUP.mfo}`, false],
+      ["тел. " + SUP.phone, false],
+      ["mail: " + SUP.mail, false],
+    ];
+    sup.forEach((s, i) => {
+      const c = ws.getCell(i + 1, 2);
+      c.value = s[0]; c.alignment = { indent: 8, vertical: "middle" };
+      if (s[1]) c.font = { bold: true };
+    });
+
+    // ── підпис під QR ──
+    ws.mergeCells("A6:B6");
+    const ig = ws.getCell("A6"); ig.value = "@" + SUP.ig.toUpperCase();
+    ig.font = { size: 8, bold: true }; ig.alignment = { horizontal: "center" };
+    ws.mergeCells("A7:B8");
+    const note = ws.getCell("A7");
+    note.value = "*Скануй та підпишись! Знижки та спеціальні пропозиції діють тільки для підписників";
+    note.font = { size: 7, color: { argb: "FF888888" } };
+    note.alignment = { horizontal: "center", vertical: "top", wrapText: true };
+
+    // ── Отримувач ──
+    const rc = ws.getCell("B9");
+    rc.value = "Отримувач: " + clientName + (clientPhone ? "    тел.: " + clientPhone : "");
+    rc.font = { bold: true }; rc.alignment = { indent: 8 };
 
     // ── Заголовок (обʼєднано, по центру) ──
-    const tr = ws.addRow([`Видаткова накладна № ${deal.id} від ${today}`]);
-    ws.mergeCells(`A${tr.number}:F${tr.number}`);
-    const tc = ws.getCell(`A${tr.number}`);
+    ws.mergeCells("A11:F11");
+    const tc = ws.getCell("A11");
+    tc.value = `Видаткова накладна № ${deal.id} від ${today}`;
     tc.font = { bold: true, size: 13 }; tc.alignment = { horizontal: "center" };
-    ws.addRow([]);
 
     // ── Шапка таблиці (заливка + рамка) ──
-    const hr = ws.addRow(["№", "Товари (роботи, послуги)", "Кіл-сть", "Од", "Ціна", "Сума"]);
-    hr.eachCell((c: any) => {
-      c.font = { bold: true }; c.border = box;
+    const HR = 13;
+    ["№", "Товари (роботи, послуги)", "Кіл-сть", "Од", "Ціна", "Сума"].forEach((h, i) => {
+      const c = ws.getCell(HR, i + 1);
+      c.value = h; c.font = { bold: true }; c.border = box;
       c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFDF6E3" } };
       c.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     });
 
     // ── Рядки товарів (з рамками) ──
+    let row = HR + 1;
     items.forEach((it: any, i: number) => {
-      const r = ws.addRow([i + 1, it.product_name, Number(it.quantity), "шт", Number(it.price), Number(it.total)]);
-      r.eachCell((c: any, col: number) => {
-        c.border = box;
-        if (col === 1 || col === 3 || col === 4) c.alignment = { horizontal: "center" };
-        if (col === 5 || col === 6) { c.alignment = { horizontal: "right" }; c.numFmt = "#,##0.00"; }
-        if (col === 2) c.alignment = { wrapText: true };
+      const vals: any[] = [i + 1, it.product_name, Number(it.quantity), "шт", Number(it.price), Number(it.total)];
+      vals.forEach((v, ci) => {
+        const c = ws.getCell(row, ci + 1);
+        c.value = v; c.border = box;
+        if (ci === 0 || ci === 2 || ci === 3) c.alignment = { horizontal: "center" };
+        if (ci === 4 || ci === 5) { c.alignment = { horizontal: "right" }; c.numFmt = "#,##0.00"; }
+        if (ci === 1) c.alignment = { wrapText: true };
       });
+      row++;
     });
-    ws.addRow([]);
+    row++;
 
     // ── Підсумки (праворуч) ──
     const addTot = (label: string, val: number, bold: boolean) => {
-      const r = ws.addRow(["", "", "", "", label, Number(val.toFixed(2))]);
-      const lc = ws.getCell(`E${r.number}`); lc.alignment = { horizontal: "right" }; lc.font = { bold };
-      const vc = ws.getCell(`F${r.number}`); vc.alignment = { horizontal: "right" }; vc.numFmt = "#,##0.00"; vc.font = { bold };
+      const lc = ws.getCell(row, 5); lc.value = label; lc.alignment = { horizontal: "right" }; lc.font = { bold };
+      const vc = ws.getCell(row, 6); vc.value = Number(val.toFixed(2)); vc.alignment = { horizontal: "right" }; vc.numFmt = "#,##0.00"; vc.font = { bold };
+      row++;
     };
     addTot("Всього:", subtotal, false);
     if (discount > 0) addTot("Сума знижки:", discount, false);
     addTot("Всього до оплати:", total, true);
-    ws.addRow([]);
-    ws.addRow([uahWords(total)]);
+    row += 1;
+    ws.getCell(row, 1).value = uahWords(total); row++;
+    ws.getCell(row, 1).value = "У т.ч. ПДВ: Нуль гривень 00 копійок";
 
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
