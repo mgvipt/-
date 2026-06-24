@@ -130,12 +130,26 @@ export default function KpDoc({ deal, onClose }: { deal: any; onClose: () => voi
     const thin = { style: "thin", color: { argb: "FF333333" } };
     const box = { top: thin, left: thin, bottom: thin, right: thin };
 
+    // ── QR Instagram (праворуч угорі, як у документі) ──
+    try {
+      const resp = await fetch(qr);
+      if (resp.ok) {
+        const ab = await resp.arrayBuffer();
+        const imgId = wb.addImage({ buffer: ab, extension: "png" });
+        ws.addImage(imgId, { tl: { col: 4.15, row: 0.1 }, ext: { width: 96, height: 96 } });
+        ws.getCell("E7").value = "@" + SUP.ig.toUpperCase();
+        ws.getCell("E7").font = { size: 8 };
+        ws.getCell("E7").alignment = { horizontal: "center" };
+      }
+    } catch { /* без QR — не ламаємо експорт */ }
+
     // ── Постачальник / Отримувач ──
     ws.addRow(["Постачальник:", SUP.name]); ws.getCell("A1").font = { bold: true };
     ws.addRow(["IBAN", SUP.iban]);
     ws.addRow([`${SUP.bank} РНУКПН: ${SUP.rnukpn}; МФО: ${SUP.mfo}`]);
     ws.addRow(["тел.", SUP.phone]);
     ws.addRow(["mail:", SUP.mail]);
+    ws.addRow(["Instagram:", "@" + SUP.ig.toUpperCase()]);
     ws.addRow([]);
     const rec = ws.addRow(["Отримувач:", clientName, clientPhone]);
     ws.getCell(`A${rec.number}`).font = { bold: true };
