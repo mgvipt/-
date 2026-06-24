@@ -117,6 +117,9 @@ export default function Layout() {
     r.setProperty("--fx2", theme.fx2 || theme.accent || "#22d3ee");
     r.setProperty("--glass-a", String(theme.glassA != null ? theme.glassA : 0.6));
     r.setProperty("--sidebar-text", theme.sidebarText || "#c5d4e6");
+    const darkCards = theme.fx === "neon";
+    r.setProperty("--card-text", darkCards ? "#eef2ff" : "#1e293b");
+    r.setProperty("--card-text-2", darkCards ? "#aab8d6" : "#475569");
     if (theme.sidebar) r.setProperty("--sidebar", theme.sidebar);
     if (theme.sidebar2) r.setProperty("--sidebar2", theme.sidebar2);
     r.setProperty("--topbar", theme.topbar || "#ffffff");

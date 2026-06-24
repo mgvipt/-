@@ -187,3 +187,12 @@ body.fx-neon .listtbl td{color:#e7ecff;border-bottom-color:rgba(150,180,255,.1);
 /* ── Читабельність на темному + градієнтний лого у fx-neon ── */
 body.fx-neon .muted{color:rgba(210,220,255,.55)!important;}
 body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-webkit-background-clip:text;background-clip:text;color:transparent;}
+
+
+/* ── Адаптивний текст карток (контраст під тему) ── */
+.card .ttl{color:var(--card-text,#1e293b);}
+.card .price{color:var(--card-text-2,#475569);font-weight:500;}
+.owner{color:var(--card-text-2,#475569);}
+.sum{color:var(--card-text-2,#64748b);}
+.col-head b{color:var(--card-text,#334155);}
+.chip-unseen{background:#f59e0b!important;color:#fff!important;font-weight:600;}
