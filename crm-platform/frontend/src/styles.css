@@ -136,3 +136,15 @@ body.glass .listtbl,body.glass .listtbl th{background:rgba(255,255,255,.72)!impo
 .listtbl td{padding:9px 12px;border-bottom:1px solid #f1f5f9;}
 .listtbl tbody tr:hover{background:#f1f5f9;}
 .chip{display:inline-block;padding:2px 8px;border-radius:999px;color:#fff;font-size:11px;font-weight:600;}
+
+
+/* ── Неон / Футуризм (body.fx-neon) ── */
+body.fx-neon .btn-primary{background:linear-gradient(135deg,var(--brand),#22d3ee)!important;box-shadow:0 0 14px rgba(168,85,247,.45);border:none;}
+body.fx-neon .btn-green{box-shadow:0 0 14px rgba(52,211,153,.5);}
+body.fx-neon .nav-item.active{box-shadow:0 0 16px rgba(124,196,255,.3);}
+body.fx-neon .card{border:1px solid rgba(124,196,255,.14);}
+body.fx-neon .card:hover{box-shadow:0 0 20px rgba(168,85,247,.32)!important;border-color:rgba(168,85,247,.4);}
+body.fx-neon .col-head{box-shadow:0 0 14px rgba(124,196,255,.15);}
+body.fx-neon .price,body.fx-neon .sum{color:#67e8f9!important;}
+body.fx-neon .panel{border:1px solid rgba(124,196,255,.12);box-shadow:0 0 20px rgba(20,20,60,.25);}
+body.fx-neon .toolbar{border:1px solid rgba(124,196,255,.12);}

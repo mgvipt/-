@@ -39,6 +39,17 @@ const PRESETS = [
   { id: "amber", name: "Бурштин", sidebar: "#3b2a0c", sidebar2: "#5e4515", accent: "#f59e0b", bg: "#fffbeb", topbar: "#3b2a0c", topbarText: "#ffffff" },
   { id: "fuchsia", name: "Фуксія", sidebar: "#3b0c2a", sidebar2: "#5e1545", accent: "#e879f9", bg: "#fdf4ff", topbar: "#ffffff", topbarText: "#0f172a" },
   { id: "indigo", name: "Індиго", sidebar: "#1e1b4b", sidebar2: "#312e81", accent: "#6366f1", bg: "#eef2ff", topbar: "#1e1b4b", topbarText: "#ffffff" },
+  { id: "neon", name: "Неон ✦", sidebar: "#0a0e27", sidebar2: "#1b1146", accent: "#a855f7", bg: "#0a0e27", topbar: "#0a0e27", topbarText: "#ffffff", fx: "neon", glass: true, animBg: "night" },
+  { id: "nord", name: "Nord", sidebar: "#2e3440", sidebar2: "#3b4252", accent: "#88c0d0", bg: "#eceff4", topbar: "#ffffff", topbarText: "#2e3440" },
+  { id: "dracula", name: "Dracula", sidebar: "#282a36", sidebar2: "#383a4a", accent: "#bd93f9", bg: "#f2f0fb", topbar: "#282a36", topbarText: "#ffffff" },
+  { id: "tokyo", name: "Tokyo Night", sidebar: "#1a1b26", sidebar2: "#24283b", accent: "#7aa2f7", bg: "#e9ebf5", topbar: "#1a1b26", topbarText: "#ffffff" },
+  { id: "catppuccin", name: "Catppuccin", sidebar: "#1e1e2e", sidebar2: "#313244", accent: "#cba6f7", bg: "#f1edf7", topbar: "#ffffff", topbarText: "#1e1e2e" },
+  { id: "rosepine", name: "Rosé Pine", sidebar: "#191724", sidebar2: "#26233a", accent: "#ebbcba", bg: "#faf4ed", topbar: "#ffffff", topbarText: "#191724" },
+  { id: "solar", name: "Solar", sidebar: "#073642", sidebar2: "#0d4a5a", accent: "#268bd2", bg: "#fdf6e3", topbar: "#073642", topbarText: "#ffffff" },
+  { id: "emerald", name: "Смарагд", sidebar: "#0f2e25", sidebar2: "#1b4a3c", accent: "#34d399", bg: "#ecfdf5", topbar: "#ffffff", topbarText: "#0f2e25" },
+  { id: "slatepro", name: "Slate Pro", sidebar: "#1e293b", sidebar2: "#334155", accent: "#38bdf8", bg: "#f1f5f9", topbar: "#1e293b", topbarText: "#ffffff" },
+  { id: "mocha", name: "Мокко", sidebar: "#3a2e26", sidebar2: "#52423a", accent: "#c08552", bg: "#f6efe6", topbar: "#ffffff", topbarText: "#3a2e26" },
+  { id: "plum", name: "Слива", sidebar: "#2d1b30", sidebar2: "#45294a", accent: "#e879f9", bg: "#fdf4ff", topbar: "#ffffff", topbarText: "#2d1b30" },
 ];
 const ANIMBGS = [
   { id: "none", name: "Немає" }, { id: "aurora", name: "Аврора" }, { id: "flow", name: "Потік" },
@@ -95,6 +106,7 @@ export default function Layout() {
     r.setProperty("--topbar-text", theme.topbarText || "#0f172a");
     document.body.classList.toggle("anim-on", theme.anim !== false);
     document.body.classList.toggle("glass", !!theme.glass);
+    document.body.classList.toggle("fx-neon", theme.fx === "neon");
   }, [theme]);
 
   function setT(patch: any) { save({ ...theme, ...patch }); }
@@ -145,7 +157,7 @@ export default function Layout() {
             <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
               <span className="muted" style={{ width: 74, fontSize: 12 }}>{t("Пресеты","Пресети")}:</span>
               {PRESETS.map((p) => (
-                <button key={p.id} className="preset-chip" title={p.name} onClick={() => save({ ...theme, ...p })}
+                <button key={p.id} className="preset-chip" title={p.name} onClick={() => save({ ...theme, ...p, fx: (p as any).fx || "", glass: (p as any).glass || false, animBg: (p as any).animBg || "none" })}
                   style={{ borderColor: theme.sidebar === p.sidebar ? p.accent : "transparent" }}>
                   <span style={{ width: 18, height: 30, background: `linear-gradient(165deg,${p.sidebar},${p.sidebar2})`, display: "inline-block" }} />
                   <span style={{ width: 16, height: 30, background: p.accent, display: "inline-block" }} />
