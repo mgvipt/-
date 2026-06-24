@@ -33,6 +33,7 @@ import CardFields from "../CardFields";
 import ClientChat from "../ClientChat";
 import ActivityLog from "../ActivityLog";
 import CallButton from "../CallButton";
+import { useLang } from "../i18n";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
@@ -62,6 +63,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const id = dealId != null ? String(dealId) : params.id;
   const nav = useNavigate();
   const [deal, setDeal] = useState<Deal | null>(null);
+  const { t } = useLang();
   const [chatW, setChatW] = useState(() => Number(localStorage.getItem("crm_card_chatW")) || 360);
   const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -135,17 +137,17 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
 
   async function acceptPayment() {
     setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount }));
-    setPayOpen(false); setPayAmount(""); flash("✓ Оплата проведена в финансы");
+    setPayOpen(false); setPayAmount(""); flash(t("✓ Оплата проведена в финансы","✓ Оплата проведена у фінанси"));
   }
   async function ship() {
-    try { const r = await api.post<any>(`/api/deals/${id}/ship/`, {}); setDeal(r.deal); flash(`✓ Отгружено. Себестоимость ${r.cogs} ₴ списана`); }
-    catch { flash("В сделке нет товаров для отгрузки"); }
+    try { const r = await api.post<any>(`/api/deals/${id}/ship/`, {}); setDeal(r.deal); flash(t(`✓ Отгружено. Себестоимость ${r.cogs} ₴ списана`, `✓ Відвантажено. Собівартість ${r.cogs} ₴ списана`)); }
+    catch { flash(t("В сделке нет товаров для отгрузки","У сделке немає товарів для відвантаження")); }
   }
   // TODO боевой режим: завести @action в DealViewSet поверх integrations/adapters.py
   //      (np_create_ttn / checkbox_create_receipt / liqpay_checkout_link). Сейчас — заглушки.
-  async function createTTN() { await patch({ ttn: "НП " + Math.floor(2e13 + Math.random() * 1e13) }); flash("✓ ТТН Нова Пошта создана"); }
-  async function issueCheckbox() { await patch({ checkbox_status: deal?.paid && deal.paid < Number(deal.amount) ? "аванс" : "финальный" }); flash("✓ Чек Checkbox сформирован"); }
-  function sendPayLink() { flash("✓ Ссылка на оплату отправлена клиенту · cashflow.wallcovdec.com.ua"); }
+  async function createTTN() { await patch({ ttn: "НП " + Math.floor(2e13 + Math.random() * 1e13) }); flash(t("✓ ТТН Нова Пошта создана","✓ ТТН Нова Пошта створена")); }
+  async function issueCheckbox() { await patch({ checkbox_status: deal?.paid && deal.paid < Number(deal.amount) ? "аванс" : "финальный" }); flash(t("✓ Чек Checkbox сформирован","✓ Чек Checkbox сформовано")); }
+  function sendPayLink() { flash(t("✓ Ссылка на оплату отправлена клиенту · cashflow.wallcovdec.com.ua","✓ Посилання на оплату надіслано клієнту · cashflow.wallcovdec.com.ua")); }
   useEffect(() => {
     if (!ncOpen || ncMode !== "pick" || !ncSearch.trim()) { setNcResults([]); return; }
     const t = setTimeout(() => api.get<any>(`/api/contacts/?search=${encodeURIComponent(ncSearch)}&page_size=8`).then((d) => setNcResults(d.results || d)).catch(() => setNcResults([])), 250);
@@ -161,7 +163,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     return () => clearTimeout(t);
   }, [cliSearch]);
   async function setContact(cid: number) { await api.patch(`/api/deals/${id}/`, { contact: cid }); setCliEdit(false); setCliSearch(""); setCliResults([]); setCliNew(false); load(); }
-  async function removeContact() { if (!confirm("Прибрати клієнта зі сделки?")) return; await api.patch(`/api/deals/${id}/`, { contact: null }); load(); }
+  async function removeContact() { if (!confirm(t("Убрать клиента из сделки?","Прибрати клієнта зі сделки?"))) return; await api.patch(`/api/deals/${id}/`, { contact: null }); load(); }
   async function createInlineClient() { const p = cliN.name.trim().split(/\s+/); const c = await api.post<any>("/api/contacts/", { first_name: p[0] || cliN.name.trim(), last_name: p.slice(1).join(" "), phone: cliN.phone }); setContact(c.id); setCliN({ name: "", phone: "" }); }
   async function createClient() {
     const parts = nc.name.trim().split(" ");
@@ -170,24 +172,24 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     setNcOpen(false); setNc({ name: "", phone: "", email: "" }); load();
   }
   async function sendChat() {
-    if (!draft.trim() || !deal?.conversation_id) { if (!deal?.conversation_id) flash("Немає активного чату з клієнтом"); return; }
+    if (!draft.trim() || !deal?.conversation_id) { if (!deal?.conversation_id) flash(t("Нет активного чата с клиентом","Немає активного чату з клієнтом")); return; }
     setSending(true);
     try {
       const m = await api.post<any>(`/api/conversations/${deal.conversation_id}/send/`, { text: draft.trim() });
       setChat((c) => [...c, m]); setDraft("");
-    } catch { flash("Не вдалося відправити (канал/токен)"); }
+    } catch { flash(t("Не удалось отправить (канал/токен)","Не вдалося відправити (канал/токен)")); }
     finally { setSending(false); }
   }
   async function aiSuggest() {
     setAiLoad(true); setAi(null);
     try { setAi(await api.post<any>(`/api/deals/${id}/ai_suggest/`, {})); }
-    catch { flash("AI недоступний"); }
+    catch { flash(t("AI недоступен","AI недоступний")); }
     finally { setAiLoad(false); }
   }
 
   /* ─── [6] ВЫЧИСЛЯЕМОЕ ────────────────────────────────────────────────── */
-  if (notFound) return <div className="scroll pad fade"><div className="panel" style={{ textAlign: "center", padding: 40 }}><h3>Сделку не знайдено</h3><div className="muted" style={{ marginBottom: 16 }}>Можливо, її видалено або змінено ID після перенесення з Бітрикса. Відкрий зі списку сделок.</div><button className="btn btn-primary" onClick={() => nav("/deals")}>← До списку сделок</button></div></div>;
-  if (!deal) return <div className="spin">Загрузка сделки…</div>;
+  if (notFound) return <div className="scroll pad fade"><div className="panel" style={{ textAlign: "center", padding: 40 }}><h3>{t("Сделка не найдена","Сделку не знайдено")}</h3><div className="muted" style={{ marginBottom: 16 }}>{t("Возможно, она удалена или изменён ID после переноса из Битрикса. Открой из списка сделок.","Можливо, її видалено або змінено ID після перенесення з Бітрикса. Відкрий зі списку сделок.")}</div><button className="btn btn-primary" onClick={() => nav("/deals")}>{t("← К списку сделок","← До списку сделок")}</button></div></div>;
+  if (!deal) return <div className="spin">{t("Загрузка сделки…","Загрузка сделки…")}</div>;
   const curOrder = funnel?.stages.find((s) => s.id === deal.stage)?.order ?? 0;
   const remaining = Number(deal.amount) - deal.paid;
   const disc = Number(deal.discount_pct || 0);
@@ -195,8 +197,8 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const hasCheck = !!deal.checkbox_status && deal.checkbox_status !== "none";
   // Лента событий из реальных данных (оплаты + системное «создана»):
   const events = [
-    ...deal.payments.map((p) => ({ t: p.created_at, kind: "pay", text: `Оплата ${fmt(Number(p.amount))} ₴ · ${p.provider}` })),
-    { t: deal.payments[0]?.created_at || "", kind: "sys", text: "Сделка создана" },
+    ...deal.payments.map((p) => ({ t: p.created_at, kind: "pay", text: t(`Оплата ${fmt(Number(p.amount))} ₴ · ${p.provider}`, `Оплата ${fmt(Number(p.amount))} ₴ · ${p.provider}`) })),
+    { t: deal.payments[0]?.created_at || "", kind: "sys", text: t("Сделка создана","Сделка створена") },
   ].filter((e) => e.t);
 
   return (
@@ -210,7 +212,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
         {deal.contact_id && <CallButton contact={deal.contact_id} small />}
-        <button className="btn btn-green" onClick={ship}>📦 Отгрузить</button>
+        <button className="btn btn-green" onClick={ship}>{t("📦 Отгрузить","📦 Відвантажити")}</button>
       </div>
 
       {/* ─── [8] РЕНДЕР: стадии (клик = смена, на текущей — дни) ────────── */}
@@ -221,7 +223,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             return (
               <div key={s.id} className="stage" onClick={() => setStage(s.id)}
                 style={{ cursor: "pointer", background: s.order <= curOrder ? "var(--brand)" : "#cbd5e1" }}>
-                {s.name}{cur && deal.days_in_stage != null ? ` · ${deal.days_in_stage}д` : ""}
+                {s.name}{cur && deal.days_in_stage != null ? t(` · ${deal.days_in_stage}д`, ` · ${deal.days_in_stage}д`) : ""}
               </div>
             );
           })}
@@ -230,14 +232,14 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
 
       {/* ─── [9] РЕНДЕР: єдина панель — вкладки + дії (dealbar-unified) ──── */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "12px 0", padding: "8px 10px", background: "linear-gradient(90deg,#f8fafc,#eef2ff)", borderRadius: 10, border: "1px solid #e2e8f0" }}>
-        <button className={"btn" + (tab === "general" ? " btn-primary" : "")} onClick={() => setTab("general")}>💬 Лента / Чат</button>
-        <button className={"btn" + (tab === "items" ? " btn-primary" : "")} onClick={() => setTab("items")}>📦 Товари ({deal.items.length})</button>
-        <button className={"btn" + (tab === "cashflow" ? " btn-primary" : "")} onClick={() => setTab("cashflow")}>💰 Cashflow</button>
+        <button className={"btn" + (tab === "general" ? " btn-primary" : "")} onClick={() => setTab("general")}>{t("💬 Лента / Чат","💬 Стрічка / Чат")}</button>
+        <button className={"btn" + (tab === "items" ? " btn-primary" : "")} onClick={() => setTab("items")}>{t("📦 Товары","📦 Товари")} ({deal.items.length})</button>
+        <button className={"btn" + (tab === "cashflow" ? " btn-primary" : "")} onClick={() => setTab("cashflow")}>{t("💰 Cashflow","💰 Cashflow")}</button>
         <div style={{ width: 1, height: 24, background: "#cbd5e1", margin: "0 6px" }} />
-        <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Дії:</span>
-        <button className="btn" onClick={sendPayLink}>💳 Оплата</button>
-        <button className="btn" onClick={createTTN}>🚚 ТТН</button>
-        <button className="btn" onClick={issueCheckbox}>🧾 Checkbox</button>
+        <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>{t("Действия:","Дії:")}</span>
+        <button className="btn" onClick={sendPayLink}>{t("💳 Оплата","💳 Оплата")}</button>
+        <button className="btn" onClick={createTTN}>{t("🚚 ТТН","🚚 ТТН")}</button>
+        <button className="btn" onClick={issueCheckbox}>{t("🧾 Checkbox","🧾 Checkbox")}</button>
       </div>
 
       {tab !== "cashflow" ? (
@@ -249,29 +251,29 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           {/* 10.1 Клиент — інлайн вибір/зміна/прибирання (без попапів) */}
           <div className="panel">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div className="label">Клиент</div>
+              <div className="label">{t("Клиент","Клієнт")}</div>
               {deal.contact_id && !cliEdit && (
                 <span style={{ fontSize: 11, display: "flex", gap: 10 }}>
-                  <span style={{ color: "#2563eb", cursor: "pointer" }} onClick={() => { setCliEdit(true); setCliNew(false); }}>✏️ Змінити</span>
-                  <span style={{ color: "#dc2626", cursor: "pointer" }} onClick={removeContact}>✕ Прибрати</span>
+                  <span style={{ color: "#2563eb", cursor: "pointer" }} onClick={() => { setCliEdit(true); setCliNew(false); }}>{t("✏️ Изменить","✏️ Змінити")}</span>
+                  <span style={{ color: "#dc2626", cursor: "pointer" }} onClick={removeContact}>{t("✕ Убрать","✕ Прибрати")}</span>
                 </span>
               )}
             </div>
             {deal.contact_id && !cliEdit ? (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontWeight: 600 }}>{deal.contact_name || "Без контакта"}</span>
+                  <span style={{ fontWeight: 600 }}>{deal.contact_name || t("Без контакта","Без контакту")}</span>
                   {loyalty && <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: (LOYALTY_COLOR[loyalty] || "#64748b") + "22", color: LOYALTY_COLOR[loyalty] || "#64748b" }}>{loyalty}</span>}
                 </div>
                 <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>📞 Позвонить</button>
-                  <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }} onClick={() => deal.conversation_id ? nav(`/inbox?c=${deal.conversation_id}`) : setTab("general")}>💬 Чат</button>
-                  <button className="btn" style={{ background: "#f1f5f9" }} title="Картка клієнта" onClick={() => nav(`/clients/${deal.contact_id}`)}>Клієнт →</button>
+                  <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>{t("📞 Позвонить","📞 Подзвонити")}</button>
+                  <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }} onClick={() => deal.conversation_id ? nav(`/inbox?c=${deal.conversation_id}`) : setTab("general")}>{t("💬 Чат","💬 Чат")}</button>
+                  <button className="btn" style={{ background: "#f1f5f9" }} title={t("Карточка клиента","Картка клієнта")} onClick={() => nav(`/clients/${deal.contact_id}`)}>{t("Клиент →","Клієнт →")}</button>
                 </div>
               </>
             ) : (
               <div style={{ marginTop: 6 }}>
-                <input value={cliSearch} autoFocus onChange={(e) => setCliSearch(e.target.value)} placeholder="🔍 Телефон або імʼя клієнта…" style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px" }} />
+                <input value={cliSearch} autoFocus onChange={(e) => setCliSearch(e.target.value)} placeholder={t("🔍 Телефон или имя клиента…","🔍 Телефон або імʼя клієнта…")} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px" }} />
                 {cliResults.length > 0 && (
                   <div style={{ maxHeight: 200, overflowY: "auto", marginTop: 6, border: "1px solid #e2e8f0", borderRadius: 8 }}>
                     {cliResults.map((c) => (
@@ -281,19 +283,19 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                     ))}
                   </div>
                 )}
-                {cliSearch.trim() && cliResults.length === 0 && <div className="muted" style={{ fontSize: 12, padding: "6px 0" }}>Не знайдено — створи нового нижче.</div>}
+                {cliSearch.trim() && cliResults.length === 0 && <div className="muted" style={{ fontSize: 12, padding: "6px 0" }}>{t("Не найдено — создай нового ниже.","Не знайдено — створи нового нижче.")}</div>}
                 {!cliNew ? (
                   <div style={{ display: "flex", gap: 10, marginTop: 8, fontSize: 12 }}>
-                    <span style={{ color: "#16a34a", cursor: "pointer" }} onClick={() => setCliNew(true)}>➕ Створити нового</span>
-                    {deal.contact_id && <span style={{ color: "#64748b", cursor: "pointer", marginLeft: "auto" }} onClick={() => { setCliEdit(false); setCliSearch(""); }}>Скасувати</span>}
+                    <span style={{ color: "#16a34a", cursor: "pointer" }} onClick={() => setCliNew(true)}>{t("➕ Создать нового","➕ Створити нового")}</span>
+                    {deal.contact_id && <span style={{ color: "#64748b", cursor: "pointer", marginLeft: "auto" }} onClick={() => { setCliEdit(false); setCliSearch(""); }}>{t("Отменить","Скасувати")}</span>}
                   </div>
                 ) : (
                   <div style={{ marginTop: 8 }}>
-                    <input value={cliN.name} onChange={(e) => setCliN({ ...cliN, name: e.target.value })} placeholder="Імʼя та прізвище" style={{ width: "100%", height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 9px", marginBottom: 6 }} />
+                    <input value={cliN.name} onChange={(e) => setCliN({ ...cliN, name: e.target.value })} placeholder={t("Имя и фамилия","Імʼя та прізвище")} style={{ width: "100%", height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 9px", marginBottom: 6 }} />
                     <input value={cliN.phone} onChange={(e) => setCliN({ ...cliN, phone: e.target.value })} placeholder="+380…" style={{ width: "100%", height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 9px", marginBottom: 6 }} />
                     <div style={{ display: "flex", gap: 6 }}>
-                      <button className="btn btn-light" style={{ flex: 1, fontSize: 12 }} onClick={() => setCliNew(false)}>Назад</button>
-                      <button className="btn btn-primary" style={{ flex: 1, fontSize: 12 }} onClick={createInlineClient} disabled={!cliN.name.trim()}>Створити</button>
+                      <button className="btn btn-light" style={{ flex: 1, fontSize: 12 }} onClick={() => setCliNew(false)}>{t("Назад","Назад")}</button>
+                      <button className="btn btn-primary" style={{ flex: 1, fontSize: 12 }} onClick={createInlineClient} disabled={!cliN.name.trim()}>{t("Создать","Створити")}</button>
                     </div>
                   </div>
                 )}
@@ -303,50 +305,50 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
 
           {/* 10.2 Сумма / оплачено / осталось (сумма — инлайн-edit) */}
           <div className="panel">
-            <div className="label">Сумма сделки</div>
+            <div className="label">{t("Сумма сделки","Сума сделки")}</div>
             <div style={{ fontSize: 22, fontWeight: 700 }}>
-              <Inline value={Number(deal.amount)} fmt={(v) => fmt(v) + " грн."} onSave={(v) => patch({ amount: v })} />
+              <Inline value={Number(deal.amount)} fmt={(v) => fmt(v) + t(" грн."," грн.")} onSave={(v) => patch({ amount: v })} />
             </div>
-            <div className="row" style={{ marginTop: 8 }}><span className="muted">Оплачено</span><b style={{ color: "#16a34a" }}>{fmt(deal.paid)} ₴</b></div>
-            <div className="row"><span className="muted">Осталось</span><b style={{ color: remaining > 0 ? "#d97706" : "#16a34a" }}>{fmt(remaining)} ₴</b></div>
-            <button className="btn btn-primary" style={{ width: "100%", height: 36, marginTop: 10 }} onClick={() => { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }}>💳 Принять оплату</button>
+            <div className="row" style={{ marginTop: 8 }}><span className="muted">{t("Оплачено","Оплачено")}</span><b style={{ color: "#16a34a" }}>{fmt(deal.paid)} ₴</b></div>
+            <div className="row"><span className="muted">{t("Осталось","Залишилось")}</span><b style={{ color: remaining > 0 ? "#d97706" : "#16a34a" }}>{fmt(remaining)} ₴</b></div>
+            <button className="btn btn-primary" style={{ width: "100%", height: 36, marginTop: 10 }} onClick={() => { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }}>{t("💳 Принять оплату","💳 Прийняти оплату")}</button>
           </div>
           <ActivityLog kind="deal" id={deal.id} />
 
           {/* 10.3 Скидка (инлайн-edit) + авто-рекомендация для VIP */}
           <div className="panel">
-            <div className="label">Скидка</div>
-            <div className="row"><span className="muted">Текущая</span><b><Inline value={disc} fmt={(v) => v + " %"} onSave={(v) => patch({ discount_pct: v })} /></b></div>
+            <div className="label">{t("Скидка","Знижка")}</div>
+            <div className="row"><span className="muted">{t("Текущая","Поточна")}</span><b><Inline value={disc} fmt={(v) => v + " %"} onSave={(v) => patch({ discount_pct: v })} /></b></div>
             {loyalty === "VIP" && disc < 10 && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginTop: 8, background: "#ecfdf5", color: "#047857", padding: "7px 9px", borderRadius: 8, fontSize: 12 }}>
-                <span>VIP: при полной оплате доступно 10%</span>
-                <button className="btn" style={{ padding: "3px 8px" }} onClick={() => patch({ discount_pct: 10 })}>Применить</button>
+                <span>{t("VIP: при полной оплате доступно 10%","VIP: при повній оплаті доступно 10%")}</span>
+                <button className="btn" style={{ padding: "3px 8px" }} onClick={() => patch({ discount_pct: 10 })}>{t("Применить","Застосувати")}</button>
               </div>
             )}
           </div>
 
           {/* 10.4 Доставка и документы (ТТН / чек + бейджи) */}
           <div className="panel">
-            <div className="label">Доставка и документы</div>
-            <div className="row"><span className="muted">ТТН Нова Пошта</span><b>{deal.ttn || "—"}</b></div>
-            <div className="row"><span className="muted">Чек Checkbox</span><b>{hasCheck ? deal.checkbox_status : "—"}</b></div>
+            <div className="label">{t("Доставка и документы","Доставка і документи")}</div>
+            <div className="row"><span className="muted">{t("ТТН Нова Пошта","ТТН Нова Пошта")}</span><b>{deal.ttn || "—"}</b></div>
+            <div className="row"><span className="muted">{t("Чек Checkbox","Чек Checkbox")}</span><b>{hasCheck ? deal.checkbox_status : "—"}</b></div>
             <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
-              <span style={chip(hasCheck)}>Чек {hasCheck ? "✓" : "—"}</span>
-              <span style={chip(!!deal.ttn)}>ТТН {deal.ttn ? "✓" : "—"}</span>
+              <span style={chip(hasCheck)}>{t("Чек","Чек")} {hasCheck ? "✓" : "—"}</span>
+              <span style={chip(!!deal.ttn)}>{t("ТТН","ТТН")} {deal.ttn ? "✓" : "—"}</span>
             </div>
           </div>
 
           {/* 10.5 Маржа + бонус менеджера (для руководителя) */}
           <div className="panel">
-            <div className="label">Маржа (видит РОП / руководитель)</div>
-            <div className="row"><span className="muted">Маржа</span><b>{fmt(deal.margin || 0)} ₴{deal.margin && Number(deal.amount) ? ` · ${Math.round((deal.margin / Number(deal.amount)) * 100)}%` : ""}</b></div>
-            <div className="row" title={deal.bonus ? `${deal.bonus.revenue_pct}% з обороту + ${deal.bonus.margin_pct}% з маржі. Ставки міняються у Фінмоделі → ЗП.` : ""}><span className="muted">💰 Бонус менеджера з угоди</span><b style={{ color: "#1d4ed8" }}>{fmt(deal.bonus?.total || 0)} ₴</b></div>
-            {deal.bonus && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{deal.bonus.revenue_pct}% обороту = {fmt(deal.bonus.from_revenue)} ₴ + {deal.bonus.margin_pct}% маржі = {fmt(deal.bonus.from_margin)} ₴</div>}
+            <div className="label">{t("Маржа (видит РОП / руководитель)","Маржа (бачить РОП / керівник)")}</div>
+            <div className="row"><span className="muted">{t("Маржа","Маржа")}</span><b>{fmt(deal.margin || 0)} ₴{deal.margin && Number(deal.amount) ? ` · ${Math.round((deal.margin / Number(deal.amount)) * 100)}%` : ""}</b></div>
+            <div className="row" title={deal.bonus ? t(`${deal.bonus.revenue_pct}% с оборота + ${deal.bonus.margin_pct}% с маржи. Ставки меняются в Финмодели → ЗП.`, `${deal.bonus.revenue_pct}% з обороту + ${deal.bonus.margin_pct}% з маржі. Ставки міняються у Фінмоделі → ЗП.`) : ""}><span className="muted">{t("💰 Бонус менеджера со сделки","💰 Бонус менеджера з угоди")}</span><b style={{ color: "#1d4ed8" }}>{fmt(deal.bonus?.total || 0)} ₴</b></div>
+            {deal.bonus && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{deal.bonus.revenue_pct}{t("% оборота = ","% обороту = ")}{fmt(deal.bonus.from_revenue)} ₴ + {deal.bonus.margin_pct}{t("% маржи = ","% маржі = ")}{fmt(deal.bonus.from_margin)} ₴</div>}
           </div>
 
           {/* 10.6 Ответственный */}
           <div className="panel">
-            <div className="label">Ответственный</div>
+            <div className="label">{t("Ответственный","Відповідальний")}</div>
             <OwnerSelect ownerId={deal.owner} ownerName={deal.owner_name} onSet={(uid) => patch({ owner: uid })} />
           </div>
         </div>
@@ -362,34 +364,34 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           ) : (
             /* 11.2 Товары в сделке (добавить/удалить → пересчёт суммы на бэке) */
             <div className="panel">
-              <div className="label">Товары в сделке</div>
+              <div className="label">{t("Товары в сделке","Товари у сделке")}</div>
               <div className="prod-search" style={{ position: "relative", margin: "8px 0 12px" }}>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <input value={psearch} onChange={(e) => { setPsearch(e.target.value); setPsel(null); }} placeholder="🔍 Пошук товару з номенклатури за назвою…" style={{ flex: 1, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px" }} />
-                  <input type="number" value={addQty} min={1} onChange={(e) => setAddQty(Number(e.target.value))} title="Кількість" style={{ width: 56, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px" }} />
-                  <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, whiteSpace: "nowrap" }} title="Зарезервувати товар під сделку"><input type="checkbox" checked={addReserve} onChange={(e) => setAddReserve(e.target.checked)} />Резерв</label>
-                  <button className="btn btn-primary" onClick={addItem} disabled={!psel}>Додати</button>
+                  <input value={psearch} onChange={(e) => { setPsearch(e.target.value); setPsel(null); }} placeholder={t("🔍 Поиск товара из номенклатуры по названию…","🔍 Пошук товару з номенклатури за назвою…")} style={{ flex: 1, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px" }} />
+                  <input type="number" value={addQty} min={1} onChange={(e) => setAddQty(Number(e.target.value))} title={t("Количество","Кількість")} style={{ width: 56, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px" }} />
+                  <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, whiteSpace: "nowrap" }} title={t("Зарезервировать товар под сделку","Зарезервувати товар під сделку")}><input type="checkbox" checked={addReserve} onChange={(e) => setAddReserve(e.target.checked)} />{t("Резерв","Резерв")}</label>
+                  <button className="btn btn-primary" onClick={addItem} disabled={!psel}>{t("Добавить","Додати")}</button>
                 </div>
                 {presults.length > 0 && (
                   <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 260, overflowY: "auto" }}>
                     {presults.map((p) => (
                       <div key={p.id} onClick={() => { setPsel(p); setPsearch(p.name); setPresults([]); }} style={{ padding: "8px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
-                        <b>{p.name}</b> <span className="muted">· {fmt(Number(p.price))} ₴ · ост. {(p as any).stock}</span>
+                        <b>{p.name}</b> <span className="muted">· {fmt(Number(p.price))} ₴ · {t("ост.","зал.")} {(p as any).stock}</span>
                       </div>
                     ))}
                   </div>
                 )}
-                {psel && <div style={{ fontSize: 12, color: "#16a34a", marginTop: 4 }}>✓ Обрано: {psel.name} · {fmt(Number(psel.price))} ₴ · сума {fmt(Number(psel.price) * addQty)} ₴</div>}
+                {psel && <div style={{ fontSize: 12, color: "#16a34a", marginTop: 4 }}>{t("✓ Выбрано:","✓ Обрано:")} {psel.name} · {fmt(Number(psel.price))} ₴ · {t("сумма","сума")} {fmt(Number(psel.price) * addQty)} ₴</div>}
               </div>
-              {deal.items.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>Товаров пока нет.</div> : (
-                <table><thead><tr><th>Товар</th><th>Кол-во</th><th>Залишок</th><th>Цена</th><th>Сумма</th><th>Резерв</th><th></th></tr></thead>
+              {deal.items.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Товаров пока нет.","Товарів поки немає.")}</div> : (
+                <table><thead><tr><th>{t("Товар","Товар")}</th><th>{t("Кол-во","К-сть")}</th><th>{t("Остаток","Залишок")}</th><th>{t("Цена","Ціна")}</th><th>{t("Сумма","Сума")}</th><th>{t("Резерв","Резерв")}</th><th></th></tr></thead>
                   <tbody>{deal.items.map((it: any) => {
                     const low = it.product_stock != null && Number(it.quantity) > Number(it.product_stock);
                     return (
                     <tr key={it.id}><td><span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/warehouse?p=${it.product}`)}>{it.product_name}</span></td><td>{Number(it.quantity)}</td>
-                      <td style={{ color: low ? "#dc2626" : "#64748b" }} title={low ? "Не вистачає на складі" : ""}>{it.product_stock != null ? Number(it.product_stock) : "—"}{low ? " ⚠" : ""}</td>
+                      <td style={{ color: low ? "#dc2626" : "#64748b" }} title={low ? t("Не хватает на складе","Не вистачає на складі") : ""}>{it.product_stock != null ? Number(it.product_stock) : "—"}{low ? " ⚠" : ""}</td>
                       <td>{fmt(Number(it.price))} ₴</td><td><b>{fmt(Number(it.total))} ₴</b></td>
-                      <td style={{ textAlign: "center" }}><input type="checkbox" checked={!!it.reserved} onChange={() => toggleReserve(it)} title="Зарезервувати під сделку" /></td>
+                      <td style={{ textAlign: "center" }}><input type="checkbox" checked={!!it.reserved} onChange={() => toggleReserve(it)} title={t("Зарезервировать под сделку","Зарезервувати під сделку")} /></td>
                       <td><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => removeItem(it.id)}>✕</span></td></tr>
                   ); })}</tbody>
                 </table>
@@ -399,12 +401,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         </div>
         </div>
         {deal.contact_id && (
-          <div onMouseDown={startResize} title="Тягни, щоб змінити ширину чату" style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0 }} />
+          <div onMouseDown={startResize} title={t("Тяни, чтобы изменить ширину чата","Тягни, щоб змінити ширину чату")} style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0 }} />
         )}
         {deal.contact_id && (
           <div style={{ width: chatW, flexShrink: 0, position: "sticky", top: 56, alignSelf: "flex-start" }}>
             <div className="panel">
-              <div className="label">💬 Чат з клієнтом</div>
+              <div className="label">{t("💬 Чат с клиентом","💬 Чат з клієнтом")}</div>
               <ClientChat contact={deal.contact_id} />
             </div>
           </div>
@@ -416,37 +418,37 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       {ncOpen && (
         <div onClick={() => setNcOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 380 }}>
-            <h3 style={{ marginTop: 0 }}>Клієнт сделки</h3>
+            <h3 style={{ marginTop: 0 }}>{t("Клиент сделки","Клієнт сделки")}</h3>
             <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-              <button className={"btn" + (ncMode === "pick" ? " btn-primary" : " btn-light")} style={{ flex: 1 }} onClick={() => setNcMode("pick")}>🔍 Обрати існуючого</button>
-              <button className={"btn" + (ncMode === "new" ? " btn-primary" : " btn-light")} style={{ flex: 1 }} onClick={() => setNcMode("new")}>➕ Створити нового</button>
+              <button className={"btn" + (ncMode === "pick" ? " btn-primary" : " btn-light")} style={{ flex: 1 }} onClick={() => setNcMode("pick")}>{t("🔍 Выбрать существующего","🔍 Обрати існуючого")}</button>
+              <button className={"btn" + (ncMode === "new" ? " btn-primary" : " btn-light")} style={{ flex: 1 }} onClick={() => setNcMode("new")}>{t("➕ Создать нового","➕ Створити нового")}</button>
             </div>
             {ncMode === "pick" ? (
               <>
-                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>Знайди клієнта серед існуючих (37 тис.) і привʼяжи до сделки.</div>
-                <input value={ncSearch} autoFocus onChange={(e) => setNcSearch(e.target.value)} placeholder="Імʼя, прізвище, телефон…" style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 8 }} />
+                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("Найди клиента среди существующих (37 тыс.) и привяжи к сделке.","Знайди клієнта серед існуючих (37 тис.) і привʼяжи до сделки.")}</div>
+                <input value={ncSearch} autoFocus onChange={(e) => setNcSearch(e.target.value)} placeholder={t("Имя, фамилия, телефон…","Імʼя, прізвище, телефон…")} style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 8 }} />
                 <div style={{ maxHeight: 240, overflowY: "auto", marginBottom: 12 }}>
                   {ncResults.map((c) => (
                     <div key={c.id} onClick={() => linkExisting(c.id)} style={{ padding: "8px 10px", borderRadius: 8, cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
                       👤 <b>{c.display_name || `${c.first_name || ""} ${c.last_name || ""}`.trim() || "—"}</b> {c.phone ? <span className="muted">· {c.phone}</span> : null}
                     </div>
                   ))}
-                  {ncSearch.trim() && ncResults.length === 0 && <div className="muted" style={{ fontSize: 13, padding: 8 }}>Нічого не знайдено. Створи нового на сусідній вкладці.</div>}
+                  {ncSearch.trim() && ncResults.length === 0 && <div className="muted" style={{ fontSize: 13, padding: 8 }}>{t("Ничего не найдено. Создай нового на соседней вкладке.","Нічого не знайдено. Створи нового на сусідній вкладці.")}</div>}
                 </div>
-                <button className="btn btn-light" style={{ width: "100%" }} onClick={() => setNcOpen(false)}>Закрити</button>
+                <button className="btn btn-light" style={{ width: "100%" }} onClick={() => setNcOpen(false)}>{t("Закрыть","Закрити")}</button>
               </>
             ) : (
               <>
-                <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>Створиться картка клієнта і привʼяжеться до цієї сделки.</div>
-                <label className="label">Ім'я та прізвище</label>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{t("Создастся карточка клиента и привяжется к этой сделке.","Створиться картка клієнта і привʼяжеться до цієї сделки.")}</div>
+                <label className="label">{t("Имя и фамилия","Імʼя та прізвище")}</label>
                 <input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="Ірина Турок" style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10 }} />
-                <label className="label">Телефон</label>
+                <label className="label">{t("Телефон","Телефон")}</label>
                 <input value={nc.phone} onChange={(e) => setNc({ ...nc, phone: e.target.value })} placeholder="+380..." style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10 }} />
-                <label className="label">Email</label>
+                <label className="label">{t("Email","Email")}</label>
                 <input value={nc.email} onChange={(e) => setNc({ ...nc, email: e.target.value })} style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 14 }} />
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setNcOpen(false)}>Скасувати</button>
-                  <button className="btn btn-primary" style={{ flex: 1 }} onClick={createClient} disabled={!nc.name.trim()}>Створити</button>
+                  <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setNcOpen(false)}>{t("Отменить","Скасувати")}</button>
+                  <button className="btn btn-primary" style={{ flex: 1 }} onClick={createClient} disabled={!nc.name.trim()}>{t("Создать","Створити")}</button>
                 </div>
               </>
             )}
@@ -458,14 +460,14 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       {payOpen && (
         <div onClick={() => setPayOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 340 }}>
-            <h3 style={{ marginTop: 0 }}>Принять оплату</h3>
-            <label className="label">Сумма</label>
+            <h3 style={{ marginTop: 0 }}>{t("Принять оплату","Прийняти оплату")}</h3>
+            <label className="label">{t("Сумма","Сума")}</label>
             <input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} style={{ width: "100%", height: 38, marginBottom: 16, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} />
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setPayOpen(false)}>Отмена</button>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={acceptPayment}>Провести</button>
+              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setPayOpen(false)}>{t("Отмена","Скасувати")}</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={acceptPayment}>{t("Провести","Провести")}</button>
             </div>
-            <div className="muted" style={{ fontSize: 11, marginTop: 10 }}>Создаст доходную транзакцию в Финансах.</div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 10 }}>{t("Создаст доходную транзакцию в Финансах.","Створить дохідну транзакцію у Фінансах.")}</div>
           </div>
         </div>
       )}
@@ -497,14 +499,15 @@ function Inline({ value, fmt, onSave }: { value: number; fmt: (v: number) => str
 
 /* ─── WALLCOV CASHFLOW — перенесено з віджета finmap-bridge (5 вкладок) ───── */
 function CashflowTab({ deal }: any) {
+  const { t } = useLang();
   /* Боєвий віджет Wallcov Cashflow (finmap-bridge) через iframe — 1:1 функціонал Бітрикса:
      Платежі (LiqPay/QR/Реквізити/історія/повернення/чек), Доставка НП (повна форма ТТН+пакування),
      Склад (бланк викраски), Архів кольорів, Лояльність. Працює по реальному Bitrix deal_id. */
   if (!deal.b24_id) {
     return (
       <div className="panel" style={{ margin: 0, textAlign: "center", padding: 40 }}>
-        <h3>Cashflow недоступний</h3>
-        <div className="muted">У цієї сделки немає Bitrix-ID. Віджет працює лише для перенесених із Бітрикса угод.</div>
+        <h3>{t("Cashflow недоступен","Cashflow недоступний")}</h3>
+        <div className="muted">{t("У этой сделки нет Bitrix-ID. Виджет работает только для перенесённых из Битрикса сделок.","У цієї сделки немає Bitrix-ID. Віджет працює лише для перенесених із Бітрикса угод.")}</div>
       </div>
     );
   }
@@ -514,9 +517,9 @@ function CashflowTab({ deal }: any) {
     <div className="panel" style={{ margin: 0, padding: 0, overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" }}>
         <b style={{ fontSize: 13 }}>💰 Wallcov Cashflow</b>
-        <span className="muted" style={{ fontSize: 12 }}>боєвий віджет · deal #{deal.b24_id}</span>
+        <span className="muted" style={{ fontSize: 12 }}>{t("боевой виджет","боєвий віджет")} · deal #{deal.b24_id}</span>
         <div style={{ flex: 1 }} />
-        <a href={url} target="_blank" rel="noreferrer" className="btn btn-light" style={{ fontSize: 12, padding: "3px 9px" }}>↗ Відкрити в окремій вкладці</a>
+        <a href={url} target="_blank" rel="noreferrer" className="btn btn-light" style={{ fontSize: 12, padding: "3px 9px" }}>{t("↗ Открыть в отдельной вкладке","↗ Відкрити в окремій вкладці")}</a>
       </div>
       <iframe src={url} title="Wallcov Cashflow" style={{ width: "100%", height: "82vh", border: "none", display: "block" }} />
     </div>

@@ -2,6 +2,7 @@
  * Реєструється як SIP-розширення, дзвонить і приймає. Плаваючий віджет. */
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import { useLang } from "./i18n";
 
 declare global {
   interface Window { JsSIP: any; wallcovDial?: (n: string) => void; wallcovPhoneReady?: boolean; }
@@ -12,6 +13,7 @@ const ICE_CFG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls:
 type St = "off" | "connecting" | "ready" | "incoming" | "calling" | "incall" | "error";
 
 export default function WebPhone() {
+  const { t } = useLang();
   const [st, setSt] = useState<St>("off");
   const [peer, setPeer] = useState("");
   const [msg, setMsg] = useState("");
@@ -41,7 +43,7 @@ export default function WebPhone() {
         ua.on("connecting", () => setSt("connecting"));
         ua.on("registered", () => { setSt("ready"); window.wallcovPhoneReady = true; });
         ua.on("unregistered", () => setSt("off"));
-        ua.on("registrationFailed", (e: any) => { setSt("error"); setMsg("Реєстрація не вдалась: " + (e?.cause || "")); });
+        ua.on("registrationFailed", (e: any) => { setSt("error"); setMsg(t("Регистрация не удалась: ","Реєстрація не вдалась: ") + (e?.cause || "")); });
         ua.on("newRTCSession", (data: any) => {
           const session = data.session; sessRef.current = session;
           setPeer(session.remote_identity?.uri?.user || "");
@@ -61,7 +63,7 @@ export default function WebPhone() {
           session.on("accepted", () => setSt("incall"));
           session.on("confirmed", () => setSt("incall"));
           session.on("ended", () => { setSt("ready"); setPeer(""); sessRef.current = null; });
-          session.on("failed", (e: any) => { setSt("ready"); setPeer(""); sessRef.current = null; setMsg("Дзвінок не вдався: " + (e?.cause || "")); });
+          session.on("failed", (e: any) => { setSt("ready"); setPeer(""); sessRef.current = null; setMsg(t("Звонок не удался: ","Дзвінок не вдався: ") + (e?.cause || "")); });
           setSt(data.originator === "remote" ? "incoming" : "calling");
         });
         ua.start();
@@ -73,7 +75,7 @@ export default function WebPhone() {
 
   function doDial(number: string) {
     const ua = uaRef.current;
-    if (!ua) { setMsg("Веб-телефон не готовий"); return; }
+    if (!ua) { setMsg(t("Веб-телефон не готов","Веб-телефон не готовий")); return; }
     const num = (number || "").replace(/[^\d+]/g, "");
     const dn = num.startsWith("+380") ? "0" + num.slice(4) : num.replace(/^\+/, "");
     if (!dn) return;
@@ -85,13 +87,13 @@ export default function WebPhone() {
         pcConfig: ICE_CFG,
       });
       setPeer(number); setSt("calling"); setMsg("");
-    } catch (e: any) { setMsg("Помилка: " + (e?.message || "")); }
+    } catch (e: any) { setMsg(t("Ошибка: ","Помилка: ") + (e?.message || "")); }
   }
   function answer() { try { sessRef.current?.answer({ mediaConstraints: { audio: true, video: false }, pcConfig: ICE_CFG }); setSt("incall"); } catch { /* */ } }
   function hangup() { try { sessRef.current?.terminate(); } catch { /* */ } setSt("ready"); setPeer(""); }
 
   const dot = ({ off: "#94a3b8", connecting: "#f59e0b", ready: "#16a34a", incoming: "#16a34a", calling: "#3b82f6", incall: "#3b82f6", error: "#dc2626" } as any)[st];
-  const label = ({ off: "вимкнено", connecting: "підключення…", ready: "готовий", incoming: "вхідний дзвінок", calling: "набір…", incall: "розмова", error: "помилка" } as any)[st];
+  const label = ({ off: t("выключено","вимкнено"), connecting: t("подключение…","підключення…"), ready: t("готов","готовий"), incoming: t("входящий звонок","вхідний дзвінок"), calling: t("набор…","набір…"), incall: t("разговор","розмова"), error: t("ошибка","помилка") } as any)[st];
   const busy = st === "incoming" || st === "calling" || st === "incall";
 
   if (st === "off") return <audio ref={audioRef} autoPlay playsInline />;
@@ -102,7 +104,7 @@ export default function WebPhone() {
       <div style={{ position: "fixed", bottom: 18, right: 18, zIndex: 9998, background: "#fff", borderRadius: 14, boxShadow: "0 10px 34px rgba(0,0,0,.2)", border: "1px solid #e2e8f0", padding: 13, width: 250 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: busy ? 10 : 0 }}>
           <span style={{ width: 9, height: 9, borderRadius: 9, background: dot, display: "inline-block" }} />
-          <b style={{ fontSize: 13 }}>📞 Веб-телефон</b>
+          <b style={{ fontSize: 13 }}>{t("📞 Веб-телефон","📞 Веб-телефон")}</b>
           <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>{label}</span>
         </div>
 
@@ -110,20 +112,20 @@ export default function WebPhone() {
 
         {st === "incoming" && (
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-green" style={{ flex: 1 }} onClick={answer}>✅ Прийняти</button>
-            <button className="btn" style={{ background: "#fee2e2", color: "#b91c1c" }} onClick={hangup}>✖ Скинути</button>
+            <button className="btn btn-green" style={{ flex: 1 }} onClick={answer}>{t("✅ Принять","✅ Прийняти")}</button>
+            <button className="btn" style={{ background: "#fee2e2", color: "#b91c1c" }} onClick={hangup}>{t("✖ Сбросить","✖ Скинути")}</button>
           </div>
         )}
         {(st === "calling" || st === "incall") && (
-          <button className="btn" style={{ width: "100%", background: "#fee2e2", color: "#b91c1c" }} onClick={hangup}>📵 Завершити</button>
+          <button className="btn" style={{ width: "100%", background: "#fee2e2", color: "#b91c1c" }} onClick={hangup}>{t("📵 Завершить","📵 Завершити")}</button>
         )}
         {st === "ready" && (
           <div style={{ marginTop: 8 }}>
-            <div className="muted" style={{ fontSize: 11, marginBottom: 3 }}>Дзвонити з лінії:</div>
+            <div className="muted" style={{ fontSize: 11, marginBottom: 3 }}>{t("Звонить с линии:","Дзвонити з лінії:")}</div>
             <select value={line} onChange={(e) => pickLine(e.target.value)}
               style={{ width: "100%", height: 30, borderRadius: 7, border: "1px solid #cbd5e1", fontSize: 12, marginBottom: 6 }}>
-              <option value="789">Салон · 0964191890</option>
-              <option value="788">Алмазне · 0673812702</option>
+              <option value="789">{t("Салон · 0964191890","Салон · 0964191890")}</option>
+              <option value="788">{t("Алмазное · 0673812702","Алмазне · 0673812702")}</option>
             </select>
           <div style={{ display: "flex", gap: 6 }}>
             <input value={dialN} onChange={(e) => setDialN(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doDial(dialN)}
@@ -132,10 +134,10 @@ export default function WebPhone() {
           </div>
           {recent.length > 0 && (
             <div style={{ marginTop: 8 }}>
-              <div className="muted" style={{ fontSize: 11, marginBottom: 3 }}>Останні номери:</div>
+              <div className="muted" style={{ fontSize: 11, marginBottom: 3 }}>{t("Последние номера:","Останні номери:")}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                 {recent.map((n) => (
-                  <button key={n} onClick={() => doDial(n)} title="Подзвонити"
+                  <button key={n} onClick={() => doDial(n)} title={t("Позвонить","Подзвонити")}
                     style={{ cursor: "pointer", background: "#eef2ff", color: "#4338ca", border: "none", borderRadius: 999, fontSize: 11.5, padding: "3px 9px" }}>{n}</button>
                 ))}
               </div>

@@ -4,7 +4,7 @@ import { useLang } from "../i18n";
 
 interface Prov { provider: string; fields: string[]; values: Record<string, string>; is_active: boolean; }
 
-const TITLES: Record<string, string> = { liqpay: "LiqPay (оплаты)", checkbox: "Checkbox (фискализация)", novaposhta: "Нова Пошта" };
+const TITLES: Record<string, string> = { liqpay: "LiqPay", checkbox: "Checkbox", novaposhta: "Нова Пошта" };
 
 export default function Settings() {
   const { t, lang, setLang } = useLang();
@@ -37,7 +37,7 @@ export default function Settings() {
           <option value="ru">Русский</option>
         </select>
       </div>
-      <div className="note">Перенеси сюда ключи из Битрикса (один раз) — и оплаты, фискализация и Нова Пошта заработают вживую. Ключи хранятся на сервере и показываются замаскированными.</div>
+      <div className="note">{t("Перенеси сюда ключи из Битрикса (один раз) — и оплаты, фискализация и Нова Пошта заработают вживую. Ключи хранятся на сервере и показываются замаскированными.", "Перенеси сюди ключі з Бітрикса (один раз) — і оплати, фіскалізація та Нова Пошта запрацюють наживо. Ключі зберігаються на сервері та показуються замаскованими.")}</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         {provs.map((p) => (
           <div key={p.provider} className="panel" style={{ margin: 0 }}>
@@ -50,14 +50,14 @@ export default function Settings() {
               <div key={f} style={{ marginBottom: 8 }}>
                 <label className="label" style={{ display: "block", marginBottom: 3 }}>{f}</label>
                 <input
-                  placeholder={p.values[f] ? `сейчас: ${p.values[f]}` : "не задано"}
+                  placeholder={p.values[f] ? `${t("сейчас", "зараз")}: ${p.values[f]}` : t("не задано", "не задано")}
                   value={edit[p.provider]?.[f] ?? ""}
                   onChange={(e) => setEdit({ ...edit, [p.provider]: { ...(edit[p.provider] || {}), [f]: e.target.value } })}
                   style={{ width: "100%", height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px", fontSize: 13 }} />
               </div>
             ))}
             <button className="btn btn-primary" style={{ marginTop: 6 }} onClick={() => save(p)}>
-              {saved === p.provider ? "✓ Сохранено" : "Сохранить"}
+              {saved === p.provider ? t("✓ Сохранено", "✓ Збережено") : t("Сохранить", "Зберегти")}
             </button>
           </div>
         ))}

@@ -20,6 +20,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, Paginated } from "../api";
+import { useLang } from "../i18n";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 interface Product {
@@ -39,6 +40,7 @@ const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pa
 
 export default function Warehouse() {
   /* ─── [2] STATE ──────────────────────────────────────────────────────── */
+  const { t } = useLang();
   const [cats, setCats] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [count, setCount] = useState(0);
@@ -123,7 +125,7 @@ export default function Warehouse() {
     const items = sheet
       .filter((r) => facts[r.id] !== undefined && Number(facts[r.id]) !== Number(r.book))
       .map((r) => ({ product: r.id, quantity: Number(facts[r.id]), price: 0 }));
-    if (!items.length) { setInvMsg("Нет расхождений факта с учётом — нечего проводить."); return; }
+    if (!items.length) { setInvMsg(t("Нет расхождений факта с учётом — нечего проводить.","Немає розбіжностей факту з обліком — нічого проводити.")); return; }
     await api.post("/api/stock-documents/", { kind: "inv", warehouse: whs[0]?.id, comment: `Інвентаризація ${pFrom}…${pTo}`, items });
     setInvOpen(false); loadProducts();
   }
@@ -141,7 +143,7 @@ export default function Warehouse() {
       {/* ─── [5] ДЕРЕВО КАТЕГОРИЙ ─────────────────────────────────────────── */}
       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 8, position: "sticky", top: 8, maxHeight: "calc(100vh - 90px)", overflowY: "auto" }}>
         <div onClick={() => pick(null)} style={{ padding: "7px 9px", borderRadius: 6, cursor: "pointer", fontWeight: 600, background: cat === null ? "#eff6ff" : "", color: cat === null ? "#1d4ed8" : "#1e293b" }}>
-          📦 Всі товари <span className="muted" style={{ fontWeight: 400 }}>({count})</span>
+          📦 {t("Все товары","Всі товари")} <span className="muted" style={{ fontWeight: 400 }}>({count})</span>
         </div>
         {tree.roots.map((r) => (
           <div key={r.id}>
@@ -160,19 +162,19 @@ export default function Warehouse() {
       {/* ─── [6] ТУЛБАР + ТАБЛИЦА + ПАГИНАЦИЯ ─────────────────────────────── */}
       <div>
         <div className="toolbar" style={{ borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 10, background: "#fff", display: "flex", gap: 8, alignItems: "center", padding: 8, flexWrap: "wrap" }}>
-          <button className="btn btn-primary" onClick={() => setModal("in")}>📥 Приход</button>
-          <button className="btn btn-light" onClick={() => setModal("out")}>📤 Расход</button>
-          <button className="btn btn-light" onClick={openInventory}>📋 Інвентаризація</button>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Поиск товара / артикула…" style={{ flex: 1, minWidth: 160, height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 12px", fontSize: 13 }} />
-          <span className="muted">Найдено: <b style={{ color: "#1e293b" }}>{count.toLocaleString("ru")}</b></span>
+          <button className="btn btn-primary" onClick={() => setModal("in")}>📥 {t("Приход","Прихід")}</button>
+          <button className="btn btn-light" onClick={() => setModal("out")}>📤 {t("Расход","Витрата")}</button>
+          <button className="btn btn-light" onClick={openInventory}>📋 {t("Инвентаризация","Інвентаризація")}</button>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("🔍 Поиск товара / артикула…","🔍 Пошук товару / артикулу…")} style={{ flex: 1, minWidth: 160, height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 12px", fontSize: 13 }} />
+          <span className="muted">{t("Найдено","Знайдено")}: <b style={{ color: "#1e293b" }}>{count.toLocaleString("ru")}</b></span>
         </div>
 
         <div className="tablewrap" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
           <table style={{ width: "100%" }}>
-            <thead><tr><th>Товар</th><th>Артикул</th><th>Категорія</th><th>Ціна</th><th>Закупка</th><th>Од.</th><th>Залишок</th></tr></thead>
+            <thead><tr><th>{t("Товар","Товар")}</th><th>{t("Артикул","Артикул")}</th><th>{t("Категория","Категорія")}</th><th>{t("Цена","Ціна")}</th><th>{t("Закупка","Закупка")}</th><th>{t("Ед.","Од.")}</th><th>{t("Остаток","Залишок")}</th></tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>Загрузка…</td></tr>}
-              {!loading && products.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>Товаров не найдено</td></tr>}
+              {loading && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</td></tr>}
+              {!loading && products.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>{t("Товаров не найдено","Товарів не знайдено")}</td></tr>}
               {!loading && products.map((p) => (
                 <tr key={p.id}>
                   <td><span onClick={() => openCard(p)} style={{ fontWeight: 500, color: "#1d4ed8", cursor: "pointer" }}>{p.name}</span></td>
@@ -189,14 +191,14 @@ export default function Warehouse() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-          <span className="muted" style={{ fontSize: 13 }}>На странице:</span>
+          <span className="muted" style={{ fontSize: 13 }}>{t("На странице","На сторінці")}:</span>
           {PAGE_SIZES.map((s) => (
             <button key={s} onClick={() => { setPageSize(s); setPage(1); }} style={{ fontSize: 13, padding: "4px 11px", borderRadius: 7, cursor: "pointer", border: "1px solid " + (pageSize === s ? "var(--brand)" : "#cbd5e1"), background: pageSize === s ? "var(--brand)" : "#fff", color: pageSize === s ? "#fff" : "#475569" }}>{s}</button>
           ))}
           <div className="spacer" style={{ flex: 1 }} />
-          <button className="btn btn-light" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>← Назад</button>
-          <span style={{ fontSize: 13 }}>Стр. <b>{page}</b> из <b>{totalPages}</b></span>
-          <button className="btn btn-light" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Вперёд →</button>
+          <button className="btn btn-light" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>{t("← Назад","← Назад")}</button>
+          <span style={{ fontSize: 13 }}>{t("Стр.","Стор.")} <b>{page}</b> {t("из","з")} <b>{totalPages}</b></span>
+          <button className="btn btn-light" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>{t("Вперёд →","Вперед →")}</button>
         </div>
       </div>
 
@@ -204,19 +206,19 @@ export default function Warehouse() {
       {modal && (
         <div onClick={() => setModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 380 }}>
-            <h3 style={{ marginTop: 0 }}>{modal === "in" ? "Приходная накладная" : "Расходная накладная"}</h3>
-            <label className="label">Товар</label>
+            <h3 style={{ marginTop: 0 }}>{modal === "in" ? t("Приходная накладная","Прибуткова накладна") : t("Расходная накладная","Видаткова накладна")}</h3>
+            <label className="label">{t("Товар","Товар")}</label>
             <select value={form.product} onChange={(e) => setForm({ ...form, product: Number(e.target.value) })} style={{ width: "100%", height: 38, marginBottom: 10, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }}>
-              <option value={0}>— выбери товар (из текущей страницы) —</option>
-              {products.map((p) => <option key={p.id} value={p.id}>{p.name} (остаток {p.stock})</option>)}
+              <option value={0}>{t("— выбери товар (из текущей страницы) —","— обери товар (з поточної сторінки) —")}</option>
+              {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({t("остаток","залишок")} {p.stock})</option>)}
             </select>
-            <label className="label">Количество</label>
+            <label className="label">{t("Количество","Кількість")}</label>
             <input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })} style={{ width: "100%", height: 38, marginBottom: 10, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} />
-            <label className="label">Цена за ед.</label>
+            <label className="label">{t("Цена за ед.","Ціна за од.")}</label>
             <input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} style={{ width: "100%", height: 38, marginBottom: 16, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} />
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setModal(null)}>Отмена</button>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={saveDoc}>Провести</button>
+              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setModal(null)}>{t("Отмена","Скасувати")}</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={saveDoc}>{t("Провести","Провести")}</button>
             </div>
           </div>
         </div>
@@ -230,19 +232,19 @@ export default function Warehouse() {
               <h3 style={{ margin: 0 }}>{card.name}</h3>
               <button className="btn btn-light" onClick={() => setCard(null)}>✕</button>
             </div>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>Артикул: {card.sku || "—"} · {card.category_name || "Без категорії"}</div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>Артикул: {card.sku || "—"} · {card.category_name || t("Без категории","Без категорії")}</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-              {[["Роздрібна ціна", Number(card.price).toLocaleString("ru") + " " + (card.currency || "грн")],
-                ["Закупка", Number(card.cost) > 0 ? Number(card.cost).toLocaleString("ru") + " " + (card.currency || "грн") : "—"],
-                ["Маржа", (card.margin || 0).toLocaleString("ru") + " ₴" + (Number(card.price) > 0 && card.margin ? " · " + Math.round((card.margin / Number(card.price)) * 100) + "%" : "")],
-                ["Залишок", Number(card.stock).toLocaleString("ru") + " " + card.unit]].map(([t, v]) => (
+              {[[t("Розничная цена","Роздрібна ціна"), Number(card.price).toLocaleString("ru") + " " + (card.currency || "грн")],
+                [t("Закупка","Закупка"), Number(card.cost) > 0 ? Number(card.cost).toLocaleString("ru") + " " + (card.currency || "грн") : "—"],
+                [t("Маржа","Маржа"), (card.margin || 0).toLocaleString("ru") + " ₴" + (Number(card.price) > 0 && card.margin ? " · " + Math.round((card.margin / Number(card.price)) * 100) + "%" : "")],
+                [t("Остаток","Залишок"), Number(card.stock).toLocaleString("ru") + " " + card.unit]].map(([t, v]) => (
                 <div key={t} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{t}</div><div style={{ fontSize: 18, fontWeight: 700 }}>{v}</div></div>
               ))}
             </div>
-            <div className="label" style={{ marginBottom: 6 }}>Рух товару (приход / расход / інвентаризація)</div>
-            {movements.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>Рухів ще не було.</div> : (
+            <div className="label" style={{ marginBottom: 6 }}>{t("Движение товара (приход / расход / инвентаризация)","Рух товару (прихід / витрата / інвентаризація)")}</div>
+            {movements.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Движений ещё не было.","Рухів ще не було.")}</div> : (
               <table style={{ width: "100%", fontSize: 13 }}>
-                <thead><tr><th>Дата</th><th>Тип</th><th>К-сть</th><th>Ціна</th></tr></thead>
+                <thead><tr><th>{t("Дата","Дата")}</th><th>{t("Тип","Тип")}</th><th>{t("Кол-во","К-сть")}</th><th>{t("Цена","Ціна")}</th></tr></thead>
                 <tbody>{movements.map((m) => (
                   <tr key={m.id}><td className="muted">{new Date(m.date).toLocaleDateString("ru")}</td><td>{m.kind_display}</td>
                     <td style={{ color: m.quantity < 0 ? "#dc2626" : "#16a34a", fontWeight: 600 }}>{m.quantity > 0 ? "+" : ""}{m.quantity}</td>
@@ -258,17 +260,17 @@ export default function Warehouse() {
       {invOpen && (
         <div onClick={() => setInvOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: "min(900px,96vw)", maxHeight: "88vh", display: "flex", flexDirection: "column" }}>
-            <h3 style={{ marginTop: 0 }}>Інвентаризаційна відомість {cat ? "· обрана категорія" : "· поточна сторінка"}</h3>
+            <h3 style={{ marginTop: 0 }}>{t("Инвентаризационная ведомость","Інвентаризаційна відомість")} {cat ? t("· выбранная категория","· обрана категорія") : t("· текущая страница","· поточна сторінка")}</h3>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
-              <span className="muted" style={{ fontSize: 12 }}>Період:</span>
+              <span className="muted" style={{ fontSize: 12 }}>{t("Период","Період")}:</span>
               <input type="date" value={pFrom} onChange={(e) => { setPFrom(e.target.value); loadSheet(e.target.value, pTo); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
               <span className="muted">—</span>
               <input type="date" value={pTo} onChange={(e) => { setPTo(e.target.value); loadSheet(pFrom, e.target.value); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
-              <span className="muted" style={{ fontSize: 12 }}>Початковий + Надходження − Продано = Кінцевий обліковий. Розбіжність = Факт − обліковий.</span>
+              <span className="muted" style={{ fontSize: 12 }}>{t("Начальный + Поступление − Продано = Конечный учётный. Расхождение = Факт − учётный.","Початковий + Надходження − Продано = Кінцевий обліковий. Розбіжність = Факт − обліковий.")}</span>
             </div>
             <div style={{ overflowY: "auto", flex: 1 }}>
               <table style={{ width: "100%", fontSize: 13 }}>
-                <thead><tr>{["Товар", "Од.", "Початковий", "Надходж.", "Продано", "Кінцевий (облік)", "Факт", "Розбіжність"].map((h) => <th key={h} style={{ position: "sticky", top: 0, background: "#fff", zIndex: 2, boxShadow: "inset 0 -1px 0 #e2e8f0", textAlign: "left" }}>{h}</th>)}</tr></thead>
+                <thead><tr>{[t("Товар","Товар"), t("Ед.","Од."), t("Начальный","Початковий"), t("Поступ.","Надходж."), t("Продано","Продано"), t("Конечный (учёт)","Кінцевий (облік)"), t("Факт","Факт"), t("Расхождение","Розбіжність")].map((h) => <th key={h} style={{ position: "sticky", top: 0, background: "#fff", zIndex: 2, boxShadow: "inset 0 -1px 0 #e2e8f0", textAlign: "left" }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {sheet.map((r) => {
                     const fact = facts[r.id] ?? String(r.book);
@@ -285,14 +287,14 @@ export default function Warehouse() {
                       </tr>
                     );
                   })}
-                  {sheet.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 12 }}>Завантаження відомості…</td></tr>}
+                  {sheet.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 12 }}>{t("Загрузка ведомости…","Завантаження відомості…")}</td></tr>}
                 </tbody>
               </table>
             </div>
             {invMsg && <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>{invMsg}</div>}
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setInvOpen(false)}>Скасувати</button>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={conductInventory}>Провести інвентаризацію</button>
+              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setInvOpen(false)}>{t("Отмена","Скасувати")}</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={conductInventory}>{t("Провести инвентаризацию","Провести інвентаризацію")}</button>
             </div>
           </div>
         </div>
@@ -303,6 +305,7 @@ export default function Warehouse() {
 
 /* ─── [10] СУБ-КОМПОНЕНТ: инлайн-ввод закупочной цены ─── */
 function EditCost({ p, onSaved }: { p: Product; onSaved: (v: number) => void }) {
+  const { t } = useLang();
   const [edit, setEdit] = useState(false);
   const [v, setV] = useState(p.cost);
   useEffect(() => setV(p.cost), [p.cost]);
@@ -313,5 +316,5 @@ function EditCost({ p, onSaved }: { p: Product; onSaved: (v: number) => void }) 
       style={{ width: 84, height: 26, border: "1px solid var(--brand)", borderRadius: 5, padding: "0 5px", fontSize: 12 }} />
   );
   const c = Number(p.cost);
-  return <span onClick={() => setEdit(true)} style={{ cursor: "text", borderBottom: "1px dashed #cbd5e1", color: c > 0 ? "#1e293b" : "#94a3b8" }}>{c > 0 ? c.toLocaleString("ru") + " " + (p.currency || "грн") : "— вписати"}</span>;
+  return <span onClick={() => setEdit(true)} style={{ cursor: "text", borderBottom: "1px dashed #cbd5e1", color: c > 0 ? "#1e293b" : "#94a3b8" }}>{c > 0 ? c.toLocaleString("ru") + " " + (p.currency || "грн") : t("— вписать","— вписати")}</span>;
 }

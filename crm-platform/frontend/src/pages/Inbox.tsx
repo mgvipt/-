@@ -3,9 +3,11 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { api, ChatMessage, Conversation, Paginated } from "../api";
 import { Avatar, SourceChip } from "../ui";
 import { useAuth } from "../auth";
+import { useLang } from "../i18n";
 
 export default function Inbox() {
   const { can } = useAuth();
+  const { t } = useLang();
   const [params] = useSearchParams();
   const nav = useNavigate();
   const [scope, setScope] = useState<"mine" | "all" | "unassigned">("all");
@@ -49,7 +51,7 @@ export default function Inbox() {
       api.get<any>(`/api/conversations/?contact=${contactId}`).then((r) => {
         const conv = ((r as any).results || [])[0];
         if (conv) { setConvs((cs) => cs.some((x) => x.id === conv.id) ? cs : [conv, ...cs]); openConv(conv); }
-        else setErr("Переписки з цим клієнтом ще немає");
+        else setErr(t("Переписки с этим клиентом ещё нет","Переписки з цим клієнтом ще немає"));
       }).catch(() => {});
       return;
     }
@@ -82,8 +84,8 @@ export default function Inbox() {
       if (deal) { nav(`/deals/${deal.id}`); return; }
       const ld = await api.get<any>(`/api/leads/?contact=${active.contact}`);
       const lead = ((ld as any).results || [])[0];
-      if (lead) nav(`/leads/${lead.id}`); else setErr("Картку не знайдено");
-    } catch { setErr("Не вдалося відкрити картку"); }
+      if (lead) nav(`/leads/${lead.id}`); else setErr(t("Карточка не найдена","Картку не знайдено"));
+    } catch { setErr(t("Не удалось открыть карточку","Не вдалося відкрити картку")); }
   }
 
   async function send() {
@@ -94,7 +96,7 @@ export default function Inbox() {
       setMsgs((ms) => [...ms, m]);
       setText("");
     } catch (e: any) {
-      setErr("Не удалось отправить (проверь токен бота / сеть).");
+      setErr(t("Не удалось отправить (проверь токен бота / сеть).","Не вдалося відправити (перевір токен бота / мережу)."));
     } finally { setSending(false); }
   }
 
@@ -102,9 +104,9 @@ export default function Inbox() {
     <div className="inbox fade" style={{ height: "100%", display: "grid", gridTemplateColumns: "300px 1fr 340px" }}>
       {/* список диалогов */}
       <div style={{ background: "#fff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ padding: 12, borderBottom: "1px solid #e2e8f0", fontWeight: 600 }}>Диалоги</div>
+        <div style={{ padding: 12, borderBottom: "1px solid #e2e8f0", fontWeight: 600 }}>{t("Диалоги","Діалоги")}</div>
         <div style={{ display: "flex", gap: 6, padding: "8px 12px", borderBottom: "1px solid #f1f5f9" }}>
-          {(([["mine", "Мої"]].concat(can("conversation.view.all") ? [["all", "Всі"], ["unassigned", "Не призначені"]] : [])) as [string, string][]).map(([k, label]) => (
+          {(([["mine", t("Мои","Мої")]].concat(can("conversation.view.all") ? [["all", t("Все","Всі")], ["unassigned", t("Не назначены","Не призначені")]] : [])) as [string, string][]).map(([k, label]) => (
             <button key={k} onClick={() => setScope(k as any)}
               style={{ fontSize: 12, padding: "4px 10px", borderRadius: 14, cursor: "pointer",
                 border: "1px solid " + (scope === k ? "var(--brand)" : "#e2e8f0"),
@@ -112,7 +114,7 @@ export default function Inbox() {
           ))}
         </div>
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {convs.length === 0 && <div className="spin">Пока нет диалогов.</div>}
+          {convs.length === 0 && <div className="spin">{t("Пока нет диалогов.","Поки немає діалогів.")}</div>}
           {(() => {
             const fmtAt = (d?: string) => d ? new Date(d).toLocaleString("uk", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
             const card = (c: Conversation) => (
@@ -122,12 +124,12 @@ export default function Inbox() {
                 <Avatar name={c.contact_name || c.title || "?"} cls="av-md" />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.contact_name || c.title || "Без имени"}</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.contact_name || c.title || t("Без имени","Без імені")}</span>
                     <span style={{ fontSize: 10, color: "#94a3b8", whiteSpace: "nowrap" }}>{fmtAt((c as any).last_message_at)}</span>
                   </div>
                   <div className="muted" style={{ fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.last_text}</div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 11, color: c.assigned_to ? "#2563eb" : "#94a3b8" }}>{c.assigned_to ? "👤 " + c.assigned_to_name : "Не призначено"}</span>
+                    <span style={{ fontSize: 11, color: c.assigned_to ? "#2563eb" : "#94a3b8" }}>{c.assigned_to ? "👤 " + c.assigned_to_name : t("Не назначено","Не призначено")}</span>
                     <SourceChip source={c.channel_kind} />
                   </div>
                 </div>
@@ -138,9 +140,9 @@ export default function Inbox() {
             const work = convs.filter((c) => !(c as any).needs_reply);
             const hdr = (t: string, color: string) => <div style={{ padding: "8px 12px 4px", fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: .3 }}>{t}</div>;
             return (<>
-              {need.length > 0 && hdr(`🔴 Потрібна відповідь (${need.length})`, "#dc2626")}
+              {need.length > 0 && hdr(t(`🔴 Нужен ответ (${need.length})`,`🔴 Потрібна відповідь (${need.length})`), "#dc2626")}
               {need.map(card)}
-              {work.length > 0 && hdr(`✅ В роботі (${work.length})`, "#16a34a")}
+              {work.length > 0 && hdr(t(`✅ В работе (${work.length})`,`✅ В роботі (${work.length})`), "#16a34a")}
               {work.map(card)}
             </>);
           })()}
@@ -150,19 +152,19 @@ export default function Inbox() {
       {/* переписка */}
       <div style={{ display: "flex", flexDirection: "column", background: "#f8fafc", overflow: "hidden" }}>
         {!active ? (
-          <div className="spin">Выбери диалог слева</div>
+          <div className="spin">{t("Выбери диалог слева","Обери діалог зліва")}</div>
         ) : (
           <>
             <div style={{ height: 52, background: "#fff", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 8, padding: "0 16px" }}>
               <Avatar name={active.contact_name || active.title || "?"} cls="av-md" />
               <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.25 }}>
                 <b style={{ fontSize: 14 }}>{active.contact_name || active.title}</b>
-                <span className="muted" style={{ fontSize: 11 }}>{active.assigned_to ? "👤 " + active.assigned_to_name : "Не призначено"} · {active.channel_name}</span>
+                <span className="muted" style={{ fontSize: 11 }}>{active.assigned_to ? "👤 " + active.assigned_to_name : t("Не назначено","Не призначено")} · {active.channel_name}</span>
               </div>
               <SourceChip source={active.channel_kind} />
               <div className="spacer" />
-              <button className="btn btn-green">📞 Подзвонити</button>
-              {active.contact && <button className="btn btn-primary" style={{ marginLeft: 8 }} onClick={goToCard}>🤝 В картку</button>}
+              <button className="btn btn-green">{t("📞 Позвонить","📞 Подзвонити")}</button>
+              {active.contact && <button className="btn btn-primary" style={{ marginLeft: 8 }} onClick={goToCard}>{t("🤝 В карточку","🤝 В картку")}</button>}
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
               {msgs.map((m) => (
@@ -175,7 +177,7 @@ export default function Inbox() {
                   {m.text}
                   {m.attachments?.map((a, i) => (
                     <div key={i} style={{ fontSize: 11, opacity: .8, marginTop: 4 }}>
-                      📎 {a.type === "voice" ? `голосовое ${a.duration ?? ""}с` : a.type}
+                      📎 {a.type === "voice" ? t(`голосовое ${a.duration ?? ""}с`,`голосове ${a.duration ?? ""}с`) : a.type}
                     </div>
                   ))}
                   <div style={{ fontSize: 10, opacity: .55, marginTop: 3, textAlign: m.direction === "out" ? "right" : "left" }}>{(m as any).created_at ? new Date((m as any).created_at).toLocaleTimeString("uk", { hour: "2-digit", minute: "2-digit" }) : ""}</div>
@@ -187,9 +189,9 @@ export default function Inbox() {
             <div style={{ background: "#fff", borderTop: "1px solid #e2e8f0", padding: 12, display: "flex", gap: 8 }}>
               <input value={text} onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && send()}
-                placeholder={`Сообщение уйдёт в ${active.channel_name}…`}
+                placeholder={t(`Сообщение уйдёт в ${active.channel_name}…`,`Повідомлення піде в ${active.channel_name}…`)}
                 style={{ flex: 1, height: 36, background: "#f1f5f9", border: "none", borderRadius: 7, padding: "0 12px", fontSize: 13, outline: "none" }} />
-              <button className="btn btn-primary" onClick={send} disabled={sending}>{sending ? "…" : "Отправить"}</button>
+              <button className="btn btn-primary" onClick={send} disabled={sending}>{sending ? "…" : t("Отправить","Відправити")}</button>
             </div>
           </>
         )}
@@ -200,31 +202,31 @@ export default function Inbox() {
         <div style={{ padding: "14px 14px 12px", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center" }}>
           <b style={{ fontSize: 14 }}>🧠 AI-РОП</b>
           <div style={{ flex: 1 }} />
-          {active && <button className="btn" style={{ fontSize: 12, padding: "3px 10px" }} onClick={() => analyzeAI(active.id)} disabled={aiLoad}>{aiLoad ? "…" : "🔄 Оновити"}</button>}
+          {active && <button className="btn" style={{ fontSize: 12, padding: "3px 10px" }} onClick={() => analyzeAI(active.id)} disabled={aiLoad}>{aiLoad ? "…" : t("🔄 Обновить","🔄 Оновити")}</button>}
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
           {!active ? (
-            <div className="muted" style={{ fontSize: 13 }}>Обери діалог — AI-РОП підкаже тези й відповідь.</div>
+            <div className="muted" style={{ fontSize: 13 }}>{t("Выбери диалог — AI-РОП подскажет тезисы и ответ.","Обери діалог — AI-РОП підкаже тези й відповідь.")}</div>
           ) : aiLoad && !ai ? (
-            <div className="muted" style={{ fontSize: 13 }}>AI-РОП аналізує діалог…</div>
+            <div className="muted" style={{ fontSize: 13 }}>{t("AI-РОП анализирует диалог…","AI-РОП аналізує діалог…")}</div>
           ) : ai ? (
             <>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>Що в діалозі</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>{t("Что в диалоге","Що в діалозі")}</div>
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.5 }}>
                 {(ai.points && ai.points.length ? ai.points : (ai.context ? [ai.context] : [])).map((p, i) => <li key={i} style={{ marginBottom: 5 }}>{p}</li>)}
               </ul>
               {ai.suggestion && (
                 <>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", margin: "16px 0 8px" }}>Пропонована відповідь</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", margin: "16px 0 8px" }}>{t("Предлагаемый ответ","Пропонована відповідь")}</div>
                   <div style={{ fontSize: 13, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: 10, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{ai.suggestion}</div>
-                  <button className="btn btn-primary" style={{ width: "100%", marginTop: 8 }} onClick={() => setText(ai.suggestion || "")}>✍️ Вставити у відповідь</button>
+                  <button className="btn btn-primary" style={{ width: "100%", marginTop: 8 }} onClick={() => setText(ai.suggestion || "")}>{t("✍️ Вставить в ответ","✍️ Вставити у відповідь")}</button>
                 </>
               )}
             </>
           ) : (
             <div style={{ textAlign: "center", paddingTop: 24 }}>
-              <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>AI-РОП підкаже тези діалогу + готову відповідь.</div>
-              <button className="btn btn-primary" onClick={() => active && analyzeAI(active.id)} disabled={aiLoad}>{aiLoad ? "Аналізую…" : "🧠 Проаналізувати діалог"}</button>
+              <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>{t("AI-РОП подскажет тезисы диалога + готовый ответ.","AI-РОП підкаже тези діалогу + готову відповідь.")}</div>
+              <button className="btn btn-primary" onClick={() => active && analyzeAI(active.id)} disabled={aiLoad}>{aiLoad ? t("Анализирую…","Аналізую…") : t("🧠 Проанализировать диалог","🧠 Проаналізувати діалог")}</button>
             </div>
           )}
         </div>

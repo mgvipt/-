@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Paginated } from "../api";
+import { useLang } from "../i18n";
 
 interface Call {
   id: number; direction: string; direction_display: string;
@@ -23,6 +24,7 @@ export default function Phone() {
   const [calls, setCalls] = useState<Call[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const nav = useNavigate();
+  const { t } = useLang();
 
   function load() {
     api.get<Paginated<Call>>("/api/calls/?page_size=300").then((d) => setCalls(d.results)).catch(() => {});
@@ -54,11 +56,11 @@ export default function Phone() {
         </div>
         <div style={{ textAlign: "right", fontSize: 11.5 }}>
           <div className="muted">{when(c)}</div>
-          <div style={{ color: missed ? "#dc2626" : "#64748b" }}>{missed ? "пропущений" : dur(c.duration)}</div>
+          <div style={{ color: missed ? "#dc2626" : "#64748b" }}>{missed ? t("пропущенный","пропущений") : dur(c.duration)}</div>
         </div>
         {c.recording_url
-          ? <a href={c.recording_url} target="_blank" rel="noreferrer" title="Прослухати" style={{ color: "#2563eb", fontSize: 16 }}>▶</a>
-          : c.recording_file ? <span title="Запис є на сервері" style={{ color: "#94a3b8", fontSize: 14 }}>🎙</span>
+          ? <a href={c.recording_url} target="_blank" rel="noreferrer" title={t("Прослушать","Прослухати")} style={{ color: "#2563eb", fontSize: 16 }}>▶</a>
+          : c.recording_file ? <span title={t("Запись есть на сервере","Запис є на сервері")} style={{ color: "#94a3b8", fontSize: 14 }}>🎙</span>
           : <span style={{ width: 16 }} />}
       </div>
     );
@@ -75,7 +77,7 @@ export default function Phone() {
         </div>
         <div style={{ maxHeight: "calc(100vh - 250px)", overflowY: "auto" }}>
           {list.length === 0
-            ? <div className="muted" style={{ padding: 18, fontSize: 13 }}>Поки порожньо.</div>
+            ? <div className="muted" style={{ padding: 18, fontSize: 13 }}>{t("Пока пусто.","Поки порожньо.")}</div>
             : list.map((c) => <Row key={c.id} c={c} />)}
         </div>
       </div>
@@ -84,23 +86,23 @@ export default function Phone() {
 
   return (
     <div className="scroll pad fade">
-      <h2 style={{ margin: "0 0 4px" }}>📞 Телефонія</h2>
-      <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>Власний SIP-шлюз на нашому сервері (незалежно від Бітрикса). Дзвінки і записи — наші.</div>
+      <h2 style={{ margin: "0 0 4px" }}>📞 {t("Телефония","Телефонія")}</h2>
+      <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>{t("Собственный SIP-шлюз на нашем сервере (независимо от Битрикса). Звонки и записи — наши.","Власний SIP-шлюз на нашому сервері (незалежно від Бітрикса). Дзвінки і записи — наші.")}</div>
 
       {stats && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
-          {[["Всього", stats.total], ["Із записом", stats.recorded], ["Пропущені", stats.missed], ["Сер. тривалість", dur(stats.avg_seconds)]].map(([t, v]) => (
+          {[[t("Всего","Всього"), stats.total], [t("С записью","Із записом"), stats.recorded], [t("Пропущенные","Пропущені"), stats.missed], [t("Ср. длительность","Сер. тривалість"), dur(stats.avg_seconds)]].map(([t, v]) => (
             <div key={t} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{t}</div><div style={{ fontSize: 24, fontWeight: 700 }}>{v}</div></div>
           ))}
         </div>
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" }}>
-        <Column title="Вхідні" icon="📥" color="#16a34a" list={incoming} />
-        <Column title="Вихідні" icon="📤" color="#3b82f6" list={outgoing} />
+        <Column title={t("Входящие","Вхідні")} icon="📥" color="#16a34a" list={incoming} />
+        <Column title={t("Исходящие","Вихідні")} icon="📤" color="#3b82f6" list={outgoing} />
       </div>
 
-      <div className="note" style={{ marginTop: 14 }}>💡 Журнал оновлюється сам кожні 30 сек. Клік на імʼя клієнта → його картка. Далі підключимо дзвінок по кліку і прослуховування запису прямо тут.</div>
+      <div className="note" style={{ marginTop: 14 }}>💡 {t("Журнал обновляется сам каждые 30 сек. Клик на имя клиента → его карточка. Дальше подключим звонок по клику и прослушивание записи прямо тут.","Журнал оновлюється сам кожні 30 сек. Клік на імʼя клієнта → його картка. Далі підключимо дзвінок по кліку і прослуховування запису прямо тут.")}</div>
     </div>
   );
 }

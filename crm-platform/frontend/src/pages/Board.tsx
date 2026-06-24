@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Card, Funnel, Paginated } from "../api";
 import { Avatar, SourceChip } from "../ui";
+import { useLang } from "../i18n";
 
 // Универсальный канбан для лидов и сделок. Перетаскивание карточки между
 // колонками меняет стадию через PATCH к API.
 export default function Board({ endpoint, funnel, query }: { endpoint: string; funnel: Funnel; query?: string }) {
   const [cards, setCards] = useState<Card[]>([]);
+  const { t } = useLang();
   const [loading, setLoading] = useState(true);
   const [dropStage, setDropStage] = useState<number | null>(null);
   const dragId = useRef<number | null>(null);
@@ -33,7 +35,7 @@ export default function Board({ endpoint, funnel, query }: { endpoint: string; f
     catch { load(); } // откат при ошибке
   }
 
-  if (loading) return <div className="spin">Загрузка…</div>;
+  if (loading) return <div className="spin">{t("Загрузка…","Завантаження…")}</div>;
 
   return (
     <div className="board fade">
@@ -71,7 +73,7 @@ export default function Board({ endpoint, funnel, query }: { endpoint: string; f
                   >
                     {(c as any).contact && (
                       <span onClick={(e) => { e.stopPropagation(); nav(`/inbox?contact=${(c as any).contact}`); }}
-                        title="Відкрити чат з клієнтом"
+                        title={t("Открыть чат с клиентом","Відкрити чат з клієнтом")}
                         style={{ position: "absolute", top: 6, right: 8, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>💬</span>
                     )}
                     <div className="ttl">{c.title}</div>
@@ -81,7 +83,7 @@ export default function Board({ endpoint, funnel, query }: { endpoint: string; f
                       <div className="owner"><Avatar name={c.owner_name} />{c.owner_name}</div>
                     )}
                     {isLead && !c.is_seen && (
-                      <div style={{ marginTop: 6 }}><span className="chip chip-unseen">НЕПЕРЕГЛЯНУТІ</span></div>
+                      <div style={{ marginTop: 6 }}><span className="chip chip-unseen">{t("НЕПРОСМОТРЕННЫЕ","НЕПЕРЕГЛЯНУТІ")}</span></div>
                     )}
                   </div>
                 ))}

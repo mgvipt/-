@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, Funnel } from "../api";
 import Board from "./Board";
 import FunnelEditor from "./FunnelEditor";
+import { useLang } from "../i18n";
 
 export default function Deals() {
   const [funnels, setFunnels] = useState<Funnel[]>([]);
@@ -15,6 +16,7 @@ export default function Deals() {
   const [sort, setSort] = useState("-created_at");
   const [owner, setOwner] = useState("");
   const [users, setUsers] = useState<{ id: number; name: string }[]>([]);
+  const { t } = useLang();
   const nav = useNavigate();
 
   useEffect(() => {
@@ -39,32 +41,32 @@ export default function Deals() {
     nav(`/deals/${d.id}`);
   }
 
-  if (!cur) return <div className="spin">Нет доступных воронок продаж.</div>;
+  if (!cur) return <div className="spin">{t("Нет доступных воронок продаж.","Немає доступних воронок продажів.")}</div>;
 
   return (
     <div className="kanban">
       <div className="toolbar">
-        <button className="btn btn-primary" onClick={() => setCreating(true)}>+ Сделка</button>
+        <button className="btn btn-primary" onClick={() => setCreating(true)}>{t("+ Сделка","+ Угода")}</button>
         <select value={curId ?? ""} onChange={(e) => { const id = Number(e.target.value); setCurId(id); localStorage.setItem("deals_funnel", String(id)); }}>
           {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
         </select>
-        <button className="btn btn-light" onClick={() => setEditFunnel(true)}>⚙ Воронка</button>
+        <button className="btn btn-light" onClick={() => setEditFunnel(true)}>{t("⚙ Воронка","⚙ Воронка")}</button>
         <div className="spacer" />
-        <span className="muted">Воронок доступно: {funnels.length}</span>
+        <span className="muted">{t("Воронок доступно:","Воронок доступно:")} {funnels.length}</span>
       </div>
       <Board key={ver} endpoint="/api/deals/" funnel={cur} query={query} />
 
       {creating && (
         <div onClick={() => setCreating(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 380 }}>
-            <h3 style={{ marginTop: 0 }}>Нова сделка · {cur.name}</h3>
-            <label className="label">Назва / клієнт</label>
+            <h3 style={{ marginTop: 0 }}>{t("Новая сделка","Нова угода")} · {cur.name}</h3>
+            <label className="label">{t("Название / клиент","Назва / клієнт")}</label>
             <input value={title} autoFocus onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && create()}
-              placeholder="Напр. Турок Ірина — Покриття для стін"
+              placeholder={t("Напр. Турок Ирина — Покрытие для стен","Напр. Турок Ірина — Покриття для стін")}
               style={{ width: "100%", height: 38, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 14 }} />
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setCreating(false)}>Скасувати</button>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={create}>Створити</button>
+              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setCreating(false)}>{t("Отменить","Скасувати")}</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={create}>{t("Создать","Створити")}</button>
             </div>
           </div>
         </div>

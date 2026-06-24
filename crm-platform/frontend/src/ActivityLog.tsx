@@ -2,8 +2,10 @@
  * GET /api/activity/?kind=lead|deal&object_id=ID */
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { useLang } from "./i18n";
 
 export default function ActivityLog({ kind, id }: { kind: "lead" | "deal"; id: number }) {
+  const { t } = useLang();
   const [log, setLog] = useState<{ action: string; detail: string; actor: string; at: string }[]>([]);
 
   useEffect(() => {
@@ -14,9 +16,9 @@ export default function ActivityLog({ kind, id }: { kind: "lead" | "deal"; id: n
 
   return (
     <div className="panel">
-      <div className="label">🕘 Історія змін</div>
+      <div className="label">{t("🕘 История изменений","🕘 Історія змін")}</div>
       {log.length === 0 ? (
-        <div className="muted" style={{ fontSize: 12 }}>Поки немає записів.</div>
+        <div className="muted" style={{ fontSize: 12 }}>{t("Пока нет записей.","Поки немає записів.")}</div>
       ) : (
         <div style={{ maxHeight: 320, overflowY: "auto" }}>
           {log.map((a, i) => (

@@ -8,6 +8,7 @@ import ClientChat from "../ClientChat";
 import NeedsForm from "../NeedsForm";
 import CardFields from "../CardFields";
 import ActivityLog from "../ActivityLog";
+import { useLang } from "../i18n";
 
 interface Lead {
   id: number; title: string; contact?: number; contact_name?: string; owner_name?: string;
@@ -18,6 +19,7 @@ export default function LeadCard() {
   const { id } = useParams();
   const nav = useNavigate();
   const [lead, setLead] = useState<Lead | null>(null);
+  const { t } = useLang();
   const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [chatW, setChatW] = useState(() => Number(localStorage.getItem("crm_card_chatW")) || 360);
   const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("crm_card_leftW")) || 220);
@@ -55,20 +57,20 @@ export default function LeadCard() {
   }
 
   async function dialClient() {
-    if (!lead?.contact) { setMsg("У ліда немає контакту"); return; }
-    try { const r: any = await api.post("/api/calls/dial/", { contact: lead.contact }); setMsg(`📞 АТС набирає ваш ${r.extension} — підніміть слухавку`); }
-    catch (e: any) { const m = String(e?.message || "").match(/"detail":"([^"]+)"/); setMsg(m ? m[1] : "Помилка дзвінка"); }
+    if (!lead?.contact) { setMsg(t("У лида нет контакта","У ліда немає контакту")); return; }
+    try { const r: any = await api.post("/api/calls/dial/", { contact: lead.contact }); setMsg(t(`📞 АТС набирает ваш ${r.extension} — поднимите трубку`, `📞 АТС набирає ваш ${r.extension} — підніміть слухавку`)); }
+    catch (e: any) { const m = String(e?.message || "").match(/"detail":"([^"]+)"/); setMsg(m ? m[1] : t("Ошибка звонка","Помилка дзвінка")); }
     setTimeout(() => setMsg(""), 7000);
   }
 
   async function openChat() {
-    if (!lead || !lead.contact) { setMsg("У ліда немає контакту"); return; }
+    if (!lead || !lead.contact) { setMsg(t("У лида нет контакта","У ліда немає контакту")); return; }
     try {
       const r: any = await api.get<any>(`/api/conversations/?contact=${lead.contact}`);
       const conv = (r.results || r || [])[0];
       if (conv) nav(`/inbox?c=${conv.id}`);
-      else setMsg("Переписки ще немає — чат зʼявиться після першого повідомлення");
-    } catch { setMsg("Не вдалося відкрити чат"); }
+      else setMsg(t("Переписки ещё нет — чат появится после первого сообщения","Переписки ще немає — чат зʼявиться після першого повідомлення"));
+    } catch { setMsg(t("Не удалось открыть чат","Не вдалося відкрити чат")); }
   }
 
   async function load() {
@@ -77,7 +79,7 @@ export default function LeadCard() {
     if (!funnel || funnel.id !== l.funnel) setFunnel(await api.get<Funnel>(`/api/funnels/${l.funnel}/`));
   }
   useEffect(() => { load(); }, [id]);
-  if (!lead) return <div className="spin">Загрузка ліда…</div>;
+  if (!lead) return <div className="spin">{t("Загрузка лида…","Загрузка ліда…")}</div>;
 
   async function setStage(s: number) { await api.patch(`/api/leads/${id}/`, { stage: s }); load(); }
   async function convert() {
@@ -94,7 +96,7 @@ export default function LeadCard() {
         <span className="muted">{funnel?.name}</span>
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
-        <button className="btn btn-green" onClick={convert}>✅ Конвертувати в сделку</button>
+        <button className="btn btn-green" onClick={convert}>{t("✅ Конвертировать в сделку","✅ Конвертувати в сделку")}</button>
       </div>
 
       {funnel && (
@@ -109,11 +111,11 @@ export default function LeadCard() {
       <div style={{ display: "flex", gap: 12, padding: "0 16px 16px", alignItems: "stretch", flex: 1, minHeight: 0, overflow: "hidden" }}>
         <div style={{ width: leftW, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12, overflowY: "auto", overflowX: "hidden" }}>
           <div className="panel">
-            <div className="label">Клієнт</div>
-            <div style={{ fontWeight: 600 }}>{lead.contact_name || "Без контакту"}</div>
+            <div className="label">{t("Клиент","Клієнт")}</div>
+            <div style={{ fontWeight: 600 }}>{lead.contact_name || t("Без контакта","Без контакту")}</div>
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }} onClick={dialClient} title="Подзвонити клієнту через нашу АТС">📞</button>
-              <button className="btn" style={{ flex: 2, background: "#eff6ff", color: "#1d4ed8" }} onClick={openChat}>💬 Чат</button>
+              <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }} onClick={dialClient} title={t("Позвонить клиенту через нашу АТС","Подзвонити клієнту через нашу АТС")}>📞</button>
+              <button className="btn" style={{ flex: 2, background: "#eff6ff", color: "#1d4ed8" }} onClick={openChat}>{t("💬 Чат","💬 Чат")}</button>
             </div>
             {lead.contact_social_link && (
               <a href={lead.contact_social_link} target="_blank" rel="noreferrer"
@@ -123,17 +125,17 @@ export default function LeadCard() {
             )}
           </div>
           <div className="panel">
-            <div className="label">Відповідальний</div>
+            <div className="label">{t("Ответственный","Відповідальний")}</div>
             <div className="owner" style={{ fontSize: 13 }}><Avatar name={lead.owner_name || "—"} />{lead.owner_name || "—"}</div>
           </div>
           <div className="panel">
-            <div className="label">Сума · Джерело</div>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>{Number(lead.amount).toLocaleString("ru")} <span className="muted" style={{ fontSize: 14 }}>грн.</span></div>
+            <div className="label">{t("Сумма · Источник","Сума · Джерело")}</div>
+            <div style={{ fontSize: 22, fontWeight: 700 }}>{Number(lead.amount).toLocaleString("ru")} <span className="muted" style={{ fontSize: 14 }}>{t("грн.","грн.")}</span></div>
             <div style={{ marginTop: 8 }}>
               <SourceChip source={lead.source} />
-              <select value={lead.source} onChange={(e) => changeSource(e.target.value)} title="Звідки лід (ChatPlace не розрізняє платформу — обери вручну)"
+              <select value={lead.source} onChange={(e) => changeSource(e.target.value)} title={t("Откуда лид (ChatPlace не различает платформу — выбери вручную)","Звідки лід (ChatPlace не розрізняє платформу — обери вручну)")}
                 style={{ fontSize: 12, padding: "5px 8px", borderRadius: 7, border: "1px solid #e2e8f0", width: "100%", marginTop: 6 }}>
-                {([["instagram", "Instagram"], ["telegram", "Telegram"], ["tiktok", "TikTok"], ["facebook", "Facebook"], ["viber", "Viber"], ["call", "Дзвінок"], ["site", "Сайт"], ["wholesale", "Опт / дилери"], ["designers", "Дизайнери"], ["other", "Інше"]] as [string, string][]).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                {([["instagram", "Instagram"], ["telegram", "Telegram"], ["tiktok", "TikTok"], ["facebook", "Facebook"], ["viber", "Viber"], ["call", t("Звонок","Дзвінок")], ["site", t("Сайт","Сайт")], ["wholesale", t("Опт / дилеры","Опт / дилери")], ["designers", t("Дизайнеры","Дизайнери")], ["other", t("Другое","Інше")]] as [string, string][]).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </div>
           </div>
@@ -141,19 +143,19 @@ export default function LeadCard() {
           <ActivityLog kind="lead" id={lead.id} />
         </div>
 
-        <div onMouseDown={startResizeLeft} title="Тягни, щоб змінити ширину лівого блоку"
+        <div onMouseDown={startResizeLeft} title={t("Тяни, чтобы изменить ширину левого блока","Тягни, щоб змінити ширину лівого блоку")}
           style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#eef2f7", borderRadius: 3, flexShrink: 0 }} />
 
         <div style={{ flex: 1, minWidth: 280, overflowY: "auto", overflowX: "hidden" }}>
           <NeedsForm leadId={lead.id} initial={lead.qualification} />
         </div>
 
-        <div onMouseDown={startResize} title="Тягни, щоб змінити ширину чату"
+        <div onMouseDown={startResize} title={t("Тяни, чтобы изменить ширину чата","Тягни, щоб змінити ширину чату")}
           style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0 }} />
 
         <div style={{ width: chatW, flexShrink: 0, display: "flex", flexDirection: "column", overflowY: "auto" }}>
           <div className="panel" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-            <div className="label">💬 Чат з клієнтом</div>
+            <div className="label">{t("💬 Чат с клиентом","💬 Чат з клієнтом")}</div>
             <div style={{ flex: 1, minHeight: 0 }}><ClientChat contact={lead.contact} /></div>
           </div>
         </div>
