@@ -15,6 +15,7 @@ type St = "off" | "connecting" | "ready" | "incoming" | "calling" | "incall" | "
 export default function WebPhone() {
   const { t } = useLang();
   const [st, setSt] = useState<St>("off");
+  const [enabled, setEnabled] = useState(false);   // телефония доступна (конфиг получен) — виджет не прячем при кратких разрег.
   const [peer, setPeer] = useState("");
   const [msg, setMsg] = useState("");
   const [dialN, setDialN] = useState("");
@@ -27,11 +28,22 @@ export default function WebPhone() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    let ua: any;
+    let ua: any, cancelled = false;
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     (async () => {
       try {
-        const cfg = await api.get<any>("/api/telephony/webrtc-config/");
-        if (!cfg?.enabled || !window.JsSIP) { return; }
+        // 1) дочекатись бібліотеки JsSIP (sync-скрипт міг ще не виконатись на момент монтування)
+        const t0 = Date.now();
+        while (!window.JsSIP && !cancelled && Date.now() - t0 < 8000) await sleep(150);
+        if (cancelled || !window.JsSIP) return;
+        // 2) конфіг з ретраями — разовий 401/збій мережі НЕ повинні назавжди ховати віджет
+        let cfg: any = null;
+        for (let i = 0; i < 6 && !cancelled; i++) {
+          try { cfg = await api.get<any>("/api/telephony/webrtc-config/"); if (cfg?.enabled) break; } catch { /* retry */ }
+          await sleep(1000);
+        }
+        if (cancelled || !cfg?.enabled) return;
+        setEnabled(true);   // телефония настроена → виджет показываем постоянно
         const JsSIP = window.JsSIP;
         const socket = new JsSIP.WebSocketInterface(cfg.ws);
         const host = window.location.host;
@@ -42,7 +54,7 @@ export default function WebPhone() {
         uaRef.current = ua;
         ua.on("connecting", () => setSt("connecting"));
         ua.on("registered", () => { setSt("ready"); window.wallcovPhoneReady = true; });
-        ua.on("unregistered", () => setSt("off"));
+        ua.on("unregistered", () => setSt((s) => (["incoming", "calling", "incall"].includes(s) ? s : "connecting")));
         ua.on("registrationFailed", (e: any) => { setSt("error"); setMsg(t("Регистрация не удалась: ","Реєстрація не вдалась: ") + (e?.cause || "")); });
         ua.on("newRTCSession", (data: any) => {
           const session = data.session; sessRef.current = session;
@@ -70,7 +82,7 @@ export default function WebPhone() {
         window.wallcovDial = (n: string) => doDial(n);
       } catch { /* конфіг недоступний — віджет не показуємо */ }
     })();
-    return () => { try { window.wallcovDial = undefined; window.wallcovPhoneReady = false; ua?.stop(); } catch { /* */ } };
+    return () => { cancelled = true; try { window.wallcovDial = undefined; window.wallcovPhoneReady = false; ua?.stop(); } catch { /* */ } };
   }, []);
 
   function doDial(number: string) {
@@ -96,7 +108,7 @@ export default function WebPhone() {
   const label = ({ off: t("выключено","вимкнено"), connecting: t("подключение…","підключення…"), ready: t("готов","готовий"), incoming: t("входящий звонок","вхідний дзвінок"), calling: t("набор…","набір…"), incall: t("разговор","розмова"), error: t("ошибка","помилка") } as any)[st];
   const busy = st === "incoming" || st === "calling" || st === "incall";
 
-  if (st === "off") return <audio ref={audioRef} autoPlay playsInline />;
+  if (!enabled) return <audio ref={audioRef} autoPlay playsInline />;
 
   return (
     <>
