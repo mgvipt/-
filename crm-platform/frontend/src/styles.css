@@ -125,11 +125,13 @@ body.anim-on .stage:hover{transform:translateY(-1px);}
 .viewbg-night{background:linear-gradient(120deg,#0f2027,#203a43,#2c5364,#24243e)!important;background-size:300% 300%!important;animation:wcBg 26s ease infinite;}
 @keyframes wcBg{0%{background-position:0% 50%;}50%{background-position:100% 50%;}100%{background-position:0% 50%;}}
 /* ── Прозорий (скляний) канбан ── */
-body.glass .col-head{background:rgba(255,255,255,.62)!important;backdrop-filter:blur(7px);}
-body.glass .col-body{background:rgba(255,255,255,.22)!important;backdrop-filter:blur(4px);}
-body.glass .card{background:rgba(255,255,255,.84)!important;backdrop-filter:blur(3px);}
-body.glass .toolbar{background:rgba(255,255,255,.5)!important;backdrop-filter:blur(7px);border-radius:10px;}
-body.glass .listtbl,body.glass .listtbl th{background:rgba(255,255,255,.72)!important;backdrop-filter:blur(5px);}
+body.glass .col-head{background:rgba(255,255,255,calc(var(--glass-a,.6)*.9 + .08))!important;backdrop-filter:blur(8px);}
+body.glass .col-body{background:rgba(255,255,255,calc(var(--glass-a,.6)*.35))!important;backdrop-filter:blur(5px);}
+body.glass .card{background:rgba(255,255,255,calc(var(--glass-a,.6)*.95 + .05))!important;backdrop-filter:blur(4px);}
+body.glass .panel{background:rgba(255,255,255,calc(var(--glass-a,.6)*.8 + .15))!important;backdrop-filter:blur(7px);}
+body.glass .toolbar{background:rgba(255,255,255,calc(var(--glass-a,.6)*.7))!important;backdrop-filter:blur(8px);border-radius:10px;}
+body.glass .listtbl,body.glass .listtbl th{background:rgba(255,255,255,calc(var(--glass-a,.6)*.9))!important;backdrop-filter:blur(6px);}
+body.glass .sidebar{background:linear-gradient(165deg,color-mix(in srgb,var(--sidebar) calc(var(--glass-a,.6)*70% + 25%),transparent),color-mix(in srgb,var(--sidebar2) calc(var(--glass-a,.6)*70% + 25%),transparent))!important;backdrop-filter:blur(12px);}
 /* ── Списковий вид ── */
 .listtbl{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;font-size:13px;box-shadow:0 1px 3px rgba(20,40,80,.06);}
 .listtbl th{text-align:left;padding:9px 12px;background:#f8fafc;color:#64748b;font-size:11.5px;font-weight:600;border-bottom:1px solid #eef2f7;position:sticky;top:0;z-index:1;}
@@ -146,7 +148,7 @@ body.fx-neon .nav-item.active{box-shadow:0 0 18px color-mix(in srgb,var(--brand)
 body.fx-neon .col-head{background:rgba(255,255,255,.06)!important;box-shadow:0 0 16px rgba(150,180,255,.16);}
 body.fx-neon .col-head b{color:#dbe4ff!important;}
 body.fx-neon .col-body{background:rgba(255,255,255,.04)!important;}
-body.fx-neon .card{background:rgba(255,255,255,.07)!important;border:1px solid rgba(150,180,255,.2);backdrop-filter:blur(4px);}
+body.fx-neon .card{background:rgba(255,255,255,calc(var(--glass-a,.6)*.13))!important;border:1px solid rgba(150,180,255,.2);backdrop-filter:blur(4px);}
 body.fx-neon .card .ttl{color:#fff!important;}
 body.fx-neon .card:hover{box-shadow:0 0 22px color-mix(in srgb,var(--brand) 45%,transparent)!important;border-color:var(--brand);}
 body.fx-neon .price,body.fx-neon .sum{background:linear-gradient(90deg,var(--fx2),var(--brand));-webkit-background-clip:text;background-clip:text;color:transparent!important;}
@@ -154,3 +156,15 @@ body.fx-neon .panel{border:1px solid rgba(150,180,255,.14);box-shadow:0 0 22px r
 body.fx-neon .toolbar{border:1px solid rgba(150,180,255,.12);}
 body.fx-neon .listtbl{background:rgba(255,255,255,.08)!important;}
 body.fx-neon .listtbl td{color:#e7ecff;border-bottom-color:rgba(150,180,255,.1);}
+
+
+/* ── 10 анімаційних фонів (сцени) ── */
+.viewbg-sea{background:linear-gradient(180deg,#48cae4,#0096c7,#023e8a)!important;background-size:100% 320%!important;animation:wcBgV 18s ease infinite;}
+.viewbg-ocean{background:linear-gradient(160deg,#0d1b2a,#1b4965,#2a6f97,#62b6cb)!important;background-size:100% 320%!important;animation:wcBgV 26s ease infinite;}
+.viewbg-nebula{background:linear-gradient(135deg,#3a0ca3,#7209b7,#f72585,#4361ee)!important;background-size:400% 400%!important;animation:wcBg 26s ease infinite;}
+.viewbg-galaxy{background:linear-gradient(135deg,#0b0b2a,#240b50,#3a0ca3,#05010f)!important;background-size:400% 400%!important;animation:wcBg 30s ease infinite;}
+.viewbg-forest{background:linear-gradient(160deg,#0b2616,#1b5e20,#43a047,#a5d6a7)!important;background-size:100% 320%!important;animation:wcBgV 24s ease infinite;}
+.viewbg-lava{background:linear-gradient(135deg,#1a0000,#7a1f0a,#e63900,#ffae42)!important;background-size:400% 400%!important;animation:wcBg 18s ease infinite;}
+.viewbg-cyber{background:linear-gradient(135deg,#04001a,#0d0030,#ff006e,#3a86ff)!important;background-size:400% 400%!important;animation:wcBg 22s ease infinite;}
+.viewbg-candy{background:linear-gradient(120deg,#ffdde1,#ee9ca7,#c2e9fb,#a1c4fd)!important;background-size:300% 300%!important;animation:wcBg 22s ease infinite;}
+@keyframes wcBgV{0%{background-position:50% 0%;}50%{background-position:50% 100%;}100%{background-position:50% 0%;}}

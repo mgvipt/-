@@ -45,6 +45,9 @@ const PRESETS = [
   { id: "electric", name: "Електрик ✦", sidebar: "#0a1030", sidebar2: "#141d4d", accent: "#3b82f6", fx2: "#8b5cf6", bg: "#0a1030", topbar: "#0a1030", topbarText: "#ffffff", fx: "neon", glass: true, animBg: "aurora" },
   { id: "sunsetneon", name: "Захід ✦", sidebar: "#2a0f16", sidebar2: "#451823", accent: "#f59e0b", fx2: "#ec4899", bg: "#1e0a10", topbar: "#2a0f16", topbarText: "#ffffff", fx: "neon", glass: true, animBg: "sunset" },
   { id: "matrix", name: "Матриця ✦", sidebar: "#06160a", sidebar2: "#0d2e15", accent: "#22c55e", fx2: "#84cc16", bg: "#06160a", topbar: "#06160a", topbarText: "#ffffff", fx: "neon", glass: true, animBg: "mint" },
+  { id: "lightaqua", name: "Світло-аква ✧", sidebar: "#0c3b3b", sidebar2: "#177878", accent: "#06b6d4", bg: "#ecfeff", topbar: "#ffffff", topbarText: "#0c3b3b", glass: true, animBg: "sea" },
+  { id: "lightlav", name: "Світло-лаванда ✧", sidebar: "#3a2c63", sidebar2: "#5641a0", accent: "#8b5cf6", bg: "#f3effe", topbar: "#ffffff", topbarText: "#2e2747", glass: true, animBg: "aurora" },
+  { id: "lightrose", name: "Світло-рожевий ✧", sidebar: "#5e1545", sidebar2: "#8a2266", accent: "#ec4899", bg: "#fdf2f8", topbar: "#ffffff", topbarText: "#5e1545", glass: true, animBg: "candy" },
   { id: "nord", name: "Nord", sidebar: "#2e3440", sidebar2: "#3b4252", accent: "#88c0d0", bg: "#eceff4", topbar: "#ffffff", topbarText: "#2e3440" },
   { id: "dracula", name: "Dracula", sidebar: "#282a36", sidebar2: "#383a4a", accent: "#bd93f9", bg: "#f2f0fb", topbar: "#282a36", topbarText: "#ffffff" },
   { id: "tokyo", name: "Tokyo Night", sidebar: "#1a1b26", sidebar2: "#24283b", accent: "#7aa2f7", bg: "#e9ebf5", topbar: "#1a1b26", topbarText: "#ffffff" },
@@ -57,8 +60,10 @@ const PRESETS = [
   { id: "plum", name: "Слива", sidebar: "#2d1b30", sidebar2: "#45294a", accent: "#e879f9", bg: "#fdf4ff", topbar: "#ffffff", topbarText: "#2d1b30" },
 ];
 const ANIMBGS = [
-  { id: "none", name: "Немає" }, { id: "aurora", name: "Аврора" }, { id: "flow", name: "Потік" },
-  { id: "sunset", name: "Захід" }, { id: "mint", name: "Мʼята" }, { id: "night", name: "Ніч" },
+  { id: "none", name: "Немає" }, { id: "sea", name: "Море" }, { id: "ocean", name: "Океан" },
+  { id: "aurora", name: "Аврора" }, { id: "nebula", name: "Туманність" }, { id: "galaxy", name: "Галактика" },
+  { id: "sunset", name: "Захід" }, { id: "forest", name: "Ліс" }, { id: "lava", name: "Лава" },
+  { id: "cyber", name: "Кібер" }, { id: "candy", name: "Цукерка" },
 ];
 const SIDEBARS: [string, string][] = [
   ["#33291f", "#463a30"], ["#0f2942", "#16466e"], ["#16271d", "#234735"], ["#1d1d24", "#30303b"],
@@ -106,6 +111,7 @@ export default function Layout() {
     const r = document.documentElement.style;
     if (theme.accent) r.setProperty("--brand", theme.accent);
     r.setProperty("--fx2", theme.fx2 || theme.accent || "#22d3ee");
+    r.setProperty("--glass-a", String(theme.glassA != null ? theme.glassA : 0.6));
     if (theme.sidebar) r.setProperty("--sidebar", theme.sidebar);
     if (theme.sidebar2) r.setProperty("--sidebar2", theme.sidebar2);
     r.setProperty("--topbar", theme.topbar || "#ffffff");
@@ -196,7 +202,11 @@ export default function Layout() {
               {ANIMBGS.map((a) => <button key={a.id} className={"btn btn-light"} style={{ fontSize: 12, fontWeight: (theme.animBg || "none") === a.id ? 700 : 400 }} onClick={() => setT({ animBg: a.id })}>{a.name}</button>)}
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
-              <input type="checkbox" checked={!!theme.glass} onChange={(e) => setT({ glass: e.target.checked })} /> 🪟 {t("Прозрачный канбан","Прозорий канбан")}
+              <input type="checkbox" checked={!!theme.glass} onChange={(e) => setT({ glass: e.target.checked })} /> 🪟 {t("Прозрачность","Прозорість")}
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, minWidth: 210 }}>
+              <span className="muted">{t("Прозрачность","Прозорість")}</span>
+              <input type="range" min={15} max={95} step={5} value={Math.round((theme.glassA != null ? theme.glassA : 0.6) * 100)} onChange={(e) => setT({ glassA: Number(e.target.value) / 100 })} style={{ flex: 1 }} />
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
               <input type="checkbox" checked={theme.anim !== false} onChange={(e) => setT({ anim: e.target.checked })} /> ✨ {t("Анимации","Анімації")}
