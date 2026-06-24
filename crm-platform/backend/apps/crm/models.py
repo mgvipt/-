@@ -187,3 +187,27 @@ def log_activity(kind, object_id, action, detail="", user=None, actor=""):
                                    detail=str(detail)[:400], user=u, actor=str(who)[:80])
     except Exception:
         pass
+
+
+# ============================================================================
+# РУШІЙ АВТОМАТИЗАЦІЇ ВОРОНКИ — авто-перехід стадій (сценарій як у ChatPlace/Бітрикс,
+# але незалежний, всередині CRM). Кожне правило: на стадії X за тригером T → перейти на Y.
+# ============================================================================
+class AutomationRule(models.Model):
+    TRIGGERS = [
+        ("manager_reply", "Менеджер/AI відповів"),
+        ("client_reply", "Клієнт відповів"),
+        ("ready_buy", "Готовність купити"),
+        ("payment", "Оплата отримана"),
+    ]
+    funnel = models.ForeignKey("Funnel", on_delete=models.CASCADE, related_name="automation_rules")
+    from_stage = models.ForeignKey("Stage", on_delete=models.CASCADE, related_name="+")
+    to_stage = models.ForeignKey("Stage", on_delete=models.CASCADE, related_name="+")
+    trigger = models.CharField(max_length=20, choices=TRIGGERS)
+    enabled = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = [("funnel", "from_stage", "trigger")]
+
+    def __str__(self):
+        return f"{self.from_stage} --{self.trigger}--> {self.to_stage}"

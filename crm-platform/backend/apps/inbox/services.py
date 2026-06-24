@@ -50,6 +50,11 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
     conv.last_message_at = msg.created_at
     conv.status = "open"
     conv.save(update_fields=["unread", "last_message_at", "status", "assigned_to"])
+    try:
+        from apps.crm.automation import on_incoming
+        on_incoming(contact, inc.text)
+    except Exception:
+        pass
     return msg
 
 
@@ -64,4 +69,9 @@ def send_message(conv: Conversation, text: str, user=None) -> Message:
     )
     conv.last_message_at = msg.created_at
     conv.save(update_fields=["last_message_at"])
+    try:
+        from apps.crm.automation import on_outgoing
+        on_outgoing(conv.contact)
+    except Exception:
+        pass
     return msg
