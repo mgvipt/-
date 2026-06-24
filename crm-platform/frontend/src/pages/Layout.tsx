@@ -23,13 +23,22 @@ const NAV: [string, string, string, string, string | null][] = [
   ["/settings", "Настройки · Интеграции", "Налаштування · Інтеграції", "⚙️", "roles.manage"],
 ];
 
-const BGS = [
-  "#eef2f7",
-  "linear-gradient(135deg,#e0f2fe,#ede9fe)",
-  "linear-gradient(135deg,#1e3a8a,#0ea5e9)",
-  "linear-gradient(135deg,#0ea5e9,#67e8f9)",
+const PRESETS = [
+  { id: "terracotta", name: "Терракота", sidebar: "#33291f", sidebar2: "#463a30", accent: "#C67D5F", bg: "#f3efe9", topbar: "#ffffff", topbarText: "#0f172a" },
+  { id: "ocean", name: "Океан", sidebar: "#0f2942", sidebar2: "#16466e", accent: "#0ea5e9", bg: "#eaf2f8", topbar: "#0f2942", topbarText: "#ffffff" },
+  { id: "forest", name: "Ліс", sidebar: "#16271d", sidebar2: "#234735", accent: "#059669", bg: "#edf5ef", topbar: "#ffffff", topbarText: "#0f172a" },
+  { id: "graphite", name: "Графіт", sidebar: "#1d1d24", sidebar2: "#30303b", accent: "#6366f1", bg: "#f0f0f4", topbar: "#1d1d24", topbarText: "#ffffff" },
+  { id: "royal", name: "Роял", sidebar: "#241b3d", sidebar2: "#3a2c63", accent: "#8b5cf6", bg: "#f1ecfa", topbar: "#ffffff", topbarText: "#0f172a" },
+  { id: "sunset", name: "Захід", sidebar: "#3a1c28", sidebar2: "#612f44", accent: "#f43f5e", bg: "#faecef", topbar: "#3a1c28", topbarText: "#ffffff" },
+  { id: "midnight", name: "Ніч", sidebar: "#0b1220", sidebar2: "#1b2942", accent: "#38bdf8", bg: "#e8edf4", topbar: "#0b1220", topbarText: "#ffffff" },
+  { id: "sand", name: "Пісок", sidebar: "#3a3326", sidebar2: "#524834", accent: "#d97706", bg: "#f7f2e8", topbar: "#ffffff", topbarText: "#0f172a" },
 ];
-const ACCENTS = ["#2a6df4", "#7c3aed", "#0ea5e9", "#059669"];
+const SIDEBARS: [string, string][] = [
+  ["#33291f", "#463a30"], ["#0f2942", "#16466e"], ["#16271d", "#234735"], ["#1d1d24", "#30303b"],
+  ["#241b3d", "#3a2c63"], ["#3a1c28", "#612f44"], ["#0b1220", "#1b2942"], ["#1e293b", "#334155"],
+];
+const ACCENTS = ["#C67D5F", "#2a6df4", "#7c3aed", "#0ea5e9", "#059669", "#f43f5e", "#d97706", "#8b5cf6"];
+const BGS = ["#f3efe9", "#eef2f7", "#edf5ef", "#f1ecfa", "#faecef", "linear-gradient(135deg,#e0f2fe,#ede9fe)", "linear-gradient(135deg,#fef3c7,#fde68a)", "#e8edf4"];
 
 function WorkTimer() {
   const [st, setSt] = useState<any>(null);
@@ -61,15 +70,20 @@ export default function Layout() {
   const { me, logout, can } = useAuth();
   const loc = useLocation();
   const [showTheme, setShowTheme] = useState(false);
-  const [theme, setTheme] = useState(me?.theme ?? {});
+  const [theme, setTheme] = useState<any>(me?.theme ?? {});
 
-  // применяем тему
+  // применяем тему — всі CSS-перемінні блоків + анімації
   useEffect(() => {
-    if (theme.accent) document.documentElement.style.setProperty("--brand", theme.accent);
-  }, [theme.accent]);
+    const r = document.documentElement.style;
+    if (theme.accent) r.setProperty("--brand", theme.accent);
+    if (theme.sidebar) r.setProperty("--sidebar", theme.sidebar);
+    if (theme.sidebar2) r.setProperty("--sidebar2", theme.sidebar2);
+    r.setProperty("--topbar", theme.topbar || "#ffffff");
+    r.setProperty("--topbar-text", theme.topbarText || "#0f172a");
+    document.body.classList.toggle("anim-on", theme.anim !== false);
+  }, [theme]);
 
-  function applyBg(bg: string) { save({ ...theme, bg }); }
-  function applyAccent(accent: string) { save({ ...theme, accent }); }
+  function setT(patch: any) { save({ ...theme, ...patch }); }
   function save(t: any) {
     setTheme(t);
     api.patch("/api/me/", { theme: t }).catch(() => {});
@@ -112,12 +126,39 @@ export default function Layout() {
         </header>
 
         {showTheme && (
-          <div className="themebar">
-            <span className="muted">Фон:</span>
-            {BGS.map((b) => <button key={b} className="swatch" style={{ background: b }} onClick={() => applyBg(b)} />)}
-            <span className="muted" style={{ marginLeft: 10 }}>Акцент:</span>
-            {ACCENTS.map((a) => <button key={a} className="dot" style={{ background: a }} onClick={() => applyAccent(a)} />)}
-            <span className="muted" style={{ marginLeft: 8, fontStyle: "italic" }}>(сохраняется в твоём профиле)</span>
+          <div className="themebar" style={{ flexWrap: "wrap", rowGap: 10, alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
+              <span className="muted" style={{ width: 74, fontSize: 12 }}>{t("Пресеты","Пресети")}:</span>
+              {PRESETS.map((p) => (
+                <button key={p.id} className="preset-chip" title={p.name} onClick={() => save({ ...theme, ...p })}
+                  style={{ borderColor: theme.sidebar === p.sidebar ? p.accent : "transparent" }}>
+                  <span style={{ width: 18, height: 30, background: `linear-gradient(165deg,${p.sidebar},${p.sidebar2})`, display: "inline-block" }} />
+                  <span style={{ width: 16, height: 30, background: p.accent, display: "inline-block" }} />
+                </button>
+              ))}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span className="muted" style={{ width: 74, fontSize: 12 }}>{t("Сайдбар","Сайдбар")}:</span>
+              {SIDEBARS.map(([s, s2]) => <button key={s} className="swatch-lg" title={t("Левый блок","Лівий блок")} style={{ background: `linear-gradient(165deg,${s},${s2})`, borderColor: theme.sidebar === s ? "#0f172a" : "#fff" }} onClick={() => setT({ sidebar: s, sidebar2: s2 })} />)}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span className="muted" style={{ width: 74, fontSize: 12 }}>{t("Акцент","Акцент")}:</span>
+              {ACCENTS.map((a) => <button key={a} className="swatch-lg" style={{ background: a, borderColor: theme.accent === a ? "#0f172a" : "#fff" }} onClick={() => setT({ accent: a })} />)}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span className="muted" style={{ width: 74, fontSize: 12 }}>{t("Фон","Фон")}:</span>
+              {BGS.map((b) => <button key={b} className="swatch-lg" style={{ background: b, borderColor: theme.bg === b ? "#0f172a" : "#fff" }} onClick={() => setT({ bg: b })} />)}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span className="muted" style={{ width: 74, fontSize: 12 }}>{t("Верх","Верх")}:</span>
+              <button className="btn btn-light" style={{ fontSize: 12 }} onClick={() => setT({ topbar: "#ffffff", topbarText: "#0f172a" })}>{t("Белый","Білий")}</button>
+              <button className="btn btn-light" style={{ fontSize: 12 }} onClick={() => setT({ topbar: theme.sidebar || "#33291f", topbarText: "#ffffff" })}>{t("Как сайдбар","Як сайдбар")}</button>
+              <button className="btn btn-light" style={{ fontSize: 12 }} onClick={() => setT({ topbar: theme.accent || "#C67D5F", topbarText: "#ffffff" })}>{t("Акцент","Акцент")}</button>
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
+              <input type="checkbox" checked={theme.anim !== false} onChange={(e) => setT({ anim: e.target.checked })} /> ✨ {t("Анимации","Анімації")}
+            </label>
+            <span className="muted" style={{ fontStyle: "italic", fontSize: 11 }}>({t("сохраняется в профиле","зберігається у профілі")})</span>
           </div>
         )}
 

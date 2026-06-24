@@ -95,3 +95,23 @@ tbody tr:hover{background:#f8fafc;}
 .stage-head-rich{color:#fff;border-radius:8px;padding:8px 12px;margin-bottom:8px;display:flex;flex-direction:column;gap:2px;box-shadow:0 4px 12px rgba(15,23,42,.14);}
 .stage-head-rich .sh-name{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .stage-head-rich .sh-meta{font-size:11px;font-weight:600;opacity:.85;}
+
+
+/* ── Динамічна тема: кастомні блоки + плавні переходи + анімації ── */
+.sidebar{background:linear-gradient(165deg,var(--sidebar),var(--sidebar2));transition:background .4s ease;}
+.topbar{background:var(--topbar,#fff)!important;color:var(--topbar-text,#0f172a);transition:background .4s ease,color .3s ease;}
+.topbar h1{color:var(--topbar-text,#0f172a);}
+.nav-item,.btn,.panel{transition:background-color .3s ease,color .25s ease,border-color .25s ease,transform .15s ease,padding-left .2s ease,box-shadow .2s ease;}
+.swatch-lg{width:30px;height:30px;border-radius:8px;border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.22);cursor:pointer;transition:transform .15s ease;padding:0;}
+.swatch-lg:hover{transform:scale(1.14);}
+.preset-chip{display:inline-flex;height:30px;border-radius:9px;overflow:hidden;cursor:pointer;border:2px solid transparent;transition:transform .15s ease,border-color .2s ease;padding:0;}
+.preset-chip:hover{transform:translateY(-2px);}
+/* лёгкі анімації — вмикаються коли body.anim-on */
+body.anim-on .nav-item:hover{padding-left:22px;}
+body.anim-on .btn:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(0,0,0,.12);}
+body.anim-on .panel{animation:wcFadeUp .32s ease both;}
+@keyframes wcFadeUp{from{opacity:0;transform:translateY(7px);}to{opacity:1;transform:none;}}
+body.anim-on .sidebar{background-size:100% 220%;animation:wcShimmer 18s ease-in-out infinite;}
+@keyframes wcShimmer{0%{background-position:50% 0%;}50%{background-position:50% 100%;}100%{background-position:50% 0%;}}
+body.anim-on .stage{transition:background .3s ease,transform .15s ease;}
+body.anim-on .stage:hover{transform:translateY(-1px);}
