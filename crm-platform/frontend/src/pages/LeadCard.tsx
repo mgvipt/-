@@ -20,6 +20,16 @@ export default function LeadCard() {
   const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [chatW, setChatW] = useState(360);
   const [leftW, setLeftW] = useState(220);
+  useEffect(() => {
+    const onResize = () => {
+      const w = window.innerWidth;
+      setChatW((x) => Math.min(x, Math.max(280, w * 0.40)));
+      setLeftW((x) => Math.min(x, Math.max(170, w * 0.26)));
+    };
+    window.addEventListener("resize", onResize);
+    onResize();
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
   const [msg, setMsg] = useState("");
 
   async function changeSource(src: string) {
@@ -88,7 +98,7 @@ export default function LeadCard() {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 12, padding: "0 16px 16px", alignItems: "flex-start" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, padding: "0 16px 16px", alignItems: "flex-start" }}>
         <div style={{ width: leftW, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12 }}>
           <div className="panel">
             <div className="label">Клієнт</div>
@@ -125,7 +135,7 @@ export default function LeadCard() {
         <div onMouseDown={startResizeLeft} title="Тягни, щоб змінити ширину лівого блоку"
           style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#eef2f7", borderRadius: 3, flexShrink: 0 }} />
 
-        <div style={{ flex: 1, minWidth: 300 }}>
+        <div style={{ flex: 1, minWidth: 280 }}>
           <NeedsForm leadId={lead.id} initial={lead.qualification} />
         </div>
 
