@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Role, Department, PERMISSION_CHOICES
+from .models import User, Role, Department, Invite, PERMISSION_CHOICES
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -9,18 +9,38 @@ class RoleSerializer(serializers.ModelSerializer):
 
 
 class DepartmentSerializer(serializers.ModelSerializer):
+    members_count = serializers.SerializerMethodField()
+    eff_permissions = serializers.SerializerMethodField()
+
     class Meta:
         model = Department
-        fields = ["id", "name", "head"]
+        fields = ["id", "name", "parent", "head", "permissions", "funnels",
+                  "open_lines", "color", "pos_x", "pos_y", "sort", "members_count", "eff_permissions"]
+
+    def get_members_count(self, obj):
+        return obj.members.filter(is_active=True).count()
+
+    def get_eff_permissions(self, obj):
+        return list(obj.eff_permissions())
 
 
 class UserSerializer(serializers.ModelSerializer):
     role_name = serializers.CharField(source="role.name", read_only=True)
+    department_name = serializers.CharField(source="department.name", read_only=True)
+    full_name = serializers.SerializerMethodField()
+    effective_permissions = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "username", "first_name", "last_name", "email",
-                  "phone", "role", "role_name", "department", "theme", "is_active"]
+        fields = ["id", "username", "first_name", "last_name", "full_name", "email",
+                  "phone", "extension", "role", "role_name", "department", "department_name",
+                  "extra_permissions", "denied_permissions", "effective_permissions", "theme", "is_active"]
+
+    def get_full_name(self, obj):
+        return ("%s %s" % (obj.first_name, obj.last_name)).strip() or obj.username
+
+    def get_effective_permissions(self, obj):
+        return list(obj.effective_permissions())
 
 
 class MeSerializer(UserSerializer):
@@ -31,7 +51,21 @@ class MeSerializer(UserSerializer):
         fields = UserSerializer.Meta.fields + ["permissions", "permission_catalog", "is_superuser"]
 
     def get_permissions(self, obj):
-        return obj.role.permissions if obj.role else []
+        return list(obj.effective_permissions())
 
     def get_permission_catalog(self, obj):
         return [{"code": c, "label": l} for c, l in PERMISSION_CHOICES]
+
+
+class InviteSerializer(serializers.ModelSerializer):
+    link = serializers.SerializerMethodField()
+    department_name = serializers.CharField(source="department.name", read_only=True)
+
+    class Meta:
+        model = Invite
+        fields = ["id", "email", "first_name", "last_name", "department", "department_name",
+                  "role", "token", "status", "expires_at", "created_at", "link"]
+        read_only_fields = ["token", "status", "created_at", "expires_at"]
+
+    def get_link(self, obj):
+        return "https://crm.wallcovdec.com.ua/invite/" + obj.token

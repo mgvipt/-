@@ -25,6 +25,8 @@ router.register("deals", crm_views.DealViewSet)
 router.register("payments", crm_views.PaymentViewSet)
 router.register("roles", acc_views.RoleViewSet)
 router.register("users", acc_views.UserViewSet)
+router.register("departments", acc_views.DepartmentViewSet)
+router.register("invites", acc_views.InviteViewSet)
 router.register("channels", inbox_views.ChannelViewSet)
 router.register("conversations", inbox_views.ConversationViewSet)
 router.register("warehouses", wh_views.WarehouseViewSet)
@@ -45,6 +47,8 @@ urlpatterns = [
     path("api/auth/", include("rest_framework.urls")),
     path("api/auth/token/", obtain_auth_token),  # POST username/password -> {token}
     path("api/me/", acc_views.MeView.as_view()),
+    path("api/permissions/", acc_views.PermissionsCatalogView.as_view()),
+    path("api/invite/<str:token>/", acc_views.AcceptInviteView.as_view()),
     path("api/inbox/telegram/webhook/<int:channel_id>/", inbox_views.TelegramWebhookView.as_view()),
     path("api/inbox/viber/webhook/<int:channel_id>/", inbox_views.ViberWebhookView.as_view()),
     path("api/inbox/meta/webhook/", inbox_views.MetaWebhookView.as_view()),

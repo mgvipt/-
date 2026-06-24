@@ -18,7 +18,7 @@ const NAV: [string, string, string, string, string | null][] = [
   ["/clients", "Клиенты", "Клієнти", "👥", null],
   ["/finance", "Финансы", "Фінанси", "💰", "finance.view"],
   ["/analytics", "Аналитика", "Аналітика", "📊", null],
-  ["/roles", "Сотрудники и права", "Співробітники і права", "🛡️", "roles.manage"],
+  ["/employees", "Сотрудники и права", "Співробітники і права", "🛡️", "roles.manage"],
   ["/settings", "Настройки · Интеграции", "Налаштування · Інтеграції", "⚙️", "roles.manage"],
 ];
 

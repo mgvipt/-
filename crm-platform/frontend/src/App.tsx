@@ -16,9 +16,14 @@ import ClientCard from "./pages/ClientCard";
 import Settings from "./pages/Settings";
 import Analytics from "./pages/Analytics";
 import Phone from "./pages/Phone";
+import Employees from "./pages/Employees";
+import InviteAccept from "./InviteAccept";
 
 function Shell() {
   const { me, loading } = useAuth();
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/invite/")) {
+    return (<BrowserRouter><Routes><Route path="/invite/:token" element={<InviteAccept />} /><Route path="*" element={<InviteAccept />} /></Routes></BrowserRouter>);
+  }
   if (loading) return <div className="spin">Загрузка…</div>;
   if (!me) return <Login />;
 
@@ -32,6 +37,7 @@ function Shell() {
           <Route path="/deals" element={<Deals />} />
           <Route path="/deals/:id" element={<DealCard />} />
           <Route path="/roles" element={<Roles />} />
+          <Route path="/employees" element={<Employees />} />
           <Route path="/inbox" element={<Inbox />} />
           <Route path="/contact-center" element={<ContactCenter />} />
           <Route path="/phone" element={<Phone />} />
