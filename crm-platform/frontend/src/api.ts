@@ -88,7 +88,8 @@ export interface Paginated<T> { count: number; results: T[]; }
 
 export interface Conversation {
   id: number; channel: number; channel_kind: string; channel_name: string;
-  contact_name?: string; title: string; status: string; unread: number;
+  contact?: number; contact_name?: string; title: string; status: string; unread: number;
+  needs_reply?: boolean;
   last_message_at: string | null; last_text: string;
   assigned_to: number | null; assigned_to_name: string;
 }
