@@ -80,7 +80,7 @@ export default function LeadCard() {
   const curOrder = funnel?.stages.find((s) => s.id === lead.stage)?.order ?? 0;
 
   return (
-    <div className="scroll fade">
+    <div className="scroll fade" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 52px)", overflow: "hidden" }}>
       <div className="dealhead">
         <button className="back" onClick={() => nav("/leads")}>←</button>
         <b style={{ fontSize: 16 }}>{lead.title}</b>
@@ -99,8 +99,8 @@ export default function LeadCard() {
         </div>
       )}
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, padding: "0 16px 16px", alignItems: "stretch", minHeight: "calc(100vh - 200px)" }}>
-        <div style={{ width: leftW, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", gap: 12, padding: "0 16px 16px", alignItems: "stretch", flex: 1, minHeight: 0, overflow: "hidden" }}>
+        <div style={{ width: leftW, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12, overflowY: "auto", overflowX: "hidden" }}>
           <div className="panel">
             <div className="label">Клієнт</div>
             <div style={{ fontWeight: 600 }}>{lead.contact_name || "Без контакту"}</div>
@@ -137,14 +137,14 @@ export default function LeadCard() {
         <div onMouseDown={startResizeLeft} title="Тягни, щоб змінити ширину лівого блоку"
           style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#eef2f7", borderRadius: 3, flexShrink: 0 }} />
 
-        <div style={{ flex: 1, minWidth: 280, display: "flex" }}>
+        <div style={{ flex: 1, minWidth: 280, overflowY: "auto", overflowX: "hidden" }}>
           <NeedsForm leadId={lead.id} initial={lead.qualification} />
         </div>
 
         <div onMouseDown={startResize} title="Тягни, щоб змінити ширину чату"
           style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0 }} />
 
-        <div style={{ width: chatW, flexShrink: 0, display: "flex" }}>
+        <div style={{ width: chatW, flexShrink: 0, display: "flex", overflow: "hidden" }}>
           <div className="panel" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
             <div className="label">💬 Чат з клієнтом</div>
             <div style={{ flex: 1, minHeight: 0 }}><ClientChat contact={lead.contact} /></div>
