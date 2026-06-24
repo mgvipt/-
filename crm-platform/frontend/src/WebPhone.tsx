@@ -7,6 +7,8 @@ declare global {
   interface Window { JsSIP: any; wallcovDial?: (n: string) => void; wallcovPhoneReady?: boolean; }
 }
 
+const ICE_CFG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }] };
+
 type St = "off" | "connecting" | "ready" | "incoming" | "calling" | "incall" | "error";
 
 export default function WebPhone() {
@@ -39,11 +41,19 @@ export default function WebPhone() {
         ua.on("newRTCSession", (data: any) => {
           const session = data.session; sessRef.current = session;
           setPeer(session.remote_identity?.uri?.user || "");
-          const attach = (pc: any) => pc && pc.addEventListener("track", (ev: any) => {
-            if (audioRef.current && ev.streams?.[0]) audioRef.current.srcObject = ev.streams[0];
-          });
-          attach(session.connection);
+          const attach = (pc: any) => {
+            if (!pc) return;
+            pc.addEventListener("track", (ev: any) => {
+              const stream = ev.streams && ev.streams[0];
+              if (stream && audioRef.current) {
+                audioRef.current.srcObject = stream;
+                audioRef.current.muted = false;
+                audioRef.current.play().catch(() => {});
+              }
+            });
+          };
           session.on("peerconnection", (e: any) => attach(e.peerconnection));
+          if (session.connection) attach(session.connection);
           session.on("accepted", () => setSt("incall"));
           session.on("confirmed", () => setSt("incall"));
           session.on("ended", () => { setSt("ready"); setPeer(""); sessRef.current = null; });
@@ -67,22 +77,23 @@ export default function WebPhone() {
       ua.call(`sip:${dn}@${window.location.host}`, {
         mediaConstraints: { audio: true, video: false },
         rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
+        pcConfig: ICE_CFG,
       });
       setPeer(number); setSt("calling"); setMsg("");
     } catch (e: any) { setMsg("Помилка: " + (e?.message || "")); }
   }
-  function answer() { try { sessRef.current?.answer({ mediaConstraints: { audio: true, video: false } }); setSt("incall"); } catch { /* */ } }
+  function answer() { try { sessRef.current?.answer({ mediaConstraints: { audio: true, video: false }, pcConfig: ICE_CFG }); setSt("incall"); } catch { /* */ } }
   function hangup() { try { sessRef.current?.terminate(); } catch { /* */ } setSt("ready"); setPeer(""); }
 
   const dot = ({ off: "#94a3b8", connecting: "#f59e0b", ready: "#16a34a", incoming: "#16a34a", calling: "#3b82f6", incall: "#3b82f6", error: "#dc2626" } as any)[st];
   const label = ({ off: "вимкнено", connecting: "підключення…", ready: "готовий", incoming: "вхідний дзвінок", calling: "набір…", incall: "розмова", error: "помилка" } as any)[st];
   const busy = st === "incoming" || st === "calling" || st === "incall";
 
-  if (st === "off") return <audio ref={audioRef} autoPlay />;
+  if (st === "off") return <audio ref={audioRef} autoPlay playsInline />;
 
   return (
     <>
-      <audio ref={audioRef} autoPlay />
+      <audio ref={audioRef} autoPlay playsInline />
       <div style={{ position: "fixed", bottom: 18, right: 18, zIndex: 9998, background: "#fff", borderRadius: 14, boxShadow: "0 10px 34px rgba(0,0,0,.2)", border: "1px solid #e2e8f0", padding: 13, width: 250 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: busy ? 10 : 0 }}>
           <span style={{ width: 9, height: 9, borderRadius: 9, background: dot, display: "inline-block" }} />
