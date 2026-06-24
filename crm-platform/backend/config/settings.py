@@ -5,6 +5,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-insecure-change-me")
+TELEPHONY_TOKEN = os.environ.get("TELEPHONY_TOKEN", "")
 DEBUG = os.environ.get("DEBUG", "1") == "1"
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "*").split(",")
 

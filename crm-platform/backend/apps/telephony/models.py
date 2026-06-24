@@ -12,6 +12,10 @@ class Call(models.Model):
     manager = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="calls")
     duration = models.PositiveIntegerField(default=0, help_text="секунды")
     recording_url = models.URLField(blank=True)
+    recording_file = models.CharField(max_length=255, blank=True, help_text="імʼя файлу запису на FreePBX")
+    extension = models.CharField(max_length=16, blank=True, help_text="внутрішній номер менеджера")
+    disposition = models.CharField(max_length=24, blank=True, help_text="ANSWERED / NO ANSWER / BUSY / FAILED")
+    started_at = models.DateTimeField(null=True, blank=True)
     external_id = models.CharField(max_length=128, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -11,7 +11,8 @@ class CallSerializer(serializers.ModelSerializer):
         model = Call
         fields = ["id", "direction", "direction_display", "from_number", "to_number",
                   "contact", "contact_name", "deal", "manager", "manager_name",
-                  "duration", "recording_url", "created_at"]
+                  "duration", "recording_url", "recording_file", "extension",
+                  "disposition", "started_at", "created_at"]
 
     def get_contact_name(self, obj):
         return str(obj.contact) if obj.contact else ""
