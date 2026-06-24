@@ -13,6 +13,7 @@ class Call(models.Model):
     duration = models.PositiveIntegerField(default=0, help_text="секунды")
     recording_url = models.URLField(blank=True)
     recording_file = models.CharField(max_length=255, blank=True, help_text="імʼя файлу запису на FreePBX")
+    line = models.CharField(max_length=60, blank=True, help_text="SIM-лінія, напр. 803 · Салон")
     extension = models.CharField(max_length=16, blank=True, help_text="внутрішній номер менеджера")
     disposition = models.CharField(max_length=24, blank=True, help_text="ANSWERED / NO ANSWER / BUSY / FAILED")
     started_at = models.DateTimeField(null=True, blank=True)

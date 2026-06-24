@@ -99,6 +99,7 @@ class CallWebhookView(APIView):
             recording_file=d.get("recording", "") or "",
             disposition=d.get("disposition", "") or "",
             extension=ext, contact=contact, deal=deal,
+            line=d.get("line", "") or "",
         )
         sa = d.get("started_at")
         if sa:

@@ -9,7 +9,7 @@ interface Call {
   from_number: string; to_number: string;
   contact?: number; contact_name?: string; manager_name?: string;
   duration: number; recording_url: string; recording_file?: string;
-  extension?: string; disposition?: string; started_at?: string; created_at: string;
+  extension?: string; disposition?: string; started_at?: string; created_at: string; line?: string;
 }
 interface Stats { total: number; recorded: number; missed: number; avg_seconds: number; }
 
@@ -50,6 +50,7 @@ export default function Phone() {
           <div className="muted" style={{ fontSize: 11.5 }}>
             {c.direction === "out" ? c.to_number : c.from_number}{c.manager_name ? ` · ${c.manager_name}` : ""}
           </div>
+          {c.line && <div style={{ fontSize: 10.5, color: "#7c5cff", marginTop: 1 }}>📡 {c.line}</div>}
         </div>
         <div style={{ textAlign: "right", fontSize: 11.5 }}>
           <div className="muted">{when(c)}</div>
