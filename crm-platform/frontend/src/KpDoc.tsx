@@ -66,7 +66,7 @@ export default function KpDoc({ deal, onClose }: { deal: any; onClose: () => voi
   <div style="font-family:Arial,sans-serif;color:#111;max-width:720px;margin:0 auto;font-size:13px">
     <table style="width:100%;border-collapse:collapse;margin-bottom:14px"><tr>
       <td style="width:150px;vertical-align:top;text-align:center">
-        <img src="${qr}" width="110" height="110" style="display:block;margin:0 auto" onerror="this.style.display='none'"/>
+        <img src="${qr}" width="110" height="110" crossorigin="anonymous" style="display:block;margin:0 auto" onerror="this.style.display='none'"/>
         <div style="font-size:10px;margin-top:3px">@${SUP.ig.toUpperCase()}</div>
         <div style="font-size:9px;color:#555;margin-top:4px">*Скануй та підпишись!<br/>Знижки та спеціальні пропозиції<br/>діють тільки для підписників</div>
       </td>
@@ -104,6 +104,17 @@ export default function KpDoc({ deal, onClose }: { deal: any; onClose: () => voi
     w.document.write(`<html><head><title>КП Декор #${deal.id}</title></head><body style="margin:20px">${docHtml}</body></html>`);
     w.document.close(); w.focus(); setTimeout(() => w.print(), 400);
   }
+  function pdf() {
+    const el = document.getElementById("kp-doc-print");
+    const h2p = (window as any).html2pdf;
+    if (!el || !h2p) { printWin(); return; }   // нема бібліотеки → fallback на друк
+    h2p().set({
+      margin: 8, filename: `KP_Decor_${deal.id}.pdf`,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    }).from(el).save();
+  }
   function excel() {
     const rows = items.map((it: any, i: number) =>
       `<tr><td>${i + 1}</td><td>${it.product_name}</td><td>${Number(it.quantity)}</td><td>шт</td><td>${Number(it.price)}</td><td>${Number(it.total)}</td></tr>`).join("");
@@ -119,11 +130,11 @@ export default function KpDoc({ deal, onClose }: { deal: any; onClose: () => voi
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           <b style={{ fontSize: 17, flex: 1 }}>1. КП Декор #{deal.id}</b>
           <button className="btn btn-primary" onClick={printWin}>🖨 Друк</button>
-          <button className="btn" onClick={printWin} title="У діалозі друку обери «Зберегти як PDF»">📄 PDF</button>
+          <button className="btn" onClick={pdf} title="Завантажити PDF-файл">📄 PDF</button>
           <button className="btn btn-green" onClick={excel}>📊 Excel</button>
           <button className="btn" onClick={onClose}>✕</button>
         </div>
-        <div style={{ background: "#fff", borderRadius: 10, padding: 24 }} dangerouslySetInnerHTML={{ __html: docHtml }} />
+        <div id="kp-doc-print" style={{ background: "#fff", borderRadius: 10, padding: 24 }} dangerouslySetInnerHTML={{ __html: docHtml }} />
       </div>
     </div>
   );
