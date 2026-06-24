@@ -21,7 +21,8 @@ export default function Deals() {
     api.get<{ results: Funnel[] }>("/api/funnels/").then((d) => {
       const sales = d.results.filter((f) => !f.is_lead_funnel);
       setFunnels(sales);
-      setCurId(sales[0]?.id ?? null);
+      const saved = Number(localStorage.getItem("deals_funnel"));
+      setCurId(sales.find((f) => f.id === saved) ? saved : (sales[0]?.id ?? null));
     });
   }, []);
 
@@ -44,7 +45,7 @@ export default function Deals() {
     <div className="kanban">
       <div className="toolbar">
         <button className="btn btn-primary" onClick={() => setCreating(true)}>+ Сделка</button>
-        <select value={curId ?? ""} onChange={(e) => setCurId(Number(e.target.value))}>
+        <select value={curId ?? ""} onChange={(e) => { const id = Number(e.target.value); setCurId(id); localStorage.setItem("deals_funnel", String(id)); }}>
           {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
         </select>
         <button className="btn btn-light" onClick={() => setEditFunnel(true)}>⚙ Воронка</button>
