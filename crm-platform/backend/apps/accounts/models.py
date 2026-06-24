@@ -51,6 +51,7 @@ class User(AbstractUser):
         Department, null=True, blank=True, on_delete=models.SET_NULL, related_name="members"
     )
     phone = models.CharField(max_length=32, blank=True)
+    extension = models.CharField(max_length=16, blank=True, help_text="внутрішній номер у АТС, напр. 789")
     theme = models.JSONField(default=dict, blank=True, help_text="Персональные настройки фона/акцента")
 
     # --- помощники прав ---

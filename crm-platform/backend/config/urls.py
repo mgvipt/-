@@ -73,6 +73,7 @@ urlpatterns = [
     path("api/analytics/inventory/", wh_views.InventoryAnalyticsView.as_view()),
     path("api/warehouse/inventory-sheet/", wh_views.InventorySheetView.as_view()),
     path("api/telephony/webhook/", tel_views.CallWebhookView.as_view()),
+    path("api/telephony/originate-queue/", tel_views.OriginateQueueView.as_view()),
     path("api/integrations/settings/", intg_views.IntegrationSettingsView.as_view()),
     path("api/integrations/liqpay/link/", intg_views.LiqpayLinkView.as_view()),
     path("api/integrations/novaposhta/track/", intg_views.NovaPoshtaTrackView.as_view()),

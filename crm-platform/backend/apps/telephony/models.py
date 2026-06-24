@@ -24,3 +24,16 @@ class Call(models.Model):
 
     def __str__(self):
         return f"{self.get_direction_display()} {self.from_number}->{self.to_number}"
+
+
+class CallRequest(models.Model):
+    """Заявка на дзвінок по кліку. Конектор FreePBX опитує і робить Originate."""
+    number = models.CharField(max_length=32)
+    extension = models.CharField(max_length=16, blank=True)
+    status = models.CharField(max_length=10, default="pending")  # pending/done/failed
+    error = models.CharField(max_length=200, blank=True)
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]

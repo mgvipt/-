@@ -6,7 +6,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.crm.models import Contact
-from .models import Call
+from .models import Call, CallRequest
+import re
 from .serializers import CallSerializer
 
 
@@ -33,6 +34,24 @@ class CallViewSet(viewsets.ModelViewSet):
         avg = int(avg / total) if total else 0
         return Response({"total": total, "recorded": recorded, "missed": missed,
                          "avg_seconds": avg})
+
+    @action(detail=False, methods=["post"])
+    def dial(self, request):
+        """Подзвонити клієнту: ставимо заявку, АТС дзвонить на внутрішній менеджера, потім клієнту."""
+        number = (request.data.get("number") or "").strip()
+        cid = request.data.get("contact")
+        if not number and cid:
+            c = Contact.objects.filter(id=cid).first()
+            number = (c.phone if c else "") or ""
+        number = re.sub(r"[^\d+]", "", number)
+        if len(re.sub(r"\D", "", number)) < 7:
+            return Response({"detail": "Немає коректного номера телефону у клієнта"}, status=status.HTTP_400_BAD_REQUEST)
+        ext = (request.data.get("extension") or getattr(request.user, "extension", "") or "").strip()
+        if not ext:
+            return Response({"detail": "У вашому профілі не вказано внутрішній номер АТС (напр. 789). Вкажіть його, щоб дзвонити."}, status=status.HTTP_400_BAD_REQUEST)
+        cr = CallRequest.objects.create(number=number, extension=str(ext),
+                                        requested_by=request.user if request.user.is_authenticated else None)
+        return Response({"ok": True, "id": cr.id, "number": number, "extension": ext}, status=status.HTTP_201_CREATED)
 
 
 class CallWebhookView(APIView):
@@ -95,3 +114,30 @@ class CallWebhookView(APIView):
             call, created = Call.objects.create(**defaults), True
         return Response({"ok": True, "id": call.id, "created": created,
                          "matched_contact": bool(contact)}, status=status.HTTP_201_CREATED)
+
+
+class OriginateQueueView(APIView):
+    """Конектор FreePBX опитує чергу дзвінків і відмічає виконані. Захищено токеном."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def _ok_token(self, request):
+        from django.conf import settings as _s
+        t = request.headers.get("X-Telephony-Token") or request.GET.get("token") or request.data.get("token")
+        return bool(_s.TELEPHONY_TOKEN) and t == _s.TELEPHONY_TOKEN
+
+    def get(self, request):
+        if not self._ok_token(request):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        items = CallRequest.objects.filter(status="pending").order_by("created_at")[:10]
+        return Response([{"id": i.id, "number": i.number, "extension": i.extension} for i in items])
+
+    def post(self, request):
+        if not self._ok_token(request):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        cr = CallRequest.objects.filter(id=request.data.get("id")).first()
+        if cr:
+            cr.status = "done" if request.data.get("ok") else "failed"
+            cr.error = (request.data.get("error") or "")[:200]
+            cr.save(update_fields=["status", "error"])
+        return Response({"ok": True})
