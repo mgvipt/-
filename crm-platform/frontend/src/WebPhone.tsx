@@ -16,6 +16,9 @@ export default function WebPhone() {
   const [peer, setPeer] = useState("");
   const [msg, setMsg] = useState("");
   const [dialN, setDialN] = useState("");
+  const [line, setLine] = useState<string>(() => localStorage.getItem("crm_phone_line") || "789");
+  const lineRef = useRef<string>(localStorage.getItem("crm_phone_line") || "789");
+  function pickLine(l: string) { setLine(l); lineRef.current = l; localStorage.setItem("crm_phone_line", l); }
   const uaRef = useRef<any>(null);
   const sessRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -74,7 +77,7 @@ export default function WebPhone() {
     const dn = num.startsWith("+380") ? "0" + num.slice(4) : num.replace(/^\+/, "");
     if (!dn) return;
     try {
-      ua.call(`sip:${dn}@${window.location.host}`, {
+      ua.call(`sip:${lineRef.current}*${dn}@${window.location.host}`, {
         mediaConstraints: { audio: true, video: false },
         rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
         pcConfig: ICE_CFG,
@@ -113,10 +116,18 @@ export default function WebPhone() {
           <button className="btn" style={{ width: "100%", background: "#fee2e2", color: "#b91c1c" }} onClick={hangup}>📵 Завершити</button>
         )}
         {st === "ready" && (
-          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+          <div style={{ marginTop: 8 }}>
+            <div className="muted" style={{ fontSize: 11, marginBottom: 3 }}>Дзвонити з лінії:</div>
+            <select value={line} onChange={(e) => pickLine(e.target.value)}
+              style={{ width: "100%", height: 30, borderRadius: 7, border: "1px solid #cbd5e1", fontSize: 12, marginBottom: 6 }}>
+              <option value="789">Салон · 0964191890</option>
+              <option value="788">Алмазне · 0673812702</option>
+            </select>
+          <div style={{ display: "flex", gap: 6 }}>
             <input value={dialN} onChange={(e) => setDialN(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doDial(dialN)}
               placeholder="0XX XXX XX XX" style={{ flex: 1, height: 32, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13 }} />
             <button className="btn btn-green" onClick={() => doDial(dialN)} disabled={!dialN.trim()}>📞</button>
+          </div>
           </div>
         )}
         {msg && <div style={{ fontSize: 11, marginTop: 7, color: st === "error" ? "#dc2626" : "#64748b" }}>{msg}</div>}
