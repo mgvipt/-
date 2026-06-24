@@ -46,6 +46,10 @@ class ContactViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        user = self.request.user
+        if not user.can_see_all_clients():
+            from django.db.models import Q as _Q
+            qs = qs.filter(_Q(owner=user) | _Q(leads__owner=user) | _Q(deals__owner=user)).distinct()
         li = self.request.query_params.get("loyalty_in")
         if li:
             qs = qs.filter(loyalty_tag__in=[x for x in li.split(",") if x])
@@ -61,6 +65,20 @@ class CompanyViewSet(viewsets.ModelViewSet):
     queryset = Company.objects.all()
     serializer_class = CompanySerializer
     search_fields = ["name", "edrpou"]
+
+    def _guard_write(self):
+        if not self.request.user.can_see_all_deals():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Змінювати компанії може лише керівник")
+
+    def perform_create(self, serializer):
+        self._guard_write(); serializer.save()
+
+    def perform_update(self, serializer):
+        self._guard_write(); serializer.save()
+
+    def perform_destroy(self, instance):
+        self._guard_write(); instance.delete()
 
 
 class FunnelViewSet(viewsets.ModelViewSet):
@@ -303,6 +321,12 @@ class PaymentViewSet(viewsets.ModelViewSet):
     serializer_class = PaymentSerializer
     filterset_fields = ["deal", "provider", "is_paid"]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if not self.request.user.can_see_all_deals():
+            qs = qs.filter(deal__owner=self.request.user)
+        return qs
+
 
 from rest_framework.views import APIView
 from django.db.models import Count, Sum, Avg
@@ -311,14 +335,18 @@ from django.db.models import Count, Sum, Avg
 class AnalyticsView(APIView):
     """Сводка по продажам: KPI + воронка по стадиям."""
     def get(self, request):
+        _u = request.user
+        _see_all = _u.is_superuser or _u.can_see_all_deals()
+        _deals_base = Deal.objects.all() if _see_all else Deal.objects.filter(owner=_u)
+        _leads_base = Lead.objects.all() if _see_all else Lead.objects.filter(owner=_u)
         funnel_id = request.GET.get("funnel")
         funnels = Funnel.objects.filter(is_lead_funnel=False)
         if funnel_id:
             funnels = funnels.filter(id=funnel_id)
         funnel = funnels.first()
 
-        leads_total = Lead.objects.count()
-        deals = Deal.objects.all()
+        leads_total = _leads_base.count()
+        deals = _deals_base
         if funnel:
             deals = deals.filter(funnel=funnel)
         deals_total = deals.count()
@@ -342,9 +370,9 @@ class AnalyticsView(APIView):
                 "tiktok": "TikTok", "viber": "Viber", "call": "Дзвінок", "site": "Сайт",
                 "wholesale": "Опт / дилери", "designers": "Дизайнери", "whatsapp": "WhatsApp",
                 "google_business": "Google", "other": "Інше"}
-        _lead_src = dict(Lead.objects.values_list("source").annotate(n=Count("id")))
+        _lead_src = dict(_leads_base.values_list("source").annotate(n=Count("id")))
         _channels = []
-        for _d in Deal.objects.values("source").annotate(
+        for _d in _deals_base.values("source").annotate(
                 deals=Count("id"),
                 won=Count("id", filter=_Q(stage__is_won=True)),
                 lost=Count("id", filter=_Q(stage__is_lost=True)),
@@ -388,6 +416,16 @@ class ActivityLogView(APIView):
             qs = qs.filter(kind=kind)
         if oid:
             qs = qs.filter(object_id=oid)
+        # доступ: менеджер бачить історію лише по СВОЇХ картках (захист від підглядання за id)
+        u = request.user
+        if oid and kind in ("lead", "deal") and not u.is_superuser:
+            see_all = u.can_see_all_deals() if kind == "deal" else u.can_see_all_leads()
+            if not see_all:
+                from .models import Lead as _L, Deal as _D
+                Model = _D if kind == "deal" else _L
+                obj = Model.objects.filter(id=oid).first()
+                if not obj or obj.owner_id != u.id:
+                    return Response([])
         return Response([{
             "action": a.action, "detail": a.detail,
             "actor": a.user.get_full_name() if a.user else (a.actor or "Система"),

@@ -68,6 +68,10 @@ class User(AbstractUser):
     def can_see_all_conversations(self) -> bool:
         return self.has_perm_code("conversation.view.all")
 
+    def can_see_all_clients(self) -> bool:
+        # клієнтів бачить керівник (хто бачить усі сделки) або хто має явне право
+        return self.has_perm_code("contact.view.all") or self.can_see_all_deals()
+
     def allowed_funnel_ids(self):
         """None = все воронки (нет ограничения); иначе — список разрешённых id.
 
