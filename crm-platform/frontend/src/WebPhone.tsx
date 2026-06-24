@@ -120,7 +120,7 @@ export default function WebPhone() {
       <div style={{ margin: "0 10px 8px", background: "#fff", borderRadius: 12, boxShadow: "0 4px 16px rgba(0,0,0,.18)", border: "1px solid #e2e8f0", padding: 11 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: busy ? 10 : 0 }}>
           <span style={{ width: 9, height: 9, borderRadius: 9, background: dot, display: "inline-block" }} />
-          <b style={{ fontSize: 13 }}>{t("📞 Веб-телефон","📞 Веб-телефон")}</b>
+          <b style={{ fontSize: 13, whiteSpace: "nowrap" }}>{t("📞 Телефон","📞 Телефон")}</b>
           <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>{label}</span>
         </div>
 
@@ -145,8 +145,8 @@ export default function WebPhone() {
             </select>
           <div style={{ display: "flex", gap: 6 }}>
             <input value={dialN} onChange={(e) => setDialN(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doDial(dialN)}
-              placeholder="0XX XXX XX XX" style={{ flex: 1, height: 32, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13 }} />
-            <button className="btn btn-green" onClick={() => doDial(dialN)} disabled={!dialN.trim()}>📞</button>
+              placeholder="0XX XXX XX XX" style={{ flex: 1, minWidth: 0, width: 0, height: 32, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13 }} />
+            <button className="btn btn-green" style={{ flexShrink: 0 }} onClick={() => doDial(dialN)} disabled={!dialN.trim()}>📞</button>
           </div>
           {recent.length > 0 && (
             <div style={{ marginTop: 8 }}>
