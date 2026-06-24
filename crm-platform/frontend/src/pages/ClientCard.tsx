@@ -5,6 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { Avatar, SourceChip } from "../ui";
 import OwnerSelect from "../OwnerSelect";
+import CallButton from "../CallButton";
 
 interface Deal { id: number; title: string; amount: number; stage: string; is_won: boolean; created_at: string; }
 interface Contact {
@@ -43,6 +44,7 @@ export default function ClientCard() {
         <Avatar name={c.display_name} cls="av-md" />
         <b style={{ fontSize: 16 }}>{c.display_name}</b>
         {c.loyalty_tag && <span className="chip" style={{ background: "#eef2ff", color: "#4338ca" }}>{c.loyalty_tag}</span>}
+        <CallButton contact={c.id} small />
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
         <span className="muted">Витратив усього: <b style={{ color: "#16a34a" }}>{money(c.total_spent)}</b></span>

@@ -54,6 +54,13 @@ export default function LeadCard() {
     window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
   }
 
+  async function dialClient() {
+    if (!lead?.contact) { setMsg("У ліда немає контакту"); return; }
+    try { const r: any = await api.post("/api/calls/dial/", { contact: lead.contact }); setMsg(`📞 АТС набирає ваш ${r.extension} — підніміть слухавку`); }
+    catch (e: any) { const m = String(e?.message || "").match(/"detail":"([^"]+)"/); setMsg(m ? m[1] : "Помилка дзвінка"); }
+    setTimeout(() => setMsg(""), 7000);
+  }
+
   async function openChat() {
     if (!lead || !lead.contact) { setMsg("У ліда немає контакту"); return; }
     try {
@@ -105,7 +112,7 @@ export default function LeadCard() {
             <div className="label">Клієнт</div>
             <div style={{ fontWeight: 600 }}>{lead.contact_name || "Без контакту"}</div>
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>📞</button>
+              <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }} onClick={dialClient} title="Подзвонити клієнту через нашу АТС">📞</button>
               <button className="btn" style={{ flex: 2, background: "#eff6ff", color: "#1d4ed8" }} onClick={openChat}>💬 Чат</button>
             </div>
             {lead.contact_social_link && (

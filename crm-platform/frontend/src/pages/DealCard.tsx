@@ -32,6 +32,7 @@ import NeedsForm from "../NeedsForm";
 import CardFields from "../CardFields";
 import ClientChat from "../ClientChat";
 import ActivityLog from "../ActivityLog";
+import CallButton from "../CallButton";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
@@ -208,6 +209,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         <span className="muted">{funnel?.name}</span>
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
+        {deal.contact_id && <CallButton contact={deal.contact_id} small />}
         <button className="btn btn-green" onClick={ship}>📦 Отгрузить</button>
       </div>
 
