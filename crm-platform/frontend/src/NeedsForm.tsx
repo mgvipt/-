@@ -51,7 +51,7 @@ export default function NeedsForm({ leadId, initial, endpoint = "/api/leads/" }:
   );
 
   return (
-    <div className="panel">
+    <div className="panel" style={{ flex: 1, boxSizing: "border-box" }}>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
         <div className="label" style={{ margin: 0 }}>📋 Виявлення потреби</div>
         <div style={{ flex: 1 }} />

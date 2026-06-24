@@ -30,6 +30,7 @@ import OwnerSelect from "../OwnerSelect";
 import { Avatar } from "../ui";
 import NeedsForm from "../NeedsForm";
 import CardFields from "../CardFields";
+import ClientChat from "../ClientChat";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
@@ -227,7 +228,8 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       </div>
 
       {tab !== "cashflow" ? (
-      <div className="grid2">
+      <div style={{ display: "flex", gap: 12, alignItems: "stretch", minHeight: "calc(100vh - 220px)" }}>
+        <div className="grid2" style={{ flex: 1, minWidth: 0 }}>
 
         {/* ─── [10] РЕНДЕР: левая колонка — данные заказа ───────────────── */}
         <div>
@@ -409,6 +411,15 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             </div>
           )}
         </div>
+        </div>
+        {deal.contact_id && (
+          <div style={{ width: 360, flexShrink: 0, display: "flex" }}>
+            <div className="panel" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <div className="label">💬 Чат з клієнтом</div>
+              <div style={{ flex: 1, minHeight: 0 }}><ClientChat contact={deal.contact_id} /></div>
+            </div>
+          </div>
+        )}
       </div>
       ) : <CashflowTab deal={deal} remaining={remaining} onPay={() => { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }} createTTN={createTTN} issueCheckbox={issueCheckbox} sendPayLink={sendPayLink} flash={flash} />}
 

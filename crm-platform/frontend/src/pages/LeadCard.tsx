@@ -98,7 +98,7 @@ export default function LeadCard() {
         </div>
       )}
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, padding: "0 16px 16px", alignItems: "flex-start" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, padding: "0 16px 16px", alignItems: "stretch", minHeight: "calc(100vh - 200px)" }}>
         <div style={{ width: leftW, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12 }}>
           <div className="panel">
             <div className="label">Клієнт</div>
@@ -135,17 +135,17 @@ export default function LeadCard() {
         <div onMouseDown={startResizeLeft} title="Тягни, щоб змінити ширину лівого блоку"
           style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#eef2f7", borderRadius: 3, flexShrink: 0 }} />
 
-        <div style={{ flex: 1, minWidth: 280 }}>
+        <div style={{ flex: 1, minWidth: 280, display: "flex" }}>
           <NeedsForm leadId={lead.id} initial={lead.qualification} />
         </div>
 
         <div onMouseDown={startResize} title="Тягни, щоб змінити ширину чату"
           style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0 }} />
 
-        <div style={{ width: chatW, flexShrink: 0 }}>
-          <div className="panel">
+        <div style={{ width: chatW, flexShrink: 0, display: "flex" }}>
+          <div className="panel" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
             <div className="label">💬 Чат з клієнтом</div>
-            <ClientChat contact={lead.contact} />
+            <div style={{ flex: 1, minHeight: 0 }}><ClientChat contact={lead.contact} /></div>
           </div>
         </div>
       </div>
