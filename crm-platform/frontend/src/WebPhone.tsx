@@ -19,6 +19,7 @@ export default function WebPhone() {
   const [line, setLine] = useState<string>(() => localStorage.getItem("crm_phone_line") || "789");
   const lineRef = useRef<string>(localStorage.getItem("crm_phone_line") || "789");
   function pickLine(l: string) { setLine(l); lineRef.current = l; localStorage.setItem("crm_phone_line", l); }
+  const [recent, setRecent] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem("crm_phone_recent") || "[]"); } catch { return []; } });
   const uaRef = useRef<any>(null);
   const sessRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -76,6 +77,7 @@ export default function WebPhone() {
     const num = (number || "").replace(/[^\d+]/g, "");
     const dn = num.startsWith("+380") ? "0" + num.slice(4) : num.replace(/^\+/, "");
     if (!dn) return;
+    setRecent((r) => { const nr = [dn, ...r.filter((x) => x !== dn)].slice(0, 5); localStorage.setItem("crm_phone_recent", JSON.stringify(nr)); return nr; });
     try {
       ua.call(`sip:${lineRef.current}*${dn}@${window.location.host}`, {
         mediaConstraints: { audio: true, video: false },
@@ -128,6 +130,17 @@ export default function WebPhone() {
               placeholder="0XX XXX XX XX" style={{ flex: 1, height: 32, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13 }} />
             <button className="btn btn-green" onClick={() => doDial(dialN)} disabled={!dialN.trim()}>📞</button>
           </div>
+          {recent.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div className="muted" style={{ fontSize: 11, marginBottom: 3 }}>Останні номери:</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {recent.map((n) => (
+                  <button key={n} onClick={() => doDial(n)} title="Подзвонити"
+                    style={{ cursor: "pointer", background: "#eef2ff", color: "#4338ca", border: "none", borderRadius: 999, fontSize: 11.5, padding: "3px 9px" }}>{n}</button>
+                ))}
+              </div>
+            </div>
+          )}
           </div>
         )}
         {msg && <div style={{ fontSize: 11, marginTop: 7, color: st === "error" ? "#dc2626" : "#64748b" }}>{msg}</div>}
