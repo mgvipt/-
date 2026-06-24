@@ -33,11 +33,12 @@ import CardFields from "../CardFields";
 import ClientChat from "../ClientChat";
 import ActivityLog from "../ActivityLog";
 import CallButton from "../CallButton";
+import KpDoc from "../KpDoc";
 import { useLang } from "../i18n";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
-interface Item { id: number; product: number; product_name: string; quantity: string; price: string; total: string; }
+interface Item { id: number; product: number; product_name: string; quantity: string; price: string; discount_pct?: string; discount_sum?: string; total: string; reserved?: boolean; product_stock?: number | null; }
 interface Pay { id: number; provider: string; amount: string; is_paid: boolean; created_at: string; }
 interface Deal {
   qualification?: any; card_fields?: any[];
@@ -55,6 +56,8 @@ interface Product { id: number; name: string; price: string; stock: number; }
 
 const fmt = (n: number) => Number(n || 0).toLocaleString("ru");
 const LOYALTY_COLOR: Record<string, string> = { VIP: "#7c3aed", Активный: "#2563eb", Новый: "#16a34a", Спящий: "#64748b" };
+const editInp: any = { width: 62, height: 28, borderRadius: 6, border: "1px solid #cbd5e1", padding: "0 6px", fontSize: 12 };
+const rowTot: any = { display: "flex", justifyContent: "space-between", padding: "3px 0", gap: 24 };
 
 export default function DealCard({ dealId, onClose }: { dealId?: number; onClose?: () => void } = {}) {
 
@@ -69,6 +72,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [notFound, setNotFound] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [tab, setTab] = useState<"general" | "items" | "cashflow">("general");
+  const [docOpen, setDocOpen] = useState(false);
   const [addProd, setAddProd] = useState(0);
   const [addQty, setAddQty] = useState(1);
   const [psearch, setPsearch] = useState(""); const [presults, setPresults] = useState<Product[]>([]); const [psel, setPsel] = useState<Product | null>(null); const [addReserve, setAddReserve] = useState(false);
@@ -132,6 +136,9 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   }, [psearch, psel]);
   async function toggleReserve(it: any) {
     setDeal(await api.post<Deal>(`/api/deals/${id}/set_reserve/`, { item: it.id, reserved: !it.reserved }));
+  }
+  async function updateItem(itemId: number, body: any) {
+    setDeal(await api.post<Deal>(`/api/deals/${id}/update_item/`, { item: itemId, ...body }));
   }
   async function removeItem(item: number) { setDeal(await api.post<Deal>(`/api/deals/${id}/remove_item/`, { item })); }
 
@@ -208,6 +215,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       <div className="dealhead">
         <button className="back" onClick={() => onClose ? onClose() : nav("/deals")}>←</button>
         <b style={{ fontSize: 16 }}>#{deal.id} · {deal.title}</b>
+        <button className="btn" onClick={() => setDocOpen(true)} title={t("Сформировать документ КП","Сформувати документ КП")}>📄 {t("Документ","Документ")}</button>
         <span className="muted">{funnel?.name}</span>
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
@@ -384,17 +392,39 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 {psel && <div style={{ fontSize: 12, color: "#16a34a", marginTop: 4 }}>{t("✓ Выбрано:","✓ Обрано:")} {psel.name} · {fmt(Number(psel.price))} ₴ · {t("сумма","сума")} {fmt(Number(psel.price) * addQty)} ₴</div>}
               </div>
               {deal.items.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Товаров пока нет.","Товарів поки немає.")}</div> : (
-                <table><thead><tr><th>{t("Товар","Товар")}</th><th>{t("Кол-во","К-сть")}</th><th>{t("Остаток","Залишок")}</th><th>{t("Цена","Ціна")}</th><th>{t("Сумма","Сума")}</th><th>{t("Резерв","Резерв")}</th><th></th></tr></thead>
-                  <tbody>{deal.items.map((it: any) => {
+                <>
+                <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", fontSize: 13 }}><thead><tr style={{ color: "#64748b", fontSize: 11, textAlign: "left" }}>
+                  <th style={{ padding: "6px 4px" }}>№</th><th style={{ padding: "6px 4px" }}>{t("Товар","Товар")}</th>
+                  <th style={{ padding: "6px 4px" }}>{t("Цена","Ціна")}</th><th style={{ padding: "6px 4px" }}>{t("Кол-во","К-сть")}</th>
+                  <th style={{ padding: "6px 4px", textAlign: "center" }}>{t("Резерв","Резерв")}</th><th style={{ padding: "6px 4px" }}>{t("Остаток","Залишок")}</th>
+                  <th style={{ padding: "6px 4px" }}>{t("Скидка %","Знижка %")}</th><th style={{ padding: "6px 4px" }}>{t("Сумма скидки","Сума знижки")}</th>
+                  <th style={{ padding: "6px 4px" }}>{t("Сумма","Сума")}</th><th></th></tr></thead>
+                  <tbody>{deal.items.map((it: any, idx: number) => {
                     const low = it.product_stock != null && Number(it.quantity) > Number(it.product_stock);
                     return (
-                    <tr key={it.id}><td><span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/warehouse?p=${it.product}`)}>{it.product_name}</span></td><td>{Number(it.quantity)}</td>
-                      <td style={{ color: low ? "#dc2626" : "#64748b" }} title={low ? t("Не хватает на складе","Не вистачає на складі") : ""}>{it.product_stock != null ? Number(it.product_stock) : "—"}{low ? " ⚠" : ""}</td>
-                      <td>{fmt(Number(it.price))} ₴</td><td><b>{fmt(Number(it.total))} ₴</b></td>
-                      <td style={{ textAlign: "center" }}><input type="checkbox" checked={!!it.reserved} onChange={() => toggleReserve(it)} title={t("Зарезервировать под сделку","Зарезервувати під сделку")} /></td>
-                      <td><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => removeItem(it.id)}>✕</span></td></tr>
+                    <tr key={it.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "6px 4px", color: "#94a3b8" }}>{idx + 1}</td>
+                      <td style={{ padding: "6px 4px" }}><span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/warehouse?p=${it.product}`)}>{it.product_name}</span></td>
+                      <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><input defaultValue={Number(it.price)} type="number" onBlur={(e) => Number(e.target.value) !== Number(it.price) && updateItem(it.id, { price: e.target.value })} style={editInp} /> ₴</td>
+                      <td style={{ padding: "6px 4px" }}><input defaultValue={Number(it.quantity)} type="number" onBlur={(e) => Number(e.target.value) !== Number(it.quantity) && updateItem(it.id, { quantity: e.target.value })} style={{ ...editInp, width: 50 }} /></td>
+                      <td style={{ padding: "6px 4px", textAlign: "center" }}><input type="checkbox" checked={!!it.reserved} onChange={() => toggleReserve(it)} title={t("Зарезервировать под сделку","Зарезервувати під сделку")} /></td>
+                      <td style={{ padding: "6px 4px", color: low ? "#dc2626" : "#64748b" }} title={low ? t("Не хватает на складе","Не вистачає на складі") : ""}>{it.product_stock != null ? Number(it.product_stock) : "—"}{low ? " ⚠" : ""}</td>
+                      <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><input defaultValue={Number(it.discount_pct || 0)} type="number" onBlur={(e) => Number(e.target.value) !== Number(it.discount_pct || 0) && updateItem(it.id, { discount_pct: e.target.value })} style={{ ...editInp, width: 44 }} /> %</td>
+                      <td style={{ padding: "6px 4px", color: "#16a34a" }}>{fmt(Number(it.discount_sum || 0))} ₴</td>
+                      <td style={{ padding: "6px 4px" }}><b>{fmt(Number(it.total))} ₴</b></td>
+                      <td style={{ padding: "6px 4px" }}><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => removeItem(it.id)}>✕</span></td></tr>
                   ); })}</tbody>
                 </table>
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+                  <div style={{ minWidth: 290 }}>
+                    <div style={rowTot}><span className="muted">{t("Сумма без скидки","Сума без знижки")}</span><b>{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.quantity) * Number(i.price), 0))} ₴</b></div>
+                    <div style={rowTot}><span className="muted">{t("Сумма скидки","Сума знижки")}</span><b style={{ color: "#16a34a" }}>−{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.discount_sum || 0), 0))} ₴</b></div>
+                    <div style={{ ...rowTot, fontSize: 16, borderTop: "2px solid #e2e8f0", paddingTop: 8, marginTop: 4 }}><span>{t("Итого","Загальна сума")}</span><b>{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.total), 0))} ₴</b></div>
+                  </div>
+                </div>
+                </>
               )}
             </div>
           )}
@@ -414,6 +444,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       </div>
       ) : <CashflowTab deal={deal} remaining={remaining} onPay={() => { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }} createTTN={createTTN} issueCheckbox={issueCheckbox} sendPayLink={sendPayLink} flash={flash} />}
 
+      {docOpen && <KpDoc deal={deal} onClose={() => setDocOpen(false)} />}
       {/* модалка створення клієнта зі сделки */}
       {ncOpen && (
         <div onClick={() => setNcOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>

@@ -238,7 +238,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         product = Product.objects.get(pk=request.data["product"])
         qty = Decimal(str(request.data.get("quantity", 1)))
         price = Decimal(str(request.data.get("price", product.price)))
-        DealItem.objects.create(deal=deal, product=product, quantity=qty, price=price, reserved=bool(request.data.get("reserved")))
+        DealItem.objects.create(deal=deal, product=product, quantity=qty, price=price,
+                                discount_pct=Decimal(str(request.data.get("discount_pct", 0) or 0)), reserved=bool(request.data.get("reserved")))
         self._recalc_amount(deal)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
@@ -265,6 +266,24 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     def remove_item(self, request, pk=None):
         deal = self.get_object()
         DealItem.objects.filter(deal=deal, pk=request.data.get("item")).delete()
+        self._recalc_amount(deal)
+        return Response(DealDetailSerializer(deal, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
+    def update_item(self, request, pk=None):
+        """Інлайн-редагування позиції: {item, price?, quantity?, discount_pct?}."""
+        deal = self.get_object()
+        it = DealItem.objects.filter(deal=deal, pk=request.data.get("item")).first()
+        if not it:
+            return Response({"detail": "Позицію не знайдено"}, status=status.HTTP_404_NOT_FOUND)
+        for f in ("price", "quantity", "discount_pct"):
+            val = request.data.get(f)
+            if val not in (None, ""):
+                try:
+                    setattr(it, f, Decimal(str(val)))
+                except Exception:
+                    pass
+        it.save()
         self._recalc_amount(deal)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 

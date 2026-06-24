@@ -136,10 +136,15 @@ class DealItem(models.Model):
     quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1)
     price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     reserved = models.BooleanField(default=False, help_text="Товар зарезервовано під цю сделку")
+    discount_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="Знижка на позицію, %")
 
     @property
     def total(self):
-        return self.quantity * self.price
+        return self.quantity * self.price * (100 - self.discount_pct) / 100
+
+    @property
+    def discount_sum(self):
+        return self.quantity * self.price * self.discount_pct / 100
 
     def __str__(self):
         return f"{self.product} × {self.quantity}"

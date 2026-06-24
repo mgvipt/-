@@ -9,7 +9,7 @@ class DealItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DealItem
-        fields = ["id", "deal", "product", "product_name", "product_stock", "quantity", "price", "total", "reserved"]
+        fields = ["id", "deal", "product", "product_name", "product_stock", "quantity", "price", "discount_pct", "discount_sum", "total", "reserved"]
         read_only_fields = ["deal"]
 
 

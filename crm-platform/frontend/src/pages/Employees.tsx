@@ -105,7 +105,15 @@ export default function Employees() {
                 {depts.filter((d) => d.parent != null).map((d) => {
                   const p = depts.find((x) => x.id === d.parent); if (!p) return null;
                   const a = center(p), b = center(d);
-                  return <path key={d.id} d={`M ${a.x} ${a.y} C ${a.x} ${(a.y + b.y) / 2}, ${b.x} ${(a.y + b.y) / 2}, ${b.x} ${b.y}`} stroke="#cbb8a8" strokeWidth={2} fill="none" />;
+                  const path = `M ${a.x} ${a.y} C ${a.x} ${(a.y + b.y) / 2}, ${b.x} ${(a.y + b.y) / 2}, ${b.x} ${b.y}`;
+                  return (
+                    <g key={d.id} style={{ pointerEvents: "stroke", cursor: "pointer" }}
+                      onClick={() => { if (confirm(t("Удалить связь?", "Видалити звʼязок?"))) setParent(d.id, null); }}>
+                      <title>{t("Клик — удалить связь", "Клік — видалити звʼязок")}</title>
+                      <path d={path} stroke="transparent" strokeWidth={14} fill="none" />
+                      <path d={path} stroke="#cbb8a8" strokeWidth={2} fill="none" />
+                    </g>
+                  );
                 })}
               </svg>
               {depts.map((d) => (
