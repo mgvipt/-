@@ -7,6 +7,7 @@ import { Avatar, SourceChip } from "../ui";
 import ClientChat from "../ClientChat";
 import NeedsForm from "../NeedsForm";
 import CardFields from "../CardFields";
+import ActivityLog from "../ActivityLog";
 
 interface Lead {
   id: number; title: string; contact?: number; contact_name?: string; owner_name?: string;
@@ -130,6 +131,7 @@ export default function LeadCard() {
             </div>
           </div>
           <CardFields leadId={lead.id} initial={lead.card_fields} />
+          <ActivityLog kind="lead" id={lead.id} />
         </div>
 
         <div onMouseDown={startResizeLeft} title="Тягни, щоб змінити ширину лівого блоку"

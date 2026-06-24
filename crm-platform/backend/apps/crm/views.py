@@ -118,7 +118,40 @@ def _save_funnel_stages(funnel, items):
     return blocked
 
 
-class LeadViewSet(ScopedByRoleMixin, viewsets.ModelViewSet):
+class ActivityLogMixin:
+    """Логує зміни стадії/відповідального + авто-призначення при взятті в роботу."""
+    log_kind = "lead"
+
+    def perform_create(self, serializer):
+        obj = serializer.save()
+        from .models import log_activity
+        u = getattr(self.request, "user", None)
+        log_activity(self.log_kind, obj.id, "Створено", getattr(obj, "title", ""), u)
+
+    def update(self, request, *args, **kwargs):
+        from .models import log_activity
+        obj = self.get_object()
+        old_owner, old_stage = obj.owner_id, obj.stage_id
+        old_stage_name = obj.stage.name if obj.stage_id else ""
+        resp = super().update(request, *args, **kwargs)
+        obj.refresh_from_db()
+        actor = request.user.get_full_name() or request.user.username
+        auto = False
+        if obj.stage_id != old_stage:
+            log_activity(self.log_kind, obj.id, "Зміна стадії", f"{old_stage_name} → {obj.stage.name}", request.user, actor)
+            if not obj.owner_id:  # взяв у роботу і ще немає відповідального → призначити того, хто взяв
+                obj.owner_id = request.user.id
+                obj.save(update_fields=["owner"])
+                log_activity(self.log_kind, obj.id, "Призначено відповідального", f"Взяв у роботу: {actor}", request.user, actor)
+                auto = True
+        if not auto and obj.owner_id != old_owner:
+            new_owner = obj.owner.get_full_name() if obj.owner else "—"
+            log_activity(self.log_kind, obj.id, "Зміна відповідального", f"→ {new_owner}", request.user, actor)
+        return resp
+
+
+class LeadViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
+    log_kind = "lead"
     queryset = Lead.objects.select_related("owner", "contact", "funnel", "stage")
     serializer_class = LeadSerializer
     view_all_method = "can_see_all_leads"
@@ -135,16 +168,21 @@ class LeadViewSet(ScopedByRoleMixin, viewsets.ModelViewSet):
             title=lead.title, contact=lead.contact, funnel=funnel, stage=stage,
             amount=lead.amount, source=lead.source, owner=lead.owner,
             qualification=lead.qualification, card_fields=lead.card_fields)
+        from .models import log_activity
+        actor = request.user.get_full_name() or request.user.username
+        log_activity("lead", lead.id, "Конвертовано в сделку", f"Сделка #{deal.id}", request.user, actor)
+        log_activity("deal", deal.id, "Створено зі сделки", f"З ліда #{lead.id}", request.user, actor)
         return Response({"deal_id": deal.id})
-    filterset_fields = ["funnel", "stage", "source", "is_seen", "owner"]
+    filterset_fields = ["funnel", "stage", "source", "is_seen", "owner", "contact"]
     search_fields = ["title", "contact__phone", "contact__first_name", "contact__last_name"]
 
 
-class DealViewSet(ScopedByRoleMixin, viewsets.ModelViewSet):
+class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
+    log_kind = "deal"
     queryset = Deal.objects.select_related("owner", "contact", "funnel", "stage")
     serializer_class = DealSerializer
     view_all_method = "can_see_all_deals"
-    filterset_fields = ["funnel", "stage", "source", "owner"]
+    filterset_fields = ["funnel", "stage", "source", "owner", "contact"]
     search_fields = ["title", "contact__phone", "contact__first_name", "contact__last_name"]
     ordering_fields = ["amount", "created_at", "updated_at", "closed_at"]
 
@@ -338,3 +376,20 @@ class AnalyticsView(APIView):
             "channels": _channels,
             "funnels": list(Funnel.objects.filter(is_lead_funnel=False).values("id", "name")),
         })
+
+
+class ActivityLogView(APIView):
+    """Аудит-журнал по сутності: /api/activity/?kind=lead&object_id=123"""
+    def get(self, request):
+        from .models import ActivityLog
+        qs = ActivityLog.objects.all()
+        kind = request.GET.get("kind"); oid = request.GET.get("object_id")
+        if kind:
+            qs = qs.filter(kind=kind)
+        if oid:
+            qs = qs.filter(object_id=oid)
+        return Response([{
+            "action": a.action, "detail": a.detail,
+            "actor": a.user.get_full_name() if a.user else (a.actor or "Система"),
+            "at": a.created_at,
+        } for a in qs[:200]])

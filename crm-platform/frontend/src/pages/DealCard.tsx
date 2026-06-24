@@ -31,6 +31,7 @@ import { Avatar } from "../ui";
 import NeedsForm from "../NeedsForm";
 import CardFields from "../CardFields";
 import ClientChat from "../ClientChat";
+import ActivityLog from "../ActivityLog";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
@@ -298,6 +299,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <div className="row"><span className="muted">Осталось</span><b style={{ color: remaining > 0 ? "#d97706" : "#16a34a" }}>{fmt(remaining)} ₴</b></div>
             <button className="btn btn-primary" style={{ width: "100%", height: 36, marginTop: 10 }} onClick={() => { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }}>💳 Принять оплату</button>
           </div>
+          <ActivityLog kind="deal" id={deal.id} />
 
           {/* 10.3 Скидка (инлайн-edit) + авто-рекомендация для VIP */}
           <div className="panel">

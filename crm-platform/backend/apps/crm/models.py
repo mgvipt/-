@@ -156,3 +156,34 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"{self.get_provider_display()} {self.amount} (#{self.deal_id})"
+
+
+# ============================================================================
+# АУДИТ-ЖУРНАЛ — хто/коли/що змінив (ліди, сделки, фінанси). Незалежний від Бітрикса.
+# ============================================================================
+class ActivityLog(models.Model):
+    KIND = [("lead", "Лід"), ("deal", "Сделка"), ("finance", "Фінанси"), ("contact", "Клієнт")]
+    kind = models.CharField(max_length=12, choices=KIND, db_index=True)
+    object_id = models.IntegerField(db_index=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    actor = models.CharField(max_length=80, blank=True, default="", help_text="Хто дію зробив (менеджер / AI-агент / Система)")
+    action = models.CharField(max_length=120)
+    detail = models.CharField(max_length=400, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"[{self.kind}#{self.object_id}] {self.action}"
+
+
+def log_activity(kind, object_id, action, detail="", user=None, actor=""):
+    """Записати подію в аудит-журнал. Безпечно (не валить основну операцію)."""
+    try:
+        u = user if (user is not None and getattr(user, "is_authenticated", False)) else None
+        who = actor or (u.get_full_name() or u.username if u else "Система")
+        ActivityLog.objects.create(kind=kind, object_id=int(object_id), action=str(action)[:120],
+                                   detail=str(detail)[:400], user=u, actor=str(who)[:80])
+    except Exception:
+        pass

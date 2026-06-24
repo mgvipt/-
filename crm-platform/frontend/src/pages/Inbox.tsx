@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { api, ChatMessage, Conversation, Paginated } from "../api";
 import { Avatar, SourceChip } from "../ui";
 import { useAuth } from "../auth";
@@ -7,6 +7,7 @@ import { useAuth } from "../auth";
 export default function Inbox() {
   const { can } = useAuth();
   const [params] = useSearchParams();
+  const nav = useNavigate();
   const [scope, setScope] = useState<"mine" | "all" | "unassigned">("all");
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [active, setActive] = useState<Conversation | null>(null);
@@ -71,6 +72,18 @@ export default function Inbox() {
     const m = await api.get<ChatMessage[]>(`/api/conversations/${c.id}/messages/`);
     setMsgs(m);
     setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, unread: 0 } : x)));
+  }
+
+  async function goToCard() {
+    if (!active?.contact) return;
+    try {
+      const dl = await api.get<any>(`/api/deals/?contact=${active.contact}`);
+      const deal = ((dl as any).results || [])[0];
+      if (deal) { nav(`/deals/${deal.id}`); return; }
+      const ld = await api.get<any>(`/api/leads/?contact=${active.contact}`);
+      const lead = ((ld as any).results || [])[0];
+      if (lead) nav(`/leads/${lead.id}`); else setErr("Картку не знайдено");
+    } catch { setErr("Не вдалося відкрити картку"); }
   }
 
   async function send() {
@@ -148,7 +161,8 @@ export default function Inbox() {
               </div>
               <SourceChip source={active.channel_kind} />
               <div className="spacer" />
-              <button className="btn btn-green">📞 Позвонить</button>
+              <button className="btn btn-green">📞 Подзвонити</button>
+              {active.contact && <button className="btn btn-primary" style={{ marginLeft: 8 }} onClick={goToCard}>🤝 В картку</button>}
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
               {msgs.map((m) => (
