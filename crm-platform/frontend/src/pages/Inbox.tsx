@@ -17,12 +17,13 @@ export default function Inbox() {
   const [ai, setAi] = useState<{ context?: string; points?: string[]; suggestion?: string } | null>(null);
   const [aiLoad, setAiLoad] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const activeRef = useRef<Conversation | null>(null);
 
   async function loadConvs() {
     const q = scope && scope !== "all" ? `?scope=${scope}` : "";
     const d = await api.get<Paginated<Conversation>>(`/api/conversations/${q}`);
     setConvs(d.results);
-    if (d.results[0]) openConv(d.results[0]);
+    if (!activeRef.current && d.results[0]) openConv(d.results[0]);
   }
   useEffect(() => { loadConvs(); }, [scope]);
   // live-оновлення відкритого чату (без ручного refresh)
@@ -46,6 +47,7 @@ export default function Inbox() {
     if (!cid) return;
     api.get<Conversation>(`/api/conversations/${cid}/`).then((c) => { setConvs((cs) => cs.some((x) => x.id === c.id) ? cs : [c, ...cs]); openConv(c); }).catch(() => {});
   }, [params]);
+  useEffect(() => { activeRef.current = active; }, [active]);
   useEffect(() => { endRef.current?.scrollIntoView(); }, [msgs]);
 
   async function analyzeAI(id: number) {
@@ -60,7 +62,6 @@ export default function Inbox() {
     const m = await api.get<ChatMessage[]>(`/api/conversations/${c.id}/messages/`);
     setMsgs(m);
     setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, unread: 0 } : x)));
-    analyzeAI(c.id);
   }
 
   async function send() {
@@ -182,7 +183,10 @@ export default function Inbox() {
               )}
             </>
           ) : (
-            <div className="muted" style={{ fontSize: 13 }}>Натисни «🔄 Оновити», щоб проаналізувати.</div>
+            <div style={{ textAlign: "center", paddingTop: 24 }}>
+              <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>AI-РОП підкаже тези діалогу + готову відповідь.</div>
+              <button className="btn btn-primary" onClick={() => active && analyzeAI(active.id)} disabled={aiLoad}>{aiLoad ? "Аналізую…" : "🧠 Проаналізувати діалог"}</button>
+            </div>
           )}
         </div>
       </div>
