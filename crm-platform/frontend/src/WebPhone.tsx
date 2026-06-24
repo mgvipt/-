@@ -117,7 +117,7 @@ export default function WebPhone() {
   return (
     <>
       <audio ref={audioRef} autoPlay playsInline />
-      <div style={{ position: "fixed", bottom: 18, right: 18, zIndex: 9998, background: "#fff", borderRadius: 14, boxShadow: "0 10px 34px rgba(0,0,0,.2)", border: "1px solid #e2e8f0", padding: 13, width: 250 }}>
+      <div style={{ margin: "0 10px 8px", background: "#fff", borderRadius: 12, boxShadow: "0 4px 16px rgba(0,0,0,.18)", border: "1px solid #e2e8f0", padding: 11 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: busy ? 10 : 0 }}>
           <span style={{ width: 9, height: 9, borderRadius: 9, background: dot, display: "inline-block" }} />
           <b style={{ fontSize: 13 }}>{t("📞 Веб-телефон","📞 Веб-телефон")}</b>

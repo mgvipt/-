@@ -106,6 +106,7 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
+        <WebPhone />
         <div className="me">
           <Avatar name={fullName} cls="av-md" />
           <div style={{ flex: 1 }}>
@@ -167,7 +168,6 @@ export default function Layout() {
         </main>
       </div>
       <IncomingCallPopup />
-      <WebPhone />
     </div>
   );
 }
