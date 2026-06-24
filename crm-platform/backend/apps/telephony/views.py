@@ -46,6 +46,8 @@ class CallViewSet(viewsets.ModelViewSet):
         number = re.sub(r"[^\d+]", "", number)
         if len(re.sub(r"\D", "", number)) < 7:
             return Response({"detail": "Немає коректного номера телефону у клієнта"}, status=status.HTTP_400_BAD_REQUEST)
+        if request.data.get("resolve_only"):
+            return Response({"ok": True, "number": number})
         ext = (request.data.get("extension") or getattr(request.user, "extension", "") or "").strip()
         if not ext:
             return Response({"detail": "У вашому профілі не вказано внутрішній номер АТС (напр. 789). Вкажіть його, щоб дзвонити."}, status=status.HTTP_400_BAD_REQUEST)
@@ -181,3 +183,17 @@ class RingingActiveView(APIView):
             "uniqueid": r.uniqueid, "number": r.number, "line": r.line,
             "contact": r.contact_id, "contact_name": (str(r.contact) if r.contact else ""),
         } for r in qs])
+
+
+class WebrtcConfigView(APIView):
+    """Параметри веб-телефона для браузера (тільки залогіненим)."""
+    def get(self, request):
+        from django.conf import settings as _s
+        ext = getattr(request.user, "extension", "") or _s.TELEPHONY_WEBRTC_EXT
+        return Response({
+            "ws": _s.TELEPHONY_WS,
+            "ext": _s.TELEPHONY_WEBRTC_EXT,           # SIP-логін веб-телефона (поки спільний 700)
+            "secret": _s.TELEPHONY_WEBRTC_SECRET,
+            "my_ext": ext,
+            "enabled": bool(_s.TELEPHONY_WS and _s.TELEPHONY_WEBRTC_SECRET),
+        })

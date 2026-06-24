@@ -6,6 +6,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-insecure-change-me")
 TELEPHONY_TOKEN = os.environ.get("TELEPHONY_TOKEN", "")
+TELEPHONY_WEBRTC_SECRET = os.environ.get("TELEPHONY_WEBRTC_SECRET", "")
+TELEPHONY_WEBRTC_EXT = os.environ.get("TELEPHONY_WEBRTC_EXT", "700")
+TELEPHONY_WS = os.environ.get("TELEPHONY_WS", "")
 DEBUG = os.environ.get("DEBUG", "1") == "1"
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "*").split(",")
 

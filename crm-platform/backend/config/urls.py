@@ -76,6 +76,7 @@ urlpatterns = [
     path("api/telephony/originate-queue/", tel_views.OriginateQueueView.as_view()),
     path("api/telephony/ringing/", tel_views.RingingView.as_view()),
     path("api/telephony/ringing/active/", tel_views.RingingActiveView.as_view()),
+    path("api/telephony/webrtc-config/", tel_views.WebrtcConfigView.as_view()),
     path("api/integrations/settings/", intg_views.IntegrationSettingsView.as_view()),
     path("api/integrations/liqpay/link/", intg_views.LiqpayLinkView.as_view()),
     path("api/integrations/novaposhta/track/", intg_views.NovaPoshtaTrackView.as_view()),

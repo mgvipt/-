@@ -10,8 +10,15 @@ export default function CallButton({ contact, phone, small }: { contact?: number
   async function call() {
     setBusy(true); setMsg(null);
     try {
-      const r = await api.post<any>("/api/calls/dial/", contact ? { contact } : { number: phone || "" });
-      setMsg({ t: `📞 АТС набирає ваш внутрішній ${r.extension} — підніміть слухавку, далі зʼєднає з клієнтом`, ok: true });
+      const w = window as any;
+      if (w.wallcovDial && w.wallcovPhoneReady) {
+        const r = await api.post<any>("/api/calls/dial/", contact ? { contact, resolve_only: true } : { number: phone || "", resolve_only: true });
+        w.wallcovDial(r.number);
+        setMsg({ t: `📞 Дзвоню ${r.number} прямо в браузері…`, ok: true });
+      } else {
+        const r = await api.post<any>("/api/calls/dial/", contact ? { contact } : { number: phone || "" });
+        setMsg({ t: `📞 АТС набирає ваш внутрішній ${r.extension} — підніміть слухавку, далі зʼєднає з клієнтом`, ok: true });
+      }
     } catch (e: any) {
       const d = String(e?.message || "");
       const m = d.match(/"detail"\s*:\s*"([^"]+)"/);

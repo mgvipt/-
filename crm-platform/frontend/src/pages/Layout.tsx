@@ -4,6 +4,7 @@ import { useAuth } from "../auth";
 import { api } from "../api";
 import { Avatar } from "../ui";
 import IncomingCallPopup from "../IncomingCallPopup";
+import WebPhone from "../WebPhone";
 
 // [путь, заголовок, иконка, требуемое право (или null)]
 const NAV: [string, string, string, string | null][] = [
@@ -121,6 +122,7 @@ export default function Layout() {
         </main>
       </div>
       <IncomingCallPopup />
+      <WebPhone />
     </div>
   );
 }

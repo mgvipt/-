@@ -1,0 +1,115 @@
+/* Веб-телефон Wallcov-CRM — дзвінки прямо з браузера через нашу телефонію (WebRTC/JsSIP).
+ * Реєструється як SIP-розширення, дзвонить і приймає. Плаваючий віджет. */
+import { useEffect, useRef, useState } from "react";
+import { api } from "./api";
+
+declare global {
+  interface Window { JsSIP: any; wallcovDial?: (n: string) => void; wallcovPhoneReady?: boolean; }
+}
+
+type St = "off" | "connecting" | "ready" | "incoming" | "calling" | "incall" | "error";
+
+export default function WebPhone() {
+  const [st, setSt] = useState<St>("off");
+  const [peer, setPeer] = useState("");
+  const [msg, setMsg] = useState("");
+  const [dialN, setDialN] = useState("");
+  const uaRef = useRef<any>(null);
+  const sessRef = useRef<any>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    let ua: any;
+    (async () => {
+      try {
+        const cfg = await api.get<any>("/api/telephony/webrtc-config/");
+        if (!cfg?.enabled || !window.JsSIP) { return; }
+        const JsSIP = window.JsSIP;
+        const socket = new JsSIP.WebSocketInterface(cfg.ws);
+        const host = window.location.host;
+        ua = new JsSIP.UA({
+          sockets: [socket], uri: `sip:${cfg.ext}@${host}`, password: cfg.secret,
+          register: true, session_timers: false, user_agent: "Wallcov CRM Phone",
+        });
+        uaRef.current = ua;
+        ua.on("connecting", () => setSt("connecting"));
+        ua.on("registered", () => { setSt("ready"); window.wallcovPhoneReady = true; });
+        ua.on("unregistered", () => setSt("off"));
+        ua.on("registrationFailed", (e: any) => { setSt("error"); setMsg("Реєстрація не вдалась: " + (e?.cause || "")); });
+        ua.on("newRTCSession", (data: any) => {
+          const session = data.session; sessRef.current = session;
+          setPeer(session.remote_identity?.uri?.user || "");
+          const attach = (pc: any) => pc && pc.addEventListener("track", (ev: any) => {
+            if (audioRef.current && ev.streams?.[0]) audioRef.current.srcObject = ev.streams[0];
+          });
+          attach(session.connection);
+          session.on("peerconnection", (e: any) => attach(e.peerconnection));
+          session.on("accepted", () => setSt("incall"));
+          session.on("confirmed", () => setSt("incall"));
+          session.on("ended", () => { setSt("ready"); setPeer(""); sessRef.current = null; });
+          session.on("failed", (e: any) => { setSt("ready"); setPeer(""); sessRef.current = null; setMsg("Дзвінок не вдався: " + (e?.cause || "")); });
+          setSt(data.originator === "remote" ? "incoming" : "calling");
+        });
+        ua.start();
+        window.wallcovDial = (n: string) => doDial(n);
+      } catch { /* конфіг недоступний — віджет не показуємо */ }
+    })();
+    return () => { try { window.wallcovDial = undefined; window.wallcovPhoneReady = false; ua?.stop(); } catch { /* */ } };
+  }, []);
+
+  function doDial(number: string) {
+    const ua = uaRef.current;
+    if (!ua) { setMsg("Веб-телефон не готовий"); return; }
+    const num = (number || "").replace(/[^\d+]/g, "");
+    const dn = num.startsWith("+380") ? "0" + num.slice(4) : num.replace(/^\+/, "");
+    if (!dn) return;
+    try {
+      ua.call(`sip:${dn}@${window.location.host}`, {
+        mediaConstraints: { audio: true, video: false },
+        rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
+      });
+      setPeer(number); setSt("calling"); setMsg("");
+    } catch (e: any) { setMsg("Помилка: " + (e?.message || "")); }
+  }
+  function answer() { try { sessRef.current?.answer({ mediaConstraints: { audio: true, video: false } }); setSt("incall"); } catch { /* */ } }
+  function hangup() { try { sessRef.current?.terminate(); } catch { /* */ } setSt("ready"); setPeer(""); }
+
+  const dot = ({ off: "#94a3b8", connecting: "#f59e0b", ready: "#16a34a", incoming: "#16a34a", calling: "#3b82f6", incall: "#3b82f6", error: "#dc2626" } as any)[st];
+  const label = ({ off: "вимкнено", connecting: "підключення…", ready: "готовий", incoming: "вхідний дзвінок", calling: "набір…", incall: "розмова", error: "помилка" } as any)[st];
+  const busy = st === "incoming" || st === "calling" || st === "incall";
+
+  if (st === "off") return <audio ref={audioRef} autoPlay />;
+
+  return (
+    <>
+      <audio ref={audioRef} autoPlay />
+      <div style={{ position: "fixed", bottom: 18, right: 18, zIndex: 9998, background: "#fff", borderRadius: 14, boxShadow: "0 10px 34px rgba(0,0,0,.2)", border: "1px solid #e2e8f0", padding: 13, width: 250 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: busy ? 10 : 0 }}>
+          <span style={{ width: 9, height: 9, borderRadius: 9, background: dot, display: "inline-block" }} />
+          <b style={{ fontSize: 13 }}>📞 Веб-телефон</b>
+          <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>{label}</span>
+        </div>
+
+        {busy && <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>{peer || "—"}</div>}
+
+        {st === "incoming" && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-green" style={{ flex: 1 }} onClick={answer}>✅ Прийняти</button>
+            <button className="btn" style={{ background: "#fee2e2", color: "#b91c1c" }} onClick={hangup}>✖ Скинути</button>
+          </div>
+        )}
+        {(st === "calling" || st === "incall") && (
+          <button className="btn" style={{ width: "100%", background: "#fee2e2", color: "#b91c1c" }} onClick={hangup}>📵 Завершити</button>
+        )}
+        {st === "ready" && (
+          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+            <input value={dialN} onChange={(e) => setDialN(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doDial(dialN)}
+              placeholder="0XX XXX XX XX" style={{ flex: 1, height: 32, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13 }} />
+            <button className="btn btn-green" onClick={() => doDial(dialN)} disabled={!dialN.trim()}>📞</button>
+          </div>
+        )}
+        {msg && <div style={{ fontSize: 11, marginTop: 7, color: st === "error" ? "#dc2626" : "#64748b" }}>{msg}</div>}
+      </div>
+    </>
+  );
+}
