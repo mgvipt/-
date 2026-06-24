@@ -39,7 +39,12 @@ const PRESETS = [
   { id: "amber", name: "Бурштин", sidebar: "#3b2a0c", sidebar2: "#5e4515", accent: "#f59e0b", bg: "#fffbeb", topbar: "#3b2a0c", topbarText: "#ffffff" },
   { id: "fuchsia", name: "Фуксія", sidebar: "#3b0c2a", sidebar2: "#5e1545", accent: "#e879f9", bg: "#fdf4ff", topbar: "#ffffff", topbarText: "#0f172a" },
   { id: "indigo", name: "Індиго", sidebar: "#1e1b4b", sidebar2: "#312e81", accent: "#6366f1", bg: "#eef2ff", topbar: "#1e1b4b", topbarText: "#ffffff" },
-  { id: "neon", name: "Неон ✦", sidebar: "#0a0e27", sidebar2: "#1b1146", accent: "#a855f7", bg: "#0a0e27", topbar: "#0a0e27", topbarText: "#ffffff", fx: "neon", glass: true, animBg: "night" },
+  { id: "neon", name: "Фіолет ✦", sidebar: "#0a0e27", sidebar2: "#1b1146", accent: "#a855f7", fx2: "#22d3ee", bg: "#0a0e27", topbar: "#0a0e27", topbarText: "#ffffff", fx: "neon", glass: true, animBg: "night" },
+  { id: "cyberpink", name: "Кібер-рожевий ✦", sidebar: "#1a0a1e", sidebar2: "#2d0f33", accent: "#ec4899", fx2: "#06b6d4", bg: "#12081a", topbar: "#1a0a1e", topbarText: "#ffffff", fx: "neon", glass: true, animBg: "flow" },
+  { id: "aquaneon", name: "Аква ✦", sidebar: "#04201f", sidebar2: "#0a3a37", accent: "#14b8a6", fx2: "#22d3ee", bg: "#04201f", topbar: "#04201f", topbarText: "#ffffff", fx: "neon", glass: true, animBg: "mint" },
+  { id: "electric", name: "Електрик ✦", sidebar: "#0a1030", sidebar2: "#141d4d", accent: "#3b82f6", fx2: "#8b5cf6", bg: "#0a1030", topbar: "#0a1030", topbarText: "#ffffff", fx: "neon", glass: true, animBg: "aurora" },
+  { id: "sunsetneon", name: "Захід ✦", sidebar: "#2a0f16", sidebar2: "#451823", accent: "#f59e0b", fx2: "#ec4899", bg: "#1e0a10", topbar: "#2a0f16", topbarText: "#ffffff", fx: "neon", glass: true, animBg: "sunset" },
+  { id: "matrix", name: "Матриця ✦", sidebar: "#06160a", sidebar2: "#0d2e15", accent: "#22c55e", fx2: "#84cc16", bg: "#06160a", topbar: "#06160a", topbarText: "#ffffff", fx: "neon", glass: true, animBg: "mint" },
   { id: "nord", name: "Nord", sidebar: "#2e3440", sidebar2: "#3b4252", accent: "#88c0d0", bg: "#eceff4", topbar: "#ffffff", topbarText: "#2e3440" },
   { id: "dracula", name: "Dracula", sidebar: "#282a36", sidebar2: "#383a4a", accent: "#bd93f9", bg: "#f2f0fb", topbar: "#282a36", topbarText: "#ffffff" },
   { id: "tokyo", name: "Tokyo Night", sidebar: "#1a1b26", sidebar2: "#24283b", accent: "#7aa2f7", bg: "#e9ebf5", topbar: "#1a1b26", topbarText: "#ffffff" },
@@ -100,6 +105,7 @@ export default function Layout() {
   useEffect(() => {
     const r = document.documentElement.style;
     if (theme.accent) r.setProperty("--brand", theme.accent);
+    r.setProperty("--fx2", theme.fx2 || theme.accent || "#22d3ee");
     if (theme.sidebar) r.setProperty("--sidebar", theme.sidebar);
     if (theme.sidebar2) r.setProperty("--sidebar2", theme.sidebar2);
     r.setProperty("--topbar", theme.topbar || "#ffffff");

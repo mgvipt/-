@@ -138,13 +138,19 @@ body.glass .listtbl,body.glass .listtbl th{background:rgba(255,255,255,.72)!impo
 .chip{display:inline-block;padding:2px 8px;border-radius:999px;color:#fff;font-size:11px;font-weight:600;}
 
 
-/* ── Неон / Футуризм (body.fx-neon) ── */
-body.fx-neon .btn-primary{background:linear-gradient(135deg,var(--brand),#22d3ee)!important;box-shadow:0 0 14px rgba(168,85,247,.45);border:none;}
+/* ── Неон / Футуризм (body.fx-neon) — як концепт ── */
+body.fx-neon .btn-primary{background:linear-gradient(135deg,var(--brand),var(--fx2))!important;box-shadow:0 0 16px color-mix(in srgb,var(--brand) 55%,transparent);border:none;color:#fff;}
 body.fx-neon .btn-green{box-shadow:0 0 14px rgba(52,211,153,.5);}
-body.fx-neon .nav-item.active{box-shadow:0 0 16px rgba(124,196,255,.3);}
-body.fx-neon .card{border:1px solid rgba(124,196,255,.14);}
-body.fx-neon .card:hover{box-shadow:0 0 20px rgba(168,85,247,.32)!important;border-color:rgba(168,85,247,.4);}
-body.fx-neon .col-head{box-shadow:0 0 14px rgba(124,196,255,.15);}
-body.fx-neon .price,body.fx-neon .sum{color:#67e8f9!important;}
-body.fx-neon .panel{border:1px solid rgba(124,196,255,.12);box-shadow:0 0 20px rgba(20,20,60,.25);}
-body.fx-neon .toolbar{border:1px solid rgba(124,196,255,.12);}
+body.fx-neon h1{background:linear-gradient(90deg,var(--fx2),var(--brand));-webkit-background-clip:text;background-clip:text;color:transparent!important;}
+body.fx-neon .nav-item.active{box-shadow:0 0 18px color-mix(in srgb,var(--brand) 40%,transparent);}
+body.fx-neon .col-head{background:rgba(255,255,255,.06)!important;box-shadow:0 0 16px rgba(150,180,255,.16);}
+body.fx-neon .col-head b{color:#dbe4ff!important;}
+body.fx-neon .col-body{background:rgba(255,255,255,.04)!important;}
+body.fx-neon .card{background:rgba(255,255,255,.07)!important;border:1px solid rgba(150,180,255,.2);backdrop-filter:blur(4px);}
+body.fx-neon .card .ttl{color:#fff!important;}
+body.fx-neon .card:hover{box-shadow:0 0 22px color-mix(in srgb,var(--brand) 45%,transparent)!important;border-color:var(--brand);}
+body.fx-neon .price,body.fx-neon .sum{background:linear-gradient(90deg,var(--fx2),var(--brand));-webkit-background-clip:text;background-clip:text;color:transparent!important;}
+body.fx-neon .panel{border:1px solid rgba(150,180,255,.14);box-shadow:0 0 22px rgba(20,20,60,.3);}
+body.fx-neon .toolbar{border:1px solid rgba(150,180,255,.12);}
+body.fx-neon .listtbl{background:rgba(255,255,255,.08)!important;}
+body.fx-neon .listtbl td{color:#e7ecff;border-bottom-color:rgba(150,180,255,.1);}
