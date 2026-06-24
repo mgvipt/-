@@ -158,6 +158,8 @@ class ActivityLogMixin:
         obj = self.get_object()
         old_owner, old_stage = obj.owner_id, obj.stage_id
         old_stage_name = obj.stage.name if obj.stage_id else ""
+        old_funnel = obj.funnel_id
+        old_funnel_name = obj.funnel.name if obj.funnel_id else ""
         _raw = request.data.get("stage")
         if _raw not in (None, ""):
             try:
@@ -171,6 +173,8 @@ class ActivityLogMixin:
         resp = super().update(request, *args, **kwargs)
         obj.refresh_from_db()
         actor = request.user.get_full_name() or request.user.username
+        if obj.funnel_id != old_funnel:
+            log_activity(self.log_kind, obj.id, "Зміна воронки", f"{old_funnel_name} → {obj.funnel.name}", request.user, actor)
         auto = False
         if obj.stage_id != old_stage:
             log_activity(self.log_kind, obj.id, "Зміна стадії", f"{old_stage_name} → {obj.stage.name}", request.user, actor)

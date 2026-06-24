@@ -71,6 +71,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const [allFunnels, setAllFunnels] = useState<any[]>([]);
   const [tab, setTab] = useState<"general" | "items" | "cashflow">("general");
   const [docOpen, setDocOpen] = useState(false);
   const [addProd, setAddProd] = useState(0);
@@ -103,6 +104,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   useEffect(() => {
     load();
     api.get<Paginated<Product>>("/api/products/?page_size=200").then((p) => setProducts(p.results));
+    api.get<any>("/api/funnels/").then((f) => setAllFunnels(f.results || f)).catch(() => {});
   }, [id]);
   useEffect(() => {
     if (deal?.conversation_id) api.get<any>(`/api/conversations/${deal.conversation_id}/messages/`).then(setChat).catch(() => setChat([]));
@@ -123,6 +125,16 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   }
 
   async function setStage(stageId: number) { await patch({ stage: stageId }); }
+  async function changeFunnel(fid: number) {
+    if (!deal || fid === deal.funnel) return;
+    const nf = allFunnels.find((f: any) => f.id === fid);
+    const first = nf?.stages?.[0]?.id;
+    if (!first) return;
+    if (!confirm(t("Сменить воронку на «"+nf.name+"»? Сделка перейдёт на первую стадию новой воронки.","Змінити воронку на «"+nf.name+"»? Сделка перейде на першу стадію нової воронки."))) return;
+    await api.patch(`/api/deals/${id}/`, { funnel: fid, stage: first });
+    flash(t("Воронка изменена","Воронку змінено"));
+    load();
+  }
 
   async function addItem(prod?: Product) {
     const p = prod && (prod as any).id ? prod : psel;   // двойной клик передаёт товар напрямую, иначе берём выбранный
@@ -217,7 +229,11 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         <button className="back" onClick={() => onClose ? onClose() : nav("/deals")}>←</button>
         <b style={{ fontSize: 16 }}><span title={t("Клик — скопировать № (идентификатор для оплат)","Клік — скопіювати № (ідентифікатор для оплат)")} style={{ cursor: "pointer" }} onClick={() => { navigator.clipboard?.writeText(String(deal.id)); flash(t("№ "+deal.id+" скопирован","№ "+deal.id+" скопійовано")); }}>#{deal.id}</span> · {deal.title}</b>
         <button className="btn" title={t("Скопировать ссылку на сделку","Скопіювати лінк на сделку")} onClick={() => { navigator.clipboard?.writeText(window.location.origin+"/deals/"+deal.id); flash(t("Ссылка скопирована","Лінк скопійовано")); }}>🔗</button>
-        <span className="muted">{funnel?.name}</span>
+        {allFunnels.length ? (
+          <select value={deal.funnel} onChange={(e) => changeFunnel(Number(e.target.value))} title={t("Воронка сделки — можно сменить","Воронка сделки — можна змінити")} style={{ height: 30, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 13, background: "#fff", cursor: "pointer", maxWidth: 230 }}>
+            {allFunnels.filter((f: any) => !f.is_lead_funnel).map((f: any) => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+        ) : <span className="muted">{funnel?.name}</span>}
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
         {deal.contact_id && <CallButton contact={deal.contact_id} small />}
