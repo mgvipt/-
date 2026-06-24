@@ -215,7 +215,8 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       {/* ─── [7] РЕНДЕР: шапка ─────────────────────────────────────────── */}
       <div className="dealhead">
         <button className="back" onClick={() => onClose ? onClose() : nav("/deals")}>←</button>
-        <b style={{ fontSize: 16 }}>#{deal.id} · {deal.title}</b>
+        <b style={{ fontSize: 16 }}><span title={t("Клик — скопировать № (идентификатор для оплат)","Клік — скопіювати № (ідентифікатор для оплат)")} style={{ cursor: "pointer" }} onClick={() => { navigator.clipboard?.writeText(String(deal.id)); flash(t("№ "+deal.id+" скопирован","№ "+deal.id+" скопійовано")); }}>#{deal.id}</span> · {deal.title}</b>
+        <button className="btn" title={t("Скопировать ссылку на сделку","Скопіювати лінк на сделку")} onClick={() => { navigator.clipboard?.writeText(window.location.origin+"/deals/"+deal.id); flash(t("Ссылка скопирована","Лінк скопійовано")); }}>🔗</button>
         <span className="muted">{funnel?.name}</span>
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}

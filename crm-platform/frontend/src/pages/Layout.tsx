@@ -6,6 +6,7 @@ import { Avatar } from "../ui";
 import { useLang } from "../i18n";
 import IncomingCallPopup from "../IncomingCallPopup";
 import WebPhone from "../WebPhone";
+import GlobalSearch from "../GlobalSearch";
 
 // [путь, заголовок, иконка, требуемое право (или null)]
 const NAV: [string, string, string, string, string | null][] = [
@@ -104,7 +105,7 @@ export default function Layout() {
         <header className="topbar">
           <h1>{title}</h1>
           <div className="spacer" />
-          <input className="search" placeholder="🔍  Поиск по CRM…" />
+          <GlobalSearch />
           <WorkTimer />
           <button className="btn btn-light" onClick={() => setShowTheme((v) => !v)}>🎨 Тема</button>
           <div className="clock">{new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</div>

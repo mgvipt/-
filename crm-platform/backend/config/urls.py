@@ -47,6 +47,7 @@ urlpatterns = [
     path("api/auth/", include("rest_framework.urls")),
     path("api/auth/token/", obtain_auth_token),  # POST username/password -> {token}
     path("api/me/", acc_views.MeView.as_view()),
+    path("api/search/", crm_views.GlobalSearchView.as_view()),
     path("api/permissions/", acc_views.PermissionsCatalogView.as_view()),
     path("api/invite/<str:token>/", acc_views.AcceptInviteView.as_view()),
     path("api/inbox/telegram/webhook/<int:channel_id>/", inbox_views.TelegramWebhookView.as_view()),

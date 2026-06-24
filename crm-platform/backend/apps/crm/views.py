@@ -467,3 +467,65 @@ class ActivityLogView(APIView):
             "actor": a.user.get_full_name() if a.user else (a.actor or "Система"),
             "at": a.created_at,
         } for a in qs[:200]])
+
+
+class GlobalSearchView(APIView):
+    """Глибокий пошук по CRM: сделки, ліди, клієнти — за назвою/іменем/телефоном/ID.
+    Поважає права: менеджер не знайде чужі сделки/ліди/клієнтів."""
+
+    def get(self, request):
+        from django.db.models import Q as _Q
+        from .models import Contact
+        q = (request.GET.get("q") or "").strip()
+        if len(q) < 2:
+            return Response({"deals": [], "leads": [], "clients": []})
+        u = request.user
+        digit = q.isdigit()
+
+        def dname(c):
+            if not c:
+                return ""
+            return ("%s %s" % (c.last_name or "", c.first_name or "")).strip() or c.phone or "Без імені"
+
+        # ── сделки ──
+        deals = Deal.objects.select_related("contact", "stage")
+        af = u.allowed_funnel_ids()
+        if af is not None:
+            deals = deals.filter(funnel_id__in=af)
+        if not (u.is_superuser or u.can_see_all_deals()):
+            deals = deals.filter(owner=u)
+        dq = (_Q(title__icontains=q) | _Q(b24_id__icontains=q) | _Q(ttn__icontains=q)
+              | _Q(contact__first_name__icontains=q) | _Q(contact__last_name__icontains=q)
+              | _Q(contact__phone__icontains=q))
+        if digit:
+            dq |= _Q(id=int(q))
+        deals = deals.filter(dq).distinct()[:8]
+
+        # ── ліди ──
+        leads = Lead.objects.select_related("contact", "stage")
+        if af is not None:
+            leads = leads.filter(funnel_id__in=af)
+        if not (u.is_superuser or u.can_see_all_leads()):
+            leads = leads.filter(owner=u)
+        lq = (_Q(title__icontains=q) | _Q(contact__first_name__icontains=q)
+              | _Q(contact__last_name__icontains=q) | _Q(contact__phone__icontains=q))
+        if digit:
+            lq |= _Q(id=int(q))
+        leads = leads.filter(lq).distinct()[:8]
+
+        # ── клієнти ──
+        clients = Contact.objects.all()
+        if not (u.is_superuser or u.can_see_all_clients()):
+            clients = clients.filter(_Q(owner=u) | _Q(leads__owner=u) | _Q(deals__owner=u)).distinct()
+        cq = (_Q(first_name__icontains=q) | _Q(last_name__icontains=q)
+              | _Q(phone__icontains=q) | _Q(email__icontains=q))
+        clients = clients.filter(cq).distinct()[:8]
+
+        return Response({
+            "deals": [{"id": d.id, "title": d.title, "stage": d.stage.name if d.stage_id else "",
+                       "amount": float(d.amount or 0), "client": dname(d.contact)} for d in deals],
+            "leads": [{"id": l.id, "title": l.title, "stage": l.stage.name if l.stage_id else "",
+                       "client": dname(l.contact)} for l in leads],
+            "clients": [{"id": c.id, "name": dname(c), "phone": c.phone or "",
+                         "deals": c.deals.count()} for c in clients],
+        })
