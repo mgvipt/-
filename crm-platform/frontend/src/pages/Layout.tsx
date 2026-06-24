@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
 import { api } from "../api";
 import { Avatar } from "../ui";
+import IncomingCallPopup from "../IncomingCallPopup";
 
 // [путь, заголовок, иконка, требуемое право (или null)]
 const NAV: [string, string, string, string | null][] = [
@@ -119,6 +120,7 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+      <IncomingCallPopup />
     </div>
   );
 }

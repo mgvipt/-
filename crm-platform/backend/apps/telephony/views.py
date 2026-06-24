@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.crm.models import Contact
-from .models import Call, CallRequest
+from .models import Call, CallRequest, RingingCall
 import re
 from .serializers import CallSerializer
 
@@ -142,3 +142,42 @@ class OriginateQueueView(APIView):
             cr.error = (request.data.get("error") or "")[:200]
             cr.save(update_fields=["status", "error"])
         return Response({"ok": True})
+
+
+class RingingView(APIView):
+    """АТС повідомляє: дзвінок задзвонив / завершився. Захищено токеном."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from django.conf import settings as _s
+        t = request.headers.get("X-Telephony-Token") or request.data.get("token")
+        if not _s.TELEPHONY_TOKEN or t != _s.TELEPHONY_TOKEN:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        d = request.data
+        uid = str(d.get("uniqueid", ""))
+        if not uid:
+            return Response({"ok": False})
+        if d.get("action") == "end":
+            RingingCall.objects.filter(uniqueid=uid).update(active=False)
+            return Response({"ok": True})
+        number = str(d.get("number", ""))
+        n9 = re.sub(r"\D", "", number)[-9:]
+        contact = Contact.objects.filter(phone__endswith=n9).first() if len(n9) >= 7 else None
+        RingingCall.objects.update_or_create(uniqueid=uid, defaults={
+            "number": number, "line": d.get("line", "") or "", "contact": contact, "active": True})
+        return Response({"ok": True, "matched": bool(contact)})
+
+
+class RingingActiveView(APIView):
+    """Фронт опитує: чи є зараз вхідний дзвінок (показати спливашку)."""
+    def get(self, request):
+        from django.utils import timezone
+        from datetime import timedelta
+        cutoff = timezone.now() - timedelta(seconds=45)
+        qs = (RingingCall.objects.filter(active=True, created_at__gte=cutoff)
+              .select_related("contact").order_by("-created_at")[:5])
+        return Response([{
+            "uniqueid": r.uniqueid, "number": r.number, "line": r.line,
+            "contact": r.contact_id, "contact_name": (str(r.contact) if r.contact else ""),
+        } for r in qs])

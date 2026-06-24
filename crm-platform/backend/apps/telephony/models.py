@@ -38,3 +38,13 @@ class CallRequest(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class RingingCall(models.Model):
+    """Дзвінок що ДЗВОНИТЬ ЗАРАЗ — для живої спливашки у CRM (real-time через AMI)."""
+    uniqueid = models.CharField(max_length=64, unique=True)
+    number = models.CharField(max_length=32)
+    line = models.CharField(max_length=60, blank=True)
+    contact = models.ForeignKey("crm.Contact", null=True, blank=True, on_delete=models.SET_NULL)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
