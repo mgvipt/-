@@ -229,7 +229,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       </div>
 
       {tab !== "cashflow" ? (
-      <div style={{ display: "flex", gap: 12, alignItems: "stretch", minHeight: "calc(100vh - 220px)" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
         <div className="grid2" style={{ flex: 1, minWidth: 0 }}>
 
         {/* ─── [10] РЕНДЕР: левая колонка — данные заказа ───────────────── */}
@@ -415,7 +415,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         </div>
         </div>
         {deal.contact_id && (
-          <div style={{ width: 360, flexShrink: 0, display: "flex" }}>
+          <div style={{ width: 360, flexShrink: 0, display: "flex", maxHeight: "calc(100vh - 110px)", position: "sticky", top: 56 }}>
             <div className="panel" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
               <div className="label">💬 Чат з клієнтом</div>
               <div style={{ flex: 1, minHeight: 0 }}><ClientChat contact={deal.contact_id} /></div>
