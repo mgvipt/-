@@ -116,12 +116,39 @@ export default function KpDoc({ deal, onClose }: { deal: any; onClose: () => voi
     }).from(el).save();
   }
   function excel() {
-    const rows = items.map((it: any, i: number) =>
-      `<tr><td>${i + 1}</td><td>${it.product_name}</td><td>${Number(it.quantity)}</td><td>шт</td><td>${Number(it.price)}</td><td>${Number(it.total)}</td></tr>`).join("");
-    const html = `<table border="1"><tr><th>№</th><th>Товар</th><th>Кіл-сть</th><th>Од</th><th>Ціна</th><th>Сума</th></tr>${rows}
-      <tr><td colspan="5">Всього до оплати, грн</td><td>${total.toFixed(2)}</td></tr></table>`;
-    const blob = new Blob(["﻿" + html], { type: "application/vnd.ms-excel" });
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `KP_Decor_${deal.id}.xls`; a.click();
+    const XLSX = (window as any).XLSX;
+    if (!XLSX) {   // fallback: старий .xls (HTML) якщо бібліотека не завантажилась
+      const rows = items.map((it: any, i: number) => `<tr><td>${i + 1}</td><td>${it.product_name}</td><td>${Number(it.quantity)}</td><td>шт</td><td>${Number(it.price)}</td><td>${Number(it.total)}</td></tr>`).join("");
+      const html = `<table border="1"><tr><th>№</th><th>Товар</th><th>Кіл-сть</th><th>Од</th><th>Ціна</th><th>Сума</th></tr>${rows}<tr><td colspan="5">Всього до оплати, грн</td><td>${total.toFixed(2)}</td></tr></table>`;
+      const blob = new Blob(["﻿" + html], { type: "application/vnd.ms-excel" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `KP_Decor_${deal.id}.xls`; a.click();
+      return;
+    }
+    const aoa: any[][] = [
+      ["Постачальник:", SUP.name],
+      ["IBAN", SUP.iban],
+      [`${SUP.bank} РНУКПН: ${SUP.rnukpn}; МФО: ${SUP.mfo}`],
+      ["тел.", SUP.phone],
+      ["mail:", SUP.mail],
+      [],
+      ["Отримувач:", clientName, clientPhone],
+      [],
+      [`Видаткова накладна № ${deal.id} від ${today}`],
+      [],
+      ["№", "Товар", "Кіл-сть", "Од", "Ціна", "Сума"],
+      ...items.map((it: any, i: number) => [i + 1, it.product_name, Number(it.quantity), "шт", Number(it.price), Number(it.total)]),
+      [],
+      ["", "", "", "", "Всього:", Number(subtotal.toFixed(2))],
+      ...(discount > 0 ? [["", "", "", "", "Сума знижки:", Number(discount.toFixed(2))]] : []),
+      ["", "", "", "", "Всього до оплати:", Number(total.toFixed(2))],
+      [],
+      [uahWords(total)],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = [{ wch: 5 }, { wch: 46 }, { wch: 9 }, { wch: 6 }, { wch: 12 }, { wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "КП Декор");
+    XLSX.writeFile(wb, `KP_Decor_${deal.id}.xlsx`);
   }
 
   return (
