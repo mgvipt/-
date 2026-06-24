@@ -19,8 +19,8 @@ export default function LeadCard() {
   const nav = useNavigate();
   const [lead, setLead] = useState<Lead | null>(null);
   const [funnel, setFunnel] = useState<Funnel | null>(null);
-  const [chatW, setChatW] = useState(360);
-  const [leftW, setLeftW] = useState(220);
+  const [chatW, setChatW] = useState(() => Number(localStorage.getItem("crm_card_chatW")) || 360);
+  const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("crm_card_leftW")) || 220);
   useEffect(() => {
     const onResize = () => {
       const w = window.innerWidth;
@@ -40,17 +40,17 @@ export default function LeadCard() {
 
   function startResizeLeft(e: any) {
     e.preventDefault();
-    const startX = e.clientX, startW = leftW;
-    function mv(ev: MouseEvent) { setLeftW(Math.min(440, Math.max(170, startW + (ev.clientX - startX)))); }
-    function up() { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); }
+    const startX = e.clientX, startW = leftW; let w = startW;
+    function mv(ev: MouseEvent) { w = Math.min(440, Math.max(170, startW + (ev.clientX - startX))); setLeftW(w); }
+    function up() { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); localStorage.setItem("crm_card_leftW", String(w)); }
     window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
   }
 
   function startResize(e: any) {
     e.preventDefault();
-    const startX = e.clientX, startW = chatW;
-    function mv(ev: MouseEvent) { setChatW(Math.min(760, Math.max(280, startW + (startX - ev.clientX)))); }
-    function up() { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); }
+    const startX = e.clientX, startW = chatW; let w = startW;
+    function mv(ev: MouseEvent) { w = Math.min(760, Math.max(280, startW + (startX - ev.clientX))); setChatW(w); }
+    function up() { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); localStorage.setItem("crm_card_chatW", String(w)); }
     window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
   }
 

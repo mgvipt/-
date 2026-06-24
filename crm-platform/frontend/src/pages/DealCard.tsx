@@ -61,6 +61,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const id = dealId != null ? String(dealId) : params.id;
   const nav = useNavigate();
   const [deal, setDeal] = useState<Deal | null>(null);
+  const [chatW, setChatW] = useState(() => Number(localStorage.getItem("crm_card_chatW")) || 360);
   const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
@@ -104,6 +105,15 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   /* ─── [5] ДЕЙСТВИЯ ───────────────────────────────────────────────────── */
   const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(""), 2800); };
   async function patch(body: Record<string, unknown>) { await api.patch(`/api/deals/${id}/`, body); load(); }
+
+  // Перетягування правого краю → ширина чату (спільна для всіх карток CRM)
+  function startResize(e: any) {
+    e.preventDefault();
+    const startX = e.clientX, startW = chatW; let w = startW;
+    function mv(ev: MouseEvent) { w = Math.min(760, Math.max(280, startW + (startX - ev.clientX))); setChatW(w); }
+    function up() { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); localStorage.setItem("crm_card_chatW", String(w)); }
+    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+  }
 
   async function setStage(stageId: number) { await patch({ stage: stageId }); }
 
@@ -387,7 +397,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         </div>
         </div>
         {deal.contact_id && (
-          <div style={{ width: 360, flexShrink: 0, position: "sticky", top: 56, alignSelf: "flex-start" }}>
+          <div onMouseDown={startResize} title="Тягни, щоб змінити ширину чату" style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0 }} />
+        )}
+        {deal.contact_id && (
+          <div style={{ width: chatW, flexShrink: 0, position: "sticky", top: 56, alignSelf: "flex-start" }}>
             <div className="panel">
               <div className="label">💬 Чат з клієнтом</div>
               <ClientChat contact={deal.contact_id} />
