@@ -115,40 +115,74 @@ export default function KpDoc({ deal, onClose }: { deal: any; onClose: () => voi
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     }).from(el).save();
   }
-  function excel() {
-    const XLSX = (window as any).XLSX;
-    if (!XLSX) {   // fallback: старий .xls (HTML) якщо бібліотека не завантажилась
+  async function excel() {
+    const ExcelJS = (window as any).ExcelJS;
+    if (!ExcelJS) {   // fallback: простий .xls (HTML) якщо бібліотека не завантажилась
       const rows = items.map((it: any, i: number) => `<tr><td>${i + 1}</td><td>${it.product_name}</td><td>${Number(it.quantity)}</td><td>шт</td><td>${Number(it.price)}</td><td>${Number(it.total)}</td></tr>`).join("");
-      const html = `<table border="1"><tr><th>№</th><th>Товар</th><th>Кіл-сть</th><th>Од</th><th>Ціна</th><th>Сума</th></tr>${rows}<tr><td colspan="5">Всього до оплати, грн</td><td>${total.toFixed(2)}</td></tr></table>`;
+      const html = `<table border="1"><tr><th>№</th><th>Товар</th><th>Кіл-сть</th><th>Од</th><th>Ціна</th><th>Сума</th></tr>${rows}</table>`;
       const blob = new Blob(["﻿" + html], { type: "application/vnd.ms-excel" });
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `KP_Decor_${deal.id}.xls`; a.click();
       return;
     }
-    const aoa: any[][] = [
-      ["Постачальник:", SUP.name],
-      ["IBAN", SUP.iban],
-      [`${SUP.bank} РНУКПН: ${SUP.rnukpn}; МФО: ${SUP.mfo}`],
-      ["тел.", SUP.phone],
-      ["mail:", SUP.mail],
-      [],
-      ["Отримувач:", clientName, clientPhone],
-      [],
-      [`Видаткова накладна № ${deal.id} від ${today}`],
-      [],
-      ["№", "Товар", "Кіл-сть", "Од", "Ціна", "Сума"],
-      ...items.map((it: any, i: number) => [i + 1, it.product_name, Number(it.quantity), "шт", Number(it.price), Number(it.total)]),
-      [],
-      ["", "", "", "", "Всього:", Number(subtotal.toFixed(2))],
-      ...(discount > 0 ? [["", "", "", "", "Сума знижки:", Number(discount.toFixed(2))]] : []),
-      ["", "", "", "", "Всього до оплати:", Number(total.toFixed(2))],
-      [],
-      [uahWords(total)],
-    ];
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 5 }, { wch: 46 }, { wch: 9 }, { wch: 6 }, { wch: 12 }, { wch: 14 }];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "КП Декор");
-    XLSX.writeFile(wb, `KP_Decor_${deal.id}.xlsx`);
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("КП Декор");
+    ws.columns = [{ width: 6 }, { width: 50 }, { width: 10 }, { width: 7 }, { width: 13 }, { width: 15 }];
+    const thin = { style: "thin", color: { argb: "FF333333" } };
+    const box = { top: thin, left: thin, bottom: thin, right: thin };
+
+    // ── Постачальник / Отримувач ──
+    ws.addRow(["Постачальник:", SUP.name]); ws.getCell("A1").font = { bold: true };
+    ws.addRow(["IBAN", SUP.iban]);
+    ws.addRow([`${SUP.bank} РНУКПН: ${SUP.rnukpn}; МФО: ${SUP.mfo}`]);
+    ws.addRow(["тел.", SUP.phone]);
+    ws.addRow(["mail:", SUP.mail]);
+    ws.addRow([]);
+    const rec = ws.addRow(["Отримувач:", clientName, clientPhone]);
+    ws.getCell(`A${rec.number}`).font = { bold: true };
+    ws.addRow([]);
+
+    // ── Заголовок (обʼєднано, по центру) ──
+    const tr = ws.addRow([`Видаткова накладна № ${deal.id} від ${today}`]);
+    ws.mergeCells(`A${tr.number}:F${tr.number}`);
+    const tc = ws.getCell(`A${tr.number}`);
+    tc.font = { bold: true, size: 13 }; tc.alignment = { horizontal: "center" };
+    ws.addRow([]);
+
+    // ── Шапка таблиці (заливка + рамка) ──
+    const hr = ws.addRow(["№", "Товари (роботи, послуги)", "Кіл-сть", "Од", "Ціна", "Сума"]);
+    hr.eachCell((c: any) => {
+      c.font = { bold: true }; c.border = box;
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFDF6E3" } };
+      c.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    });
+
+    // ── Рядки товарів (з рамками) ──
+    items.forEach((it: any, i: number) => {
+      const r = ws.addRow([i + 1, it.product_name, Number(it.quantity), "шт", Number(it.price), Number(it.total)]);
+      r.eachCell((c: any, col: number) => {
+        c.border = box;
+        if (col === 1 || col === 3 || col === 4) c.alignment = { horizontal: "center" };
+        if (col === 5 || col === 6) { c.alignment = { horizontal: "right" }; c.numFmt = "#,##0.00"; }
+        if (col === 2) c.alignment = { wrapText: true };
+      });
+    });
+    ws.addRow([]);
+
+    // ── Підсумки (праворуч) ──
+    const addTot = (label: string, val: number, bold: boolean) => {
+      const r = ws.addRow(["", "", "", "", label, Number(val.toFixed(2))]);
+      const lc = ws.getCell(`E${r.number}`); lc.alignment = { horizontal: "right" }; lc.font = { bold };
+      const vc = ws.getCell(`F${r.number}`); vc.alignment = { horizontal: "right" }; vc.numFmt = "#,##0.00"; vc.font = { bold };
+    };
+    addTot("Всього:", subtotal, false);
+    if (discount > 0) addTot("Сума знижки:", discount, false);
+    addTot("Всього до оплати:", total, true);
+    ws.addRow([]);
+    ws.addRow([uahWords(total)]);
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `KP_Decor_${deal.id}.xlsx`; a.click();
   }
 
   return (
