@@ -154,13 +154,16 @@ export default function Layout() {
 
         {showTheme && (
           <div className="themebar" style={{ flexWrap: "wrap", rowGap: 10, alignItems: "center" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", flexWrap: "wrap" }}>
               <span className="muted" style={{ width: 74, fontSize: 12 }}>{t("Пресеты","Пресети")}:</span>
               {PRESETS.map((p) => (
                 <button key={p.id} className="preset-chip" title={p.name} onClick={() => save({ ...theme, ...p, fx: (p as any).fx || "", glass: (p as any).glass || false, animBg: (p as any).animBg || "none" })}
-                  style={{ borderColor: theme.sidebar === p.sidebar ? p.accent : "transparent" }}>
-                  <span style={{ width: 18, height: 30, background: `linear-gradient(165deg,${p.sidebar},${p.sidebar2})`, display: "inline-block" }} />
-                  <span style={{ width: 16, height: 30, background: p.accent, display: "inline-block" }} />
+                  style={{ borderColor: theme.sidebar === p.sidebar ? p.accent : "transparent", display: "inline-flex", alignItems: "center", gap: 6, height: 28, padding: "0 9px 0 0" }}>
+                  <span style={{ display: "inline-flex", height: 28, borderRadius: "7px 0 0 7px", overflow: "hidden" }}>
+                    <span style={{ width: 13, height: 28, background: `linear-gradient(165deg,${p.sidebar},${p.sidebar2})`, display: "inline-block" }} />
+                    <span style={{ width: 11, height: 28, background: p.accent, display: "inline-block" }} />
+                  </span>
+                  <span style={{ fontSize: 11.5, whiteSpace: "nowrap", color: "#0f172a" }}>{p.name}</span>
                 </button>
               ))}
             </div>
