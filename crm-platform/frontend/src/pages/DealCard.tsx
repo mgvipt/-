@@ -229,7 +229,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       </div>
 
       {tab !== "cashflow" ? (
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div className="grid2" style={{ flex: 1, minWidth: 0 }}>
 
         {/* ─── [10] РЕНДЕР: левая колонка — данные заказа ───────────────── */}
@@ -345,35 +345,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <>
               <NeedsForm leadId={deal.id} initial={deal.qualification} endpoint="/api/deals/" />
               <CardFields leadId={deal.id} initial={deal.card_fields} endpoint="/api/deals/" />
-            {/* 11.1 ЧАТ З КЛІЄНТОМ + події + AI-помічник */}
-            <div className="panel">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div className="label">Чат з клієнтом · {deal.contact_name || "—"}</div>
-                <button className="btn" style={{ fontSize: 12, padding: "3px 9px", background: "#f5f3ff", color: "#6d28d9" }} onClick={aiSuggest} disabled={aiLoad}>{aiLoad ? "AI думає…" : "✨ AI-помічник"}</button>
-              </div>
-              {ai && (
-                <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 8, padding: 10, margin: "8px 0", fontSize: 13 }}>
-                  <div style={{ color: "#6d28d9", fontWeight: 600, marginBottom: 4 }}>✨ Контекст діалогу</div>
-                  <div style={{ color: "#475569", marginBottom: 8 }}>{ai.context}</div>
-                  <div style={{ color: "#6d28d9", fontWeight: 600, marginBottom: 4 }}>Пропонована відповідь</div>
-                  <div style={{ color: "#1e293b" }}>{ai.suggestion}</div>
-                  <button className="btn btn-light" style={{ fontSize: 12, padding: "3px 9px", marginTop: 8 }} onClick={() => { setDraft(ai.suggestion); setAi(null); }}>↧ Вставити у відповідь</button>
-                </div>
-              )}
-              <div style={{ maxHeight: 280, overflowY: "auto", marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-                {chat.length === 0 && events.length === 0 && <div className="muted" style={{ fontSize: 13 }}>Повідомлень ще немає. Чат підтягнеться з відкритих ліній (inbox).</div>}
-                {chat.map((m) => (
-                  <div key={m.id} style={{ maxWidth: "85%", padding: "8px 11px", borderRadius: 10, fontSize: 13, alignSelf: m.direction === "out" ? "flex-end" : "flex-start", background: m.direction === "out" ? "var(--brand,#2563eb)" : "#f1f5f9", color: m.direction === "out" ? "#fff" : "#1e293b" }}>{m.text}</div>
-                ))}
-                {events.map((e, i) => (
-                  <div key={"e" + i} style={{ fontSize: 12, padding: "6px 9px", borderRadius: 8, background: e.kind === "pay" ? "#ecfdf5" : "#f8fafc", color: e.kind === "pay" ? "#047857" : "#64748b", alignSelf: "center" }}>{e.text}</div>
-                ))}
-              </div>
-              <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-                <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendChat()} placeholder={deal.conversation_id ? "Повідомлення клієнту…" : "Немає активного чату"} style={{ flex: 1, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px" }} />
-                <button className="btn btn-primary" onClick={sendChat} disabled={sending}>{sending ? "…" : "➤"}</button>
-              </div>
-            </div>
+
             </>
           ) : (
             /* 11.2 Товары в сделке (добавить/удалить → пересчёт суммы на бэке) */
@@ -415,10 +387,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         </div>
         </div>
         {deal.contact_id && (
-          <div style={{ width: 360, flexShrink: 0, display: "flex", maxHeight: "calc(100vh - 110px)", position: "sticky", top: 56 }}>
-            <div className="panel" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <div style={{ width: 360, flexShrink: 0, position: "sticky", top: 56, alignSelf: "flex-start" }}>
+            <div className="panel">
               <div className="label">💬 Чат з клієнтом</div>
-              <div style={{ flex: 1, minHeight: 0 }}><ClientChat contact={deal.contact_id} /></div>
+              <ClientChat contact={deal.contact_id} />
             </div>
           </div>
         )}

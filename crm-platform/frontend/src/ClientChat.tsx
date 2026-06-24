@@ -81,9 +81,9 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
   const pts = ai ? (ai.points && ai.points.length ? ai.points : (ai.context ? [ai.context] : [])) : [];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 420 }}>
+    <div style={{ display: "flex", flexDirection: "column" }}>
       {/* СТРІЧКА — заповнює доступну висоту */}
-      <div style={{ flex: 1, minHeight: 140, resize: "vertical", overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
+      <div style={{ height: 340, minHeight: 140, maxHeight: "70vh", resize: "vertical", overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
         {msgs.length === 0 && <div className="muted" style={{ fontSize: 13 }}>Повідомлень поки немає</div>}
         {msgs.map((m) => (
           <div key={m.id} style={{ alignSelf: m.direction === "in" ? "flex-start" : "flex-end", maxWidth: "82%" }}>

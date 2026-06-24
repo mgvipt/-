@@ -144,7 +144,7 @@ export default function LeadCard() {
         <div onMouseDown={startResize} title="Тягни, щоб змінити ширину чату"
           style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0 }} />
 
-        <div style={{ width: chatW, flexShrink: 0, display: "flex", overflow: "hidden" }}>
+        <div style={{ width: chatW, flexShrink: 0, display: "flex", flexDirection: "column", overflowY: "auto" }}>
           <div className="panel" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
             <div className="label">💬 Чат з клієнтом</div>
             <div style={{ flex: 1, minHeight: 0 }}><ClientChat contact={lead.contact} /></div>
