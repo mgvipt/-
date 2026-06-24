@@ -29,7 +29,12 @@ class ScopedByRoleMixin:
 
         # 2) свои vs все
         if self.view_all_method and not getattr(user, self.view_all_method)():
-            qs = qs.filter(owner=user)
+            from django.db.models import Q as _Q
+            _va = user.viewable_all_stage_ids()
+            if _va:
+                qs = qs.filter(_Q(owner=user) | _Q(stage_id__in=list(_va)))
+            else:
+                qs = qs.filter(owner=user)
         return qs
 
     def perform_create(self, serializer):
@@ -120,6 +125,8 @@ def _save_funnel_stages(funnel, items):
             is_won=bool(it.get("is_won")),
             is_lost=bool(it.get("is_lost")),
         )
+        if "auto_only" in it:
+            fields["auto_only"] = bool(it.get("auto_only"))
         sid = it.get("id")
         if sid:
             Stage.objects.filter(id=sid, funnel=funnel).update(**fields)
@@ -151,6 +158,16 @@ class ActivityLogMixin:
         obj = self.get_object()
         old_owner, old_stage = obj.owner_id, obj.stage_id
         old_stage_name = obj.stage.name if obj.stage_id else ""
+        _raw = request.data.get("stage")
+        if _raw not in (None, ""):
+            try:
+                _ns = int(_raw)
+            except (TypeError, ValueError):
+                _ns = None
+            if _ns and _ns != (old_stage or 0) and _ns in request.user.locked_move_stage_ids():
+                from rest_framework.response import Response as _R
+                from rest_framework import status as _stx
+                return _R({"detail": "Цей статус змінюється автоматично — ручне переміщення заборонено."}, status=_stx.HTTP_403_FORBIDDEN)
         resp = super().update(request, *args, **kwargs)
         obj.refresh_from_db()
         actor = request.user.get_full_name() or request.user.username

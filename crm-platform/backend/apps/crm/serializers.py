@@ -54,7 +54,7 @@ class ContactDetailSerializer(ContactSerializer):
 class StageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Stage
-        fields = ["id", "funnel", "name", "color", "order", "is_won", "is_lost"]
+        fields = ["id", "funnel", "name", "color", "order", "is_won", "is_lost", "auto_only"]
 
 
 class FunnelSerializer(serializers.ModelSerializer):

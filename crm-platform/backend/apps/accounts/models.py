@@ -41,6 +41,8 @@ class Department(models.Model):
     pos_x = models.FloatField(default=0)      # координаты узла на интеллект-карте
     pos_y = models.FloatField(default=0)
     sort = models.IntegerField(default=0)
+    stage_view_all = models.JSONField(default=list, blank=True, help_text="ID стадій, де бачать ВСІ картки")
+    stage_lock = models.JSONField(default=list, blank=True, help_text="ID стадій, куди ЗАБОРОНЕНО ручне переміщення")
 
     class Meta:
         ordering = ["sort", "name"]
@@ -72,6 +74,18 @@ class Department(models.Model):
             ids |= set(d.open_lines or [])
         return ids
 
+    def eff_stage_view_all(self):
+        ids = set()
+        for d in self.ancestors_incl_self():
+            ids |= set(d.stage_view_all or [])
+        return ids
+
+    def eff_stage_lock(self):
+        ids = set()
+        for d in self.ancestors_incl_self():
+            ids |= set(d.stage_lock or [])
+        return ids
+
 
 class Role(models.Model):
     """Динамическая роль-пресет: набор прав + доступ к воронкам/линиям."""
@@ -79,6 +93,8 @@ class Role(models.Model):
     permissions = models.JSONField(default=list, help_text="Список кодов из PERMISSION_CHOICES")
     funnels = models.ManyToManyField("crm.Funnel", blank=True, related_name="roles")
     open_lines = models.JSONField(default=list, blank=True)
+    stage_view_all = models.JSONField(default=list, blank=True)
+    stage_lock = models.JSONField(default=list, blank=True)
 
     def __str__(self):
         return self.name
@@ -100,6 +116,8 @@ class User(AbstractUser):
     denied_permissions = models.JSONField(default=list, blank=True, help_text="Персонально запрещённые (приоритет над всем)")
     extra_funnels = models.ManyToManyField("crm.Funnel", blank=True, related_name="extra_users")
     extra_open_lines = models.JSONField(default=list, blank=True)
+    stage_view_all = models.JSONField(default=list, blank=True)
+    stage_lock = models.JSONField(default=list, blank=True)
 
     # ── РЕЗОЛЮЦИЯ ПРАВ: отдел ∪ роль ∪ индивидуальные − запрещённые ──
     def effective_permissions(self) -> set:
@@ -153,6 +171,36 @@ class User(AbstractUser):
             ids |= set(self.role.open_lines or [])
         ids |= set(self.extra_open_lines or [])
         return list(ids) or None
+
+    # ── права на рівні СТАДІЙ воронки ──
+    def viewable_all_stage_ids(self):
+        """Стадії, де користувач бачить ВСІ картки (навіть чужі). None = всі стадії."""
+        if self.is_superuser:
+            return None
+        ids = set()
+        if self.department_id:
+            ids |= self.department.eff_stage_view_all()
+        if self.role:
+            ids |= set(self.role.stage_view_all or [])
+        ids |= set(self.stage_view_all or [])
+        return ids
+
+    def locked_move_stage_ids(self):
+        """Стадії, куди ЗАБОРОНЕНО ручне переміщення картки."""
+        if self.is_superuser or self.has_perm_code("roles.manage"):
+            return set()
+        ids = set()
+        if self.department_id:
+            ids |= self.department.eff_stage_lock()
+        if self.role:
+            ids |= set(self.role.stage_lock or [])
+        ids |= set(self.stage_lock or [])
+        try:
+            from apps.crm.models import Stage
+            ids |= set(Stage.objects.filter(auto_only=True).values_list("id", flat=True))
+        except Exception:
+            pass
+        return ids
 
 
 class Invite(models.Model):

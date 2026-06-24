@@ -59,6 +59,7 @@ class Stage(models.Model):
     order = models.PositiveIntegerField(default=0)
     is_won = models.BooleanField(default=False)
     is_lost = models.BooleanField(default=False)
+    auto_only = models.BooleanField(default=False, help_text="Статус ставиться ТІЛЬКИ автоматизацією — ручне переміщення заборонено")
 
     class Meta:
         ordering = ["funnel", "order"]

@@ -25,6 +25,7 @@ export default function Employees() {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [perms, setPerms] = useState<Perm[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
+  const [funnels, setFunnels] = useState<any[]>([]);
   const [msg, setMsg] = useState("");
   const [linkFrom, setLinkFrom] = useState<number | null>(null); // режим звʼязування: дочірній відділ чекає батька
 
@@ -34,6 +35,7 @@ export default function Employees() {
     api.get<any>("/api/invites/").then((d) => setInvites(d.results || d)).catch(() => {});
     api.get<Perm[]>("/api/permissions/").then(setPerms).catch(() => {});
     api.get<any>("/api/roles/").then((d) => setRoles(d.results || d)).catch(() => {});
+    api.get<any>("/api/funnels/").then((d) => setFunnels(d.results || d)).catch(() => {});
   }
   useEffect(() => { load(); }, []);
   function flash(m: string) { setMsg(m); setTimeout(() => setMsg(""), 2200); }
@@ -150,7 +152,7 @@ export default function Employees() {
           </table></div>
         )}
         {tab === "invites" && <InvitesTab depts={depts} roles={roles} invites={invites} reload={load} t={t} />}
-        {tab === "perms" && <PermsTab depts={depts} emps={emps} perms={perms} t={t}
+        {tab === "perms" && <PermsTab depts={depts} emps={emps} perms={perms} funnels={funnels} roles={roles} reload={load} t={t}
           toggleDept={async (d: Dept, code: string) => { const next = d.permissions.includes(code) ? d.permissions.filter((c) => c !== code) : [...d.permissions, code]; await api.patch(`/api/departments/${d.id}/`, { permissions: next }); load(); }}
           toggleUser={async (e: Emp, code: string, kind: "extra" | "denied") => { const field = kind === "extra" ? "extra_permissions" : "denied_permissions"; const cur = (kind === "extra" ? e.extra_permissions : e.denied_permissions) || []; const next = cur.includes(code) ? cur.filter((c) => c !== code) : [...cur, code]; await api.patch(`/api/users/${e.id}/`, { [field]: next }); load(); }} />}
       </div>
@@ -189,20 +191,23 @@ function InvitesTab({ depts, roles, invites, reload, t }: any) {
   );
 }
 
-function PermsTab({ depts, emps, perms, t, toggleDept, toggleUser }: any) {
-  const [mode, setMode] = useState<"dept" | "user">("dept");
+function PermsTab({ depts, emps, perms, funnels, roles, reload, t, toggleDept, toggleUser }: any) {
+  const [mode, setMode] = useState<"dept" | "user" | "stage">("dept");
   const [selDept, setSelDept] = useState<any>("");
   const [selUser, setSelUser] = useState<any>("");
   const d = depts.find((x: any) => x.id === Number(selDept));
   const u = emps.find((x: any) => x.id === Number(selUser));
   const inp: any = { height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13, minWidth: 240 };
   return (
-    <div style={{ maxWidth: 760 }}>
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+    <div style={{ maxWidth: 820 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <button className={"btn" + (mode === "dept" ? " btn-primary" : "")} onClick={() => setMode("dept")}>{t("Права отдела", "Права відділу")}</button>
         <button className={"btn" + (mode === "user" ? " btn-primary" : "")} onClick={() => setMode("user")}>{t("Индивидуальные", "Індивідуальні")}</button>
+        <button className={"btn" + (mode === "stage" ? " btn-primary" : "")} onClick={() => setMode("stage")}>{t("🚦 По статусам", "🚦 За статусами")}</button>
       </div>
-      {mode === "dept" ? (
+      {mode === "stage" ? (
+        <StagePerms funnels={funnels} roles={roles} depts={depts} emps={emps} reload={reload} t={t} />
+      ) : mode === "dept" ? (
         <div className="panel">
           <select style={inp} value={selDept} onChange={(e) => setSelDept(e.target.value)}><option value="">{t("выбери отдел", "обери відділ")}</option>{depts.map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
           {d && <div style={{ marginTop: 12 }}><div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{t("Действуют на ВСЕХ сотрудников отдела:", "Діють на ВСІХ співробітників відділу:")}</div>{perms.map((p: any) => <label key={p.code} style={{ display: "flex", gap: 8, padding: "5px 0", fontSize: 13, cursor: "pointer" }}><input type="checkbox" checked={d.permissions.includes(p.code)} onChange={() => toggleDept(d, p.code)} />{p.label}</label>)}</div>}
@@ -213,6 +218,68 @@ function PermsTab({ depts, emps, perms, t, toggleDept, toggleUser }: any) {
           {u && <div style={{ marginTop: 12 }}><div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{t("Зелёное = выдать лично, красное = запретить лично:", "Зелене = видати, червоне = заборонити особисто:")}</div>{perms.map((p: any) => <div key={p.code} style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 0", fontSize: 13 }}><span style={{ flex: 1 }}>{p.label}</span><button className="btn" style={{ padding: "2px 8px", fontSize: 11, background: u.extra_permissions?.includes(p.code) ? "#16a34a" : "#ecfdf5", color: u.extra_permissions?.includes(p.code) ? "#fff" : "#16a34a" }} onClick={() => toggleUser(u, p.code, "extra")}>＋</button><button className="btn" style={{ padding: "2px 8px", fontSize: 11, background: u.denied_permissions?.includes(p.code) ? "#dc2626" : "#fee2e2", color: u.denied_permissions?.includes(p.code) ? "#fff" : "#b91c1c" }} onClick={() => toggleUser(u, p.code, "denied")}>✖</button></div>)}</div>}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─────────── Права за СТАТУСАМИ ───────────
+function StagePerms({ funnels, roles, depts, emps, reload, t }: any) {
+  const [funnelId, setFunnelId] = useState<any>("");
+  const [subject, setSubject] = useState<string>("");
+  const fn = funnels.find((f: any) => String(f.id) === String(funnelId));
+  const stages = fn?.stages || [];
+  const [type, sid] = subject ? subject.split(":") : ["", ""];
+  const subjObj = type === "role" ? roles.find((x: any) => x.id === Number(sid))
+    : type === "dept" ? depts.find((x: any) => x.id === Number(sid))
+      : type === "user" ? emps.find((x: any) => x.id === Number(sid)) : null;
+  const endpoint = type === "role" ? "/api/roles/" : type === "dept" ? "/api/departments/" : "/api/users/";
+  const inp: any = { height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13, minWidth: 220 };
+
+  async function toggleAuto(st: any) { await api.patch(`/api/stages/${st.id}/`, { auto_only: !st.auto_only }); reload(); }
+  async function toggleSubj(st: any, field: "stage_view_all" | "stage_lock") {
+    if (!subjObj) return;
+    const arr = (subjObj[field] || []) as number[];
+    const next = arr.includes(st.id) ? arr.filter((x) => x !== st.id) : [...arr, st.id];
+    await api.patch(`${endpoint}${sid}/`, { [field]: next }); reload();
+  }
+
+  return (
+    <div className="panel" style={{ maxWidth: 860 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <select style={inp} value={funnelId} onChange={(e) => setFunnelId(e.target.value)}>
+          <option value="">{t("выбери воронку", "обери воронку")}</option>
+          {funnels.map((f: any) => <option key={f.id} value={f.id}>{f.name}</option>)}
+        </select>
+        <select style={inp} value={subject} onChange={(e) => setSubject(e.target.value)}>
+          <option value="">{t("— кому настраивать (необяз.) —", "— кому (необовʼязково) —")}</option>
+          <optgroup label={t("Роли", "Ролі")}>{roles.map((r: any) => <option key={"r" + r.id} value={"role:" + r.id}>{r.name}</option>)}</optgroup>
+          <optgroup label={t("Отделы", "Відділи")}>{depts.map((d: any) => <option key={"d" + d.id} value={"dept:" + d.id}>{d.name}</option>)}</optgroup>
+          <optgroup label={t("Сотрудники", "Співробітники")}>{emps.map((e: any) => <option key={"u" + e.id} value={"user:" + e.id}>{e.full_name}</option>)}</optgroup>
+        </select>
+      </div>
+      {!fn ? <div className="muted" style={{ fontSize: 12 }}>{t("Выбери воронку, чтобы настроить права по её статусам.", "Обери воронку, щоб налаштувати права за її статусами.")}</div> : (
+        <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+          <thead><tr style={{ textAlign: "left", color: "#64748b", fontSize: 11 }}>
+            <th style={{ padding: "6px 4px" }}>{t("Статус", "Статус")}</th>
+            <th style={{ padding: "6px 4px", textAlign: "center" }}>🔒 {t("Только авто", "Тільки авто")}</th>
+            {subjObj && <th style={{ padding: "6px 4px", textAlign: "center" }}>👁 {t("Видеть все", "Бачити всі")}</th>}
+            {subjObj && <th style={{ padding: "6px 4px", textAlign: "center" }}>🚫 {t("Запрет перемещения", "Заборона переміщення")}</th>}
+          </tr></thead>
+          <tbody>{stages.map((st: any) => (
+            <tr key={st.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+              <td style={{ padding: "6px 4px" }}><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 3, background: st.color, marginRight: 6, verticalAlign: "middle" }} />{st.name}</td>
+              <td style={{ padding: "6px 4px", textAlign: "center" }}><input type="checkbox" checked={!!st.auto_only} onChange={() => toggleAuto(st)} /></td>
+              {subjObj && <td style={{ padding: "6px 4px", textAlign: "center" }}><input type="checkbox" checked={(subjObj.stage_view_all || []).includes(st.id)} onChange={() => toggleSubj(st, "stage_view_all")} /></td>}
+              {subjObj && <td style={{ padding: "6px 4px", textAlign: "center" }}><input type="checkbox" checked={(subjObj.stage_lock || []).includes(st.id)} onChange={() => toggleSubj(st, "stage_lock")} /></td>}
+            </tr>
+          ))}</tbody>
+        </table>
+      )}
+      <div className="muted" style={{ fontSize: 11, marginTop: 12, lineHeight: 1.6 }}>
+        🔒 {t("Только авто — карточку нельзя перетащить в этот статус вручную (ставит только автоматизация).", "Тільки авто — картку не можна перетягнути в цей статус вручну (ставить лише автоматизація).")}<br />
+        👁 {t("Видеть все — выбранные видят ВСЕ карточки в этом статусе, даже чужие.", "Бачити всі — обрані бачать УСІ картки в цьому статусі, навіть чужі.")}<br />
+        🚫 {t("Запрет перемещения — выбранным нельзя вручную двигать карточку в этот статус.", "Заборона переміщення — обраним не можна вручну рухати картку в цей статус.")}
+      </div>
     </div>
   );
 }
