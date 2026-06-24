@@ -50,6 +50,7 @@ services:
     # Публичные 80/443 у системного nginx, который проксирует сюда поддомен CRM и держит TLS.
     ports: ["127.0.0.1:${EDGE_PORT:-8137}:80"]
     depends_on: [web]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     restart: unless-stopped
 
 volumes:
