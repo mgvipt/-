@@ -168,3 +168,22 @@ body.fx-neon .listtbl td{color:#e7ecff;border-bottom-color:rgba(150,180,255,.1);
 .viewbg-cyber{background:linear-gradient(135deg,#04001a,#0d0030,#ff006e,#3a86ff)!important;background-size:400% 400%!important;animation:wcBg 22s ease infinite;}
 .viewbg-candy{background:linear-gradient(120deg,#ffdde1,#ee9ca7,#c2e9fb,#a1c4fd)!important;background-size:300% 300%!important;animation:wcBg 22s ease infinite;}
 @keyframes wcBgV{0%{background-position:50% 0%;}50%{background-position:50% 100%;}100%{background-position:50% 0%;}}
+
+
+/* ── Фіксований рухомий фон + дрейфуючі орби ── */
+.app{position:relative;}
+.sidebar,.main{position:relative;z-index:1;}
+.appbg{position:fixed;inset:0;z-index:0;overflow:hidden;}
+.appbg::before,.appbg::after{content:"";position:absolute;border-radius:50%;filter:blur(72px);opacity:.45;pointer-events:none;}
+.appbg::before{width:42vw;height:42vw;background:rgba(255,255,255,.6);left:-8vw;top:-12vh;animation:orbA 19s ease-in-out infinite;}
+.appbg::after{width:34vw;height:34vw;background:rgba(170,210,255,.5);right:-6vw;bottom:-14vh;animation:orbB 23s ease-in-out infinite;}
+@keyframes orbA{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(30vw,30vh) scale(1.35);}}
+@keyframes orbB{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(-26vw,-24vh) scale(1.3);}}
+/* ── Колір тексту сайдбара (підтримка світлих варіантів) ── */
+.sidebar{color:var(--sidebar-text,#c5d4e6);}
+.nav-item{color:var(--sidebar-text,#c5d4e6);}
+.logo b{color:var(--sidebar-text,#fff);}
+.nav-item.active{background:linear-gradient(100deg,color-mix(in srgb,var(--brand) 20%,transparent),transparent)!important;border-left-color:var(--brand)!important;color:var(--sidebar-text,#fff)!important;}
+/* ── Читабельність на темному + градієнтний лого у fx-neon ── */
+body.fx-neon .muted{color:rgba(210,220,255,.55)!important;}
+body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-webkit-background-clip:text;background-clip:text;color:transparent;}

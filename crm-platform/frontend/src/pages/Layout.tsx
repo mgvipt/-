@@ -48,6 +48,10 @@ const PRESETS = [
   { id: "lightaqua", name: "Світло-аква ✧", sidebar: "#0c3b3b", sidebar2: "#177878", accent: "#06b6d4", bg: "#ecfeff", topbar: "#ffffff", topbarText: "#0c3b3b", glass: true, animBg: "sea" },
   { id: "lightlav", name: "Світло-лаванда ✧", sidebar: "#3a2c63", sidebar2: "#5641a0", accent: "#8b5cf6", bg: "#f3effe", topbar: "#ffffff", topbarText: "#2e2747", glass: true, animBg: "aurora" },
   { id: "lightrose", name: "Світло-рожевий ✧", sidebar: "#5e1545", sidebar2: "#8a2266", accent: "#ec4899", bg: "#fdf2f8", topbar: "#ffffff", topbarText: "#5e1545", glass: true, animBg: "candy" },
+  { id: "snow", name: "Сніг ☀", sidebar: "#eef2f7", sidebar2: "#dde5ee", sidebarText: "#334155", accent: "#0ea5e9", bg: "#f8fafc", topbar: "#ffffff", topbarText: "#0f172a", animBg: "sea" },
+  { id: "cream", name: "Крем ☀", sidebar: "#f3ebdd", sidebar2: "#e7d8c0", sidebarText: "#5b4636", accent: "#c08552", bg: "#fbf7f0", topbar: "#ffffff", topbarText: "#3a2e26", animBg: "candy" },
+  { id: "mintlt", name: "Мʼята світла ☀", sidebar: "#e3f3ec", sidebar2: "#cbe9dc", sidebarText: "#0f5132", accent: "#10b981", bg: "#f0faf5", topbar: "#ffffff", topbarText: "#0f5132", animBg: "mint" },
+  { id: "sky", name: "Небо ☀", sidebar: "#e7f0fb", sidebar2: "#d0e2f4", sidebarText: "#1e3a5f", accent: "#3b82f6", bg: "#f3f8fd", topbar: "#ffffff", topbarText: "#1e3a5f", animBg: "aurora" },
   { id: "nord", name: "Nord", sidebar: "#2e3440", sidebar2: "#3b4252", accent: "#88c0d0", bg: "#eceff4", topbar: "#ffffff", topbarText: "#2e3440" },
   { id: "dracula", name: "Dracula", sidebar: "#282a36", sidebar2: "#383a4a", accent: "#bd93f9", bg: "#f2f0fb", topbar: "#282a36", topbarText: "#ffffff" },
   { id: "tokyo", name: "Tokyo Night", sidebar: "#1a1b26", sidebar2: "#24283b", accent: "#7aa2f7", bg: "#e9ebf5", topbar: "#1a1b26", topbarText: "#ffffff" },
@@ -112,6 +116,7 @@ export default function Layout() {
     if (theme.accent) r.setProperty("--brand", theme.accent);
     r.setProperty("--fx2", theme.fx2 || theme.accent || "#22d3ee");
     r.setProperty("--glass-a", String(theme.glassA != null ? theme.glassA : 0.6));
+    r.setProperty("--sidebar-text", theme.sidebarText || "#c5d4e6");
     if (theme.sidebar) r.setProperty("--sidebar", theme.sidebar);
     if (theme.sidebar2) r.setProperty("--sidebar2", theme.sidebar2);
     r.setProperty("--topbar", theme.topbar || "#ffffff");
@@ -135,6 +140,7 @@ export default function Layout() {
 
   return (
     <div className="app">
+      {theme.animBg && theme.animBg !== "none" && <div className={"appbg viewbg-" + theme.animBg} aria-hidden="true" />}
       <aside className="sidebar">
         <div className="logo"><div className="logo-badge">W</div><b>Wallcov</b></div>
         <nav className="nav">
@@ -148,8 +154,8 @@ export default function Layout() {
         <div className="me">
           <Avatar name={fullName} cls="av-md" />
           <div style={{ flex: 1 }}>
-            <div style={{ color: "#fff" }}>{fullName}</div>
-            <div style={{ color: "#7dd3fc", cursor: "pointer" }} onClick={logout}>Выйти</div>
+            <div style={{ color: "var(--sidebar-text, #fff)" }}>{fullName}</div>
+            <div style={{ color: "var(--brand)", cursor: "pointer", fontWeight: 500 }} onClick={logout}>Выйти</div>
           </div>
         </div>
       </aside>
@@ -169,7 +175,7 @@ export default function Layout() {
             <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", flexWrap: "wrap" }}>
               <span className="muted" style={{ width: 74, fontSize: 12 }}>{t("Пресеты","Пресети")}:</span>
               {PRESETS.map((p) => (
-                <button key={p.id} className="preset-chip" title={p.name} onClick={() => save({ ...theme, ...p, fx: (p as any).fx || "", glass: (p as any).glass || false, animBg: (p as any).animBg || "none" })}
+                <button key={p.id} className="preset-chip" title={p.name} onClick={() => save({ ...theme, ...p, fx: (p as any).fx || "", glass: (p as any).glass || false, animBg: (p as any).animBg || "none", sidebarText: (p as any).sidebarText || "#c5d4e6" })}
                   style={{ borderColor: theme.sidebar === p.sidebar ? p.accent : "transparent", display: "inline-flex", alignItems: "center", gap: 6, height: 28, padding: "0 9px 0 0" }}>
                   <span style={{ display: "inline-flex", height: 28, borderRadius: "7px 0 0 7px", overflow: "hidden" }}>
                     <span style={{ width: 13, height: 28, background: `linear-gradient(165deg,${p.sidebar},${p.sidebar2})`, display: "inline-block" }} />
@@ -215,7 +221,7 @@ export default function Layout() {
           </div>
         )}
 
-        <main className={"view" + (theme.animBg && theme.animBg !== "none" ? " viewbg-" + theme.animBg : "")} style={{ background: theme.animBg && theme.animBg !== "none" ? undefined : theme.bg }}>
+        <main className="view" style={{ background: theme.animBg && theme.animBg !== "none" ? "transparent" : theme.bg }}>
           <Outlet />
         </main>
       </div>
