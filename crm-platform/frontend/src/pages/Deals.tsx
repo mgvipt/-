@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Funnel } from "../api";
 import Board from "./Board";
+import ListView from "../ListView";
 import FunnelEditor from "./FunnelEditor";
 import { useLang } from "../i18n";
 
@@ -16,6 +17,7 @@ export default function Deals() {
   const [sort, setSort] = useState("-created_at");
   const [owner, setOwner] = useState("");
   const [users, setUsers] = useState<{ id: number; name: string }[]>([]);
+  const [view, setView] = useState(localStorage.getItem("deals_view") || "kanban");
   const { t } = useLang();
   const nav = useNavigate();
 
@@ -51,10 +53,16 @@ export default function Deals() {
           {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
         </select>
         <button className="btn btn-light" onClick={() => setEditFunnel(true)}>{t("⚙ Воронка","⚙ Воронка")}</button>
+        <div style={{ display: "flex", gap: 2, background: "#eef2f7", borderRadius: 8, padding: 2 }}>
+          <button className={"btn" + (view === "kanban" ? " btn-primary" : " btn-light")} style={{ height: 28 }} onClick={() => { setView("kanban"); localStorage.setItem("deals_view", "kanban"); }}>▦ {t("Канбан","Канбан")}</button>
+          <button className={"btn" + (view === "list" ? " btn-primary" : " btn-light")} style={{ height: 28 }} onClick={() => { setView("list"); localStorage.setItem("deals_view", "list"); }}>☰ {t("Список","Список")}</button>
+        </div>
         <div className="spacer" />
         <span className="muted">{t("Воронок доступно:","Воронок доступно:")} {funnels.length}</span>
       </div>
-      <Board key={ver} endpoint="/api/deals/" funnel={cur} query={query} />
+      {view === "kanban"
+        ? <Board key={ver} endpoint="/api/deals/" funnel={cur} query={query} />
+        : <ListView endpoint="/api/deals/" funnel={cur} query={query} />}
 
       {creating && (
         <div onClick={() => setCreating(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>

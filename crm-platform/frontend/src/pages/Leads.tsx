@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, Funnel } from "../api";
 import Board from "./Board";
+import ListView from "../ListView";
 import { useLang } from "../i18n";
 
 export default function Leads() {
@@ -8,6 +9,7 @@ export default function Leads() {
   const [ver, setVer] = useState(0);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
+  const [view, setView] = useState(localStorage.getItem("leads_view") || "kanban");
   const { t } = useLang();
 
   useEffect(() => {
@@ -29,10 +31,16 @@ export default function Leads() {
       <div className="toolbar">
         <button className="btn btn-primary" onClick={() => setCreating(true)}>{t("+ Создать","+ Створити")}</button>
         <input placeholder={t("Фильтр + поиск","Фільтр + пошук")} />
+        <div style={{ display: "flex", gap: 2, background: "#eef2f7", borderRadius: 8, padding: 2 }}>
+          <button className={"btn" + (view === "kanban" ? " btn-primary" : " btn-light")} style={{ height: 28 }} onClick={() => { setView("kanban"); localStorage.setItem("leads_view", "kanban"); }}>▦ {t("Канбан","Канбан")}</button>
+          <button className={"btn" + (view === "list" ? " btn-primary" : " btn-light")} style={{ height: 28 }} onClick={() => { setView("list"); localStorage.setItem("leads_view", "list"); }}>☰ {t("Список","Список")}</button>
+        </div>
         <div className="spacer" />
         <span className="muted">{t("Видны лиды согласно вашим правам","Видно ліди згідно з вашими правами")}</span>
       </div>
-      <Board key={ver} endpoint="/api/leads/" funnel={funnel} />
+      {view === "kanban"
+        ? <Board key={ver} endpoint="/api/leads/" funnel={funnel} />
+        : <ListView endpoint="/api/leads/" funnel={funnel} />}
 
       {creating && (
         <div onClick={() => setCreating(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>

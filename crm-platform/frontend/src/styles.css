@@ -115,3 +115,24 @@ body.anim-on .sidebar{background-size:100% 220%;animation:wcShimmer 18s ease-in-
 @keyframes wcShimmer{0%{background-position:50% 0%;}50%{background-position:50% 100%;}100%{background-position:50% 0%;}}
 body.anim-on .stage{transition:background .3s ease,transform .15s ease;}
 body.anim-on .stage:hover{transform:translateY(-1px);}
+
+
+/* ── Анімовані фони сторінки ── */
+.viewbg-aurora{background:linear-gradient(120deg,#a1c4fd,#c2e9fb,#fbc2eb,#a6c1ee)!important;background-size:300% 300%!important;animation:wcBg 20s ease infinite;}
+.viewbg-flow{background:linear-gradient(-45deg,#ee7752,#e73c7e,#23a6d5,#23d5ab)!important;background-size:400% 400%!important;animation:wcBg 22s ease infinite;}
+.viewbg-sunset{background:linear-gradient(120deg,#f6d365,#fda085,#fbc2eb)!important;background-size:300% 300%!important;animation:wcBg 22s ease infinite;}
+.viewbg-mint{background:linear-gradient(120deg,#d4fc79,#96e6a1,#a1c4fd)!important;background-size:300% 300%!important;animation:wcBg 20s ease infinite;}
+.viewbg-night{background:linear-gradient(120deg,#0f2027,#203a43,#2c5364,#24243e)!important;background-size:300% 300%!important;animation:wcBg 26s ease infinite;}
+@keyframes wcBg{0%{background-position:0% 50%;}50%{background-position:100% 50%;}100%{background-position:0% 50%;}}
+/* ── Прозорий (скляний) канбан ── */
+body.glass .col-head{background:rgba(255,255,255,.62)!important;backdrop-filter:blur(7px);}
+body.glass .col-body{background:rgba(255,255,255,.22)!important;backdrop-filter:blur(4px);}
+body.glass .card{background:rgba(255,255,255,.84)!important;backdrop-filter:blur(3px);}
+body.glass .toolbar{background:rgba(255,255,255,.5)!important;backdrop-filter:blur(7px);border-radius:10px;}
+body.glass .listtbl,body.glass .listtbl th{background:rgba(255,255,255,.72)!important;backdrop-filter:blur(5px);}
+/* ── Списковий вид ── */
+.listtbl{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;font-size:13px;box-shadow:0 1px 3px rgba(20,40,80,.06);}
+.listtbl th{text-align:left;padding:9px 12px;background:#f8fafc;color:#64748b;font-size:11.5px;font-weight:600;border-bottom:1px solid #eef2f7;position:sticky;top:0;z-index:1;}
+.listtbl td{padding:9px 12px;border-bottom:1px solid #f1f5f9;}
+.listtbl tbody tr:hover{background:#f1f5f9;}
+.chip{display:inline-block;padding:2px 8px;border-radius:999px;color:#fff;font-size:11px;font-weight:600;}

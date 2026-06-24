@@ -32,13 +32,26 @@ const PRESETS = [
   { id: "sunset", name: "Захід", sidebar: "#3a1c28", sidebar2: "#612f44", accent: "#f43f5e", bg: "#faecef", topbar: "#3a1c28", topbarText: "#ffffff" },
   { id: "midnight", name: "Ніч", sidebar: "#0b1220", sidebar2: "#1b2942", accent: "#38bdf8", bg: "#e8edf4", topbar: "#0b1220", topbarText: "#ffffff" },
   { id: "sand", name: "Пісок", sidebar: "#3a3326", sidebar2: "#524834", accent: "#d97706", bg: "#f7f2e8", topbar: "#ffffff", topbarText: "#0f172a" },
+  { id: "coral", name: "Корал", sidebar: "#3a1c28", sidebar2: "#612f44", accent: "#fb7185", bg: "#fff1f2", topbar: "#ffffff", topbarText: "#0f172a" },
+  { id: "teal", name: "Бірюза", sidebar: "#0c3b3b", sidebar2: "#155e5e", accent: "#14b8a6", bg: "#ecfeff", topbar: "#0c3b3b", topbarText: "#ffffff" },
+  { id: "lavender", name: "Лаванда", sidebar: "#2e2747", sidebar2: "#433a66", accent: "#a78bfa", bg: "#f5f3ff", topbar: "#ffffff", topbarText: "#0f172a" },
+  { id: "lime", name: "Лайм", sidebar: "#2a3b0c", sidebar2: "#455e15", accent: "#84cc16", bg: "#f7fee7", topbar: "#ffffff", topbarText: "#0f172a" },
+  { id: "amber", name: "Бурштин", sidebar: "#3b2a0c", sidebar2: "#5e4515", accent: "#f59e0b", bg: "#fffbeb", topbar: "#3b2a0c", topbarText: "#ffffff" },
+  { id: "fuchsia", name: "Фуксія", sidebar: "#3b0c2a", sidebar2: "#5e1545", accent: "#e879f9", bg: "#fdf4ff", topbar: "#ffffff", topbarText: "#0f172a" },
+  { id: "indigo", name: "Індиго", sidebar: "#1e1b4b", sidebar2: "#312e81", accent: "#6366f1", bg: "#eef2ff", topbar: "#1e1b4b", topbarText: "#ffffff" },
+];
+const ANIMBGS = [
+  { id: "none", name: "Немає" }, { id: "aurora", name: "Аврора" }, { id: "flow", name: "Потік" },
+  { id: "sunset", name: "Захід" }, { id: "mint", name: "Мʼята" }, { id: "night", name: "Ніч" },
 ];
 const SIDEBARS: [string, string][] = [
   ["#33291f", "#463a30"], ["#0f2942", "#16466e"], ["#16271d", "#234735"], ["#1d1d24", "#30303b"],
   ["#241b3d", "#3a2c63"], ["#3a1c28", "#612f44"], ["#0b1220", "#1b2942"], ["#1e293b", "#334155"],
+  ["#0c3b3b", "#155e5e"], ["#3b0c2a", "#5e1545"], ["#2a3b0c", "#455e15"], ["#3b2a0c", "#5e4515"],
+  ["#1e1b4b", "#312e81"], ["#2e2747", "#433a66"], ["#3a1c1c", "#5e2828"], ["#0c2a3b", "#15455e"],
 ];
-const ACCENTS = ["#C67D5F", "#2a6df4", "#7c3aed", "#0ea5e9", "#059669", "#f43f5e", "#d97706", "#8b5cf6"];
-const BGS = ["#f3efe9", "#eef2f7", "#edf5ef", "#f1ecfa", "#faecef", "linear-gradient(135deg,#e0f2fe,#ede9fe)", "linear-gradient(135deg,#fef3c7,#fde68a)", "#e8edf4"];
+const ACCENTS = ["#C67D5F", "#2a6df4", "#7c3aed", "#0ea5e9", "#059669", "#f43f5e", "#d97706", "#8b5cf6", "#ec4899", "#14b8a6", "#eab308", "#ef4444", "#6366f1", "#10b981", "#f97316", "#06b6d4"];
+const BGS = ["#f3efe9", "#eef2f7", "#edf5ef", "#f1ecfa", "#faecef", "#fff7ed", "#ecfeff", "#fef2f2", "linear-gradient(135deg,#e0f2fe,#ede9fe)", "linear-gradient(135deg,#fef3c7,#fde68a)", "linear-gradient(135deg,#d1fae5,#a7f3d0)", "linear-gradient(135deg,#fce7f3,#fbcfe8)"];
 
 function WorkTimer() {
   const [st, setSt] = useState<any>(null);
@@ -81,6 +94,7 @@ export default function Layout() {
     r.setProperty("--topbar", theme.topbar || "#ffffff");
     r.setProperty("--topbar-text", theme.topbarText || "#0f172a");
     document.body.classList.toggle("anim-on", theme.anim !== false);
+    document.body.classList.toggle("glass", !!theme.glass);
   }, [theme]);
 
   function setT(patch: any) { save({ ...theme, ...patch }); }
@@ -156,6 +170,13 @@ export default function Layout() {
               <button className="btn btn-light" style={{ fontSize: 12 }} onClick={() => setT({ topbar: theme.sidebar || "#33291f", topbarText: "#ffffff" })}>{t("Как сайдбар","Як сайдбар")}</button>
               <button className="btn btn-light" style={{ fontSize: 12 }} onClick={() => setT({ topbar: theme.accent || "#C67D5F", topbarText: "#ffffff" })}>{t("Акцент","Акцент")}</button>
             </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
+              <span className="muted" style={{ width: 74, fontSize: 12 }}>{t("Анимфон","Анімфон")}:</span>
+              {ANIMBGS.map((a) => <button key={a.id} className={"btn btn-light"} style={{ fontSize: 12, fontWeight: (theme.animBg || "none") === a.id ? 700 : 400 }} onClick={() => setT({ animBg: a.id })}>{a.name}</button>)}
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
+              <input type="checkbox" checked={!!theme.glass} onChange={(e) => setT({ glass: e.target.checked })} /> 🪟 {t("Прозрачный канбан","Прозорий канбан")}
+            </label>
             <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
               <input type="checkbox" checked={theme.anim !== false} onChange={(e) => setT({ anim: e.target.checked })} /> ✨ {t("Анимации","Анімації")}
             </label>
@@ -163,7 +184,7 @@ export default function Layout() {
           </div>
         )}
 
-        <main className="view" style={{ background: theme.bg }}>
+        <main className={"view" + (theme.animBg && theme.animBg !== "none" ? " viewbg-" + theme.animBg : "")} style={{ background: theme.animBg && theme.animBg !== "none" ? undefined : theme.bg }}>
           <Outlet />
         </main>
       </div>
