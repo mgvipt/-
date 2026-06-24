@@ -16,6 +16,7 @@ export default function WebPhone() {
   const { t } = useLang();
   const [st, setSt] = useState<St>("off");
   const [enabled, setEnabled] = useState(false);   // телефония доступна (конфиг получен) — виджет не прячем при кратких разрег.
+  const [everReady, setEverReady] = useState(false);  // хоч раз зареєструвались → панель набору тримаємо стабільно
   const [peer, setPeer] = useState("");
   const [msg, setMsg] = useState("");
   const [dialN, setDialN] = useState("");
@@ -28,7 +29,7 @@ export default function WebPhone() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    let ua: any, cancelled = false;
+    let ua: any, cancelled = false, regTimer: any;
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     (async () => {
       try {
@@ -53,8 +54,11 @@ export default function WebPhone() {
         });
         uaRef.current = ua;
         ua.on("connecting", () => setSt("connecting"));
-        ua.on("registered", () => { setSt("ready"); window.wallcovPhoneReady = true; });
-        ua.on("unregistered", () => setSt((s) => (["incoming", "calling", "incall"].includes(s) ? s : "connecting")));
+        ua.on("registered", () => { clearTimeout(regTimer); setSt("ready"); setEverReady(true); window.wallcovPhoneReady = true; });
+        ua.on("unregistered", () => {
+          clearTimeout(regTimer);
+          regTimer = setTimeout(() => setSt((s) => (["incoming", "calling", "incall", "ready"].includes(s) ? s : "connecting")), 5000);
+        });
         ua.on("registrationFailed", (e: any) => { setSt("error"); setMsg(t("Регистрация не удалась: ","Реєстрація не вдалась: ") + (e?.cause || "")); });
         ua.on("newRTCSession", (data: any) => {
           const session = data.session; sessRef.current = session;
@@ -82,7 +86,7 @@ export default function WebPhone() {
         window.wallcovDial = (n: string) => doDial(n);
       } catch { /* конфіг недоступний — віджет не показуємо */ }
     })();
-    return () => { cancelled = true; try { window.wallcovDial = undefined; window.wallcovPhoneReady = false; ua?.stop(); } catch { /* */ } };
+    return () => { cancelled = true; clearTimeout(regTimer); try { window.wallcovDial = undefined; window.wallcovPhoneReady = false; ua?.stop(); } catch { /* */ } };
   }, []);
 
   function doDial(number: string) {
@@ -131,7 +135,7 @@ export default function WebPhone() {
         {(st === "calling" || st === "incall") && (
           <button className="btn" style={{ width: "100%", background: "#fee2e2", color: "#b91c1c" }} onClick={hangup}>{t("📵 Завершить","📵 Завершити")}</button>
         )}
-        {st === "ready" && (
+        {everReady && !busy && (
           <div style={{ marginTop: 8 }}>
             <div className="muted" style={{ fontSize: 11, marginBottom: 3 }}>{t("Звонить с линии:","Дзвонити з лінії:")}</div>
             <select value={line} onChange={(e) => pickLine(e.target.value)}
