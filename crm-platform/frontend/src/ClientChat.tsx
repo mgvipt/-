@@ -91,6 +91,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
               {m.direction === "in" ? "Клієнт" : (m.sender_name === "ai_assistant" ? "Юля (AI)" : (m.sender_name || "Менеджер"))}
             </div>
             <div style={{ background: m.direction === "in" ? "#ffffff" : "#dbeafe", padding: "7px 11px", borderRadius: 12, fontSize: 13, whiteSpace: "pre-wrap", border: m.direction === "in" ? "1px solid #eef2f7" : "none" }}>{m.text}</div>
+            <div style={{ fontSize: 9.5, color: "#cbd5e1", marginTop: 2, textAlign: m.direction === "in" ? "left" : "right" }}>{(m as any).created_at ? new Date((m as any).created_at).toLocaleTimeString("uk", { hour: "2-digit", minute: "2-digit" }) : ""}</div>
           </div>
         ))}
         <div ref={endRef} />

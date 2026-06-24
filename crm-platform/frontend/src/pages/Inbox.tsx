@@ -99,23 +99,38 @@ export default function Inbox() {
           ))}
         </div>
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {convs.length === 0 && <div className="spin">Пока нет диалогов. Напиши боту в Telegram — появится здесь.</div>}
-          {convs.map((c) => (
-            <div key={c.id} onClick={() => openConv(c)}
-              style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", cursor: "pointer",
-                display: "flex", gap: 9, background: active?.id === c.id ? "#eff6ff" : "" }}>
-              <Avatar name={c.contact_name || c.title || "?"} cls="av-md" />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>{c.contact_name || c.title || "Без имени"}</span>
-                  <SourceChip source={c.channel_kind} />
+          {convs.length === 0 && <div className="spin">Пока нет диалогов.</div>}
+          {(() => {
+            const fmtAt = (d?: string) => d ? new Date(d).toLocaleString("uk", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+            const card = (c: Conversation) => (
+              <div key={c.id} onClick={() => openConv(c)}
+                style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", cursor: "pointer",
+                  display: "flex", gap: 9, background: active?.id === c.id ? "#eff6ff" : "" }}>
+                <Avatar name={c.contact_name || c.title || "?"} cls="av-md" />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.contact_name || c.title || "Без имени"}</span>
+                    <span style={{ fontSize: 10, color: "#94a3b8", whiteSpace: "nowrap" }}>{fmtAt((c as any).last_message_at)}</span>
+                  </div>
+                  <div className="muted" style={{ fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.last_text}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 11, color: c.assigned_to ? "#2563eb" : "#94a3b8" }}>{c.assigned_to ? "👤 " + c.assigned_to_name : "Не призначено"}</span>
+                    <SourceChip source={c.channel_kind} />
+                  </div>
                 </div>
-                <div className="muted" style={{ fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.last_text}</div>
-                <div style={{ fontSize: 11, color: c.assigned_to ? "#2563eb" : "#94a3b8" }}>{c.assigned_to ? "👤 " + c.assigned_to_name : "Не призначено"}</div>
+                {c.unread > 0 && <span style={{ width: 16, height: 16, borderRadius: "50%", background: "#ef4444", color: "#fff", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", alignSelf: "center" }}>{c.unread}</span>}
               </div>
-              {c.unread > 0 && <span style={{ width: 16, height: 16, borderRadius: "50%", background: "#3b82f6", color: "#fff", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", alignSelf: "center" }}>{c.unread}</span>}
-            </div>
-          ))}
+            );
+            const need = convs.filter((c) => (c as any).needs_reply);
+            const work = convs.filter((c) => !(c as any).needs_reply);
+            const hdr = (t: string, color: string) => <div style={{ padding: "8px 12px 4px", fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: .3 }}>{t}</div>;
+            return (<>
+              {need.length > 0 && hdr(`🔴 Потрібна відповідь (${need.length})`, "#dc2626")}
+              {need.map(card)}
+              {work.length > 0 && hdr(`✅ В роботі (${work.length})`, "#16a34a")}
+              {work.map(card)}
+            </>);
+          })()}
         </div>
       </div>
 
@@ -149,6 +164,7 @@ export default function Inbox() {
                       📎 {a.type === "voice" ? `голосовое ${a.duration ?? ""}с` : a.type}
                     </div>
                   ))}
+                  <div style={{ fontSize: 10, opacity: .55, marginTop: 3, textAlign: m.direction === "out" ? "right" : "left" }}>{(m as any).created_at ? new Date((m as any).created_at).toLocaleTimeString("uk", { hour: "2-digit", minute: "2-digit" }) : ""}</div>
                 </div>
               ))}
               <div ref={endRef} />
