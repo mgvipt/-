@@ -75,7 +75,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [docOpen, setDocOpen] = useState(false);
   const [addProd, setAddProd] = useState(0);
   const [addQty, setAddQty] = useState(1);
-  const [psearch, setPsearch] = useState(""); const [presults, setPresults] = useState<Product[]>([]); const [psel, setPsel] = useState<Product | null>(null); const [addReserve, setAddReserve] = useState(false);
+  const [psearch, setPsearch] = useState(""); const [presults, setPresults] = useState<Product[]>([]); const [psel, setPsel] = useState<Product | null>(null); const [addReserve, setAddReserve] = useState(false); const [showList, setShowList] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [payAmount, setPayAmount] = useState("");
   const [msg, setMsg] = useState("");
@@ -124,9 +124,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
 
   async function setStage(stageId: number) { await patch({ stage: stageId }); }
 
-  async function addItem() {
-    if (!psel) return;
-    setDeal(await api.post<Deal>(`/api/deals/${id}/add_item/`, { product: psel.id, quantity: addQty, reserved: addReserve }));
+  async function addItem(prod?: Product) {
+    const p = prod && (prod as any).id ? prod : psel;   // двойной клик передаёт товар напрямую, иначе берём выбранный
+    if (!p) return;
+    setDeal(await api.post<Deal>(`/api/deals/${id}/add_item/`, { product: p.id, quantity: addQty, reserved: addReserve }));
     setPsel(null); setPsearch(""); setPresults([]); setAddQty(1); setAddReserve(false);
   }
   useEffect(() => {
@@ -215,7 +216,6 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       <div className="dealhead">
         <button className="back" onClick={() => onClose ? onClose() : nav("/deals")}>←</button>
         <b style={{ fontSize: 16 }}>#{deal.id} · {deal.title}</b>
-        <button className="btn" onClick={() => setDocOpen(true)} title={t("Сформировать документ КП","Сформувати документ КП")}>📄 {t("Документ","Документ")}</button>
         <span className="muted">{funnel?.name}</span>
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
@@ -372,18 +372,22 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           ) : (
             /* 11.2 Товары в сделке (добавить/удалить → пересчёт суммы на бэке) */
             <div className="panel">
-              <div className="label">{t("Товары в сделке","Товари у сделке")}</div>
+              <div className="label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>{t("Товары в сделке","Товари у сделке")}</span>
+                <button className="btn" onClick={() => setDocOpen(true)} title={t("Сформировать документ КП","Сформувати документ КП")}>📄 {t("Документ","Документ")}</button>
+              </div>
               <div className="prod-search" style={{ position: "relative", margin: "8px 0 12px" }}>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <input value={psearch} onChange={(e) => { setPsearch(e.target.value); setPsel(null); }} placeholder={t("🔍 Поиск товара из номенклатуры по названию…","🔍 Пошук товару з номенклатури за назвою…")} style={{ flex: 1, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px" }} />
                   <input type="number" value={addQty} min={1} onChange={(e) => setAddQty(Number(e.target.value))} title={t("Количество","Кількість")} style={{ width: 56, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px" }} />
                   <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, whiteSpace: "nowrap" }} title={t("Зарезервировать товар под сделку","Зарезервувати товар під сделку")}><input type="checkbox" checked={addReserve} onChange={(e) => setAddReserve(e.target.checked)} />{t("Резерв","Резерв")}</label>
-                  <button className="btn btn-primary" onClick={addItem} disabled={!psel}>{t("Добавить","Додати")}</button>
+                  <button className="btn btn-primary" onClick={() => addItem()} disabled={!psel}>{t("Добавить","Додати")}</button>
+                  <button className="btn" onClick={() => setShowList((s) => !s)} title={t("Показать весь список товаров (двойной клик — добавить)","Показати весь список товарів (подвійний клік — додати)")}>{showList ? t("✕ Список","✕ Список") : t("📋 Список","📋 Список")}</button>
                 </div>
                 {presults.length > 0 && (
                   <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 260, overflowY: "auto" }}>
                     {presults.map((p) => (
-                      <div key={p.id} onClick={() => { setPsel(p); setPsearch(p.name); setPresults([]); }} style={{ padding: "8px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
+                      <div key={p.id} onClick={() => { setPsel(p); setPsearch(p.name); setPresults([]); }} onDoubleClick={() => addItem(p)} title={t("Клик — выбрать, двойной клик — сразу добавить","Клік — обрати, подвійний клік — одразу додати")} style={{ padding: "8px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
                         <b>{p.name}</b> <span className="muted">· {fmt(Number(p.price))} ₴ · {t("ост.","зал.")} {(p as any).stock}</span>
                       </div>
                     ))}
@@ -391,6 +395,21 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 )}
                 {psel && <div style={{ fontSize: 12, color: "#16a34a", marginTop: 4 }}>{t("✓ Выбрано:","✓ Обрано:")} {psel.name} · {fmt(Number(psel.price))} ₴ · {t("сумма","сума")} {fmt(Number(psel.price) * addQty)} ₴</div>}
               </div>
+              {showList && (
+                <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, maxHeight: 300, overflowY: "auto", marginBottom: 12 }}>
+                  <div style={{ padding: "6px 10px", fontSize: 11, color: "#64748b", borderBottom: "1px solid #f1f5f9", position: "sticky", top: 0, background: "#f8fafc" }}>{t("Двойной клик по товару — добавить в сделку. Поиск сверху фильтрует список.","Подвійний клік по товару — додати у сделку. Пошук зверху фільтрує список.")}</div>
+                  {products.filter((p) => !psearch.trim() || p.name.toLowerCase().includes(psearch.toLowerCase())).map((p) => {
+                    const added = deal.items.some((it: any) => it.product === p.id);
+                    return (
+                      <div key={p.id} onDoubleClick={() => addItem(p)} title={t("Двойной клик — добавить","Подвійний клік — додати")} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13, display: "flex", justifyContent: "space-between", gap: 8 }}>
+                        <span><b>{p.name}</b> <span className="muted">· {fmt(Number(p.price))} ₴ · {t("ост.","зал.")} {(p as any).stock}</span></span>
+                        {added && <span style={{ color: "#16a34a", whiteSpace: "nowrap" }}>✓ {t("в сделке","у сделці")}</span>}
+                      </div>
+                    );
+                  })}
+                  {products.filter((p) => !psearch.trim() || p.name.toLowerCase().includes(psearch.toLowerCase())).length === 0 && <div style={{ padding: 12, fontSize: 13, color: "#94a3b8" }}>{t("Ничего не найдено","Нічого не знайдено")}</div>}
+                </div>
+              )}
               {deal.items.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Товаров пока нет.","Товарів поки немає.")}</div> : (
                 <>
                 <div style={{ overflowX: "auto" }}>
