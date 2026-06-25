@@ -80,6 +80,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [psearch, setPsearch] = useState(""); const [presults, setPresults] = useState<Product[]>([]); const [psel, setPsel] = useState<Product | null>(null); const [addReserve, setAddReserve] = useState(false); const [showList, setShowList] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [payAmount, setPayAmount] = useState("");
+  const [payType, setPayType] = useState("cash");
   const [msg, setMsg] = useState("");
   const [chat, setChat] = useState<{ id: number; direction: string; text: string; created_at: string }[]>([]);
   const [draft, setDraft] = useState("");
@@ -153,6 +154,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     load();
   }
 
+  async function confirmItems() {
+    try { const d = await api.post<any>(`/api/deals/${id}/confirm_items/`, {}); setDeal(d); flash(t("✓ Список сохранён · стадия → Розрахунок здійснено","✓ Список збережено · стадія → Розрахунок здійснено")); }
+    catch { flash(t("Сначала добавьте товары","Спершу додайте товари")); }
+  }
   async function addItem(prod?: Product) {
     const p = prod && (prod as any).id ? prod : psel;   // двойной клик передаёт товар напрямую, иначе берём выбранный
     if (!p) return;
@@ -173,7 +178,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   async function removeItem(item: number) { setDeal(await api.post<Deal>(`/api/deals/${id}/remove_item/`, { item })); }
 
   async function acceptPayment() {
-    setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount }));
+    setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType }));
     setPayOpen(false); setPayAmount(""); flash(t("✓ Оплата проведена в финансы","✓ Оплата проведена у фінанси"));
   }
   async function ship() {
@@ -484,6 +489,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                     <div style={{ ...rowTot, fontSize: 16, borderTop: "2px solid #e2e8f0", paddingTop: 8, marginTop: 4 }}><span>{t("Итого","Загальна сума")}</span><b>{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.total), 0))} ₴</b></div>
                   </div>
                 </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 14 }}>
+                  <span className="muted" style={{ fontSize: 12 }}>{t("Зафиксируй список — сделка перейдёт на расчёт","Зафіксуй список — сделка перейде на розрахунок")}</span>
+                  <button className="btn btn-primary" onClick={confirmItems} title={t("Сохранить список товаров и перейти к расчёту","Зберегти список товарів і перейти до розрахунку")}>💾 {t("Сохранить список → Розрахунок","Зберегти список → Розрахунок")}</button>
+                </div>
                 </>
               )}
             </div>
@@ -550,15 +559,23 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       {/* ─── [12] РЕНДЕР: модалка приёма оплаты ───────────────────────── */}
       {payOpen && (
         <div onClick={() => setPayOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 340 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 380 }}>
             <h3 style={{ marginTop: 0 }}>{t("Принять оплату","Прийняти оплату")}</h3>
-            <label className="label">{t("Сумма","Сума")}</label>
-            <input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} style={{ width: "100%", height: 38, marginBottom: 16, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} />
+            <label className="label" style={{ marginBottom: 6 }}>{t("Тип оплаты","Тип оплати")}</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 14 }}>
+              {([["cash", t("💵 Наличные/Предоплата","💵 Готівка/Передоплата")], ["liqpay", t("💳 LiqPay онлайн","💳 LiqPay онлайн")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]] as [string,string][]).map(([k, label]) => (
+                <button key={k} onClick={() => setPayType(k)} style={{ fontSize: 12, padding: "8px 8px", borderRadius: 8, cursor: "pointer", textAlign: "left", border: "1px solid " + (payType === k ? "var(--brand,#2563eb)" : "#e2e8f0"), background: payType === k ? "#eff6ff" : "#fff", color: payType === k ? "#1d4ed8" : "#475569", fontWeight: payType === k ? 600 : 400 }}>{label}</button>
+              ))}
+            </div>
+            <label className="label">{t("Сумма, ₴","Сума, ₴")}</label>
+            <input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} style={{ width: "100%", height: 38, marginBottom: 14, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} />
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setPayOpen(false)}>{t("Отмена","Скасувати")}</button>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={acceptPayment} disabled={sending}>{sending ? "…" : t("Провести","Провести")}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} onClick={acceptPayment} disabled={sending}>{sending ? "…" : t("Провести оплату","Провести оплату")}</button>
             </div>
-            <div className="muted" style={{ fontSize: 11, marginTop: 10 }}>{t("Создаст доходную транзакцию в Финансах.","Створить дохідну транзакцію у Фінансах.")}</div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 10 }}>{(payType === "liqpay" || payType === "requisites")
+              ? t("Запишет оплату; авто-отправка ссылки клиенту — следующий этап (LiqPay).","Запише оплату; авто-відправка посилання клієнту — наступний етап (LiqPay).")
+              : t("Создаст доходную транзакцию в Финансах + двинет стадию.","Створить дохідну транзакцію у Фінансах + рухне стадію.")}</div>
           </div>
         </div>
       )}
