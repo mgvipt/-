@@ -26,9 +26,13 @@ class ConversationSerializer(serializers.ModelSerializer):
     assigned_to_name = serializers.SerializerMethodField()
     last_text = serializers.SerializerMethodField()
     needs_reply = serializers.SerializerMethodField()
+    participant_names = serializers.SerializerMethodField()
 
     def get_contact_name(self, obj):
         return str(obj.contact) if obj.contact else (obj.title or "")
+
+    def get_participant_names(self, obj):
+        return [(u.get_full_name() or u.username) for u in obj.participants.all()]
 
     def get_assigned_to_name(self, obj):
         if not obj.assigned_to:
@@ -39,7 +43,7 @@ class ConversationSerializer(serializers.ModelSerializer):
         model = Conversation
         fields = ["id", "channel", "channel_kind", "channel_name", "contact",
                   "contact_name", "title", "status", "assigned_to", "assigned_to_name",
-                  "unread", "last_message_at", "last_text", "needs_reply"]
+                  "unread", "last_message_at", "last_text", "needs_reply", "participants", "participant_names"]
 
     def get_last_text(self, obj):
         m = obj.messages.last()

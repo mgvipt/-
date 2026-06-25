@@ -30,6 +30,8 @@ class Conversation(models.Model):
     status = models.CharField(max_length=10, choices=STATUS, default="open")
     assigned_to = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="conversations")
+    participants = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True, related_name="participating_conversations")
     unread = models.PositiveIntegerField(default=0)
     last_message_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

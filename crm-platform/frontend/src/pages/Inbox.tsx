@@ -27,14 +27,33 @@ export default function Inbox() {
   const [err, setErr] = useState("");
   const [ai, setAi] = useState<{ context?: string; points?: string[]; suggestion?: string } | null>(null);
   const [aiLoad, setAiLoad] = useState(false);
+  const [nextUrl, setNextUrl] = useState<string | null>(null);
+  const [picker, setPicker] = useState<null | "transfer" | "add">(null);
+  const [emps, setEmps] = useState<{ id: number; full_name: string }[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<Conversation | null>(null);
 
   async function loadConvs() {
-    const q = scope && scope !== "all" ? `?scope=${scope}` : "";
+    const q = scope && scope !== "all" ? `?scope=${scope}&page_size=50` : "?page_size=50";
     const d = await api.get<Paginated<Conversation>>(`/api/conversations/${q}`);
-    setConvs(d.results);
+    setConvs(d.results); setNextUrl((d as any).next || null);
     if (!activeRef.current && d.results[0]) openConv(d.results[0]);
+  }
+  async function loadMore() {
+    if (!nextUrl) return;
+    const url = nextUrl.replace(/^https?:\/\/[^/]+/, "");
+    const d = await api.get<Paginated<Conversation>>(url);
+    setConvs((cs) => { const ids = new Set(cs.map((x) => x.id)); return [...cs, ...d.results.filter((r) => !ids.has(r.id))]; });
+    setNextUrl((d as any).next || null);
+  }
+  async function refreshList() {
+    const q = scope && scope !== "all" ? `?scope=${scope}&page_size=50` : "?page_size=50";
+    const d = await api.get<Paginated<Conversation>>(`/api/conversations/${q}`);
+    setConvs((cs) => {
+      const map = new Map<number, Conversation>(cs.map((c) => [c.id, c]));
+      d.results.forEach((r) => map.set(r.id, { ...(map.get(r.id) as any), ...r }));
+      return Array.from(map.values()).sort((a, b) => String(b.last_message_at || "").localeCompare(String(a.last_message_at || "")));
+    });
   }
   useEffect(() => { loadConvs(); }, [scope]);
   // live-оновлення відкритого чату (без ручного refresh)
@@ -50,7 +69,7 @@ export default function Inbox() {
   }, [active]);
   // періодичне оновлення списку чатів
   useEffect(() => {
-    const t = setInterval(() => loadConvs(), 20000);
+    const t = setInterval(() => refreshList(), 20000);
     return () => clearInterval(t);
   }, [scope]);
   useEffect(() => {
@@ -68,6 +87,7 @@ export default function Inbox() {
     api.get<Conversation>(`/api/conversations/${cid}/`).then((c) => { setConvs((cs) => cs.some((x) => x.id === c.id) ? cs : [c, ...cs]); openConv(c); }).catch(() => {});
   }, [params]);
   useEffect(() => { activeRef.current = active; }, [active]);
+  useEffect(() => { api.get<any>("/api/users/?page_size=500").then((d) => setEmps(((d.results || d) as any[]).filter((u) => u.is_active).map((u) => ({ id: u.id, full_name: u.full_name || u.username })))).catch(() => {}); }, []);
   useEffect(() => { endRef.current?.scrollIntoView(); }, [msgs]);
 
   async function analyzeAI(id: number) {
@@ -108,6 +128,17 @@ export default function Inbox() {
     } finally { setSending(false); }
   }
 
+  async function pickUser(uid: number) {
+    if (!active) return;
+    const ep = picker === "transfer" ? "assign" : "add_member";
+    try {
+      const c = await api.post<Conversation>(`/api/conversations/${active.id}/${ep}/`, { user_id: uid });
+      setActive(c);
+      setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, ...c } : x)));
+    } catch { setErr(t("Не удалось","Не вдалося")); }
+    setPicker(null);
+  }
+
   return (
     <div className="inbox fade" style={{ height: "100%", display: "grid", gridTemplateColumns: "300px 1fr 340px" }}>
       {/* список диалогов */}
@@ -121,7 +152,7 @@ export default function Inbox() {
                 background: scope === k ? "var(--brand)" : "#fff", color: scope === k ? "#fff" : "#475569" }}>{label}</button>
           ))}
         </div>
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ flex: 1, overflowY: "auto" }} onScroll={(e) => { const el = e.currentTarget; if (el.scrollHeight - el.scrollTop - el.clientHeight < 140) loadMore(); }}>
           {convs.length === 0 && <div className="spin">{t("Пока нет диалогов.","Поки немає діалогів.")}</div>}
           {(() => {
             const fmtAt = (d?: string) => d ? new Date(d).toLocaleString("uk", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
@@ -154,6 +185,7 @@ export default function Inbox() {
               {work.map(card)}
             </>);
           })()}
+          {nextUrl && <div onClick={() => loadMore()} style={{ padding: "10px 12px", textAlign: "center", fontSize: 12, color: "var(--brand)", cursor: "pointer", borderTop: "1px solid #f1f5f9" }}>{t("Загрузить ещё ↓","Завантажити ще ↓")}</div>}
         </div>
       </div>
 
@@ -167,13 +199,27 @@ export default function Inbox() {
               <Avatar name={active.contact_name || active.title || "?"} cls="av-md" />
               <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.25 }}>
                 <b style={{ fontSize: 14 }}>{active.contact_name || active.title}</b>
-                <span className="muted" style={{ fontSize: 11 }}>{active.assigned_to ? "👤 " + active.assigned_to_name : t("Не назначено","Не призначено")} · {active.channel_name}</span>
+                <span className="muted" style={{ fontSize: 11 }}>{active.assigned_to ? "👤 " + active.assigned_to_name : t("Не назначено","Не призначено")}{(active as any).participant_names && (active as any).participant_names.length > 0 ? " · 👥 " + (active as any).participant_names.join(", ") : ""} · {active.channel_name}</span>
               </div>
               <SourceChip source={active.channel_kind} />
               <div className="spacer" />
               <button className="btn btn-green">{t("📞 Позвонить","📞 Подзвонити")}</button>
               {active.contact && <button className="btn btn-primary" style={{ marginLeft: 8 }} onClick={goToCard}>{t("🤝 В карточку","🤝 В картку")}</button>}
+              <button className="btn" style={{ marginLeft: 8, background: "#fff7ed", color: "#c2410c", fontWeight: 600 }} onClick={() => setPicker(picker === "transfer" ? null : "transfer")}>{t("↪ Переадресовать","↪ Переадресувати")}</button>
+              <button className="btn" style={{ marginLeft: 8, background: "#eef2ff", color: "#4338ca", fontWeight: 600 }} onClick={() => setPicker(picker === "add" ? null : "add")}>{t("➕ Менеджер","➕ Менеджер")}</button>
             </div>
+            {picker && (<>
+              <div onClick={() => setPicker(null)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+              <div style={{ position: "fixed", top: 104, right: 360, width: 300, maxHeight: 420, overflowY: "auto", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 14px 36px rgba(0,0,0,.18)", zIndex: 41 }}>
+                <div style={{ padding: "9px 12px", fontSize: 12.5, fontWeight: 700, color: "#475569", borderBottom: "1px solid #f1f5f9", position: "sticky", top: 0, background: "#fff" }}>{picker === "transfer" ? t("Переадресовать чат на:","Переадресувати чат на:") : t("Добавить менеджера в чат:","Додати менеджера у чат:")}</div>
+                {emps.map((e) => (
+                  <div key={e.id} onClick={() => pickUser(e.id)} style={{ padding: "8px 12px", cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid #f8fafc" }}>
+                    <Avatar name={e.full_name} cls="av-md" />{e.full_name}
+                  </div>
+                ))}
+                {emps.length === 0 && <div className="muted" style={{ padding: 12, fontSize: 12 }}>{t("Нет сотрудников","Немає співробітників")}</div>}
+              </div>
+            </>)}
             <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
               {msgs.map((m) => (
                 <div key={m.id} className={"msg" + (m.direction === "out" ? " msg-out" : " msg-in")}

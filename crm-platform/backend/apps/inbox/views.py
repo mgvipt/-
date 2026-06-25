@@ -129,7 +129,7 @@ class ChannelViewSet(viewsets.ModelViewSet):
 
 
 class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Conversation.objects.select_related("channel", "contact", "assigned_to")
+    queryset = Conversation.objects.select_related("channel", "contact", "assigned_to").prefetch_related("participants")
     serializer_class = ConversationSerializer
     filterset_fields = ["channel", "status", "assigned_to", "contact"]
     search_fields = ["title", "contact__first_name", "contact__phone"]
@@ -143,24 +143,48 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         # RBAC: менеджер без права «все чаты» видит только свои —
         # по ответственному чата ИЛИ по ответственному контакта.
         if not user.can_see_all_conversations():
-            qs = qs.filter(Q(assigned_to=user) | Q(contact__owner=user))
+            qs = qs.filter(Q(assigned_to=user) | Q(contact__owner=user) | Q(participants=user))
         # фильтр-чипы (поверх RBAC): Мої / Не призначені
         scope = self.request.query_params.get("scope")
         if scope == "mine":
-            qs = qs.filter(assigned_to=user)
+            qs = qs.filter(Q(assigned_to=user) | Q(participants=user))
         elif scope == "unassigned":
             qs = qs.filter(assigned_to__isnull=True)
-        return qs
+        return qs.distinct()
 
     @action(detail=True, methods=["post"])
     def assign(self, request, pk=None):
         """Переброс чата на ответственного (только руководитель)."""
         u = request.user
-        if not (u.can_see_all_conversations() or u.has_perm_code("roles.manage")):
-            return Response({"detail": "Нет прав на переброс чата"}, status=status.HTTP_403_FORBIDDEN)
         conv = self.get_object()
+        if not (u.can_see_all_conversations() or u.has_perm_code("roles.manage") or conv.assigned_to_id == u.id):
+            return Response({"detail": "Нет прав на переброс чата"}, status=status.HTTP_403_FORBIDDEN)
         conv.assigned_to_id = request.data.get("user_id") or None
         conv.save(update_fields=["assigned_to"])
+        return Response(ConversationSerializer(conv).data)
+
+    @action(detail=True, methods=["post"])
+    def add_member(self, request, pk=None):
+        """Додати ще одного менеджера у чат (учасник, бачить чат)."""
+        u = request.user
+        conv = self.get_object()
+        if not (u.can_see_all_conversations() or u.has_perm_code("roles.manage")
+                or conv.assigned_to_id == u.id or conv.participants.filter(id=u.id).exists()):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        uid = request.data.get("user_id")
+        if uid:
+            conv.participants.add(uid)
+        return Response(ConversationSerializer(conv).data)
+
+    @action(detail=True, methods=["post"])
+    def remove_member(self, request, pk=None):
+        u = request.user
+        conv = self.get_object()
+        if not (u.can_see_all_conversations() or u.has_perm_code("roles.manage") or conv.assigned_to_id == u.id):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        uid = request.data.get("user_id")
+        if uid:
+            conv.participants.remove(uid)
         return Response(ConversationSerializer(conv).data)
 
     @action(detail=True, methods=["get"])

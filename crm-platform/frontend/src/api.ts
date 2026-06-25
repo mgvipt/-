@@ -92,6 +92,7 @@ export interface Conversation {
   needs_reply?: boolean;
   last_message_at: string | null; last_text: string;
   assigned_to: number | null; assigned_to_name: string;
+  participants?: number[]; participant_names?: string[];
 }
 export interface ChatMessage {
   id: number; conversation: number; direction: "in" | "out";
