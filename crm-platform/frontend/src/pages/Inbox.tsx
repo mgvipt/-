@@ -8,7 +8,7 @@ import { useLang } from "../i18n";
 function linkify(text: string, out: boolean) {
   return String(text || "").split(/(https?:\/\/[^\s]+)/g).map((p, i) =>
     /^https?:\/\//.test(p)
-      ? <a key={i} href={p} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: out ? "#fff" : "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}>{p}</a>
+      ? <a key={i} href={p} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}>{p}</a>
       : <span key={i}>{p}</span>);
 }
 
@@ -179,10 +179,11 @@ export default function Inbox() {
                 <div key={m.id} className={"msg" + (m.direction === "out" ? " msg-out" : " msg-in")}
                   style={{ maxWidth: "70%", padding: "9px 11px", borderRadius: 10, fontSize: 13,
                     alignSelf: m.direction === "out" ? "flex-end" : "flex-start",
-                    background: m.direction === "out" ? "var(--brand)" : "#fff",
-                    color: m.direction === "out" ? "#fff" : "inherit",
+                    background: "#fff",
+                    color: "#0f172a",
+                    border: m.direction === "out" ? "1.5px solid #2563eb" : "1px solid #e8edf3",
                     boxShadow: "0 1px 2px rgba(0,0,0,.05)" }}>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: .2, marginBottom: 4, paddingBottom: 3, borderBottom: m.direction === "out" ? "1px solid rgba(255,255,255,.3)" : "1px solid rgba(0,0,0,.08)", color: m.direction === "out" ? "rgba(255,255,255,.72)" : "var(--brand)" }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: .2, marginBottom: 4, paddingBottom: 3, borderBottom: m.direction === "out" ? "1px solid rgba(37,99,235,.25)" : "1px solid rgba(0,0,0,.08)", color: m.direction === "out" ? "#2563eb" : "var(--brand)" }}>
                     {m.sender_name || (m.direction === "out" ? t("Менеджер","Менеджер") : (active?.title || t("Клиент","Клієнт")))}
                   </div>
                   <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{linkify(m.text, m.direction === "out")}</span>
