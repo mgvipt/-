@@ -234,20 +234,20 @@ function Journal() {
           </tr></thead>
           <tbody>
             {tx.length === 0 && <tr><td colSpan={12} className="muted" style={{ padding: 14 }}>{t("Операций ещё нет. Добавь вручную или они появятся при оплате сделок.","Операцій ще немає. Додай вручну або вони зʼявляться при оплаті сделок.")}</td></tr>}
-            {tx.map((t) => (
-              <tr key={t.id} onClick={() => openEdit(t)} title={t("Кликни, чтобы посмотреть и изменить","Клікни, щоб переглянути та змінити")} style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}>
-                <td className="muted" style={{ padding: "8px 12px" }}>{new Date(t.date || t.created_at).toLocaleDateString("ru")}</td>
-                <td style={{ fontWeight: 600, color: t.direction === "in" ? "#16a34a" : t.direction === "transfer" ? "#6366f1" : "#dc2626" }}>{t.direction === "in" ? "+" : t.direction === "transfer" ? "⇄ " : "−"}{Number(t.amount).toLocaleString("ru")}</td>
-                <td className="muted">{t.currency || "UAH"}</td>
-                <td className="muted">{Number(t.amount_uah || t.amount).toLocaleString("ru")} ₴</td>
-                <td>{t.direction === "transfer" ? <span style={{ color: "#6366f1" }}>→ {t.transfer_account_name}</span> : (t.category_name || <span className="muted">—</span>)}</td>
-                <td>{t.direction === "transfer" ? <span className="muted">переказ</span> : (t.counterparty || <span className="muted">—</span>)}</td>
-                <td className="muted">{t.account_name}</td>
-                <td onClick={(e) => { e.stopPropagation(); if (t.deal) setDrawerDeal(t.deal); }}>{t.deal ? <span style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600 }} title="Відкрити картку сделки">#{t.deal}{t.deal_title ? " · " + t.deal_title.slice(0, 16) : ""} · {Number(t.amount).toLocaleString("ru")}₴</span> : <span className="muted">—</span>}</td>
-                <td>{t.fin_article_name || <span className="muted">—</span>}</td>
-                <td>{t.fin_direction_name || <span className="muted">—</span>}</td>
-                <td className="muted">{(CHANNELS.find((c) => c[0] === t.channel) || ["", "—"])[1]}</td>
-                <td className="muted" style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.comment}</td>
+            {tx.map((r) => (
+              <tr key={r.id} onClick={() => openEdit(r)} title={t("Кликни, чтобы посмотреть и изменить","Клікни, щоб переглянути та змінити")} style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}>
+                <td className="muted" style={{ padding: "8px 12px" }}>{new Date(r.date || r.created_at).toLocaleDateString("ru")}</td>
+                <td style={{ fontWeight: 600, color: r.direction === "in" ? "#16a34a" : r.direction === "transfer" ? "#6366f1" : "#dc2626" }}>{r.direction === "in" ? "+" : r.direction === "transfer" ? "⇄ " : "−"}{Number(r.amount).toLocaleString("ru")}</td>
+                <td className="muted">{r.currency || "UAH"}</td>
+                <td className="muted">{Number(r.amount_uah || r.amount).toLocaleString("ru")} ₴</td>
+                <td>{r.direction === "transfer" ? <span style={{ color: "#6366f1" }}>→ {r.transfer_account_name}</span> : (r.category_name || <span className="muted">—</span>)}</td>
+                <td>{r.direction === "transfer" ? <span className="muted">переказ</span> : (r.counterparty || <span className="muted">—</span>)}</td>
+                <td className="muted">{r.account_name}</td>
+                <td onClick={(e) => { e.stopPropagation(); if (r.deal) setDrawerDeal(r.deal); }}>{r.deal ? <span style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600 }} title="Відкрити картку сделки">#{r.deal}{r.deal_title ? " · " + r.deal_title.slice(0, 16) : ""} · {Number(r.amount).toLocaleString("ru")}₴</span> : <span className="muted">—</span>}</td>
+                <td>{r.fin_article_name || <span className="muted">—</span>}</td>
+                <td>{r.fin_direction_name || <span className="muted">—</span>}</td>
+                <td className="muted">{(CHANNELS.find((c) => c[0] === r.channel) || ["", "—"])[1]}</td>
+                <td className="muted" style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.comment}</td>
               </tr>
             ))}
           </tbody>
@@ -822,13 +822,13 @@ function DirectionJournal({ directionId, from, to }: { directionId: number; from
         <table style={{ width: "100%", fontSize: 12.5 }}>
           <thead><tr><th style={{ textAlign: "left", padding: "4px 8px" }}>{t("Дата","Дата")}</th><th>{t("Сумма","Сума")}</th><th>{t("Фонд","Фонд")}</th><th>{t("Канал","Канал")}</th><th style={{ textAlign: "left" }}>{t("Комментарий","Коментар")}</th></tr></thead>
           <tbody>
-            {tx.map((t) => (
-              <tr key={t.id} style={{ borderTop: "1px solid #eef2f7" }}>
-                <td className="muted" style={{ padding: "4px 8px" }}>{new Date(t.date || t.created_at).toLocaleDateString("ru")}</td>
-                <td style={{ textAlign: "right", fontWeight: 600, color: t.direction === "in" ? "#16a34a" : "#dc2626" }}>{t.direction === "in" ? "+" : "−"}{Number(t.amount).toLocaleString("ru")} ₴</td>
-                <td>{t.fin_article_name || <span className="muted">—</span>}</td>
-                <td className="muted" style={{ textAlign: "center" }}>{(CHANNELS.find((c) => c[0] === t.channel) || ["", "—"])[1]}</td>
-                <td className="muted" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.comment}</td>
+            {tx.map((r) => (
+              <tr key={r.id} style={{ borderTop: "1px solid #eef2f7" }}>
+                <td className="muted" style={{ padding: "4px 8px" }}>{new Date(r.date || r.created_at).toLocaleDateString("ru")}</td>
+                <td style={{ textAlign: "right", fontWeight: 600, color: r.direction === "in" ? "#16a34a" : "#dc2626" }}>{r.direction === "in" ? "+" : "−"}{Number(r.amount).toLocaleString("ru")} ₴</td>
+                <td>{r.fin_article_name || <span className="muted">—</span>}</td>
+                <td className="muted" style={{ textAlign: "center" }}>{(CHANNELS.find((c) => c[0] === r.channel) || ["", "—"])[1]}</td>
+                <td className="muted" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.comment}</td>
               </tr>
             ))}
           </tbody>
