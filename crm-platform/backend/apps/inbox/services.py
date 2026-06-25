@@ -12,7 +12,7 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
     )
     if created:
         # на канале без телефона (Telegram) заводим контакт по имени и помечаем канал
-        contact = Contact.objects.create(first_name=inc.sender_name, channels=[channel.kind], social_link=(inc.social_link or ""))
+        contact = Contact.objects.create(first_name=inc.sender_name, channels=[channel.kind], social_link=(inc.social_link or ""), phone=(getattr(inc, "phone", "") or ""))
         conv.contact = contact
         conv.save(update_fields=["contact"])
         # авто-лід у воронці "Лиды" з джерелом = канал (розділення лідів по каналах)
@@ -33,6 +33,9 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
     if contact is not None and getattr(inc, "social_link", "") and not contact.social_link:
         contact.social_link = inc.social_link
         contact.save(update_fields=["social_link"])
+    if contact is not None and getattr(inc, "phone", "") and not contact.phone:
+        contact.phone = inc.phone
+        contact.save(update_fields=["phone"])
     if conv.assigned_to_id is None and contact is not None:
         from apps.crm.models import Deal
         owner_id = contact.owner_id or (

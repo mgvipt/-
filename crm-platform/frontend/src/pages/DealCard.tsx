@@ -42,7 +42,7 @@ interface Item { id: number; product: number; product_name: string; quantity: st
 interface Pay { id: number; provider: string; amount: string; is_paid: boolean; created_at: string; }
 interface Deal {
   qualification?: any; card_fields?: any[];
-  id: number; title: string; contact_name?: string; owner_name?: string; owner?: number | null; created_at?: string;
+  id: number; title: string; contact_name?: string; contact_social_link?: string; contact_phone?: string; owner_name?: string; owner?: number | null; created_at?: string;
   funnel: number; stage: number; amount: string; source: string;
   items: Item[]; payments: Pay[]; paid: number;
   // поля merge-карточки (см. CODEMAP разд.2, модель Deal):
@@ -291,6 +291,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   <span style={{ fontWeight: 600 }}>{deal.contact_name || t("Без контакта","Без контакту")}</span>
                   {loyalty && <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: (LOYALTY_COLOR[loyalty] || "#64748b") + "22", color: LOYALTY_COLOR[loyalty] || "#64748b" }}>{loyalty}</span>}
                 </div>
+                {(deal.contact_phone || deal.contact_social_link) && (
+                  <div style={{ marginTop: 6, fontSize: 12.5, display: "flex", flexDirection: "column", gap: 3 }}>
+                    {deal.contact_phone && <a href={`tel:${deal.contact_phone}`} style={{ color: "#0f172a", fontWeight: 600 }}>📱 {deal.contact_phone}</a>}
+                    {deal.contact_social_link && <a href={deal.contact_social_link} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>🔗 {deal.contact_social_link}</a>}
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                   <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>{t("📞 Позвонить","📞 Подзвонити")}</button>
                   <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }} onClick={() => deal.conversation_id ? nav(`/inbox?c=${deal.conversation_id}`) : setTab("general")}>{t("💬 Чат","💬 Чат")}</button>

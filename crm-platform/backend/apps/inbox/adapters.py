@@ -17,6 +17,7 @@ class IncomingMessage:
     attachments: list = field(default_factory=list)
     direction: str = "in"
     social_link: str = ""
+    phone: str = ""
 
 
 class ChannelAdapter:
@@ -184,6 +185,8 @@ class EchatViberAdapter(ChannelAdapter):
             sender_name=(contact.get("name") or num),
             external_id=str(msg.get("message_id", "")),
             attachments=att,
+            phone=num,
+            social_link=("viber://chat?number=%2B" + num.lstrip("+")),
         )
 
     def _post(self, path, body):

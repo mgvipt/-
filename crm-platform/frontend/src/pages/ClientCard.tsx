@@ -10,7 +10,7 @@ import { useLang } from "../i18n";
 
 interface Deal { id: number; title: string; amount: number; stage: string; is_won: boolean; created_at: string; }
 interface Contact {
-  id: number; first_name: string; last_name: string; display_name: string; phone: string; email: string;
+  id: number; first_name: string; last_name: string; display_name: string; phone: string; email: string; social_link: string;
   source: string; address: string; comment: string; loyalty_tag: string; birthday: string | null;
   channels: string[]; owner?: number | null; owner_name?: string; deals: Deal[]; total_spent: number;
 }
@@ -62,6 +62,7 @@ export default function ClientCard() {
             </div>
             {fld(t("Телефон","Телефон"), "phone", t("Основной контактный номер","Основний контактний номер"))}
             {fld(t("Email","Email"), "email")}
+            {fld(t("Ссылка на аккаунт (мессенджер)","Посилання на акаунт (месенджер)"), "social_link", "t.me / instagram.com…")}
             {fld(t("Адрес / город","Адреса / місто"), "address", t("Куда доставлять","Куди доставляти"))}
             <div style={{ marginBottom: 10 }}>
               <div className="label">{t("Лояльность","Лояльність")}</div>
