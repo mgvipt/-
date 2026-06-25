@@ -36,6 +36,13 @@ class ProductSerializer(serializers.ModelSerializer):
     def get_margin(self, obj):
         return float((obj.price or 0) - (obj.cost or 0))
 
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        u = getattr(self.context.get("request"), "user", None)
+        if not (u and (getattr(u, "is_superuser", False) or (hasattr(u, "has_perm_code") and u.has_perm_code("product.cost.view")))):
+            data.pop("cost", None); data.pop("margin", None)
+        return data
+
 
 class MovementSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source="product.name", read_only=True)

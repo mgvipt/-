@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, Paginated } from "../api";
 import { useLang } from "../i18n";
+import { useAuth } from "../auth";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 interface Product {
@@ -41,6 +42,8 @@ const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pa
 export default function Warehouse() {
   /* ─── [2] STATE ──────────────────────────────────────────────────────── */
   const { t } = useLang();
+  const { can } = useAuth();
+  const showCost = can("product.cost.view");
   const [cats, setCats] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [count, setCount] = useState(0);
@@ -171,17 +174,17 @@ export default function Warehouse() {
 
         <div className="tablewrap" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
           <table style={{ width: "100%" }}>
-            <thead><tr><th>{t("Товар","Товар")}</th><th>{t("Артикул","Артикул")}</th><th>{t("Категория","Категорія")}</th><th>{t("Цена","Ціна")}</th><th>{t("Закупка","Закупка")}</th><th>{t("Ед.","Од.")}</th><th>{t("Остаток","Залишок")}</th></tr></thead>
+            <thead><tr><th>{t("Товар","Товар")}</th><th>{t("Артикул","Артикул")}</th><th>{t("Категория","Категорія")}</th><th>{t("Цена","Ціна")}</th>{showCost && <th>{t("Закупка","Закупка")}</th>}<th>{t("Ед.","Од.")}</th><th>{t("Остаток","Залишок")}</th></tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</td></tr>}
-              {!loading && products.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>{t("Товаров не найдено","Товарів не знайдено")}</td></tr>}
+              {loading && <tr><td colSpan={showCost ? 7 : 6} className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</td></tr>}
+              {!loading && products.length === 0 && <tr><td colSpan={showCost ? 7 : 6} className="muted" style={{ padding: 16 }}>{t("Товаров не найдено","Товарів не знайдено")}</td></tr>}
               {!loading && products.map((p) => (
                 <tr key={p.id}>
                   <td><span onClick={() => openCard(p)} style={{ fontWeight: 500, color: "#1d4ed8", cursor: "pointer" }}>{p.name}</span></td>
                   <td className="muted">{p.sku}</td>
                   <td className="muted" style={{ fontSize: 12 }}>{p.category_name || "—"}</td>
                   <td>{Number(p.price).toLocaleString("ru")} {p.currency || "грн"}</td>
-                  <td><EditCost p={p} onSaved={(v) => setProducts((ps) => ps.map((x) => (x.id === p.id ? { ...x, cost: String(v) } : x)))} /></td>
+                  {showCost && <td><EditCost p={p} onSaved={(v) => setProducts((ps) => ps.map((x) => (x.id === p.id ? { ...x, cost: String(v) } : x)))} /></td>}
                   <td>{p.unit}</td>
                   <td><span style={{ color: Number(p.stock) <= 0 ? "#dc2626" : Number(p.stock) < 100 ? "#d97706" : "#16a34a", fontWeight: 600 }}>{Number(p.stock).toLocaleString("ru")}</span></td>
                 </tr>
@@ -235,8 +238,7 @@ export default function Warehouse() {
             <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>Артикул: {card.sku || "—"} · {card.category_name || t("Без категории","Без категорії")}</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
               {[[t("Розничная цена","Роздрібна ціна"), Number(card.price).toLocaleString("ru") + " " + (card.currency || "грн")],
-                [t("Закупка","Закупка"), Number(card.cost) > 0 ? Number(card.cost).toLocaleString("ru") + " " + (card.currency || "грн") : "—"],
-                [t("Маржа","Маржа"), (card.margin || 0).toLocaleString("ru") + " ₴" + (Number(card.price) > 0 && card.margin ? " · " + Math.round((card.margin / Number(card.price)) * 100) + "%" : "")],
+                ...(showCost ? [[t("Закупка","Закупка"), Number(card.cost) > 0 ? Number(card.cost).toLocaleString("ru") + " " + (card.currency || "грн") : "—"], [t("Маржа","Маржа"), (card.margin || 0).toLocaleString("ru") + " ₴" + (Number(card.price) > 0 && card.margin ? " · " + Math.round((card.margin / Number(card.price)) * 100) + "%" : "")]] : []),
                 [t("Остаток","Залишок"), Number(card.stock).toLocaleString("ru") + " " + card.unit]].map(([lbl, v]) => (
                 <div key={lbl} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{lbl}</div><div style={{ fontSize: 18, fontWeight: 700 }}>{v}</div></div>
               ))}

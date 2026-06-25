@@ -16,6 +16,7 @@ PERMISSION_CHOICES = [
     ("finance.manage", "Управление финмоделью (статьи ТБ/P&L)"),
     ("warehouse.view", "Доступ к складу"),
     ("warehouse.edit", "Редактировать склад"),
+    ("product.cost.view", "Бачити закупівельні ціни (собівартість)"),
     ("telephony.view", "Доступ к телефонии и записям"),
     ("telephony.view.all", "Видеть все звонки"),
     ("analytics.view", "Доступ к аналитике"),
