@@ -5,7 +5,7 @@ import { api } from "./api";
 import { useLang } from "./i18n";
 
 declare global {
-  interface Window { JsSIP: any; wallcovDial?: (n: string) => void; wallcovPhoneReady?: boolean; }
+  interface Window { JsSIP: any; wallcovDial?: (n: string) => void; wallcovPhoneReady?: boolean; wallcovAnswer?: () => void; wallcovHangup?: () => void; wallcovIncoming?: boolean; }
 }
 
 const ICE_CFG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }] };
@@ -107,6 +107,12 @@ export default function WebPhone() {
   }
   function answer() { try { sessRef.current?.answer({ mediaConstraints: { audio: true, video: false }, pcConfig: ICE_CFG }); setSt("incall"); } catch { /* */ } }
   function hangup() { try { sessRef.current?.terminate(); } catch { /* */ } setSt("ready"); setPeer(""); }
+  useEffect(() => {
+    window.wallcovAnswer = answer;
+    window.wallcovHangup = hangup;
+    window.wallcovIncoming = st === "incoming";
+    window.dispatchEvent(new CustomEvent("wallcov-phone-state", { detail: { state: st, peer } }));
+  }, [st, peer]);
 
   const dot = ({ off: "#94a3b8", connecting: "#f59e0b", ready: "#16a34a", incoming: "#16a34a", calling: "#3b82f6", incall: "#3b82f6", error: "#dc2626" } as any)[st];
   const label = ({ off: t("выключено","вимкнено"), connecting: t("подключение…","підключення…"), ready: t("готов","готовий"), incoming: t("входящий звонок","вхідний дзвінок"), calling: t("набор…","набір…"), incall: t("разговор","розмова"), error: t("ошибка","помилка") } as any)[st];
