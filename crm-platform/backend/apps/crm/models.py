@@ -118,6 +118,7 @@ class Deal(TimestampedOwned):
     ttn = models.CharField("ТТН Нова Пошта", max_length=40, blank=True, default="")
     checkbox_status = models.CharField(max_length=16, blank=True, default="none", help_text="none/аванс/финальный")
     closed_at = models.DateTimeField(null=True, blank=True)
+    stage_changed_at = models.DateTimeField(null=True, blank=True, help_text="Коли востаннє змінилась стадія (для днів на стадії)")
     b24_id = models.CharField(max_length=20, blank=True, default="", db_index=True, help_text="ID угоди в Бітриксі (для токена Cashflow WC-{b24_id})")
     qualification = models.JSONField(default=dict, blank=True, help_text="Анкета виявлення потреби (переноситься з ліда)")
     card_fields = models.JSONField(default=list, blank=True, help_text="Кастомні поля картки [{label, value}]")

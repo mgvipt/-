@@ -105,8 +105,8 @@ class FinanceDashboardView(APIView):
         month_start = today.replace(day=1)
         tx = Transaction.objects.all()
         month = tx.filter(created_at__date__gte=month_start)
-        income = month.filter(direction="in").aggregate(s=Sum("amount"))["s"] or 0
-        expense = month.filter(direction="out").aggregate(s=Sum("amount"))["s"] or 0
+        income = month.filter(direction="in").aggregate(s=Sum("amount_uah"))["s"] or 0
+        expense = month.filter(direction="out").aggregate(s=Sum("amount_uah"))["s"] or 0
         total_balance = sum(a.balance() for a in Account.objects.all())
 
         # денежный поток по дням за 30 дней
@@ -116,8 +116,8 @@ class FinanceDashboardView(APIView):
             day_tx = tx.filter(created_at__date=d)
             days.append({
                 "date": d.isoformat(),
-                "in": float(day_tx.filter(direction="in").aggregate(s=Sum("amount"))["s"] or 0),
-                "out": float(day_tx.filter(direction="out").aggregate(s=Sum("amount"))["s"] or 0),
+                "in": float(day_tx.filter(direction="in").aggregate(s=Sum("amount_uah"))["s"] or 0),
+                "out": float(day_tx.filter(direction="out").aggregate(s=Sum("amount_uah"))["s"] or 0),
             })
         return Response({
             "total_balance": float(total_balance),
@@ -176,8 +176,8 @@ class DirectionsReportView(APIView):
         for dr in FinDirection.objects.filter(active=True):
             tx = Transaction.objects.filter(fin_direction=dr,
                 created_at__date__gte=d_from, created_at__date__lte=d_to)
-            inc = float(tx.filter(direction="in").aggregate(s=Sum("amount"))["s"] or 0)
-            exp = float(tx.filter(direction="out").aggregate(s=Sum("amount"))["s"] or 0)
+            inc = float(tx.filter(direction="in").aggregate(s=Sum("amount_uah"))["s"] or 0)
+            exp = float(tx.filter(direction="out").aggregate(s=Sum("amount_uah"))["s"] or 0)
             profit = inc - exp
             rows.append({
                 "id": dr.id, "name": dr.name,
@@ -559,7 +559,7 @@ class OverviewView(APIView):
         # топ-витрати (обраний місяць)
         top_exp = [{"name": r["category__name"] or "(без категорії)", "sum": round(float(r["s"]))}
                    for r in Transaction.objects.filter(direction="out", created_at__date__gte=cf, created_at__date__lte=ct)
-                   .values("category__name").annotate(s=Sum("amount")).order_by("-s")[:8]]
+                   .values("category__name").annotate(s=Sum("amount_uah")).order_by("-s")[:8]]
 
         # напрямки (обраний місяць)
         dirs = []

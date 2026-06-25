@@ -146,7 +146,8 @@ class DealDetailSerializer(DealSerializer):
 
     def get_days_in_stage(self, obj):
         from django.utils import timezone
-        return (timezone.now() - obj.updated_at).days
+        base = obj.stage_changed_at or obj.created_at
+        return (timezone.now() - base).days
 
     def get_contact_loyalty(self, obj):
         return getattr(obj.contact, "loyalty_tag", "") if obj.contact else ""

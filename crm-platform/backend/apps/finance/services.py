@@ -56,7 +56,7 @@ def compute_pnl(d_from, d_to):
     direct = revenue * (rev_fund_pct + pay_pct) / 100 + ai_per_deal * deals
     margin = revenue - direct
     operating = sum(float(a.value) for a in arts
-                    if a.category in ("variable", "fixed") and a.value_type == "fixed_sum_per_month") * days / 30.0
+                    if a.category in ("variable", "fixed") and a.value_type in ("fixed_sum_per_month", "auto_meta_ads")) * days / 30.0
     net = margin - operating
     return {
         "revenue": round(revenue), "deals": deals,
@@ -77,7 +77,7 @@ def compute_breakeven(d_from, d_to):
     rev_funds = sum(float(a.value) for a in arts if a.category == "revenue_fund")
     margin_pct = max(0.0, 100.0 - rev_funds)
     monthly_costs = sum(float(a.value) for a in arts
-                        if a.category in ("variable", "fixed") and a.value_type == "fixed_sum_per_month")
+                        if a.category in ("variable", "fixed") and a.value_type in ("fixed_sum_per_month", "auto_meta_ads"))
     per_deal_fees = sum(float(a.value) for a in arts
                         if a.category == "payment_fee" and a.value_type == "fixed_per_deal") * 100
     total_monthly = monthly_costs + per_deal_fees

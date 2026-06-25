@@ -178,6 +178,9 @@ class ActivityLogMixin:
         auto = False
         if obj.stage_id != old_stage:
             log_activity(self.log_kind, obj.id, "Зміна стадії", f"{old_stage_name} → {obj.stage.name}", request.user, actor)
+            if hasattr(obj, "stage_changed_at"):
+                from django.utils import timezone as _tzs
+                obj.stage_changed_at = _tzs.now(); obj.save(update_fields=["stage_changed_at"])
             if not obj.owner_id:  # взяв у роботу і ще немає відповідального → призначити того, хто взяв
                 obj.owner_id = request.user.id
                 obj.save(update_fields=["owner"])

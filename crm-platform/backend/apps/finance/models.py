@@ -1,3 +1,4 @@
+from datetime import date as _date
 from django.db import models
 from django.db.models import Sum
 
@@ -48,7 +49,7 @@ class Transaction(models.Model):
     currency = models.CharField(max_length=3, default="UAH", help_text="Валюта операції")
     rate = models.DecimalField(max_digits=12, decimal_places=4, default=1, help_text="Курс до гривні (1 одиниця валюти = N грн)")
     amount_uah = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="Сума у гривні (amount × rate) — для аналітики")
-    date = models.DateField(auto_now_add=True)
+    date = models.DateField(default=_date.today, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

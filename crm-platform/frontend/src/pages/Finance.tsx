@@ -104,7 +104,7 @@ function Journal() {
   const [dirs, setDirs] = useState<any[]>([]);
   const [cats, setCats] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
-  const blank = { id: 0, direction: "out", amount: "", account: 0, transfer_account: 0, fin_article: 0, fin_direction: 0, channel: "", counterparty: "", set_category: "", currency: "UAH", rate: 1, comment: "" };
+  const blank = { id: 0, direction: "out", amount: "", account: 0, transfer_account: 0, fin_article: 0, fin_direction: 0, channel: "", counterparty: "", set_category: "", currency: "UAH", rate: 1, comment: "", date: "" };
   const [f, setF] = useState<any>(blank);
   const [ff, setFf] = useState(""); const [ft, setFt] = useState(""); const [fq, setFq] = useState("");
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50); const [count, setCount] = useState(0);
@@ -133,10 +133,10 @@ function Journal() {
   useEffect(() => { load(1); setPage(1); }, [pageSize]);
   const totalPages = Math.max(1, Math.ceil(count / pageSize));
 
-  function openNew(direction: string) { setF({ ...blank, direction }); setOpen(true); }
+  function openNew(direction: string) { setF({ ...blank, direction, date: new Date().toISOString().slice(0, 10) }); setOpen(true); }
   function openEdit(t: any) {
     setF({ id: t.id, direction: t.direction, amount: t.amount, account: t.account || 0, fin_article: t.fin_article || 0, fin_direction: t.fin_direction || 0,
-      transfer_account: t.transfer_account || 0, channel: t.channel || "", counterparty: t.counterparty || "", set_category: t.category_name || "", currency: t.currency || "UAH", rate: t.rate || 1, comment: t.comment || "" });
+      transfer_account: t.transfer_account || 0, channel: t.channel || "", counterparty: t.counterparty || "", set_category: t.category_name || "", currency: t.currency || "UAH", rate: t.rate || 1, comment: t.comment || "", date: t.date || "" });
     setOpen(true);
   }
   async function fetchRate(ccy: string) {
@@ -149,6 +149,7 @@ function Journal() {
     const isT = f.direction === "transfer";
     const body: any = { direction: f.direction, amount: Number(f.amount), account: f.account || accounts[0]?.id,
       comment: f.comment, currency: f.currency, rate: Number(f.rate) || 1 };
+    if (f.date) body.date = f.date;
     if (isT) {
       if (!f.transfer_account || f.transfer_account === f.account) { alert("Оберіть інший рахунок-отримувач"); return; }
       body.transfer_account = f.transfer_account; body.fin_article = null; body.fin_direction = null;
@@ -289,6 +290,8 @@ function Journal() {
                 <span style={{ fontWeight: 600, color: "#0ea5e9" }}>= {money(grnEq)}</span>
               </div>
             )}
+            <label className="label">{t("Дата операции","Дата операції")}</label>
+            <input type="date" value={f.date || ""} onChange={(e) => setF({ ...f, date: e.target.value })} style={inp} title={t("Можно указать прошедшую дату","Можна вказати минулу дату")} />
             {f.direction === "transfer" ? (
               <>
                 <label className="label" title={t("Откуда списываются деньги","Звідки списуються гроші")}>{t("Со счёта","З рахунку")}</label>
