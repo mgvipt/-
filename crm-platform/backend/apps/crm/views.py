@@ -4,6 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import BasePermission, SAFE_METHODS, AllowAny
 from rest_framework.views import APIView
+from django.http import HttpResponseRedirect, HttpResponseNotFound
 from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payment, AutomationRule, GlobalRule, Task, AgentConfig
 from .serializers import (
     CompanySerializer, ContactSerializer, ContactDetailSerializer, FunnelSerializer, StageSerializer,
@@ -271,6 +272,20 @@ class LeadViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     search_fields = ["title", "contact__phone", "contact__first_name", "contact__last_name"]
 
 
+def _short_code():
+    import random, string
+    return "".join(random.choice(string.ascii_letters + string.digits) for _ in range(7))
+
+
+def paylink_redirect(request, code):
+    from .models import PayLink
+    pl = PayLink.objects.filter(code=code).first()
+    if not pl:
+        return HttpResponseNotFound("Посилання не знайдено або застаріло")
+    PayLink.objects.filter(id=pl.id).update(clicks=pl.clicks + 1)
+    return HttpResponseRedirect(pl.target)
+
+
 def _advance_deal_stage(deal, target_order, reason, actor="Автоматизація"):
     """Рух сделки на стадію за order (тільки вперед). Лог + stage_changed_at."""
     if not deal.stage_id or not deal.funnel_id:
@@ -424,9 +439,37 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             pub = getattr(_s, "LIQPAY_PUBLIC_KEY", ""); prv = getattr(_s, "LIQPAY_PRIVATE_KEY", "")
             if not (pub and prv):
                 return Response({"detail": "LiqPay не налаштовано (немає ключів)"}, status=status.HTTP_400_BAD_REQUEST)
-            url = build_checkout_url(pub, prv, amount, order_id, "Замовлення Wallcov #%s" % deal.id,
-                                     server_url=base + "/api/crm/liqpay/callback/", result_url=base)
-            text = "Ось посилання для оплати 👉 %s\nСума: %s грн. Після оплати одразу почнемо готувати замовлення 😊" % (url, amount)
+            full_url = build_checkout_url(pub, prv, amount, order_id, "Замовлення Wallcov #%s" % deal.id,
+                                          server_url=base + "/api/crm/liqpay/callback/", result_url=base)
+            # коротке посилання щоб не слати потвору
+            from .models import PayLink
+            code = _short_code()
+            while PayLink.objects.filter(code=code).exists():
+                code = _short_code()
+            PayLink.objects.create(code=code, deal=deal, target=full_url)
+            url = "%s/p/%s/" % (base, code)
+            # РОП пише тепле повідомлення (Claude) на основі діалогу
+            body = "Ваше замовлення готове до оплати 😊"
+            try:
+                from apps.inbox.models import Conversation as _Cv
+                from .ai import claude_json
+                msgs = []
+                if deal.contact_id:
+                    _c = _Cv.objects.filter(contact_id=deal.contact_id).order_by("-last_message_at").first()
+                    if _c:
+                        msgs = list(_c.messages.order_by("id").values("direction", "text"))[-12:]
+                dlg = "\n".join((("Клієнт: " if m["direction"] == "in" else "Ми: ") + (m["text"] or "")) for m in msgs if m.get("text"))
+                items = ", ".join(i.product.name[:40] for i in deal.items.all()[:3])
+                pr = ("Ти РОП Wallcov (декоративні покриття). Напиши КОРОТКЕ (2-3 речення) тепле повідомлення клієнту "
+                      "що замовлення готове до оплати. Подякуй, згадай що замовив, додай що після оплати одразу готуємо/відправляємо. "
+                      "БЕЗ посилання і БЕЗ суми (я додам сам). Тією ж мовою що клієнт. JSON {\"message\":\"...\"}.\n"
+                      "Замовлення: %s\nДіалог:\n%s") % (items or "тест-набір", dlg or "(нема)")
+                r = claude_json(pr)
+                if r.get("message"):
+                    body = r["message"].strip()
+            except Exception:
+                pass
+            text = "%s\n\n💳 Оплатити онлайн 👉 %s\nСума: %s грн" % (body, url, amount)
         sent = False
         if deal.contact_id:
             from apps.inbox.models import Conversation

@@ -310,3 +310,12 @@ class AgentRun(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class PayLink(models.Model):
+    """Коротке посилання на оплату → редірект на повний LiqPay URL (щоб клієнту не слати потвору)."""
+    code = models.CharField(max_length=12, unique=True, db_index=True)
+    deal = models.ForeignKey("Deal", null=True, blank=True, on_delete=models.CASCADE, related_name="pay_links")
+    target = models.TextField()
+    clicks = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)

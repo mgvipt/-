@@ -74,6 +74,7 @@ urlpatterns = [
     path("api/finance/channels/", fin_views.ChannelsView.as_view()),
     path("api/agent/config/", crm_views.AgentConfigView.as_view()),
     path("api/crm/liqpay/callback/", crm_views.LiqPayCallbackView.as_view()),
+    path("p/<str:code>/", crm_views.paylink_redirect),
     path("api/finance/funds/", fin_views.FundsView.as_view()),
     path("api/finance/fx-rate/", fin_views.FxRateView.as_view()),
     path("api/finance/fx-impact/", fin_views.FxImpactView.as_view()),
