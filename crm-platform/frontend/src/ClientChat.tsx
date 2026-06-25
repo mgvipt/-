@@ -82,10 +82,10 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
   const pts = ai ? (ai.points && ai.points.length ? ai.points : (ai.context ? [ai.context] : [])) : [];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", containerType: "inline-size", height: "calc(100vh - 124px)", maxHeight: "calc(100vh - 124px)" }}>
+    <div style={{ display: "flex", flexDirection: "column", containerType: "inline-size" }}>
       <ChatActions convId={conv.id} onClosed={() => { setConv(null); setMsgs([]); }} onChanged={(c) => setConv(c)} />
       {/* СТРІЧКА — заповнює доступну висоту */}
-      <div style={{ flex: "1 1 auto", minHeight: 100, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
+      <div style={{ height: "calc(100vh - 300px)", minHeight: 160, maxHeight: "calc(100vh - 170px)", resize: "vertical", overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
         {msgs.length === 0 && <div className="muted" style={{ fontSize: 13 }}>Повідомлень поки немає</div>}
         {msgs.map((m) => (
           <div key={m.id} style={{ alignSelf: m.direction === "in" ? "flex-start" : "flex-end", maxWidth: "82%" }}>
