@@ -60,7 +60,7 @@ class TelegramAdapter(ChannelAdapter):
         name = " ".join(x for x in [party.get("first_name"), party.get("last_name")] if x) \
             or party.get("username") or party.get("title") or chat_id
         uname = party.get("username")
-        link = ("https://t.me/" + uname) if uname else ("tg://user?id=" + chat_id if chat_id else "")
+        link = ("https://t.me/" + uname) if uname else ""
         attachments = []
         if "photo" in msg:
             attachments.append({"type": "photo", "file_id": msg["photo"][-1]["file_id"]})
