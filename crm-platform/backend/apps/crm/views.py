@@ -271,6 +271,27 @@ class LeadViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     search_fields = ["title", "contact__phone", "contact__first_name", "contact__last_name"]
 
 
+def _advance_deal_stage(deal, target_order, reason, actor="Автоматизація"):
+    """Рух сделки на стадію за order (тільки вперед). Лог + stage_changed_at."""
+    if not deal.stage_id or not deal.funnel_id:
+        return False
+    if deal.stage.order >= target_order:
+        return False
+    target = deal.funnel.stages.filter(order=target_order).first()
+    if not target:
+        return False
+    from .models import log_activity
+    from django.utils import timezone as _tz
+    old = deal.stage.name
+    deal.stage = target
+    flds = ["stage"]
+    if hasattr(deal, "stage_changed_at"):
+        deal.stage_changed_at = _tz.now(); flds.append("stage_changed_at")
+    deal.save(update_fields=flds)
+    log_activity("deal", deal.id, "Авто-стадія", "%s → %s (%s)" % (old, target.name, reason), None, actor)
+    return True
+
+
 class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     log_kind = "deal"
     queryset = Deal.objects.select_related("owner", "contact", "funnel", "stage")
