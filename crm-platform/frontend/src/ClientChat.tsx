@@ -82,10 +82,10 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
   const pts = ai ? (ai.points && ai.points.length ? ai.points : (ai.context ? [ai.context] : [])) : [];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", containerType: "inline-size" }}>
+    <div style={{ display: "flex", flexDirection: "column", containerType: "inline-size", height: "calc(100vh - 124px)", maxHeight: "calc(100vh - 124px)" }}>
       <ChatActions convId={conv.id} onClosed={() => { setConv(null); setMsgs([]); }} onChanged={(c) => setConv(c)} />
       {/* СТРІЧКА — заповнює доступну висоту */}
-      <div style={{ height: 340, minHeight: 140, maxHeight: "70vh", resize: "vertical", overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
+      <div style={{ flex: "1 1 auto", minHeight: 100, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
         {msgs.length === 0 && <div className="muted" style={{ fontSize: 13 }}>Повідомлень поки немає</div>}
         {msgs.map((m) => (
           <div key={m.id} style={{ alignSelf: m.direction === "in" ? "flex-start" : "flex-end", maxWidth: "82%" }}>
@@ -101,7 +101,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
 
       {/* AI-РОП — тези + рекомендована відповідь */}
       {ai && (
-        <div style={{ marginTop: 8, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: 10 }}>
+        <div style={{ marginTop: 8, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: 10, maxHeight: 220, overflowY: "auto", flexShrink: 0 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#92400e", marginBottom: 6 }}>🧠 AI-РОП — що в діалозі</div>
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.5, color: "#334155" }}>
             {pts.map((p, i) => <li key={i} style={{ marginBottom: 3 }}>{p}</li>)}
@@ -120,7 +120,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
 
       {/* ПОЛЕ ВІДПОВІДІ — теж регульоване */}
       <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Відповідь клієнту…" rows={3}
-        style={{ width: "100%", fontSize: 13, padding: 9, borderRadius: 10, border: "1px solid #e2e8f0", marginTop: 8, boxSizing: "border-box", resize: "vertical", minHeight: 56 }} />
+        style={{ width: "100%", fontSize: 13, padding: 9, borderRadius: 10, border: "1px solid #e2e8f0", marginTop: 8, boxSizing: "border-box", resize: "vertical", minHeight: 56, flexShrink: 0 }} />
       <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={sendFile} />
       <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "nowrap" }}>
         <button className="btn" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title="Надіслати фото / відео" onClick={() => fileRef.current?.click()} disabled={busy}>📎</button>
