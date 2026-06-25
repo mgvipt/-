@@ -212,6 +212,36 @@ class LeadViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         log_activity("lead", lead.id, "Конвертовано в сделку", f"Сделка #{deal.id}", request.user, actor)
         log_activity("deal", deal.id, "Створено зі сделки", f"З ліда #{lead.id}", request.user, actor)
         return Response({"deal_id": deal.id})
+
+    @action(detail=True, methods=["post"])
+    def convert_to(self, request, pk=None):
+        """Конвертація ліда у сделку в конкретну воронку за вибором продукту (для AI-продавця).
+        body: {"product": "test"|"main"} або {"funnel": <id>}. Тест→«Тестовий набір», основний→«Основний продукт»."""
+        lead = self.get_object()
+        prod = (request.data.get("product") or "").lower()
+        fid = request.data.get("funnel")
+        funnel = None
+        if fid:
+            funnel = Funnel.objects.filter(id=fid, is_lead_funnel=False).first()
+        elif prod in ("test", "тест", "пробник", "набір", "зразок"):
+            funnel = Funnel.objects.filter(is_lead_funnel=False, name__icontains="Тестовий набір").first()
+        elif prod in ("main", "основной", "основний"):
+            funnel = Funnel.objects.filter(is_lead_funnel=False, name__icontains="Основний продукт").first()
+        if not funnel:
+            funnel = Funnel.objects.filter(is_lead_funnel=False).order_by("order", "id").first()
+        if not funnel:
+            return Response({"detail": "Немає воронки продажів"}, status=status.HTTP_400_BAD_REQUEST)
+        stage = funnel.stages.order_by("order").first()
+        deal = Deal.objects.create(
+            title=lead.title, contact=lead.contact, funnel=funnel, stage=stage,
+            amount=lead.amount, source=lead.source, owner=lead.owner,
+            qualification=lead.qualification, card_fields=lead.card_fields)
+        from .models import log_activity
+        actor = (request.user.get_full_name() or request.user.username) if request.user.is_authenticated else "AI"
+        u = request.user if request.user.is_authenticated else None
+        log_activity("lead", lead.id, "Конвертовано в сделку", "%s · сделка #%s" % (funnel.name, deal.id), u, actor)
+        log_activity("deal", deal.id, "Створено з ліда", "Воронка %s, лід #%s" % (funnel.name, lead.id), u, actor)
+        return Response({"deal_id": deal.id, "funnel": funnel.name})
     filterset_fields = ["funnel", "stage", "source", "is_seen", "owner", "contact"]
     search_fields = ["title", "contact__phone", "contact__first_name", "contact__last_name"]
 
