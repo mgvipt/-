@@ -189,6 +189,27 @@ class ActivityLogMixin:
         return resp
 
 
+def convert_lead_to_deal(lead, funnel, user, actor):
+    """Конвертація: гарантуємо контакт (створюємо якщо нема) -> створюємо сделку -> ВИДАЛЯЄМО лід."""
+    from .models import Contact, Deal, log_activity
+    contact = lead.contact
+    if not contact:
+        parts = (lead.title or "Клієнт").split()
+        contact = Contact.objects.create(
+            first_name=(parts[0][:150] if parts else "Клієнт"),
+            last_name=(" ".join(parts[1:])[:150] if len(parts) > 1 else ""),
+            source=lead.source or "other")
+    stage = funnel.stages.order_by("order").first()
+    deal = Deal.objects.create(
+        title=lead.title, contact=contact, funnel=funnel, stage=stage,
+        amount=lead.amount, source=lead.source, owner=lead.owner,
+        qualification=lead.qualification, card_fields=lead.card_fields)
+    log_activity("deal", deal.id, "Створено з ліда (лід видалено)",
+                 "Воронка %s · лід #%s · контакт #%s" % (funnel.name, lead.id, contact.id), user, actor)
+    lead.delete()
+    return deal
+
+
 class LeadViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     log_kind = "lead"
     queryset = Lead.objects.select_related("owner", "contact", "funnel", "stage")
@@ -202,15 +223,8 @@ class LeadViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         funnel = Funnel.objects.filter(is_lead_funnel=False).order_by("order", "id").first()
         if not funnel:
             return Response({"detail": "Немає воронки продажів"}, status=status.HTTP_400_BAD_REQUEST)
-        stage = funnel.stages.order_by("order").first()
-        deal = Deal.objects.create(
-            title=lead.title, contact=lead.contact, funnel=funnel, stage=stage,
-            amount=lead.amount, source=lead.source, owner=lead.owner,
-            qualification=lead.qualification, card_fields=lead.card_fields)
-        from .models import log_activity
         actor = request.user.get_full_name() or request.user.username
-        log_activity("lead", lead.id, "Конвертовано в сделку", f"Сделка #{deal.id}", request.user, actor)
-        log_activity("deal", deal.id, "Створено зі сделки", f"З ліда #{lead.id}", request.user, actor)
+        deal = convert_lead_to_deal(lead, funnel, request.user, actor)
         return Response({"deal_id": deal.id})
 
     @action(detail=True, methods=["post"])
@@ -231,16 +245,9 @@ class LeadViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             funnel = Funnel.objects.filter(is_lead_funnel=False).order_by("order", "id").first()
         if not funnel:
             return Response({"detail": "Немає воронки продажів"}, status=status.HTTP_400_BAD_REQUEST)
-        stage = funnel.stages.order_by("order").first()
-        deal = Deal.objects.create(
-            title=lead.title, contact=lead.contact, funnel=funnel, stage=stage,
-            amount=lead.amount, source=lead.source, owner=lead.owner,
-            qualification=lead.qualification, card_fields=lead.card_fields)
-        from .models import log_activity
         actor = (request.user.get_full_name() or request.user.username) if request.user.is_authenticated else "AI"
         u = request.user if request.user.is_authenticated else None
-        log_activity("lead", lead.id, "Конвертовано в сделку", "%s · сделка #%s" % (funnel.name, deal.id), u, actor)
-        log_activity("deal", deal.id, "Створено з ліда", "Воронка %s, лід #%s" % (funnel.name, lead.id), u, actor)
+        deal = convert_lead_to_deal(lead, funnel, u, actor)
         return Response({"deal_id": deal.id, "funnel": funnel.name})
     filterset_fields = ["funnel", "stage", "source", "is_seen", "owner", "contact"]
     search_fields = ["title", "contact__phone", "contact__first_name", "contact__last_name"]
