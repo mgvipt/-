@@ -168,7 +168,7 @@ export default function Inbox() {
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
               {msgs.map((m) => (
-                <div key={m.id} className={"msg" + (m.direction === "out" ? " me" : "")}
+                <div key={m.id} className={"msg" + (m.direction === "out" ? " msg-out" : " msg-in")}
                   style={{ maxWidth: "70%", padding: "9px 11px", borderRadius: 10, fontSize: 13,
                     alignSelf: m.direction === "out" ? "flex-end" : "flex-start",
                     background: m.direction === "out" ? "var(--brand)" : "#fff",
