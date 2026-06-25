@@ -4,6 +4,7 @@ import { useLang } from "../i18n";
 import { useAuth } from "../auth";
 import SettingsGlobalRules from "./SettingsGlobalRules";
 import SettingsAutomations from "./SettingsAutomations";
+import SettingsAgent from "./SettingsAgent";
 
 interface Prov { provider: string; fields: string[]; values: Record<string, string>; is_active: boolean; }
 
@@ -14,7 +15,7 @@ export default function Settings() {
   const [provs, setProvs] = useState<Prov[]>([]);
   const [edit, setEdit] = useState<Record<string, Record<string, string>>>({});
   const [saved, setSaved] = useState("");
-  const [tab, setTab] = useState<"integrations" | "automations" | "rules">("rules");
+  const [tab, setTab] = useState<"integrations" | "automations" | "rules" | "agent">("rules");
   const { can } = useAuth();
   const canRules = can("roles.manage");
 
@@ -33,11 +34,11 @@ export default function Settings() {
     load();
   }
 
-  const TABS: [string, string][] = [["rules", t("📋 Глобальные правила", "📋 Глобальні правила")], ["automations", t("⚙️ Автоматизации", "⚙️ Автоматизації")], ["integrations", t("🔌 Интеграции / Язык", "🔌 Інтеграції / Мова")]];
+  const TABS: [string, string][] = [["rules", t("📋 Глобальные правила", "📋 Глобальні правила")], ["automations", t("⚙️ Автоматизации", "⚙️ Автоматизації")], ["agent", t("🤖 AI-агент", "🤖 AI-агент")], ["integrations", t("🔌 Интеграции / Язык", "🔌 Інтеграції / Мова")]];
   return (
     <div className="scroll pad fade">
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        {TABS.map(([k, label]) => ((k === "rules" || k === "automations") && !canRules ? null : (
+        {TABS.map(([k, label]) => ((k === "rules" || k === "automations" || k === "agent") && !canRules ? null : (
           <button key={k} onClick={() => setTab(k as any)}
             style={{ fontSize: 14, fontWeight: tab === k ? 700 : 500, padding: "8px 16px", borderRadius: 10, cursor: "pointer",
               border: "1px solid " + (tab === k ? "var(--brand)" : "#e2e8f0"), background: tab === k ? "var(--brand)" : "#fff", color: tab === k ? "#fff" : "#475569" }}>{label}</button>
@@ -45,6 +46,7 @@ export default function Settings() {
       </div>
       {tab === "rules" && <SettingsGlobalRules />}
       {tab === "automations" && <SettingsAutomations />}
+      {tab === "agent" && <SettingsAgent />}
       {tab !== "integrations" ? null : (<>
       <div className="panel" style={{ margin: "0 0 12px", maxWidth: 360 }}>
         <div className="label" style={{ marginBottom: 6 }}>🌐 {t("Язык интерфейса", "Мова інтерфейсу")}</div>
