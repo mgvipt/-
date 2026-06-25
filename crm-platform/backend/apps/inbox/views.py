@@ -128,6 +128,27 @@ class ChannelViewSet(viewsets.ModelViewSet):
         return qs if allowed is None else qs.filter(id__in=allowed)
 
 
+def _close_contact_leads(contact_id):
+    """При завершенні чату — фіналізувати відкриті ліди контакту (в lost),
+    щоб не лишались дублі і аналітика рахувала їх як неконвертовані."""
+    if not contact_id:
+        return
+    from apps.crm.models import Lead, Funnel, log_activity
+    lf = Funnel.objects.filter(is_lead_funnel=True).first()
+    if not lf:
+        return
+    lost = (lf.stages.filter(is_lost=True).order_by("-order").first()
+            or lf.stages.filter(name__icontains="Не вдалося").first()
+            or lf.stages.order_by("-order").first())
+    if not lost:
+        return
+    for ld in Lead.objects.filter(contact_id=contact_id, funnel=lf).exclude(stage__is_lost=True).exclude(stage__is_won=True):
+        old = ld.stage.name
+        ld.stage = lost
+        ld.save(update_fields=["stage"])
+        log_activity("lead", ld.id, "Закрито разом з чатом", "%s → %s" % (old, lost.name), None, "Система")
+
+
 class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Conversation.objects.select_related("channel", "contact", "assigned_to").prefetch_related("participants")
     serializer_class = ConversationSerializer
@@ -177,9 +198,11 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     def bulk_close(self, request):
         """Масово завершити вибрані діалоги (тільки ті, що видно користувачу)."""
         ids = request.data.get("ids") or []
-        allowed = list(self.get_queryset().filter(id__in=ids).values_list("id", flat=True))
-        Conversation.objects.filter(id__in=allowed).update(status="closed")
-        return Response({"closed": len(allowed)})
+        rows = list(self.get_queryset().filter(id__in=ids).values("id", "contact_id"))
+        Conversation.objects.filter(id__in=[r["id"] for r in rows]).update(status="closed")
+        for r in rows:
+            _close_contact_leads(r["contact_id"])
+        return Response({"closed": len(rows)})
 
     @action(detail=True, methods=["post"])
     def assign(self, request, pk=None):
@@ -198,6 +221,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         conv = self.get_object()
         conv.status = "closed"
         conv.save(update_fields=["status"])
+        _close_contact_leads(conv.contact_id)
         return Response(ConversationSerializer(conv).data)
 
     @action(detail=True, methods=["post"])
