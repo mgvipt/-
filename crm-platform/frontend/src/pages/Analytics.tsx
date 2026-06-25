@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useLang } from "../i18n";
+import { useAuth } from "../auth";
 
 /* ─── ТИПЫ ─────────────────────────────────────────────────────────────── */
 interface SalesData {
@@ -152,16 +153,19 @@ function SalesTab() {
 /* ─── ВКЛАДКА СКЛАД ────────────────────────────────────────────────────── */
 function StockTab() {
   const { t } = useLang();
+  const { can } = useAuth();
+  const showCost = can("product.cost.view");
   const [d, setD] = useState<InvData | null>(null);
   useEffect(() => { api.get<InvData>("/api/analytics/inventory/").then(setD); }, []);
   if (!d) return <div className="spin">{t("Загрузка склада…","Завантаження складу…")}</div>;
-  const cards: [string, string][] = [
-    [t("Запас по закупке","Запас по закупці"), fmt(d.value_cost) + " ₴"],
-    [t("Запас по рознице","Запас по роздрібу"), fmt(d.value_retail) + " ₴"],
-    [t("Потенц. маржа","Потенц. маржа"), fmt(d.potential_margin) + " ₴"],
-    [t("Позиций в наличии","Позицій в наявності"), fmt(d.in_stock) + " / " + fmt(d.total_items)],
-    [t("Нет в наличии","Немає в наявності"), fmt(d.out_stock)],
+  const allCards: [string, string, boolean][] = [
+    [t("Запас по закупке","Запас по закупці"), fmt(d.value_cost) + " ₴", showCost],
+    [t("Запас по рознице","Запас по роздрібу"), fmt(d.value_retail) + " ₴", true],
+    [t("Потенц. маржа","Потенц. маржа"), fmt(d.potential_margin) + " ₴", showCost],
+    [t("Позиций в наличии","Позицій в наявності"), fmt(d.in_stock) + " / " + fmt(d.total_items), true],
+    [t("Нет в наличии","Немає в наявності"), fmt(d.out_stock), true],
   ];
+  const cards = allCards.filter((c) => c[2]);
   return (
     <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 14 }}>
@@ -170,9 +174,9 @@ function StockTab() {
       <div className="panel" style={{ margin: 0 }}>
         <b style={{ fontSize: 14 }}>{t("Запасы по категориям","Запаси по категоріях")}</b>
         <table style={{ marginTop: 8 }}>
-          <thead><tr><th>{t("Категория","Категорія")}</th><th>{t("Позиций","Позицій")}</th><th>{t("Кол-во","К-сть")}</th><th>{t("По закупке","По закупці")}</th><th>{t("По рознице","По роздрібу")}</th></tr></thead>
+          <thead><tr><th>{t("Категория","Категорія")}</th><th>{t("Позиций","Позицій")}</th><th>{t("Кол-во","К-сть")}</th>{showCost && <th>{t("По закупке","По закупці")}</th>}<th>{t("По рознице","По роздрібу")}</th></tr></thead>
           <tbody>{d.by_category.map((c, i) => (
-            <tr key={i}><td>{c.name}</td><td>{c.items}</td><td>{c.qty.toLocaleString("ru")}</td><td>{fmt(c.cost)} ₴</td><td><b>{fmt(c.retail)} ₴</b></td></tr>
+            <tr key={i}><td>{c.name}</td><td>{c.items}</td><td>{c.qty.toLocaleString("ru")}</td>{showCost && <td>{fmt(c.cost)} ₴</td>}<td><b>{fmt(c.retail)} ₴</b></td></tr>
           ))}</tbody>
         </table>
       </div>

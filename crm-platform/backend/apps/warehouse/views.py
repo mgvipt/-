@@ -86,14 +86,15 @@ class InventoryAnalyticsView(APIView):
             else:
                 out_stock += 1
         cats = sorted(by_cat.items(), key=lambda kv: -kv[1]["retail"])
+        _cc = getattr(request.user, "is_superuser", False) or (hasattr(request.user, "has_perm_code") and request.user.has_perm_code("product.cost.view"))
         return Response({
             "total_items": total_items, "in_stock": in_stock, "out_stock": out_stock,
             "total_qty": round(float(total_qty), 1),
-            "value_cost": round(float(val_cost)),
+            "value_cost": round(float(val_cost)) if _cc else None,
             "value_retail": round(float(val_retail)),
-            "potential_margin": round(float(val_retail - val_cost)),
+            "potential_margin": round(float(val_retail - val_cost)) if _cc else None,
             "by_category": [{"name": k, "items": v["items"], "qty": round(v["qty"], 1),
-                             "cost": round(v["cost"]), "retail": round(v["retail"])}
+                             "cost": round(v["cost"]) if _cc else None, "retail": round(v["retail"])}
                             for k, v in cats],
         })
 
