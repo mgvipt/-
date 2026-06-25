@@ -14,8 +14,12 @@ BUY_KEYWORDS = [
 ]
 
 
+_NEG = ["не ", "поки не", "ще не", "не хочу", "не буду", "нет", "ні,"]
+
 def is_buy_intent(text: str) -> bool:
     t = (text or "").lower()
+    if any(n in t for n in _NEG):  # BUG-5: «не готов», «поки не беру» — не вважати готовністю
+        return False
     return any(k in t for k in BUY_KEYWORDS)
 
 
@@ -32,7 +36,11 @@ def _advance(entity, kind: str, trigger: str) -> bool:
         return False
     old = entity.stage.name
     entity.stage = rule.to_stage
-    entity.save(update_fields=["stage"])
+    _flds = ["stage"]
+    if hasattr(entity, "stage_changed_at"):
+        from django.utils import timezone as _tz
+        entity.stage_changed_at = _tz.now(); _flds.append("stage_changed_at")
+    entity.save(update_fields=_flds)
     label = dict(AutomationRule.TRIGGERS).get(trigger, trigger)
     log_activity(kind, entity.id, "Авто-стадія", f"{old} → {rule.to_stage.name} (тригер: {label})", None, "Автоматизація")
     return True

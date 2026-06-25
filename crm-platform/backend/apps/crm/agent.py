@@ -23,7 +23,7 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {"why": {"type": "string"}}, "required": []}},
 ]
 
-DEPT_BY_KIND = {"warehouse": "Склад", "tinting": "Тонуванн", "manager": "Продаж"}
+DEPT_BY_KIND = {"warehouse": "Склад", "tinting": "Виробництв", "manager": "продаж"}
 
 
 def _call(system, user_text, model, max_tokens=1200):
@@ -88,8 +88,8 @@ def _move_stage(entity, kind, to_name, reason, user, autonomous):
     if target.order <= entity.stage.order:
         return {"ok": False, "msg": "не вперед"}
     if target.order > entity.stage.order + 1:
-        # тільки на сусідню — беремо наступну
-        target = funnel.stages.filter(order=entity.stage.order + 1).first() or target
+        # тільки на наступну існуючу стадію (захист від дір у order)
+        target = funnel.stages.filter(order__gt=entity.stage.order).order_by("order").first() or target
     if not autonomous:
         return {"ok": False, "proposed": "→ %s: %s" % (target.name, reason)}
     old = entity.stage.name

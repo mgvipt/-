@@ -220,6 +220,9 @@ def convert_lead_to_deal(lead, funnel, user, actor):
         qualification=lead.qualification, card_fields=lead.card_fields)
     log_activity("deal", deal.id, "Створено з ліда (лід видалено)",
                  "Воронка %s · лід #%s · контакт #%s" % (funnel.name, lead.id, contact.id), user, actor)
+    # BUG-1 фікс: перенести задачі ліда на сделку (раніше каскад видаляв їх разом з лідом)
+    from .models import Task
+    Task.objects.filter(lead=lead).update(lead=None, deal=deal)
     lead.delete()
     return deal
 
