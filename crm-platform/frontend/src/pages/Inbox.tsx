@@ -5,6 +5,14 @@ import { Avatar, SourceChip } from "../ui";
 import { useAuth } from "../auth";
 import { useLang } from "../i18n";
 
+function linkify(text: string, out: boolean) {
+  return String(text || "").split(/(https?:\/\/[^\s]+)/g).map((p, i) =>
+    /^https?:\/\//.test(p)
+      ? <a key={i} href={p} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: out ? "#fff" : "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}>{p}</a>
+      : <span key={i}>{p}</span>);
+}
+
+
 export default function Inbox() {
   const { can } = useAuth();
   const { t } = useLang();
@@ -177,7 +185,7 @@ export default function Inbox() {
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: .2, marginBottom: 4, paddingBottom: 3, borderBottom: m.direction === "out" ? "1px solid rgba(255,255,255,.3)" : "1px solid rgba(0,0,0,.08)", color: m.direction === "out" ? "rgba(255,255,255,.72)" : "var(--brand)" }}>
                     {m.sender_name || (m.direction === "out" ? t("Менеджер","Менеджер") : (active?.title || t("Клиент","Клієнт")))}
                   </div>
-                  {m.text}
+                  <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{linkify(m.text, m.direction === "out")}</span>
                   {m.attachments?.map((a, i) => (
                     <div key={i} style={{ fontSize: 11, opacity: .8, marginTop: 4 }}>
                       📎 {a.type === "voice" ? t(`голосовое ${a.duration ?? ""}с`,`голосове ${a.duration ?? ""}с`) : a.type}
