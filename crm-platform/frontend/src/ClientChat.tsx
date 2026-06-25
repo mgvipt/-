@@ -3,6 +3,7 @@
  * тези діалогу + рекомендовану відповідь прямо тут. */
 import { useEffect, useRef, useState } from "react";
 import { api, ChatMessage, Conversation, Paginated } from "./api";
+import ChatActions from "./ChatActions";
 
 export default function ClientChat({ contact }: { contact?: number | null }) {
   const [conv, setConv] = useState<Conversation | null>(null);
@@ -82,6 +83,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
+      <ChatActions convId={conv.id} onClosed={() => { setConv(null); setMsgs([]); }} onChanged={(c) => setConv(c)} />
       {/* СТРІЧКА — заповнює доступну висоту */}
       <div style={{ height: 340, minHeight: 140, maxHeight: "70vh", resize: "vertical", overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
         {msgs.length === 0 && <div className="muted" style={{ fontSize: 13 }}>Повідомлень поки немає</div>}

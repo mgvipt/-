@@ -30,6 +30,7 @@ export default function Inbox() {
   const [nextUrl, setNextUrl] = useState<string | null>(null);
   const [picker, setPicker] = useState<null | "transfer" | "add">(null);
   const [emps, setEmps] = useState<{ id: number; full_name: string }[]>([]);
+  const [menu, setMenu] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<Conversation | null>(null);
 
@@ -139,6 +140,19 @@ export default function Inbox() {
     setPicker(null);
   }
 
+  const mItem: any = { padding: "10px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f8fafc" };
+  async function takeConv() {
+    if (!active) return;
+    try { const c = await api.post<Conversation>(`/api/conversations/${active.id}/take/`, {}); setActive(c); setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, ...c } : x))); } catch { setErr(t("Не удалось","Не вдалося")); }
+    setMenu(false);
+  }
+  async function closeConv() {
+    if (!active) return;
+    try { await api.post<any>(`/api/conversations/${active.id}/close/`, {}); setConvs((cs) => cs.filter((x) => x.id !== active.id)); setActive(null); setMsgs([]); } catch { setErr(t("Не удалось","Не вдалося")); }
+    setMenu(false);
+  }
+  function goToContact() { setMenu(false); if (active?.contact) nav(`/clients/${active.contact}`); }
+
   return (
     <div className="inbox fade" style={{ height: "100%", display: "grid", gridTemplateColumns: "300px 1fr 340px" }}>
       {/* список диалогов */}
@@ -207,7 +221,17 @@ export default function Inbox() {
               {active.contact && <button className="btn btn-primary" style={{ marginLeft: 8 }} onClick={goToCard}>{t("🤝 В карточку","🤝 В картку")}</button>}
               <button className="btn" style={{ marginLeft: 8, background: "#fff7ed", color: "#c2410c", fontWeight: 600 }} onClick={() => setPicker(picker === "transfer" ? null : "transfer")}>{t("↪ Переадресовать","↪ Переадресувати")}</button>
               <button className="btn" style={{ marginLeft: 8, background: "#eef2ff", color: "#4338ca", fontWeight: 600 }} onClick={() => setPicker(picker === "add" ? null : "add")}>{t("➕ Менеджер","➕ Менеджер")}</button>
+              <button className="btn" style={{ marginLeft: 8, background: "#f1f5f9", fontWeight: 700, fontSize: 17, lineHeight: 1, padding: "0 12px" }} onClick={() => setMenu((m) => !m)} title={t("Ещё","Ще")}>⋯</button>
             </div>
+            {menu && (<>
+              <div onClick={() => setMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+              <div style={{ position: "fixed", top: 104, right: 360, width: 260, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 14px 36px rgba(0,0,0,.18)", zIndex: 41, overflow: "hidden" }}>
+                <div onClick={takeConv} style={mItem}>📌 {t("Закрепить за мной","Закріпити за мною")}</div>
+                {active.contact && <div onClick={goToContact} style={mItem}>👤 {t("Перейти в контакт","Перейти в контакт")}</div>}
+                {active.contact && <div onClick={() => { setMenu(false); goToCard(); }} style={mItem}>🤝 {t("Перейти в сделку","Перейти в угоду")}</div>}
+                <div onClick={closeConv} style={{ ...mItem, color: "#dc2626", borderTop: "1px solid #f1f5f9", fontWeight: 600 }}>✅ {t("Завершить диалог","Завершити діалог")}</div>
+              </div>
+            </>)}
             {picker && (<>
               <div onClick={() => setPicker(null)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
               <div style={{ position: "fixed", top: 104, right: 360, width: 300, maxHeight: 420, overflowY: "auto", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 14px 36px rgba(0,0,0,.18)", zIndex: 41 }}>

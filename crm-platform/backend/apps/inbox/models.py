@@ -38,7 +38,6 @@ class Conversation(models.Model):
 
     class Meta:
         ordering = ["-last_message_at", "-created_at"]
-        unique_together = [("channel", "external_chat_id")]
 
     def __str__(self):
         return self.title or f"Диалог #{self.pk}"

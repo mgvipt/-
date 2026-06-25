@@ -6,10 +6,14 @@ from .models import Channel, Conversation, Message
 
 def ingest(channel: Channel, inc: IncomingMessage) -> Message:
     """Принять входящее сообщение: создать/найти диалог и контакт, записать сообщение."""
-    conv, created = Conversation.objects.get_or_create(
-        channel=channel, external_chat_id=inc.external_chat_id,
-        defaults={"title": inc.sender_name},
-    )
+    # Беремо лише ВІДКРИТИЙ діалог. Якщо менеджер завершив попередній — новий лист
+    # від клієнта створює НОВИЙ діалог (і новий лід нижче).
+    conv = (Conversation.objects.filter(channel=channel, external_chat_id=inc.external_chat_id, status="open")
+            .order_by("-created_at").first())
+    created = conv is None
+    if created:
+        conv = Conversation.objects.create(channel=channel, external_chat_id=inc.external_chat_id,
+                                           title=inc.sender_name or "")
     if created:
         # на канале без телефона (Telegram) заводим контакт по имени и помечаем канал
         contact = Contact.objects.create(first_name=inc.sender_name, channels=[channel.kind], social_link=(inc.social_link or ""), phone=(getattr(inc, "phone", "") or ""))

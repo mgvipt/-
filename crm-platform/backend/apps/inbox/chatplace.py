@@ -84,8 +84,11 @@ def sync_chats(max_chats=40, per_chat=40):
         name = (it.get("clientName") or "Instagram").strip()
         if not cid:
             continue
-        conv, created = Conversation.objects.get_or_create(channel=ch, external_chat_id=str(cid),
-                                                           defaults={"title": name[:160]})
+        conv = (Conversation.objects.filter(channel=ch, external_chat_id=str(cid), status="open")
+                .order_by("-created_at").first())
+        created = conv is None
+        if created:
+            conv = Conversation.objects.create(channel=ch, external_chat_id=str(cid), title=name[:160])
         if created:
             new_conv += 1
             if name and not name.startswith("@"):

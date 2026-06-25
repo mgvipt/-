@@ -150,6 +150,8 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(Q(assigned_to=user) | Q(participants=user))
         elif scope == "unassigned":
             qs = qs.filter(assigned_to__isnull=True)
+        if self.request.query_params.get("status") is None and self.action == "list":
+            qs = qs.exclude(status="closed")
         return qs.distinct()
 
     @action(detail=True, methods=["post"])
@@ -160,6 +162,22 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         if not (u.can_see_all_conversations() or u.has_perm_code("roles.manage") or conv.assigned_to_id == u.id):
             return Response({"detail": "Нет прав на переброс чата"}, status=status.HTTP_403_FORBIDDEN)
         conv.assigned_to_id = request.data.get("user_id") or None
+        conv.save(update_fields=["assigned_to"])
+        return Response(ConversationSerializer(conv).data)
+
+    @action(detail=True, methods=["post"])
+    def close(self, request, pk=None):
+        """Завершити діалог. Наступний лист клієнта створить НОВИЙ діалог + лід."""
+        conv = self.get_object()
+        conv.status = "closed"
+        conv.save(update_fields=["status"])
+        return Response(ConversationSerializer(conv).data)
+
+    @action(detail=True, methods=["post"])
+    def take(self, request, pk=None):
+        """Закріпити діалог за собою (стати відповідальним)."""
+        conv = self.get_object()
+        conv.assigned_to = request.user
         conv.save(update_fields=["assigned_to"])
         return Response(ConversationSerializer(conv).data)
 
