@@ -78,6 +78,7 @@ export default function Board({ endpoint, funnel, query }: { endpoint: string; f
                     )}
                     <div className="ttl">{c.title}</div>
                     <div className="price">{Number(c.amount).toLocaleString("ru")} грн.</div>
+                    {(c as any).created_at && <div className="muted" style={{ fontSize: 10.5, marginBottom: 5 }}>🕓 {new Date((c as any).created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>}
                     <SourceChip source={c.source} />
                     {c.owner_name && (
                       <div className="owner"><Avatar name={c.owner_name} />{c.owner_name}</div>
