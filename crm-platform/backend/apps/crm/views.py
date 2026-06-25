@@ -237,7 +237,7 @@ class LeadViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     def convert(self, request, pk=None):
         """Конвертувати лід у сделку (той самий контакт/owner)."""
         lead = self.get_object()
-        funnel = (Funnel.objects.filter(is_lead_funnel=False, name__icontains="Основний продукт").first()
+        funnel = (Funnel.objects.filter(is_lead_funnel=False, name__icontains="Основний продукт").exclude(name__contains="·").first()
                   or Funnel.objects.filter(is_lead_funnel=False).order_by("order", "id").first())
         if not funnel:
             return Response({"detail": "Немає воронки продажів"}, status=status.HTTP_400_BAD_REQUEST)
@@ -256,9 +256,9 @@ class LeadViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         if fid:
             funnel = Funnel.objects.filter(id=fid, is_lead_funnel=False).first()
         elif prod in ("test", "тест", "пробник", "набір", "зразок"):
-            funnel = Funnel.objects.filter(is_lead_funnel=False, name__icontains="Тестовий набір").first()
+            funnel = Funnel.objects.filter(is_lead_funnel=False, name__icontains="Тестовий набір").exclude(name__contains="·").first()
         elif prod in ("main", "основной", "основний"):
-            funnel = Funnel.objects.filter(is_lead_funnel=False, name__icontains="Основний продукт").first()
+            funnel = Funnel.objects.filter(is_lead_funnel=False, name__icontains="Основний продукт").exclude(name__contains="·").first()
         if not funnel:
             funnel = Funnel.objects.filter(is_lead_funnel=False).order_by("order", "id").first()
         if not funnel:
