@@ -220,7 +220,8 @@ class LeadViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     def convert(self, request, pk=None):
         """Конвертувати лід у сделку (той самий контакт/owner)."""
         lead = self.get_object()
-        funnel = Funnel.objects.filter(is_lead_funnel=False).order_by("order", "id").first()
+        funnel = (Funnel.objects.filter(is_lead_funnel=False, name__icontains="Основний продукт").first()
+                  or Funnel.objects.filter(is_lead_funnel=False).order_by("order", "id").first())
         if not funnel:
             return Response({"detail": "Немає воронки продажів"}, status=status.HTTP_400_BAD_REQUEST)
         actor = request.user.get_full_name() or request.user.username
@@ -337,6 +338,10 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         amount = Decimal(str(request.data.get("amount") or deal.amount))
         provider = request.data.get("provider", "cash")
         account = Account.objects.filter(pk=request.data.get("account")).first()
+        from django.utils import timezone as _tz
+        from datetime import timedelta as _td
+        if Payment.objects.filter(deal=deal, amount=amount, provider=provider, created_at__gte=_tz.now() - _td(seconds=20)).exists():
+            return Response(DealDetailSerializer(deal, context={"request": request}).data)
         pay = Payment.objects.create(deal=deal, provider=provider, amount=amount, is_paid=True)
         record_income(amount, deal=deal, account=account, payment=pay)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
@@ -378,6 +383,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         items = list(deal.items.select_related("product"))
         if not items:
             return Response({"detail": "В сделке нет товаров"}, status=status.HTTP_400_BAD_REQUEST)
+        if StockDocument.objects.filter(kind="out", deal=deal).exists():
+            return Response({"detail": "Сделку вже відвантажено"}, status=status.HTTP_409_CONFLICT)
         wh = Warehouse.objects.filter(is_default=True).first() or Warehouse.objects.first()
         doc = StockDocument.objects.create(kind="out", number=f"РН-{deal.id}", warehouse=wh,
                                            deal=deal, comment=f"Відвантаження по угоді #{deal.id}",

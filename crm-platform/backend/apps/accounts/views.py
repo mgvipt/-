@@ -90,6 +90,8 @@ class AcceptInviteView(APIView):
         pwd = request.data.get("password") or ""
         if len(pwd) < 6:
             return Response({"detail": "Пароль мінімум 6 символів"}, status=status.HTTP_400_BAD_REQUEST)
+        if inv.email and User.objects.filter(email__iexact=inv.email).exists():
+            return Response({"detail": "Користувач з таким email вже існує"}, status=status.HTTP_400_BAD_REQUEST)
         base_un = (inv.email.split("@")[0] or "user").lower()
         un = base_un; i = 1
         while User.objects.filter(username=un).exists():

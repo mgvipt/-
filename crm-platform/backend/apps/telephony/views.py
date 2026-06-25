@@ -26,7 +26,7 @@ class CallViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def stats(self, request):
-        qs = Call.objects.all()
+        qs = self.get_queryset()
         total = qs.count()
         recorded = qs.exclude(recording_url="").count()
         missed = qs.filter(direction="missed").count()

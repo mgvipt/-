@@ -113,8 +113,11 @@ class InventorySheetView(APIView):
         now = timezone.now()
         d_from = request.GET.get("from") or now.replace(day=1).date().isoformat()
         d_to = request.GET.get("to") or now.date().isoformat()
-        df = date.fromisoformat(d_from)
-        dt = date.fromisoformat(d_to)
+        try:
+            df = date.fromisoformat(d_from)
+            dt = date.fromisoformat(d_to)
+        except (ValueError, TypeError):
+            return Response({"detail": "Невірний формат дати", "from": d_from, "to": d_to, "rows": []}, status=400)
         agg = (StockMovement.objects.filter(product_id__in=ids).values("product_id").annotate(
             opening=Coalesce(Sum("quantity", filter=Q(document__created_at__date__lt=df)), Decimal("0")),
             received=Coalesce(Sum("quantity", filter=Q(quantity__gt=0,
