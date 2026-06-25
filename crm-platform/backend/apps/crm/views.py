@@ -488,6 +488,67 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         return Response({"ok": True, "sent": sent, "url": url, "text": text})
 
     @action(detail=True, methods=["post"])
+    def issue_checkbox(self, request, pk=None):
+        """Створити РЕАЛЬНИЙ фіскальний чек Checkbox (ДПС) + надіслати клієнту.
+        Аванс-чек якщо оплата < суми товарів; інакше повний sell-чек."""
+        from django.conf import settings as _s
+        from . import checkbox as cb
+        from .models import log_activity
+        deal = self.get_object()
+        if not (_s.CHECKBOX_LICENSE_KEY and _s.CHECKBOX_PASSWORD):
+            return Response({"detail": "Checkbox не налаштовано (немає ключів)"}, status=status.HTTP_400_BAD_REQUEST)
+        # ідемпотентність: якщо чек уже є і не force — не дублюємо
+        if deal.checkbox_receipt_id and not request.data.get("force"):
+            return Response({"ok": True, "already": True, "url": deal.checkbox_url, "status": deal.checkbox_status})
+        # товари → goods (копійки, кількість у мілі-одиницях)
+        goods = []
+        for it in deal.items.all():
+            nm = (getattr(it.product, "name", None) or "Товар")[:200]
+            goods.append({"good": {"code": str(getattr(it, "product_id", None) or it.id), "name": nm,
+                                   "price": int(round(float(it.price) * 100))},
+                          "quantity": int(round(float(it.quantity) * 1000))})
+        if not goods:
+            goods = [{"good": {"code": "DEAL-%s" % deal.id, "name": (deal.title or "Замовлення Wallcov")[:200],
+                               "price": int(round(float(deal.amount or 0) * 100))}, "quantity": 1000}]
+        goods_total = sum(g["good"]["price"] * g["quantity"] // 1000 for g in goods)
+        paid = sum((p.amount for p in Payment.objects.filter(deal=deal, is_paid=True)), Decimal("0"))
+        paid_kop = int(round(float(paid) * 100))
+        if paid_kop <= 0:
+            return Response({"detail": "Немає оплачених платежів — чек не створюється"}, status=status.HTTP_400_BAD_REQUEST)
+        last = Payment.objects.filter(deal=deal, is_paid=True).order_by("-id").first()
+        pm = "CASH" if (last and last.provider == "cash") else "CASHLESS"
+        advance = paid_kop < goods_total  # часткова оплата → аванс-чек
+        ext = "WCCRM-%s" % deal.id
+        client_name = getattr(deal.contact, "name", None) if deal.contact_id else None
+        try:
+            r = cb.create_receipt(goods, paid_kop, ext, payment_method=pm, advance=advance,
+                                  client_name=client_name, relation_id=(deal.checkbox_relation_id or None),
+                                  ttn=(deal.ttn or None))
+        except cb.CheckboxError as e:
+            log_activity("deal", deal.id, "Checkbox помилка", str(e)[:400], request.user, "Checkbox")
+            return Response({"detail": "Checkbox: %s" % e}, status=status.HTTP_502_BAD_GATEWAY)
+        deal.checkbox_status = "аванс" if advance else "фіскальний"
+        deal.checkbox_url = r["url"]
+        deal.checkbox_receipt_id = r["id"]
+        if r["relation_id"]:
+            deal.checkbox_relation_id = r["relation_id"]
+        deal.save(update_fields=["checkbox_status", "checkbox_url", "checkbox_receipt_id", "checkbox_relation_id"])
+        # надіслати чек клієнту
+        sent = False
+        if deal.contact_id and r["url"]:
+            from apps.inbox.models import Conversation
+            from apps.inbox.services import send_message
+            conv = Conversation.objects.filter(contact_id=deal.contact_id, status="open").order_by("-last_message_at").first()
+            if conv:
+                try:
+                    send_message(conv, "Дякуємо за оплату! 🧾 Ваш фіскальний чек: %s" % r["url"], user=request.user)
+                    sent = True
+                except Exception:
+                    pass
+        log_activity("deal", deal.id, "Чек Checkbox", "%s · %s грн · фіскальний код %s · %s" % (deal.checkbox_status, paid, r.get("fiscal_code") or "—", "надіслано клієнту" if sent else "створено"), request.user, "Checkbox")
+        return Response({"ok": True, "url": r["url"], "fiscal_code": r.get("fiscal_code"), "sent": sent, "status": deal.checkbox_status})
+
+    @action(detail=True, methods=["post"])
     def ai_suggest(self, request, pk=None):
         """AI-помічник: аналіз діалогу + готова відповідь клієнту (Claude)."""
         deal = self.get_object()

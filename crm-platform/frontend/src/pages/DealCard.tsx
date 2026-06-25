@@ -198,7 +198,17 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   // TODO боевой режим: завести @action в DealViewSet поверх integrations/adapters.py
   //      (np_create_ttn / checkbox_create_receipt / liqpay_checkout_link). Сейчас — заглушки.
   async function createTTN() { await patch({ ttn: "НП " + Math.floor(2e13 + Math.random() * 1e13) }); flash(t("✓ ТТН Нова Пошта создана","✓ ТТН Нова Пошта створена")); }
-  async function issueCheckbox() { await patch({ checkbox_status: deal?.paid && deal.paid < Number(deal.amount) ? "аванс" : "финальный" }); flash(t("✓ Чек Checkbox сформирован","✓ Чек Checkbox сформовано")); }
+  async function issueCheckbox() {
+    try {
+      const r = await api.post<any>(`/api/deals/${id}/issue_checkbox/`, {});
+      const d = await api.get<Deal>(`/api/deals/${id}/`); setDeal(d);
+      if (r.already) { flash(t("Чек уже создан","Чек вже створено")); return; }
+      flash(r.sent ? t("✓ Фискальный чек создан и отправлен клиенту","✓ Фіскальний чек створено і надіслано клієнту")
+                   : t("✓ Чек создан (нет открытого чата)","✓ Чек створено (немає чату для надсилання)"));
+    } catch (e: any) {
+      flash(t("Ошибка Checkbox: ","Помилка Checkbox: ") + (e?.response?.data?.detail || e?.message || ""));
+    }
+  }
   function sendPayLink() { flash(t("✓ Ссылка на оплату отправлена клиенту · cashflow.wallcovdec.com.ua","✓ Посилання на оплату надіслано клієнту · cashflow.wallcovdec.com.ua")); }
   useEffect(() => {
     if (!ncOpen || ncMode !== "pick" || !ncSearch.trim()) { setNcResults([]); return; }
@@ -422,7 +432,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           <div className="panel">
             <div className="label">{t("Доставка и документы","Доставка і документи")}</div>
             <div className="row"><span className="muted">{t("ТТН Нова Пошта","ТТН Нова Пошта")}</span><b>{deal.ttn || "—"}</b></div>
-            <div className="row"><span className="muted">{t("Чек Checkbox","Чек Checkbox")}</span><b>{hasCheck ? deal.checkbox_status : "—"}</b></div>
+            <div className="row"><span className="muted">{t("Чек Checkbox","Чек Checkbox")}</span>{(deal as any).checkbox_url ? <a href={(deal as any).checkbox_url} target="_blank" rel="noreferrer" style={{ fontWeight: 700, color: "#16a34a" }}>🧾 {t("відкрити чек","відкрити чек")}</a> : <b>{hasCheck ? deal.checkbox_status : "—"}</b>}</div>
             <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
               <span style={chip(hasCheck)}>{t("Чек","Чек")} {hasCheck ? "✓" : "—"}</span>
               <span style={chip(!!deal.ttn)}>{t("ТТН","ТТН")} {deal.ttn ? "✓" : "—"}</span>

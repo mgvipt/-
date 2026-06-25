@@ -12,6 +12,9 @@ TELEPHONY_WS = os.environ.get("TELEPHONY_WS", "")
 LIQPAY_PUBLIC_KEY = os.environ.get("LIQPAY_PUBLIC_KEY", "")
 LIQPAY_PRIVATE_KEY = os.environ.get("LIQPAY_PRIVATE_KEY", "")
 WALLCOV_IBAN = os.environ.get("WALLCOV_IBAN", "")
+CHECKBOX_API_BASE = os.environ.get("CHECKBOX_API_BASE", "https://api.checkbox.in.ua")
+CHECKBOX_PASSWORD = os.environ.get("CHECKBOX_PASSWORD", "")
+CHECKBOX_LICENSE_KEY = os.environ.get("CHECKBOX_LICENSE_KEY", "")
 DEBUG = os.environ.get("DEBUG", "1") == "1"
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "*").split(",")
 
