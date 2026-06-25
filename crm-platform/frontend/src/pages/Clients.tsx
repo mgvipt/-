@@ -9,7 +9,7 @@ interface Contact {
   source?: string; loyalty_tag?: string; owner_name?: string; created_at?: string;
 }
 
-const LOY_COLOR: Record<string, string> = { VIP: "#7c3aed", Активный: "#16a34a", Новый: "#2563eb", Спящий: "#d97706" };
+const LOY_COLOR: Record<string, string> = { VIP: "#7c3aed", Активний: "#16a34a", Новий: "#2563eb", Сплячий: "#d97706", Активный: "#16a34a", Новый: "#2563eb", Спящий: "#d97706" };
 
 export default function Clients() {
   const { t } = useLang();
@@ -46,7 +46,7 @@ export default function Clients() {
         <input placeholder={t("🔍 Имя / телефон / email","🔍 Імʼя / телефон / email")} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && apply()} style={{ flex: "1 1 220px", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           <span className="muted" style={{ fontSize: 12 }}>{t("Статус","Статус")}:</span>
-          {["VIP", "Активный", "Новый", "Спящий"].map((x) => {
+          {["VIP", "Активний", "Новий", "Сплячий"].map((x) => {
             const on = loys.includes(x);
             return <span key={x} onClick={() => setLoys((c) => on ? c.filter((y) => y !== x) : [...c, x])} style={{ cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 14, border: "1px solid " + (on ? "#2563eb" : "#cbd5e1"), background: on ? "#2563eb" : "#fff", color: on ? "#fff" : "#475569" }}>{x}</span>;
           })}

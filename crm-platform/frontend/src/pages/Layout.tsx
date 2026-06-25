@@ -198,7 +198,7 @@ export default function Layout() {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span className="muted" style={{ width: 74, fontSize: 12 }}>{t("Фон","Фон")}:</span>
-              {BGS.map((b) => <button key={b} className="swatch-lg" style={{ background: b, borderColor: theme.bg === b ? "#0f172a" : "#fff" }} onClick={() => setT({ bg: b })} />)}
+              {BGS.map((b) => <button key={b} className="swatch-lg" style={{ background: b, borderColor: theme.bg === b ? "#0f172a" : "#fff" }} onClick={() => setT({ bg: b, animBg: "none" })} />)}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span className="muted" style={{ width: 74, fontSize: 12 }}>{t("Верх","Верх")}:</span>

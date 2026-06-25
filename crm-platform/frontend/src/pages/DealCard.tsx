@@ -533,7 +533,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} style={{ width: "100%", height: 38, marginBottom: 16, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} />
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setPayOpen(false)}>{t("Отмена","Скасувати")}</button>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={acceptPayment}>{t("Провести","Провести")}</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={acceptPayment} disabled={sending}>{sending ? "…" : t("Провести","Провести")}</button>
             </div>
             <div className="muted" style={{ fontSize: 11, marginTop: 10 }}>{t("Создаст доходную транзакцию в Финансах.","Створить дохідну транзакцію у Фінансах.")}</div>
           </div>

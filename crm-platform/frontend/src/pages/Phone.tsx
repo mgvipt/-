@@ -91,8 +91,8 @@ export default function Phone() {
 
       {stats && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
-          {[[t("Всего","Всього"), stats.total], [t("С записью","Із записом"), stats.recorded], [t("Пропущенные","Пропущені"), stats.missed], [t("Ср. длительность","Сер. тривалість"), dur(stats.avg_seconds)]].map(([t, v]) => (
-            <div key={t} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{t}</div><div style={{ fontSize: 24, fontWeight: 700 }}>{v}</div></div>
+          {[[t("Всего","Всього"), stats.total], [t("С записью","Із записом"), stats.recorded], [t("Пропущенные","Пропущені"), stats.missed], [t("Ср. длительность","Сер. тривалість"), dur(stats.avg_seconds)]].map(([lbl, v]) => (
+            <div key={lbl} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{lbl}</div><div style={{ fontSize: 24, fontWeight: 700 }}>{v}</div></div>
           ))}
         </div>
       )}
