@@ -132,7 +132,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Conversation.objects.select_related("channel", "contact", "assigned_to").prefetch_related("participants")
     serializer_class = ConversationSerializer
     filterset_fields = ["channel", "status", "assigned_to", "contact"]
-    search_fields = ["title", "contact__first_name", "contact__phone"]
+    search_fields = ["title", "contact__first_name", "contact__last_name", "contact__phone", "contact__social_link"]
 
     def get_queryset(self):
         qs = super().get_queryset()

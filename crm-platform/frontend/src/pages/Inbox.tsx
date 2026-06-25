@@ -31,6 +31,7 @@ export default function Inbox() {
   const [picker, setPicker] = useState<null | "transfer" | "add">(null);
   const [emps, setEmps] = useState<{ id: number; full_name: string }[]>([]);
   const [menu, setMenu] = useState(false);
+  const [search, setSearch] = useState("");
   const [channels, setChannels] = useState<{ id: number; name: string }[]>([]);
   const [chFilter, setChFilter] = useState("");
   const [period, setPeriod] = useState("all");
@@ -44,6 +45,7 @@ export default function Inbox() {
     if (scope && scope !== "all") sp.set("scope", scope);
     if (chFilter) sp.set("channel", chFilter);
     if (period && period !== "all") sp.set("period", period);
+    if (search.trim()) sp.set("search", search.trim());
     return "?" + sp.toString();
   }
   async function loadConvs() {
@@ -69,6 +71,7 @@ export default function Inbox() {
     });
   }
   useEffect(() => { loadConvs(); }, [scope, chFilter, period]);
+  useEffect(() => { const id = setTimeout(() => loadConvs(), 400); return () => clearTimeout(id); /* eslint-disable-next-line */ }, [search]);
   // live-оновлення відкритого чату (без ручного refresh)
   useEffect(() => {
     if (!active) return;
@@ -183,6 +186,9 @@ export default function Inbox() {
       {/* список диалогов */}
       <div style={{ background: "#fff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div style={{ padding: 12, borderBottom: "1px solid #e2e8f0", fontWeight: 600 }}>{t("Диалоги","Діалоги")}</div>
+        <div style={{ padding: "8px 12px", borderBottom: "1px solid #f1f5f9" }}>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("🔍 Имя, телефон, ник…","🔍 Імʼя, телефон, нік…")} style={{ width: "100%", height: 30, border: "1px solid #e2e8f0", borderRadius: 8, padding: "0 10px", fontSize: 12.5, boxSizing: "border-box" }} />
+        </div>
         <div style={{ display: "flex", gap: 6, padding: "8px 12px", borderBottom: "1px solid #f1f5f9" }}>
           {(([["mine", t("Мои","Мої")]].concat(can("conversation.view.all") ? [["all", t("Все","Всі")], ["unassigned", t("Не назначены","Не призначені")]] : [])) as [string, string][]).map(([k, label]) => (
             <button key={k} onClick={() => setScope(k as any)}
