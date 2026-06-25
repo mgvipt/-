@@ -606,30 +606,36 @@ function Inline({ value, fmt, onSave }: { value: number; fmt: (v: number) => str
 
 
 /* ─── WALLCOV CASHFLOW — перенесено з віджета finmap-bridge (5 вкладок) ───── */
-function CashflowTab({ deal }: any) {
+function CashflowTab({ deal, remaining, onPay, createTTN, issueCheckbox }: any) {
   const { t } = useLang();
-  /* Боєвий віджет Wallcov Cashflow (finmap-bridge) через iframe — 1:1 функціонал Бітрикса:
-     Платежі (LiqPay/QR/Реквізити/історія/повернення/чек), Доставка НП (повна форма ТТН+пакування),
-     Склад (бланк викраски), Архів кольорів, Лояльність. Працює по реальному Bitrix deal_id. */
-  if (!deal.b24_id) {
-    return (
-      <div className="panel" style={{ margin: 0, textAlign: "center", padding: 40 }}>
-        <h3>{t("Cashflow недоступен","Cashflow недоступний")}</h3>
-        <div className="muted">{t("У этой сделки нет Bitrix-ID. Виджет работает только для перенесённых из Битрикса сделок.","У цієї сделки немає Bitrix-ID. Віджет працює лише для перенесених із Бітрикса угод.")}</div>
-      </div>
-    );
-  }
-  const viewer = 4; // адмін-перегляд (повний доступ). Пізніше — id менеджера.
-  const url = `https://cashflow.wallcovdec.com.ua/widget/cashflow?deal_id=${deal.b24_id}&viewer_id=${viewer}`;
+  const f = (v: number) => new Intl.NumberFormat("uk").format(Math.round(v || 0));
+  const mBox: React.CSSProperties = { background: "#f8fafc", borderRadius: 10, padding: "10px 12px" };
+  const paid = deal.paid || 0;
   return (
-    <div className="panel" style={{ margin: 0, padding: 0, overflow: "hidden" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" }}>
-        <b style={{ fontSize: 13 }}>💰 Wallcov Cashflow</b>
-        <span className="muted" style={{ fontSize: 12 }}>{t("боевой виджет","боєвий віджет")} · deal #{deal.b24_id}</span>
-        <div style={{ flex: 1 }} />
-        <a href={url} target="_blank" rel="noreferrer" className="btn btn-light" style={{ fontSize: 12, padding: "3px 9px" }}>{t("↗ Открыть в отдельной вкладке","↗ Відкрити в окремій вкладці")}</a>
+    <div className="panel" style={{ margin: 0 }}>
+      <div className="label" style={{ marginBottom: 12 }}>💰 {t("Оплата и доставка","Оплата та доставка")} <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>({t("нативно, без Битрикса","нативно, без Бітрикса")})</span></div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
+        <div style={mBox}><div className="muted" style={{ fontSize: 12 }}>{t("Сумма","Сума")}</div><div style={{ fontSize: 20, fontWeight: 600 }}>{f(Number(deal.amount))} ₴</div></div>
+        <div style={mBox}><div className="muted" style={{ fontSize: 12 }}>{t("Оплачено","Оплачено")}</div><div style={{ fontSize: 20, fontWeight: 600, color: "#16a34a" }}>{f(paid)} ₴</div></div>
+        <div style={mBox}><div className="muted" style={{ fontSize: 12 }}>{t("Осталось","Залишилось")}</div><div style={{ fontSize: 20, fontWeight: 600, color: remaining > 0 ? "#d97706" : "#16a34a" }}>{f(remaining)} ₴</div></div>
       </div>
-      <iframe src={url} title="Wallcov Cashflow" style={{ width: "100%", height: "82vh", border: "none", display: "block" }} />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        <button className="btn btn-primary" onClick={onPay}>💳 {t("Принять оплату","Прийняти оплату")}</button>
+        <button className="btn" onClick={createTTN}>🚚 {t("Создать ТТН","Створити ТТН")}</button>
+        <button className="btn" onClick={issueCheckbox}>🧾 {t("Чек Checkbox","Чек Checkbox")}</button>
+      </div>
+      <div className="label" style={{ marginBottom: 6 }}>{t("История платежей","Історія платежів")}</div>
+      {(deal.payments || []).length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Платежей пока нет","Платежів поки немає")}</div> :
+        (deal.payments || []).map((p: any) => (
+          <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", borderBottom: "1px solid #f1f5f9" }}>
+            <span>{p.provider} · {p.created_at ? new Date(p.created_at).toLocaleDateString("uk") : ""}</span>
+            <b style={{ color: "#16a34a" }}>{f(Number(p.amount))} ₴</b>
+          </div>
+        ))}
+      <div style={{ display: "flex", gap: 16, marginTop: 14, fontSize: 12 }}>
+        <span className="muted">ТТН: {deal.ttn || "—"}</span>
+        <span className="muted">{t("Чек","Чек")}: {deal.checkbox_status || "—"}</span>
+      </div>
     </div>
   );
 }
