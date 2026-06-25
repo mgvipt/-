@@ -12,7 +12,7 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
     )
     if created:
         # на канале без телефона (Telegram) заводим контакт по имени и помечаем канал
-        contact = Contact.objects.create(first_name=inc.sender_name, channels=[channel.kind])
+        contact = Contact.objects.create(first_name=inc.sender_name, channels=[channel.kind], social_link=(inc.social_link or ""))
         conv.contact = contact
         conv.save(update_fields=["contact"])
         # авто-лід у воронці "Лиды" з джерелом = канал (розділення лідів по каналах)
@@ -30,6 +30,9 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
     # RBAC-привязка: чат → ответственному клиента (owner контакта либо owner его
     # последней активной сделки). None = «Не призначені» — НЕ fallback на чужого юзера.
     contact = conv.contact
+    if contact is not None and getattr(inc, "social_link", "") and not contact.social_link:
+        contact.social_link = inc.social_link
+        contact.save(update_fields=["social_link"])
     if conv.assigned_to_id is None and contact is not None:
         from apps.crm.models import Deal
         owner_id = contact.owner_id or (
@@ -41,18 +44,23 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
         contact.last_touch_at = timezone.now()
         contact.save(update_fields=["last_touch_at"])
 
+    _dir = getattr(inc, "direction", "in") or "in"
     msg = Message.objects.create(
-        conversation=conv, direction="in", text=inc.text,
+        conversation=conv, direction=_dir, text=inc.text,
         attachments=inc.attachments, external_id=inc.external_id,
         sender_name=inc.sender_name,
     )
-    conv.unread += 1
+    if _dir == "in":
+        conv.unread += 1
     conv.last_message_at = msg.created_at
     conv.status = "open"
     conv.save(update_fields=["unread", "last_message_at", "status", "assigned_to"])
     try:
-        from apps.crm.automation import on_incoming
-        on_incoming(contact, inc.text)
+        from apps.crm.automation import on_incoming, on_outgoing
+        if _dir == "in":
+            on_incoming(contact, inc.text)
+        else:
+            on_outgoing(contact)
     except Exception:
         pass
     return msg

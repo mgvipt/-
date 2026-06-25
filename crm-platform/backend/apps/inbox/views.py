@@ -29,6 +29,8 @@ class TelegramWebhookView(APIView):
             cfg = channel.config or {}
             cfg["business_connection_id"] = bc.get("id")
             cfg["business_enabled"] = bool(bc.get("is_enabled", True))
+            if bc.get("user"):
+                cfg["owner_id"] = (bc.get("user") or {}).get("id")
             channel.config = cfg
             channel.save(update_fields=["config"])
             return Response({"ok": True})

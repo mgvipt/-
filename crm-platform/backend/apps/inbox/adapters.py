@@ -15,6 +15,8 @@ class IncomingMessage:
     sender_name: str = ""
     external_id: str = ""
     attachments: list = field(default_factory=list)
+    direction: str = "in"
+    social_link: str = ""
 
 
 class ChannelAdapter:
@@ -44,10 +46,20 @@ class TelegramAdapter(ChannelAdapter):
                or payload.get("business_message") or payload.get("edited_business_message"))
         if not msg:
             return None
-        chat = msg.get("chat", {})
-        frm = msg.get("from", {})
-        name = " ".join(x for x in [frm.get("first_name"), frm.get("last_name")] if x) \
-            or frm.get("username") or str(chat.get("id"))
+        chat = msg.get("chat", {}) or {}
+        frm = msg.get("from", {}) or {}
+        chat_id = str(chat.get("id") or "")
+        from_id = str(frm.get("id") or "")
+        owner_id = str(self.config.get("owner_id") or "")
+        # КЛІЄНТ = співрозмовник (chat). НАПРЯМ: у приватному чаті клієнт має from.id==chat.id;
+        # якщо відправник інший (ми пишемо з бізнес-акаунту) → from.id!=chat.id → це наше вихідне.
+        is_out = bool(from_id and chat_id and from_id != chat_id) or bool(owner_id and from_id == owner_id)
+        direction = "out" if is_out else "in"
+        party = chat  # ідентичність клієнта завжди беремо з chat, а не з відправника
+        name = " ".join(x for x in [party.get("first_name"), party.get("last_name")] if x) \
+            or party.get("username") or party.get("title") or chat_id
+        uname = party.get("username")
+        link = ("https://t.me/" + uname) if uname else ("tg://user?id=" + chat_id if chat_id else "")
         attachments = []
         if "photo" in msg:
             attachments.append({"type": "photo", "file_id": msg["photo"][-1]["file_id"]})
@@ -55,11 +67,13 @@ class TelegramAdapter(ChannelAdapter):
             attachments.append({"type": "voice", "file_id": msg["voice"]["file_id"],
                                 "duration": msg["voice"].get("duration")})
         return IncomingMessage(
-            external_chat_id=str(chat.get("id")),
+            external_chat_id=chat_id,
             text=msg.get("text") or msg.get("caption") or "",
             sender_name=name,
             external_id=str(msg.get("message_id", "")),
             attachments=attachments,
+            direction=direction,
+            social_link=link,
         )
 
     def send(self, external_chat_id: str, text: str) -> str:
