@@ -300,6 +300,9 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         DealItem.objects.create(deal=deal, product=product, quantity=qty, price=price,
                                 discount_pct=Decimal(str(request.data.get("discount_pct", 0) or 0)), reserved=bool(request.data.get("reserved")))
         self._recalc_amount(deal)
+        deal.refresh_from_db(fields=["amount"])
+        if deal.amount and deal.amount > 0:
+            _advance_deal_stage(deal, 1, "товари заповнено")  # Данні для розрахунку → Розрахунок здійснено
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
     @action(detail=True, methods=["get"])
@@ -361,6 +364,11 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             return Response(DealDetailSerializer(deal, context={"request": request}).data)
         pay = Payment.objects.create(deal=deal, provider=provider, amount=amount, is_paid=True)
         record_income(amount, deal=deal, account=account, payment=pay)
+        paid = sum((p.amount for p in Payment.objects.filter(deal=deal, is_paid=True)), Decimal("0"))
+        if deal.amount and paid >= deal.amount:
+            _advance_deal_stage(deal, 3, "оплата отримана повністю")  # → Оплату отримано
+        elif paid > 0:
+            _advance_deal_stage(deal, 2, "часткова оплата")  # → Домовились про оплату
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
