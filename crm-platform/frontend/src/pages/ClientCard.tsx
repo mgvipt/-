@@ -7,6 +7,7 @@ import { Avatar, SourceChip } from "../ui";
 import OwnerSelect from "../OwnerSelect";
 import CallButton from "../CallButton";
 import { useLang } from "../i18n";
+import { SocialLink } from "../social";
 
 interface Deal { id: number; title: string; amount: number; stage: string; is_won: boolean; created_at: string; }
 interface Contact {
@@ -63,6 +64,7 @@ export default function ClientCard() {
             {fld(t("Телефон","Телефон"), "phone", t("Основной контактный номер","Основний контактний номер"))}
             {fld(t("Email","Email"), "email")}
             {fld(t("Ссылка на аккаунт (мессенджер)","Посилання на акаунт (месенджер)"), "social_link", "t.me / instagram.com…")}
+            <SocialLink link={c.social_link} />
             {fld(t("Адрес / город","Адреса / місто"), "address", t("Куда доставлять","Куди доставляти"))}
             <div style={{ marginBottom: 10 }}>
               <div className="label">{t("Лояльность","Лояльність")}</div>

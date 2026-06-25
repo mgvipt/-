@@ -9,6 +9,7 @@ import NeedsForm from "../NeedsForm";
 import CardFields from "../CardFields";
 import ActivityLog from "../ActivityLog";
 import { useLang } from "../i18n";
+import { SocialLink } from "../social";
 
 interface Lead {
   id: number; title: string; contact?: number; contact_name?: string; owner_name?: string; created_at?: string;
@@ -121,12 +122,7 @@ export default function LeadCard() {
             {lead.contact_phone && (
               <a href={`tel:${lead.contact_phone}`} style={{ display: "block", marginTop: 8, fontSize: 13, fontWeight: 600, color: "#0f172a" }}>📱 {lead.contact_phone}</a>
             )}
-            {lead.contact_social_link && (
-              <a href={lead.contact_social_link} target="_blank" rel="noreferrer"
-                style={{ display: "block", marginTop: 8, fontSize: 12, color: "#1d4ed8", wordBreak: "break-all" }}>
-                🔗 {lead.contact_social_link}
-              </a>
-            )}
+            <SocialLink link={lead.contact_social_link} />
           </div>
           <div className="panel">
             <div className="label">{t("Ответственный","Відповідальний")}</div>

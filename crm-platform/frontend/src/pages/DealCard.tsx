@@ -35,6 +35,7 @@ import ActivityLog from "../ActivityLog";
 import CallButton from "../CallButton";
 import KpDoc from "../KpDoc";
 import { useLang } from "../i18n";
+import { SocialLink } from "../social";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
@@ -294,7 +295,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 {(deal.contact_phone || deal.contact_social_link) && (
                   <div style={{ marginTop: 6, fontSize: 12.5, display: "flex", flexDirection: "column", gap: 3 }}>
                     {deal.contact_phone && <a href={`tel:${deal.contact_phone}`} style={{ color: "#0f172a", fontWeight: 600 }}>📱 {deal.contact_phone}</a>}
-                    {deal.contact_social_link && <a href={deal.contact_social_link} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>🔗 {deal.contact_social_link}</a>}
+                    {deal.contact_social_link && <SocialLink link={deal.contact_social_link} />}
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
