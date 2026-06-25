@@ -119,9 +119,12 @@ def create_receipt(goods, amount_kopecks, external_id, payment_method="CASHLESS"
                 url = rr.get("tax_url") or rr.get("url") or ""
                 fiscal = rr.get("fiscal_code") or fiscal
                 break
+    # клієнту даємо ФАЙЛ чека (гарна сторінка), а не пошук у кабінеті ДПС
+    receipt_url = "https://check.checkbox.ua/%s" % rid if rid else url
     return {
         "id": rid,
         "fiscal_code": fiscal,
-        "url": url,
+        "url": receipt_url,   # check.checkbox.ua — сам чек
+        "tax_url": url,       # cabinet.tax.gov.ua — для архіву
         "relation_id": str(d.get("pre_payment_relation_id") or relation_id or ""),
     }

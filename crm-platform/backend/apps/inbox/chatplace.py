@@ -8,6 +8,24 @@ API_KEY = (os.environ.get("CHATPLACE_API_KEY", "") or "").strip()
 
 # сторони повідомлення, які вважаємо ВИХІДНИМИ (ми/AI/оператор). Решта = вхідне (клієнт).
 _STAFF_SIDES = {"ai_assistant", "operator", "manager", "bot", "system", "admin", "out"}
+
+
+def _relink_echo(conv, ext, text, direction):
+    """Канал повертає НАШЕ вихідне повідомлення з іншим id (ехо «operator»).
+    Якщо знаходимо свіже власне вихідне з тим же текстом — привʼязуємо до нього
+    цей id і НЕ створюємо дубль. Повертає True якщо це ехо (пропустити)."""
+    if direction != "out":
+        return False
+    from django.utils import timezone as _tz
+    from datetime import timedelta
+    own = (Message.objects.filter(conversation=conv, direction="out", text=text)
+           .filter(created_at__gte=_tz.now() - timedelta(minutes=30))
+           .exclude(external_id=ext).order_by("-id").first())
+    if own:
+        own.external_id = ext
+        own.save(update_fields=["external_id"])
+        return True
+    return False
 # службові маркери ChatPlace (не реальні повідомлення)
 import re as _re
 _SYS_LABEL = _re.compile(r"^[A-Za-z]{3,}Label$")
@@ -64,6 +82,8 @@ def sync_one_chat(conv, per_chat=40):
             continue
         side = (m.get("side") or "").lower()
         direction = "out" if side in _STAFF_SIDES else "in"
+        if _relink_echo(conv, ext, str(body)[:5000], direction):
+            continue
         Message.objects.create(conversation=conv, direction=direction, text=str(body)[:5000],
                                external_id=ext, sender_name=("" if direction == "in" else side))
         new += 1
@@ -156,6 +176,8 @@ def sync_chats(max_chats=40, per_chat=40):
                     continue
                 side = (m.get("side") or "").lower()
                 direction = "out" if side in _STAFF_SIDES else "in"
+                if _relink_echo(conv, ext, str(body)[:5000], direction):
+                    continue
                 Message.objects.create(conversation=conv, direction=direction, text=str(body)[:5000],
                                        external_id=ext, sender_name=("" if direction == "in" else side))
                 new_msg += 1
