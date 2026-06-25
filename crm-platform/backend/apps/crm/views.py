@@ -439,8 +439,11 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             pub = getattr(_s, "LIQPAY_PUBLIC_KEY", ""); prv = getattr(_s, "LIQPAY_PRIVATE_KEY", "")
             if not (pub and prv):
                 return Response({"detail": "LiqPay не налаштовано (немає ключів)"}, status=status.HTTP_400_BAD_REQUEST)
+            # обмежуємо способи: звичайний LiqPay = тільки картка/Apple/Google/Приват24;
+            # розстрочка/частинами — ТІЛЬКИ коли менеджер обрав "Розстрочка" у CRM
+            paytypes = "paypart,moment_part,card" if kind == "installment" else "card,apay,gpay,privat24"
             full_url = build_checkout_url(pub, prv, amount, order_id, "Замовлення Wallcov #%s" % deal.id,
-                                          server_url=base + "/api/crm/liqpay/callback/", result_url=base)
+                                          server_url=base + "/api/crm/liqpay/callback/", result_url=base, paytypes=paytypes)
             # коротке посилання щоб не слати потвору
             from .models import PayLink
             code = _short_code()

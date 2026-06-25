@@ -179,7 +179,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   async function removeItem(item: number) { setDeal(await api.post<Deal>(`/api/deals/${id}/remove_item/`, { item })); }
 
   async function acceptPayment() {
-    if (payType === "liqpay" || payType === "requisites") {
+    if (payType === "liqpay" || payType === "requisites" || payType === "installment") {
       try {
         const r = await api.post<any>(`/api/deals/${id}/send_pay_link/`, { kind: payType, amount: payAmount || deal?.amount });
         const d = await api.get<Deal>(`/api/deals/${id}/`); setDeal(d);

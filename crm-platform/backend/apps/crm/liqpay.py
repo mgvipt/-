@@ -26,7 +26,7 @@ def verify(data_b64, signature, private_key):
     return hmac.compare_digest(sign(data_b64, private_key), signature)
 
 
-def build_checkout_url(public_key, private_key, amount, order_id, description, server_url=None, result_url=None, sandbox=False):
+def build_checkout_url(public_key, private_key, amount, order_id, description, server_url=None, result_url=None, sandbox=False, paytypes=None):
     payload = {"public_key": public_key, "version": 3, "action": "pay", "amount": float(amount),
                "currency": "UAH", "order_id": order_id, "description": description}
     if server_url:
@@ -35,6 +35,8 @@ def build_checkout_url(public_key, private_key, amount, order_id, description, s
         payload["result_url"] = result_url
     if sandbox:
         payload["sandbox"] = 1
+    if paytypes:
+        payload["paytypes"] = paytypes  # обмежити способи оплати (card / paypart...)
     data = encode_data(payload)
     sig = sign(data, private_key)
     return "%s?data=%s&signature=%s" % (CHECKOUT_URL, quote(data, safe=""), quote(sig, safe=""))
