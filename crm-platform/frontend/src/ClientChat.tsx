@@ -82,7 +82,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
   const pts = ai ? (ai.points && ai.points.length ? ai.points : (ai.context ? [ai.context] : [])) : [];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column" }}>
+    <div style={{ display: "flex", flexDirection: "column", containerType: "inline-size" }}>
       <ChatActions convId={conv.id} onClosed={() => { setConv(null); setMsgs([]); }} onChanged={(c) => setConv(c)} />
       {/* СТРІЧКА — заповнює доступну висоту */}
       <div style={{ height: 340, minHeight: 140, maxHeight: "70vh", resize: "vertical", overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
@@ -122,10 +122,10 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
       <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Відповідь клієнту…" rows={3}
         style={{ width: "100%", fontSize: 13, padding: 9, borderRadius: 10, border: "1px solid #e2e8f0", marginTop: 8, boxSizing: "border-box", resize: "vertical", minHeight: 56 }} />
       <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={sendFile} />
-      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-        <button className="btn" style={{ background: "#f1f5f9" }} title="Надіслати фото / відео" onClick={() => fileRef.current?.click()} disabled={busy}>📎</button>
-        <button className="btn" style={{ flex: 1, background: "#fef3c7", color: "#92400e" }} onClick={analyze} disabled={aiLoad}>{aiLoad ? "AI аналізує…" : "🧠 AI-РОП підказати відповідь"}</button>
-        <button className="btn btn-primary" style={{ flex: 1 }} onClick={send} disabled={busy || !text.trim()}>{busy ? "…" : "Надіслати"}</button>
+      <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "nowrap" }}>
+        <button className="btn" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title="Надіслати фото / відео" onClick={() => fileRef.current?.click()} disabled={busy}>📎</button>
+        <button className="btn" style={{ flex: "1.8 1 0", minWidth: 0, background: "#fef3c7", color: "#92400e", fontSize: "clamp(9px, 2.7cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "0 6px" }} onClick={analyze} disabled={aiLoad} title="AI-РОП підказати відповідь">{aiLoad ? "AI аналізує…" : "🧠 AI-РОП підказати відповідь"}</button>
+        <button className="btn btn-primary" style={{ flex: "1 1 0", minWidth: 0, fontSize: "clamp(9px, 2.7cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "0 6px" }} onClick={send} disabled={busy || !text.trim()}>{busy ? "…" : "Надіслати"}</button>
       </div>
     </div>
   );

@@ -11,9 +11,9 @@ export default function ChatActions({ convId, onClosed, onChanged }: { convId: n
   async function take() { try { const c = await api.post<any>(`/api/conversations/${convId}/take/`, {}); onChanged?.(c); } catch { /* ignore */ } }
   async function close() { try { await api.post<any>(`/api/conversations/${convId}/close/`, {}); onClosed?.(); } catch { /* ignore */ } }
   async function pick(uid: number) { try { const c = await api.post<any>(`/api/conversations/${convId}/${picker === "transfer" ? "assign" : "add_member"}/`, { user_id: uid }); onChanged?.(c); } catch { /* ignore */ } setPicker(null); }
-  const btn: any = { fontSize: 11.5, fontWeight: 600, padding: "5px 9px", borderRadius: 7, cursor: "pointer", border: "1px solid #e2e8f0", background: "#fff" };
+  const btn: any = { flex: "1 1 0", minWidth: 0, fontSize: "clamp(8px, 3cqi, 11.5px)", fontWeight: 600, padding: "5px 4px", borderRadius: 7, cursor: "pointer", border: "1px solid #e2e8f0", background: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" };
   return (
-    <div style={{ position: "relative", display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+    <div style={{ position: "relative", display: "flex", gap: 4, marginBottom: 8, flexWrap: "nowrap" }}>
       <button style={{ ...btn, color: "#0369a1" }} onClick={take} title="Закріпити чат за собою (стати відповідальним)">📌 Закріпити</button>
       <button style={{ ...btn, color: "#c2410c" }} onClick={() => setPicker(picker === "transfer" ? null : "transfer")}>↪ Переадресувати</button>
       <button style={{ ...btn, color: "#4338ca" }} onClick={() => setPicker(picker === "add" ? null : "add")}>➕ Менеджер</button>
