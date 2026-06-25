@@ -20,6 +20,7 @@ export default function LeadCard() {
   const { id } = useParams();
   const nav = useNavigate();
   const [lead, setLead] = useState<Lead | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const { t } = useLang();
   const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [chatW, setChatW] = useState(() => Number(localStorage.getItem("crm_card_chatW")) || 360);
@@ -75,9 +76,11 @@ export default function LeadCard() {
   }
 
   async function load() {
-    const l = await api.get<Lead>(`/api/leads/${id}/`);
-    setLead(l);
-    if (!funnel || funnel.id !== l.funnel) setFunnel(await api.get<Funnel>(`/api/funnels/${l.funnel}/`));
+    try {
+      const l = await api.get<Lead>(`/api/leads/${id}/`);
+      setLead(l);
+      if (!funnel || funnel.id !== l.funnel) setFunnel(await api.get<Funnel>(`/api/funnels/${l.funnel}/`));
+    } catch { setNotFound(true); }
   }
   useEffect(() => { load(); }, [id]);
   // live-оновлення стадії/відповідального без перезавантаження (не чіпає поля анкети)
@@ -96,6 +99,15 @@ export default function LeadCard() {
     }, 5000);
     return () => clearInterval(tm);
   }, [id]);
+  if (notFound) return (
+    <div className="spin" style={{ flexDirection: "column", gap: 12 }}>
+      <div>{t("Лид не найден — возможно, уже сконвертирован в сделку или удалён.", "Лід не знайдено — можливо, вже сконвертований у сделку або видалений.")}</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-primary" onClick={() => nav("/leads")}>{t("← К лидам", "← До лідів")}</button>
+        <button className="btn" onClick={() => nav("/deals")}>{t("Открыть сделки", "Відкрити сделки")}</button>
+      </div>
+    </div>
+  );
   if (!lead) return <div className="spin">{t("Загрузка лида…","Загрузка ліда…")}</div>;
 
   async function setStage(s: number) { await api.patch(`/api/leads/${id}/`, { stage: s }); load(); }
