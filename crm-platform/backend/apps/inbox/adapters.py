@@ -67,15 +67,47 @@ class TelegramAdapter(ChannelAdapter):
         if "voice" in msg:
             attachments.append({"type": "voice", "file_id": msg["voice"]["file_id"],
                                 "duration": msg["voice"].get("duration")})
+        shared = msg.get("contact") or {}
+        shared_phone = str(shared.get("phone_number") or "")
+        body_text = msg.get("text") or msg.get("caption") or ""
+        if shared_phone and not body_text:
+            body_text = "☎️ Клієнт надіслав номер: " + shared_phone
         return IncomingMessage(
             external_chat_id=chat_id,
-            text=msg.get("text") or msg.get("caption") or "",
+            text=body_text,
             sender_name=name,
             external_id=str(msg.get("message_id", "")),
             attachments=attachments,
             direction=direction,
             social_link=link,
+            phone=shared_phone,
         )
+
+    def request_phone(self, external_chat_id: str) -> str:
+        """Надіслати клієнту кнопку "Поділитися номером" (request_contact)."""
+        token = self.config.get("bot_token")
+        if not token:
+            return ""
+        url = self.API.format(token=token, method="sendMessage")
+        body = {
+            "chat_id": external_chat_id,
+            "text": "Щоб ми швидше зв’язалися — натисніть кнопку нижче 📱",
+            "reply_markup": {
+                "keyboard": [[{"text": "📱 Поділитися номером", "request_contact": True}]],
+                "resize_keyboard": True, "one_time_keyboard": True,
+            },
+        }
+        bcid = (self.config.get("business_chats") or {}).get(str(external_chat_id))
+        if bcid:
+            body["business_connection_id"] = bcid
+        data = json.dumps(body).encode()
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as r:  # noqa: S310
+                resp = json.loads(r.read().decode())
+            return str(resp.get("result", {}).get("message_id", ""))
+        except Exception as e:
+            return "ERR:" + str(e)[:80]
 
     def send(self, external_chat_id: str, text: str) -> str:
         token = self.config.get("bot_token")

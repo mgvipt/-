@@ -15,6 +15,13 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
         contact = Contact.objects.create(first_name=inc.sender_name, channels=[channel.kind], social_link=(inc.social_link or ""), phone=(getattr(inc, "phone", "") or ""))
         conv.contact = contact
         conv.save(update_fields=["contact"])
+        # Telegram: одразу попросити номер кнопкою (request_contact) у нового клієнта
+        if (channel.kind == "telegram" and getattr(inc, "direction", "in") == "in"
+                and (channel.config or {}).get("ask_phone", True) and not contact.phone):
+            try:
+                get_adapter(channel).request_phone(inc.external_chat_id)
+            except Exception:
+                pass
         # авто-лід у воронці "Лиды" з джерелом = канал (розділення лідів по каналах)
         try:
             from apps.crm.models import Lead, Funnel
