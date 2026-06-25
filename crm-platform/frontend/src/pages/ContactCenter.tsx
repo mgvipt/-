@@ -69,6 +69,8 @@ export default function ContactCenter() {
         <span className="muted" style={{ marginLeft: 12, fontSize: 13 }}>{t("Каналы связи с клиентами · лиды с каждого канала падают в CRM разделённо","Канали звʼязку з клієнтами · ліди з кожного каналу падають у CRM розділено")}</span>
       </div>
 
+      <EchatBlock t={t} />
+
       {/* ── Сітка плиток каналів ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 14 }}>
         {channels.map((ch) => (
@@ -119,6 +121,51 @@ export default function ContactCenter() {
             </div>
 
             <div className="muted" style={{ fontSize: 12 }}>{t("Канал-ключ","Канал-ключ")}: <code>{sel.key}</code></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ─── Блок: Viber через e-chat.tech ──────────────────────────────────────────
+function EchatBlock({ t }: any) {
+  const [st, setSt] = useState<any>(null);
+  const [key, setKey] = useState("");
+  const [num, setNum] = useState("");
+  const [msg, setMsg] = useState("");
+  useEffect(() => { api.get<any>("/api/inbox/echat/setup/").then((d) => { setSt(d); setNum(d.number || ""); }).catch(() => {}); }, []);
+  async function connect() {
+    if (!num.trim()) { setMsg(t("Укажите Viber-номер","Вкажіть Viber-номер")); return; }
+    setMsg("…");
+    try {
+      const r = await api.post<any>("/api/inbox/echat/setup/", { api_key: key.trim(), number: num.trim() });
+      setSt({ ...(st || {}), connected: true, channel_id: r.channel_id, webhook: r.webhook, has_key: (st && st.has_key) || !!key.trim(), number: num.trim() });
+      setKey(""); setMsg(t("✓ Подключено","✓ Підключено"));
+    } catch { setMsg(t("Ошибка подключения","Помилка підключення")); }
+  }
+  const inp: any = { height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", fontSize: 13 };
+  return (
+    <div className="panel" style={{ margin: "0 0 18px", borderLeft: "4px solid #7360F2" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <span style={{ width: 26, height: 26, borderRadius: 7, background: "#7360F2", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>V</span>
+        <b style={{ fontSize: 15 }}>Viber через e-chat.tech</b>
+        {st?.connected && <span className="chip" style={{ background: "#16a34a" }}>{t("подключено","підключено")}</span>}
+      </div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Введите API-ключ и Viber-номер канала из панели e-chat.tech. Входящие/исходящие пойдут в Чаты CRM.","Введіть API-ключ і Viber-номер каналу з панелі e-chat.tech. Вхідні/вихідні підуть у Чати CRM.")}</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <input style={{ ...inp, flex: 2, minWidth: 200 }} placeholder={st?.has_key ? t("API-ключ (сохранён, можно не вводить)","API-ключ (збережено, можна не вводити)") : "Api-Key"} value={key} onChange={(e) => setKey(e.target.value)} />
+        <input style={{ ...inp, flex: 1, minWidth: 150 }} placeholder={t("Viber-номер, напр. 380XXXXXXXXX","Viber-номер, напр. 380XXXXXXXXX")} value={num} onChange={(e) => setNum(e.target.value)} />
+        <button className="btn btn-primary" onClick={connect}>{st?.connected ? t("Обновить","Оновити") : t("Подключить","Підключити")}</button>
+        {msg && <span style={{ fontSize: 13, color: "#16a34a" }}>{msg}</span>}
+      </div>
+      {st?.webhook && (
+        <div style={{ marginTop: 10, padding: 10, background: "#f1f5f9", borderRadius: 8 }}>
+          <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("Webhook URL — вставь в панель e-chat.tech (callback для входящих):","Webhook URL — встав у панель e-chat.tech (callback для вхідних):")}</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input readOnly value={st.webhook} style={{ ...inp, flex: 1, fontSize: 12 }} onFocus={(e) => e.target.select()} />
+            <button className="btn" onClick={() => navigator.clipboard?.writeText(st.webhook)}>📋</button>
           </div>
         </div>
       )}

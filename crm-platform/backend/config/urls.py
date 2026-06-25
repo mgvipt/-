@@ -52,6 +52,8 @@ urlpatterns = [
     path("api/invite/<str:token>/", acc_views.AcceptInviteView.as_view()),
     path("api/inbox/telegram/webhook/<int:channel_id>/", inbox_views.TelegramWebhookView.as_view()),
     path("api/inbox/viber/webhook/<int:channel_id>/", inbox_views.ViberWebhookView.as_view()),
+    path("api/inbox/echat/webhook/<int:channel_id>/", inbox_views.EchatWebhookView.as_view()),
+    path("api/inbox/echat/setup/", inbox_views.EchatSetupView.as_view()),
     path("api/inbox/meta/webhook/", inbox_views.MetaWebhookView.as_view()),
     path("api/inbox/meta/webhook", inbox_views.MetaWebhookView.as_view()),
     path("api/inbox/chatplace/sync/", inbox_views.ChatPlaceSyncView.as_view()),

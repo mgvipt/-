@@ -149,10 +149,58 @@ class ViberAdapter(ChannelAdapter):
         return str(resp.get("message_token", ""))
 
 
-ADAPTERS = {TelegramAdapter.kind: TelegramAdapter, ViberAdapter.kind: ViberAdapter}
+class EchatViberAdapter(ChannelAdapter):
+    """Viber через агрегатор e-chat.tech. config: {echat:True, api_key, number}.
+    Вхідні — webhook у форматі e-chat; вихідні — POST /messages/send (header Api-Key)."""
+    kind = "echat"
+    BASE = "https://e-chat.tech/api/viber/v2"
+
+    def parse_webhook(self, payload: dict):
+        contact = payload.get("contact", {}) or {}
+        msg = payload.get("message", {}) or {}
+        att = []
+        if msg.get("file"):
+            att.append({"type": msg.get("type", "file"), "url": msg["file"]})
+        num = str(contact.get("number", "") or "")
+        if not num:
+            return None
+        return IncomingMessage(
+            external_chat_id=num,
+            text=msg.get("text") or "",
+            sender_name=(contact.get("name") or num),
+            external_id=str(msg.get("message_id", "")),
+            attachments=att,
+        )
+
+    def _post(self, path, body):
+        req = urllib.request.Request(self.BASE + path, data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json", "Api-Key": self.config.get("api_key", "")})
+        with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310
+            return json.loads((r.read().decode() or "{}") or "{}")
+
+    def send(self, external_chat_id: str, text: str) -> str:
+        if not self.config.get("api_key"):
+            raise RuntimeError("В каналі e-chat не задано api_key")
+        import time
+        ext = "wcv-%d" % int(time.time() * 1000)
+        resp = self._post("/messages/send", {
+            "number": self.config.get("number", ""),
+            "message": {"id": ext, "text": text},
+            "contact": {"number": external_chat_id},
+        })
+        return str((resp.get("message") or {}).get("message_id") or ext)
+
+    def connect(self):
+        return self._post("/channel/connect", {"number": self.config.get("number", "")})
+
+
+ADAPTERS = {TelegramAdapter.kind: TelegramAdapter, ViberAdapter.kind: ViberAdapter,
+            EchatViberAdapter.kind: EchatViberAdapter}
 
 
 def get_adapter(channel) -> ChannelAdapter:
+    if (channel.config or {}).get("echat"):
+        return EchatViberAdapter(channel)
     if (channel.config or {}).get("chatplace"):
         return ChatPlaceAdapter(channel)
     if (channel.config or {}).get("meta"):

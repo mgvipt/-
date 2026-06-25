@@ -4,6 +4,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework import status
 from rest_framework.views import APIView
 
 from .models import Channel, Conversation, Message
@@ -59,6 +60,60 @@ class ViberWebhookView(APIView):
         if inc:
             ingest(channel, inc)
         return Response({"status": 0, "status_message": "ok"})
+
+
+class EchatWebhookView(APIView):
+    """Приём входящих Viber-сообщений через e-chat.tech. URL: /api/inbox/echat/webhook/<channel_id>/"""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request, channel_id):
+        channel = get_object_or_404(Channel, pk=channel_id, is_active=True)
+        d = request.data
+        direction = str(d.get("direction") or "")
+        event = str(d.get("event") or "")
+        if "outgoing" in direction or "outgoing" in event:
+            return Response({"status": 0})  # власні вихідні / статуси — ігноруємо
+        inc = get_adapter(channel).parse_webhook(d)
+        if inc and inc.external_chat_id:
+            ingest(channel, inc)
+        return Response({"status": 0, "status_message": "ok"})
+
+
+class EchatSetupView(APIView):
+    """Налаштування Viber через e-chat: створення каналу + увімкнення вебхуків + лінк вебхука."""
+    def _ch(self):
+        return Channel.objects.filter(kind="echat").first()
+
+    def get(self, request):
+        ch = self._ch()
+        if not ch:
+            return Response({"connected": False, "number": "", "has_key": False, "webhook": "", "channel_id": None})
+        return Response({"connected": bool(ch.is_active), "number": (ch.config or {}).get("number", ""),
+                         "has_key": bool((ch.config or {}).get("api_key")), "channel_id": ch.id,
+                         "webhook": request.build_absolute_uri("/api/inbox/echat/webhook/%d/" % ch.id)})
+
+    def post(self, request):
+        if not request.user.has_perm_code("roles.manage"):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        api_key = (request.data.get("api_key") or "").strip()
+        number = (request.data.get("number") or "").strip()
+        if not number:
+            return Response({"detail": "Вкажіть Viber-номер каналу"}, status=status.HTTP_400_BAD_REQUEST)
+        ch = self._ch() or Channel.objects.create(kind="echat", name="Viber (e-chat)")
+        cfg = ch.config or {}
+        cfg["echat"] = True; cfg["number"] = number
+        if api_key:
+            cfg["api_key"] = api_key
+        ch.config = cfg; ch.is_active = True; ch.name = "Viber (e-chat) " + number; ch.save()
+        result = {}
+        try:
+            result = get_adapter(ch).connect()
+        except Exception as e:
+            result = {"warn": str(e)}
+        return Response({"ok": True, "channel_id": ch.id,
+                         "webhook": request.build_absolute_uri("/api/inbox/echat/webhook/%d/" % ch.id),
+                         "connect_result": result})
 
 
 class ChannelViewSet(viewsets.ModelViewSet):
