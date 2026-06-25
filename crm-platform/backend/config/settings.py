@@ -9,6 +9,9 @@ TELEPHONY_TOKEN = os.environ.get("TELEPHONY_TOKEN", "")
 TELEPHONY_WEBRTC_SECRET = os.environ.get("TELEPHONY_WEBRTC_SECRET", "")
 TELEPHONY_WEBRTC_EXT = os.environ.get("TELEPHONY_WEBRTC_EXT", "700")
 TELEPHONY_WS = os.environ.get("TELEPHONY_WS", "")
+LIQPAY_PUBLIC_KEY = os.environ.get("LIQPAY_PUBLIC_KEY", "")
+LIQPAY_PRIVATE_KEY = os.environ.get("LIQPAY_PRIVATE_KEY", "")
+WALLCOV_IBAN = os.environ.get("WALLCOV_IBAN", "")
 DEBUG = os.environ.get("DEBUG", "1") == "1"
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "*").split(",")
 

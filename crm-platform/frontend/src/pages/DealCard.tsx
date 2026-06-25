@@ -179,6 +179,15 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   async function removeItem(item: number) { setDeal(await api.post<Deal>(`/api/deals/${id}/remove_item/`, { item })); }
 
   async function acceptPayment() {
+    if (payType === "liqpay" || payType === "requisites") {
+      try {
+        const r = await api.post<any>(`/api/deals/${id}/send_pay_link/`, { kind: payType, amount: payAmount || deal?.amount });
+        const d = await api.get<Deal>(`/api/deals/${id}/`); setDeal(d);
+        setPayOpen(false); setPayAmount("");
+        flash(r.sent ? t("✓ Ссылка отправлена клиенту в чат","✓ Посилання надіслано клієнту в чат") : t("⚠ Ссылка создана, но нет открытого чата с клиентом","⚠ Посилання створено, але немає відкритого чату з клієнтом"));
+      } catch { flash(t("Не удалось создать ссылку","Не вдалося створити посилання")); }
+      return;
+    }
     setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType }));
     setPayOpen(false); setPayAmount(""); flash(t("✓ Оплата проведена в финансы","✓ Оплата проведена у фінанси"));
   }
@@ -599,7 +608,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} style={{ width: "100%", height: 38, marginBottom: 14, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} />
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setPayOpen(false)}>{t("Отмена","Скасувати")}</button>
-              <button className="btn btn-primary" style={{ flex: 2 }} onClick={acceptPayment} disabled={sending}>{sending ? "…" : t("Провести оплату","Провести оплату")}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} onClick={acceptPayment} disabled={sending}>{sending ? "…" : ((payType === "liqpay" || payType === "requisites") ? t("Создать ссылку и отправить","Створити посилання і надіслати") : t("Провести оплату","Провести оплату"))}</button>
             </div>
             <div className="muted" style={{ fontSize: 11, marginTop: 10 }}>{(payType === "liqpay" || payType === "requisites")
               ? t("Запишет оплату; авто-отправка ссылки клиенту — следующий этап (LiqPay).","Запише оплату; авто-відправка посилання клієнту — наступний етап (LiqPay).")

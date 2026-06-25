@@ -2,7 +2,7 @@ from decimal import Decimal
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import BasePermission, SAFE_METHODS
+from rest_framework.permissions import BasePermission, SAFE_METHODS, AllowAny
 from rest_framework.views import APIView
 from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payment, AutomationRule, GlobalRule, Task, AgentConfig
 from .serializers import (
@@ -405,6 +405,43 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
+    def send_pay_link(self, request, pk=None):
+        """LiqPay/Реквізити: згенерувати посилання + надіслати клієнту в чат + стадія Домовились про оплату.
+        НЕ позначає оплачено — оплата підтвердиться callback-ом LiqPay після реального платежу."""
+        from django.conf import settings as _s
+        from .liqpay import build_checkout_url
+        from .models import log_activity
+        deal = self.get_object()
+        kind = request.data.get("kind", "liqpay")
+        amount = Decimal(str(request.data.get("amount") or deal.amount or 0))
+        order_id = "WCCRM-%s-%s" % (deal.id, str(deal.id * 7919 + int(amount))[-6:])
+        base = "https://crm.wallcovdec.com.ua"
+        url = ""
+        if kind == "requisites":
+            iban = getattr(_s, "WALLCOV_IBAN", "") or "(вкажіть IBAN у Налаштуваннях)"
+            text = "Реквізити для оплати 💳\nIBAN: %s\nПризначення: Оплата замовлення #%s\nСума: %s грн\nПісля оплати одразу почнемо готувати замовлення 😊" % (iban, deal.id, amount)
+        else:
+            pub = getattr(_s, "LIQPAY_PUBLIC_KEY", ""); prv = getattr(_s, "LIQPAY_PRIVATE_KEY", "")
+            if not (pub and prv):
+                return Response({"detail": "LiqPay не налаштовано (немає ключів)"}, status=status.HTTP_400_BAD_REQUEST)
+            url = build_checkout_url(pub, prv, amount, order_id, "Замовлення Wallcov #%s" % deal.id,
+                                     server_url=base + "/api/crm/liqpay/callback/", result_url=base)
+            text = "Ось посилання для оплати 👉 %s\nСума: %s грн. Після оплати одразу почнемо готувати замовлення 😊" % (url, amount)
+        sent = False
+        if deal.contact_id:
+            from apps.inbox.models import Conversation
+            from apps.inbox.services import send_message
+            conv = Conversation.objects.filter(contact_id=deal.contact_id, status="open").order_by("-last_message_at").first()
+            if conv:
+                try:
+                    send_message(conv, text, user=request.user); sent = True
+                except Exception:
+                    pass
+        _advance_deal_stage(deal, 2, "надіслано посилання на оплату")  # Домовились про оплату
+        log_activity("deal", deal.id, "Посилання на оплату", "%s · %s грн · %s" % (kind, amount, "надіслано клієнту" if sent else "НЕ надіслано (немає відкритого чату)"), request.user, "Менеджер")
+        return Response({"ok": True, "sent": sent, "url": url, "text": text})
+
+    @action(detail=True, methods=["post"])
     def ai_suggest(self, request, pk=None):
         """AI-помічник: аналіз діалогу + готова відповідь клієнту (Claude)."""
         deal = self.get_object()
@@ -707,4 +744,46 @@ class AgentConfigView(APIView):
             if f in request.data:
                 setattr(c, f, request.data[f])
         c.save()
+        return Response({"ok": True})
+
+
+class LiqPayCallbackView(APIView):
+    """Callback LiqPay: підтвердження реальної оплати → Payment(paid) → стадія Оплату отримано."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from django.conf import settings as _s
+        from .liqpay import verify, decode_data
+        from .models import log_activity
+        data = request.data.get("data"); sig = request.data.get("signature")
+        if not verify(data, sig, getattr(_s, "LIQPAY_PRIVATE_KEY", "")):
+            return Response({"detail": "bad signature"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            d = decode_data(data)
+        except Exception:
+            return Response({"detail": "bad data"}, status=status.HTTP_400_BAD_REQUEST)
+        st = d.get("status")
+        order_id = str(d.get("order_id") or "")
+        amount = Decimal(str(d.get("amount") or 0))
+        if st not in ("success", "sandbox", "subscribed", "wait_accept"):
+            return Response({"ok": True, "ignored": st})
+        parts = order_id.split("-")
+        if len(parts) < 2 or parts[0] != "WCCRM":
+            return Response({"ok": True, "no_deal": order_id})
+        deal = Deal.objects.filter(id=parts[1]).first()
+        if not deal:
+            return Response({"ok": True, "no_deal": order_id})
+        if Payment.objects.filter(deal=deal, provider="liqpay", amount=amount, is_paid=True).exists():
+            return Response({"ok": True, "dup": True})
+        pay = Payment.objects.create(deal=deal, provider="liqpay", amount=amount, is_paid=True)
+        try:
+            from apps.finance.services import record_income
+            record_income(amount, deal=deal, payment=pay)
+        except Exception:
+            pass
+        paid = sum((p.amount for p in Payment.objects.filter(deal=deal, is_paid=True)), Decimal("0"))
+        if deal.amount and paid >= deal.amount:
+            _advance_deal_stage(deal, 3, "LiqPay оплата отримана")
+        log_activity("deal", deal.id, "Оплата LiqPay", "%s грн отримано (callback)" % amount, None, "LiqPay")
         return Response({"ok": True})
