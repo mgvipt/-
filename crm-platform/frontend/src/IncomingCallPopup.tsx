@@ -50,8 +50,7 @@ export default function IncomingCallPopup() {
       </div>
       <div style={{ fontSize: 19, fontWeight: 700, lineHeight: 1.2 }}>{ring.contact_name || t("Неизвестный номер","Невідомий номер")}</div>
       <div style={{ color: "#475569", marginBottom: 12, fontSize: 14 }}>{ring.number}</div>
-      {canAnswer && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <button className="btn btn-green" style={{ flex: 1, height: 40, fontWeight: 700 }}
             onClick={() => { try { (window as any).wallcovAnswer?.(); } catch { /* */ } }}>
             {t("✅ Принять","✅ Прийняти")}
@@ -60,8 +59,7 @@ export default function IncomingCallPopup() {
             onClick={() => { try { (window as any).wallcovHangup?.(); } catch { /* */ } close(); }}>
             {t("✖ Сбросить","✖ Скинути")}
           </button>
-        </div>
-      )}
+      </div>
       <button className="btn" style={{ width: "100%", height: 36, background: "#eff6ff", color: "#1d4ed8" }}
         onClick={() => { if (ring.contact) nav(`/clients/${ring.contact}`); else nav("/phone"); close(); }}>
         {ring.contact ? t("Открыть карточку клиента","Відкрити картку клієнта") : t("Открыть телефонию","Відкрити телефонію")}
