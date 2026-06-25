@@ -279,3 +279,34 @@ class Task(models.Model):
 
     def __str__(self):
         return f"{self.get_kind_display()}: {self.title}"
+
+
+class AgentConfig(models.Model):
+    """Налаштування вбудованого Claude-агента (один рядок, id=1)."""
+    enabled = models.BooleanField(default=True)
+    autonomous = models.BooleanField(default=True, help_text="True=агент сам виконує дії; False=пропонує")
+    auto_on_reply = models.BooleanField(default=True, help_text="Запускати агента на кожну відповідь клієнта")
+    model = models.CharField(max_length=40, default="claude-sonnet-4-6")
+    system_extra = models.TextField(blank=True, help_text="Додаткова інструкція агенту")
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(id=1)
+        return obj
+
+
+class AgentRun(models.Model):
+    """Аудит прогонів агента: що зробив, скільки токенів, помилки."""
+    kind = models.CharField(max_length=10, default="lead")  # lead / deal
+    lead = models.ForeignKey("Lead", null=True, blank=True, on_delete=models.SET_NULL, related_name="agent_runs")
+    deal = models.ForeignKey("Deal", null=True, blank=True, on_delete=models.SET_NULL, related_name="agent_runs")
+    trigger = models.CharField(max_length=20, default="manual")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    model = models.CharField(max_length=40, blank=True)
+    output = models.JSONField(default=dict, blank=True)
+    tasks_created = models.IntegerField(default=0)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]

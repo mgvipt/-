@@ -3,7 +3,8 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import BasePermission, SAFE_METHODS
-from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payment, AutomationRule, GlobalRule, Task
+from rest_framework.views import APIView
+from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payment, AutomationRule, GlobalRule, Task, AgentConfig
 from .serializers import (
     CompanySerializer, ContactSerializer, ContactDetailSerializer, FunnelSerializer, StageSerializer,
     LeadSerializer, DealSerializer, DealDetailSerializer, PaymentSerializer,
@@ -153,6 +154,15 @@ class ActivityLogMixin:
         from .models import log_activity
         u = getattr(self.request, "user", None)
         log_activity(self.log_kind, obj.id, "Створено", getattr(obj, "title", ""), u)
+
+    @action(detail=True, methods=["post"])
+    def agent_run(self, request, pk=None):
+        """Запустити вбудованого AI-агента вручну по картці."""
+        from .agent import run_agent
+        obj = self.get_object()
+        out = run_agent(obj, self.log_kind, trigger="manual", user=request.user,
+                        model=(request.data.get("model") or "claude-opus-4-8"))
+        return Response(out)
 
     def update(self, request, *args, **kwargs):
         from .models import log_activity
@@ -637,3 +647,20 @@ class TaskViewSet(viewsets.ModelViewSet):
     def done(self, request, pk=None):
         t = self.get_object(); t.status = "done"; t.save(update_fields=["status"])
         return Response(self.get_serializer(t).data)
+
+
+class AgentConfigView(APIView):
+    permission_classes = [_RolesManageOrRead]
+
+    def get(self, request):
+        c = AgentConfig.get()
+        return Response({"enabled": c.enabled, "autonomous": c.autonomous, "auto_on_reply": c.auto_on_reply,
+                         "model": c.model, "system_extra": c.system_extra})
+
+    def post(self, request):
+        c = AgentConfig.get()
+        for f in ["enabled", "autonomous", "auto_on_reply", "model", "system_extra"]:
+            if f in request.data:
+                setattr(c, f, request.data[f])
+        c.save()
+        return Response({"ok": True})

@@ -72,6 +72,7 @@ urlpatterns = [
     path("api/finance/breakeven/", fin_views.BreakevenView.as_view()),
     path("api/finance/directions/", fin_views.DirectionsReportView.as_view()),
     path("api/finance/channels/", fin_views.ChannelsView.as_view()),
+    path("api/agent/config/", crm_views.AgentConfigView.as_view()),
     path("api/finance/funds/", fin_views.FundsView.as_view()),
     path("api/finance/fx-rate/", fin_views.FxRateView.as_view()),
     path("api/finance/fx-impact/", fin_views.FxImpactView.as_view()),
