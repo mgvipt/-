@@ -2,7 +2,8 @@ from decimal import Decimal
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payment
+from rest_framework.permissions import BasePermission, SAFE_METHODS
+from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payment, AutomationRule, GlobalRule, Task
 from .serializers import (
     CompanySerializer, ContactSerializer, ContactDetailSerializer, FunnelSerializer, StageSerializer,
     LeadSerializer, DealSerializer, DealDetailSerializer, PaymentSerializer,
@@ -580,3 +581,59 @@ class GlobalSearchView(APIView):
             "clients": [{"id": c.id, "name": dname(c), "phone": c.phone or "",
                          "deals": c.deals.count()} for c in clients],
         })
+
+
+class _RolesManageOrRead(BasePermission):
+    """Читати — будь-який авторизований; редагувати правила — лише керівник."""
+    def has_permission(self, request, view):
+        u = request.user
+        if request.method in SAFE_METHODS:
+            return bool(u and u.is_authenticated)
+        return bool(u and (getattr(u, "is_superuser", False) or (hasattr(u, "has_perm_code") and u.has_perm_code("roles.manage"))))
+
+
+class AutomationRuleViewSet(viewsets.ModelViewSet):
+    queryset = AutomationRule.objects.select_related("funnel", "from_stage", "to_stage").all()
+    serializer_class = __import__("apps.crm.serializers", fromlist=["AutomationRuleSerializer"]).AutomationRuleSerializer
+    permission_classes = [_RolesManageOrRead]
+    filterset_fields = ["funnel", "from_stage", "trigger", "enabled"]
+
+
+class GlobalRuleViewSet(viewsets.ModelViewSet):
+    queryset = GlobalRule.objects.all()
+    serializer_class = __import__("apps.crm.serializers", fromlist=["GlobalRuleSerializer"]).GlobalRuleSerializer
+    permission_classes = [_RolesManageOrRead]
+    filterset_fields = ["block", "funnel", "enabled"]
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(updated_by=self.request.user)
+
+
+class TaskViewSet(viewsets.ModelViewSet):
+    queryset = Task.objects.select_related("department", "assignee", "deal", "lead").all()
+    serializer_class = __import__("apps.crm.serializers", fromlist=["TaskSerializer"]).TaskSerializer
+    filterset_fields = ["kind", "status", "department", "assignee", "deal", "lead"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.query_params.get("mine") == "1":
+            from django.db.models import Q
+            u = self.request.user
+            qs = qs.filter(Q(assignee=u) | Q(department_id=getattr(u, "department_id", None)))
+        return qs
+
+    @action(detail=True, methods=["post"])
+    def accept(self, request, pk=None):
+        t = self.get_object(); t.assignee = request.user
+        if t.status in ("proposed", "open"):
+            t.status = "in_progress"
+        t.save(update_fields=["assignee", "status"])
+        return Response(self.get_serializer(t).data)
+
+    @action(detail=True, methods=["post"])
+    def done(self, request, pk=None):
+        t = self.get_object(); t.status = "done"; t.save(update_fields=["status"])
+        return Response(self.get_serializer(t).data)

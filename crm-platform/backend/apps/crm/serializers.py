@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payment
+from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payment, AutomationRule, GlobalRule, Task
 
 
 class DealItemSerializer(serializers.ModelSerializer):
@@ -153,3 +153,40 @@ class DealDetailSerializer(DealSerializer):
 
     def get_contact_loyalty(self, obj):
         return getattr(obj.contact, "loyalty_tag", "") if obj.contact else ""
+
+
+class AutomationRuleSerializer(serializers.ModelSerializer):
+    from_stage_name = serializers.CharField(source="from_stage.name", read_only=True)
+    to_stage_name = serializers.CharField(source="to_stage.name", read_only=True)
+    trigger_display = serializers.CharField(source="get_trigger_display", read_only=True)
+    funnel_name = serializers.CharField(source="funnel.name", read_only=True)
+
+    class Meta:
+        model = AutomationRule
+        fields = ["id", "funnel", "funnel_name", "from_stage", "from_stage_name", "to_stage",
+                  "to_stage_name", "trigger", "trigger_display", "enabled", "entry_conditions",
+                  "actions", "description", "delay_hours", "note_to_staff"]
+
+
+class GlobalRuleSerializer(serializers.ModelSerializer):
+    block_display = serializers.CharField(source="get_block_display", read_only=True)
+
+    class Meta:
+        model = GlobalRule
+        fields = ["id", "block", "block_display", "title", "body", "funnel", "priority", "enabled", "updated_at"]
+
+
+class TaskSerializer(serializers.ModelSerializer):
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    department_name = serializers.CharField(source="department.name", read_only=True, default="")
+    assignee_name = serializers.SerializerMethodField()
+
+    def get_assignee_name(self, obj):
+        return (obj.assignee.get_full_name() or obj.assignee.username) if obj.assignee else ""
+
+    class Meta:
+        model = Task
+        fields = ["id", "kind", "kind_display", "title", "body", "deal", "lead", "department",
+                  "department_name", "assignee", "assignee_name", "status", "status_display",
+                  "due_at", "created_by_agent", "created_at"]

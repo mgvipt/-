@@ -206,15 +206,76 @@ class AutomationRule(models.Model):
         ("client_reply", "Клієнт відповів"),
         ("ready_buy", "Готовність купити"),
         ("payment", "Оплата отримана"),
+        ("time_in_stage", "Простій на стадії (дожим)"),
+        ("field_changed", "Змінилось поле"),
+        ("item_added", "Додано товар"),
     ]
     funnel = models.ForeignKey("Funnel", on_delete=models.CASCADE, related_name="automation_rules")
     from_stage = models.ForeignKey("Stage", on_delete=models.CASCADE, related_name="+")
     to_stage = models.ForeignKey("Stage", on_delete=models.CASCADE, related_name="+")
     trigger = models.CharField(max_length=20, choices=TRIGGERS)
     enabled = models.BooleanField(default=True)
+    # розширення (v1): умови входу, дії при вході, людський опис, дожим-таймер
+    entry_conditions = models.JSONField(default=list, blank=True, help_text="Умови входу на стадію")
+    actions = models.JSONField(default=list, blank=True, help_text="Дії при потраплянні на стадію")
+    description = models.TextField(blank=True, help_text="Опис правила людською мовою (для навчання)")
+    delay_hours = models.IntegerField(default=0, help_text="Затримка дії, годин (дожим)")
+    note_to_staff = models.TextField(blank=True, help_text="Підказка співробітнику")
 
     class Meta:
         unique_together = [("funnel", "from_stage", "trigger")]
 
     def __str__(self):
         return f"{self.from_stage} --{self.trigger}--> {self.to_stage}"
+
+
+
+class GlobalRule(models.Model):
+    """Глобальні правила роботи CRM по блоках/сутностях. Джерело правди для
+    навчання співробітників ТА системний контекст вбудованого Claude-агента."""
+    BLOCKS = [
+        ("products", "Товари"), ("sales", "Продажі / воронки"), ("automation", "Автоматизації"),
+        ("payments", "Платежі"), ("novaposhta", "Нова Пошта"), ("checkbox", "Чеки (Checkbox)"),
+        ("warehouse", "Склад"), ("followup", "Дожими"), ("general", "Загальні"),
+    ]
+    block = models.CharField(max_length=20, choices=BLOCKS, db_index=True)
+    title = models.CharField(max_length=200)
+    body = models.TextField(blank=True, help_text="Markdown, редагується менеджером")
+    funnel = models.ForeignKey("Funnel", null=True, blank=True, on_delete=models.SET_NULL, related_name="global_rules")
+    priority = models.IntegerField(default=100)
+    enabled = models.BooleanField(default=True)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["block", "priority", "id"]
+
+    def __str__(self):
+        return f"[{self.block}] {self.title}"
+
+
+class Task(models.Model):
+    """Задача співробітнику (склад/тонування/менеджер/дожим). Ставиться на ВІДДІЛ,
+    стає персональною коли хтось прийняв. proposed = агент пропонує, треба апрув."""
+    KINDS = [("warehouse", "Склад"), ("tinting", "Тонування"), ("manager", "Менеджер"),
+             ("followup", "Дожим"), ("other", "Інше")]
+    STATUS = [("proposed", "Запропоновано"), ("open", "Відкрита"), ("in_progress", "В роботі"),
+              ("done", "Виконана"), ("canceled", "Скасована")]
+    kind = models.CharField(max_length=16, choices=KINDS, default="other")
+    title = models.CharField(max_length=255)
+    body = models.TextField(blank=True)
+    deal = models.ForeignKey("Deal", null=True, blank=True, on_delete=models.CASCADE, related_name="tasks")
+    lead = models.ForeignKey("Lead", null=True, blank=True, on_delete=models.CASCADE, related_name="tasks")
+    department = models.ForeignKey("accounts.Department", null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks")
+    assignee = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks")
+    status = models.CharField(max_length=14, choices=STATUS, default="open", db_index=True)
+    due_at = models.DateTimeField(null=True, blank=True)
+    created_by_agent = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["status", "-created_at"]
+
+    def __str__(self):
+        return f"{self.get_kind_display()}: {self.title}"
