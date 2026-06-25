@@ -107,12 +107,22 @@ def sync_chats(max_chats=40, per_chat=40):
             conv = Conversation.objects.create(channel=ch, external_chat_id=str(cid), title=name[:160])
         if created:
             new_conv += 1
-            if name and not name.startswith("@"):
+            # ЗАВЖДИ створюємо/лінкуємо контакт (раніше @username-клієнти лишались без контакту → лід без чату)
+            nm = (name or "Instagram").lstrip("@").strip() or "Instagram"
+            link = ("https://instagram.com/" + nm) if name.startswith("@") else ""
+            existing = Contact.objects.filter(social_link=link).first() if link else None
+            if existing:
+                conv.contact = existing
+            elif name.startswith("@"):
+                conv.contact = Contact.objects.create(first_name=nm[:120], channels=["instagram"],
+                                                      social_link=link, comment="З ChatPlace IG")
+            else:
                 parts = name.split(" ", 1)
                 conv.contact = (Contact.objects.filter(first_name__iexact=parts[0]).first()
                                 or Contact.objects.create(first_name=parts[0][:120],
                                                           last_name=(parts[1] if len(parts) > 1 else "")[:120],
-                                                          comment="З ChatPlace IG"))
+                                                          channels=["instagram"], comment="З ChatPlace IG"))
+            conv.save(update_fields=["contact"])
             # посилання на IG-акаунт (username з chats_get)
             try:
                 if conv.contact and not conv.contact.social_link:
