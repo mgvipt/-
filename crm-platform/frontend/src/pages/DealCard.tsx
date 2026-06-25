@@ -366,7 +366,25 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             </div>
             <div className="row" style={{ marginTop: 8 }}><span className="muted">{t("Оплачено","Оплачено")}</span><b style={{ color: "#16a34a" }}>{fmt(deal.paid)} ₴</b></div>
             <div className="row"><span className="muted">{t("Осталось","Залишилось")}</span><b style={{ color: remaining > 0 ? "#d97706" : "#16a34a" }}>{fmt(remaining)} ₴</b></div>
-            <button className="btn btn-primary" style={{ width: "100%", height: 36, marginTop: 10 }} onClick={() => { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }}>{t("💳 Принять оплату","💳 Прийняти оплату")}</button>
+            <div style={{ height: 8, background: "#e2e8f0", borderRadius: 6, overflow: "hidden", margin: "10px 0 6px" }} title={t("Прогресс оплаты","Прогрес оплати")}>
+              <div style={{ height: "100%", width: (Number(deal.amount) > 0 ? Math.min(100, Math.round((deal.paid / Number(deal.amount)) * 100)) : 0) + "%", background: (deal.paid >= Number(deal.amount) && deal.paid > 0) ? "#16a34a" : "#f59e0b", transition: "width .3s" }} />
+            </div>
+            {(() => {
+              const st = deal.paid <= 0 ? { txt: t("⏳ Ожидаем оплату","⏳ Очікуємо оплату"), bg: "#eff6ff", c: "#1d4ed8" } : (deal.paid < Number(deal.amount) ? { txt: t("🟡 Оплачено частично (аванс)","🟡 Оплачено частково (аванс)"), bg: "#fef3c7", c: "#92400e" } : { txt: t("✅ Оплачено полностью","✅ Оплачено повністю"), bg: "#dcfce7", c: "#166534" });
+              return <div style={{ textAlign: "center", fontSize: 12.5, fontWeight: 600, padding: "6px", borderRadius: 8, background: st.bg, color: st.c, marginBottom: 8 }}>{st.txt}</div>;
+            })()}
+            <button className="btn btn-primary" style={{ width: "100%", height: 36 }} onClick={() => { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }}>{t("💳 Принять оплату","💳 Прийняти оплату")}</button>
+            {(deal.payments || []).length > 0 && (
+              <div style={{ marginTop: 10, borderTop: "1px solid #f1f5f9", paddingTop: 8 }}>
+                <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("История платежей","Історія платежів")}</div>
+                {(deal.payments || []).map((p: any) => (
+                  <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}>
+                    <span className="muted">{p.provider} · {p.created_at ? new Date(p.created_at).toLocaleDateString("uk", { day: "2-digit", month: "2-digit" }) : ""}</span>
+                    <b style={{ color: "#16a34a" }}>{fmt(Number(p.amount))} ₴</b>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <ActivityLog kind="deal" id={deal.id} />
 
