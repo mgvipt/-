@@ -80,6 +80,21 @@ export default function LeadCard() {
     if (!funnel || funnel.id !== l.funnel) setFunnel(await api.get<Funnel>(`/api/funnels/${l.funnel}/`));
   }
   useEffect(() => { load(); }, [id]);
+  // live-оновлення стадії/відповідального без перезавантаження (не чіпає поля анкети)
+  useEffect(() => {
+    if (!id) return;
+    const tm = setInterval(async () => {
+      try {
+        const l = await api.get<Lead>(`/api/leads/${id}/`);
+        setLead((cur) => {
+          if (!cur) return cur;
+          if (cur.stage === l.stage && cur.owner === l.owner && cur.funnel === l.funnel) return cur;
+          return { ...cur, stage: l.stage, owner: l.owner, owner_name: (l as any).owner_name, funnel: l.funnel };
+        });
+      } catch { /* ignore */ }
+    }, 5000);
+    return () => clearInterval(tm);
+  }, [id]);
   if (!lead) return <div className="spin">{t("Загрузка лида…","Загрузка ліда…")}</div>;
 
   async function setStage(s: number) { await api.patch(`/api/leads/${id}/`, { stage: s }); load(); }

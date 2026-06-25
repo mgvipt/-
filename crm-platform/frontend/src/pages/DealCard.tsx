@@ -107,6 +107,21 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     api.get<Paginated<Product>>("/api/products/?page_size=200").then((p) => setProducts(p.results));
     api.get<any>("/api/funnels/").then((f) => setAllFunnels(f.results || f)).catch(() => {});
   }, [id]);
+  // live-оновлення стадії/відповідального без перезавантаження (не чіпає поля сделки)
+  useEffect(() => {
+    if (!id) return;
+    const tm = setInterval(async () => {
+      try {
+        const d = await api.get<Deal>(`/api/deals/${id}/`);
+        setDeal((cur) => {
+          if (!cur) return cur;
+          if (cur.stage === d.stage && cur.owner === d.owner) return cur;
+          return { ...cur, stage: d.stage, owner: d.owner, owner_name: (d as any).owner_name };
+        });
+      } catch { /* ignore */ }
+    }, 5000);
+    return () => clearInterval(tm);
+  }, [id]);
   useEffect(() => {
     if (deal?.conversation_id) api.get<any>(`/api/conversations/${deal.conversation_id}/messages/`).then(setChat).catch(() => setChat([]));
     else setChat([]);
