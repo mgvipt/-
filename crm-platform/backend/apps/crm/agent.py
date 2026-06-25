@@ -6,6 +6,16 @@ from django.utils import timezone
 from datetime import timedelta
 from .models import GlobalRule, Task, AgentRun, AgentConfig, log_activity
 
+ROOMS = ["Кухня", "Спальня", "Вітальня", "Ванна", "Коридор", "Офіс", "Салон краси", "Кафе/ресторан", "Інше"]
+PREP = ["Ідеально гладкі (під фарбування)", "Можна дефекти (під шпалери)", "Не підготовлені"]
+MATS = ["Galateya", "Pattera (Травертин)", "Mermi Silk", "Eleganti", "Celestial", "Velvet Luna", "Slate", "Ще не визначився"]
+TERMS = ["Терміново (1-2 тиж)", "В процесі (місяць)", "Планує (3+ міс)", "На майбутнє"]
+PROBE = ["Пробник", "Розрахунок на весь обʼєм"]
+PAY = ["Повна (LiqPay/Mono)", "Накладений платіж", "Передоплата + доплата"]
+SHIP = ["НП відділення", "НП курʼєр додому", "Самовивіз зі складу", "Власний курʼєр"]
+CONTACTED = ["Ні — вперше", "Так — був пробник", "Так — дивився раніше"]
+APPLIER = ["Сам наноситиму", "Потрібен майстер", "Ще не вирішив"]
+
 API = "https://api.anthropic.com/v1/messages"
 
 TOOLS = [
@@ -19,6 +29,15 @@ TOOLS = [
          "title": {"type": "string"}, "body": {"type": "string"},
          "due_hours": {"type": "integer", "description": "Через скільки годин дедлайн (0=без)"}},
       "required": ["kind", "title"]}},
+    {"name": "fill_needs", "description": "Заповнити анкету виявлення потреби даними які клієнт ЯВНО назвав у діалозі. Передавай ТІЛЬКИ те що клієнт реально сказав, решту лиши порожнім. Не вигадуй.",
+     "input_schema": {"type": "object", "properties": {
+         "room": {"type": "string", "enum": ROOMS}, "area": {"type": "string", "description": "площа стін, число м²"},
+         "prep": {"type": "string", "enum": PREP}, "term": {"type": "string", "enum": TERMS},
+         "city": {"type": "string"}, "material": {"type": "string", "enum": MATS},
+         "color": {"type": "string"}, "probe": {"type": "string", "enum": PROBE},
+         "applier": {"type": "string", "enum": APPLIER}, "budget": {"type": "string", "description": "бюджет, число грн"},
+         "pay": {"type": "string", "enum": PAY}, "ship": {"type": "string", "enum": SHIP},
+         "contacted": {"type": "string", "enum": CONTACTED}, "objections": {"type": "string", "description": "заперечення/питання клієнта"}}, "required": []}},
     {"name": "no_action", "description": "Нічого не робити — стадія правильна, дій не треба.",
      "input_schema": {"type": "object", "properties": {"why": {"type": "string"}}, "required": []}},
 ]
@@ -44,7 +63,8 @@ def build_system(entity, kind):
     parts = ["Ти AI-РОП компанії Wallcov (декоративні покриття для стін). Працюєш ВСЕРЕДИНІ CRM. "
              "Твоя задача: рухати ліда/сделку по воронці за правилами і створювати задачі співробітникам. "
              "Дій рішуче але точно: рухай стадію тільки коли клієнт реально дозрів. Якщо клієнт замовк — створи задачу-дожим менеджеру. "
-             "Рухати можна ТІЛЬКИ вперед і на сусідню стадію (не перестрибуй). Відповідай українською у reason/тексті задач."]
+             "Рухати можна ТІЛЬКИ вперед і на сусідню стадію (не перестрибуй). Відповідай українською у reason/тексті задач. "
+             "ЗАПОВНЮЙ анкету потреби (fill_needs) даними які клієнт ЯВНО назвав у діалозі (приміщення, площа, матеріал, колір, бюджет, місто, терміни, спосіб оплати тощо) — це економить менеджеру час. Не вигадуй те чого клієнт не казав."]
     for gr in GlobalRule.objects.filter(enabled=True).order_by("block", "priority"):
         parts.append("## [%s] %s\n%s" % (gr.get_block_display(), gr.title, gr.body))
     if entity.funnel_id:
@@ -120,6 +140,21 @@ def _create_task(entity, kind, inp, user, autonomous):
     return {"ok": True, "task_id": t.id, "status": t.status}
 
 
+def _fill_needs(entity, inp, kind, user):
+    """Заповнити lead.qualification з діалогу — ТІЛЬКИ порожні поля (не затирати ручний ввід)."""
+    q = dict(entity.qualification or {})
+    filled = []
+    for k, v in (inp or {}).items():
+        if v and not q.get(k):
+            q[k] = v
+            filled.append(k)
+    if filled:
+        entity.qualification = q
+        entity.save(update_fields=["qualification"])
+        log_activity(kind, entity.id, "AI-агент: анкета потреби", "заповнено: " + ", ".join(filled), user, "AI-агент")
+    return {"ok": True, "filled": filled}
+
+
 def run_agent(entity, kind, trigger="manual", user=None, model=None):
     cfg = AgentConfig.get()
     if not cfg.enabled:
@@ -140,6 +175,8 @@ def run_agent(entity, kind, trigger="manual", user=None, model=None):
                 r = _create_task(entity, kind, inp, user, cfg.autonomous)
                 if r.get("ok"):
                     run.tasks_created += 1
+            elif name == "fill_needs":
+                r = _fill_needs(entity, inp, kind, user)
             else:
                 r = {"no_action": inp.get("why", "")}
             actions.append({"tool": name, "input": inp, "result": r})

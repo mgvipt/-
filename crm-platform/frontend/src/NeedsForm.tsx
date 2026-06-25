@@ -1,6 +1,6 @@
 /* Анкета виявлення потреби (за скриптом РОПа Wallcov). Поля → lead.qualification (JSON).
  * Блоки: Обʼєкт · Продукт · Фінанси/Доставка · Додатково. */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "./api";
 import { useLang } from "./i18n";
 
@@ -22,6 +22,17 @@ export default function NeedsForm({ leadId, initial, endpoint = "/api/leads/" }:
   const [saved, setSaved] = useState(true);
   const [busy, setBusy] = useState(false);
   function set(k: string, v: any) { setQ((p: any) => ({ ...p, [k]: v })); setSaved(false); }
+  // агент/сервер заповнив анкету → підхопити ТІЛЬКИ порожні поля (ручний ввід не чіпаємо)
+  useEffect(() => {
+    if (!initial) return;
+    setQ((p: any) => {
+      const m = { ...p }; let ch = false;
+      for (const k of Object.keys(initial)) {
+        if ((m[k] === undefined || m[k] === "" || m[k] === null) && initial[k]) { m[k] = initial[k]; ch = true; }
+      }
+      return ch ? m : p;
+    });
+  }, [initial]);
   async function save() {
     setBusy(true);
     try { await api.patch(`${endpoint}${leadId}/`, { qualification: q }); setSaved(true); } catch { /* ignore */ }

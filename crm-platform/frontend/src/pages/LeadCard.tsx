@@ -88,8 +88,9 @@ export default function LeadCard() {
         const l = await api.get<Lead>(`/api/leads/${id}/`);
         setLead((cur) => {
           if (!cur) return cur;
-          if (cur.stage === l.stage && (cur as any).owner === (l as any).owner && cur.funnel === l.funnel) return cur;
-          return { ...cur, stage: l.stage, owner: (l as any).owner, owner_name: (l as any).owner_name, funnel: l.funnel };
+          const qCh = JSON.stringify((cur as any).qualification) !== JSON.stringify((l as any).qualification);
+          if (cur.stage === l.stage && (cur as any).owner === (l as any).owner && cur.funnel === l.funnel && !qCh) return cur;
+          return { ...cur, stage: l.stage, owner: (l as any).owner, owner_name: (l as any).owner_name, funnel: l.funnel, qualification: (l as any).qualification };
         });
       } catch { /* ignore */ }
     }, 5000);

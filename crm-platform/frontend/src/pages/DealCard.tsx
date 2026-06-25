@@ -115,8 +115,9 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         const d = await api.get<Deal>(`/api/deals/${id}/`);
         setDeal((cur) => {
           if (!cur) return cur;
-          if (cur.stage === d.stage && cur.owner === d.owner) return cur;
-          return { ...cur, stage: d.stage, owner: d.owner, owner_name: (d as any).owner_name };
+          const qCh = JSON.stringify((cur as any).qualification) !== JSON.stringify((d as any).qualification);
+          if (cur.stage === d.stage && cur.owner === d.owner && !qCh) return cur;
+          return { ...cur, stage: d.stage, owner: d.owner, owner_name: (d as any).owner_name, qualification: (d as any).qualification };
         });
       } catch { /* ignore */ }
     }, 5000);
