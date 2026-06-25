@@ -117,8 +117,9 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         setDeal((cur) => {
           if (!cur) return cur;
           const qCh = JSON.stringify((cur as any).qualification) !== JSON.stringify((d as any).qualification);
-          if (cur.stage === d.stage && cur.owner === d.owner && !qCh) return cur;
-          return { ...cur, stage: d.stage, owner: d.owner, owner_name: (d as any).owner_name, qualification: (d as any).qualification };
+          const iCh = JSON.stringify((cur as any).items) !== JSON.stringify((d as any).items);
+          if (cur.stage === d.stage && cur.owner === d.owner && (cur as any).amount === (d as any).amount && !qCh && !iCh) return cur;
+          return { ...cur, stage: d.stage, owner: d.owner, owner_name: (d as any).owner_name, qualification: (d as any).qualification, items: (d as any).items, amount: (d as any).amount, payments: (d as any).payments, paid: (d as any).paid };
         });
       } catch { /* ignore */ }
     }, 5000);
