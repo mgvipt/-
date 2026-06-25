@@ -31,11 +31,23 @@ export default function Inbox() {
   const [picker, setPicker] = useState<null | "transfer" | "add">(null);
   const [emps, setEmps] = useState<{ id: number; full_name: string }[]>([]);
   const [menu, setMenu] = useState(false);
+  const [channels, setChannels] = useState<{ id: number; name: string }[]>([]);
+  const [chFilter, setChFilter] = useState("");
+  const [period, setPeriod] = useState("all");
+  const [selMode, setSelMode] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const endRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<Conversation | null>(null);
 
+  function listQuery() {
+    const sp = new URLSearchParams({ page_size: "50" });
+    if (scope && scope !== "all") sp.set("scope", scope);
+    if (chFilter) sp.set("channel", chFilter);
+    if (period && period !== "all") sp.set("period", period);
+    return "?" + sp.toString();
+  }
   async function loadConvs() {
-    const q = scope && scope !== "all" ? `?scope=${scope}&page_size=50` : "?page_size=50";
+    const q = listQuery();
     const d = await api.get<Paginated<Conversation>>(`/api/conversations/${q}`);
     setConvs(d.results); setNextUrl((d as any).next || null);
     if (!activeRef.current && d.results[0]) openConv(d.results[0]);
@@ -48,7 +60,7 @@ export default function Inbox() {
     setNextUrl((d as any).next || null);
   }
   async function refreshList() {
-    const q = scope && scope !== "all" ? `?scope=${scope}&page_size=50` : "?page_size=50";
+    const q = listQuery();
     const d = await api.get<Paginated<Conversation>>(`/api/conversations/${q}`);
     setConvs((cs) => {
       const map = new Map<number, Conversation>(cs.map((c) => [c.id, c]));
@@ -56,7 +68,7 @@ export default function Inbox() {
       return Array.from(map.values()).sort((a, b) => String(b.last_message_at || "").localeCompare(String(a.last_message_at || "")));
     });
   }
-  useEffect(() => { loadConvs(); }, [scope]);
+  useEffect(() => { loadConvs(); }, [scope, chFilter, period]);
   // live-оновлення відкритого чату (без ручного refresh)
   useEffect(() => {
     if (!active) return;
@@ -72,7 +84,7 @@ export default function Inbox() {
   useEffect(() => {
     const t = setInterval(() => refreshList(), 20000);
     return () => clearInterval(t);
-  }, [scope]);
+  }, [scope, chFilter, period]);
   useEffect(() => {
     const contactId = params.get("contact");
     if (contactId) {
@@ -88,6 +100,7 @@ export default function Inbox() {
     api.get<Conversation>(`/api/conversations/${cid}/`).then((c) => { setConvs((cs) => cs.some((x) => x.id === c.id) ? cs : [c, ...cs]); openConv(c); }).catch(() => {});
   }, [params]);
   useEffect(() => { activeRef.current = active; }, [active]);
+  useEffect(() => { api.get<any>("/api/channels/").then((d) => setChannels(((d.results || d) as any[]).map((c) => ({ id: c.id, name: c.name })))).catch(() => {}); }, []);
   useEffect(() => { api.get<any>("/api/users/?page_size=500").then((d) => setEmps(((d.results || d) as any[]).filter((u) => u.is_active).map((u) => ({ id: u.id, full_name: u.full_name || u.username })))).catch(() => {}); }, []);
   useEffect(() => { endRef.current?.scrollIntoView(); }, [msgs]);
 
@@ -140,6 +153,18 @@ export default function Inbox() {
     setPicker(null);
   }
 
+  function toggleSel(id: number) { setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
+  function selectAllVisible() { setSelected(new Set(convs.map((c) => c.id))); }
+  async function bulkClose() {
+    if (selected.size === 0) return;
+    try {
+      await api.post<any>("/api/conversations/bulk_close/", { ids: Array.from(selected) });
+      setConvs((cs) => cs.filter((x) => !selected.has(x.id)));
+      if (active && selected.has(active.id)) { setActive(null); setMsgs([]); }
+      setSelected(new Set()); setSelMode(false);
+    } catch { setErr(t("Не удалось закрыть","Не вдалося закрити")); }
+  }
+
   const mItem: any = { padding: "10px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f8fafc" };
   async function takeConv() {
     if (!active) return;
@@ -166,14 +191,38 @@ export default function Inbox() {
                 background: scope === k ? "var(--brand)" : "#fff", color: scope === k ? "#fff" : "#475569" }}>{label}</button>
           ))}
         </div>
+        <div style={{ display: "flex", gap: 6, padding: "6px 12px", borderBottom: "1px solid #f1f5f9", alignItems: "center", flexWrap: "wrap" }}>
+          <select value={chFilter} onChange={(e) => setChFilter(e.target.value)} style={{ flex: 1, minWidth: 86, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
+            <option value="">{t("Все каналы","Всі канали")}</option>
+            {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select value={period} onChange={(e) => setPeriod(e.target.value)} style={{ flex: 1, minWidth: 86, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
+            <option value="all">{t("Все дни","Всі дні")}</option>
+            <option value="today">{t("Сегодня","Сьогодні")}</option>
+            <option value="yesterday">{t("Вчера","Вчора")}</option>
+            <option value="7d">{t("7 дней","7 днів")}</option>
+            <option value="30d">{t("30 дней","30 днів")}</option>
+          </select>
+          <button onClick={() => { setSelMode((v) => !v); setSelected(new Set()); }} title={t("Выбрать чаты для закрытия","Обрати чати для закриття")}
+            style={{ height: 28, fontSize: 13, padding: "0 9px", borderRadius: 7, cursor: "pointer", border: "1px solid " + (selMode ? "var(--brand)" : "#e2e8f0"), background: selMode ? "var(--brand)" : "#fff", color: selMode ? "#fff" : "#475569" }}>☑️</button>
+        </div>
+        {selMode && (
+          <div style={{ display: "flex", gap: 8, padding: "6px 12px", borderBottom: "1px solid #f1f5f9", alignItems: "center", background: "#fff7ed" }}>
+            <span style={{ fontSize: 12, color: "#9a3412" }}>{t("Выбрано","Обрано")}: {selected.size}</span>
+            <button onClick={selectAllVisible} style={{ fontSize: 11.5, padding: "3px 8px", borderRadius: 6, cursor: "pointer", border: "1px solid #e2e8f0", background: "#fff" }}>{t("Все","Всі")}</button>
+            <button onClick={() => setSelected(new Set())} style={{ fontSize: 11.5, padding: "3px 8px", borderRadius: 6, cursor: "pointer", border: "1px solid #e2e8f0", background: "#fff" }}>{t("Сброс","Скинути")}</button>
+            <button onClick={bulkClose} disabled={selected.size === 0} style={{ marginLeft: "auto", fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 7, cursor: selected.size ? "pointer" : "default", border: "none", background: selected.size ? "#dc2626" : "#fca5a5", color: "#fff" }}>✅ {t("Закрыть","Закрити")} ({selected.size})</button>
+          </div>
+        )}
         <div style={{ flex: 1, overflowY: "auto" }} onScroll={(e) => { const el = e.currentTarget; if (el.scrollHeight - el.scrollTop - el.clientHeight < 140) loadMore(); }}>
           {convs.length === 0 && <div className="spin">{t("Пока нет диалогов.","Поки немає діалогів.")}</div>}
           {(() => {
             const fmtAt = (d?: string) => d ? new Date(d).toLocaleString("uk", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
             const card = (c: Conversation) => (
-              <div key={c.id} onClick={() => openConv(c)}
+              <div key={c.id} onClick={() => (selMode ? toggleSel(c.id) : openConv(c))}
                 style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", cursor: "pointer",
-                  display: "flex", gap: 9, background: active?.id === c.id ? "#eff6ff" : "" }}>
+                  display: "flex", gap: 9, background: selected.has(c.id) ? "#fef3c7" : (active?.id === c.id ? "#eff6ff" : "") }}>
+                {selMode && <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} onClick={(e) => e.stopPropagation()} style={{ alignSelf: "center", width: 16, height: 16, cursor: "pointer" }} />}
                 <Avatar name={c.contact_name || c.title || "?"} cls="av-md" />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>

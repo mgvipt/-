@@ -150,9 +150,36 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(Q(assigned_to=user) | Q(participants=user))
         elif scope == "unassigned":
             qs = qs.filter(assigned_to__isnull=True)
+        period = self.request.query_params.get("period")
+        if period and period != "all":
+            from django.utils import timezone as _tz
+            from datetime import timedelta as _td
+            now = _tz.now()
+            if period == "today":
+                qs = qs.filter(last_message_at__date=now.date())
+            elif period == "yesterday":
+                qs = qs.filter(last_message_at__date=(now - _td(days=1)).date())
+            elif period == "7d":
+                qs = qs.filter(last_message_at__gte=now - _td(days=7))
+            elif period == "30d":
+                qs = qs.filter(last_message_at__gte=now - _td(days=30))
+        df = self.request.query_params.get("date_from")
+        dt = self.request.query_params.get("date_to")
+        if df:
+            qs = qs.filter(last_message_at__date__gte=df)
+        if dt:
+            qs = qs.filter(last_message_at__date__lte=dt)
         if self.request.query_params.get("status") is None and self.action == "list":
             qs = qs.exclude(status="closed")
         return qs.distinct()
+
+    @action(detail=False, methods=["post"])
+    def bulk_close(self, request):
+        """Масово завершити вибрані діалоги (тільки ті, що видно користувачу)."""
+        ids = request.data.get("ids") or []
+        allowed = list(self.get_queryset().filter(id__in=ids).values_list("id", flat=True))
+        Conversation.objects.filter(id__in=allowed).update(status="closed")
+        return Response({"closed": len(allowed)})
 
     @action(detail=True, methods=["post"])
     def assign(self, request, pk=None):
