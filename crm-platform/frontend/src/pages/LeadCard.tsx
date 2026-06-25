@@ -11,7 +11,7 @@ import ActivityLog from "../ActivityLog";
 import { useLang } from "../i18n";
 
 interface Lead {
-  id: number; title: string; contact?: number; contact_name?: string; owner_name?: string;
+  id: number; title: string; contact?: number; contact_name?: string; owner_name?: string; created_at?: string;
   funnel: number; stage: number; amount: string; source: string; is_seen: boolean; qualification?: any; card_fields?: any[]; contact_social_link?: string;
 }
 
@@ -94,6 +94,7 @@ export default function LeadCard() {
         <button className="back" onClick={() => nav("/leads")}>←</button>
         <b style={{ fontSize: 16 }}>{lead.title}</b>
         <span className="muted">{funnel?.name}</span>
+        {lead.created_at && <span className="muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }} title={t("Лид появился","Лід зʼявився")}>🕓 {new Date(lead.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
         <button className="btn btn-green" onClick={convert}>{t("✅ Конвертировать в сделку","✅ Конвертувати в сделку")}</button>

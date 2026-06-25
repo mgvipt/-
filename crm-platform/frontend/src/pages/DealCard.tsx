@@ -42,7 +42,7 @@ interface Item { id: number; product: number; product_name: string; quantity: st
 interface Pay { id: number; provider: string; amount: string; is_paid: boolean; created_at: string; }
 interface Deal {
   qualification?: any; card_fields?: any[];
-  id: number; title: string; contact_name?: string; owner_name?: string; owner?: number | null;
+  id: number; title: string; contact_name?: string; owner_name?: string; owner?: number | null; created_at?: string;
   funnel: number; stage: number; amount: string; source: string;
   items: Item[]; payments: Pay[]; paid: number;
   // поля merge-карточки (см. CODEMAP разд.2, модель Deal):
@@ -234,6 +234,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             {allFunnels.filter((f: any) => !f.is_lead_funnel).map((f: any) => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
         ) : <span className="muted">{funnel?.name}</span>}
+        {deal.created_at && <span className="muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }} title={t("Сделка появилась","Сделка зʼявилась")}>🕓 {new Date(deal.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
         {deal.contact_id && <CallButton contact={deal.contact_id} small />}
