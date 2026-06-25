@@ -366,6 +366,15 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             </div>
             <div className="row" style={{ marginTop: 8 }}><span className="muted">{t("Оплачено","Оплачено")}</span><b style={{ color: "#16a34a" }}>{fmt(deal.paid)} ₴</b></div>
             <div className="row"><span className="muted">{t("Осталось","Залишилось")}</span><b style={{ color: remaining > 0 ? "#d97706" : "#16a34a" }}>{fmt(remaining)} ₴</b></div>
+            <div style={{ marginTop: 10 }}>
+              <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("Тип оплаты","Тип оплати")}</div>
+              <select value={deal.pay_type || "full"} onChange={(e) => patch({ pay_type: e.target.value })} style={{ width: "100%", height: 32, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 12.5, padding: "0 8px" }}>
+                <option value="full">{t("💯 Полная оплата","💯 Повна оплата")}</option>
+                <option value="prepay_np">{t("🚚 Предоплата + послеоплата НП","🚚 Передоплата + післяплата НП")}</option>
+                <option value="reserve">{t("🔒 Бронь","🔒 Бронь")}</option>
+              </select>
+              <div className="muted" style={{ fontSize: 10.5, marginTop: 3 }}>{deal.pay_type === "prepay_np" ? t("Аванс → Оплату отримано + чек, остаток собирает НП","Аванс → Оплату отримано + чек, решту збере НП") : t("Полная сумма → Оплату отримано; частично → остаётся Домовились","Повна сума → Оплату отримано; частково → лишається Домовились")}</div>
+            </div>
             <div style={{ height: 8, background: "#e2e8f0", borderRadius: 6, overflow: "hidden", margin: "10px 0 6px" }} title={t("Прогресс оплаты","Прогрес оплати")}>
               <div style={{ height: "100%", width: (Number(deal.amount) > 0 ? Math.min(100, Math.round((deal.paid / Number(deal.amount)) * 100)) : 0) + "%", background: (deal.paid >= Number(deal.amount) && deal.paid > 0) ? "#16a34a" : "#f59e0b", transition: "width .3s" }} />
             </div>
@@ -582,7 +591,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <h3 style={{ marginTop: 0 }}>{t("Принять оплату","Прийняти оплату")}</h3>
             <label className="label" style={{ marginBottom: 6 }}>{t("Тип оплаты","Тип оплати")}</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 14 }}>
-              {([["cash", t("💵 Наличные/Предоплата","💵 Готівка/Передоплата")], ["liqpay", t("💳 LiqPay онлайн","💳 LiqPay онлайн")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]] as [string,string][]).map(([k, label]) => (
+              {([["cash", t("💵 Наличные","💵 Готівка")], ["liqpay", t("💳 LiqPay онлайн","💳 LiqPay онлайн")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]] as [string,string][]).map(([k, label]) => (
                 <button key={k} onClick={() => setPayType(k)} style={{ fontSize: 12, padding: "8px 8px", borderRadius: 8, cursor: "pointer", textAlign: "left", border: "1px solid " + (payType === k ? "var(--brand,#2563eb)" : "#e2e8f0"), background: payType === k ? "#eff6ff" : "#fff", color: payType === k ? "#1d4ed8" : "#475569", fontWeight: payType === k ? 600 : 400 }}>{label}</button>
               ))}
             </div>

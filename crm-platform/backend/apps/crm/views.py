@@ -393,10 +393,15 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         pay = Payment.objects.create(deal=deal, provider=provider, amount=amount, is_paid=True)
         record_income(amount, deal=deal, account=account, payment=pay)
         paid = sum((p.amount for p in Payment.objects.filter(deal=deal, is_paid=True)), Decimal("0"))
+        pt = (deal.pay_type or "").lower()
+        is_np = any(x in pt for x in ["np", "післяплат", "послеоплат", "prepay", "передопл"])
         if deal.amount and paid >= deal.amount:
             _advance_deal_stage(deal, 3, "оплата отримана повністю")  # → Оплату отримано
         elif paid > 0:
-            _advance_deal_stage(deal, 2, "часткова оплата")  # → Домовились про оплату
+            if is_np:
+                _advance_deal_stage(deal, 3, "передоплату отримано (решта — післяплата НП)")  # відвантажуємо, решту збере НП
+            else:
+                _advance_deal_stage(deal, 2, "часткова оплата (тип Повна — чекаємо решту)")  # → Домовились про оплату
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
