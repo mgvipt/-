@@ -9,6 +9,8 @@ API_KEY = (os.environ.get("CHATPLACE_API_KEY", "") or "").strip()
 # сторони повідомлення, які вважаємо ВИХІДНИМИ (ми/AI/оператор). Решта = вхідне (клієнт).
 _STAFF_SIDES = {"ai_assistant", "operator", "manager", "bot", "system", "admin", "out"}
 # службові маркери ChatPlace (не реальні повідомлення)
+import re as _re
+_SYS_LABEL = _re.compile(r"^[A-Za-z]{3,}Label$")
 _SYSTEM_MARKERS = {"ActiveStatusLabel", "InactiveStatusLabel", "ReadStatusLabel"}
 
 
@@ -52,10 +54,11 @@ def sync_one_chat(conv, per_chat=40):
     if isinstance(msgs, dict):
         msgs = msgs.get("items") or msgs.get("messages") or []
     new = 0
+    _had_in = [False]; _had_out = [False]
     for m in reversed(msgs or []):
         ext = str(m.get("id"))
         body = m.get("message") or m.get("text") or ""
-        if not body or body in _SYSTEM_MARKERS or "StatusLabel" in str(body):
+        if not body or body in _SYSTEM_MARKERS or "StatusLabel" in str(body) or _SYS_LABEL.match(str(body).strip()):
             continue
         if Message.objects.filter(conversation=conv, external_id=ext).exists():
             continue
@@ -64,6 +67,19 @@ def sync_one_chat(conv, per_chat=40):
         Message.objects.create(conversation=conv, direction=direction, text=str(body)[:5000],
                                external_id=ext, sender_name=("" if direction == "in" else side))
         new += 1
+        if direction == "in":
+            _had_in[0] = True
+        else:
+            _had_out[0] = True
+    if conv.contact_id:
+        try:
+            from apps.crm.automation import on_incoming, on_outgoing
+            if _had_in[0]:
+                on_incoming(conv.contact, "")
+            if _had_out[0]:
+                on_outgoing(conv.contact)
+        except Exception:
+            pass
     return new
 
 
@@ -116,6 +132,7 @@ def sync_chats(max_chats=40, per_chat=40):
                                         funnel=f, stage=st, source="instagram", is_seen=False)
             except Exception:
                 pass
+        chad_in = chad_out = False
         try:
             msgs = _mcp("chats_messages", {"chatId": cid, "limit": per_chat})
             if isinstance(msgs, dict):
@@ -123,7 +140,7 @@ def sync_chats(max_chats=40, per_chat=40):
             for m in reversed(msgs or []):
                 ext = str(m.get("id"))
                 body = m.get("message") or m.get("text") or ""
-                if not body or body in _SYSTEM_MARKERS or "StatusLabel" in str(body):
+                if not body or body in _SYSTEM_MARKERS or "StatusLabel" in str(body) or _SYS_LABEL.match(str(body).strip()):
                     continue
                 if Message.objects.filter(conversation=conv, external_id=ext).exists():
                     continue
@@ -132,8 +149,21 @@ def sync_chats(max_chats=40, per_chat=40):
                 Message.objects.create(conversation=conv, direction=direction, text=str(body)[:5000],
                                        external_id=ext, sender_name=("" if direction == "in" else side))
                 new_msg += 1
+                if direction == "in":
+                    chad_in = True
+                else:
+                    chad_out = True
         except Exception as e:
             errors.append(str(cid))
+        if conv.contact_id:
+            try:
+                from apps.crm.automation import on_incoming, on_outgoing
+                if chad_in:
+                    on_incoming(conv.contact, "")
+                if chad_out:
+                    on_outgoing(conv.contact)
+            except Exception:
+                pass
         ts = it.get("lastMessageAt")
         if ts:
             try:
