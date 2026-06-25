@@ -174,6 +174,9 @@ export default function Inbox() {
                     background: m.direction === "out" ? "var(--brand)" : "#fff",
                     color: m.direction === "out" ? "#fff" : "inherit",
                     boxShadow: "0 1px 2px rgba(0,0,0,.05)" }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 600, marginBottom: 2, color: m.direction === "out" ? "rgba(255,255,255,.92)" : "var(--brand)" }}>
+                    {m.sender_name || (m.direction === "out" ? t("Менеджер","Менеджер") : (active?.title || t("Клиент","Клієнт")))}
+                  </div>
                   {m.text}
                   {m.attachments?.map((a, i) => (
                     <div key={i} style={{ fontSize: 11, opacity: .8, marginTop: 4 }}>
