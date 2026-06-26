@@ -26,16 +26,20 @@ const fmt = (n: number) => Math.round(n || 0).toLocaleString("ru");
 export default function Analytics() {
   const [tab, setTab] = useState<"sales" | "channels" | "stock">("sales");
   const { t } = useLang();
+  const { can } = useAuth();
+  const canStock = can("warehouse.view");
+  const canSales = can("analytics.view");
   return (
     <div className="scroll pad fade">
       <div className="tabline" style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        <button className={tab === "sales" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("sales")}>📈 {t("Продажи","Продажі")}</button>
-        <button className={tab === "channels" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("channels")}>📣 {t("Каналы","Канали")}</button>
-        <button className={tab === "stock" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("stock")}>📦 {t("Склад","Склад")}</button>
+        {canSales && <button className={tab === "sales" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("sales")}>📈 {t("Продажи","Продажі")}</button>}
+        {canSales && <button className={tab === "channels" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("channels")}>📣 {t("Каналы","Канали")}</button>}
+        {canStock && <button className={tab === "stock" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("stock")}>📦 {t("Склад","Склад")}</button>}
       </div>
-      {tab === "sales" && <SalesTab />}
-      {tab === "channels" && <ChannelsTab />}
-      {tab === "stock" && <StockTab />}
+      {tab === "sales" && canSales && <SalesTab />}
+      {tab === "channels" && canSales && <ChannelsTab />}
+      {tab === "stock" && canStock && <StockTab />}
+      {((tab === "stock" && !canStock) || ((tab === "sales" || tab === "channels") && !canSales)) && <div className="muted" style={{ padding: 30 }}>{t("Нет доступа к этому разделу","Немає доступу до цього розділу")}</div>}
     </div>
   );
 }

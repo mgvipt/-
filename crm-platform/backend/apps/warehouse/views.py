@@ -58,6 +58,8 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
 
 class InventoryAnalyticsView(APIView):
     """Аналитика по складу: стоимость запасов (по закупке/рознице), по категориям, дефицит."""
+    permission_classes = [HasPermCode]
+    required_perm = "warehouse.view"
 
     def get(self, request):
         prods = (Product.objects.annotate(stk=Coalesce(Sum("movements__quantity"), Decimal("0")))

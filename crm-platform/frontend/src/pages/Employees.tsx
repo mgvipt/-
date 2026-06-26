@@ -24,6 +24,7 @@ export default function Employees() {
   const [emps, setEmps] = useState<Emp[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [perms, setPerms] = useState<Perm[]>([]);
+  const [permGroups, setPermGroups] = useState<any[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [funnels, setFunnels] = useState<any[]>([]);
   const [msg, setMsg] = useState("");
@@ -33,7 +34,7 @@ export default function Employees() {
     api.get<any>("/api/departments/").then((d) => setDepts(((d.results || d) as Dept[]).map((x) => ({ ...x, permissions: x.permissions || [] })))).catch(() => {});
     api.get<any>("/api/users/?page_size=500").then((d) => setEmps(((d.results || d) as Emp[]).filter((u) => u.is_active))).catch(() => {});
     api.get<any>("/api/invites/").then((d) => setInvites(d.results || d)).catch(() => {});
-    api.get<Perm[]>("/api/permissions/").then(setPerms).catch(() => {});
+    api.get<any>("/api/permissions/").then((dd) => { setPerms(dd.flat || dd); setPermGroups(dd.groups || []); }).catch(() => {});
     api.get<any>("/api/roles/").then((d) => setRoles(d.results || d)).catch(() => {});
     api.get<any>("/api/funnels/").then((d) => setFunnels(d.results || d)).catch(() => {});
   }
@@ -160,7 +161,7 @@ export default function Employees() {
           </table></div>
         )}
         {tab === "invites" && <InvitesTab depts={depts} roles={roles} invites={invites} reload={load} t={t} />}
-        {tab === "perms" && <PermsTab depts={depts} emps={emps} perms={perms} funnels={funnels} roles={roles} reload={load} t={t}
+        {tab === "perms" && <PermsTab depts={depts} emps={emps} perms={perms} permGroups={permGroups} funnels={funnels} roles={roles} reload={load} t={t}
           toggleDept={async (d: Dept, code: string) => { const next = d.permissions.includes(code) ? d.permissions.filter((c) => c !== code) : [...d.permissions, code]; await api.patch(`/api/departments/${d.id}/`, { permissions: next }); load(); }}
           toggleUser={async (e: Emp, code: string, kind: "extra" | "denied") => { const field = kind === "extra" ? "extra_permissions" : "denied_permissions"; const cur = (kind === "extra" ? e.extra_permissions : e.denied_permissions) || []; const next = cur.includes(code) ? cur.filter((c) => c !== code) : [...cur, code]; await api.patch(`/api/users/${e.id}/`, { [field]: next }); load(); }} />}
       </div>
@@ -199,13 +200,48 @@ function InvitesTab({ depts, roles, invites, reload, t }: any) {
   );
 }
 
-function PermsTab({ depts, emps, perms, funnels, roles, reload, t, toggleDept, toggleUser }: any) {
+function PermsTab({ depts, emps, perms, permGroups, funnels, roles, reload, t, toggleDept, toggleUser }: any) {
   const [mode, setMode] = useState<"dept" | "user" | "stage">("dept");
   const [selDept, setSelDept] = useState<any>("");
   const [selUser, setSelUser] = useState<any>("");
   const d = depts.find((x: any) => x.id === Number(selDept));
   const u = emps.find((x: any) => x.id === Number(selUser));
   const inp: any = { height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13, minWidth: 240 };
+  const groups = (permGroups && permGroups.length) ? permGroups : [{ group: "", items: perms }];
+
+  const Rows = ({ control }: any) => (
+    <div style={{ marginTop: 12 }}>
+      {groups.map((g: any) => (
+        <div key={g.group} style={{ marginBottom: 12 }}>
+          {g.group && <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", letterSpacing: 0.3, textTransform: "uppercase", margin: "4px 0 2px" }}>{g.group}</div>}
+          {g.items.map((p: any) => (
+            <div key={p.code} style={{ display: "flex", gap: 10, alignItems: "center", padding: "7px 0", borderBottom: "0.5px solid #f1f5f9" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13 }}>{p.label}</div>
+                {p.hint && <div style={{ fontSize: 11, color: "#94a3b8" }}>{p.hint}</div>}
+              </div>
+              {control(p)}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+
+  const inherited = (() => {
+    const set = new Set<string>();
+    if (u) {
+      const dep = depts.find((x: any) => x.id === u.department);
+      (dep?.permissions || []).forEach((c: string) => set.add(c));
+      const rl = roles.find((x: any) => x.id === u.role);
+      (rl?.permissions || []).forEach((c: string) => set.add(c));
+    }
+    return set;
+  })();
+  const sw: any = (on: boolean) => ({ width: 44, height: 24, borderRadius: 20, border: "none", cursor: "pointer", background: on ? "#16a34a" : "#cbd5e1", position: "relative", flexShrink: 0 });
+  const knob: any = (on: boolean) => ({ position: "absolute", top: 3, left: on ? 23 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .15s" });
+  const mini: any = { padding: "2px 9px", fontSize: 12, borderRadius: 7, border: "none", cursor: "pointer", fontWeight: 600 };
+
   return (
     <div style={{ maxWidth: 820 }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
@@ -218,12 +254,26 @@ function PermsTab({ depts, emps, perms, funnels, roles, reload, t, toggleDept, t
       ) : mode === "dept" ? (
         <div className="panel">
           <select style={inp} value={selDept} onChange={(e) => setSelDept(e.target.value)}><option value="">{t("выбери отдел", "обери відділ")}</option>{depts.map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
-          {d && <div style={{ marginTop: 12 }}><div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{t("Действуют на ВСЕХ сотрудников отдела:", "Діють на ВСІХ співробітників відділу:")}</div>{perms.map((p: any) => <label key={p.code} style={{ display: "flex", gap: 8, padding: "5px 0", fontSize: 13, cursor: "pointer" }}><input type="checkbox" checked={d.permissions.includes(p.code)} onChange={() => toggleDept(d, p.code)} />{p.label}</label>)}</div>}
+          {d && <>
+            <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>{t("Действуют на ВСЕХ сотрудников отдела. Нет «видеть все» = сотрудник видит только своё.", "Діють на ВСІХ співробітників відділу. Нема «бачити всі» = співробітник бачить лише своє.")}</div>
+            <Rows control={(p: any) => { const on = d.permissions.includes(p.code); return <button onClick={() => toggleDept(d, p.code)} style={sw(on)} aria-label={p.label}><span style={knob(on)} /></button>; }} />
+          </>}
         </div>
       ) : (
         <div className="panel">
           <select style={inp} value={selUser} onChange={(e) => setSelUser(e.target.value)}><option value="">{t("выбери сотрудника", "обери співробітника")}</option>{emps.map((x: any) => <option key={x.id} value={x.id}>{x.full_name} ({x.department_name || "—"})</option>)}</select>
-          {u && <div style={{ marginTop: 12 }}><div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{t("Зелёное = выдать лично, красное = запретить лично:", "Зелене = видати, червоне = заборонити особисто:")}</div>{perms.map((p: any) => <div key={p.code} style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 0", fontSize: 13 }}><span style={{ flex: 1 }}>{p.label}</span><button className="btn" style={{ padding: "2px 8px", fontSize: 11, background: u.extra_permissions?.includes(p.code) ? "#16a34a" : "#ecfdf5", color: u.extra_permissions?.includes(p.code) ? "#fff" : "#16a34a" }} onClick={() => toggleUser(u, p.code, "extra")}>＋</button><button className="btn" style={{ padding: "2px 8px", fontSize: 11, background: u.denied_permissions?.includes(p.code) ? "#dc2626" : "#fee2e2", color: u.denied_permissions?.includes(p.code) ? "#fff" : "#b91c1c" }} onClick={() => toggleUser(u, p.code, "denied")}>✖</button></div>)}</div>}
+          {u && <>
+            <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>{t("Серое справа = что есть от отдела/роли. ＋ выдать лично · ✖ запретить лично (запрет важнее всего).", "Сіре праворуч = що є від відділу/ролі. ＋ видати особисто · ✖ заборонити особисто (заборона важливіша за все).")}</div>
+            <Rows control={(p: any) => {
+              const inh = inherited.has(p.code); const ex = u.extra_permissions?.includes(p.code); const dn = u.denied_permissions?.includes(p.code);
+              const eff = dn ? false : (ex || inh);
+              return <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <span style={{ fontSize: 10.5, width: 92, textAlign: "right", color: eff ? "#16a34a" : "#cbd5e1" }}>{dn ? t("✖ запрещено", "✖ заборонено") : eff ? (inh && !ex ? t("✓ от отдела", "✓ від відділу") : t("✓ есть", "✓ є")) : t("— нет", "— нема")}</span>
+                <button onClick={() => toggleUser(u, p.code, "extra")} title={t("Выдать лично", "Видати особисто")} style={{ ...mini, background: ex ? "#16a34a" : "#ecfdf5", color: ex ? "#fff" : "#16a34a" }}>＋</button>
+                <button onClick={() => toggleUser(u, p.code, "denied")} title={t("Запретить лично", "Заборонити особисто")} style={{ ...mini, background: dn ? "#dc2626" : "#fee2e2", color: dn ? "#fff" : "#b91c1c" }}>✖</button>
+              </div>;
+            }} />
+          </>}
         </div>
       )}
     </div>

@@ -105,4 +105,7 @@ class AcceptInviteView(APIView):
 
 class PermissionsCatalogView(APIView):
     def get(self, request):
-        return Response([{"code": c, "label": l} for c, l in PERMISSION_CHOICES])
+        from apps.accounts.models import PERMISSION_GROUPS
+        groups = [{"group": g, "items": [{"code": c, "label": l, "hint": h} for c, l, h in items]} for g, items in PERMISSION_GROUPS]
+        flat = [{"code": c, "label": l} for c, l in PERMISSION_CHOICES]
+        return Response({"groups": groups, "flat": flat})

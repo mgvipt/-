@@ -96,9 +96,10 @@ export default function Board({ endpoint, funnel, query }: { endpoint: string; f
                     {c.owner_name && (
                       <div className="owner"><Avatar name={c.owner_name} />{c.owner_name}</div>
                     )}
-                    {!c.is_seen && (
-                      <div style={{ marginTop: 6 }}><span className="chip chip-unseen">{t("НЕ ОТВЕЧЕНО","НЕ ВІДПОВІЛИ")}</span></div>
-                    )}
+                    <div style={{ marginTop: 6 }}>{!c.is_seen
+                      ? <span className="chip chip-unseen">{t("НЕ ОТВЕЧЕНО","НЕ ВІДПОВІЛИ")}</span>
+                      : <span style={{ fontSize: 10.5, fontWeight: 600, color: "#0F6E56", background: "#E1F5EE", padding: "2px 8px", borderRadius: 20 }}>{t("✓ Отвечено","✓ Відповіли")}</span>}
+                    </div>
                   </div>
                 ))}
               </div>

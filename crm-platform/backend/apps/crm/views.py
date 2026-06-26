@@ -4,6 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import BasePermission, SAFE_METHODS, AllowAny
 from rest_framework.views import APIView
+from apps.common.permissions import HasPermCode
 from django.http import HttpResponseRedirect, HttpResponseNotFound
 from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payment, AutomationRule, GlobalRule, Task, AgentConfig
 from .serializers import (
@@ -841,6 +842,9 @@ from django.db.models import Count, Sum, Avg
 
 class AnalyticsView(APIView):
     """Сводка по продажам: KPI + воронка по стадиям."""
+    permission_classes = [HasPermCode]
+    required_perm = "analytics.view"
+
     def get(self, request):
         _u = request.user
         _see_all = _u.is_superuser or _u.can_see_all_deals()
