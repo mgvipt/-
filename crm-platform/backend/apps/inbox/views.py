@@ -164,7 +164,12 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         # RBAC: менеджер без права «все чаты» видит только свои —
         # по ответственному чата ИЛИ по ответственному контакта.
         if not user.can_see_all_conversations():
-            qs = qs.filter(Q(assigned_to=user) | Q(contact__owner=user) | Q(participants=user))
+            # чат видно якщо: призначений на мене / контакт мій / я учасник /
+            # АБО у контакта є лід чи сделка ЗА МНОЮ (менеджер володіє лідом, а не контактом)
+            qs = qs.filter(
+                Q(assigned_to=user) | Q(contact__owner=user) | Q(participants=user)
+                | Q(contact__leads__owner=user) | Q(contact__deals__owner=user)
+            ).distinct()
         # фильтр-чипы (поверх RBAC): Мої / Не призначені
         scope = self.request.query_params.get("scope")
         if scope == "mine":
