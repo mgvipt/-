@@ -15,8 +15,15 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
         conv = Conversation.objects.create(channel=channel, external_chat_id=inc.external_chat_id,
                                            title=inc.sender_name or "")
     if created:
-        # на канале без телефона (Telegram) заводим контакт по имени и помечаем канал
-        contact = Contact.objects.create(first_name=inc.sender_name, channels=[channel.kind], social_link=(inc.social_link or ""), phone=(getattr(inc, "phone", "") or ""))
+        # контакт = єдине джерело: спершу шукаємо існуючий по social_link/phone, інакше створюємо
+        _link = (inc.social_link or ""); _phone = (getattr(inc, "phone", "") or "")
+        contact = None
+        if _link:
+            contact = Contact.objects.filter(social_link=_link).first()
+        if not contact and _phone:
+            contact = Contact.objects.filter(phone=_phone).first()
+        if not contact:
+            contact = Contact.objects.create(first_name=inc.sender_name, channels=[channel.kind], social_link=_link, phone=_phone)
         conv.contact = contact
         conv.save(update_fields=["contact"])
         # Telegram: одразу попросити номер кнопкою (request_contact) у нового клієнта

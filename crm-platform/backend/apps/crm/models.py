@@ -161,9 +161,14 @@ class Payment(models.Model):
     provider = models.CharField(max_length=16, choices=PROVIDERS)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     is_paid = models.BooleanField(default=False)
-    external_id = models.CharField(max_length=128, blank=True)
+    external_id = models.CharField(max_length=128, blank=True, db_index=True)
     checkbox_receipt_id = models.CharField(max_length=64, blank=True, default="", help_text="ID чека Checkbox для цього платежу")
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["external_id"], condition=~models.Q(external_id=""), name="uniq_payment_external_id"),
+        ]
 
     def __str__(self):
         return f"{self.get_provider_display()} {self.amount} (#{self.deal_id})"

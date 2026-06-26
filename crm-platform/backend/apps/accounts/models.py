@@ -152,7 +152,8 @@ class User(AbstractUser):
         return self.has_perm_code("contact.view.all") or self.can_see_all_deals()
 
     def allowed_funnel_ids(self):
-        if self.is_superuser:
+        # None = бачить ВСЕ (тільки адмін/право). Порожній список = нічого (НЕ fail-open).
+        if self.is_superuser or self.can_see_all_deals():
             return None
         ids = set()
         if self.department_id:
@@ -160,7 +161,7 @@ class User(AbstractUser):
         if self.role:
             ids |= set(self.role.funnels.values_list("id", flat=True))
         ids |= set(self.extra_funnels.values_list("id", flat=True))
-        return list(ids) or None
+        return list(ids)
 
     def allowed_channel_ids(self):
         if self.is_superuser:

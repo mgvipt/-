@@ -137,11 +137,12 @@ def sync_chats(max_chats=40, per_chat=40):
                 conv.contact = Contact.objects.create(first_name=nm[:120], channels=["instagram"],
                                                       social_link=link, comment="З ChatPlace IG")
             else:
+                # БЕЗ матчингу по голому імені (зливав різних клієнтів в один контакт).
+                # IG-клієнт без @username → завжди новий контакт (external_chat_id унікальний per-діалог).
                 parts = name.split(" ", 1)
-                conv.contact = (Contact.objects.filter(first_name__iexact=parts[0]).first()
-                                or Contact.objects.create(first_name=parts[0][:120],
-                                                          last_name=(parts[1] if len(parts) > 1 else "")[:120],
-                                                          channels=["instagram"], comment="З ChatPlace IG"))
+                conv.contact = Contact.objects.create(first_name=parts[0][:120],
+                                                      last_name=(parts[1] if len(parts) > 1 else "")[:120],
+                                                      channels=["instagram"], comment="З ChatPlace IG")
             conv.save(update_fields=["contact"])
             # посилання на IG-акаунт (username з chats_get)
             try:

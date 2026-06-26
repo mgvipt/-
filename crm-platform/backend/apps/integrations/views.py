@@ -59,6 +59,9 @@ class IntegrationSettingsView(APIView):
 class LiqpayLinkView(APIView):
     def post(self, request):
         deal = Deal.objects.filter(pk=request.data.get("deal")).first()
+        u = request.user
+        if deal and not (u.is_superuser or u.can_see_all_deals() or deal.owner_id == u.id):
+            return Response({"detail": "Немає доступу до цієї сделки"}, status=status.HTTP_403_FORBIDDEN)
         amount = request.data.get("amount") or (deal.amount if deal else 0)
         try:
             link = adapters.liqpay_checkout_link(

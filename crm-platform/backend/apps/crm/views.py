@@ -214,16 +214,19 @@ def convert_lead_to_deal(lead, funnel, user, actor):
             first_name=(parts[0][:150] if parts else "Клієнт"),
             last_name=(" ".join(parts[1:])[:150] if len(parts) > 1 else ""),
             source=lead.source or "other")
+    from django.db import transaction as _txn
     stage = funnel.stages.order_by("order").first()
-    deal = Deal.objects.create(
-        title=lead.title, contact=contact, funnel=funnel, stage=stage,
-        amount=lead.amount, source=lead.source, owner=lead.owner,
-        qualification=lead.qualification, card_fields=lead.card_fields)
+    with _txn.atomic():
+        deal = Deal.objects.create(
+            title=lead.title, contact=contact, funnel=funnel, stage=stage,
+            amount=lead.amount, source=lead.source, owner=lead.owner,
+            qualification=lead.qualification, card_fields=lead.card_fields)
     log_activity("deal", deal.id, "Створено з ліда (лід видалено)",
                  "Воронка %s · лід #%s · контакт #%s" % (funnel.name, lead.id, contact.id), user, actor)
-    # BUG-1 фікс: перенести задачі ліда на сделку (раніше каскад видаляв їх разом з лідом)
-    from .models import Task
+    # перенести задачі + AI-прогони ліда на сделку (не сиротити при каскаді)
+    from .models import Task, AgentRun
     Task.objects.filter(lead=lead).update(lead=None, deal=deal)
+    AgentRun.objects.filter(lead=lead).update(lead=None, deal=deal, kind="deal")
     lead.delete()
     return deal
 
@@ -315,9 +318,11 @@ def _issue_checkbox_for_deal(deal, user=None):
     goods = []
     for it in deal.items.all():
         nm = (getattr(it.product, "name", None) or "Товар")[:200]
+        qty = float(it.quantity) or 1
+        unit_kop = int(round(float(it.total) / qty * 100))  # ціна за одиницю ЗІ знижкою (щоб чек = сплаченому)
         goods.append({"good": {"code": str(getattr(it, "product_id", None) or it.id), "name": nm,
-                               "price": int(round(float(it.price) * 100))},
-                      "quantity": int(round(float(it.quantity) * 1000))})
+                               "price": unit_kop},
+                      "quantity": int(round(qty * 1000))})
     if not goods:
         goods = [{"good": {"code": "DEAL-%s" % deal.id, "name": (deal.title or "Замовлення Wallcov")[:200],
                            "price": int(round(float(deal.amount or 0) * 100))}, "quantity": 1000}]
@@ -398,6 +403,8 @@ def _advance_deal_stage(deal, target_order, reason, actor="Автоматиза�
     flds = ["stage"]
     if hasattr(deal, "stage_changed_at"):
         deal.stage_changed_at = _tz.now(); flds.append("stage_changed_at")
+    if (getattr(target, "is_won", False) or getattr(target, "is_lost", False)) and not deal.closed_at:
+        deal.closed_at = _tz.now(); flds.append("closed_at")
     deal.save(update_fields=flds)
     log_activity("deal", deal.id, "Авто-стадія", "%s → %s (%s)" % (old, target.name, reason), None, actor)
     return True
@@ -499,26 +506,34 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         account = Account.objects.filter(pk=request.data.get("account")).first()
         from django.utils import timezone as _tz
         from datetime import timedelta as _td
-        if Payment.objects.filter(deal=deal, amount=amount, provider=provider, created_at__gte=_tz.now() - _td(seconds=20)).exists():
-            return Response(DealDetailSerializer(deal, context={"request": request}).data)
-        pay = Payment.objects.create(deal=deal, provider=provider, amount=amount, is_paid=True)
-        record_income(amount, deal=deal, account=account, payment=pay)
-        paid = sum((p.amount for p in Payment.objects.filter(deal=deal, is_paid=True)), Decimal("0"))
-        pt = (deal.pay_type or "").lower()
-        is_np = any(x in pt for x in ["np", "післяплат", "послеоплат", "prepay", "передопл"])
-        if deal.amount and paid >= deal.amount:
-            _advance_deal_stage(deal, 3, "оплата отримана повністю")  # → Оплату отримано
-        elif paid > 0:
-            if is_np:
-                _advance_deal_stage(deal, 3, "передоплату отримано (решта — післяплата НП)")  # відвантажуємо, решту збере НП
-            else:
-                _advance_deal_stage(deal, 2, "часткова оплата (тип Повна — чекаємо решту)")  # → Домовились про оплату
-        # авто-чек Checkbox після оплати (аванс/фінал по ланцюгу)
+        from django.db import transaction as _txn
+        with _txn.atomic():
+            dlock = Deal.objects.select_for_update().get(pk=deal.pk)
+            if Payment.objects.filter(deal=dlock, amount=amount, provider=provider, created_at__gte=_tz.now() - _td(seconds=30)).exists():
+                return Response(DealDetailSerializer(dlock, context={"request": request}).data)
+            pay = Payment.objects.create(deal=dlock, provider=provider, amount=amount, is_paid=True)
+            record_income(amount, deal=dlock, account=account, payment=pay)
+            paid = sum((p.amount for p in Payment.objects.filter(deal=dlock, is_paid=True)), Decimal("0"))
+            pt = (dlock.pay_type or "").lower()
+            is_np = any(x in pt for x in ["np", "післяплат", "послеоплат", "prepay", "передопл"])
+            if dlock.amount and paid >= dlock.amount:
+                _advance_deal_stage(dlock, 3, "оплата отримана повністю")  # → Оплату отримано
+            elif paid > 0:
+                if is_np:
+                    _advance_deal_stage(dlock, 3, "передоплату отримано (решта — післяплата НП)")
+                else:
+                    _advance_deal_stage(dlock, 2, "часткова оплата (тип Повна — чекаємо решту)")
+            deal = dlock
+        # авто-чек Checkbox поза транзакцією (зовнішній API); помилку НЕ глушимо мовчки
+        cbres = None
         try:
-            _issue_checkbox_for_deal(deal, user=getattr(request, "user", None))
-        except Exception:
-            pass
-        return Response(DealDetailSerializer(deal, context={"request": request}).data)
+            cbres = _issue_checkbox_for_deal(deal, user=getattr(request, "user", None))
+        except Exception as _e:
+            cbres = {"error": str(_e)}
+        resp = DealDetailSerializer(deal, context={"request": request}).data
+        if cbres and cbres.get("error"):
+            resp = dict(resp); resp["checkbox_error"] = cbres["error"]
+        return Response(resp)
 
     @action(detail=True, methods=["post"])
     def send_pay_link(self, request, pk=None):
@@ -628,6 +643,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         from apps.integrations.models import IntegrationSettings
         from .models import log_activity
         deal = self.get_object()
+        if deal.ttn:
+            return Response({"ok": True, "already": True, "ttn": deal.ttn})
         p = request.data
         name = (p.get("recipient_name") or (getattr(deal.contact, "name", "") if deal.contact_id else "") or "").strip()
         phone = _normalize_phone(p.get("recipient_phone") or (getattr(deal.contact, "phone", "") if deal.contact_id else ""))
@@ -683,6 +700,11 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         deal.ttn = ttn
         deal.save(update_fields=["ttn"])
         log_activity("deal", deal.id, "ТТН Нова Пошта", "Створено %s%s" % (ttn, (" · наложка %s грн" % int(cod)) if cod else ""), request.user, "НП")
+        # фінальний чек НП (sell з relation_id+ttn) якщо є неоплачений-без-чека платіж що закриває суму
+        try:
+            _issue_checkbox_for_deal(deal, user=request.user)
+        except Exception:
+            pass
         sent = False
         if deal.contact_id:
             from apps.inbox.models import Conversation
@@ -955,7 +977,11 @@ class GlobalRuleViewSet(viewsets.ModelViewSet):
     filterset_fields = ["block", "funnel", "enabled"]
 
     def perform_update(self, serializer):
-        serializer.save(updated_by=self.request.user)
+        deal = serializer.save(updated_by=self.request.user)
+        st = getattr(deal, "stage", None)
+        if st and (getattr(st, "is_won", False) or getattr(st, "is_lost", False)) and not deal.closed_at:
+            from django.utils import timezone as _tz
+            deal.closed_at = _tz.now(); deal.save(update_fields=["closed_at"])
 
     def perform_create(self, serializer):
         serializer.save(updated_by=self.request.user)
@@ -968,9 +994,10 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if self.request.query_params.get("mine") == "1":
+        u = self.request.user
+        see_all = u.is_superuser or u.can_see_all_deals()
+        if not see_all or self.request.query_params.get("mine") == "1":
             from django.db.models import Q
-            u = self.request.user
             qs = qs.filter(Q(assignee=u) | Q(department_id=getattr(u, "department_id", None)))
         return qs
 
@@ -1032,19 +1059,23 @@ class LiqPayCallbackView(APIView):
         deal = Deal.objects.filter(id=parts[1]).first()
         if not deal:
             return Response({"ok": True, "no_deal": order_id})
-        if Payment.objects.filter(deal=deal, provider="liqpay", amount=amount, is_paid=True).exists():
-            return Response({"ok": True, "dup": True})
-        pay = Payment.objects.create(deal=deal, provider="liqpay", amount=amount, is_paid=True)
-        try:
-            from apps.finance.services import record_income
-            record_income(amount, deal=deal, payment=pay)
-        except Exception:
-            pass
-        paid = sum((p.amount for p in Payment.objects.filter(deal=deal, is_paid=True)), Decimal("0"))
-        if deal.amount and paid >= deal.amount:
-            _advance_deal_stage(deal, 3, "LiqPay оплата отримана")
-        log_activity("deal", deal.id, "Оплата LiqPay", "%s грн отримано (callback)" % amount, None, "LiqPay")
-        # авто-чек Checkbox після реальної оплати
+        pay_id = str(d.get("payment_id") or d.get("transaction_id") or order_id)
+        from django.db import transaction as _txn
+        with _txn.atomic():
+            dlock = Deal.objects.select_for_update().get(pk=deal.pk)
+            if pay_id and Payment.objects.filter(external_id=pay_id).exists():
+                return Response({"ok": True, "dup": True})
+            pay = Payment.objects.create(deal=dlock, provider="liqpay", amount=amount, is_paid=True, external_id=pay_id)
+            try:
+                from apps.finance.services import record_income
+                record_income(amount, deal=dlock, payment=pay)
+            except Exception:
+                pass
+            paid = sum((p.amount for p in Payment.objects.filter(deal=dlock, is_paid=True)), Decimal("0"))
+            if dlock.amount and paid >= dlock.amount:
+                _advance_deal_stage(dlock, 3, "LiqPay оплата отримана")
+            deal = dlock
+        log_activity("deal", deal.id, "Оплата LiqPay", "%s грн отримано (callback, txn %s)" % (amount, pay_id[:12]), None, "LiqPay")
         try:
             _issue_checkbox_for_deal(deal, user=None)
         except Exception:
