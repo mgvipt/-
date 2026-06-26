@@ -4,6 +4,7 @@ import { api, ChatMessage, Conversation, Paginated } from "../api";
 import { Avatar, SourceChip } from "../ui";
 import { useAuth } from "../auth";
 import { useLang } from "../i18n";
+import { EmojiButton } from "../ChatCompose";
 
 function linkify(text: string, out: boolean) {
   return String(text || "").split(/(https?:\/\/[^\s]+)/g).map((p, i) =>
@@ -24,6 +25,8 @@ export default function Inbox() {
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [internalNote, setInternalNote] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState("");
   const [ai, setAi] = useState<{ context?: string; points?: string[]; suggestion?: string } | null>(null);
   const [aiLoad, setAiLoad] = useState(false);
@@ -137,12 +140,28 @@ export default function Inbox() {
     if (!active || !text.trim()) return;
     setSending(true); setErr("");
     try {
-      const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send/`, { text });
+      const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send/`, { text, internal: internalNote });
       setMsgs((ms) => [...ms, m]);
       setText("");
     } catch (e: any) {
       setErr(t("Не удалось отправить (проверь токен бота / сеть).","Не вдалося відправити (перевір токен бота / мережу)."));
     } finally { setSending(false); }
+  }
+
+  async function sendFile(e: any) {
+    const f = e.target.files?.[0]; if (!f || !active) return;
+    const kind = f.type.startsWith("video") ? "video" : f.type.startsWith("image") ? "photo" : "file";
+    setSending(true); setErr("");
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send_media/`, { content_b64: reader.result, filename: f.name, kind });
+        setMsgs((ms) => [...ms, m]);
+      } catch { setErr(t("Не удалось отправить файл","Не вдалося надіслати файл")); }
+      finally { setSending(false); }
+    };
+    reader.readAsDataURL(f);
+    e.target.value = "";
   }
 
   async function pickUser(uid: number) {
@@ -301,15 +320,15 @@ export default function Inbox() {
             </>)}
             <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
               {msgs.map((m) => (
-                <div key={m.id} className={"msg" + (m.direction === "out" ? " msg-out" : " msg-in")}
+                <div key={m.id} className={"msg" + (m.direction === "out" ? " msg-out" : " msg-in")} data-internal={(m as any).internal ? "1" : ""}
                   style={{ maxWidth: "70%", padding: "9px 11px", borderRadius: 10, fontSize: 13,
                     alignSelf: m.direction === "out" ? "flex-end" : "flex-start",
-                    background: "#fff",
+                    background: (m as any).internal ? "#fef9c3" : "#fff",
                     color: "#0f172a",
-                    border: m.direction === "out" ? "1.5px solid #2563eb" : "1px solid #e8edf3",
+                    border: (m as any).internal ? "1px dashed #d4a017" : (m.direction === "out" ? "1.5px solid #2563eb" : "1px solid #e8edf3"),
                     boxShadow: "0 1px 2px rgba(0,0,0,.05)" }}>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: .2, marginBottom: 4, paddingBottom: 3, borderBottom: m.direction === "out" ? "1px solid rgba(37,99,235,.25)" : "1px solid rgba(0,0,0,.08)", color: m.direction === "out" ? "#2563eb" : "var(--brand)" }}>
-                    {m.sender_name || (m.direction === "out" ? t("Менеджер","Менеджер") : (active?.title || t("Клиент","Клієнт")))}
+                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: .2, marginBottom: 4, paddingBottom: 3, borderBottom: (m as any).internal ? "1px solid rgba(212,160,23,.3)" : (m.direction === "out" ? "1px solid rgba(37,99,235,.25)" : "1px solid rgba(0,0,0,.08)"), color: (m as any).internal ? "#92400e" : (m.direction === "out" ? "#2563eb" : "var(--brand)") }}>
+                    {(m as any).internal ? "📝 " + (m.sender_name || t("Менеджер","Менеджер")) + " · " + t("только команда","тільки команда") : (m.sender_name || (m.direction === "out" ? t("Менеджер","Менеджер") : (active?.title || t("Клиент","Клієнт"))))}
                   </div>
                   <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{linkify(m.text, m.direction === "out")}</span>
                   {m.attachments?.map((a, i) => (
@@ -323,12 +342,16 @@ export default function Inbox() {
               <div ref={endRef} />
             </div>
             {err && <div className="err" style={{ padding: "0 16px" }}>{err}</div>}
-            <div style={{ background: "#fff", borderTop: "1px solid #e2e8f0", padding: 12, display: "flex", gap: 8 }}>
+            <div style={{ background: "#fff", borderTop: "1px solid #e2e8f0", padding: 12, display: "flex", gap: 6, alignItems: "center" }}>
+              <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={sendFile} />
+              <button className="btn" type="button" style={{ background: internalNote ? "#fde68a" : "#f1f5f9", color: internalNote ? "#92400e" : "#475569", fontWeight: internalNote ? 700 : 400, flex: "0 0 auto" }} title={t("Скрытая заметка для менеджеров (клиент не увидит)","Прихована нотатка для менеджерів (клієнт не побачить)")} onClick={() => setInternalNote((v) => !v)}>📝</button>
+              <EmojiButton onPick={(em) => setText((tx) => tx + em)} />
+              <button className="btn" type="button" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title={t("Прикрепить фото / видео","Прикріпити фото / відео")} onClick={() => fileRef.current?.click()} disabled={sending}>📎</button>
               <input value={text} onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && send()}
-                placeholder={t(`Сообщение уйдёт в ${active.channel_name}…`,`Повідомлення піде в ${active.channel_name}…`)}
-                style={{ flex: 1, height: 36, background: "#f1f5f9", border: "none", borderRadius: 7, padding: "0 12px", fontSize: 13, outline: "none" }} />
-              <button className="btn btn-primary" onClick={send} disabled={sending}>{sending ? "…" : t("Отправить","Відправити")}</button>
+                placeholder={internalNote ? t("Внутренняя заметка — клиент НЕ увидит…","Внутрішня нотатка — клієнт НЕ побачить…") : t(`Сообщение уйдёт в ${active.channel_name}…`,`Повідомлення піде в ${active.channel_name}…`)}
+                style={{ flex: 1, height: 36, background: internalNote ? "#fffbeb" : "#f1f5f9", border: internalNote ? "1.5px dashed #d4a017" : "none", borderRadius: 7, padding: "0 12px", fontSize: 13, outline: "none" }} />
+              <button className="btn btn-primary" onClick={send} disabled={sending} style={{ background: internalNote ? "#d4a017" : undefined }}>{sending ? "…" : (internalNote ? t("📝 Заметка","📝 Нотатка") : t("Отправить","Відправити"))}</button>
             </div>
           </>
         )}

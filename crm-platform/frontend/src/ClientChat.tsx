@@ -2,6 +2,7 @@
  * обидва з регульованою висотою (тягни за правий нижній кут). AI-РОП показує
  * тези діалогу + рекомендовану відповідь прямо тут. */
 import { useEffect, useRef, useState } from "react";
+import { EmojiButton } from "./ChatCompose";
 import { api, ChatMessage, Conversation, Paginated } from "./api";
 import ChatActions from "./ChatActions";
 
@@ -9,6 +10,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
   const [conv, setConv] = useState<Conversation | null>(null);
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
+  const [internal, setInternal] = useState(false);
   const [busy, setBusy] = useState(false);
   const [ai, setAi] = useState<{ context?: string; points?: string[]; suggestion?: string } | null>(null);
   const [aiLoad, setAiLoad] = useState(false);
@@ -45,7 +47,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
     if (!conv || !text.trim()) return;
     setBusy(true); setErr("");
     try {
-      const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send/`, { text });
+      const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send/`, { text, internal });
       setMsgs((p) => [...p, m]); setText("");
     } catch { setErr("Не вдалося надіслати — чат має бути відкритий оператором"); }
     setBusy(false);
@@ -92,7 +94,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
             <div style={{ fontSize: 10.5, color: "#94a3b8", marginBottom: 2, textAlign: m.direction === "in" ? "left" : "right" }}>
               {m.direction === "in" ? "Клієнт" : (m.sender_name === "ai_assistant" ? "Юля (AI)" : (m.sender_name || "Менеджер"))}
             </div>
-            <div style={{ background: m.direction === "in" ? "#ffffff" : "#dbeafe", padding: "7px 11px", borderRadius: 12, fontSize: 13, whiteSpace: "pre-wrap", border: m.direction === "in" ? "1px solid #eef2f7" : "none" }}>{m.text}</div>
+            <div style={{ background: (m as any).internal ? "#fef9c3" : (m.direction === "in" ? "#ffffff" : "#dbeafe"), padding: "7px 11px", borderRadius: 12, fontSize: 13, whiteSpace: "pre-wrap", border: (m as any).internal ? "1px dashed #d4a017" : (m.direction === "in" ? "1px solid #eef2f7" : "none") }}>{(m as any).internal && <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", marginBottom: 2 }}>📝 Нотатка (тільки команда)</div>}{m.text}</div>
             <div style={{ fontSize: 9.5, color: "#cbd5e1", marginTop: 2, textAlign: m.direction === "in" ? "left" : "right" }}>{(m as any).created_at ? new Date((m as any).created_at).toLocaleTimeString("uk", { hour: "2-digit", minute: "2-digit" }) : ""}</div>
           </div>
         ))}
@@ -119,13 +121,15 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
       {err && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 6 }}>{err}</div>}
 
       {/* ПОЛЕ ВІДПОВІДІ — теж регульоване */}
-      <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Відповідь клієнту…" rows={3}
-        style={{ width: "100%", fontSize: 13, padding: 9, borderRadius: 10, border: "1px solid #e2e8f0", marginTop: 8, boxSizing: "border-box", resize: "vertical", minHeight: 56, flexShrink: 0 }} />
+      <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={internal ? "Внутрішня нотатка — клієнт НЕ побачить…" : "Відповідь клієнту…"} rows={3}
+        style={{ width: "100%", fontSize: 13, padding: 9, borderRadius: 10, border: internal ? "1.5px dashed #d4a017" : "1px solid #e2e8f0", background: internal ? "#fffbeb" : "#fff", marginTop: 8, boxSizing: "border-box", resize: "vertical", minHeight: 56, flexShrink: 0 }} />
       <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={sendFile} />
       <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "nowrap" }}>
+        <button className="btn" type="button" style={{ background: internal ? "#fde68a" : "#f1f5f9", color: internal ? "#92400e" : "#475569", flex: "0 0 auto", fontWeight: internal ? 700 : 400 }} title="Прихована нотатка для менеджерів (клієнт не побачить)" onClick={() => setInternal((v) => !v)}>📝</button>
+        <EmojiButton onPick={(e) => setText((t) => t + e)} />
         <button className="btn" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title="Надіслати фото / відео" onClick={() => fileRef.current?.click()} disabled={busy}>📎</button>
         <button className="btn" style={{ flex: "1.8 1 0", minWidth: 0, background: "#fef3c7", color: "#92400e", fontSize: "clamp(9px, 2.7cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "0 6px" }} onClick={analyze} disabled={aiLoad} title="AI-РОП підказати відповідь">{aiLoad ? "AI аналізує…" : "🧠 AI-РОП підказати відповідь"}</button>
-        <button className="btn btn-primary" style={{ flex: "1 1 0", minWidth: 0, fontSize: "clamp(9px, 2.7cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "0 6px" }} onClick={send} disabled={busy || !text.trim()}>{busy ? "…" : "Надіслати"}</button>
+        <button className="btn btn-primary" style={{ flex: "1 1 0", minWidth: 0, fontSize: "clamp(9px, 2.7cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "0 6px", background: internal ? "#d4a017" : undefined }} onClick={send} disabled={busy || !text.trim()}>{busy ? "…" : (internal ? "📝 Нотатка" : "Надіслати")}</button>
       </div>
     </div>
   );

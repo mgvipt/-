@@ -14,7 +14,7 @@ class ChannelSerializer(serializers.ModelSerializer):
 class MessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Message
-        fields = ["id", "conversation", "direction", "text", "attachments",
+        fields = ["id", "conversation", "direction", "text", "internal", "attachments",
                   "sender_name", "created_at"]
         read_only_fields = ["direction", "sender_name", "created_at"]
 

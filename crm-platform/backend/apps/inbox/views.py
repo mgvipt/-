@@ -296,6 +296,12 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         text = (request.data.get("text") or "").strip()
         if not text:
             return Response({"detail": "Пустое сообщение"}, status=status.HTTP_400_BAD_REQUEST)
+        if request.data.get("internal"):
+            # внутрішня нотатка — НЕ йде клієнту, видно лише менеджерам у діалозі
+            u = request.user
+            msg = Message.objects.create(conversation=conv, direction="out", text=text, internal=True,
+                                         sender=u, sender_name=(u.get_full_name() or u.username))
+            return Response(MessageSerializer(msg).data, status=status.HTTP_201_CREATED)
         try:
             msg = send_message(conv, text, user=request.user)
         except Exception as e:  # сеть/токен недоступны
