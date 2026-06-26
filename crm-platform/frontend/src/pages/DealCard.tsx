@@ -243,7 +243,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       flash(t("Ошибка Checkbox: ","Помилка Checkbox: ") + (e?.response?.data?.detail || e?.message || ""));
     }
   }
-  function sendPayLink() { flash(t("✓ Ссылка на оплату отправлена клиенту · cashflow.wallcovdec.com.ua","✓ Посилання на оплату надіслано клієнту · cashflow.wallcovdec.com.ua")); }
+  function sendPayLink() { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }
   useEffect(() => {
     if (!ncOpen || ncMode !== "pick" || !ncSearch.trim()) { setNcResults([]); return; }
     const t = setTimeout(() => api.get<any>(`/api/contacts/?search=${encodeURIComponent(ncSearch)}&page_size=8`).then((d) => setNcResults(d.results || d)).catch(() => setNcResults([])), 250);
@@ -702,7 +702,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
               <button className="btn btn-primary" style={{ flex: 2 }} onClick={acceptPayment} disabled={sending}>{sending ? "…" : ((payType === "liqpay" || payType === "requisites") ? t("Создать ссылку и отправить","Створити посилання і надіслати") : t("Провести оплату","Провести оплату"))}</button>
             </div>
             <div className="muted" style={{ fontSize: 11, marginTop: 10 }}>{(payType === "liqpay" || payType === "requisites")
-              ? t("Запишет оплату; авто-отправка ссылки клиенту — следующий этап (LiqPay).","Запише оплату; авто-відправка посилання клієнту — наступний етап (LiqPay).")
+              ? t("Создаст ссылку LiqPay и отправит клиенту в чат. Статус сменится только после реальной оплаты.","Створить посилання LiqPay і надішле клієнту в чат. Статус зміниться лише після реальної оплати.")
               : t("Создаст доходную транзакцию в Финансах + двинет стадию.","Створить дохідну транзакцію у Фінансах + рухне стадію.")}</div>
           </div>
         </div>
