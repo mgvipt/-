@@ -1,6 +1,7 @@
 /* Документ «1. КП Декор» — видаткова накладна / КП. Друк + PDF + Excel. */
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { Icon } from "./Icon";
 
 const SUP = {
   name: "ФОП Кріжевські Олег Леонідович",
@@ -223,9 +224,9 @@ export default function KpDoc({ deal, onClose }: { deal: any; onClose: () => voi
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#f3efe9", borderRadius: 14, padding: 18, width: 820, maxWidth: "96vw" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           <b style={{ fontSize: 17, flex: 1 }}>1. КП Декор #{deal.id}</b>
-          <button className="btn btn-primary" onClick={printWin}>🖨 Друк</button>
-          <button className="btn" onClick={pdf} title="Завантажити PDF-файл">📄 PDF</button>
-          <button className="btn btn-green" onClick={excel}>📊 Excel</button>
+          <button className="btn btn-primary" onClick={printWin}><Icon n="🖨" size={15} /> Друк</button>
+          <button className="btn" onClick={pdf} title="Завантажити PDF-файл"><Icon n="📄" size={15} /> PDF</button>
+          <button className="btn btn-green" onClick={excel}><Icon n="📊" size={15} /> Excel</button>
           <button className="btn" onClick={onClose}>✕</button>
         </div>
         <div id="kp-doc-print" style={{ background: "#fff", borderRadius: 10, padding: 24 }} dangerouslySetInnerHTML={{ __html: docHtml }} />

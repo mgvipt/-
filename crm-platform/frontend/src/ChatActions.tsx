@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { Avatar } from "./ui";
+import { Icon } from "./Icon";
 
 export default function ChatActions({ convId, onClosed, onChanged }: { convId: number; onClosed?: () => void; onChanged?: (c: any) => void }) {
   const [emps, setEmps] = useState<{ id: number; full_name: string }[]>([]);
@@ -14,10 +15,10 @@ export default function ChatActions({ convId, onClosed, onChanged }: { convId: n
   const btn: any = { flex: "1 1 0", minWidth: 0, fontSize: "clamp(8px, 3cqi, 11.5px)", fontWeight: 600, padding: "5px 4px", borderRadius: 7, cursor: "pointer", border: "1px solid #e2e8f0", background: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" };
   return (
     <div style={{ position: "relative", display: "flex", gap: 4, marginBottom: 8, flexWrap: "nowrap" }}>
-      <button style={{ ...btn, color: "#0369a1" }} onClick={take} title="Закріпити чат за собою (стати відповідальним)">📌 Закріпити</button>
+      <button style={{ ...btn, color: "#0369a1" }} onClick={take} title="Закріпити чат за собою (стати відповідальним)"><Icon n="📌" size={15} /> Закріпити</button>
       <button style={{ ...btn, color: "#c2410c" }} onClick={() => setPicker(picker === "transfer" ? null : "transfer")}>↪ Переадресувати</button>
-      <button style={{ ...btn, color: "#4338ca" }} onClick={() => setPicker(picker === "add" ? null : "add")}>➕ Менеджер</button>
-      <button style={{ ...btn, color: "#dc2626" }} onClick={close} title="Завершити діалог — наступний лист клієнта створить новий лід">✅ Завершити</button>
+      <button style={{ ...btn, color: "#4338ca" }} onClick={() => setPicker(picker === "add" ? null : "add")}><Icon n="➕" size={15} /> Менеджер</button>
+      <button style={{ ...btn, color: "#dc2626" }} onClick={close} title="Завершити діалог — наступний лист клієнта створить новий лід"><Icon n="✅" size={15} /> Завершити</button>
       {picker && (<>
         <div onClick={() => setPicker(null)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
         <div style={{ position: "absolute", top: 32, left: 0, width: 250, maxHeight: 300, overflowY: "auto", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 12px 30px rgba(0,0,0,.16)", zIndex: 41 }}>

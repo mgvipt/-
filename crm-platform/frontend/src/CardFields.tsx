@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api } from "./api";
 import { useLang } from "./i18n";
+import { Icon } from "./Icon";
 
 const inp: React.CSSProperties = { width: "100%", fontSize: 13, padding: "6px 8px", borderRadius: 7, border: "1px solid #e2e8f0", boxSizing: "border-box", background: "#fff" };
 
@@ -24,9 +25,9 @@ export default function CardFields({ leadId, initial, endpoint = "/api/leads/" }
   return (
     <div className="panel">
       <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
-        <div className="label" style={{ margin: 0 }}>{t("🧩 Поля карточки","🧩 Поля картки")}</div>
+        <div className="label" style={{ margin: 0 }}><Icon n="🧩" size={15} /> {t("Поля карточки","Поля картки")}</div>
         <div style={{ flex: 1 }} />
-        {!saved && <button className="btn btn-primary" style={{ fontSize: 11, padding: "3px 9px" }} onClick={save} disabled={busy}>{busy ? "…" : "💾"}</button>}
+        {!saved && <button className="btn btn-primary" style={{ fontSize: 11, padding: "3px 9px" }} onClick={save} disabled={busy}>{busy ? "…" : <Icon n="💾" size={14} />}</button>}
       </div>
 
       {fields.length === 0 && <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("Добавь свои поля (телефон, email, адрес, объект, № договора…)","Додай свої поля (телефон, email, адреса, обʼєкт, № договору…)")}</div>}

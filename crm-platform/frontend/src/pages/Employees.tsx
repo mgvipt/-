@@ -2,6 +2,7 @@
 import { Component, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useLang } from "../i18n";
+import { Icon } from "../Icon";
 
 interface Dept { id: number; name: string; parent: number | null; permissions: string[]; color: string; pos_x: number; pos_y: number; members_count: number; eff_permissions: string[]; }
 interface Emp { id: number; username: string; full_name: string; email: string; role: number | null; role_name: string; department: number | null; department_name: string; extra_permissions: string[]; denied_permissions: string[]; is_active: boolean; }
@@ -77,18 +78,18 @@ export default function Employees() {
 
   const center = (d: Dept) => ({ x: d.pos_x + NODE_W / 2, y: d.pos_y + 18 });
 
-  const TABS: [typeof tab, string, string][] = [
-    ["map", "🗺 Структура компании", "🗺 Структура компанії"],
-    ["list", "👥 Сотрудники", "👥 Співробітники"],
-    ["invites", "✉️ Приглашения", "✉️ Запрошення"],
-    ["perms", "🛡 Права", "🛡 Права"],
+  const TABS: [typeof tab, string, string, string][] = [
+    ["map", "🗺", "Структура компании", "Структура компанії"],
+    ["list", "👥", "Сотрудники", "Співробітники"],
+    ["invites", "✉️", "Приглашения", "Запрошення"],
+    ["perms", "🛡", "Права", "Права"],
   ];
 
   return (
     <ErrBoundary>
       <div className="scroll pad fade">
         <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-          {TABS.map(([k, ru, uk]) => <button key={k} className={"btn" + (tab === k ? " btn-primary" : "")} onClick={() => setTab(k)}>{t(ru, uk)}</button>)}
+          {TABS.map(([k, ic, ru, uk]) => <button key={k} className={"btn" + (tab === k ? " btn-primary" : "")} onClick={() => setTab(k)}><Icon n={ic} size={15} /> {t(ru, uk)}</button>)}
           {msg && <span style={{ marginLeft: "auto", color: "#16a34a", fontSize: 13, alignSelf: "center" }}>{msg}</span>}
         </div>
 
@@ -97,7 +98,7 @@ export default function Employees() {
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
               <button className="btn btn-green" onClick={addDept}>＋ {t("Добавить отдел", "Додати відділ")}</button>
               {linkFrom != null
-                ? <span style={{ color: "#C67D5F", fontSize: 13 }}>🔗 {t("Кликни родительский отдел…", "Клікни батьківський відділ…")} <a onClick={() => setLinkFrom(null)} style={{ cursor: "pointer", textDecoration: "underline" }}>{t("отмена", "скасувати")}</a></span>
+                ? <span style={{ color: "#C67D5F", fontSize: 13 }}><Icon n="🔗" size={14} /> {t("Кликни родительский отдел…", "Клікни батьківський відділ…")} <a onClick={() => setLinkFrom(null)} style={{ cursor: "pointer", textDecoration: "underline" }}>{t("отмена", "скасувати")}</a></span>
                 : <span className="muted" style={{ fontSize: 12 }}>{t("Тащи сотрудника на отдел · двигай отдел за шапку · 🔗 связать с родителем", "Тягни співробітника на відділ · рухай відділ за шапку · 🔗 звʼязати з батьком")}</span>}
             </div>
             <div style={{ position: "relative", height: 600, background: "#fbfaf8", border: "1px solid #ece7df", borderRadius: 14, overflow: "hidden" }} onDragOver={(e) => e.preventDefault()}>
@@ -125,9 +126,9 @@ export default function Employees() {
                   <div onMouseDown={(e) => startDeptDrag(e, d)} style={{ cursor: "move", padding: "7px 9px", background: (d.color || "#64748b") + "1a", borderRadius: "10px 10px 0 0", display: "flex", alignItems: "center", gap: 5 }}>
                     <b style={{ fontSize: 12.5, flex: 1 }}>{d.name}</b>
                     <span className="muted" style={{ fontSize: 11 }}>{byDept(d.id).length}</span>
-                    <span onClick={(e) => { e.stopPropagation(); setLinkFrom(d.id); }} title={t("Связать с родителем", "Звʼязати з батьком")} style={{ cursor: "pointer", fontSize: 12 }}>🔗</span>
-                    <span onClick={(e) => { e.stopPropagation(); renameDept(d); }} style={{ cursor: "pointer", fontSize: 12 }}>✏️</span>
-                    <span onClick={(e) => { e.stopPropagation(); delDept(d); }} style={{ cursor: "pointer", fontSize: 12 }}>🗑</span>
+                    <span onClick={(e) => { e.stopPropagation(); setLinkFrom(d.id); }} title={t("Связать с родителем", "Звʼязати з батьком")} style={{ cursor: "pointer", fontSize: 12 }}><Icon n="🔗" size={13} /></span>
+                    <span onClick={(e) => { e.stopPropagation(); renameDept(d); }} style={{ cursor: "pointer", fontSize: 12 }}><Icon n="✏️" size={13} /></span>
+                    <span onClick={(e) => { e.stopPropagation(); delDept(d); }} style={{ cursor: "pointer", fontSize: 12 }}><Icon n="🗑" size={13} /></span>
                   </div>
                   <div style={{ padding: 7, display: "flex", flexDirection: "column", gap: 4, minHeight: 26 }}>
                     {byDept(d.id).map((e) => (
@@ -185,16 +186,16 @@ function InvitesTab({ depts, roles, invites, reload, t }: any) {
           <input style={inp} placeholder={t("Имя", "Імʼя")} value={f.first_name} onChange={(e) => setF({ ...f, first_name: e.target.value })} />
           <input style={inp} placeholder={t("Фамилия", "Прізвище")} value={f.last_name} onChange={(e) => setF({ ...f, last_name: e.target.value })} />
           <select style={inp} value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}><option value="">{t("— роль —", "— роль —")}</option>{roles.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-          <button className="btn btn-green" onClick={create}>🔗 {t("Создать ссылку", "Створити лінк")}</button>
+          <button className="btn btn-green" onClick={create}><Icon n="🔗" size={15} /> {t("Создать ссылку", "Створити лінк")}</button>
         </div>
         {link && <div style={{ marginTop: 10, padding: 10, background: "#ecfdf5", borderRadius: 8 }}>
           <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("Скопируй и отправь сотруднику:", "Скопіюй і надішли:")}</div>
-          <div style={{ display: "flex", gap: 6 }}><input readOnly value={link} style={{ ...inp, flex: 1 }} onFocus={(e) => e.target.select()} /><button className="btn" onClick={() => navigator.clipboard?.writeText(link)}>📋</button></div>
+          <div style={{ display: "flex", gap: 6 }}><input readOnly value={link} style={{ ...inp, flex: 1 }} onFocus={(e) => e.target.select()} /><button className="btn" onClick={() => navigator.clipboard?.writeText(link)}><Icon n="📋" size={15} /></button></div>
         </div>}
       </div>
       <div className="tablewrap" style={{ marginTop: 12 }}><table>
         <thead><tr><th>Email</th><th>{t("Отдел", "Відділ")}</th><th>{t("Статус", "Статус")}</th><th></th></tr></thead>
-        <tbody>{invites.map((i: any) => <tr key={i.id}><td>{i.email}</td><td>{i.department_name || "—"}</td><td><span className="chip" style={{ background: i.status === "accepted" ? "#16a34a" : i.status === "pending" ? "#f59e0b" : "#94a3b8" }}>{i.status}</span></td><td>{i.status === "pending" && <><a onClick={() => navigator.clipboard?.writeText(i.link)} style={{ cursor: "pointer", marginRight: 8 }}>📋</a><a onClick={() => revoke(i.id)} style={{ cursor: "pointer", color: "#dc2626" }}>{t("отозвать", "відкликати")}</a></>}</td></tr>)}</tbody>
+        <tbody>{invites.map((i: any) => <tr key={i.id}><td>{i.email}</td><td>{i.department_name || "—"}</td><td><span className="chip" style={{ background: i.status === "accepted" ? "#16a34a" : i.status === "pending" ? "#f59e0b" : "#94a3b8" }}>{i.status}</span></td><td>{i.status === "pending" && <><a onClick={() => navigator.clipboard?.writeText(i.link)} style={{ cursor: "pointer", marginRight: 8 }}><Icon n="📋" size={14} /></a><a onClick={() => revoke(i.id)} style={{ cursor: "pointer", color: "#dc2626" }}>{t("отозвать", "відкликати")}</a></>}</td></tr>)}</tbody>
       </table></div>
     </div>
   );
@@ -247,7 +248,7 @@ function PermsTab({ depts, emps, perms, permGroups, funnels, roles, reload, t, t
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <button className={"btn" + (mode === "dept" ? " btn-primary" : "")} onClick={() => setMode("dept")}>{t("Права отдела", "Права відділу")}</button>
         <button className={"btn" + (mode === "user" ? " btn-primary" : "")} onClick={() => setMode("user")}>{t("Индивидуальные", "Індивідуальні")}</button>
-        <button className={"btn" + (mode === "stage" ? " btn-primary" : "")} onClick={() => setMode("stage")}>{t("🚦 По статусам", "🚦 За статусами")}</button>
+        <button className={"btn" + (mode === "stage" ? " btn-primary" : "")} onClick={() => setMode("stage")}><Icon n="🚦" size={15} /> {t("По статусам", "За статусами")}</button>
       </div>
       {mode === "stage" ? (
         <StagePerms funnels={funnels} roles={roles} depts={depts} emps={emps} reload={reload} t={t} />
@@ -319,9 +320,9 @@ function StagePerms({ funnels, roles, depts, emps, reload, t }: any) {
         <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
           <thead><tr style={{ textAlign: "left", color: "#64748b", fontSize: 11 }}>
             <th style={{ padding: "6px 4px" }}>{t("Статус", "Статус")}</th>
-            <th style={{ padding: "6px 4px", textAlign: "center" }}>🔒 {t("Только авто", "Тільки авто")}</th>
-            {subjObj && <th style={{ padding: "6px 4px", textAlign: "center" }}>👁 {t("Видеть все", "Бачити всі")}</th>}
-            {subjObj && <th style={{ padding: "6px 4px", textAlign: "center" }}>🚫 {t("Запрет перемещения", "Заборона переміщення")}</th>}
+            <th style={{ padding: "6px 4px", textAlign: "center" }}><Icon n="🔒" size={14} /> {t("Только авто", "Тільки авто")}</th>
+            {subjObj && <th style={{ padding: "6px 4px", textAlign: "center" }}><Icon n="👁" size={14} /> {t("Видеть все", "Бачити всі")}</th>}
+            {subjObj && <th style={{ padding: "6px 4px", textAlign: "center" }}><Icon n="🚫" size={14} /> {t("Запрет перемещения", "Заборона переміщення")}</th>}
           </tr></thead>
           <tbody>{stages.map((st: any) => (
             <tr key={st.id} style={{ borderTop: "1px solid #f1f5f9" }}>
@@ -334,9 +335,9 @@ function StagePerms({ funnels, roles, depts, emps, reload, t }: any) {
         </table>
       )}
       <div className="muted" style={{ fontSize: 11, marginTop: 12, lineHeight: 1.6 }}>
-        🔒 {t("Только авто — карточку нельзя перетащить в этот статус вручную (ставит только автоматизация).", "Тільки авто — картку не можна перетягнути в цей статус вручну (ставить лише автоматизація).")}<br />
-        👁 {t("Видеть все — выбранные видят ВСЕ карточки в этом статусе, даже чужие.", "Бачити всі — обрані бачать УСІ картки в цьому статусі, навіть чужі.")}<br />
-        🚫 {t("Запрет перемещения — выбранным нельзя вручную двигать карточку в этот статус.", "Заборона переміщення — обраним не можна вручну рухати картку в цей статус.")}
+        <Icon n="🔒" size={13} /> {t("Только авто — карточку нельзя перетащить в этот статус вручную (ставит только автоматизация).", "Тільки авто — картку не можна перетягнути в цей статус вручну (ставить лише автоматизація).")}<br />
+        <Icon n="👁" size={13} /> {t("Видеть все — выбранные видят ВСЕ карточки в этом статусе, даже чужие.", "Бачити всі — обрані бачать УСІ картки в цьому статусі, навіть чужі.")}<br />
+        <Icon n="🚫" size={13} /> {t("Запрет перемещения — выбранным нельзя вручную двигать карточку в этот статус.", "Заборона переміщення — обраним не можна вручну рухати картку в цей статус.")}
       </div>
     </div>
   );

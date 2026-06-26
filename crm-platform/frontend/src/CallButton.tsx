@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api } from "./api";
 import { useLang } from "./i18n";
+import { Icon } from "./Icon";
 
 export default function CallButton({ contact, phone, small }: { contact?: number; phone?: string; small?: boolean }) {
   const { t } = useLang();
@@ -36,7 +37,7 @@ export default function CallButton({ contact, phone, small }: { contact?: number
       <button className="btn btn-green" onClick={call} disabled={busy}
         title={t("Позвонить клиенту через нашу АТС","Подзвонити клієнту через нашу АТС")}
         style={small ? { padding: "4px 10px", fontSize: 13 } : undefined}>
-        {busy ? "…" : t("📞 Позвонить","📞 Подзвонити")}
+        {busy ? "…" : <><Icon n="📞" size={15} /> {t("Позвонить","Подзвонити")}</>}
       </button>
       {msg && <span style={{ fontSize: 11.5, color: msg.ok ? "#16a34a" : "#dc2626", maxWidth: 240 }}>{msg.t}</span>}
     </span>

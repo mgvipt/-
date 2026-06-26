@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useLang } from "../i18n";
+import { Icon } from "../Icon";
 
-const BLOCKS: [string, string][] = [
-  ["products", "🛍 Товари"], ["sales", "🔻 Продажі"], ["automation", "⚙️ Автоматизації"],
-  ["payments", "💳 Платежі"], ["novaposhta", "📦 Нова Пошта"], ["checkbox", "🧾 Чеки"],
-  ["warehouse", "🏭 Склад"], ["followup", "🎯 Дожими"], ["general", "📋 Загальні"],
+const BLOCKS: [string, string, string][] = [
+  ["products", "🛍", "Товари"], ["sales", "🔻", "Продажі"], ["automation", "⚙️", "Автоматизації"],
+  ["payments", "💳", "Платежі"], ["novaposhta", "📦", "Нова Пошта"], ["checkbox", "🧾", "Чеки"],
+  ["warehouse", "🏭", "Склад"], ["followup", "🎯", "Дожими"], ["general", "📋", "Загальні"],
 ];
 
 export default function SettingsGlobalRules() {
@@ -28,12 +29,12 @@ export default function SettingsGlobalRules() {
         "Здесь зафиксированы правила работы CRM по блокам — единый источник правды для обучения сотрудников и контекст для встроенного AI-агента. Редактируй прямо здесь.",
         "Тут зафіксовані правила роботи CRM по блоках — єдине джерело правди для навчання співробітників і контекст для вбудованого AI-агента. Редагуй прямо тут.")}</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "10px 0 14px" }}>
-        {BLOCKS.map(([k, label]) => (
+        {BLOCKS.map(([k, icon, label]) => (
           <button key={k} onClick={() => setBlock(k)}
-            style={{ fontSize: 13, padding: "6px 12px", borderRadius: 16, cursor: "pointer",
+            style={{ fontSize: 13, padding: "6px 12px", borderRadius: 16, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5,
               border: "1px solid " + (block === k ? "var(--brand)" : "#e2e8f0"),
               background: block === k ? "var(--brand)" : "#fff", color: block === k ? "#fff" : "#475569",
-              fontWeight: block === k ? 700 : 500 }}>{label}{rules.filter((r) => r.block === k).length ? ` (${rules.filter((r) => r.block === k).length})` : ""}</button>
+              fontWeight: block === k ? 700 : 500 }}><Icon n={icon} size={15} />{label}{rules.filter((r) => r.block === k).length ? ` (${rules.filter((r) => r.block === k).length})` : ""}</button>
         ))}
       </div>
       {list.map((r) => (

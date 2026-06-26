@@ -3,6 +3,7 @@ import { api, Funnel } from "../api";
 import Board from "./Board";
 import ListView from "../ListView";
 import { useLang } from "../i18n";
+import { Icon } from "../Icon";
 
 export default function Leads() {
   const [funnel, setFunnel] = useState<Funnel | null>(null);
@@ -32,8 +33,8 @@ export default function Leads() {
         <button className="btn btn-primary" onClick={() => setCreating(true)}>{t("+ Создать","+ Створити")}</button>
         <input placeholder={t("Фильтр + поиск","Фільтр + пошук")} />
         <div style={{ display: "flex", gap: 2, background: "#eef2f7", borderRadius: 8, padding: 2 }}>
-          <button className={"btn" + (view === "kanban" ? " btn-primary" : " btn-light")} style={{ height: 28 }} onClick={() => { setView("kanban"); localStorage.setItem("leads_view", "kanban"); }}>▦ {t("Канбан","Канбан")}</button>
-          <button className={"btn" + (view === "list" ? " btn-primary" : " btn-light")} style={{ height: 28 }} onClick={() => { setView("list"); localStorage.setItem("leads_view", "list"); }}>☰ {t("Список","Список")}</button>
+          <button className={"btn" + (view === "kanban" ? " btn-primary" : " btn-light")} style={{ height: 28 }} onClick={() => { setView("kanban"); localStorage.setItem("leads_view", "kanban"); }}><Icon n="grid" size={15} /> {t("Канбан","Канбан")}</button>
+          <button className={"btn" + (view === "list" ? " btn-primary" : " btn-light")} style={{ height: 28 }} onClick={() => { setView("list"); localStorage.setItem("leads_view", "list"); }}><Icon n="☰" size={15} /> {t("Список","Список")}</button>
         </div>
         <div className="spacer" />
         <span className="muted">{t("Видны лиды согласно вашим правам","Видно ліди згідно з вашими правами")}</span>

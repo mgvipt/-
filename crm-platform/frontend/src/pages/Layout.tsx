@@ -99,7 +99,7 @@ function WorkTimer() {
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center", background: "#fff", borderRadius: 8, padding: "3px 8px", border: "1px solid #e2e8f0" }}>
       <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 15, color: st.on_pause ? "#d97706" : "#16a34a" }} title="Відпрацьовано сьогодні">{st.on_pause ? "⏸ " : "🟢 "}{hhmmss(sec)}</span>
-      <button className="btn btn-light" style={{ height: 28, padding: "0 8px", fontSize: 12 }} onClick={() => act("pause")} title="Обід/пауза">{st.on_pause ? "▶ Продовжити" : "☕ Обід"}</button>
+      <button className="btn btn-light" style={{ height: 28, padding: "0 8px", fontSize: 12 }} onClick={() => act("pause")} title="Обід/пауза">{st.on_pause ? "▶ Продовжити" : <><Icon n="☕" size={14} /> Обід</>}</button>
       <button className="btn btn-light" style={{ height: 28, padding: "0 8px", fontSize: 12, color: "#dc2626" }} onClick={() => act("stop")} title="Завершити робочий день">⏹ Завершити</button>
     </div>
   );
@@ -170,7 +170,7 @@ export default function Layout() {
           <div className="spacer" />
           <GlobalSearch />
           <WorkTimer />
-          <button className="btn btn-light" onClick={() => setShowTheme((v) => !v)}>🎨 Тема</button>
+          <button className="btn btn-light" onClick={() => setShowTheme((v) => !v)}><Icon n="🎨" size={15} /> Тема</button>
           <div className="clock">{new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</div>
         </header>
 
@@ -212,14 +212,14 @@ export default function Layout() {
               {ANIMBGS.map((a) => <button key={a.id} className={"btn btn-light"} style={{ fontSize: 12, fontWeight: (theme.animBg || "none") === a.id ? 700 : 400 }} onClick={() => setT({ animBg: a.id })}>{a.name}</button>)}
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
-              <input type="checkbox" checked={!!theme.glass} onChange={(e) => setT({ glass: e.target.checked })} /> 🪟 {t("Прозрачность","Прозорість")}
+              <input type="checkbox" checked={!!theme.glass} onChange={(e) => setT({ glass: e.target.checked })} /> <Icon n="🪟" size={15} /> {t("Прозрачность","Прозорість")}
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, minWidth: 210 }}>
               <span className="muted">{t("Прозрачность","Прозорість")}</span>
               <input type="range" min={15} max={95} step={5} value={Math.round((theme.glassA != null ? theme.glassA : 0.6) * 100)} onChange={(e) => setT({ glassA: Number(e.target.value) / 100 })} style={{ flex: 1 }} />
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
-              <input type="checkbox" checked={theme.anim !== false} onChange={(e) => setT({ anim: e.target.checked })} /> ✨ {t("Анимации","Анімації")}
+              <input type="checkbox" checked={theme.anim !== false} onChange={(e) => setT({ anim: e.target.checked })} /> <Icon n="✨" size={15} /> {t("Анимации","Анімації")}
             </label>
             <span className="muted" style={{ fontStyle: "italic", fontSize: 11 }}>({t("сохраняется в профиле","зберігається у профілі")})</span>
           </div>

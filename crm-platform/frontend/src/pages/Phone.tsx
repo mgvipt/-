@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Paginated } from "../api";
 import { useLang } from "../i18n";
+import { Icon } from "../Icon";
 
 interface Call {
   id: number; direction: string; direction_display: string;
@@ -41,7 +42,7 @@ export default function Phone() {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderBottom: "1px solid #f1f5f9" }}>
         <div style={{ fontSize: 18, width: 22, textAlign: "center" }}>
-          {c.direction === "out" ? "📤" : missed ? "📵" : "📥"}
+          <Icon n={c.direction === "out" ? "📤" : missed ? "📵" : "📥"} size={18} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: 13.5, color: missed ? "#dc2626" : "#1e293b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -52,7 +53,7 @@ export default function Phone() {
           <div className="muted" style={{ fontSize: 11.5 }}>
             {c.direction === "out" ? c.to_number : c.from_number}{c.manager_name ? ` · ${c.manager_name}` : ""}
           </div>
-          {c.line && <div style={{ fontSize: 10.5, color: "#7c5cff", marginTop: 1 }}>📡 {c.line}</div>}
+          {c.line && <div style={{ fontSize: 10.5, color: "#7c5cff", marginTop: 1 }}><Icon n="📡" size={12} /> {c.line}</div>}
         </div>
         <div style={{ textAlign: "right", fontSize: 11.5 }}>
           <div className="muted">{when(c)}</div>
@@ -60,7 +61,7 @@ export default function Phone() {
         </div>
         {c.recording_url
           ? <a href={c.recording_url} target="_blank" rel="noreferrer" title={t("Прослушать","Прослухати")} style={{ color: "#2563eb", fontSize: 16 }}>▶</a>
-          : c.recording_file ? <span title={t("Запись есть на сервере","Запис є на сервері")} style={{ color: "#94a3b8", fontSize: 14 }}>🎙</span>
+          : c.recording_file ? <span title={t("Запись есть на сервере","Запис є на сервері")} style={{ color: "#94a3b8", fontSize: 14 }}><Icon n="🎙" size={14} /></span>
           : <span style={{ width: 16 }} />}
       </div>
     );
@@ -71,7 +72,7 @@ export default function Phone() {
     return (
       <div className="panel" style={{ margin: 0, padding: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <div style={{ padding: "12px 14px", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 8, background: color + "14" }}>
-          <span style={{ fontSize: 18 }}>{icon}</span>
+          <span style={{ fontSize: 18 }}><Icon n={icon} size={18} /></span>
           <b style={{ fontSize: 15 }}>{title}</b>
           <span className="chip" style={{ background: color, marginLeft: "auto" }}>{list.length}</span>
         </div>
@@ -86,7 +87,7 @@ export default function Phone() {
 
   return (
     <div className="scroll pad fade">
-      <h2 style={{ margin: "0 0 4px" }}>📞 {t("Телефония","Телефонія")}</h2>
+      <h2 style={{ margin: "0 0 4px" }}><Icon n="📞" size={22} /> {t("Телефония","Телефонія")}</h2>
       <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>{t("Собственный SIP-шлюз на нашем сервере (независимо от Битрикса). Звонки и записи — наши.","Власний SIP-шлюз на нашому сервері (незалежно від Бітрикса). Дзвінки і записи — наші.")}</div>
 
       {stats && (
@@ -102,7 +103,7 @@ export default function Phone() {
         <Column title={t("Исходящие","Вихідні")} icon="📤" color="#3b82f6" list={outgoing} />
       </div>
 
-      <div className="note" style={{ marginTop: 14 }}>💡 {t("Журнал обновляется сам каждые 30 сек. Клик на имя клиента → его карточка. Дальше подключим звонок по клику и прослушивание записи прямо тут.","Журнал оновлюється сам кожні 30 сек. Клік на імʼя клієнта → його картка. Далі підключимо дзвінок по кліку і прослуховування запису прямо тут.")}</div>
+      <div className="note" style={{ marginTop: 14 }}><Icon n="💡" size={15} /> {t("Журнал обновляется сам каждые 30 сек. Клик на имя клиента → его карточка. Дальше подключим звонок по клику и прослушивание записи прямо тут.","Журнал оновлюється сам кожні 30 сек. Клік на імʼя клієнта → його картка. Далі підключимо дзвінок по кліку і прослуховування запису прямо тут.")}</div>
     </div>
   );
 }

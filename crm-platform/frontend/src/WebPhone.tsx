@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { useLang } from "./i18n";
+import { Icon } from "./Icon";
 
 declare global {
   interface Window { JsSIP: any; wallcovDial?: (n: string) => void; wallcovPhoneReady?: boolean; wallcovAnswer?: () => void; wallcovHangup?: () => void; wallcovIncoming?: boolean; }
@@ -126,7 +127,7 @@ export default function WebPhone() {
       <div style={{ margin: "0 10px 8px", background: "#fff", borderRadius: 12, boxShadow: "0 4px 16px rgba(0,0,0,.18)", border: "1px solid #e2e8f0", padding: 11 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: busy ? 10 : 0 }}>
           <span style={{ width: 9, height: 9, borderRadius: 9, background: dot, display: "inline-block" }} />
-          <b style={{ fontSize: 13, whiteSpace: "nowrap" }}>{t("📞 Телефон","📞 Телефон")}</b>
+          <b style={{ fontSize: 13, whiteSpace: "nowrap" }}><Icon n="📞" size={15} /> {t("Телефон","Телефон")}</b>
           <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>{label}</span>
         </div>
 
@@ -134,12 +135,12 @@ export default function WebPhone() {
 
         {st === "incoming" && (
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-green" style={{ flex: 1 }} onClick={answer}>{t("✅ Принять","✅ Прийняти")}</button>
+            <button className="btn btn-green" style={{ flex: 1 }} onClick={answer}><Icon n="✅" size={15} /> {t("Принять","Прийняти")}</button>
             <button className="btn" style={{ background: "#fee2e2", color: "#b91c1c" }} onClick={hangup}>{t("✖ Сбросить","✖ Скинути")}</button>
           </div>
         )}
         {(st === "calling" || st === "incall") && (
-          <button className="btn" style={{ width: "100%", background: "#fee2e2", color: "#b91c1c" }} onClick={hangup}>{t("📵 Завершить","📵 Завершити")}</button>
+          <button className="btn" style={{ width: "100%", background: "#fee2e2", color: "#b91c1c" }} onClick={hangup}><Icon n="📵" size={15} /> {t("Завершить","Завершити")}</button>
         )}
         {everReady && !busy && (
           <div style={{ marginTop: 8 }}>
@@ -152,7 +153,7 @@ export default function WebPhone() {
           <div style={{ display: "flex", gap: 6 }}>
             <input value={dialN} onChange={(e) => setDialN(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doDial(dialN)}
               placeholder="0XX XXX XX XX" style={{ flex: 1, minWidth: 0, width: 0, height: 32, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13 }} />
-            <button className="btn btn-green" style={{ flexShrink: 0 }} onClick={() => doDial(dialN)} disabled={!dialN.trim()}>📞</button>
+            <button className="btn btn-green" style={{ flexShrink: 0 }} onClick={() => doDial(dialN)} disabled={!dialN.trim()}><Icon n="📞" size={16} /></button>
           </div>
           {recent.length > 0 && (
             <div style={{ marginTop: 8 }}>

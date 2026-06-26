@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useLang } from "../i18n";
+import { Icon } from "../Icon";
 
 // ─── Тип каналу ────────────────────────────────────────────────────────────
 interface Channel {
@@ -65,7 +66,7 @@ export default function ContactCenter() {
     <div className="scroll fade" style={{ padding: 20 }}>
       {/* ── Заголовок ── */}
       <div style={{ display: "flex", alignItems: "center", marginBottom: 18 }}>
-        <h2 style={{ margin: 0, fontSize: 22 }}>🎛️ {t("Контакт-центр","Контакт-центр")}</h2>
+        <h2 style={{ margin: 0, fontSize: 22, display: "flex", alignItems: "center", gap: 8 }}><Icon n="🎛️" size={20} /> {t("Контакт-центр","Контакт-центр")}</h2>
         <span className="muted" style={{ marginLeft: 12, fontSize: 13 }}>{t("Каналы связи с клиентами · лиды с каждого канала падают в CRM разделённо","Канали звʼязку з клієнтами · ліди з кожного каналу падають у CRM розділено")}</span>
       </div>
 
@@ -82,7 +83,7 @@ export default function ContactCenter() {
             {ch.status === "connected" && (
               <span style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderRadius: "50%", background: "#22c55e", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>✓</span>
             )}
-            <div style={{ width: 42, height: 42, borderRadius: 12, background: "rgba(255,255,255,.22)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, marginBottom: 12 }}>{ch.icon}</div>
+            <div style={{ width: 42, height: 42, borderRadius: 12, background: "rgba(255,255,255,.22)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, marginBottom: 12 }}><Icon n={ch.icon} size={22} /></div>
             <div style={{ fontSize: 15, fontWeight: 700 }}>{ch.name}</div>
             <div style={{ fontSize: 11.5, opacity: .9, marginTop: 3 }}>{ch.sub}</div>
             <div style={{ fontSize: 11, marginTop: 8, opacity: .95 }}>{ch.status === "connected" ? `● ${t("Подключено","Підключено")}${ch.via ? " · " + ch.via : ""}` : t("○ Доступно для подключения","○ Доступно для підключення")}</div>
@@ -95,7 +96,7 @@ export default function ContactCenter() {
         <div onClick={() => setSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.4)", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 0, right: 0, width: 460, maxWidth: "92vw", height: "100%", background: "#fff", boxShadow: "-8px 0 28px rgba(15,23,42,.18)", padding: 24, overflowY: "auto" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
-              <div style={{ width: 48, height: 48, borderRadius: 12, background: sel.color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 700 }}>{sel.icon}</div>
+              <div style={{ width: 48, height: 48, borderRadius: 12, background: sel.color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 700 }}><Icon n={sel.icon} size={24} /></div>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 700 }}>{sel.name}</div>
                 <div className="muted" style={{ fontSize: 12.5 }}>{sel.sub}</div>
@@ -165,7 +166,7 @@ function EchatBlock({ t }: any) {
           <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("Webhook URL — вставь в панель e-chat.tech (callback для входящих):","Webhook URL — встав у панель e-chat.tech (callback для вхідних):")}</div>
           <div style={{ display: "flex", gap: 6 }}>
             <input readOnly value={st.webhook} style={{ ...inp, flex: 1, fontSize: 12 }} onFocus={(e) => e.target.select()} />
-            <button className="btn" onClick={() => navigator.clipboard?.writeText(st.webhook)}>📋</button>
+            <button className="btn" onClick={() => navigator.clipboard?.writeText(st.webhook)}><Icon n="📋" size={16} /></button>
           </div>
         </div>
       )}

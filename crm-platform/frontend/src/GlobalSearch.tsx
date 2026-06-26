@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "./api";
 import { useLang } from "./i18n";
+import { Icon } from "./Icon";
 
 export default function GlobalSearch() {
   const nav = useNavigate();
@@ -42,18 +43,18 @@ export default function GlobalSearch() {
         <div style={{ position: "absolute", top: 40, right: 0, width: 430, maxHeight: 470, overflowY: "auto", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 12px 36px rgba(15,23,42,.18)", zIndex: 80, padding: 6 }}>
           {loading && !res && <div className="muted" style={{ padding: 12, fontSize: 13 }}>{t("Поиск…", "Пошук…")}</div>}
           {empty && <div className="muted" style={{ padding: 12, fontSize: 13 }}>{t("Ничего не найдено", "Нічого не знайдено")}</div>}
-          {res?.deals?.length > 0 && <Group title={t("🤝 Сделки", "🤝 Угоди")} />}
+          {res?.deals?.length > 0 && <Group title={<><Icon n="🤝" size={15} /> {t("Сделки", "Угоди")}</>} />}
           {res?.deals?.map((d: any) => (
             <Row key={"d" + d.id} onClick={() => go(`/deals/${d.id}`)}
               main={`#${d.id} · ${d.title}`} sub={`${d.client || ""}${d.stage ? " · " + d.stage : ""}`}
               right={d.amount ? `${Number(d.amount).toLocaleString("uk-UA")} ₴` : ""} />
           ))}
-          {res?.leads?.length > 0 && <Group title={t("📋 Лиды", "📋 Ліди")} />}
+          {res?.leads?.length > 0 && <Group title={<><Icon n="📋" size={15} /> {t("Лиды", "Ліди")}</>} />}
           {res?.leads?.map((l: any) => (
             <Row key={"l" + l.id} onClick={() => go(`/leads/${l.id}`)}
               main={`#${l.id} · ${l.title}`} sub={`${l.client || ""}${l.stage ? " · " + l.stage : ""}`} />
           ))}
-          {res?.clients?.length > 0 && <Group title={t("👥 Клиенты", "👥 Клієнти")} />}
+          {res?.clients?.length > 0 && <Group title={<><Icon n="👥" size={15} /> {t("Клиенты", "Клієнти")}</>} />}
           {res?.clients?.map((c: any) => (
             <Row key={"c" + c.id} onClick={() => go(`/clients/${c.id}`)}
               main={c.name} sub={`${c.phone || ""}${c.deals ? " · " + t("сделок:", "сделок:") + " " + c.deals : ""}`} />

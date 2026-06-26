@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { Avatar } from "./ui";
+import { Icon } from "./Icon";
 
 /* Інлайн-вибір відповідального (менеджера). Використовується в картці сделки і клієнта. */
 export default function OwnerSelect({ ownerId, ownerName, onSet }: { ownerId?: number | null; ownerName?: string; onSet: (id: number | null) => void }) {
@@ -14,7 +15,7 @@ export default function OwnerSelect({ ownerId, ownerName, onSet }: { ownerId?: n
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
         <Avatar name={ownerName || "—"} />{ownerName || "Не призначено"}
-        <span onClick={() => setEdit(true)} style={{ color: "#2563eb", cursor: "pointer", fontSize: 12, marginLeft: 6 }} title="Змінити відповідального">✏️ змінити</span>
+        <span onClick={() => setEdit(true)} style={{ color: "#2563eb", cursor: "pointer", fontSize: 12, marginLeft: 6 }} title="Змінити відповідального"><Icon n="✏️" size={12} /> змінити</span>
       </div>
     );
   }

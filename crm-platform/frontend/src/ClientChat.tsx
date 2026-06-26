@@ -54,8 +54,11 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
     setBusy(false);
   }
   // ── Надіслати фото/відео клієнту ──
-  async function sendFile(e: any) {
-    const f = e.target.files?.[0];
+  function onPasteFile(e: any) {
+    const items = e.clipboardData?.items || [];
+    for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.type && it.type.startsWith("image")) { const f = it.getAsFile(); if (f) { e.preventDefault(); uploadFile(f); return; } } }
+  }
+  async function uploadFile(f: File | null | undefined) {
     if (!f || !conv) return;
     const kind = f.type.startsWith("video") ? "video" : f.type.startsWith("image") ? "photo" : "document";
     setBusy(true); setErr("");
@@ -68,8 +71,8 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
       setBusy(false);
     };
     reader.readAsDataURL(f);
-    e.target.value = "";
   }
+  async function sendFile(e: any) { await uploadFile(e.target.files?.[0]); e.target.value = ""; }
   async function analyze() {
     if (!conv) return;
     setAiLoad(true); setErr("");
@@ -95,7 +98,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
             <div style={{ fontSize: 10.5, color: "#94a3b8", marginBottom: 2, textAlign: m.direction === "in" ? "left" : "right" }}>
               {m.direction === "in" ? "Клієнт" : (m.sender_name === "ai_assistant" ? "Юля (AI)" : (m.sender_name || "Менеджер"))}
             </div>
-            <div style={{ background: (m as any).internal ? "#fef9c3" : (m.direction === "in" ? "#ffffff" : "#dbeafe"), padding: "7px 11px", borderRadius: 12, fontSize: 13, whiteSpace: "pre-wrap", border: (m as any).internal ? "1px dashed #d4a017" : (m.direction === "in" ? "1px solid #eef2f7" : "none") }}>{(m as any).internal && <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", marginBottom: 2 }}>📝 Нотатка (тільки команда)</div>}{m.text}</div>
+            <div style={{ background: (m as any).internal ? "#fef9c3" : (m.direction === "in" ? "#ffffff" : "#dbeafe"), padding: "7px 11px", borderRadius: 12, fontSize: 13, whiteSpace: "pre-wrap", border: (m as any).internal ? "1px dashed #d4a017" : (m.direction === "in" ? "1px solid #eef2f7" : "none") }}>{(m as any).internal && <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", marginBottom: 2 }}><Icon n="📝" size={12} /> Нотатка (тільки команда)</div>}{m.text}</div>
             <div style={{ fontSize: 9.5, color: "#cbd5e1", marginTop: 2, textAlign: m.direction === "in" ? "left" : "right" }}>{(m as any).created_at ? new Date((m as any).created_at).toLocaleTimeString("uk", { hour: "2-digit", minute: "2-digit" }) : ""}</div>
           </div>
         ))}
@@ -105,7 +108,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
       {/* AI-РОП — тези + рекомендована відповідь */}
       {ai && (
         <div style={{ marginTop: 8, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: 10, maxHeight: 220, overflowY: "auto", flexShrink: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#92400e", marginBottom: 6 }}>🧠 AI-РОП — що в діалозі</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#92400e", marginBottom: 6 }}><Icon n="🧠" size={14} /> AI-РОП — що в діалозі</div>
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.5, color: "#334155" }}>
             {pts.map((p, i) => <li key={i} style={{ marginBottom: 3 }}>{p}</li>)}
           </ul>
@@ -113,7 +116,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
             <>
               <div style={{ fontSize: 12, fontWeight: 700, color: "#92400e", margin: "10px 0 5px" }}>Рекомендована відповідь</div>
               <div style={{ fontSize: 12.5, background: "#fff", border: "1px solid #fde68a", borderRadius: 8, padding: 8, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{ai.suggestion}</div>
-              <button className="btn" style={{ marginTop: 6, fontSize: 12, background: "#fde68a", color: "#92400e" }} onClick={() => setText(ai.suggestion || "")}>✍️ Вставити у відповідь</button>
+              <button className="btn" style={{ marginTop: 6, fontSize: 12, background: "#fde68a", color: "#92400e" }} onClick={() => setText(ai.suggestion || "")}><Icon n="✍️" size={13} /> Вставити у відповідь</button>
             </>
           )}
         </div>
@@ -122,15 +125,15 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
       {err && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 6 }}>{err}</div>}
 
       {/* ПОЛЕ ВІДПОВІДІ — теж регульоване */}
-      <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={internal ? "Внутрішня нотатка — клієнт НЕ побачить…" : "Відповідь клієнту…"} rows={3}
+      <textarea value={text} onChange={(e) => setText(e.target.value)} onPaste={onPasteFile} placeholder={internal ? "Внутрішня нотатка — клієнт НЕ побачить…  (вставити фото — Ctrl+V)" : "Відповідь клієнту…  (вставити фото — Ctrl+V)"} rows={3}
         style={{ width: "100%", fontSize: 13, padding: 9, borderRadius: 10, border: internal ? "1.5px dashed #d4a017" : "1px solid #e2e8f0", background: internal ? "#fffbeb" : "#fff", marginTop: 8, boxSizing: "border-box", resize: "vertical", minHeight: 56, flexShrink: 0 }} />
-      <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={sendFile} />
+      <input ref={fileRef} type="file" hidden onChange={sendFile} />
       <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "nowrap" }}>
         <button className="btn" type="button" style={{ background: internal ? "#fde68a" : "#f1f5f9", color: internal ? "#92400e" : "#475569", flex: "0 0 auto", fontWeight: internal ? 700 : 400 }} title="Прихована нотатка для менеджерів (клієнт не побачить)" onClick={() => setInternal((v) => !v)}><Icon n="eye" size={17} /></button>
         <EmojiButton onPick={(e) => setText((t) => t + e)} />
         <button className="btn" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title="Надіслати фото / відео" onClick={() => fileRef.current?.click()} disabled={busy}><Icon n="paperclip" size={17} /></button>
-        <button className="btn" style={{ flex: "1.8 1 0", minWidth: 0, background: "#fef3c7", color: "#92400e", fontSize: "clamp(9px, 2.7cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "0 6px" }} onClick={analyze} disabled={aiLoad} title="AI-РОП підказати відповідь">{aiLoad ? "AI аналізує…" : "🧠 AI-РОП підказати відповідь"}</button>
-        <button className="btn btn-primary" style={{ flex: "1 1 0", minWidth: 0, fontSize: "clamp(9px, 2.7cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "0 6px", background: internal ? "#d4a017" : undefined }} onClick={send} disabled={busy || !text.trim()}>{busy ? "…" : (internal ? "📝 Нотатка" : "Надіслати")}</button>
+        <button className="btn" style={{ flex: "1.8 1 0", minWidth: 0, background: "#fef3c7", color: "#92400e", fontSize: "clamp(9px, 2.7cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "0 6px" }} onClick={analyze} disabled={aiLoad} title="AI-РОП підказати відповідь">{aiLoad ? "AI аналізує…" : <><Icon n="🧠" size={13} /> AI-РОП підказати відповідь</>}</button>
+        <button className="btn btn-primary" style={{ flex: "1 1 0", minWidth: 0, fontSize: "clamp(9px, 2.7cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "0 6px", background: internal ? "#d4a017" : undefined }} onClick={send} disabled={busy || !text.trim()}>{busy ? "…" : (internal ? <><Icon n="📝" size={13} /> Нотатка</> : "Надіслати")}</button>
       </div>
     </div>
   );

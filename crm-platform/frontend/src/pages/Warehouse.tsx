@@ -22,6 +22,7 @@ import { useSearchParams } from "react-router-dom";
 import { api, Paginated } from "../api";
 import { useLang } from "../i18n";
 import { useAuth } from "../auth";
+import { Icon } from "../Icon";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 interface Product {
@@ -146,12 +147,12 @@ export default function Warehouse() {
       {/* ─── [5] ДЕРЕВО КАТЕГОРИЙ ─────────────────────────────────────────── */}
       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 8, position: "sticky", top: 8, maxHeight: "calc(100vh - 90px)", overflowY: "auto" }}>
         <div onClick={() => pick(null)} style={{ padding: "7px 9px", borderRadius: 6, cursor: "pointer", fontWeight: 600, background: cat === null ? "#eff6ff" : "", color: cat === null ? "#1d4ed8" : "#1e293b" }}>
-          📦 {t("Все товары","Всі товари")} <span className="muted" style={{ fontWeight: 400 }}>({count})</span>
+          <Icon n="📦" size={15} /> {t("Все товары","Всі товари")} <span className="muted" style={{ fontWeight: 400 }}>({count})</span>
         </div>
         {tree.roots.map((r) => (
           <div key={r.id}>
             <div onClick={() => pick(r.id)} style={{ padding: "6px 9px", borderRadius: 6, cursor: "pointer", fontSize: 13, background: cat === r.id ? "#eff6ff" : "", color: cat === r.id ? "#1d4ed8" : "#334155" }}>
-              📁 {r.name} <span className="muted">({r.products_count})</span>
+              <Icon n="📁" size={14} /> {r.name} <span className="muted">({r.products_count})</span>
             </div>
             {tree.childrenOf(r.id).map((ch) => (
               <div key={ch.id} onClick={() => pick(ch.id)} style={{ padding: "5px 9px 5px 24px", borderRadius: 6, cursor: "pointer", fontSize: 12.5, background: cat === ch.id ? "#eff6ff" : "", color: cat === ch.id ? "#1d4ed8" : "#475569" }}>
@@ -165,9 +166,9 @@ export default function Warehouse() {
       {/* ─── [6] ТУЛБАР + ТАБЛИЦА + ПАГИНАЦИЯ ─────────────────────────────── */}
       <div>
         <div className="toolbar" style={{ borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 10, background: "#fff", display: "flex", gap: 8, alignItems: "center", padding: 8, flexWrap: "wrap" }}>
-          <button className="btn btn-primary" onClick={() => setModal("in")}>📥 {t("Приход","Прихід")}</button>
-          <button className="btn btn-light" onClick={() => setModal("out")}>📤 {t("Расход","Витрата")}</button>
-          <button className="btn btn-light" onClick={openInventory}>📋 {t("Инвентаризация","Інвентаризація")}</button>
+          <button className="btn btn-primary" onClick={() => setModal("in")}><Icon n="📥" size={15} /> {t("Приход","Прихід")}</button>
+          <button className="btn btn-light" onClick={() => setModal("out")}><Icon n="📤" size={15} /> {t("Расход","Витрата")}</button>
+          <button className="btn btn-light" onClick={openInventory}><Icon n="📋" size={15} /> {t("Инвентаризация","Інвентаризація")}</button>
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("🔍 Поиск товара / артикула…","🔍 Пошук товару / артикулу…")} style={{ flex: 1, minWidth: 160, height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 12px", fontSize: 13 }} />
           <span className="muted">{t("Найдено","Знайдено")}: <b style={{ color: "#1e293b" }}>{count.toLocaleString("ru")}</b></span>
         </div>

@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useLang } from "../i18n";
 import { useAuth } from "../auth";
+import { Icon } from "../Icon";
 
 /* ─── ТИПЫ ─────────────────────────────────────────────────────────────── */
 interface SalesData {
@@ -32,9 +33,9 @@ export default function Analytics() {
   return (
     <div className="scroll pad fade">
       <div className="tabline" style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        {canSales && <button className={tab === "sales" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("sales")}>📈 {t("Продажи","Продажі")}</button>}
-        {canSales && <button className={tab === "channels" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("channels")}>📣 {t("Каналы","Канали")}</button>}
-        {canStock && <button className={tab === "stock" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("stock")}>📦 {t("Склад","Склад")}</button>}
+        {canSales && <button className={tab === "sales" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("sales")}><Icon n="📈" size={15} /> {t("Продажи","Продажі")}</button>}
+        {canSales && <button className={tab === "channels" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("channels")}><Icon n="📣" size={15} /> {t("Каналы","Канали")}</button>}
+        {canStock && <button className={tab === "stock" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("stock")}><Icon n="📦" size={15} /> {t("Склад","Склад")}</button>}
       </div>
       {tab === "sales" && canSales && <SalesTab />}
       {tab === "channels" && canSales && <ChannelsTab />}
@@ -81,7 +82,7 @@ function ChannelsTab() {
           ))}
         </tbody>
       </table>
-      <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>📣 {t("Канал = источник сделки (Instagram/Facebook/Сайт/Опт/Дизайнеры/TikTok/Telegram). «Чистый вклад» = выручка×маржа − реклама — показывает какой канал реально даёт прибыль. Spend/ROAS — введи рекламу в Настройках или авто из Meta-ads.","Канал = джерело сделки (Instagram/Facebook/Сайт/Опт/Дизайнери/TikTok/Telegram). «Чистий внесок» = виручка×маржа − реклама — показує який канал реально дає прибуток. Spend/ROAS — введи рекламу в Налаштування або авто з Meta-ads.")}</div>
+      <div className="muted" style={{ fontSize: 12, marginTop: 8 }}><Icon n="📣" size={14} /> {t("Канал = источник сделки (Instagram/Facebook/Сайт/Опт/Дизайнеры/TikTok/Telegram). «Чистый вклад» = выручка×маржа − реклама — показывает какой канал реально даёт прибыль. Spend/ROAS — введи рекламу в Настройках или авто из Meta-ads.","Канал = джерело сделки (Instagram/Facebook/Сайт/Опт/Дизайнери/TikTok/Telegram). «Чистий внесок» = виручка×маржа − реклама — показує який канал реально дає прибуток. Spend/ROAS — введи рекламу в Налаштування або авто з Meta-ads.")}</div>
     </div>
   );
 }
@@ -134,7 +135,7 @@ function SalesTab() {
 
       {/* ── КАНАЛИ (джерела лідів і сделок) ── */}
       <div className="panel" style={{ margin: 0, marginTop: 12 }}>
-        <b style={{ fontSize: 14 }}>📣 {t("Каналы — источники лидов и сделок","Канали — джерела лідів і сделок")}</b>
+        <b style={{ fontSize: 14 }}><Icon n="📣" size={15} /> {t("Каналы — источники лидов и сделок","Канали — джерела лідів і сделок")}</b>
         <table style={{ marginTop: 8 }}>
           <thead><tr><th>{t("Канал","Канал")}</th><th>{t("Лиды","Ліди")}</th><th>{t("Сделок","Угод")}</th><th>{t("Выиграно","Виграно")}</th><th>{t("Конверсия","Конверсія")}</th><th>{t("Выручка","Виручка")}</th></tr></thead>
           <tbody>{((d as any).channels || []).map((c: any, i: number) => (

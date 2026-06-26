@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useLang } from "../i18n";
+import { Icon } from "../Icon";
 
 export default function SettingsAgent() {
   const { t } = useLang();
@@ -51,7 +52,7 @@ export default function SettingsAgent() {
           <div className="label" style={{ marginBottom: 6 }}>{t("Последние задачи от агента", "Останні задачі від агента")}</div>
           {runs.map((r) => (
             <div key={r.id} style={{ fontSize: 12.5, padding: "5px 0", borderBottom: "1px solid #f1f5f9" }}>
-              🤖 <b>{r.kind_display}</b>: {r.title} <span className="muted">· {r.status_display}</span>
+              <Icon n="🤖" size={16} /> <b>{r.kind_display}</b>: {r.title} <span className="muted">· {r.status_display}</span>
             </div>
           ))}
         </div>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { useLang } from "./i18n";
+import { Icon } from "./Icon";
 
 export default function ActivityLog({ kind, id }: { kind: "lead" | "deal"; id: number }) {
   const { t } = useLang();
@@ -16,7 +17,7 @@ export default function ActivityLog({ kind, id }: { kind: "lead" | "deal"; id: n
 
   return (
     <div className="panel">
-      <div className="label">{t("🕘 История изменений","🕘 Історія змін")}</div>
+      <div className="label"><Icon n="🕘" size={15} /> {t("История изменений","Історія змін")}</div>
       {log.length === 0 ? (
         <div className="muted" style={{ fontSize: 12 }}>{t("Пока нет записей.","Поки немає записів.")}</div>
       ) : (
@@ -28,7 +29,7 @@ export default function ActivityLog({ kind, id }: { kind: "lead" | "deal"; id: n
                 <span className="muted" style={{ fontSize: 11, whiteSpace: "nowrap" }}>{fmt(a.at)}</span>
               </div>
               {a.detail && <div className="muted" style={{ fontSize: 12, marginTop: 1 }}>{a.detail}</div>}
-              <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>👤 {a.actor}</div>
+              <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}><Icon n="👤" size={12} /> {a.actor}</div>
             </div>
           ))}
         </div>

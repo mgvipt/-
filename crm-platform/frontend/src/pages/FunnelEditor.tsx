@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { api, Funnel, Stage } from "../api";
 import { useLang } from "../i18n";
+import { Icon } from "../Icon";
 
 type Row = { id?: number; name: string; color: string; is_won: boolean; is_lost: boolean };
 const PRESETS = ["#3b82f6", "#6366f1", "#8b5cf6", "#ec4899", "#f59e0b", "#10b981", "#14b8a6", "#ef4444", "#64748b", "#0ea5e9"];
@@ -65,7 +66,7 @@ export default function FunnelEditor({ funnel, onClose, onSaved }: { funnel: Fun
               <button onClick={() => patch(i, { is_lost: !r.is_lost, is_won: false })} title={t("Стадия «Проиграно»","Стадія «Програно»")}
                 style={{ width: 30, height: 30, borderRadius: 7, border: "1px solid " + (r.is_lost ? "#ef4444" : "#cbd5e1"), background: r.is_lost ? "#ef4444" : "#fff", color: r.is_lost ? "#fff" : "#94a3b8", cursor: "pointer" }}>✕</button>
               <button onClick={() => remove(i)} title={t("Удалить стадию","Видалити стадію")}
-                style={{ width: 30, height: 30, borderRadius: 7, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", cursor: "pointer" }}>🗑</button>
+                style={{ width: 30, height: 30, borderRadius: 7, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", cursor: "pointer" }}><Icon n="🗑" size={16} /></button>
             </div>
             <div style={{ display: "flex", gap: 4, margin: "4px 0 0 30px" }}>
               {PRESETS.map((c) => <span key={c} onClick={() => patch(i, { color: c })} style={{ width: 16, height: 16, borderRadius: 4, background: c, cursor: "pointer", border: r.color === c ? "2px solid #0f172a" : "1px solid #e2e8f0" }} />)}
@@ -74,7 +75,7 @@ export default function FunnelEditor({ funnel, onClose, onSaved }: { funnel: Fun
           </div>
         ))}
 
-        {warn && <div style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#b45309", borderRadius: 8, padding: "8px 10px", fontSize: 13, marginTop: 8 }}>⚠ {warn}</div>}
+        {warn && <div style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#b45309", borderRadius: 8, padding: "8px 10px", fontSize: 13, marginTop: 8 }}><Icon n="⚠" size={15} /> {warn}</div>}
 
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
           <button className="btn btn-light" style={{ flex: 1 }} onClick={onClose}>{t("Закрыть","Закрити")}</button>

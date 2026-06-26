@@ -37,6 +37,7 @@ import KpDoc from "../KpDoc";
 import { useLang } from "../i18n";
 import { SocialLink } from "../social";
 import { SalesAnalystPanel } from "../SalesAnalyst";
+import { Icon } from "../Icon";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
@@ -314,19 +315,19 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <button className="btn btn-primary" style={{ padding: "3px 9px" }} onClick={saveTitle}>✓</button>
             <button className="btn btn-light" style={{ padding: "3px 9px" }} onClick={() => setTitleEdit(false)}>✕</button>
           </span>
-        ) : (<span style={{ cursor: "pointer" }} title={t("Клик — изменить название","Клік — змінити назву")} onClick={() => { setTitleVal(deal.title); setTitleEdit(true); }}>{deal.title} <span style={{ fontSize: 11, opacity: .45 }}>✏️</span></span>)}</b>
-        <button className="btn" title={t("Скопировать ссылку на сделку","Скопіювати лінк на сделку")} onClick={() => { navigator.clipboard?.writeText(window.location.origin+"/deals/"+deal.id); flash(t("Ссылка скопирована","Лінк скопійовано")); }}>🔗</button>
+        ) : (<span style={{ cursor: "pointer" }} title={t("Клик — изменить название","Клік — змінити назву")} onClick={() => { setTitleVal(deal.title); setTitleEdit(true); }}>{deal.title} <span style={{ fontSize: 11, opacity: .45 }}><Icon n="✏️" size={11} /></span></span>)}</b>
+        <button className="btn" title={t("Скопировать ссылку на сделку","Скопіювати лінк на сделку")} onClick={() => { navigator.clipboard?.writeText(window.location.origin+"/deals/"+deal.id); flash(t("Ссылка скопирована","Лінк скопійовано")); }}><Icon n="🔗" size={16} /></button>
         {deal.is_seen ? <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", background: "#dcfce7", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap" }} title={t("Ответили клиенту","Відповіли клієнту")}>✓ {t("Відповіли","Відповіли")}</span> : <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "#ef4444", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap", boxShadow: "0 0 0 3px rgba(239,68,68,.18)" }} title={t("Клиент написал — не отвечено","Клієнт написав — не відповіли")}>● {t("Непереглянуто","Непереглянуто")}</span>}
         {allFunnels.length ? (
           <select value={deal.funnel} onChange={(e) => changeFunnel(Number(e.target.value))} title={t("Воронка сделки — можно сменить","Воронка сделки — можна змінити")} style={{ height: 30, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 13, background: "#fff", cursor: "pointer", maxWidth: 230 }}>
             {allFunnels.filter((f: any) => !f.is_lead_funnel).map((f: any) => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
         ) : <span className="muted">{funnel?.name}</span>}
-        {deal.created_at && <span className="muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }} title={t("Сделка появилась","Сделка зʼявилась")}>🕓 {new Date(deal.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
+        {deal.created_at && <span className="muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }} title={t("Сделка появилась","Сделка зʼявилась")}><Icon n="🕓" size={14} /> {new Date(deal.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
         {deal.contact_id && <CallButton contact={deal.contact_id} small />}
-        <button className="btn btn-green" onClick={ship}>{t("📦 Отгрузить","📦 Відвантажити")}</button>
+        <button className="btn btn-green" onClick={ship}><Icon n="📦" size={15} /> {t("Отгрузить","Відвантажити")}</button>
       </div>
 
       {/* ─── [8] РЕНДЕР: стадии (клик = смена, на текущей — дни) ────────── */}
@@ -346,14 +347,14 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
 
       {/* ─── [9] РЕНДЕР: єдина панель — вкладки + дії (dealbar-unified) ──── */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "12px 0", padding: "8px 10px", background: "linear-gradient(90deg,#f8fafc,#eef2ff)", borderRadius: 10, border: "1px solid #e2e8f0" }}>
-        <button className={"btn" + (tab === "general" ? " btn-primary" : "")} onClick={() => setTab("general")}>{t("💬 Лента / Чат","💬 Стрічка / Чат")}</button>
-        <button className={"btn" + (tab === "items" ? " btn-primary" : "")} onClick={() => setTab("items")}>{t("📦 Товары","📦 Товари")} ({deal.items.length})</button>
-        <button className={"btn" + (tab === "cashflow" ? " btn-primary" : "")} onClick={() => setTab("cashflow")}>{t("💰 Cashflow","💰 Cashflow")}</button>
+        <button className={"btn" + (tab === "general" ? " btn-primary" : "")} onClick={() => setTab("general")}><Icon n="💬" size={15} /> {t("Лента / Чат","Стрічка / Чат")}</button>
+        <button className={"btn" + (tab === "items" ? " btn-primary" : "")} onClick={() => setTab("items")}><Icon n="📦" size={15} /> {t("Товары","Товари")} ({deal.items.length})</button>
+        <button className={"btn" + (tab === "cashflow" ? " btn-primary" : "")} onClick={() => setTab("cashflow")}><Icon n="💰" size={15} /> {t("Cashflow","Cashflow")}</button>
         <div style={{ width: 1, height: 24, background: "#cbd5e1", margin: "0 6px" }} />
         <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>{t("Действия:","Дії:")}</span>
-        <button className="btn" onClick={sendPayLink}>{t("💳 Оплата","💳 Оплата")}</button>
-        <button className="btn" onClick={createTTN}>{t("🚚 ТТН","🚚 ТТН")}</button>
-        <button className="btn" onClick={issueCheckbox}>{t("🧾 Checkbox","🧾 Checkbox")}</button>
+        <button className="btn" onClick={sendPayLink}><Icon n="💳" size={15} /> {t("Оплата","Оплата")}</button>
+        <button className="btn" onClick={createTTN}><Icon n="🚚" size={15} /> {t("ТТН","ТТН")}</button>
+        <button className="btn" onClick={issueCheckbox}><Icon n="🧾" size={15} /> {t("Checkbox","Checkbox")}</button>
       </div>
 
       {tab !== "cashflow" ? (
@@ -368,7 +369,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
               <div className="label">{t("Клиент","Клієнт")}</div>
               {deal.contact_id && !cliEdit && (
                 <span style={{ fontSize: 11, display: "flex", gap: 10 }}>
-                  <span style={{ color: "#2563eb", cursor: "pointer" }} onClick={() => { setCliEdit(true); setCliNew(false); }}>{t("✏️ Изменить","✏️ Змінити")}</span>
+                  <span style={{ color: "#2563eb", cursor: "pointer" }} onClick={() => { setCliEdit(true); setCliNew(false); }}><Icon n="✏️" size={12} /> {t("Изменить","Змінити")}</span>
                   <span style={{ color: "#dc2626", cursor: "pointer" }} onClick={removeContact}>{t("✕ Убрать","✕ Прибрати")}</span>
                 </span>
               )}
@@ -381,13 +382,13 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 </div>
                 {(deal.contact_phone || deal.contact_social_link) && (
                   <div style={{ marginTop: 6, fontSize: 12.5, display: "flex", flexDirection: "column", gap: 3 }}>
-                    {deal.contact_phone && <a href={`tel:${deal.contact_phone}`} style={{ color: "#0f172a", fontWeight: 600 }}>📱 {deal.contact_phone}</a>}
+                    {deal.contact_phone && <a href={`tel:${deal.contact_phone}`} style={{ color: "#0f172a", fontWeight: 600 }}><Icon n="📱" size={13} /> {deal.contact_phone}</a>}
                     {deal.contact_social_link && <SocialLink link={deal.contact_social_link} />}
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}>{t("📞 Позвонить","📞 Подзвонити")}</button>
-                  <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }} onClick={() => deal.conversation_id ? nav(`/inbox?c=${deal.conversation_id}`) : setTab("general")}>{t("💬 Чат","💬 Чат")}</button>
+                  <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}><Icon n="📞" size={14} /> {t("Позвонить","Подзвонити")}</button>
+                  <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }} onClick={() => deal.conversation_id ? nav(`/inbox?c=${deal.conversation_id}`) : setTab("general")}><Icon n="💬" size={14} /> {t("Чат","Чат")}</button>
                   <button className="btn" style={{ background: "#f1f5f9" }} title={t("Карточка клиента","Картка клієнта")} onClick={() => nav(`/clients/${deal.contact_id}`)}>{t("Клиент →","Клієнт →")}</button>
                 </div>
               </>
@@ -398,7 +399,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   <div style={{ maxHeight: 200, overflowY: "auto", marginTop: 6, border: "1px solid #e2e8f0", borderRadius: 8 }}>
                     {cliResults.map((c) => (
                       <div key={c.id} onClick={() => setContact(c.id)} style={{ padding: "7px 9px", borderBottom: "1px solid #f1f5f9", cursor: "pointer", fontSize: 13 }}>
-                        👤 <b>{c.display_name || `${c.first_name || ""} ${c.last_name || ""}`.trim() || "—"}</b> {c.phone ? <span className="muted">· {c.phone}</span> : null}
+                        <Icon n="👤" size={14} /> <b>{c.display_name || `${c.first_name || ""} ${c.last_name || ""}`.trim() || "—"}</b> {c.phone ? <span className="muted">· {c.phone}</span> : null}
                       </div>
                     ))}
                   </div>
@@ -406,7 +407,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 {cliSearch.trim() && cliResults.length === 0 && <div className="muted" style={{ fontSize: 12, padding: "6px 0" }}>{t("Не найдено — создай нового ниже.","Не знайдено — створи нового нижче.")}</div>}
                 {!cliNew ? (
                   <div style={{ display: "flex", gap: 10, marginTop: 8, fontSize: 12 }}>
-                    <span style={{ color: "#16a34a", cursor: "pointer" }} onClick={() => setCliNew(true)}>{t("➕ Создать нового","➕ Створити нового")}</span>
+                    <span style={{ color: "#16a34a", cursor: "pointer" }} onClick={() => setCliNew(true)}><Icon n="➕" size={12} /> {t("Создать нового","Створити нового")}</span>
                     {deal.contact_id && <span style={{ color: "#64748b", cursor: "pointer", marginLeft: "auto" }} onClick={() => { setCliEdit(false); setCliSearch(""); }}>{t("Отменить","Скасувати")}</span>}
                   </div>
                 ) : (
@@ -478,7 +479,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           <div className="panel">
             <div className="label">{t("Доставка и документы","Доставка і документи")}</div>
             <div className="row"><span className="muted">{t("ТТН Нова Пошта","ТТН Нова Пошта")}</span><b>{deal.ttn || "—"}</b></div>
-            <div className="row"><span className="muted">{t("Чек Checkbox","Чек Checkbox")}</span>{(deal as any).checkbox_url ? <a href={(deal as any).checkbox_url} target="_blank" rel="noreferrer" style={{ fontWeight: 700, color: "#16a34a" }}>🧾 {t("відкрити чек","відкрити чек")}</a> : <b>{hasCheck ? deal.checkbox_status : "—"}</b>}</div>
+            <div className="row"><span className="muted">{t("Чек Checkbox","Чек Checkbox")}</span>{(deal as any).checkbox_url ? <a href={(deal as any).checkbox_url} target="_blank" rel="noreferrer" style={{ fontWeight: 700, color: "#16a34a" }}><Icon n="🧾" size={14} /> {t("відкрити чек","відкрити чек")}</a> : <b>{hasCheck ? deal.checkbox_status : "—"}</b>}</div>
             <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
               <span style={chip(hasCheck)}>{t("Чек","Чек")} {hasCheck ? "✓" : "—"}</span>
               <span style={chip(!!deal.ttn)}>{t("ТТН","ТТН")} {deal.ttn ? "✓" : "—"}</span>
@@ -489,7 +490,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           <div className="panel">
             <div className="label">{t("Маржа (видит РОП / руководитель)","Маржа (бачить РОП / керівник)")}</div>
             <div className="row"><span className="muted">{t("Маржа","Маржа")}</span><b>{fmt(deal.margin || 0)} ₴{deal.margin && Number(deal.amount) ? ` · ${Math.round((deal.margin / Number(deal.amount)) * 100)}%` : ""}</b></div>
-            <div className="row" title={deal.bonus ? t(`${deal.bonus.revenue_pct}% с оборота + ${deal.bonus.margin_pct}% с маржи. Ставки меняются в Финмодели → ЗП.`, `${deal.bonus.revenue_pct}% з обороту + ${deal.bonus.margin_pct}% з маржі. Ставки міняються у Фінмоделі → ЗП.`) : ""}><span className="muted">{t("💰 Бонус менеджера со сделки","💰 Бонус менеджера з угоди")}</span><b style={{ color: "#1d4ed8" }}>{fmt(deal.bonus?.total || 0)} ₴</b></div>
+            <div className="row" title={deal.bonus ? t(`${deal.bonus.revenue_pct}% с оборота + ${deal.bonus.margin_pct}% с маржи. Ставки меняются в Финмодели → ЗП.`, `${deal.bonus.revenue_pct}% з обороту + ${deal.bonus.margin_pct}% з маржі. Ставки міняються у Фінмоделі → ЗП.`) : ""}><span className="muted"><Icon n="💰" size={14} /> {t("Бонус менеджера со сделки","Бонус менеджера з угоди")}</span><b style={{ color: "#1d4ed8" }}>{fmt(deal.bonus?.total || 0)} ₴</b></div>
             {deal.bonus && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{deal.bonus.revenue_pct}{t("% оборота = ","% обороту = ")}{fmt(deal.bonus.from_revenue)} ₴ + {deal.bonus.margin_pct}{t("% маржи = ","% маржі = ")}{fmt(deal.bonus.from_margin)} ₴</div>}
           </div>
 
@@ -513,7 +514,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <div className="panel">
               <div className="label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span>{t("Товары в сделке","Товари у сделке")}</span>
-                <button className="btn" onClick={() => setDocOpen(true)} title={t("Сформировать документ КП","Сформувати документ КП")}>📄 {t("Документ","Документ")}</button>
+                <button className="btn" onClick={() => setDocOpen(true)} title={t("Сформировать документ КП","Сформувати документ КП")}><Icon n="📄" size={14} /> {t("Документ","Документ")}</button>
               </div>
               <div className="prod-search" style={{ position: "relative", margin: "8px 0 12px" }}>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -521,7 +522,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   <input type="number" value={addQty} min={1} onChange={(e) => setAddQty(Number(e.target.value))} title={t("Количество","Кількість")} style={{ width: 56, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px" }} />
                   <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, whiteSpace: "nowrap" }} title={t("Зарезервировать товар под сделку","Зарезервувати товар під сделку")}><input type="checkbox" checked={addReserve} onChange={(e) => setAddReserve(e.target.checked)} />{t("Резерв","Резерв")}</label>
                   <button className="btn btn-primary" onClick={() => addItem()} disabled={!psel}>{t("Добавить","Додати")}</button>
-                  <button className="btn" onClick={() => setShowList((s) => !s)} title={t("Показать весь список товаров (двойной клик — добавить)","Показати весь список товарів (подвійний клік — додати)")}>{showList ? t("✕ Список","✕ Список") : t("📋 Список","📋 Список")}</button>
+                  <button className="btn" onClick={() => setShowList((s) => !s)} title={t("Показать весь список товаров (двойной клик — добавить)","Показати весь список товарів (подвійний клік — додати)")}>{showList ? <>{t("✕ Список","✕ Список")}</> : <><Icon n="📋" size={14} /> {t("Список","Список")}</>}</button>
                 </div>
                 {presults.length > 0 && (
                   <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 260, overflowY: "auto" }}>
@@ -584,7 +585,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 14 }}>
                   <span className="muted" style={{ fontSize: 12 }}>{t("Зафиксируй список — сделка перейдёт на расчёт","Зафіксуй список — сделка перейде на розрахунок")}</span>
-                  <button className="btn btn-primary" onClick={confirmItems} title={t("Сохранить список товаров и перейти к расчёту","Зберегти список товарів і перейти до розрахунку")}>💾 {t("Сохранить список → Розрахунок","Зберегти список → Розрахунок")}</button>
+                  <button className="btn btn-primary" onClick={confirmItems} title={t("Сохранить список товаров и перейти к расчёту","Зберегти список товарів і перейти до розрахунку")}><Icon n="💾" size={14} /> {t("Сохранить список → Розрахунок","Зберегти список → Розрахунок")}</button>
                 </div>
                 </>
               )}
@@ -598,7 +599,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         {deal.contact_id && (
           <div style={{ width: chatW, flexShrink: 0, position: "sticky", top: 56, alignSelf: "flex-start" }}>
             <div className="panel">
-              <div className="label">{t("💬 Чат с клиентом","💬 Чат з клієнтом")}</div>
+              <div className="label"><Icon n="💬" size={14} /> {t("Чат с клиентом","Чат з клієнтом")}</div>
               <SalesAnalystPanel kind="deals" id={id!} onInsert={(txt) => setDraft(txt)} />
               <ClientChat contact={deal.contact_id} />
             </div>
@@ -614,8 +615,8 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 380 }}>
             <h3 style={{ marginTop: 0 }}>{t("Клиент сделки","Клієнт сделки")}</h3>
             <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-              <button className={"btn" + (ncMode === "pick" ? " btn-primary" : " btn-light")} style={{ flex: 1 }} onClick={() => setNcMode("pick")}>{t("🔍 Выбрать существующего","🔍 Обрати існуючого")}</button>
-              <button className={"btn" + (ncMode === "new" ? " btn-primary" : " btn-light")} style={{ flex: 1 }} onClick={() => setNcMode("new")}>{t("➕ Создать нового","➕ Створити нового")}</button>
+              <button className={"btn" + (ncMode === "pick" ? " btn-primary" : " btn-light")} style={{ flex: 1 }} onClick={() => setNcMode("pick")}><Icon n="🔍" size={14} /> {t("Выбрать существующего","Обрати існуючого")}</button>
+              <button className={"btn" + (ncMode === "new" ? " btn-primary" : " btn-light")} style={{ flex: 1 }} onClick={() => setNcMode("new")}><Icon n="➕" size={14} /> {t("Создать нового","Створити нового")}</button>
             </div>
             {ncMode === "pick" ? (
               <>
@@ -624,7 +625,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 <div style={{ maxHeight: 240, overflowY: "auto", marginBottom: 12 }}>
                   {ncResults.map((c) => (
                     <div key={c.id} onClick={() => linkExisting(c.id)} style={{ padding: "8px 10px", borderRadius: 8, cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
-                      👤 <b>{c.display_name || `${c.first_name || ""} ${c.last_name || ""}`.trim() || "—"}</b> {c.phone ? <span className="muted">· {c.phone}</span> : null}
+                      <Icon n="👤" size={14} /> <b>{c.display_name || `${c.first_name || ""} ${c.last_name || ""}`.trim() || "—"}</b> {c.phone ? <span className="muted">· {c.phone}</span> : null}
                     </div>
                   ))}
                   {ncSearch.trim() && ncResults.length === 0 && <div className="muted" style={{ fontSize: 13, padding: 8 }}>{t("Ничего не найдено. Создай нового на соседней вкладке.","Нічого не знайдено. Створи нового на сусідній вкладці.")}</div>}
@@ -654,7 +655,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       {ttnOpen && (
         <div onClick={() => setTtnOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 420, maxHeight: "88vh", overflowY: "auto" }}>
-            <h3 style={{ marginTop: 0 }}>🚚 {t("Создать ТТН Нова Пошта", "Створити ТТН Нова Пошта")}</h3>
+            <h3 style={{ marginTop: 0 }}><Icon n="🚚" size={18} /> {t("Создать ТТН Нова Пошта", "Створити ТТН Нова Пошта")}</h3>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div><label className="label">{t("Получатель", "Отримувач")}</label><input value={ttnName} onChange={(e) => setTtnName(e.target.value)} style={inp} /></div>
               <div><label className="label">{t("Телефон", "Телефон")}</label><input value={ttnPhone} onChange={(e) => setTtnPhone(e.target.value)} placeholder="0XX..." style={inp} /></div>
@@ -740,16 +741,16 @@ function CashflowTab({ deal, remaining, onPay, createTTN, issueCheckbox }: any) 
   const paid = deal.paid || 0;
   return (
     <div className="panel" style={{ margin: 0 }}>
-      <div className="label" style={{ marginBottom: 12 }}>💰 {t("Оплата и доставка","Оплата та доставка")} <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>({t("нативно, без Битрикса","нативно, без Бітрикса")})</span></div>
+      <div className="label" style={{ marginBottom: 12 }}><Icon n="💰" size={16} /> {t("Оплата и доставка","Оплата та доставка")} <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>({t("нативно, без Битрикса","нативно, без Бітрикса")})</span></div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
         <div style={mBox}><div className="muted" style={{ fontSize: 12 }}>{t("Сумма","Сума")}</div><div style={{ fontSize: 20, fontWeight: 600 }}>{f(Number(deal.amount))} ₴</div></div>
         <div style={mBox}><div className="muted" style={{ fontSize: 12 }}>{t("Оплачено","Оплачено")}</div><div style={{ fontSize: 20, fontWeight: 600, color: "#16a34a" }}>{f(paid)} ₴</div></div>
         <div style={mBox}><div className="muted" style={{ fontSize: 12 }}>{t("Осталось","Залишилось")}</div><div style={{ fontSize: 20, fontWeight: 600, color: remaining > 0 ? "#d97706" : "#16a34a" }}>{f(remaining)} ₴</div></div>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-        <button className="btn btn-primary" onClick={onPay}>💳 {t("Принять оплату","Прийняти оплату")}</button>
-        <button className="btn" onClick={createTTN}>🚚 {t("Создать ТТН","Створити ТТН")}</button>
-        <button className="btn" onClick={issueCheckbox}>🧾 {t("Чек Checkbox","Чек Checkbox")}</button>
+        <button className="btn btn-primary" onClick={onPay}><Icon n="💳" size={15} /> {t("Принять оплату","Прийняти оплату")}</button>
+        <button className="btn" onClick={createTTN}><Icon n="🚚" size={15} /> {t("Создать ТТН","Створити ТТН")}</button>
+        <button className="btn" onClick={issueCheckbox}><Icon n="🧾" size={15} /> {t("Чек Checkbox","Чек Checkbox")}</button>
       </div>
       <div className="label" style={{ marginBottom: 6 }}>{t("История платежей","Історія платежів")}</div>
       {(deal.payments || []).length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Платежей пока нет","Платежів поки немає")}</div> :

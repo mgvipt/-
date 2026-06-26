@@ -11,6 +11,7 @@ import ActivityLog from "../ActivityLog";
 import { useLang } from "../i18n";
 import { SocialLink } from "../social";
 import { SalesAnalystPanel } from "../SalesAnalyst";
+import { Icon } from "../Icon";
 
 interface Lead {
   id: number; title: string; contact?: number; contact_name?: string; owner_name?: string; created_at?: string;
@@ -131,14 +132,14 @@ export default function LeadCard() {
             <button className="btn btn-light" style={{ padding: "3px 9px" }} onClick={() => setTitleEdit(false)}>✕</button>
           </span>
         ) : (
-          <b style={{ fontSize: 16, cursor: "pointer" }} title={t("Клик — изменить название","Клік — змінити назву")} onClick={() => { setTitleVal(lead.title); setTitleEdit(true); }}>{lead.title} <span style={{ fontSize: 11, opacity: .45 }}>✏️</span></b>
+          <b style={{ fontSize: 16, cursor: "pointer" }} title={t("Клик — изменить название","Клік — змінити назву")} onClick={() => { setTitleVal(lead.title); setTitleEdit(true); }}>{lead.title} <span style={{ fontSize: 11, opacity: .45 }}><Icon n="✏️" size={11} /></span></b>
         )}
         {lead.is_seen ? <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", background: "#dcfce7", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap" }} title={t("Ответили клиенту","Відповіли клієнту")}>✓ {t("Відповіли","Відповіли")}</span> : <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "#ef4444", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap", boxShadow: "0 0 0 3px rgba(239,68,68,.18)" }} title={t("Клиент написал — не отвечено","Клієнт написав — не відповіли")}>● {t("Непереглянуто","Непереглянуто")}</span>}
         <span className="muted">{funnel?.name}</span>
-        {lead.created_at && <span className="muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }} title={t("Лид появился","Лід зʼявився")}>🕓 {new Date(lead.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
+        {lead.created_at && <span className="muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }} title={t("Лид появился","Лід зʼявився")}><Icon n="🕓" size={13} /> {new Date(lead.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
-        <button className="btn btn-green" onClick={convert}>{t("✅ Конвертировать в сделку","✅ Конвертувати в сделку")}</button>
+        <button className="btn btn-green" onClick={convert}><><Icon n="✅" size={16} /> {t("Конвертировать в сделку","Конвертувати в сделку")}</></button>
       </div>
 
       {funnel && (
@@ -156,11 +157,11 @@ export default function LeadCard() {
             <div className="label">{t("Клиент","Клієнт")}</div>
             <div style={{ fontWeight: 600 }}>{lead.contact_name || t("Без контакта","Без контакту")}</div>
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }} onClick={dialClient} title={t("Позвонить клиенту через нашу АТС","Подзвонити клієнту через нашу АТС")}>📞</button>
-              <button className="btn" style={{ flex: 2, background: "#eff6ff", color: "#1d4ed8" }} onClick={openChat}>{t("💬 Чат","💬 Чат")}</button>
+              <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }} onClick={dialClient} title={t("Позвонить клиенту через нашу АТС","Подзвонити клієнту через нашу АТС")}><Icon n="📞" size={16} /></button>
+              <button className="btn" style={{ flex: 2, background: "#eff6ff", color: "#1d4ed8" }} onClick={openChat}><><Icon n="💬" size={15} /> {t("Чат","Чат")}</></button>
             </div>
             {lead.contact_phone && (
-              <a href={`tel:${lead.contact_phone}`} style={{ display: "block", marginTop: 8, fontSize: 13, fontWeight: 600, color: "#0f172a" }}>📱 {lead.contact_phone}</a>
+              <a href={`tel:${lead.contact_phone}`} style={{ display: "block", marginTop: 8, fontSize: 13, fontWeight: 600, color: "#0f172a" }}><Icon n="📱" size={14} /> {lead.contact_phone}</a>
             )}
             <SocialLink link={lead.contact_social_link} />
           </div>
@@ -196,7 +197,7 @@ export default function LeadCard() {
 
         <div style={{ width: chatW, flexShrink: 0, display: "flex", flexDirection: "column", overflowY: "auto" }}>
           <div className="panel" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-            <div className="label">{t("💬 Чат с клиентом","💬 Чат з клієнтом")}</div>
+            <div className="label"><><Icon n="💬" size={15} /> {t("Чат с клиентом","Чат з клієнтом")}</></div>
             <div style={{ flex: 1, minHeight: 0 }}><ClientChat contact={lead.contact} /></div>
           </div>
         </div>

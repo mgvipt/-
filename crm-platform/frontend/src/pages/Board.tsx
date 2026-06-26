@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, Card, Funnel, Paginated } from "../api";
 import { Avatar, SourceChip } from "../ui";
 import { useLang } from "../i18n";
+import { Icon } from "../Icon";
 
 function socialMeta(link?: string) {
   if (!link) return null;
@@ -85,13 +86,13 @@ export default function Board({ endpoint, funnel, query }: { endpoint: string; f
                     {(c as any).contact && (
                       <span onClick={(e) => { e.stopPropagation(); nav(`/inbox?contact=${(c as any).contact}`); }}
                         title={t("Открыть чат с клиентом","Відкрити чат з клієнтом")}
-                        style={{ position: "absolute", top: 6, right: 8, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>💬</span>
+                        style={{ position: "absolute", top: 6, right: 8, cursor: "pointer", fontSize: 15, lineHeight: 1 }}><Icon n="💬" size={15} /></span>
                     )}
                     <div className="ttl">{c.title}</div>
-                    {(c as any).contact_name && <div style={{ fontSize: 11.5, fontWeight: 600, color: "#334155", margin: "1px 0 2px" }}>👤 {(c as any).contact_name}</div>}
-                    {(() => { const m = socialMeta((c as any).contact_social_link); return m ? (<a href={(c as any).contact_social_link} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", gap: 4, alignItems: "center", fontSize: 10.5, fontWeight: 600, color: "#2563eb", textDecoration: "none", marginBottom: 3 }}>{m.icon} {m.label}</a>) : null; })()}
+                    {(c as any).contact_name && <div style={{ fontSize: 11.5, fontWeight: 600, color: "#334155", margin: "1px 0 2px" }}><Icon n="👤" size={13} /> {(c as any).contact_name}</div>}
+                    {(() => { const m = socialMeta((c as any).contact_social_link); return m ? (<a href={(c as any).contact_social_link} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", gap: 4, alignItems: "center", fontSize: 10.5, fontWeight: 600, color: "#2563eb", textDecoration: "none", marginBottom: 3 }}><Icon n={m.icon} size={12} /> {m.label}</a>) : null; })()}
                     <div className="price">{Number(c.amount).toLocaleString("ru")} грн.</div>
-                    {(c as any).created_at && <div className="muted" style={{ fontSize: 10.5, marginBottom: 5 }}>🕓 {new Date((c as any).created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>}
+                    {(c as any).created_at && <div className="muted" style={{ fontSize: 10.5, marginBottom: 5 }}><Icon n="🕓" size={12} /> {new Date((c as any).created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>}
                     <SourceChip source={c.source} />
                     {c.owner_name && (
                       <div className="owner"><Avatar name={c.owner_name} />{c.owner_name}</div>

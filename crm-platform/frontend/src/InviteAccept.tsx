@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "./api";
+import { Icon } from "./Icon";
 
 export default function InviteAccept() {
   const { token } = useParams();
@@ -31,7 +32,7 @@ export default function InviteAccept() {
 
   if (info === undefined) return <div className="spin">…</div>;
   if (!info.valid) return <div style={wrap}><div style={card}><h3>Запрошення недійсне або прострочене</h3><p className="muted">Зверніться до керівника за новим лінком.</p></div></div>;
-  if (done) return <div style={wrap}><div style={card}><h3>✅ Акаунт створено!</h3><p>Переходимо на вхід…</p></div></div>;
+  if (done) return <div style={wrap}><div style={card}><h3><Icon n="✅" size={18} /> Акаунт створено!</h3><p>Переходимо на вхід…</p></div></div>;
 
   return (
     <div style={wrap}>

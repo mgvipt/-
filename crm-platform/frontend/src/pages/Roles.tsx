@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useLang } from "../i18n";
+import { Icon } from "../Icon";
 
 interface Role { id: number; name: string; permissions: string[]; funnels: number[]; open_lines: number[]; }
 interface Chan { id: number; name: string; kind: string; }
@@ -65,7 +66,7 @@ export default function Roles() {
 
         {/* ── Доступ до месенджерів (каналів) по ролях ── */}
         <div className="tablewrap" style={{ marginTop: 18, padding: 14 }}>
-          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📣 {t("Доступ к мессенджерам","Доступ до месенджерів")}</div>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}><Icon n="📣" size={16} /> {t("Доступ к мессенджерам","Доступ до месенджерів")}</div>
           <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{t("Выберите, какие каналы видит роль. Если ничего не выбрано — роль видит все каналы.","Оберіть, які канали бачить роль. Якщо нічого не обрано — роль бачить усі канали.")}</div>
           {roles.map((r) => (
             <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: "1px solid #f1f5f9" }}>

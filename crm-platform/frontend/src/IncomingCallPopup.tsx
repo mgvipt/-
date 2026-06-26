@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "./api";
 import { useLang } from "./i18n";
+import { Icon } from "./Icon";
 
 interface Ring { uniqueid: string; number: string; line: string; contact?: number; contact_name?: string; }
 
@@ -41,10 +42,10 @@ export default function IncomingCallPopup() {
       border: "2px solid #16a34a", padding: 16,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <div style={{ fontSize: 30 }}>📞</div>
+        <div style={{ fontSize: 30 }}><Icon n="📞" size={30} /></div>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 800, color: "#16a34a", fontSize: 13, letterSpacing: ".3px" }}>{t("ВХОДЯЩИЙ ЗВОНОК","ВХІДНИЙ ДЗВІНОК")}</div>
-          {ring.line && <div style={{ fontSize: 11, color: "#7c5cff" }}>📡 {ring.line}</div>}
+          {ring.line && <div style={{ fontSize: 11, color: "#7c5cff" }}><Icon n="📡" size={11} /> {ring.line}</div>}
         </div>
         <button onClick={close} title={t("Скрыть","Сховати")} style={{ border: "none", background: "transparent", fontSize: 20, cursor: "pointer", color: "#94a3b8" }}>×</button>
       </div>
@@ -53,7 +54,7 @@ export default function IncomingCallPopup() {
       <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <button className="btn btn-green" style={{ flex: 1, height: 40, fontWeight: 700 }}
             onClick={() => { try { (window as any).wallcovAnswer?.(); } catch { /* */ } }}>
-            {t("✅ Принять","✅ Прийняти")}
+            <><Icon n="✅" size={16} /> {t("Принять","Прийняти")}</>
           </button>
           <button className="btn" style={{ flex: 1, height: 40, background: "#fee2e2", color: "#b91c1c", fontWeight: 700 }}
             onClick={() => { try { (window as any).wallcovHangup?.(); } catch { /* */ } close(); }}>

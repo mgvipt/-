@@ -5,6 +5,7 @@ import { useAuth } from "../auth";
 import SettingsGlobalRules from "./SettingsGlobalRules";
 import SettingsAutomations from "./SettingsAutomations";
 import SettingsAgent from "./SettingsAgent";
+import { Icon } from "../Icon";
 
 interface Prov { provider: string; fields: string[]; values: Record<string, string>; is_active: boolean; }
 
@@ -34,7 +35,7 @@ export default function Settings() {
     load();
   }
 
-  const TABS: [string, string][] = [["rules", t("📋 Глобальные правила", "📋 Глобальні правила")], ["automations", t("⚙️ Автоматизации", "⚙️ Автоматизації")], ["agent", t("🤖 AI-агент", "🤖 AI-агент")], ["integrations", t("🔌 Интеграции / Язык", "🔌 Інтеграції / Мова")]];
+  const TABS: [string, React.ReactNode][] = [["rules", <><Icon n="📋" size={15} /> {t("Глобальные правила", "Глобальні правила")}</>], ["automations", <><Icon n="⚙️" size={15} /> {t("Автоматизации", "Автоматизації")}</>], ["agent", <><Icon n="🤖" size={15} /> {t("AI-агент", "AI-агент")}</>], ["integrations", <><Icon n="🔌" size={15} /> {t("Интеграции / Язык", "Інтеграції / Мова")}</>]];
   return (
     <div className="scroll pad fade">
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
@@ -49,7 +50,7 @@ export default function Settings() {
       {tab === "agent" && <SettingsAgent />}
       {tab !== "integrations" ? null : (<>
       <div className="panel" style={{ margin: "0 0 12px", maxWidth: 360 }}>
-        <div className="label" style={{ marginBottom: 6 }}>🌐 {t("Язык интерфейса", "Мова інтерфейсу")}</div>
+        <div className="label" style={{ marginBottom: 6 }}><Icon n="🌐" size={14} /> {t("Язык интерфейса", "Мова інтерфейсу")}</div>
         <select value={lang} onChange={(e) => setLang(e.target.value as "uk" | "ru")}
           style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 14 }}>
           <option value="uk">Українська</option>

@@ -8,6 +8,7 @@ import { api } from "../api";
 import DealCard from "./DealCard";
 import { useNavigate } from "react-router-dom";
 import { useLang } from "../i18n";
+import { Icon } from "../Icon";
 function useNav() { return useNavigate(); }
 
 const money = (n: number) => Math.round(n || 0).toLocaleString("ru") + " ₴";
@@ -18,10 +19,10 @@ const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pa
 export default function Finance() {
   const { t } = useLang();
   const [tab, setTab] = useState<"dash" | "journal" | "pnl" | "be" | "dir" | "plan" | "grow" | "salary" | "mplan" | "time" | "ref" | "model">("dash");
-  const tabs: [string, string][] = [["dash", t("💰 Дашборд","💰 Дашборд")], ["journal", t("🧾 Журнал","🧾 Журнал")], ["pnl", t("📊 P&L (ATM)","📊 P&L (ATM)")], ["be", t("🎯 Точка безубыточности","🎯 Точка беззбитковості")], ["dir", t("🗂 Направления (проекты)","🗂 Напрямки (проекти)")], ["plan", t("💼 Планирование","💼 Планування")], ["grow", t("🚀 Рост","🚀 Зростання")], ["salary", t("💰 ЗП/KPI","💰 ЗП/KPI")], ["mplan", t("🎯 Планы","🎯 Плани")], ["time", t("🕐 Табель","🕐 Табель")], ["ref", t("📚 Справочники","📚 Довідники")], ["model", t("⚙️ Финмодель","⚙️ Фінмодель")]];
+  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
   return (
     <div className="scroll pad fade">
-      <div className="note warn">🔒 {t("Раздел видят только роли с правом","Розділ бачать тільки ролі з правом")} <b>finance.view</b>.</div>
+      <div className="note warn"><Icon n="🔒" size={15} /> {t("Раздел видят только роли с правом","Розділ бачать тільки ролі з правом")} <b>finance.view</b>.</div>
       <div style={{ display: "flex", gap: 6, margin: "12px 0", flexWrap: "wrap" }}>
         {tabs.map(([k, l]) => <button key={k} className={tab === k ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab(k as any)}>{l}</button>)}
       </div>
@@ -85,10 +86,10 @@ function CpField({ value, onChange }: { value: string; onChange: (v: string) => 
         <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 30, maxHeight: 220, overflowY: "auto" }}>
           {res.map((c) => (
             <div key={c.id} onClick={() => { onChange(`${c.first_name || ""} ${c.last_name || ""}`.trim()); setOpen(false); }} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
-              👤 {`${c.first_name || ""} ${c.last_name || ""}`.trim() || "—"} {c.phone ? <span className="muted">· {c.phone}</span> : null}
+              <Icon n="👤" size={15} /> {`${c.first_name || ""} ${c.last_name || ""}`.trim() || "—"} {c.phone ? <span className="muted">· {c.phone}</span> : null}
             </div>
           ))}
-          {!exact && <div onClick={createClient} style={{ padding: "8px 10px", cursor: "pointer", fontSize: 13, color: "#16a34a", fontWeight: 600 }}>➕ {t("Создать клиента","Створити клієнта")} «{value.trim()}» {t("в CRM","у CRM")}</div>}
+          {!exact && <div onClick={createClient} style={{ padding: "8px 10px", cursor: "pointer", fontSize: 13, color: "#16a34a", fontWeight: 600 }}><Icon n="➕" size={14} /> {t("Создать клиента","Створити клієнта")} «{value.trim()}» {t("в CRM","у CRM")}</div>}
         </div>
       )}
       {msg && <div style={{ fontSize: 12, color: "#16a34a" }}>{msg}</div>}
@@ -175,7 +176,7 @@ function Journal() {
     <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
       <div className="panel acc-sidebar" style={{ width: 220, flex: "0 0 220px", margin: 0, maxHeight: "80vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <b style={{ fontSize: 13 }}>🏦 Рахунки</b>
+          <b style={{ fontSize: 13 }}><Icon n="🏦" size={14} /> Рахунки</b>
           {selAcc.length > 0 && <span style={{ fontSize: 11, color: "#2563eb", cursor: "pointer" }} onClick={() => { setSelAcc([]); setTimeout(() => load(1), 0); }}>скинути</span>}
         </div>
         <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>Обери один або кілька — журнал відфільтрується.</div>
@@ -190,10 +191,10 @@ function Journal() {
       <div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }} className="journal-filter">
         <input value={fq} onChange={(e) => setFq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && apply()} placeholder={t("🔍 Поиск по всему: сумма, контрагент, комментарий, счёт…","🔍 Пошук по всьому: сума, контрагент, коментар, рахунок…")} style={{ flex: "1 1 220px", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
-        <span className="muted" style={{ fontSize: 12 }} title={t("Отдельный фильтр по дате операции","Окремий фільтр по даті операції")}>📅 {t("Дата","Дата")}:</span>
+        <span className="muted" style={{ fontSize: 12 }} title={t("Отдельный фильтр по дате операции","Окремий фільтр по даті операції")}><Icon n="📅" size={13} /> {t("Дата","Дата")}:</span>
         <input type="date" value={ff} onChange={(e) => setFf(e.target.value)} title={t("Дата от","Дата від")} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 6px" }} />
         <input type="date" value={ft} onChange={(e) => setFt(e.target.value)} title={t("Дата до","Дата до")} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 6px" }} />
-        <button className="btn btn-light" onClick={() => setShowCols((x) => !x)} title={t("Фильтры по каждому столбцу","Фільтри по кожному стовпцю")}>⚙ {t("Столбцы","Стовпці")} {showCols ? "▲" : "▼"}</button>
+        <button className="btn btn-light" onClick={() => setShowCols((x) => !x)} title={t("Фильтры по каждому столбцу","Фільтри по кожному стовпцю")}><Icon n="⚙" size={14} /> {t("Столбцы","Стовпці")} {showCols ? "▲" : "▼"}</button>
         <button className="btn btn-primary" onClick={apply}>{t("Найти","Знайти")}</button>
         <button className="btn btn-light" onClick={resetAll}>{t("Сбросить всё","Скинути все")}</button>
       </div>
@@ -335,9 +336,9 @@ function Journal() {
             )}
             <label className="label">{t("Комментарий","Коментар")}</label>
             <input value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} style={inp} />
-            {f.id ? <Attachments txId={f.id} /> : <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>📎 {t("Сохрани операцию — тогда сможешь прикрепить фото/скан чека.","Збережи операцію — тоді зможеш прикріпити фото/скан чека.")}</div>}
+            {f.id ? <Attachments txId={f.id} /> : <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}><Icon n="📎" size={14} /> {t("Сохрани операцию — тогда сможешь прикрепить фото/скан чека.","Збережи операцію — тоді зможеш прикріпити фото/скан чека.")}</div>}
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              {f.id ? <button className="btn" style={{ background: "#fef2f2", color: "#dc2626" }} onClick={del} title={t("Удалить операцию","Видалити операцію")}>🗑</button> : null}
+              {f.id ? <button className="btn" style={{ background: "#fef2f2", color: "#dc2626" }} onClick={del} title={t("Удалить операцию","Видалити операцію")}><Icon n="🗑" size={15} /></button> : null}
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setOpen(false)}>{t("Отмена","Скасувати")}</button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={save}>{t("Сохранить","Зберегти")}</button>
             </div>
@@ -369,18 +370,18 @@ function Attachments({ txId }: { txId: number }) {
   async function del(id: number) { await api.del(`/api/attachments/${id}/file/`); reload(); }
   return (
     <div style={{ marginBottom: 10 }}>
-      <label className="label" title={t("Прикрепи фото или скан чека. С телефона откроется камера.","Прикріпи фото або скан чека. З телефона відкриється камера.")}>📎 {t("Чек / документы","Чек / документи")}</label>
+      <label className="label" title={t("Прикрепи фото или скан чека. С телефона откроется камера.","Прикріпи фото або скан чека. З телефона відкриється камера.")}><Icon n="📎" size={14} /> {t("Чек / документы","Чек / документи")}</label>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
         {items.map((a) => (
           <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 4, background: "#f1f5f9", borderRadius: 8, padding: "4px 8px", fontSize: 12 }}>
-            <span style={{ cursor: "pointer", color: "#1d4ed8", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={t("Открыть","Відкрити")} onClick={() => openFile(a)}>{a.content_type?.startsWith("image/") ? "🖼" : "📄"} {a.filename}</span>
+            <span style={{ cursor: "pointer", color: "#1d4ed8", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={t("Открыть","Відкрити")} onClick={() => openFile(a)}>{a.content_type?.startsWith("image/") ? <Icon n="🖼" size={14} /> : <Icon n="📄" size={14} />} {a.filename}</span>
             <span style={{ color: "#ef4444", cursor: "pointer" }} title={t("Удалить","Видалити")} onClick={() => del(a.id)}>✕</span>
           </div>
         ))}
         {items.length === 0 && <span className="muted" style={{ fontSize: 12 }}>{t("Чеков ещё нет","Чеків ще немає")}</span>}
       </div>
       <label className="btn btn-light" style={{ fontSize: 13, cursor: "pointer", display: "inline-block" }}>
-        {busy ? t("Загрузка…","Завантаження…") : t("📷 Добавить фото / файл","📷 Додати фото / файл")}
+        {busy ? t("Загрузка…","Завантаження…") : <><Icon n="📷" size={14} /> {t("Добавить фото / файл","Додати фото / файл")}</>}
         <input type="file" accept="image/*,application/pdf" capture="environment" onChange={upload} style={{ display: "none" }} disabled={busy} />
       </label>
       {err && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{err}</div>}
@@ -557,7 +558,7 @@ function FxImpact() {
   return (
     <div className="panel" style={{ margin: "12px 0 0", borderLeft: "4px solid #f59e0b" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <b style={{ fontSize: 14, flex: 1 }} title={t("Закупка декор-материалов завязана на курс. Падение гривны уменьшает маржу.","Закупка декор-матеріалів завʼязана на курс. Падіння гривні зменшує маржу.")}>💱 {t("Влияние курса валют на прибыль","Вплив курсу валют на прибуток")}</b>
+        <b style={{ fontSize: 14, flex: 1 }} title={t("Закупка декор-материалов завязана на курс. Падение гривны уменьшает маржу.","Закупка декор-матеріалів завʼязана на курс. Падіння гривні зменшує маржу.")}><Icon n="💱" size={14} /> {t("Влияние курса валют на прибыль","Вплив курсу валют на прибуток")}</b>
         <select value={ccy} onChange={(e) => setCcy(e.target.value)} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }}>
           {["USD", "EUR", "PLN", "GBP"].map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
@@ -584,7 +585,7 @@ function FxImpact() {
             </tbody>
           </table>
           <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 12px" }}>
-            <div style={{ fontWeight: 600, fontSize: 12.5, color: "#b45309", marginBottom: 4 }}>💡 {t("Рекомендации аналитика — чтобы не терять на курсе:","Рекомендації аналітика — щоб не втрачати на курсі:")}</div>
+            <div style={{ fontWeight: 600, fontSize: 12.5, color: "#b45309", marginBottom: 4 }}><Icon n="💡" size={13} /> {t("Рекомендации аналитика — чтобы не терять на курсе:","Рекомендації аналітика — щоб не втрачати на курсі:")}</div>
             <ul style={{ margin: "0 0 0 16px", fontSize: 12.5, lineHeight: 1.5 }}>
               {d.recommendations.map((r: string, i: number) => <li key={i}>{r}</li>)}
             </ul>
@@ -665,7 +666,7 @@ function Breakeven() {
         </div>
       </div>
       <div className="panel" style={{ margin: 0, maxWidth: 560 }}>
-        <b style={{ fontSize: 14 }}>🔮 {tr("Прогноз по текущему темпу","Прогноз за поточним темпом")}</b>
+        <b style={{ fontSize: 14 }}><Icon n="🔮" size={14} /> {tr("Прогноз по текущему темпу","Прогноз за поточним темпом")}</b>
         <div className="row" style={{ padding: "7px 0", borderBottom: "1px solid #f1f5f9" }}><span className="muted">{tr("Темп выручки (прошло","Темп виручки (минуло")} {d.days_elapsed} {tr("из","з")} {d.days_total} {tr("дн)","дн)")}</span><b>{money(d.daily_pace)} / {tr("день","день")}</b></div>
         <div className="row" style={{ padding: "7px 0", borderBottom: "1px solid #f1f5f9" }}><span className="muted">{tr("Прогноз на конец периода","Прогноз на кінець періоду")}</span><b>{money(d.projected)}</b></div>
         <div className="row" style={{ padding: "7px 0", borderBottom: "1px solid #f1f5f9" }}><span className="muted">{tr("Прогресс-прогноз","Прогрес-прогноз")}</span><b style={{ color: d.projected_progress >= 100 ? "#16a34a" : "#d97706" }}>{d.projected_progress}%</b></div>
@@ -699,7 +700,7 @@ function Directions() {
         <button className="btn btn-primary" style={{ fontSize: 13 }} title={t("Добавить новое направление (проект). Появится в журнале, планировании и аналитике.","Додати новий напрямок (проект). Зʼявиться у журналі, плануванні й аналітиці.")} onClick={() => setEdit({ name: "", plan_income: 0, plan_expense: 0 })}>+ {t("Направление","Напрямок")}</button>
       </div>
       <Period from={from} to={to} set={(f, tt) => { setFrom(f); setTo(tt); }} />
-      <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>👆 {t("Нажми на направление — ниже откроется его журнал операций за период.","Натисни на напрямок — нижче відкриється його журнал операцій за період.")}</div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}><Icon n="👆" size={13} /> {t("Нажми на направление — ниже откроется его журнал операций за период.","Натисни на напрямок — нижче відкриється його журнал операцій за період.")}</div>
       <table style={{ width: "100%", marginTop: 4, fontSize: 13 }}>
         <thead><tr><th></th><th>{t("Направление","Напрямок")}</th><th>{t("План доход","План дохід")}</th><th>{t("План расходы","План витрати")}</th><th>{t("План прибыль","План прибуток")}</th><th>{t("Рентаб.","Рентаб.")}</th><th>{t("Факт доход","Факт дохід")}</th><th>{t("Факт прибыль","Факт прибуток")}</th><th></th></tr></thead>
         <tbody>
@@ -718,7 +719,7 @@ function Directions() {
                   <td style={{ textAlign: "right" }} className="muted">{money(r.income)}</td>
                   <td style={{ textAlign: "right", color: r.profit >= 0 ? "#16a34a" : "#dc2626" }}>{money(r.profit)}</td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
-                    <span title={t("Редактировать направление","Редагувати напрямок")} style={{ cursor: "pointer", marginRight: 10 }} onClick={() => setEdit({ id: r.id, name: r.name, plan_income: r.plan_income, plan_expense: r.plan_expense })}>✏️</span>
+                    <span title={t("Редактировать направление","Редагувати напрямок")} style={{ cursor: "pointer", marginRight: 10 }} onClick={() => setEdit({ id: r.id, name: r.name, plan_income: r.plan_income, plan_expense: r.plan_expense })}><Icon n="✏️" size={14} /></span>
                     <span title={t("Удалить направление","Видалити напрямок")} style={{ cursor: "pointer", color: "#ef4444" }} onClick={() => delDir(r.id, r.name)}>✕</span>
                   </td>
                 </tr>
@@ -740,7 +741,7 @@ function Directions() {
           </tr>
         </tbody>
       </table>
-      <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>📋 {t("Направления перенесены из Finmap (Проекты). «План» — ориентир из Finmap. «Факт» считается из транзакций CRM, привязанных к направлению. Изменения тут синхронизируются в журнале, планировании и аналитике.","Напрямки перенесені з Finmap (Проекти). «План» — орієнтир із Finmap. «Факт» рахується з транзакцій CRM, привʼязаних до напрямку. Зміни тут синхронізуються у журналі, плануванні та аналітиці.")}</div>
+      <div className="muted" style={{ fontSize: 12, marginTop: 8 }}><Icon n="📋" size={13} /> {t("Направления перенесены из Finmap (Проекты). «План» — ориентир из Finmap. «Факт» считается из транзакций CRM, привязанных к направлению. Изменения тут синхронизируются в журнале, планировании и аналитике.","Напрямки перенесені з Finmap (Проекти). «План» — орієнтир із Finmap. «Факт» рахується з транзакцій CRM, привʼязаних до напрямку. Зміни тут синхронізуються у журналі, плануванні та аналітиці.")}</div>
       {edit && <DirModal dir={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload(); }} />}
     </div>
   );
@@ -809,7 +810,7 @@ function DirectionJournal({ directionId, from, to }: { directionId: number; from
       </div>
       {chans.length > 0 && (
         <div style={{ marginBottom: 8 }}>
-          <div className="muted" style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 4 }}>🌿 {t("Каналы (ветки) направления · продаж × сумма:","Канали (ветки) напрямку · продажів × сума:")}</div>
+          <div className="muted" style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 4 }}><Icon n="🌿" size={13} /> {t("Каналы (ветки) направления · продаж × сумма:","Канали (ветки) напрямку · продажів × сума:")}</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {chans.map(([k, v]) => (
               <span key={k} style={{ fontSize: 12, padding: "4px 10px", borderRadius: 14, background: "#eef2ff", color: "#4338ca", fontWeight: 600 }}>
@@ -874,7 +875,7 @@ function Timesheet() {
   const overtime = Object.values(days).filter((s) => s === "overtime").length;
   return (
     <>
-      <div className="note">🕐 <b>{t("Табель рабочего времени","Табель робочого часу")}</b> {t("(как в Битриксе). Клик на день меняет статус по кругу. Влияет на ЗП: оклад платится пропорционально отработанным дням, а","(як у Бітриксі). Клік на день міняє статус по колу. Впливає на ЗП: оклад платиться пропорційно відпрацьованим дням, а")} <b>{t("перевыполнение","перевиконання")}</b> {t("(выход в выходной) добавляет дневную ставку сверху. Если табель не вести — оклад полный по умолчанию.","(вихід у вихідний) додає денну ставку зверху. Якщо табель не вести — оклад повний за замовчуванням.")}</div>
+      <div className="note"><Icon n="🕐" size={14} /> <b>{t("Табель рабочего времени","Табель робочого часу")}</b> {t("(как в Битриксе). Клик на день меняет статус по кругу. Влияет на ЗП: оклад платится пропорционально отработанным дням, а","(як у Бітриксі). Клік на день міняє статус по колу. Впливає на ЗП: оклад платиться пропорційно відпрацьованим дням, а")} <b>{t("перевыполнение","перевиконання")}</b> {t("(выход в выходной) добавляет дневную ставку сверху. Если табель не вести — оклад полный по умолчанию.","(вихід у вихідний) додає денну ставку зверху. Якщо табель не вести — оклад повний за замовчуванням.")}</div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "12px 0" }}>
         <select value={uid ?? ""} onChange={(e) => setUid(Number(e.target.value))} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }}>
           {users.map((u) => <option key={u.id} value={u.id}>{u.full_name || `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.username}</option>)}
@@ -918,10 +919,10 @@ function Timesheet() {
 function Reference() {
   const { t } = useLang();
   const [sub, setSub] = useState<"acc" | "cat" | "dir" | "cp" | "chan" | "ccy">("acc");
-  const subs: [string, string][] = [["acc", t("🏦 Счета","🏦 Рахунки")], ["cat", t("🏷 Категории","🏷 Категорії")], ["dir", t("🗂 Направления","🗂 Напрямки")], ["cp", t("👥 Контрагенты","👥 Контрагенти")], ["chan", t("📡 Каналы","📡 Канали")], ["ccy", t("💱 Валюты","💱 Валюти")]];
+  const subs: [string, React.ReactNode][] = [["acc", <><Icon n="🏦" size={14} /> {t("Счета","Рахунки")}</>], ["cat", <><Icon n="🏷" size={14} /> {t("Категории","Категорії")}</>], ["dir", <><Icon n="🗂" size={14} /> {t("Направления","Напрямки")}</>], ["cp", <><Icon n="👥" size={14} /> {t("Контрагенты","Контрагенти")}</>], ["chan", <><Icon n="📡" size={14} /> {t("Каналы","Канали")}</>], ["ccy", <><Icon n="💱" size={14} /> {t("Валюты","Валюти")}</>]];
   return (
     <>
-      <div className="note">📚 {t("Справочники CRM. Всё синхронно: изменения тут сразу доступны в Журнале, Планировании и Аналитике. Контрагенты подтягиваются из операций и связаны с клиентами CRM.","Довідники CRM. Усе синхронно: зміни тут одразу доступні в Журналі, Плануванні й Аналітиці. Контрагенти підтягуються з операцій і звʼязані з клієнтами CRM.")}</div>
+      <div className="note"><Icon n="📚" size={14} /> {t("Справочники CRM. Всё синхронно: изменения тут сразу доступны в Журнале, Планировании и Аналитике. Контрагенты подтягиваются из операций и связаны с клиентами CRM.","Довідники CRM. Усе синхронно: зміни тут одразу доступні в Журналі, Плануванні й Аналітиці. Контрагенти підтягуються з операцій і звʼязані з клієнтами CRM.")}</div>
       <div style={{ display: "flex", gap: 6, margin: "10px 0", flexWrap: "wrap" }}>
         {subs.map(([k, l]) => <button key={k} className={sub === k ? "btn btn-primary" : "btn btn-light"} style={{ fontSize: 12.5 }} onClick={() => setSub(k as any)}>{l}</button>)}
       </div>
@@ -1040,7 +1041,7 @@ function RefCounterparties() {
         <tbody>{items.slice(0, 300).map((c, i) => (
           <tr key={i}><td style={tdS}>{c.name}</td><td style={{ ...tdS, textAlign: "center" }}>{c.count}</td>
             <td style={{ ...tdS, textAlign: "right" }}>{money(c.total)}</td>
-            <td style={{ ...tdS, textAlign: "center" }}>{c.contact_id ? <span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/clients?contact=${c.contact_id}`)}>🔗 {t("открыть","відкрити")}</span> : <span className="muted">—</span>}</td></tr>
+            <td style={{ ...tdS, textAlign: "center" }}>{c.contact_id ? <span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/clients?contact=${c.contact_id}`)}><Icon n="🔗" size={13} /> {t("открыть","відкрити")}</span> : <span className="muted">—</span>}</td></tr>
         ))}</tbody>
       </table>
       {items.length > 300 && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t("Показано первые 300 из","Показано перші 300 із")} {items.length}.</div>}
@@ -1080,7 +1081,7 @@ function Planning() {
     return (
       <>
         <div className="row" style={{ padding: "8px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center", paddingLeft: sub ? 24 : 0 }}>
-          <span style={{ flex: 1, fontWeight: sub ? 400 : 600 }}>{sub && <span style={{ color: "#cbd5e1", marginRight: 4 }}>↳</span>}{f.is_envelope && "✉️ "}{f.name}</span>
+          <span style={{ flex: 1, fontWeight: sub ? 400 : 600 }}>{sub && <span style={{ color: "#cbd5e1", marginRight: 4 }}>↳</span>}{f.is_envelope && <Icon n="✉️" size={13} />}{f.is_envelope ? " " : ""}{f.name}</span>
           <span title={t("Нажми, чтобы увидеть и убрать отдельные распределения","Натисни, щоб побачити та прибрати окремі розподіли")} onClick={() => setOpenAlloc(open ? null : f.id)}
             style={{ width: 110, textAlign: "right", color: "#0ea5e9", cursor: f.allocated ? "pointer" : "default", textDecoration: f.allocated ? "underline dotted" : "none" }}>{f.allocated ? (open ? "▾ " : "▸ ") : ""}{money(f.allocated)}</span>
           <span style={{ width: 110, textAlign: "right", color: "#ef4444" }}>−{money(f.spent)}</span>
@@ -1097,12 +1098,12 @@ function Planning() {
   if (!data) return <div className="spin">{t("Загрузка фондов…","Завантаження фондів…")}</div>;
   return (
     <>
-      <div className="note">💼 {t("Деньги приходят на счёт → распределяешь по фондам-конвертам. В каждом фонде:","Гроші приходять на рахунок → розподіляєш по фондах-конвертах. У кожному фонді:")} <b>{t("Распределено","Розподілено")}</b> {t("(сколько положил)","(скільки поклав)")} − <b>{t("Потрачено","Витрачено")}</b> {t("(сколько списал)","(скільки списав)")} = <b>{t("Остаток","Залишок")}</b>. {t("Порядок:","Порядок:")} <b>ФВ → ФМ → ФСКД</b>.<br/><span style={{fontSize:12}}>📌 <b>{t("«Потрачено»","«Витрачено»")}</b> {t("наполняется, когда создаёшь расход с этим фондом — кнопкой «","наповнюється, коли створюєш витрату з цим фондом — кнопкою «")}<b>{t("− расход","− розхід")}</b>{t("» тут или в Журнале выбираешь Фонд = этот. Тогда сумма появляется в столбце.","» тут або у Журналі обираєш Фонд = цей. Тоді сума зʼявляється у стовпці.")}</span></div>
+      <div className="note"><Icon n="💼" size={14} /> {t("Деньги приходят на счёт → распределяешь по фондам-конвертам. В каждом фонде:","Гроші приходять на рахунок → розподіляєш по фондах-конвертах. У кожному фонді:")} <b>{t("Распределено","Розподілено")}</b> {t("(сколько положил)","(скільки поклав)")} − <b>{t("Потрачено","Витрачено")}</b> {t("(сколько списал)","(скільки списав)")} = <b>{t("Остаток","Залишок")}</b>. {t("Порядок:","Порядок:")} <b>ФВ → ФМ → ФСКД</b>.<br/><span style={{fontSize:12}}><Icon n="📌" size={13} /> <b>{t("«Потрачено»","«Витрачено»")}</b> {t("наполняется, когда создаёшь расход с этим фондом — кнопкой «","наповнюється, коли створюєш витрату з цим фондом — кнопкою «")}<b>{t("− расход","− розхід")}</b>{t("» тут или в Журнале выбираешь Фонд = этот. Тогда сумма появляется в столбце.","» тут або у Журналі обираєш Фонд = цей. Тоді сума зʼявляється у стовпці.")}</span></div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "12px 0" }}>
         <span className="muted" style={{ fontSize: 13 }}>{t("Месяц","Місяць")}:</span>
         <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px" }} />
         <div style={{ flex: 1 }} />
-        <button className="btn btn-primary" onClick={() => setAuto(true)}>⚡ {t("Авто-распределение выручки","Авто-розподіл виручки")}</button>
+        <button className="btn btn-primary" onClick={() => setAuto(true)}><Icon n="⚡" size={14} /> {t("Авто-распределение выручки","Авто-розподіл виручки")}</button>
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
@@ -1200,7 +1201,7 @@ function SpendModal({ fund, accounts, dirs, onClose, onSaved }: any) {
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 22, width: 440, maxHeight: "90vh", overflowY: "auto" }}>
         <h3 style={{ marginTop: 0 }}>{t("Расход","Витрата")} · {t("фонд","фонд")} {fund.name}</h3>
-        <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>💸 {t("Это обычный расход (как в Журнале), уже привязанный к фонду. Уменьшит остаток фонда, наполнит «Потрачено» и появится в Журнале.","Це звичайна витрата (як у Журналі), уже привʼязана до фонду. Зменшить залишок фонду, наповнить «Витрачено» і зʼявиться в Журналі.")}</div>
+        <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}><Icon n="💸" size={13} /> {t("Это обычный расход (как в Журнале), уже привязанный к фонду. Уменьшит остаток фонда, наполнит «Потрачено» и появится в Журнале.","Це звичайна витрата (як у Журналі), уже привʼязана до фонду. Зменшить залишок фонду, наповнить «Витрачено» і зʼявиться в Журналі.")}</div>
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ flex: 2 }}><label className="label">{t("Сумма","Сума")}</label><input type="number" value={amount} autoFocus onChange={(e) => setAmount(e.target.value)} style={inp} /></div>
           <div style={{ flex: 1 }}><label className="label">{t("Валюта","Валюта")}</label><select value={currency} onChange={(e) => fetchRate(e.target.value)} style={inp}>{["UAH", "USD", "EUR", "PLN"].map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
@@ -1247,7 +1248,7 @@ function AllocModal({ fund, period, accounts, dirs, onClose, onSaved }: any) {
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 22, width: 420 }}>
         <h3 style={{ marginTop: 0 }}>{t("Распределение в фонд","Розподіл у фонд")}</h3>
-        <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>✉️ {fund.name} · {period}</div>
+        <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}><Icon n="✉️" size={13} /> {fund.name} · {period}</div>
         <label className="label">{t("Сумма, ₴","Сума, ₴")}</label>
         <input type="number" value={amount} autoFocus onChange={(e) => setAmount(e.target.value)} style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10 }} />
         <label className="label">{t("Со счёта","З рахунку")}</label>
@@ -1285,7 +1286,7 @@ function AutoModal({ period, accounts, dirs, onClose, onSaved }: any) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 22, width: 440 }}>
-        <h3 style={{ marginTop: 0 }}>⚡ {t("Авто-распределение выручки","Авто-розподіл виручки")}</h3>
+        <h3 style={{ marginTop: 0 }}><Icon n="⚡" size={15} /> {t("Авто-распределение выручки","Авто-розподіл виручки")}</h3>
         <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>{t("Каждый фонд выручки (ФВ) получит свой % от суммы за","Кожен фонд виручки (ФВ) отримає свій % від суми за")} {period}.</div>
         <label className="label">{t("Сумма выручки, ₴","Сума виручки, ₴")}</label>
         <input type="number" value={revenue} autoFocus onChange={(e) => setRevenue(e.target.value)} style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10 }} />
@@ -1318,7 +1319,7 @@ function Salary() {
   const tierLabel = (m: number) => m >= 1.3 ? t("перевыполнение ×1.3","перевиконання ×1.3") : m >= 1 ? t("полные премии ×1.0","повні премії ×1.0") : m >= 0.8 ? t("почти план ×0.8","майже план ×0.8") : m >= 0.5 ? t("половина ×0.5","половина ×0.5") : t("старт ×0.3","старт ×0.3");
   return (
     <>
-      <div className="note">💰 {t("ЗП считается","ЗП рахується")} <b>{t("без жёсткого GATE","без жорсткого GATE")}</b>: {t("премии открываются поэтапно с 70% плана (×0.3→×1.3). Ставки меняются во вкладке «Финмодель → ЗП». Планы — во вкладке «Планы».","премії відкриваються поетапно з 70% плану (×0.3→×1.3). Ставки міняються у вкладці «Фінмодель → ЗП». Плани — у вкладці «Плани».")}</div>
+      <div className="note"><Icon n="💰" size={14} /> {t("ЗП считается","ЗП рахується")} <b>{t("без жёсткого GATE","без жорсткого GATE")}</b>: {t("премии открываются поэтапно с 70% плана (×0.3→×1.3). Ставки меняются во вкладке «Финмодель → ЗП». Планы — во вкладке «Планы».","премії відкриваються поетапно з 70% плану (×0.3→×1.3). Ставки міняються у вкладці «Фінмодель → ЗП». Плани — у вкладці «Плани».")}</div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "12px 0" }}>
         <span className="muted" style={{ fontSize: 13 }}>{t("Месяц","Місяць")}:</span>
         <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px" }} />
@@ -1361,7 +1362,7 @@ function Salary() {
         );
       })}
       <div className="panel" style={{ margin: "12px 0 0", background: "#f8fafc" }}>
-        <div className="muted" style={{ fontSize: 12 }}>🎯 {t("Покрытие цели компании","Покриття цілі компанії")}: {t("ТБ","ТБ")} <b>{money(c.breakeven)}</b> · {t("цель","ціль")} ×1.3 <b>{money(c.target)}</b> · {t("сумма планов","сума планів")} <b>{money(c.sum_plans)}</b> · {t("покрытие","покриття")} <b style={{ color: c.coverage_pct >= 100 ? "#16a34a" : "#dc2626" }}>{c.coverage_pct}%</b></div>
+        <div className="muted" style={{ fontSize: 12 }}><Icon n="🎯" size={13} /> {t("Покрытие цели компании","Покриття цілі компанії")}: {t("ТБ","ТБ")} <b>{money(c.breakeven)}</b> · {t("цель","ціль")} ×1.3 <b>{money(c.target)}</b> · {t("сумма планов","сума планів")} <b>{money(c.sum_plans)}</b> · {t("покрытие","покриття")} <b style={{ color: c.coverage_pct >= 100 ? "#16a34a" : "#dc2626" }}>{c.coverage_pct}%</b></div>
       </div>
     </>
   );
@@ -1395,13 +1396,13 @@ function MPlans() {
   const inp = { width: 110, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px", textAlign: "right" } as React.CSSProperties;
   return (
     <>
-      <div className="note">🎯 <b>{t("Планы персональные","Плани персональні")}</b> {t("(не одинаковые!). Норма ≈ факт × 1.2, амбиция ≈ факт × 1.5 (рекомендация РОП). Кнопка «🎁 Авто» ставит уровни от фактической выручки менеджера.","(не однакові!). Норма ≈ факт × 1.2, амбіція ≈ факт × 1.5 (рекомендація РОП). Кнопка «🎁 Авто» ставить рівні від фактичної виручки менеджера.")}</div>
+      <div className="note"><Icon n="🎯" size={14} /> <b>{t("Планы персональные","Плани персональні")}</b> {t("(не одинаковые!). Норма ≈ факт × 1.2, амбиция ≈ факт × 1.5 (рекомендация РОП). Кнопка «🎁 Авто» ставит уровни от фактической выручки менеджера.","(не однакові!). Норма ≈ факт × 1.2, амбіція ≈ факт × 1.5 (рекомендація РОП). Кнопка «🎁 Авто» ставить рівні від фактичної виручки менеджера.")}</div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "12px 0" }}>
         <span className="muted" style={{ fontSize: 13 }}>{t("Месяц","Місяць")}:</span>
         <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px" }} />
       </div>
       <div className="panel" style={{ margin: "0 0 12px", background: "#f8fafc" }}>
-        <div className="muted" style={{ fontSize: 12 }}>🏢 {t("ТБ компании","ТБ компанії")} <b>{money(c.breakeven)}</b> · {t("цель","ціль")} ×1.3 <b>{money(c.target)}</b> · {t("сумма планов","сума планів")} <b>{money(c.sum_plans)}</b> · {t("покрытие","покриття")} <b style={{ color: c.coverage_pct >= 100 ? "#16a34a" : "#dc2626" }}>{c.coverage_pct}%</b></div>
+        <div className="muted" style={{ fontSize: 12 }}><Icon n="🏢" size={13} /> {t("ТБ компании","ТБ компанії")} <b>{money(c.breakeven)}</b> · {t("цель","ціль")} ×1.3 <b>{money(c.target)}</b> · {t("сумма планов","сума планів")} <b>{money(c.sum_plans)}</b> · {t("покрытие","покриття")} <b style={{ color: c.coverage_pct >= 100 ? "#16a34a" : "#dc2626" }}>{c.coverage_pct}%</b></div>
       </div>
       {sal.rows.map((r: any) => {
         const p = plans[r.user_id] || {};
@@ -1410,7 +1411,7 @@ function MPlans() {
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
               <b style={{ fontSize: 14, flex: 1 }}>{r.user_name}</b>
               <span className="muted" style={{ fontSize: 12 }}>{t("факт","факт")}: {money(r.revenue)} · {r.deals} {t("сделок","угод")}</span>
-              <button className="btn btn-light" style={{ fontSize: 12 }} title={t("Поставить уровни автоматически от факта","Поставити рівні автоматично від факту")} onClick={() => recommend(r)}>🎁 {t("Авто","Авто")}</button>
+              <button className="btn btn-light" style={{ fontSize: 12 }} title={t("Поставить уровни автоматически от факта","Поставити рівні автоматично від факту")} onClick={() => recommend(r)}><Icon n="🎁" size={13} /> {t("Авто","Авто")}</button>
             </div>
             <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
               <label style={{ fontSize: 12 }} title={t("Минимум — ниже не падать","Мінімум — нижче не падати")}>🟥 {t("Минимум","Мінімум")} <input type="number" defaultValue={p.min_revenue || 0} onBlur={(e) => save(r.user_id, { min_revenue: Number(e.target.value) })} style={inp} /></label>
@@ -1467,7 +1468,7 @@ function Growth() {
   if (rep === undefined) return <div className="spin">{t("Загрузка…","Завантаження…")}</div>;
   return (
     <div className="panel" style={{ margin: 0 }}>
-      <div className="note">🚀 <b>{t("Рост прибыли","Зростання прибутку")}</b> {t("— план от совещательной системы: бизнес-аналитик, финаналитик, РОП, коуч по команде и маркетолог проанализировали бизнес и конкурентов, проверили друг друга и составили безопасный план удвоения чистой прибыли за 2-3 месяца.","— план від радчої системи: бізнес-аналітик, фінаналітик, РОП, коуч по команді та маркетолог проаналізували бізнес і конкурентів, перевірили одне одного й склали безпечний план подвоєння чистого прибутку за 2-3 місяці.")}</div>
+      <div className="note"><Icon n="🚀" size={14} /> <b>{t("Рост прибыли","Зростання прибутку")}</b> {t("— план от совещательной системы: бизнес-аналитик, финаналитик, РОП, коуч по команде и маркетолог проанализировали бизнес и конкурентов, проверили друг друга и составили безопасный план удвоения чистой прибыли за 2-3 месяца.","— план від радчої системи: бізнес-аналітик, фінаналітик, РОП, коуч по команді та маркетолог проаналізували бізнес і конкурентів, перевірили одне одного й склали безпечний план подвоєння чистого прибутку за 2-3 місяці.")}</div>
       {!rep ? (
         <div className="muted" style={{ fontSize: 14, padding: 20, textAlign: "center" }}>{t("Отчёт ещё готовится агентами или не сформирован. Зайди немного позже — он появится тут автоматически.","Звіт ще готується агентами або не сформований. Зайди трохи пізніше — він зʼявиться тут автоматично.")}</div>
       ) : (
@@ -1533,7 +1534,7 @@ function FinModel() {
       <input defaultValue={a.name} title={t("Название статьи / фонда — кликни, чтобы переименовать","Назва статті / фонду — клікни, щоб перейменувати")} onBlur={(e) => save(a.id, { name: e.target.value })}
         style={{ flex: 1, height: 28, border: "1px solid transparent", borderRadius: 6, padding: "0 6px", fontWeight: sub ? 400 : 500, background: "transparent" }} />
       <button title={a.is_envelope ? t("Это конверт: держит деньги для планирования. Кликни, чтобы выключить.","Це конверт: тримає гроші для планування. Клікни, щоб вимкнути.") : t("Сделать конвертом — тогда в него можно класть деньги во вкладке «Планирование»","Зробити конвертом — тоді в нього можна класти гроші у вкладці «Планування»")} onClick={() => save(a.id, { is_envelope: !a.is_envelope }).then(load)}
-        style={{ width: 28, height: 26, borderRadius: 6, marginRight: 6, cursor: "pointer", border: "1px solid " + (a.is_envelope ? "#0ea5e9" : "#e2e8f0"), background: a.is_envelope ? "#e0f2fe" : "#fff" }}>✉️</button>
+        style={{ width: 28, height: 26, borderRadius: 6, marginRight: 6, cursor: "pointer", border: "1px solid " + (a.is_envelope ? "#0ea5e9" : "#e2e8f0"), background: a.is_envelope ? "#e0f2fe" : "#fff" }}><Icon n="✉️" size={15} /></button>
       <input type="number" defaultValue={a.value} title={t("Значение: % или сумма в гривнах (тип справа). Влияет на P&L и точку безубыточности.","Значення: % або сума в гривнях (тип праворуч). Впливає на P&L і точку беззбитковості.")} onBlur={(e) => save(a.id, { value: Number(e.target.value) })} style={{ width: 96, height: 28, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px", textAlign: "right" }} />
       <span className="muted" style={{ width: 64, fontSize: 12 }} title={t("Единица: % от суммы, грн/месяц, грн/сделку и т.д.","Одиниця: % від суми, грн/місяць, грн/угоду тощо")}>{a.unit || a.value_type_display}</span>
       {!sub && <span title={t("Добавить подфонд (под-конверт внутри этого фонда)","Додати підфонд (під-конверт усередині цього фонду)")} style={{ color: "#0ea5e9", cursor: "pointer", paddingLeft: 6, fontWeight: 700 }} onClick={() => add(a.category, a.id)}>＋</span>}
@@ -1543,7 +1544,7 @@ function FinModel() {
 
   return (
     <>
-      <div className="note">⚙️ <b>{t("Финмодель","Фінмодель")}</b> {t("— сердце расчётов: отсюда считаются P&L и Точка безубыточности. Порядок фондов:","— серце розрахунків: звідси рахуються P&L і Точка беззбитковості. Порядок фондів:")} <b>{t("ФВ (выручки) → ФМ (маржи) → ФСКД (скорректированного дохода)","ФВ (виручки) → ФМ (маржі) → ФСКД (скоригованого доходу)")}</b>. {t("✉️ = конверт (держит деньги для планирования). ＋ — добавить подфонд.","✉️ = конверт (тримає гроші для планування). ＋ — додати підфонд.")} <b>{t("⠿ Перетащи статью мышкой в другую категорию","⠿ Перетягни статтю мишкою в іншу категорію")}</b>{t(", чтобы переложить фонд. Наведи на любое поле — подскажет, что это.",", щоб перекласти фонд. Наведи на будь-яке поле — підкаже, що це.")}</div>
+      <div className="note"><Icon n="⚙️" size={14} /> <b>{t("Финмодель","Фінмодель")}</b> {t("— сердце расчётов: отсюда считаются P&L и Точка безубыточности. Порядок фондов:","— серце розрахунків: звідси рахуються P&L і Точка беззбитковості. Порядок фондів:")} <b>{t("ФВ (выручки) → ФМ (маржи) → ФСКД (скорректированного дохода)","ФВ (виручки) → ФМ (маржі) → ФСКД (скоригованого доходу)")}</b>. {t("✉️ = конверт (держит деньги для планирования). ＋ — добавить подфонд.","✉️ = конверт (тримає гроші для планування). ＋ — додати підфонд.")} <b>{t("⠿ Перетащи статью мышкой в другую категорию","⠿ Перетягни статтю мишкою в іншу категорію")}</b>{t(", чтобы переложить фонд. Наведи на любое поле — подскажет, что это.",", щоб перекласти фонд. Наведи на будь-яке поле — підкаже, що це.")}</div>
       {FUND_GROUPS.map((g) => {
         const groupArts = arts.filter((a) => g.cats.includes(a.category));
         if (!groupArts.length && g.key !== "revenue" && g.key !== "margin") return null;

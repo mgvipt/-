@@ -149,9 +149,9 @@ export default function Inbox() {
     } finally { setSending(false); }
   }
 
-  async function sendFile(e: any) {
-    const f = e.target.files?.[0]; if (!f || !active) return;
-    const kind = f.type.startsWith("video") ? "video" : f.type.startsWith("image") ? "photo" : "file";
+  async function uploadFile(f: File | null | undefined) {
+    if (!f || !active) return;
+    const kind = f.type.startsWith("video") ? "video" : f.type.startsWith("image") ? "photo" : "document";
     setSending(true); setErr("");
     const reader = new FileReader();
     reader.onload = async () => {
@@ -162,7 +162,11 @@ export default function Inbox() {
       finally { setSending(false); }
     };
     reader.readAsDataURL(f);
-    e.target.value = "";
+  }
+  async function sendFile(e: any) { await uploadFile(e.target.files?.[0]); e.target.value = ""; }
+  function onPasteFile(e: any) {
+    const items = e.clipboardData?.items || [];
+    for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.type && it.type.startsWith("image")) { const f = it.getAsFile(); if (f) { e.preventDefault(); uploadFile(f); return; } } }
   }
 
   async function pickUser(uid: number) {
@@ -230,14 +234,14 @@ export default function Inbox() {
             <option value="30d">{t("30 дней","30 днів")}</option>
           </select>
           <button onClick={() => { setSelMode((v) => !v); setSelected(new Set()); }} title={t("Выбрать чаты для закрытия","Обрати чати для закриття")}
-            style={{ height: 28, fontSize: 13, padding: "0 9px", borderRadius: 7, cursor: "pointer", border: "1px solid " + (selMode ? "var(--brand)" : "#e2e8f0"), background: selMode ? "var(--brand)" : "#fff", color: selMode ? "#fff" : "#475569" }}>☑️</button>
+            style={{ height: 28, fontSize: 13, padding: "0 9px", borderRadius: 7, cursor: "pointer", border: "1px solid " + (selMode ? "var(--brand)" : "#e2e8f0"), background: selMode ? "var(--brand)" : "#fff", color: selMode ? "#fff" : "#475569" }}><Icon n="check-square" size={16} /></button>
         </div>
         {selMode && (
           <div style={{ display: "flex", gap: 8, padding: "6px 12px", borderBottom: "1px solid #f1f5f9", alignItems: "center", background: "#fff7ed" }}>
             <span style={{ fontSize: 12, color: "#9a3412" }}>{t("Выбрано","Обрано")}: {selected.size}</span>
             <button onClick={selectAllVisible} style={{ fontSize: 11.5, padding: "3px 8px", borderRadius: 6, cursor: "pointer", border: "1px solid #e2e8f0", background: "#fff" }}>{t("Все","Всі")}</button>
             <button onClick={() => setSelected(new Set())} style={{ fontSize: 11.5, padding: "3px 8px", borderRadius: 6, cursor: "pointer", border: "1px solid #e2e8f0", background: "#fff" }}>{t("Сброс","Скинути")}</button>
-            <button onClick={bulkClose} disabled={selected.size === 0} style={{ marginLeft: "auto", fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 7, cursor: selected.size ? "pointer" : "default", border: "none", background: selected.size ? "#dc2626" : "#fca5a5", color: "#fff" }}>✅ {t("Закрыть","Закрити")} ({selected.size})</button>
+            <button onClick={bulkClose} disabled={selected.size === 0} style={{ marginLeft: "auto", fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 7, cursor: selected.size ? "pointer" : "default", border: "none", background: selected.size ? "#dc2626" : "#fca5a5", color: "#fff" }}><Icon n="check" size={15} /> {t("Закрыть","Закрити")} ({selected.size})</button>
           </div>
         )}
         <div style={{ flex: 1, overflowY: "auto" }} onScroll={(e) => { const el = e.currentTarget; if (el.scrollHeight - el.scrollTop - el.clientHeight < 140) loadMore(); }}>
@@ -292,19 +296,19 @@ export default function Inbox() {
               </div>
               <SourceChip source={active.channel_kind} />
               <div className="spacer" />
-              <button className="btn btn-green">{t("📞 Позвонить","📞 Подзвонити")}</button>
-              {active.contact && <button className="btn btn-primary" style={{ marginLeft: 8 }} onClick={goToCard}>{t("🤝 В карточку","🤝 В картку")}</button>}
+              <button className="btn btn-green"><Icon n="phone" size={15} /> {t("Позвонить","Подзвонити")}</button>
+              {active.contact && <button className="btn btn-primary" style={{ marginLeft: 8 }} onClick={goToCard}><Icon n="handshake" size={15} /> {t("В карточку","В картку")}</button>}
               <button className="btn" style={{ marginLeft: 8, background: "#fff7ed", color: "#c2410c", fontWeight: 600 }} onClick={() => setPicker(picker === "transfer" ? null : "transfer")}>{t("↪ Переадресовать","↪ Переадресувати")}</button>
-              <button className="btn" style={{ marginLeft: 8, background: "#eef2ff", color: "#4338ca", fontWeight: 600 }} onClick={() => setPicker(picker === "add" ? null : "add")}>{t("➕ Менеджер","➕ Менеджер")}</button>
+              <button className="btn" style={{ marginLeft: 8, background: "#eef2ff", color: "#4338ca", fontWeight: 600 }} onClick={() => setPicker(picker === "add" ? null : "add")}><Icon n="plus" size={15} /> {t("Менеджер","Менеджер")}</button>
               <button className="btn" style={{ marginLeft: 8, background: "#f1f5f9", fontWeight: 700, fontSize: 17, lineHeight: 1, padding: "0 12px" }} onClick={() => setMenu((m) => !m)} title={t("Ещё","Ще")}>⋯</button>
             </div>
             {menu && (<>
               <div onClick={() => setMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
               <div style={{ position: "fixed", top: 104, right: 360, width: 260, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 14px 36px rgba(0,0,0,.18)", zIndex: 41, overflow: "hidden" }}>
-                <div onClick={takeConv} style={mItem}>📌 {t("Закрепить за мной","Закріпити за мною")}</div>
-                {active.contact && <div onClick={goToContact} style={mItem}>👤 {t("Перейти в контакт","Перейти в контакт")}</div>}
-                {active.contact && <div onClick={() => { setMenu(false); goToCard(); }} style={mItem}>🤝 {t("Перейти в сделку","Перейти в угоду")}</div>}
-                <div onClick={closeConv} style={{ ...mItem, color: "#dc2626", borderTop: "1px solid #f1f5f9", fontWeight: 600 }}>✅ {t("Завершить диалог","Завершити діалог")}</div>
+                <div onClick={takeConv} style={mItem}><Icon n="pin" size={15} /> {t("Закрепить за мной","Закріпити за мною")}</div>
+                {active.contact && <div onClick={goToContact} style={mItem}><Icon n="user" size={15} /> {t("Перейти в контакт","Перейти в контакт")}</div>}
+                {active.contact && <div onClick={() => { setMenu(false); goToCard(); }} style={mItem}><Icon n="handshake" size={15} /> {t("Перейти в сделку","Перейти в угоду")}</div>}
+                <div onClick={closeConv} style={{ ...mItem, color: "#dc2626", borderTop: "1px solid #f1f5f9", fontWeight: 600 }}><Icon n="check" size={15} /> {t("Завершить диалог","Завершити діалог")}</div>
               </div>
             </>)}
             {picker && (<>
@@ -334,7 +338,7 @@ export default function Inbox() {
                   <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{linkify(m.text, m.direction === "out")}</span>
                   {m.attachments?.map((a, i) => (
                     <div key={i} style={{ fontSize: 11, opacity: .8, marginTop: 4 }}>
-                      📎 {a.type === "voice" ? t(`голосовое ${a.duration ?? ""}с`,`голосове ${a.duration ?? ""}с`) : a.type}
+                      <Icon n="paperclip" size={13} /> {a.type === "voice" ? t(`голосовое ${a.duration ?? ""}с`,`голосове ${a.duration ?? ""}с`) : a.type}
                     </div>
                   ))}
                   <div style={{ fontSize: 10, opacity: .55, marginTop: 3, textAlign: m.direction === "out" ? "right" : "left" }}>{(m as any).created_at ? new Date((m as any).created_at).toLocaleTimeString("uk", { hour: "2-digit", minute: "2-digit" }) : ""}</div>
@@ -343,16 +347,18 @@ export default function Inbox() {
               <div ref={endRef} />
             </div>
             {err && <div className="err" style={{ padding: "0 16px" }}>{err}</div>}
-            <div style={{ background: "#fff", borderTop: "1px solid #e2e8f0", padding: 12, display: "flex", gap: 6, alignItems: "center" }}>
-              <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={sendFile} />
-              <button className="btn" type="button" style={{ background: internalNote ? "#fde68a" : "#f1f5f9", color: internalNote ? "#92400e" : "#475569", fontWeight: internalNote ? 700 : 400, flex: "0 0 auto" }} title={t("Скрытая заметка для менеджеров (клиент не увидит)","Прихована нотатка для менеджерів (клієнт не побачить)")} onClick={() => setInternalNote((v) => !v)}><Icon n="eye" size={17} /></button>
+            <div style={{ background: "#fff", borderTop: "1px solid #e2e8f0", padding: 12, display: "flex", gap: 6, alignItems: "flex-end" }}>
+              <input ref={fileRef} type="file" hidden onChange={sendFile} />
+              <button className="btn" type="button" style={{ background: internalNote ? "#fde68a" : "#f1f5f9", color: internalNote ? "#92400e" : "#475569", fontWeight: internalNote ? 700 : 400, flex: "0 0 auto", height: 38 }} title={t("Скрытая заметка для менеджеров (клиент не увидит)","Прихована нотатка для менеджерів (клієнт не побачить)")} onClick={() => setInternalNote((v) => !v)}><Icon n="eye" size={17} /></button>
               <EmojiButton onPick={(em) => setText((tx) => tx + em)} />
-              <button className="btn" type="button" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title={t("Прикрепить фото / видео","Прикріпити фото / відео")} onClick={() => fileRef.current?.click()} disabled={sending}><Icon n="paperclip" size={17} /></button>
-              <input value={text} onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && send()}
-                placeholder={internalNote ? t("Внутренняя заметка — клиент НЕ увидит…","Внутрішня нотатка — клієнт НЕ побачить…") : t(`Сообщение уйдёт в ${active.channel_name}…`,`Повідомлення піде в ${active.channel_name}…`)}
-                style={{ flex: 1, height: 36, background: internalNote ? "#fffbeb" : "#f1f5f9", border: internalNote ? "1.5px dashed #d4a017" : "none", borderRadius: 7, padding: "0 12px", fontSize: 13, outline: "none" }} />
-              <button className="btn btn-primary" onClick={send} disabled={sending} style={{ background: internalNote ? "#d4a017" : undefined }}>{sending ? "…" : (internalNote ? t("📝 Заметка","📝 Нотатка") : t("Отправить","Відправити"))}</button>
+              <button className="btn" type="button" style={{ background: "#f1f5f9", flex: "0 0 auto", height: 38 }} title={t("Прикрепить файл / фото / видео / документ","Прикріпити файл / фото / відео / документ")} onClick={() => fileRef.current?.click()} disabled={sending}><Icon n="paperclip" size={17} /></button>
+              <textarea value={text} rows={1}
+                onChange={(e) => { setText(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 170) + "px"; }}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+                onPaste={onPasteFile}
+                placeholder={internalNote ? t("Внутренняя заметка — клиент НЕ увидит…  (Enter — отправить, Shift+Enter — новая строка)","Внутрішня нотатка — клієнт НЕ побачить…  (Enter — надіслати, Shift+Enter — новий рядок)") : t(`Сообщение в ${active.channel_name}…  (Enter — отправить, Shift+Enter — строка, вставить фото — Ctrl+V)`,`Повідомлення в ${active.channel_name}…  (Enter — надіслати, Shift+Enter — рядок, вставити фото — Ctrl+V)`)}
+                style={{ flex: 1, minHeight: 38, maxHeight: 170, background: internalNote ? "#fffbeb" : "#f1f5f9", border: internalNote ? "1.5px dashed #d4a017" : "none", borderRadius: 7, padding: "9px 12px", fontSize: 13, outline: "none", resize: "vertical", lineHeight: 1.4, fontFamily: "inherit", boxSizing: "border-box" }} />
+              <button className="btn btn-primary" onClick={send} disabled={sending} style={{ background: internalNote ? "#d4a017" : undefined, height: 38 }}>{sending ? "…" : (internalNote ? <><Icon n="file" size={14} /> {t("Заметка","Нотатка")}</> : t("Отправить","Відправити"))}</button>
             </div>
           </>
         )}
@@ -361,9 +367,9 @@ export default function Inbox() {
       {/* AI-РОП панель */}
       <div style={{ background: "#fff", borderLeft: "1px solid #e2e8f0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div style={{ padding: "14px 14px 12px", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center" }}>
-          <b style={{ fontSize: 14 }}>🧠 AI-РОП</b>
+          <b style={{ fontSize: 14 }}><Icon n="brain" size={16} /> AI-РОП</b>
           <div style={{ flex: 1 }} />
-          {active && <button className="btn" style={{ fontSize: 12, padding: "3px 10px" }} onClick={() => analyzeAI(active.id)} disabled={aiLoad}>{aiLoad ? "…" : t("🔄 Обновить","🔄 Оновити")}</button>}
+          {active && <button className="btn" style={{ fontSize: 12, padding: "3px 10px" }} onClick={() => analyzeAI(active.id)} disabled={aiLoad}>{aiLoad ? "…" : <><Icon n="refresh" size={14} /> {t("Обновить","Оновити")}</>}</button>}
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
           {!active ? (
@@ -380,14 +386,14 @@ export default function Inbox() {
                 <>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", margin: "16px 0 8px" }}>{t("Предлагаемый ответ","Пропонована відповідь")}</div>
                   <div style={{ fontSize: 13, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: 10, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{ai.suggestion}</div>
-                  <button className="btn btn-primary" style={{ width: "100%", marginTop: 8 }} onClick={() => setText(ai.suggestion || "")}>{t("✍️ Вставить в ответ","✍️ Вставити у відповідь")}</button>
+                  <button className="btn btn-primary" style={{ width: "100%", marginTop: 8 }} onClick={() => setText(ai.suggestion || "")}><Icon n="pencil" size={14} /> {t("Вставить в ответ","Вставити у відповідь")}</button>
                 </>
               )}
             </>
           ) : (
             <div style={{ textAlign: "center", paddingTop: 24 }}>
               <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>{t("AI-РОП подскажет тезисы диалога + готовый ответ.","AI-РОП підкаже тези діалогу + готову відповідь.")}</div>
-              <button className="btn btn-primary" onClick={() => active && analyzeAI(active.id)} disabled={aiLoad}>{aiLoad ? t("Анализирую…","Аналізую…") : t("🧠 Проанализировать диалог","🧠 Проаналізувати діалог")}</button>
+              <button className="btn btn-primary" onClick={() => active && analyzeAI(active.id)} disabled={aiLoad}>{aiLoad ? t("Анализирую…","Аналізую…") : <><Icon n="brain" size={15} /> {t("Проанализировать диалог","Проаналізувати діалог")}</>}</button>
             </div>
           )}
         </div>
