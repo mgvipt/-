@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Icon } from "./Icon";
 
 export const SALES_EMOJIS = "😊 🙂 😉 😍 🥰 😎 🤩 🤗 😋 🙏 👍 👌 🤝 👏 💪 🫶 🔥 💯 ✨ ⭐ 🌟 🎉 🥳 🎁 🛍️ 💎 💰 💳 🧾 📦 🚚 ✅ ☑️ 🆕 🔝 📲 📞 💬 ❓ ❗ ‼️ 💡 🎯 📍 🏷️ 🖌️ 🎨 🏠 🛋️ 🪞 🌈 ⚡ ⏰ 📅 🤔 😅 👋 ❤️ 🧡 💛 💚 💙 💜 🤍 🤎 🖤 🥇 📌 ➡️ ↩️".split(" ");
 
@@ -6,7 +7,7 @@ export function EmojiButton({ onPick, up = true }: { onPick: (e: string) => void
   const [open, setOpen] = useState(false);
   return (
     <div style={{ position: "relative", flex: "0 0 auto" }}>
-      <button className="btn" type="button" style={{ background: "#f1f5f9" }} title="Емодзі та символи" onClick={() => setOpen((o) => !o)}>😊</button>
+      <button className="btn" type="button" style={{ background: "#f1f5f9" }} title="Емодзі та символи" onClick={() => setOpen((o) => !o)}><Icon n="smile" size={18} /></button>
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 49 }} />

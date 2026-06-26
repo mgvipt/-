@@ -5,6 +5,7 @@ import { Avatar, SourceChip } from "../ui";
 import { useAuth } from "../auth";
 import { useLang } from "../i18n";
 import { EmojiButton } from "../ChatCompose";
+import { Icon } from "../Icon";
 
 function linkify(text: string, out: boolean) {
   return String(text || "").split(/(https?:\/\/[^\s]+)/g).map((p, i) =>
@@ -344,9 +345,9 @@ export default function Inbox() {
             {err && <div className="err" style={{ padding: "0 16px" }}>{err}</div>}
             <div style={{ background: "#fff", borderTop: "1px solid #e2e8f0", padding: 12, display: "flex", gap: 6, alignItems: "center" }}>
               <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={sendFile} />
-              <button className="btn" type="button" style={{ background: internalNote ? "#fde68a" : "#f1f5f9", color: internalNote ? "#92400e" : "#475569", fontWeight: internalNote ? 700 : 400, flex: "0 0 auto" }} title={t("Скрытая заметка для менеджеров (клиент не увидит)","Прихована нотатка для менеджерів (клієнт не побачить)")} onClick={() => setInternalNote((v) => !v)}>📝</button>
+              <button className="btn" type="button" style={{ background: internalNote ? "#fde68a" : "#f1f5f9", color: internalNote ? "#92400e" : "#475569", fontWeight: internalNote ? 700 : 400, flex: "0 0 auto" }} title={t("Скрытая заметка для менеджеров (клиент не увидит)","Прихована нотатка для менеджерів (клієнт не побачить)")} onClick={() => setInternalNote((v) => !v)}><Icon n="eye" size={17} /></button>
               <EmojiButton onPick={(em) => setText((tx) => tx + em)} />
-              <button className="btn" type="button" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title={t("Прикрепить фото / видео","Прикріпити фото / відео")} onClick={() => fileRef.current?.click()} disabled={sending}>📎</button>
+              <button className="btn" type="button" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title={t("Прикрепить фото / видео","Прикріпити фото / відео")} onClick={() => fileRef.current?.click()} disabled={sending}><Icon n="paperclip" size={17} /></button>
               <input value={text} onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && send()}
                 placeholder={internalNote ? t("Внутренняя заметка — клиент НЕ увидит…","Внутрішня нотатка — клієнт НЕ побачить…") : t(`Сообщение уйдёт в ${active.channel_name}…`,`Повідомлення піде в ${active.channel_name}…`)}
