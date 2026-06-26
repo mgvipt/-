@@ -27,7 +27,15 @@ export default function Inbox() {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [internalNote, setInternalNote] = useState(false);
+  const [composerH, setComposerH] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  function startResizeComposer(e: any) {
+    e.preventDefault();
+    const startY = e.clientY; const startH = composerH ?? 38;
+    function mv(ev: MouseEvent) { setComposerH(Math.min(420, Math.max(38, startH - (ev.clientY - startY)))); }
+    function up() { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); }
+    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+  }
   const [err, setErr] = useState("");
   const [ai, setAi] = useState<{ context?: string; points?: string[]; suggestion?: string } | null>(null);
   const [aiLoad, setAiLoad] = useState(false);
@@ -347,18 +355,23 @@ export default function Inbox() {
               <div ref={endRef} />
             </div>
             {err && <div className="err" style={{ padding: "0 16px" }}>{err}</div>}
-            <div style={{ background: "#fff", borderTop: "1px solid #e2e8f0", padding: 12, display: "flex", gap: 6, alignItems: "flex-end" }}>
+            <div style={{ background: "#fff", borderTop: "1px solid #e2e8f0", padding: "0 12px 12px" }}>
+              <div onMouseDown={startResizeComposer} title={t("Потяни вверх — увеличить поле ввода","Потягни вгору — збільшити поле вводу")} style={{ height: 13, cursor: "ns-resize", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 44, height: 4, borderRadius: 4, background: "#cbd5e1" }} />
+              </div>
+              <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
               <input ref={fileRef} type="file" hidden onChange={sendFile} />
               <button className="btn" type="button" style={{ background: internalNote ? "#fde68a" : "#f1f5f9", color: internalNote ? "#92400e" : "#475569", fontWeight: internalNote ? 700 : 400, flex: "0 0 auto", height: 38 }} title={t("Скрытая заметка для менеджеров (клиент не увидит)","Прихована нотатка для менеджерів (клієнт не побачить)")} onClick={() => setInternalNote((v) => !v)}><Icon n="eye" size={17} /></button>
               <EmojiButton onPick={(em) => setText((tx) => tx + em)} />
               <button className="btn" type="button" style={{ background: "#f1f5f9", flex: "0 0 auto", height: 38 }} title={t("Прикрепить файл / фото / видео / документ","Прикріпити файл / фото / відео / документ")} onClick={() => fileRef.current?.click()} disabled={sending}><Icon n="paperclip" size={17} /></button>
               <textarea value={text} rows={1}
-                onChange={(e) => { setText(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 170) + "px"; }}
+                onChange={(e) => { setText(e.target.value); if (composerH === null) { e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 170) + "px"; } }}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
                 onPaste={onPasteFile}
                 placeholder={internalNote ? t("Внутренняя заметка — клиент НЕ увидит…  (Enter — отправить, Shift+Enter — новая строка)","Внутрішня нотатка — клієнт НЕ побачить…  (Enter — надіслати, Shift+Enter — новий рядок)") : t(`Сообщение в ${active.channel_name}…  (Enter — отправить, Shift+Enter — строка, вставить фото — Ctrl+V)`,`Повідомлення в ${active.channel_name}…  (Enter — надіслати, Shift+Enter — рядок, вставити фото — Ctrl+V)`)}
-                style={{ flex: 1, minHeight: 38, maxHeight: 170, background: internalNote ? "#fffbeb" : "#f1f5f9", border: internalNote ? "1.5px dashed #d4a017" : "none", borderRadius: 7, padding: "9px 12px", fontSize: 13, outline: "none", resize: "vertical", lineHeight: 1.4, fontFamily: "inherit", boxSizing: "border-box" }} />
+                style={{ flex: 1, minHeight: 38, height: composerH ? composerH + "px" : undefined, maxHeight: composerH ? undefined : 170, background: internalNote ? "#fffbeb" : "#f1f5f9", border: internalNote ? "1.5px dashed #d4a017" : "none", borderRadius: 7, padding: "9px 12px", fontSize: 13, outline: "none", resize: "none", lineHeight: 1.4, fontFamily: "inherit", boxSizing: "border-box" }} />
               <button className="btn btn-primary" onClick={send} disabled={sending} style={{ background: internalNote ? "#d4a017" : undefined, height: 38 }}>{sending ? "…" : (internalNote ? <><Icon n="file" size={14} /> {t("Заметка","Нотатка")}</> : t("Отправить","Відправити"))}</button>
+              </div>
             </div>
           </>
         )}
