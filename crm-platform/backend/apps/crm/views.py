@@ -342,9 +342,25 @@ def _issue_checkbox_for_deal(deal, user=None):
         from apps.inbox.services import send_message
         conv = Conversation.objects.filter(contact_id=deal.contact_id, status="open").order_by("-last_message_at").first()
         if conv:
+            # РОП пише тепле живе повідомлення (без слова "фіскальний")
+            body = ("Дякуємо за оплату! 😊 Вже почали готувати ваше замовлення." if closes
+                    else "Дякуємо за передоплату! 😊 Бронюємо замовлення за вами.")
             try:
-                msg = ("Дякуємо за оплату! 🧾 Ваш фіскальний чек: %s" % r["url"]) if closes else ("Дякуємо за передоплату! 🧾 Чек на аванс: %s" % r["url"])
-                send_message(conv, msg, user=user)
+                from .ai import claude_json
+                dmsgs = list(conv.messages.order_by("id").values("direction", "text"))[-12:]
+                dlg = "\n".join((("Клієнт: " if m["direction"] == "in" else "Ми: ") + (m["text"] or "")) for m in dmsgs if m.get("text"))
+                items = ", ".join(i.product.name[:40] for i in deal.items.all()[:3])
+                step = "повна оплата пройшла, починаємо готувати і скоро відправимо" if closes else "отримали передоплату, бронюємо і готуємо замовлення"
+                pr = ("Ти РОП Wallcov (декоративні покриття для стін). Напиши КОРОТКЕ (2-3 речення) тепле живе повідомлення клієнту: %s. "
+                      "Подякуй, згадай що замовив, додай приємний наступний крок. НЕ пиши слова 'фіскальний' і 'чек' — посилання я додам сам. "
+                      "ЗАВЖДИ українською. JSON {\"message\":\"...\"}.\nЗамовлення: %s\nДіалог:\n%s") % (step, items or "тест-набір", dlg or "(нема)")
+                rr = claude_json(pr)
+                if rr.get("message"):
+                    body = rr["message"].strip()
+            except Exception:
+                pass
+            try:
+                send_message(conv, "%s\n\n🧾 %s" % (body, r["url"]), user=user)
                 sent = True
             except Exception:
                 pass
