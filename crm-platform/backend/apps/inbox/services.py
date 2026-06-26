@@ -40,8 +40,10 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
             st = f.stages.order_by("order").first() if f else None
             if f and st:
                 src = channel.kind if channel.kind in dict(Lead.SOURCES) else "other"
+                from apps.crm.lead_routing import next_lead_owner
                 Lead.objects.create(title=(inc.sender_name or channel.kind)[:255],
-                                    contact=contact, funnel=f, stage=st, source=src, is_seen=False)
+                                    contact=contact, funnel=f, stage=st, source=src, is_seen=False,
+                                    owner=next_lead_owner())
         except Exception:
             pass
 

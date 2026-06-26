@@ -159,8 +159,10 @@ def sync_chats(max_chats=40, per_chat=40):
                 f = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
                 st = f.stages.order_by("order").first() if f else None
                 if f and st:
+                    from apps.crm.lead_routing import next_lead_owner
                     Lead.objects.create(title=(name or "Instagram")[:255], contact=conv.contact,
-                                        funnel=f, stage=st, source="instagram", is_seen=False)
+                                        funnel=f, stage=st, source="instagram", is_seen=False,
+                                        owner=next_lead_owner())
             except Exception:
                 pass
         chad_in = chad_out = False
