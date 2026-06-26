@@ -4,6 +4,17 @@ import { api, Card, Funnel, Paginated } from "../api";
 import { Avatar, SourceChip } from "../ui";
 import { useLang } from "../i18n";
 
+function socialMeta(link?: string) {
+  if (!link) return null;
+  const l = link.toLowerCase();
+  if (l.includes("instagram")) return { icon: "📷", label: "Instagram" };
+  if (l.includes("facebook") || l.includes("fb.com") || l.includes("fb.me") || l.includes("m.me")) return { icon: "🟦", label: "Facebook" };
+  if (l.includes("t.me") || l.includes("telegram")) return { icon: "✈️", label: "Telegram" };
+  if (l.includes("viber")) return { icon: "🟣", label: "Viber" };
+  if (l.includes("tiktok")) return { icon: "🎵", label: "TikTok" };
+  return { icon: "🔗", label: "Профіль" };
+}
+
 // Универсальный канбан для лидов и сделок. Перетаскивание карточки между
 // колонками меняет стадию через PATCH к API.
 export default function Board({ endpoint, funnel, query }: { endpoint: string; funnel: Funnel; query?: string }) {
@@ -77,6 +88,8 @@ export default function Board({ endpoint, funnel, query }: { endpoint: string; f
                         style={{ position: "absolute", top: 6, right: 8, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>💬</span>
                     )}
                     <div className="ttl">{c.title}</div>
+                    {(c as any).contact_name && <div style={{ fontSize: 11.5, fontWeight: 600, color: "#334155", margin: "1px 0 2px" }}>👤 {(c as any).contact_name}</div>}
+                    {(() => { const m = socialMeta((c as any).contact_social_link); return m ? (<a href={(c as any).contact_social_link} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", gap: 4, alignItems: "center", fontSize: 10.5, fontWeight: 600, color: "#2563eb", textDecoration: "none", marginBottom: 3 }}>{m.icon} {m.label}</a>) : null; })()}
                     <div className="price">{Number(c.amount).toLocaleString("ru")} грн.</div>
                     {(c as any).created_at && <div className="muted" style={{ fontSize: 10.5, marginBottom: 5 }}>🕓 {new Date((c as any).created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>}
                     <SourceChip source={c.source} />

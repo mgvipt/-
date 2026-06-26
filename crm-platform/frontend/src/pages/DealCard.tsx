@@ -139,6 +139,8 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   /* ─── [5] ДЕЙСТВИЯ ───────────────────────────────────────────────────── */
   const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(""), 2800); };
   async function patch(body: Record<string, unknown>) { await api.patch(`/api/deals/${id}/`, body); load(); }
+  const [titleEdit, setTitleEdit] = useState(false); const [titleVal, setTitleVal] = useState("");
+  async function saveTitle() { const v = titleVal.trim(); if (!v) { setTitleEdit(false); return; } try { await api.patch(`/api/deals/${id}/`, { title: v }); setDeal((d) => (d ? { ...d, title: v } : d)); } catch { flash(t("Нет прав на изменение","Немає прав на зміну")); } setTitleEdit(false); }
 
   // Перетягування правого краю → ширина чату (спільна для всіх карток CRM)
   function startResize(e: any) {
@@ -305,7 +307,13 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       {/* ─── [7] РЕНДЕР: шапка ─────────────────────────────────────────── */}
       <div className="dealhead">
         <button className="back" onClick={() => onClose ? onClose() : nav("/deals")}>←</button>
-        <b style={{ fontSize: 16 }}><span title={t("Клик — скопировать № (идентификатор для оплат)","Клік — скопіювати № (ідентифікатор для оплат)")} style={{ cursor: "pointer" }} onClick={() => { navigator.clipboard?.writeText(String(deal.id)); flash(t("№ "+deal.id+" скопирован","№ "+deal.id+" скопійовано")); }}>#{deal.id}</span> · {deal.title}</b>
+        <b style={{ fontSize: 16 }}><span title={t("Клик — скопировать № (идентификатор для оплат)","Клік — скопіювати № (ідентифікатор для оплат)")} style={{ cursor: "pointer" }} onClick={() => { navigator.clipboard?.writeText(String(deal.id)); flash(t("№ "+deal.id+" скопирован","№ "+deal.id+" скопійовано")); }}>#{deal.id}</span> · {titleEdit ? (
+          <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+            <input value={titleVal} autoFocus onChange={(e) => setTitleVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setTitleEdit(false); }} style={{ fontSize: 15, fontWeight: 700, padding: "3px 7px", borderRadius: 6, border: "1px solid #cbd5e1", minWidth: 200 }} />
+            <button className="btn btn-primary" style={{ padding: "3px 9px" }} onClick={saveTitle}>✓</button>
+            <button className="btn btn-light" style={{ padding: "3px 9px" }} onClick={() => setTitleEdit(false)}>✕</button>
+          </span>
+        ) : (<span style={{ cursor: "pointer" }} title={t("Клик — изменить название","Клік — змінити назву")} onClick={() => { setTitleVal(deal.title); setTitleEdit(true); }}>{deal.title} <span style={{ fontSize: 11, opacity: .45 }}>✏️</span></span>)}</b>
         <button className="btn" title={t("Скопировать ссылку на сделку","Скопіювати лінк на сделку")} onClick={() => { navigator.clipboard?.writeText(window.location.origin+"/deals/"+deal.id); flash(t("Ссылка скопирована","Лінк скопійовано")); }}>🔗</button>
         {deal.is_seen ? <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", background: "#dcfce7", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap" }} title={t("Ответили клиенту","Відповіли клієнту")}>✓ {t("Відповіли","Відповіли")}</span> : <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "#ef4444", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap", boxShadow: "0 0 0 3px rgba(239,68,68,.18)" }} title={t("Клиент написал — не отвечено","Клієнт написав — не відповіли")}>● {t("Непереглянуто","Непереглянуто")}</span>}
         {allFunnels.length ? (

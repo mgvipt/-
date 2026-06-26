@@ -82,7 +82,7 @@ export interface Funnel { id: number; name: string; is_lead_funnel: boolean; ord
 export interface Card {
   id: number; title: string; amount: string; source: string;
   stage: number; funnel: number; owner: number | null; owner_name?: string;
-  contact_name?: string; is_seen?: boolean;
+  contact_name?: string; is_seen?: boolean; contact?: number | null; contact_social_link?: string; contact_phone?: string;
 }
 export interface Paginated<T> { count: number; results: T[]; }
 

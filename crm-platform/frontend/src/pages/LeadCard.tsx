@@ -41,6 +41,8 @@ export default function LeadCard() {
     if (!lead) return;
     try { await api.patch(`/api/leads/${lead.id}/`, { source: src }); setLead({ ...lead, source: src }); } catch { /* ignore */ }
   }
+  const [titleEdit, setTitleEdit] = useState(false); const [titleVal, setTitleVal] = useState("");
+  async function saveTitle() { if (!lead) return; const v = titleVal.trim(); if (!v) { setTitleEdit(false); return; } try { await api.patch(`/api/leads/${lead.id}/`, { title: v }); setLead({ ...lead, title: v }); } catch { alert(t("Нет прав на изменение названия","Немає прав на зміну назви")); } setTitleEdit(false); }
 
   function startResizeLeft(e: any) {
     e.preventDefault();
@@ -121,7 +123,15 @@ export default function LeadCard() {
     <div className="scroll fade" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 52px)", overflow: "hidden" }}>
       <div className="dealhead">
         <button className="back" onClick={() => nav("/leads")}>←</button>
-        <b style={{ fontSize: 16 }}>{lead.title}</b>
+        {titleEdit ? (
+          <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+            <input value={titleVal} autoFocus onChange={(e) => setTitleVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setTitleEdit(false); }} style={{ fontSize: 15, fontWeight: 700, padding: "3px 7px", borderRadius: 6, border: "1px solid #cbd5e1", minWidth: 200 }} />
+            <button className="btn btn-primary" style={{ padding: "3px 9px" }} onClick={saveTitle}>✓</button>
+            <button className="btn btn-light" style={{ padding: "3px 9px" }} onClick={() => setTitleEdit(false)}>✕</button>
+          </span>
+        ) : (
+          <b style={{ fontSize: 16, cursor: "pointer" }} title={t("Клик — изменить название","Клік — змінити назву")} onClick={() => { setTitleVal(lead.title); setTitleEdit(true); }}>{lead.title} <span style={{ fontSize: 11, opacity: .45 }}>✏️</span></b>
+        )}
         {lead.is_seen ? <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", background: "#dcfce7", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap" }} title={t("Ответили клиенту","Відповіли клієнту")}>✓ {t("Відповіли","Відповіли")}</span> : <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "#ef4444", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap", boxShadow: "0 0 0 3px rgba(239,68,68,.18)" }} title={t("Клиент написал — не отвечено","Клієнт написав — не відповіли")}>● {t("Непереглянуто","Непереглянуто")}</span>}
         <span className="muted">{funnel?.name}</span>
         {lead.created_at && <span className="muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }} title={t("Лид появился","Лід зʼявився")}>🕓 {new Date(lead.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
