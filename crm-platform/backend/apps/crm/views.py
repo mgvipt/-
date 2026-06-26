@@ -286,6 +286,18 @@ def paylink_redirect(request, code):
     return HttpResponseRedirect(pl.target)
 
 
+def _normalize_phone(raw):
+    """Нормалізувати телефон у формат 380XXXXXXXXX."""
+    d = "".join(ch for ch in str(raw or "") if ch.isdigit())
+    if d.startswith("380"):
+        return d[:12]
+    if d.startswith("0") and len(d) >= 10:
+        return "38" + d[:10]
+    if len(d) == 9:
+        return "380" + d
+    return d
+
+
 def _issue_checkbox_for_deal(deal, user=None):
     """Авто-чек Checkbox для найстаршого оплаченого платежу БЕЗ чека.
     Податковий ланцюг: аванс → (дод. аванс) → фінал (sell) через pre_payment_relation_id.
@@ -589,6 +601,103 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         if r.get("error"):
             return Response({"detail": "Checkbox: %s" % r["error"]}, status=status.HTTP_502_BAD_GATEWAY)
         return Response(r)
+
+    @action(detail=False, methods=["get"])
+    def np_cities(self, request):
+        """Автокомпліт міст Нова Пошта."""
+        from apps.integrations import adapters as ad
+        try:
+            return Response(ad.np_search_cities(request.GET.get("q", ""), 15))
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+    @action(detail=False, methods=["get"])
+    def np_warehouses(self, request):
+        """Відділення/поштомати у вибраному місті."""
+        from apps.integrations import adapters as ad
+        try:
+            return Response(ad.np_warehouses(request.GET.get("settlement_ref", ""), request.GET.get("q", ""), 40))
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+    @action(detail=True, methods=["post"])
+    def create_ttn(self, request, pk=None):
+        """Створити РЕАЛЬНУ ТТН Нова Пошта + надіслати клієнту. Наложка (cod_amount) для післяплати НП."""
+        from datetime import datetime as _dt
+        from apps.integrations import adapters as ad
+        from apps.integrations.models import IntegrationSettings
+        from .models import log_activity
+        deal = self.get_object()
+        p = request.data
+        name = (p.get("recipient_name") or (getattr(deal.contact, "name", "") if deal.contact_id else "") or "").strip()
+        phone = _normalize_phone(p.get("recipient_phone") or (getattr(deal.contact, "phone", "") if deal.contact_id else ""))
+        city_name = (p.get("recipient_city_name") or "").strip()
+        area = (p.get("recipient_area") or "").strip()
+        region = (p.get("recipient_region") or "").strip()
+        wh_number = str(p.get("warehouse_number") or "").strip()
+        if not (name and phone and city_name and wh_number):
+            return Response({"detail": "Потрібні: отримувач, телефон, місто, № відділення"}, status=status.HTTP_400_BAD_REQUEST)
+        cfg_obj = IntegrationSettings.objects.filter(provider="novaposhta").first()
+        cfg = (cfg_obj.config or {}) if cfg_obj else {}
+        if not cfg.get("api_key"):
+            return Response({"detail": "Нова Пошта не налаштована (немає ключа)"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            sender = ad.np_resolve_sender()
+        except Exception as e:
+            return Response({"detail": "NP відправник: %s" % e}, status=status.HTTP_502_BAD_GATEWAY)
+        cod = float(p.get("cod_amount") or 0)
+        props = {
+            "PayerType": p.get("payer") or "Recipient",
+            "PaymentMethod": p.get("payment_method") or "Cash",
+            "DateTime": _dt.now().strftime("%d.%m.%Y"),
+            "CargoType": "Parcel",
+            "Weight": str(p.get("weight") or "0.5"),
+            "ServiceType": p.get("service_type") or "WarehouseWarehouse",
+            "SeatsAmount": str(int(p.get("seats") or 1)),
+            "Description": (p.get("description") or "Декоративні матеріали")[:100],
+            "Cost": str(int(round(float(p.get("cost") or deal.amount or 300)))),
+            "CitySender": cfg.get("sender_city_ref"),
+            "Sender": sender.get("counterparty_ref"),
+            "SenderAddress": cfg.get("sender_address_ref"),
+            "ContactSender": sender.get("contact_ref"),
+            "SendersPhone": _normalize_phone(sender.get("sender_phone") or ""),
+            "RecipientName": name,
+            "RecipientType": "PrivatePerson",
+            "RecipientsPhone": phone,
+            "NewAddress": "1",
+            "RecipientCityName": city_name,
+            "RecipientArea": area,
+            "RecipientAreaRegions": region,
+            "RecipientAddressName": wh_number,
+        }
+        if cod > 0:
+            props["BackwardDeliveryData"] = [{"PayerType": "Recipient", "CargoType": "Money", "RedeliveryString": str(int(round(cod)))}]
+        try:
+            r = ad.np_create_ttn(props)
+        except Exception as e:
+            return Response({"detail": "NP: %s" % e}, status=status.HTTP_502_BAD_GATEWAY)
+        if not r.get("success"):
+            return Response({"detail": "NP: %s" % (r.get("errors") or r.get("warnings") or "невідома помилка")}, status=status.HTTP_502_BAD_GATEWAY)
+        doc = (r.get("data") or [{}])[0]
+        ttn = doc.get("IntDocNumber") or doc.get("Number") or ""
+        deal.ttn = ttn
+        deal.save(update_fields=["ttn"])
+        log_activity("deal", deal.id, "ТТН Нова Пошта", "Створено %s%s" % (ttn, (" · наложка %s грн" % int(cod)) if cod else ""), request.user, "НП")
+        sent = False
+        if deal.contact_id:
+            from apps.inbox.models import Conversation
+            from apps.inbox.services import send_message
+            conv = Conversation.objects.filter(contact_id=deal.contact_id, status="open").order_by("-last_message_at").first()
+            if conv:
+                try:
+                    txt = "Ваше замовлення відправлено Новою Поштою! 📦\nНомер ТТН: %s\nВідстежити: https://novaposhta.ua/tracking/?cargo_number=%s" % (ttn, ttn)
+                    if cod:
+                        txt += "\nДо сплати при отриманні: %s грн" % int(cod)
+                    send_message(conv, txt, user=request.user)
+                    sent = True
+                except Exception:
+                    pass
+        return Response({"ok": True, "ttn": ttn, "cost": doc.get("CostOnSite"), "est": doc.get("EstimatedDeliveryDate"), "sent": sent})
 
     @action(detail=True, methods=["post"])
     def ai_suggest(self, request, pk=None):

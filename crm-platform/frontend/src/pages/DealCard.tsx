@@ -94,6 +94,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [cliEdit, setCliEdit] = useState(false);
   const [cliSearch, setCliSearch] = useState(""); const [cliResults, setCliResults] = useState<any[]>([]);
   const [cliNew, setCliNew] = useState(false); const [cliN, setCliN] = useState({ name: "", phone: "" });
+  const [ttnOpen, setTtnOpen] = useState(false); const [ttnSending, setTtnSending] = useState(false);
+  const [ttnName, setTtnName] = useState(""); const [ttnPhone, setTtnPhone] = useState("");
+  const [ttnCityQ, setTtnCityQ] = useState(""); const [ttnCities, setTtnCities] = useState<any[]>([]); const [ttnCity, setTtnCity] = useState<any>(null);
+  const [ttnWhs, setTtnWhs] = useState<any[]>([]); const [ttnWh, setTtnWh] = useState<any>(null);
+  const [ttnWeight, setTtnWeight] = useState("0.5"); const [ttnSeats, setTtnSeats] = useState("1");
+  const [ttnCost, setTtnCost] = useState(""); const [ttnCod, setTtnCod] = useState(""); const [ttnService, setTtnService] = useState("WarehouseWarehouse");
 
   /* ─── [4] ЗАГРУЗКА ───────────────────────────────────────────────────── */
   async function load() {
@@ -197,7 +203,31 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   }
   // TODO боевой режим: завести @action в DealViewSet поверх integrations/adapters.py
   //      (np_create_ttn / checkbox_create_receipt / liqpay_checkout_link). Сейчас — заглушки.
-  async function createTTN() { await patch({ ttn: "НП " + Math.floor(2e13 + Math.random() * 1e13) }); flash(t("✓ ТТН Нова Пошта создана","✓ ТТН Нова Пошта створена")); }
+  function createTTN() {
+    setTtnName(((deal as any)?.contact_name) || ""); setTtnPhone(((deal as any)?.contact_phone) || "");
+    setTtnCost(String(deal?.amount || "")); setTtnCod(((deal as any)?.pay_type === "prepay_np" && remaining > 0) ? String(remaining) : "");
+    setTtnCity(null); setTtnCityQ(""); setTtnCities([]); setTtnWhs([]); setTtnWh(null); setTtnOpen(true);
+  }
+  async function pickCity(c: any) {
+    setTtnCity(c); setTtnCityQ(c.present || c.name); setTtnCities([]); setTtnWh(null); setTtnWhs([]);
+    try { setTtnWhs(await api.get<any[]>(`/api/deals/np_warehouses/?settlement_ref=${encodeURIComponent(c.settlement_ref)}`)); } catch { /* */ }
+  }
+  async function submitTTN() {
+    if (!ttnCity || !ttnWh) { flash(t("Выберите город и отделение","Виберіть місто і відділення")); return; }
+    if (!ttnName || !ttnPhone) { flash(t("Укажите получателя и телефон","Вкажіть отримувача і телефон")); return; }
+    setTtnSending(true);
+    try {
+      const r = await api.post<any>(`/api/deals/${id}/create_ttn/`, {
+        recipient_name: ttnName, recipient_phone: ttnPhone,
+        recipient_city_name: ttnCity.name, recipient_area: ttnCity.area, recipient_region: ttnCity.region,
+        warehouse_number: ttnWh.number, weight: ttnWeight, seats: ttnSeats, cost: ttnCost,
+        service_type: ttnService, cod_amount: ttnCod || 0, payer: "Recipient", payment_method: "Cash",
+      });
+      const d = await api.get<Deal>(`/api/deals/${id}/`); setDeal(d); setTtnOpen(false);
+      flash(r.sent ? t(`✓ ТТН ${r.ttn} создана и отправлена клиенту`, `✓ ТТН ${r.ttn} створена і надіслана клієнту`) : t(`✓ ТТН ${r.ttn} создана`, `✓ ТТН ${r.ttn} створена`));
+    } catch (e: any) { flash(t("Ошибка НП: ", "Помилка НП: ") + (e?.response?.data?.detail || e?.message || "")); }
+    finally { setTtnSending(false); }
+  }
   async function issueCheckbox() {
     try {
       const r = await api.post<any>(`/api/deals/${id}/issue_checkbox/`, {});
@@ -224,6 +254,11 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     const t = setTimeout(() => api.get<any>(`/api/contacts/?search=${encodeURIComponent(cliSearch)}&page_size=8`).then((d) => setCliResults(d.results || d)).catch(() => setCliResults([])), 250);
     return () => clearTimeout(t);
   }, [cliSearch]);
+  useEffect(() => {
+    if (!ttnOpen || ttnCity || ttnCityQ.trim().length < 2) return;
+    const tm = setTimeout(() => api.get<any[]>(`/api/deals/np_cities/?q=${encodeURIComponent(ttnCityQ)}`).then(setTtnCities).catch(() => setTtnCities([])), 350);
+    return () => clearTimeout(tm);
+  }, [ttnCityQ, ttnOpen, ttnCity]);
   async function setContact(cid: number) { await api.patch(`/api/deals/${id}/`, { contact: cid }); setCliEdit(false); setCliSearch(""); setCliResults([]); setCliNew(false); load(); }
   async function removeContact() { if (!confirm(t("Убрать клиента из сделки?","Прибрати клієнта зі сделки?"))) return; await api.patch(`/api/deals/${id}/`, { contact: null }); load(); }
   async function createInlineClient() { const p = cliN.name.trim().split(/\s+/); const c = await api.post<any>("/api/contacts/", { first_name: p[0] || cliN.name.trim(), last_name: p.slice(1).join(" "), phone: cliN.phone }); setContact(c.id); setCliN({ name: "", phone: "" }); }
@@ -254,6 +289,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   if (!deal) return <div className="spin">{t("Загрузка сделки…","Загрузка сделки…")}</div>;
   const curOrder = funnel?.stages.find((s) => s.id === deal.stage)?.order ?? 0;
   const remaining = Number(deal.amount) - deal.paid;
+  const inp: any = { width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", fontSize: 13, boxSizing: "border-box" };
   const disc = Number(deal.discount_pct || 0);
   const loyalty = deal.contact_loyalty || "";
   const hasCheck = !!deal.checkbox_status && deal.checkbox_status !== "none";
@@ -604,6 +640,39 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       )}
 
       {/* ─── [12] РЕНДЕР: модалка приёма оплаты ───────────────────────── */}
+      {ttnOpen && (
+        <div onClick={() => setTtnOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 420, maxHeight: "88vh", overflowY: "auto" }}>
+            <h3 style={{ marginTop: 0 }}>🚚 {t("Создать ТТН Нова Пошта", "Створити ТТН Нова Пошта")}</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div><label className="label">{t("Получатель", "Отримувач")}</label><input value={ttnName} onChange={(e) => setTtnName(e.target.value)} style={inp} /></div>
+              <div><label className="label">{t("Телефон", "Телефон")}</label><input value={ttnPhone} onChange={(e) => setTtnPhone(e.target.value)} placeholder="0XX..." style={inp} /></div>
+            </div>
+            <label className="label" style={{ marginTop: 8 }}>{t("Город", "Місто")}</label>
+            <input value={ttnCityQ} onChange={(e) => { setTtnCityQ(e.target.value); setTtnCity(null); }} placeholder={t("Начните вводить…", "Почніть вводити…")} style={inp} />
+            {!ttnCity && ttnCities.length > 0 && <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, maxHeight: 160, overflowY: "auto", marginTop: 2 }}>{ttnCities.map((c, i) => (<div key={i} onClick={() => pickCity(c)} style={{ padding: "7px 10px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f1f5f9" }}>{c.present || c.name}</div>))}</div>}
+            {ttnCity && (<>
+              <label className="label" style={{ marginTop: 8 }}>{t("Отделение", "Відділення")} ({ttnWhs.length})</label>
+              <select value={ttnWh?.ref || ""} onChange={(e) => setTtnWh(ttnWhs.find((w) => w.ref === e.target.value) || null)} style={inp}>
+                <option value="">{t("— выберите —", "— виберіть —")}</option>
+                {ttnWhs.map((w) => (<option key={w.ref} value={w.ref}>{w.desc}</option>))}
+              </select>
+            </>)}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 8 }}>
+              <div><label className="label">{t("Вес, кг", "Вага, кг")}</label><input type="number" value={ttnWeight} onChange={(e) => setTtnWeight(e.target.value)} style={inp} /></div>
+              <div><label className="label">{t("Мест", "Місць")}</label><input type="number" value={ttnSeats} onChange={(e) => setTtnSeats(e.target.value)} style={inp} /></div>
+              <div><label className="label">{t("Оценка, ₴", "Оцінка, ₴")}</label><input type="number" value={ttnCost} onChange={(e) => setTtnCost(e.target.value)} style={inp} /></div>
+            </div>
+            <label className="label" style={{ marginTop: 8 }}>{t("Наложенный платёж (послеоплата), ₴", "Накладений платіж (післяплата), ₴")}</label>
+            <input type="number" value={ttnCod} onChange={(e) => setTtnCod(e.target.value)} placeholder={t("0 — без наложки", "0 — без наложки")} style={inp} />
+            <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>{t("Сумма, которую клиент платит при получении (НП-послеоплата). После прихода денег создастся финальный чек.", "Сума, яку клієнт платить при отриманні (НП-післяплата). Після приходу грошей створиться фінальний чек.")}</div>
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setTtnOpen(false)}>{t("Отмена", "Скасувати")}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} onClick={submitTTN} disabled={ttnSending}>{ttnSending ? "…" : t("Создать ТТН", "Створити ТТН")}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {payOpen && (
         <div onClick={() => setPayOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 380 }}>
