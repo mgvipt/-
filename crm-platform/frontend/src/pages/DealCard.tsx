@@ -243,7 +243,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       flash(t("Ошибка Checkbox: ","Помилка Checkbox: ") + (e?.response?.data?.detail || e?.message || ""));
     }
   }
-  function sendPayLink() { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }
+  function sendPayLink() { if (!deal) return; const rem = Number(deal.amount) - (deal.paid || 0); setPayAmount(String(rem > 0 ? rem : deal.amount)); setPayOpen(true); }
   useEffect(() => {
     if (!ncOpen || ncMode !== "pick" || !ncSearch.trim()) { setNcResults([]); return; }
     const t = setTimeout(() => api.get<any>(`/api/contacts/?search=${encodeURIComponent(ncSearch)}&page_size=8`).then((d) => setNcResults(d.results || d)).catch(() => setNcResults([])), 250);
