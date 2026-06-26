@@ -16,7 +16,7 @@ function linkify(text: string, out: boolean) {
 
 
 export default function Inbox() {
-  const { can } = useAuth();
+  const { can, me } = useAuth();
   const { t } = useLang();
   const [params] = useSearchParams();
   const nav = useNavigate();
@@ -306,6 +306,7 @@ export default function Inbox() {
               <div className="spacer" />
               <button className="btn btn-green"><Icon n="phone" size={15} /> {t("Позвонить","Подзвонити")}</button>
               {active.contact && <button className="btn btn-primary" style={{ marginLeft: 8 }} onClick={goToCard}><Icon n="handshake" size={15} /> {t("В карточку","В картку")}</button>}
+              {active.assigned_to !== me?.id && <button className="btn" style={{ marginLeft: 8, background: "#ecfdf5", color: "#047857", fontWeight: 600 }} onClick={takeConv} title={t("Закрепить чат за собой","Закріпити чат за собою")}><Icon n="check" size={15} /> {t("Взять себе","Взяти собі")}</button>}
               <button className="btn" style={{ marginLeft: 8, background: "#fff7ed", color: "#c2410c", fontWeight: 600 }} onClick={() => setPicker(picker === "transfer" ? null : "transfer")}>{t("↪ Переадресовать","↪ Переадресувати")}</button>
               <button className="btn" style={{ marginLeft: 8, background: "#eef2ff", color: "#4338ca", fontWeight: 600 }} onClick={() => setPicker(picker === "add" ? null : "add")}><Icon n="plus" size={15} /> {t("Менеджер","Менеджер")}</button>
               <button className="btn" style={{ marginLeft: 8, background: "#f1f5f9", fontWeight: 700, fontSize: 17, lineHeight: 1, padding: "0 12px" }} onClick={() => setMenu((m) => !m)} title={t("Ещё","Ще")}>⋯</button>
@@ -359,6 +360,7 @@ export default function Inbox() {
               <div onMouseDown={startResizeComposer} title={t("Потяни вверх — увеличить поле ввода","Потягни вгору — збільшити поле вводу")} style={{ height: 13, cursor: "ns-resize", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <div style={{ width: 44, height: 4, borderRadius: 4, background: "#cbd5e1" }} />
               </div>
+              {internalNote && <div style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11.5, fontWeight: 600, padding: "5px 10px", borderRadius: 6, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}><Icon n="eye" size={14} /> {t("Режим заметки — клиент НЕ увидит, видят только менеджеры","Режим нотатки — клієнт НЕ побачить, бачать лише менеджери")}</div>}
               <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
               <input ref={fileRef} type="file" hidden onChange={sendFile} />
               <button className="btn" type="button" style={{ background: internalNote ? "#fde68a" : "#f1f5f9", color: internalNote ? "#92400e" : "#475569", fontWeight: internalNote ? 700 : 400, flex: "0 0 auto", height: 38 }} title={t("Скрытая заметка для менеджеров (клиент не увидит)","Прихована нотатка для менеджерів (клієнт не побачить)")} onClick={() => setInternalNote((v) => !v)}><Icon n="eye" size={17} /></button>

@@ -30,7 +30,7 @@ export function SalesAnalystPanel({ kind, id, onInsert }: { kind: "deals" | "lea
         <Icon n="🧠" size={16} />
         <b style={{ fontSize: 13.5 }}>{t("Аналитик продаж — коуч", "Аналітик продажів — коуч")}</b>
         <button className="btn" style={{ marginLeft: "auto", padding: "3px 10px", fontSize: 12 }} onClick={refresh} disabled={loading}>
-          {loading ? "…" : (a && !a.empty ? t("Обновить разбор", "Оновити розбір") : t("Разобрать диалог", "Розібрати діалог"))}
+          {loading ? "…" : (a && !a.empty ? t("🎓 Обновить оценку качества", "🎓 Оновити оцінку якості") : t("🎓 Оценить качество диалога", "🎓 Оцінити якість діалогу"))}
         </button>
       </div>
 

@@ -317,7 +317,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           </span>
         ) : (<span style={{ cursor: "pointer" }} title={t("Клик — изменить название","Клік — змінити назву")} onClick={() => { setTitleVal(deal.title); setTitleEdit(true); }}>{deal.title} <span style={{ fontSize: 11, opacity: .45 }}><Icon n="✏️" size={11} /></span></span>)}</b>
         <button className="btn" title={t("Скопировать ссылку на сделку","Скопіювати лінк на сделку")} onClick={() => { navigator.clipboard?.writeText(window.location.origin+"/deals/"+deal.id); flash(t("Ссылка скопирована","Лінк скопійовано")); }}><Icon n="🔗" size={16} /></button>
-        {deal.is_seen ? <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", background: "#dcfce7", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap" }} title={t("Ответили клиенту","Відповіли клієнту")}>✓ {t("Відповіли","Відповіли")}</span> : <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "#ef4444", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap", boxShadow: "0 0 0 3px rgba(239,68,68,.18)" }} title={t("Клиент написал — не отвечено","Клієнт написав — не відповіли")}>● {t("Непереглянуто","Непереглянуто")}</span>}
+        {deal.is_seen ? <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", background: "#dcfce7", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap" }} title={t("Ответили клиенту","Відповіли клієнту")}>✓ {t("Відповіли","Відповіли")}</span> : <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "#ef4444", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap", boxShadow: "0 0 0 3px rgba(239,68,68,.18)" }} title={t("Клиент написал — не отвечено","Клієнт написав — не відповіли")}>● {t("Не отвечено","Не відповіли")}</span>}
         {allFunnels.length ? (
           <select value={deal.funnel} onChange={(e) => changeFunnel(Number(e.target.value))} title={t("Воронка сделки — можно сменить","Воронка сделки — можна змінити")} style={{ height: 30, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 13, background: "#fff", cursor: "pointer", maxWidth: 230 }}>
             {allFunnels.filter((f: any) => !f.is_lead_funnel).map((f: any) => <option key={f.id} value={f.id}>{f.name}</option>)}
@@ -478,11 +478,11 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           {/* 10.4 Доставка и документы (ТТН / чек + бейджи) */}
           <div className="panel">
             <div className="label">{t("Доставка и документы","Доставка і документи")}</div>
-            <div className="row"><span className="muted">{t("ТТН Нова Пошта","ТТН Нова Пошта")}</span><b>{deal.ttn || "—"}</b></div>
-            <div className="row"><span className="muted">{t("Чек Checkbox","Чек Checkbox")}</span>{(deal as any).checkbox_url ? <a href={(deal as any).checkbox_url} target="_blank" rel="noreferrer" style={{ fontWeight: 700, color: "#16a34a" }}><Icon n="🧾" size={14} /> {t("відкрити чек","відкрити чек")}</a> : <b>{hasCheck ? deal.checkbox_status : "—"}</b>}</div>
+            <div className="row"><span className="muted">{t("Накладная Нова Пошта (ТТН)","Накладна Нова Пошта (ТТН)")}</span><b>{deal.ttn || t("ще не створено","ще не створено")}</b></div>
+            <div className="row"><span className="muted">{t("Фискальный чек","Фіскальний чек")}</span>{(deal as any).checkbox_url ? <a href={(deal as any).checkbox_url} target="_blank" rel="noreferrer" style={{ fontWeight: 700, color: "#16a34a" }}><Icon n="🧾" size={14} /> {t("відкрити чек","відкрити чек")}</a> : <b>{hasCheck ? deal.checkbox_status : t("ще не створено","ще не створено")}</b>}</div>
             <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
-              <span style={chip(hasCheck)}>{t("Чек","Чек")} {hasCheck ? "✓" : "—"}</span>
-              <span style={chip(!!deal.ttn)}>{t("ТТН","ТТН")} {deal.ttn ? "✓" : "—"}</span>
+              <span style={chip(hasCheck)}>{t("Фискальный чек","Фіскальний чек")} {hasCheck ? "✓" : t("ще нема","ще нема")}</span>
+              <span style={chip(!!deal.ttn)}>{t("Накладна НП","Накладна НП")} {deal.ttn ? "✓" : t("ще нема","ще нема")}</span>
             </div>
           </div>
 
@@ -691,7 +691,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <h3 style={{ marginTop: 0 }}>{t("Принять оплату","Прийняти оплату")}</h3>
             <label className="label" style={{ marginBottom: 6 }}>{t("Тип оплаты","Тип оплати")}</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 14 }}>
-              {([["cash", t("💵 Наличные","💵 Готівка")], ["liqpay", t("💳 LiqPay онлайн","💳 LiqPay онлайн")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]] as [string,string][]).map(([k, label]) => (
+              {([["cash", t("💵 Наличные","💵 Готівка")], ["liqpay", t("💳 LiqPay (оплата картой онлайн)","💳 LiqPay (оплата картою онлайн)")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]] as [string,string][]).map(([k, label]) => (
                 <button key={k} onClick={() => setPayType(k)} style={{ fontSize: 12, padding: "8px 8px", borderRadius: 8, cursor: "pointer", textAlign: "left", border: "1px solid " + (payType === k ? "var(--brand,#2563eb)" : "#e2e8f0"), background: payType === k ? "#eff6ff" : "#fff", color: payType === k ? "#1d4ed8" : "#475569", fontWeight: payType === k ? 600 : 400 }}>{label}</button>
               ))}
             </div>
@@ -750,7 +750,7 @@ function CashflowTab({ deal, remaining, onPay, createTTN, issueCheckbox }: any) 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
         <button className="btn btn-primary" onClick={onPay}><Icon n="💳" size={15} /> {t("Принять оплату","Прийняти оплату")}</button>
         <button className="btn" onClick={createTTN}><Icon n="🚚" size={15} /> {t("Создать ТТН","Створити ТТН")}</button>
-        <button className="btn" onClick={issueCheckbox}><Icon n="🧾" size={15} /> {t("Чек Checkbox","Чек Checkbox")}</button>
+        <button className="btn" onClick={issueCheckbox}><Icon n="🧾" size={15} /> {t("Фискальный чек","Фіскальний чек")}</button>
       </div>
       <div className="label" style={{ marginBottom: 6 }}>{t("История платежей","Історія платежів")}</div>
       {(deal.payments || []).length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Платежей пока нет","Платежів поки немає")}</div> :

@@ -257,21 +257,27 @@ function PermsTab({ depts, emps, perms, permGroups, funnels, roles, reload, t, t
           <select style={inp} value={selDept} onChange={(e) => setSelDept(e.target.value)}><option value="">{t("выбери отдел", "обери відділ")}</option>{depts.map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
           {d && <>
             <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>{t("Действуют на ВСЕХ сотрудников отдела. Нет «видеть все» = сотрудник видит только своё.", "Діють на ВСІХ співробітників відділу. Нема «бачити всі» = співробітник бачить лише своє.")}</div>
-            <Rows control={(p: any) => { const on = d.permissions.includes(p.code); return <button onClick={() => toggleDept(d, p.code)} style={sw(on)} aria-label={p.label}><span style={knob(on)} /></button>; }} />
+            <Rows control={(p: any) => { const on = d.permissions.includes(p.code); return <div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ fontSize: 11, fontWeight: 600, color: on ? "#16a34a" : "#94a3b8", width: 42, textAlign: "right" }}>{on ? t("Вкл", "Увімк") : t("Выкл", "Вимк")}</span><button onClick={() => toggleDept(d, p.code)} style={sw(on)} aria-label={p.label}><span style={knob(on)} /></button></div>; }} />
           </>}
         </div>
       ) : (
         <div className="panel">
           <select style={inp} value={selUser} onChange={(e) => setSelUser(e.target.value)}><option value="">{t("выбери сотрудника", "обери співробітника")}</option>{emps.map((x: any) => <option key={x.id} value={x.id}>{x.full_name} ({x.department_name || "—"})</option>)}</select>
           {u && <>
-            <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>{t("Серое справа = что есть от отдела/роли. ＋ выдать лично · ✖ запретить лично (запрет важнее всего).", "Сіре праворуч = що є від відділу/ролі. ＋ видати особисто · ✖ заборонити особисто (заборона важливіша за все).")}</div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>{t("«От отдела» = наследует. «Выдать» = дать лично. «Запретить» = убрать лично (важнее всего).", "«Від відділу» = успадковує. «Видати» = дати особисто. «Заборонити» = прибрати особисто (важливіше за все).")}</div>
             <Rows control={(p: any) => {
               const inh = inherited.has(p.code); const ex = u.extra_permissions?.includes(p.code); const dn = u.denied_permissions?.includes(p.code);
-              const eff = dn ? false : (ex || inh);
-              return <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <span style={{ fontSize: 10.5, width: 92, textAlign: "right", color: eff ? "#16a34a" : "#cbd5e1" }}>{dn ? t("✖ запрещено", "✖ заборонено") : eff ? (inh && !ex ? t("✓ от отдела", "✓ від відділу") : t("✓ есть", "✓ є")) : t("— нет", "— нема")}</span>
-                <button onClick={() => toggleUser(u, p.code, "extra")} title={t("Выдать лично", "Видати особисто")} style={{ ...mini, background: ex ? "#16a34a" : "#ecfdf5", color: ex ? "#fff" : "#16a34a" }}>＋</button>
-                <button onClick={() => toggleUser(u, p.code, "denied")} title={t("Запретить лично", "Заборонити особисто")} style={{ ...mini, background: dn ? "#dc2626" : "#fee2e2", color: dn ? "#fff" : "#b91c1c" }}>✖</button>
+              const mode = dn ? "deny" : ex ? "grant" : "inherit";
+              const seg: any = (active: boolean, color: string) => ({ padding: "4px 9px", fontSize: 11.5, border: "none", cursor: "pointer", fontWeight: 600, background: active ? color : "#f1f5f9", color: active ? "#fff" : "#64748b" });
+              function setMode(target: string) {
+                const wantEx = target === "grant", wantDn = target === "deny";
+                if (!!ex !== wantEx) toggleUser(u, p.code, "extra");
+                if (!!dn !== wantDn) toggleUser(u, p.code, "denied");
+              }
+              return <div style={{ display: "inline-flex", borderRadius: 7, overflow: "hidden", border: "1px solid #e2e8f0" }}>
+                <button onClick={() => setMode("inherit")} title={t("Как у отдела/роли", "Як у відділу/ролі")} style={seg(mode === "inherit", "#64748b")}>{inh ? t("От отдела ✓", "Від відділу ✓") : t("Нет", "Нема")}</button>
+                <button onClick={() => setMode("grant")} title={t("Выдать лично", "Видати особисто")} style={seg(mode === "grant", "#16a34a")}>{t("Выдать", "Видати")}</button>
+                <button onClick={() => setMode("deny")} title={t("Запретить лично (важнее всего)", "Заборонити особисто (важливіше за все)")} style={seg(mode === "deny", "#dc2626")}>{t("Запретить", "Заборонити")}</button>
               </div>;
             }} />
           </>}
