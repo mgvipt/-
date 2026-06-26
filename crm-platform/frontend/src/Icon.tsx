@@ -5,7 +5,7 @@ import {
   CornerUpLeft, Link as LinkIcon, Pin, Gift, Zap, Plus, X, ChevronDown, Star, Flame, Trophy,
   GraduationCap, Lightbulb, AlertTriangle, FileText, Image as ImageIcon, Video, Settings, Users, Home,
   LayoutGrid, List, Filter, RefreshCw, Download, Upload, Mail, Lock, HelpCircle, ThumbsUp, Sparkles,
-  PartyPopper, ShoppingBag, BadgeCheck, Banknote, Hash, Copy, Building2, Bot, MapPin, Phone as PhoneCall,
+  PartyPopper, ShoppingBag, BadgeCheck, Banknote, Hash, Copy, Building2, Bot, MapPin, Phone as PhoneCall, BarChart3,
 } from "lucide-react";
 
 const MAP: Record<string, any> = {
@@ -20,7 +20,7 @@ const MAP: Record<string, any> = {
   image: ImageIcon, video: Video, settings: Settings, users: Users, home: Home, grid: LayoutGrid, list: List,
   filter: Filter, refresh: RefreshCw, download: Download, upload: Upload, mail: Mail, lock: Lock,
   thumb: ThumbsUp, sparkles: Sparkles, party: PartyPopper, bag: ShoppingBag, "badge-check": BadgeCheck,
-  money: Banknote, hash: Hash, copy: Copy, building: Building2, bot: Bot, "map-pin": MapPin,
+  money: Banknote, hash: Hash, copy: Copy, building: Building2, bot: Bot, "map-pin": MapPin, chart: BarChart3,
 };
 
 export function Icon({ n, size = 16, strokeWidth = 2, style, ...rest }: { n: string; size?: number; strokeWidth?: number; style?: any; [k: string]: any }) {

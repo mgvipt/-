@@ -4,23 +4,24 @@ import { useAuth } from "../auth";
 import { api } from "../api";
 import { Avatar } from "../ui";
 import { useLang } from "../i18n";
+import { Icon } from "../Icon";
 import IncomingCallPopup from "../IncomingCallPopup";
 import WebPhone from "../WebPhone";
 import GlobalSearch from "../GlobalSearch";
 
 // [путь, заголовок, иконка, требуемое право (или null)]
 const NAV: [string, string, string, string, string | null][] = [
-  ["/leads", "Лиды", "Ліди", "📋", null],
-  ["/deals", "Сделки", "Угоди", "🤝", null],
-  ["/inbox", "Чаты · Открытые линии", "Чати · Відкриті лінії", "💬", null],
+  ["/leads", "Лиды", "Ліди", "list", null],
+  ["/deals", "Сделки", "Угоди", "handshake", null],
+  ["/inbox", "Чаты · Открытые линии", "Чати · Відкриті лінії", "chat", null],
   ["/contact-center", "Контакт-центр", "Контакт-центр", "🎛️", "roles.manage"],
-  ["/phone", "Телефония", "Телефонія", "📞", "telephony.view"],
-  ["/warehouse", "Товары · Склад", "Товари · Склад", "📦", "warehouse.view"],
-  ["/clients", "Клиенты", "Клієнти", "👥", null],
-  ["/finance", "Финансы", "Фінанси", "💰", "finance.view"],
-  ["/analytics", "Аналитика", "Аналітика", "📊", null],
+  ["/phone", "Телефония", "Телефонія", "phone", "telephony.view"],
+  ["/warehouse", "Товары · Склад", "Товари · Склад", "package", "warehouse.view"],
+  ["/clients", "Клиенты", "Клієнти", "users", null],
+  ["/finance", "Финансы", "Фінанси", "wallet", "finance.view"],
+  ["/analytics", "Аналитика", "Аналітика", "chart", null],
   ["/employees", "Сотрудники и права", "Співробітники і права", "🛡️", "roles.manage"],
-  ["/settings", "Настройки · Интеграции", "Налаштування · Інтеграції", "⚙️", "roles.manage"],
+  ["/settings", "Настройки · Интеграции", "Налаштування · Інтеграції", "settings", "roles.manage"],
 ];
 
 const PRESETS = [
@@ -149,7 +150,7 @@ export default function Layout() {
         <nav className="nav">
           {items.map(([path, ru, uk, icon]) => (
             <NavLink key={path} to={path} className="nav-item">
-              <span style={{ width: 18, textAlign: "center" }}>{icon}</span><span>{t(ru, uk)}</span>
+              <span style={{ width: 18, textAlign: "center", display: "inline-flex", justifyContent: "center" }}><Icon n={icon as string} size={17} /></span><span>{t(ru, uk)}</span>
             </NavLink>
           ))}
         </nav>
