@@ -92,8 +92,8 @@ export default function LeadCard() {
         setLead((cur) => {
           if (!cur) return cur;
           const qCh = JSON.stringify((cur as any).qualification) !== JSON.stringify((l as any).qualification);
-          if (cur.stage === l.stage && (cur as any).owner === (l as any).owner && cur.funnel === l.funnel && !qCh) return cur;
-          return { ...cur, stage: l.stage, owner: (l as any).owner, owner_name: (l as any).owner_name, funnel: l.funnel, qualification: (l as any).qualification };
+          if (cur.stage === l.stage && (cur as any).owner === (l as any).owner && cur.funnel === l.funnel && (cur as any).is_seen === (l as any).is_seen && !qCh) return cur;
+          return { ...cur, stage: l.stage, owner: (l as any).owner, owner_name: (l as any).owner_name, funnel: l.funnel, is_seen: (l as any).is_seen, qualification: (l as any).qualification };
         });
       } catch { /* ignore */ }
     }, 5000);
@@ -122,6 +122,7 @@ export default function LeadCard() {
       <div className="dealhead">
         <button className="back" onClick={() => nav("/leads")}>←</button>
         <b style={{ fontSize: 16 }}>{lead.title}</b>
+        {lead.is_seen ? <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", background: "#dcfce7", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap" }} title={t("Ответили клиенту","Відповіли клієнту")}>✓ {t("Відповіли","Відповіли")}</span> : <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "#ef4444", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap", boxShadow: "0 0 0 3px rgba(239,68,68,.18)" }} title={t("Клиент написал — не отвечено","Клієнт написав — не відповіли")}>● {t("Непереглянуто","Непереглянуто")}</span>}
         <span className="muted">{funnel?.name}</span>
         {lead.created_at && <span className="muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }} title={t("Лид появился","Лід зʼявився")}>🕓 {new Date(lead.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
         <div className="spacer" />

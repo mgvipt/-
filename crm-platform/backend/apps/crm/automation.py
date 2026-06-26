@@ -54,8 +54,18 @@ def _lead_for(contact):
             .select_related("stage", "funnel").order_by("-created_at").first())
 
 
+def _flag_seen(contact, seen):
+    """Бейдж 'непереглянуто': клієнт написав → seen=False (червоний); відповіли → seen=True (зелений)."""
+    if not contact:
+        return
+    from .models import Lead, Deal
+    Lead.objects.filter(contact=contact).update(is_seen=seen)
+    Deal.objects.filter(contact=contact, closed_at__isnull=True).update(is_seen=seen)
+
+
 def on_incoming(contact, text: str = ""):
-    """Клієнт написав → авто-просування (готовність купити має пріоритет)."""
+    """Клієнт написав → бейдж 'непереглянуто' + авто-просування (готовність купити має пріоритет)."""
+    _flag_seen(contact, False)
     lead = _lead_for(contact)
     if not lead:
         return
@@ -65,7 +75,8 @@ def on_incoming(contact, text: str = ""):
 
 
 def on_outgoing(contact):
-    """Менеджер/AI відповів → авто-просування (напр. Лід отриманий → Взято в роботу)."""
+    """Менеджер/AI відповів → знімаємо бейдж 'непереглянуто' (зелений) + авто-просування."""
+    _flag_seen(contact, True)
     lead = _lead_for(contact)
     if lead:
         _advance(lead, "lead", "manager_reply")

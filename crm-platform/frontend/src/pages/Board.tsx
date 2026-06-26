@@ -83,8 +83,8 @@ export default function Board({ endpoint, funnel, query }: { endpoint: string; f
                     {c.owner_name && (
                       <div className="owner"><Avatar name={c.owner_name} />{c.owner_name}</div>
                     )}
-                    {isLead && !c.is_seen && (
-                      <div style={{ marginTop: 6 }}><span className="chip chip-unseen">{t("НЕПРОСМОТРЕННЫЕ","НЕПЕРЕГЛЯНУТІ")}</span></div>
+                    {!c.is_seen && (
+                      <div style={{ marginTop: 6 }}><span className="chip chip-unseen">{t("НЕ ОТВЕЧЕНО","НЕ ВІДПОВІЛИ")}</span></div>
                     )}
                   </div>
                 ))}

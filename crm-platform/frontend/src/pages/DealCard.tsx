@@ -44,7 +44,7 @@ interface Pay { id: number; provider: string; amount: string; is_paid: boolean; 
 interface Deal {
   qualification?: any; card_fields?: any[];
   id: number; title: string; contact_name?: string; contact_social_link?: string; contact_phone?: string; owner_name?: string; owner?: number | null; created_at?: string;
-  funnel: number; stage: number; amount: string; source: string;
+  funnel: number; stage: number; amount: string; source: string; is_seen?: boolean;
   items: Item[]; payments: Pay[]; paid: number;
   // поля merge-карточки (см. CODEMAP разд.2, модель Deal):
   discount_pct?: string; pay_type?: string; ttn?: string; checkbox_status?: string;
@@ -124,8 +124,8 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           if (!cur) return cur;
           const qCh = JSON.stringify((cur as any).qualification) !== JSON.stringify((d as any).qualification);
           const iCh = JSON.stringify((cur as any).items) !== JSON.stringify((d as any).items);
-          if (cur.stage === d.stage && cur.owner === d.owner && (cur as any).amount === (d as any).amount && !qCh && !iCh) return cur;
-          return { ...cur, stage: d.stage, owner: d.owner, owner_name: (d as any).owner_name, qualification: (d as any).qualification, items: (d as any).items, amount: (d as any).amount, payments: (d as any).payments, paid: (d as any).paid };
+          if (cur.stage === d.stage && cur.owner === d.owner && (cur as any).amount === (d as any).amount && (cur as any).is_seen === (d as any).is_seen && !qCh && !iCh) return cur;
+          return { ...cur, stage: d.stage, owner: d.owner, owner_name: (d as any).owner_name, is_seen: (d as any).is_seen, qualification: (d as any).qualification, items: (d as any).items, amount: (d as any).amount, payments: (d as any).payments, paid: (d as any).paid };
         });
       } catch { /* ignore */ }
     }, 5000);
@@ -307,6 +307,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         <button className="back" onClick={() => onClose ? onClose() : nav("/deals")}>←</button>
         <b style={{ fontSize: 16 }}><span title={t("Клик — скопировать № (идентификатор для оплат)","Клік — скопіювати № (ідентифікатор для оплат)")} style={{ cursor: "pointer" }} onClick={() => { navigator.clipboard?.writeText(String(deal.id)); flash(t("№ "+deal.id+" скопирован","№ "+deal.id+" скопійовано")); }}>#{deal.id}</span> · {deal.title}</b>
         <button className="btn" title={t("Скопировать ссылку на сделку","Скопіювати лінк на сделку")} onClick={() => { navigator.clipboard?.writeText(window.location.origin+"/deals/"+deal.id); flash(t("Ссылка скопирована","Лінк скопійовано")); }}>🔗</button>
+        {deal.is_seen ? <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", background: "#dcfce7", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap" }} title={t("Ответили клиенту","Відповіли клієнту")}>✓ {t("Відповіли","Відповіли")}</span> : <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "#ef4444", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap", boxShadow: "0 0 0 3px rgba(239,68,68,.18)" }} title={t("Клиент написал — не отвечено","Клієнт написав — не відповіли")}>● {t("Непереглянуто","Непереглянуто")}</span>}
         {allFunnels.length ? (
           <select value={deal.funnel} onChange={(e) => changeFunnel(Number(e.target.value))} title={t("Воронка сделки — можно сменить","Воронка сделки — можна змінити")} style={{ height: 30, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 13, background: "#fff", cursor: "pointer", maxWidth: 230 }}>
             {allFunnels.filter((f: any) => !f.is_lead_funnel).map((f: any) => <option key={f.id} value={f.id}>{f.name}</option>)}
