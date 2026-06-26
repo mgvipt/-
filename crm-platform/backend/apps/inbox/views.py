@@ -163,19 +163,25 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(channel_id__in=allowed)
         # RBAC: менеджер без права «все чаты» видит только свои —
         # по ответственному чата ИЛИ по ответственному контакта.
-        if not user.can_see_all_conversations():
-            # чат видно якщо: призначений на мене / контакт мій / я учасник /
-            # АБО у контакта є лід чи сделка ЗА МНОЮ (менеджер володіє лідом, а не контактом)
-            qs = qs.filter(
-                Q(assigned_to=user) | Q(contact__owner=user) | Q(participants=user)
-                | Q(contact__leads__owner=user) | Q(contact__deals__owner=user)
-            ).distinct()
-        # фильтр-чипы (поверх RBAC): Мої / Не призначені
+        can_all = user.can_see_all_conversations()
+        # БАЗОВИЙ ДОСТУП (для retrieve/messages/send/відкриття через картку):
+        # «бачити всі чати» (право відділу) → доступ до будь-якого; інакше — лише свої звʼязки
+        # (призначений / контакт мій / учасник / у контакта є мій лід чи сделка).
+        mine_q = (Q(assigned_to=user) | Q(contact__owner=user) | Q(participants=user)
+                  | Q(contact__leads__owner=user) | Q(contact__deals__owner=user))
+        if not can_all:
+            qs = qs.filter(mine_q).distinct()
+        # КОМАНДНА ЧЕРГА — фільтри ТІЛЬКИ у СПИСКУ. Чат, взятий ІНШИМ співробітником,
+        # зникає зі списку (його все одно можна відкрити через картку ліда/сделки = retrieve,
+        # і «Закріпити» за собою — тоді він стане видимий у того, хто останнім узяв).
         scope = self.request.query_params.get("scope")
         if scope == "mine":
             qs = qs.filter(Q(assigned_to=user) | Q(participants=user))
         elif scope == "unassigned":
             qs = qs.filter(assigned_to__isnull=True)
+        elif self.action == "list":
+            # «Всі» / за замовчуванням у списку: незайняті + мої; взяті іншими — приховані
+            qs = qs.filter(Q(assigned_to__isnull=True) | Q(assigned_to=user) | Q(participants=user))
         period = self.request.query_params.get("period")
         if period and period != "all":
             from django.utils import timezone as _tz
