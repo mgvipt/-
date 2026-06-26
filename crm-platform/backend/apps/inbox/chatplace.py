@@ -16,6 +16,7 @@ def _relink_echo(conv, ext, text, direction):
     цей id і НЕ створюємо дубль. Повертає True якщо це ехо (пропустити)."""
     if direction != "out":
         return False
+    from .models import Message
     from django.utils import timezone as _tz
     from datetime import timedelta
     own = (Message.objects.filter(conversation=conv, direction="out", text=text)
