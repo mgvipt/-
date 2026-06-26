@@ -149,6 +149,11 @@ def _close_contact_leads(contact_id):
         log_activity("lead", ld.id, "Закрито разом з чатом", "%s → %s" % (old, lost.name), None, "Система")
 
 
+# Скільки хвилин чат лишається у загальному списку менеджера після того,
+# як ВІН написав у чужий (закріплений за іншим) чат. Закріпити = назавжди.
+_RECENT_REPLY_MIN = 30
+
+
 class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Conversation.objects.select_related("channel", "contact", "assigned_to").prefetch_related("participants")
     serializer_class = ConversationSerializer
@@ -180,8 +185,12 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         elif scope == "unassigned":
             qs = qs.filter(assigned_to__isnull=True)
         elif self.action == "list":
-            # «Всі» / за замовчуванням у списку: незайняті + мої; взяті іншими — приховані
-            qs = qs.filter(Q(assigned_to__isnull=True) | Q(assigned_to=user) | Q(participants=user))
+            # «Всі»/за замовч.: незайняті + мої + ті, де Я НЕЩОДАВНО ПИСАВ (останні N хв),
+            # навіть якщо чат закріплений за іншим (щоб дотиснути діалог). Закріпити = назавжди.
+            from django.utils import timezone as _tzr
+            from datetime import timedelta as _tdr
+            recent_q = Q(messages__sender=user, messages__created_at__gte=_tzr.now() - _tdr(minutes=_RECENT_REPLY_MIN))
+            qs = qs.filter(Q(assigned_to__isnull=True) | Q(assigned_to=user) | Q(participants=user) | recent_q)
         period = self.request.query_params.get("period")
         if period and period != "all":
             from django.utils import timezone as _tz
