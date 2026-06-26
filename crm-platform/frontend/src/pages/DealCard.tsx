@@ -36,6 +36,7 @@ import CallButton from "../CallButton";
 import KpDoc from "../KpDoc";
 import { useLang } from "../i18n";
 import { SocialLink } from "../social";
+import { SalesAnalystPanel } from "../SalesAnalyst";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
@@ -598,6 +599,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           <div style={{ width: chatW, flexShrink: 0, position: "sticky", top: 56, alignSelf: "flex-start" }}>
             <div className="panel">
               <div className="label">{t("💬 Чат с клиентом","💬 Чат з клієнтом")}</div>
+              <SalesAnalystPanel kind="deals" id={id!} onInsert={(txt) => setDraft(txt)} />
               <ClientChat contact={deal.contact_id} />
             </div>
           </div>

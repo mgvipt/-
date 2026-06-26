@@ -10,6 +10,7 @@ import CardFields from "../CardFields";
 import ActivityLog from "../ActivityLog";
 import { useLang } from "../i18n";
 import { SocialLink } from "../social";
+import { SalesAnalystPanel } from "../SalesAnalyst";
 
 interface Lead {
   id: number; title: string; contact?: number; contact_name?: string; owner_name?: string; created_at?: string;
@@ -178,6 +179,7 @@ export default function LeadCard() {
               </select>
             </div>
           </div>
+          <SalesAnalystPanel kind="leads" id={lead.id} />
           <CardFields leadId={lead.id} initial={lead.card_fields} />
           <ActivityLog kind="lead" id={lead.id} />
         </div>

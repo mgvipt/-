@@ -249,6 +249,12 @@ class LeadViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         deal = convert_lead_to_deal(lead, funnel, request.user, actor)
         return Response({"deal_id": deal.id})
 
+    @action(detail=True, methods=["get", "post"])
+    def sales_analysis(self, request, pk=None):
+        """Аналітик-коуч: глибокий розбір діалогу ліда. GET=кеш, POST=новий розбір."""
+        lead = self.get_object()
+        return Response(_run_sales_analysis(lead, "lead", user=request.user, refresh=(request.method == "POST")))
+
     @action(detail=True, methods=["post"])
     def convert_to(self, request, pk=None):
         """Конвертація ліда у сделку в конкретну воронку за вибором продукту (для AI-продавця).
@@ -385,6 +391,42 @@ def _issue_checkbox_for_deal(deal, user=None):
                  "%s · %s грн · код %s · %s" % (deal.checkbox_status, pay.amount, r.get("fiscal_code") or "—", "надіслано" if sent else "створено"),
                  user, "Checkbox")
     return {"ok": True, "url": r["url"], "fiscal_code": r.get("fiscal_code"), "sent": sent, "status": deal.checkbox_status}
+
+
+def _ser_analysis(da):
+    return {"id": da.id, "overall": da.overall_score, "scores": da.scores or {},
+            "strengths": da.strengths, "why_not_selling": da.why_not_selling,
+            "recommended_reply": da.recommended_reply, "coaching": da.coaching,
+            "kind": da.kind, "created_at": da.created_at.isoformat()}
+
+
+def _run_sales_analysis(entity, field, user=None, refresh=False):
+    """Глибокий коучинг-розбір діалогу для ліда/сделки. field = 'deal' | 'lead'."""
+    from .models import DialogAnalysis
+    from .sales_analyst import analyze_dialog
+    from apps.inbox.models import Conversation
+    if not refresh:
+        last = DialogAnalysis.objects.filter(**{field: entity}).first()
+        if last:
+            return _ser_analysis(last)
+    conv = None
+    if entity.contact_id:
+        conv = Conversation.objects.filter(contact_id=entity.contact_id).order_by("-last_message_at").first()
+    if not conv:
+        return {"empty": True, "why_not_selling": "Немає чату з клієнтом для розбору."}
+    msgs = list(conv.messages.order_by("id").values("direction", "text"))[-40:]
+    stage_name = entity.stage.name if entity.stage_id else ""
+    ctx = "Сума %s грн, стадія: %s" % (getattr(entity, "amount", "") or "—", stage_name)
+    r = analyze_dialog(msgs, context=ctx, kind="чат")
+    if r.get("empty") or r.get("error"):
+        return r
+    da = DialogAnalysis.objects.create(
+        conversation=conv, manager=(entity.owner if getattr(entity, "owner_id", None) else user),
+        kind="chat", overall_score=r.get("overall", 0), scores=r.get("scores", {}),
+        strengths=r.get("strengths", ""), why_not_selling=r.get("why_not_selling", ""),
+        recommended_reply=r.get("recommended_reply", ""), coaching=r.get("coaching", ""),
+        **{field: entity})
+    return _ser_analysis(da)
 
 
 def _advance_deal_stage(deal, target_order, reason, actor="Автоматизація"):
@@ -616,6 +658,12 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         if r.get("error"):
             return Response({"detail": "Checkbox: %s" % r["error"]}, status=status.HTTP_502_BAD_GATEWAY)
         return Response(r)
+
+    @action(detail=True, methods=["get", "post"])
+    def sales_analysis(self, request, pk=None):
+        """Аналітик-коуч: глибокий розбір діалогу сделки. GET=кеш, POST=новий розбір."""
+        deal = self.get_object()
+        return Response(_run_sales_analysis(deal, "deal", user=request.user, refresh=(request.method == "POST")))
 
     @action(detail=False, methods=["get"])
     def np_cities(self, request):

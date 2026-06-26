@@ -329,3 +329,22 @@ class PayLink(models.Model):
     target = models.TextField()
     clicks = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class DialogAnalysis(models.Model):
+    """Оцінка якості діалогу від Аналітика-коуча (історія для скорингу + гейміфікації)."""
+    conversation = models.ForeignKey("inbox.Conversation", null=True, blank=True, on_delete=models.CASCADE, related_name="analyses")
+    deal = models.ForeignKey("Deal", null=True, blank=True, on_delete=models.CASCADE, related_name="analyses")
+    lead = models.ForeignKey("Lead", null=True, blank=True, on_delete=models.CASCADE, related_name="analyses")
+    manager = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    kind = models.CharField(max_length=10, default="chat", help_text="chat / call")
+    overall_score = models.IntegerField(default=0)
+    scores = models.JSONField(default=dict)
+    strengths = models.TextField(blank=True, default="")
+    why_not_selling = models.TextField(blank=True, default="")
+    recommended_reply = models.TextField(blank=True, default="")
+    coaching = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-id"]
