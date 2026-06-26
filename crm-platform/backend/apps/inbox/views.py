@@ -344,7 +344,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             content = base64.b64decode(b64.split(",")[-1])
             msg_id = get_adapter(conv.channel).send_media(conv.external_chat_id, content, filename, kind)
         except NotImplementedError:
-            return Response({"detail": "Цей канал поки не підтримує надсилання медіа"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Instagram через ChatPlace приймає лише текст (файли — ні). Telegram приймає файли. Для IG-файлів потрібен офіційний Instagram API."}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
         msg = Message.objects.create(conversation=conv, direction="out", text=f"[{kind}] {filename}",

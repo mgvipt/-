@@ -28,6 +28,7 @@ export default function Inbox() {
   const [sending, setSending] = useState(false);
   const [internalNote, setInternalNote] = useState(false);
   const [composerH, setComposerH] = useState<number | null>(null);
+  const [pending, setPending] = useState<any[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   function startResizeComposer(e: any) {
     e.preventDefault();
@@ -146,35 +147,35 @@ export default function Inbox() {
   }
 
   async function send() {
-    if (!active || !text.trim()) return;
+    if (!active) return;
+    if (!text.trim() && pending.length === 0) return;
     setSending(true); setErr("");
     try {
-      const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send/`, { text, internal: internalNote });
-      setMsgs((ms) => [...ms, m]);
-      setText("");
+      for (const att of pending) {
+        const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send_media/`, { content_b64: att.dataURL, filename: att.name, kind: att.kind });
+        setMsgs((ms) => [...ms, m]);
+      }
+      setPending([]);
+      if (text.trim()) {
+        const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send/`, { text, internal: internalNote });
+        setMsgs((ms) => [...ms, m]); setText("");
+      }
     } catch (e: any) {
-      setErr(t("Не удалось отправить (проверь токен бота / сеть).","Не вдалося відправити (перевір токен бота / мережу)."));
+      setErr(e?.response?.data?.detail || t("Не удалось отправить (проверь токен бота / сеть).","Не вдалося відправити (перевір токен бота / мережу)."));
     } finally { setSending(false); }
   }
 
-  async function uploadFile(f: File | null | undefined) {
-    if (!f || !active) return;
+  function stageFile(f: File | null | undefined) {
+    if (!f) return;
     const kind = f.type.startsWith("video") ? "video" : f.type.startsWith("image") ? "photo" : "document";
-    setSending(true); setErr("");
     const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send_media/`, { content_b64: reader.result, filename: f.name, kind });
-        setMsgs((ms) => [...ms, m]);
-      } catch { setErr(t("Не удалось отправить файл","Не вдалося надіслати файл")); }
-      finally { setSending(false); }
-    };
+    reader.onload = () => setPending((p) => [...p, { name: f.name, kind, dataURL: String(reader.result) }]);
     reader.readAsDataURL(f);
   }
-  async function sendFile(e: any) { await uploadFile(e.target.files?.[0]); e.target.value = ""; }
+  function sendFile(e: any) { stageFile(e.target.files?.[0]); e.target.value = ""; }
   function onPasteFile(e: any) {
     const items = e.clipboardData?.items || [];
-    for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.type && it.type.startsWith("image")) { const f = it.getAsFile(); if (f) { e.preventDefault(); uploadFile(f); return; } } }
+    for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.type && it.type.startsWith("image")) { const f = it.getAsFile(); if (f) { e.preventDefault(); stageFile(f); return; } } }
   }
 
   async function pickUser(uid: number) {
@@ -360,6 +361,14 @@ export default function Inbox() {
               <div onMouseDown={startResizeComposer} title={t("Потяни вверх — увеличить поле ввода","Потягни вгору — збільшити поле вводу")} style={{ height: 13, cursor: "ns-resize", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <div style={{ width: 44, height: 4, borderRadius: 4, background: "#cbd5e1" }} />
               </div>
+              {pending.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 7 }}>
+                {pending.map((att: any, i: number) => (
+                  <div key={i} style={{ position: "relative", border: "1px solid #e2e8f0", borderRadius: 8, background: "#f8fafc", padding: att.kind === "photo" ? 0 : "8px 12px", display: "flex", alignItems: "center", gap: 6 }}>
+                    {att.kind === "photo" ? <img src={att.dataURL} alt="" style={{ height: 54, maxWidth: 90, borderRadius: 8, objectFit: "cover", display: "block" }} /> : <span style={{ fontSize: 12, color: "#475569", display: "inline-flex", alignItems: "center", gap: 5 }}><Icon n="file" size={15} /> {att.name.slice(0, 24)}</span>}
+                    <button type="button" onClick={() => setPending((p) => p.filter((_: any, j: number) => j !== i))} title={t("Убрать","Прибрати")} style={{ position: "absolute", top: -7, right: -7, width: 18, height: 18, borderRadius: "50%", background: "#dc2626", color: "#fff", border: "none", cursor: "pointer", fontSize: 11, lineHeight: "16px", padding: 0 }}>✕</button>
+                  </div>
+                ))}
+              </div>}
               {internalNote && <div style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11.5, fontWeight: 600, padding: "5px 10px", borderRadius: 6, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}><Icon n="eye" size={14} /> {t("Режим заметки — клиент НЕ увидит, видят только менеджеры","Режим нотатки — клієнт НЕ побачить, бачать лише менеджери")}</div>}
               <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
               <input ref={fileRef} type="file" hidden onChange={sendFile} />
