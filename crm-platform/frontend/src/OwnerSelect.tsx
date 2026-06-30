@@ -8,9 +8,9 @@ export default function OwnerSelect({ ownerId, ownerName, onSet }: { ownerId?: n
   const [users, setUsers] = useState<any[]>([]);
   const [edit, setEdit] = useState(false);
   useEffect(() => {
-    if (edit && users.length === 0) api.get<any>("/api/users/?page_size=300").then((d) => setUsers((d.results || d).filter((u: any) => u.is_active !== false)));
+    if (edit && users.length === 0) api.get<any>("/api/conversations/staff/").then((d) => setUsers(d || [])).catch(() => {});
   }, [edit]);
-  const nm = (u: any) => `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.username;
+  const nm = (u: any) => u.full_name || `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.username;
   if (!edit) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
