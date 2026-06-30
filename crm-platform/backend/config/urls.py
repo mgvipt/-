@@ -69,6 +69,8 @@ urlpatterns = [
     path("api/inbox/ping/", inbox_views.InboxPingView.as_view()),
     path("api/inbox/tg-file/<int:message_id>/<int:idx>/", inbox_views.TgFileView.as_view()),
     path("api/telephony/lines/", tel_views.PhoneLineView.as_view()),
+    path("api/team-chat/contacts/", inbox_views.TeamContactsView.as_view()),
+    path("api/team-chat/<int:user_id>/", inbox_views.TeamThreadView.as_view()),
     path("api/f/<str:token>/", inbox_views.SharedFileView.as_view()),
     path("api/contact-form-config/", crm_views.ContactFormConfigView.as_view()),
     path("api/inbox/notifications/", inbox_views.NotificationsView.as_view()),

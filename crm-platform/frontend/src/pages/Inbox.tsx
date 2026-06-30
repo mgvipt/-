@@ -4,6 +4,7 @@ import { api, ChatMessage, Conversation, Paginated } from "../api";
 import { Avatar, SourceChip } from "../ui";
 import { useAuth } from "../auth";
 import { useLang } from "../i18n";
+import TeamChat from "./TeamChat";
 import { EmojiButton } from "../ChatCompose";
 import { Icon } from "../Icon";
 
@@ -21,7 +22,7 @@ export default function Inbox() {
   const [params] = useSearchParams();
   const nav = useNavigate();
   const [scope, setScope] = useState<"mine" | "all" | "unassigned" | "clients">("all");
-  const [tab, setTab] = useState<"chats" | "notif">("chats");
+  const [tab, setTab] = useState<"chats" | "notif" | "team">("chats");
   const [notifN, setNotifN] = useState(0);
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [active, setActive] = useState<Conversation | null>(null);
@@ -245,8 +246,9 @@ export default function Inbox() {
       <div style={{ display: "flex", gap: 6, padding: "8px 12px", background: "#fff", borderBottom: "1px solid #e2e8f0", flexShrink: 0, alignItems: "center" }}>
         <button onClick={() => setTab("chats")} className={"btn" + (tab === "chats" ? " btn-primary" : " btn-light")} style={{ fontSize: 13, fontWeight: 600 }}><Icon n="message" size={15} /> {t("Чаты с клиентами", "Чати з клієнтами")}</button>
         <button onClick={() => setTab("notif")} className={"btn" + (tab === "notif" ? " btn-primary" : " btn-light")} style={{ fontSize: 13, fontWeight: 600 }}><Icon n="bell" size={15} /> {t("Уведомления", "Сповіщення")}{notifN > 0 && <span style={{ marginLeft: 6, background: "#dc2626", color: "#fff", borderRadius: 20, fontSize: 11, fontWeight: 700, padding: "1px 7px" }}>{notifN}</span>}</button>
+        <button onClick={() => setTab("team")} className={"btn" + (tab === "team" ? " btn-primary" : " btn-light")} style={{ fontSize: 13, fontWeight: 600 }}><Icon n="users" size={15} /> {t("Чаты сотрудников", "Чати співробітників")}</button>
       </div>
-      {tab === "notif"
+      {tab === "team" ? <TeamChat /> : tab === "notif"
         ? <NotifFeed t={t} nav={nav} onOpen={(cid: number) => { setTab("chats"); api.get<Conversation>(`/api/conversations/${cid}/`).then((c) => { setConvs((cs) => cs.some((x) => x.id === c.id) ? cs : [c, ...cs]); openConv(c); }).catch(() => {}); }} />
         : <div className="inbox fade" style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "300px 1fr 340px" }}>
       {/* список диалогов */}

@@ -720,3 +720,82 @@ class TgFileView(APIView):
         resp["Content-Disposition"] = 'inline; filename="%s"' % nm
         resp["Cache-Control"] = "private, max-age=86400"
         return resp
+
+
+class TeamContactsView(APIView):
+    """Список співробітників для внутрішнього чату + останнє повідомлення + непрочитані."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.contrib.auth import get_user_model
+        from django.db.models import Q, Max
+        from .models import TeamMessage
+        U = get_user_model()
+        me = request.user
+        users = U.objects.filter(is_active=True).exclude(id=me.id).select_related("department").order_by("first_name", "username")
+        out = []
+        for u in users:
+            last = TeamMessage.objects.filter(
+                Q(sender=me, recipient=u) | Q(sender=u, recipient=me)).order_by("-id").first()
+            unread = TeamMessage.objects.filter(sender=u, recipient=me, read=False).count()
+            out.append({
+                "id": u.id, "full_name": (u.get_full_name() or u.username),
+                "dept": (u.department.name if getattr(u, "department_id", None) else ""),
+                "last": (last.text[:60] if last else ""), "last_at": (last.created_at if last else None),
+                "unread": unread,
+            })
+        out.sort(key=lambda x: (x["last_at"] is None, x["last_at"] and -x["last_at"].timestamp() if x["last_at"] else 0))
+        return Response(out)
+
+
+class TeamThreadView(APIView):
+    """Переписка з конкретним співробітником. GET — повідомлення (помічаємо прочитаними). POST — відправити."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id):
+        from django.db.models import Q
+        from .models import TeamMessage
+        me = request.user
+        qs = TeamMessage.objects.filter(Q(sender=me, recipient_id=user_id) | Q(sender_id=user_id, recipient=me)).select_related("sender")[:500]
+        TeamMessage.objects.filter(sender_id=user_id, recipient=me, read=False).update(read=True)
+        return Response([{
+            "id": m.id, "text": m.text, "attachments": m.attachments or [], "mentions": m.mentions or [],
+            "out": m.sender_id == me.id, "sender_name": (m.sender.get_full_name() or m.sender.username),
+            "created_at": m.created_at,
+        } for m in qs])
+
+    def post(self, request, user_id):
+        from django.contrib.auth import get_user_model
+        from .models import TeamMessage
+        me = request.user
+        U = get_user_model()
+        rec = U.objects.filter(id=user_id, is_active=True).first()
+        if not rec:
+            return Response({"detail": "Співробітник не знайдений"}, status=status.HTTP_404_NOT_FOUND)
+        text = (request.data.get("text") or "").strip()
+        atts = request.data.get("attachments") or []
+        # файл як base64 → SharedLink → посилання
+        b64 = request.data.get("content_b64")
+        if b64:
+            from .models import SharedLink
+            import secrets, mimetypes
+            fn = request.data.get("filename") or "file"
+            tok = secrets.token_urlsafe(16)
+            ct = mimetypes.guess_type(fn)[0] or "application/octet-stream"
+            SharedLink.objects.create(token=tok, filename=fn[:255], content_type=ct, data=__import__("base64").b64decode(b64.split(",")[-1]))
+            atts = list(atts) + [{"name": fn, "url": request.build_absolute_uri("/api/f/%s/" % tok), "kind": ("image" if ct.startswith("image") else "file")}]
+        mentions = request.data.get("mentions") or []
+        if not text and not atts:
+            return Response({"detail": "Порожнє повідомлення"}, status=status.HTTP_400_BAD_REQUEST)
+        m = TeamMessage.objects.create(sender=me, recipient=rec, text=text, attachments=atts, mentions=mentions)
+        # сповіщення згаданим + отримувачу
+        try:
+            from .models import Notification
+            who = me.get_full_name() or me.username
+            targets = set([rec.id] + [int(x) for x in mentions if str(x).isdigit()])
+            for tid in targets:
+                Notification.objects.create(user_id=tid, text="\U0001F4AC %s: %s" % (who, (text or "файл")[:80]))
+        except Exception:
+            pass
+        return Response({"id": m.id, "text": m.text, "attachments": m.attachments, "out": True,
+                         "sender_name": (me.get_full_name() or me.username), "created_at": m.created_at}, status=201)
