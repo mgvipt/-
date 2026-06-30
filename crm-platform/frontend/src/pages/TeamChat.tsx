@@ -5,7 +5,7 @@ import { useLang } from "../i18n";
 import { Icon } from "../Icon";
 import { Avatar } from "../ui";
 
-const EMOJIS = ["😀","😁","😂","🙂","😊","😍","👍","👌","🙏","🔥","💪","✅","❗","⚠️","📷","💬","🎉","❤️","🤝","👋","🚀","💯","🤔","😅"];
+const EMOJIS = ["👋","🤚","🖐️","✋","🖖","👌","🤌","🤏","✌️","🤞","🫰","🤟","🤘","🤙","👈","👉","👆","👇","☝️","🫵","👍","👎","✊","👊","🤛","🤜","👏","🙌","🫶","👐","🤲","🤝","🙏","✍️","💪","😀","😁","😂","🤣","🙂","😊","😉","😍","🥰","😎","🤩","🤗","😋","😜","🤔","😅","😴","🥳","😇","🤯","😱","😭","😤","👀","❤️","🧡","💛","💚","💙","💜","🖤","🔥","💯","✨","⭐","🎉","🎁","✅","❗","⚠️","📌","📎","📷","📞","💬","🚀","💡","☕","🍕"];
 
 export default function TeamChat() {
   const { t } = useLang();
@@ -66,7 +66,7 @@ export default function TeamChat() {
             <div ref={endRef} />
           </div>
           <div style={{ borderTop: "1px solid #e2e8f0", padding: 10, position: "relative" }}>
-            {showEmoji && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8, padding: 8, background: "#f8fafc", borderRadius: 8 }}>{EMOJIS.map((e) => <span key={e} onClick={() => { setText((x) => x + e); setShowEmoji(false); }} style={{ cursor: "pointer", fontSize: 21 }}>{e}</span>)}</div>}
+            {showEmoji && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8, padding: 8, background: "#f8fafc", borderRadius: 8, maxHeight: 180, overflowY: "auto" }}>{EMOJIS.map((e) => <span key={e} onClick={() => { setText((x) => x + e); setShowEmoji(false); }} style={{ cursor: "pointer", fontSize: 21 }}>{e}</span>)}</div>}
             {showMention && <div style={{ position: "absolute", bottom: 56, left: 10, background: "#fff", border: "1px solid #cbd5e1", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,.15)", maxHeight: 200, overflowY: "auto", zIndex: 5, minWidth: 200 }}>{contacts.map((c) => <div key={c.id} onClick={() => addMention(c)} style={{ padding: "6px 10px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f1f5f9" }}>@ {c.full_name}</div>)}</div>}
             <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
               <button className="btn btn-light" style={{ padding: "6px 9px" }} onClick={() => { setShowEmoji((s) => !s); setShowMention(false); }} title={t("Эмодзи", "Емодзі")}>😊</button>

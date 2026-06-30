@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Icon } from "./Icon";
 
-export const SALES_EMOJIS = "😊 🙂 😉 😍 🥰 😎 🤩 🤗 😋 🙏 👍 👌 🤝 👏 💪 🫶 🔥 💯 ✨ ⭐ 🌟 🎉 🥳 🎁 🛍️ 💎 💰 💳 🧾 📦 🚚 ✅ ☑️ 🆕 🔝 📲 📞 💬 ❓ ❗ ‼️ 💡 🎯 📍 🏷️ 🖌️ 🎨 🏠 🛋️ 🪞 🌈 ⚡ ⏰ 📅 🤔 😅 👋 ❤️ 🧡 💛 💚 💙 💜 🤍 🤎 🖤 🥇 📌 ➡️ ↩️".split(" ");
+export const SALES_EMOJIS = "👋 🤚 🖐️ ✋ 🖖 👌 🤌 🤏 ✌️ 🤞 🫰 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ 🫵 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 🫶 👐 🤲 🤝 🙏 ✍️ 💪 😊 🙂 😉 😍 🥰 😎 🤩 🤗 😋 🤔 😅 😄 😁 🥳 😘 🙃 😇 🤭 😌 🥹 ❤️ 🧡 💛 💚 💙 💜 🤍 🤎 🖤 💗 💖 💝 🔥 💯 ✨ ⭐ 🌟 🎉 🎁 🛍️ 💎 💰 💳 🧾 📦 🚚 ✅ ☑️ 🆕 🔝 📲 📞 💬 ❓ ❗ ‼️ 💡 🎯 📍 🏷️ 🖌️ 🎨 🏠 🛋️ 🪞 🌈 ⚡ ⏰ 📅 🥇 📌 ➡️ ↩️ 👀".split(" ");
 
 export function EmojiButton({ onPick, up = true }: { onPick: (e: string) => void; up?: boolean }) {
   const [open, setOpen] = useState(false);
