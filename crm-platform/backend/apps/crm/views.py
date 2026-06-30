@@ -511,7 +511,7 @@ def _issue_checkbox_for_deal(deal, user=None):
                 pr = ("Ти РОП Wallcov (декоративні покриття для стін). Напиши КОРОТКЕ (2-3 речення) тепле живе повідомлення клієнту: %s. "
                       "Подякуй, згадай що замовив, додай приємний наступний крок. НЕ пиши слова 'фіскальний' і 'чек' — посилання я додам сам. "
                       "ЗАВЖДИ українською. JSON {\"message\":\"...\"}.\nЗамовлення: %s\nДіалог:\n%s") % (step, items or "тест-набір", dlg or "(нема)")
-                rr = claude_json(pr)
+                rr = claude_json(pr, source="Помощник CRM (советы и расчёты)")
                 if rr.get("message"):
                     body = rr["message"].strip()
             except Exception:
@@ -771,7 +771,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             nm = ", ".join(i.product.name[:40] for i in items[:3])
             pr = ("\u0422\u0438 \u0420\u041e\u041f Wallcov. \u041d\u0430\u043f\u0438\u0448\u0438 \u041a\u041e\u0420\u041e\u0422\u041a\u0415 (1-2 \u0440\u0435\u0447\u0435\u043d\u043d\u044f) \u0442\u0435\u043f\u043b\u0435 \u0456\u043d\u0442\u0440\u043e \u043f\u0435\u0440\u0435\u0434 \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043a\u043e\u043c. "
                   "\u0411\u0415\u0417 \u0446\u0456\u043d \u0456 \u0411\u0415\u0417 \u0441\u043f\u0438\u0441\u043a\u0443 (\u044f \u0434\u043e\u0434\u0430\u043c \u0441\u0430\u043c). \u0417\u0410\u0412\u0416\u0414\u0418 \u0443\u043a\u0440\u0430\u0457\u043d\u0441\u044c\u043a\u043e\u044e. JSON {\"message\":\"...\"}.\n\u0422\u043e\u0432\u0430\u0440\u0438: %s\n\u0414\u0456\u0430\u043b\u043e\u0433:\n%s") % (nm, dlg or "()")
-            r = claude_json(pr)
+            r = claude_json(pr, source="Помощник CRM (советы и расчёты)")
             if r.get("message"):
                 intro = r["message"].strip()
         except Exception:
@@ -837,7 +837,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                       "що замовлення готове до оплати. Подякуй, згадай що замовив, додай що після оплати одразу готуємо/відправляємо. "
                       "БЕЗ посилання і БЕЗ суми (я додам сам). ЗАВЖДИ УКРАЇНСЬКОЮ мовою (навіть якщо клієнт пише російською). JSON {\"message\":\"...\"}.\n"
                       "Замовлення: %s\nДіалог:\n%s") % (items or "тест-набір", dlg or "(нема)")
-                r = claude_json(pr)
+                r = claude_json(pr, source="Помощник CRM (советы и расчёты)")
                 if r.get("message"):
                     body = r["message"].strip()
             except Exception:
@@ -1154,7 +1154,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             '"suggestion": "готова дружня відповідь клієнту тією ж мовою, що й він"}')
         from .ai import claude_json
         try:
-            data = claude_json(prompt)
+            data = claude_json(prompt, source="Подсказка ответа клиенту")
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
         return Response(data)
@@ -1436,16 +1436,22 @@ class AiUsageView(APIView):
         from apps.crm.models import AiUsage
         from django.db.models.functions import TruncDate
         from django.db.models import Sum, Count, Max
-        days = list(AiUsage.objects.annotate(d=TruncDate("created_at")).values("d").annotate(
+        qs = AiUsage.objects.all()
+        dn = request.query_params.get("days")
+        if dn and dn.isdigit():
+            from django.utils import timezone
+            from datetime import timedelta
+            qs = qs.filter(created_at__gte=timezone.now() - timedelta(days=int(dn)))
+        days = list(qs.annotate(d=TruncDate("created_at")).values("d").annotate(
             cost=Sum("cost_usd"), calls=Count("id")).order_by("-d")[:45])
-        by_src = list(AiUsage.objects.values("source").annotate(cost=Sum("cost_usd"), calls=Count("id"),
+        by_src = list(qs.values("source").annotate(cost=Sum("cost_usd"), calls=Count("id"),
             itok=Sum("in_tok"), otok=Sum("out_tok"), note=Max("note")).order_by("-cost"))
-        by_model = list(AiUsage.objects.values("model").annotate(cost=Sum("cost_usd"), calls=Count("id")).order_by("-cost"))
-        day_src = list(AiUsage.objects.annotate(d=TruncDate("created_at")).values("d", "source").annotate(
+        by_model = list(qs.values("model").annotate(cost=Sum("cost_usd"), calls=Count("id")).order_by("-cost"))
+        day_src = list(qs.annotate(d=TruncDate("created_at")).values("d", "source").annotate(
             cost=Sum("cost_usd"), calls=Count("id")).order_by("-d", "-cost")[:300])
-        tot = AiUsage.objects.aggregate(cost=Sum("cost_usd"), calls=Count("id"))
-        est_c = AiUsage.objects.filter(est=True).aggregate(s=Sum("cost_usd"))["s"] or 0
-        live_c = AiUsage.objects.filter(est=False).aggregate(s=Sum("cost_usd"))["s"] or 0
+        tot = qs.aggregate(cost=Sum("cost_usd"), calls=Count("id"))
+        est_c = qs.filter(est=True).aggregate(s=Sum("cost_usd"))["s"] or 0
+        live_c = qs.filter(est=False).aggregate(s=Sum("cost_usd"))["s"] or 0
         return Response({"days": days, "by_source": by_src, "by_model": by_model, "day_source": day_src,
                          "total_cost": tot["cost"] or 0, "total_calls": tot["calls"] or 0,
                          "est_cost": est_c, "live_cost": live_c})
