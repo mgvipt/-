@@ -44,7 +44,7 @@ def classify(messages):
     try:
         from apps.crm.models import AgentConfig
         _c = AgentConfig.get()
-        r = claude_json("\n".join(lines), model=(_c.priority_model or "claude-haiku-4-5"), max_tokens=120, system=_PROMPT, cache=_c.cache_enabled)
+        r = claude_json("\n".join(lines), model=(_c.priority_model or "claude-haiku-4-5"), max_tokens=120, system=_PROMPT, cache=_c.cache_enabled, source="ИИ-РОП приоритет чатов")
     except Exception:
         return "", ""
     if not isinstance(r, dict):

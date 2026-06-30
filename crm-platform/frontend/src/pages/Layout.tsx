@@ -24,6 +24,7 @@ const NAV: [string, string, string, string, string | null][] = [
   ["/development", "Развитие", "Розвиток", "trophy", "development.view"],
   ["/finance", "Финансы", "Фінанси", "wallet", "finance.view"],
   ["/analytics", "Аналитика", "Аналітика", "chart", "analytics.view"],
+  ["/ai-costs", "Расходы ИИ", "Витрати ШІ", "money", "finance.view"],
   ["/employees", "Сотрудники и права", "Співробітники і права", "🛡️", "roles.manage"],
   ["/duplicates", "Дубли", "Дублі", "copy", "roles.manage"],
   ["/settings", "Настройки · Интеграции", "Налаштування · Інтеграції", "settings", "roles.manage"],

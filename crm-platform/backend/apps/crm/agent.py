@@ -71,7 +71,13 @@ def _call(system, user_text, model, max_tokens=1200):
         hdrs["anthropic-beta"] = "prompt-caching-2024-07-31"
     req = urllib.request.Request(API, data=body, headers=hdrs)
     with urllib.request.urlopen(req, timeout=60) as r:
-        return json.load(r)
+        resp = json.load(r)
+    try:
+        from apps.crm.ai import _log_usage
+        _log_usage("ИИ-РОП дожим (продажник)", model, resp.get("usage") or {})
+    except Exception:
+        pass
+    return resp
 
 
 def build_system(entity, kind):

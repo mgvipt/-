@@ -1428,6 +1428,27 @@ class TaskViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(t).data)
 
 
+class AiUsageView(APIView):
+    """Детальний звіт витрат на Claude: по днях, механіках, моделях."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from apps.crm.models import AiUsage
+        from django.db.models.functions import TruncDate
+        from django.db.models import Sum, Count
+        days = list(AiUsage.objects.annotate(d=TruncDate("created_at")).values("d").annotate(
+            cost=Sum("cost_usd"), calls=Count("id"), itok=Sum("in_tok"), otok=Sum("out_tok")).order_by("-d")[:30])
+        by_src = list(AiUsage.objects.values("source").annotate(cost=Sum("cost_usd"), calls=Count("id"),
+            itok=Sum("in_tok"), otok=Sum("out_tok")).order_by("-cost"))
+        by_model = list(AiUsage.objects.values("model").annotate(cost=Sum("cost_usd"), calls=Count("id")).order_by("-cost"))
+        # деталізація день × механіка
+        day_src = list(AiUsage.objects.annotate(d=TruncDate("created_at")).values("d", "source").annotate(
+            cost=Sum("cost_usd"), calls=Count("id")).order_by("-d", "-cost")[:200])
+        tot = AiUsage.objects.aggregate(cost=Sum("cost_usd"), calls=Count("id"))
+        return Response({"days": days, "by_source": by_src, "by_model": by_model, "day_source": day_src,
+                         "total_cost": tot["cost"] or 0, "total_calls": tot["calls"] or 0})
+
+
 class AgentConfigView(APIView):
     permission_classes = [_RolesManageOrRead]
 

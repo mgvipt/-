@@ -18,6 +18,7 @@ import Clients from "./pages/Clients";
 import ClientCard from "./pages/ClientCard";
 import Settings from "./pages/Settings";
 import Analytics from "./pages/Analytics";
+import AiCosts from "./pages/AiCosts";
 import Phone from "./pages/Phone";
 import Employees from "./pages/Employees";
 import InviteAccept from "./InviteAccept";
@@ -53,6 +54,7 @@ function Shell() {
           <Route path="/finance" element={<Finance />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/analytics" element={<Analytics />} />
+          <Route path="/ai-costs" element={<AiCosts />} />
           <Route path="*" element={<Navigate to="/leads" replace />} />
         </Route>
       </Routes>

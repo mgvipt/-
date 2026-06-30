@@ -359,3 +359,16 @@ class DialogAnalysis(models.Model):
 
     class Meta:
         ordering = ["-id"]
+
+
+
+class AiUsage(models.Model):
+    """Лог кожного виклику Claude — для детального звіту витрат по днях/механіках."""
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    source = models.CharField(max_length=60, db_index=True)
+    model = models.CharField(max_length=40)
+    in_tok = models.IntegerField(default=0)
+    out_tok = models.IntegerField(default=0)
+    cache_read = models.IntegerField(default=0)
+    cache_write = models.IntegerField(default=0)
+    cost_usd = models.FloatField(default=0)

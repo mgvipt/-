@@ -41,7 +41,7 @@ def analyze_dialog(messages, context="", kind="чат"):
     try:
         from apps.crm.models import AgentConfig
         _am = AgentConfig.get().analyst_model or "claude-sonnet-4-6"
-        r = claude_json(prompt, model=_am, max_tokens=1600)
+        r = claude_json(prompt, model=_am, max_tokens=1600, source="Коуч-аналитик диалога")
     except Exception:
         r = claude_json(prompt, model="claude-sonnet-4-6", max_tokens=1400)
     if not isinstance(r, dict):
