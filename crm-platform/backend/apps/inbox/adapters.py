@@ -124,10 +124,31 @@ class TelegramAdapter(ChannelAdapter):
         if bcid:
             body["business_connection_id"] = bcid  # відповідь від імені особистого акаунту
         data = json.dumps(body).encode()
-        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=15) as r:  # noqa: S310
-            resp = json.loads(r.read().decode())
-        return str(resp.get("result", {}).get("message_id", ""))
+        import time, urllib.error
+        last_err = "Telegram: не вдалося відправити"
+        for attempt in range(3):  # ретрай на лимит/таймаут/мережу
+            try:
+                req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310
+                    resp = json.loads(r.read().decode())
+                return str(resp.get("result", {}).get("message_id", ""))
+            except urllib.error.HTTPError as e:
+                try:
+                    ed = json.loads(e.read().decode())
+                except Exception:
+                    ed = {}
+                desc = ed.get("description", "") or str(e)
+                ra = (ed.get("parameters") or {}).get("retry_after")
+                last_err = "Telegram: %s" % desc
+                if e.code == 429:  # перевищено ліміт частоти — чекаємо і повторюємо
+                    time.sleep(min(int(ra) + 1, 10) if ra else 2); continue
+                if e.code in (500, 502, 503):  # тимчасова помилка Telegram
+                    time.sleep(2); continue
+                raise RuntimeError(last_err)  # 400/403 — постійна (заблокований/невірний chat) — не повторюємо
+            except (urllib.error.URLError, TimeoutError, OSError) as e:  # мережа/таймаут
+                last_err = "Мережа/таймаут: %s" % e
+                time.sleep(2); continue
+        raise RuntimeError(last_err)
 
     def send_media(self, external_chat_id: str, content: bytes, filename: str, kind: str) -> str:
         token = self.config.get("bot_token")
