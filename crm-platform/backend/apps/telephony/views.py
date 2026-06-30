@@ -3,6 +3,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from apps.crm.models import Contact
@@ -289,4 +290,34 @@ class TranscribeView(APIView):
                         _XP.objects.filter(ref_type="analysis", ref_id=str(_da.pk)).update(created_at=call.started_at)
             except Exception:
                 pass
+        return Response({"ok": True})
+
+
+class PhoneLineView(APIView):
+    """Баланс ліній дзвінків. GET — усі бачать; PATCH (оновити баланс) — адмін."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .models import PhoneLine
+        return Response([{"id": l.id, "internal": l.internal, "name": l.name, "number": l.number,
+                          "balance": float(l.balance), "balance_at": l.balance_at, "low_threshold": float(l.low_threshold),
+                          "low": float(l.balance) < float(l.low_threshold), "note": l.note}
+                         for l in PhoneLine.objects.all().order_by("internal")])
+
+    def patch(self, request):
+        u = request.user
+        if not (u.is_superuser or (hasattr(u, "has_perm_code") and u.has_perm_code("roles.manage"))):
+            return Response({"detail": "Оновити баланс може лише адмін"}, status=status.HTTP_403_FORBIDDEN)
+        from .models import PhoneLine
+        from django.utils import timezone
+        l = PhoneLine.objects.filter(id=request.data.get("id")).first()
+        if not l:
+            return Response({"detail": "Лінія не знайдена"}, status=404)
+        if "balance" in request.data:
+            l.balance = request.data["balance"]; l.balance_at = timezone.now()
+        if "low_threshold" in request.data:
+            l.low_threshold = request.data["low_threshold"]
+        if "note" in request.data:
+            l.note = request.data["note"][:200]
+        l.save()
         return Response({"ok": True})

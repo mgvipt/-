@@ -68,6 +68,7 @@ urlpatterns = [
     path("api/gamification/manager/<int:pk>/", gam_views.ManagerView.as_view()),
     path("api/inbox/ping/", inbox_views.InboxPingView.as_view()),
     path("api/inbox/tg-file/<int:message_id>/<int:idx>/", inbox_views.TgFileView.as_view()),
+    path("api/telephony/lines/", tel_views.PhoneLineView.as_view()),
     path("api/f/<str:token>/", inbox_views.SharedFileView.as_view()),
     path("api/contact-form-config/", crm_views.ContactFormConfigView.as_view()),
     path("api/inbox/notifications/", inbox_views.NotificationsView.as_view()),

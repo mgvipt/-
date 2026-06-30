@@ -50,3 +50,15 @@ class RingingCall(models.Model):
     contact = models.ForeignKey("crm.Contact", null=True, blank=True, on_delete=models.SET_NULL)
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+
+class PhoneLine(models.Model):
+    """Лінія дзвінків (SIM): баланс для контролю оплати. Баланс вводиться вручну (перевірка *111# на телефоні)."""
+    internal = models.CharField(max_length=10, unique=True, help_text="Внутрішній номер АТС: 789/788")
+    name = models.CharField(max_length=60)
+    number = models.CharField(max_length=30)
+    balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    balance_at = models.DateTimeField(null=True, blank=True)
+    low_threshold = models.DecimalField(max_digits=10, decimal_places=2, default=50)
+    note = models.CharField(max_length=200, blank=True)

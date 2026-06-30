@@ -2,6 +2,7 @@
  * Дві окремі картки: ВХІДНІ та ВИХІДНІ. Дзвінки тягнуться з нашого SIP-шлюзу. */
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../auth";
 import { api, Paginated } from "../api";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
@@ -19,6 +20,37 @@ function dur(s: number) { return s ? `${Math.floor(s / 60)}:${String(s % 60).pad
 function when(c: Call) {
   const d = c.started_at || c.created_at;
   return d ? new Date(d).toLocaleString("uk", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+}
+
+function LineBalances({ t }: any) {
+  const [lines, setLines] = useState<any[]>([]);
+  const { can } = useAuth();
+  function load() { api.get<any>("/api/telephony/lines/").then(setLines).catch(() => {}); }
+  useEffect(() => { load(); }, []);
+  async function setBal(l: any) {
+    const v = prompt(t("Текущий баланс линии «", "Поточний баланс лінії «") + l.name + "», грн:", String(l.balance));
+    if (v == null) return;
+    try { await api.patch("/api/telephony/lines/", { id: l.id, balance: Number(v.replace(",", ".")) }); load(); }
+    catch { alert(t("Баланс может вписывать только администратор", "Баланс може вписувати лише адміністратор")); }
+  }
+  if (!lines.length) return null;
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div className="label" style={{ marginBottom: 6 }}>{t("Баланс линий (для контроля оплаты)", "Баланс ліній (для контролю оплати)")}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px,1fr))", gap: 12 }}>
+        {lines.map((l: any) => (
+          <div key={l.id} className="panel" style={{ margin: 0, borderLeft: "4px solid " + (l.low ? "#dc2626" : "#16a34a") }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Icon n="📡" size={15} /><b>{l.name}</b><span className="muted" style={{ fontSize: 12 }}>{l.number}</span></div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: l.low ? "#dc2626" : "#0f172a", marginTop: 4 }}>{Number(l.balance).toFixed(2)} ₴</div>
+            {l.low && <div style={{ color: "#dc2626", fontSize: 12, fontWeight: 600 }}>⚠ {t("Мало — пополни!", "Мало — поповни!")}</div>}
+            <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{l.balance_at ? t("Обновлено: ", "Оновлено: ") + new Date(l.balance_at).toLocaleString("ru-RU") : t("Баланс ещё не вносили", "Баланс ще не вносили")}</div>
+            {can && can("roles.manage") && <button className="btn btn-light" style={{ fontSize: 12, marginTop: 6, padding: "3px 10px" }} onClick={() => setBal(l)}>✎ {t("Вписать баланс", "Вписати баланс")}</button>}
+          </div>
+        ))}
+      </div>
+      <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{t("Баланс вводится вручную: проверь на телефоне (Киевстар *111#, Vodafone *101#, lifecell *111#) и впиши сюда. Красный = пора пополнить.", "Баланс вводиться вручну: перевір на телефоні (Київстар *111#, Vodafone *101#, lifecell *111#) і впиши сюди. Червоний = час поповнити.")}</div>
+    </div>
+  );
 }
 
 export default function Phone() {
@@ -120,6 +152,8 @@ export default function Phone() {
           ))}
         </div>
       )}
+
+      <LineBalances t={t} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px,1fr))", gap: 14, alignItems: "start" }}>
         <Column title={t("Входящие","Вхідні")} icon="📥" color="#16a34a" list={incoming} />
