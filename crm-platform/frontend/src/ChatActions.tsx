@@ -8,7 +8,7 @@ import { Icon } from "./Icon";
 export default function ChatActions({ convId, onClosed, onChanged }: { convId: number; onClosed?: () => void; onChanged?: (c: any) => void }) {
   const [emps, setEmps] = useState<{ id: number; full_name: string }[]>([]);
   const [picker, setPicker] = useState<null | "transfer" | "add">(null);
-  useEffect(() => { api.get<any>("/api/users/?page_size=500").then((d) => setEmps(((d.results || d) as any[]).filter((u) => u.is_active).map((u) => ({ id: u.id, full_name: u.full_name || u.username })))).catch(() => {}); }, []);
+  useEffect(() => { api.get<any>("/api/conversations/staff/").then((d) => setEmps(((d.results || d) as any[]).map((u) => ({ id: u.id, full_name: u.full_name || u.username })))).catch(() => {}); }, []);
   async function take() { try { const c = await api.post<any>(`/api/conversations/${convId}/take/`, {}); onChanged?.(c); } catch { /* ignore */ } }
   async function close() { try { await api.post<any>(`/api/conversations/${convId}/close/`, {}); onClosed?.(); } catch { /* ignore */ } }
   async function pick(uid: number) { try { const c = await api.post<any>(`/api/conversations/${convId}/${picker === "transfer" ? "assign" : "add_member"}/`, { user_id: uid }); onChanged?.(c); } catch { /* ignore */ } setPicker(null); }

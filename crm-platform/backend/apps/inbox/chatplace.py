@@ -123,6 +123,11 @@ def sync_chats(max_chats=40, per_chat=40):
             continue
         conv = (Conversation.objects.filter(channel=ch, external_chat_id=str(cid), status="open")
                 .order_by("-created_at").first())
+        was_closed = False
+        if conv is None:
+            conv = (Conversation.objects.filter(channel=ch, external_chat_id=str(cid), status="closed")
+                    .order_by("-created_at").first())
+            was_closed = conv is not None
         created = conv is None
         if created:
             conv = Conversation.objects.create(channel=ch, external_chat_id=str(cid), title=name[:160])
@@ -135,7 +140,7 @@ def sync_chats(max_chats=40, per_chat=40):
             if existing:
                 conv.contact = existing
             elif name.startswith("@"):
-                conv.contact = Contact.objects.create(first_name=nm[:120], channels=["instagram"],
+                conv.contact = Contact.objects.create(first_name=nm[:120], nickname=name[:150], channels=["instagram"],
                                                       social_link=link, comment="З ChatPlace IG")
             else:
                 # БЕЗ матчингу по голому імені (зливав різних клієнтів в один контакт).
@@ -143,7 +148,7 @@ def sync_chats(max_chats=40, per_chat=40):
                 parts = name.split(" ", 1)
                 conv.contact = Contact.objects.create(first_name=parts[0][:120],
                                                       last_name=(parts[1] if len(parts) > 1 else "")[:120],
-                                                      channels=["instagram"], comment="З ChatPlace IG")
+                                                      nickname=name[:150], channels=["instagram"], comment="З ChatPlace IG")
             conv.save(update_fields=["contact"])
             # посилання на IG-акаунт (username з chats_get)
             try:
@@ -160,10 +165,8 @@ def sync_chats(max_chats=40, per_chat=40):
                 f = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
                 st = f.stages.order_by("order").first() if f else None
                 if f and st:
-                    from apps.crm.lead_routing import next_lead_owner
-                    Lead.objects.create(title=(name or "Instagram")[:255], contact=conv.contact,
-                                        funnel=f, stage=st, source="instagram", is_seen=False,
-                                        owner=next_lead_owner())
+                    from apps.crm.lead_routing import make_lead_for_contact
+                    make_lead_for_contact(conv.contact, f, "instagram")
             except Exception:
                 pass
         chad_in = chad_out = False
@@ -191,6 +194,18 @@ def sync_chats(max_chats=40, per_chat=40):
                     chad_out = True
         except Exception as e:
             errors.append(str(cid))
+        if was_closed:
+            if chad_in:
+                conv.status = "open"; conv.assigned_to = None
+                conv.save(update_fields=["status", "assigned_to"])  # клієнт написав → відкрити у вільний пул
+                try:  # клієнт повернувся → новий лід з перенесеним контекстом + стартом зі стадії відвалу
+                    from apps.crm.lead_routing import make_lead_for_contact
+                    _lf = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
+                    if _lf and conv.contact_id:
+                        make_lead_for_contact(conv.contact, _lf, "instagram")
+                except Exception:
+                    pass
+            # інакше лишаємо закритим — у списку не зʼявиться (status-фільтр)
         if conv.contact_id:
             try:
                 from apps.crm.automation import on_incoming, on_outgoing

@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
-from apps.crm.models import Lead, AgentConfig, AgentRun, Task
+from apps.crm.models import Lead, Deal, AgentConfig, AgentRun, Task
 from apps.inbox.models import Conversation
 from apps.crm.agent import run_agent
 
@@ -45,4 +45,24 @@ class Command(BaseCommand):
                     done += 1
                 except Exception as e:
                     self.stderr.write(str(e)[:100])
+        from apps.inbox.models import Conversation as _Cv
+        deals = (Deal.objects.filter(funnel__name__icontains="\u0422\u0435\u0441\u0442\u043e\u0432\u0438\u0439 \u043d\u0430\u0431\u0456\u0440", closed_at__isnull=True)
+                 .exclude(stage__is_lost=True).exclude(stage__is_won=True).select_related("stage", "funnel", "contact"))
+        for deal in deals:
+            if done >= cap:
+                break
+            if not deal.contact_id:
+                continue
+            dconv = _Cv.objects.filter(contact_id=deal.contact_id).order_by("-last_message_at").first()
+            if not dconv or not dconv.last_message_at:
+                continue
+            if (now - dconv.last_message_at) > timedelta(days=2):
+                continue
+            dlast = AgentRun.objects.filter(deal=deal).order_by("-created_at").first()
+            if dlast and dlast.created_at >= dconv.last_message_at:
+                continue
+            try:
+                run_agent(deal, "deal", trigger="sweep", user=None); done += 1
+            except Exception as e:
+                self.stderr.write(str(e)[:100])
         self.stdout.write("agent sweep: processed=%d" % done)

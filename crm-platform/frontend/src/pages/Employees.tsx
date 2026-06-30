@@ -47,6 +47,17 @@ export default function Employees() {
   async function renameDept(d: Dept) { const name = prompt(t("Новое название", "Нова назва"), d.name); if (!name) return; await api.patch(`/api/departments/${d.id}/`, { name }); load(); }
   async function delDept(d: Dept) { if (!confirm(t(`Удалить отдел «${d.name}»?`, `Видалити відділ «${d.name}»?`))) return; await api.del(`/api/departments/${d.id}/`); load(); }
   async function moveEmp(empId: number, deptId: number | null) { await api.patch(`/api/users/${empId}/`, { department: deptId }); flash(t("Перемещено", "Переміщено")); load(); }
+  async function dismissEmp(e: Emp) {
+    if (!confirm(t(
+      `Уволить «${e.full_name}»?\n\nАккаунт деактивируется (НЕ удаляется), доступ пропадёт. Его клиенты / лиды / сделки / чаты / задачи автоматически перейдут другим сотрудникам.`,
+      `Звільнити «${e.full_name}»?\n\nАкаунт деактивується (НЕ видаляється), доступ зникне. Його клієнти / ліди / сделки / чати / задачі автоматично перейдуть іншим співробітникам.`))) return;
+    try {
+      const r = await api.post<any>(`/api/users/${e.id}/dismiss/`, {});
+      const m = r.moved || {}; const sum = Object.entries(m).map(([k, v]) => `${k}: ${v}`).join(", ");
+      flash(t(`Уволен. Передано (${sum || "ничего"}) → ${(r.to || []).join(", ") || "—"}`, `Звільнено. Передано (${sum || "нічого"}) → ${(r.to || []).join(", ") || "—"}`));
+      load();
+    } catch (err: any) { flash(err?.response?.data?.detail || t("Ошибка", "Помилка")); }
+  }
   async function setParent(childId: number, parentId: number | null) {
     if (childId === parentId) return;
     await api.patch(`/api/departments/${childId}/`, { parent: parentId }); flash(t("Связано", "Звʼязано")); load();
@@ -156,9 +167,9 @@ export default function Employees() {
         )}
 
         {tab === "list" && (
-          <div className="tablewrap"><table>
-            <thead><tr><th>{t("Сотрудник", "Співробітник")}</th><th>{t("Отдел", "Відділ")}</th><th>{t("Роль", "Роль")}</th><th>Email</th></tr></thead>
-            <tbody>{emps.map((e) => <tr key={e.id}><td>{e.full_name}</td><td>{e.department_name || "—"}</td><td>{e.role_name || "—"}</td><td className="muted">{e.email || "—"}</td></tr>)}</tbody>
+          <div className="tablewrap" style={{ maxHeight: "calc(100vh - 240px)", overflowY: "auto" }}><table>
+            <thead><tr><th>{t("Сотрудник", "Співробітник")}</th><th>{t("Отдел", "Відділ")}</th><th>{t("Роль", "Роль")}</th><th>Email</th><th>{t("Действие", "Дія")}</th></tr></thead>
+            <tbody>{emps.map((e) => <tr key={e.id}><td>{e.full_name}</td><td>{e.department_name || "—"}</td><td>{e.role_name || "—"}</td><td className="muted">{e.email || "—"}</td><td><button onClick={() => dismissEmp(e)} title={t("Уволить — деактивировать + передать сущности", "Звільнити — деактивувати + передати сутності")} style={{ fontSize: 11.5, padding: "3px 9px", borderRadius: 7, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}><Icon n="🚪" size={13} /> {t("Уволить", "Звільнити")}</button></td></tr>)}</tbody>
           </table></div>
         )}
         {tab === "invites" && <InvitesTab depts={depts} roles={roles} invites={invites} reload={load} t={t} />}

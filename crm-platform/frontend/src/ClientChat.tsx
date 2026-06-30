@@ -23,7 +23,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
   async function loadConv() {
     if (!contact) { setLoaded(true); return; }
     try {
-      const r = await api.get<Paginated<Conversation>>(`/api/conversations/?contact=${contact}`);
+      const r = await api.get<Paginated<Conversation>>(`/api/conversations/by_contact/?contact=${contact}`);
       const c = ((r as any).results || (r as any) || [])[0] || null;
       setConv(c);
       if (c) loadMsgs(c.id);

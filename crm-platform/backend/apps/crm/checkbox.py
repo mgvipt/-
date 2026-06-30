@@ -75,7 +75,7 @@ def ensure_shift(token):
     raise CheckboxError("Зміна Checkbox не перейшла в OPENED за 10с")
 
 
-def create_receipt(goods, amount_kopecks, external_id, payment_method="CASHLESS",
+def create_receipt(goods, amount_kopecks, external_id, payment_method="CASHLESS", payment_label=None,
                    advance=False, client_name=None, relation_id=None, ttn=None):
     """Створити чек. advance=True → аванс-чек (часткова оплата); False → повний sell.
     Якщо relation_id заданий → закриваюче/додаткове по тому ж prepayment-ланцюгу."""
@@ -84,7 +84,7 @@ def create_receipt(goods, amount_kopecks, external_id, payment_method="CASHLESS"
     body = {
         "external_id": external_id,
         "goods": goods,
-        "payments": [{"type": payment_method, "value": amount_kopecks}],
+        "payments": [dict({"type": payment_method, "value": amount_kopecks}, **({"label": payment_label} if payment_label else {}))],
     }
     if client_name:
         body["client_full_name"] = client_name[:120]

@@ -14,15 +14,52 @@ const PAY = ["Повна (LiqPay/Mono)", "Накладений платіж", "�
 const SHIP = ["НП відділення", "НП курʼєр додому", "Самовивіз зі складу", "Власний курʼєр"];
 const CONTACTED = ["Ні — вперше", "Так — був пробник", "Так — дивився раніше"];
 const APPLIER = ["Сам наноситиму", "Потрібен майстер", "Ще не вирішив"];
+const UNDERLAY = ["Без підкладки", "Біла підкладка", "Тонована підкладка"];
 
 const inp: React.CSSProperties = { width: "100%", fontSize: 13, padding: "7px 9px", borderRadius: 8, border: "1px solid #e2e8f0", boxSizing: "border-box", background: "#fff" };
+
+function Field({ label, children }: any) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 11.5, color: "#64748b", marginBottom: 4, fontWeight: 600 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+function Sel({ k, label, opts, q, set }: any) {
+  return (
+    <Field label={label}>
+      <select value={q[k] || ""} onChange={(e: any) => set(k, e.target.value)} style={inp}>
+        <option value="">—</option>
+        {opts.map((o: string) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </Field>
+  );
+}
+function Txt({ k, label, ph, type, q, set }: any) {
+  return (<Field label={label}><input value={q[k] || ""} type={type || "text"} placeholder={ph} onChange={(e: any) => set(k, e.target.value)} style={inp} /></Field>);
+}
+function Block({ title, children }: any) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", margin: "0 0 8px", paddingBottom: 4, borderBottom: "2px solid #eef2f7" }}>{title}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>{children}</div>
+    </div>
+  );
+}
 
 export default function NeedsForm({ leadId, initial, endpoint = "/api/leads/" }: { leadId: number; initial?: any; endpoint?: string }) {
   const { t } = useLang();
   const [q, setQ] = useState<any>(initial || {});
+  const [mats, setMats] = useState<string[]>(MATS);
+  useEffect(() => { api.get<string[]>("/api/deals/kit_materials/").then((d) => { if (Array.isArray(d) && d.length) setMats([...d, "\u0429\u0435 \u043d\u0435 \u0432\u0438\u0437\u043d\u0430\u0447\u0438\u0432\u0441\u044f"]); }).catch(() => {}); }, []);
   const [saved, setSaved] = useState(true);
   const [busy, setBusy] = useState(false);
   function set(k: string, v: any) { setQ((p: any) => ({ ...p, [k]: v })); setSaved(false); }
+  const kits: any[] = q.kits || [];
+  function setKit(i: number, field: string, v: any) { const a = [...(q.kits || [])]; a[i] = { ...a[i], [field]: v }; set("kits", a); }
+  function addKit() { set("kits", [...(q.kits || []), { material: "", color: "", board: false, tint: false }]); }
+  function removeKit(i: number) { const a = [...(q.kits || [])]; a.splice(i, 1); set("kits", a); }
   // агент/сервер заповнив анкету → підхопити ТІЛЬКИ порожні поля (ручний ввід не чіпаємо)
   useEffect(() => {
     if (!initial) return;
@@ -40,30 +77,6 @@ export default function NeedsForm({ leadId, initial, endpoint = "/api/leads/" }:
     setBusy(false);
   }
 
-  const Field = ({ label, children }: { label: string; children: any }) => (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 11.5, color: "#64748b", marginBottom: 4, fontWeight: 600 }}>{label}</div>
-      {children}
-    </div>
-  );
-  const Sel = ({ k, label, opts }: { k: string; label: string; opts: string[] }) => (
-    <Field label={label}>
-      <select value={q[k] || ""} onChange={(e) => set(k, e.target.value)} style={inp}>
-        <option value="">—</option>
-        {opts.map((o) => <option key={o} value={o}>{o}</option>)}
-      </select>
-    </Field>
-  );
-  const Txt = ({ k, label, ph, type }: { k: string; label: string; ph?: string; type?: string }) => (
-    <Field label={label}><input value={q[k] || ""} type={type || "text"} placeholder={ph} onChange={(e) => set(k, e.target.value)} style={inp} /></Field>
-  );
-  const Block = ({ title, children }: { title: any; children: any }) => (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", margin: "0 0 8px", paddingBottom: 4, borderBottom: "2px solid #eef2f7" }}>{title}</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>{children}</div>
-    </div>
-  );
-
   return (
     <div className="panel">
       <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
@@ -74,25 +87,45 @@ export default function NeedsForm({ leadId, initial, endpoint = "/api/leads/" }:
       </div>
 
       <Block title={<><Icon n="🏠" size={15} /> {t("Объект","Обʼєкт")}</>}>
-        <Sel k="room" label={t("Тип помещения","Тип приміщення")} opts={ROOMS} />
-        <Txt k="area" label={t("Площадь стен, м²","Площа стін, м²")} type="number" ph={t("напр. 20","напр. 20")} />
-        <Sel k="prep" label={t("Подготовка стен","Підготовка стін")} opts={PREP} />
-        <Sel k="term" label={t("Сроки","Терміни")} opts={TERMS} />
-        <Txt k="city" label={t("Город / регион","Місто / регіон")} ph={t("напр. Киев","напр. Київ")} />
+        <Sel q={q} set={set} k="room" label={t("Тип помещения","Тип приміщення")} opts={ROOMS} />
+        <Txt q={q} set={set} k="area" label={t("Площадь стен, м²","Площа стін, м²")} type="number" ph={t("напр. 20","напр. 20")} />
+        <Sel q={q} set={set} k="prep" label={t("Подготовка стен","Підготовка стін")} opts={PREP} />
+        <Sel q={q} set={set} k="term" label={t("Сроки","Терміни")} opts={TERMS} />
+        <Txt q={q} set={set} k="city" label={t("Город / регион","Місто / регіон")} ph={t("напр. Киев","напр. Київ")} />
       </Block>
 
       <Block title={<><Icon n="🎨" size={15} /> {t("Продукт","Продукт")}</>}>
-        <Sel k="material" label={t("Материал","Матеріал")} opts={MATS} />
-        <Txt k="color" label={t("Цвет / тонировка","Колір / тонування")} ph={t("белый / под тон…","білий / під тон…")} />
-        <Sel k="probe" label={t("Пробник или объём","Пробник чи обʼєм")} opts={PROBE} />
-        <Sel k="applier" label={t("Кто наносит","Хто наносить")} opts={APPLIER} />
+        <Sel q={q} set={set} k="material" label={t("Материал","Матеріал")} opts={mats} />
+        <Txt q={q} set={set} k="color" label={t("Цвет / тонировка","Колір / тонування")} ph={t("белый / под тон…","білий / під тон…")} />
+        <Sel q={q} set={set} k="underlay" label={t("Подложка (для бланка выкраски)","Підкладка (для бланка викраски)")} opts={UNDERLAY} />
+        <Sel q={q} set={set} k="probe" label={t("Пробник или объём","Пробник чи обʼєм")} opts={PROBE} />
+        <Sel q={q} set={set} k="applier" label={t("Кто наносит","Хто наносить")} opts={APPLIER} />
+      </Block>
+
+      <Block title={<><Icon n="📋" size={15} /> {t("Тест-наборы для склада","Тест-набори для складу")}</>}>
+        <div style={{ gridColumn: "1 / -1" }}>
+          {kits.map((kit: any, i: number) => (
+            <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <select value={kit.material || ""} onChange={(e) => setKit(i, "material", e.target.value)} style={{ ...inp, flex: "2 1 130px", width: "auto" }}>
+                <option value="">{t("материал…","матеріал…")}</option>
+                {mats.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <input value={kit.color || ""} placeholder={t("цвет 09-15","колір 09-15")} onChange={(e) => setKit(i, "color", e.target.value)} style={{ ...inp, flex: "1 1 90px", width: "auto" }} />
+              <label style={{ fontSize: 11.5, display: "flex", gap: 3, alignItems: "center", whiteSpace: "nowrap" }}><input type="checkbox" checked={!!kit.board} onChange={(e) => setKit(i, "board", e.target.checked)} />{t("дощечка","дощечка")}</label>
+              <label style={{ fontSize: 11.5, display: "flex", gap: 3, alignItems: "center", whiteSpace: "nowrap" }}><input type="checkbox" checked={!!kit.tint} onChange={(e) => setKit(i, "tint", e.target.checked)} />{t("тонировка","тонування")}</label>
+              <button onClick={() => removeKit(i)} title={t("Удалить","Видалити")} style={{ border: "none", background: "#fef2f2", color: "#dc2626", borderRadius: 6, width: 26, height: 26, cursor: "pointer" }}>✕</button>
+            </div>
+          ))}
+          <button onClick={addKit} className="btn btn-light" style={{ fontSize: 12, marginTop: 2 }}>+ {t("Добавить тест-набор","Додати тест-набір")}</button>
+          <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>{t("Несколько наборов → склад получит правильное ТЗ","Декілька наборів → склад отримає правильне ТЗ")}</div>
+        </div>
       </Block>
 
       <Block title={<><Icon n="💳" size={15} /> {t("Финансы · Доставка","Фінанси · Доставка")}</>}>
-        <Txt k="budget" label={t("Бюджет, ₴","Бюджет, ₴")} type="number" ph={t("напр. 5000","напр. 5000")} />
-        <Sel k="pay" label={t("Способ оплаты","Спосіб оплати")} opts={PAY} />
-        <Sel k="ship" label={t("Доставка","Доставка")} opts={SHIP} />
-        <Sel k="contacted" label={t("Контакт ранее","Контакт раніше")} opts={CONTACTED} />
+        <Txt q={q} set={set} k="budget" label={t("Бюджет, ₴","Бюджет, ₴")} type="number" ph={t("напр. 5000","напр. 5000")} />
+        <Sel q={q} set={set} k="pay" label={t("Способ оплаты","Спосіб оплати")} opts={PAY} />
+        <Sel q={q} set={set} k="ship" label={t("Доставка","Доставка")} opts={SHIP} />
+        <Sel q={q} set={set} k="contacted" label={t("Контакт ранее","Контакт раніше")} opts={CONTACTED} />
       </Block>
 
       <Block title={<><Icon n="📝" size={15} /> {t("Дополнительно","Додатково")}</>}>

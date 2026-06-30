@@ -33,6 +33,10 @@ class Conversation(models.Model):
     participants = models.ManyToManyField(
         settings.AUTH_USER_MODEL, blank=True, related_name="participating_conversations")
     unread = models.PositiveIntegerField(default=0)
+    priority = models.CharField(max_length=20, blank=True, default="")
+    priority_reason = models.CharField(max_length=200, blank=True, default="")
+    priority_at = models.DateTimeField(null=True, blank=True)
+    priority_seen_count = models.PositiveIntegerField(default=0)
     last_message_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -45,6 +49,7 @@ class Conversation(models.Model):
 
 class Message(models.Model):
     DIRECTION = [("in", "Входящее"), ("out", "Исходящее")]
+    STATUS = [("sent", "Надіслано"), ("delivered", "Доставлено"), ("failed", "Не доставлено"), ("window_risk", "Вікно закрите — міг не дійти")]
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
     direction = models.CharField(max_length=3, choices=DIRECTION)
     internal = models.BooleanField(default=False, help_text="Внутрішня нотатка — видно лише менеджерам, клієнту НЕ йде")
@@ -55,6 +60,7 @@ class Message(models.Model):
     sender_name = models.CharField(max_length=160, blank=True)
     sender = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="sent_messages")
+    status = models.CharField(max_length=12, choices=STATUS, default="sent", help_text="Статус доставки вихідного")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -62,3 +68,28 @@ class Message(models.Model):
 
     def __str__(self):
         return f"[{self.direction}] {self.text[:40]}"
+
+
+class Notification(models.Model):
+    """Персональне сповіщення співробітнику (напр. «вас додали до чату»)."""
+    KIND = [("added_chat", "Додано до чату"), ("system", "Система")]
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications")
+    kind = models.CharField(max_length=16, choices=KIND, default="system")
+    text = models.CharField(max_length=300)
+    conversation = models.ForeignKey(Conversation, null=True, blank=True, on_delete=models.CASCADE)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+
+class SharedLink(models.Model):
+    """Файл/фото для відправки клієнту ПОСИЛАННЯМ (обхід обмеження IG на медіа)."""
+    token = models.CharField(max_length=48, unique=True, db_index=True)
+    filename = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=120, default="application/octet-stream")
+    data = models.BinaryField()
+    created_at = models.DateTimeField(auto_now_add=True)

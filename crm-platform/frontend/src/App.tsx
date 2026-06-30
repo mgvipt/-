@@ -8,8 +8,11 @@ import LeadCard from "./pages/LeadCard";
 import DealCard from "./pages/DealCard";
 import Roles from "./pages/Roles";
 import Inbox from "./pages/Inbox";
+import Duplicates from "./pages/Duplicates";
+import Razvitok from "./pages/Razvitok";
 import ContactCenter from "./pages/ContactCenter";
 import Warehouse from "./pages/Warehouse";
+import WarehouseWork from "./pages/WarehouseWork";
 import Finance from "./pages/Finance";
 import Clients from "./pages/Clients";
 import ClientCard from "./pages/ClientCard";
@@ -42,8 +45,11 @@ function Shell() {
           <Route path="/contact-center" element={<ContactCenter />} />
           <Route path="/phone" element={<Phone />} />
           <Route path="/warehouse" element={<Warehouse />} />
+          <Route path="/wh" element={<WarehouseWork />} />
           <Route path="/clients" element={<Clients />} />
           <Route path="/clients/:id" element={<ClientCard />} />
+          <Route path="/duplicates" element={<Duplicates />} />
+          <Route path="/development" element={<Razvitok />} />
           <Route path="/finance" element={<Finance />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/analytics" element={<Analytics />} />

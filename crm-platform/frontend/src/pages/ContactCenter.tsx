@@ -23,14 +23,14 @@ interface Channel {
 
 // ─── Каталог каналів (порядок як у Бітриксі) ───────────────────────────────
 const FALLBACK: Channel[] = [
-  { key: "instagram", name: "Instagram", sub: "Direct + Коментарі", icon: "📸", color: "#E1306C", status: "connected", via: "ChatPlace" },
-  { key: "facebook", name: "Facebook", sub: "Messenger + Коментарі", icon: "f", color: "#1877F2", status: "available" },
-  { key: "telegram_bot", name: "Telegram бот", sub: "Бот для клієнтів", icon: "✈", color: "#229ED9", status: "connected", via: "ChatPlace" },
-  { key: "telegram_phone", name: "Telegram (номер)", sub: "Клієнт пише на ваш номер", icon: "✈", color: "#229ED9", status: "available" },
-  { key: "tiktok", name: "TikTok", sub: "Повідомлення", icon: "🎵", color: "#111827", status: "connected", via: "ChatPlace" },
-  { key: "viber_bot", name: "Viber бот", sub: "Бот для клієнтів", icon: "V", color: "#7360F2", status: "available" },
-  { key: "viber_phone", name: "Viber (номер)", sub: "Клієнт пише на ваш номер", icon: "V", color: "#7360F2", status: "available" },
-  { key: "whatsapp", name: "WhatsApp", sub: "Повідомлення", icon: "W", color: "#25D366", status: "available" },
+  { key: "instagram", name: "Instagram", sub: "Direct + Коментарі", icon: "instagram", color: "#E1306C", status: "connected", via: "ChatPlace" },
+  { key: "facebook", name: "Facebook", sub: "Messenger + Коментарі", icon: "facebook", color: "#1877F2", status: "available" },
+  { key: "telegram_bot", name: "Telegram бот", sub: "Бот для клієнтів", icon: "telegram", color: "#229ED9", status: "connected", via: "ChatPlace" },
+  { key: "telegram_phone", name: "Telegram (номер)", sub: "Клієнт пише на ваш номер", icon: "telegram", color: "#229ED9", status: "available" },
+  { key: "tiktok", name: "TikTok", sub: "Повідомлення", icon: "tiktok", color: "#111827", status: "connected", via: "ChatPlace" },
+  { key: "viber_bot", name: "Viber бот", sub: "Бот для клієнтів", icon: "viber", color: "#7360F2", status: "available" },
+  { key: "viber_phone", name: "Viber (номер)", sub: "Клієнт пише на ваш номер", icon: "viber", color: "#7360F2", status: "available" },
+  { key: "whatsapp", name: "WhatsApp", sub: "Повідомлення", icon: "whatsapp", color: "#25D366", status: "available" },
 ];
 
 // ─── Сторінка ──────────────────────────────────────────────────────────────

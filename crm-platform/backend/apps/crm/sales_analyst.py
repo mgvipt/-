@@ -39,7 +39,9 @@ def analyze_dialog(messages, context="", kind="чат"):
         "}"
     ) % (kind, dialog, context or "—")
     try:
-        r = claude_json(prompt, model="claude-opus-4-8", max_tokens=1600)
+        from apps.crm.models import AgentConfig
+        _am = AgentConfig.get().analyst_model or "claude-sonnet-4-6"
+        r = claude_json(prompt, model=_am, max_tokens=1600)
     except Exception:
         r = claude_json(prompt, model="claude-sonnet-4-6", max_tokens=1400)
     if not isinstance(r, dict):
@@ -48,3 +50,23 @@ def analyze_dialog(messages, context="", kind="чат"):
     r["scores"] = {k: int(sc.get(k) or 0) for k in DIMENSIONS}
     r["overall"] = int(r.get("overall") or (sum(r["scores"].values()) // max(len(r["scores"]), 1)))
     return r
+
+
+def label_speakers(transcript):
+    """Моно-запис дзвінка → розмітка реплік на МЕНЕДЖЕР/КЛІЄНТ за змістом (Claude)."""
+    if not transcript or len(transcript.strip()) < 30:
+        return transcript
+    prompt = (
+        "Це транскрипт телефонного дзвінка менеджера компанії Wallcov (декоративні покриття та фарби для стін) "
+        "з клієнтом. Записано ОДНИМ каналом — спікери не розділені. Розділи текст на репліки за змістом: "
+        "менеджер консультує, називає ціни, пропонує наступний крок; клієнт питає, відповідає, сумнівається. "
+        "Текст реплік НЕ змінюй, лише познач хто говорить.\n"
+        "Поверни СТРОГО JSON українською: {\"dialog\": \"МЕНЕДЖЕР: ...\\nКЛІЄНТ: ...\\nМЕНЕДЖЕР: ...\"}\n\n"
+        "ТРАНСКРИПТ:\n" + transcript[:6000])
+    try:
+        r = claude_json(prompt, model="claude-sonnet-4-6", max_tokens=2200)
+        if isinstance(r, dict) and r.get("dialog"):
+            return r["dialog"][:20000]
+    except Exception:
+        pass
+    return transcript

@@ -25,8 +25,8 @@ class ContactSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Contact
-        fields = ["id", "first_name", "last_name", "display_name", "phone",
-                  "email", "company", "channels", "loyalty_tag", "birthday",
+        fields = ["id", "first_name", "last_name", "middle_name", "nickname", "display_name", "phone",
+                  "email", "social_link", "company", "channels", "loyalty_tag", "birthday",
                   "source", "address", "comment", "owner", "owner_name", "created_at"]
 
     def get_display_name(self, obj):
@@ -115,6 +115,16 @@ class DealDetailSerializer(DealSerializer):
     contact_loyalty = serializers.SerializerMethodField()
     contact_id = serializers.IntegerField(source="contact.id", read_only=True)
     conversation_id = serializers.SerializerMethodField()
+    pay_method = serializers.SerializerMethodField()
+
+    def get_pay_method(self, obj):
+        paid = [p for p in obj.payments.all() if p.is_paid]
+        if paid:
+            return sorted(paid, key=lambda p: -p.id)[0].provider
+        from .models import PayLink
+        if PayLink.objects.filter(deal=obj).exists():
+            return "liqpay"
+        return ""
 
     def get_conversation_id(self, obj):
         if not obj.contact_id:
@@ -126,7 +136,8 @@ class DealDetailSerializer(DealSerializer):
     class Meta(DealSerializer.Meta):
         fields = DealSerializer.Meta.fields + [
             "items", "payments", "paid", "margin", "bonus",
-            "days_in_stage", "contact_loyalty", "contact_id", "conversation_id", "b24_id",
+            "days_in_stage", "contact_loyalty", "contact_id", "conversation_id", "b24_id", "pay_method",
+            "np_data", "np_delivery_date", "ref_photos",
         ]
 
     def get_paid(self, obj):

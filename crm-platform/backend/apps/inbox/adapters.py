@@ -64,6 +64,11 @@ class TelegramAdapter(ChannelAdapter):
         attachments = []
         if "photo" in msg:
             attachments.append({"type": "photo", "file_id": msg["photo"][-1]["file_id"]})
+        if "document" in msg:
+            _doc = msg["document"]
+            attachments.append({"type": "document", "file_id": _doc["file_id"], "name": _doc.get("file_name") or "файл", "mime": _doc.get("mime_type") or "application/octet-stream"})
+        if "video" in msg:
+            attachments.append({"type": "video", "file_id": msg["video"]["file_id"], "mime": "video/mp4"})
         if "voice" in msg:
             attachments.append({"type": "voice", "file_id": msg["voice"]["file_id"],
                                 "duration": msg["voice"].get("duration")})
@@ -134,6 +139,9 @@ class TelegramAdapter(ChannelAdapter):
         boundary = "----wallcovmedia" + str(len(content))
         b = boundary.encode()
         body = b"--" + b + b'\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n' + str(external_chat_id).encode() + b"\r\n"
+        bcid = (self.config.get("business_chats") or {}).get(str(external_chat_id))
+        if bcid:
+            body += b"--" + b + b'\r\nContent-Disposition: form-data; name="business_connection_id"\r\n\r\n' + str(bcid).encode() + b"\r\n"
         body += b"--" + b + b'\r\nContent-Disposition: form-data; name="' + field.encode() + b'"; filename="' + filename.encode() + b'"\r\nContent-Type: application/octet-stream\r\n\r\n' + content + b"\r\n"
         body += b"--" + b + b"--\r\n"
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "multipart/form-data; boundary=" + boundary})

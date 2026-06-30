@@ -16,6 +16,8 @@ class Contact(models.Model):
     """Карточка клиента. Каналы (Instagram/Viber/...) накапливаются по мере общения."""
     first_name = models.CharField(max_length=120, blank=True)
     last_name = models.CharField(max_length=120, blank=True)
+    middle_name = models.CharField(max_length=120, blank=True, default="", help_text="По батькові")
+    nickname = models.CharField(max_length=150, blank=True, default="", help_text="Нік / імʼя з месенджера (оригінал)")
     phone = models.CharField(max_length=32, blank=True, db_index=True)
     email = models.EmailField(blank=True)
     company = models.ForeignKey(Company, null=True, blank=True, on_delete=models.SET_NULL, related_name="contacts")
@@ -120,6 +122,9 @@ class Deal(TimestampedOwned):
     checkbox_url = models.TextField(blank=True, default="", help_text="Фіскальна ссылка на чек")
     checkbox_receipt_id = models.CharField(max_length=64, blank=True, default="")
     checkbox_relation_id = models.CharField(max_length=64, blank=True, default="", help_text="pre_payment_relation_id для звʼязку аванс→фінал")
+    np_data = models.JSONField(default=dict, blank=True, help_text="Повна форма Доставка НП")
+    np_delivery_date = models.DateField(null=True, blank=True, help_text="Бажана дата доставки")
+    ref_photos = models.JSONField(default=list, blank=True, help_text="Скріни/фото від клієнта (data-URL) — показуються складу")
     closed_at = models.DateTimeField(null=True, blank=True)
     stage_changed_at = models.DateTimeField(null=True, blank=True, help_text="Коли востаннє змінилась стадія (для днів на стадії)")
     is_seen = models.BooleanField(default=True, help_text="Бейдж непереглянуто: False=клієнт написав і не відповіли, True=відповіли")
@@ -297,6 +302,12 @@ class AgentConfig(models.Model):
     autonomous = models.BooleanField(default=True, help_text="True=агент сам виконує дії; False=пропонує")
     auto_on_reply = models.BooleanField(default=True, help_text="Запускати агента на кожну відповідь клієнта")
     model = models.CharField(max_length=40, default="claude-sonnet-4-6")
+    priority_enabled = models.BooleanField(default=True, help_text="ИИ-РОП авто-приоритет чатов (крон 5хв)")
+    priority_model = models.CharField(max_length=40, default="claude-haiku-4-5")
+    analyst_model = models.CharField(max_length=40, default="claude-sonnet-4-6")
+    suggest_model = models.CharField(max_length=40, default="claude-sonnet-4-6")
+    cache_enabled = models.BooleanField(default=True, help_text="Prompt caching — економія на повторному контексті")
+    analyst_auto = models.BooleanField(default=False, help_text="Коуч-аналіз САМ при відкритті картки (Opus). False = тільки по кнопці")
     system_extra = models.TextField(blank=True, help_text="Додаткова інструкція агенту")
 
     @classmethod

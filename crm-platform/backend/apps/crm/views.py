@@ -2,7 +2,7 @@ from decimal import Decimal
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import BasePermission, SAFE_METHODS, AllowAny
+from rest_framework.permissions import BasePermission, SAFE_METHODS, AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 from apps.common.permissions import HasPermCode
 from django.http import HttpResponseRedirect, HttpResponseNotFound
@@ -68,6 +68,31 @@ class ContactViewSet(viewsets.ModelViewSet):
 
     def get_serializer_class(self):
         return ContactDetailSerializer if self.action == "retrieve" else ContactSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("contact.delete")):
+            return Response({"detail": "Немає прав видаляти клієнтів. Зверніться до керівника."}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"])
+    def reset(self, request, pk=None):
+        """ТЕСТ: повністю стерти дані клієнта (ліди/сделки/чати/повідомлення + контакт) — зайде як новий. Лише адмін."""
+        u = request.user
+        if not (u.is_superuser or (hasattr(u, "has_perm_code") and u.has_perm_code("roles.manage"))):
+            return Response({"detail": "Скидати клієнта може лише адмін"}, status=status.HTTP_403_FORBIDDEN)
+        contact = self.get_object()
+        from apps.crm.models import Lead, Deal
+        from apps.inbox.models import Conversation
+        cnt = {"deals": Deal.objects.filter(contact=contact).count(),
+               "leads": Lead.objects.filter(contact=contact).count(),
+               "conversations": Conversation.objects.filter(contact=contact).count()}
+        Deal.objects.filter(contact=contact).delete()
+        Lead.objects.filter(contact=contact).delete()
+        Conversation.objects.filter(contact=contact).delete()
+        cid = contact.id
+        contact.delete()
+        return Response({"ok": True, "deleted": cnt, "contact": cid})
 
 
 class CompanyViewSet(viewsets.ModelViewSet):
@@ -150,6 +175,24 @@ def _save_funnel_stages(funnel, items):
 class ActivityLogMixin:
     """Логує зміни стадії/відповідального + авто-призначення при взятті в роботу."""
     log_kind = "lead"
+    delete_perm = None   # право для видалення (lead.delete / deal.delete)
+    edit_perm = None     # право редагувати ЧУЖІ (lead.edit.all / deal.edit.all)
+
+    def _can_edit(self, obj):
+        u = self.request.user
+        if u.is_superuser:
+            return True
+        if self.edit_perm and u.has_perm_code(self.edit_perm):
+            return True
+        return obj.owner_id in (None, u.id)  # свою або ще нічию (взяти в роботу) — можна
+
+    def destroy(self, request, *args, **kwargs):
+        u = request.user
+        if not (u.is_superuser or (self.delete_perm and u.has_perm_code(self.delete_perm))):
+            from rest_framework.response import Response as _R
+            from rest_framework import status as _st
+            return _R({"detail": "Немає прав видаляти. Зверніться до керівника."}, status=_st.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         obj = serializer.save()
@@ -169,6 +212,10 @@ class ActivityLogMixin:
     def update(self, request, *args, **kwargs):
         from .models import log_activity
         obj = self.get_object()
+        if not self._can_edit(obj):
+            from rest_framework.response import Response as _Re
+            from rest_framework import status as _ste
+            return _Re({"detail": "Немає прав редагувати цю картку (лише свою або з правом «редагувати всі»)."}, status=_ste.HTTP_403_FORBIDDEN)
         old_owner, old_stage = obj.owner_id, obj.stage_id
         old_stage_name = obj.stage.name if obj.stage_id else ""
         old_funnel = obj.funnel_id
@@ -191,6 +238,12 @@ class ActivityLogMixin:
         auto = False
         if obj.stage_id != old_stage:
             log_activity(self.log_kind, obj.id, "Зміна стадії", f"{old_stage_name} → {obj.stage.name}", request.user, actor)
+            if self.log_kind == "deal" and obj.stage and "оплату отримано" in (obj.stage.name or "").lower():
+                try:
+                    from apps.warehouse.services import create_warehouse_job
+                    create_warehouse_job(obj)
+                except Exception:
+                    pass
             if hasattr(obj, "stage_changed_at"):
                 from django.utils import timezone as _tzs
                 obj.stage_changed_at = _tzs.now(); obj.save(update_fields=["stage_changed_at"])
@@ -237,6 +290,8 @@ class LeadViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     queryset = Lead.objects.select_related("owner", "contact", "funnel", "stage")
     serializer_class = LeadSerializer
     view_all_method = "can_see_all_leads"
+    delete_perm = "lead.delete"
+    edit_perm = "lead.edit.all"
 
     @action(detail=True, methods=["post"])
     def convert(self, request, pk=None):
@@ -308,6 +363,83 @@ def _normalize_phone(raw):
     return d
 
 
+def _find_product(name):
+    from apps.warehouse.models import Product
+    q = (name or "").strip()
+    if not q:
+        return None
+    p = Product.objects.filter(is_active=True, name__iexact=q).first()
+    if not p:
+        p = Product.objects.filter(is_active=True, name__icontains=q[:30]).first()
+    return p
+
+
+def make_offer(deal, items_spec, user=None, send_pay=True):
+    """АВТО-оффер тест-набору: товари з номенклатури -> прорахунок + LiqPay -> стадії «Розрахунок здійснено» → «Домовились про оплату»."""
+    from django.conf import settings as _s
+    from apps.inbox.models import Conversation
+    from apps.inbox.services import send_message
+    from .models import DealItem, log_activity, PayLink
+    from .liqpay import build_checkout_url
+    if deal.items.exists():
+        return {"ok": False, "msg": "товари вже є — оффер не повторюємо"}
+    if deal.stage_id and deal.stage.order >= 2:
+        return {"ok": False, "msg": "сделка вже на оплаті/далі"}
+    added, missing = [], []
+    for spec in (items_spec or []):
+        prod = _find_product((spec or {}).get("name"))
+        if not prod:
+            missing.append((spec or {}).get("name")); continue
+        qty = Decimal(str((spec or {}).get("qty") or 1))
+        DealItem.objects.create(deal=deal, product=prod, quantity=qty, price=prod.price)
+        added.append("%s x %s" % (prod.name[:40], qty))
+    if not added:
+        return {"ok": False, "missing": missing, "msg": "товар не знайдено в номенклатурі"}
+    items = list(deal.items.all())
+    total = sum((i.total for i in items), Decimal("0"))
+    deal.amount = total
+    deal.save(update_fields=["amount"])
+    conv = Conversation.objects.filter(contact_id=deal.contact_id, status="open").order_by("-last_message_at").first() if deal.contact_id else None
+
+    def _g(x):
+        return ("%g" % float(x))
+
+    lines = ["\u2022 %s \u2014 %s \u00d7 %s \u0433\u0440\u043d = %s \u0433\u0440\u043d" % (i.product.name[:55], _g(i.quantity), _g(i.price), _g(i.total)) for i in items]
+    quote = "\U0001f9fe \u0412\u0430\u0448 \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a:\n" + "\n".join(lines) + ("\n\n\u0420\u0430\u0437\u043e\u043c \u0434\u043e \u0441\u043f\u043b\u0430\u0442\u0438: %s \u0433\u0440\u043d" % _g(total))
+    text_quote = "\u041f\u0456\u0434\u0433\u043e\u0442\u0443\u0432\u0430\u043b\u0438 \u0434\u043b\u044f \u0432\u0430\u0441 \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a \U0001f60a\n\n" + quote
+    sent_q = False
+    if conv:
+        try:
+            send_message(conv, text_quote, user=user); sent_q = True
+        except Exception:
+            pass
+    _advance_deal_stage(deal, 1, "\u0430\u0432\u0442\u043e: \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a")
+    log_activity("deal", deal.id, "AI: \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a", "%s \u0433\u0440\u043d; %s" % (total, "; ".join(added)), user, "AI-\u0430\u0433\u0435\u043d\u0442")
+    sent_p = False
+    url = ""
+    if send_pay and total > 0:
+        pub = getattr(_s, "LIQPAY_PUBLIC_KEY", "")
+        prv = getattr(_s, "LIQPAY_PRIVATE_KEY", "")
+        if pub and prv:
+            order_id = "WCCRM-%s-%s" % (deal.id, str(deal.id * 7919 + int(total))[-6:])
+            base = "https://crm.wallcovdec.com.ua"
+            full = build_checkout_url(pub, prv, total, order_id, "Wallcov #%s" % deal.id, server_url=base + "/api/crm/liqpay/callback/", result_url=base, paytypes="card,apay,gpay,privat24")
+            code = _short_code()
+            while PayLink.objects.filter(code=code).exists():
+                code = _short_code()
+            PayLink.objects.create(code=code, deal=deal, target=full)
+            url = "%s/p/%s/" % (base, code)
+            paytext = "\U0001f4b3 \u041e\u043f\u043b\u0430\u0442\u0438\u0442\u0438 \u043e\u043d\u043b\u0430\u0439\u043d \U0001f449 %s\n\u0421\u0443\u043c\u0430: %s \u0433\u0440\u043d" % (url, _g(total))
+            if conv:
+                try:
+                    send_message(conv, paytext, user=user); sent_p = True
+                except Exception:
+                    pass
+            _advance_deal_stage(deal, 2, "\u0430\u0432\u0442\u043e: \u043f\u043e\u0441\u0438\u043b\u0430\u043d\u043d\u044f \u043d\u0430 \u043e\u043f\u043b\u0430\u0442\u0443")
+            log_activity("deal", deal.id, "AI: \u043e\u043f\u043b\u0430\u0442\u0430", "%s \u0433\u0440\u043d; %s" % (total, url), user, "AI-\u0430\u0433\u0435\u043d\u0442")
+    return {"ok": True, "added": added, "missing": missing, "amount": str(total), "sent_quote": sent_q, "sent_pay": sent_p, "url": url}
+
+
 def _issue_checkbox_for_deal(deal, user=None):
     """Авто-чек Checkbox для найстаршого оплаченого платежу БЕЗ чека.
     Податковий ланцюг: аванс → (дод. аванс) → фінал (sell) через pre_payment_relation_id.
@@ -340,13 +472,14 @@ def _issue_checkbox_for_deal(deal, user=None):
     if this_kop <= 0:
         return None
     pm = "CASH" if pay.provider in ("cash", "np") else "CASHLESS"
+    pay_label = {"liqpay": "\u0406\u043d\u0442\u0435\u0440\u043d\u0435\u0442 \u0435\u043a\u0432\u0430\u0439\u0440\u0438\u043d\u0433", "terminal": "\u041a\u0430\u0440\u0442\u043a\u0430", "card": "\u041a\u0430\u0440\u0442\u043a\u0430"}.get(pay.provider)
     relation = deal.checkbox_relation_id or None
     closes = cum_kop >= goods_total
     ext = "WCCRM-%s-P%s" % (deal.id, pay.id)
     client_name = getattr(deal.contact, "name", None) if deal.contact_id else None
     ttn = (deal.ttn or None) if closes else None
     try:
-        r = cb.create_receipt(goods, this_kop, ext, payment_method=pm,
+        r = cb.create_receipt(goods, this_kop, ext, payment_method=pm, payment_label=pay_label,
                               advance=(not closes), relation_id=relation,
                               client_name=client_name, ttn=ttn)
     except cb.CheckboxError as e:
@@ -410,6 +543,9 @@ def _run_sales_analysis(entity, field, user=None, refresh=False):
         last = DialogAnalysis.objects.filter(**{field: entity}).first()
         if last:
             return _ser_analysis(last)
+        from .models import AgentConfig
+        if not AgentConfig.get().analyst_auto:
+            return {"empty": True, "why_not_selling": "Натисніть «Оцінити якість діалогу» для розбору."}
     conv = None
     if entity.contact_id:
         conv = Conversation.objects.filter(contact_id=entity.contact_id).order_by("-last_message_at").first()
@@ -449,7 +585,13 @@ def _advance_deal_stage(deal, target_order, reason, actor="Автоматиза�
     if (getattr(target, "is_won", False) or getattr(target, "is_lost", False)) and not deal.closed_at:
         deal.closed_at = _tz.now(); flds.append("closed_at")
     deal.save(update_fields=flds)
-    log_activity("deal", deal.id, "Авто-стадія", "%s → %s (%s)" % (old, target.name, reason), None, actor)
+    log_activity("deal", deal.id, "\u0410\u0432\u0442\u043e-\u0441\u0442\u0430\u0434\u0456\u044f", "%s \u2192 %s (%s)" % (old, target.name, reason), None, actor)
+    if "\u043e\u043f\u043b\u0430\u0442\u0443 \u043e\u0442\u0440\u0438\u043c\u0430\u043d\u043e" in (target.name or "").lower():
+        try:
+            from apps.warehouse.services import create_warehouse_job
+            create_warehouse_job(deal)
+        except Exception:
+            pass
     return True
 
 
@@ -458,13 +600,32 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     queryset = Deal.objects.select_related("owner", "contact", "funnel", "stage")
     serializer_class = DealSerializer
     view_all_method = "can_see_all_deals"
+    delete_perm = "deal.delete"
+    edit_perm = "deal.edit.all"
+
+    def get_object(self):
+        # Стандартний scope (власник/«всі»). Якщо не знайдено — дозволити СКЛАДУ доступ
+        # до сделки, у якої є складська задача (щоб заповнити Нову Пошту / ТТН).
+        obj = self.get_queryset().filter(pk=self.kwargs.get("pk")).first()
+        if obj is None:
+            u = self.request.user
+            if hasattr(u, "has_perm_code") and u.has_perm_code("warehouse.view"):
+                from apps.warehouse.models import WarehouseJob
+                pk = self.kwargs.get("pk")
+                if WarehouseJob.objects.filter(deal_id=pk).exists():
+                    obj = Deal.objects.filter(pk=pk).first()
+        if obj is None:
+            from rest_framework.exceptions import NotFound
+            raise NotFound()
+        self.check_object_permissions(self.request, obj)
+        return obj
     filterset_fields = ["funnel", "stage", "source", "owner", "contact"]
     search_fields = ["title", "contact__phone", "contact__first_name", "contact__last_name"]
     ordering_fields = ["amount", "created_at", "updated_at", "closed_at"]
 
     def get_serializer_class(self):
         # в карточке (retrieve) отдаём расширенные данные: товары, оплаты
-        if self.action == "retrieve":
+        if self.action in ("retrieve", "update", "partial_update"):
             return DealDetailSerializer
         return DealSerializer
 
@@ -567,16 +728,66 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 else:
                     _advance_deal_stage(dlock, 2, "часткова оплата (тип Повна — чекаємо решту)")
             deal = dlock
-        # авто-чек Checkbox поза транзакцією (зовнішній API); помилку НЕ глушимо мовчки
+        # авто-чек Checkbox поза транзакцією; для «термінал» чек б'є застосунок Checkbox (Tap to Pay) — НЕ дублюємо
         cbres = None
-        try:
-            cbres = _issue_checkbox_for_deal(deal, user=getattr(request, "user", None))
-        except Exception as _e:
-            cbres = {"error": str(_e)}
+        if provider != "terminal":
+            try:
+                cbres = _issue_checkbox_for_deal(deal, user=getattr(request, "user", None))
+            except Exception as _e:
+                cbres = {"error": str(_e)}
         resp = DealDetailSerializer(deal, context={"request": request}).data
         if cbres and cbres.get("error"):
             resp = dict(resp); resp["checkbox_error"] = cbres["error"]
         return Response(resp)
+
+    @action(detail=True, methods=["post"])
+    def send_quote(self, request, pk=None):
+        """Надіслати клієнту прорахунок (КП) з позицій сделки ТЕКСТОМ (поки немає Meta-реєстрації — без PDF)
+        + оновити суму + стадія «Розрахунок здійснено (КП)». Далі менеджер/агент шле LiqPay (send_pay_link)."""
+        from .models import log_activity
+        from apps.inbox.models import Conversation
+        from apps.inbox.services import send_message
+        deal = self.get_object()
+        items = list(deal.items.all())
+        if not items:
+            return Response({"detail": "У сделці немає товарних позицій — спершу додай товари з номенклатури."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        total = sum((i.total for i in items), Decimal("0"))
+        if deal.amount != total:
+            deal.amount = total
+            deal.save(update_fields=["amount"])
+        def _g(x):
+            return ("%g" % float(x))
+        lines = ["\u2022 %s \u2014 %s \u00d7 %s \u0433\u0440\u043d = %s \u0433\u0440\u043d" % (i.product.name[:55], _g(i.quantity), _g(i.price), _g(i.total)) for i in items]
+        quote = "\U0001f9fe \u0412\u0430\u0448 \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a:\n" + "\n".join(lines) + ("\n\n\u0420\u0430\u0437\u043e\u043c \u0434\u043e \u0441\u043f\u043b\u0430\u0442\u0438: %s \u0433\u0440\u043d" % _g(total))
+        intro = "\u041f\u0456\u0434\u0433\u043e\u0442\u0443\u0432\u0430\u043b\u0438 \u0434\u043b\u044f \u0432\u0430\u0441 \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a \U0001f60a"
+        try:
+            from .ai import claude_json
+            conv0 = Conversation.objects.filter(contact_id=deal.contact_id).order_by("-last_message_at").first() if deal.contact_id else None
+            dlg = ""
+            if conv0:
+                dmsgs = list(conv0.messages.order_by("id").values("direction", "text"))[-12:]
+                dlg = "\n".join((("\u041a\u043b\u0456\u0454\u043d\u0442: " if m["direction"] == "in" else "\u041c\u0438: ") + (m["text"] or "")) for m in dmsgs if m.get("text"))
+            nm = ", ".join(i.product.name[:40] for i in items[:3])
+            pr = ("\u0422\u0438 \u0420\u041e\u041f Wallcov. \u041d\u0430\u043f\u0438\u0448\u0438 \u041a\u041e\u0420\u041e\u0422\u041a\u0415 (1-2 \u0440\u0435\u0447\u0435\u043d\u043d\u044f) \u0442\u0435\u043f\u043b\u0435 \u0456\u043d\u0442\u0440\u043e \u043f\u0435\u0440\u0435\u0434 \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043a\u043e\u043c. "
+                  "\u0411\u0415\u0417 \u0446\u0456\u043d \u0456 \u0411\u0415\u0417 \u0441\u043f\u0438\u0441\u043a\u0443 (\u044f \u0434\u043e\u0434\u0430\u043c \u0441\u0430\u043c). \u0417\u0410\u0412\u0416\u0414\u0418 \u0443\u043a\u0440\u0430\u0457\u043d\u0441\u044c\u043a\u043e\u044e. JSON {\"message\":\"...\"}.\n\u0422\u043e\u0432\u0430\u0440\u0438: %s\n\u0414\u0456\u0430\u043b\u043e\u0433:\n%s") % (nm, dlg or "()")
+            r = claude_json(pr)
+            if r.get("message"):
+                intro = r["message"].strip()
+        except Exception:
+            pass
+        text = "%s\n\n%s" % (intro, quote)
+        sent = False
+        if deal.contact_id:
+            conv = Conversation.objects.filter(contact_id=deal.contact_id, status="open").order_by("-last_message_at").first()
+            if conv:
+                try:
+                    send_message(conv, text, user=getattr(request, "user", None)); sent = True
+                except Exception:
+                    pass
+        _advance_deal_stage(deal, 1, "\u043d\u0430\u0434\u0456\u0441\u043b\u0430\u043d\u043e \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a (\u041a\u041f)")
+        log_activity("deal", deal.id, "\u041f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a", "%s \u0433\u0440\u043d" % total, getattr(request, "user", None), "\u041c\u0435\u043d\u0435\u0434\u0436\u0435\u0440")
+        return Response({"ok": True, "sent": sent, "amount": str(total), "text": text})
 
     @action(detail=True, methods=["post"])
     def send_pay_link(self, request, pk=None):
@@ -667,6 +878,26 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         return Response(_run_sales_analysis(deal, "deal", user=request.user, refresh=(request.method == "POST")))
 
     @action(detail=False, methods=["get"])
+    def kit_materials(self, request):
+        """Матеріали тест-наборів з номенклатури (повний список для анкети/складу)."""
+        import re as _re
+        from apps.warehouse.models import Product
+
+        def fam(name):
+            n = _re.split(r"\s*[\u2014\-]?\s*[\u0442\u0422]\u0435\u0441\u0442", name.strip(), 1)[0]
+            n = _re.sub(r"\u0412\u0435\u043b\u044c\u0432\u0435\u0442\s+", "", n)
+            n = _re.sub(r"\s+Bianco\b", "", n, flags=_re.I)
+            n = _re.sub(r"^[\s\"\u201c\u201d\u0027\u00ab\u00bb\u2014\-]+|[\s\"\u201c\u201d\u0027\u00ab\u00bb\u2014\-]+$", "", n)
+            return n
+
+        seen = {}
+        for nm in Product.objects.filter(is_active=True, name__iregex=r"\u0442\u0435\u0441\u0442\u043e\u0432|\u043f\u0440\u043e\u0431\u043d\u0438").values_list("name", flat=True):
+            f = fam(nm)
+            if 2 <= len(f) <= 45:
+                seen[f] = seen.get(f, 0) + 1
+        return Response(sorted(seen.keys(), key=lambda k: (-seen[k], k)))
+
+    @action(detail=False, methods=["get"])
     def np_cities(self, request):
         """Автокомпліт міст Нова Пошта."""
         from apps.integrations import adapters as ad
@@ -683,6 +914,129 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             return Response(ad.np_warehouses(request.GET.get("settlement_ref", ""), request.GET.get("q", ""), 40))
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+    @action(detail=True, methods=["get"])
+    def np_print(self, request, pk=None):
+        """Друк ТТН у форматі НП (A4 / m100 / m85 / zebra) — проксі PDF з сервера."""
+        deal = self.get_object()
+        if not deal.ttn:
+            return Response({"detail": "Немає ТТН"}, status=status.HTTP_400_BAD_REQUEST)
+        from apps.integrations import adapters as ad
+        import urllib.request
+        from django.http import HttpResponse
+        url = ad.np_print_url(deal.ttn, request.query_params.get("fmt", "A4"))
+        try:
+            with urllib.request.urlopen(url, timeout=40) as resp:  # noqa: S310
+                data = resp.read(); ctype = resp.headers.get("Content-Type", "application/pdf")
+        except Exception as e:
+            return Response({"detail": "NP друк: %s" % e}, status=status.HTTP_502_BAD_GATEWAY)
+        r = HttpResponse(data, content_type=ctype)
+        r["Content-Disposition"] = 'inline; filename="ttn-%s.pdf"' % deal.ttn
+        return r
+
+    @action(detail=True, methods=["post"])
+    def np_recreate(self, request, pk=None):
+        """Перестворити ТТН: видалити поточну в НП (помилка в адресі/відділенні) + очистити,
+        щоб зробити нову. Платіж, чек і угода ЛИШАЮТЬСЯ."""
+        deal = self.get_object()
+        from apps.integrations import adapters as ad
+        from .models import log_activity
+        old = deal.ttn
+        ref = (deal.np_data or {}).get("ttn_ref") or ad.np_ref_by_number(old)
+        warn = ""
+        if ref:
+            try:
+                dr = ad.np_delete_ttn(ref)
+                if not dr.get("success"):
+                    warn = str(dr.get("errors") or dr.get("warnings") or "")
+            except Exception as e:
+                warn = str(e)
+        else:
+            warn = "Ref не знайдено в НП"
+        deal.ttn = ""
+        _nd = dict(deal.np_data or {}); _nd.pop("ttn_ref", None); deal.np_data = _nd
+        deal.save(update_fields=["ttn", "np_data"])
+        log_activity("deal", deal.id, "ТТН перестворення", "Видалено %s%s" % (old, (" · НП: " + warn) if warn else " (НП видалено)"), request.user, "НП")
+        return Response({"ok": True, "deleted": old, "np_warning": warn})
+
+    @action(detail=True, methods=["post"])
+    def np_cancel(self, request, pk=None):
+        """Скасувати замовлення: видалити ТТН + відкат стадії + позначка «потрібен повернення коштів».
+        Гроші НЕ списуються автоматично — повернення робить менеджер вручну (безпека)."""
+        deal = self.get_object()
+        from apps.integrations import adapters as ad
+        from .models import log_activity
+        old = deal.ttn
+        ref = (deal.np_data or {}).get("ttn_ref") or ad.np_ref_by_number(old)
+        warn = ""
+        if ref:
+            try:
+                dr = ad.np_delete_ttn(ref)
+                if not dr.get("success"):
+                    warn = str(dr.get("errors") or dr.get("warnings") or "")
+            except Exception as e:
+                warn = str(e)
+        else:
+            warn = "Ref не знайдено в НП"
+        deal.ttn = ""
+        _nd = dict(deal.np_data or {}); _nd.pop("ttn_ref", None); _nd["cancelled"] = True; deal.np_data = _nd
+        upd = ["ttn", "np_data"]
+        back = deal.funnel.stages.filter(is_lost=True).order_by("order").first() if deal.funnel_id else None
+        if back:
+            deal.stage = back; upd.append("stage")
+        deal.save(update_fields=upd)
+        log_activity("deal", deal.id, "Скасування замовлення", "ТТН %s видалено · ПОТРІБЕН ПОВЕРНЕННЯ КОШТІВ клієнту (вручну)%s" % (old, (" · НП: " + warn) if warn else ""), request.user, "НП")
+        return Response({"ok": True, "deleted": old, "np_warning": warn, "refund_manual": True})
+
+    @action(detail=True, methods=["post"])
+    def np_save(self, request, pk=None):
+        """Зберегти повну форму Доставка НП (спільна для менеджера і складу)."""
+        deal = self.get_object()
+        nd = request.data.get("np_data")
+        if nd is not None:
+            deal.np_data = nd
+        dd = request.data.get("delivery_date")
+        if dd is not None:
+            deal.np_delivery_date = dd or None
+        deal.save(update_fields=["np_data", "np_delivery_date"])
+        return Response({"ok": True, "np_data": deal.np_data, "delivery_date": str(deal.np_delivery_date or "")})
+
+    @action(detail=True, methods=["post"])
+    def np_estimate(self, request, pk=None):
+        """Оцінка вартості доставки НП (getDocumentPrice)."""
+        from apps.integrations import adapters as ad
+        props = request.data.get("props") or {}
+        try:
+            r = ad.np_document_price(props)
+            rows = (r or {}).get("data") or []
+            return Response(rows[0] if rows else {})
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+    @action(detail=False, methods=["get"])
+    def np_streets(self, request):
+        from apps.integrations import adapters as ad
+        ref = request.query_params.get("settlement_ref", "")
+        q = request.query_params.get("q", "")
+        if not ref or len(q) < 2:
+            return Response([])
+        try:
+            r = ad.np_streets(ref, q)
+            rows = (r or {}).get("data") or []
+            items = rows[0].get("Addresses", []) if rows else []
+            return Response([{"name": (a.get("Present") or a.get("SettlementStreetDescription") or ""), "ref": a.get("SettlementStreetRef") or a.get("Ref")} for a in items])
+        except Exception:
+            return Response([])
+
+    @action(detail=False, methods=["get"])
+    def np_packlist(self, request):
+        from apps.integrations import adapters as ad
+        try:
+            r = ad.np_packlist()
+            rows = (r or {}).get("data") or []
+            return Response([{"ref": p.get("Ref"), "descr": p.get("Description"), "w": p.get("Width"), "h": p.get("Height"), "l": p.get("Length")} for p in rows][:60])
+        except Exception:
+            return Response([])
 
     @action(detail=True, methods=["post"])
     def create_ttn(self, request, pk=None):
@@ -747,7 +1101,14 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         doc = (r.get("data") or [{}])[0]
         ttn = doc.get("IntDocNumber") or doc.get("Number") or ""
         deal.ttn = ttn
-        deal.save(update_fields=["ttn"])
+        _nd = dict(deal.np_data or {}); _nd["ttn_ref"] = doc.get("Ref") or ""; deal.np_data = _nd
+        deal.save(update_fields=["ttn", "np_data"])
+        try:  # авто-рух на «НП_ТТН створена» (синхронно зі складом)
+            _tc = deal.funnel.stages.filter(name__icontains="ТТН створена").order_by("order").first() if deal.funnel_id else None
+            if _tc:
+                _advance_deal_stage(deal, _tc.order, "ТТН створено в НП")
+        except Exception:
+            pass
         log_activity("deal", deal.id, "ТТН Нова Пошта", "Створено %s%s" % (ttn, (" · наложка %s грн" % int(cod)) if cod else ""), request.user, "НП")
         # фінальний чек НП (sell з relation_id+ttn) якщо є неоплачений-без-чека платіж що закриває суму
         try:
@@ -1073,11 +1434,14 @@ class AgentConfigView(APIView):
     def get(self, request):
         c = AgentConfig.get()
         return Response({"enabled": c.enabled, "autonomous": c.autonomous, "auto_on_reply": c.auto_on_reply,
-                         "model": c.model, "system_extra": c.system_extra})
+                         "model": c.model, "system_extra": c.system_extra,
+                         "priority_enabled": c.priority_enabled, "priority_model": c.priority_model,
+                         "analyst_model": c.analyst_model, "suggest_model": c.suggest_model,
+                         "cache_enabled": c.cache_enabled, "analyst_auto": c.analyst_auto})
 
     def post(self, request):
         c = AgentConfig.get()
-        for f in ["enabled", "autonomous", "auto_on_reply", "model", "system_extra"]:
+        for f in ["enabled", "autonomous", "auto_on_reply", "model", "system_extra", "priority_enabled", "priority_model", "analyst_model", "suggest_model", "cache_enabled", "analyst_auto"]:
             if f in request.data:
                 setattr(c, f, request.data[f])
         c.save()
@@ -1133,3 +1497,39 @@ class LiqPayCallbackView(APIView):
         except Exception:
             pass
         return Response({"ok": True})
+
+
+class ContactFormConfigView(APIView):
+    """Налаштування обовʼязкових полів контакту. Редагувати може лише адмін або призначений співробітник."""
+    permission_classes = [IsAuthenticated]
+
+    def _cfg(self):
+        from apps.integrations.models import IntegrationSettings
+        obj, _ = IntegrationSettings.objects.get_or_create(provider="contact_form", defaults={"config": {"required": [], "editors": []}})
+        return obj, (obj.config or {})
+
+    def _build(self, request, cfg):
+        u = request.user
+        is_admin = bool(u.is_superuser or (hasattr(u, "has_perm_code") and u.has_perm_code("roles.manage")))
+        editors = cfg.get("editors", []) or []
+        return Response({"required": cfg.get("required", []), "editors": editors,
+                         "can_edit": is_admin or (hasattr(u, "has_perm_code") and u.has_perm_code("contact.fields.config")) or (u.id in editors), "is_admin": is_admin})
+
+    def get(self, request):
+        _, cfg = self._cfg()
+        return self._build(request, cfg)
+
+    def patch(self, request):
+        obj, cfg = self._cfg()
+        u = request.user
+        is_admin = bool(u.is_superuser or (hasattr(u, "has_perm_code") and u.has_perm_code("roles.manage")))
+        editors = cfg.get("editors", []) or []
+        if not (is_admin or (hasattr(u, "has_perm_code") and u.has_perm_code("contact.fields.config")) or u.id in editors):
+            return Response({"detail": "Тільки адмін або призначений співробітник"}, status=status.HTTP_403_FORBIDDEN)
+        if "required" in request.data:
+            cfg["required"] = list(request.data.get("required") or [])
+        if "editors" in request.data and is_admin:
+            cfg["editors"] = list(request.data.get("editors") or [])
+        obj.config = cfg
+        obj.save()
+        return self._build(request, cfg)

@@ -197,3 +197,96 @@ class WebrtcConfigView(APIView):
             "my_ext": ext,
             "enabled": bool(_s.TELEPHONY_WS and _s.TELEPHONY_WEBRTC_SECRET),
         })
+
+
+class RecordingView(APIView):
+    """Стрім запису дзвінка (підписаний URL — для <audio>/посилання без DRF-хедера)."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        import os, hmac, hashlib
+        from django.conf import settings as _s
+        from django.http import FileResponse, Http404, HttpResponseForbidden
+        call = Call.objects.filter(pk=pk).first()
+        if not call or not call.recording_file:
+            raise Http404("no recording")
+        good = hmac.new(_s.SECRET_KEY.encode(), str(pk).encode(), hashlib.sha256).hexdigest()[:20]
+        if request.GET.get("s") != good:
+            return HttpResponseForbidden("bad sig")
+        path = os.path.join("/app/media/recordings", call.recording_file)
+        if not os.path.exists(path):
+            raise Http404("file missing")
+        return FileResponse(open(path, "rb"), content_type="audio/wav")
+
+
+class PendingTranscribeView(APIView):
+    """Список дзвінків що чекають транскрипцію (для хост-скрипта Whisper)."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from django.conf import settings as _s
+        token = request.headers.get("X-Telephony-Token") or request.GET.get("token", "")
+        if not _s.TELEPHONY_TOKEN or token != _s.TELEPHONY_TOKEN:
+            return Response({"detail": "forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            lim = int(request.GET.get("limit", 5))
+        except Exception:
+            lim = 5
+        qs = (Call.objects.filter(analyzed=False, duration__gte=15)
+              .exclude(recording_file="").order_by("-started_at", "-id")[:lim])
+        return Response([{"id": c.id, "recording_file": c.recording_file} for c in qs])
+
+
+class TranscribeView(APIView):
+    """Приймає транскрипт дзвінка → зберігає + запускає AI-розбір (DialogAnalysis kind=call)."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from django.conf import settings as _s
+        token = request.headers.get("X-Telephony-Token") or request.data.get("token", "")
+        if not _s.TELEPHONY_TOKEN or token != _s.TELEPHONY_TOKEN:
+            return Response({"detail": "forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        call = Call.objects.filter(pk=request.data.get("call_id")).first()
+        if not call:
+            return Response({"detail": "no call"}, status=status.HTTP_404_NOT_FOUND)
+        raw = (request.data.get("transcript") or "")[:20000]
+        from apps.crm.sales_analyst import label_speakers
+        txt = label_speakers(raw) if len(raw.strip()) >= 30 else raw
+        call.transcript = txt
+        call.analyzed = True
+        call.save(update_fields=["transcript", "analyzed"])
+        if len(txt.strip()) >= 40:
+            try:
+                from apps.crm.sales_analyst import analyze_dialog
+                from apps.crm.models import DialogAnalysis
+                mgr_id = None
+                if call.deal_id and call.deal and call.deal.owner_id:
+                    mgr_id = call.deal.owner_id
+                elif call.manager_id:
+                    mgr_id = call.manager_id
+                msgs = []
+                for ln in txt.split(chr(10)):
+                    ln = ln.strip()
+                    if ln.startswith("\u041a\u041b\u0406\u0404\u041d\u0422:"):
+                        msgs.append({"direction": "in", "text": ln.split(":", 1)[1].strip()})
+                    elif ln.startswith("\u041c\u0415\u041d\u0415\u0414\u0416\u0415\u0420:"):
+                        msgs.append({"direction": "out", "text": ln.split(":", 1)[1].strip()})
+                if not msgs:
+                    msgs = [{"direction": "note", "text": txt}]
+                r = analyze_dialog(msgs, context=f"\u0422\u0435\u043b\u0435\u0444\u043e\u043d\u043d\u0438\u0439 \u0434\u0437\u0432\u0456\u043d\u043e\u043a ({call.direction}), \u043b\u0456\u043d\u0456\u044f {call.line}", kind="\u0434\u0437\u0432\u0456\u043d\u043e\u043a")
+                if isinstance(r, dict) and not r.get("empty"):
+                    _da = DialogAnalysis.objects.create(
+                        deal_id=call.deal_id, manager_id=mgr_id, kind="call",
+                        overall_score=r.get("overall", 0) or 0, scores=r.get("scores", {}) or {},
+                        strengths=r.get("strengths", ""), why_not_selling=r.get("why_not_selling", ""),
+                        recommended_reply=r.get("recommended_reply", ""), coaching=r.get("coaching", ""))
+                    if call.started_at:
+                        from apps.gamification.models import XPEvent as _XP
+                        DialogAnalysis.objects.filter(pk=_da.pk).update(created_at=call.started_at)
+                        _XP.objects.filter(ref_type="analysis", ref_id=str(_da.pk)).update(created_at=call.started_at)
+            except Exception:
+                pass
+        return Response({"ok": True})

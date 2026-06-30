@@ -6,7 +6,9 @@ import { Avatar } from "../ui";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
 import IncomingCallPopup from "../IncomingCallPopup";
+import Notifier from "../Notifier";
 import WebPhone from "../WebPhone";
+import CallBar from "../CallBar";
 import GlobalSearch from "../GlobalSearch";
 
 // [путь, заголовок, иконка, требуемое право (или null)]
@@ -17,10 +19,13 @@ const NAV: [string, string, string, string, string | null][] = [
   ["/contact-center", "Контакт-центр", "Контакт-центр", "🎛️", "roles.manage"],
   ["/phone", "Телефония", "Телефонія", "phone", "telephony.view"],
   ["/warehouse", "Товары · Склад", "Товари · Склад", "package", "warehouse.view"],
+  ["/wh", "Склад · Работа", "Склад · Робота", "package", "warehouse.view"],
   ["/clients", "Клиенты", "Клієнти", "users", null],
+  ["/development", "Развитие", "Розвиток", "trophy", "development.view"],
   ["/finance", "Финансы", "Фінанси", "wallet", "finance.view"],
-  ["/analytics", "Аналитика", "Аналітика", "chart", null],
+  ["/analytics", "Аналитика", "Аналітика", "chart", "analytics.view"],
   ["/employees", "Сотрудники и права", "Співробітники і права", "🛡️", "roles.manage"],
+  ["/duplicates", "Дубли", "Дублі", "copy", "roles.manage"],
   ["/settings", "Настройки · Интеграции", "Налаштування · Інтеграції", "settings", "roles.manage"],
 ];
 
@@ -83,7 +88,7 @@ function WorkTimer() {
   const [st, setSt] = useState<any>(null);
   const [sec, setSec] = useState(0);
   function load() { api.get<any>("/api/worktime/").then((d) => { setSt(d); setSec(d.worked_seconds || 0); }).catch(() => setSt({ active: false })); }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); const _t = setInterval(load, 12000); const _f = () => load(); window.addEventListener("focus", _f); document.addEventListener("visibilitychange", _f); return () => { clearInterval(_t); window.removeEventListener("focus", _f); document.removeEventListener("visibilitychange", _f); }; }, []);
   useEffect(() => {
     if (!st?.active || st?.on_pause) return;
     const t = setInterval(() => setSec((x) => x + 1), 1000);
@@ -109,6 +114,7 @@ export default function Layout() {
   const { me, logout, can } = useAuth();
   const loc = useLocation();
   const [showTheme, setShowTheme] = useState(false);
+  const [motto, setMotto] = useState(false);
   const [theme, setTheme] = useState<any>(me?.theme ?? {});
 
   // применяем тему — всі CSS-перемінні блоків + анімації
@@ -155,6 +161,7 @@ export default function Layout() {
           ))}
         </nav>
         <WebPhone />
+      <CallBar />
         <div className="me">
           <Avatar name={fullName} cls="av-md" />
           <div style={{ flex: 1 }}>
@@ -167,6 +174,32 @@ export default function Layout() {
       <div className="main">
         <header className="topbar">
           <h1>{title}</h1>
+          <div onMouseEnter={() => setMotto(true)} onMouseLeave={() => setMotto(false)} onClick={() => setMotto((v) => !v)}
+            style={{ position: "relative", marginLeft: 16, display: "flex", alignItems: "center", gap: 7, cursor: "help" }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--brand)", flexShrink: 0 }} />
+            <span style={{ fontWeight: 800, fontSize: 13.5, color: "var(--topbar-text)", whiteSpace: "nowrap" }}>«Держим слово — держим клиента»</span>
+            <Icon n="bulb" size={14} style={{ opacity: .55 }} />
+            {motto && (
+              <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: "calc(100% + 12px)", left: 0, width: 480, maxWidth: "82vw", background: "#fff", color: "#1e293b", borderRadius: 18, boxShadow: "0 22px 60px rgba(15,23,42,.30)", padding: "22px 24px", zIndex: 300, border: "1px solid #e8edf3", cursor: "default" }}>
+                <div style={{ fontSize: 19, fontWeight: 800, color: "#0f172a" }}>Держим слово — держим клиента</div>
+                <div style={{ fontSize: 13.5, color: "var(--brand)", fontWeight: 700, marginTop: 3, marginBottom: 14 }}>Мы продаём не декор. Мы продаём уверенность.</div>
+                <div style={{ fontSize: 13, lineHeight: 1.6, color: "#475569", marginBottom: 14 }}>Обещание рождается на первом касании с клиентом — и его держит вся цепочка, каждый из нас. Рвётся одно звено — рвётся слово всей компании.</div>
+                {([
+                  ["Первое касание / реклама", "Объясняем клиенту, почему важно прийти именно к нам. Цель не просто продать, а решить его вопрос — и дать больше, чем обещали."],
+                  ["Менеджер", "Несёт ту же идею, с которой клиент пришёл, не «впаривает». Клиент покупает спокойно — уверенный, что будет как обещали."],
+                  ["Производство", "Тонируем точно по цвету, надёжно упаковываем, отгружаем вовремя — чтобы материал доехал в сохранности."],
+                  ["Доставка", "Клиент получает посылку — ту и тогда, как договорились."],
+                  ["Поддержка клиента", "Убеждаемся, что у клиента получился результат. А если не выходит — делаем всё, чтобы получилось."],
+                ] as [string, string][]).map(([h, txt], i) => (
+                  <div key={i} style={{ display: "flex", gap: 11, marginBottom: 9 }}>
+                    <span style={{ flexShrink: 0, width: 22, height: 22, borderRadius: "50%", background: "var(--brand)", color: "#fff", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>
+                    <div style={{ fontSize: 12.5, lineHeight: 1.5 }}><b style={{ color: "#0f172a" }}>{h}.</b> <span style={{ color: "#64748b" }}> {txt}</span></div>
+                  </div>
+                ))}
+                <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid #eef2f7", fontSize: 13, fontWeight: 700, color: "#0f172a" }}>Сначала отвечаем друг перед другом. Потом — перед клиентом.</div>
+              </div>
+            )}
+          </div>
           <div className="spacer" />
           <GlobalSearch />
           <WorkTimer />
@@ -230,6 +263,7 @@ export default function Layout() {
         </main>
       </div>
       <IncomingCallPopup />
+      <Notifier />
     </div>
   );
 }

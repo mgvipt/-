@@ -40,10 +40,8 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
             st = f.stages.order_by("order").first() if f else None
             if f and st:
                 src = channel.kind if channel.kind in dict(Lead.SOURCES) else "other"
-                from apps.crm.lead_routing import next_lead_owner
-                Lead.objects.create(title=(inc.sender_name or channel.kind)[:255],
-                                    contact=contact, funnel=f, stage=st, source=src, is_seen=False,
-                                    owner=next_lead_owner())
+                from apps.crm.lead_routing import make_lead_for_contact
+                make_lead_for_contact(contact, f, src)
         except Exception:
             pass
 
@@ -56,7 +54,7 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
     if contact is not None and getattr(inc, "phone", "") and not contact.phone:
         contact.phone = inc.phone
         contact.save(update_fields=["phone"])
-    if conv.assigned_to_id is None and contact is not None:
+    if conv.assigned_to_id is None and contact is not None and not created:
         from apps.crm.models import Deal
         owner_id = contact.owner_id or (
             Deal.objects.filter(contact=contact).exclude(stage__is_lost=True)
@@ -93,10 +91,15 @@ def send_message(conv: Conversation, text: str, user=None) -> Message:
     """Отправить исходящее сообщение через адаптер канала и записать его."""
     adapter = get_adapter(conv.channel)
     ext_id = adapter.send(conv.external_chat_id, text)
+    status = "sent"
+    if conv.channel.kind in ("instagram", "facebook"):
+        last_in = Message.objects.filter(conversation=conv, direction="in").order_by("-created_at").first()
+        if not last_in or (timezone.now() - last_in.created_at).total_seconds() > 24 * 3600:
+            status = "window_risk"  # вікно Meta 24г закрите — ChatPlace прийняв, але IG міг не доставити
     msg = Message.objects.create(
         conversation=conv, direction="out", text=text,
         external_id=ext_id, sender=user,
-        sender_name=(user.get_full_name() if user else "") or "",
+        sender_name=(user.get_full_name() if user else "") or "", status=status,
     )
     conv.last_message_at = msg.created_at
     conv.save(update_fields=["last_message_at"])

@@ -199,7 +199,7 @@ function Journal() {
         <button className="btn btn-light" onClick={resetAll}>{t("Сбросить всё","Скинути все")}</button>
       </div>
       {showCols && (
-        <div className="panel journal-cols" style={{ margin: "0 0 8px", padding: 12, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+        <div className="panel journal-cols" style={{ margin: "0 0 8px", padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px,1fr))", gap: 8 }}>
           {(() => { const cs = { height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", width: "100%" } as React.CSSProperties; const set = (k: string, v: any) => setCf((c: any) => ({ ...c, [k]: v })); return (<>
             <select value={cf.direction} onChange={(e) => set("direction", e.target.value)} style={cs}><option value="">{t("Тип: все","Тип: усі")}</option><option value="in">{t("Доход","Дохід")}</option><option value="out">{t("Расход","Витрата")}</option><option value="transfer">{t("Перевод","Переказ")}</option></select>
             <input value={cf.amount_min} onChange={(e) => set("amount_min", e.target.value)} type="number" placeholder={t("Сумма от","Сума від")} style={cs} />
@@ -424,7 +424,7 @@ function Dashboard() {
       </div>
 
       {/* 1. СВІТЛОФОР */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12, marginBottom: 14 }}>
         {trafficKpi.map((c) => (
           <div key={c.t} className="panel" style={{ margin: 0, borderTop: `3px solid ${c.c}` }}>
             <div className="muted" style={{ fontSize: 12 }}>{c.t}</div>
@@ -650,7 +650,7 @@ function Breakeven() {
   return (
     <>
       <Period from={from} to={to} set={load} />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 12, marginBottom: 14 }}>
         {cards.map(([t, v]) => <div key={t} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{t}</div><div style={{ fontSize: 20, fontWeight: 700 }}>{v}</div></div>)}
       </div>
       <div className="panel" style={{ margin: 0, marginBottom: 12 }}>

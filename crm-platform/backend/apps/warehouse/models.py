@@ -32,6 +32,7 @@ class Product(models.Model):
     unit = models.CharField("Ед. изм.", max_length=16, default="шт")
     price = models.DecimalField("Цена продажи", max_digits=12, decimal_places=2, default=0)
     cost = models.DecimalField("Себестоимость", max_digits=12, decimal_places=2, default=0)
+    weight_kg = models.DecimalField("Вага нетто, кг", max_digits=8, decimal_places=3, null=True, blank=True)
     is_active = models.BooleanField(default=True)
     category = models.ForeignKey("ProductCategory", null=True, blank=True, on_delete=models.SET_NULL, related_name="products")
     currency = models.CharField(max_length=8, default="UAH")
@@ -83,3 +84,122 @@ class StockMovement(models.Model):
 
     def __str__(self):
         return f"{self.product} × {self.quantity}"
+
+
+# ═══════════════════════════════ СКЛАД — робота кладовщиків (Фаза 1) ═══════════════════════════════
+class TareType(models.Model):
+    """Тип тари — визначає рівень упаковки (до 5/10/20 кг) за вмістимістю."""
+    name = models.CharField("Назва", max_length=80)
+    tare_weight_kg = models.DecimalField("Вага порожньої тари, кг", max_digits=6, decimal_places=3, default=0)
+    max_fill_kg = models.DecimalField("Вмістимість, кг", max_digits=6, decimal_places=3, default=0)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["max_fill_kg"]
+
+    def __str__(self):
+        return self.name
+
+
+class WarehouseJob(models.Model):
+    """Картка виконання задачі складу (1↔1 з crm.Task). Джерело правди для ЗП."""
+    STATUS = [("queued", "У черзі"), ("taken", "Взято"), ("tinting", "Тонується"),
+              ("packing", "Пакування"), ("awaiting_photos", "Потрібні фото"),
+              ("shipped", "Відвантажено"), ("partial", "Часткове"), ("cancelled", "Скасовано")]
+    task = models.OneToOneField("crm.Task", null=True, blank=True, on_delete=models.SET_NULL, related_name="warehouse_job")
+    deal = models.ForeignKey("crm.Deal", on_delete=models.CASCADE, related_name="warehouse_jobs")
+    assignee = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="warehouse_jobs")
+    status = models.CharField(max_length=16, choices=STATUS, default="queued", db_index=True)
+    is_shipment = models.BooleanField(default=True)
+    tinted_kits = models.JSONField(default=list, blank=True)
+    tintings_count = models.PositiveIntegerField(default=0)
+    tintings_base = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    shipped_weight_kg = models.DecimalField(max_digits=10, decimal_places=3, default=0)
+    pack_le5_count = models.PositiveIntegerField(default=0)
+    pack_le10_count = models.PositiveIntegerField(default=0)
+    pack_le20_count = models.PositiveIntegerField(default=0)
+    packed = models.BooleanField(default=True, help_text="Чи самі пакували (ні = >4 місць, контейнер НП)")
+    np_ttn = models.CharField(max_length=40, blank=True, default="")
+    done_snapshot = models.JSONField(default=dict, blank=True)
+    taken_at = models.DateTimeField(null=True, blank=True)
+    shipped_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return "Job#%s deal=%s %s" % (self.pk, self.deal_id, self.status)
+
+
+class WarehousePayrollEntry(models.Model):
+    """Аудит-рядок ЗП: одна дія = один рядок зі снімком ставки. ЗП = SUM(amount)."""
+    OP = [("shipment_weight", "Вага відвантаження"), ("packing", "Упаковка"), ("tinting", "Тонування"),
+          ("workday", "Робочий день"), ("error", "Помилка"), ("wrong_material", "Невірний матеріал"),
+          ("bonus_initiative", "Бонус-ідея"), ("bonus_cleanliness", "Бонус-чистота")]
+    employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="wh_payroll")
+    work_date = models.DateField(db_index=True)
+    job = models.ForeignKey(WarehouseJob, null=True, blank=True, on_delete=models.SET_NULL, related_name="payroll")
+    deal = models.ForeignKey("crm.Deal", null=True, blank=True, on_delete=models.SET_NULL)
+    op_type = models.CharField(max_length=20, choices=OP)
+    quantity_kg = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    pack_tier = models.CharField(max_length=4, blank=True, default="")
+    base_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    rate_applied = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    status = models.CharField(max_length=10, default="confirmed")
+    source = models.CharField(max_length=10, default="system")
+    note = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class WarehousePhoto(models.Model):
+    """Фото регламенту (відерця/посилка/чистота/доказ). FileField — Pillow не потрібен."""
+    KIND = [("buckets", "Відерця"), ("parcel", "Посилка"), ("cleanliness", "Чистота"), ("error_proof", "Доказ помилки")]
+    job = models.ForeignKey(WarehouseJob, null=True, blank=True, on_delete=models.CASCADE, related_name="photos")
+    deal = models.ForeignKey("crm.Deal", null=True, blank=True, on_delete=models.SET_NULL)
+    employee = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    kind = models.CharField(max_length=16, choices=KIND)
+    image = models.FileField(upload_to="warehouse_photos/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+
+class WarehouseError(models.Model):
+    """Помилка/удержання (Ф2). Удержання в ЗП лише після confirmed власником/РОПом."""
+    SOURCE = [("manual_staff", "Сам визнав"), ("manager", "Менеджер/РОП"), ("ai_suggested", "AI")]
+    KIND = [("wrong_material", "Невірний матеріал"), ("wrong_tint", "Невірна тонировка"),
+            ("wrong_qty", "Невірна кількість"), ("damaged", "Пошкоджено"),
+            ("lost_np", "Втрачено в НП"), ("other", "Інше")]
+    STATUS = [("suggested", "На розгляді"), ("confirmed", "Підтверджено"), ("rejected", "Відхилено")]
+    job = models.ForeignKey(WarehouseJob, null=True, blank=True, on_delete=models.SET_NULL, related_name="errors")
+    deal = models.ForeignKey("crm.Deal", null=True, blank=True, on_delete=models.SET_NULL)
+    reported_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="wh_errors_reported")
+    blamed_user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="wh_errors_blamed")
+    source = models.CharField(max_length=16, choices=SOURCE, default="manual_staff")
+    kind = models.CharField(max_length=16, choices=KIND, default="other")
+    description = models.TextField(blank=True, default="")
+    deduction_uah = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    status = models.CharField(max_length=10, choices=STATUS, default="suggested")
+    confirmed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class InitiativeIdea(models.Model):
+    """Ідея співробітника (Ф3). Бонус за прийняту/впроваджену."""
+    STATUS = [("new", "Нова"), ("accepted", "Прийнято"), ("implemented", "Впроваджено"), ("declined", "Відхилено")]
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="wh_ideas")
+    text = models.TextField()
+    status = models.CharField(max_length=12, choices=STATUS, default="new")
+    award_uah = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    awarded_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]

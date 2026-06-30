@@ -13,6 +13,9 @@ services:
 
   web:
     build: { context: ./backend }
+    volumes:
+      - /root/telephony-recordings:/app/media/recordings:ro
+      - /root/crm-media/warehouse_photos:/app/warehouse_photos
     command: >
       sh -c "python manage.py migrate &&
              python manage.py collectstatic --noinput &&

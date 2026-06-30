@@ -2,7 +2,7 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
@@ -144,9 +144,13 @@ def _close_contact_leads(contact_id):
         return
     for ld in Lead.objects.filter(contact_id=contact_id, funnel=lf).exclude(stage__is_lost=True).exclude(stage__is_won=True):
         old = ld.stage.name
+        q = dict(ld.qualification or {})
+        q["_reached_stage_id"] = ld.stage_id  # знімок стадії відвалу — для перенесення при поверненні
+        q["_reached_stage_name"] = old
+        ld.qualification = q
         ld.stage = lost
-        ld.save(update_fields=["stage"])
-        log_activity("lead", ld.id, "Закрито разом з чатом", "%s → %s" % (old, lost.name), None, "Система")
+        ld.save(update_fields=["stage", "qualification"])
+        log_activity("lead", ld.id, "Закрито разом з чатом", "%s → %s (зафіксовано для аналітики)" % (old, lost.name), None, "Система")
 
 
 # Скільки хвилин чат лишається у загальному списку менеджера після того,
@@ -175,7 +179,9 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         mine_q = (Q(assigned_to=user) | Q(contact__owner=user) | Q(participants=user)
                   | Q(contact__leads__owner=user) | Q(contact__deals__owner=user))
         if not can_all:
-            qs = qs.filter(mine_q).distinct()
+            # Незайняті чати (нічиї) — СПІЛЬНИЙ ПУЛ: доступні всім, хто має доступ до каналу
+            # (бачить + може відкрити/відповісти/взяти). Призначені — лише свої (mine_q).
+            qs = qs.filter(mine_q | Q(assigned_to__isnull=True)).distinct()
         # КОМАНДНА ЧЕРГА — фільтри ТІЛЬКИ у СПИСКУ. Чат, взятий ІНШИМ співробітником,
         # зникає зі списку (його все одно можна відкрити через картку ліда/сделки = retrieve,
         # і «Закріпити» за собою — тоді він стане видимий у того, хто останнім узяв).
@@ -184,6 +190,8 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(Q(assigned_to=user) | Q(participants=user))
         elif scope == "unassigned":
             qs = qs.filter(assigned_to__isnull=True)
+        elif scope == "clients":
+            qs = qs.filter(contact__deals__isnull=False).distinct()
         elif self.action == "list":
             # «Всі»/за замовч.: незайняті + мої + ті, де Я НЕЩОДАВНО ПИСАВ (останні N хв),
             # навіть якщо чат закріплений за іншим (щоб дотиснути діалог). Закріпити = назавжди.
@@ -191,6 +199,13 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             from datetime import timedelta as _tdr
             recent_q = Q(messages__sender=user, messages__created_at__gte=_tzr.now() - _tdr(minutes=_RECENT_REPLY_MIN))
             qs = qs.filter(Q(assigned_to__isnull=True) | Q(assigned_to=user) | Q(participants=user) | recent_q)
+        # У СПИСКУ показуємо лише ВІДКРИТІ чати. Закритий зникає; коли клієнт напише —
+        # ingest створює новий open-діалог і він знову зʼявиться (у непризначених).
+        if self.action == "list" and not self.request.query_params.get("status"):
+            qs = qs.filter(status="open")
+        pr = self.request.query_params.get("priority")
+        if pr:
+            qs = qs.filter(priority=pr)
         period = self.request.query_params.get("period")
         if period and period != "all":
             from django.utils import timezone as _tz
@@ -246,10 +261,21 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=["post"])
     def take(self, request, pk=None):
-        """Закріпити діалог за собою (стати відповідальним)."""
+        """Закріпити діалог за собою + стати відповідальним за контакт і його ВІДКРИТІ сделки.
+
+        Чати, які вів ШІ-агент, не мали «живого» відповідального — беручи чат, менеджер
+        одразу бачить сделку, контакт і діалог у розділі «Мої». Виграні/програні сделки
+        НЕ перепризначаємо (щоб не зламати нарахування ЗП та історію власника)."""
         conv = self.get_object()
         conv.assigned_to = request.user
         conv.save(update_fields=["assigned_to"])
+        if conv.contact_id:
+            from apps.crm.models import Deal
+            # Беручи чат — стаємо відповідальним лише за ВІДКРИТІ сделки клієнта.
+            # Власника КОНТАКТУ автоматично НЕ змінюємо — лише керівник/чинний відповідальний вручну.
+            (Deal.objects.filter(contact_id=conv.contact_id)
+                 .exclude(stage__is_won=True).exclude(stage__is_lost=True)
+                 .update(owner=request.user))
         return Response(ConversationSerializer(conv).data)
 
     @action(detail=True, methods=["post"])
@@ -263,6 +289,15 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         uid = request.data.get("user_id")
         if uid:
             conv.participants.add(uid)
+            try:
+                from .models import Notification
+                if str(uid) != str(u.id):
+                    who = u.get_full_name() or u.username
+                    cl = (str(conv.contact) if conv.contact_id else None) or conv.title or "клієнтом"
+                    Notification.objects.create(user_id=uid, kind="added_chat", actor=u, conversation=conv,
+                                                text="%s додав(-ла) вас до чату з %s" % (who, cl))
+            except Exception:
+                pass
         return Response(ConversationSerializer(conv).data)
 
     @action(detail=True, methods=["post"])
@@ -275,6 +310,54 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         if uid:
             conv.participants.remove(uid)
         return Response(ConversationSerializer(conv).data)
+
+    @action(detail=False, methods=["get"])
+    def staff(self, request):
+        """Список активних співробітників — для пікера «додати у чат»/«передати». Доступно всім авторизованим."""
+        from django.contrib.auth import get_user_model
+        U = get_user_model()
+        qs = U.objects.filter(is_active=True).select_related("department").order_by("first_name", "username")
+        return Response([{"id": u.id, "full_name": (u.get_full_name() or u.username),
+                          "dept": (u.department.name if getattr(u, "department_id", None) else "")} for u in qs])
+
+    @action(detail=False, methods=["get"])
+    def by_contact(self, request):
+        """Усі діалоги контакту БЕЗ scope-фільтра — для картки сделки/контакту.
+        Доступ до сделки = доступ до чату клієнта (навіть якщо чат закріплений за іншим менеджером)."""
+        cid = request.query_params.get("contact")
+        if not cid:
+            return Response([])
+        qs = (Conversation.objects.filter(contact_id=cid)
+              .select_related("channel", "contact", "assigned_to").prefetch_related("participants")
+              .order_by("-last_message_at"))
+        return Response(ConversationSerializer(qs, many=True, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
+    def create_deal(self, request, pk=None):
+        """Створити/відкрити сделку з чату відкритої лінії. Гарантуємо контакт, лінк через контакт."""
+        from apps.crm.models import Contact, Deal, Funnel
+        conv = self.get_object()
+        contact = conv.contact
+        if not contact:
+            raw = (str(conv.contact) if conv.contact else "") or conv.title or "Клієнт з чату"
+            parts = raw.split()
+            contact = Contact.objects.create(
+                first_name=(parts[0][:150] if parts else "Клієнт"),
+                last_name=(" ".join(parts[1:])[:150] if len(parts) > 1 else ""),
+                source=(conv.channel.kind if conv.channel_id else "chat"))
+            conv.contact = contact
+            conv.save(update_fields=["contact"])
+        existing = contact.deals.order_by("-updated_at").first()
+        if existing:
+            return Response({"deal_id": existing.id, "created": False})
+        funnel = (Funnel.objects.filter(is_lead_funnel=False, name__icontains="Основний продукт").exclude(name__contains="·").first()
+                  or Funnel.objects.filter(is_lead_funnel=False).first())
+        stage = funnel.stages.order_by("order").first() if funnel else None
+        deal = Deal.objects.create(
+            title=(str(contact) or conv.title or "Сделка з чату"), contact=contact, funnel=funnel, stage=stage,
+            amount=0, source=(conv.channel.kind if conv.channel_id else "chat"),
+            owner=(conv.assigned_to or (request.user if request.user.is_authenticated else None)))
+        return Response({"deal_id": deal.id, "created": True})
 
     @action(detail=True, methods=["get"])
     def messages(self, request, pk=None):
@@ -344,7 +427,20 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             content = base64.b64decode(b64.split(",")[-1])
             msg_id = get_adapter(conv.channel).send_media(conv.external_chat_id, content, filename, kind)
         except NotImplementedError:
-            return Response({"detail": "Instagram через ChatPlace приймає лише текст (файли — ні). Telegram приймає файли. Для IG-файлів потрібен офіційний Instagram API."}, status=status.HTTP_400_BAD_REQUEST)
+            # Канал не приймає файли (IG/ChatPlace) → зберігаємо файл і шлемо ПОСИЛАННЯ текстом (обхід обмеження)
+            from .models import SharedLink
+            from .services import send_message as _send_text
+            import secrets, mimetypes
+            tok = secrets.token_urlsafe(16)
+            ct = mimetypes.guess_type(filename)[0] or ("image/jpeg" if kind == "image" else "application/octet-stream")
+            SharedLink.objects.create(token=tok, filename=filename[:255], content_type=ct, data=content)
+            url = request.build_absolute_uri("/api/f/%s/" % tok)
+            label = "\U0001F4F7 Фото" if kind == "image" else "\U0001F4CE Файл"
+            try:
+                msg = _send_text(conv, "%s — %s\n%s" % (label, filename, url), user=request.user)
+            except Exception as e:
+                return Response({"detail": "Не вдалося надіслати посилання: %s" % e}, status=status.HTTP_502_BAD_GATEWAY)
+            return Response(MessageSerializer(msg).data, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
         msg = Message.objects.create(conversation=conv, direction="out", text=f"[{kind}] {filename}",
@@ -354,6 +450,21 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
 
 from django.http import HttpResponse as _HttpResponse
 from rest_framework.permissions import AllowAny as _AllowAny
+
+
+class SharedFileView(APIView):
+    """Публічна віддача файлу за токеном — для посилань клієнту (обхід IG)."""
+    authentication_classes = []
+    permission_classes = [_AllowAny]
+
+    def get(self, request, token):
+        from .models import SharedLink
+        f = SharedLink.objects.filter(token=token).first()
+        if not f:
+            return _HttpResponse("not found", status=404)
+        r = _HttpResponse(bytes(f.data), content_type=f.content_type)
+        r["Content-Disposition"] = 'inline; filename="%s"' % f.filename
+        return r
 
 
 class MetaWebhookView(APIView):
@@ -485,3 +596,127 @@ class DataDeletionView(APIView):
 
     def get(self, request):
         return _HttpResponse(_DATADEL_HTML, content_type="text/html; charset=utf-8")
+
+
+def _msg_vis(u):
+    from django.db.models import Q as _Q
+    return (_Q(conversation__assigned_to=u) | _Q(conversation__assigned_to__isnull=True)
+            | _Q(conversation__participants=u) | _Q(conversation__contact__owner=u))
+
+
+def _conv_vis(u):
+    from django.db.models import Q as _Q
+    return (_Q(assigned_to=u) | _Q(assigned_to__isnull=True)
+            | _Q(participants=u) | _Q(contact__owner=u))
+
+
+def _cname(conv, fallback=""):
+    c = conv.contact
+    nm = ((c.first_name + " " + c.last_name).strip() if c else "")
+    return nm or conv.title or fallback or "Клієнт"
+
+
+class InboxPingView(APIView):
+    """Поллер сповіщень: max id вхідного + деталі останнього + лічильник непрочитаних."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.db.models import Max
+        u = request.user
+        qs = (Message.objects.filter(direction="in", internal=False, conversation__status="open")
+              .filter(_msg_vis(u)))
+        last = qs.aggregate(m=Max("id"))["m"] or 0
+        latest = None
+        m = qs.select_related("conversation", "conversation__contact", "conversation__channel").order_by("-id").first()
+        if m:
+            conv = m.conversation
+            latest = {"conv_id": conv.id, "name": _cname(conv, m.sender_name),
+                      "channel": conv.channel.name if conv.channel_id else "",
+                      "preview": (m.text or "")[:90], "at": m.created_at.isoformat()}
+        unread = (Conversation.objects.filter(status="open", unread__gt=0)
+                  .filter(_conv_vis(u)).distinct().count())
+        from .models import Notification as _Ntf
+        unread += _Ntf.objects.filter(user=u, read=False).count()
+        return Response({"last_in": last, "latest": latest, "unread": unread})
+
+
+class NotificationsView(APIView):
+    """Стрічка сповіщень: вхідні повідомлення + дзвінки (для вкладки «Сповіщення»)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        u = request.user
+        items = []
+        from .models import Notification
+        _ntfs = list(Notification.objects.filter(user=u, read=False).select_related("conversation")[:30])
+        for _nt in _ntfs:
+            items.append({"type": "added", "conv_id": _nt.conversation_id, "name": _nt.text,
+                          "preview": "", "at": _nt.created_at.isoformat()})
+        if _ntfs:
+            Notification.objects.filter(id__in=[x.id for x in _ntfs]).update(read=True)
+        msgs = (Message.objects.filter(direction="in", internal=False, conversation__status="open")
+                .filter(_msg_vis(u))
+                .select_related("conversation", "conversation__contact", "conversation__channel")
+                .order_by("-id")[:40])
+        for m in msgs:
+            conv = m.conversation
+            items.append({"type": "message", "conv_id": conv.id, "name": _cname(conv, m.sender_name),
+                          "channel": conv.channel.name if conv.channel_id else "",
+                          "preview": (m.text or "")[:130], "unread": conv.unread,
+                          "at": m.created_at.isoformat()})
+        try:
+            from apps.telephony.models import Call
+            for ca in Call.objects.select_related("contact", "deal").order_by("-started_at", "-id")[:20]:
+                cc = ca.contact
+                nm = ((cc.first_name + " " + cc.last_name).strip() if cc else "") or ca.from_number or ca.to_number or "—"
+                items.append({"type": "call", "deal_id": ca.deal_id, "name": nm, "line": ca.line,
+                              "direction": ca.direction, "disposition": ca.disposition, "duration": ca.duration,
+                              "at": ca.started_at.isoformat() if ca.started_at else None})
+        except Exception:
+            pass
+        items = [i for i in items if i.get("at")]
+        items.sort(key=lambda i: i["at"], reverse=True)
+        return Response({"items": items[:60]})
+
+
+
+def _tg_sig(message_id, idx):
+    import hmac, hashlib
+    from django.conf import settings as _s
+    return hmac.new(_s.SECRET_KEY.encode(), ("%s:%s" % (message_id, idx)).encode(), hashlib.sha256).hexdigest()[:16]
+
+
+class TgFileView(APIView):
+    """Віддає медіа Telegram по file_id (токен лишається на сервері). Підпис ?s= захищає від перебору."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request, message_id, idx):
+        from django.http import HttpResponse
+        import urllib.request as _u, json as _j
+        if request.query_params.get("s") != _tg_sig(message_id, idx):
+            return Response({"detail": "bad signature"}, status=status.HTTP_403_FORBIDDEN)
+        msg = Message.objects.filter(id=message_id).select_related("conversation__channel").first()
+        if not msg:
+            return Response(status=404)
+        atts = msg.attachments or []
+        if idx < 0 or idx >= len(atts):
+            return Response(status=404)
+        att = atts[idx]
+        fid = att.get("file_id")
+        token = ((msg.conversation.channel.config or {}).get("bot_token")) if msg.conversation_id and msg.conversation.channel_id else None
+        if not fid or not token:
+            return Response(status=404)
+        try:
+            with _u.urlopen("https://api.telegram.org/bot%s/getFile?file_id=%s" % (token, fid), timeout=20) as r:
+                fp = _j.loads(r.read().decode())["result"]["file_path"]
+            with _u.urlopen("https://api.telegram.org/file/bot%s/%s" % (token, fp), timeout=40) as r:
+                data = r.read()
+        except Exception as e:
+            return Response({"detail": str(e)[:80]}, status=502)
+        ct = att.get("mime") or ("image/jpeg" if att.get("type") == "photo" else ("audio/ogg" if att.get("type") == "voice" else "application/octet-stream"))
+        resp = HttpResponse(data, content_type=ct)
+        nm = att.get("name") or (att.get("type", "file"))
+        resp["Content-Disposition"] = 'inline; filename="%s"' % nm
+        resp["Cache-Control"] = "private, max-age=86400"
+        return resp

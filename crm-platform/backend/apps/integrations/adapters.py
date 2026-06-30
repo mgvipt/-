@@ -59,6 +59,22 @@ def np_create_ttn(props: dict) -> dict:
     return _np_call("InternetDocument", "save", props)
 
 
+def np_document_price(props: dict) -> dict:
+    """Оцінка вартості доставки (InternetDocument.getDocumentPrice)."""
+    return _np_call("InternetDocument", "getDocumentPrice", props)
+
+
+def np_streets(settlement_ref: str, q: str, limit=30) -> dict:
+    """Вулиці у населеному пункті (Address.searchSettlementStreets)."""
+    return _np_call("Address", "searchSettlementStreets",
+                    {"SettlementRef": settlement_ref, "StreetName": q, "Limit": str(limit)})
+
+
+def np_packlist() -> dict:
+    """Список платних упаковок НП (InternetDocument.getPackList)."""
+    return _np_call("InternetDocument", "getPackList", {})
+
+
 # ---------------- Checkbox (фискализация) ----------------
 def checkbox_create_receipt(items: list) -> dict:
     cfg = _settings("checkbox")
@@ -132,3 +148,40 @@ def np_resolve_sender():
     obj.config = {**(obj.config or {}), "counterparty_ref": counterparty_ref, "contact_ref": contact_ref, "sender_phone": phone}
     obj.save(update_fields=["config"])
     return obj.config
+
+
+def np_print_url(ttn, fmt):
+    """URL друку ТТН у НП (apiKey лишається на сервері — фронт качає через проксі)."""
+    cfg = _settings("novaposhta")
+    key = cfg.get("api_key") or ""
+    base = "https://my.novaposhta.ua/orders/"
+    paths = {
+        "A4": "printDocument/orders[]/%s/type/pdf/apiKey/%s",
+        "m100": "printMarking100x100/orders[]/%s/type/pdf/apiKey/%s",
+        "m85": "printMarking85x85/orders[]/%s/type/pdf/apiKey/%s",
+        "zebra": "printMarking100x100/orders[]/%s/type/zebra/apiKey/%s",
+    }
+    return base + (paths.get(fmt) or paths["A4"]) % (ttn, key)
+
+
+def np_delete_ttn(ref):
+    """Видалити ТТН (InternetDocument.delete) — потрібен Ref документа."""
+    return _np_call("InternetDocument", "delete", {"DocumentRefs": ref})
+
+
+def np_ref_by_number(ttn):
+    """Знайти Ref документа за номером ТТН (для видалення, якщо Ref не збережений). Шукає за 60 днів."""
+    from datetime import datetime, timedelta
+    if not ttn:
+        return None
+    now = datetime.now()
+    frm = (now - timedelta(days=60)).strftime("%d.%m.%Y")
+    to = (now + timedelta(days=1)).strftime("%d.%m.%Y")
+    try:
+        r = _np_call("InternetDocument", "getDocumentList", {"DateTimeFrom": frm, "DateTimeTo": to, "GetFullList": "1"})
+        for x in (r.get("data") or []):
+            if str(x.get("IntDocNumber")) == str(ttn):
+                return x.get("Ref")
+    except Exception:
+        pass
+    return None

@@ -7,8 +7,11 @@ from apps.crm import views as crm_views
 from apps.accounts import views as acc_views
 from apps.inbox import views as inbox_views
 from apps.warehouse import views as wh_views
+from apps.warehouse import wh_views as whv
 from apps.finance import views as fin_views
 from apps.integrations import views as intg_views
+from apps.crm.duplicates import DuplicatesView
+from apps.gamification import views as gam_views
 from apps.telephony import views as tel_views
 
 router = DefaultRouter()
@@ -58,6 +61,15 @@ urlpatterns = [
     path("api/inbox/echat/webhook/<int:channel_id>/", inbox_views.EchatWebhookView.as_view()),
     path("api/inbox/echat/setup/", inbox_views.EchatSetupView.as_view()),
     path("api/inbox/meta/webhook/", inbox_views.MetaWebhookView.as_view()),
+    path("api/duplicates/", DuplicatesView.as_view()),
+    path("api/gamification/me/", gam_views.MeView.as_view()),
+    path("api/gamification/leaderboard/", gam_views.LeaderboardView.as_view()),
+    path("api/gamification/manager/<int:pk>/", gam_views.ManagerView.as_view()),
+    path("api/inbox/ping/", inbox_views.InboxPingView.as_view()),
+    path("api/inbox/tg-file/<int:message_id>/<int:idx>/", inbox_views.TgFileView.as_view()),
+    path("api/f/<str:token>/", inbox_views.SharedFileView.as_view()),
+    path("api/contact-form-config/", crm_views.ContactFormConfigView.as_view()),
+    path("api/inbox/notifications/", inbox_views.NotificationsView.as_view()),
     path("api/inbox/meta/webhook", inbox_views.MetaWebhookView.as_view()),
     path("api/inbox/chatplace/sync/", inbox_views.ChatPlaceSyncView.as_view()),
     path("api/contact-center/", inbox_views.ContactCenterView.as_view()),
@@ -86,7 +98,29 @@ urlpatterns = [
     path("api/analytics/", crm_views.AnalyticsView.as_view()),
     path("api/analytics/inventory/", wh_views.InventoryAnalyticsView.as_view()),
     path("api/warehouse/inventory-sheet/", wh_views.InventorySheetView.as_view()),
+    path("api/warehouse/queue/", whv.queue),
+    path("api/warehouse/jobs/<int:pk>/", whv.job_detail),
+    path("api/warehouse/jobs/<int:pk>/take/", whv.take),
+    path("api/warehouse/jobs/<int:pk>/cancel/", whv.cancel_job),
+    path("api/warehouse/jobs/<int:pk>/tinting/", whv.tinting),
+    path("api/warehouse/jobs/<int:pk>/packing/", whv.packing),
+    path("api/warehouse/jobs/<int:pk>/photo/", whv.photo),
+    path("api/warehouse/jobs/<int:pk>/ship/", whv.ship),
+    path("api/warehouse/my-salary/", whv.my_salary),
+    path("api/warehouse/my-shift/", whv.my_shift),
+    path("api/warehouse/day/start/", whv.day_start),
+    path("api/warehouse/day/close/", whv.day_close),
+    path("api/warehouse/lunch/", whv.lunch_toggle),
+    path("api/warehouse/tare-types/", whv.tare_types),
+    path("api/warehouse/errors/", whv.errors),
+    path("api/warehouse/errors/<int:pk>/confirm/", whv.confirm_error),
+    path("api/warehouse/ideas/", whv.ideas),
+    path("api/warehouse/ideas/<int:pk>/award/", whv.award_idea),
+    path("api/warehouse/dashboard/", whv.dashboard),
     path("api/telephony/webhook/", tel_views.CallWebhookView.as_view()),
+    path("api/telephony/rec/<int:pk>/", tel_views.RecordingView.as_view()),
+    path("api/telephony/pending-transcribe/", tel_views.PendingTranscribeView.as_view()),
+    path("api/telephony/transcribe/", tel_views.TranscribeView.as_view()),
     path("api/telephony/originate-queue/", tel_views.OriginateQueueView.as_view()),
     path("api/telephony/ringing/", tel_views.RingingView.as_view()),
     path("api/telephony/ringing/active/", tel_views.RingingActiveView.as_view()),

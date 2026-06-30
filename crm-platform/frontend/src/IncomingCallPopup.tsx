@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "./api";
 import { useLang } from "./i18n";
 import { Icon } from "./Icon";
+import { startCallRing, stopCallRing } from "./sounds";
 
 interface Ring { uniqueid: string; number: string; line: string; contact?: number; contact_name?: string; }
 
@@ -31,6 +32,12 @@ export default function IncomingCallPopup() {
     window.addEventListener("wallcov-phone-state", onState as any);
     return () => { alive = false; clearInterval(t); window.removeEventListener("wallcov-phone-state", onState as any); };
   }, []);
+
+  useEffect(() => {
+    if (!ring) { stopCallRing(); return; }
+    startCallRing();
+    return () => stopCallRing();
+  }, [ring?.uniqueid]);
 
   if (!ring) return null;
   const close = () => { dismissed.current.add(ring.uniqueid); setRing(null); };

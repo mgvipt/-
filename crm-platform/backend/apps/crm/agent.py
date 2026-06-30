@@ -38,6 +38,11 @@ TOOLS = [
          "applier": {"type": "string", "enum": APPLIER}, "budget": {"type": "string", "description": "бюджет, число грн"},
          "pay": {"type": "string", "enum": PAY}, "ship": {"type": "string", "enum": SHIP},
          "contacted": {"type": "string", "enum": CONTACTED}, "objections": {"type": "string", "description": "заперечення/питання клієнта"}}, "required": []}},
+    {"name": "make_offer", "description": "\u0410\u0412\u0422\u041e-\u041f\u0420\u041e\u0414\u0410\u0416 \u0442\u0435\u0441\u0442-\u043d\u0430\u0431\u043e\u0440\u0443: \u043a\u043e\u043b\u0438 \u043a\u043b\u0456\u0454\u043d\u0442 \u042f\u0412\u041d\u041e \u043e\u0431\u0440\u0430\u0432 \u043a\u043e\u043d\u043a\u0440\u0435\u0442\u043d\u0438\u0439 \u0442\u0435\u0441\u0442-\u043d\u0430\u0431\u0456\u0440/\u043c\u0430\u0442\u0435\u0440\u0456\u0430\u043b \u2014 \u0434\u043e\u0434\u0430\u0439 \u0442\u043e\u0432\u0430\u0440 \u0437 \u043d\u043e\u043c\u0435\u043d\u043a\u043b\u0430\u0442\u0443\u0440\u0438, \u043d\u0430\u0434\u0456\u0448\u043b\u0438 \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a + \u043f\u043e\u0441\u0438\u043b\u0430\u043d\u043d\u044f LiqPay, \u043f\u0440\u043e\u0441\u0443\u043d\u044c \u0441\u0442\u0430\u0434\u0456\u044e. \u0422\u0456\u043b\u044c\u043a\u0438 \u043a\u043e\u043b\u0438 \u043a\u043b\u0456\u0454\u043d\u0442 \u043e\u0431\u0440\u0430\u0432. \u041d\u0430\u0437\u0432\u0443 \u0431\u0435\u0440\u0438 \u0422\u041e\u0427\u041d\u041e \u0437\u0456 \u0441\u043f\u0438\u0441\u043a\u0443 \u0442\u0435\u0441\u0442-\u043d\u0430\u0431\u043e\u0440\u0456\u0432.",
+     "input_schema": {"type": "object", "properties": {
+         "items": {"type": "array", "items": {"type": "object", "properties": {
+             "name": {"type": "string"}, "qty": {"type": "number"}}, "required": ["name"]}},
+         "reason": {"type": "string"}}, "required": ["items"]}},
     {"name": "no_action", "description": "Нічого не робити — стадія правильна, дій не треба.",
      "input_schema": {"type": "object", "properties": {"why": {"type": "string"}}, "required": []}},
 ]
@@ -49,12 +54,22 @@ def _call(system, user_text, model, max_tokens=1200):
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         raise RuntimeError("ANTHROPIC_API_KEY не налаштовано")
+    from apps.crm.models import AgentConfig
+    use_cache = AgentConfig.get().cache_enabled
+    sys_block = [{"type": "text", "text": system}]
+    tools = [dict(t) for t in TOOLS]
+    if use_cache:
+        sys_block[0]["cache_control"] = {"type": "ephemeral"}  # кешуємо системний промпт (правила+товари)
+        if tools:
+            tools[-1]["cache_control"] = {"type": "ephemeral"}  # + кеш схеми інструментів
     body = json.dumps({
-        "model": model, "max_tokens": max_tokens, "system": system,
-        "messages": [{"role": "user", "content": user_text}], "tools": TOOLS,
+        "model": model, "max_tokens": max_tokens, "system": sys_block,
+        "messages": [{"role": "user", "content": user_text}], "tools": tools,
     }).encode()
-    req = urllib.request.Request(API, data=body, headers={
-        "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
+    hdrs = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+    if use_cache:
+        hdrs["anthropic-beta"] = "prompt-caching-2024-07-31"
+    req = urllib.request.Request(API, data=body, headers=hdrs)
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.load(r)
 
@@ -70,6 +85,12 @@ def build_system(entity, kind):
     if entity.funnel_id:
         stages = list(entity.funnel.stages.order_by("order").values_list("name", flat=True))
         parts.append("## Стадії воронки (по порядку): " + " → ".join(stages))
+    if entity.funnel_id and "\u0442\u0435\u0441\u0442\u043e\u0432" in (entity.funnel.name or "").lower():
+        from apps.warehouse.models import Product
+        prods = list(Product.objects.filter(is_active=True).filter(name__iregex=r"\u0442\u0435\u0441\u0442\u043e\u0432|\u043f\u0440\u043e\u0431\u043d\u0438").order_by("name").values_list("name", "price")[:120])
+        if prods:
+            parts.append("## \u0414\u043e\u0441\u0442\u0443\u043f\u043d\u0456 \u0442\u0435\u0441\u0442-\u043d\u0430\u0431\u043e\u0440\u0438 (\u043d\u0430\u0437\u0432\u0430 \u0422\u041e\u0427\u041d\u041e \u0434\u043b\u044f make_offer):\n" + "\n".join("- %s \u2014 %s \u0433\u0440\u043d" % (n, p) for n, p in prods))
+            parts.append("## \u041a\u041e\u041b\u0418 \u043a\u043b\u0456\u0454\u043d\u0442 \u044f\u0432\u043d\u043e \u043e\u0431\u0440\u0430\u0432 \u0442\u0435\u0441\u0442-\u043d\u0430\u0431\u0456\u0440 \u2014 \u0412\u0406\u0414\u0420\u0410\u0417\u0423 \u0432\u0438\u043a\u043b\u0438\u0447 make_offer \u0437 \u0442\u043e\u0447\u043d\u043e\u044e \u043d\u0430\u0437\u0432\u043e\u044e. \u042f\u043a\u0449\u043e \u0449\u0435 \u043d\u0435 \u043e\u0431\u0440\u0430\u0432 \u2014 \u0443\u0442\u043e\u0447\u043d\u0438, \u043e\u0444\u0444\u0435\u0440 \u043d\u0435 \u0440\u043e\u0431\u0438.")
     cfg = AgentConfig.get()
     if cfg.system_extra:
         parts.append("## Додатково: " + cfg.system_extra)
@@ -177,6 +198,14 @@ def run_agent(entity, kind, trigger="manual", user=None, model=None):
                     run.tasks_created += 1
             elif name == "fill_needs":
                 r = _fill_needs(entity, inp, kind, user)
+            elif name == "make_offer":
+                if kind != "deal":
+                    r = {"ok": False, "msg": "make_offer only for deal"}
+                elif not cfg.autonomous:
+                    r = {"ok": False, "proposed": "offer: " + ", ".join((i or {}).get("name", "") for i in inp.get("items", []))}
+                else:
+                    from .views import make_offer as _mo
+                    r = _mo(entity, inp.get("items"), user=user)
             else:
                 r = {"no_action": inp.get("why", "")}
             actions.append({"tool": name, "input": inp, "result": r})

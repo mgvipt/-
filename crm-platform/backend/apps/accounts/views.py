@@ -16,10 +16,77 @@ class RoleViewSet(viewsets.ModelViewSet):
     required_perm = "roles.manage"
 
 
+def _rr_reassign(qs, field, pool):
+    """Round-robin: розподілити записи qs рівномірно між pool (список юзерів). Повертає к-сть."""
+    ids = list(qs.values_list("id", flat=True))
+    if not pool or not ids:
+        return 0
+    nn = len(pool)
+    for i, p in enumerate(pool):
+        chunk = ids[i::nn]
+        if chunk:
+            qs.model.objects.filter(id__in=chunk).update(**{field: p})
+    return len(ids)
+
+
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.select_related("role", "department").order_by("username")
     serializer_class = UserSerializer
     permission_classes = [HasPermCode]
+
+    @action(detail=True, methods=["post"])
+    def dismiss(self, request, pk=None):
+        """Звільнення: акаунт деактивується (доступ зникає, НЕ видаляється), а його сутності
+        переходять: продажник → round-robin на всіх активних продажників; інший відділ →
+        керівнику відділу (він розподілить), або round-robin на активних членів відділу."""
+        actor = request.user
+        if not (actor.is_superuser or (hasattr(actor, "has_perm_code") and actor.has_perm_code("roles.manage"))):
+            return Response({"detail": "Лише адмін може звільняти"}, status=status.HTTP_403_FORBIDDEN)
+        u = self.get_object()
+        if u.id == actor.id:
+            return Response({"detail": "Не можна звільнити себе"}, status=status.HTTP_400_BAD_REQUEST)
+        from apps.crm.models import Deal, Lead, Contact, Task
+        from apps.inbox.models import Conversation
+        from apps.warehouse.models import WarehouseJob
+        from apps.crm.lead_routing import lead_owner_pool
+        dept = u.department
+        is_sales = bool(dept and "продаж" in (dept.name or "").lower())
+        moved = {}
+        if is_sales:
+            pool = [p for p in lead_owner_pool() if p.id != u.id]
+            if not pool:
+                pool = list(User.objects.filter(is_active=True, is_superuser=False).exclude(id=u.id)[:10])
+            moved["клиенты"] = _rr_reassign(Contact.objects.filter(owner=u), "owner", pool)
+            moved["лиды"] = _rr_reassign(Lead.objects.filter(owner=u), "owner", pool)
+            moved["сделки"] = _rr_reassign(Deal.objects.filter(owner=u), "owner", pool)
+            moved["чаты"] = _rr_reassign(Conversation.objects.filter(assigned_to=u), "assigned_to", pool)
+        else:
+            head = dept.head if (dept and dept.head_id and dept.head_id != u.id and getattr(dept.head, "is_active", False)) else None
+            if head:
+                pool = [head]
+            elif dept:
+                pool = list(User.objects.filter(is_active=True, department=dept).exclude(id=u.id))
+            else:
+                pool = []
+            if not pool:
+                pool = list(User.objects.filter(is_active=True, is_superuser=True).exclude(id=u.id)[:1])
+            moved["задачи"] = _rr_reassign(Task.objects.filter(assignee=u), "assignee", pool)
+            moved["склад_задачи"] = _rr_reassign(WarehouseJob.objects.filter(assignee=u), "assignee", pool)
+            moved["сделки"] = _rr_reassign(Deal.objects.filter(owner=u), "owner", pool)
+            moved["лиды"] = _rr_reassign(Lead.objects.filter(owner=u), "owner", pool)
+        u.is_active = False
+        u.is_superuser = False
+        u.save(update_fields=["is_active", "is_superuser"])
+        targets = [p.get_full_name() or p.username for p in pool]
+        try:
+            from apps.crm.models import log_activity
+            log_activity("contact", 0, "Звільнення співробітника",
+                         "%s деактивовано, дані → %s" % (u.get_full_name() or u.username, ", ".join(targets) or "—"),
+                         actor, "Адмін")
+        except Exception:
+            pass
+        return Response({"ok": True, "is_sales": is_sales, "moved": {k: v for k, v in moved.items() if v},
+                         "to": targets})
     required_perm = "roles.manage"
 
 

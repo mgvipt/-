@@ -25,6 +25,7 @@
 
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "../auth";
 import { api, Funnel, Paginated } from "../api";
 import OwnerSelect from "../OwnerSelect";
 import { Avatar } from "../ui";
@@ -35,9 +36,11 @@ import ActivityLog from "../ActivityLog";
 import CallButton from "../CallButton";
 import KpDoc from "../KpDoc";
 import { useLang } from "../i18n";
+import VykraskaDoc from "../VykraskaDoc";
 import { SocialLink } from "../social";
 import { SalesAnalystPanel } from "../SalesAnalyst";
 import { Icon } from "../Icon";
+import NPDelivery from "./NPDelivery";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
@@ -62,12 +65,86 @@ const LOYALTY_COLOR: Record<string, string> = { VIP: "#7c3aed", Активный
 const editInp: any = { width: 62, height: 28, borderRadius: 6, border: "1px solid #cbd5e1", padding: "0 6px", fontSize: 12 };
 const rowTot: any = { display: "flex", justifyContent: "space-between", padding: "3px 0", gap: 24 };
 
+function methodPair(p: string): [string, string] {
+  switch (p) {
+    case "cash": return ["Наличные", "Готівка"];
+    case "liqpay": return ["LiqPay", "LiqPay"];
+    case "terminal": return ["Терминал · карта/телефон", "Термінал · картка/телефон"];
+    case "requisites": return ["Реквизиты IBAN", "Реквізити IBAN"];
+    case "np": return ["Наложенный платёж", "Накладений платіж"];
+    case "installment": return ["Рассрочка", "Розстрочка"];
+    case "bank": return ["Банк", "Банк"];
+    case "checkbox": return ["Checkbox", "Checkbox"];
+    default: return [p, p];
+  }
+}
+
+function resizeToDataUrl(file: File, max: number, q: number): Promise<string> {
+  return new Promise((resolve) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > max || h > max) { const sc = max / Math.max(w, h); w = Math.round(w * sc); h = Math.round(h * sc); }
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        const ctx = c.getContext("2d"); if (ctx) ctx.drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL("image/jpeg", q));
+      };
+      img.src = r.result as string;
+    };
+    r.readAsDataURL(file);
+  });
+}
+
+function RefPhotos({ dealId, initial }: { dealId: number; initial?: string[] }) {
+  const { t } = useLang();
+  const [photos, setPhotos] = useState<string[]>(initial || []);
+  const [busy, setBusy] = useState(false);
+  async function onFiles(e: any) {
+    const files = Array.from(e.target.files || []) as File[];
+    if (!files.length) return;
+    setBusy(true);
+    const added: string[] = [];
+    for (const f of files) { try { added.push(await resizeToDataUrl(f, 1280, 0.72)); } catch { /* skip */ } }
+    const next = [...photos, ...added];
+    setPhotos(next);
+    try { await api.patch("/api/deals/" + dealId + "/", { ref_photos: next }); } catch { /* ignore */ }
+    setBusy(false); e.target.value = "";
+  }
+  async function del(i: number) {
+    const next = photos.filter((_, j) => j !== i);
+    setPhotos(next);
+    try { await api.patch("/api/deals/" + dealId + "/", { ref_photos: next }); } catch { /* ignore */ }
+  }
+  return (
+    <div className="panel">
+      <div className="label" style={{ marginBottom: 8 }}>📷 {t("Скриншоты от клиента", "Скріни від клієнта")} <span className="muted" style={{ fontSize: 11, fontWeight: 400 }}>{t("— увидит склад в задаче", "— побачить склад у задачі")}</span></div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {photos.map((p, i) => (
+          <div key={i} style={{ position: "relative" }}>
+            <a href={p} target="_blank" rel="noreferrer"><img src={p} style={{ width: 86, height: 86, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0", display: "block" }} /></a>
+            <button onClick={() => del(i)} style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: 10, border: "none", background: "#dc2626", color: "#fff", cursor: "pointer", fontSize: 11, lineHeight: "20px", padding: 0 }}>✕</button>
+          </div>
+        ))}
+        <label style={{ width: 86, height: 86, borderRadius: 8, border: "2px dashed #cbd5e1", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#94a3b8", fontSize: 26 }}>
+          {busy ? "…" : "+"}
+          <input type="file" accept="image/*" multiple onChange={onFiles} style={{ display: "none" }} />
+        </label>
+      </div>
+    </div>
+  );
+}
+
 export default function DealCard({ dealId, onClose }: { dealId?: number; onClose?: () => void } = {}) {
 
   /* ─── [3] STATE ──────────────────────────────────────────────────────── */
   const params = useParams();
   const id = dealId != null ? String(dealId) : params.id;
   const nav = useNavigate();
+  const { can } = useAuth();
+  const [gearOpen, setGearOpen] = useState(false);
+  const gItem: any = { display: "flex", alignItems: "center", gap: 8, padding: "9px 13px", fontSize: 13.5, cursor: "pointer", borderBottom: "1px solid #f6f8fb" };
   const [deal, setDeal] = useState<Deal | null>(null);
   const { t } = useLang();
   const [chatW, setChatW] = useState(() => Number(localStorage.getItem("crm_card_chatW")) || 360);
@@ -75,8 +152,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [notFound, setNotFound] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [allFunnels, setAllFunnels] = useState<any[]>([]);
-  const [tab, setTab] = useState<"general" | "items" | "cashflow">("general");
+  const [tab, setTab] = useState<"general" | "items" | "cashflow" | "np">(() => (localStorage.getItem("deal_tab") as any) || "general");
+  useEffect(() => { try { localStorage.setItem("deal_tab", tab); } catch (e) { /* noop */ } }, [tab]);
   const [docOpen, setDocOpen] = useState(false);
+  const [vkOpen, setVkOpen] = useState(false);
   const [addProd, setAddProd] = useState(0);
   const [addQty, setAddQty] = useState(1);
   const [psearch, setPsearch] = useState(""); const [presults, setPresults] = useState<Product[]>([]); const [psel, setPsel] = useState<Product | null>(null); const [addReserve, setAddReserve] = useState(false); const [showList, setShowList] = useState(false);
@@ -96,6 +175,16 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [cliEdit, setCliEdit] = useState(false);
   const [cliSearch, setCliSearch] = useState(""); const [cliResults, setCliResults] = useState<any[]>([]);
   const [cliNew, setCliNew] = useState(false); const [cliN, setCliN] = useState({ name: "", phone: "" });
+  const [cliFieldsOpen, setCliFieldsOpen] = useState(false);
+  const [cliForm, setCliForm] = useState<any>({ first_name: "", last_name: "", middle_name: "", nickname: "", phone: "", social_link: "", email: "", comment: "" });
+  const [reqFields, setReqFields] = useState<string[]>([]);
+  const [cfgCanEdit, setCfgCanEdit] = useState(false);
+  const [cfgIsAdmin, setCfgIsAdmin] = useState(false);
+  const [cfgEditors, setCfgEditors] = useState<number[]>([]);
+  const [cfgOpen, setCfgOpen] = useState(false);
+  const [cfgStaff, setCfgStaff] = useState<any[]>([]);
+  const fIn: any = { width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13, boxSizing: "border-box" };
+  const lblS: any = { fontSize: 10.5, color: "#94a3b8", marginBottom: 2, fontWeight: 600, textTransform: "lowercase" };
   const [ttnOpen, setTtnOpen] = useState(false); const [ttnSending, setTtnSending] = useState(false);
   const [ttnName, setTtnName] = useState(""); const [ttnPhone, setTtnPhone] = useState("");
   const [ttnCityQ, setTtnCityQ] = useState(""); const [ttnCities, setTtnCities] = useState<any[]>([]); const [ttnCity, setTtnCity] = useState<any>(null);
@@ -124,10 +213,9 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         const d = await api.get<Deal>(`/api/deals/${id}/`);
         setDeal((cur) => {
           if (!cur) return cur;
-          const qCh = JSON.stringify((cur as any).qualification) !== JSON.stringify((d as any).qualification);
-          const iCh = JSON.stringify((cur as any).items) !== JSON.stringify((d as any).items);
-          if (cur.stage === d.stage && cur.owner === d.owner && (cur as any).amount === (d as any).amount && (cur as any).is_seen === (d as any).is_seen && !qCh && !iCh) return cur;
-          return { ...cur, stage: d.stage, owner: d.owner, owner_name: (d as any).owner_name, is_seen: (d as any).is_seen, qualification: (d as any).qualification, items: (d as any).items, amount: (d as any).amount, payments: (d as any).payments, paid: (d as any).paid };
+          // НЕ чіпаємо qualification + items — їх редагує менеджер (інакше збиває фокус при наборі)
+          if (cur.stage === d.stage && cur.owner === d.owner && (cur as any).amount === (d as any).amount && (cur as any).is_seen === (d as any).is_seen) return cur;
+          return { ...cur, stage: d.stage, owner: d.owner, owner_name: (d as any).owner_name, is_seen: (d as any).is_seen, amount: (d as any).amount, payments: (d as any).payments, paid: (d as any).paid };
         });
       } catch { /* ignore */ }
     }, 5000);
@@ -189,17 +277,19 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   async function removeItem(item: number) { setDeal(await api.post<Deal>(`/api/deals/${id}/remove_item/`, { item })); }
 
   async function acceptPayment() {
-    if (payType === "liqpay" || payType === "requisites" || payType === "installment") {
-      try {
+    setSending(true);
+    try {
+      if (payType === "liqpay" || payType === "requisites" || payType === "installment") {
         const r = await api.post<any>(`/api/deals/${id}/send_pay_link/`, { kind: payType, amount: payAmount || deal?.amount });
         const d = await api.get<Deal>(`/api/deals/${id}/`); setDeal(d);
         setPayOpen(false); setPayAmount("");
-        flash(r.sent ? t("✓ Ссылка отправлена клиенту в чат","✓ Посилання надіслано клієнту в чат") : t("⚠ Ссылка создана, но нет открытого чата с клиентом","⚠ Посилання створено, але немає відкритого чату з клієнтом"));
-      } catch { flash(t("Не удалось создать ссылку","Не вдалося створити посилання")); }
-      return;
-    }
-    setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType }));
-    setPayOpen(false); setPayAmount(""); flash(t("✓ Оплата проведена в финансы","✓ Оплата проведена у фінанси"));
+        flash(r.sent ? t("✓ Ссылка создана и отправлена клиенту в чат","✓ Посилання створено й надіслано клієнту в чат") : t("⚠ Ссылка создана, но нет открытого чата с клиентом","⚠ Посилання створено, але немає відкритого чату з клієнтом"));
+      } else {
+        setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType }));
+        setPayOpen(false); setPayAmount(""); flash(t("✓ Оплата проведена в финансы","✓ Оплата проведена у фінанси"));
+      }
+    } catch (e: any) { flash(e?.response?.data?.detail || t("Не удалось — проверь сумму / сеть","Не вдалося — перевір суму / мережу")); }
+    finally { setSending(false); }
   }
   async function ship() {
     try { const r = await api.post<any>(`/api/deals/${id}/ship/`, {}); setDeal(r.deal); flash(t(`✓ Отгружено. Себестоимость ${r.cogs} ₴ списана`, `✓ Відвантажено. Собівартість ${r.cogs} ₴ списана`)); }
@@ -265,6 +355,42 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   }, [ttnCityQ, ttnOpen, ttnCity]);
   async function setContact(cid: number) { await api.patch(`/api/deals/${id}/`, { contact: cid }); setCliEdit(false); setCliSearch(""); setCliResults([]); setCliNew(false); load(); }
   async function removeContact() { if (!confirm(t("Убрать клиента из сделки?","Прибрати клієнта зі сделки?"))) return; await api.patch(`/api/deals/${id}/`, { contact: null }); load(); }
+  async function delDeal() {
+    if (!confirm(t("Удалить сделку безвозвратно? Действие необратимо.","Видалити сделку безповоротно? Дію не відмінити."))) return;
+    try { await api.del("/api/deals/" + id + "/"); flash(t("Сделка удалена","Сделку видалено")); nav(-1); }
+    catch (e: any) { flash(e?.response?.data?.detail || t("Нет прав на удаление","Немає прав на видалення")); }
+  }
+  async function resetClient() {
+    if (!confirm(t("ТЕСТ: удалить ВСЕ данные клиента (лиды/сделки/чаты)? Он зайдёт как новый.","ТЕСТ: видалити ВСІ дані клієнта (ліди/сделки/чати)? Зайде як новий."))) return;
+    try { await api.post("/api/contacts/" + (deal as any).contact_id + "/reset/", {}); flash(t("Клиент сброшен — зайдёт как новый","Клієнта скинуто — зайде як новий")); nav(-1); }
+    catch (e: any) { flash(e?.response?.data?.detail || t("Нет прав","Немає прав")); }
+  }
+  async function dupDeal() {
+    try { const r = await api.post<any>("/api/deals/", { title: (deal?.title || "") + t(" (копия)"," (копія)"), contact: (deal as any)?.contact_id || null, funnel: (deal as any)?.funnel, stage: (deal as any)?.stage, amount: deal?.amount }); flash(t("Создана копия","Створено копію")); nav("/deals/" + r.id); }
+    catch (e: any) { flash(e?.response?.data?.detail || t("Не удалось дублировать","Не вдалося дублювати")); }
+  }
+  async function openCliEdit() {
+    setCliEdit(false);
+    try {
+      const c = await api.get<any>(`/api/contacts/${(deal as any).contact_id}/`);
+      setCliForm({ first_name: c.first_name || "", last_name: c.last_name || "", middle_name: c.middle_name || "", nickname: c.nickname || "", phone: c.phone || "", social_link: c.social_link || "", email: c.email || "", comment: c.comment || "" });
+    } catch { setCliForm({ first_name: "", last_name: "", middle_name: "", nickname: "", phone: (deal as any)?.contact_phone || "", social_link: (deal as any)?.contact_social_link || "", email: "", comment: "" }); }
+    try { const cf = await api.get<any>(`/api/contact-form-config/`); setReqFields(cf.required || []); setCfgCanEdit(!!cf.can_edit); setCfgIsAdmin(!!cf.is_admin); setCfgEditors(cf.editors || []); } catch { /* ignore */ }
+    setCliFieldsOpen(true);
+  }
+  const REQ_LBL: any = { first_name: t("имя","імʼя"), last_name: t("фамилия","прізвище"), middle_name: t("отчество","по батькові"), nickname: t("ник","нік"), phone: t("телефон","телефон"), social_link: "instagram", email: "email" };
+  async function saveCliFields() {
+    if (!(deal as any)?.contact_id) return;
+    const miss = (reqFields || []).filter((fld) => !String(cliForm[fld] || "").trim());
+    if (miss.length) { flash(t("Заполни обязательные: ","Заповни обовʼязкові: ") + miss.map((x) => REQ_LBL[x] || x).join(", ")); return; }
+    try { await api.patch(`/api/contacts/${(deal as any).contact_id}/`, cliForm); } catch { flash(t("Ошибка сохранения","Помилка збереження")); return; }
+    setCliFieldsOpen(false); load();
+  }
+  async function saveReqCfg(required: string[], editors?: number[]) {
+    try { const d = await api.patch<any>(`/api/contact-form-config/`, editors !== undefined ? { required, editors } : { required }); setReqFields(d.required || []); if (d.editors) setCfgEditors(d.editors); flash(t("✓ Сохранено","✓ Збережено")); }
+    catch { flash(t("Нет прав менять настройку","Немає прав змінювати налаштування")); }
+  }
+  function toggleCfg() { setCfgOpen((v) => !v); if (cfgStaff.length === 0 && cfgIsAdmin) api.get<any>("/api/conversations/staff/").then((d) => setCfgStaff(((d.results || d) as any[]))).catch(() => {}); }
   async function createInlineClient() { const p = cliN.name.trim().split(/\s+/); const c = await api.post<any>("/api/contacts/", { first_name: p[0] || cliN.name.trim(), last_name: p.slice(1).join(" "), phone: cliN.phone }); setContact(c.id); setCliN({ name: "", phone: "" }); }
   async function createClient() {
     const parts = nc.name.trim().split(" ");
@@ -327,7 +453,18 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
         {deal.contact_id && <CallButton contact={deal.contact_id} small />}
-        <button className="btn btn-green" onClick={ship}><Icon n="📦" size={15} /> {t("Отгрузить","Відвантажити")}</button>
+        <div style={{ position: "relative" }}>
+          <button className="btn" title={t("Действия со сделкой","Дії зі сделкою")} onClick={() => setGearOpen((v) => !v)}><Icon n="settings" size={16} /></button>
+          {gearOpen ? (
+            <div onMouseLeave={() => setGearOpen(false)} style={{ position: "absolute", top: 42, right: 0, width: 240, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 14px 36px rgba(0,0,0,.18)", zIndex: 41, overflow: "hidden" }}>
+              <div onClick={() => { setGearOpen(false); navigator.clipboard?.writeText(window.location.origin + "/deals/" + deal.id); flash(t("Ссылка скопирована", "Лінк скопійовано")); }} style={gItem}><Icon n="🔗" size={15} /> {t("Копировать ссылку", "Копіювати посилання")}</div>
+              {deal.contact_id ? <div onClick={() => { setGearOpen(false); nav("/clients/" + deal.contact_id); }} style={gItem}><Icon n="👤" size={15} /> {t("Карточка клиента", "Картка клієнта")}</div> : null}
+              <div onClick={() => { setGearOpen(false); dupDeal(); }} style={gItem}><Icon n="📄" size={15} /> {t("Дублировать сделку", "Дублювати сделку")}</div>
+              {(can("roles.manage") && deal.contact_id) ? <div onClick={() => { setGearOpen(false); resetClient(); }} style={{ ...gItem, color: "#b45309" }}><Icon n="trash" size={15} /> {t("Сбросить клиента (тест)","Скинути клієнта (тест)")}</div> : null}
+              {can("deal.delete") ? <div onClick={() => { setGearOpen(false); delDeal(); }} style={{ ...gItem, color: "#dc2626", borderTop: "1px solid #f1f5f9", borderBottom: "none" }}><Icon n="trash" size={15} /> {t("Удалить сделку", "Видалити сделку")}</div> : null}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {/* ─── [8] РЕНДЕР: стадии (клик = смена, на текущей — дни) ────────── */}
@@ -349,15 +486,14 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "12px 0", padding: "8px 10px", background: "linear-gradient(90deg,#f8fafc,#eef2ff)", borderRadius: 10, border: "1px solid #e2e8f0" }}>
         <button className={"btn" + (tab === "general" ? " btn-primary" : "")} onClick={() => setTab("general")}><Icon n="💬" size={15} /> {t("Лента / Чат","Стрічка / Чат")}</button>
         <button className={"btn" + (tab === "items" ? " btn-primary" : "")} onClick={() => setTab("items")}><Icon n="📦" size={15} /> {t("Товары","Товари")} ({deal.items.length})</button>
-        <button className={"btn" + (tab === "cashflow" ? " btn-primary" : "")} onClick={() => setTab("cashflow")}><Icon n="💰" size={15} /> {t("Cashflow","Cashflow")}</button>
+        <button className={"btn" + (tab === "np" ? " btn-primary" : "")} onClick={() => setTab("np")}><Icon n="🚚" size={15} /> {t("Новая почта","Нова Пошта")}</button>
+        <button className="btn" style={{ padding: "0 10px" }} title={t("Накладная / КП (документ)","Накладна / КП (документ)")} onClick={() => setDocOpen(true)}><Icon n="file" size={16} /></button>
+        <button className="btn" style={{ padding: "0 10px" }} title={t("Печать бланка выкраски","Друк бланка викраски")} onClick={() => setVkOpen(true)}><Icon n="palette" size={16} /></button>
         <div style={{ width: 1, height: 24, background: "#cbd5e1", margin: "0 6px" }} />
-        <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>{t("Действия:","Дії:")}</span>
-        <button className="btn" onClick={sendPayLink}><Icon n="💳" size={15} /> {t("Оплата","Оплата")}</button>
-        <button className="btn" onClick={createTTN}><Icon n="🚚" size={15} /> {t("ТТН","ТТН")}</button>
         <button className="btn" onClick={issueCheckbox}><Icon n="🧾" size={15} /> {t("Checkbox","Checkbox")}</button>
       </div>
 
-      {tab !== "cashflow" ? (
+      {tab === "np" ? (<NPDelivery deal={deal} flash={flash} onReload={() => api.get<Deal>(`/api/deals/${id}/`).then(setDeal)} />) : tab !== "cashflow" ? (
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div className="grid2" style={{ flex: 1, minWidth: 0 }}>
 
@@ -367,14 +503,15 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           <div className="panel">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div className="label">{t("Клиент","Клієнт")}</div>
-              {deal.contact_id && !cliEdit && (
+              {deal.contact_id && !cliEdit && !cliFieldsOpen && (
                 <span style={{ fontSize: 11, display: "flex", gap: 10 }}>
-                  <span style={{ color: "#2563eb", cursor: "pointer" }} onClick={() => { setCliEdit(true); setCliNew(false); }}><Icon n="✏️" size={12} /> {t("Изменить","Змінити")}</span>
+                  <span style={{ color: "#2563eb", cursor: "pointer" }} onClick={openCliEdit}><Icon n="✏️" size={12} /> {t("Изменить","Змінити")}</span>
+                  <span style={{ color: "#64748b", cursor: "pointer" }} title={t("Привязать другого клиента","Привʼязати іншого клієнта")} onClick={() => { setCliEdit(true); setCliNew(false); }}>↺ {t("Другой","Інший")}</span>
                   <span style={{ color: "#dc2626", cursor: "pointer" }} onClick={removeContact}>{t("✕ Убрать","✕ Прибрати")}</span>
                 </span>
               )}
             </div>
-            {deal.contact_id && !cliEdit ? (
+            {deal.contact_id && !cliEdit && !cliFieldsOpen ? (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontWeight: 600 }}>{deal.contact_name || t("Без контакта","Без контакту")}</span>
@@ -392,6 +529,48 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   <button className="btn" style={{ background: "#f1f5f9" }} title={t("Карточка клиента","Картка клієнта")} onClick={() => nav(`/clients/${deal.contact_id}`)}>{t("Клиент →","Клієнт →")}</button>
                 </div>
               </>
+            ) : cliFieldsOpen ? (
+              <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 8 }}>
+                {(() => {
+                  const F = (fld: string, label: string, ph: string, auto?: boolean) => {
+                    const req = reqFields.includes(fld);
+                    const empty = !String(cliForm[fld] || "").trim();
+                    return (<div style={{ flex: 1 }}><div style={lblS}>{label}{req && <span style={{ color: "#dc2626" }}> *</span>}</div>
+                      <input value={cliForm[fld] || ""} autoFocus={auto} onChange={(e) => setCliForm({ ...cliForm, [fld]: e.target.value })} placeholder={ph} style={{ ...fIn, border: "1px solid " + (req && empty ? "#fca5a5" : "#cbd5e1") }} /></div>);
+                  };
+                  return (<>
+                    <div style={{ display: "flex", gap: 7 }}>{F("last_name", t("фамилия","прізвище"), "Литвинчук")}{F("first_name", t("имя","імʼя"), "Антон", true)}</div>
+                    <div style={{ display: "flex", gap: 7 }}>{F("middle_name", t("отчество","по батькові"), "Сергійович")}{F("nickname", t("ник / имя из Instagram","нік / імʼя з Instagram"), "Tony")}</div>
+                    {F("phone", t("телефон","телефон"), "+380…")}
+                    {F("social_link", t("инстаграм / соцсеть (ссылка)","інстаграм / соцмережа (посилання)"), "instagram.com/…")}
+                    {F("email", "email", "email@…")}
+                    <div><div style={lblS}>{t("заметка (видна команде)","нотатка (видно команді)")}</div><textarea value={cliForm.comment} onChange={(e) => setCliForm({ ...cliForm, comment: e.target.value })} placeholder={t("комментарий о клиенте","коментар про клієнта")} rows={2} style={{ ...fIn, height: "auto", padding: 8 }} /></div>
+                  </>);
+                })()}
+                {cfgCanEdit && <div>
+                  <span style={{ fontSize: 11, color: "#64748b", cursor: "pointer" }} onClick={toggleCfg}>⚙ {t("Обязательные поля","Обовʼязкові поля")} {cfgOpen ? "▴" : "▾"}</span>
+                  {cfgOpen && <div style={{ background: "#f8fafc", borderRadius: 8, padding: 10, marginTop: 6, fontSize: 12 }}>
+                    {([["last_name", t("Фамилия","Прізвище")], ["first_name", t("Имя","Імʼя")], ["middle_name", t("Отчество","По батькові")], ["phone", t("Телефон","Телефон")], ["social_link", "Instagram / соцмережа"], ["email", "Email"], ["nickname", t("Ник","Нік")]] as [string, string][]).map(([fld, lab]) => (
+                      <label key={fld} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                        <input type="checkbox" checked={reqFields.includes(fld)} onChange={(e) => { const nx = e.target.checked ? [...reqFields, fld] : reqFields.filter((x) => x !== fld); setReqFields(nx); saveReqCfg(nx); }} /> {lab}
+                      </label>
+                    ))}
+                    {cfgIsAdmin && <div style={{ marginTop: 8, borderTop: "1px solid #e2e8f0", paddingTop: 8 }}>
+                      <div style={{ fontWeight: 700, marginBottom: 2 }}>{t("Кто ещё может менять","Хто ще може змінювати")}</div>
+                      <div className="muted" style={{ fontSize: 10.5, marginBottom: 5 }}>{t("Админ — всегда. Отметь сотрудников:","Адмін — завжди. Познач співробітників:")}</div>
+                      <div style={{ maxHeight: 150, overflowY: "auto" }}>{cfgStaff.map((u) => (
+                        <label key={u.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                          <input type="checkbox" checked={cfgEditors.includes(u.id)} onChange={(e) => { const nx = e.target.checked ? [...cfgEditors, u.id] : cfgEditors.filter((x) => x !== u.id); setCfgEditors(nx); saveReqCfg(reqFields, nx); }} /> {u.full_name}
+                        </label>))}</div>
+                    </div>}
+                  </div>}
+                </div>}
+                <div style={{ display: "flex", gap: 7 }}>
+                  <button className="btn btn-primary" style={{ flex: 1 }} onClick={saveCliFields}>{t("Сохранить","Зберегти")}</button>
+                  <button className="btn" style={{ background: "#f1f5f9" }} onClick={() => setCliFieldsOpen(false)}>{t("Отмена","Скасувати")}</button>
+                  <button className="btn" style={{ background: "#f1f5f9" }} title={t("Полная карточка клиента","Повна картка клієнта")} onClick={() => nav(`/clients/${(deal as any).contact_id}`)}>{t("Карточка →","Картка →")}</button>
+                </div>
+              </div>
             ) : (
               <div style={{ marginTop: 6 }}>
                 <input value={cliSearch} autoFocus onChange={(e) => setCliSearch(e.target.value)} placeholder={t("🔍 Телефон или имя клиента…","🔍 Телефон або імʼя клієнта…")} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px" }} />
@@ -441,6 +620,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
               </select>
               <div className="muted" style={{ fontSize: 10.5, marginTop: 3 }}>{deal.pay_type === "prepay_np" ? t("Аванс → Оплату отримано + чек, остаток собирает НП","Аванс → Оплату отримано + чек, решту збере НП") : t("Полная сумма → Оплату отримано; частично → остаётся Домовились","Повна сума → Оплату отримано; частково → лишається Домовились")}</div>
             </div>
+            <div style={{ marginTop: 8 }}>
+              <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("Способ оплаты","Спосіб оплати")}</div>
+              {(deal as any).pay_method
+                ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, background: "#eff6ff", color: "#1d4ed8", borderRadius: 8, padding: "5px 11px" }}>💳 {t(...methodPair((deal as any).pay_method))}</span>
+                : <span className="muted" style={{ fontSize: 12 }}>{t("выберется при «Принять оплату»","обереться при «Прийняти оплату»")}</span>}
+            </div>
             <div style={{ height: 8, background: "#e2e8f0", borderRadius: 6, overflow: "hidden", margin: "10px 0 6px" }} title={t("Прогресс оплаты","Прогрес оплати")}>
               <div style={{ height: "100%", width: (Number(deal.amount) > 0 ? Math.min(100, Math.round((deal.paid / Number(deal.amount)) * 100)) : 0) + "%", background: (deal.paid >= Number(deal.amount) && deal.paid > 0) ? "#16a34a" : "#f59e0b", transition: "width .3s" }} />
             </div>
@@ -454,13 +639,14 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("История платежей","Історія платежів")}</div>
                 {(deal.payments || []).map((p: any) => (
                   <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}>
-                    <span className="muted">{p.provider} · {p.created_at ? new Date(p.created_at).toLocaleDateString("uk", { day: "2-digit", month: "2-digit" }) : ""}</span>
+                    <span className="muted">{t(...methodPair(p.provider))} · {p.created_at ? new Date(p.created_at).toLocaleDateString("uk", { day: "2-digit", month: "2-digit" }) : ""}</span>
                     <b style={{ color: "#16a34a" }}>{fmt(Number(p.amount))} ₴</b>
                   </div>
                 ))}
               </div>
             )}
           </div>
+          <SalesAnalystPanel kind="deals" id={id!} onInsert={(txt) => setDraft(txt)} />
           <ActivityLog kind="deal" id={deal.id} />
 
           {/* 10.3 Скидка (инлайн-edit) + авто-рекомендация для VIP */}
@@ -506,6 +692,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           {tab === "general" ? (
             <>
               <NeedsForm leadId={deal.id} initial={deal.qualification} endpoint="/api/deals/" />
+              <RefPhotos dealId={deal.id} initial={(deal as any).ref_photos} />
               <CardFields leadId={deal.id} initial={deal.card_fields} endpoint="/api/deals/" />
 
             </>
@@ -600,7 +787,6 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           <div style={{ width: chatW, flexShrink: 0, position: "sticky", top: 56, alignSelf: "flex-start" }}>
             <div className="panel">
               <div className="label"><Icon n="💬" size={14} /> {t("Чат с клиентом","Чат з клієнтом")}</div>
-              <SalesAnalystPanel kind="deals" id={id!} onInsert={(txt) => setDraft(txt)} />
               <ClientChat contact={deal.contact_id} />
             </div>
           </div>
@@ -609,6 +795,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       ) : <CashflowTab deal={deal} remaining={remaining} onPay={() => { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }} createTTN={createTTN} issueCheckbox={issueCheckbox} sendPayLink={sendPayLink} flash={flash} />}
 
       {docOpen && <KpDoc deal={deal} onClose={() => setDocOpen(false)} />}
+      {vkOpen && <VykraskaDoc data={{ number: deal.id, material: ((deal as any).qualification || {}).material, color: ((deal as any).qualification || {}).color, area: ((deal as any).qualification || {}).area, underlay: ((deal as any).qualification || {}).underlay, kits: ((deal as any).qualification || {}).kits, client: (deal as any).contact_name, phone: (deal as any).contact_phone }} onClose={() => setVkOpen(false)} />}
       {/* модалка створення клієнта зі сделки */}
       {ncOpen && (
         <div onClick={() => setNcOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
@@ -689,9 +876,9 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         <div onClick={() => setPayOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 380 }}>
             <h3 style={{ marginTop: 0 }}>{t("Принять оплату","Прийняти оплату")}</h3>
-            <label className="label" style={{ marginBottom: 6 }}>{t("Тип оплаты","Тип оплати")}</label>
+            <label className="label" style={{ marginBottom: 6 }}>{t("Способ оплаты","Спосіб оплати")}</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 14 }}>
-              {([["cash", t("💵 Наличные","💵 Готівка")], ["liqpay", t("💳 LiqPay (оплата картой онлайн)","💳 LiqPay (оплата картою онлайн)")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]] as [string,string][]).map(([k, label]) => (
+              {([["cash", t("💵 Наличные","💵 Готівка")], ["liqpay", t("💳 LiqPay (оплата картой онлайн)","💳 LiqPay (оплата картою онлайн)")], ["terminal", t("💳 Терминал · карта/телефон NFC","💳 Термінал · картка/телефон NFC")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]] as [string,string][]).map(([k, label]) => (
                 <button key={k} onClick={() => setPayType(k)} style={{ fontSize: 12, padding: "8px 8px", borderRadius: 8, cursor: "pointer", textAlign: "left", border: "1px solid " + (payType === k ? "var(--brand,#2563eb)" : "#e2e8f0"), background: payType === k ? "#eff6ff" : "#fff", color: payType === k ? "#1d4ed8" : "#475569", fontWeight: payType === k ? 600 : 400 }}>{label}</button>
               ))}
             </div>
@@ -699,9 +886,11 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} style={{ width: "100%", height: 38, marginBottom: 14, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} />
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setPayOpen(false)}>{t("Отмена","Скасувати")}</button>
-              <button className="btn btn-primary" style={{ flex: 2 }} onClick={acceptPayment} disabled={sending}>{sending ? "…" : ((payType === "liqpay" || payType === "requisites") ? t("Создать ссылку и отправить","Створити посилання і надіслати") : t("Провести оплату","Провести оплату"))}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} onClick={acceptPayment} disabled={sending}>{sending ? t("Отправляю…","Надсилаю…") : ((payType === "liqpay" || payType === "requisites" || payType === "installment") ? t("Создать ссылку и отправить","Створити посилання і надіслати") : t("Провести оплату","Провести оплату"))}</button>
             </div>
-            <div className="muted" style={{ fontSize: 11, marginTop: 10 }}>{(payType === "liqpay" || payType === "requisites")
+            <div className="muted" style={{ fontSize: 11, marginTop: 10 }}>{payType === "terminal"
+              ? t("Прими оплату в приложении Checkbox (Tap to Pay) — телефон читает карту/телефон клиента и сразу бьёт чек + печать. Потом «Провести оплату» — CRM проведёт доход и закроет сделку.","Прийми оплату в застосунку Checkbox (Tap to Pay) — телефон читає картку/телефон клієнта і одразу б'є чек + друк. Потім «Провести оплату» — CRM проведе дохід і закриє сделку.")
+              : (payType === "liqpay" || payType === "requisites")
               ? t("Создаст ссылку LiqPay и отправит клиенту в чат. Статус сменится только после реальной оплаты.","Створить посилання LiqPay і надішле клієнту в чат. Статус зміниться лише після реальної оплати.")
               : t("Создаст доходную транзакцию в Финансах + двинет стадию.","Створить дохідну транзакцію у Фінансах + рухне стадію.")}</div>
           </div>
@@ -749,14 +938,13 @@ function CashflowTab({ deal, remaining, onPay, createTTN, issueCheckbox }: any) 
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
         <button className="btn btn-primary" onClick={onPay}><Icon n="💳" size={15} /> {t("Принять оплату","Прийняти оплату")}</button>
-        <button className="btn" onClick={createTTN}><Icon n="🚚" size={15} /> {t("Создать ТТН","Створити ТТН")}</button>
         <button className="btn" onClick={issueCheckbox}><Icon n="🧾" size={15} /> {t("Фискальный чек","Фіскальний чек")}</button>
       </div>
       <div className="label" style={{ marginBottom: 6 }}>{t("История платежей","Історія платежів")}</div>
       {(deal.payments || []).length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Платежей пока нет","Платежів поки немає")}</div> :
         (deal.payments || []).map((p: any) => (
           <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", borderBottom: "1px solid #f1f5f9" }}>
-            <span>{p.provider} · {p.created_at ? new Date(p.created_at).toLocaleDateString("uk") : ""}</span>
+            <span>{t(...methodPair(p.provider))} · {p.created_at ? new Date(p.created_at).toLocaleDateString("uk") : ""}</span>
             <b style={{ color: "#16a34a" }}>{f(Number(p.amount))} ₴</b>
           </div>
         ))}

@@ -4,6 +4,7 @@ import { useLang } from "../i18n";
 import { useAuth } from "../auth";
 import SettingsGlobalRules from "./SettingsGlobalRules";
 import SettingsAutomations from "./SettingsAutomations";
+import SoundSettings from "./SoundSettings";
 import SettingsAgent from "./SettingsAgent";
 import { Icon } from "../Icon";
 
@@ -57,6 +58,7 @@ export default function Settings() {
           <option value="ru">Русский</option>
         </select>
       </div>
+      <SoundSettings />
       <div className="note">{t("Перенеси сюда ключи из Битрикса (один раз) — и оплаты, фискализация и Нова Пошта заработают вживую. Ключи хранятся на сервере и показываются замаскированными.", "Перенеси сюди ключі з Бітрикса (один раз) — і оплати, фіскалізація та Нова Пошта запрацюють наживо. Ключі зберігаються на сервері та показуються замаскованими.")}</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         {provs.map((p) => (

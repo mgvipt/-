@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { api, ChatMessage, Conversation, Paginated } from "../api";
 import { Avatar, SourceChip } from "../ui";
@@ -20,9 +20,18 @@ export default function Inbox() {
   const { t } = useLang();
   const [params] = useSearchParams();
   const nav = useNavigate();
-  const [scope, setScope] = useState<"mine" | "all" | "unassigned">("all");
+  const [scope, setScope] = useState<"mine" | "all" | "unassigned" | "clients">("all");
+  const [tab, setTab] = useState<"chats" | "notif">("chats");
+  const [notifN, setNotifN] = useState(0);
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [active, setActive] = useState<Conversation | null>(null);
+  const PRIO: Record<string, { icon: string; color: string; bg: string; label: string }> = {
+    complaint: { icon: "warn", color: "#dc2626", bg: "#fef2f2", label: t("Возмущение","Обурення") },
+    urgent: { icon: "flame", color: "#ea580c", bg: "#fff7ed", label: t("Хочет срочно","Хоче терміново") },
+    needs_quote: { icon: "calculator", color: "#d97706", bg: "#fffbeb", label: t("Нужен просчёт","Потрібен прорахунок") },
+    quoted: { icon: "badge-check", color: "#16a34a", bg: "#f0fdf4", label: t("Просчитано ИИ","Прораховано ШІ") },
+    thinking: { icon: "clock", color: "#64748b", bg: "#f1f5f9", label: t("Думает","Думає") },
+  };
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -44,10 +53,23 @@ export default function Inbox() {
   const [picker, setPicker] = useState<null | "transfer" | "add">(null);
   const [emps, setEmps] = useState<{ id: number; full_name: string }[]>([]);
   const [menu, setMenu] = useState(false);
+  const headRef = useRef<HTMLDivElement | null>(null);
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const el = headRef.current; if (!el) return;
+    const ro = new ResizeObserver(() => setCompact(el.offsetWidth < 660));
+    ro.observe(el); return () => ro.disconnect();
+  }, [active]);
   const [search, setSearch] = useState("");
   const [channels, setChannels] = useState<{ id: number; name: string }[]>([]);
   const [chFilter, setChFilter] = useState("");
   const [period, setPeriod] = useState("all");
+  const [prio, setPrio] = useState("");
+  const [density, setDensity] = useState<"xs" | "sm" | "md" | "lg">(() => ((localStorage.getItem("inboxDensity") as any) || "sm"));
+  const [filtersOpen, setFiltersOpen] = useState(() => localStorage.getItem("inboxFiltersOpen") === "1");
+  useEffect(() => { localStorage.setItem("inboxDensity", density); }, [density]);
+  useEffect(() => { localStorage.setItem("inboxFiltersOpen", filtersOpen ? "1" : "0"); }, [filtersOpen]);
+  const DENS = ({ xs: { pad: "3px 10px", gap: 0, av: "", name: 11, text: 9.5, sub: 9, time: 8.5 }, sm: { pad: "4px 9px", gap: 6, av: "av-xs", name: 11.5, text: 10.5, sub: 9.5, time: 9 }, md: { pad: "6px 10px", gap: 7, av: "av-sm", name: 12.5, text: 11.5, sub: 10, time: 9.5 }, lg: { pad: "9px 12px", gap: 9, av: "av-md", name: 13.5, text: 12.5, sub: 11, time: 10 } } as any)[density];
   const [selMode, setSelMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const endRef = useRef<HTMLDivElement>(null);
@@ -58,6 +80,7 @@ export default function Inbox() {
     if (scope && scope !== "all") sp.set("scope", scope);
     if (chFilter) sp.set("channel", chFilter);
     if (period && period !== "all") sp.set("period", period);
+    if (prio) sp.set("priority", prio);
     if (search.trim()) sp.set("search", search.trim());
     return "?" + sp.toString();
   }
@@ -83,7 +106,7 @@ export default function Inbox() {
       return Array.from(map.values()).sort((a, b) => String(b.last_message_at || "").localeCompare(String(a.last_message_at || "")));
     });
   }
-  useEffect(() => { loadConvs(); }, [scope, chFilter, period]);
+  useEffect(() => { loadConvs(); }, [scope, chFilter, period, prio]);
   useEffect(() => { const id = setTimeout(() => loadConvs(), 400); return () => clearTimeout(id); /* eslint-disable-next-line */ }, [search]);
   // live-оновлення відкритого чату (без ручного refresh)
   useEffect(() => {
@@ -100,7 +123,7 @@ export default function Inbox() {
   useEffect(() => {
     const t = setInterval(() => refreshList(), 20000);
     return () => clearInterval(t);
-  }, [scope, chFilter, period]);
+  }, [scope, chFilter, period, prio]);
   useEffect(() => {
     const contactId = params.get("contact");
     if (contactId) {
@@ -116,8 +139,9 @@ export default function Inbox() {
     api.get<Conversation>(`/api/conversations/${cid}/`).then((c) => { setConvs((cs) => cs.some((x) => x.id === c.id) ? cs : [c, ...cs]); openConv(c); }).catch(() => {});
   }, [params]);
   useEffect(() => { activeRef.current = active; }, [active]);
+  useEffect(() => { const f = () => api.get<any>("/api/inbox/ping/").then((d) => setNotifN(d.unread || 0)).catch(() => {}); f(); const tm = setInterval(f, 15000); return () => clearInterval(tm); }, []);
   useEffect(() => { api.get<any>("/api/channels/").then((d) => setChannels(((d.results || d) as any[]).map((c) => ({ id: c.id, name: c.name })))).catch(() => {}); }, []);
-  useEffect(() => { api.get<any>("/api/users/?page_size=500").then((d) => setEmps(((d.results || d) as any[]).filter((u) => u.is_active).map((u) => ({ id: u.id, full_name: u.full_name || u.username })))).catch(() => {}); }, []);
+  useEffect(() => { api.get<any>("/api/conversations/staff/").then((d) => setEmps(((d.results || d) as any[]).map((u) => ({ id: u.id, full_name: u.full_name || u.username })))).catch(() => {}); }, []);
   useEffect(() => { endRef.current?.scrollIntoView(); }, [msgs]);
 
   async function analyzeAI(id: number) {
@@ -135,15 +159,17 @@ export default function Inbox() {
   }
 
   async function goToCard() {
-    if (!active?.contact) return;
+    if (!active) return;
     try {
-      const dl = await api.get<any>(`/api/deals/?contact=${active.contact}`);
-      const deal = ((dl as any).results || [])[0];
-      if (deal) { nav(`/deals/${deal.id}`); return; }
-      const ld = await api.get<any>(`/api/leads/?contact=${active.contact}`);
-      const lead = ((ld as any).results || [])[0];
-      if (lead) nav(`/leads/${lead.id}`); else setErr(t("Карточка не найдена","Картку не знайдено"));
-    } catch { setErr(t("Не удалось открыть карточку","Не вдалося відкрити картку")); }
+      if ((active as any).deal_id) { nav(`/deals/${(active as any).deal_id}`); return; }
+      if (active.contact) {
+        const dl = await api.get<any>(`/api/deals/?contact=${active.contact}`);
+        const deal = ((dl as any).results || [])[0];
+        if (deal) { nav(`/deals/${deal.id}`); return; }
+      }
+      const r = await api.post<any>(`/api/conversations/${active.id}/create_deal/`, {});
+      if (r.deal_id) nav(`/deals/${r.deal_id}`); else setErr(t("Не удалось создать сделку", "Не вдалося створити сделку"));
+    } catch { setErr(t("Не удалось открыть карточку", "Не вдалося відкрити картку")); }
   }
 
   async function send() {
@@ -215,36 +241,64 @@ export default function Inbox() {
   function goToContact() { setMenu(false); if (active?.contact) nav(`/clients/${active.contact}`); }
 
   return (
-    <div className="inbox fade" style={{ height: "100%", display: "grid", gridTemplateColumns: "300px 1fr 340px" }}>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", gap: 6, padding: "8px 12px", background: "#fff", borderBottom: "1px solid #e2e8f0", flexShrink: 0, alignItems: "center" }}>
+        <button onClick={() => setTab("chats")} className={"btn" + (tab === "chats" ? " btn-primary" : " btn-light")} style={{ fontSize: 13, fontWeight: 600 }}><Icon n="message" size={15} /> {t("Чаты с клиентами", "Чати з клієнтами")}</button>
+        <button onClick={() => setTab("notif")} className={"btn" + (tab === "notif" ? " btn-primary" : " btn-light")} style={{ fontSize: 13, fontWeight: 600 }}><Icon n="bell" size={15} /> {t("Уведомления", "Сповіщення")}{notifN > 0 && <span style={{ marginLeft: 6, background: "#dc2626", color: "#fff", borderRadius: 20, fontSize: 11, fontWeight: 700, padding: "1px 7px" }}>{notifN}</span>}</button>
+      </div>
+      {tab === "notif"
+        ? <NotifFeed t={t} nav={nav} onOpen={(cid: number) => { setTab("chats"); api.get<Conversation>(`/api/conversations/${cid}/`).then((c) => { setConvs((cs) => cs.some((x) => x.id === c.id) ? cs : [c, ...cs]); openConv(c); }).catch(() => {}); }} />
+        : <div className="inbox fade" style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "300px 1fr 340px" }}>
       {/* список диалогов */}
       <div style={{ background: "#fff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div style={{ padding: 12, borderBottom: "1px solid #e2e8f0", fontWeight: 600 }}>{t("Диалоги","Діалоги")}</div>
         <div style={{ padding: "8px 12px", borderBottom: "1px solid #f1f5f9" }}>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("🔍 Имя, телефон, ник…","🔍 Імʼя, телефон, нік…")} style={{ width: "100%", height: 30, border: "1px solid #e2e8f0", borderRadius: 8, padding: "0 10px", fontSize: 12.5, boxSizing: "border-box" }} />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("🔍 Имя, телефон, ник…","🔍 Імʼя, телефон, нік…")} style={{ width: "100%", height: 28, border: "1px solid #e2e8f0", borderRadius: 8, padding: "0 10px", fontSize: 12, boxSizing: "border-box" }} />
         </div>
-        <div style={{ display: "flex", gap: 6, padding: "8px 12px", borderBottom: "1px solid #f1f5f9" }}>
-          {(([["mine", t("Мои","Мої")]].concat(can("conversation.view.all") ? [["all", t("Все","Всі")], ["unassigned", t("Не назначены","Не призначені")]] : [])) as [string, string][]).map(([k, label]) => (
-            <button key={k} onClick={() => setScope(k as any)}
-              style={{ fontSize: 12, padding: "4px 10px", borderRadius: 14, cursor: "pointer",
-                border: "1px solid " + (scope === k ? "var(--brand)" : "#e2e8f0"),
-                background: scope === k ? "var(--brand)" : "#fff", color: scope === k ? "#fff" : "#475569" }}>{label}</button>
-          ))}
+        <div style={{ display: "flex", gap: 6, padding: "6px 12px", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
+          <button onClick={() => setFiltersOpen((v) => !v)} title={t("Показать / скрыть фильтры: разделы, канал, статус, дата","Показати / сховати фільтри: розділи, канал, статус, дата")}
+            style={{ fontSize: 12, fontWeight: 600, padding: "5px 9px", borderRadius: 7, cursor: "pointer", border: "1px solid " + (filtersOpen ? "var(--brand)" : "#e2e8f0"), background: filtersOpen ? "#eff6ff" : "#fff", color: "#475569" }}>{t("Фильтры","Фільтри")} {filtersOpen ? "▴" : "▾"}</button>
+          <div style={{ flex: 1 }} />
+          <div title={t("Размер чатов в списке — выбери удобный масштаб","Розмір чатів у списку — обери зручний масштаб")} style={{ display: "flex", border: "1px solid #e2e8f0", borderRadius: 7, overflow: "hidden" }}>
+            {(["sm", "md", "lg", "xs"] as const).map((d) => (
+              <button key={d} onClick={() => setDensity(d)} title={d === "sm" ? t("Мелкий","Дрібний") : d === "md" ? t("Средний","Середній") : d === "lg" ? t("Крупный","Великий") : t("Без аватара — максимум чатов","Без аватара — максимум чатів")}
+                style={{ fontSize: 11, fontWeight: 700, padding: "5px 7px", cursor: "pointer", border: "none", background: density === d ? "var(--brand)" : "#fff", color: density === d ? "#fff" : "#64748b" }}>{d === "sm" ? "S" : d === "md" ? "M" : d === "lg" ? "L" : "☰"}</button>
+            ))}
+          </div>
+          <button onClick={() => { setSelMode((v) => !v); setSelected(new Set()); }} title={t("Выбрать несколько чатов и массово закрыть","Обрати кілька чатів і масово закрити")}
+            style={{ height: 30, fontSize: 13, padding: "0 9px", borderRadius: 7, cursor: "pointer", border: "1px solid " + (selMode ? "var(--brand)" : "#e2e8f0"), background: selMode ? "var(--brand)" : "#fff", color: selMode ? "#fff" : "#475569" }}><Icon n="check-square" size={16} /></button>
         </div>
-        <div style={{ display: "flex", gap: 6, padding: "6px 12px", borderBottom: "1px solid #f1f5f9", alignItems: "center", flexWrap: "wrap" }}>
-          <select value={chFilter} onChange={(e) => setChFilter(e.target.value)} style={{ flex: 1, minWidth: 86, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
-            <option value="">{t("Все каналы","Всі канали")}</option>
-            {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select value={period} onChange={(e) => setPeriod(e.target.value)} style={{ flex: 1, minWidth: 86, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
-            <option value="all">{t("Все дни","Всі дні")}</option>
-            <option value="today">{t("Сегодня","Сьогодні")}</option>
-            <option value="yesterday">{t("Вчера","Вчора")}</option>
-            <option value="7d">{t("7 дней","7 днів")}</option>
-            <option value="30d">{t("30 дней","30 днів")}</option>
-          </select>
-          <button onClick={() => { setSelMode((v) => !v); setSelected(new Set()); }} title={t("Выбрать чаты для закрытия","Обрати чати для закриття")}
-            style={{ height: 28, fontSize: 13, padding: "0 9px", borderRadius: 7, cursor: "pointer", border: "1px solid " + (selMode ? "var(--brand)" : "#e2e8f0"), background: selMode ? "var(--brand)" : "#fff", color: selMode ? "#fff" : "#475569" }}><Icon n="check-square" size={16} /></button>
-        </div>
+        {filtersOpen && (
+          <div style={{ borderBottom: "1px solid #f1f5f9" }}>
+            <div style={{ display: "flex", gap: 6, padding: "8px 12px 4px", flexWrap: "wrap" }}>
+              {(([["mine", t("Мои","Мої")], ["clients", t("Клиенты","Клієнти")]].concat(can("conversation.view.all") ? [["all", t("Все","Всі")], ["unassigned", t("Не назначены","Не призначені")]] : [])) as [string, string][]).map(([k, label]) => (
+                <button key={k} onClick={() => setScope(k as any)} title={t("Раздел диалогов","Розділ діалогів")}
+                  style={{ fontSize: 12, padding: "4px 10px", borderRadius: 14, cursor: "pointer", border: "1px solid " + (scope === k ? "var(--brand)" : "#e2e8f0"), background: scope === k ? "var(--brand)" : "#fff", color: scope === k ? "#fff" : "#475569" }}>{label}</button>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 6, padding: "0 12px 8px", alignItems: "center", flexWrap: "wrap" }}>
+              <select value={chFilter} onChange={(e) => setChFilter(e.target.value)} title={t("Фильтр по каналу (Instagram, Telegram…)","Фільтр по каналу (Instagram, Telegram…)")} style={{ flex: 1, minWidth: 86, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
+                <option value="">{t("Все каналы","Всі канали")}</option>
+                {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <select value={prio} onChange={(e) => setPrio(e.target.value)} title={t("Фильтр по статусу / приоритету ИИ","Фільтр по статусу / пріоритету ШІ")} style={{ flex: 1, minWidth: 96, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
+                <option value="">{t("Все статусы","Всі статуси")}</option>
+                <option value="needs_quote">{t("Нужен просчёт","Потрібен прорахунок")}</option>
+                <option value="quoted">{t("Просчитано ИИ","Прораховано ШІ")}</option>
+                <option value="urgent">{t("Хочет срочно","Хоче терміново")}</option>
+                <option value="complaint">{t("Возмущение","Обурення")}</option>
+                <option value="thinking">{t("Думает","Думає")}</option>
+              </select>
+              <select value={period} onChange={(e) => setPeriod(e.target.value)} title={t("Фильтр по дате","Фільтр по даті")} style={{ flex: 1, minWidth: 86, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
+                <option value="all">{t("Все дни","Всі дні")}</option>
+                <option value="today">{t("Сегодня","Сьогодні")}</option>
+                <option value="yesterday">{t("Вчера","Вчора")}</option>
+                <option value="7d">{t("7 дней","7 днів")}</option>
+                <option value="30d">{t("30 дней","30 днів")}</option>
+              </select>
+            </div>
+          </div>
+        )}
         {selMode && (
           <div style={{ display: "flex", gap: 8, padding: "6px 12px", borderBottom: "1px solid #f1f5f9", alignItems: "center", background: "#fff7ed" }}>
             <span style={{ fontSize: 12, color: "#9a3412" }}>{t("Выбрано","Обрано")}: {selected.size}</span>
@@ -259,32 +313,46 @@ export default function Inbox() {
             const fmtAt = (d?: string) => d ? new Date(d).toLocaleString("uk", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
             const card = (c: Conversation) => (
               <div key={c.id} onClick={() => (selMode ? toggleSel(c.id) : openConv(c))}
-                style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", cursor: "pointer",
-                  display: "flex", gap: 9, background: selected.has(c.id) ? "#fef3c7" : (active?.id === c.id ? "#eff6ff" : "") }}>
+                style={{ padding: DENS.pad, borderBottom: "1px solid #f1f5f9", cursor: "pointer",
+                  display: "flex", gap: DENS.gap, background: selected.has(c.id) ? "#fef3c7" : (active?.id === c.id ? "#eff6ff" : "") }}>
                 {selMode && <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} onClick={(e) => e.stopPropagation()} style={{ alignSelf: "center", width: 16, height: 16, cursor: "pointer" }} />}
-                <Avatar name={c.contact_name || c.title || "?"} cls="av-md" />
+                {DENS.av ? <Avatar name={c.contact_name || c.title || "?"} cls={DENS.av} /> : null}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.contact_name || c.title || t("Без имени","Без імені")}</span>
-                    <span style={{ fontSize: 10, color: "#94a3b8", whiteSpace: "nowrap" }}>{fmtAt((c as any).last_message_at)}</span>
+                    <span style={{ fontSize: DENS.name, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.contact_name || c.title || t("Без имени","Без імені")}</span>
+                    <span style={{ fontSize: DENS.time, color: "#94a3b8", whiteSpace: "nowrap" }}>{fmtAt((c as any).last_message_at)}</span>
                   </div>
-                  <div className="muted" style={{ fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.last_text}</div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 11, color: c.assigned_to ? "#2563eb" : "#94a3b8" }}>{c.assigned_to ? "👤 " + c.assigned_to_name : t("Не назначено","Не призначено")}</span>
+                  <div className="muted" style={{ fontSize: DENS.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.last_text}</div>
+                  <FitChips>
+                    <span title={c.assigned_to ? t("Ответственный","Відповідальний") : t("Свободный — не назначен","Вільний — не призначено")} style={{ display: "inline-flex", alignItems: "center", fontSize: 9.5, fontWeight: 600, color: c.assigned_to ? "#1d4ed8" : "#64748b", background: c.assigned_to ? "#dbeafe" : "#f1f5f9", borderRadius: 20, padding: "1px 7px", whiteSpace: "nowrap" }}>{c.assigned_to ? "👤 " + c.assigned_to_name : t("Вільний","Вільний")}</span>
                     <SourceChip source={c.channel_kind} />
-                  </div>
+                    {(c as any).deal_stage && <span title={t("Стадия сделки","Стадія угоди")} style={{ fontSize: 9.5, fontWeight: 600, color: "#0369a1", background: "#e0f2fe", borderRadius: 20, padding: "1px 7px", whiteSpace: "nowrap" }}>{(c as any).deal_stage}</span>}
+                    {(c as any).priority && PRIO[(c as any).priority] && <span title={(c as any).priority_reason || PRIO[(c as any).priority].label} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 9.5, fontWeight: 700, color: PRIO[(c as any).priority].color, background: PRIO[(c as any).priority].bg, borderRadius: 20, padding: "1px 6px 1px 5px", whiteSpace: "nowrap" }}><Icon n={PRIO[(c as any).priority].icon} size={10} /> {PRIO[(c as any).priority].label}</span>}
+                  </FitChips>
                 </div>
                 {c.unread > 0 && <span style={{ width: 16, height: 16, borderRadius: "50%", background: "#ef4444", color: "#fff", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", alignSelf: "center" }}>{c.unread}</span>}
               </div>
             );
-            const need = convs.filter((c) => (c as any).needs_reply);
-            const work = convs.filter((c) => !(c as any).needs_reply);
-            const hdr = (t: string, color: string) => <div style={{ padding: "8px 12px 4px", fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: .3 }}>{t}</div>;
+            // 3 категорії: Непризначені (вільний пул, видно всім з доступом до каналу)
+            // + Потрібна відповідь / В роботі (тільки призначені = свої)
+            const unassigned = convs.filter((c) => !c.assigned_to);
+            const need = convs.filter((c) => c.assigned_to && (c as any).needs_reply);
+            const work = convs.filter((c) => c.assigned_to && !(c as any).needs_reply);
+            const hdr = (icon: string, label: string, color: string) => <div style={{ padding: "8px 12px 4px", fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: .3, display: "flex", alignItems: "center", gap: 5 }}><Icon n={icon} size={12} /> {label}</div>;
+            const withDays = (list: Conversation[]) => {
+              const dk = (c: any) => c.last_message_at ? new Date(c.last_message_at).toDateString() : "\u2014";
+              const cnt: any = {}; list.forEach((c: any) => { const k = dk(c); cnt[k] = (cnt[k] || 0) + 1; });
+              const out: any[] = []; let prev: any = null;
+              list.forEach((c: any) => { const k = dk(c); if (k !== prev) { prev = k; out.push(<div key={"day-" + c.id} style={{ position: "sticky", top: 0, zIndex: 3, background: "#e2e8f0", padding: "5px 12px", fontSize: 11, fontWeight: 700, color: "#334155", borderTop: "1px solid #cbd5e1", borderBottom: "1px solid #cbd5e1", display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ textTransform: "capitalize" }}>{dayLabel(c.last_message_at, t)}</span><span style={{ background: "#94a3b8", color: "#fff", borderRadius: 20, padding: "1px 8px", fontSize: 10.5 }}>{cnt[k]}</span></div>); } out.push(card(c)); });
+              return out;
+            };
             return (<>
-              {need.length > 0 && hdr(t(`🔴 Нужен ответ (${need.length})`,`🔴 Потрібна відповідь (${need.length})`), "#dc2626")}
-              {need.map(card)}
-              {work.length > 0 && hdr(t(`✅ В работе (${work.length})`,`✅ В роботі (${work.length})`), "#16a34a")}
-              {work.map(card)}
+              {unassigned.length > 0 && hdr("bell", t(`Не назначены — свободные (${unassigned.length})`,`Непризначені — вільні (${unassigned.length})`), "#7c3aed")}
+              {withDays(unassigned)}
+              {need.length > 0 && hdr("circle", t(`Нужен ответ (${need.length})`,`Потрібна відповідь (${need.length})`), "#dc2626")}
+              {withDays(need)}
+              {work.length > 0 && hdr("check", t(`В работе (${work.length})`,`В роботі (${work.length})`), "#16a34a")}
+              {withDays(work)}
             </>);
           })()}
           {nextUrl && <div onClick={() => loadMore()} style={{ padding: "10px 12px", textAlign: "center", fontSize: 12, color: "var(--brand)", cursor: "pointer", borderTop: "1px solid #f1f5f9" }}>{t("Загрузить ещё ↓","Завантажити ще ↓")}</div>}
@@ -297,27 +365,27 @@ export default function Inbox() {
           <div className="spin">{t("Выбери диалог слева","Обери діалог зліва")}</div>
         ) : (
           <>
-            <div style={{ height: 52, background: "#fff", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 8, padding: "0 16px" }}>
+            <div ref={headRef} style={{ minHeight: 52, background: "#fff", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, rowGap: 6, padding: "7px 14px" }}>
               <Avatar name={active.contact_name || active.title || "?"} cls="av-md" />
-              <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.25 }}>
-                <b style={{ fontSize: 14 }}>{active.contact_name || active.title}</b>
-                <span className="muted" style={{ fontSize: 11 }}>{active.assigned_to ? "👤 " + active.assigned_to_name : t("Не назначено","Не призначено")}{(active as any).participant_names && (active as any).participant_names.length > 0 ? " · 👥 " + (active as any).participant_names.join(", ") : ""} · {active.channel_name}</span>
+              <div style={{ flex: "1 1 130px", minWidth: 0, display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                <b style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{active.contact_name || active.title}</b>
+                <span className="muted" style={{ fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{active.assigned_to ? "👤 " + active.assigned_to_name : t("Не назначено","Не призначено")}{(active as any).participant_names && (active as any).participant_names.length > 0 ? " · 👥 " + (active as any).participant_names.join(", ") : ""} · {active.channel_name}</span>
               </div>
               <SourceChip source={active.channel_kind} />
-              <div className="spacer" />
-              <button className="btn btn-green"><Icon n="phone" size={15} /> {t("Позвонить","Подзвонити")}</button>
-              {active.contact && <button className="btn btn-primary" style={{ marginLeft: 8 }} onClick={goToCard}><Icon n="handshake" size={15} /> {t("В карточку","В картку")}</button>}
-              {active.assigned_to !== me?.id && <button className="btn" style={{ marginLeft: 8, background: "#ecfdf5", color: "#047857", fontWeight: 600 }} onClick={takeConv} title={t("Закрепить чат за собой","Закріпити чат за собою")}><Icon n="check" size={15} /> {t("Взять себе","Взяти собі")}</button>}
-              <button className="btn" style={{ marginLeft: 8, background: "#fff7ed", color: "#c2410c", fontWeight: 600 }} onClick={() => setPicker(picker === "transfer" ? null : "transfer")}>{t("↪ Переадресовать","↪ Переадресувати")}</button>
-              <button className="btn" style={{ marginLeft: 8, background: "#eef2ff", color: "#4338ca", fontWeight: 600 }} onClick={() => setPicker(picker === "add" ? null : "add")}><Icon n="plus" size={15} /> {t("Менеджер","Менеджер")}</button>
-              <button className="btn" style={{ marginLeft: 8, background: "#f1f5f9", fontWeight: 700, fontSize: 17, lineHeight: 1, padding: "0 12px" }} onClick={() => setMenu((m) => !m)} title={t("Ещё","Ще")}>⋯</button>
+              {(() => { const w = metaWindow(active, msgs); return w ? <span title={w.closed ? t("Окно Instagram (24ч) закрыто — клиент может НЕ получить обычное сообщение","Вікно Instagram (24г) закрите — клієнт може НЕ отримати звичайне повідомлення") : t("Окно открыто — клиент получит сообщение","Вікно відкрите — клієнт отримає")} style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap", color: w.closed ? "#b91c1c" : "#15803d", background: w.closed ? "#fee2e2" : "#dcfce7" }}>{w.closed ? "\ud83d\udd34 " + t("Окно закрыто","Вікно закрите") + " · " + w.hrs + t("ч","г") : "\ud83d\udfe2 " + t("Окно 24ч","Вікно 24г")}</span> : null; })()}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                <button className="btn btn-green" style={{ padding: compact ? "0 9px" : undefined }} title={t("Позвонить","Подзвонити")}><Icon n="phone" size={15} />{!compact && <> {t("Позвонить","Подзвонити")}</>}</button>
+                <button className="btn" style={{ background: "#f1f5f9", fontWeight: 700, lineHeight: 1, padding: "0 11px" }} onClick={() => setMenu((m) => !m)} title={t("Ещё","Ще")}><Icon n="more" size={16} /></button>
+              </div>
             </div>
             {menu && (<>
               <div onClick={() => setMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
               <div style={{ position: "fixed", top: 104, right: 360, width: 260, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 14px 36px rgba(0,0,0,.18)", zIndex: 41, overflow: "hidden" }}>
                 <div onClick={takeConv} style={mItem}><Icon n="pin" size={15} /> {t("Закрепить за мной","Закріпити за мною")}</div>
+                <div onClick={() => { setMenu(false); setPicker("transfer"); }} style={mItem}><Icon n="forward" size={15} /> {t("Переадресовать","Переадресувати")}</div>
+                <div onClick={() => { setMenu(false); setPicker("add"); }} style={mItem}><Icon n="user-plus" size={15} /> {t("Добавить менеджера","Додати менеджера")}</div>
                 {active.contact && <div onClick={goToContact} style={mItem}><Icon n="user" size={15} /> {t("Перейти в контакт","Перейти в контакт")}</div>}
-                {active.contact && <div onClick={() => { setMenu(false); goToCard(); }} style={mItem}><Icon n="handshake" size={15} /> {t("Перейти в сделку","Перейти в угоду")}</div>}
+                <div onClick={() => { setMenu(false); goToCard(); }} style={mItem}><Icon n="handshake" size={15} /> {((active as any).deal_id || active.contact) ? t("Перейти в сделку","Перейти в угоду") : t("Создать сделку из чата","Створити сделку з чату")}</div>
                 <div onClick={closeConv} style={{ ...mItem, color: "#dc2626", borderTop: "1px solid #f1f5f9", fontWeight: 600 }}><Icon n="check" size={15} /> {t("Завершить диалог","Завершити діалог")}</div>
               </div>
             </>)}
@@ -334,8 +402,10 @@ export default function Inbox() {
               </div>
             </>)}
             <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-              {msgs.map((m) => (
-                <div key={m.id} className={"msg" + (m.direction === "out" ? " msg-out" : " msg-in")} data-internal={(m as any).internal ? "1" : ""}
+              {msgs.map((m, i) => (
+                <Fragment key={m.id}>
+                {(i === 0 || new Date((m as any).created_at).toDateString() !== new Date((msgs[i - 1] as any).created_at).toDateString()) && <div style={{ position: "sticky", top: 2, zIndex: 3, textAlign: "center", margin: "8px 0 6px", pointerEvents: "none" }}><span style={{ fontSize: 11, fontWeight: 700, color: "#475569", background: "#e2e8f0", borderRadius: 20, padding: "3px 13px", boxShadow: "0 1px 4px rgba(0,0,0,.14)" }}>{dayLabel((m as any).created_at, t)}</span></div>}
+                <div className={"msg" + (m.direction === "out" ? " msg-out" : " msg-in")} data-internal={(m as any).internal ? "1" : ""}
                   style={{ maxWidth: "70%", padding: "9px 11px", borderRadius: 10, fontSize: 13,
                     alignSelf: m.direction === "out" ? "flex-end" : "flex-start",
                     background: (m as any).internal ? "#fef9c3" : "#fff",
@@ -343,16 +413,20 @@ export default function Inbox() {
                     border: (m as any).internal ? "1px dashed #d4a017" : (m.direction === "out" ? "1.5px solid #2563eb" : "1px solid #e8edf3"),
                     boxShadow: "0 1px 2px rgba(0,0,0,.05)" }}>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: .2, marginBottom: 4, paddingBottom: 3, borderBottom: (m as any).internal ? "1px solid rgba(212,160,23,.3)" : (m.direction === "out" ? "1px solid rgba(37,99,235,.25)" : "1px solid rgba(0,0,0,.08)"), color: (m as any).internal ? "#92400e" : (m.direction === "out" ? "#2563eb" : "var(--brand)") }}>
-                    {(m as any).internal ? "📝 " + (m.sender_name || t("Менеджер","Менеджер")) + " · " + t("только команда","тільки команда") : (m.sender_name || (m.direction === "out" ? t("Менеджер","Менеджер") : (active?.title || t("Клиент","Клієнт"))))}
+                    {(m as any).internal ? "📝 " + ((SNDR_MAP[m.sender_name] || m.sender_name) || t("Менеджер","Менеджер")) + " · " + t("только команда","тільки команда") : ((SNDR_MAP[m.sender_name] || m.sender_name) || (m.direction === "out" ? t("Менеджер","Менеджер") : (active?.title || t("Клиент","Клієнт"))))}
                   </div>
                   <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{linkify(m.text, m.direction === "out")}</span>
-                  {m.attachments?.map((a, i) => (
-                    <div key={i} style={{ fontSize: 11, opacity: .8, marginTop: 4 }}>
-                      <Icon n="paperclip" size={13} /> {a.type === "voice" ? t(`голосовое ${a.duration ?? ""}с`,`голосове ${a.duration ?? ""}с`) : a.type}
-                    </div>
+                  {m.attachments?.map((a: any, i: number) => (
+                    (a.url && a.type === "photo") ? <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 6 }}><img src={a.url} alt="" style={{ maxWidth: 240, maxHeight: 260, borderRadius: 8, display: "block", objectFit: "cover" }} /></a>
+                    : (a.url && a.type === "video") ? <video key={i} src={a.url} controls style={{ maxWidth: 240, borderRadius: 8, marginTop: 6, display: "block" }} />
+                    : (a.url && a.type === "voice") ? <audio key={i} src={a.url} controls style={{ marginTop: 6, maxWidth: 240 }} />
+                    : a.url ? <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 12.5, color: "#2563eb", fontWeight: 600 }}><Icon n="paperclip" size={14} /> {a.name || t("файл","файл")}</a>
+                    : <div key={i} style={{ fontSize: 11, opacity: .8, marginTop: 4 }}><Icon n="paperclip" size={13} /> {a.type === "voice" ? t(`голосовое ${a.duration ?? ""}с`,`голосове ${a.duration ?? ""}с`) : a.type}</div>
                   ))}
                   <div style={{ fontSize: 10, opacity: .55, marginTop: 3, textAlign: m.direction === "out" ? "right" : "left" }}>{(m as any).created_at ? new Date((m as any).created_at).toLocaleTimeString("uk", { hour: "2-digit", minute: "2-digit" }) : ""}</div>
+                  {m.direction === "out" && !(m as any).internal && ((m as any).status === "window_risk" || (m as any).status === "failed") && <div style={{ fontSize: 10, fontWeight: 700, marginTop: 1, textAlign: "right", color: (m as any).status === "failed" ? "#b91c1c" : "#b45309" }}>{(m as any).status === "failed" ? "\u2717 " + t("не доставлено","не доставлено") : "⚠️ " + t("мог не дойти (окно закрыто)","міг не дійти (вікно закрите)")}</div>}
                 </div>
+                </Fragment>
               ))}
               <div ref={endRef} />
             </div>
@@ -370,6 +444,7 @@ export default function Inbox() {
                 ))}
               </div>}
               {internalNote && <div style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11.5, fontWeight: 600, padding: "5px 10px", borderRadius: 6, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}><Icon n="eye" size={14} /> {t("Режим заметки — клиент НЕ увидит, видят только менеджеры","Режим нотатки — клієнт НЕ побачить, бачать лише менеджери")}</div>}
+              {(() => { const w = metaWindow(active, msgs); return w && w.closed ? <div style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11.5, fontWeight: 600, padding: "6px 10px", borderRadius: 6, marginBottom: 6, lineHeight: 1.35 }}>⚠️ {t("Окно Instagram закрыто (прошло " + w.hrs + "ч). Сообщение может НЕ дойти — дождись ответа клиента или напиши с другого канала.","Вікно Instagram закрите (минуло " + w.hrs + "г). Повідомлення може НЕ дійти — дочекайся відповіді клієнта або напиши з іншого каналу.")}</div> : null; })()}
               <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
               <input ref={fileRef} type="file" hidden onChange={sendFile} />
               <button className="btn" type="button" style={{ background: internalNote ? "#fde68a" : "#f1f5f9", color: internalNote ? "#92400e" : "#475569", fontWeight: internalNote ? 700 : 400, flex: "0 0 auto", height: 38 }} title={t("Скрытая заметка для менеджеров (клиент не увидит)","Прихована нотатка для менеджерів (клієнт не побачить)")} onClick={() => setInternalNote((v) => !v)}><Icon n="eye" size={17} /></button>
@@ -379,9 +454,9 @@ export default function Inbox() {
                 onChange={(e) => { setText(e.target.value); if (composerH === null) { e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 170) + "px"; } }}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
                 onPaste={onPasteFile}
-                placeholder={internalNote ? t("Внутренняя заметка — клиент НЕ увидит…  (Enter — отправить, Shift+Enter — новая строка)","Внутрішня нотатка — клієнт НЕ побачить…  (Enter — надіслати, Shift+Enter — новий рядок)") : t(`Сообщение в ${active.channel_name}…  (Enter — отправить, Shift+Enter — строка, вставить фото — Ctrl+V)`,`Повідомлення в ${active.channel_name}…  (Enter — надіслати, Shift+Enter — рядок, вставити фото — Ctrl+V)`)}
+                placeholder={internalNote ? (compact ? t("Внутренняя заметка…","Внутрішня нотатка…") : t("Внутренняя заметка — клиент НЕ увидит…  (Enter — отправить, Shift+Enter — новая строка)","Внутрішня нотатка — клієнт НЕ побачить…  (Enter — надіслати, Shift+Enter — новий рядок)")) : (compact ? t(`Сообщение в ${active.channel_name}…`,`Повідомлення в ${active.channel_name}…`) : t(`Сообщение в ${active.channel_name}…  (Enter — отправить, Shift+Enter — строка, вставить фото — Ctrl+V)`,`Повідомлення в ${active.channel_name}…  (Enter — надіслати, Shift+Enter — рядок, вставити фото — Ctrl+V)`))}
                 style={{ flex: 1, minHeight: 38, height: composerH ? composerH + "px" : undefined, maxHeight: composerH ? undefined : 170, background: internalNote ? "#fffbeb" : "#f1f5f9", border: internalNote ? "1.5px dashed #d4a017" : "none", borderRadius: 7, padding: "9px 12px", fontSize: 13, outline: "none", resize: "none", lineHeight: 1.4, fontFamily: "inherit", boxSizing: "border-box" }} />
-              <button className="btn btn-primary" onClick={send} disabled={sending} style={{ background: internalNote ? "#d4a017" : undefined, height: 38 }}>{sending ? "…" : (internalNote ? <><Icon n="file" size={14} /> {t("Заметка","Нотатка")}</> : t("Отправить","Відправити"))}</button>
+              <button className="btn btn-primary" onClick={send} disabled={sending} title={internalNote ? t("Заметка","Нотатка") : t("Отправить","Відправити")} style={{ background: internalNote ? "#d4a017" : undefined, height: 38, padding: compact ? "0 11px" : undefined }}>{sending ? "…" : (internalNote ? <><Icon n="file" size={15} />{!compact && <> {t("Заметка","Нотатка")}</>}</> : <><Icon n="send" size={16} />{!compact && <> {t("Отправить","Відправити")}</>}</>)}</button>
               </div>
             </div>
           </>
@@ -423,5 +498,89 @@ export default function Inbox() {
         </div>
       </div>
     </div>
+      }
+    </div>
   );
 }
+
+function FitChips({ children }: any) {
+  const inner = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const el = inner.current;
+    if (!el || !el.parentElement) return;
+    const fit = () => {
+      const parent = el.parentElement;
+      if (!parent) return;
+      const avail = parent.clientWidth, natural = el.scrollWidth;
+      if (avail > 4 && natural > 0) setScale(natural > avail ? Math.max(0.6, avail / natural) : 1);
+    };
+    const raf = requestAnimationFrame(fit);
+    const ro = new ResizeObserver(fit);
+    ro.observe(el.parentElement);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  }, []);
+  return (
+    <div style={{ overflow: "hidden", marginTop: 3 }}>
+      <div ref={inner} style={{ display: "inline-flex", gap: 4, whiteSpace: "nowrap", transformOrigin: "left center", transform: scale < 0.999 ? `scale(${scale})` : undefined }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const SNDR_MAP: any = { ai_assistant: "Юля (AI)", operator: "Менеджер", bot: "Бот" };
+function dayLabel(iso: any, t: any) {
+  if (!iso) return "";
+  const dt = new Date(iso), now = new Date(), y = new Date();
+  y.setDate(now.getDate() - 1);
+  const sd = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+  if (sd(dt, now)) return t("Сегодня", "Сьогодні");
+  if (sd(dt, y)) return t("Вчера", "Вчора");
+  return dt.toLocaleDateString("uk", { day: "numeric", month: "long", ...(dt.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) });
+}
+
+function metaWindow(active: any, msgs: any[]) {
+  if (!active || !["instagram", "facebook"].includes(active.channel_kind || "")) return null;
+  let li: any = null;
+  for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].direction === "in") { li = msgs[i]; break; } }
+  const hrs = li && li.created_at ? (Date.now() - new Date(li.created_at).getTime()) / 3600000 : 999;
+  return { hrs: Math.floor(hrs), closed: hrs > 24 };
+}
+
+function NotifFeed({ t, onOpen, nav }: any) {
+  const [items, setItems] = useState<any[]>([]);
+  const [load, setLoad] = useState(true);
+  useEffect(() => { api.get<any>("/api/inbox/notifications/").then((d) => setItems(d.items || [])).catch(() => {}).finally(() => setLoad(false)); }, []);
+  const fmt = (s: string) => s ? new Date(s).toLocaleString("uk", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+  return (
+    <div className="scroll" style={{ flex: 1, minHeight: 0, padding: 16, background: "#f8fafc" }}>
+      <div style={{ maxWidth: 760, margin: "0 auto" }}>
+        <div className="muted" style={{ fontSize: 12.5, marginBottom: 12 }}>{t("Новые сообщения клиентов и звонки. Системные события появятся здесь же.", "Нові повідомлення клієнтів і дзвінки. Системні події з\u02bcявляться тут же.")}</div>
+        {load && <div className="spin">{t("Загрузка…", "Завантаження…")}</div>}
+        {!load && items.length === 0 && <div className="note">{t("Пока нет уведомлений.", "Поки немає сповіщень.")}</div>}
+        {items.map((it, i) => (
+          <div key={i} onClick={() => (it.type === "message" || it.type === "added") ? onOpen(it.conv_id) : (it.deal_id && nav(`/deals/${it.deal_id}`))}
+            style={{ display: "flex", gap: 11, alignItems: "flex-start", background: "#fff", border: "1px solid #eef2f7", borderRadius: 12, padding: "11px 13px", marginBottom: 8, cursor: "pointer" }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: it.type === "call" ? "#ecfdf5" : "#eff6ff", color: it.type === "call" ? "#16a34a" : "#2563eb" }}>
+              <Icon n={it.type === "call" ? "phone" : it.type === "added" ? "user-plus" : "message"} size={17} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <b style={{ fontSize: 13.5 }}>{it.name}</b>
+                {it.type === "message" && it.unread > 0 && <span style={{ background: "#dc2626", color: "#fff", borderRadius: 20, fontSize: 10.5, fontWeight: 700, padding: "0 6px" }}>{it.unread}</span>}
+                <div style={{ flex: 1 }} />
+                <span className="muted" style={{ fontSize: 11 }}>{fmt(it.at)}</span>
+              </div>
+              <div className="muted" style={{ fontSize: 12.5, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {it.type === "message" ? (it.preview || t("(вложение)", "(вкладення)")) : `${it.direction === "in" ? t("Входящий", "Вхідний") : it.direction === "out" ? t("Исходящий", "Вихідний") : t("Пропущенный", "Пропущений")} · ${it.line || "—"} · ${Math.round((it.duration || 0) / 60)} ${t("мин", "хв")}`}
+              </div>
+              <div className="muted" style={{ fontSize: 10.5, marginTop: 2 }}>{it.type === "message" ? "💬 " + (it.channel || t("сообщение", "повідомлення")) : "📞 " + t("звонок", "дзвінок")}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+

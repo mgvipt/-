@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "apps.finance",
     "apps.integrations",
     "apps.telephony",
+    "apps.gamification",
 ]
 
 MIDDLEWARE = [
