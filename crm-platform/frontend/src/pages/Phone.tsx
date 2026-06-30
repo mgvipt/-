@@ -43,6 +43,7 @@ function LineBalances({ t }: any) {
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Icon n="📡" size={15} /><b>{l.name}</b><span className="muted" style={{ fontSize: 12 }}>{l.number}</span></div>
             <div style={{ fontSize: 26, fontWeight: 800, color: l.low ? "#dc2626" : "#0f172a", marginTop: 4 }}>{Number(l.balance).toFixed(2)} ₴</div>
             {l.low && <div style={{ color: "#dc2626", fontSize: 12, fontWeight: 600 }}>⚠ {t("Мало — пополни!", "Мало — поповни!")}</div>}
+            <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 3, color: l.busy ? "#dc2626" : "#16a34a" }}>{l.busy ? t("🔴 Линия занята (идёт звонок)", "🔴 Лінія зайнята (йде дзвінок)") : t("🟢 Свободна", "🟢 Вільна")}</div>
             <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{l.balance_at ? t("Обновлено: ", "Оновлено: ") + new Date(l.balance_at).toLocaleString("ru-RU") : t("Баланс ещё не вносили", "Баланс ще не вносили")}</div>
             {can && can("roles.manage") && <button className="btn btn-light" style={{ fontSize: 12, marginTop: 6, padding: "3px 10px" }} onClick={() => setBal(l)}>✎ {t("Вписать баланс", "Вписати баланс")}</button>}
           </div>

@@ -21,6 +21,7 @@ export default function WebPhone() {
   const [peer, setPeer] = useState("");
   const [msg, setMsg] = useState("");
   const [dialN, setDialN] = useState("");
+  const [lineStatus, setLineStatus] = useState<any>({});
   const [line, setLine] = useState<string>(() => localStorage.getItem("crm_phone_line") || "789");
   const lineRef = useRef<string>(localStorage.getItem("crm_phone_line") || "789");
   function pickLine(l: string) { setLine(l); lineRef.current = l; localStorage.setItem("crm_phone_line", l); }
@@ -107,6 +108,7 @@ export default function WebPhone() {
     } catch (e: any) { setMsg(t("Ошибка: ","Помилка: ") + (e?.message || "")); }
   }
   function answer() { try { sessRef.current?.answer({ mediaConstraints: { audio: true, video: false }, pcConfig: ICE_CFG }); setSt("incall"); } catch { /* */ } }
+  useEffect(() => { const f = () => api.get<any>("/api/telephony/lines/").then((d) => { const m: any = {}; (d || []).forEach((l: any) => { m[l.internal] = l; }); setLineStatus(m); }).catch(() => {}); f(); const tm = setInterval(f, 15000); return () => clearInterval(tm); }, []);
   function hangup() { try { sessRef.current?.terminate(); } catch { /* */ } setSt("ready"); setPeer(""); }
   useEffect(() => {
     window.wallcovAnswer = answer;
@@ -150,6 +152,7 @@ export default function WebPhone() {
               <option value="789">{t("Салон · 0964191890","Салон · 0964191890")}</option>
               <option value="788">{t("Алмазное · 0673812702","Алмазне · 0673812702")}</option>
             </select>
+            {lineStatus[line] && <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 6, color: lineStatus[line].busy ? "#dc2626" : "#16a34a" }}>{lineStatus[line].busy ? t("🔴 Линия занята — возьми другую","🔴 Лінія зайнята — візьми іншу") : t("🟢 Линия свободна","🟢 Лінія вільна")}</div>}
           <div style={{ display: "flex", gap: 6 }}>
             <input value={dialN} onChange={(e) => setDialN(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doDial(dialN)}
               placeholder="0XX XXX XX XX" style={{ flex: 1, minWidth: 0, width: 0, height: 32, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13 }} />

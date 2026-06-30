@@ -301,7 +301,7 @@ class PhoneLineView(APIView):
         from .models import PhoneLine
         return Response([{"id": l.id, "internal": l.internal, "name": l.name, "number": l.number,
                           "balance": float(l.balance), "balance_at": l.balance_at, "low_threshold": float(l.low_threshold),
-                          "low": float(l.balance) < float(l.low_threshold), "note": l.note}
+                          "low": float(l.balance) < float(l.low_threshold), "note": l.note, "busy": l.busy, "busy_at": l.busy_at}
                          for l in PhoneLine.objects.all().order_by("internal")])
 
     def patch(self, request):
@@ -320,4 +320,21 @@ class PhoneLineView(APIView):
         if "note" in request.data:
             l.note = request.data["note"][:200]
         l.save()
+        return Response({"ok": True})
+
+
+class LineStatusView(APIView):
+    """Хост-поллер шле статус занятості ліній (токен). {"803": true, "802": false}."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from django.conf import settings as _s
+        from django.utils import timezone
+        t = request.headers.get("X-Telephony-Token") or request.data.get("token")
+        if not _s.TELEPHONY_TOKEN or t != _s.TELEPHONY_TOKEN:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        from .models import PhoneLine
+        for intl, busy in (request.data.get("lines") or {}).items():
+            PhoneLine.objects.filter(internal=str(intl)).update(busy=bool(busy), busy_at=timezone.now())
         return Response({"ok": True})

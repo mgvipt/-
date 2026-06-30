@@ -62,3 +62,5 @@ class PhoneLine(models.Model):
     balance_at = models.DateTimeField(null=True, blank=True)
     low_threshold = models.DecimalField(max_digits=10, decimal_places=2, default=50)
     note = models.CharField(max_length=200, blank=True)
+    busy = models.BooleanField(default=False)
+    busy_at = models.DateTimeField(null=True, blank=True)
