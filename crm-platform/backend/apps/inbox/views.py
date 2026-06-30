@@ -270,12 +270,12 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         conv.assigned_to = request.user
         conv.save(update_fields=["assigned_to"])
         if conv.contact_id:
-            from apps.crm.models import Deal
-            # Беручи чат — стаємо відповідальним лише за ВІДКРИТІ сделки клієнта.
-            # Власника КОНТАКТУ автоматично НЕ змінюємо — лише керівник/чинний відповідальний вручну.
-            (Deal.objects.filter(contact_id=conv.contact_id)
-                 .exclude(stage__is_won=True).exclude(stage__is_lost=True)
-                 .update(owner=request.user))
+            from apps.crm.models import Deal, Lead, Contact
+            # Беручи чат — стаємо відповідальним за ВІДКРИТІ сделки + ліди + сам контакт клієнта,
+            # щоб менеджер одразу бачив усе в розділі «Мої». Виграні/програні НЕ чіпаємо (історія+ЗП).
+            Deal.objects.filter(contact_id=conv.contact_id).exclude(stage__is_won=True).exclude(stage__is_lost=True).update(owner=request.user)
+            Lead.objects.filter(contact_id=conv.contact_id).exclude(stage__is_won=True).exclude(stage__is_lost=True).update(owner=request.user)
+            Contact.objects.filter(id=conv.contact_id).update(owner=request.user)
         return Response(ConversationSerializer(conv).data)
 
     @action(detail=True, methods=["post"])
