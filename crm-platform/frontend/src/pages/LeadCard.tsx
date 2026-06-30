@@ -2,6 +2,7 @@
  * + конвертация в сделку. Открывается из канбана лидов (/leads/:id). */
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import OwnerSelect from "../OwnerSelect";
 import { api, Funnel } from "../api";
 import { Avatar, SourceChip } from "../ui";
 import ClientChat from "../ClientChat";
@@ -115,6 +116,7 @@ export default function LeadCard() {
   if (!lead) return <div className="spin">{t("Загрузка лида…","Загрузка ліда…")}</div>;
 
   async function setStage(s: number) { await api.patch(`/api/leads/${id}/`, { stage: s }); load(); }
+  async function setOwner(uid: number | null) { if (!lead) return; try { await api.patch(`/api/leads/${lead.id}/`, { owner: uid }); load(); } catch { alert(t("Нет прав менять ответственного (можно менять своих лидов)","Немає прав міняти відповідального (можна своїх лідів)")); } }
   async function convert() {
     const r = await api.post<{ deal_id: number }>(`/api/leads/${id}/convert/`, {});
     nav(`/deals/${r.deal_id}`);
@@ -167,7 +169,7 @@ export default function LeadCard() {
           </div>
           <div className="panel">
             <div className="label">{t("Ответственный","Відповідальний")}</div>
-            <div className="owner" style={{ fontSize: 13 }}><Avatar name={lead.owner_name || "—"} />{lead.owner_name || "—"}</div>
+            <OwnerSelect ownerId={(lead as any).owner} ownerName={lead.owner_name} onSet={setOwner} />
           </div>
           <div className="panel">
             <div className="label">{t("Сумма · Источник","Сума · Джерело")}</div>
