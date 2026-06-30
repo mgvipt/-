@@ -74,7 +74,7 @@ def _call(system, user_text, model, max_tokens=1200):
         resp = json.load(r)
     try:
         from apps.crm.ai import _log_usage
-        _log_usage("ИИ-РОП дожим (продажник)", model, resp.get("usage") or {})
+        _log_usage("Помощник: напоминания дожать клиента", model, resp.get("usage") or {})
     except Exception:
         pass
     return resp

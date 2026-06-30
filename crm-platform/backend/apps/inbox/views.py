@@ -409,7 +409,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             '"suggestion": "готова відповідь клієнту ТІЄЮ Ж мовою, що й він — ввічливо, по суті, з наступним кроком до продажу"}')
         from apps.crm.ai import claude_json
         try:
-            return Response(claude_json(prompt, max_tokens=1000, source="Подсказка ответа"))
+            return Response(claude_json(prompt, max_tokens=1000, source="Подсказка ответа клиенту"))
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 

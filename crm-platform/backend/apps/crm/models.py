@@ -372,3 +372,5 @@ class AiUsage(models.Model):
     cache_read = models.IntegerField(default=0)
     cache_write = models.IntegerField(default=0)
     cost_usd = models.FloatField(default=0)
+    est = models.BooleanField(default=False, help_text="True=оцінка (історія до логування), False=точно")
+    note = models.CharField(max_length=200, blank=True)

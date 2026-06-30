@@ -1435,18 +1435,20 @@ class AiUsageView(APIView):
     def get(self, request):
         from apps.crm.models import AiUsage
         from django.db.models.functions import TruncDate
-        from django.db.models import Sum, Count
+        from django.db.models import Sum, Count, Max
         days = list(AiUsage.objects.annotate(d=TruncDate("created_at")).values("d").annotate(
-            cost=Sum("cost_usd"), calls=Count("id"), itok=Sum("in_tok"), otok=Sum("out_tok")).order_by("-d")[:30])
+            cost=Sum("cost_usd"), calls=Count("id")).order_by("-d")[:45])
         by_src = list(AiUsage.objects.values("source").annotate(cost=Sum("cost_usd"), calls=Count("id"),
-            itok=Sum("in_tok"), otok=Sum("out_tok")).order_by("-cost"))
+            itok=Sum("in_tok"), otok=Sum("out_tok"), note=Max("note")).order_by("-cost"))
         by_model = list(AiUsage.objects.values("model").annotate(cost=Sum("cost_usd"), calls=Count("id")).order_by("-cost"))
-        # деталізація день × механіка
         day_src = list(AiUsage.objects.annotate(d=TruncDate("created_at")).values("d", "source").annotate(
-            cost=Sum("cost_usd"), calls=Count("id")).order_by("-d", "-cost")[:200])
+            cost=Sum("cost_usd"), calls=Count("id")).order_by("-d", "-cost")[:300])
         tot = AiUsage.objects.aggregate(cost=Sum("cost_usd"), calls=Count("id"))
+        est_c = AiUsage.objects.filter(est=True).aggregate(s=Sum("cost_usd"))["s"] or 0
+        live_c = AiUsage.objects.filter(est=False).aggregate(s=Sum("cost_usd"))["s"] or 0
         return Response({"days": days, "by_source": by_src, "by_model": by_model, "day_source": day_src,
-                         "total_cost": tot["cost"] or 0, "total_calls": tot["calls"] or 0})
+                         "total_cost": tot["cost"] or 0, "total_calls": tot["calls"] or 0,
+                         "est_cost": est_c, "live_cost": live_c})
 
 
 class AgentConfigView(APIView):
