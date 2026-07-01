@@ -101,6 +101,7 @@ function RefPhotos({ dealId, initial }: { dealId: number; initial?: string[] }) 
   const { t } = useLang();
   const [photos, setPhotos] = useState<string[]>(initial || []);
   const [busy, setBusy] = useState(false);
+  const [zoom, setZoom] = useState<string | null>(null);
   async function onFiles(e: any) {
     const files = Array.from(e.target.files || []) as File[];
     if (!files.length) return;
@@ -123,7 +124,7 @@ function RefPhotos({ dealId, initial }: { dealId: number; initial?: string[] }) 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {photos.map((p, i) => (
           <div key={i} style={{ position: "relative" }}>
-            <a href={p} target="_blank" rel="noreferrer"><img src={p} style={{ width: 86, height: 86, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0", display: "block" }} /></a>
+            <img src={p} onClick={() => setZoom(p)} title={t("Открыть в масштабе","Відкрити у масштабі")} style={{ width: 86, height: 86, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0", display: "block", cursor: "zoom-in" }} />
             <button onClick={() => del(i)} style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: 10, border: "none", background: "#dc2626", color: "#fff", cursor: "pointer", fontSize: 11, lineHeight: "20px", padding: 0 }}>✕</button>
           </div>
         ))}
@@ -132,6 +133,12 @@ function RefPhotos({ dealId, initial }: { dealId: number; initial?: string[] }) 
           <input type="file" accept="image/*" multiple onChange={onFiles} style={{ display: "none" }} />
         </label>
       </div>
+      {zoom && (
+        <div onClick={() => setZoom(null)} style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out" }}>
+          <img src={zoom} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92%", maxHeight: "92%", objectFit: "contain", borderRadius: 8, boxShadow: "0 10px 50px rgba(0,0,0,.5)" }} />
+          <button onClick={() => setZoom(null)} style={{ position: "absolute", top: 18, right: 22, width: 40, height: 40, borderRadius: 20, border: "none", background: "rgba(255,255,255,.15)", color: "#fff", fontSize: 22, cursor: "pointer" }}>✕</button>
+        </div>
+      )}
     </div>
   );
 }
