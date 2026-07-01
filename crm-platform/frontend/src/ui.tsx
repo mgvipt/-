@@ -1,7 +1,7 @@
 // Мелкие визуальные помощники (аватар-инициалы, бейдж канала).
 export const SOURCES: Record<string, [string, string]> = {
   telegram: ["Telegram", "#27a7e7"], viber: ["Viber", "#7d4fc4"],
-  instagram: ["Instagram", "#e1306c"], facebook: ["Facebook", "#1877f2"],
+  instagram: ["Instagram", "#e1306c"], tiktok: ["TikTok", "#010101"], facebook: ["Facebook", "#1877f2"],
   whatsapp: ["WhatsApp", "#25d366"], call: ["Звонок", "#16a34a"],
   google_business: ["Google", "#ea4335"], other: ["Другое", "#64748b"],
 };

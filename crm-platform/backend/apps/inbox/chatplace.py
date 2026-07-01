@@ -108,17 +108,24 @@ def sync_chats(max_chats=40, per_chat=40):
     """Підтягнути останні чати + повідомлення з ChatPlace у inbox CRM."""
     from .models import Channel, Conversation, Message
     from apps.crm.models import Contact, Lead, Funnel
-    ch, _ = Channel.objects.get_or_create(name="ChatPlace · Instagram",
-                                          defaults={"kind": "instagram", "config": {"chatplace": True}})
-    if not (ch.config or {}).get("chatplace"):
-        ch.config = {**(ch.config or {}), "chatplace": True}; ch.save(update_fields=["config"])
+    ig_ch, _ = Channel.objects.get_or_create(name="ChatPlace · Instagram",
+                                             defaults={"kind": "instagram", "config": {"chatplace": True}})
+    tt_ch, _ = Channel.objects.get_or_create(name="ChatPlace · TikTok",
+                                             defaults={"kind": "tiktok", "config": {"chatplace": True}})
+    for _c in (ig_ch, tt_ch):
+        if not (_c.config or {}).get("chatplace"):
+            _c.config = {**(_c.config or {}), "chatplace": True}; _c.save(update_fields=["config"])
     data = _mcp("chats_list", {"limit": max_chats})
     items = data.get("items", []) if isinstance(data, dict) else (data or [])
     new_conv = new_msg = 0
     errors = []
     for it in items:
         cid = it.get("id")
-        name = (it.get("clientName") or "Instagram").strip()
+        raw_name = (it.get("clientName") or "").strip()
+        is_tt = raw_name.startswith("@")   # TikTok: ChatPlace дає '@username'; Instagram — реальне імʼя
+        platform = "tiktok" if is_tt else "instagram"
+        ch = tt_ch if is_tt else ig_ch
+        name = raw_name or "Instagram"
         if not cid:
             continue
         conv = (Conversation.objects.filter(channel=ch, external_chat_id=str(cid), status="open")
@@ -135,20 +142,20 @@ def sync_chats(max_chats=40, per_chat=40):
             new_conv += 1
             # ЗАВЖДИ створюємо/лінкуємо контакт (раніше @username-клієнти лишались без контакту → лід без чату)
             nm = (name or "Instagram").lstrip("@").strip() or "Instagram"
-            link = ("https://instagram.com/" + nm) if name.startswith("@") else ""
+            link = ((("https://www.tiktok.com/@" if is_tt else "https://instagram.com/") + nm) if name.startswith("@") else "")
             existing = Contact.objects.filter(social_link=link).first() if link else None
             if existing:
                 conv.contact = existing
             elif name.startswith("@"):
-                conv.contact = Contact.objects.create(first_name=nm[:120], nickname=name[:150], channels=["instagram"],
-                                                      social_link=link, comment="З ChatPlace IG")
+                conv.contact = Contact.objects.create(first_name=nm[:120], nickname=name[:150], channels=[platform],
+                                                      social_link=link, comment="З ChatPlace " + platform.upper())
             else:
                 # БЕЗ матчингу по голому імені (зливав різних клієнтів в один контакт).
                 # IG-клієнт без @username → завжди новий контакт (external_chat_id унікальний per-діалог).
                 parts = name.split(" ", 1)
                 conv.contact = Contact.objects.create(first_name=parts[0][:120],
                                                       last_name=(parts[1] if len(parts) > 1 else "")[:120],
-                                                      nickname=name[:150], channels=["instagram"], comment="З ChatPlace IG")
+                                                      nickname=name[:150], channels=[platform], comment="З ChatPlace " + platform.upper())
             conv.save(update_fields=["contact"])
             # посилання на IG-акаунт (username з chats_get)
             try:
@@ -156,7 +163,7 @@ def sync_chats(max_chats=40, per_chat=40):
                     g = _mcp("chats_get", {"chatId": cid})
                     un = (g or {}).get("username") if isinstance(g, dict) else None
                     if un:
-                        conv.contact.social_link = f"https://instagram.com/{un}"
+                        conv.contact.social_link = (("https://www.tiktok.com/@" + un) if is_tt else ("https://instagram.com/" + un))
                         conv.contact.save(update_fields=["social_link"])
             except Exception:
                 pass
@@ -166,7 +173,7 @@ def sync_chats(max_chats=40, per_chat=40):
                 st = f.stages.order_by("order").first() if f else None
                 if f and st:
                     from apps.crm.lead_routing import make_lead_for_contact
-                    make_lead_for_contact(conv.contact, f, "instagram")
+                    make_lead_for_contact(conv.contact, f, platform)
             except Exception:
                 pass
         chad_in = chad_out = False
@@ -202,7 +209,7 @@ def sync_chats(max_chats=40, per_chat=40):
                     from apps.crm.lead_routing import make_lead_for_contact
                     _lf = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
                     if _lf and conv.contact_id:
-                        make_lead_for_contact(conv.contact, _lf, "instagram")
+                        make_lead_for_contact(conv.contact, _lf, platform)
                 except Exception:
                     pass
             # інакше лишаємо закритим — у списку не зʼявиться (status-фільтр)
