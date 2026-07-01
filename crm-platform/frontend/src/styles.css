@@ -199,3 +199,8 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
 .sum{color:var(--card-text-2,#64748b);}
 .col-head b{color:var(--card-text,#334155);}
 .chip-unseen{background:#f59e0b!important;color:#fff!important;font-weight:600;}
+
+@keyframes drawerSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes drawerBgIn { from { opacity: 0; } to { opacity: 1; } }
+.deal-drawer { animation: drawerSlideIn .26s cubic-bezier(.22,.61,.36,1); will-change: transform; }
+.deal-drawer-bg { animation: drawerBgIn .2s ease; }

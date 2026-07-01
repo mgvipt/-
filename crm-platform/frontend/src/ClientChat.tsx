@@ -45,7 +45,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
     const t = setInterval(() => loadMsgs(conv.id), 6000);
     return () => clearInterval(t);
   }, [conv]);
-  useEffect(() => { endRef.current?.scrollIntoView(); }, [msgs]);
+  useEffect(() => { const el = endRef.current?.parentElement as HTMLElement | undefined; if (el) el.scrollTop = el.scrollHeight; }, [msgs]);
 
   async function send() {
     if (!conv || !text.trim()) return;

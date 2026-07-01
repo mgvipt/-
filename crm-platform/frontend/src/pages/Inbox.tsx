@@ -510,8 +510,8 @@ export default function Inbox() {
     </div>
       }
       {dealDrawer && (
-        <div onClick={() => { setDealDrawer(null); refreshList(); }} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(15,23,42,.35)" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "90%", background: "var(--bg, #f3efe9)", boxShadow: "-10px 0 40px rgba(0,0,0,.3)", overflowY: "auto" }}>
+        <div onClick={() => { setDealDrawer(null); refreshList(); }} className="deal-drawer-bg" style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(15,23,42,.35)" }}>
+          <div onClick={(e) => e.stopPropagation()} className="deal-drawer" style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "90%", background: "var(--bg, #f3efe9)", boxShadow: "-10px 0 40px rgba(0,0,0,.3)", overflowY: "auto" }}>
             <DealCard dealId={dealDrawer} onClose={() => { setDealDrawer(null); refreshList(); }} />
           </div>
         </div>
