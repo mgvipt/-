@@ -823,3 +823,82 @@ class TeamThreadView(APIView):
             pass
         return Response({"id": m.id, "text": m.text, "attachments": m.attachments, "out": True,
                          "sender_name": (me.get_full_name() or me.username), "created_at": m.created_at}, status=201)
+
+class ChatPlaceWebhookView(APIView):
+    """PUSH від ChatPlace: нове повідомлення клієнта (IG/TikTok) → одразу в CRM, БЕЗ опитування.
+    ChatPlace-автоматизація (http_request) шле сюди {clientId, username, fullName, text, platform}."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def _secret(self):
+        import hashlib
+        from django.conf import settings as _s
+        return hashlib.sha256((_s.SECRET_KEY + "|chatplace-webhook").encode()).hexdigest()[:32]
+
+    def post(self, request):
+        if request.headers.get("X-CP-Secret") != self._secret():
+            return Response({"detail": "bad secret"}, status=status.HTTP_403_FORBIDDEN)
+        d = request.data or {}
+        text = (d.get("text") or "").strip()
+        username = (d.get("username") or "").strip().lstrip("@")
+        client_id = str(d.get("clientId") or "").strip()
+        full_name = (d.get("fullName") or "").strip()
+        platform = (d.get("platform") or "instagram").strip().lower()
+        if platform not in ("instagram", "tiktok"):
+            platform = "instagram"
+        if not (text or username or client_id):
+            return Response({"detail": "empty"}, status=status.HTTP_400_BAD_REQUEST)
+        from apps.crm.models import Contact, Funnel
+        chan_name = "ChatPlace · TikTok" if platform == "tiktok" else "ChatPlace · Instagram"
+        ch, _ = Channel.objects.get_or_create(name=chan_name, defaults={"kind": platform, "config": {"chatplace": True}})
+        # 1) контакт по username (щоб влучити в наявний діалог з реальним chatId для відповіді)
+        contact = None
+        if username:
+            contact = (Contact.objects.filter(social_link__icontains=username).first()
+                       or Contact.objects.filter(nickname__icontains=username).first())
+        # 2) діалог
+        conv = None
+        if contact:
+            conv = Conversation.objects.filter(channel=ch, contact=contact).order_by("-created_at").first()
+        if conv is None and client_id:
+            conv = Conversation.objects.filter(channel=ch, external_chat_id=client_id).order_by("-created_at").first()
+        created = conv is None
+        if created:
+            link = ""
+            if username:
+                link = ("https://www.tiktok.com/@" + username) if platform == "tiktok" else ("https://instagram.com/" + username)
+            if contact is None:
+                contact = Contact.objects.create(first_name=(username or full_name or "Клієнт")[:120],
+                                                 nickname=(("@" + username) if username else full_name)[:150],
+                                                 channels=[platform], social_link=link, comment="ChatPlace " + platform)
+            conv = Conversation.objects.create(channel=ch, external_chat_id=(client_id or username or ""),
+                                               title=(("@" + username) if username else (full_name or "Клієнт"))[:160], contact=contact)
+        if conv.status == "closed":
+            conv.status = "open"; conv.assigned_to = None; conv.save(update_fields=["status", "assigned_to"])
+        # 3) дедуп (ChatPlace може ретраїти http_request) + повідомлення
+        from django.utils import timezone as _tz
+        from datetime import timedelta as _td
+        if text and Message.objects.filter(conversation=conv, direction="in", text=text[:5000],
+                                            created_at__gte=_tz.now() - _td(seconds=90)).exists():
+            return Response({"ok": True, "dup": True})
+        msg = Message.objects.create(conversation=conv, direction="in", text=text[:5000], external_id="")
+        conv.last_message_at = msg.created_at
+        conv.unread = (conv.unread or 0) + 1
+        conv.save(update_fields=["last_message_at", "unread"])
+        # 4) бейдж непрочитаного + авто-лід
+        if contact:
+            try:
+                from apps.crm.automation import on_incoming
+                on_incoming(contact, text)
+            except Exception:
+                pass
+            if created:
+                try:
+                    f = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
+                    if f:
+                        from apps.crm.lead_routing import make_lead_for_contact
+                        make_lead_for_contact(contact, f, platform)
+                except Exception:
+                    pass
+        return Response({"ok": True, "conv": conv.id, "created": created})
+

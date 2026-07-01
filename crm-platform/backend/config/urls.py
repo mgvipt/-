@@ -77,6 +77,7 @@ urlpatterns = [
     path("api/inbox/notifications/", inbox_views.NotificationsView.as_view()),
     path("api/inbox/meta/webhook", inbox_views.MetaWebhookView.as_view()),
     path("api/inbox/chatplace/sync/", inbox_views.ChatPlaceSyncView.as_view()),
+    path("api/inbox/chatplace/webhook/", inbox_views.ChatPlaceWebhookView.as_view()),
     path("api/contact-center/", inbox_views.ContactCenterView.as_view()),
     path("api/activity/", crm_views.ActivityLogView.as_view()),
     path("api/privacy/", inbox_views.PrivacyPolicyView.as_view()),
