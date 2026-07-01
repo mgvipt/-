@@ -6,14 +6,10 @@ import { useAuth } from "../auth";
 import { useLang } from "../i18n";
 import TeamChat from "./TeamChat";
 import { EmojiButton } from "../ChatCompose";
+import { linkify, dayLabel, metaWindow, SNDR_MAP } from "../chatUtils";
 import { Icon } from "../Icon";
 
-function linkify(text: string, out: boolean) {
-  return String(text || "").split(/(https?:\/\/[^\s]+)/g).map((p, i) =>
-    /^https?:\/\//.test(p)
-      ? <a key={i} href={p} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}>{p}</a>
-      : <span key={i}>{p}</span>);
-}
+
 
 
 export default function Inbox() {
@@ -531,24 +527,9 @@ function FitChips({ children }: any) {
   );
 }
 
-const SNDR_MAP: any = { ai_assistant: "Юля (AI)", operator: "Менеджер", bot: "Бот" };
-function dayLabel(iso: any, t: any) {
-  if (!iso) return "";
-  const dt = new Date(iso), now = new Date(), y = new Date();
-  y.setDate(now.getDate() - 1);
-  const sd = (a: Date, b: Date) => a.toDateString() === b.toDateString();
-  if (sd(dt, now)) return t("Сегодня", "Сьогодні");
-  if (sd(dt, y)) return t("Вчера", "Вчора");
-  return dt.toLocaleDateString("uk", { day: "numeric", month: "long", ...(dt.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) });
-}
 
-function metaWindow(active: any, msgs: any[]) {
-  if (!active || !["instagram", "facebook"].includes(active.channel_kind || "")) return null;
-  let li: any = null;
-  for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].direction === "in") { li = msgs[i]; break; } }
-  const hrs = li && li.created_at ? (Date.now() - new Date(li.created_at).getTime()) / 3600000 : 999;
-  return { hrs: Math.floor(hrs), closed: hrs > 24 };
-}
+
+
 
 function NotifFeed({ t, onOpen, nav }: any) {
   const [items, setItems] = useState<any[]>([]);

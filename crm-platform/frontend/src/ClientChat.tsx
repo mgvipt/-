@@ -1,11 +1,14 @@
 /* Вбудований чат з клієнтом + AI-РОП. Стрічка повідомлень і поле відповіді —
  * обидва з регульованою висотою (тягни за правий нижній кут). AI-РОП показує
  * тези діалогу + рекомендовану відповідь прямо тут. */
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { EmojiButton } from "./ChatCompose";
 import { Icon } from "./Icon";
 import { api, ChatMessage, Conversation, Paginated } from "./api";
 import ChatActions from "./ChatActions";
+import { dayLabel, timeLabel, isNewDay, linkify, metaWindow } from "./chatUtils";
+
+const tt = (_r: string, ua: string) => ua;  // ClientChat україномовний
 
 export default function ClientChat({ contact }: { contact?: number | null }) {
   const [conv, setConv] = useState<Conversation | null>(null);
@@ -93,14 +96,29 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
       {/* СТРІЧКА — заповнює доступну висоту */}
       <div style={{ height: "calc(100vh - 300px)", minHeight: 160, maxHeight: "calc(100vh - 170px)", resize: "vertical", overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
         {msgs.length === 0 && <div className="muted" style={{ fontSize: 13 }}>Повідомлень поки немає</div>}
-        {msgs.map((m) => (
-          <div key={m.id} style={{ alignSelf: m.direction === "in" ? "flex-start" : "flex-end", maxWidth: "82%" }}>
-            <div style={{ fontSize: 10.5, color: "#94a3b8", marginBottom: 2, textAlign: m.direction === "in" ? "left" : "right" }}>
-              {m.direction === "in" ? "Клієнт" : (m.sender_name === "ai_assistant" ? "Юля (AI)" : (m.sender_name || "Менеджер"))}
+        {msgs.map((m, i) => (
+          <Fragment key={m.id}>
+            {isNewDay((m as any).created_at, (msgs[i - 1] as any)?.created_at) && (
+              <div style={{ alignSelf: "center", fontSize: 11, fontWeight: 700, color: "#475569", background: "#e2e8f0", borderRadius: 20, padding: "3px 13px", margin: "6px 0", boxShadow: "0 1px 4px rgba(0,0,0,.12)" }}>{dayLabel((m as any).created_at, tt)}</div>
+            )}
+            <div style={{ alignSelf: m.direction === "in" ? "flex-start" : "flex-end", maxWidth: "82%" }}>
+              <div style={{ fontSize: 10.5, color: "#94a3b8", marginBottom: 2, textAlign: m.direction === "in" ? "left" : "right" }}>
+                {m.direction === "in" ? "Клієнт" : (m.sender_name === "ai_assistant" ? "Юля (AI)" : (m.sender_name || "Менеджер"))}
+              </div>
+              <div style={{ background: (m as any).internal ? "#fef9c3" : (m.direction === "in" ? "#ffffff" : "#dbeafe"), padding: "7px 11px", borderRadius: 12, fontSize: 13, whiteSpace: "pre-wrap", border: (m as any).internal ? "1px dashed #d4a017" : (m.direction === "in" ? "1px solid #eef2f7" : "none") }}>
+                {(m as any).internal && <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", marginBottom: 2 }}><Icon n="📝" size={12} /> Нотатка (тільки команда)</div>}
+                <span style={{ wordBreak: "break-word" }}>{linkify(m.text, m.direction !== "in")}</span>
+                {(m as any).attachments?.map((a: any, j: number) => (
+                  (a.url && a.type === "photo") ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 6 }}><img src={a.url} alt="" style={{ maxWidth: 220, maxHeight: 240, borderRadius: 8, display: "block", objectFit: "cover" }} /></a>
+                  : (a.url && a.type === "video") ? <video key={j} src={a.url} controls style={{ maxWidth: 220, borderRadius: 8, marginTop: 6, display: "block" }} />
+                  : (a.url && a.type === "voice") ? <audio key={j} src={a.url} controls style={{ marginTop: 6, maxWidth: 220 }} />
+                  : a.url ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 12.5, color: "#2563eb", fontWeight: 600 }}><Icon n="paperclip" size={14} /> {a.name || "файл"}</a>
+                  : null
+                ))}
+              </div>
+              <div style={{ fontSize: 9.5, color: "#cbd5e1", marginTop: 2, textAlign: m.direction === "in" ? "left" : "right" }}>{timeLabel((m as any).created_at)}</div>
             </div>
-            <div style={{ background: (m as any).internal ? "#fef9c3" : (m.direction === "in" ? "#ffffff" : "#dbeafe"), padding: "7px 11px", borderRadius: 12, fontSize: 13, whiteSpace: "pre-wrap", border: (m as any).internal ? "1px dashed #d4a017" : (m.direction === "in" ? "1px solid #eef2f7" : "none") }}>{(m as any).internal && <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", marginBottom: 2 }}><Icon n="📝" size={12} /> Нотатка (тільки команда)</div>}{m.text}</div>
-            <div style={{ fontSize: 9.5, color: "#cbd5e1", marginTop: 2, textAlign: m.direction === "in" ? "left" : "right" }}>{(m as any).created_at ? new Date((m as any).created_at).toLocaleTimeString("uk", { hour: "2-digit", minute: "2-digit" }) : ""}</div>
-          </div>
+          </Fragment>
         ))}
         <div ref={endRef} />
       </div>
@@ -124,6 +142,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
 
       {err && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 6 }}>{err}</div>}
 
+      {(() => { const w = metaWindow(conv, msgs); return w && w.closed ? <div style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11.5, fontWeight: 600, padding: "6px 10px", borderRadius: 6, marginTop: 8, lineHeight: 1.35 }}>⚠️ Вікно Instagram закрите (минуло {w.hrs}г). Повідомлення може НЕ дійти — дочекайся відповіді клієнта.</div> : null; })()}
       {/* ПОЛЕ ВІДПОВІДІ — теж регульоване */}
       <textarea value={text} onChange={(e) => setText(e.target.value)} onPaste={onPasteFile} placeholder={internal ? "Внутрішня нотатка — клієнт НЕ побачить…  (вставити фото — Ctrl+V)" : "Відповідь клієнту…  (вставити фото — Ctrl+V)"} rows={3}
         style={{ width: "100%", fontSize: 13, padding: 9, borderRadius: 10, border: internal ? "1.5px dashed #d4a017" : "1px solid #e2e8f0", background: internal ? "#fffbeb" : "#fff", marginTop: 8, boxSizing: "border-box", resize: "vertical", minHeight: 56, flexShrink: 0 }} />
