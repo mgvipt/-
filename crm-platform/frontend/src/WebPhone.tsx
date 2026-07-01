@@ -108,7 +108,7 @@ export default function WebPhone() {
     } catch (e: any) { setMsg(t("Ошибка: ","Помилка: ") + (e?.message || "")); }
   }
   function answer() { try { sessRef.current?.answer({ mediaConstraints: { audio: true, video: false }, pcConfig: ICE_CFG }); setSt("incall"); } catch { /* */ } }
-  useEffect(() => { const f = () => api.get<any>("/api/telephony/lines/").then((d) => { const m: any = {}; (d || []).forEach((l: any) => { m[l.internal] = l; }); setLineStatus(m); }).catch(() => {}); f(); const tm = setInterval(f, 15000); return () => clearInterval(tm); }, []);
+  useEffect(() => { const f = () => api.get<any>("/api/telephony/lines/").then((d) => { const m: any = {}; (d || []).forEach((l: any) => { m[l.internal] = l; }); setLineStatus((prev: any) => JSON.stringify(prev) === JSON.stringify(m) ? prev : m); }).catch(() => {}); f(); const tm = setInterval(f, 15000); return () => clearInterval(tm); }, []);
   function hangup() { try { sessRef.current?.terminate(); } catch { /* */ } setSt("ready"); setPeer(""); }
   useEffect(() => {
     window.wallcovAnswer = answer;

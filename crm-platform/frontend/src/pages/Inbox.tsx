@@ -5,6 +5,7 @@ import { Avatar, SourceChip } from "../ui";
 import { useAuth } from "../auth";
 import { useLang } from "../i18n";
 import TeamChat from "./TeamChat";
+import DealCard from "./DealCard";
 import { EmojiButton } from "../ChatCompose";
 import { linkify, dayLabel, metaWindow, SNDR_MAP } from "../chatUtils";
 import { Icon } from "../Icon";
@@ -22,6 +23,7 @@ export default function Inbox() {
   const [notifN, setNotifN] = useState(0);
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [active, setActive] = useState<Conversation | null>(null);
+  const [dealDrawer, setDealDrawer] = useState<number | null>(null);
   const PRIO: Record<string, { icon: string; color: string; bg: string; label: string }> = {
     complaint: { icon: "warn", color: "#dc2626", bg: "#fef2f2", label: t("Возмущение","Обурення") },
     urgent: { icon: "flame", color: "#ea580c", bg: "#fff7ed", label: t("Хочет срочно","Хоче терміново") },
@@ -98,9 +100,19 @@ export default function Inbox() {
     const q = listQuery();
     const d = await api.get<Paginated<Conversation>>(`/api/conversations/${q}`);
     setConvs((cs) => {
-      const map = new Map<number, Conversation>(cs.map((c) => [c.id, c]));
-      d.results.forEach((r) => map.set(r.id, { ...(map.get(r.id) as any), ...r }));
-      return Array.from(map.values()).sort((a, b) => String(b.last_message_at || "").localeCompare(String(a.last_message_at || "")));
+      const fresh = new Map<number, Conversation>(d.results.map((r) => [r.id, r]));
+      // Оновлюємо НА МІСЦІ (без пересортування → список не стрибає, менеджер не втрачає діалог).
+      // Незмінені чати повертаємо ТИМ САМИМ обʼєктом → React не перемальовує (нема моргання).
+      const merged = cs.map((c) => {
+        const r: any = fresh.get(c.id); const cc: any = c;
+        if (!r) return c;
+        if (r.last_message_at === cc.last_message_at && r.unread === cc.unread && r.needs_reply === cc.needs_reply
+            && r.assigned_to === cc.assigned_to && r.priority === cc.priority && r.is_seen === cc.is_seen) return c;
+        return { ...c, ...r };
+      });
+      const existing = new Set(cs.map((c) => c.id));
+      const added = d.results.filter((r) => !existing.has(r.id));  // нові чати — зверху
+      return added.length ? [...added, ...merged] : merged;
     });
   }
   useEffect(() => { loadConvs(); }, [scope, chFilter, period, prio]);
@@ -158,14 +170,14 @@ export default function Inbox() {
   async function goToCard() {
     if (!active) return;
     try {
-      if ((active as any).deal_id) { nav(`/deals/${(active as any).deal_id}`); return; }
+      if ((active as any).deal_id) { setDealDrawer((active as any).deal_id); return; }
       if (active.contact) {
         const dl = await api.get<any>(`/api/deals/?contact=${active.contact}`);
         const deal = ((dl as any).results || [])[0];
-        if (deal) { nav(`/deals/${deal.id}`); return; }
+        if (deal) { setDealDrawer(deal.id); return; }
       }
       const r = await api.post<any>(`/api/conversations/${active.id}/create_deal/`, {});
-      if (r.deal_id) nav(`/deals/${r.deal_id}`); else setErr(t("Не удалось создать сделку", "Не вдалося створити сделку"));
+      if (r.deal_id) setDealDrawer(r.deal_id); else setErr(t("Не удалось создать сделку", "Не вдалося створити сделку"));
     } catch { setErr(t("Не удалось открыть карточку", "Не вдалося відкрити картку")); }
   }
 
@@ -497,6 +509,13 @@ export default function Inbox() {
       </div>
     </div>
       }
+      {dealDrawer && (
+        <div onClick={() => { setDealDrawer(null); refreshList(); }} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(15,23,42,.35)" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "90%", background: "var(--bg, #f3efe9)", boxShadow: "-10px 0 40px rgba(0,0,0,.3)", overflowY: "auto" }}>
+            <DealCard dealId={dealDrawer} onClose={() => { setDealDrawer(null); refreshList(); }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
