@@ -53,7 +53,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
     try {
       const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send/`, { text, internal });
       setMsgs((p) => [...p, m]); setText("");
-    } catch { setErr("Не вдалося надіслати — чат має бути відкритий оператором"); }
+    } catch (e: any) { setErr(e?.response?.data?.detail || "Не вдалося надіслати — чат має бути відкритий оператором"); }
     setBusy(false);
   }
   // ── Надіслати фото/відео клієнту ──
@@ -70,7 +70,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
       try {
         const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send_media/`, { content_b64: reader.result, filename: f.name, kind });
         setMsgs((p) => [...p, m]);
-      } catch { setErr("Не вдалося надіслати файл (цей канал може не підтримувати медіа)"); }
+      } catch (e: any) { setErr(e?.response?.data?.detail || "Не вдалося надіслати файл (цей канал може не підтримувати медіа)"); }
       setBusy(false);
     };
     reader.readAsDataURL(f);

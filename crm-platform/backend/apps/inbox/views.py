@@ -381,12 +381,18 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     def messages(self, request, pk=None):
         conv = self.get_object()
         if (conv.channel.config or {}).get("chatplace"):
-            try:
-                from .chatplace import sync_one_chat, configured
-                if configured():
-                    sync_one_chat(conv)
-            except Exception:
-                pass
+            # Троттл: живий запит у ChatPlace не частіше ніж раз на 30с на чат
+            # (фронт опитує /messages кожні 6с → інакше 10 звернень/хв на чат → Cloudflare-бан).
+            from django.core.cache import cache as _cache
+            _ck = "cp_livesync_%s" % conv.id
+            if not _cache.get(_ck):
+                try:
+                    from .chatplace import sync_one_chat, configured
+                    if configured():
+                        sync_one_chat(conv)
+                        _cache.set(_ck, 1, timeout=30)
+                except Exception:
+                    pass
         conv.unread = 0
         conv.save(update_fields=["unread"])
         return Response(MessageSerializer(conv.messages.all(), many=True).data)

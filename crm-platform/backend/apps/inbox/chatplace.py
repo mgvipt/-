@@ -43,22 +43,62 @@ def _mcp(name, arguments=None):
         raise RuntimeError("CHATPLACE_API_KEY не налаштовано")
     payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                "params": {"name": name, "arguments": arguments or {}}}
-    req = urllib.request.Request(MCP_URL, data=json.dumps(payload).encode(), headers={
+    import urllib.error, time as _t
+    # Circuit-breaker: якщо Cloudflare нас щойно забанив (429/1015) — не довбимо далі,
+    # інакше бан лише продовжується. Повертаємо зрозумілу помилку одразу.
+    _BLOCK_FILE = "/tmp/cp_block"
+    try:
+        with open(_BLOCK_FILE) as _bf:
+            _bu = float(_bf.read().strip() or 0)
+    except Exception:
+        _bu = 0
+    if _bu and _bu > _t.time():
+        raise RuntimeError("ChatPlace тимчасово обмежив запити. Автовідновлення за ~%d хв." % (int(_bu - _t.time()) // 60 + 1))
+    body = json.dumps(payload).encode()
+    headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream",
         "User-Agent": "wallcov-crm/1.0",
-    })
-    with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310
-        resp = json.load(r)
-    if resp.get("error"):
-        raise RuntimeError(f"ChatPlace MCP error: {resp['error']}")
-    content = (resp.get("result") or {}).get("content") or []
-    text = content[0].get("text") if content else "null"
-    try:
-        return json.loads(text)
-    except (ValueError, TypeError):
-        return text
+    }
+    # ChatPlace MCP нестабільний → до 4 спроб з наростаючою паузою.
+    # Ретраїмо ЛИШЕ мережеві/5xx/429 (запит не дійшов). НА відмову самого ChatPlace
+    # (JSON-RPC error, напр. вікно закрите) — НЕ ретраїмо, щоб не задвоїти повідомлення.
+    last = None
+    for _i in range(4):
+        try:
+            req = urllib.request.Request(MCP_URL, data=body, headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310
+                resp = json.load(r)
+            if resp.get("error"):
+                raise RuntimeError(f"ChatPlace MCP error: {resp['error']}")
+            content = (resp.get("result") or {}).get("content") or []
+            text = content[0].get("text") if content else "null"
+            try:
+                return json.loads(text)
+            except (ValueError, TypeError):
+                return text
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code == 429:
+                ra = e.headers.get("Retry-After") if e.headers else None
+                secs = min(float(ra), 2000) if ra and str(ra).replace(".", "", 1).isdigit() else 120
+                try:
+                    with open(_BLOCK_FILE, "w") as _bf:
+                        _bf.write(str(_t.time() + secs))
+                except Exception:
+                    pass
+                raise RuntimeError("ChatPlace обмежив запити (забагато звернень). Автовідновлення за ~%d хв." % (int(secs) // 60 + 1))
+            if e.code in (500, 502, 503, 504) and _i < 3:
+                _t.sleep(0.6 * (2 ** _i)); continue
+            raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+            last = e
+            if _i < 3:
+                _t.sleep(0.6 * (2 ** _i)); continue
+            raise
+    if last:
+        raise last
 
 
 def send(chat_id, text):
@@ -175,6 +215,15 @@ def sync_chats(max_chats=40, per_chat=40):
                     from apps.crm.lead_routing import make_lead_for_contact
                     make_lead_for_contact(conv.contact, f, platform)
             except Exception:
+                pass
+        # Економія rate-limit: не смикати chats_messages, якщо з останньої синхронізації
+        # НЕ було нових повідомлень (lastMessageAt чату <= збережений last_message_at).
+        _clast = it.get("lastMessageAt")
+        if (not created) and (not was_closed) and _clast and conv.last_message_at:
+            try:
+                if int(_clast) <= int(conv.last_message_at.timestamp()):
+                    continue
+            except (TypeError, ValueError):
                 pass
         chad_in = chad_out = False
         try:
