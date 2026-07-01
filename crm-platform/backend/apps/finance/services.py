@@ -200,9 +200,12 @@ def compute_manager_salary(user, period):
     from .models import ManagerPlan
     p = salary_params()
     y, mo = int(period[:4]), int(period[5:7])
-    won = Deal.objects.filter(owner=user, stage__is_won=True, created_at__year=y, created_at__month=mo)
-    rev = float(won.aggregate(s=_Sum("amount"))["s"] or 0)
-    deals = won.count()
+    # ЗП рахуємо від РЕАЛЬНИХ грошей (рішення Олега 01.07): income-транзакції, привʼязані до
+    # сделок ЦЬОГО менеджера, у гривні (amount_uah). Раніше брали Deal.amount(won) → розбіжність ×17.
+    from .models import Transaction
+    _inc = Transaction.objects.filter(direction="in", deal__owner=user, date__year=y, date__month=mo)
+    rev = float(_inc.aggregate(s=_Sum("amount_uah"))["s"] or 0)
+    deals = _inc.values("deal_id").distinct().count()
     avg_check = rev / deals if deals else 0
     # маржа período — приблизно через ставку маржі компанії (38.22% валова)
     margin_amt = rev * 0.3822
