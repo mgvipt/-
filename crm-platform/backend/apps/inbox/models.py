@@ -65,6 +65,11 @@ class Message(models.Model):
 
     class Meta:
         ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["conversation", "external_id"],
+                                    condition=~models.Q(external_id=""),
+                                    name="uniq_conv_extid"),  # #16 без дублів повідомлень
+        ]
 
     def __str__(self):
         return f"[{self.direction}] {self.text[:40]}"

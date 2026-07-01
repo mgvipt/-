@@ -332,7 +332,13 @@ class SalaryView(APIView):
         if uid:
             from django.contrib.auth import get_user_model
             u = get_user_model().objects.filter(id=uid).first()
-            return Response(compute_manager_salary(u, period) if u else {})
+            if not u:
+                return Response({})
+            me = request.user  # #12 чужу ЗП — лише свій відділ або керівник
+            same_dept = getattr(u, "department_id", None) and u.department_id == getattr(me, "department_id", None)
+            if str(u.id) != str(me.id) and not (me.is_superuser or me.has_perm_code("roles.manage") or same_dept):
+                return Response({"detail": "Немає доступу до ЗП цього співробітника."}, status=403)
+            return Response(compute_manager_salary(u, period))
         rows = [compute_manager_salary(u, period) for u in _sales_team()]
         rows.sort(key=lambda r: r["revenue"], reverse=True)
         # покриття цілі компанії

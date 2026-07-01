@@ -656,8 +656,11 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         product = Product.objects.get(pk=request.data["product"])
         qty = Decimal(str(request.data.get("quantity", 1)))
         price = Decimal(str(request.data.get("price", product.price)))
+        disc = Decimal(str(request.data.get("discount_pct", 0) or 0))
+        if qty <= 0 or price < 0 or disc < 0 or disc > 100:  # #14 захист від дурня/від'ємних
+            return Response({"detail": "Кількість > 0, ціна ≥ 0, знижка 0–100%."}, status=status.HTTP_400_BAD_REQUEST)
         DealItem.objects.create(deal=deal, product=product, quantity=qty, price=price,
-                                discount_pct=Decimal(str(request.data.get("discount_pct", 0) or 0)), reserved=bool(request.data.get("reserved")))
+                                discount_pct=disc, reserved=bool(request.data.get("reserved")))
         self._recalc_amount(deal)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
@@ -715,6 +718,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                     setattr(it, f, Decimal(str(val)))
                 except Exception:
                     pass
+        if it.quantity <= 0 or it.price < 0 or (it.discount_pct or 0) < 0 or (it.discount_pct or 0) > 100:  # #14
+            return Response({"detail": "Кількість > 0, ціна ≥ 0, знижка 0–100%."}, status=status.HTTP_400_BAD_REQUEST)
         it.save()
         self._recalc_amount(deal)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
@@ -728,6 +733,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         g = self._guard(deal, money=True)
         if g: return g
         amount = Decimal(str(request.data.get("amount") or deal.amount))
+        if amount <= 0:  # #15 від'ємна/нульова оплата — заборонено
+            return Response({"detail": "Сума оплати має бути більше 0."}, status=status.HTTP_400_BAD_REQUEST)
         provider = request.data.get("provider", "cash")
         account = Account.objects.filter(pk=request.data.get("account")).first()
         from django.utils import timezone as _tz
@@ -735,7 +742,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         from django.db import transaction as _txn
         with _txn.atomic():
             dlock = Deal.objects.select_for_update().get(pk=deal.pk)
-            if Payment.objects.filter(deal=dlock, amount=amount, provider=provider, created_at__gte=_tz.now() - _td(seconds=30)).exists():
+            if Payment.objects.filter(deal=dlock, amount=amount, provider=provider, created_at__gte=_tz.now() - _td(seconds=180)).exists():  # #7 вікно захисту від задвоєння 3 хв
                 return Response(DealDetailSerializer(dlock, context={"request": request}).data)
             pay = Payment.objects.create(deal=dlock, provider=provider, amount=amount, is_paid=True)
             record_income(amount, deal=dlock, account=account, payment=pay)
@@ -823,6 +830,10 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         if g: return g
         kind = request.data.get("kind", "liqpay")
         amount = Decimal(str(request.data.get("amount") or deal.amount or 0))
+        if amount <= 0:  # #9 не можна нульове/від'ємне посилання
+            return Response({"detail": "Сума посилання має бути більше 0."}, status=status.HTTP_400_BAD_REQUEST)
+        if deal.amount and amount > deal.amount:  # #9 не більше вартості замовлення (передоплата — можна менше)
+            amount = deal.amount
         order_id = "WCCRM-%s-%s" % (deal.id, str(deal.id * 7919 + int(amount))[-6:])
         base = "https://crm.wallcovdec.com.ua"
         url = ""
@@ -1528,7 +1539,7 @@ class LiqPayCallbackView(APIView):
         st = d.get("status")
         order_id = str(d.get("order_id") or "")
         amount = Decimal(str(d.get("amount") or 0))
-        if st not in ("success", "sandbox", "subscribed", "wait_accept"):
+        if st not in ("success", "sandbox", "subscribed"):  # #6 wait_accept НЕ вважати оплатою
             return Response({"ok": True, "ignored": st})
         parts = order_id.split("-")
         if len(parts) < 2 or parts[0] != "WCCRM":

@@ -22,6 +22,9 @@ class TelegramWebhookView(APIView):
 
     def post(self, request, channel_id):
         channel = get_object_or_404(Channel, pk=channel_id, kind="telegram", is_active=True)
+        _sec = (channel.config or {}).get("webhook_secret")  # #11 якщо задано — вимагаємо збіг
+        if _sec and request.headers.get("X-Telegram-Bot-Api-Secret-Token") != _sec:
+            return Response({"detail": "bad secret"}, status=status.HTTP_403_FORBIDDEN)
         data = request.data
         # бот підключили/відключили до Telegram-бізнесу
         bc = data.get("business_connection")
@@ -55,6 +58,12 @@ class ViberWebhookView(APIView):
 
     def post(self, request, channel_id):
         channel = get_object_or_404(Channel, pk=channel_id, kind="viber", is_active=True)
+        _vk = (channel.config or {}).get("app_key")  # #11 підпис Viber, якщо ключ заданий
+        if _vk:
+            import hmac as _h, hashlib as _hl
+            _good = _h.new(_vk.encode(), request.body, _hl.sha256).hexdigest()
+            if request.headers.get("X-Viber-Content-Signature") != _good:
+                return Response({"status": 1, "status_message": "bad signature"}, status=status.HTTP_403_FORBIDDEN)
         event = request.data.get("event")
         if event in ("webhook", "delivered", "seen", "failed", "subscribed", "unsubscribed"):
             return Response({"status": 0})  # сервісні події — просто 200
@@ -327,6 +336,15 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         cid = request.query_params.get("contact")
         if not cid:
             return Response([])
+        u = request.user  # #10 доступ: свої/учасник АБО право бачити всі чати/сделки
+        if not (u.is_superuser or u.has_perm_code("conversation.view.all") or u.can_see_all_deals()):
+            from django.db.models import Q as _Q
+            from apps.crm.models import Deal, Lead
+            ok = (Deal.objects.filter(contact_id=cid, owner=u).exists() or
+                  Lead.objects.filter(contact_id=cid, owner=u).exists() or
+                  Conversation.objects.filter(contact_id=cid).filter(_Q(assigned_to=u) | _Q(participants=u)).exists())
+            if not ok:
+                return Response([])
         qs = (Conversation.objects.filter(contact_id=cid)
               .select_related("channel", "contact", "assigned_to").prefetch_related("participants")
               .order_by("-last_message_at"))

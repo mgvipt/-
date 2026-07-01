@@ -14,18 +14,36 @@ class WarehousePerm(HasPermCode):
     pass
 
 
+from rest_framework.permissions import BasePermission, SAFE_METHODS
+
+
+class WarehouseWrite(BasePermission):
+    """Читати — будь-який авторизований (менеджерам потрібен каталог товарів).
+    Змінювати склад/товари — лише право warehouse.edit (#13)."""
+    def has_permission(self, request, view):
+        u = getattr(request, "user", None)
+        if not (u and u.is_authenticated):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return u.is_superuser or u.has_perm_code("warehouse.edit")
+
+
 class WarehouseViewSet(viewsets.ModelViewSet):
+    permission_classes = [WarehouseWrite]
     queryset = Warehouse.objects.all()
     serializer_class = WarehouseSerializer
 
 
 class ProductCategoryViewSet(viewsets.ModelViewSet):
+    permission_classes = [WarehouseWrite]
     queryset = ProductCategory.objects.all()
     serializer_class = ProductCategorySerializer
     pagination_class = None  # дерево категорий целиком
 
 
 class ProductViewSet(viewsets.ModelViewSet):
+    permission_classes = [WarehouseWrite]
     queryset = Product.objects.select_related("category").all()
     serializer_class = ProductSerializer
     search_fields = ["name", "sku"]
@@ -51,6 +69,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
 
 class StockDocumentViewSet(viewsets.ModelViewSet):
+    permission_classes = [WarehouseWrite]
     queryset = StockDocument.objects.prefetch_related("items").select_related("warehouse", "deal")
     serializer_class = StockDocumentSerializer
     filterset_fields = ["kind", "warehouse", "deal"]
