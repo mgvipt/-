@@ -28,7 +28,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth";
 import { api, Funnel, Paginated } from "../api";
 import OwnerSelect from "../OwnerSelect";
-import { Avatar } from "../ui";
+import { Avatar, SOURCES } from "../ui";
 import NeedsForm from "../NeedsForm";
 import CardFields from "../CardFields";
 import ClientChat from "../ClientChat";
@@ -527,6 +527,14 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   <button className="btn" style={{ flex: 1, background: "#ecfdf5", color: "#047857" }}><Icon n="📞" size={14} /> {t("Позвонить","Подзвонити")}</button>
                   <button className="btn" style={{ flex: 1, background: "#eff6ff", color: "#1d4ed8" }} onClick={() => deal.conversation_id ? nav(`/inbox?c=${deal.conversation_id}`) : setTab("general")}><Icon n="💬" size={14} /> {t("Чат","Чат")}</button>
                   <button className="btn" style={{ background: "#f1f5f9" }} title={t("Карточка клиента","Картка клієнта")} onClick={() => nav(`/clients/${deal.contact_id}`)}>{t("Клиент →","Клієнт →")}</button>
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <div className="label" style={{ fontSize: 11 }}>{t("Источник (общий для клиента)","Джерело (спільне для клієнта)")}</div>
+                  <select value={deal.source || ""} onChange={async (e) => { const v = e.target.value; try { await api.patch(`/api/contacts/${deal.contact_id}/`, { source: v }); load(); } catch { /* */ } }}
+                    style={{ width: "100%", height: 32, border: "1px solid #cbd5e1", borderRadius: 7, fontSize: 12.5 }}>
+                    <option value="">—</option>
+                    {Object.keys(SOURCES).map((k) => <option key={k} value={k}>{(SOURCES as any)[k][0]}</option>)}
+                  </select>
                 </div>
               </>
             ) : cliFieldsOpen ? (

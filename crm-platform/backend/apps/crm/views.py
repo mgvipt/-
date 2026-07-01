@@ -109,7 +109,11 @@ class CompanyViewSet(viewsets.ModelViewSet):
         self._guard_write(); serializer.save()
 
     def perform_update(self, serializer):
-        self._guard_write(); serializer.save()
+        self._guard_write(); obj = serializer.save()
+        if "source" in self.request.data:  # джерело — спільне для клієнта: розшарити на всі його ліди/сделки
+            from .models import Lead, Deal
+            Lead.objects.filter(contact=obj).update(source=obj.source or "other")
+            Deal.objects.filter(contact=obj).update(source=obj.source or "other")
 
     def perform_destroy(self, instance):
         self._guard_write(); instance.delete()

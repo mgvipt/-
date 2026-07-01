@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
-import { Avatar, SourceChip } from "../ui";
+import { Avatar, SourceChip, SOURCES } from "../ui";
 import OwnerSelect from "../OwnerSelect";
 import CallButton from "../CallButton";
 import { useLang } from "../i18n";
@@ -73,7 +73,14 @@ export default function ClientCard() {
                 {LOYALTY.map((l) => <option key={l} value={l}>{l || "—"}</option>)}
               </select>
             </div>
-            {fld(t("Источник","Джерело"), "source", t("Откуда пришёл клиент","Звідки прийшов клієнт"))}
+            <div style={{ marginBottom: 10 }}>
+              <div className="label">{t("Источник","Джерело")}</div>
+              <select value={c.source || ""} onChange={(e) => save({ source: e.target.value })}
+                style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7 }}>
+                <option value="">—</option>
+                {Object.keys(SOURCES).map((k) => <option key={k} value={k}>{(SOURCES as any)[k][0]}</option>)}
+              </select>
+            </div>
             <div>
               <div className="label">{t("Заметки менеджера","Нотатки менеджера")}</div>
               <textarea defaultValue={c.comment} onBlur={(e) => save({ comment: e.target.value })}
