@@ -21,7 +21,8 @@ class CallSerializer(serializers.ModelSerializer):
     def get_recording_url(self, obj):
         if not obj.recording_file:
             return ""
-        import hmac, hashlib
+        import hmac, hashlib, time
         from django.conf import settings
-        sig = hmac.new(settings.SECRET_KEY.encode(), str(obj.id).encode(), hashlib.sha256).hexdigest()[:20]
-        return f"/api/telephony/rec/{obj.id}/?s={sig}"
+        exp = int(time.time()) + 8 * 3600  # посилання живе 8 годин, потім протухає (безпека)
+        sig = hmac.new(settings.SECRET_KEY.encode(), f"{obj.id}.{exp}".encode(), hashlib.sha256).hexdigest()[:20]
+        return f"/api/telephony/rec/{obj.id}/?s={sig}&exp={exp}"

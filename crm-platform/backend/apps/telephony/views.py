@@ -212,7 +212,14 @@ class RecordingView(APIView):
         call = Call.objects.filter(pk=pk).first()
         if not call or not call.recording_file:
             raise Http404("no recording")
-        good = hmac.new(_s.SECRET_KEY.encode(), str(pk).encode(), hashlib.sha256).hexdigest()[:20]
+        import time as _t
+        try:
+            exp = int(request.GET.get("exp") or 0)
+        except (TypeError, ValueError):
+            exp = 0
+        if not exp or exp < int(_t.time()):
+            return HttpResponseForbidden("link expired")  # протухле посилання
+        good = hmac.new(_s.SECRET_KEY.encode(), f"{pk}.{exp}".encode(), hashlib.sha256).hexdigest()[:20]
         if request.GET.get("s") != good:
             return HttpResponseForbidden("bad sig")
         path = os.path.join("/app/media/recordings", call.recording_file)

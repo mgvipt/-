@@ -186,6 +186,20 @@ class ActivityLogMixin:
             return True
         return obj.owner_id in (None, u.id)  # свою або ще нічию (взяти в роботу) — можна
 
+    def _guard(self, deal, money=False, fulfill=False):
+        """Дозвіл на ДІЮ по сделці (не плутати з «бачити»). Власник/edit.all — завжди.
+        Гроші — ще й право payment.process. Відгрузка/ТТН — ще й склад (warehouse.edit)."""
+        from rest_framework.response import Response as _R
+        from rest_framework import status as _st
+        u = self.request.user
+        if self._can_edit(deal):
+            return None
+        if (money or fulfill) and u.has_perm_code("payment.process"):
+            return None
+        if fulfill and u.has_perm_code("warehouse.edit"):
+            return None
+        return _R({"detail": "Немає прав на цю дію по чужій сделці. Зверніться до керівника."}, status=_st.HTTP_403_FORBIDDEN)
+
     def destroy(self, request, *args, **kwargs):
         u = request.user
         if not (u.is_superuser or (self.delete_perm and u.has_perm_code(self.delete_perm))):
@@ -636,6 +650,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def add_item(self, request, pk=None):
         deal = self.get_object()
+        g = self._guard(deal)
+        if g: return g
         from apps.warehouse.models import Product
         product = Product.objects.get(pk=request.data["product"])
         qty = Decimal(str(request.data.get("quantity", 1)))
@@ -677,6 +693,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def remove_item(self, request, pk=None):
         deal = self.get_object()
+        g = self._guard(deal)
+        if g: return g
         DealItem.objects.filter(deal=deal, pk=request.data.get("item")).delete()
         self._recalc_amount(deal)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
@@ -685,6 +703,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     def update_item(self, request, pk=None):
         """Інлайн-редагування позиції: {item, price?, quantity?, discount_pct?}."""
         deal = self.get_object()
+        g = self._guard(deal)
+        if g: return g
         it = DealItem.objects.filter(deal=deal, pk=request.data.get("item")).first()
         if not it:
             return Response({"detail": "Позицію не знайдено"}, status=status.HTTP_404_NOT_FOUND)
@@ -705,6 +725,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         from apps.finance.services import record_income
         from apps.finance.models import Account
         deal = self.get_object()
+        g = self._guard(deal, money=True)
+        if g: return g
         amount = Decimal(str(request.data.get("amount") or deal.amount))
         provider = request.data.get("provider", "cash")
         account = Account.objects.filter(pk=request.data.get("account")).first()
@@ -797,6 +819,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         from .liqpay import build_checkout_url
         from .models import log_activity
         deal = self.get_object()
+        g = self._guard(deal, money=True)
+        if g: return g
         kind = request.data.get("kind", "liqpay")
         amount = Decimal(str(request.data.get("amount") or deal.amount or 0))
         order_id = "WCCRM-%s-%s" % (deal.id, str(deal.id * 7919 + int(amount))[-6:])
@@ -939,6 +963,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         """Перестворити ТТН: видалити поточну в НП (помилка в адресі/відділенні) + очистити,
         щоб зробити нову. Платіж, чек і угода ЛИШАЮТЬСЯ."""
         deal = self.get_object()
+        g = self._guard(deal, fulfill=True)
+        if g: return g
         from apps.integrations import adapters as ad
         from .models import log_activity
         old = deal.ttn
@@ -964,6 +990,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         """Скасувати замовлення: видалити ТТН + відкат стадії + позначка «потрібен повернення коштів».
         Гроші НЕ списуються автоматично — повернення робить менеджер вручну (безпека)."""
         deal = self.get_object()
+        g = self._guard(deal, fulfill=True)
+        if g: return g
         from apps.integrations import adapters as ad
         from .models import log_activity
         old = deal.ttn
@@ -1046,6 +1074,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         from apps.integrations.models import IntegrationSettings
         from .models import log_activity
         deal = self.get_object()
+        g = self._guard(deal, fulfill=True)
+        if g: return g
         if deal.ttn:
             return Response({"ok": True, "already": True, "ttn": deal.ttn})
         p = request.data
@@ -1165,6 +1195,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         from apps.warehouse.models import Warehouse, StockDocument, StockMovement
         from apps.finance.services import record_expense
         deal = self.get_object()
+        g = self._guard(deal, fulfill=True)
+        if g: return g
         items = list(deal.items.select_related("product"))
         if not items:
             return Response({"detail": "В сделке нет товаров"}, status=status.HTTP_400_BAD_REQUEST)
@@ -1185,7 +1217,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                          "deal": DealDetailSerializer(deal, context={"request": request}).data})
 
 
-class PaymentViewSet(viewsets.ModelViewSet):
+class PaymentViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Payment.objects.select_related("deal")
     serializer_class = PaymentSerializer
     filterset_fields = ["deal", "provider", "is_paid"]
