@@ -144,6 +144,28 @@ def sync_one_chat(conv, per_chat=40):
     return new
 
 
+
+_TT_CACHE = {}
+def _tt_exists(username):
+    """Чи існує реальний TikTok-акаунт (oembed). Кеш у памʼяті. Мережева помилка → None (не чіпати)."""
+    if not username:
+        return False
+    if username in _TT_CACHE:
+        return _TT_CACHE[username]
+    import urllib.request, urllib.error
+    try:
+        req = urllib.request.Request("https://www.tiktok.com/oembed?url=https://www.tiktok.com/@%s" % username,
+                                     headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            ok = (r.status == 200)
+    except urllib.error.HTTPError:
+        ok = False
+    except Exception:
+        ok = None
+    _TT_CACHE[username] = ok
+    return ok
+
+
 def sync_chats(max_chats=40, per_chat=40):
     """Підтягнути останні чати + повідомлення з ChatPlace у inbox CRM."""
     from .models import Channel, Conversation, Message
@@ -162,7 +184,10 @@ def sync_chats(max_chats=40, per_chat=40):
     for it in items:
         cid = it.get("id")
         raw_name = (it.get("clientName") or "").strip()
-        is_tt = raw_name.startswith("@")   # TikTok: ChatPlace дає '@username'; Instagram — реальне імʼя
+        # TikTok визначаємо НАДІЙНО: імʼя-@username І реальний TikTok-акаунт існує (oembed).
+        # Раніше брали лише '@' — але у частини IG-клієнтів теж імена з '@' (хибний TikTok).
+        _cand = raw_name.lstrip("@").strip() if raw_name.startswith("@") else ""
+        is_tt = bool(_cand) and (_tt_exists(_cand) is True)
         platform = "tiktok" if is_tt else "instagram"
         ch = tt_ch if is_tt else ig_ch
         name = raw_name or "Instagram"
