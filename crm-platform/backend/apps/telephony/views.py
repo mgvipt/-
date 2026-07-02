@@ -190,12 +190,16 @@ class WebrtcConfigView(APIView):
     """Параметри веб-телефона для браузера (тільки залогіненим)."""
     def get(self, request):
         from django.conf import settings as _s
-        ext = getattr(request.user, "extension", "") or _s.TELEPHONY_WEBRTC_EXT
+        from .models import CallQueueMember
+        u = request.user
+        ext = _s.TELEPHONY_WEBRTC_EXT  # спільний 700 за замовчуванням
+        if CallQueueMember.objects.filter(user=u).exists() and getattr(u, "extension", ""):
+            ext = u.extension  # персональний добавочний учасника черги (701..)
         return Response({
             "ws": _s.TELEPHONY_WS,
-            "ext": _s.TELEPHONY_WEBRTC_EXT,           # SIP-логін веб-телефона (поки спільний 700)
+            "ext": ext,
             "secret": _s.TELEPHONY_WEBRTC_SECRET,
-            "my_ext": ext,
+            "my_ext": getattr(u, "extension", "") or ext,
             "enabled": bool(_s.TELEPHONY_WS and _s.TELEPHONY_WEBRTC_SECRET),
         })
 
@@ -462,5 +466,8 @@ class RingPlanView(APIView):
             if cfg.on_shift_only and m.user_id not in on_shift:
                 continue
             plan.append({"ext": m.user.extension, "ring": m.ring_seconds})
-        dial = "&".join("%s:%s" % (p["ext"], p["ring"]) for p in plan)
+        dial = "&".join("%s:%s" % (p["ext"], p["ring"]) for p in plan) if (cfg.active and plan) else ""
+        if request.GET.get("fmt") == "dial":
+            from django.http import HttpResponse
+            return HttpResponse(dial, content_type="text/plain")
         return Response({"active": cfg.active, "strategy": cfg.strategy, "plan": plan, "dial": dial})
