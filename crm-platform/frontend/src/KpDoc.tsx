@@ -40,11 +40,11 @@ function uahWords(amount: number): string {
 
 const money = (n: number) => Number(n || 0).toLocaleString("uk-UA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default function KpDoc({ deal, onClose }: { deal: any; onClose: () => void }) {
+export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal: any; onClose: () => void; dateOverride?: string; readOnly?: boolean }) {
   const [contact, setContact] = useState<any>(null);
   useEffect(() => { if (deal.contact_id) api.get<any>(`/api/contacts/${deal.contact_id}/`).then(setContact).catch(() => {}); }, [deal.contact_id]);
 
-  const today = new Date().toLocaleDateString("uk-UA");
+  const today = dateOverride || new Date().toLocaleDateString("uk-UA");
   const items = deal.items || [];
   const subtotal = items.reduce((s: number, i: any) => s + Number(i.quantity) * Number(i.price), 0);
   const discount = items.reduce((s: number, i: any) => s + Number(i.discount_sum || 0), 0);
@@ -229,8 +229,8 @@ export default function KpDoc({ deal, onClose }: { deal: any; onClose: () => voi
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 60, display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: 20 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#f3efe9", borderRadius: 14, padding: 18, width: 820, maxWidth: "96vw" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <b style={{ fontSize: 17, flex: 1 }}>1. КП Декор #{deal.id}</b>
-          <button className="btn" style={{ background: "#ecfdf5", color: "#047857" }} onClick={saveHist}><Icon n="🧾" size={15} /> Зберегти в історію</button>
+          <b style={{ fontSize: 17, flex: 1 }}>{readOnly ? `Накладна #${deal.id} · ${today}` : `1. КП Декор #${deal.id}`}</b>
+          {!readOnly && <button className="btn" style={{ background: "#ecfdf5", color: "#047857" }} onClick={saveHist}><Icon n="🧾" size={15} /> Зберегти в історію</button>}
           <button className="btn btn-primary" onClick={printWin}><Icon n="🖨" size={15} /> Друк</button>
           <button className="btn" onClick={pdf} title="Завантажити PDF-файл"><Icon n="📄" size={15} /> PDF</button>
           <button className="btn btn-green" onClick={excel}><Icon n="📊" size={15} /> Excel</button>
