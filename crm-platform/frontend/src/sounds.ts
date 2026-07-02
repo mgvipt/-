@@ -149,7 +149,31 @@ export async function deleteSound(id: number): Promise<void> {
   await api.del(`/api/sounds/${id}/`);
   await loadSoundLibrary();
 }
-function _customUrl(id: string): string { const s = _lib.find((x) => String(x.id) === String(id)); return s ? s.url : ""; }
+function _oldLocal(): { id: string; name: string; data: string }[] {
+  try { return JSON.parse(localStorage.getItem("crm_sound_lib") || "[]"); } catch { return []; }
+}
+function _customUrl(id: string): string {
+  const s = _lib.find((x) => String(x.id) === String(id));
+  if (s) return s.url;
+  const o = _oldLocal().find((x) => String(x.id) === String(id));  // fallback: old local sound
+  return o ? o.data : "";
+}
+// One-time migration of old local sounds (localStorage) into the SHARED server library.
+export async function migrateLocalSounds(): Promise<number> {
+  const old = _oldLocal();
+  if (!old.length) return 0;
+  const map: Record<string, string> = {};
+  for (const snd of old) {
+    try { const r = await api.post<any>("/api/sounds/", { name: snd.name || "Sound", data: snd.data }); if (r && r.id) map["custom:" + snd.id] = "custom:" + r.id; } catch { /* skip */ }
+  }
+  const remap = (get: () => string, set: (v: string) => void) => { const cur = get(); if (map[cur]) set(map[cur]); };
+  remap(getMsgSound, setMsgSound);
+  remap(getCallSound, setCallSound);
+  remap(getTeamSound, setTeamSound);
+  if (Object.keys(map).length === old.length) localStorage.removeItem("crm_sound_lib");
+  await loadSoundLibrary();
+  return Object.keys(map).length;
+}
 function _playFile(data: string, loop: boolean, onend?: () => void): () => void { try { const a = new Audio(data); a.loop = loop; a.volume = 1; a.play().catch(() => {}); if (onend) a.onended = onend; return () => { try { a.pause(); a.currentTime = 0; } catch {} }; } catch { return () => {}; } }
 
 // прослуховування в налаштуваннях — зупиняється по повторному кліку / зміні / переході сторінки

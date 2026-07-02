@@ -9,7 +9,7 @@ import {
   SOUNDS, CALL_SOUNDS, getMsgSound, setMsgSound, getCallSound, setCallSound,
   msgSoundOn, setMsgSoundOn, callSoundOn, setCallSoundOn, previewSel, stopPreview,
   getTeamSound, setTeamSound, teamSoundOn, setTeamSoundOn,
-  getLibrary, loadSoundLibrary, uploadSound, deleteSound,
+  getLibrary, loadSoundLibrary, uploadSound, deleteSound, migrateLocalSounds,
 } from "../sounds";
 
 export default function SoundSettings() {
@@ -24,8 +24,22 @@ export default function SoundSettings() {
   const [teamOn, setTeamOnS] = useState(teamSoundOn());
   const [customs, setCustoms] = useState(getLibrary());
   const [busy, setBusy] = useState(false);
+  const [migN, setMigN] = useState(0); // скільки старих звуків перенесено у спільну бібліотеку
   const fileRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { loadSoundLibrary().then(() => setCustoms(getLibrary())); }, []);
+  useEffect(() => {
+    (async () => {
+      await loadSoundLibrary();
+      let hasLocal = false;
+      try { hasLocal = (JSON.parse(localStorage.getItem("crm_sound_lib") || "[]") as any[]).length > 0; } catch { hasLocal = false; }
+      if (canUpload && hasLocal) {
+        setBusy(true);
+        try { const n = await migrateLocalSounds(); if (n > 0) { setMigN(n); setMsg(getMsgSound()); setCall(getCallSound()); setTeam(getTeamSound()); } } catch { /* */ }
+        setBusy(false);
+      }
+      setCustoms(getLibrary());
+    })();
+    /* eslint-disable-next-line */
+  }, []);
   useEffect(() => () => stopPreview(), []); // зупинити прослуховування при виході
 
   const selStyle = { flex: 1, minWidth: 0, height: 34, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13, padding: "0 8px" } as const;
@@ -76,6 +90,9 @@ export default function SoundSettings() {
   return (
     <div className="panel" style={{ margin: "0 0 12px", maxWidth: 400 }}>
       <div className="label" style={{ marginBottom: 10 }}><Icon n="bell" size={14} /> {t("Звуки уведомлений", "Звуки сповіщень")}</div>
+
+      {busy && <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>⏳ {t("Переношу ваши звуки в общую библиотеку…", "Переношу ваші звуки у спільну бібліотеку…")}</div>}
+      {migN > 0 && <div style={{ fontSize: 12, marginBottom: 8, background: "#ecfdf5", color: "#047857", border: "1px solid #a7f3d0", borderRadius: 8, padding: "6px 9px" }}>✓ {t(`Перенёс ${migN} ваших звуков в общую библиотеку — теперь их видят все сотрудники.`, `Перенесено ${migN} ваших звуків у спільну бібліотеку — тепер їх бачать усі співробітники.`)}</div>}
 
       {/* повідомлення клієнта */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
