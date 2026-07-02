@@ -1,5 +1,7 @@
 /* Жива спливашка ВХІДНОГО дзвінка — опитує CRM кожні 2.5с, показує хто дзвонить
- * і на яку лінію. Зʼявляється на будь-якій сторінці. */
+ * і на яку лінію. Зʼявляється на будь-якій сторінці.
+ * «Прийняти» відповідає ТІЛЬКИ коли браузер реально прийняв WebRTC-сесію (canAnswer);
+ * інакше — чесна підказка «підніми слухавку на телефоні» замість мертвої кнопки. */
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "./api";
@@ -58,7 +60,10 @@ export default function IncomingCallPopup() {
       </div>
       <div style={{ fontSize: 19, fontWeight: 700, lineHeight: 1.2 }}>{ring.contact_name || t("Неизвестный номер","Невідомий номер")}</div>
       <div style={{ color: "#475569", marginBottom: 12, fontSize: 14 }}>{ring.number}</div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+
+      {canAnswer ? (
+        /* Браузер реально прийняв дзвінок — кнопки повністю робочі */
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <button className="btn btn-green" style={{ flex: 1, height: 40, fontWeight: 700 }}
             onClick={() => { try { (window as any).wallcovAnswer?.(); } catch { /* */ } }}>
             <><Icon n="✅" size={16} /> {t("Принять","Прийняти")}</>
@@ -67,7 +72,22 @@ export default function IncomingCallPopup() {
             onClick={() => { try { (window as any).wallcovHangup?.(); } catch { /* */ } close(); }}>
             {t("✖ Сбросить","✖ Скинути")}
           </button>
-      </div>
+        </div>
+      ) : (
+        /* Дзвінок дзвонить на лінію/телефон, але не доходить у браузер —
+           чесна підказка замість кнопки, яка нічого не робить */
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", borderRadius: 8, padding: "8px 10px", marginBottom: 8, fontSize: 12.5, lineHeight: 1.35 }}>
+            <span style={{ fontSize: 18 }}><Icon n="📱" size={18} /></span>
+            <span>{t("Возьмите трубку на телефоне — приём звонка в браузере пока не подключён","Підніміть слухавку на телефоні — приймання дзвінка у браузері поки не підключено")}</span>
+          </div>
+          <button className="btn" style={{ width: "100%", height: 38, background: "#fee2e2", color: "#b91c1c", fontWeight: 700, marginBottom: 8 }}
+            onClick={close}>
+            <><Icon n="✖" size={15} /> {t("Скрыть уведомление","Сховати сповіщення")}</>
+          </button>
+        </>
+      )}
+
       <button className="btn" style={{ width: "100%", height: 36, background: "#eff6ff", color: "#1d4ed8" }}
         onClick={() => { if (ring.contact) nav(`/clients/${ring.contact}`); else nav("/phone"); close(); }}>
         {ring.contact ? t("Открыть карточку клиента","Відкрити картку клієнта") : t("Открыть телефонию","Відкрити телефонію")}
