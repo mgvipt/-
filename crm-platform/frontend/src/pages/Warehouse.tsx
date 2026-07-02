@@ -173,6 +173,19 @@ export default function Warehouse() {
       api.get<Category[]>("/api/product-categories/").then(setCats).catch(() => {});
     } catch { alert(t("Не удалось импортировать (нужно право «Редактировать склад»)", "Не вдалося імпортувати (потрібне право «Редагувати склад»)")); }
   }
+  const receiptFileRef = useRef<HTMLInputElement>(null);
+  async function importReceipt(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return; e.target.value = "";
+    let text = ""; try { text = await f.text(); } catch { return; }
+    try {
+      const dry: any = await api.post("/api/stock-documents/import-receipt/", { data: text, commit: false });
+      const msg = t("Приход файлом:", "Прихід файлом:") + "\n" + t("Позиций: ", "Позицій: ") + dry.positions + "\n" + t("Всего кол-во: ", "Всього к-сть: ") + dry.total_qty + "\n" + t("Сумма: ", "Сума: ") + dry.total_sum + " ₴\n" + t("Ошибок/не найдено: ", "Помилок/не знайдено: ") + dry.errors + (dry.err_samples && dry.err_samples.length ? "\n" + dry.err_samples.join("\n") : "") + "\n\n" + t("Провести приход?", "Провести прихід?");
+      if (dry.positions === 0) { alert(t("Нет ни одной подходящей позиции.", "Немає жодної придатної позиції.") + (dry.err_samples ? "\n" + dry.err_samples.join("\n") : "")); return; }
+      if (!confirm(msg)) return;
+      const done: any = await api.post("/api/stock-documents/import-receipt/", { data: text, commit: true, warehouse: whs[0]?.id });
+      alert(t("Приход проведён ✓ Позиций: ", "Прихід проведено ✓ Позицій: ") + done.positions); loadProducts();
+    } catch { alert(t("Не удалось (нужно право «Редактировать склад»)", "Не вдалося (потрібне право «Редагувати склад»)")); }
+  }
   function toggleSort(f: string) { setOrdering(ordering === f ? "-" + f : ordering === "-" + f ? "" : f); setPage(1); }
   const sortTh = (field: string, label: string) => {
     const d = ordering === field ? "\u2191" : ordering === "-" + field ? "\u2193" : "";
@@ -217,6 +230,7 @@ export default function Warehouse() {
       <div>
         <div className="toolbar" style={{ borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 10, background: "#fff", display: "flex", gap: 8, alignItems: "center", padding: 8, flexWrap: "wrap" }}>
           <button className="btn btn-primary" onClick={() => setModal("in")}><Icon n="📥" size={15} /> {t("Приход","Прихід")}</button>
+          {canEdit && <><input ref={receiptFileRef} type="file" accept=".csv,text/csv,text/plain" style={{ display: "none" }} onChange={importReceipt} /><button className="btn btn-light" onClick={() => receiptFileRef.current?.click()} title={t("Приход из файла: артикул, кол-во, цена","Прихід з файлу: артикул, к-сть, ціна")}><Icon n="📄" size={15} /> {t("Приход файлом","Прихід файлом")}</button></>}
           <button className="btn btn-light" onClick={() => setModal("out")}><Icon n="📤" size={15} /> {t("Расход","Витрата")}</button>
           <button className="btn btn-light" onClick={openInventory}><Icon n="📋" size={15} /> {t("Инвентаризация","Інвентаризація")}</button>
           <button className="btn btn-light" onClick={exportCsv} title={t("Выгрузить номенклатуру в CSV (Excel)","Вивантажити номенклатуру в CSV (Excel)")}><Icon n="⬇️" size={15} /> {t("Экспорт","Експорт")}</button>

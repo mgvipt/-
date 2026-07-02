@@ -178,6 +178,69 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
     serializer_class = StockDocumentSerializer
     filterset_fields = ["kind", "warehouse", "deal"]
 
+    @action(detail=False, methods=["post"], url_path="import-receipt")
+    def import_receipt(self, request):
+        """Прихід файлом: CSV (Артикул;Кількість;Ціна) → знайти товар по артикулу/назві → прихід одним документом.
+        commit=false → лише прев'ю (нічого не пише). Ненайдені товари — у помилки (прихід для невідомого товару не робимо)."""
+        import csv
+        import io as _io
+        from apps.warehouse.models import Product, Warehouse, StockMovement, StockDocument
+        raw = request.data.get("data") or ""
+        commit = bool(request.data.get("commit"))
+        if not str(raw).strip():
+            return Response({"detail": "Порожній файл"}, status=400)
+        delim = ";" if raw.count(";") >= raw.count(",") else ","
+        rows = list(csv.reader(_io.StringIO(raw), delimiter=delim))
+        start = 0
+        if rows:
+            hdr = [str(c).strip().lower() for c in rows[0]]
+            if any(h in ("артикул", "sku", "назва", "название", "товар", "кількість", "количество", "qty", "ціна", "цена") for h in hdr):
+                start = 1
+
+        def _num(x):
+            try:
+                return float(str(x).replace(" ", "").replace("\u00a0", "").replace(",", "."))
+            except (TypeError, ValueError):
+                return None
+        items = []
+        errors = 0
+        err_samples = []
+        total_qty = 0.0
+        total_sum = 0.0
+        for i in range(start, len(rows)):
+            r = rows[i]
+            if not any((str(c) or "").strip() for c in r):
+                continue
+            key = (r[0].strip() if len(r) > 0 else "")
+            qty = _num(r[1]) if len(r) > 1 else None
+            price = _num(r[2]) if len(r) > 2 and str(r[2]).strip() else None
+            if not key or qty is None or qty <= 0:
+                errors += 1
+                if len(err_samples) < 6:
+                    err_samples.append("рядок %d: нема артикула/кількості" % (i + 1))
+                continue
+            p = Product.objects.filter(sku=key).first() or Product.objects.filter(name__iexact=key).first()
+            if not p:
+                errors += 1
+                if len(err_samples) < 6:
+                    err_samples.append("рядок %d: товар не знайдено «%s»" % (i + 1, key[:30]))
+                continue
+            if price is None:
+                price = float(p.cost or 0)
+            items.append((p, qty, price))
+            total_qty += qty
+            total_sum += qty * price
+        res = {"positions": len(items), "total_qty": round(total_qty, 2), "total_sum": round(total_sum, 2),
+               "errors": errors, "err_samples": err_samples, "committed": False}
+        if commit and items:
+            wh = Warehouse.objects.filter(id=request.data.get("warehouse")).first() or Warehouse.objects.first()
+            doc = StockDocument.objects.create(warehouse=wh, kind="in")
+            for (p, qty, price) in items:
+                StockMovement.objects.create(document=doc, product=p, quantity=qty, price=price)
+            res["committed"] = True
+            res["doc_id"] = doc.id
+        return Response(res)
+
 
 class InventoryAnalyticsView(APIView):
     """Аналитика по складу: стоимость запасов (по закупке/рознице), по категориям, дефицит."""
