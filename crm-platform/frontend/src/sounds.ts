@@ -138,7 +138,12 @@ let _canUploadSnd = false;
 export function getLibrary(): CustomSound[] { return _lib; }
 export function canUploadSounds(): boolean { return _canUploadSnd; }
 export async function loadSoundLibrary(): Promise<void> {
-  try { const r = await api.get<any>("/api/sounds/"); _lib = (r && (r.items || r)) || []; _canUploadSnd = !!(r && r.can_upload); } catch { /* */ }
+  try {
+    const r = await api.get<any>("/api/sounds/");
+    _lib = (r && (r.items || r)) || [];
+    _canUploadSnd = !!(r && r.can_upload);
+    try { localStorage.setItem("crm_sound_lib_cache", JSON.stringify(_lib)); } catch { /* */ }
+  } catch { /* */ }
 }
 export async function uploadSound(name: string, dataUrl: string): Promise<{ dedup?: boolean }> {
   const r = await api.post<any>("/api/sounds/", { name, data: dataUrl });
@@ -153,9 +158,10 @@ function _oldLocal(): { id: string; name: string; data: string }[] {
   try { return JSON.parse(localStorage.getItem("crm_sound_lib") || "[]"); } catch { return []; }
 }
 function _customUrl(id: string): string {
-  const s = _lib.find((x) => String(x.id) === String(id));
+  let s: any = _lib.find((x) => String(x.id) === String(id));
+  if (!s) { try { const cache = JSON.parse(localStorage.getItem("crm_sound_lib_cache") || "[]"); s = cache.find((x: any) => String(x.id) === String(id)); } catch { /* */ } }
   if (s) return s.url;
-  const o = _oldLocal().find((x) => String(x.id) === String(id));  // fallback: old local sound
+  const o = _oldLocal().find((x) => String(x.id) === String(id));  // fallback: старий локальний звук
   return o ? o.data : "";
 }
 // One-time migration of old local sounds (localStorage) into the SHARED server library.

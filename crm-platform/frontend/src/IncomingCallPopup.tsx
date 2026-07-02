@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "./api";
 import { useLang } from "./i18n";
 import { Icon } from "./Icon";
-import { startCallRing, stopCallRing } from "./sounds";
+import { startCallRing, stopCallRing, loadSoundLibrary } from "./sounds";
 
 interface Ring { uniqueid: string; number: string; line: string; contact?: number; contact_name?: string; ring_ext?: string; }
 
@@ -22,8 +22,11 @@ export default function IncomingCallPopup() {
   const sawRing = useRef(false);
   const [myExt, setMyExt] = useState("");
 
-  // мій добавочний (щоб знати чи ЗАРАЗ моя черга за сигналом сервера)
-  useEffect(() => { api.get<any>("/api/telephony/webrtc-config/").then((c) => setMyExt(String(c?.my_ext || c?.ext || ""))).catch(() => {}); }, []);
+  // мій добавочний (щоб знати чи ЗАРАЗ моя черга за сигналом сервера) + свіжа бібліотека звуків
+  useEffect(() => {
+    api.get<any>("/api/telephony/webrtc-config/").then((c) => setMyExt(String(c?.my_ext || c?.ext || ""))).catch(() => {});
+    loadSoundLibrary();
+  }, []);
 
   // реальний стан веб-телефона: дзвонить саме цей браузер?
   useEffect(() => {
