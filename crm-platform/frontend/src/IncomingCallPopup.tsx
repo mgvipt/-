@@ -50,10 +50,7 @@ export default function IncomingCallPopup() {
       if (list && list.length) {
         sawRing.current = true;
         const d = (peer || "").replace(/\D/g, "").slice(-9);
-        const r = list.find((x) => (x.number || "").replace(/\D/g, "").slice(-9) === d) || list[0];
-        setRing(r);
-        // сервер каже: ЗАРАЗ дзвонить інший добавочний → це вже не моя черга → глушимо
-        if (r?.ring_ext && myExt && String(r.ring_ext) !== String(myExt)) { setIncoming(false); stopCallRing(); }
+        setRing(list.find((x) => (x.number || "").replace(/\D/g, "").slice(-9) === d) || list[0]);
       } else if (sawRing.current) {
         setIncoming(false);   // страховка: сервер каже дзвінок завершився (взяли/скинули) → ховаємо
       }
