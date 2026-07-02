@@ -84,6 +84,8 @@ class CallQueueConfig(models.Model):
     on_shift_only = models.BooleanField(default=True, help_text="Дзвонити лише тим, хто почав робочий день")
     strategy = models.CharField(max_length=12, default="sequential")  # sequential | ringall
     active = models.BooleanField(default=False, help_text="Чи керує черга маршрутизацією вхідних")
+    ring_ext = models.CharField(max_length=16, blank=True, default="", help_text="Добавочний, що дзвонить ЗАРАЗ (per-turn)")
+    ring_ext_at = models.DateTimeField(null=True, blank=True)
 
     @classmethod
     def get(cls):

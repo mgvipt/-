@@ -190,9 +190,14 @@ class RingingActiveView(APIView):
         cutoff = timezone.now() - timedelta(seconds=45)
         qs = (RingingCall.objects.filter(active=True, created_at__gte=cutoff)
               .select_related("contact").order_by("-created_at")[:5])
+        rext = ""
+        cfg2 = CallQueueConfig.get()
+        if cfg2.ring_ext and cfg2.ring_ext_at and (timezone.now() - cfg2.ring_ext_at).total_seconds() < 25:
+            rext = cfg2.ring_ext
         return Response([{
             "uniqueid": r.uniqueid, "number": r.number, "line": r.line,
             "contact": r.contact_id, "contact_name": (str(r.contact) if r.contact else ""),
+            "ring_ext": rext,
         } for r in qs])
 
 
@@ -481,3 +486,23 @@ class RingPlanView(APIView):
             from django.http import HttpResponse
             return HttpResponse(dial, content_type="text/plain")
         return Response({"active": cfg.active, "strategy": cfg.strategy, "plan": plan, "dial": dial})
+
+
+class RingNowView(APIView):
+    """Asterisk повідомляє який добавочний дзвонить ЗАРАЗ (per-turn попап). ext порожній = очистити."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from django.conf import settings as _s
+        from django.utils import timezone
+        from django.http import HttpResponse
+        from .models import CallQueueConfig
+        token = request.headers.get("X-Telephony-Token") or request.GET.get("token", "")
+        if not _s.TELEPHONY_TOKEN or token != _s.TELEPHONY_TOKEN:
+            return Response({"detail": "forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        cfg = CallQueueConfig.get()
+        cfg.ring_ext = (request.GET.get("ext") or "").strip()
+        cfg.ring_ext_at = timezone.now()
+        cfg.save(update_fields=["ring_ext", "ring_ext_at"])
+        return HttpResponse("ok", content_type="text/plain")

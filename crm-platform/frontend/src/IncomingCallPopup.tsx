@@ -9,7 +9,7 @@ import { useLang } from "./i18n";
 import { Icon } from "./Icon";
 import { startCallRing, stopCallRing } from "./sounds";
 
-interface Ring { uniqueid: string; number: string; line: string; contact?: number; contact_name?: string; }
+interface Ring { uniqueid: string; number: string; line: string; contact?: number; contact_name?: string; ring_ext?: string; }
 
 export default function IncomingCallPopup() {
   const { t } = useLang();
@@ -20,6 +20,10 @@ export default function IncomingCallPopup() {
   const [ring, setRing] = useState<Ring | null>(null);
   const alive = useRef(true);
   const sawRing = useRef(false);
+  const [myExt, setMyExt] = useState("");
+
+  // мій добавочний (щоб знати чи ЗАРАЗ моя черга за сигналом сервера)
+  useEffect(() => { api.get<any>("/api/telephony/webrtc-config/").then((c) => setMyExt(String(c?.my_ext || c?.ext || ""))).catch(() => {}); }, []);
 
   // реальний стан веб-телефона: дзвонить саме цей браузер?
   useEffect(() => {
@@ -28,6 +32,7 @@ export default function IncomingCallPopup() {
       setIncoming(isIn);
       setPeer(e?.detail?.peer || "");
       if (isIn) setHidden(false);           // нова черга дійшла — показати знову
+      else stopCallRing();                  // вже НЕ дзвонить цей браузер — негайно глушимо звук
     };
     window.addEventListener("wallcov-phone-state", onState as any);
     return () => window.removeEventListener("wallcov-phone-state", onState as any);
@@ -42,7 +47,10 @@ export default function IncomingCallPopup() {
       if (list && list.length) {
         sawRing.current = true;
         const d = (peer || "").replace(/\D/g, "").slice(-9);
-        setRing(list.find((x) => (x.number || "").replace(/\D/g, "").slice(-9) === d) || list[0]);
+        const r = list.find((x) => (x.number || "").replace(/\D/g, "").slice(-9) === d) || list[0];
+        setRing(r);
+        // сервер каже: ЗАРАЗ дзвонить інший добавочний → це вже не моя черга → глушимо
+        if (r?.ring_ext && myExt && String(r.ring_ext) !== String(myExt)) { setIncoming(false); stopCallRing(); }
       } else if (sawRing.current) {
         setIncoming(false);   // страховка: сервер каже дзвінок завершився (взяли/скинули) → ховаємо
       }
@@ -50,7 +58,7 @@ export default function IncomingCallPopup() {
     f();
     const tm = setInterval(f, 2500);
     return () => { alive.current = false; clearInterval(tm); };
-  }, [incoming, peer]);
+  }, [incoming, peer, myExt]);
 
   // сигнал дзвінка поки показуємо вікно
   useEffect(() => {
