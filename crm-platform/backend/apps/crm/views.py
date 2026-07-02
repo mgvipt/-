@@ -1205,6 +1205,29 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         return Response(data)
 
     @action(detail=True, methods=["post"])
+    def kp_save(self, request, pk=None):
+        """Зберегти поточний КП/накладну (товари сделки) у ІСТОРІЮ — щоб бачити що прораховували клієнту."""
+        deal = self.get_object()
+        g = self._guard(deal)
+        if g: return g
+        from django.utils import timezone as _tz
+        items = []
+        subtotal = discount = total = 0.0
+        for it in deal.items.select_related("product").all():
+            qty = float(it.quantity or 0); price = float(it.price or 0); disc = float(it.discount_pct or 0)
+            gross = qty * price; dsum = gross * disc / 100.0; line = gross - dsum
+            subtotal += gross; discount += dsum; total += line
+            items.append({"name": (it.product.name if it.product_id else ""), "qty": qty, "price": price, "discount_pct": disc, "total": round(line, 2)})
+        snap = {"ts": _tz.now().isoformat(), "total": round(total, 2), "subtotal": round(subtotal, 2),
+                "discount": round(discount, 2), "note": (request.data.get("note") or "")[:200],
+                "by": (request.user.get_full_name() or request.user.username), "items": items}
+        hist = list(deal.kp_history or []); hist.append(snap)
+        deal.kp_history = hist; deal.save(update_fields=["kp_history"])
+        from .models import log_activity
+        log_activity("deal", deal.id, "КП збережено в історію", "Версія #%d · %s грн · %d позицій" % (len(hist), round(total, 2), len(items)), request.user, "Менеджер")
+        return Response({"ok": True, "count": len(hist), "snap": snap})
+
+    @action(detail=True, methods=["post"])
     def ship(self, request, pk=None):
         """Отгрузка: списание товаров сделки со склада + расход по себестоимости (COGS)."""
         from apps.warehouse.models import Warehouse, StockDocument, StockMovement

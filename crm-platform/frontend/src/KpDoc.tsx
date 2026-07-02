@@ -100,6 +100,12 @@ export default function KpDoc({ deal, onClose }: { deal: any; onClose: () => voi
     </div>
   </div>`;
 
+  async function saveHist() {
+    const note = window.prompt("Коментар до версії КП (необовʼязково):", "");
+    if (note === null) return;
+    try { await api.post(`/api/deals/${deal.id}/kp_save/`, { note }); window.alert("✓ Збережено в історію (видно у картці сделки)"); }
+    catch { window.alert("Не вдалося зберегти"); }
+  }
   function printWin() {
     const w = window.open("", "_blank", "width=800,height=900"); if (!w) return;
     w.document.write(`<html><head><title>КП Декор #${deal.id}</title></head><body style="margin:20px">${docHtml}</body></html>`);
@@ -224,6 +230,7 @@ export default function KpDoc({ deal, onClose }: { deal: any; onClose: () => voi
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#f3efe9", borderRadius: 14, padding: 18, width: 820, maxWidth: "96vw" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           <b style={{ fontSize: 17, flex: 1 }}>1. КП Декор #{deal.id}</b>
+          <button className="btn" style={{ background: "#ecfdf5", color: "#047857" }} onClick={saveHist}><Icon n="🧾" size={15} /> Зберегти в історію</button>
           <button className="btn btn-primary" onClick={printWin}><Icon n="🖨" size={15} /> Друк</button>
           <button className="btn" onClick={pdf} title="Завантажити PDF-файл"><Icon n="📄" size={15} /> PDF</button>
           <button className="btn btn-green" onClick={excel}><Icon n="📊" size={15} /> Excel</button>

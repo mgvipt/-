@@ -137,7 +137,7 @@ class DealDetailSerializer(DealSerializer):
         fields = DealSerializer.Meta.fields + [
             "items", "payments", "paid", "margin", "bonus",
             "days_in_stage", "contact_loyalty", "contact_id", "conversation_id", "b24_id", "pay_method",
-            "np_data", "np_delivery_date", "ref_photos",
+            "np_data", "np_delivery_date", "ref_photos", "kp_history",
         ]
 
     def get_paid(self, obj):

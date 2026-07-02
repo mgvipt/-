@@ -125,6 +125,7 @@ class Deal(TimestampedOwned):
     np_data = models.JSONField(default=dict, blank=True, help_text="Повна форма Доставка НП")
     np_delivery_date = models.DateField(null=True, blank=True, help_text="Бажана дата доставки")
     ref_photos = models.JSONField(default=list, blank=True, help_text="Скріни/фото від клієнта (data-URL) — показуються складу")
+    kp_history = models.JSONField(default=list, blank=True, help_text="Історія КП/накладних: [{ts,total,subtotal,discount,note,by,items:[{name,qty,price,discount_pct,total}]}]")
     closed_at = models.DateTimeField(null=True, blank=True)
     stage_changed_at = models.DateTimeField(null=True, blank=True, help_text="Коли востаннє змінилась стадія (для днів на стадії)")
     is_seen = models.BooleanField(default=True, help_text="Бейдж непереглянуто: False=клієнт написав і не відповіли, True=відповіли")

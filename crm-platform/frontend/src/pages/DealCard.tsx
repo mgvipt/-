@@ -97,6 +97,47 @@ function resizeToDataUrl(file: File, max: number, q: number): Promise<string> {
   });
 }
 
+
+function KpHistory({ history }: { history?: any[] }) {
+  const { t } = useLang();
+  const [view, setView] = useState<any>(null);
+  const h = history || [];
+  const f = (v: any) => Number(v || 0).toLocaleString("uk-UA");
+  const th: React.CSSProperties = { textAlign: "left", padding: "4px 6px", borderBottom: "1px solid #e2e8f0", fontSize: 11, color: "#64748b" };
+  const td: React.CSSProperties = { padding: "4px 6px", borderBottom: "1px solid #f1f5f9", fontSize: 12.5 };
+  return (
+    <div className="panel">
+      <div className="label" style={{ marginBottom: 8 }}>🧾 {t("История КП / накладных", "Історія КП / накладних")} <span className="muted" style={{ fontSize: 11, fontWeight: 400 }}>({h.length})</span></div>
+      {h.length === 0 ? <div className="muted" style={{ fontSize: 12.5 }}>{t("Пока пусто — сохрани КП из документа (кнопка «Зберегти в історію»)", "Поки порожньо — збережи КП з документа (кнопка «Зберегти в історію»)")}</div> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {h.slice().reverse().map((s: any, idx: number) => (
+            <div key={idx} onClick={() => setView(s)} title={t("Открыть версию", "Відкрити версію")} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", border: "1px solid #e8edf3", borderRadius: 8, cursor: "pointer" }}>
+              <span style={{ fontWeight: 700, fontSize: 12 }}>#{h.length - idx}</span>
+              <span style={{ fontSize: 11.5, color: "#64748b" }}>{new Date(s.ts).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+              {s.note && <span style={{ fontSize: 11, color: "#0369a1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>{s.note}</span>}
+              <span style={{ marginLeft: "auto", fontWeight: 700, fontSize: 12.5 }}>{f(s.total)} ₴</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {view && (
+        <div onClick={() => setView(null)} style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(15,23,42,.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 18, maxWidth: 560, width: "90%", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 10px 50px rgba(0,0,0,.3)" }}>
+            <div style={{ fontWeight: 700, marginBottom: 3 }}>{t("КП от", "КП від")} {new Date(view.ts).toLocaleString("uk-UA")}</div>
+            <div className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>{view.by}{view.note ? " · " + view.note : ""}</div>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr><th style={th}>{t("Товар", "Товар")}</th><th style={{ ...th, textAlign: "center" }}>{t("К-во", "К-сть")}</th><th style={{ ...th, textAlign: "right" }}>{t("Цена", "Ціна")}</th><th style={{ ...th, textAlign: "right" }}>{t("Сумма", "Сума")}</th></tr></thead>
+              <tbody>{(view.items || []).map((it: any, i: number) => <tr key={i}><td style={td}>{it.name}</td><td style={{ ...td, textAlign: "center" }}>{it.qty}</td><td style={{ ...td, textAlign: "right" }}>{f(it.price)}</td><td style={{ ...td, textAlign: "right" }}>{f(it.total)}</td></tr>)}</tbody>
+            </table>
+            <div style={{ textAlign: "right", marginTop: 10, fontSize: 14, fontWeight: 700 }}>{t("Всего", "Всього")}: {f(view.total)} ₴{view.discount > 0 ? ` (${t("скидка","знижка")} ${f(view.discount)})` : ""}</div>
+            <button className="btn" style={{ marginTop: 12 }} onClick={() => setView(null)}>{t("Закрыть", "Закрити")}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RefPhotos({ dealId, initial }: { dealId: number; initial?: string[] }) {
   const { t } = useLang();
   const [photos, setPhotos] = useState<string[]>(initial || []);
@@ -708,6 +749,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <>
               <NeedsForm leadId={deal.id} initial={deal.qualification} endpoint="/api/deals/" />
               <RefPhotos dealId={deal.id} initial={(deal as any).ref_photos} />
+              <KpHistory history={(deal as any).kp_history} />
               <CardFields leadId={deal.id} initial={deal.card_fields} endpoint="/api/deals/" />
 
             </>
