@@ -51,6 +51,33 @@ class ProductViewSet(viewsets.ModelViewSet):
     ordering_fields = ["name", "price", "id", "sku", "cost", "stock"]
     ordering = ["name"]
 
+    def destroy(self, request, *args, **kwargs):
+        from rest_framework.response import Response as _R
+        p = self.get_object()
+        if StockMovement.objects.filter(product=p).exists():
+            # товар має рухи → не видаляємо назавжди (історія), а ховаємо
+            p.is_active = False
+            p.save(update_fields=["is_active"])
+            return _R({"hidden": True, "detail": "Товар має рухи на складі — приховано (історія збережена)."})
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=False, methods=["get"])
+    def export(self, request):
+        import csv
+        import io as _io
+        from django.http import HttpResponse
+        qs = self.filter_queryset(self.get_queryset()).select_related("category")
+        buf = _io.StringIO()
+        buf.write("\ufeff")  # BOM щоб Excel правильно показав кирилицю
+        w = csv.writer(buf, delimiter=";")
+        w.writerow(["Назва", "Артикул", "Категорія", "Од", "Ціна", "Собівартість", "Валюта"])
+        for p in qs:
+            w.writerow([p.name, p.sku, (p.category.name if p.category_id else ""), p.unit,
+                        str(p.price), str(p.cost), p.currency])
+        resp = HttpResponse(buf.getvalue(), content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = "attachment; filename=nomenclatura.csv"
+        return resp
+
     @action(detail=True, methods=["get"])
     def movements(self, request, pk=None):
         """История движений товара (приход/расход/инвентаризация) для карточки."""

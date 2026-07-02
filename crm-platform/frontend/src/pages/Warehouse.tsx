@@ -45,6 +45,7 @@ export default function Warehouse() {
   const { t } = useLang();
   const { can } = useAuth();
   const showCost = can("product.cost.view");
+  const canEdit = can("warehouse.edit");
   const [cats, setCats] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [count, setCount] = useState(0);
@@ -86,6 +87,7 @@ export default function Warehouse() {
     if (cat) q.set("category", String(cat));
     if (search.trim()) q.set("search", search.trim());
     if (ordering) q.set("ordering", ordering);
+    q.set("is_active", "true");
     const d = await api.get<Paginated<Product>>(`/api/products/?${q.toString()}`);
     setProducts(d.results); setCount(d.count); setLoading(false);
   }
@@ -143,6 +145,21 @@ export default function Warehouse() {
     return { roots, childrenOf };
   }, [cats]);
   function pick(id: number | null) { setCat(id); setPage(1); }
+  async function delProduct(p: Product) {
+    if (!confirm(t("Удалить товар «", "Видалити товар «") + p.name + "»?")) return;
+    try {
+      const r: any = await api.del(`/api/products/${p.id}/`);
+      if (r && r.hidden) alert(t("Товар имеет движения — скрыт (история сохранена).", "Товар має рухи — приховано (історія збережена)."));
+    } catch { alert(t("Нет прав или ошибка", "Немає прав або помилка")); }
+    loadProducts();
+  }
+  async function exportCsv() {
+    const q = new URLSearchParams();
+    if (cat) q.set("category", String(cat));
+    if (search.trim()) q.set("search", search.trim());
+    try { const u = await (api as any).blobUrl(`/api/products/export/?${q.toString()}`); const a = document.createElement("a"); a.href = u; a.download = "nomenklatura.csv"; a.click(); }
+    catch { alert(t("Не удалось выгрузить", "Не вдалося вивантажити")); }
+  }
   function toggleSort(f: string) { setOrdering(ordering === f ? "-" + f : ordering === "-" + f ? "" : f); setPage(1); }
   const sortTh = (field: string, label: string) => {
     const d = ordering === field ? "\u2191" : ordering === "-" + field ? "\u2193" : "";
@@ -189,16 +206,17 @@ export default function Warehouse() {
           <button className="btn btn-primary" onClick={() => setModal("in")}><Icon n="📥" size={15} /> {t("Приход","Прихід")}</button>
           <button className="btn btn-light" onClick={() => setModal("out")}><Icon n="📤" size={15} /> {t("Расход","Витрата")}</button>
           <button className="btn btn-light" onClick={openInventory}><Icon n="📋" size={15} /> {t("Инвентаризация","Інвентаризація")}</button>
+          <button className="btn btn-light" onClick={exportCsv} title={t("Выгрузить номенклатуру в CSV (Excel)","Вивантажити номенклатуру в CSV (Excel)")}><Icon n="⬇️" size={15} /> {t("Экспорт","Експорт")}</button>
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("🔍 Поиск товара / артикула…","🔍 Пошук товару / артикулу…")} style={{ flex: 1, minWidth: 160, height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 12px", fontSize: 13 }} />
           <span className="muted">{t("Найдено","Знайдено")}: <b style={{ color: "#1e293b" }}>{count.toLocaleString("ru")}</b></span>
         </div>
 
         <div className="tablewrap" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
           <table style={{ width: "100%" }}>
-            <thead><tr>{sortTh("name", t("Товар","Товар"))}{sortTh("sku", t("Артикул","Артикул"))}<th>{t("Категория","Категорія")}</th>{sortTh("price", t("Цена","Ціна"))}{showCost && sortTh("cost", t("Закупка","Закупка"))}<th>{t("Ед.","Од.")}</th><th>{t("Остаток","Залишок")}</th></tr></thead>
+            <thead><tr>{sortTh("name", t("Товар","Товар"))}{sortTh("sku", t("Артикул","Артикул"))}<th>{t("Категория","Категорія")}</th>{sortTh("price", t("Цена","Ціна"))}{showCost && sortTh("cost", t("Закупка","Закупка"))}<th>{t("Ед.","Од.")}</th><th>{t("Остаток","Залишок")}</th>{canEdit && <th></th>}</tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={showCost ? 7 : 6} className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</td></tr>}
-              {!loading && products.length === 0 && <tr><td colSpan={showCost ? 7 : 6} className="muted" style={{ padding: 16 }}>{t("Товаров не найдено","Товарів не знайдено")}</td></tr>}
+              {loading && <tr><td colSpan={6 + (showCost ? 1 : 0) + (canEdit ? 1 : 0)} className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</td></tr>}
+              {!loading && products.length === 0 && <tr><td colSpan={6 + (showCost ? 1 : 0) + (canEdit ? 1 : 0)} className="muted" style={{ padding: 16 }}>{t("Товаров не найдено","Товарів не знайдено")}</td></tr>}
               {!loading && products.map((p) => (
                 <tr key={p.id}>
                   <td><span onClick={() => openCard(p)} style={{ fontWeight: 500, color: "#1d4ed8", cursor: "pointer" }}>{p.name}</span></td>
@@ -208,6 +226,7 @@ export default function Warehouse() {
                   {showCost && <td><EditCost p={p} onSaved={(v) => setProducts((ps) => ps.map((x) => (x.id === p.id ? { ...x, cost: String(v) } : x)))} /></td>}
                   <td>{p.unit}</td>
                   <td><span style={{ color: Number(p.stock) <= 0 ? "#dc2626" : Number(p.stock) < 100 ? "#d97706" : "#16a34a", fontWeight: 600 }}>{Number(p.stock).toLocaleString("ru")}</span></td>
+                  {canEdit && <td style={{ textAlign: "center" }}><button onClick={() => delProduct(p)} title={t("Удалить / скрыть товар","Видалити / приховати товар")} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#dc2626", fontSize: 14 }}>🗑</button></td>}
                 </tr>
               ))}
             </tbody>
