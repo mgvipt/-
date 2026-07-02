@@ -19,6 +19,7 @@ export default function IncomingCallPopup() {
   const [peer, setPeer] = useState("");
   const [ring, setRing] = useState<Ring | null>(null);
   const alive = useRef(true);
+  const sawRing = useRef(false);
 
   // реальний стан веб-телефона: дзвонить саме цей браузер?
   useEffect(() => {
@@ -34,13 +35,17 @@ export default function IncomingCallPopup() {
 
   // збагачення (імʼя/лінія/контакт) з сервера — лише поки дзвонить цей браузер
   useEffect(() => {
-    if (!incoming) { setRing(null); return; }
+    if (!incoming) { setRing(null); sawRing.current = false; return; }
     alive.current = true;
     const f = () => api.get<Ring[]>("/api/telephony/ringing/active/").then((list) => {
       if (!alive.current) return;
-      const d = (peer || "").replace(/\D/g, "").slice(-9);
-      const r = (list || []).find((x) => (x.number || "").replace(/\D/g, "").slice(-9) === d) || (list || [])[0] || null;
-      setRing(r);
+      if (list && list.length) {
+        sawRing.current = true;
+        const d = (peer || "").replace(/\D/g, "").slice(-9);
+        setRing(list.find((x) => (x.number || "").replace(/\D/g, "").slice(-9) === d) || list[0]);
+      } else if (sawRing.current) {
+        setIncoming(false);   // страховка: сервер каже дзвінок завершився (взяли/скинули) → ховаємо
+      }
     }).catch(() => {});
     f();
     const tm = setInterval(f, 2500);

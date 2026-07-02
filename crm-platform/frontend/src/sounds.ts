@@ -222,3 +222,21 @@ export function startCallRing() {
   _ringStop = () => clearInterval(iv);
 }
 export function stopCallRing() { if (_ringStop) { try { _ringStop(); } catch {} _ringStop = null; } }
+
+
+// ── Розблокування звуку ──
+// Браузери глушать programmatic-звук до першого жесту користувача. На перший клік/клавішу
+// резюмуємо AudioContext і «праймимо» Audio — тоді дзвінок/сповіщення чутні одразу.
+let _audioUnlocked = false;
+export function unlockAudio() {
+  if (_audioUnlocked) return;
+  _audioUnlocked = true;
+  try { const c = ac(); if (c.state === "suspended") c.resume(); } catch { /* */ }
+  try { const a = new Audio(); a.muted = true; const pr = a.play(); if (pr && (pr as any).catch) (pr as any).catch(() => {}); } catch { /* */ }
+}
+if (typeof window !== "undefined") {
+  const _uh = () => { unlockAudio(); };
+  window.addEventListener("pointerdown", _uh, { once: true });
+  window.addEventListener("keydown", _uh, { once: true });
+  window.addEventListener("click", _uh, { once: true });
+}
