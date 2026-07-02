@@ -24,6 +24,7 @@
  * ========================================================================== */
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth";
 import { api, Funnel, Paginated } from "../api";
@@ -174,12 +175,11 @@ function RefPhotos({ dealId, initial }: { dealId: number; initial?: string[] }) 
           <input type="file" accept="image/*" multiple onChange={onFiles} style={{ display: "none" }} />
         </label>
       </div>
-      {zoom && (
-        <div onClick={() => setZoom(null)} style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out" }}>
-          <img src={zoom} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92%", maxHeight: "92%", objectFit: "contain", borderRadius: 8, boxShadow: "0 10px 50px rgba(0,0,0,.5)" }} />
-          <button onClick={() => setZoom(null)} style={{ position: "absolute", top: 18, right: 22, width: 40, height: 40, borderRadius: 20, border: "none", background: "rgba(255,255,255,.15)", color: "#fff", fontSize: 22, cursor: "pointer" }}>✕</button>
-        </div>
-      )}
+      {zoom && createPortal(
+        <div onClick={() => setZoom(null)} style={{ position: "fixed", inset: 0, zIndex: 100000, background: "rgba(0,0,0,.88)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out", animation: "drawerBgIn .18s ease" }}>
+          <img src={zoom} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "94vw", maxHeight: "94vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 10px 60px rgba(0,0,0,.6)" }} />
+          <button onClick={() => setZoom(null)} style={{ position: "fixed", top: 20, right: 26, width: 44, height: 44, borderRadius: 22, border: "none", background: "rgba(255,255,255,.18)", color: "#fff", fontSize: 24, cursor: "pointer" }}>✕</button>
+        </div>, document.body)}
     </div>
   );
 }
