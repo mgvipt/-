@@ -137,6 +137,12 @@ def sync_one_chat(conv, per_chat=40):
         new += 1
         if direction == "in":
             _had_in[0] = True
+            if conv.contact_id:
+                try:
+                    from apps.crm.automation import capture_phone as _cp
+                    _cp(conv.contact, body)
+                except Exception:
+                    pass
         else:
             _had_out[0] = True
     if conv.contact_id:
@@ -285,6 +291,12 @@ def sync_chats(max_chats=40, per_chat=40):
                 new_msg += 1
                 if direction == "in":
                     chad_in = True
+                    if conv.contact_id:
+                        try:
+                            from apps.crm.automation import capture_phone as _cp
+                            _cp(conv.contact, body)
+                        except Exception:
+                            pass
                 else:
                     chad_out = True
         except Exception as e:

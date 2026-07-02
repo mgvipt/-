@@ -63,8 +63,43 @@ def _flag_seen(contact, seen):
     Deal.objects.filter(contact=contact, closed_at__isnull=True).update(is_seen=seen)
 
 
+import re as _re_phone
+
+def _extract_phone(text):
+    """Витягти український номер телефона з тексту (0XX XXX XX XX / +380.. / 380..)."""
+    if not text:
+        return ""
+    t = str(text).replace("\u00a0", " ")
+    for m in _re_phone.finditer(r"[\+\d][\d\s\-\(\)\.]{8,18}\d", t):
+        digits = _re_phone.sub(r"\D", "", m.group(0))
+        if len(digits) == 12 and digits.startswith("380"):
+            return "+" + digits
+        if len(digits) == 11 and digits.startswith("80"):
+            return "+3" + digits
+        if len(digits) == 10 and digits.startswith("0"):
+            return "+38" + digits
+    return ""
+
+
+def capture_phone(contact, text):
+    """Клієнт написав телефон у чаті → вписати у картку клієнта (лише якщо порожньо, наявний НЕ затираємо)."""
+    if contact is None or not text:
+        return
+    ph = _extract_phone(text)
+    if not ph:
+        return
+    if (getattr(contact, "phone", "") or "").strip():
+        return
+    contact.phone = ph[:32]
+    try:
+        contact.save(update_fields=["phone"])
+    except Exception:
+        pass
+
+
 def on_incoming(contact, text: str = ""):
     """Клієнт написав → бейдж 'непереглянуто' + авто-просування (готовність купити має пріоритет)."""
+    capture_phone(contact, text)
     _flag_seen(contact, False)
     lead = _lead_for(contact)
     if not lead:
