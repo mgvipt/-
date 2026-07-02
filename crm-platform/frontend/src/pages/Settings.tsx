@@ -14,15 +14,30 @@ const TITLES: Record<string, string> = { liqpay: "LiqPay", checkbox: "Checkbox",
 
 export default function Settings() {
   const { t, lang, setLang } = useLang();
+  const { can } = useAuth();
+  const canAll = can("roles.manage");
+  // вкладку видно, якщо є її код-право (або roles.manage / superuser)
+  const allow = (code: string) => canAll || can(code);
+  const canIntegr = allow("settings.integrations");
+
   const [provs, setProvs] = useState<Prov[]>([]);
   const [edit, setEdit] = useState<Record<string, Record<string, string>>>({});
   const [saved, setSaved] = useState("");
-  const [tab, setTab] = useState<"integrations" | "automations" | "rules" | "agent">("rules");
-  const { can } = useAuth();
-  const canRules = can("roles.manage");
 
-  function load() { api.get<Prov[]>("/api/integrations/settings/").then(setProvs); }
-  useEffect(() => { load(); }, []);
+  // [ключ, підпис, код-права]. Кожен пункт налаштувань можна делегувати окремо.
+  const TABDEFS: [string, React.ReactNode, string][] = [
+    ["rules", <><Icon n="📋" size={15} /> {t("Глобальные правила", "Глобальні правила")}</>, "settings.rules"],
+    ["automations", <><Icon n="⚙️" size={15} /> {t("Автоматизации", "Автоматизації")}</>, "settings.automations"],
+    ["agent", <><Icon n="🤖" size={15} /> {t("AI-агент", "AI-агент")}</>, "settings.agent"],
+    ["sounds", <><Icon n="bell" size={15} /> {t("Звуки", "Звуки")}</>, "settings.sounds"],
+    ["integrations", <><Icon n="🔌" size={15} /> {t("Интеграции / Язык", "Інтеграції / Мова")}</>, "settings.integrations"],
+  ];
+  const visible = TABDEFS.filter(([, , code]) => allow(code));
+  const [tab, setTab] = useState<string>(visible[0]?.[0] || "");
+  useEffect(() => { if (!visible.some(([k]) => k === tab)) setTab(visible[0]?.[0] || ""); /* eslint-disable-next-line */ }, [visible.length]);
+
+  function load() { if (canIntegr) api.get<Prov[]>("/api/integrations/settings/").then(setProvs).catch(() => { /* немає доступу — тихо */ }); }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
   async function save(p: Prov) {
     const body: any = { provider: p.provider, is_active: p.is_active, ...(edit[p.provider] || {}) };
@@ -36,19 +51,21 @@ export default function Settings() {
     load();
   }
 
-  const TABS: [string, React.ReactNode][] = [["rules", <><Icon n="📋" size={15} /> {t("Глобальные правила", "Глобальні правила")}</>], ["automations", <><Icon n="⚙️" size={15} /> {t("Автоматизации", "Автоматизації")}</>], ["agent", <><Icon n="🤖" size={15} /> {t("AI-агент", "AI-агент")}</>], ["integrations", <><Icon n="🔌" size={15} /> {t("Интеграции / Язык", "Інтеграції / Мова")}</>]];
+  if (!visible.length) return <div className="scroll pad fade"><div className="note">{t("Нет доступа к настройкам", "Немає доступу до налаштувань")}</div></div>;
+
   return (
     <div className="scroll pad fade">
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        {TABS.map(([k, label]) => ((k === "rules" || k === "automations" || k === "agent") && !canRules ? null : (
-          <button key={k} onClick={() => setTab(k as any)}
+        {visible.map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)}
             style={{ fontSize: 14, fontWeight: tab === k ? 700 : 500, padding: "8px 16px", borderRadius: 10, cursor: "pointer",
               border: "1px solid " + (tab === k ? "var(--brand)" : "#e2e8f0"), background: tab === k ? "var(--brand)" : "#fff", color: tab === k ? "#fff" : "#475569" }}>{label}</button>
-        )))}
+        ))}
       </div>
       {tab === "rules" && <SettingsGlobalRules />}
       {tab === "automations" && <SettingsAutomations />}
       {tab === "agent" && <SettingsAgent />}
+      {tab === "sounds" && <SoundSettings />}
       {tab !== "integrations" ? null : (<>
       <div className="panel" style={{ margin: "0 0 12px", maxWidth: 360 }}>
         <div className="label" style={{ marginBottom: 6 }}><Icon n="🌐" size={14} /> {t("Язык интерфейса", "Мова інтерфейсу")}</div>
@@ -58,7 +75,6 @@ export default function Settings() {
           <option value="ru">Русский</option>
         </select>
       </div>
-      <SoundSettings />
       <div className="note">{t("Перенеси сюда ключи из Битрикса (один раз) — и оплаты, фискализация и Нова Пошта заработают вживую. Ключи хранятся на сервере и показываются замаскированными.", "Перенеси сюди ключі з Бітрикса (один раз) — і оплати, фіскалізація та Нова Пошта запрацюють наживо. Ключі зберігаються на сервері та показуються замаскованими.")}</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         {provs.map((p) => (

@@ -20,8 +20,18 @@ def _mask(v: str) -> str:
     return v[:3] + "•••" + v[-2:]
 
 
-class ManagePerm(HasPermCode):
-    required_perm = "roles.manage"
+from rest_framework.permissions import BasePermission as _BasePerm
+
+
+class ManagePerm(_BasePerm):
+    """roles.manage АБО делеговане settings.integrations (superuser — завжди)."""
+    def has_permission(self, request, view):
+        u = request.user
+        if not (u and u.is_authenticated):
+            return False
+        if getattr(u, "is_superuser", False):
+            return True
+        return hasattr(u, "has_perm_code") and (u.has_perm_code("roles.manage") or u.has_perm_code("settings.integrations"))
 
 
 class IntegrationSettingsView(APIView):

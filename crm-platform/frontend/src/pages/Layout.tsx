@@ -144,7 +144,8 @@ export default function Layout() {
   }
 
   const { t } = useLang();
-  const items = NAV.filter(([, , , , perm]) => !perm || can(perm));
+  const SETTINGS_PERMS = ["settings.sounds", "settings.integrations", "settings.agent", "settings.automations", "settings.rules"];
+  const items = NAV.filter(([path, , , , perm]) => path === "/settings" ? (can("roles.manage") || SETTINGS_PERMS.some((pp) => can(pp))) : (!perm || can(perm)));
   const _cur = NAV.find(([path]) => loc.pathname.startsWith(path));
   const title = _cur ? t(_cur[1], _cur[2]) : "CRM";
   const fullName = me ? `${me.first_name} ${me.last_name}`.trim() || me.username : "";

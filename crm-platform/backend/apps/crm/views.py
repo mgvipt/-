@@ -1446,17 +1446,34 @@ class _RolesManageOrRead(BasePermission):
         return bool(u and (getattr(u, "is_superuser", False) or (hasattr(u, "has_perm_code") and u.has_perm_code("roles.manage"))))
 
 
+def _manage_or_read(*extra_codes):
+    """Читати — будь-який авторизований; редагувати — superuser / roles.manage / делегований settings-код."""
+    class _P(BasePermission):
+        def has_permission(self, request, view):
+            u = request.user
+            if request.method in SAFE_METHODS:
+                return bool(u and u.is_authenticated)
+            if not (u and u.is_authenticated):
+                return False
+            if getattr(u, "is_superuser", False):
+                return True
+            if hasattr(u, "has_perm_code"):
+                return u.has_perm_code("roles.manage") or any(u.has_perm_code(c) for c in extra_codes)
+            return False
+    return _P
+
+
 class AutomationRuleViewSet(viewsets.ModelViewSet):
     queryset = AutomationRule.objects.select_related("funnel", "from_stage", "to_stage").all()
     serializer_class = __import__("apps.crm.serializers", fromlist=["AutomationRuleSerializer"]).AutomationRuleSerializer
-    permission_classes = [_RolesManageOrRead]
+    permission_classes = [_manage_or_read("settings.automations")]
     filterset_fields = ["funnel", "from_stage", "trigger", "enabled"]
 
 
 class GlobalRuleViewSet(viewsets.ModelViewSet):
     queryset = GlobalRule.objects.all()
     serializer_class = __import__("apps.crm.serializers", fromlist=["GlobalRuleSerializer"]).GlobalRuleSerializer
-    permission_classes = [_RolesManageOrRead]
+    permission_classes = [_manage_or_read("settings.rules")]
     filterset_fields = ["block", "funnel", "enabled"]
 
     def perform_update(self, serializer):
@@ -1528,7 +1545,7 @@ class AiUsageView(APIView):
 
 
 class AgentConfigView(APIView):
-    permission_classes = [_RolesManageOrRead]
+    permission_classes = [_manage_or_read("settings.agent")]
 
     def get(self, request):
         c = AgentConfig.get()
