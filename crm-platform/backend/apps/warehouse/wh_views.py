@@ -219,12 +219,8 @@ def _finalize(job, user):
         add("tinting", job.tintings_base * rtint, base_value=job.tintings_base, rate_applied=rtint)
     job.done_snapshot = {"weight": str(weight), "tiers": tiers, "tint_base": str(job.tintings_base)}
     job.status = "shipped"; job.shipped_at = timezone.now(); job.save()
-    from .models import Warehouse, StockDocument, StockMovement
-    wh = Warehouse.objects.filter(is_default=True).first() or Warehouse.objects.first()
-    if wh:
-        doc = StockDocument.objects.create(kind="out", warehouse=wh, deal=deal, author=user, comment="Відвантаження складу")
-        for it in deal.items.all():
-            StockMovement.objects.create(document=doc, product=it.product, quantity=-it.quantity, price=it.price)
+    from .services import realize_deal
+    realize_deal(deal, user)  # спільне списання по собівартості + COGS, ідемпотентно (без подвійного списання)
     if job.task_id:
         job.task.status = "done"; job.task.save(update_fields=["status"])
     return job

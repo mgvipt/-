@@ -1230,27 +1230,16 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def ship(self, request, pk=None):
         """Отгрузка: списание товаров сделки со склада + расход по себестоимости (COGS)."""
-        from apps.warehouse.models import Warehouse, StockDocument, StockMovement
-        from apps.finance.services import record_expense
+        from apps.warehouse.models import StockDocument
+        from apps.warehouse.services import realize_deal
         deal = self.get_object()
         g = self._guard(deal, fulfill=True)
         if g: return g
-        items = list(deal.items.select_related("product"))
-        if not items:
+        if not deal.items.exists():
             return Response({"detail": "В сделке нет товаров"}, status=status.HTTP_400_BAD_REQUEST)
         if StockDocument.objects.filter(kind="out", deal=deal).exists():
             return Response({"detail": "Сделку вже відвантажено"}, status=status.HTTP_409_CONFLICT)
-        wh = Warehouse.objects.filter(is_default=True).first() or Warehouse.objects.first()
-        doc = StockDocument.objects.create(kind="out", number=f"РН-{deal.id}", warehouse=wh,
-                                           deal=deal, comment=f"Відвантаження по угоді #{deal.id}",
-                                           author=request.user)
-        cogs = Decimal("0")
-        for it in items:
-            StockMovement.objects.create(document=doc, product=it.product,
-                                         quantity=-it.quantity, price=it.product.cost)
-            cogs += it.quantity * it.product.cost
-        if cogs:
-            record_expense(cogs, deal=deal)
+        doc, cogs, created = realize_deal(deal, request.user)  # єдине списання по собівартості + COGS
         return Response({"ok": True, "cogs": float(cogs),
                          "deal": DealDetailSerializer(deal, context={"request": request}).data})
 
