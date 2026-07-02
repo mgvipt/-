@@ -1,3 +1,4 @@
+import { api } from "./api";
 /* Звуковий рушій (Web Audio) — БАГАТЕ звучання: реверберація + гармоніки + хор + поліфонія (акорди).
    Дзвінок — довгі мелодійні рінгтони ЦИКЛОМ + можливість завантажити свій аудіо-файл. */
 
@@ -130,11 +131,25 @@ export function setTeamSound(v: string) { localStorage.setItem(LS_TEAM, v); }
 export function teamSoundOn() { return localStorage.getItem(LS_TEAM_ON) !== "0"; }
 export function setTeamSoundOn(v: boolean) { localStorage.setItem(LS_TEAM_ON, v ? "1" : "0"); }
 
-export type CustomSound = { id: string; name: string; data: string };
-export function getCustomSounds(): CustomSound[] { try { return JSON.parse(localStorage.getItem(LS_LIB) || "[]"); } catch { return []; } }
-export function addCustomSound(name: string, data: string): string { const list = getCustomSounds(); const id = "c" + Date.now() + Math.floor(Math.random() * 999); list.push({ id, name, data }); localStorage.setItem(LS_LIB, JSON.stringify(list)); return id; }
-export function removeCustomSound(id: string) { localStorage.setItem(LS_LIB, JSON.stringify(getCustomSounds().filter((s) => s.id !== id))); }
-function _cdata(id: string) { return getCustomSounds().find((s) => s.id === id)?.data || ""; }
+// Спільна бібліотека звуків — на сервері, доступна всім (не localStorage).
+export type CustomSound = { id: number; name: string; url: string; by?: string };
+let _lib: CustomSound[] = [];
+let _canUploadSnd = false;
+export function getLibrary(): CustomSound[] { return _lib; }
+export function canUploadSounds(): boolean { return _canUploadSnd; }
+export async function loadSoundLibrary(): Promise<void> {
+  try { const r = await api.get<any>("/api/sounds/"); _lib = (r && (r.items || r)) || []; _canUploadSnd = !!(r && r.can_upload); } catch { /* */ }
+}
+export async function uploadSound(name: string, dataUrl: string): Promise<{ dedup?: boolean }> {
+  const r = await api.post<any>("/api/sounds/", { name, data: dataUrl });
+  await loadSoundLibrary();
+  return { dedup: !!(r && r.dedup) };
+}
+export async function deleteSound(id: number): Promise<void> {
+  await api.del(`/api/sounds/${id}/`);
+  await loadSoundLibrary();
+}
+function _customUrl(id: string): string { const s = _lib.find((x) => String(x.id) === String(id)); return s ? s.url : ""; }
 function _playFile(data: string, loop: boolean, onend?: () => void): () => void { try { const a = new Audio(data); a.loop = loop; a.volume = 1; a.play().catch(() => {}); if (onend) a.onended = onend; return () => { try { a.pause(); a.currentTime = 0; } catch {} }; } catch { return () => {}; } }
 
 // прослуховування в налаштуваннях — зупиняється по повторному кліку / зміні / переході сторінки
@@ -146,7 +161,7 @@ export function previewSel(val: string, isCall: boolean) {
   if (_previewStop && _previewKey === key) { stopPreview(); return; } // повторний клік = стоп
   stopPreview();
   let data = "";
-  if (val.startsWith("custom:")) data = _cdata(val.slice(7));
+  if (val.startsWith("custom:")) data = _customUrl(val.slice(7));
   else { const s = isCall ? CALL_SOUNDS[val] : SOUNDS[val]; data = s?.file || ""; if (!data) { try { s?.play?.(ac()); } catch {} return; } }
   if (!data) return;
   _previewKey = key;
@@ -159,13 +174,13 @@ export function previewCall(name: string) { playSnd(CALL_SOUNDS[name]); }
 export function playMessageSound() {
   if (!msgSoundOn()) return;
   const v = getMsgSound();
-  if (v.startsWith("custom:")) { const d = _cdata(v.slice(7)); if (d) _playFile(d, false); return; }
+  if (v.startsWith("custom:")) { const u = _customUrl(v.slice(7)); if (u) { _playFile(u, false); return; } }
   playSnd(SOUNDS[v] || SOUNDS.real_notify);
 }
 export function playTeamSound() {
   if (!teamSoundOn()) return;
   const v = getTeamSound();
-  if (v.startsWith("custom:")) { const d = _cdata(v.slice(7)); if (d) _playFile(d, false); return; }
+  if (v.startsWith("custom:")) { const u = _customUrl(v.slice(7)); if (u) { _playFile(u, false); return; } }
   playSnd(SOUNDS[v] || SOUNDS.real_confirm);
 }
 
@@ -174,7 +189,7 @@ export function startCallRing() {
   stopCallRing();
   if (!callSoundOn()) return;
   const v = getCallSound();
-  if (v.startsWith("custom:")) { const d = _cdata(v.slice(7)); if (d) { _ringStop = _playFile(d, true); return; } }
+  if (v.startsWith("custom:")) { const u = _customUrl(v.slice(7)); if (u) { _ringStop = _playFile(u, true); return; } }
   const r = CALL_SOUNDS[v] || CALL_SOUNDS.real_pizzi;
   if (r.file) { _ringStop = _playFile(r.file, true); return; }
   const c = ac();

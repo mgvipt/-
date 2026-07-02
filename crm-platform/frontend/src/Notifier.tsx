@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "./api";
-import { playMessageSound, playTeamSound } from "./sounds";
+import { playMessageSound, playTeamSound, loadSoundLibrary } from "./sounds";
 import { useLang } from "./i18n";
 
 type Toast = { id: number; name: string; preview: string; channel: string; conv_id: number };
@@ -18,6 +18,7 @@ export default function Notifier() {
 
   useEffect(() => {
     let stop = false;
+    loadSoundLibrary();
     async function poll() {
       try {
         const d = await api.get<{ last_in: number; latest: any; unread: number; team_last?: number; team_latest?: any }>("/api/inbox/ping/");

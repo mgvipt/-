@@ -912,3 +912,73 @@ class ChatPlaceWebhookView(APIView):
                     pass
         return Response({"ok": True, "conv": conv.id, "created": created})
 
+
+class SoundLibraryView(APIView):
+    """Спільна бібліотека звуків: GET — список (усім), POST — завантажити (право settings.sounds.upload)."""
+    permission_classes = [IsAuthenticated]
+
+    def _can_upload(self, u):
+        return bool(u.is_superuser or (hasattr(u, "has_perm_code") and (u.has_perm_code("settings.sounds.upload") or u.has_perm_code("roles.manage"))))
+
+    def get(self, request):
+        from .models import SoundLibrary
+        items = [{"id": s.id, "name": s.name, "url": "/api/sounds/%d/file/" % s.id,
+                  "by": ((s.uploaded_by.get_full_name() or s.uploaded_by.username) if s.uploaded_by_id else ""),
+                  "size": s.size} for s in SoundLibrary.objects.all()]
+        return Response({"items": items, "can_upload": self._can_upload(request.user)})
+
+    def post(self, request):
+        import base64, hashlib
+        from .models import SoundLibrary
+        u = request.user
+        if not self._can_upload(u):
+            return Response({"detail": "Немає права завантажувати звуки"}, status=403)
+        name = (request.data.get("name") or "Звук").strip()[:160]
+        data_url = request.data.get("data") or ""
+        mime = "audio/mpeg"
+        b64 = data_url
+        if data_url.startswith("data:"):
+            head, _, b64 = data_url.partition(",")
+            try:
+                mime = head[5:head.index(";")] or mime
+            except Exception:
+                pass
+        try:
+            raw = base64.b64decode(b64)
+        except Exception:
+            return Response({"detail": "Пошкоджений файл"}, status=400)
+        if not raw or len(raw) > 3 * 1024 * 1024:
+            return Response({"detail": "Файл порожній або завеликий (макс 3 МБ)"}, status=400)
+        sha = hashlib.sha256(raw).hexdigest()
+        exist = SoundLibrary.objects.filter(sha256=sha).first()
+        if exist:
+            return Response({"id": exist.id, "name": exist.name, "url": "/api/sounds/%d/file/" % exist.id, "dedup": True})
+        s = SoundLibrary.objects.create(name=name, sha256=sha, mime=mime, data=raw, size=len(raw), uploaded_by=u)
+        return Response({"id": s.id, "name": s.name, "url": "/api/sounds/%d/file/" % s.id}, status=201)
+
+
+class SoundFileView(APIView):
+    """Віддає байти звуку. Публічно (звук не секрет) — грається через Audio(url)."""
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        from django.http import HttpResponse
+        from .models import SoundLibrary
+        s = SoundLibrary.objects.filter(pk=pk).first()
+        if not s:
+            return Response(status=404)
+        resp = HttpResponse(bytes(s.data), content_type=(s.mime or "audio/mpeg"))
+        resp["Cache-Control"] = "public, max-age=86400"
+        return resp
+
+
+class SoundDeleteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        from .models import SoundLibrary
+        u = request.user
+        if not (u.is_superuser or (hasattr(u, "has_perm_code") and (u.has_perm_code("settings.sounds.upload") or u.has_perm_code("roles.manage")))):
+            return Response({"detail": "Немає права"}, status=403)
+        SoundLibrary.objects.filter(pk=pk).delete()
+        return Response(status=204)

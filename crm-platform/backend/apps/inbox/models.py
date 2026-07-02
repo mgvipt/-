@@ -114,3 +114,19 @@ class TeamMessage(models.Model):
 
     class Meta:
         ordering = ["id"]
+
+
+class SoundLibrary(models.Model):
+    """Спільна бібліотека завантажених звуків сповіщень. Вибирати може будь-хто;
+    завантажувати/видаляти — лише з правом settings.sounds.upload. Дедуп по sha256 (без дублів)."""
+    from django.conf import settings as _s3
+    name = models.CharField(max_length=160)
+    sha256 = models.CharField(max_length=64, unique=True, db_index=True)
+    mime = models.CharField(max_length=60, default="audio/mpeg")
+    data = models.BinaryField()
+    size = models.PositiveIntegerField(default=0)
+    uploaded_by = models.ForeignKey(_s3.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-id"]
