@@ -253,6 +253,12 @@ class InventoryAnalyticsView(APIView):
         total_items = in_stock = out_stock = 0
         val_cost = val_retail = total_qty = Decimal("0")
         by_cat = {}
+        from django.utils import timezone as _tz
+        from datetime import timedelta as _td
+        from apps.warehouse.models import StockMovement as _SM
+        _dead_days = 90
+        _recent = set(_SM.objects.filter(quantity__lt=0, document__created_at__gte=_tz.now() - _td(days=_dead_days)).values_list("product_id", flat=True))
+        _rows = []
         for p in prods:
             total_items += 1
             s = p.stk or Decimal("0")
@@ -271,9 +277,16 @@ class InventoryAnalyticsView(APIView):
                 c["qty"] += float(s)
                 c["cost"] += float(vc)
                 c["retail"] += float(vr)
+                _rows.append({"id": p.id, "name": p.name, "sku": p.sku, "unit": p.unit,
+                              "qty": round(float(s), 2), "frozen": round(float(vc), 2), "dead": p.id not in _recent})
             else:
                 out_stock += 1
         cats = sorted(by_cat.items(), key=lambda kv: -kv[1]["retail"])
+        _frozen_total = round(sum(r["frozen"] for r in _rows))
+        _frozen_top = sorted(_rows, key=lambda r: -r["frozen"])[:20]
+        _dead = [r for r in _rows if r["dead"]]
+        _dead_total = round(sum(r["frozen"] for r in _dead))
+        _dead_top = sorted(_dead, key=lambda r: -r["frozen"])[:20]
         _cc = getattr(request.user, "is_superuser", False) or (hasattr(request.user, "has_perm_code") and request.user.has_perm_code("product.cost.view"))
         return Response({
             "total_items": total_items, "in_stock": in_stock, "out_stock": out_stock,
@@ -284,6 +297,12 @@ class InventoryAnalyticsView(APIView):
             "by_category": [{"name": k, "items": v["items"], "qty": round(v["qty"], 1),
                              "cost": round(v["cost"]) if _cc else None, "retail": round(v["retail"])}
                             for k, v in cats],
+            "frozen_total": _frozen_total if _cc else None,
+            "frozen_top": (_frozen_top if _cc else []),
+            "dead_count": len(_dead),
+            "dead_total": _dead_total if _cc else None,
+            "dead_top": (_dead_top if _cc else []),
+            "dead_days": _dead_days,
         })
 
 

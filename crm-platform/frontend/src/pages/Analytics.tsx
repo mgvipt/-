@@ -21,6 +21,8 @@ interface InvData {
   total_items: number; in_stock: number; out_stock: number; total_qty: number;
   value_cost: number; value_retail: number; potential_margin: number;
   by_category: { name: string; items: number; qty: number; cost: number; retail: number }[];
+  frozen_total?: number; frozen_top?: { name: string; sku: string; qty: number; unit: string; frozen: number }[];
+  dead_count?: number; dead_total?: number; dead_top?: { name: string; sku: string; qty: number; unit: string; frozen: number }[]; dead_days?: number;
 }
 const fmt = (n: number) => Math.round(n || 0).toLocaleString("ru");
 
@@ -185,6 +187,24 @@ function StockTab() {
           ))}</tbody>
         </table>
       </div>
+
+      {showCost && d.frozen_top && d.frozen_top.length > 0 && (
+        <div className="panel" style={{ margin: "14px 0 0" }}>
+          <b style={{ fontSize: 14 }}>💰 {t("Замороженные деньги (где лежит капитал)","Заморожені гроші (де лежить капітал)")}</b>
+          <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>{t("Всего в товаре по закупке","Всього в товарі по закупці")}: <b style={{ color: "#9a3412" }}>{fmt(d.frozen_total || 0)} ₴</b>. {t("Топ-20 где заморожен капитал.","Топ-20 де заморожений капітал.")}</div>
+          <table style={{ marginTop: 4 }}><thead><tr><th>{t("Товар","Товар")}</th><th>{t("Артикул","Артикул")}</th><th>{t("Остаток","Залишок")}</th><th>{t("Заморожено ₴","Заморожено ₴")}</th></tr></thead>
+            <tbody>{d.frozen_top!.map((r, i) => <tr key={i}><td>{r.name}</td><td className="muted">{r.sku}</td><td>{r.qty} {r.unit}</td><td><b>{fmt(r.frozen)} ₴</b></td></tr>)}</tbody></table>
+        </div>
+      )}
+
+      {showCost && (d.dead_count ?? 0) > 0 && (
+        <div className="panel" style={{ margin: "14px 0 0", borderLeft: "4px solid #dc2626" }}>
+          <b style={{ fontSize: 14 }}>🪦 {t("Мёртвый сток","Мертвий сток")} — {t("нет продаж","немає продажів")} {d.dead_days} {t("дней","днів")}</b>
+          <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>{d.dead_count} {t("товаров","товарів")}, {t("в них заморожено","у них заморожено")} <b style={{ color: "#dc2626" }}>{fmt(d.dead_total || 0)} ₴</b>. {t("Кандидаты на акцию / распродажу → живые деньги.","Кандидати на акцію / розпродаж → живі гроші.")}</div>
+          <table style={{ marginTop: 4 }}><thead><tr><th>{t("Товар","Товар")}</th><th>{t("Артикул","Артикул")}</th><th>{t("Остаток","Залишок")}</th><th>{t("Заморожено ₴","Заморожено ₴")}</th></tr></thead>
+            <tbody>{d.dead_top!.map((r, i) => <tr key={i}><td>{r.name}</td><td className="muted">{r.sku}</td><td>{r.qty} {r.unit}</td><td><b>{fmt(r.frozen)} ₴</b></td></tr>)}</tbody></table>
+        </div>
+      )}
     </>
   );
 }
