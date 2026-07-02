@@ -251,7 +251,7 @@ export default function Inbox() {
     try { await api.post<any>(`/api/conversations/${active.id}/close/`, {}); setConvs((cs) => cs.filter((x) => x.id !== active.id)); setActive(null); setMsgs([]); } catch { setErr(t("Не удалось","Не вдалося")); }
     setMenu(false);
   }
-  function goToContact() { setMenu(false); if (active?.contact) nav(`/clients/${active.contact}`); }
+  function goToContact() { setMenu(false); if (active?.contact) nav(`/clients/${active.contact}?c=${active.id}`); }
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>

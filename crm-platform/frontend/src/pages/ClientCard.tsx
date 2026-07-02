@@ -1,7 +1,7 @@
 /* Картка клієнта (контакту): поля як у Бітриксі + історія сделок.
  * Відкривається зі списку «Клієнти» або зі сделки. /clients/:id */
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { Avatar, SourceChip, SOURCES } from "../ui";
 import OwnerSelect from "../OwnerSelect";
@@ -22,6 +22,8 @@ export default function ClientCard() {
   const { id } = useParams();
   const { t } = useLang();
   const nav = useNavigate();
+  const [sp] = useSearchParams();
+  const backChat = sp.get("c");
   const [c, setC] = useState<Contact | null>(null);
   const [msg, setMsg] = useState("");
   const load = () => api.get<Contact>(`/api/contacts/${id}/`).then(setC);
@@ -43,7 +45,7 @@ export default function ClientCard() {
   return (
     <div className="scroll pad fade">
       <div className="dealhead">
-        <button className="back" onClick={() => nav("/clients")}>←</button>
+        <button className="back" title={backChat ? t("Вернуться в чат с клиентом","Повернутися в чат з клієнтом") : t("К списку клиентов","До списку клієнтів")} onClick={() => nav(backChat ? `/inbox?c=${backChat}` : "/clients")}>←</button>
         <Avatar name={c.display_name} cls="av-md" />
         <b style={{ fontSize: 16 }}>{c.display_name}</b>
         {c.loyalty_tag && <span className="chip" style={{ background: "#eef2ff", color: "#4338ca" }}>{c.loyalty_tag}</span>}
