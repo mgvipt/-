@@ -173,10 +173,20 @@ class RingingView(APIView):
 
 
 class RingingActiveView(APIView):
-    """Фронт опитує: чи є зараз вхідний дзвінок (показати спливашку)."""
+    """Фронт опитує: чи є зараз вхідний дзвінок (показати спливашку).
+    Коли черга активна — спливашку бачать ЛИШЕ учасники черги (enabled, і якщо
+    on_shift_only — на зміні). Не в черзі → нічого не бачить."""
     def get(self, request):
         from django.utils import timezone
         from datetime import timedelta
+        from .models import CallQueueConfig, CallQueueMember
+        cfg = CallQueueConfig.get()
+        if cfg.active:
+            u = request.user
+            is_member = CallQueueMember.objects.filter(user=u, enabled=True).exists()
+            eligible = is_member and (not cfg.on_shift_only or u.id in _on_shift_ids())
+            if not eligible:
+                return Response([])
         cutoff = timezone.now() - timedelta(seconds=45)
         qs = (RingingCall.objects.filter(active=True, created_at__gte=cutoff)
               .select_related("contact").order_by("-created_at")[:5])
