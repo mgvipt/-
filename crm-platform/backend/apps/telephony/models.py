@@ -64,3 +64,30 @@ class PhoneLine(models.Model):
     note = models.CharField(max_length=200, blank=True)
     busy = models.BooleanField(default=False)
     busy_at = models.DateTimeField(null=True, blank=True)
+
+
+class CallQueueMember(models.Model):
+    """Учасник черги вхідних дзвінків. Порядок = position. Дзвонять лише якщо enabled
+    і (за налаштуванням on_shift_only) співробітник почав робочий день."""
+    user = models.OneToOneField("accounts.User", on_delete=models.CASCADE, related_name="queue_member")
+    position = models.PositiveIntegerField(default=0)
+    enabled = models.BooleanField(default=True)
+    ring_seconds = models.PositiveIntegerField(default=20)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["position", "id"]
+
+
+class CallQueueConfig(models.Model):
+    """Singleton — налаштування черги вхідних."""
+    on_shift_only = models.BooleanField(default=True, help_text="Дзвонити лише тим, хто почав робочий день")
+    strategy = models.CharField(max_length=12, default="sequential")  # sequential | ringall
+    active = models.BooleanField(default=False, help_text="Чи керує черга маршрутизацією вхідних")
+
+    @classmethod
+    def get(cls):
+        obj = cls.objects.first()
+        if not obj:
+            obj = cls.objects.create()
+        return obj

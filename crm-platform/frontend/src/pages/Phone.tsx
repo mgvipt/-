@@ -54,6 +54,85 @@ function LineBalances({ t }: any) {
   );
 }
 
+function CallQueuePanel({ t }: any) {
+  const [d, setD] = useState<any>(null);
+  const [addId, setAddId] = useState("");
+  const load = () => api.get<any>("/api/telephony/queue/").then(setD).catch(() => {});
+  useEffect(() => { load(); }, []);
+  if (!d) return null;
+  const admin = d.can_manage;
+  const cfg = d.config;
+  const act = (body: any) => api.post<any>("/api/telephony/queue/", body).then(setD).catch(() => alert(t("Нет прав", "Немає прав")));
+  const move = (uid: number, dir: number) => {
+    const ids = d.members.map((m: any) => m.user_id);
+    const i = ids.indexOf(uid), j = i + dir;
+    if (j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    act({ action: "reorder", order: ids });
+  };
+  const btn: any = { width: 26, height: 26, borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer", fontSize: 13 };
+  return (
+    <div className="panel" style={{ margin: "0 0 16px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+        <div className="label" style={{ margin: 0 }}>📞 {t("Очередь входящих звонков", "Черга вхідних дзвінків")}</div>
+        {admin && <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, cursor: "pointer" }}>
+          <span className={"toggle" + (cfg.active ? " on" : "")} onClick={() => act({ action: "config", active: !cfg.active })} />
+          {cfg.active ? t("Очередь включена", "Черга увімкнена") : t("Очередь выключена", "Черга вимкнена")}
+        </label>}
+      </div>
+
+      {d.members.length === 0
+        ? <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>{t("Пусто. Добавь сотрудников — им будут поступать входящие по очереди.", "Порожньо. Додай співробітників — їм надходитимуть вхідні по черзі.")}</div>
+        : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {d.members.map((m: any, i: number) => (
+            <div key={m.user_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", border: "1px solid #e8edf3", borderRadius: 9, opacity: m.enabled ? 1 : 0.5 }}>
+              <b style={{ width: 20, textAlign: "center", color: "#64748b" }}>{i + 1}</b>
+              <span style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{m.name}</span>
+              <span title={t("Внутренний номер", "Внутрішній номер")} style={{ fontSize: 11.5, background: "#eef2ff", color: "#4338ca", borderRadius: 6, padding: "2px 7px", fontWeight: 700 }}>#{m.extension || "—"}</span>
+              <span title={m.on_shift ? t("На смене", "На зміні") : t("День не начат", "День не почато")} style={{ fontSize: 12 }}>{m.on_shift ? "🟢" : "⚪"}</span>
+              {admin && <>
+                <input type="number" min={5} max={120} defaultValue={m.ring_seconds} title={t("Секунд дозвона", "Секунд дозвону")}
+                  onBlur={(e) => act({ action: "ring_seconds", user_id: m.user_id, value: e.target.value })}
+                  style={{ width: 46, height: 26, borderRadius: 6, border: "1px solid #cbd5e1", fontSize: 12, textAlign: "center" }} />
+                <button onClick={() => move(m.user_id, -1)} disabled={i === 0} style={btn}>↑</button>
+                <button onClick={() => move(m.user_id, 1)} disabled={i === d.members.length - 1} style={btn}>↓</button>
+                <span className={"toggle" + (m.enabled ? " on" : "")} onClick={() => act({ action: "toggle", user_id: m.user_id })} />
+                <button onClick={() => { if (confirm(t("Убрать из очереди?", "Прибрати з черги?"))) act({ action: "remove", user_id: m.user_id }); }} style={{ ...btn, color: "#dc2626" }}>✕</button>
+              </>}
+            </div>
+          ))}
+        </div>}
+
+      {admin && <>
+        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+          <select value={addId} onChange={(e) => setAddId(e.target.value)} style={{ flex: 1, minWidth: 160, height: 34, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13 }}>
+            <option value="">{t("+ Добавить сотрудника…", "+ Додати співробітника…")}</option>
+            {d.candidates.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <button className="btn btn-primary" disabled={!addId} onClick={() => { act({ action: "add", user_id: Number(addId) }); setAddId(""); }}>{t("Добавить", "Додати")}</button>
+        </div>
+        <div style={{ display: "flex", gap: 16, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, cursor: "pointer" }}>
+            <span className={"toggle" + (cfg.on_shift_only ? " on" : "")} onClick={() => act({ action: "config", on_shift_only: !cfg.on_shift_only })} />
+            {t("Звонить только тем, кто начал рабочий день", "Дзвонити лише тим, хто почав робочий день")}
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5 }}>
+            {t("Как звонить:", "Як дзвонити:")}
+            <select value={cfg.strategy} onChange={(e) => act({ action: "config", strategy: e.target.value })} style={{ height: 30, borderRadius: 7, border: "1px solid #cbd5e1", fontSize: 12.5 }}>
+              <option value="sequential">{t("По очереди (один за другим)", "По черзі (один за одним)")}</option>
+              <option value="ringall">{t("Всем сразу", "Усім одразу")}</option>
+            </select>
+          </label>
+        </div>
+      </>}
+
+      <div className="muted" style={{ fontSize: 11.5, marginTop: 10 }}>
+        🟢 {t("на смене", "на зміні")} · ⚪ {t("день не начат — звонки не идут", "день не почато — дзвінки не йдуть")}. {t("Кто не в очереди — звонки не получает. Если никто не взял — звонок фиксируется как пропущенный.", "Хто не в черзі — дзвінків не отримує. Якщо ніхто не взяв — дзвінок фіксується як пропущений.")}
+      </div>
+    </div>
+  );
+}
+
 export default function Phone() {
   const [calls, setCalls] = useState<Call[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -155,6 +234,7 @@ export default function Phone() {
       )}
 
       <LineBalances t={t} />
+      <CallQueuePanel t={t} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px,1fr))", gap: 14, alignItems: "start" }}>
         <Column title={t("Входящие","Вхідні")} icon="📥" color="#16a34a" list={incoming} />

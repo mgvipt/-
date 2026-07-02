@@ -345,3 +345,122 @@ class LineStatusView(APIView):
         for intl, busy in (request.data.get("lines") or {}).items():
             PhoneLine.objects.filter(internal=str(intl)).update(busy=bool(busy), busy_at=timezone.now())
         return Response({"ok": True})
+
+
+def _next_free_ext():
+    from apps.accounts.models import User
+    used = set()
+    for e in User.objects.exclude(extension="").values_list("extension", flat=True):
+        if e and str(e).isdigit():
+            used.add(int(e))
+    n = 701
+    while n in used or n == 700:
+        n += 1
+    return str(n)
+
+
+def _on_shift_ids():
+    from apps.finance.models import WorkSession
+    return set(WorkSession.objects.filter(ended_at__isnull=True).values_list("user_id", flat=True))
+
+
+class CallQueueView(APIView):
+    """Керування чергою вхідних дзвінків (додати/прибрати/порядок/увімкнути/налаштування)."""
+    permission_classes = [IsAuthenticated]
+
+    def _admin(self, u):
+        return bool(u.is_superuser or (hasattr(u, "has_perm_code") and (u.has_perm_code("roles.manage") or u.has_perm_code("telephony.view"))))
+
+    def _payload(self, request):
+        from .models import CallQueueMember, CallQueueConfig
+        from apps.accounts.models import User
+        cfg = CallQueueConfig.get()
+        on_shift = _on_shift_ids()
+        members = [{
+            "user_id": m.user_id,
+            "name": (m.user.get_full_name() or m.user.username),
+            "extension": m.user.extension or "",
+            "position": m.position, "enabled": m.enabled, "ring_seconds": m.ring_seconds,
+            "on_shift": m.user_id in on_shift,
+        } for m in CallQueueMember.objects.select_related("user").all()]
+        member_ids = {m["user_id"] for m in members}
+        candidates = [{"id": u.id, "name": (u.get_full_name() or u.username)}
+                      for u in User.objects.filter(is_active=True).exclude(id__in=member_ids).order_by("first_name", "username")]
+        return Response({
+            "members": members, "candidates": candidates,
+            "config": {"on_shift_only": cfg.on_shift_only, "strategy": cfg.strategy, "active": cfg.active},
+            "can_manage": self._admin(request.user),
+        })
+
+    def get(self, request):
+        return self._payload(request)
+
+    def post(self, request):
+        from .models import CallQueueMember, CallQueueConfig
+        from apps.accounts.models import User
+        u = request.user
+        if not self._admin(u):
+            return Response({"detail": "Немає прав керувати чергою"}, status=403)
+        act = request.data.get("action")
+        if act == "add":
+            usr = User.objects.filter(id=request.data.get("user_id")).first()
+            if not usr:
+                return Response({"detail": "no user"}, status=400)
+            if not usr.extension:
+                usr.extension = _next_free_ext()
+                usr.save(update_fields=["extension"])
+            pos = CallQueueMember.objects.count()
+            CallQueueMember.objects.get_or_create(user=usr, defaults={"position": pos})
+        elif act == "remove":
+            CallQueueMember.objects.filter(user_id=request.data.get("user_id")).delete()
+        elif act == "toggle":
+            m = CallQueueMember.objects.filter(user_id=request.data.get("user_id")).first()
+            if m:
+                m.enabled = not m.enabled
+                m.save(update_fields=["enabled"])
+        elif act == "ring_seconds":
+            m = CallQueueMember.objects.filter(user_id=request.data.get("user_id")).first()
+            if m:
+                try:
+                    m.ring_seconds = max(5, min(120, int(request.data.get("value") or 20)))
+                    m.save(update_fields=["ring_seconds"])
+                except (TypeError, ValueError):
+                    pass
+        elif act == "reorder":
+            for i, uid in enumerate(request.data.get("order") or []):
+                CallQueueMember.objects.filter(user_id=uid).update(position=i)
+        elif act == "config":
+            cfg = CallQueueConfig.get()
+            if "on_shift_only" in request.data:
+                cfg.on_shift_only = bool(request.data["on_shift_only"])
+            if request.data.get("strategy") in ("sequential", "ringall"):
+                cfg.strategy = request.data["strategy"]
+            if "active" in request.data:
+                cfg.active = bool(request.data["active"])
+            cfg.save()
+        return self._payload(request)
+
+
+class RingPlanView(APIView):
+    """Для Asterisk (token): впорядкований список добавочних, кому дзвонити ЗАРАЗ
+    (у черзі + enabled + якщо on_shift_only — почав робочий день)."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from django.conf import settings as _s
+        from .models import CallQueueMember, CallQueueConfig
+        token = request.headers.get("X-Telephony-Token") or request.GET.get("token", "")
+        if not _s.TELEPHONY_TOKEN or token != _s.TELEPHONY_TOKEN:
+            return Response({"detail": "forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        cfg = CallQueueConfig.get()
+        on_shift = _on_shift_ids()
+        plan = []
+        for m in CallQueueMember.objects.select_related("user").filter(enabled=True):
+            if not m.user.extension:
+                continue
+            if cfg.on_shift_only and m.user_id not in on_shift:
+                continue
+            plan.append({"ext": m.user.extension, "ring": m.ring_seconds})
+        dial = "&".join("%s:%s" % (p["ext"], p["ring"]) for p in plan)
+        return Response({"active": cfg.active, "strategy": cfg.strategy, "plan": plan, "dial": dial})
