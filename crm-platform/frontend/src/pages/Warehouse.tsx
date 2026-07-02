@@ -231,7 +231,7 @@ export default function Warehouse() {
         <div className="toolbar" style={{ borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 10, background: "#fff", display: "flex", gap: 8, alignItems: "center", padding: 8, flexWrap: "wrap" }}>
           <button className="btn btn-primary" onClick={() => setModal("in")}><Icon n="📥" size={15} /> {t("Приход","Прихід")}</button>
           {canEdit && <><input ref={receiptFileRef} type="file" accept=".csv,text/csv,text/plain" style={{ display: "none" }} onChange={importReceipt} /><button className="btn btn-light" onClick={() => receiptFileRef.current?.click()} title={t("Приход из файла: артикул, кол-во, цена","Прихід з файлу: артикул, к-сть, ціна")}><Icon n="📄" size={15} /> {t("Приход файлом","Прихід файлом")}</button></>}
-          <button className="btn btn-light" onClick={() => setModal("out")}><Icon n="📤" size={15} /> {t("Расход","Витрата")}</button>
+          <button className="btn btn-light" onClick={() => setModal("out")} title={t("Списание/реализация товара","Списання/реалізація товару")}><Icon n="📤" size={15} /> {t("Реализация","Реалізація")}</button>
           <button className="btn btn-light" onClick={openInventory}><Icon n="📋" size={15} /> {t("Инвентаризация","Інвентаризація")}</button>
           <button className="btn btn-light" onClick={exportCsv} title={t("Выгрузить номенклатуру в CSV (Excel)","Вивантажити номенклатуру в CSV (Excel)")}><Icon n="⬇️" size={15} /> {t("Экспорт","Експорт")}</button>
           {canEdit && <>
@@ -280,7 +280,7 @@ export default function Warehouse() {
       {modal && (
         <div onClick={() => setModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 380 }}>
-            <h3 style={{ marginTop: 0 }}>{modal === "in" ? t("Приходная накладная","Прибуткова накладна") : t("Расходная накладная","Видаткова накладна")}</h3>
+            <h3 style={{ marginTop: 0 }}>{modal === "in" ? t("Приходная накладная","Прибуткова накладна") : t("Реализация (списание) товара","Реалізація (списання) товару")}</h3>
             <label className="label">{t("Товар","Товар")}</label>
             <select value={form.product} onChange={(e) => setForm({ ...form, product: Number(e.target.value) })} style={{ width: "100%", height: 38, marginBottom: 10, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }}>
               <option value={0}>{t("— выбери товар (из текущей страницы) —","— обери товар (з поточної сторінки) —")}</option>

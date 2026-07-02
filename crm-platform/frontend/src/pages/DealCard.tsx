@@ -340,6 +340,15 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     try { const r = await api.post<any>(`/api/deals/${id}/ship/`, {}); setDeal(r.deal); flash(t(`✓ Отгружено. Себестоимость ${r.cogs} ₴ списана`, `✓ Відвантажено. Собівартість ${r.cogs} ₴ списана`)); }
     catch { flash(t("В сделке нет товаров для отгрузки","У сделке немає товарів для відвантаження")); }
   }
+  async function postDoc(docId: number) {
+    try { await api.post(`/api/stock-documents/${docId}/post/`, {}); await load(); flash(t("✓ Документ проведён — товар списан со склада","✓ Документ проведено — товар списано зі складу")); }
+    catch { flash(t("Не удалось (нужно право «Редактировать склад»)","Не вдалося (потрібне право «Редагувати склад»)")); }
+  }
+  async function unpostDoc(docId: number) {
+    if (!confirm(t("Отменить проведение? Товар вернётся на склад, себестоимость сторнируется.","Скасувати проведення? Товар повернеться на склад, собівартість сторнується."))) return;
+    try { await api.post(`/api/stock-documents/${docId}/unpost/`, {}); await load(); flash(t("✓ Проведение отменено — товар возвращён на склад","✓ Проведення скасовано — товар повернуто на склад")); }
+    catch { flash(t("Не удалось (нужно право «Редактировать склад»)","Не вдалося (потрібне право «Редагувати склад»)")); }
+  }
   // TODO боевой режим: завести @action в DealViewSet поверх integrations/adapters.py
   //      (np_create_ttn / checkbox_create_receipt / liqpay_checkout_link). Сейчас — заглушки.
   function createTTN() {
@@ -824,6 +833,23 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                     <div style={{ ...rowTot, fontSize: 16, borderTop: "2px solid #e2e8f0", paddingTop: 8, marginTop: 4 }}><span>{t("Итого","Загальна сума")}</span><b>{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.total), 0))} ₴</b></div>
                   </div>
                 </div>
+                {(deal as any).realization && (
+                  <div className="panel" style={{ margin: "14px 0 0", borderLeft: `4px solid ${(deal as any).realization.posted ? "#16a34a" : "#f59e0b"}`, background: (deal as any).realization.posted ? "#f0fdf4" : "#fffbeb" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                      <div>
+                        <b style={{ fontSize: 14 }}>{t("Реализация товаров","Реалізація товарів")} №{(deal as any).realization.id}</b>
+                        <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+                          {(deal as any).realization.posted
+                            ? t("✓ Проведён — товар списан со склада, себестоимость в расходах","✓ Проведено — товар списано зі складу, собівартість у витратах")
+                            : t("Черновик — товар НЕ списан (проведение отменено)","Чернетка — товар НЕ списано (проведення скасовано)")}
+                        </div>
+                      </div>
+                      {can("warehouse.edit") && ((deal as any).realization.posted
+                        ? <button className="btn btn-light" onClick={() => unpostDoc((deal as any).realization.id)} title={t("Вернуть товар на склад и сторнировать себестоимость","Повернути товар на склад і сторнувати собівартість")}><Icon n="↩️" size={14} /> {t("Отменить проведение","Скасувати проведення")}</button>
+                        : <button className="btn btn-primary" onClick={() => postDoc((deal as any).realization.id)} title={t("Списать товар со склада","Списати товар зі складу")}><Icon n="✓" size={14} /> {t("Провести","Провести")}</button>)}
+                    </div>
+                  </div>
+                )}
                 <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 14 }}>
                   <span className="muted" style={{ fontSize: 12 }}>{t("Зафиксируй список — сделка перейдёт на расчёт","Зафіксуй список — сделка перейде на розрахунок")}</span>
                   <button className="btn btn-primary" onClick={confirmItems} title={t("Сохранить список товаров и перейти к расчёту","Зберегти список товарів і перейти до розрахунку")}><Icon n="💾" size={14} /> {t("Сохранить список → Розрахунок","Зберегти список → Розрахунок")}</button>

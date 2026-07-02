@@ -116,6 +116,16 @@ class DealDetailSerializer(DealSerializer):
     contact_id = serializers.IntegerField(source="contact.id", read_only=True)
     conversation_id = serializers.SerializerMethodField()
     pay_method = serializers.SerializerMethodField()
+    realization = serializers.SerializerMethodField()
+
+    def get_realization(self, obj):
+        """Документ реалізації (списання товару) по угоді — для блоку проведення/скасування у картці."""
+        from apps.warehouse.models import StockDocument
+        doc = StockDocument.objects.filter(kind="out", deal=obj).order_by("-id").first()
+        if not doc:
+            return None
+        return {"id": doc.id, "number": doc.number, "posted": doc.posted,
+                "total": float(doc.total), "created_at": doc.created_at}
 
     def get_pay_method(self, obj):
         paid = [p for p in obj.payments.all() if p.is_paid]
@@ -137,7 +147,7 @@ class DealDetailSerializer(DealSerializer):
         fields = DealSerializer.Meta.fields + [
             "items", "payments", "paid", "margin", "bonus",
             "days_in_stage", "contact_loyalty", "contact_id", "conversation_id", "b24_id", "pay_method",
-            "np_data", "np_delivery_date", "ref_photos", "kp_history",
+            "np_data", "np_delivery_date", "ref_photos", "kp_history", "realization",
         ]
 
     def get_paid(self, obj):

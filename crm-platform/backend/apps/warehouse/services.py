@@ -36,7 +36,52 @@ def realize_deal(deal, user=None):
     if cogs:
         try:
             from apps.finance.services import record_expense
-            record_expense(cogs, deal=deal)
+            tx = record_expense(cogs, deal=deal)
+            tx.comment = "COGS doc#%s" % doc.id  # тег для точного сторно при скасуванні проведення
+            tx.save(update_fields=["comment"])
         except Exception:
             pass
     return doc, cogs, True
+
+
+def _doc_cogs(doc):
+    """Собівартість документа = сума (кількість×ціна) по рядках (для out qty від'ємний → плюс)."""
+    from decimal import Decimal
+    total = Decimal("0")
+    for m in doc.items.all():
+        total += abs(m.quantity) * (m.price or 0)
+    return total
+
+
+def post_document(doc):
+    """Провести документ: рухи знову рахуються у залишок; для реалізації по угоді — забронювати COGS."""
+    if doc.posted:
+        return False
+    doc.posted = True
+    doc.save(update_fields=["posted"])
+    if doc.kind == "out" and doc.deal_id:
+        from apps.finance.models import Transaction
+        tag = "COGS doc#%s" % doc.id
+        if not Transaction.objects.filter(comment=tag).exists():
+            cogs = _doc_cogs(doc)
+            if cogs:
+                try:
+                    from apps.finance.services import record_expense
+                    tx = record_expense(cogs, deal=doc.deal)
+                    tx.comment = tag
+                    tx.save(update_fields=["comment"])
+                except Exception:
+                    pass
+    return True
+
+
+def unpost_document(doc):
+    """Скасувати проведення: рухи перестають рахуватись (залишок повертається); COGS сторнується."""
+    if not doc.posted:
+        return False
+    doc.posted = False
+    doc.save(update_fields=["posted"])
+    if doc.kind == "out" and doc.deal_id:
+        from apps.finance.models import Transaction
+        Transaction.objects.filter(comment="COGS doc#%s" % doc.id).delete()  # сторно собівартості
+    return True

@@ -176,7 +176,23 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
     permission_classes = [WarehouseWrite]
     queryset = StockDocument.objects.prefetch_related("items").select_related("warehouse", "deal")
     serializer_class = StockDocumentSerializer
-    filterset_fields = ["kind", "warehouse", "deal"]
+    filterset_fields = ["kind", "warehouse", "deal", "posted"]
+
+    @action(detail=True, methods=["post"], url_path="post")
+    def post_doc(self, request, pk=None):
+        """Провести документ (рухи рахуються у залишок; для реалізації — бронь COGS)."""
+        from .services import post_document
+        doc = self.get_object()
+        changed = post_document(doc)
+        return Response({"ok": True, "changed": changed, "posted": doc.posted})
+
+    @action(detail=True, methods=["post"], url_path="unpost")
+    def unpost_doc(self, request, pk=None):
+        """Скасувати проведення (залишок повертається; COGS сторнується)."""
+        from .services import unpost_document
+        doc = self.get_object()
+        changed = unpost_document(doc)
+        return Response({"ok": True, "changed": changed, "posted": doc.posted})
 
     @action(detail=False, methods=["post"], url_path="import-receipt")
     def import_receipt(self, request):

@@ -47,7 +47,7 @@ class Product(models.Model):
 
     def stock(self, warehouse=None):
         """Текущий остаток = сумма движений (приход +, расход -)."""
-        qs = self.movements.all()
+        qs = self.movements.filter(document__posted=True)  # чернетки не рахуються
         if warehouse:
             qs = qs.filter(document__warehouse=warehouse)
         return qs.aggregate(s=Sum("quantity"))["s"] or 0
@@ -63,6 +63,7 @@ class StockDocument(models.Model):
     deal = models.ForeignKey("crm.Deal", null=True, blank=True, on_delete=models.SET_NULL, related_name="stock_documents")
     author = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)
+    posted = models.BooleanField("Проведено", default=True)  # чернетка (False) не впливає на залишок/COGS
 
     class Meta:
         ordering = ["-created_at"]
