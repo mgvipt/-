@@ -1,5 +1,6 @@
 /* Документ «1. КП Декор» — видаткова накладна / КП. Друк + PDF + Excel. */
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "./api";
 import { Icon } from "./Icon";
 
@@ -225,8 +226,8 @@ export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal:
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `KP_Decor_${deal.id}.xlsx`; a.click();
   }
 
-  return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 60, display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: 20 }}>
+  return createPortal(
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 9000, display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: 20 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#f3efe9", borderRadius: 14, padding: 18, width: 820, maxWidth: "96vw" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           <b style={{ fontSize: 17, flex: 1 }}>{readOnly ? `Накладна #${deal.id} · ${today}` : `1. КП Декор #${deal.id}`}</b>
@@ -238,6 +239,7 @@ export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal:
         </div>
         <div id="kp-doc-print" style={{ background: "#fff", borderRadius: 10, padding: 24 }} dangerouslySetInnerHTML={{ __html: docHtml }} />
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
