@@ -6,6 +6,7 @@ import { Icon } from "../Icon";
 import {
   SOUNDS, CALL_SOUNDS, getMsgSound, setMsgSound, getCallSound, setCallSound,
   msgSoundOn, setMsgSoundOn, callSoundOn, setCallSoundOn, previewSel, stopPreview,
+  getTeamSound, setTeamSound, teamSoundOn, setTeamSoundOn,
   getCustomSounds, addCustomSound, removeCustomSound,
 } from "../sounds";
 
@@ -15,6 +16,8 @@ export default function SoundSettings() {
   const [call, setCall] = useState(getCallSound());
   const [msgOn, setMsgOnS] = useState(msgSoundOn());
   const [callOn, setCallOnS] = useState(callSoundOn());
+  const [team, setTeam] = useState(getTeamSound());
+  const [teamOn, setTeamOnS] = useState(teamSoundOn());
   const [customs, setCustoms] = useState(getCustomSounds());
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => () => stopPreview(), []); // зупинити прослуховування при виході зі сторінки
@@ -35,6 +38,7 @@ export default function SoundSettings() {
     removeCustomSound(id); const left = getCustomSounds(); setCustoms(left);
     if (msg === "custom:" + id) { setMsg("bloom"); setMsgSound("bloom"); }
     if (call === "custom:" + id) { setCall("iphone_marimba"); setCallSound("iphone_marimba"); }
+    if (team === "custom:" + id) { setTeam("bloom"); setTeamSound("bloom"); }
   };
 
   const msgList = Object.entries(SOUNDS).map(([k, s]) => [k, s.label] as [string, string]);
@@ -64,6 +68,16 @@ export default function SoundSettings() {
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
         {sel(msg, (v) => { setMsg(v); setMsgSound(v); }, msgList, !msgOn, false)}
         <button className="btn btn-light" onClick={() => previewSel(msg, false)}><Icon n="bell" size={14} /> {t("Прослушать", "Прослухати")}</button>
+      </div>
+
+      {/* повідомлення співробітника (командний чат) */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{t("Сообщение от сотрудника", "Повідомлення від співробітника")}</span>
+        <span className={"toggle" + (teamOn ? " on" : "")} onClick={() => { const v = !teamOn; setTeamOnS(v); setTeamSoundOn(v); }} />
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        {sel(team, (v) => { setTeam(v); setTeamSound(v); }, msgList, !teamOn, false)}
+        <button className="btn btn-light" onClick={() => previewSel(team, false)}><Icon n="bell" size={14} /> {t("Прослушать", "Прослухати")}</button>
       </div>
 
       {/* дзвінок */}

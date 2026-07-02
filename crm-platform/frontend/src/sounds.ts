@@ -124,6 +124,11 @@ export function msgSoundOn() { return localStorage.getItem(LS_MSG_ON) !== "0"; }
 export function setMsgSoundOn(v: boolean) { localStorage.setItem(LS_MSG_ON, v ? "1" : "0"); }
 export function callSoundOn() { return localStorage.getItem(LS_CALL_ON) !== "0"; }
 export function setCallSoundOn(v: boolean) { localStorage.setItem(LS_CALL_ON, v ? "1" : "0"); }
+const LS_TEAM = "crm_team_sound", LS_TEAM_ON = "crm_team_sound_on";
+export function getTeamSound() { return localStorage.getItem(LS_TEAM) || "real_confirm"; }
+export function setTeamSound(v: string) { localStorage.setItem(LS_TEAM, v); }
+export function teamSoundOn() { return localStorage.getItem(LS_TEAM_ON) !== "0"; }
+export function setTeamSoundOn(v: boolean) { localStorage.setItem(LS_TEAM_ON, v ? "1" : "0"); }
 
 export type CustomSound = { id: string; name: string; data: string };
 export function getCustomSounds(): CustomSound[] { try { return JSON.parse(localStorage.getItem(LS_LIB) || "[]"); } catch { return []; } }
@@ -156,6 +161,12 @@ export function playMessageSound() {
   const v = getMsgSound();
   if (v.startsWith("custom:")) { const d = _cdata(v.slice(7)); if (d) _playFile(d, false); return; }
   playSnd(SOUNDS[v] || SOUNDS.real_notify);
+}
+export function playTeamSound() {
+  if (!teamSoundOn()) return;
+  const v = getTeamSound();
+  if (v.startsWith("custom:")) { const d = _cdata(v.slice(7)); if (d) _playFile(d, false); return; }
+  playSnd(SOUNDS[v] || SOUNDS.real_confirm);
 }
 
 let _ringStop: (() => void) | null = null;

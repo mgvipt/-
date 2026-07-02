@@ -661,7 +661,17 @@ class InboxPingView(APIView):
                   .filter(_conv_vis(u)).distinct().count())
         from .models import Notification as _Ntf
         unread += _Ntf.objects.filter(user=u, read=False).count()
-        return Response({"last_in": last, "latest": latest, "unread": unread})
+        from .models import TeamMessage as _TM
+        tqs = _TM.objects.filter(recipient=u)
+        team_last = tqs.aggregate(m=Max("id"))["m"] or 0
+        team_unread = tqs.filter(read=False).count()
+        team_latest = None
+        _tmsg = tqs.select_related("sender").order_by("-id").first()
+        if _tmsg:
+            team_latest = {"name": (_tmsg.sender.get_full_name() or _tmsg.sender.username), "preview": (_tmsg.text or "")[:90]}
+        unread += team_unread
+        return Response({"last_in": last, "latest": latest, "unread": unread,
+                         "team_last": team_last, "team_unread": team_unread, "team_latest": team_latest})
 
 
 class NotificationsView(APIView):

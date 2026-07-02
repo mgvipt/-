@@ -9,6 +9,7 @@ import DealCard from "./DealCard";
 import { EmojiButton } from "../ChatCompose";
 import { linkify, dayLabel, metaWindow, SNDR_MAP } from "../chatUtils";
 import { Icon } from "../Icon";
+import { msgSoundOn, setMsgSoundOn, teamSoundOn, setTeamSoundOn } from "../sounds";
 
 
 
@@ -20,6 +21,9 @@ export default function Inbox() {
   const nav = useNavigate();
   const [scope, setScope] = useState<"mine" | "all" | "unassigned" | "clients">("all");
   const [tab, setTab] = useState<"chats" | "notif" | "team">("chats");
+  const [sndCli, setSndCli] = useState(msgSoundOn());
+  const [sndTeam, setSndTeam] = useState(teamSoundOn());
+  useEffect(() => { if (params.get("tab") === "team") setTab("team"); /* eslint-disable-next-line */ }, [params]);
   const [notifN, setNotifN] = useState(0);
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [active, setActive] = useState<Conversation | null>(null);
@@ -255,6 +259,15 @@ export default function Inbox() {
         <button onClick={() => setTab("chats")} className={"btn" + (tab === "chats" ? " btn-primary" : " btn-light")} style={{ fontSize: 13, fontWeight: 600 }}><Icon n="message" size={15} /> {t("Чаты с клиентами", "Чати з клієнтами")}</button>
         <button onClick={() => setTab("notif")} className={"btn" + (tab === "notif" ? " btn-primary" : " btn-light")} style={{ fontSize: 13, fontWeight: 600 }}><Icon n="bell" size={15} /> {t("Уведомления", "Сповіщення")}{notifN > 0 && <span style={{ marginLeft: 6, background: "#dc2626", color: "#fff", borderRadius: 20, fontSize: 11, fontWeight: 700, padding: "1px 7px" }}>{notifN}</span>}</button>
         <button onClick={() => setTab("team")} className={"btn" + (tab === "team" ? " btn-primary" : " btn-light")} style={{ fontSize: 13, fontWeight: 600 }}><Icon n="users" size={15} /> {t("Чаты сотрудников", "Чати співробітників")}</button>
+        <div style={{ flex: 1 }} />
+        <button title={t(sndCli ? "Звук чатов с клиентами: включён — нажмите чтобы выключить" : "Звук чатов с клиентами: выключен", sndCli ? "Звук чатів з клієнтами: увімкнено — натисніть щоб вимкнути" : "Звук чатів з клієнтами: вимкнено")}
+          onClick={() => { const v = !sndCli; setSndCli(v); setMsgSoundOn(v); }} className="btn btn-light" style={{ fontSize: 12.5, fontWeight: 600, opacity: sndCli ? 1 : 0.5 }}>
+          <span style={{ fontSize: 15 }}>{sndCli ? "🔔" : "🔕"}</span> {t("Клиенты", "Клієнти")}
+        </button>
+        <button title={t(sndTeam ? "Звук чата сотрудников: включён — нажмите чтобы выключить" : "Звук чата сотрудников: выключен", sndTeam ? "Звук чату співробітників: увімкнено — натисніть щоб вимкнути" : "Звук чату співробітників: вимкнено")}
+          onClick={() => { const v = !sndTeam; setSndTeam(v); setTeamSoundOn(v); }} className="btn btn-light" style={{ fontSize: 12.5, fontWeight: 600, opacity: sndTeam ? 1 : 0.5 }}>
+          <span style={{ fontSize: 15 }}>{sndTeam ? "🔔" : "🔕"}</span> {t("Сотрудники", "Співробітники")}
+        </button>
       </div>
       {tab === "team" ? <TeamChat /> : tab === "notif"
         ? <NotifFeed t={t} nav={nav} onOpen={(cid: number) => { setTab("chats"); api.get<Conversation>(`/api/conversations/${cid}/`).then((c) => { setConvs((cs) => cs.some((x) => x.id === c.id) ? cs : [c, ...cs]); openConv(c); }).catch(() => {}); }} />
