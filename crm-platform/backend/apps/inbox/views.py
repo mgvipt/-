@@ -856,7 +856,12 @@ class ChatPlaceWebhookView(APIView):
         platform = (d.get("platform") or "instagram").strip().lower()
         if platform not in ("instagram", "tiktok"):
             platform = "instagram"
-        if not (text or username or client_id):
+        # ChatPlace-автоматизація може прислати ще й посилання на фото/медіа клієнта
+        photo_url = (d.get("photo_url") or d.get("image") or d.get("media") or d.get("attachment")
+                     or d.get("file") or d.get("url") or "").strip()
+        if photo_url and not photo_url.lower().startswith(("http://", "https://")):
+            photo_url = ""
+        if not (text or username or client_id or photo_url):
             return Response({"detail": "empty"}, status=status.HTTP_400_BAD_REQUEST)
         from apps.crm.models import Contact, Funnel
         chan_name = "ChatPlace · TikTok" if platform == "tiktok" else "ChatPlace · Instagram"
@@ -888,10 +893,27 @@ class ChatPlaceWebhookView(APIView):
         # 3) дедуп (ChatPlace може ретраїти http_request) + повідомлення
         from django.utils import timezone as _tz
         from datetime import timedelta as _td
-        if text and Message.objects.filter(conversation=conv, direction="in", text=text[:5000],
-                                            created_at__gte=_tz.now() - _td(seconds=90)).exists():
+        _win = _tz.now() - _td(seconds=90)
+        if photo_url and Message.objects.filter(conversation=conv, direction="in",
+                                                created_at__gte=_win,
+                                                attachments__contains=[{"url": photo_url}]).exists():
             return Response({"ok": True, "dup": True})
-        msg = Message.objects.create(conversation=conv, direction="in", text=text[:5000], external_id="")
+        if text and not photo_url and Message.objects.filter(conversation=conv, direction="in", text=text[:5000],
+                                            created_at__gte=_win).exists():
+            return Response({"ok": True, "dup": True})
+        atts = []
+        if photo_url:
+            low = photo_url.lower()
+            if any(e in low for e in (".mp4", ".mov", ".webm")):
+                kind = "video"
+            elif any(e in low for e in (".mp3", ".ogg", ".m4a", ".wav")):
+                kind = "voice"
+            else:
+                kind = "photo"
+            atts = [{"type": kind, "url": photo_url, "name": ("фото" if kind == "photo" else kind)}]
+        msg = Message.objects.create(conversation=conv, direction="in",
+                                     text=(text or ("📷 Фото від клієнта" if photo_url else ""))[:5000],
+                                     attachments=atts, external_id="")
         conv.last_message_at = msg.created_at
         conv.unread = (conv.unread or 0) + 1
         conv.save(update_fields=["last_message_at", "unread"])
