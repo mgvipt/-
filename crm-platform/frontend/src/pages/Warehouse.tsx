@@ -56,6 +56,8 @@ export default function Warehouse() {
   const [modal, setModal] = useState<null | "in" | "out">(null);
   const [form, setForm] = useState({ product: 0, quantity: 1, price: 0 });
   const [loading, setLoading] = useState(false);
+  const [ordering, setOrdering] = useState("");
+  const [catW, setCatW] = useState(() => Number(localStorage.getItem("wh_cat_w")) || 260);
   // карточка товара
   const [card, setCard] = useState<Product | null>(null);
   const [movements, setMovements] = useState<Movement[]>([]);
@@ -83,10 +85,11 @@ export default function Warehouse() {
     const q = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (cat) q.set("category", String(cat));
     if (search.trim()) q.set("search", search.trim());
+    if (ordering) q.set("ordering", ordering);
     const d = await api.get<Paginated<Product>>(`/api/products/?${q.toString()}`);
     setProducts(d.results); setCount(d.count); setLoading(false);
   }
-  useEffect(() => { loadProducts(); }, [cat, page, pageSize]);
+  useEffect(() => { loadProducts(); }, [cat, page, pageSize, ordering]);
   useEffect(() => {
     const t = setTimeout(() => { setPage(1); loadProducts(); }, 350);
     return () => clearTimeout(t);
@@ -140,9 +143,21 @@ export default function Warehouse() {
     return { roots, childrenOf };
   }, [cats]);
   function pick(id: number | null) { setCat(id); setPage(1); }
+  function toggleSort(f: string) { setOrdering(ordering === f ? "-" + f : ordering === "-" + f ? "" : f); setPage(1); }
+  const sortTh = (field: string, label: string) => {
+    const d = ordering === field ? "\u2191" : ordering === "-" + field ? "\u2193" : "";
+    return <th onClick={() => toggleSort(field)} style={{ cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }} title={t("Сортировать","Сортувати")}>{label} <span style={{ color: d ? "#1d4ed8" : "#cbd5e1", fontSize: 11 }}>{d || "\u2195"}</span></th>;
+  };
+  function startResize(e: React.MouseEvent) {
+    e.preventDefault();
+    const sx = e.clientX, sw = catW;
+    const mv = (ev: MouseEvent) => { const w = Math.max(170, Math.min(520, sw + ev.clientX - sx)); setCatW(w); localStorage.setItem("wh_cat_w", String(w)); };
+    const up = () => { document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up); document.body.style.cursor = ""; };
+    document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up); document.body.style.cursor = "col-resize";
+  }
 
   return (
-    <div className="scroll pad fade" style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 12, alignItems: "start" }}>
+    <div className="scroll pad fade" style={{ display: "grid", gridTemplateColumns: `${catW}px 8px 1fr`, gap: 6, alignItems: "start" }}>
 
       {/* ─── [5] ДЕРЕВО КАТЕГОРИЙ ─────────────────────────────────────────── */}
       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 8, position: "sticky", top: 8, maxHeight: "calc(100vh - 90px)", overflowY: "auto" }}>
@@ -163,6 +178,11 @@ export default function Warehouse() {
         ))}
       </div>
 
+      {/* «потягни» — зміна ширини панелі категорій */}
+      <div onMouseDown={startResize} title={t("Потяни, чтобы изменить ширину","Потягни, щоб змінити ширину")} style={{ cursor: "col-resize", alignSelf: "stretch", minHeight: "60vh", display: "flex", justifyContent: "center", position: "sticky", top: 8 }}>
+        <div style={{ width: 3, borderRadius: 3, background: "#e2e8f0" }} />
+      </div>
+
       {/* ─── [6] ТУЛБАР + ТАБЛИЦА + ПАГИНАЦИЯ ─────────────────────────────── */}
       <div>
         <div className="toolbar" style={{ borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 10, background: "#fff", display: "flex", gap: 8, alignItems: "center", padding: 8, flexWrap: "wrap" }}>
@@ -175,7 +195,7 @@ export default function Warehouse() {
 
         <div className="tablewrap" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
           <table style={{ width: "100%" }}>
-            <thead><tr><th>{t("Товар","Товар")}</th><th>{t("Артикул","Артикул")}</th><th>{t("Категория","Категорія")}</th><th>{t("Цена","Ціна")}</th>{showCost && <th>{t("Закупка","Закупка")}</th>}<th>{t("Ед.","Од.")}</th><th>{t("Остаток","Залишок")}</th></tr></thead>
+            <thead><tr>{sortTh("name", t("Товар","Товар"))}{sortTh("sku", t("Артикул","Артикул"))}<th>{t("Категория","Категорія")}</th>{sortTh("price", t("Цена","Ціна"))}{showCost && sortTh("cost", t("Закупка","Закупка"))}<th>{t("Ед.","Од.")}</th><th>{t("Остаток","Залишок")}</th></tr></thead>
             <tbody>
               {loading && <tr><td colSpan={showCost ? 7 : 6} className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</td></tr>}
               {!loading && products.length === 0 && <tr><td colSpan={showCost ? 7 : 6} className="muted" style={{ padding: 16 }}>{t("Товаров не найдено","Товарів не знайдено")}</td></tr>}

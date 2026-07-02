@@ -48,7 +48,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     serializer_class = ProductSerializer
     search_fields = ["name", "sku"]
     filterset_fields = ["is_active", "category"]
-    ordering_fields = ["name", "price", "id"]
+    ordering_fields = ["name", "price", "id", "sku", "cost", "stock"]
     ordering = ["name"]
 
     @action(detail=True, methods=["get"])
