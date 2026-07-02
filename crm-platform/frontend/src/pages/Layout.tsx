@@ -6,6 +6,7 @@ import { Avatar } from "../ui";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
 import IncomingCallPopup from "../IncomingCallPopup";
+import VersionWatcher from "../VersionWatcher";
 import Notifier from "../Notifier";
 import WebPhone from "../WebPhone";
 import CallBar from "../CallBar";
@@ -265,6 +266,7 @@ export default function Layout() {
         </main>
       </div>
       <IncomingCallPopup />
+      <VersionWatcher />
       <Notifier />
     </div>
   );
