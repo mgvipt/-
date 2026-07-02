@@ -262,6 +262,12 @@ class ActivityLogMixin:
                     create_warehouse_job(obj)
                 except Exception:
                     pass
+            if self.log_kind == "deal" and obj.stage and getattr(obj.stage, "is_won", False):
+                try:
+                    from apps.warehouse.services import realize_deal
+                    realize_deal(obj, request.user)  # успішна стадія → списання товару + документ реалізації
+                except Exception:
+                    pass
             if hasattr(obj, "stage_changed_at"):
                 from django.utils import timezone as _tzs
                 obj.stage_changed_at = _tzs.now(); obj.save(update_fields=["stage_changed_at"])
@@ -608,6 +614,12 @@ def _advance_deal_stage(deal, target_order, reason, actor="Автоматиза�
         try:
             from apps.warehouse.services import create_warehouse_job
             create_warehouse_job(deal)
+        except Exception:
+            pass
+    if getattr(target, "is_won", False):
+        try:
+            from apps.warehouse.services import realize_deal
+            realize_deal(deal, None)  # успішна стадія → списання товару + документ реалізації
         except Exception:
             pass
     return True

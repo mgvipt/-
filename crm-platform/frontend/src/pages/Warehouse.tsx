@@ -55,6 +55,25 @@ export default function Warehouse() {
   const [pageSize, setPageSize] = useState(50);
   const [whs, setWhs] = useState<WH[]>([]);
   const [modal, setModal] = useState<null | "in" | "out">(null);
+  const canRealize = can("warehouse.edit") || can("finance.manage");
+  const [realizOpen, setRealizOpen] = useState(false);
+  const [realizDocs, setRealizDocs] = useState<any[]>([]);
+  const [realizBusy, setRealizBusy] = useState(false);
+  async function openRealizList() {
+    setRealizOpen(true); setRealizBusy(true);
+    try { const r: any = await api.get("/api/stock-documents/?kind=out"); setRealizDocs(Array.isArray(r) ? r : (r.results || [])); }
+    catch { setRealizDocs([]); }
+    setRealizBusy(false);
+  }
+  async function realizPost(rid: number) {
+    try { await api.post(`/api/stock-documents/${rid}/post/`, {}); await openRealizList(); loadProducts(); }
+    catch { alert(t("Нет доступа (нужно «Редактировать склад» или «Финмодель»)","Немає доступу (потрібне «Редагувати склад» або «Фінмодель»)")); }
+  }
+  async function realizUnpost(rid: number) {
+    if (!confirm(t("Отменить проведение? Товар вернётся на склад, себестоимость сторнируется.","Скасувати проведення? Товар повернеться на склад, собівартість сторнується."))) return;
+    try { await api.post(`/api/stock-documents/${rid}/unpost/`, {}); await openRealizList(); loadProducts(); }
+    catch { alert(t("Нет доступа (нужно «Редактировать склад» или «Финмодель»)","Немає доступу (потрібне «Редагувати склад» або «Фінмодель»)")); }
+  }
   const [form, setForm] = useState({ product: 0, quantity: 1, price: 0 });
   const [loading, setLoading] = useState(false);
   const [ordering, setOrdering] = useState("");
@@ -231,7 +250,7 @@ export default function Warehouse() {
         <div className="toolbar" style={{ borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 10, background: "#fff", display: "flex", gap: 8, alignItems: "center", padding: 8, flexWrap: "wrap" }}>
           <button className="btn btn-primary" onClick={() => setModal("in")}><Icon n="📥" size={15} /> {t("Приход","Прихід")}</button>
           {canEdit && <><input ref={receiptFileRef} type="file" accept=".csv,text/csv,text/plain" style={{ display: "none" }} onChange={importReceipt} /><button className="btn btn-light" onClick={() => receiptFileRef.current?.click()} title={t("Приход из файла: артикул, кол-во, цена","Прихід з файлу: артикул, к-сть, ціна")}><Icon n="📄" size={15} /> {t("Приход файлом","Прихід файлом")}</button></>}
-          <button className="btn btn-light" onClick={() => setModal("out")} title={t("Списание/реализация товара","Списання/реалізація товару")}><Icon n="📤" size={15} /> {t("Реализация","Реалізація")}</button>
+          <button className="btn btn-light" onClick={openRealizList} title={t("Список реализаций (расходных накладных) со сделок","Список реалізацій (видаткових накладних) зі сделок")}><Icon n="📤" size={15} /> {t("Реализация","Реалізація")}</button>
           <button className="btn btn-light" onClick={openInventory}><Icon n="📋" size={15} /> {t("Инвентаризация","Інвентаризація")}</button>
           <button className="btn btn-light" onClick={exportCsv} title={t("Выгрузить номенклатуру в CSV (Excel)","Вивантажити номенклатуру в CSV (Excel)")}><Icon n="⬇️" size={15} /> {t("Экспорт","Експорт")}</button>
           {canEdit && <>
@@ -294,6 +313,41 @@ export default function Warehouse() {
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setModal(null)}>{t("Отмена","Скасувати")}</button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={saveDoc}>{t("Провести","Провести")}</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── [7b] МОДАЛКА СПИСОК РЕАЛІЗАЦІЙ ───────────────────────────────── */}
+      {realizOpen && (
+        <div onClick={() => setRealizOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 760, maxWidth: "94vw", maxHeight: "86vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <h3 style={{ margin: 0 }}>{t("Реализации (расходные накладные)","Реалізації (видаткові накладні)")}</h3>
+              {canEdit && <button className="btn btn-light" onClick={() => { setRealizOpen(false); setModal("out"); }} title={t("Ручное списание товара","Ручне списання товару")}><Icon n="📤" size={14} /> {t("Ручное списание","Ручне списання")}</button>}
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Создаются автоматически, когда сделка переходит в стадию «Успешная». «Проведён» = товар списан со склада. Провести/отменить может ответственный за склад или бухгалтер.","Створюються автоматично, коли сделка переходить у стадію «Успішна». «Проведено» = товар списано зі складу. Провести/скасувати може відповідальний за склад або бухгалтер.")}</div>
+            <div style={{ overflow: "auto" }}>
+              {realizBusy ? <div className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</div> :
+               realizDocs.length === 0 ? <div className="muted" style={{ padding: 16 }}>{t("Пока нет реализаций.","Поки немає реалізацій.")}</div> :
+              <table style={{ width: "100%" }}>
+                <thead><tr><th>№</th><th>{t("Дата","Дата")}</th><th>{t("Сделка","Сделка")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "center" }}>{t("Статус","Статус")}</th><th></th></tr></thead>
+                <tbody>{realizDocs.map((d: any) => (
+                  <tr key={d.id}>
+                    <td>{d.number || d.id}</td>
+                    <td className="muted">{(d.created_at || "").slice(0, 10)}</td>
+                    <td>{d.deal_title || (d.deal ? "#" + d.deal : t("ручное","ручне"))}</td>
+                    <td style={{ textAlign: "right" }}>{Number(d.total || 0).toLocaleString("uk-UA")} ₴</td>
+                    <td style={{ textAlign: "center" }}><span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: d.posted ? "#dcfce7" : "#fef3c7", color: d.posted ? "#166534" : "#92400e" }}>{d.posted ? t("Проведён","Проведено") : t("Черновик","Чернетка")}</span></td>
+                    <td style={{ textAlign: "right" }}>
+                      {canRealize && (d.posted
+                        ? <button className="btn btn-light" style={{ padding: "3px 10px" }} onClick={() => realizUnpost(d.id)}>{t("Отменить проведение","Скасувати проведення")}</button>
+                        : <button className="btn btn-primary" style={{ padding: "3px 10px" }} onClick={() => realizPost(d.id)}>{t("Провести","Провести")}</button>)}
+                    </td>
+                  </tr>
+                ))}</tbody>
+              </table>}
+            </div>
+            <div style={{ marginTop: 14, textAlign: "right" }}><button className="btn btn-light" onClick={() => setRealizOpen(false)}>{t("Закрыть","Закрити")}</button></div>
           </div>
         </div>
       )}

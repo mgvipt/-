@@ -56,11 +56,12 @@ class StockDocumentSerializer(serializers.ModelSerializer):
     items = MovementSerializer(many=True)
     total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    deal_title = serializers.CharField(source="deal.title", read_only=True, default=None)
 
     class Meta:
         model = StockDocument
         fields = ["id", "kind", "kind_display", "number", "warehouse", "comment",
-                  "deal", "total", "created_at", "items", "posted"]
+                  "deal", "deal_title", "total", "created_at", "items", "posted"]
         read_only_fields = ["created_at"]
 
     def create(self, validated):

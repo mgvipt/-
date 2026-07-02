@@ -29,6 +29,15 @@ class WarehouseWrite(BasePermission):
         return u.is_superuser or u.has_perm_code("warehouse.edit")
 
 
+class RealizationManage(BasePermission):
+    """Проведення/скасування реалізації — відповідальний за склад (warehouse.edit) або бухгалтер (finance.manage). Менеджерам — ні."""
+    def has_permission(self, request, view):
+        u = getattr(request, "user", None)
+        if not (u and u.is_authenticated):
+            return False
+        return bool(u.is_superuser or u.has_perm_code("warehouse.edit") or u.has_perm_code("finance.manage"))
+
+
 class WarehouseViewSet(viewsets.ModelViewSet):
     permission_classes = [WarehouseWrite]
     queryset = Warehouse.objects.all()
@@ -178,7 +187,7 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
     serializer_class = StockDocumentSerializer
     filterset_fields = ["kind", "warehouse", "deal", "posted"]
 
-    @action(detail=True, methods=["post"], url_path="post")
+    @action(detail=True, methods=["post"], url_path="post", permission_classes=[RealizationManage])
     def post_doc(self, request, pk=None):
         """Провести документ (рухи рахуються у залишок; для реалізації — бронь COGS)."""
         from .services import post_document
@@ -186,7 +195,7 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
         changed = post_document(doc)
         return Response({"ok": True, "changed": changed, "posted": doc.posted})
 
-    @action(detail=True, methods=["post"], url_path="unpost")
+    @action(detail=True, methods=["post"], url_path="unpost", permission_classes=[RealizationManage])
     def unpost_doc(self, request, pk=None):
         """Скасувати проведення (залишок повертається; COGS сторнується)."""
         from .services import unpost_document
