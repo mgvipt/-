@@ -73,15 +73,24 @@ function JobCard({ j, t, onClick, action }: any) {
   );
 }
 
+function KpDocLoader({ dealId, onClose }: { dealId: number; onClose: () => void }) {
+  const [deal, setDeal] = useState<any>(null);
+  useEffect(() => { api.get<any>(`/api/deals/${dealId}/`).then(setDeal).catch(onClose); /* eslint-disable-next-line */ }, [dealId]);
+  if (!deal) return null;
+  return <KpDoc deal={deal} onClose={onClose} />;
+}
+
 function QueueView({ t, onOpen, mgr }: any) {
   const [d, setD] = useState<any>(null);
   const [prev, setPrev] = useState<number | null>(null);
+  const [vkJob, setVkJob] = useState<any>(null);
+  const [kpId, setKpId] = useState<number | null>(null);
   const load = () => api.get<any>("/api/warehouse/queue/").then(setD).catch(() => {});
   useEffect(() => { load(); const tm = setInterval(load, 15000); return () => clearInterval(tm); }, []);
   if (!d) return <div className="spin">…</div>;
   const take = (id: number) => api.post<any>(`/api/warehouse/jobs/${id}/take/`, {}).then(() => onOpen(id)).catch((e: any) => { alert(e?.response?.data?.by ? t("Уже взяла ", "Вже взяла ") + e.response.data.by : t("Не удалось взять", "Не вдалося взяти")); load(); });
   const cancel = (id: number) => { if (!confirm(t("Удалить задачу из списка? Складовщики её не увидят.", "Видалити задачу зі списку? Складовщики її не побачать."))) return; api.post<any>(`/api/warehouse/jobs/${id}/cancel/`, {}).then(load).catch(() => alert(t("Нет прав (только руководитель склада)", "Немає прав (лише керівник складу)"))); };
-  const row = (j: any) => <JobCard key={j.id} j={j} t={t} onClick={() => setPrev(j.id)} action={<div style={{ display: "flex", gap: 6 }}>{mgr && <button className="btn" title={t("Удалить неактуальную задачу","Видалити неактуальну задачу")} onClick={(e) => { e.stopPropagation(); cancel(j.id); }} style={{ height: 42, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca" }}><Icon n="trash" size={16} /></button>}<button className="btn btn-primary" style={{ height: 42, fontSize: 14, fontWeight: 600 }} onClick={(e) => { e.stopPropagation(); take(j.id); }}>{t("Взять", "Взяти")}</button></div>} />;
+  const row = (j: any) => <JobCard key={j.id} j={j} t={t} onClick={() => setPrev(j.id)} action={<div style={{ display: "flex", gap: 6 }}><button className="btn" title={t("Печать бланка выкраски","Друк бланка викраски")} onClick={(e) => { e.stopPropagation(); setVkJob(j); }} style={{ height: 42, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe" }}><Icon n="🎨" size={16} /></button><button className="btn" title={t("Печать накладной","Друк накладної")} onClick={(e) => { e.stopPropagation(); setKpId(j.deal_id); }} style={{ height: 42, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}><Icon n="file" size={16} /></button>{mgr && <button className="btn" title={t("Удалить неактуальную задачу","Видалити неактуальну задачу")} onClick={(e) => { e.stopPropagation(); cancel(j.id); }} style={{ height: 42, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca" }}><Icon n="trash" size={16} /></button>}<button className="btn btn-primary" style={{ height: 42, fontSize: 14, fontWeight: 600 }} onClick={(e) => { e.stopPropagation(); take(j.id); }}>{t("Взять", "Взяти")}</button></div>} />;
   const sal = (d.queue || []).filter((j: any) => j.channel === "offline");
   const rest = (d.queue || []).filter((j: any) => j.channel !== "offline");
   return (
@@ -91,6 +100,8 @@ function QueueView({ t, onOpen, mgr }: any) {
       {(d.queue || []).length === 0 && <div className="note">{t("Очередь пуста — все задачи разобраны 👍", "Черга порожня — всі задачі розібрані 👍")}</div>}
       {sal.length > 0 && <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: "10px 12px", marginBottom: 12 }}><div className="label" style={{ margin: "0 0 8px", color: C.terra }}>🔥 {t("Покрытия для стен — приоритет", "Покриття для стін — пріоритет")} <span className="muted" style={{ fontWeight: 400 }}>· {sal.length}</span></div><div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{sal.map(row)}</div></div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{rest.map(row)}</div>
+      {vkJob && <VykraskaDoc data={{ number: vkJob.deal_id, material: vkJob.needs && vkJob.needs.material, color: vkJob.needs && vkJob.needs.color, area: vkJob.needs && vkJob.needs.area, underlay: vkJob.needs && vkJob.needs.underlay, kits: vkJob.kits, client: vkJob.client, phone: vkJob.phone }} onClose={() => setVkJob(null)} />}
+      {kpId != null && <KpDocLoader dealId={kpId} onClose={() => setKpId(null)} />}
     </div>
   );
 }
