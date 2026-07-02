@@ -26,7 +26,7 @@ export default function WarehouseWork() {
   const TABS: any[] = [["shift", "🏠", "Смена", "Зміна"], ["queue", "📋", "Общий список", "Загальний список"], ["kanban", "🗂", "Мои задачи", "Мої задачі"], ["salary", "💰", "Зарплата", "ЗП"]].concat(mgr ? [["control", "🛡", "Контроль", "Контроль"], ["dashboard", "📊", "Дашборд", "Дашборд"]] : []);
   return (
     <div className="scroll pad fade" style={{ width: "100%" }}>
-      <h2 style={{ margin: "0 0 12px", fontSize: 22, display: "flex", alignItems: "center", gap: 8 }}><Icon n="package" size={20} /> {t("Склад · Работа", "Склад · Робота")}</h2>
+      <h2 style={{ margin: "0 0 12px", fontSize: 22, display: "flex", alignItems: "center", gap: 8 }}><Icon n="truck" size={20} /> {t("Отгрузка", "Відвантаження")}</h2>
       <div style={{ display: "flex", gap: 5, marginBottom: 16, position: "sticky", top: 0, background: "rgba(255,255,255,.88)", backdropFilter: "blur(6px)", padding: "6px 0", zIndex: 10, overflowX: "auto" }}>
         {TABS.map(([k, e, ru, uk]) => (
           <button key={k} onClick={() => setView(k as any)} className={"btn" + (view === k ? " btn-primary" : " btn-light")} style={{ flex: "1 0 auto", fontSize: 13, padding: "9px 10px", whiteSpace: "nowrap" }}>{e} {t(ru, uk)}</button>
