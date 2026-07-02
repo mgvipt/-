@@ -24,14 +24,14 @@ from rest_framework.permissions import BasePermission as _BasePerm
 
 
 class ManagePerm(_BasePerm):
-    """roles.manage АБО делеговане settings.integrations (superuser — завжди)."""
+    """Лише адмін (roles.manage / superuser). Інтеграції = чутливі ключі (оплата/фіскалізація/НП), співробітникам не даємо."""
     def has_permission(self, request, view):
         u = request.user
         if not (u and u.is_authenticated):
             return False
         if getattr(u, "is_superuser", False):
             return True
-        return hasattr(u, "has_perm_code") and (u.has_perm_code("roles.manage") or u.has_perm_code("settings.integrations"))
+        return hasattr(u, "has_perm_code") and u.has_perm_code("roles.manage")
 
 
 class IntegrationSettingsView(APIView):

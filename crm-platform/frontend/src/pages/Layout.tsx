@@ -145,7 +145,7 @@ export default function Layout() {
   }
 
   const { t } = useLang();
-  const SETTINGS_PERMS = ["settings.sounds", "settings.integrations", "settings.agent", "settings.automations", "settings.rules"];
+  const SETTINGS_PERMS = ["settings.sounds", "settings.agent", "settings.automations", "settings.rules"];
   const items = NAV.filter(([path, , , , perm]) => path === "/settings" ? (can("roles.manage") || SETTINGS_PERMS.some((pp) => can(pp))) : (!perm || can(perm)));
   const _cur = NAV.find(([path]) => loc.pathname.startsWith(path));
   const title = _cur ? t(_cur[1], _cur[2]) : "CRM";
