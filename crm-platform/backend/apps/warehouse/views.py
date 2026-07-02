@@ -78,6 +78,83 @@ class ProductViewSet(viewsets.ModelViewSet):
         resp["Content-Disposition"] = "attachment; filename=nomenclatura.csv"
         return resp
 
+    @action(detail=False, methods=["post"], url_path="import")
+    def import_csv(self, request):
+        """Імпорт номенклатури з CSV (колонки: Назва;Артикул;Категорія;Од;Ціна;Собівартість;Валюта).
+        Міняє ТІЛЬКИ картку товару (залишок НЕ чіпає). commit=false → лише прев'ю (нічого не пише)."""
+        import csv
+        import io as _io
+        from apps.warehouse.models import ProductCategory
+        raw = request.data.get("data") or ""
+        commit = bool(request.data.get("commit"))
+        if not str(raw).strip():
+            return Response({"detail": "Порожній файл"}, status=400)
+        delim = ";" if raw.count(";") >= raw.count(",") else ","
+        rows = list(csv.reader(_io.StringIO(raw), delimiter=delim))
+        start = 0
+        if rows:
+            hdr = [str(c).strip().lower() for c in rows[0]]
+            if any(h in ("назва", "название", "name", "товар", "артикул", "sku") for h in hdr):
+                start = 1
+
+        def _num(x):
+            try:
+                return float(str(x).replace(" ", "").replace("\u00a0", "").replace(",", "."))
+            except (TypeError, ValueError):
+                return None
+        created = updated = errors = 0
+        err_samples = []
+        for i in range(start, len(rows)):
+            r = rows[i]
+            if not any((str(c) or "").strip() for c in r):
+                continue
+            name = (r[0].strip() if len(r) > 0 else "")
+            sku = (r[1].strip() if len(r) > 1 else "")
+            catname = (r[2].strip() if len(r) > 2 else "")
+            unit = (r[3].strip() if len(r) > 3 and r[3].strip() else "шт")
+            price = _num(r[4]) if len(r) > 4 and str(r[4]).strip() else 0
+            cost = _num(r[5]) if len(r) > 5 and str(r[5]).strip() else 0
+            currency = (r[6].strip() if len(r) > 6 and r[6].strip() else "UAH")
+            if not (name or sku):
+                errors += 1
+                if len(err_samples) < 5:
+                    err_samples.append("рядок %d: нема назви й артикула" % (i + 1))
+                continue
+            if price is None or cost is None:
+                errors += 1
+                if len(err_samples) < 5:
+                    err_samples.append("рядок %d: ціна/собівартість не число" % (i + 1))
+                continue
+            existing = Product.objects.filter(sku=sku).first() if sku else None
+            if not existing and name:
+                existing = Product.objects.filter(name__iexact=name.strip()).first()
+            if existing:
+                updated += 1
+                if commit:
+                    cat = existing.category
+                    if catname:
+                        cat = ProductCategory.objects.filter(name=catname).first() or ProductCategory.objects.create(name=catname)
+                    if name:
+                        existing.name = name
+                    if sku:
+                        existing.sku = sku
+                    existing.unit = unit
+                    existing.price = price
+                    existing.cost = cost
+                    existing.currency = currency
+                    existing.is_active = True
+                    if cat:
+                        existing.category = cat
+                    existing.save()
+            else:
+                created += 1
+                if commit:
+                    cat = None
+                    if catname:
+                        cat = ProductCategory.objects.filter(name=catname).first() or ProductCategory.objects.create(name=catname)
+                    Product.objects.create(name=(name or sku), sku=sku, unit=unit, price=price, cost=cost, currency=currency, category=cat)
+        return Response({"created": created, "updated": updated, "errors": errors, "err_samples": err_samples, "committed": commit})
+
     @action(detail=True, methods=["get"])
     def movements(self, request, pk=None):
         """История движений товара (приход/расход/инвентаризация) для карточки."""

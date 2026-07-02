@@ -17,7 +17,7 @@
  *    [9] РЕНДЕР: инвентаризация
  *    [10] СУБ-КОМПОНЕНТ: EditCost
  * ========================================================================== */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, Paginated } from "../api";
 import { useLang } from "../i18n";
@@ -160,6 +160,19 @@ export default function Warehouse() {
     try { const u = await (api as any).blobUrl(`/api/products/export/?${q.toString()}`); const a = document.createElement("a"); a.href = u; a.download = "nomenklatura.csv"; a.click(); }
     catch { alert(t("Не удалось выгрузить", "Не вдалося вивантажити")); }
   }
+  const nomFileRef = useRef<HTMLInputElement>(null);
+  async function importNom(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return; e.target.value = "";
+    let text = ""; try { text = await f.text(); } catch { return; }
+    try {
+      const dry: any = await api.post("/api/products/import/", { data: text, commit: false });
+      const msg = t("Импорт номенклатуры:", "Імпорт номенклатури:") + "\n" + t("Новых: ", "Нових: ") + dry.created + "\n" + t("Обновлений: ", "Оновлень: ") + dry.updated + "\n" + t("Ошибок: ", "Помилок: ") + dry.errors + (dry.err_samples && dry.err_samples.length ? "\n" + dry.err_samples.join("\n") : "") + "\n\n" + t("Применить? Остатки НЕ меняются.", "Застосувати? Залишки НЕ змінюються.");
+      if (!confirm(msg)) return;
+      await api.post("/api/products/import/", { data: text, commit: true });
+      alert(t("Готово ✓", "Готово ✓")); loadProducts();
+      api.get<Category[]>("/api/product-categories/").then(setCats).catch(() => {});
+    } catch { alert(t("Не удалось импортировать (нужно право «Редактировать склад»)", "Не вдалося імпортувати (потрібне право «Редагувати склад»)")); }
+  }
   function toggleSort(f: string) { setOrdering(ordering === f ? "-" + f : ordering === "-" + f ? "" : f); setPage(1); }
   const sortTh = (field: string, label: string) => {
     const d = ordering === field ? "\u2191" : ordering === "-" + field ? "\u2193" : "";
@@ -207,6 +220,10 @@ export default function Warehouse() {
           <button className="btn btn-light" onClick={() => setModal("out")}><Icon n="📤" size={15} /> {t("Расход","Витрата")}</button>
           <button className="btn btn-light" onClick={openInventory}><Icon n="📋" size={15} /> {t("Инвентаризация","Інвентаризація")}</button>
           <button className="btn btn-light" onClick={exportCsv} title={t("Выгрузить номенклатуру в CSV (Excel)","Вивантажити номенклатуру в CSV (Excel)")}><Icon n="⬇️" size={15} /> {t("Экспорт","Експорт")}</button>
+          {canEdit && <>
+          <input ref={nomFileRef} type="file" accept=".csv,text/csv,text/plain" style={{ display: "none" }} onChange={importNom} />
+          <button className="btn btn-light" onClick={() => nomFileRef.current?.click()} title={t("Загрузить номенклатуру из CSV (остатки не меняет)","Завантажити номенклатуру з CSV (залишки не змінює)")}><Icon n="⬆️" size={15} /> {t("Импорт","Імпорт")}</button>
+          </>}
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("🔍 Поиск товара / артикула…","🔍 Пошук товару / артикулу…")} style={{ flex: 1, minWidth: 160, height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 12px", fontSize: 13 }} />
           <span className="muted">{t("Найдено","Знайдено")}: <b style={{ color: "#1e293b" }}>{count.toLocaleString("ru")}</b></span>
         </div>
