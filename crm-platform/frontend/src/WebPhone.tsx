@@ -126,7 +126,12 @@ export default function WebPhone() {
   return (
     <>
       <audio ref={audioRef} autoPlay playsInline />
-      <div style={{ margin: "0 10px 8px", background: "#fff", borderRadius: 12, boxShadow: "0 4px 16px rgba(0,0,0,.18)", border: "1px solid #e2e8f0", padding: 11 }}>
+      <div style={{
+        ...(busy
+          ? { position: "fixed" as const, left: 14, bottom: 14, width: 250, zIndex: 9500 }
+          : { margin: "0 10px 8px" }),
+        background: "#fff", borderRadius: 12, boxShadow: busy ? "0 12px 40px rgba(0,0,0,.32)" : "0 4px 16px rgba(0,0,0,.18)", border: "1px solid #e2e8f0", padding: 11,
+      }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: busy ? 10 : 0 }}>
           <span style={{ width: 9, height: 9, borderRadius: 9, background: dot, display: "inline-block" }} />
           <b style={{ fontSize: 13, whiteSpace: "nowrap" }}><Icon n="📞" size={15} /> {t("Телефон","Телефон")}</b>
