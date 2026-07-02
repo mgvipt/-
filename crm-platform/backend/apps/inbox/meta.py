@@ -107,8 +107,18 @@ def handle_webhook(payload: dict):
                 _new_meta_lead(conv, kind, sender)
             if Message.objects.filter(conversation=conv, external_id=mid).exists():
                 continue
+            # вкладення (фото/відео/аудіо/файл) з Instagram/Messenger-вебхука
+            atts = []
+            for a in (msg.get("attachments") or []):
+                url = (((a or {}).get("payload") or {}).get("url") or "").strip()
+                if not url:
+                    continue
+                atyp = ((a or {}).get("type") or "").lower()
+                kind = "photo" if atyp in ("image", "photo") else ("video" if atyp == "video" else ("voice" if atyp in ("audio", "voice") else "file"))
+                atts.append({"type": kind, "url": url, "name": ("фото" if kind == "photo" else kind)})
             Message.objects.create(conversation=conv, direction=("out" if is_echo else "in"),
-                                   text=(msg.get("text") or "")[:5000], external_id=mid)
+                                   text=(msg.get("text") or ("📷 Фото" if atts else ""))[:5000],
+                                   attachments=atts, external_id=mid)
             conv.unread = (conv.unread or 0) + (0 if is_echo else 1)
             from django.utils import timezone
             conv.last_message_at = timezone.now()
