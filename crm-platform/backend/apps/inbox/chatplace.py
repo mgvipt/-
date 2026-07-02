@@ -116,13 +116,20 @@ def sync_one_chat(conv, per_chat=40):
     _had_in = [False]; _had_out = [False]
     for m in reversed(msgs or []):
         ext = str(m.get("id"))
-        body = m.get("message") or m.get("text") or ""
-        if not body or body in _SYSTEM_MARKERS or "StatusLabel" in str(body) or _SYS_LABEL.match(str(body).strip()):
+        raw = str(m.get("message") or m.get("text") or "").strip()
+        if raw and (raw in _SYSTEM_MARKERS or "StatusLabel" in raw or _SYS_LABEL.match(raw)):
             continue
         if Message.objects.filter(conversation=conv, external_id=ext).exists():
             continue
         side = (m.get("side") or "").lower()
         direction = "out" if side in _STAFF_SIDES else "in"
+        # ChatPlace через MCP віддає медіа як ПОРОЖНЄ повідомлення без URL → плейсхолдер (лише вхідні)
+        if not raw:
+            if direction != "in":
+                continue
+            body = "📷 Клієнт надіслав фото/файл (відкрийте Instagram/TikTok, щоб побачити)"
+        else:
+            body = raw
         if _relink_echo(conv, ext, str(body)[:5000], direction):
             continue
         Message.objects.create(conversation=conv, direction=direction, text=str(body)[:5000],
@@ -257,13 +264,20 @@ def sync_chats(max_chats=40, per_chat=40):
                 msgs = msgs.get("items") or msgs.get("messages") or []
             for m in reversed(msgs or []):
                 ext = str(m.get("id"))
-                body = m.get("message") or m.get("text") or ""
-                if not body or body in _SYSTEM_MARKERS or "StatusLabel" in str(body) or _SYS_LABEL.match(str(body).strip()):
+                raw = str(m.get("message") or m.get("text") or "").strip()
+                if raw and (raw in _SYSTEM_MARKERS or "StatusLabel" in raw or _SYS_LABEL.match(raw)):
                     continue
                 if Message.objects.filter(conversation=conv, external_id=ext).exists():
                     continue
                 side = (m.get("side") or "").lower()
                 direction = "out" if side in _STAFF_SIDES else "in"
+                # ChatPlace через MCP віддає медіа як ПОРОЖНЄ повідомлення без URL → плейсхолдер (лише вхідні)
+                if not raw:
+                    if direction != "in":
+                        continue
+                    body = "📷 Клієнт надіслав фото/файл (відкрийте Instagram/TikTok, щоб побачити)"
+                else:
+                    body = raw
                 if _relink_echo(conv, ext, str(body)[:5000], direction):
                     continue
                 Message.objects.create(conversation=conv, direction=direction, text=str(body)[:5000],
