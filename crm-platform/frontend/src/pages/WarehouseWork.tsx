@@ -1,6 +1,7 @@
 /* Склад · Робота — модуль кладовщика. Вкладки: Черга (спільна, весь відділ) · Мої задачі (в роботі) ·
    Зміна (день+обід+ЗП, звʼязано з головною кнопкою «Почати робочий день») · Зарплата (період) · Контроль (керівник). */
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "../api";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
@@ -42,6 +43,28 @@ export default function WarehouseWork() {
   );
 }
 
+function RefShots({ photos, t }: { photos?: string[]; t: any }) {
+  const [zoom, setZoom] = useState<string | null>(null);
+  const list = photos || [];
+  if (!list.length) return null;
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div className="label">📷 {t("Скриншоты от клиента", "Скріни від клієнта")} <span className="muted" style={{ fontSize: 11, fontWeight: 400 }}>({list.length})</span></div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 5 }}>
+        {list.map((p, i) => (
+          <img key={i} src={p} onClick={() => setZoom(p)} title={t("Открыть в масштабе", "Відкрити у масштабі")}
+            style={{ width: 78, height: 78, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0", display: "block", cursor: "zoom-in" }} />
+        ))}
+      </div>
+      {zoom && createPortal(
+        <div onClick={() => setZoom(null)} style={{ position: "fixed", inset: 0, zIndex: 100000, background: "rgba(0,0,0,.88)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out" }}>
+          <img src={zoom} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "94vw", maxHeight: "94vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 10px 60px rgba(0,0,0,.6)" }} />
+          <button onClick={() => setZoom(null)} style={{ position: "fixed", top: 20, right: 26, width: 40, height: 40, borderRadius: 20, border: "none", background: "rgba(255,255,255,.16)", color: "#fff", fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>, document.body)}
+    </div>
+  );
+}
+
 function JobCard({ j, t, onClick, action }: any) {
   const [bg, fg, lbl] = ST[j.status] || ["#f1f5f9", C.slate, j.status];
   const tintN = (j.kits || []).filter((k: any) => k.tint).length;
@@ -61,6 +84,7 @@ function JobCard({ j, t, onClick, action }: any) {
             {tintN > 0 ? <span style={{ color: "#9a3412" }}>🎨 {t("тонировать", "тонувати")} {tintN}</span> : ((j.kits || []).length > 0 ? <span>{t("без тонировки", "без тонування")}</span> : null)}
             {["packing", "awaiting_photos", "shipped"].includes(j.status) && <span style={{ color: "#5b21b6" }}>{j.packed ? "📦 " + t("ручная упак.", "ручне пак.") : "🚚 " + t("НП контейнер", "НП контейнер")}</span>}
             {j.photos_n > 0 && <span style={{ color: "#2563eb" }}>📷 {j.photos_n}/2</span>}
+            {j.ref_photos_n > 0 && <span style={{ color: C.terra }} title={t("Скриншоты от клиента", "Скріни від клієнта")}>🖼 {j.ref_photos_n}</span>}
             {j.np_name && <span>📥 {j.np_name}</span>}
             {j.ttn && <span style={{ color: "#16a34a", fontWeight: 600 }}>🚚 ТТН {j.ttn}</span>}
             {j.assignee_name && j.status !== "queued" && <span>👤 {j.assignee_name}</span>}
@@ -124,6 +148,7 @@ function JobPreview({ jobId, t, onClose, onTake }: any) {
             {(j.kits || []).map((k: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "4px 0" }}>• <b>{k.material || "—"}</b> <span className="muted">{k.color}</span>{k.tint ? " · 🎨 " + t("тонировать", "тонувати") : ""}{k.board ? " · " + t("с дощечкой", "з дощечкою") : ""}</div>)}</>}
           <div className="label" style={{ marginTop: 14 }}>📋 {t("Выявление потребности", "Виявлення потреби")}</div>
           {Object.keys(j.needs || {}).length ? Object.entries(j.needs).filter(([, v]: any) => v !== "" && v != null && v !== "—").map(([k, v]: any) => <div key={k} style={{ fontSize: 13, padding: "3px 0", display: "flex", gap: 10, borderBottom: "1px solid #f8fafc" }}><span className="muted" style={{ minWidth: 150, flexShrink: 0 }}>{NEEDS_LBL[k] || k}</span><b>{String(v)}</b></div>) : <div className="muted" style={{ fontSize: 12 }}>{t("Потребность не заполнена", "Потребу не заповнено")}</div>}
+          <RefShots photos={j.ref_photos} t={t} />
           <button className="btn btn-primary" style={{ width: "100%", height: 48, marginTop: 18, fontWeight: 700, fontSize: 15 }} onClick={() => onTake(j.id)}>✋ {t("Взять в работу", "Взяти в роботу")}</button>
         </>}
       </div>
@@ -297,7 +322,7 @@ function TaskCard({ t, jobId, onBack }: any) {
         {(j.items || []).length > 0 && <div style={{ marginBottom: 9 }}><div className="muted" style={{ fontSize: 11.5, marginBottom: 3 }}>📦 {t("Товары", "Товари")}</div>{(j.items || []).map((it: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "2px 0" }}>• {it.name} <b>× {it.qty}</b>{it.weight_kg && it.weight_kg !== "0" && it.weight_kg !== "0.000" ? <span className="muted"> · {it.weight_kg} кг</span> : null}</div>)}</div>}
         {(j.kits || []).length > 0 && <div style={{ marginBottom: 9 }}><div className="muted" style={{ fontSize: 11.5, marginBottom: 3 }}>🎨 {t("Наборы", "Набори")} ({(j.kits || []).length})</div>{(j.kits || []).map((k: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "2px 0" }}>• <b>{k.material || "—"}</b> <span className="muted">{k.color}</span>{k.tint ? " · 🎨 " + t("тонировать", "тонувати") : ""}{k.board ? " · " + t("с дощечкой", "з дощечкою") : ""}</div>)}</div>}
         {Object.keys(j.needs || {}).filter((k) => (j.needs[k] !== "" && j.needs[k] != null && j.needs[k] !== "—" && !k.startsWith("_"))).length > 0 && <div><div className="muted" style={{ fontSize: 11.5, marginBottom: 3 }}>📝 {t("Выявление потребности", "Виявлення потреби")}</div>{Object.entries(j.needs).filter(([k, v]: any) => v !== "" && v != null && v !== "—" && !k.startsWith("_")).map(([k, v]: any) => <div key={k} style={{ fontSize: 12.5, padding: "1px 0", display: "flex", gap: 8 }}><span className="muted" style={{ minWidth: 140, flexShrink: 0 }}>{NEEDS_LBL[k] || k}</span><b>{String(v)}</b></div>)}</div>}
-        {(j.ref_photos || []).length > 0 && <div style={{ marginTop: 9 }}><div className="muted" style={{ fontSize: 11.5, marginBottom: 4 }}>📷 {t("Фото от клиента", "Фото від клієнта")}</div><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{(j.ref_photos || []).map((p: string, i: number) => <a key={i} href={p} target="_blank" rel="noreferrer"><img src={p} style={{ width: 76, height: 76, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0", display: "block" }} /></a>)}</div></div>}
+        <RefShots photos={j.ref_photos} t={t} />
         {(j.items || []).length === 0 && (j.kits || []).length === 0 && <div className="muted" style={{ fontSize: 12.5 }}>{t("Позиции не указаны — уточни у менеджера", "Позиції не вказані — уточни у менеджера")}</div>}
       </div>
 

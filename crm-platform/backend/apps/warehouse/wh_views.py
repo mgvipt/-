@@ -66,6 +66,7 @@ def _job_dict(job, full=False):
     except Exception:
         d["np_stage"] = ""
     d["photos_n"] = job.photos.count()
+    d["ref_photos_n"] = len(deal.ref_photos or [])
     try:
         d["np_name"] = ((deal.np_data or {}).get("recipient") or {}).get("name") or ""
     except Exception:
