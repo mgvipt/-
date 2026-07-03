@@ -141,7 +141,18 @@ class Command(BaseCommand):
             pp = cp.get("purchasingPrice")
             if pp:
                 cost_map[int(cp["id"])] = round(float(pp), 2)
-        log(f"[{mode}] закупочных цен в Б24: {len(cost_map)}")
+        n_parent = len(cost_map)
+        # закупівельні живуть ще й на ОФФЕРАХ (iblock 26) — кріпимо до батька через parentId
+        for off in b24_pages("catalog.product.list",
+                             {"filter": {"iblockId": 26},
+                              "select": ["id", "iblockId", "purchasingPrice", "parentId"]},
+                             "products"):
+            pp = off.get("purchasingPrice")
+            par = off.get("parentId")
+            par_id = int(par["value"]) if isinstance(par, dict) and par.get("value") else None
+            if pp and par_id:
+                cost_map[par_id] = round(float(pp), 2)  # офферна актуальніша за батьківську
+        log(f"[{mode}] закупочных цен в Б24: {len(cost_map)} (на товарах {n_parent} + с офферов {len(cost_map) - n_parent}+)")
 
         if not commit:
             b24_ids = {int(p["ID"]) for p in prods}
@@ -200,6 +211,8 @@ class Command(BaseCommand):
                 obj0 = existing.get(bx)
                 if obj0 is not None and obj0.components.exists():
                     vals.pop("cost", None)  # набір: cost авто із компонентів
+                elif obj0 is not None and float(obj0.cost or 0) > 0:
+                    vals.pop("cost", None)  # у CRM вже є закупівельна (ручна/середньозважена) — НЕ затираємо
                 obj = existing.get(bx)
                 if obj is None:
                     vals["sku"] = f"B24-{bx}"
