@@ -56,7 +56,7 @@ export default function Warehouse() {
   const [whs, setWhs] = useState<WH[]>([]);
   const [modal, setModal] = useState<null | "in" | "out">(null);
   const canRealize = can("warehouse.edit") || can("finance.manage");
-  const [view, setView] = useState<"goods" | "realiz" | "receipt">("goods");
+  const [view, setView] = useState<"goods" | "realiz" | "receipt" | "inv">("goods");
   const [realizDocs, setRealizDocs] = useState<any[]>([]);
   const [realizBusy, setRealizBusy] = useState(false);
   const [realizSel, setRealizSel] = useState<any>(null);
@@ -99,7 +99,6 @@ export default function Warehouse() {
   const [card, setCard] = useState<Product | null>(null);
   const [movements, setMovements] = useState<Movement[]>([]);
   // инвентаризация
-  const [invOpen, setInvOpen] = useState(false);
   const [facts, setFacts] = useState<Record<number, string>>({});
   const [invMsg, setInvMsg] = useState("");
   const [sheet, setSheet] = useState<SheetRow[]>([]);
@@ -163,7 +162,7 @@ export default function Warehouse() {
     setFacts(init);
   }
   async function openInventory() {
-    setInvMsg(""); setInvOpen(true);
+    setInvMsg("");
     await loadSheet(pFrom, pTo);
   }
   async function conductInventory() {
@@ -172,7 +171,7 @@ export default function Warehouse() {
       .map((r) => ({ product: r.id, quantity: Number(facts[r.id]), price: 0 }));
     if (!items.length) { setInvMsg(t("Нет расхождений факта с учётом — нечего проводить.","Немає розбіжностей факту з обліком — нічого проводити.")); return; }
     await api.post("/api/stock-documents/", { kind: "inv", warehouse: whs[0]?.id, comment: `Інвентаризація ${pFrom}…${pTo}`, items });
-    setInvOpen(false); loadProducts();
+    loadProducts(); loadSheet(pFrom, pTo); setInvMsg(t("✓ Инвентаризация проведена","✓ Інвентаризацію проведено"));
   }
 
   const tree = useMemo(() => {
@@ -210,7 +209,6 @@ export default function Warehouse() {
     } catch { alert(t("Не удалось импортировать (нужно право «Редактировать склад»)", "Не вдалося імпортувати (потрібне право «Редагувати склад»)")); }
   }
   const receiptFileRef = useRef<HTMLInputElement>(null);
-  const receiptFileRef2 = useRef<HTMLInputElement>(null);
   async function importReceipt(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]; if (!f) return; e.target.value = "";
     let text = ""; try { text = await f.text(); } catch { return; }
@@ -243,6 +241,7 @@ export default function Warehouse() {
         <button className={"btn" + (view === "goods" ? " btn-primary" : " btn-light")} onClick={() => setView("goods")}><Icon n="📦" size={15} /> {t("Товары и остатки","Товари та залишки")}</button>
         <button className={"btn" + (view === "realiz" ? " btn-primary" : " btn-light")} onClick={() => { setView("realiz"); setRealizSel(null); openRealizList(); }}><Icon n="📤" size={15} /> {t("Реализации","Реалізації")}</button>
         <button className={"btn" + (view === "receipt" ? " btn-primary" : " btn-light")} onClick={() => { setView("receipt"); setReceiptSel(null); openReceiptList(); }}><Icon n="📥" size={15} /> {t("Приходные накладные","Прибуткові накладні")}</button>
+        <button className={"btn" + (view === "inv" ? " btn-primary" : " btn-light")} onClick={() => { setView("inv"); openInventory(); }}><Icon n="📋" size={15} /> {t("Инвентаризация","Інвентаризація")}</button>
       </div>
 
       {view === "realiz" ? (
@@ -324,8 +323,8 @@ export default function Warehouse() {
               <h3 style={{ margin: 0 }}>{t("Приходные накладные","Прибуткові накладні")}</h3>
               {canEdit && <div style={{ display: "flex", gap: 6 }}>
                 <button className="btn btn-light" onClick={() => setModal("in")} title={t("Ручной приход","Ручний прихід")}><Icon n="📥" size={14} /> {t("Приход","Прихід")}</button>
-                <input ref={receiptFileRef2} type="file" accept=".csv,text/csv,text/plain" style={{ display: "none" }} onChange={importReceipt} />
-                <button className="btn btn-light" onClick={() => receiptFileRef2.current?.click()} title={t("Приход из файла: артикул, кол-во, цена","Прихід з файлу: артикул, к-сть, ціна")}><Icon n="📄" size={14} /> {t("Приход файлом","Прихід файлом")}</button>
+                <input ref={receiptFileRef} type="file" accept=".csv,text/csv,text/plain" style={{ display: "none" }} onChange={importReceipt} />
+                <button className="btn btn-light" onClick={() => receiptFileRef.current?.click()} title={t("Приход из файла: артикул, кол-во, цена","Прихід з файлу: артикул, к-сть, ціна")}><Icon n="📄" size={14} /> {t("Приход файлом","Прихід файлом")}</button>
               </div>}
             </div>
             <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Все поступления товара на склад по датам. Кликните на строку — откроется документ с позициями.","Усі надходження товару на склад по датах. Клікніть на рядок — відкриється документ з позиціями.")}</div>
@@ -347,7 +346,7 @@ export default function Warehouse() {
           </>
         )}
       </div>
-      ) : (
+      ) : view === "goods" ? (
       <div style={{ display: "grid", gridTemplateColumns: `${catW}px 8px 1fr`, gap: 6, alignItems: "start" }}>
 
       {/* ─── [5] ДЕРЕВО КАТЕГОРИЙ ─────────────────────────────────────────── */}
@@ -377,9 +376,6 @@ export default function Warehouse() {
       {/* ─── [6] ТУЛБАР + ТАБЛИЦА + ПАГИНАЦИЯ ─────────────────────────────── */}
       <div>
         <div className="toolbar" style={{ borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 10, background: "#fff", display: "flex", gap: 8, alignItems: "center", padding: 8, flexWrap: "wrap" }}>
-          <button className="btn btn-primary" onClick={() => setModal("in")}><Icon n="📥" size={15} /> {t("Приход","Прихід")}</button>
-          {canEdit && <><input ref={receiptFileRef} type="file" accept=".csv,text/csv,text/plain" style={{ display: "none" }} onChange={importReceipt} /><button className="btn btn-light" onClick={() => receiptFileRef.current?.click()} title={t("Приход из файла: артикул, кол-во, цена","Прихід з файлу: артикул, к-сть, ціна")}><Icon n="📄" size={15} /> {t("Приход файлом","Прихід файлом")}</button></>}
-          <button className="btn btn-light" onClick={openInventory}><Icon n="📋" size={15} /> {t("Инвентаризация","Інвентаризація")}</button>
           <button className="btn btn-light" onClick={exportCsv} title={t("Выгрузить номенклатуру в CSV (Excel)","Вивантажити номенклатуру в CSV (Excel)")}><Icon n="⬇️" size={15} /> {t("Экспорт","Експорт")}</button>
           {canEdit && <>
           <input ref={nomFileRef} type="file" accept=".csv,text/csv,text/plain" style={{ display: "none" }} onChange={importNom} />
@@ -423,7 +419,7 @@ export default function Warehouse() {
         </div>
       </div>
       </div>
-      )}
+      ) : null}
 
       {/* ─── [7] МОДАЛКА ПРИХОД/РАСХОД ────────────────────────────────────── */}
       {modal && (
@@ -479,10 +475,9 @@ export default function Warehouse() {
       )}
 
       {/* ─── [9] ИНВЕНТАРИЗАЦИЯ ───────────────────────────────────────────── */}
-      {invOpen && (
-        <div onClick={() => setInvOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: "min(900px,96vw)", maxHeight: "88vh", display: "flex", flexDirection: "column" }}>
-            <h3 style={{ marginTop: 0 }}>{t("Инвентаризационная ведомость","Інвентаризаційна відомість")} {cat ? t("· выбранная категория","· обрана категорія") : t("· текущая страница","· поточна сторінка")}</h3>
+      {view === "inv" && (
+        <div style={{ background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", padding: 22, maxHeight: "calc(100vh - 170px)", display: "flex", flexDirection: "column" }}>
+            <h3 style={{ marginTop: 0 }}>{t("Инвентаризационная ведомость","Інвентаризаційна відомість")} {cat ? t("· выбранная категория","· обрана категорія") : t("· все товары","· всі товари")}</h3>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
               <span className="muted" style={{ fontSize: 12 }}>{t("Период","Період")}:</span>
               <input type="date" value={pFrom} onChange={(e) => { setPFrom(e.target.value); loadSheet(e.target.value, pTo); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
@@ -515,11 +510,10 @@ export default function Warehouse() {
             </div>
             {invMsg && <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>{invMsg}</div>}
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setInvOpen(false)}>{t("Отмена","Скасувати")}</button>
+              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setView("goods")}>{t("← К товарам","← До товарів")}</button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={conductInventory}>{t("Провести инвентаризацию","Провести інвентаризацію")}</button>
             </div>
           </div>
-        </div>
       )}
     </div>
   );
