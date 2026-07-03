@@ -126,6 +126,26 @@ export default function Warehouse() {
       loadProducts(); openCard(p);
     } catch { alert(t("Не удалось создать (нужно право «Редактировать склад»)","Не вдалося створити (потрібне право «Редагувати склад»)")); }
   }
+  // масові дії над товарами
+  const [selIds, setSelIds] = useState<Set<number>>(new Set());
+  const [bulkUnit, setBulkUnit] = useState("");
+  const UNITS = ["шт", "кг", "г", "л", "мл", "м", "см", "м²", "м³", "пог.м", "рулон", "упаковка",
+                 "комплект", "набір", "пара", "відро", "банка", "пляшечка", "туба", "мішок",
+                 "пачка", "лист", "день", "година", "послуга"];
+  function toggleSel(id: number) {
+    setSelIds((prev) => { const nx = new Set(prev); if (nx.has(id)) nx.delete(id); else nx.add(id); return nx; });
+  }
+  function toggleSelAll() {
+    setSelIds((prev) => prev.size === products.length ? new Set() : new Set(products.map((p) => p.id)));
+  }
+  async function applyBulkUnit() {
+    if (!bulkUnit || selIds.size === 0) return;
+    try {
+      const r: any = await api.post("/api/products/bulk-unit/", { ids: Array.from(selIds), unit: bulkUnit });
+      alert(t("Обновлено товаров","Оновлено товарів") + `: ${r.updated} → ${r.unit}`);
+      setSelIds(new Set()); setBulkUnit(""); loadProducts();
+    } catch { alert(t("Не удалось (нужно право «Редактировать склад»)","Не вдалося (потрібне право «Редагувати склад»)")); }
+  }
   async function delCategory(c: Category, e: React.MouseEvent) {
     e.stopPropagation();
     try {
@@ -515,6 +535,18 @@ export default function Warehouse() {
           <span className="muted">{t("Найдено","Знайдено")}: <b style={{ color: "#1e293b" }}>{count.toLocaleString("ru")}</b></span>
         </div>
 
+        {canEdit && selIds.size > 0 && (
+          <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "8px 12px", marginBottom: 10, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <b style={{ fontSize: 13 }}>{t("Выбрано","Вибрано")}: {selIds.size}</b>
+            <span className="muted" style={{ fontSize: 13 }}>{t("Изменить единицу измерения","Змінити одиницю виміру")}:</span>
+            <select value={bulkUnit} onChange={(e) => setBulkUnit(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }}>
+              <option value="">{t("— выбери —","— обери —")}</option>
+              {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+            <button className="btn btn-primary" disabled={!bulkUnit} onClick={applyBulkUnit} style={{ padding: "4px 14px" }}>{t("Применить","Застосувати")}</button>
+            <button className="btn btn-light" onClick={() => setSelIds(new Set())} style={{ padding: "4px 10px" }}>{t("Снять выбор","Зняти вибір")}</button>
+          </div>
+        )}
         {fltOpen && (
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, marginBottom: 10, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
             <label style={{ fontSize: 13 }}>{t("Активность","Активність")}: <select value={fltActive} onChange={(e) => { setFltActive(e.target.value as any); setPage(1); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, marginLeft: 4 }}>
@@ -532,12 +564,13 @@ export default function Warehouse() {
         )}
         <div className="tablewrap" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
           <table style={{ width: "100%" }}>
-            <thead><tr>{sortTh("name", t("Товар","Товар"))}{sortTh("sku", t("Артикул","Артикул"))}<th>{t("Категория","Категорія")}</th>{sortTh("price", t("Цена","Ціна"))}{showCost && sortTh("cost", t("Закупка","Закупка"))}<th>{t("Ед.","Од.")}</th><th>{t("Остаток","Залишок")}</th>{canEdit && <th></th>}</tr></thead>
+            <thead><tr>{canEdit && <th style={{ width: 30 }}><input type="checkbox" checked={products.length > 0 && selIds.size === products.length} onChange={toggleSelAll} title={t("Выбрать все на странице","Вибрати всі на сторінці")} /></th>}{sortTh("name", t("Товар","Товар"))}{sortTh("sku", t("Артикул","Артикул"))}<th>{t("Категория","Категорія")}</th>{sortTh("price", t("Цена","Ціна"))}{showCost && sortTh("cost", t("Закупка","Закупка"))}<th>{t("Ед.","Од.")}</th><th>{t("Остаток","Залишок")}</th>{canEdit && <th></th>}</tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={6 + (showCost ? 1 : 0) + (canEdit ? 1 : 0)} className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</td></tr>}
-              {!loading && products.length === 0 && <tr><td colSpan={6 + (showCost ? 1 : 0) + (canEdit ? 1 : 0)} className="muted" style={{ padding: 16 }}>{t("Товаров не найдено","Товарів не знайдено")}</td></tr>}
+              {loading && <tr><td colSpan={6 + (showCost ? 1 : 0) + (canEdit ? 2 : 0)} className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</td></tr>}
+              {!loading && products.length === 0 && <tr><td colSpan={6 + (showCost ? 1 : 0) + (canEdit ? 2 : 0)} className="muted" style={{ padding: 16 }}>{t("Товаров не найдено","Товарів не знайдено")}</td></tr>}
               {!loading && products.map((p) => (
                 <tr key={p.id}>
+                  {canEdit && <td style={{ textAlign: "center" }}><input type="checkbox" checked={selIds.has(p.id)} onChange={() => toggleSel(p.id)} onClick={(e) => e.stopPropagation()} /></td>}
                   <td><span onClick={() => openCard(p)} style={{ fontWeight: 500, color: "#1d4ed8", cursor: "pointer" }}>{(p as any).is_bundle && <span title="Набір (комплект)">🧩 </span>}{p.name}</span></td>
                   <td className="muted">{p.sku}</td>
                   <td className="muted" style={{ fontSize: 12 }}>{p.category_name || "—"}</td>

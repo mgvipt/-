@@ -211,6 +211,19 @@ class ProductViewSet(viewsets.ModelViewSet):
                     Product.objects.create(name=(name or sku), sku=sku, unit=unit, price=price, cost=cost, currency=currency, category=cat)
         return Response({"created": created, "updated": updated, "errors": errors, "err_samples": err_samples, "committed": commit})
 
+    @action(detail=False, methods=["post"], url_path="bulk-unit")
+    def bulk_unit(self, request):
+        """Масово змінити одиницю виміру: {ids: [...], unit: "кг"}. Право warehouse.edit."""
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("warehouse.edit")):
+            return Response({"detail": "Потрібне право «Редагувати склад»"}, status=403)
+        ids = request.data.get("ids") or []
+        unit = (request.data.get("unit") or "").strip()[:16]
+        if not ids or not unit:
+            return Response({"detail": "Вкажіть товари та одиницю"}, status=400)
+        n = Product.objects.filter(id__in=ids).update(unit=unit)
+        return Response({"ok": True, "updated": n, "unit": unit})
+
     @action(detail=True, methods=["get", "post"])
     def components(self, request, pk=None):
         """Склад набору. GET → список компонентів + скільки наборів можна зібрати.
