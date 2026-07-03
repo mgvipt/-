@@ -341,6 +341,14 @@ function Journal() {
   };
   function apply() { setPage(1); load(1); }
   const [bankHub, setBankHub] = useState(false);
+  const [accW, setAccW] = useState(() => Number(localStorage.getItem("fin_acc_w")) || 220);
+  function startAccResize(e: React.MouseEvent) {
+    e.preventDefault();
+    const sx = e.clientX, sw = accW;
+    const mv = (ev: MouseEvent) => { const w = Math.max(170, Math.min(480, sw + ev.clientX - sx)); setAccW(w); localStorage.setItem("fin_acc_w", String(w)); };
+    const up = () => { document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up); document.body.style.cursor = ""; };
+    document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up); document.body.style.cursor = "col-resize";
+  }
   function goPage(p: number) { setPage(p); load(p); }
   function resetAll() { setFq(""); setFf(""); setFt(""); setCf(emptyCf); setPage(1); setTimeout(() => load(1), 0); }
   useEffect(() => {
@@ -393,25 +401,33 @@ function Journal() {
   }
   return (
     <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-      <div className="panel acc-sidebar" style={{ width: 220, flex: "0 0 220px", margin: 0, maxHeight: "80vh", overflowY: "auto" }}>
+      <div className="panel acc-sidebar" style={{ width: accW, flex: `0 0 ${accW}px`, margin: 0, maxHeight: "80vh", overflowY: "auto" }}>
+        {/* Σ активних — над заголовком, у кольорі фону блоку */}
+        <div style={{ textAlign: "center", marginBottom: 6 }}>
+          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.3 }}>{money(accounts.reduce((sm: number, a: any) => sm + Number(a.balance || 0), 0))}</div>
+          <div className="muted" style={{ fontSize: 10.5 }}>{t("на активных счетах","на активних рахунках")}</div>
+        </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <b style={{ fontSize: 13 }}><Icon n="🏦" size={14} /> Рахунки</b>
-          <button onClick={() => setBankHub(true)} title={t("Настройки: банки по API, правила разноски, история загрузок, счета","Налаштування: банки по API, правила розноски, історія завантажень, рахунки")} style={{ float: "right", border: "none", background: "transparent", cursor: "pointer", fontSize: 14 }}>⚙️</button>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, fontWeight: 800, margin: "6px 0 4px", padding: "5px 6px", background: "#eff6ff", borderRadius: 7 }}>
-            <span>Σ {t("активные","активні")}</span>
-            <span style={{ color: "#0369a1" }}>{money(accounts.reduce((sm: number, a: any) => sm + Number(a.balance || 0), 0))}</span>
-          </div>
-          {selAcc.length > 0 && <span style={{ fontSize: 11, color: "#2563eb", cursor: "pointer" }} onClick={() => { setSelAcc([]); setTimeout(() => load(1), 0); }}>скинути</span>}
+          <span>
+            {selAcc.length > 0 && <span style={{ fontSize: 11, color: "#2563eb", cursor: "pointer", marginRight: 6 }} onClick={() => { setSelAcc([]); setTimeout(() => load(1), 0); }}>скинути</span>}
+            <button onClick={() => setBankHub(true)} title={t("Настройки: банки по API, правила разноски, история загрузок, счета","Налаштування: банки по API, правила розноски, історія завантажень, рахунки")} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 14 }}>⚙️</button>
+          </span>
         </div>
         <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>Обери один або кілька — журнал відфільтрується.</div>
-        {accounts.map((a) => (
-          <label key={a.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 4px", borderRadius: 6, cursor: "pointer", fontSize: 12.5, background: selAcc.includes(a.id) ? "#eff6ff" : "transparent" }}>
-            <input type="checkbox" checked={selAcc.includes(a.id)} onChange={() => toggleAcc(a.id)} />
+        {accounts.map((a) => {
+          const on = selAcc.includes(a.id);
+          return (
+          <div key={a.id} onClick={() => toggleAcc(a.id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: 7, cursor: "pointer", fontSize: 12.5, userSelect: "none",
+            background: on ? "rgba(37, 99, 235, 0.14)" : "transparent",
+            boxShadow: on ? "inset 3px 0 0 #2563eb" : "none", fontWeight: on ? 700 : 400 }}>
             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
             <b style={{ fontSize: 11, color: a.balance < 0 ? "#dc2626" : "#16a34a" }}>{money(a.balance)}</b>
-          </label>
-        ))}
+          </div>
+        ); })}
       </div>
+      {/* ручка зміни ширини блоку рахунків */}
+      <div onMouseDown={startAccResize} title={t("Тяни, чтобы изменить ширину","Тягни, щоб змінити ширину")} style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0, minHeight: "60vh" }} />
       <div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }} className="journal-filter">
         <input value={fq} onChange={(e) => setFq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && apply()} placeholder={t("🔍 Поиск по всему: сумма, контрагент, комментарий, счёт…","🔍 Пошук по всьому: сума, контрагент, коментар, рахунок…")} style={{ flex: "1 1 220px", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
