@@ -583,6 +583,7 @@ class OverviewView(APIView):
         from django.db.models import Sum
         per = request.query_params.get("period") or _date.today().strftime("%Y-%m")
         y, mo = int(per[:4]), int(per[5:7])
+        q_from, q_to = request.query_params.get("from"), request.query_params.get("to")
 
         def month_bounds(yy, mm):
             f = _date(yy, mm, 1)
@@ -609,9 +610,19 @@ class OverviewView(APIView):
             inc, exp = sums(f, t)
             months.append({"ym": f"{a}-{b:02d}", "income": round(inc), "expense": round(exp), "net": round(inc - exp)})
 
-        cf, ct = month_bounds(y, mo)
+        if q_from and q_to:
+            try:
+                cf, ct = _date.fromisoformat(q_from), _date.fromisoformat(q_to)
+                if ct < cf:
+                    cf, ct = ct, cf
+            except (ValueError, TypeError):
+                cf, ct = month_bounds(y, mo)
+            span_days = (ct - cf).days + 1
+            pf, pt = cf - _td(days=span_days), cf - _td(days=1)
+        else:
+            cf, ct = month_bounds(y, mo)
+            pf, pt = month_bounds(*seq[1])
         cur_inc, cur_exp = sums(cf, ct)
-        pf, pt = month_bounds(*seq[1])
         prev_inc, prev_exp = sums(pf, pt)
         total_balance = sum(float(a.balance()) for a in Account.objects.all())
 
@@ -643,6 +654,40 @@ class OverviewView(APIView):
             cashflow.append({"date": dd.isoformat(),
                              "in": float(dq.filter(direction="in").aggregate(s=Sum("amount"))["s"] or 0),
                              "out": float(dq.filter(direction="out").aggregate(s=Sum("amount"))["s"] or 0)})
+
+        # надходження по категоріях (за період)
+        by_cat_in = [{"name": r["category__name"] or "(без категорії)", "sum": round(float(r["s"]))}
+                     for r in Transaction.objects.filter(direction="in", date__gte=cf, date__lte=ct)
+                     .values("category__name").annotate(s=Sum("amount_uah")).order_by("-s")[:10]]
+
+        # серія руху грошей за період: ≤92 днів — по днях, інакше по місяцях
+        from django.db.models.functions import TruncMonth
+        ser_q = Transaction.objects.filter(date__gte=cf, date__lte=ct).exclude(direction="transfer")
+        span = (ct - cf).days + 1
+        srows = []
+        if span <= 92:
+            agg = {r["date"]: r for r in ser_q.values("date").annotate(
+                inc=Sum("amount_uah", filter=Q(direction="in")),
+                out=Sum("amount_uah", filter=Q(direction="out")))}
+            cur = cf
+            while cur <= ct:
+                a = agg.get(cur) or {}
+                i2 = float(a.get("inc") or 0); o2 = float(a.get("out") or 0)
+                srows.append({"d": cur.isoformat(), "in": i2, "out": o2, "net": i2 - o2})
+                cur += _td(days=1)
+            gran = "day"
+        else:
+            agg = {(r["m"].date() if hasattr(r["m"], "date") else r["m"]): r
+                   for r in ser_q.annotate(m=TruncMonth("date")).values("m").annotate(
+                       inc=Sum("amount_uah", filter=Q(direction="in")),
+                       out=Sum("amount_uah", filter=Q(direction="out")))}
+            cur = cf.replace(day=1)
+            while cur <= ct:
+                a = agg.get(cur) or {}
+                i2 = float(a.get("inc") or 0); o2 = float(a.get("out") or 0)
+                srows.append({"d": cur.isoformat()[:7], "in": i2, "out": o2, "net": i2 - o2})
+                cur = (cur.replace(day=28) + _td(days=4)).replace(day=1)
+            gran = "month"
 
         # коефіцієнти
         net = cur_inc - cur_exp
@@ -678,6 +723,8 @@ class OverviewView(APIView):
                     "prev_net": round(prev_inc - prev_exp), "balance": round(total_balance)},
             "months": months, "top_expense": top_exp, "directions": dirs,
             "accounts": accounts, "cashflow": cashflow,
+            "by_cat_in": by_cat_in, "series": {"granularity": gran, "rows": srows},
+            "from": cf.isoformat(), "to": ct.isoformat(),
             "ratios": {"margin_pct": margin_pct, "expense_ratio": exp_ratio,
                        "personal_pct": personal_pct, "burn_months": burn_months},
             "alerts": alerts,
