@@ -72,8 +72,8 @@ class Product(models.Model):
 
 class StockDocument(models.Model):
     """Складской документ: приход / расход / инвентаризация."""
-    KINDS = [("in", "Приход"), ("out", "Расход"), ("inv", "Инвентаризация")]
-    kind = models.CharField(max_length=4, choices=KINDS)
+    KINDS = [("in", "Приход"), ("out", "Расход"), ("inv", "Инвентаризация"), ("writeoff", "Списание")]
+    kind = models.CharField(max_length=8, choices=KINDS)
     number = models.CharField(max_length=40, blank=True)
     warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="documents")
     comment = models.CharField(max_length=255, blank=True)

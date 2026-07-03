@@ -286,6 +286,8 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
             doc = StockDocument.objects.create(warehouse=wh, kind="in")
             for (p, qty, price) in items:
                 StockMovement.objects.create(document=doc, product=p, quantity=qty, price=price)
+            from .services import _on_posted
+            _on_posted(doc)  # перерахунок середньозваженої собівартості
             res["committed"] = True
             res["doc_id"] = doc.id
         return Response(res)
@@ -297,7 +299,7 @@ class InventoryAnalyticsView(APIView):
     required_perm = "warehouse.view"
 
     def get(self, request):
-        prods = (Product.objects.annotate(stk=Coalesce(Sum("movements__quantity"), Decimal("0")))
+        prods = (Product.objects.annotate(stk=Coalesce(Sum("movements__quantity", filter=Q(movements__document__posted=True)), Decimal("0")))
                  .select_related("category"))
         total_items = in_stock = out_stock = 0
         val_cost = val_retail = total_qty = Decimal("0")
@@ -375,7 +377,7 @@ class InventorySheetView(APIView):
             dt = date.fromisoformat(d_to)
         except (ValueError, TypeError):
             return Response({"detail": "Невірний формат дати", "from": d_from, "to": d_to, "rows": []}, status=400)
-        agg = (StockMovement.objects.filter(product_id__in=ids).values("product_id").annotate(
+        agg = (StockMovement.objects.filter(product_id__in=ids, document__posted=True).values("product_id").annotate(
             opening=Coalesce(Sum("quantity", filter=Q(document__created_at__date__lt=df)), Decimal("0")),
             received=Coalesce(Sum("quantity", filter=Q(quantity__gt=0,
                 document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),

@@ -178,8 +178,15 @@ export default function Warehouse() {
   /* ─── [4] ДЕЙСТВИЯ ───────────────────────────────────────────────────── */
   async function saveDoc() {
     if (!form.product) return;
+    let kind: string = modal || "in";
+    let comment = "";
+    if (modal === "out") {
+      kind = "writeoff"; // ручне списання = порча/брак/викраска, НЕ реалізація по угоді
+      comment = prompt(t("Причина списания (обязательно): брак, порча, выкраска…","Причина списання (обовʼязково): брак, порча, викраска…")) || "";
+      if (!comment.trim()) { alert(t("Без причины списание не проводится.","Без причини списання не проводиться.")); return; }
+    }
     await api.post("/api/stock-documents/", {
-      kind: modal, warehouse: whs[0]?.id,
+      kind, warehouse: whs[0]?.id, comment,
       items: [{ product: form.product, quantity: form.quantity, price: form.price }],
     });
     setModal(null); setForm({ product: 0, quantity: 1, price: 0 });
@@ -314,7 +321,7 @@ export default function Warehouse() {
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
               <h3 style={{ margin: 0 }}>{t("Реализации (расходные накладные)","Реалізації (видаткові накладні)")}</h3>
-              {canEdit && <button className="btn btn-light" onClick={() => setModal("out")} title={t("Ручное списание товара","Ручне списання товару")}><Icon n="📤" size={14} /> {t("Ручное списание","Ручне списання")}</button>}
+              {canEdit && <button className="btn btn-light" onClick={() => setModal("out")} title={t("Списание: брак, порча, выкраска (не по сделке)","Списання: брак, порча, викраска (не по угоді)")}><Icon n="🗑" size={14} /> {t("Списание (брак/порча)","Списання (брак/порча)")}</button>}
             </div>
             <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Создаются автоматически, когда сделка переходит в стадию «Успешная». «Проведён» = товар списан со склада. Кликните на строку — откроется документ. Провести/отменить может ответственный за склад или бухгалтер.","Створюються автоматично, коли сделка переходить у стадію «Успішна». «Проведено» = товар списано зі складу. Клікніть на рядок — відкриється документ. Провести/скасувати може відповідальний за склад або бухгалтер.")}</div>
             {realizBusy ? <div className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</div> :
@@ -509,7 +516,7 @@ export default function Warehouse() {
       {modal && (
         <div onClick={() => setModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 380 }}>
-            <h3 style={{ marginTop: 0 }}>{modal === "in" ? t("Приходная накладная","Прибуткова накладна") : t("Реализация (списание) товара","Реалізація (списання) товару")}</h3>
+            <h3 style={{ marginTop: 0 }}>{modal === "in" ? t("Приходная накладная","Прибуткова накладна") : t("Списание товара (брак / порча / выкраска)","Списання товару (брак / порча / викраска)")}</h3>
             <label className="label">{t("Товар","Товар")}</label>
             <select value={form.product} onChange={(e) => setForm({ ...form, product: Number(e.target.value) })} style={{ width: "100%", height: 38, marginBottom: 10, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }}>
               <option value={0}>{t("— выбери товар (из текущей страницы) —","— обери товар (з поточної сторінки) —")}</option>

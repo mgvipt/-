@@ -71,6 +71,16 @@ class StockDocumentSerializer(serializers.ModelSerializer):
                   "deal", "deal_title", "total", "created_at", "items", "posted", "close_stage"]
         read_only_fields = ["created_at"]
 
+    def validate(self, attrs):
+        # ручний «Расход» (out) без угоди заборонено — подвійне списання/COGS повз контур.
+        # Для порчі/браку/викрасок — kind="writeoff" (обовʼязкова причина в comment).
+        if attrs.get("kind") == "out" and not attrs.get("deal"):
+            raise serializers.ValidationError(
+                "Видатковий документ без угоди заборонено. Для порчі/браку використовуйте «Списання» (writeoff) з причиною.")
+        if attrs.get("kind") == "writeoff" and not (attrs.get("comment") or "").strip():
+            raise serializers.ValidationError("Для списання вкажіть причину (коментар).")
+        return attrs
+
     def create(self, validated):
         items = validated.pop("items")
         validated["author"] = self.context["request"].user
@@ -79,13 +89,23 @@ class StockDocumentSerializer(serializers.ModelSerializer):
             prod = it["product"]
             counted = abs(it["quantity"])
             if doc.kind == "inv":
-                # инвентаризация: движение = (факт - текущий остаток), сток становится фактом
+                # інвентаризація: рух = (факт − обліковий залишок); ЦІНА = собівартість
+                # (щоб нестача/надлишок були у грошах, а не по нулях)
                 qty = counted - prod.stock(doc.warehouse)
+                price = prod.cost or 0
             elif doc.kind == "out":
-                qty = -counted          # расход уменьшает остаток
+                qty = -counted          # видаток по угоді
+                price = it.get("price", 0)
+            elif doc.kind == "writeoff":
+                qty = -counted          # списання (порча/брак) — по собівартості
+                price = prod.cost or 0
             else:
-                qty = counted           # приход увеличивает
+                qty = counted           # прихід
+                price = it.get("price", 0)
             if qty != 0:
                 StockMovement.objects.create(document=doc, product=prod,
-                                             quantity=qty, price=it.get("price", 0))
+                                             quantity=qty, price=price)
+        if doc.posted:
+            from .services import _on_posted
+            _on_posted(doc)  # документ народжується проведеним → грошові ефекти одразу
         return doc
