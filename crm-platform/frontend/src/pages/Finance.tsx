@@ -501,7 +501,7 @@ function Journal() {
             {tx.length === 0 && <tr><td colSpan={12} className="muted" style={{ padding: 14 }}>{t("Операций ещё нет. Добавь вручную или они появятся при оплате сделок.","Операцій ще немає. Додай вручну або вони зʼявляться при оплаті сделок.")}</td></tr>}
             {tx.map((r) => (
               <tr key={r.id} onClick={() => openEdit(r)} title={t("Кликни, чтобы посмотреть и изменить","Клікни, щоб переглянути та змінити")} style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}>
-                <td className="muted" style={{ padding: "8px 12px" }}>{new Date(r.date || r.created_at).toLocaleDateString("ru")}</td>
+                <td className="muted" style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>{new Date(r.date || r.created_at).toLocaleDateString("ru")}{r.op_time ? <span style={{ display: "block", fontSize: 10.5, opacity: 0.75 }}>{String(r.op_time).slice(0, 5)}</span> : null}</td>
                 <td style={{ fontWeight: 600, color: r.direction === "in" ? "#16a34a" : r.direction === "transfer" ? "#6366f1" : "#dc2626" }}>{r.direction === "in" ? "+" : r.direction === "transfer" ? "⇄ " : "−"}{Number(r.amount).toLocaleString("ru")}</td>
                 <td className="muted">{r.currency || "UAH"}</td>
                 <td className="muted">{Number(r.amount_uah || r.amount).toLocaleString("ru")} ₴</td>

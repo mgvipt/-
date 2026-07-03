@@ -28,9 +28,10 @@ def record_income(amount, *, deal=None, account=None, payment=None, category="П
         if c is not None:
             counterparty = (" ".join(filter(None, [getattr(c, "first_name", ""), getattr(c, "last_name", "")])).strip()
                             or getattr(c, "nickname", "") or "")[:160]
+    from django.utils import timezone as _tz
     return Transaction.objects.create(
         direction="in", amount=amount, amount_uah=amount, account=account or default_account(),
-        category=_category(category, "in"), deal=deal, payment=payment,
+        category=_category(category, "in"), deal=deal, payment=payment, op_time=_tz.localtime().time(),
         channel=channel, counterparty=counterparty, fin_direction=_default_direction())
 
 
@@ -40,9 +41,11 @@ def record_expense(amount, *, deal=None, account=None, category="Собівар�
         c = getattr(deal, "contact", None)
         if c is not None:
             counterparty = (" ".join(filter(None, [getattr(c, "first_name", ""), getattr(c, "last_name", "")])).strip() or "")[:160]
+    from django.utils import timezone as _tz
     return Transaction.objects.create(
         direction="out", amount=amount, amount_uah=amount, account=account or default_account(),
-        category=_category(category, "out"), deal=deal, counterparty=counterparty)
+        category=_category(category, "out"), deal=deal, counterparty=counterparty,
+        op_time=_tz.localtime().time())
 
 
 # ── Финмодель: P&L (ATM) + точка безубыточности ──────────────────────────

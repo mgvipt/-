@@ -48,7 +48,7 @@ class TransactionSerializer(serializers.ModelSerializer):
         fields = ["id", "direction", "amount", "account", "account_name",
                   "category", "category_name", "fin_article", "fin_article_name",
                   "fin_direction", "fin_direction_name", "channel",
-                  "counterparty", "currency", "rate", "amount_uah", "date",
+                  "counterparty", "currency", "rate", "amount_uah", "date", "op_time",
                   "transfer_account", "transfer_account_name", "deal_title",
                   "comment", "deal", "date", "created_at", "set_category"]
 

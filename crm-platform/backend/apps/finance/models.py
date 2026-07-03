@@ -54,6 +54,7 @@ class Transaction(models.Model):
     rate = models.DecimalField(max_digits=12, decimal_places=4, default=1, help_text="Курс до гривні (1 одиниця валюти = N грн)")
     amount_uah = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="Сума у гривні (amount × rate) — для аналітики")
     date = models.DateField(default=_date.today, db_index=True)
+    op_time = models.TimeField(null=True, blank=True, help_text="Час операції (з банку або момент внесення)")
     import_batch = models.CharField(max_length=48, blank=True, default="", db_index=True,
                                     help_text="Партія імпорту (банк/виписка) — для відкату помилкового завантаження")
     created_at = models.DateTimeField(auto_now_add=True)

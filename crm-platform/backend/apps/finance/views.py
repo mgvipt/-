@@ -398,6 +398,13 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None):
             dte = date.today()
         osnd = (tr.get("OSND") or "")[:180]
         cp = (tr.get("AUT_CNTR_NAM") or "")[:160]
+        op_t = None
+        try:
+            tim = (tr.get("TIM_P") or "").strip()
+            if tim:
+                op_t = _dtm.strptime(tim, "%H:%M").time()
+        except ValueError:
+            op_t = None
         account = _resolve_account(tr.get("AUT_MY_ACC") or "")
         # еквайринг по угоді (WCCRM-<id>): дохід ВЖЕ створений CRM при оплаті — не дублюємо,
         # АЛЕ комісію LiqPay (дохід сделки − зарахування банку) розносимо витратою автоматично
@@ -412,7 +419,7 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None):
                 if fee > 0.009 and not Transaction.objects.filter(comment__startswith=feetag).exists():
                     Transaction.objects.create(
                         direction="out", amount=round(fee, 2), amount_uah=round(fee, 2),
-                        account=account, date=dte, deal_id=did, category=_fee_category(),
+                        account=account, date=dte, op_time=op_t, deal_id=did, category=_fee_category(),
                         counterparty="LiqPay", import_batch=batch,
                         comment=(feetag + " · Комісія еквайрингу по угоді #%s" % did)[:255])
                     created += 1
@@ -424,7 +431,7 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None):
         cat, fdir, fart, cp2 = apply_bank_rules(direction, osnd, cp)
         Transaction.objects.create(
             direction=direction, amount=amt, amount_uah=amt, account=account,
-            date=dte, counterparty=cp2, category=cat, fin_direction=fdir, fin_article=fart,
+            date=dte, op_time=op_t, counterparty=cp2, category=cat, fin_direction=fdir, fin_article=fart,
             import_batch=batch, comment=(reftag + " · " + osnd)[:255])
         created += 1
     # зберегти мапу IBAN→рахунок (нові рахунки, авто-матчі)
@@ -478,11 +485,12 @@ def mono_pull(d_from, d_to):
         amt = (it.get("amount") or 0) / 100.0
         direction = "in" if amt > 0 else "out"
         osnd = (it.get("description") or "")[:180]
-        dte = _dtm.fromtimestamp(it.get("time") or 0).date()
+        _mdt = _dtm.fromtimestamp(it.get("time") or 0)
+        dte = _mdt.date()
         cat, fdir, fart, cp2 = apply_bank_rules(direction, osnd, osnd)
         Transaction.objects.create(
             direction=direction, amount=abs(amt), amount_uah=abs(amt), account=account,
-            date=dte, counterparty=cp2[:160], category=cat, fin_direction=fdir, fin_article=fart,
+            date=dte, op_time=_mdt.time(), counterparty=cp2[:160], category=cat, fin_direction=fdir, fin_article=fart,
             import_batch=batch, comment=(tag + " · " + osnd)[:255])
         created += 1
     return created, skipped, None, batch
