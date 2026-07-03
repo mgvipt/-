@@ -56,10 +56,19 @@ export default function Warehouse() {
   const [whs, setWhs] = useState<WH[]>([]);
   const [modal, setModal] = useState<null | "in" | "out">(null);
   const canRealize = can("warehouse.edit") || can("finance.manage");
-  const [view, setView] = useState<"goods" | "realiz">("goods");
+  const [view, setView] = useState<"goods" | "realiz" | "receipt">("goods");
   const [realizDocs, setRealizDocs] = useState<any[]>([]);
   const [realizBusy, setRealizBusy] = useState(false);
   const [realizSel, setRealizSel] = useState<any>(null);
+  const [receiptDocs, setReceiptDocs] = useState<any[]>([]);
+  const [receiptBusy, setReceiptBusy] = useState(false);
+  const [receiptSel, setReceiptSel] = useState<any>(null);
+  async function openReceiptList() {
+    setReceiptBusy(true);
+    try { const r: any = await api.get("/api/stock-documents/?kind=in"); setReceiptDocs(Array.isArray(r) ? r : (r.results || [])); }
+    catch { setReceiptDocs([]); }
+    setReceiptBusy(false);
+  }
   function docTitle(d: any) {
     return (d.number || ("РН-" + d.id)) + " · " + (d.deal_title || (d.deal ? t("сделка","сделка") + " #" + d.deal : t("ручное","ручне"))) + " · " + (d.created_at || "").slice(0, 10);
   }
@@ -134,7 +143,7 @@ export default function Warehouse() {
       items: [{ product: form.product, quantity: form.quantity, price: form.price }],
     });
     setModal(null); setForm({ product: 0, quantity: 1, price: 0 });
-    loadProducts();
+    loadProducts(); openReceiptList(); openRealizList();
   }
 
   async function openCard(p: Product) {
@@ -201,6 +210,7 @@ export default function Warehouse() {
     } catch { alert(t("Не удалось импортировать (нужно право «Редактировать склад»)", "Не вдалося імпортувати (потрібне право «Редагувати склад»)")); }
   }
   const receiptFileRef = useRef<HTMLInputElement>(null);
+  const receiptFileRef2 = useRef<HTMLInputElement>(null);
   async function importReceipt(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]; if (!f) return; e.target.value = "";
     let text = ""; try { text = await f.text(); } catch { return; }
@@ -210,7 +220,7 @@ export default function Warehouse() {
       if (dry.positions === 0) { alert(t("Нет ни одной подходящей позиции.", "Немає жодної придатної позиції.") + (dry.err_samples ? "\n" + dry.err_samples.join("\n") : "")); return; }
       if (!confirm(msg)) return;
       const done: any = await api.post("/api/stock-documents/import-receipt/", { data: text, commit: true, warehouse: whs[0]?.id });
-      alert(t("Приход проведён ✓ Позиций: ", "Прихід проведено ✓ Позицій: ") + done.positions); loadProducts();
+      alert(t("Приход проведён ✓ Позиций: ", "Прихід проведено ✓ Позицій: ") + done.positions); loadProducts(); openReceiptList();
     } catch { alert(t("Не удалось (нужно право «Редактировать склад»)", "Не вдалося (потрібне право «Редагувати склад»)")); }
   }
   function toggleSort(f: string) { setOrdering(ordering === f ? "-" + f : ordering === "-" + f ? "" : f); setPage(1); }
@@ -232,6 +242,7 @@ export default function Warehouse() {
       <div style={{ display: "flex", gap: 6, marginBottom: 10, borderBottom: "2px solid #e2e8f0", paddingBottom: 8 }}>
         <button className={"btn" + (view === "goods" ? " btn-primary" : " btn-light")} onClick={() => setView("goods")}><Icon n="📦" size={15} /> {t("Товары и остатки","Товари та залишки")}</button>
         <button className={"btn" + (view === "realiz" ? " btn-primary" : " btn-light")} onClick={() => { setView("realiz"); setRealizSel(null); openRealizList(); }}><Icon n="📤" size={15} /> {t("Реализации","Реалізації")}</button>
+        <button className={"btn" + (view === "receipt" ? " btn-primary" : " btn-light")} onClick={() => { setView("receipt"); setReceiptSel(null); openReceiptList(); }}><Icon n="📥" size={15} /> {t("Приходные накладные","Прибуткові накладні")}</button>
       </div>
 
       {view === "realiz" ? (
@@ -282,6 +293,54 @@ export default function Warehouse() {
                       ? <button className="btn btn-light" style={{ padding: "3px 10px" }} onClick={() => realizUnpost(d.id)}>{t("Отменить","Скасувати")}</button>
                       : <button className="btn btn-primary" style={{ padding: "3px 10px" }} onClick={() => realizPost(d.id)}>{t("Провести","Провести")}</button>)}
                   </td>
+                </tr>
+              ))}</tbody>
+            </table>}
+          </>
+        )}
+      </div>
+      ) : view === "receipt" ? (
+      <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16 }}>
+        {receiptSel ? (
+          <>
+            <button className="btn btn-light" onClick={() => setReceiptSel(null)}>← {t("К списку приходов","До списку приходів")}</button>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
+              <div>
+                <h3 style={{ margin: "0 0 4px" }}>{t("Приходная накладная","Прибуткова накладна")} {receiptSel.number || ("#" + receiptSel.id)}</h3>
+                <div className="muted" style={{ fontSize: 12 }}>{(receiptSel.created_at || "").slice(0, 10)}{receiptSel.comment ? " · " + receiptSel.comment : ""}</div>
+              </div>
+              <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 13, fontWeight: 700, background: receiptSel.posted ? "#dcfce7" : "#fef3c7", color: receiptSel.posted ? "#166534" : "#92400e" }}>{receiptSel.posted ? t("Проведён","Проведено") : t("Черновик","Чернетка")}</span>
+            </div>
+            <table style={{ width: "100%", marginTop: 14 }}>
+              <thead><tr><th>{t("Товар","Товар")}</th><th style={{ textAlign: "right" }}>{t("Кол-во","К-сть")}</th><th style={{ textAlign: "right" }}>{t("Цена","Ціна")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th></tr></thead>
+              <tbody>{(receiptSel.items || []).map((it: any) => (
+                <tr key={it.id}><td>{it.product_name}</td><td style={{ textAlign: "right" }}>{Math.abs(Number(it.quantity))}</td><td style={{ textAlign: "right" }}>{Number(it.price).toLocaleString("uk-UA")} ₴</td><td style={{ textAlign: "right" }}>{(Math.abs(Number(it.quantity)) * Number(it.price)).toLocaleString("uk-UA")} ₴</td></tr>
+              ))}</tbody>
+            </table>
+          </>
+        ) : (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <h3 style={{ margin: 0 }}>{t("Приходные накладные","Прибуткові накладні")}</h3>
+              {canEdit && <div style={{ display: "flex", gap: 6 }}>
+                <button className="btn btn-light" onClick={() => setModal("in")} title={t("Ручной приход","Ручний прихід")}><Icon n="📥" size={14} /> {t("Приход","Прихід")}</button>
+                <input ref={receiptFileRef2} type="file" accept=".csv,text/csv,text/plain" style={{ display: "none" }} onChange={importReceipt} />
+                <button className="btn btn-light" onClick={() => receiptFileRef2.current?.click()} title={t("Приход из файла: артикул, кол-во, цена","Прихід з файлу: артикул, к-сть, ціна")}><Icon n="📄" size={14} /> {t("Приход файлом","Прихід файлом")}</button>
+              </div>}
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Все поступления товара на склад по датам. Кликните на строку — откроется документ с позициями.","Усі надходження товару на склад по датах. Клікніть на рядок — відкриється документ з позиціями.")}</div>
+            {receiptBusy ? <div className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</div> :
+             receiptDocs.length === 0 ? <div className="muted" style={{ padding: 16 }}>{t("Пока нет приходов.","Поки немає приходів.")}</div> :
+            <table style={{ width: "100%" }}>
+              <thead><tr><th>№</th><th>{t("Дата","Дата")}</th><th>{t("Комментарий","Коментар")}</th><th style={{ textAlign: "right" }}>{t("Позиций","Позицій")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "center" }}>{t("Статус","Статус")}</th></tr></thead>
+              <tbody>{receiptDocs.map((d: any) => (
+                <tr key={d.id} onClick={() => setReceiptSel(d)} style={{ cursor: "pointer" }} title={t("Открыть документ","Відкрити документ")}>
+                  <td><b>{d.number || ("#" + d.id)}</b></td>
+                  <td className="muted">{(d.created_at || "").slice(0, 10)}</td>
+                  <td className="muted">{d.comment || "—"}</td>
+                  <td style={{ textAlign: "right" }}>{(d.items || []).length}</td>
+                  <td style={{ textAlign: "right" }}>{Number(d.total || 0).toLocaleString("uk-UA")} ₴</td>
+                  <td style={{ textAlign: "center" }}><span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: d.posted ? "#dcfce7" : "#fef3c7", color: d.posted ? "#166534" : "#92400e" }}>{d.posted ? t("Проведён","Проведено") : t("Черновик","Чернетка")}</span></td>
                 </tr>
               ))}</tbody>
             </table>}
