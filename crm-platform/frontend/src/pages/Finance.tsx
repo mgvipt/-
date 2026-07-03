@@ -282,15 +282,23 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
         {tab === "accs" && (
           <div className="panel" style={{ margin: 0 }}>
             <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>{t("Выключенные счета скрываются из журнала, дашборда и «Деньги на счетах». Операции не удаляются.","Вимкнені рахунки ховаються з журналу, дашборда та «Гроші на рахунках». Операції не видаляються.")}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, padding: "4px 0 8px", borderBottom: "2px solid #e2e8f0" }}>
+              <span>{t("Итого по активным","Разом по активних")} ({accs.filter((a: any) => a.is_active !== false).length})</span>
+              <span style={{ color: "#0ea5e9" }}>{money(accs.filter((a: any) => a.is_active !== false).reduce((sm: number, a: any) => sm + Number(a.balance || 0), 0))}</span>
+            </div>
             {accs.map((a: any) => (
-              <label key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "1px solid #f8fafc", fontSize: 13, cursor: "pointer" }}>
-                <input type="checkbox" checked={a.is_active !== false} onChange={async (e) => {
-                  await api.patch(`/api/accounts/${a.id}/`, { is_active: e.target.checked });
-                  setAccs((prev) => prev.map((x: any) => x.id === a.id ? { ...x, is_active: e.target.checked } : x));
-                }} />
+              <div key={a.id} onClick={() => {
+                const nv = !(a.is_active !== false);
+                setAccs((prev) => prev.map((x: any) => x.id === a.id ? { ...x, is_active: nv } : x));  // одразу
+                api.patch(`/api/accounts/${a.id}/`, { is_active: nv }).catch((e: any) => {
+                  setAccs((prev) => prev.map((x: any) => x.id === a.id ? { ...x, is_active: !nv } : x));  // відкат
+                  alert(e?.response?.data?.detail || t("Не удалось сохранить","Не вдалося зберегти"));
+                });
+              }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "1px solid #f8fafc", fontSize: 13, cursor: "pointer", userSelect: "none" }}>
+                <input type="checkbox" readOnly checked={a.is_active !== false} style={{ pointerEvents: "none" }} />
                 <span style={{ flex: 1, opacity: a.is_active === false ? 0.5 : 1 }}>{a.name}</span>
                 <b className="muted">{money(a.balance)}</b>
-              </label>
+              </div>
             ))}
           </div>
         )}
@@ -381,6 +389,10 @@ function Journal() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <b style={{ fontSize: 13 }}><Icon n="🏦" size={14} /> Рахунки</b>
           <button onClick={() => setBankHub(true)} title={t("Настройки: банки по API, правила разноски, история загрузок, счета","Налаштування: банки по API, правила розноски, історія завантажень, рахунки")} style={{ float: "right", border: "none", background: "transparent", cursor: "pointer", fontSize: 14 }}>⚙️</button>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, fontWeight: 800, margin: "6px 0 4px", padding: "5px 6px", background: "#eff6ff", borderRadius: 7 }}>
+            <span>Σ {t("активные","активні")}</span>
+            <span style={{ color: "#0369a1" }}>{money(accounts.reduce((sm: number, a: any) => sm + Number(a.balance || 0), 0))}</span>
+          </div>
           {selAcc.length > 0 && <span style={{ fontSize: 11, color: "#2563eb", cursor: "pointer" }} onClick={() => { setSelAcc([]); setTimeout(() => load(1), 0); }}>скинути</span>}
         </div>
         <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>Обери один або кілька — журнал відфільтрується.</div>
