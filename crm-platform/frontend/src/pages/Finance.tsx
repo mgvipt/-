@@ -242,6 +242,33 @@ function Journal() {
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <button className="btn btn-primary" title={t("Добавить поступление денег","Додати надходження грошей")} onClick={() => openNew("in")}>+ {t("Доход","Дохід")}</button>
         <button className="btn btn-light" title={t("Добавить расход","Додати витрату")} onClick={() => openNew("out")}>− {t("Расход","Витрата")}</button>
+        <button className="btn btn-light" title={t("Подтянуть операции из ПриватБанка (выписка за 4 дня)","Підтягнути операції з ПриватБанку (виписка за 4 дні)")} onClick={async () => {
+          try { const r: any = await api.post("/api/transactions/privat-sync/", { days: 4 });
+            alert(t("Приват: добавлено","Приват: додано") + ` ${r.created}, ` + t("уже были","вже були") + ` ${r.skipped_existing}`); load(); }
+          catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось (настрой Интеграции → privatbank)","Не вдалося (налаштуй Інтеграції → privatbank)")); }
+        }}>🏦 {t("Приват","Приват")}</button>
+        <label className="btn btn-light" style={{ cursor: "pointer" }} title={t("Импорт банковской выписки CSV","Імпорт банківської виписки CSV")}>
+          ⬆ {t("Выписка","Виписка")}
+          <input type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={async (e) => {
+            const f = e.target.files?.[0]; if (!f) return; (e.target as any).value = "";
+            const text = await f.text();
+            try {
+              const dry: any = await api.post("/api/transactions/import-statement/", { data: text, commit: false });
+              const msg = t("Импорт выписки на счёт","Імпорт виписки на рахунок") + ` «${dry.account}»:\n` +
+                t("Новых операций","Нових операцій") + `: ${dry.created}\n` + t("Дубликатов (пропустим)","Дублікатів (пропустимо)") + `: ${dry.duplicates}\n` +
+                t("Ошибок строк","Помилок рядків") + `: ${dry.errors}\n\n` +
+                (dry.preview || []).map((p: any) => `${p.date} ${p.dir === "in" ? "+" : "−"}${p.amount} ${p.osnd}`).join("\n") +
+                "\n\n" + t("Применить?","Застосувати?");
+              if (!confirm(msg)) return;
+              const done: any = await api.post("/api/transactions/import-statement/", { data: text, commit: true });
+              alert(t("Готово ✓ Добавлено","Готово ✓ Додано") + `: ${done.created}`); load();
+            } catch (err: any) { alert(err?.response?.data?.detail || t("Не удалось импортировать","Не вдалося імпортувати")); }
+          }} />
+        </label>
+        <button className="btn btn-light" title={t("Выгрузить журнал в CSV (Excel)","Вивантажити журнал у CSV (Excel)")} onClick={async () => {
+          try { const u = await (api as any).blobUrl("/api/transactions/export/"); const a = document.createElement("a"); a.href = u; a.download = "journal.csv"; a.click(); }
+          catch { alert(t("Не удалось выгрузить","Не вдалося вивантажити")); }
+        }}>⬇ CSV</button>
         <button className="btn btn-light" title={t("Перевод между счетами — не считается ни в доход, ни в расход","Переказ між рахунками — не рахується ні в дохід, ні у витрати")} onClick={() => openNew("transfer")}>⇄ {t("Перевод","Переказ")}</button>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
           <span className="muted">{t("На стр.","На стор.")}:</span>

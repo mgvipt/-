@@ -60,6 +60,116 @@ class TransactionViewSet(viewsets.ModelViewSet):
     permission_classes = [FinancePerm]
     filterset_fields = ["direction", "account", "category", "deal", "fin_direction", "fin_article", "channel"]
 
+    @action(detail=False, methods=["post"], url_path="privat-sync")
+    def privat_sync(self, request):
+        """Кнопка «Синхронізувати з ПриватБанком»: тягне виписку за N днів у журнал."""
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("finance.manage")):
+            return Response({"detail": "Потрібне право «Керування фінмоделлю»"}, status=403)
+        days = int(request.data.get("days") or 4)
+        created, skipped, err = privat_pull(days=min(days, 90))
+        if err:
+            return Response({"detail": err}, status=400)
+        return Response({"ok": True, "created": created, "skipped_existing": skipped})
+
+    @action(detail=False, methods=["get"])
+    def export(self, request):
+        """Експорт журналу в CSV (Excel-friendly, ; та BOM). Фільтри як у списку."""
+        import csv
+        import io as _io
+        qs = self.filter_queryset(self.get_queryset()).order_by("-date", "-id")[:20000]
+        buf = _io.StringIO()
+        w = csv.writer(buf, delimiter=";")
+        w.writerow(["Дата", "Тип", "Сума", "Валюта", "Сума грн", "Категорія", "Контрагент",
+                    "Рахунок", "Напрямок", "Сделка", "Коментар"])
+        for tx in qs:
+            w.writerow([tx.date.isoformat(), {"in": "Дохід", "out": "Витрата", "transfer": "Переказ"}.get(tx.direction, tx.direction),
+                        str(tx.amount), tx.currency, str(tx.amount_uah),
+                        tx.category.name if tx.category else "", tx.counterparty,
+                        tx.account.name if tx.account else "",
+                        tx.fin_direction.name if tx.fin_direction else "",
+                        tx.deal_id or "", (tx.comment or "").replace("\n", " ")])
+        resp = HttpResponse("\ufeff" + buf.getvalue(), content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = "attachment; filename=journal.csv"
+        return resp
+
+    @action(detail=False, methods=["post"], url_path="import-statement")
+    def import_statement(self, request):
+        """Імпорт банківської виписки (CSV) у журнал. {data, account, commit}.
+        Гнучкий парс колонок (дата/сума/призначення/контрагент/тип). Дедуп: дата+сума+призначення."""
+        import csv
+        import io as _io
+        from datetime import datetime as _dtm
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("finance.manage")):
+            return Response({"detail": "Потрібне право «Керування фінмоделлю»"}, status=403)
+        raw = request.data.get("data") or ""
+        commit = bool(request.data.get("commit"))
+        acc = Account.objects.filter(id=request.data.get("account")).first() or Account.objects.first()
+        if not raw.strip():
+            return Response({"detail": "Порожній файл"}, status=400)
+        delim = ";" if raw.count(";") >= raw.count(",") else ","
+        rows = list(csv.reader(_io.StringIO(raw), delimiter=delim))
+        if not rows:
+            return Response({"detail": "Немає рядків"}, status=400)
+        hdr = [str(c).strip().lower() for c in rows[0]]
+
+        def col(*keys):
+            for i, h in enumerate(hdr):
+                if any(k in h for k in keys):
+                    return i
+            return None
+        i_date = col("дата")
+        i_sum = col("сума", "сумма", "sum")
+        i_osnd = col("призначення", "опис", "назначение", "osnd", "категор")
+        i_cp = col("контрагент", "кореспондент", "назва")
+        i_type = col("тип", "дебет")
+        if i_date is None or i_sum is None:
+            return Response({"detail": "Не знайдено колонки Дата/Сума. Заголовки: %s" % hdr[:8]}, status=400)
+
+        def _num(x):
+            try:
+                return float(str(x).replace(" ", "").replace("\u00a0", "").replace(",", "."))
+            except (TypeError, ValueError):
+                return None
+        created = dup = errs = 0
+        preview = []
+        for r in rows[1:]:
+            if not any((str(c) or "").strip() for c in r):
+                continue
+            ds = (r[i_date] if i_date < len(r) else "").strip()[:10]
+            dte = None
+            for f in ("%d.%m.%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
+                try:
+                    dte = _dtm.strptime(ds, f).date(); break
+                except ValueError:
+                    continue
+            amt = _num(r[i_sum]) if i_sum < len(r) else None
+            if dte is None or amt is None or amt == 0:
+                errs += 1
+                continue
+            osnd = (r[i_osnd].strip() if i_osnd is not None and i_osnd < len(r) else "")[:180]
+            cp = (r[i_cp].strip() if i_cp is not None and i_cp < len(r) else "")[:160]
+            if i_type is not None and i_type < len(r):
+                tval = str(r[i_type]).lower()
+                direction = "out" if ("д" in tval[:2] or "d" in tval[:2]) else "in"
+            else:
+                direction = "in" if amt > 0 else "out"
+            amt = abs(amt)
+            if Transaction.objects.filter(date=dte, amount=amt,
+                                          comment__icontains=osnd[:40] or "\u0000").exists() and osnd:
+                dup += 1
+                continue
+            if commit:
+                Transaction.objects.create(direction=direction, amount=amt, amount_uah=amt,
+                                           account=acc, date=dte, counterparty=cp,
+                                           comment=("Виписка · " + osnd)[:255])
+            created += 1
+            if len(preview) < 8:
+                preview.append({"date": dte.isoformat(), "dir": direction, "amount": amt, "osnd": osnd[:60]})
+        return Response({"created": created, "duplicates": dup, "errors": errs,
+                         "committed": commit, "preview": preview, "account": acc.name if acc else None})
+
     def get_queryset(self):
         qs = super().get_queryset()
         p = self.request.query_params
@@ -105,6 +215,78 @@ class TransactionViewSet(viewsets.ModelViewSet):
             content_type=f.content_type or "application/octet-stream",
             size=f.size, data=f.read())
         return Response({"id": a.id, "filename": a.filename, "content_type": a.content_type, "size": a.size})
+
+
+def _privat_cfg():
+    from apps.integrations.models import IntegrationSettings
+    st = IntegrationSettings.objects.filter(provider="privatbank").first()
+    return (st.config or {}) if st and st.is_active else {}
+
+
+def privat_pull(days=4):
+    """Тягне виписку ПриватБанк AutoClient → журнал. Ідемпотентно (тег PB#REF у comment).
+    Повертає (created, skipped, err)."""
+    import json as _json
+    import urllib.request
+    import time as _time
+    from datetime import datetime as _dtm
+    cfg = _privat_cfg()
+    token, acc = cfg.get("token"), cfg.get("acc")
+    if not token or not acc:
+        return 0, 0, "ПриватБанк не налаштовано (Налаштування → Інтеграції → privatbank: token, acc, account_id)"
+    account = None
+    if cfg.get("account_id"):
+        account = Account.objects.filter(id=cfg["account_id"]).first()
+    if account is None:
+        account = Account.objects.filter(name__icontains="ФОП").first() or Account.objects.first()
+    end = _time.strftime("%d-%m-%Y")
+    start = _time.strftime("%d-%m-%Y", _time.localtime(_time.time() - days * 86400))
+    url = ("https://acp.privatbank.ua/api/statements/transactions"
+           "?acc=%s&startDate=%s&endDate=%s&limit=500" % (acc, start, end))
+    req = urllib.request.Request(url, headers={"token": token, "Content-Type": "application/json;charset=utf8"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            data = _json.loads(r.read().decode())
+    except Exception as e:
+        return 0, 0, "AutoClient: %s" % str(e)[:200]
+    created = skipped = 0
+    for tr in data.get("transactions", []):
+        ref = tr.get("REF") or ""
+        reftag = "PB#%s/%s" % (ref, tr.get("TRANTYPE") or "")
+        if not ref or Transaction.objects.filter(comment__startswith=reftag).exists():
+            skipped += 1
+            continue
+        try:
+            amt = abs(float(tr.get("SUM_E") or tr.get("SUM") or 0))
+        except (TypeError, ValueError):
+            continue
+        if amt <= 0:
+            continue
+        direction = "in" if (tr.get("TRANTYPE") == "C") else "out"
+        d_od = (tr.get("DAT_OD") or "").strip()
+        try:
+            dte = _dtm.strptime(d_od, "%d.%m.%Y").date()
+        except ValueError:
+            dte = date.today()
+        osnd = (tr.get("OSND") or "")[:180]
+        cp = (tr.get("AUT_CNTR_NAM") or "")[:160]
+        # еквайринг по угоді (WCCRM-<id> в призначенні): дохід ВЖЕ створений CRM при оплаті —
+        # банківське перерахування не дублюємо (інакше подвійна виручка)
+        import re as _re
+        m = _re.search(r"WCCRM-(\d+)", osnd)
+        if m and direction == "in":
+            did = int(m.group(1))
+            if Transaction.objects.filter(deal_id=did, direction="in").exists():
+                skipped += 1
+                continue
+        # переказ власних коштів (на свою картку) — це transfer, не витрата (не спотворює P&L)
+        if "переказ власних" in osnd.lower():
+            direction = "transfer"
+        Transaction.objects.create(
+            direction=direction, amount=amt, amount_uah=amt, account=account,
+            date=dte, counterparty=cp, comment=(reftag + " · " + osnd)[:255])
+        created += 1
+    return created, skipped, None
 
 
 class FinanceDashboardView(APIView):
