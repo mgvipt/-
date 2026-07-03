@@ -50,6 +50,8 @@ class Transaction(models.Model):
     rate = models.DecimalField(max_digits=12, decimal_places=4, default=1, help_text="Курс до гривні (1 одиниця валюти = N грн)")
     amount_uah = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="Сума у гривні (amount × rate) — для аналітики")
     date = models.DateField(default=_date.today, db_index=True)
+    import_batch = models.CharField(max_length=48, blank=True, default="", db_index=True,
+                                    help_text="Партія імпорту (банк/виписка) — для відкату помилкового завантаження")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -201,6 +203,25 @@ class AdvisoryReport(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.created_at:%Y-%m-%d})"
+
+
+class BankRule(models.Model):
+    """Правило авторозноски банківських операцій: якщо поле містить текст →
+    проставити категорію / напрямок / фонд / контрагента. Застосовується при
+    синку Приват/Моно та імпорті виписок (перше правило за пріоритетом)."""
+    FIELDS = [("osnd", "Призначення платежу"), ("counterparty", "Контрагент")]
+    field = models.CharField(max_length=16, choices=FIELDS, default="osnd")
+    contains = models.CharField("Містить текст", max_length=160)
+    direction = models.CharField(max_length=10, blank=True, default="", help_text="Порожньо = будь-який; in/out")
+    set_category = models.ForeignKey(Category, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    set_fin_direction = models.ForeignKey("FinDirection", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    set_fin_article = models.ForeignKey("FinModelArticle", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    set_counterparty = models.CharField(max_length=160, blank=True, default="")
+    priority = models.IntegerField(default=100)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["priority", "id"]
 
 
 class TransactionAttachment(models.Model):

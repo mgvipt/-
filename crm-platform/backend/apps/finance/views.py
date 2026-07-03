@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from django.db.models import Sum, Q
+from django.db.models import Sum, Q, Count, Min, Max
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -59,18 +59,80 @@ class TransactionViewSet(viewsets.ModelViewSet):
     serializer_class = TransactionSerializer
     permission_classes = [FinancePerm]
     filterset_fields = ["direction", "account", "category", "deal", "fin_direction", "fin_article", "channel"]
+    ordering = ["-date", "-id"]  # журнал завжди за датою операції (нові зверху)
 
     @action(detail=False, methods=["post"], url_path="privat-sync")
     def privat_sync(self, request):
-        """Кнопка «Синхронізувати з ПриватБанком»: тягне виписку за N днів у журнал."""
+        """Синк ПриватБанку: за N днів або за довільний період {from,to}."""
         u = request.user
         if not (u.is_superuser or u.has_perm_code("finance.manage")):
             return Response({"detail": "Потрібне право «Керування фінмоделлю»"}, status=403)
+        d_from, d_to = request.data.get("from"), request.data.get("to")
         days = int(request.data.get("days") or 4)
-        created, skipped, err = privat_pull(days=min(days, 90))
+        created, skipped, err, batch = privat_pull(days=min(days, 366), d_from=d_from, d_to=d_to)
         if err:
             return Response({"detail": err}, status=400)
-        return Response({"ok": True, "created": created, "skipped_existing": skipped})
+        return Response({"ok": True, "created": created, "skipped_existing": skipped, "batch": batch})
+
+    @action(detail=False, methods=["post"], url_path="mono-sync")
+    def mono_sync(self, request):
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("finance.manage")):
+            return Response({"detail": "Потрібне право «Керування фінмоделлю»"}, status=403)
+        created, skipped, err, batch = mono_pull(request.data.get("from"), request.data.get("to"))
+        if err:
+            return Response({"detail": err}, status=400)
+        return Response({"ok": True, "created": created, "skipped_existing": skipped, "batch": batch})
+
+    @action(detail=False, methods=["get", "delete"], url_path="import-batches")
+    def import_batches(self, request):
+        """Історія завантажень (партії) + ВІДКАТ помилкової: DELETE ?batch=PB-..."""
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("finance.manage")):
+            return Response({"detail": "Потрібне право «Керування фінмоделлю»"}, status=403)
+        if request.method == "DELETE":
+            b = request.query_params.get("batch") or ""
+            if not b:
+                return Response({"detail": "Вкажіть batch"}, status=400)
+            qs = Transaction.objects.filter(import_batch=b)
+            n = qs.count()
+            qs.delete()
+            return Response({"ok": True, "rolled_back": n, "batch": b})
+        rows = (Transaction.objects.exclude(import_batch="").values("import_batch")
+                .annotate(n=Count("id"), total=Sum("amount_uah"),
+                          d_min=Min("date"), d_max=Max("date"))
+                .order_by("-import_batch")[:40])
+        return Response([{"batch": r["import_batch"], "count": r["n"], "total": float(r["total"] or 0),
+                          "from": r["d_min"], "to": r["d_max"]} for r in rows])
+
+    @action(detail=False, methods=["get", "post"], url_path="bank-settings")
+    def bank_settings(self, request):
+        """Налаштування банків (Приват/Моно) — токени та привʼязка рахунків."""
+        from apps.integrations.models import IntegrationSettings
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("finance.manage")):
+            return Response({"detail": "Потрібне право «Керування фінмоделлю»"}, status=403)
+        if request.method == "POST":
+            prov = request.data.get("provider")
+            if prov not in ("privatbank", "monobank"):
+                return Response({"detail": "provider: privatbank | monobank"}, status=400)
+            st, _ = IntegrationSettings.objects.get_or_create(provider=prov, defaults={"config": {}})
+            cfg = st.config or {}
+            for k in ("token", "acc", "account_id", "mono_account"):
+                if k in request.data:
+                    cfg[k] = request.data[k]
+            st.config = cfg
+            st.is_active = bool(cfg.get("token"))
+            st.save()
+        out = {}
+        for prov in ("privatbank", "monobank"):
+            st = IntegrationSettings.objects.filter(provider=prov).first()
+            cfg = (st.config or {}) if st else {}
+            out[prov] = {"connected": bool(st and st.is_active and cfg.get("token")),
+                         "acc": cfg.get("acc") or "", "account_id": cfg.get("account_id"),
+                         "mono_account": cfg.get("mono_account") or "",
+                         "token_tail": ("…" + str(cfg.get("token"))[-6:]) if cfg.get("token") else ""}
+        return Response(out)
 
     @action(detail=False, methods=["get"])
     def export(self, request):
@@ -132,6 +194,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 return float(str(x).replace(" ", "").replace("\u00a0", "").replace(",", "."))
             except (TypeError, ValueError):
                 return None
+        from django.utils import timezone as _tzst
+        st_batch = "ST-" + _tzst.now().strftime("%Y%m%d-%H%M%S")
+        p_from, p_to = request.data.get("from"), request.data.get("to")
         created = dup = errs = 0
         preview = []
         for r in rows[1:]:
@@ -160,15 +225,23 @@ class TransactionViewSet(viewsets.ModelViewSet):
                                           comment__icontains=osnd[:40] or "\u0000").exists() and osnd:
                 dup += 1
                 continue
+            if p_from and dte.isoformat() < p_from:
+                continue  # поза обраним періодом
+            if p_to and dte.isoformat() > p_to:
+                continue
             if commit:
+                cat, fdir, fart, cp2 = apply_bank_rules(direction, osnd, cp)
                 Transaction.objects.create(direction=direction, amount=amt, amount_uah=amt,
-                                           account=acc, date=dte, counterparty=cp,
+                                           account=acc, date=dte, counterparty=cp2,
+                                           category=cat, fin_direction=fdir, fin_article=fart,
+                                           import_batch=st_batch,
                                            comment=("Виписка · " + osnd)[:255])
             created += 1
             if len(preview) < 8:
                 preview.append({"date": dte.isoformat(), "dir": direction, "amount": amt, "osnd": osnd[:60]})
         return Response({"created": created, "duplicates": dup, "errors": errs,
-                         "committed": commit, "preview": preview, "account": acc.name if acc else None})
+                         "committed": commit, "preview": preview, "account": acc.name if acc else None,
+                         "batch": st_batch if commit else None})
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -223,34 +296,65 @@ def _privat_cfg():
     return (st.config or {}) if st and st.is_active else {}
 
 
-def privat_pull(days=4):
-    """Тягне виписку ПриватБанк AutoClient → журнал. Ідемпотентно (тег PB#REF у comment).
-    Повертає (created, skipped, err)."""
+def apply_bank_rules(direction, osnd, cp):
+    """Правила авторозноски: перше активне правило що збігається → (category, fin_direction, fin_article, counterparty)."""
+    from .models import BankRule
+    for r in BankRule.objects.filter(active=True).select_related("set_category", "set_fin_direction", "set_fin_article"):
+        if r.direction and r.direction != direction:
+            continue
+        hay = osnd if r.field == "osnd" else cp
+        if r.contains.lower() in (hay or "").lower():
+            return r.set_category, r.set_fin_direction, r.set_fin_article, (r.set_counterparty or cp)
+    return None, None, None, cp
+
+
+def _fee_category():
+    cat = Category.objects.filter(name__icontains="Комиссия Банка", direction="out").first()
+    return cat or Category.objects.filter(name__icontains="Комис", direction="out").first()
+
+
+def privat_pull(days=4, d_from=None, d_to=None, batch=None):
+    """Тягне виписку ПриватБанк AutoClient → журнал за період. Ідемпотентно (PB#REF).
+    Правила розноски + авто-комісія LiqPay. Повертає (created, skipped, err, batch)."""
     import json as _json
     import urllib.request
     import time as _time
     from datetime import datetime as _dtm
+    from django.utils import timezone as _tz
     cfg = _privat_cfg()
     token, acc = cfg.get("token"), cfg.get("acc")
     if not token or not acc:
-        return 0, 0, "ПриватБанк не налаштовано (Налаштування → Інтеграції → privatbank: token, acc, account_id)"
+        return 0, 0, "ПриватБанк не налаштовано (Інтеграції: token, acc)", None
     account = None
     if cfg.get("account_id"):
         account = Account.objects.filter(id=cfg["account_id"]).first()
     if account is None:
         account = Account.objects.filter(name__icontains="ФОП").first() or Account.objects.first()
-    end = _time.strftime("%d-%m-%Y")
-    start = _time.strftime("%d-%m-%Y", _time.localtime(_time.time() - days * 86400))
-    url = ("https://acp.privatbank.ua/api/statements/transactions"
-           "?acc=%s&startDate=%s&endDate=%s&limit=500" % (acc, start, end))
-    req = urllib.request.Request(url, headers={"token": token, "Content-Type": "application/json;charset=utf8"})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            data = _json.loads(r.read().decode())
-    except Exception as e:
-        return 0, 0, "AutoClient: %s" % str(e)[:200]
+    if d_from and d_to:
+        start = _dtm.fromisoformat(str(d_from)).strftime("%d-%m-%Y")
+        end = _dtm.fromisoformat(str(d_to)).strftime("%d-%m-%Y")
+    else:
+        end = _time.strftime("%d-%m-%Y")
+        start = _time.strftime("%d-%m-%Y", _time.localtime(_time.time() - days * 86400))
+    batch = batch or ("PB-" + _tz.now().strftime("%Y%m%d-%H%M%S"))
+    txs = []
+    follow = ""
+    for _page in range(40):  # пагінація AutoClient (до 20000 операцій)
+        url = ("https://acp.privatbank.ua/api/statements/transactions"
+               "?acc=%s&startDate=%s&endDate=%s&limit=500%s" % (acc, start, end, follow))
+        req = urllib.request.Request(url, headers={"token": token, "Content-Type": "application/json;charset=utf8"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = _json.loads(r.read().decode())
+        except Exception as e:
+            return 0, 0, "AutoClient: %s" % str(e)[:200], None
+        txs.extend(data.get("transactions", []))
+        if data.get("exist_next_page") and data.get("next_page_id"):
+            follow = "&followId=" + str(data["next_page_id"])
+        else:
+            break
     created = skipped = 0
-    for tr in data.get("transactions", []):
+    for tr in txs:
         ref = tr.get("REF") or ""
         reftag = "PB#%s/%s" % (ref, tr.get("TRANTYPE") or "")
         if not ref or Transaction.objects.filter(comment__startswith=reftag).exists():
@@ -270,23 +374,107 @@ def privat_pull(days=4):
             dte = date.today()
         osnd = (tr.get("OSND") or "")[:180]
         cp = (tr.get("AUT_CNTR_NAM") or "")[:160]
-        # еквайринг по угоді (WCCRM-<id> в призначенні): дохід ВЖЕ створений CRM при оплаті —
-        # банківське перерахування не дублюємо (інакше подвійна виручка)
+        # еквайринг по угоді (WCCRM-<id>): дохід ВЖЕ створений CRM при оплаті — не дублюємо,
+        # АЛЕ комісію LiqPay (дохід сделки − зарахування банку) розносимо витратою автоматично
         import re as _re
         m = _re.search(r"WCCRM-(\d+)", osnd)
         if m and direction == "in":
             did = int(m.group(1))
-            if Transaction.objects.filter(deal_id=did, direction="in").exists():
+            dealtx = Transaction.objects.filter(deal_id=did, direction="in").order_by("id").first()
+            if dealtx:
+                feetag = "PBFEE#%s" % ref
+                fee = float(dealtx.amount_uah or dealtx.amount) - amt
+                if fee > 0.009 and not Transaction.objects.filter(comment__startswith=feetag).exists():
+                    Transaction.objects.create(
+                        direction="out", amount=round(fee, 2), amount_uah=round(fee, 2),
+                        account=account, date=dte, deal_id=did, category=_fee_category(),
+                        counterparty="LiqPay", import_batch=batch,
+                        comment=(feetag + " · Комісія еквайрингу по угоді #%s" % did)[:255])
+                    created += 1
                 skipped += 1
                 continue
         # переказ власних коштів (на свою картку) — це transfer, не витрата (не спотворює P&L)
         if "переказ власних" in osnd.lower():
             direction = "transfer"
+        cat, fdir, fart, cp2 = apply_bank_rules(direction, osnd, cp)
         Transaction.objects.create(
             direction=direction, amount=amt, amount_uah=amt, account=account,
-            date=dte, counterparty=cp, comment=(reftag + " · " + osnd)[:255])
+            date=dte, counterparty=cp2, category=cat, fin_direction=fdir, fin_article=fart,
+            import_batch=batch, comment=(reftag + " · " + osnd)[:255])
         created += 1
-    return created, skipped, None
+    return created, skipped, None, batch
+
+
+def mono_pull(d_from, d_to):
+    """Виписка Monobank personal API → журнал. Ліміт API: період ≤31 доби, 1 запит/хв.
+    Ідемпотентно (MONO#id). Повертає (created, skipped, err, batch)."""
+    import json as _json
+    import urllib.request
+    from datetime import datetime as _dtm, timedelta as _td2
+    from django.utils import timezone as _tz
+    from apps.integrations.models import IntegrationSettings
+    st = IntegrationSettings.objects.filter(provider="monobank").first()
+    cfg = (st.config or {}) if st and st.is_active else {}
+    token = cfg.get("token")
+    if not token:
+        return 0, 0, "Monobank не налаштовано (Інтеграції: token)", None
+    mono_acc = cfg.get("mono_account") or "0"
+    account = Account.objects.filter(id=cfg.get("account_id") or 0).first()         or Account.objects.filter(name__icontains="МОНО").first() or Account.objects.first()
+    f = _dtm.fromisoformat(str(d_from))
+    t = _dtm.fromisoformat(str(d_to)) + _td2(days=1)
+    if (t - f).days > 31:
+        return 0, 0, "Monobank: період не більше 31 доби за один раз (ліміт API)", None
+    url = "https://api.monobank.ua/personal/statement/%s/%d/%d" % (mono_acc, int(f.timestamp()), int(t.timestamp()))
+    req = urllib.request.Request(url, headers={"X-Token": token})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            items = _json.loads(r.read().decode())
+    except Exception as e:
+        return 0, 0, "Monobank API: %s" % str(e)[:200], None
+    if not isinstance(items, list):
+        return 0, 0, "Monobank: %s" % str(items)[:150], None
+    batch = "MONO-" + _tz.now().strftime("%Y%m%d-%H%M%S")
+    created = skipped = 0
+    for it in items:
+        tid = it.get("id") or ""
+        tag = "MONO#%s" % tid
+        if not tid or Transaction.objects.filter(comment__startswith=tag).exists():
+            skipped += 1
+            continue
+        amt = (it.get("amount") or 0) / 100.0
+        direction = "in" if amt > 0 else "out"
+        osnd = (it.get("description") or "")[:180]
+        dte = _dtm.fromtimestamp(it.get("time") or 0).date()
+        cat, fdir, fart, cp2 = apply_bank_rules(direction, osnd, osnd)
+        Transaction.objects.create(
+            direction=direction, amount=abs(amt), amount_uah=abs(amt), account=account,
+            date=dte, counterparty=cp2[:160], category=cat, fin_direction=fdir, fin_article=fart,
+            import_batch=batch, comment=(tag + " · " + osnd)[:255])
+        created += 1
+    return created, skipped, None, batch
+
+
+class BankRuleViewSet(viewsets.ModelViewSet):
+    """Правила авторозноски банківських операцій."""
+    permission_classes = [FinancePerm]
+    from .models import BankRule as _BR
+    queryset = _BR.objects.all()
+    pagination_class = None
+
+    def get_serializer_class(self):
+        from rest_framework import serializers as _sz
+        from .models import BankRule as _BR2
+
+        class S(_sz.ModelSerializer):
+            category_name = _sz.CharField(source="set_category.name", read_only=True, default=None)
+            direction_name = _sz.CharField(source="set_fin_direction.name", read_only=True, default=None)
+
+            class Meta:
+                model = _BR2
+                fields = ["id", "field", "contains", "direction", "set_category", "category_name",
+                          "set_fin_direction", "direction_name", "set_fin_article",
+                          "set_counterparty", "priority", "active"]
+        return S
 
 
 class FinanceDashboardView(APIView):
@@ -806,7 +994,7 @@ class OverviewView(APIView):
             pf, pt = month_bounds(*seq[1])
         cur_inc, cur_exp = sums(cf, ct)
         prev_inc, prev_exp = sums(pf, pt)
-        total_balance = sum(float(a.balance()) for a in Account.objects.all())
+        total_balance = sum(float(a.balance()) for a in Account.objects.filter(is_active=True))
 
         # топ-витрати (обраний місяць)
         top_exp = [{"name": r["category__name"] or "(без категорії)", "sum": round(float(r["s"]))}
@@ -825,7 +1013,7 @@ class OverviewView(APIView):
 
         # рахунки
         accounts = sorted([{"id": a.id, "name": a.name, "balance": round(float(a.balance()))}
-                           for a in Account.objects.all()], key=lambda x: -x["balance"])
+                           for a in Account.objects.filter(is_active=True)], key=lambda x: -x["balance"])
 
         # cashflow 30 днів
         today = _date.today()

@@ -120,6 +120,185 @@ function CpField({ value, onChange }: { value: string; onChange: (v: string) => 
   );
 }
 
+function BankHubModal({ onClose }: { onClose: () => void }) {
+  /* Налаштування інтеграцій: банки по API (Приват/Моно), правила розноски, історія завантажень (відкат), рахунки. */
+  const { t } = useLang();
+  const [tab, setTab] = useState<"banks" | "rules" | "hist" | "accs">("banks");
+  const [banks, setBanks] = useState<any>(null);
+  const [rules, setRules] = useState<any[]>([]);
+  const [hist, setHist] = useState<any[]>([]);
+  const [accs, setAccs] = useState<any[]>([]);
+  const [cats, setCats] = useState<any[]>([]);
+  const [dirs, setDirs] = useState<any[]>([]);
+  const [pbForm, setPbForm] = useState<any>({ token: "", acc: "", account_id: "" });
+  const [monoForm, setMonoForm] = useState<any>({ token: "", account_id: "" });
+  const [period, setPeriod] = useState<any>({ from: "", to: "" });
+  const [busy, setBusy] = useState("");
+  const [newRule, setNewRule] = useState<any>({ field: "osnd", contains: "", direction: "", set_category: "", set_fin_direction: "", set_counterparty: "" });
+  const loadAll = () => {
+    api.get<any>("/api/transactions/bank-settings/").then(setBanks).catch(() => {});
+    api.get<any>("/api/finance/bank-rules/").then((d) => setRules(d.results || d)).catch(() => {});
+    api.get<any>("/api/transactions/import-batches/").then((d) => setHist(d)).catch(() => {});
+    api.get<any>("/api/accounts/").then((d) => setAccs(d.results || d)).catch(() => {});
+    api.get<any>("/api/categories/").then((d) => setCats(d.results || d)).catch(() => {});
+    api.get<any>("/api/fin-directions/").then((d) => setDirs(d.results || d)).catch(() => {});
+  };
+  useEffect(loadAll, []);
+  const inp = { height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", fontSize: 13 } as any;
+  async function saveBank(prov: string, extra: any) {
+    try { await api.post("/api/transactions/bank-settings/", { provider: prov, ...extra }); loadAll(); alert(t("Сохранено ✓","Збережено ✓")); }
+    catch (e: any) { alert(e?.response?.data?.detail || "Помилка"); }
+  }
+  async function pull(prov: string) {
+    if (!period.from || !period.to) { alert(t("Выбери период","Обери період")); return; }
+    setBusy(prov);
+    try {
+      const url = prov === "privatbank" ? "/api/transactions/privat-sync/" : "/api/transactions/mono-sync/";
+      const r: any = await api.post(url, { from: period.from, to: period.to });
+      alert(t("Загружено","Завантажено") + `: ${r.created}, ` + t("дубликатов","дублікатів") + `: ${r.skipped_existing}\n` + t("Партия","Партія") + `: ${r.batch}\n` + t("Откат — во вкладке «История»","Відкат — у вкладці «Історія»"));
+      loadAll();
+    } catch (e: any) { alert(e?.response?.data?.detail || "Помилка"); }
+    setBusy("");
+  }
+  async function addRule() {
+    if (!newRule.contains.trim()) return;
+    try {
+      await api.post("/api/finance/bank-rules/", { ...newRule,
+        set_category: newRule.set_category || null, set_fin_direction: newRule.set_fin_direction || null });
+      setNewRule({ field: "osnd", contains: "", direction: "", set_category: "", set_fin_direction: "", set_counterparty: "" });
+      loadAll();
+    } catch { alert("Помилка правила"); }
+  }
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 22, width: "min(880px,96vw)", maxHeight: "90vh", overflow: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <h3 style={{ margin: 0 }}>⚙️ {t("Интеграции и правила","Інтеграції та правила")}</h3>
+          <button className="btn btn-light" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {[["banks", "🏦 " + t("Банки","Банки")], ["rules", "🧭 " + t("Правила разноски","Правила розноски")], ["hist", "🕓 " + t("История загрузок","Історія завантажень")], ["accs", "👁 " + t("Счета в учёте","Рахунки в обліку")]].map(([k, l]) => (
+            <button key={k} className={"btn" + (tab === k ? " btn-primary" : " btn-light")} onClick={() => setTab(k as any)}>{l}</button>
+          ))}
+        </div>
+
+        {tab === "banks" && banks && (
+          <>
+            <div className="panel" style={{ margin: "0 0 12px" }}>
+              <b>ПриватБанк (AutoClient · рахунок ФОП)</b> {banks.privatbank.connected ? <span style={{ color: "#16a34a", fontWeight: 700 }}>✓ {t("подключён","підключено")} {banks.privatbank.token_tail}</span> : <span className="muted">{t("не подключён","не підключено")}</span>}
+              <div className="muted" style={{ fontSize: 12, margin: "4px 0 8px" }}>{t("Токен создаётся в Приват24 для бизнеса: Настройки → API AutoClient. Операции тянутся автоматически каждые 3 часа + можно загрузить период.","Токен створюється у Приват24 для бізнесу: Налаштування → API AutoClient. Операції тягнуться автоматично кожні 3 години + можна завантажити період.")}</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <input placeholder="Token" value={pbForm.token} onChange={(e) => setPbForm({ ...pbForm, token: e.target.value })} style={{ ...inp, width: 220 }} />
+                <input placeholder="IBAN (UA…)" value={pbForm.acc} onChange={(e) => setPbForm({ ...pbForm, acc: e.target.value })} style={{ ...inp, width: 220 }} />
+                <select value={pbForm.account_id} onChange={(e) => setPbForm({ ...pbForm, account_id: e.target.value })} style={inp}>
+                  <option value="">{t("— счёт в CRM —","— рахунок у CRM —")}</option>
+                  {accs.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+                <button className="btn btn-primary" onClick={() => saveBank("privatbank", { ...(pbForm.token ? { token: pbForm.token } : {}), ...(pbForm.acc ? { acc: pbForm.acc } : {}), ...(pbForm.account_id ? { account_id: Number(pbForm.account_id) } : {}) })}>{t("Сохранить","Зберегти")}</button>
+              </div>
+            </div>
+            <div className="panel" style={{ margin: "0 0 12px" }}>
+              <b>Monobank (особисті картки)</b> {banks.monobank.connected ? <span style={{ color: "#16a34a", fontWeight: 700 }}>✓ {t("подключён","підключено")} {banks.monobank.token_tail}</span> : <span className="muted">{t("не подключён","не підключено")}</span>}
+              <div className="muted" style={{ fontSize: 12, margin: "4px 0 8px" }}>{t("Токен: api.monobank.ua (вход через приложение mono). Лимит API: период до 31 дня за одну загрузку.","Токен: api.monobank.ua (вхід через застосунок mono). Ліміт API: період до 31 доби за одне завантаження.")}</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <input placeholder="X-Token" value={monoForm.token} onChange={(e) => setMonoForm({ ...monoForm, token: e.target.value })} style={{ ...inp, width: 220 }} />
+                <select value={monoForm.account_id} onChange={(e) => setMonoForm({ ...monoForm, account_id: e.target.value })} style={inp}>
+                  <option value="">{t("— счёт в CRM —","— рахунок у CRM —")}</option>
+                  {accs.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+                <button className="btn btn-primary" onClick={() => saveBank("monobank", { ...(monoForm.token ? { token: monoForm.token } : {}), ...(monoForm.account_id ? { account_id: Number(monoForm.account_id) } : {}) })}>{t("Сохранить","Зберегти")}</button>
+              </div>
+            </div>
+            <div className="panel" style={{ margin: 0 }}>
+              <b>📥 {t("Загрузить операции за период","Завантажити операції за період")}</b>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+                <input type="date" value={period.from} onChange={(e) => setPeriod({ ...period, from: e.target.value })} style={inp} />
+                <span className="muted">—</span>
+                <input type="date" value={period.to} onChange={(e) => setPeriod({ ...period, to: e.target.value })} style={inp} />
+                <button className="btn btn-primary" disabled={busy !== ""} onClick={() => pull("privatbank")}>{busy === "privatbank" ? "…" : t("Загрузить из Привата","Завантажити з Привату")}</button>
+                <button className="btn btn-light" disabled={busy !== ""} onClick={() => pull("monobank")}>{busy === "monobank" ? "…" : t("Загрузить из Mono","Завантажити з Mono")}</button>
+              </div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t("Комиссия LiqPay по сделкам разносится автоматически в «Комиссия Банка». Переводы между своими счетами не попадают в расходы. Ошиблись — откатите партию во вкладке «История».","Комісія LiqPay по сделках розноситься автоматично у «Комиссия Банка». Перекази між своїми рахунками не потрапляють у витрати. Помилились — відкотіть партію у вкладці «Історія».")}</div>
+            </div>
+          </>
+        )}
+
+        {tab === "rules" && (
+          <div className="panel" style={{ margin: 0 }}>
+            <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>{t("Если поле операции содержит текст — автоматически проставляется категория / направление / контрагент. Работает при синке банков и импорте выписок.","Якщо поле операції містить текст — автоматично проставляється категорія / напрямок / контрагент. Працює при синку банків та імпорті виписок.")}</div>
+            <table style={{ width: "100%", fontSize: 13 }}>
+              <thead><tr className="muted" style={{ fontSize: 11, textAlign: "left" }}><th>{t("Поле","Поле")}</th><th>{t("Содержит","Містить")}</th><th>{t("Тип","Тип")}</th><th>{t("Категория","Категорія")}</th><th>{t("Направление","Напрямок")}</th><th>{t("Контрагент","Контрагент")}</th><th></th></tr></thead>
+              <tbody>
+                {rules.map((r: any) => (
+                  <tr key={r.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                    <td>{r.field === "osnd" ? t("Назначение","Призначення") : t("Контрагент","Контрагент")}</td>
+                    <td><b>{r.contains}</b></td>
+                    <td>{r.direction || t("любой","будь-який")}</td>
+                    <td>{r.category_name || "—"}</td>
+                    <td>{r.direction_name || "—"}</td>
+                    <td>{r.set_counterparty || "—"}</td>
+                    <td><button onClick={async () => { await api.del(`/api/finance/bank-rules/${r.id}/`); loadAll(); }} style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer" }}>✕</button></td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: "2px solid #e2e8f0" }}>
+                  <td><select value={newRule.field} onChange={(e) => setNewRule({ ...newRule, field: e.target.value })} style={inp}><option value="osnd">{t("Назначение","Призначення")}</option><option value="counterparty">{t("Контрагент","Контрагент")}</option></select></td>
+                  <td><input value={newRule.contains} onChange={(e) => setNewRule({ ...newRule, contains: e.target.value })} placeholder={t("текст…","текст…")} style={{ ...inp, width: 120 }} /></td>
+                  <td><select value={newRule.direction} onChange={(e) => setNewRule({ ...newRule, direction: e.target.value })} style={inp}><option value="">{t("любой","будь-який")}</option><option value="in">{t("Доход","Дохід")}</option><option value="out">{t("Расход","Витрата")}</option></select></td>
+                  <td><select value={newRule.set_category} onChange={(e) => setNewRule({ ...newRule, set_category: e.target.value })} style={{ ...inp, maxWidth: 150 }}><option value="">—</option>{cats.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></td>
+                  <td><select value={newRule.set_fin_direction} onChange={(e) => setNewRule({ ...newRule, set_fin_direction: e.target.value })} style={{ ...inp, maxWidth: 130 }}><option value="">—</option>{dirs.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></td>
+                  <td><input value={newRule.set_counterparty} onChange={(e) => setNewRule({ ...newRule, set_counterparty: e.target.value })} placeholder="—" style={{ ...inp, width: 100 }} /></td>
+                  <td><button className="btn btn-primary" style={{ padding: "3px 10px" }} onClick={addRule}>＋</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {tab === "hist" && (
+          <div className="panel" style={{ margin: 0 }}>
+            <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>{t("Каждая загрузка из банка/выписки = партия. Ошиблись — откатите: все операции партии удалятся.","Кожне завантаження з банку/виписки = партія. Помилились — відкотіть: усі операції партії видаляться.")}</div>
+            {hist.length === 0 ? <div className="muted">{t("Загрузок ещё не было.","Завантажень ще не було.")}</div> :
+            <table style={{ width: "100%", fontSize: 13 }}>
+              <thead><tr className="muted" style={{ fontSize: 11, textAlign: "left" }}><th>{t("Партия","Партія")}</th><th>{t("Период операций","Період операцій")}</th><th style={{ textAlign: "right" }}>{t("Операций","Операцій")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th></th></tr></thead>
+              <tbody>{hist.map((h: any) => (
+                <tr key={h.batch} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td><b>{h.batch}</b></td>
+                  <td className="muted">{h.from} — {h.to}</td>
+                  <td style={{ textAlign: "right" }}>{h.count}</td>
+                  <td style={{ textAlign: "right" }}>{money(h.total)}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <button className="btn btn-light" style={{ padding: "3px 10px", color: "#dc2626" }} onClick={async () => {
+                      if (!confirm(t("Откатить партию","Відкотити партію") + ` ${h.batch}? ` + t("Удалится операций","Видалиться операцій") + `: ${h.count}`)) return;
+                      const r: any = await api.del(`/api/transactions/import-batches/?batch=${encodeURIComponent(h.batch)}`);
+                      alert(t("Откачено","Відкочено") + `: ${r.rolled_back}`); loadAll();
+                    }}>↩ {t("Откатить","Відкотити")}</button>
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>}
+          </div>
+        )}
+
+        {tab === "accs" && (
+          <div className="panel" style={{ margin: 0 }}>
+            <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>{t("Выключенные счета скрываются из журнала, дашборда и «Деньги на счетах». Операции не удаляются.","Вимкнені рахунки ховаються з журналу, дашборда та «Гроші на рахунках». Операції не видаляються.")}</div>
+            {accs.map((a: any) => (
+              <label key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "1px solid #f8fafc", fontSize: 13, cursor: "pointer" }}>
+                <input type="checkbox" checked={a.is_active !== false} onChange={async (e) => {
+                  await api.patch(`/api/accounts/${a.id}/`, { is_active: e.target.checked });
+                  setAccs((prev) => prev.map((x: any) => x.id === a.id ? { ...x, is_active: e.target.checked } : x));
+                }} />
+                <span style={{ flex: 1, opacity: a.is_active === false ? 0.5 : 1 }}>{a.name}</span>
+                <b className="muted">{money(a.balance)}</b>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Journal() {
   const { t } = useLang();
   const [tx, setTx] = useState<any[]>([]);
@@ -145,11 +324,12 @@ function Journal() {
     return api.get<any>(`/api/transactions/?${qp.toString()}`).then((d) => { setTx(d.results || d); setCount(d.count ?? (d.results ? d.results.length : (d.length || 0))); });
   };
   function apply() { setPage(1); load(1); }
+  const [bankHub, setBankHub] = useState(false);
   function goPage(p: number) { setPage(p); load(p); }
   function resetAll() { setFq(""); setFf(""); setFt(""); setCf(emptyCf); setPage(1); setTimeout(() => load(1), 0); }
   useEffect(() => {
     load(1);
-    api.get<any>("/api/accounts/").then((d) => setAccounts(d.results || d));
+    api.get<any>("/api/accounts/").then((d) => setAccounts((d.results || d).filter((a: any) => a.is_active !== false)));
     api.get<any>("/api/finmodel-articles/?page_size=200").then((d) => setArts(d.results || d));
     api.get<any>("/api/fin-directions/?page_size=100").then((d) => setDirs(d.results || d));
     api.get<any>("/api/categories/").then((d) => setCats(d.results || d)).catch(() => setCats([]));
@@ -200,6 +380,7 @@ function Journal() {
       <div className="panel acc-sidebar" style={{ width: 220, flex: "0 0 220px", margin: 0, maxHeight: "80vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <b style={{ fontSize: 13 }}><Icon n="🏦" size={14} /> Рахунки</b>
+          <button onClick={() => setBankHub(true)} title={t("Настройки: банки по API, правила разноски, история загрузок, счета","Налаштування: банки по API, правила розноски, історія завантажень, рахунки")} style={{ float: "right", border: "none", background: "transparent", cursor: "pointer", fontSize: 14 }}>⚙️</button>
           {selAcc.length > 0 && <span style={{ fontSize: 11, color: "#2563eb", cursor: "pointer" }} onClick={() => { setSelAcc([]); setTimeout(() => load(1), 0); }}>скинути</span>}
         </div>
         <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>Обери один або кілька — журнал відфільтрується.</div>
@@ -242,11 +423,6 @@ function Journal() {
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <button className="btn btn-primary" title={t("Добавить поступление денег","Додати надходження грошей")} onClick={() => openNew("in")}>+ {t("Доход","Дохід")}</button>
         <button className="btn btn-light" title={t("Добавить расход","Додати витрату")} onClick={() => openNew("out")}>− {t("Расход","Витрата")}</button>
-        <button className="btn btn-light" title={t("Подтянуть операции из ПриватБанка (выписка за 4 дня)","Підтягнути операції з ПриватБанку (виписка за 4 дні)")} onClick={async () => {
-          try { const r: any = await api.post("/api/transactions/privat-sync/", { days: 4 });
-            alert(t("Приват: добавлено","Приват: додано") + ` ${r.created}, ` + t("уже были","вже були") + ` ${r.skipped_existing}`); load(); }
-          catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось (настрой Интеграции → privatbank)","Не вдалося (налаштуй Інтеграції → privatbank)")); }
-        }}>🏦 {t("Приват","Приват")}</button>
         <label className="btn btn-light" style={{ cursor: "pointer" }} title={t("Импорт банковской выписки CSV","Імпорт банківської виписки CSV")}>
           ⬆ {t("Выписка","Виписка")}
           <input type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={async (e) => {
@@ -269,6 +445,7 @@ function Journal() {
           try { const u = await (api as any).blobUrl("/api/transactions/export/"); const a = document.createElement("a"); a.href = u; a.download = "journal.csv"; a.click(); }
           catch { alert(t("Не удалось выгрузить","Не вдалося вивантажити")); }
         }}>⬇ CSV</button>
+        {bankHub && <BankHubModal onClose={() => { setBankHub(false); load(); api.get<any>("/api/accounts/").then((d) => setAccounts((d.results || d).filter((a: any) => a.is_active !== false))); }} />}
         <button className="btn btn-light" title={t("Перевод между счетами — не считается ни в доход, ни в расход","Переказ між рахунками — не рахується ні в дохід, ні у витрати")} onClick={() => openNew("transfer")}>⇄ {t("Перевод","Переказ")}</button>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
           <span className="muted">{t("На стр.","На стор.")}:</span>
