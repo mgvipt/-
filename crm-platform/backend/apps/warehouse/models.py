@@ -11,6 +11,17 @@ class Warehouse(models.Model):
         return self.name
 
 
+class ProductImage(models.Model):
+    """Картинка товара (галерея). Файлы в warehouse_photos/products/ (постоянный том)."""
+    product = models.ForeignKey("Product", on_delete=models.CASCADE, related_name="images")
+    file_path = models.CharField(max_length=255)
+    b24_file_id = models.IntegerField(null=True, blank=True, db_index=True)
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+
 class ProductCategory(models.Model):
     """Категория каталога (дерево папок). Перенос из Bitrix iblock 24."""
     name = models.CharField(max_length=255)
@@ -37,7 +48,13 @@ class Product(models.Model):
     category = models.ForeignKey("ProductCategory", null=True, blank=True, on_delete=models.SET_NULL, related_name="products")
     currency = models.CharField(max_length=8, default="UAH")
     bitrix_id = models.IntegerField("ID в Bitrix", null=True, blank=True, unique=True, db_index=True)
+    description = models.TextField("Опис", blank=True, default="")
+    b24_created_by = models.CharField("Хто створив (Б24)", max_length=120, blank=True, default="")
+    b24_modified_by = models.CharField("Хто змінив (Б24)", max_length=120, blank=True, default="")
+    b24_created_at = models.DateTimeField(null=True, blank=True)
+    b24_modified_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["name"]

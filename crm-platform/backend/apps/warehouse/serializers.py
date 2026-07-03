@@ -26,10 +26,17 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = ["id", "name", "sku", "unit", "price", "cost", "currency",
-                  "is_active", "category", "category_name", "stock", "margin"]
+                  "is_active", "category", "category_name", "stock", "margin",
+                  "description", "b24_created_by", "b24_modified_by",
+                  "b24_created_at", "b24_modified_at", "created_at", "updated_at", "images"]
 
     def get_stock(self, obj):
         return obj.stock()
+
+    images = serializers.SerializerMethodField()
+
+    def get_images(self, obj):
+        return [{"id": im.id, "url": "/api/products/%d/image/%d/" % (obj.id, im.id)} for im in obj.images.all()]
 
     margin = serializers.SerializerMethodField()
 

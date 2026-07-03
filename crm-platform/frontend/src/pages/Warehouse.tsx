@@ -29,6 +29,10 @@ interface Product {
   id: number; name: string; sku: string; unit: string;
   price: string; cost: string; currency: string; margin: number;
   category: number | null; category_name: string; stock: number;
+  is_active?: boolean; description?: string;
+  b24_created_by?: string; b24_modified_by?: string;
+  b24_created_at?: string; b24_modified_at?: string;
+  images?: { id: number; url: string }[];
 }
 interface Category { id: number; name: string; parent: number | null; order: number; products_count: number; }
 interface WH { id: number; name: string; is_default: boolean; }
@@ -98,6 +102,35 @@ export default function Warehouse() {
   // карточка товара
   const [card, setCard] = useState<Product | null>(null);
   const [movements, setMovements] = useState<Movement[]>([]);
+  // фільтр по номенклатурі
+  const [fltOpen, setFltOpen] = useState(false);
+  const [fltActive, setFltActive] = useState<"active" | "all" | "hidden">("active");
+  const [fltStock, setFltStock] = useState<"" | "in" | "zero">("");
+  // створення товару
+  const [newOpen, setNewOpen] = useState(false);
+  const [newP, setNewP] = useState<any>({ name: "", sku: "", unit: "шт", price: "", cost: "", category: 0 });
+  async function createProduct() {
+    if (!newP.name.trim()) { alert(t("Укажи название","Вкажи назву")); return; }
+    try {
+      const p: any = await api.post("/api/products/", { name: newP.name.trim(), sku: newP.sku.trim(), unit: newP.unit || "шт",
+        price: Number(newP.price) || 0, cost: Number(newP.cost) || 0, category: newP.category || null, is_active: true });
+      setNewOpen(false); setNewP({ name: "", sku: "", unit: "шт", price: "", cost: "", category: 0 });
+      loadProducts(); openCard(p);
+    } catch { alert(t("Не удалось создать (нужно право «Редактировать склад»)","Не вдалося створити (потрібне право «Редагувати склад»)")); }
+  }
+  // редагування картки
+  const [cardEdit, setCardEdit] = useState<any>(null);
+  async function saveCard() {
+    if (!card || !cardEdit) return;
+    try {
+      const upd: any = await api.patch(`/api/products/${card.id}/`, {
+        name: cardEdit.name, description: cardEdit.description, category: cardEdit.category || null,
+        price: Number(cardEdit.price) || 0, cost: Number(cardEdit.cost) || 0, unit: cardEdit.unit,
+        sku: cardEdit.sku, is_active: cardEdit.is_active });
+      setCard(upd); setCardEdit(null); loadProducts();
+      api.get<Category[]>("/api/product-categories/").then(setCats).catch(() => {});
+    } catch { alert(t("Не удалось сохранить","Не вдалося зберегти")); }
+  }
   // инвентаризация
   const [facts, setFacts] = useState<Record<number, string>>({});
   const [invMsg, setInvMsg] = useState("");
@@ -107,6 +140,11 @@ export default function Warehouse() {
 
   /* ─── [3] ЗАГРУЗКА ───────────────────────────────────────────────────── */
   const [params] = useSearchParams();
+  useEffect(() => {
+    const pid = params.get("product");
+    if (pid) { api.get<Product>(`/api/products/${pid}/`).then((p) => openCard(p)).catch(() => {}); }
+    // eslint-disable-next-line
+  }, []);
   useEffect(() => {
     api.get<Category[]>("/api/product-categories/").then(setCats).catch(() => setCats([]));
     api.get<Paginated<WH>>("/api/warehouses/").then((w) => setWhs(w.results));
@@ -122,11 +160,14 @@ export default function Warehouse() {
     if (cat) q.set("category", String(cat));
     if (search.trim()) q.set("search", search.trim());
     if (ordering) q.set("ordering", ordering);
-    q.set("is_active", "true");
+    if (fltActive === "active") q.set("is_active", "true");
+    if (fltActive === "hidden") q.set("is_active", "false");
+    if (fltStock === "in") q.set("in_stock", "1");
+    if (fltStock === "zero") q.set("in_stock", "0");
     const d = await api.get<Paginated<Product>>(`/api/products/?${q.toString()}`);
     setProducts(d.results); setCount(d.count); setLoading(false);
   }
-  useEffect(() => { loadProducts(); }, [cat, page, pageSize, ordering]);
+  useEffect(() => { loadProducts(); }, [cat, page, pageSize, ordering, fltActive, fltStock]);
   useEffect(() => {
     const t = setTimeout(() => { setPage(1); loadProducts(); }, 350);
     return () => clearTimeout(t);
@@ -146,7 +187,8 @@ export default function Warehouse() {
   }
 
   async function openCard(p: Product) {
-    setCard(p); setMovements([]);
+    setCard(p); setMovements([]); setCardEdit(null);
+    try { setCard(await api.get<Product>(`/api/products/${p.id}/`)); } catch { /* */ }
     const mv = await api.get<Movement[]>(`/api/products/${p.id}/movements/`);
     setMovements(mv);
   }
@@ -376,6 +418,8 @@ export default function Warehouse() {
       {/* ─── [6] ТУЛБАР + ТАБЛИЦА + ПАГИНАЦИЯ ─────────────────────────────── */}
       <div>
         <div className="toolbar" style={{ borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 10, background: "#fff", display: "flex", gap: 8, alignItems: "center", padding: 8, flexWrap: "wrap" }}>
+          {canEdit && <button className="btn btn-primary" onClick={() => setNewOpen(true)}><Icon n="➕" size={15} /> {t("Создать товар","Створити товар")}</button>}
+          <button className={"btn" + ((fltActive !== "active" || fltStock) ? " btn-primary" : " btn-light")} onClick={() => setFltOpen(!fltOpen)} title={t("Фильтр по номенклатуре","Фільтр по номенклатурі")}><Icon n="🔽" size={15} /> {t("Фильтр","Фільтр")}</button>
           <button className="btn btn-light" onClick={exportCsv} title={t("Выгрузить номенклатуру в CSV (Excel)","Вивантажити номенклатуру в CSV (Excel)")}><Icon n="⬇️" size={15} /> {t("Экспорт","Експорт")}</button>
           {canEdit && <>
           <input ref={nomFileRef} type="file" accept=".csv,text/csv,text/plain" style={{ display: "none" }} onChange={importNom} />
@@ -385,6 +429,21 @@ export default function Warehouse() {
           <span className="muted">{t("Найдено","Знайдено")}: <b style={{ color: "#1e293b" }}>{count.toLocaleString("ru")}</b></span>
         </div>
 
+        {fltOpen && (
+          <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, marginBottom: 10, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+            <label style={{ fontSize: 13 }}>{t("Активность","Активність")}: <select value={fltActive} onChange={(e) => { setFltActive(e.target.value as any); setPage(1); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, marginLeft: 4 }}>
+              <option value="active">{t("Только активные","Тільки активні")}</option>
+              <option value="all">{t("Все (вкл. скрытые)","Всі (вкл. приховані)")}</option>
+              <option value="hidden">{t("Только скрытые","Тільки приховані")}</option>
+            </select></label>
+            <label style={{ fontSize: 13 }}>{t("Остаток","Залишок")}: <select value={fltStock} onChange={(e) => { setFltStock(e.target.value as any); setPage(1); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, marginLeft: 4 }}>
+              <option value="">{t("Любой","Будь-який")}</option>
+              <option value="in">{t("В наличии (> 0)","В наявності (> 0)")}</option>
+              <option value="zero">{t("Нулевой / нет","Нульовий / немає")}</option>
+            </select></label>
+            <button className="btn btn-light" style={{ padding: "3px 10px" }} onClick={() => { setFltActive("active"); setFltStock(""); setPage(1); }}>{t("Сбросить","Скинути")}</button>
+          </div>
+        )}
         <div className="tablewrap" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
           <table style={{ width: "100%" }}>
             <thead><tr>{sortTh("name", t("Товар","Товар"))}{sortTh("sku", t("Артикул","Артикул"))}<th>{t("Категория","Категорія")}</th>{sortTh("price", t("Цена","Ціна"))}{showCost && sortTh("cost", t("Закупка","Закупка"))}<th>{t("Ед.","Од.")}</th><th>{t("Остаток","Залишок")}</th>{canEdit && <th></th>}</tr></thead>
@@ -421,6 +480,31 @@ export default function Warehouse() {
       </div>
       ) : null}
 
+      {/* ─── [6c] МОДАЛКА СОЗДАНИЯ ТОВАРА ─────────────────────────────────── */}
+      {newOpen && (
+        <div onClick={() => setNewOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 440, maxWidth: "94vw" }}>
+            <h3 style={{ marginTop: 0 }}>{t("Новый товар","Новий товар")}</h3>
+            <label className="label">{t("Название","Назва")}</label>
+            <input value={newP.name} onChange={(e) => setNewP({ ...newP, name: e.target.value })} style={{ width: "100%", height: 38, marginBottom: 10, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} autoFocus />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <label style={{ fontSize: 12 }} className="muted">{t("Артикул","Артикул")}<input value={newP.sku} onChange={(e) => setNewP({ ...newP, sku: e.target.value })} style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", marginTop: 2 }} /></label>
+              <label style={{ fontSize: 12 }} className="muted">{t("Ед. изм.","Од. вим.")}<input value={newP.unit} onChange={(e) => setNewP({ ...newP, unit: e.target.value })} style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", marginTop: 2 }} /></label>
+              <label style={{ fontSize: 12 }} className="muted">{t("Розничная цена","Роздрібна ціна")}<input type="number" value={newP.price} onChange={(e) => setNewP({ ...newP, price: e.target.value })} style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", marginTop: 2 }} /></label>
+              <label style={{ fontSize: 12 }} className="muted">{t("Закупочная","Закупівельна")}<input type="number" value={newP.cost} onChange={(e) => setNewP({ ...newP, cost: e.target.value })} style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", marginTop: 2 }} /></label>
+            </div>
+            <label style={{ fontSize: 12, display: "block", marginTop: 10 }} className="muted">{t("Раздел","Розділ")}<select value={newP.category} onChange={(e) => setNewP({ ...newP, category: Number(e.target.value) })} style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", marginTop: 2 }}>
+              <option value={0}>{t("— без раздела —","— без розділу —")}</option>
+              {cats.map((c) => <option key={c.id} value={c.id}>{c.parent ? "\u00a0\u00a0\u00a0" : ""}{c.name}</option>)}
+            </select></label>
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setNewOpen(false)}>{t("Отмена","Скасувати")}</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={createProduct}>{t("Создать","Створити")}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── [7] МОДАЛКА ПРИХОД/РАСХОД ────────────────────────────────────── */}
       {modal && (
         <div onClick={() => setModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
@@ -446,12 +530,43 @@ export default function Warehouse() {
       {/* ─── [8] КАРТОЧКА ТОВАРА ──────────────────────────────────────────── */}
       {card && (
         <div onClick={() => setCard(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", justifyContent: "flex-end", zIndex: 50 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(560px,94vw)", height: "100%", background: "#fff", overflow: "auto", padding: "18px 22px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <h3 style={{ margin: 0 }}>{card.name}</h3>
-              <button className="btn btn-light" onClick={() => setCard(null)}>✕</button>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(640px,94vw)", height: "100%", background: "#fff", overflow: "auto", padding: "18px 22px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+              {cardEdit
+                ? <input value={cardEdit.name} onChange={(e) => setCardEdit({ ...cardEdit, name: e.target.value })} style={{ flex: 1, fontSize: 17, fontWeight: 700, border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 10px" }} />
+                : <h3 style={{ margin: 0 }}>{card.name} {card.is_active === false && <span style={{ fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "#fee2e2", color: "#b91c1c", verticalAlign: "middle" }}>{t("скрыт","приховано")}</span>}</h3>}
+              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                <button className="btn btn-light" title={t("Скопировать ссылку на товар","Скопіювати посилання на товар")} onClick={() => { navigator.clipboard?.writeText(window.location.origin + "/warehouse?product=" + card.id); alert(t("Ссылка скопирована ✓","Посилання скопійовано ✓")); }}><Icon n="🔗" size={14} /></button>
+                {canEdit && (cardEdit
+                  ? <><button className="btn btn-primary" onClick={saveCard}>{t("Сохранить","Зберегти")}</button><button className="btn btn-light" onClick={() => setCardEdit(null)}>✕</button></>
+                  : <button className="btn btn-light" onClick={() => setCardEdit({ name: card.name, sku: card.sku, unit: card.unit, price: card.price, cost: card.cost, category: card.category || 0, description: card.description || "", is_active: card.is_active !== false })}><Icon n="✏️" size={14} /> {t("Изменить","Змінити")}</button>)}
+                <button className="btn btn-light" onClick={() => setCard(null)}>✕</button>
+              </div>
             </div>
+            {cardEdit ? (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, margin: "12px 0" }}>
+                <label style={{ fontSize: 12 }} className="muted">{t("Артикул","Артикул")}<input value={cardEdit.sku} onChange={(e) => setCardEdit({ ...cardEdit, sku: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>
+                <label style={{ fontSize: 12 }} className="muted">{t("Раздел (перенести в…)","Розділ (перенести в…)")}<select value={cardEdit.category} onChange={(e) => setCardEdit({ ...cardEdit, category: Number(e.target.value) })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, marginTop: 2 }}>
+                  <option value={0}>{t("— без раздела —","— без розділу —")}</option>
+                  {cats.map((c) => <option key={c.id} value={c.id}>{c.parent ? "\u00a0\u00a0\u00a0" : ""}{c.name}</option>)}
+                </select></label>
+                <label style={{ fontSize: 12 }} className="muted">{t("Розничная цена","Роздрібна ціна")}<input type="number" value={cardEdit.price} onChange={(e) => setCardEdit({ ...cardEdit, price: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>
+                {showCost && <label style={{ fontSize: 12 }} className="muted">{t("Закупочная","Закупівельна")}<input type="number" value={cardEdit.cost} onChange={(e) => setCardEdit({ ...cardEdit, cost: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>}
+                <label style={{ fontSize: 12 }} className="muted">{t("Ед. изм.","Од. вим.")}<input value={cardEdit.unit} onChange={(e) => setCardEdit({ ...cardEdit, unit: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>
+                <label style={{ fontSize: 12, display: "flex", alignItems: "flex-end", gap: 6, paddingBottom: 8 }}><input type="checkbox" checked={cardEdit.is_active} onChange={(e) => setCardEdit({ ...cardEdit, is_active: e.target.checked })} /> {t("Активен (виден в каталоге)","Активний (видно у каталозі)")}</label>
+                <label style={{ fontSize: 12, gridColumn: "1 / -1" }} className="muted">{t("Описание","Опис")}<textarea value={cardEdit.description} onChange={(e) => setCardEdit({ ...cardEdit, description: e.target.value })} rows={5} style={{ width: "100%", border: "1px solid #cbd5e1", borderRadius: 7, padding: 8, marginTop: 2, fontFamily: "inherit", fontSize: 13 }} /></label>
+              </div>
+            ) : (
             <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>Артикул: {card.sku || "—"} · {card.category_name || t("Без категории","Без категорії")}</div>
+            )}
+            {!cardEdit && card.images && card.images.length > 0 && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+                {card.images.map((im) => <a key={im.id} href={im.url} target="_blank" rel="noreferrer"><img src={im.url} alt="" style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0" }} /></a>)}
+              </div>
+            )}
+            {!cardEdit && (card.description || "").trim() !== "" && (
+              <div className="panel" style={{ margin: "0 0 14px", fontSize: 13, whiteSpace: "pre-wrap" }}>{card.description}</div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
               {[[t("Розничная цена","Роздрібна ціна"), Number(card.price).toLocaleString("ru") + " " + (card.currency || "грн")],
                 ...(showCost ? [[t("Закупка","Закупка"), Number(card.cost) > 0 ? Number(card.cost).toLocaleString("ru") + " " + (card.currency || "грн") : "—"], [t("Маржа","Маржа"), (card.margin || 0).toLocaleString("ru") + " ₴" + (Number(card.price) > 0 && card.margin ? " · " + Math.round((card.margin / Number(card.price)) * 100) + "%" : "")]] : []),
@@ -459,6 +574,12 @@ export default function Warehouse() {
                 <div key={lbl} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{lbl}</div><div style={{ fontSize: 18, fontWeight: 700 }}>{v}</div></div>
               ))}
             </div>
+            {(card.b24_created_by || card.b24_modified_by) && (
+              <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
+                {card.b24_created_by && <>👤 {t("Создал","Створив")}: <b>{card.b24_created_by}</b>{card.b24_created_at ? " · " + card.b24_created_at.slice(0, 10) : ""}</>}
+                {card.b24_modified_by && <> &nbsp;·&nbsp; ✏️ {t("Изменил","Змінив")}: <b>{card.b24_modified_by}</b>{card.b24_modified_at ? " · " + card.b24_modified_at.slice(0, 10) : ""}</>}
+              </div>
+            )}
             <div className="label" style={{ marginBottom: 6 }}>{t("Движение товара (приход / расход / инвентаризация)","Рух товару (прихід / витрата / інвентаризація)")}</div>
             {movements.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Движений ещё не было.","Рухів ще не було.")}</div> : (
               <table style={{ width: "100%", fontSize: 13 }}>

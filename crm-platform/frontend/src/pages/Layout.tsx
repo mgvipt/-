@@ -19,7 +19,7 @@ const NAV: [string, string, string, string, string | null][] = [
   ["/inbox", "Чаты · Открытые линии", "Чати · Відкриті лінії", "chat", null],
   ["/contact-center", "Контакт-центр", "Контакт-центр", "🎛️", "roles.manage"],
   ["/phone", "Телефония", "Телефонія", "phone", "telephony.view"],
-  ["/warehouse", "Товары и остатки", "Товари та залишки", "package", "warehouse.view"],
+  ["/warehouse", "Складской учёт", "Складський облік", "package", "warehouse.view"],
   ["/wh", "Отгрузка", "Відвантаження", "truck", "warehouse.view"],
   ["/clients", "Клиенты", "Клієнти", "users", null],
   ["/development", "Развитие", "Розвиток", "trophy", "development.view"],

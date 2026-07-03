@@ -60,6 +60,19 @@ class ProductViewSet(viewsets.ModelViewSet):
     ordering_fields = ["name", "price", "id", "sku", "cost", "stock"]
     ordering = ["name"]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        in_stock = self.request.query_params.get("in_stock")
+        if in_stock in ("0", "1"):
+            from django.db.models import Sum, Q
+            qs = qs.annotate(_stock=Sum("movements__quantity",
+                                        filter=Q(movements__document__posted=True)))
+            if in_stock == "1":
+                qs = qs.filter(_stock__gt=0)
+            else:
+                qs = qs.filter(Q(_stock__lte=0) | Q(_stock__isnull=True))
+        return qs
+
     def destroy(self, request, *args, **kwargs):
         from rest_framework.response import Response as _R
         p = self.get_object()
@@ -163,6 +176,17 @@ class ProductViewSet(viewsets.ModelViewSet):
                         cat = ProductCategory.objects.filter(name=catname).first() or ProductCategory.objects.create(name=catname)
                     Product.objects.create(name=(name or sku), sku=sku, unit=unit, price=price, cost=cost, currency=currency, category=cat)
         return Response({"created": created, "updated": updated, "errors": errors, "err_samples": err_samples, "committed": commit})
+
+    @action(detail=True, methods=["get"], url_path="image/(?P<img_id>[0-9]+)")
+    def image(self, request, pk=None, img_id=None):
+        """Отдать картинку товара (файл из warehouse_photos/products/)."""
+        from django.http import FileResponse, Http404
+        from .models import ProductImage
+        try:
+            im = ProductImage.objects.get(id=img_id, product_id=pk)
+            return FileResponse(open(im.file_path, "rb"))
+        except (ProductImage.DoesNotExist, FileNotFoundError):
+            raise Http404
 
     @action(detail=True, methods=["get"])
     def movements(self, request, pk=None):
