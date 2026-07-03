@@ -126,6 +126,22 @@ export default function Warehouse() {
       loadProducts(); openCard(p);
     } catch { alert(t("Не удалось создать (нужно право «Редактировать склад»)","Не вдалося створити (потрібне право «Редагувати склад»)")); }
   }
+  async function delCategory(c: Category, e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      const dry: any = await api.del(`/api/product-categories/${c.id}/?dry=1`);
+      const msg = t("Удалить папку","Видалити папку") + ` «${c.name}»?\n` +
+        t("Подпапок (вкл. эту)","Підпапок (вкл. цю)") + `: ${dry.categories}\n` +
+        t("Товаров удалится навсегда","Товарів видалиться назавжди") + `: ${dry.products_delete}\n` +
+        t("Товаров скроется (есть движения)","Товарів приховається (є рухи)") + `: ${dry.products_hide}`;
+      if (!confirm(msg)) return;
+      const r: any = await api.del(`/api/product-categories/${c.id}/`);
+      alert(t("Готово ✓ Папок","Готово ✓ Папок") + `: ${r.categories}, ` + t("удалено товаров","видалено товарів") + `: ${r.products_deleted}, ` + t("скрыто","приховано") + `: ${r.products_hidden}`);
+      if (cat === c.id) pick(null);
+      api.get<Category[]>("/api/product-categories/").then(setCats).catch(() => {});
+      loadProducts();
+    } catch { alert(t("Не удалось удалить (нужно право «Редактировать склад»)","Не вдалося видалити (потрібне право «Редагувати склад»)")); }
+  }
   // редагування картки
   const [cardEdit, setCardEdit] = useState<any>(null);
   // склад набору (комплект)
@@ -466,12 +482,14 @@ export default function Warehouse() {
         </div>
         {tree.roots.map((r) => (
           <div key={r.id}>
-            <div onClick={() => pick(r.id)} style={{ padding: "6px 9px", borderRadius: 6, cursor: "pointer", fontSize: 13, background: cat === r.id ? "#eff6ff" : "", color: cat === r.id ? "#1d4ed8" : "#334155" }}>
-              <Icon n="📁" size={14} /> {r.name} <span className="muted">({r.products_count})</span>
+            <div onClick={() => pick(r.id)} className="cat-row" style={{ padding: "6px 9px", borderRadius: 6, cursor: "pointer", fontSize: 13, background: cat === r.id ? "#eff6ff" : "", color: cat === r.id ? "#1d4ed8" : "#334155", display: "flex", alignItems: "center" }}>
+              <span style={{ flex: 1 }}><Icon n="📁" size={14} /> {r.name} <span className="muted">({r.products_count})</span></span>
+              {canEdit && <span onClick={(e) => delCategory(r, e)} title={t("Удалить папку со всеми подпапками и товарами","Видалити папку з усіма підпапками і товарами")} style={{ color: "#dc2626", fontSize: 12, padding: "0 4px", opacity: 0.55 }}>🗑</span>}
             </div>
             {tree.childrenOf(r.id).map((ch) => (
-              <div key={ch.id} onClick={() => pick(ch.id)} style={{ padding: "5px 9px 5px 24px", borderRadius: 6, cursor: "pointer", fontSize: 12.5, background: cat === ch.id ? "#eff6ff" : "", color: cat === ch.id ? "#1d4ed8" : "#475569" }}>
-                {ch.name} <span className="muted">({ch.products_count})</span>
+              <div key={ch.id} onClick={() => pick(ch.id)} style={{ padding: "5px 9px 5px 24px", borderRadius: 6, cursor: "pointer", fontSize: 12.5, background: cat === ch.id ? "#eff6ff" : "", color: cat === ch.id ? "#1d4ed8" : "#475569", display: "flex", alignItems: "center" }}>
+                <span style={{ flex: 1 }}>{ch.name} <span className="muted">({ch.products_count})</span></span>
+                {canEdit && <span onClick={(e) => delCategory(ch, e)} title={t("Удалить подпапку с товарами","Видалити підпапку з товарами")} style={{ color: "#dc2626", fontSize: 12, padding: "0 4px", opacity: 0.55 }}>🗑</span>}
               </div>
             ))}
           </div>

@@ -78,6 +78,24 @@ def b24_pages(method, payload, result_key=None):
     return out
 
 
+def _trash_section_ids(sections):
+    """ID секции «!!УДАЛИТЬ» + всё её поддерево — НЕ переносим (мусор Б24)."""
+    kids = {}
+    for s in sections:
+        pid = s.get("iblockSectionId")
+        if pid:
+            kids.setdefault(int(pid), []).append(int(s["id"]))
+    trash = set()
+    stack = [int(s["id"]) for s in sections if "УДАЛИТЬ" in (s.get("name") or "").upper()]
+    while stack:
+        x = stack.pop()
+        if x in trash:
+            continue
+        trash.add(x)
+        stack.extend(kids.get(x, []))
+    return trash
+
+
 class Command(BaseCommand):
     help = "Полная синхронизация каталога из Bitrix24 (разделы, товары, описания, закупки, картинки)"
 
@@ -100,7 +118,9 @@ class Command(BaseCommand):
         sections = b24_pages("catalog.section.list",
                              {"filter": {"iblockId": IBLOCK}, "select": ["id", "name", "iblockSectionId"]},
                              "sections")
-        log(f"[{mode}] разделов в Б24: {len(sections)}")
+        trash = _trash_section_ids(sections)
+        sections = [s for s in sections if int(s["id"]) not in trash]
+        log(f"[{mode}] разделов в Б24: {len(sections)} (мусорных «УДАЛИТЬ» пропущено: {len(trash)})")
 
         # ── 3. Товары (основное через crm.product.list) ────────────────────
         prods = b24_pages("crm.product.list", {
@@ -109,7 +129,8 @@ class Command(BaseCommand):
                         "CURRENCY_ID", "MEASURE", "CREATED_BY", "MODIFIED_BY",
                         "DATE_CREATE", "TIMESTAMP_X"],
         })
-        log(f"[{mode}] товаров в Б24: {len(prods)}")
+        prods = [p for p in prods if not (p.get("SECTION_ID") and int(p["SECTION_ID"]) in trash)]
+        log(f"[{mode}] товаров в Б24 (без мусорной ветки): {len(prods)}")
 
         # ── 4. Закупочные цены (catalog.product.list) ──────────────────────
         cost_map = {}
@@ -205,42 +226,59 @@ class Command(BaseCommand):
             hidden = Product.objects.filter(bitrix_id__in=gone, is_active=True).update(is_active=False)
             log(f"товары: создано {cre_p}, обновлено {upd_p}, скрыто (нет в Б24) {hidden}")
 
-        # ── 5. Картинки (вне транзакции — сеть) ────────────────────────────
+        # ── 5. Картинки: живут на ОФФЕРАХ (iblock 26), крепим к РОДИТЕЛЮ ──
         if opts["images"]:
+            import urllib.parse
             img_dir = "warehouse_photos/products"
             os.makedirs(img_dir, exist_ok=True)
             have_imgs = set(ProductImage.objects.values_list("b24_file_id", flat=True))
-            dl = skip = 0
             pmap = {p.bitrix_id: p for p in Product.objects.exclude(bitrix_id=None)}
-            all_ids = sorted(pmap.keys())
-            # батчами по 50 через batch API
-            for i in range(0, len(all_ids), 50):
-                chunk = all_ids[i:i + 50]
-                cmd = {f"i{pid}": f"catalog.productImage.list?productId={pid}" for pid in chunk}
-                d = b24("batch", {"halt": 0, "cmd": cmd})
-                res = (d.get("result") or {}).get("result") or {}
-                for key, val in res.items():
-                    pid = int(key[1:])
-                    for img in (val or {}).get("productImages", []):
-                        fid = int(img["id"])
-                        if fid in have_imgs:
-                            skip += 1; continue
-                        url = img.get("detailUrl") or img.get("downloadUrl")
-                        if not url:
-                            continue
-                        content, ct = http_get(url)
-                        if not content:
-                            continue
-                        ext = "jpg"
-                        if "png" in ct: ext = "png"
-                        elif "webp" in ct: ext = "webp"
-                        fname = f"{img_dir}/{pid}_{fid}.{ext}"
-                        with open(fname, "wb") as fh:
-                            fh.write(content)
-                        ProductImage.objects.create(product=pmap[pid], file_path=fname, b24_file_id=fid)
-                        dl += 1
-                if i % 500 == 0:
-                    log(f"  картинки: обработано товаров {i + len(chunk)}/{len(all_ids)}, скачано {dl}")
+            # все офферы (id → родитель)
+            offers = b24_pages("catalog.product.list",
+                               {"filter": {"iblockId": 26}, "select": ["id", "iblockId", "parentId"]},
+                               "products")
+            pairs = []  # (объект-источник картинок, родительский bitrix_id)
+            for o in offers:
+                par = o.get("parentId")
+                par_id = int(par["value"]) if isinstance(par, dict) and par.get("value") else None
+                pairs.append((int(o["id"]), par_id))
+            # + сами товары (на случай картинок прямо на товаре)
+            pairs.extend((bx, bx) for bx in sorted(pmap.keys()))
+            log(f"источников картинок: офферов {len(offers)} + товаров {len(pmap)}")
+            dl = skip = 0
+            done = 0
+            for src_id, parent_bx in pairs:
+                done += 1
+                if done % 400 == 0:
+                    log(f"  картинки: проверено {done}/{len(pairs)}, скачано {dl}")
+                target = pmap.get(parent_bx)
+                if target is None:
+                    continue  # родитель в мусорной ветке / не у нас
+                try:
+                    d = b24("catalog.productImage.list", {"productId": src_id})
+                except Exception:
+                    continue  # 400 для типів товару без картинок — пропускаємо
+                for img in ((d.get("result") or {}).get("productImages") or []):
+                    fid = int(img["id"])
+                    if fid in have_imgs:
+                        skip += 1; continue
+                    url = img.get("detailUrl") or img.get("downloadUrl")
+                    if not url:
+                        continue
+                    if url.startswith("/"):
+                        url = "https://b24-gmideas.com.ua" + urllib.parse.quote(url)
+                    content, ct = http_get(url)
+                    if not content or len(content) < 100:
+                        continue
+                    ext = "jpg"
+                    if "png" in ct: ext = "png"
+                    elif "webp" in ct: ext = "webp"
+                    fname = f"{img_dir}/{target.id}_{fid}.{ext}"
+                    with open(fname, "wb") as fh:
+                        fh.write(content)
+                    ProductImage.objects.create(product=target, file_path=fname, b24_file_id=fid)
+                    have_imgs.add(fid)
+                    dl += 1
             log(f"картинки: скачано {dl}, уже были {skip}")
 
         log(self.style.SUCCESS("SYNC DONE"))

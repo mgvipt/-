@@ -50,6 +50,37 @@ class ProductCategoryViewSet(viewsets.ModelViewSet):
     serializer_class = ProductCategorySerializer
     pagination_class = None  # дерево категорий целиком
 
+    def destroy(self, request, *args, **kwargs):
+        """Удалить папку + ВСЕ подпапки + товары в них.
+        Товары с движениями — скрываются (история цела), без движений — удаляются навсегда.
+        ?dry=1 → только посчитать (для подтверждения в UI)."""
+        from rest_framework.response import Response as _R
+        root = self.get_object()
+        cats = [root]
+        i = 0
+        while i < len(cats):  # собрать поддерево
+            cats.extend(ProductCategory.objects.filter(parent=cats[i]))
+            i += 1
+        cat_ids = [c.id for c in cats]
+        prods = Product.objects.filter(category_id__in=cat_ids)
+        with_mov = prods.filter(movements__isnull=False).distinct()
+        without_mov = prods.exclude(id__in=with_mov.values_list("id", flat=True))
+        if request.query_params.get("dry"):
+            return _R({"categories": len(cats), "products_delete": without_mov.count(),
+                       "products_hide": with_mov.count()})
+        hid = with_mov.update(is_active=False, category=None)  # скрыть + отвязать
+        deleted = without_mov.count()
+        for p in without_mov:
+            try:
+                p.delete()
+            except Exception:
+                p.is_active = False; p.category = None; p.save(update_fields=["is_active", "category"])
+                hid += 1; deleted -= 1
+        n_cats = len(cats)
+        for c in reversed(cats):  # сначала листья
+            c.delete()
+        return _R({"ok": True, "categories": n_cats, "products_deleted": deleted, "products_hidden": hid})
+
 
 class ProductViewSet(viewsets.ModelViewSet):
     permission_classes = [WarehouseWrite]
