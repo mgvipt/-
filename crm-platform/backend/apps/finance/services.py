@@ -58,12 +58,23 @@ def _fin_articles():
 
 def _revenue(d_from, d_to):
     """Выручка = реальні доходи-транзакції (direction=in) за період у гривні.
-    Перекази (transfer) НЕ враховуються. Дані перенесені з ФінМапа."""
+    Перекази (transfer) НЕ враховуються. Угоди = УНІКАЛЬНІ deal_id (не транзакції):
+    передоплата+доплата по одній угоді = 1 угода."""
     from .models import Transaction
     qs = Transaction.objects.filter(direction="in",
                                     date__gte=d_from, date__lte=d_to)
     rev = float(qs.aggregate(s=_Sum("amount_uah"))["s"] or 0)
-    return rev, qs.count()
+    with_deal = qs.exclude(deal__isnull=True).values("deal_id").distinct().count()
+    no_deal = qs.filter(deal__isnull=True).count()
+    return rev, with_deal + no_deal
+
+
+def _margin_pct(arts):
+    """ЄДИНА формула маржинальності (ATM): 100 − Σ(фонди виручки %) − Σ(комісії %).
+    Використовується у P&L, ТБ і Каналах — щоб не розходились."""
+    rev_fund = sum(float(a.value) for a in arts if a.category == "revenue_fund")
+    pay = sum(float(a.value) for a in arts if a.category == "payment_fee" and a.value_type == "percent")
+    return max(0.0, 100.0 - rev_fund - pay)
 
 
 def compute_pnl(d_from, d_to):
@@ -72,19 +83,19 @@ def compute_pnl(d_from, d_to):
     arts = _fin_articles()
     revenue, deals = _revenue(d_from, d_to)
     days = (d_to - d_from).days + 1
-    rev_fund_pct = sum(float(a.value) for a in arts if a.category == "revenue_fund")
-    pay_pct = sum(float(a.value) for a in arts if a.category == "payment_fee" and a.value_type == "percent")
+    direct_pct_total = 100.0 - _margin_pct(arts)  # ЄДИНА формула з ТБ
     ai_per_deal = sum(float(a.value) for a in arts if a.category == "payment_fee" and a.value_type == "fixed_per_deal")
-    direct = revenue * (rev_fund_pct + pay_pct) / 100 + ai_per_deal * deals
+    direct = revenue * direct_pct_total / 100 + ai_per_deal * deals
     margin = revenue - direct
+    # операційні: змінні + постійні + УПР(обидві) + СКД (₴/міс) — повний котел ATM
     operating = sum(float(a.value) for a in arts
-                    if a.category in ("variable", "fixed") and a.value_type in ("fixed_sum_per_month", "auto_meta_ads")) * days / 30.0
+                    if a.category in ("variable", "fixed", "upr_cat2", "upr_cat3", "skd") and a.value_type in ("fixed_sum_per_month", "auto_meta_ads")) * days / 30.0
     net = margin - operating
     return {
         "revenue": round(revenue), "deals": deals,
-        "direct": round(direct), "direct_pct": round(rev_fund_pct + pay_pct, 2),
+        "direct": round(direct), "direct_pct": round(direct_pct_total, 2),
         "ai_total": round(ai_per_deal * deals),
-        "margin": round(margin), "margin_pct": round(margin / revenue * 100, 1) if revenue else round(100 - rev_fund_pct - pay_pct, 2),
+        "margin": round(margin), "margin_pct": round(margin / revenue * 100, 1) if revenue else round(_margin_pct(arts), 2),
         "operating": round(operating),
         "net": round(net), "net_pct": round(net / revenue * 100, 1) if revenue else 0,
     }
@@ -96,12 +107,15 @@ def compute_breakeven(d_from, d_to):
     fees = Σ(payment_fee грн/угода)×100; ТБ = monthly×(дні/30) / (margin%/100)."""
     arts = _fin_articles()
     revenue, deals = _revenue(d_from, d_to)
-    rev_funds = sum(float(a.value) for a in arts if a.category == "revenue_fund")
-    margin_pct = max(0.0, 100.0 - rev_funds)
+    margin_pct = _margin_pct(arts)  # та ж формула, що у P&L (ATM)
+    # у ТБ входять: змінні + постійні + УПР обовʼязкові + СКД-мінімум (₴/міс). УПР відмовні (upr_cat3) — НІ.
     monthly_costs = sum(float(a.value) for a in arts
-                        if a.category in ("variable", "fixed") and a.value_type in ("fixed_sum_per_month", "auto_meta_ads"))
+                        if a.category in ("variable", "fixed", "upr_cat2", "skd") and a.value_type in ("fixed_sum_per_month", "auto_meta_ads"))
+    # ₴/угода × ФАКТИЧНІ угоди періоду, приведені до місяця (раніше був хардкод ×100)
+    days_f = (d_to - d_from).days + 1
+    deals_month = deals / days_f * 30.0 if days_f else 0
     per_deal_fees = sum(float(a.value) for a in arts
-                        if a.category == "payment_fee" and a.value_type == "fixed_per_deal") * 100
+                        if a.category == "payment_fee" and a.value_type == "fixed_per_deal") * deals_month
     total_monthly = monthly_costs + per_deal_fees
     days = (d_to - d_from).days + 1
     period_costs = total_monthly * days / 30.0
@@ -123,7 +137,7 @@ def compute_breakeven(d_from, d_to):
         "daily_pace": round(daily_pace), "projected": round(projected),
         "required_daily": round(required_daily), "days_left": days_left,
         "days_elapsed": days_elapsed, "days_total": days,
-        "rev_funds_pct": round(rev_funds, 2),
+        "rev_funds_pct": round(100.0 - margin_pct, 2),
         "projected_progress": round(projected / breakeven * 100, 1) if breakeven else 0,
         "to_breakeven": round(max(0, breakeven - revenue)),
     }
@@ -229,8 +243,9 @@ def compute_manager_salary(user, period):
     rev = float(_inc.aggregate(s=_Sum("amount_uah"))["s"] or 0)
     deals = _inc.values("deal_id").distinct().count()
     avg_check = rev / deals if deals else 0
-    # маржа período — приблизно через ставку маржі компанії (38.22% валова)
-    margin_amt = rev * 0.3822
+    # маржа періоду — від ФІНМОДЕЛІ (єдина _margin_pct), а не хардкод:
+    # зміниш % фондів у фінмоделі → бонус менеджера перерахується
+    margin_amt = rev * _margin_pct(_fin_articles()) / 100.0
 
     plan = ManagerPlan.objects.filter(user=user, period=period).first()
     target = float(plan.target_revenue) if plan and plan.target_revenue else None

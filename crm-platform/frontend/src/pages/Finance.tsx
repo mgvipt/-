@@ -749,6 +749,16 @@ function FxImpact() {
 }
 
 /* ─── ВКЛАДКА: P&L (ATM, 5 уровней) ────────────────────────────────────── */
+function PnLNote() {
+  const { t } = useLang();
+  return (
+    <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, color: "#1e40af", marginBottom: 10 }}>
+      ℹ️ {t("P&L — НОРМАТИВНЫЙ (проценты финмодели на фактической выручке). Кассовый факт денег — в Журнале и на Дашборде. Эти две цифры и должны отличаться: P&L показывает «как должно быть по модели», журнал — «как прошло по кассе».",
+            "P&L — НОРМАТИВНИЙ (відсотки фінмоделі на фактичній виручці). Касовий факт грошей — у Журналі та на Дашборді. Ці дві цифри і мають відрізнятись: P&L показує «як має бути по моделі», журнал — «як пройшло по касі».")}
+    </div>
+  );
+}
+
 function PnL() {
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(today());
@@ -767,6 +777,7 @@ function PnL() {
   return (
     <>
       <Period from={from} to={to} set={load} />
+      <PnLNote />
       <div className="panel" style={{ margin: 0, maxWidth: 620 }}>
         <b style={{ fontSize: 14 }}>{tr("P&L по методологии ATM","P&L по методології ATM")} · {d.deals} {tr("сделок","угод")}</b>
         <table style={{ width: "100%", marginTop: 10 }}>

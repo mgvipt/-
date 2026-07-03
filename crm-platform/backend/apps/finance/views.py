@@ -471,12 +471,12 @@ _GROUP_META = [
 def _fund_stats(period):
     """Для кожного фонду: розподілено (allocations) − витрачено (Transaction out) = залишок."""
     alloc = {r["fund"]: float(r["s"]) for r in
-             FundAllocation.objects.filter(period=period).values("fund").annotate(s=Sum("amount"))}
+             FundAllocation.objects.filter(period=period).values("fund").annotate(s=Sum("amount_uah"))}
     spent = {}
     y, mo = int(period[:4]), int(period[5:7])
     for r in (Transaction.objects.filter(direction="out", fin_article__isnull=False,
                                           date__year=y, date__month=mo)
-              .values("fin_article").annotate(s=Sum("amount"))):
+              .values("fin_article").annotate(s=Sum("amount_uah"))):
         spent[r["fin_article"]] = float(r["s"])
     return alloc, spent
 
