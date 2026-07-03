@@ -337,7 +337,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     finally { setSending(false); }
   }
   async function ship() {
-    try { const r = await api.post<any>(`/api/deals/${id}/ship/`, {}); setDeal(r.deal); flash(t(`✓ Отгружено. Себестоимость ${r.cogs} ₴ списана`, `✓ Відвантажено. Собівартість ${r.cogs} ₴ списана`)); }
+    try { const r = await api.post<any>(`/api/deals/${id}/ship/`, {}); setDeal(r.deal); flash(t(`✓ Отгружено. Со склада списано на ${r.cogs} ₴ по закупке (деньги не трогаются)`, `✓ Відвантажено. Зі складу списано на ${r.cogs} ₴ по закупці (гроші не чіпаються)`)); }
     catch { flash(t("В сделке нет товаров для отгрузки","У сделке немає товарів для відвантаження")); }
   }
   // TODO боевой режим: завести @action в DealViewSet поверх integrations/adapters.py

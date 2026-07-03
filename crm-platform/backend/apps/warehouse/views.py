@@ -415,6 +415,14 @@ class InventoryAnalyticsView(APIView):
             else:
                 out_stock += 1
         cats = sorted(by_cat.items(), key=lambda kv: -kv[1]["retail"])
+        # довідково: втрати складу (НЕ каса — гроші пішли при закупівлі)
+        from apps.warehouse.models import StockMovement as _SM2
+        _loss_wo = float(sum(abs(m.quantity) * (m.price or 0) for m in _SM2.objects.filter(
+            document__kind="writeoff", document__posted=True,
+            document__created_at__gte=_tz.now() - _td(days=90))))
+        _loss_inv = float(sum(abs(m.quantity) * (m.price or 0) for m in _SM2.objects.filter(
+            document__kind="inv", document__posted=True, quantity__lt=0,
+            document__created_at__gte=_tz.now() - _td(days=90))))
         _frozen_total = round(sum(r["frozen"] for r in _rows))
         _frozen_top = sorted(_rows, key=lambda r: -r["frozen"])[:20]
         _dead = [r for r in _rows if r["dead"]]
@@ -436,6 +444,8 @@ class InventoryAnalyticsView(APIView):
             "dead_total": _dead_total if _cc else None,
             "dead_top": (_dead_top if _cc else []),
             "dead_days": _dead_days,
+            "losses_writeoff_90d": round(_loss_wo) if _cc else None,
+            "losses_inv_90d": round(_loss_inv) if _cc else None,
         })
 
 

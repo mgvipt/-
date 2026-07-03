@@ -23,6 +23,7 @@ interface InvData {
   by_category: { name: string; items: number; qty: number; cost: number; retail: number }[];
   frozen_total?: number; frozen_top?: { name: string; sku: string; qty: number; unit: string; frozen: number }[];
   dead_count?: number; dead_total?: number; dead_top?: { name: string; sku: string; qty: number; unit: string; frozen: number }[]; dead_days?: number;
+  losses_writeoff_90d?: number; losses_inv_90d?: number;
 }
 const fmt = (n: number) => Math.round(n || 0).toLocaleString("ru");
 
@@ -188,6 +189,14 @@ export function StockTab() {
         </table>
       </div>
 
+      {showCost && ((d.losses_writeoff_90d || 0) > 0 || (d.losses_inv_90d || 0) > 0) && (
+        <div className="panel" style={{ margin: "14px 0 0", borderLeft: "4px solid #f59e0b" }}>
+          <b style={{ fontSize: 14 }}>⚠️ {t("Потери склада за 90 дней (справочно)","Втрати складу за 90 днів (довідково)")}</b>
+          <div className="muted" style={{ fontSize: 12, margin: "2px 0 0" }}>
+            {t("Брак/порча","Брак/порча")}: <b>{fmt(d.losses_writeoff_90d || 0)} ₴</b> · {t("Недостачи по инвентаризации","Нестачі по інвентаризації")}: <b>{fmt(d.losses_inv_90d || 0)} ₴</b> — {t("по закупочной. Это НЕ движение денег (деньги ушли при закупке), но эти потери уменьшают твою прибыль.","по закупівельній. Це НЕ рух грошей (гроші пішли при закупівлі), але ці втрати зменшують твій прибуток.")}
+          </div>
+        </div>
+      )}
       {showCost && d.frozen_top && d.frozen_top.length > 0 && (
         <div className="panel" style={{ margin: "14px 0 0" }}>
           <b style={{ fontSize: 14 }}>💰 {t("Замороженные деньги (где лежит капитал)","Заморожені гроші (де лежить капітал)")}</b>

@@ -29,7 +29,7 @@ class ProductSerializer(serializers.ModelSerializer):
                   "is_active", "category", "category_name", "stock", "margin",
                   "description", "b24_created_by", "b24_modified_by",
                   "b24_created_at", "b24_modified_at", "created_at", "updated_at", "images", "is_bundle",
-                  "track_stock"]
+                  "track_stock", "reserved_qty"]
 
     def get_stock(self, obj):
         return obj.stock()
@@ -38,6 +38,15 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def get_images(self, obj):
         return [{"id": im.id, "url": "/api/products/%d/image/%d/" % (obj.id, im.id)} for im in obj.images.all()]
+
+    reserved_qty = serializers.SerializerMethodField()
+
+    def get_reserved_qty(self, obj):
+        """У резерві під активні сделки (не won/lost). Доступно = залишок − резерв."""
+        from django.db.models import Sum
+        v = obj.deal_items.filter(reserved=True, deal__stage__is_won=False,
+                                  deal__stage__is_lost=False).aggregate(s=Sum("quantity"))["s"]
+        return float(v or 0)
 
     is_bundle = serializers.SerializerMethodField()
 
