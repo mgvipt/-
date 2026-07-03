@@ -27,7 +27,8 @@ def realize_deal(deal, user=None):
         return None, Decimal("0"), False
     wh = Warehouse.objects.filter(is_default=True).first() or Warehouse.objects.first()
     doc = StockDocument.objects.create(kind="out", number="РН-%s" % deal.id, warehouse=wh, deal=deal,
-                                       comment="Реалізація по угоді #%s" % deal.id, author=user)
+                                       comment="Реалізація по угоді #%s" % deal.id, author=user,
+                                       close_stage=(deal.stage.name if deal.stage_id else ""))
     cogs = Decimal("0")
     for it in items:
         cost = it.product.cost or Decimal("0")

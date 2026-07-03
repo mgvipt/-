@@ -125,7 +125,7 @@ class DealDetailSerializer(DealSerializer):
         if not doc:
             return None
         return {"id": doc.id, "number": doc.number, "posted": doc.posted,
-                "total": float(doc.total), "created_at": doc.created_at}
+                "total": float(doc.total), "created_at": doc.created_at, "close_stage": doc.close_stage}
 
     def get_pay_method(self, obj):
         paid = [p for p in obj.payments.all() if p.is_paid]

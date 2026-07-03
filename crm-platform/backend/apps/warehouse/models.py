@@ -64,6 +64,7 @@ class StockDocument(models.Model):
     author = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)
     posted = models.BooleanField("Проведено", default=True)  # чернетка (False) не впливає на залишок/COGS
+    close_stage = models.CharField("Стадія закриття", max_length=120, blank=True, default="")  # на якій стадії створено реалізацію
 
     class Meta:
         ordering = ["-created_at"]

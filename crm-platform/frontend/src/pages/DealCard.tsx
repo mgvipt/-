@@ -822,6 +822,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                     <div style={rowTot}><span className="muted">{t("Сумма без скидки","Сума без знижки")}</span><b>{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.quantity) * Number(i.price), 0))} ₴</b></div>
                     <div style={rowTot}><span className="muted">{t("Сумма скидки","Сума знижки")}</span><b style={{ color: "#16a34a" }}>−{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.discount_sum || 0), 0))} ₴</b></div>
                     <div style={{ ...rowTot, fontSize: 16, borderTop: "2px solid #e2e8f0", paddingTop: 8, marginTop: 4 }}><span>{t("Итого","Загальна сума")}</span><b>{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.total), 0))} ₴</b></div>
+                    {(deal as any).realization && (
+                      <div style={{ ...rowTot, fontSize: 12.5, marginTop: 6, color: (deal as any).realization.posted ? "#166534" : "#92400e" }}>
+                        <span className="muted">{t("Реализация","Реалізація")} 📤</span>
+                        <b>{(deal as any).realization.number} · {((deal as any).realization.created_at || "").slice(0, 10)} · {(deal as any).realization.posted ? t("проведён","проведено") : t("черновик","чернетка")}</b>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 14 }}>

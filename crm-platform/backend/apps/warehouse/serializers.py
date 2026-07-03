@@ -61,7 +61,7 @@ class StockDocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockDocument
         fields = ["id", "kind", "kind_display", "number", "warehouse", "comment",
-                  "deal", "deal_title", "total", "created_at", "items", "posted"]
+                  "deal", "deal_title", "total", "created_at", "items", "posted", "close_stage"]
         read_only_fields = ["created_at"]
 
     def create(self, validated):
