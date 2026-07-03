@@ -158,7 +158,7 @@ function SalesTab() {
 }
 
 /* ─── ВКЛАДКА СКЛАД ────────────────────────────────────────────────────── */
-function StockTab() {
+export function StockTab() {
   const { t } = useLang();
   const { can } = useAuth();
   const showCost = can("product.cost.view");

@@ -19,6 +19,7 @@
  * ========================================================================== */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { StockTab } from "./Analytics";
 import { api, Paginated } from "../api";
 import { useLang } from "../i18n";
 import { useAuth } from "../auth";
@@ -60,25 +61,32 @@ export default function Warehouse() {
   const [whs, setWhs] = useState<WH[]>([]);
   const [modal, setModal] = useState<null | "in" | "out">(null);
   const canRealize = can("warehouse.edit") || can("finance.manage");
-  const [view, setView] = useState<"goods" | "realiz" | "receipt" | "inv">("goods");
+  const [view, setView] = useState<"goods" | "realiz" | "receipt" | "inv" | "stat">("goods");
   const [realizDocs, setRealizDocs] = useState<any[]>([]);
   const [realizBusy, setRealizBusy] = useState(false);
   const [realizSel, setRealizSel] = useState<any>(null);
   const [receiptDocs, setReceiptDocs] = useState<any[]>([]);
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [receiptSel, setReceiptSel] = useState<any>(null);
-  async function openReceiptList() {
+  const [docPage, setDocPage] = useState({ realiz: 1, receipt: 1 });
+  const [docPS, setDocPS] = useState({ realiz: 25, receipt: 25 });
+  const [docCount, setDocCount] = useState({ realiz: 0, receipt: 0 });
+  async function openReceiptList(pg?: number, ps?: number) {
     setReceiptBusy(true);
-    try { const r: any = await api.get("/api/stock-documents/?kind=in"); setReceiptDocs(Array.isArray(r) ? r : (r.results || [])); }
+    const page = pg ?? docPage.receipt, size = ps ?? docPS.receipt;
+    try { const r: any = await api.get(`/api/stock-documents/?kind=in&page=${page}&page_size=${size}`);
+      setReceiptDocs(Array.isArray(r) ? r : (r.results || [])); setDocCount((c) => ({ ...c, receipt: r.count ?? (r.results || r).length })); }
     catch { setReceiptDocs([]); }
     setReceiptBusy(false);
   }
   function docTitle(d: any) {
     return (d.number || ("РН-" + d.id)) + " · " + (d.deal_title || (d.deal ? t("сделка","сделка") + " #" + d.deal : t("ручное","ручне"))) + " · " + (d.created_at || "").slice(0, 10);
   }
-  async function openRealizList() {
+  async function openRealizList(pg?: number, ps?: number) {
     setRealizBusy(true);
-    try { const r: any = await api.get("/api/stock-documents/?kind=out"); setRealizDocs(Array.isArray(r) ? r : (r.results || [])); }
+    const page = pg ?? docPage.realiz, size = ps ?? docPS.realiz;
+    try { const r: any = await api.get(`/api/stock-documents/?kind=out&page=${page}&page_size=${size}`);
+      setRealizDocs(Array.isArray(r) ? r : (r.results || [])); setDocCount((c) => ({ ...c, realiz: r.count ?? (r.results || r).length })); }
     catch { setRealizDocs([]); }
     setRealizBusy(false);
   }
@@ -167,6 +175,13 @@ export default function Warehouse() {
   useEffect(() => {
     const pid = params.get("product");
     if (pid) { api.get<Product>(`/api/products/${pid}/`).then((p) => openCard(p)).catch(() => {}); }
+    const did = params.get("doc");
+    if (did) {
+      api.get<any>(`/api/stock-documents/${did}/`).then((doc) => {
+        if (doc.kind === "out") { setView("realiz"); setRealizSel(doc); openRealizList(); }
+        else { setView("receipt"); setReceiptSel(doc); openReceiptList(); }
+      }).catch(() => {});
+    }
     // eslint-disable-next-line
   }, []);
   useEffect(() => {
@@ -316,6 +331,7 @@ export default function Warehouse() {
         <button className={"btn" + (view === "realiz" ? " btn-primary" : " btn-light")} onClick={() => { setView("realiz"); setRealizSel(null); openRealizList(); }}><Icon n="📤" size={15} /> {t("Реализации","Реалізації")}</button>
         <button className={"btn" + (view === "receipt" ? " btn-primary" : " btn-light")} onClick={() => { setView("receipt"); setReceiptSel(null); openReceiptList(); }}><Icon n="📥" size={15} /> {t("Приходные накладные","Прибуткові накладні")}</button>
         <button className={"btn" + (view === "inv" ? " btn-primary" : " btn-light")} onClick={() => { setView("inv"); openInventory(); }}><Icon n="📋" size={15} /> {t("Инвентаризация","Інвентаризація")}</button>
+        <button className={"btn" + (view === "stat" ? " btn-primary" : " btn-light")} onClick={() => setView("stat")}><Icon n="📊" size={15} /> {t("Аналитика","Аналітика")}</button>
       </div>
 
       {view === "realiz" ? (
@@ -325,7 +341,7 @@ export default function Warehouse() {
             <button className="btn btn-light" onClick={() => setRealizSel(null)}>← {t("К списку реализаций","До списку реалізацій")}</button>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
               <div>
-                <h3 style={{ margin: "0 0 4px" }}>{t("Реализация","Реалізація")} {docTitle(realizSel)}</h3>
+                <h3 style={{ margin: "0 0 4px" }}>{t("Реализация","Реалізація")} {docTitle(realizSel)} <button className="btn btn-light" style={{ padding: "2px 8px" }} title={t("Скопировать ссылку","Скопіювати посилання")} onClick={() => { navigator.clipboard?.writeText(window.location.origin + "/warehouse?doc=" + realizSel.id); alert(t("Ссылка скопирована ✓","Посилання скопійовано ✓")); }}>🔗</button></h3>
                 <div className="muted" style={{ fontSize: 12 }}>{t("Стадия закрытия","Стадія закриття")}: <b>{realizSel.close_stage || "—"}</b></div>
               </div>
               <div style={{ textAlign: "right" }}>
@@ -369,8 +385,20 @@ export default function Warehouse() {
                 </tr>
               ))}</tbody>
             </table>}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              <span className="muted" style={{ fontSize: 12 }}>{t("Строк","Рядків")}:</span>
+              {[25, 50, 100].map((n) => <button key={n} className={"btn" + (docPS.realiz === n ? " btn-primary" : " btn-light")} style={{ padding: "2px 10px", fontSize: 12 }} onClick={() => { setDocPS((x) => ({ ...x, realiz: n })); setDocPage((x) => ({ ...x, realiz: 1 })); openRealizList(1, n); }}>{n}</button>)}
+              <div style={{ flex: 1 }} />
+              <button className="btn btn-light" disabled={docPage.realiz <= 1} onClick={() => { const p = docPage.realiz - 1; setDocPage((x) => ({ ...x, realiz: p })); openRealizList(p); }}>←</button>
+              <span style={{ fontSize: 12 }}>{docPage.realiz} / {Math.max(1, Math.ceil(docCount.realiz / docPS.realiz))}</span>
+              <button className="btn btn-light" disabled={docPage.realiz >= Math.ceil(docCount.realiz / docPS.realiz)} onClick={() => { const p = docPage.realiz + 1; setDocPage((x) => ({ ...x, realiz: p })); openRealizList(p); }}>→</button>
+            </div>
           </>
         )}
+      </div>
+      ) : view === "stat" ? (
+      <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16 }}>
+        <StockTab />
       </div>
       ) : view === "receipt" ? (
       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16 }}>
@@ -379,7 +407,7 @@ export default function Warehouse() {
             <button className="btn btn-light" onClick={() => setReceiptSel(null)}>← {t("К списку приходов","До списку приходів")}</button>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
               <div>
-                <h3 style={{ margin: "0 0 4px" }}>{t("Приходная накладная","Прибуткова накладна")} {receiptSel.number || ("#" + receiptSel.id)}</h3>
+                <h3 style={{ margin: "0 0 4px" }}>{t("Приходная накладная","Прибуткова накладна")} {receiptSel.number || ("#" + receiptSel.id)} <button className="btn btn-light" style={{ padding: "2px 8px" }} title={t("Скопировать ссылку","Скопіювати посилання")} onClick={() => { navigator.clipboard?.writeText(window.location.origin + "/warehouse?doc=" + receiptSel.id); alert(t("Ссылка скопирована ✓","Посилання скопійовано ✓")); }}>🔗</button></h3>
                 <div className="muted" style={{ fontSize: 12 }}>{(receiptSel.created_at || "").slice(0, 10)}{receiptSel.comment ? " · " + receiptSel.comment : ""}</div>
               </div>
               <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 13, fontWeight: 700, background: receiptSel.posted ? "#dcfce7" : "#fef3c7", color: receiptSel.posted ? "#166534" : "#92400e" }}>{receiptSel.posted ? t("Проведён","Проведено") : t("Черновик","Чернетка")}</span>
@@ -417,6 +445,14 @@ export default function Warehouse() {
                 </tr>
               ))}</tbody>
             </table>}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              <span className="muted" style={{ fontSize: 12 }}>{t("Строк","Рядків")}:</span>
+              {[25, 50, 100].map((n) => <button key={n} className={"btn" + (docPS.receipt === n ? " btn-primary" : " btn-light")} style={{ padding: "2px 10px", fontSize: 12 }} onClick={() => { setDocPS((x) => ({ ...x, receipt: n })); setDocPage((x) => ({ ...x, receipt: 1 })); openReceiptList(1, n); }}>{n}</button>)}
+              <div style={{ flex: 1 }} />
+              <button className="btn btn-light" disabled={docPage.receipt <= 1} onClick={() => { const p = docPage.receipt - 1; setDocPage((x) => ({ ...x, receipt: p })); openReceiptList(p); }}>←</button>
+              <span style={{ fontSize: 12 }}>{docPage.receipt} / {Math.max(1, Math.ceil(docCount.receipt / docPS.receipt))}</span>
+              <button className="btn btn-light" disabled={docPage.receipt >= Math.ceil(docCount.receipt / docPS.receipt)} onClick={() => { const p = docPage.receipt + 1; setDocPage((x) => ({ ...x, receipt: p })); openReceiptList(p); }}>→</button>
+            </div>
           </>
         )}
       </div>
