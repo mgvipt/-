@@ -32,6 +32,8 @@ class Command(BaseCommand):
                 if not p:
                     skipped += 1
                     continue
+                if p.components.exists():
+                    continue  # набір: cost = Σ компонентів (авто), імпортом не чіпаємо
                 cost = round(float(v["cost"]), 2)
                 if float(p.cost or 0) != cost:
                     p.cost = cost

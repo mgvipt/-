@@ -120,6 +120,30 @@ export default function Warehouse() {
   }
   // редагування картки
   const [cardEdit, setCardEdit] = useState<any>(null);
+  // склад набору (комплект)
+  const [bundle, setBundle] = useState<any>(null);
+  const [bundleQ, setBundleQ] = useState("");
+  const [bundleOpts, setBundleOpts] = useState<any[]>([]);
+  async function loadBundle(pid: number) {
+    try { setBundle(await api.get(`/api/products/${pid}/components/`)); } catch { setBundle(null); }
+  }
+  useEffect(() => {
+    if (!bundleQ.trim()) { setBundleOpts([]); return; }
+    const tmr = setTimeout(async () => {
+      try { const r: any = await api.get(`/api/products/?search=${encodeURIComponent(bundleQ.trim())}&page_size=8&is_active=true`); setBundleOpts((r.results || []).filter((x: any) => !x.is_bundle && x.id !== card?.id)); }
+      catch { setBundleOpts([]); }
+    }, 300);
+    return () => clearTimeout(tmr);
+    // eslint-disable-next-line
+  }, [bundleQ]);
+  async function saveBundle(rows: any[]) {
+    if (!card) return;
+    try {
+      const r: any = await api.post(`/api/products/${card.id}/components/`, { components: rows.map((x: any) => ({ component: x.component, quantity: x.quantity })) });
+      setBundle(r); loadProducts();
+      try { setCard(await api.get<Product>(`/api/products/${card.id}/`)); } catch { /* */ }
+    } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось сохранить состав","Не вдалося зберегти склад")); }
+  }
   async function saveCard() {
     if (!card || !cardEdit) return;
     try {
@@ -194,7 +218,8 @@ export default function Warehouse() {
   }
 
   async function openCard(p: Product) {
-    setCard(p); setMovements([]); setCardEdit(null);
+    setCard(p); setMovements([]); setCardEdit(null); setBundle(null); setBundleQ("");
+    loadBundle(p.id);
     try { setCard(await api.get<Product>(`/api/products/${p.id}/`)); } catch { /* */ }
     const mv = await api.get<Movement[]>(`/api/products/${p.id}/movements/`);
     setMovements(mv);
@@ -459,7 +484,7 @@ export default function Warehouse() {
               {!loading && products.length === 0 && <tr><td colSpan={6 + (showCost ? 1 : 0) + (canEdit ? 1 : 0)} className="muted" style={{ padding: 16 }}>{t("Товаров не найдено","Товарів не знайдено")}</td></tr>}
               {!loading && products.map((p) => (
                 <tr key={p.id}>
-                  <td><span onClick={() => openCard(p)} style={{ fontWeight: 500, color: "#1d4ed8", cursor: "pointer" }}>{p.name}</span></td>
+                  <td><span onClick={() => openCard(p)} style={{ fontWeight: 500, color: "#1d4ed8", cursor: "pointer" }}>{(p as any).is_bundle && <span title="Набір (комплект)">🧩 </span>}{p.name}</span></td>
                   <td className="muted">{p.sku}</td>
                   <td className="muted" style={{ fontSize: 12 }}>{p.category_name || "—"}</td>
                   <td>{Number(p.price).toLocaleString("ru")} {p.currency || "грн"}</td>
@@ -585,6 +610,52 @@ export default function Warehouse() {
               <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
                 {card.b24_created_by && <>👤 {t("Создал","Створив")}: <b>{card.b24_created_by}</b>{card.b24_created_at ? " · " + card.b24_created_at.slice(0, 10) : ""}</>}
                 {card.b24_modified_by && <> &nbsp;·&nbsp; ✏️ {t("Изменил","Змінив")}: <b>{card.b24_modified_by}</b>{card.b24_modified_at ? " · " + card.b24_modified_at.slice(0, 10) : ""}</>}
+              </div>
+            )}
+            {(bundle && (bundle.components.length > 0 || canEdit)) && (
+              <div className="panel" style={{ margin: "0 0 16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <b style={{ fontSize: 13.5 }}>🧩 {t("Состав набора","Склад набору")}</b>
+                  {bundle.components.length > 0 && bundle.can_build !== null && (
+                    <span style={{ fontSize: 12.5, fontWeight: 700, padding: "2px 10px", borderRadius: 6, background: bundle.can_build > 0 ? "#dcfce7" : "#fee2e2", color: bundle.can_build > 0 ? "#166534" : "#b91c1c" }}>
+                      {t("можно собрать","можна зібрати")}: {bundle.can_build}
+                    </span>
+                  )}
+                </div>
+                {bundle.components.length === 0 && <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{t("Это обычный товар. Добавь компоненты — станет набором: при продаже списываются компоненты, закупочная цена считается автоматически.","Це звичайний товар. Додай компоненти — стане набором: при продажу списуються компоненти, закупівельна ціна рахується автоматично.")}</div>}
+                {bundle.components.length > 0 && (
+                  <table style={{ width: "100%", fontSize: 13 }}>
+                    <thead><tr><th>{t("Компонент","Компонент")}</th><th style={{ textAlign: "right" }}>{t("Кол-во","К-сть")}</th>{showCost && <th style={{ textAlign: "right" }}>{t("Закупка","Закупка")}</th>}<th style={{ textAlign: "right" }}>{t("Остаток","Залишок")}</th>{canEdit && <th></th>}</tr></thead>
+                    <tbody>{bundle.components.map((c: any) => (
+                      <tr key={c.id}>
+                        <td>{c.name} <span className="muted">{c.sku}</span></td>
+                        <td style={{ textAlign: "right" }}>
+                          {canEdit
+                            ? <input type="number" step="0.1" defaultValue={c.quantity} onBlur={(e) => { const q = Number(e.target.value) || 0; if (q !== c.quantity) saveBundle(bundle.components.map((x: any) => x.id === c.id ? { ...x, quantity: q } : x).filter((x: any) => x.quantity > 0)); }} style={{ width: 64, height: 26, border: "1px solid #cbd5e1", borderRadius: 6, textAlign: "right", padding: "0 4px" }} />
+                            : c.quantity} {c.unit}
+                        </td>
+                        {showCost && <td style={{ textAlign: "right" }}>{c.cost.toLocaleString("uk-UA")} ₴</td>}
+                        <td style={{ textAlign: "right", color: c.stock > 0 ? "#166534" : "#b91c1c" }}>{c.stock}</td>
+                        {canEdit && <td style={{ textAlign: "right" }}><button onClick={() => saveBundle(bundle.components.filter((x: any) => x.id !== c.id))} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#dc2626" }}>✕</button></td>}
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                )}
+                {showCost && bundle.components.length > 0 && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t("Закупочная набора (авто)","Закупівельна набору (авто)")}: <b>{bundle.cost.toLocaleString("uk-UA")} ₴</b></div>}
+                {canEdit && (
+                  <div style={{ position: "relative", marginTop: 8 }}>
+                    <input value={bundleQ} onChange={(e) => setBundleQ(e.target.value)} placeholder={t("➕ Найти товар и добавить в состав…","➕ Знайти товар і додати до складу…")} style={{ width: "100%", height: 32, border: "1px dashed #cbd5e1", borderRadius: 7, padding: "0 10px", fontSize: 13 }} />
+                    {bundleOpts.length > 0 && (
+                      <div style={{ position: "absolute", top: 34, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 20px rgba(15,23,42,.12)", zIndex: 5, maxHeight: 220, overflow: "auto" }}>
+                        {bundleOpts.map((o: any) => (
+                          <div key={o.id} onClick={() => { setBundleQ(""); setBundleOpts([]); saveBundle([...bundle.components, { component: o.id, quantity: 1 }]); }} style={{ padding: "7px 10px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f1f5f9" }}>
+                            {o.name} <span className="muted">{o.sku} · {t("ост.","зал.")} {o.stock}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             <div className="label" style={{ marginBottom: 6 }}>{t("Движение товара (приход / расход / инвентаризация)","Рух товару (прихід / витрата / інвентаризація)")}</div>

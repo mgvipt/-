@@ -28,7 +28,7 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "sku", "unit", "price", "cost", "currency",
                   "is_active", "category", "category_name", "stock", "margin",
                   "description", "b24_created_by", "b24_modified_by",
-                  "b24_created_at", "b24_modified_at", "created_at", "updated_at", "images"]
+                  "b24_created_at", "b24_modified_at", "created_at", "updated_at", "images", "is_bundle"]
 
     def get_stock(self, obj):
         return obj.stock()
@@ -37,6 +37,14 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def get_images(self, obj):
         return [{"id": im.id, "url": "/api/products/%d/image/%d/" % (obj.id, im.id)} for im in obj.images.all()]
+
+    is_bundle = serializers.SerializerMethodField()
+
+    def get_is_bundle(self, obj):
+        ann = getattr(obj, "_is_bundle", None)
+        if ann is not None:
+            return bool(ann)
+        return obj.components.exists()
 
     margin = serializers.SerializerMethodField()
 
@@ -79,6 +87,14 @@ class StockDocumentSerializer(serializers.ModelSerializer):
                 "Видатковий документ без угоди заборонено. Для порчі/браку використовуйте «Списання» (writeoff) з причиною.")
         if attrs.get("kind") == "writeoff" and not (attrs.get("comment") or "").strip():
             raise serializers.ValidationError("Для списання вкажіть причину (коментар).")
+        # НАБІР не може мати власних рухів (прихід/інвентаризація) — фантомний залишок.
+        # Продаж набору списує КОМПОНЕНТИ; повернення набору — прихід компонентів.
+        if attrs.get("kind") in ("in", "inv"):
+            for it in attrs.get("items") or []:
+                prod = it.get("product")
+                if prod is not None and prod.components.exists():
+                    raise serializers.ValidationError(
+                        "«%s» — це набір. Прихід/інвентаризація ведеться по КОМПОНЕНТАХ набору." % prod.name)
         return attrs
 
     def create(self, validated):

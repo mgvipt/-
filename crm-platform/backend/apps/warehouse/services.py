@@ -30,12 +30,64 @@ def realize_deal(deal, user=None):
                                        comment="Реалізація по угоді #%s" % deal.id, author=user,
                                        close_stage=(deal.stage.name if deal.stage_id else ""))
     cogs = Decimal("0")
-    for it in items:
-        cost = it.product.cost or Decimal("0")
-        StockMovement.objects.create(document=doc, product=it.product, quantity=-it.quantity, price=cost)
-        cogs += it.quantity * cost
+    for prod, qty, cost in _expand_deal_items(items):
+        StockMovement.objects.create(document=doc, product=prod, quantity=-qty, price=cost)
+        cogs += qty * cost
     _on_posted(doc)  # єдина точка: COGS-витрата з тегом COGS doc#id
     return doc, cogs, True
+
+
+def _expand_deal_items(items):
+    """Розузлування: рядок сделки з НАБОРОМ розгортається у компоненти
+    (списуються компоненти по їх собівартості), звичайний товар — як є.
+    Повертає [(product, qty, cost), ...]."""
+    from decimal import Decimal
+    out = []
+    for it in items:
+        comps = list(it.product.components.select_related("component"))
+        if comps:
+            for row in comps:
+                out.append((row.component, it.quantity * row.quantity,
+                            row.component.cost or Decimal("0")))
+        else:
+            out.append((it.product, it.quantity, it.product.cost or Decimal("0")))
+    return out
+
+
+def set_bundle_components(bundle, rows):
+    """Замінити склад набору. rows=[{component: Product|id, quantity}]. Повертає (bundle, помилка|None).
+    Правила: глибина 1 (компонент не набір; набір ні у кого не компонент), не сам у себе."""
+    from decimal import Decimal
+    from .models import Product, ProductComponent
+    if bundle.used_in_bundles.exists() and rows:
+        return bundle, "Цей товар сам є компонентом набору — вкладені набори заборонені."
+    seen = set()
+    clean = []
+    for r in rows:
+        comp = r["component"]
+        if not isinstance(comp, Product):
+            comp = Product.objects.get(id=comp)
+        if comp.id == bundle.id:
+            return bundle, "Набір не може містити сам себе."
+        if comp.components.exists():
+            return bundle, "«%s» сам є набором — вкладені набори заборонені." % comp.name
+        if comp.id in seen:
+            continue
+        seen.add(comp.id)
+        qty = Decimal(str(r.get("quantity") or 1))
+        if qty <= 0:
+            continue
+        clean.append((comp, qty))
+    bundle.components.all().delete()
+    for comp, qty in clean:
+        ProductComponent.objects.create(bundle=bundle, component=comp, quantity=qty)
+    # авто-перерахунок собівартості набору
+    total = Decimal("0")
+    for comp, qty in clean:
+        total += (comp.cost or Decimal("0")) * qty
+    bundle.cost = total.quantize(Decimal("0.01"))
+    bundle.save(update_fields=["cost"])
+    return bundle, None
 
 
 def _weighted_cost_update(doc):

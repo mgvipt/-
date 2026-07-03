@@ -176,6 +176,9 @@ class Command(BaseCommand):
                 }
                 if bx in cost_map:
                     vals["cost"] = cost_map[bx]  # только если в Б24 есть закупка
+                obj0 = existing.get(bx)
+                if obj0 is not None and obj0.components.exists():
+                    vals.pop("cost", None)  # набір: cost авто із компонентів
                 obj = existing.get(bx)
                 if obj is None:
                     vals["sku"] = f"B24-{bx}"

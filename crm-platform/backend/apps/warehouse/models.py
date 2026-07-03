@@ -11,6 +11,21 @@ class Warehouse(models.Model):
         return self.name
 
 
+class ProductComponent(models.Model):
+    """Склад набору (комплекту): набір = звичайний Product, склад = рядки компонентів.
+    Глибина рівно 1: компонент не може сам бути набором (валідація в сериалізаторі).
+    Продаж набору списує КОМПОНЕНТИ; cost набору = Σ(component.cost × quantity) — авто."""
+    bundle = models.ForeignKey("Product", on_delete=models.CASCADE, related_name="components")
+    component = models.ForeignKey("Product", on_delete=models.PROTECT, related_name="used_in_bundles")
+    quantity = models.DecimalField("Кількість", max_digits=10, decimal_places=3, default=1)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["bundle", "component"], name="uniq_bundle_component"),
+            models.CheckConstraint(check=~models.Q(bundle=models.F("component")), name="bundle_not_self"),
+        ]
+
+
 class ProductImage(models.Model):
     """Картинка товара (галерея). Файлы в warehouse_photos/products/ (постоянный том)."""
     product = models.ForeignKey("Product", on_delete=models.CASCADE, related_name="images")

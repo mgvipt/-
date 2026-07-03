@@ -61,7 +61,10 @@ class ProductViewSet(viewsets.ModelViewSet):
     ordering = ["name"]
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        from django.db.models import Exists, OuterRef
+        from .models import ProductComponent
+        qs = super().get_queryset().annotate(
+            _is_bundle=Exists(ProductComponent.objects.filter(bundle=OuterRef("pk"))))
         in_stock = self.request.query_params.get("in_stock")
         if in_stock in ("0", "1"):
             from django.db.models import Sum, Q
@@ -176,6 +179,33 @@ class ProductViewSet(viewsets.ModelViewSet):
                         cat = ProductCategory.objects.filter(name=catname).first() or ProductCategory.objects.create(name=catname)
                     Product.objects.create(name=(name or sku), sku=sku, unit=unit, price=price, cost=cost, currency=currency, category=cat)
         return Response({"created": created, "updated": updated, "errors": errors, "err_samples": err_samples, "committed": commit})
+
+    @action(detail=True, methods=["get", "post"])
+    def components(self, request, pk=None):
+        """Склад набору. GET → список компонентів + скільки наборів можна зібрати.
+        POST {components: [{component: id, quantity}]} → замінити склад (авто-cost)."""
+        from decimal import Decimal
+        p = self.get_object()
+        if request.method == "POST":
+            if not (request.user.is_superuser or request.user.has_perm_code("warehouse.edit")):
+                return Response({"detail": "Потрібне право «Редагувати склад»"}, status=403)
+            from .services import set_bundle_components
+            _, err = set_bundle_components(p, request.data.get("components") or [])
+            if err:
+                return Response({"detail": err}, status=400)
+        rows = []
+        can_build = None
+        for row in p.components.select_related("component"):
+            st = row.component.stock()
+            rows.append({"id": row.id, "component": row.component_id, "name": row.component.name,
+                         "sku": row.component.sku, "unit": row.component.unit,
+                         "quantity": float(row.quantity),
+                         "cost": float(row.component.cost or 0), "stock": float(st)})
+            if row.quantity > 0:
+                n = int(Decimal(st) / row.quantity)
+                can_build = n if can_build is None else min(can_build, n)
+        return Response({"components": rows, "cost": float(p.cost or 0),
+                         "can_build": (can_build if rows else None)})
 
     @action(detail=True, methods=["get"], url_path="image/(?P<img_id>[0-9]+)")
     def image(self, request, pk=None, img_id=None):
