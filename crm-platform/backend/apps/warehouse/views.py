@@ -58,7 +58,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     search_fields = ["name", "sku"]
     filterset_fields = ["is_active", "category"]
     ordering_fields = ["name", "price", "id", "sku", "cost", "stock"]
-    ordering = ["name"]
+    ordering = ["name", "id"]  # id — запасной ключ: 623 тёзки не дублируются при листании
 
     def get_queryset(self):
         from django.db.models import Exists, OuterRef
@@ -195,16 +195,24 @@ class ProductViewSet(viewsets.ModelViewSet):
                 return Response({"detail": err}, status=400)
         rows = []
         can_build = None
+        comp_cost = Decimal("0")
         for row in p.components.select_related("component"):
             st = row.component.stock()
             rows.append({"id": row.id, "component": row.component_id, "name": row.component.name,
                          "sku": row.component.sku, "unit": row.component.unit,
                          "quantity": float(row.quantity),
-                         "cost": float(row.component.cost or 0), "stock": float(st)})
-            if row.quantity > 0:
+                         "cost": float(row.component.cost or 0),
+                         "price": float(row.component.price or 0),
+                         "track_stock": row.component.track_stock,
+                         "stock": float(st)})
+            comp_cost += (row.component.cost or Decimal("0")) * row.quantity
+            if row.quantity > 0 and row.component.track_stock:
                 n = int(Decimal(st) / row.quantity)
                 can_build = n if can_build is None else min(can_build, n)
+        from .services import bundle_assembly_fee
+        fee = bundle_assembly_fee() if rows else Decimal("0")
         return Response({"components": rows, "cost": float(p.cost or 0),
+                         "components_cost": float(comp_cost), "assembly_fee": float(fee),
                          "can_build": (can_build if rows else None)})
 
     @action(detail=True, methods=["get"], url_path="image/(?P<img_id>[0-9]+)")

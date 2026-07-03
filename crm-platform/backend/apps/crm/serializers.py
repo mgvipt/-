@@ -9,7 +9,7 @@ class DealItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DealItem
-        fields = ["id", "deal", "product", "product_name", "product_stock", "quantity", "price", "discount_pct", "discount_sum", "total", "reserved"]
+        fields = ["id", "deal", "product", "product_name", "product_stock", "quantity", "price", "cost", "discount_pct", "discount_sum", "total", "reserved"]
         read_only_fields = ["deal"]
 
 
@@ -159,7 +159,9 @@ class DealDetailSerializer(DealSerializer):
         if not items:
             return round(float(obj.amount) * 0.35, 2)
         revenue = float(sum(i.total for i in items))
-        cogs = float(sum(float(i.quantity) * float(getattr(i.product, "cost", 0) or 0) for i in items))
+        cogs = float(sum(
+            float(i.quantity) * float((i.cost if (i.cost or 0) > 0 else getattr(i.product, "cost", 0)) or 0)
+            for i in items))  # снимок себестоимости на момент продажи; fallback — живой cost (старые строки)
         return round(revenue - cogs, 2)
 
     def get_bonus(self, obj):

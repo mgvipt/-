@@ -64,6 +64,8 @@ class Product(models.Model):
     currency = models.CharField(max_length=8, default="UAH")
     bitrix_id = models.IntegerField("ID в Bitrix", null=True, blank=True, unique=True, db_index=True)
     description = models.TextField("Опис", blank=True, default="")
+    track_stock = models.BooleanField("Кількісний облік", default=True,
+        help_text="Вимкни для послуг/робіт/номенклатури без залишку — не списується зі складу, залишок не рахується")
     b24_created_by = models.CharField("Хто створив (Б24)", max_length=120, blank=True, default="")
     b24_modified_by = models.CharField("Хто змінив (Б24)", max_length=120, blank=True, default="")
     b24_created_at = models.DateTimeField(null=True, blank=True)

@@ -30,7 +30,7 @@ interface Product {
   id: number; name: string; sku: string; unit: string;
   price: string; cost: string; currency: string; margin: number;
   category: number | null; category_name: string; stock: number;
-  is_active?: boolean; description?: string;
+  is_active?: boolean; description?: string; track_stock?: boolean;
   b24_created_by?: string; b24_modified_by?: string;
   b24_created_at?: string; b24_modified_at?: string;
   images?: { id: number; url: string }[];
@@ -158,7 +158,7 @@ export default function Warehouse() {
       const upd: any = await api.patch(`/api/products/${card.id}/`, {
         name: cardEdit.name, description: cardEdit.description, category: cardEdit.category || null,
         price: Number(cardEdit.price) || 0, cost: Number(cardEdit.cost) || 0, unit: cardEdit.unit,
-        sku: cardEdit.sku, is_active: cardEdit.is_active });
+        sku: cardEdit.sku, is_active: cardEdit.is_active, track_stock: cardEdit.track_stock });
       setCard(upd); setCardEdit(null); loadProducts();
       api.get<Category[]>("/api/product-categories/").then(setCats).catch(() => {});
     } catch { alert(t("Не удалось сохранить","Не вдалося зберегти")); }
@@ -526,7 +526,7 @@ export default function Warehouse() {
                   <td>{Number(p.price).toLocaleString("ru")} {p.currency || "грн"}</td>
                   {showCost && <td><EditCost p={p} onSaved={(v) => setProducts((ps) => ps.map((x) => (x.id === p.id ? { ...x, cost: String(v) } : x)))} /></td>}
                   <td>{p.unit}</td>
-                  <td><span style={{ color: Number(p.stock) <= 0 ? "#dc2626" : Number(p.stock) < 100 ? "#d97706" : "#16a34a", fontWeight: 600 }}>{Number(p.stock).toLocaleString("ru")}</span></td>
+                  <td>{(p as any).track_stock === false ? <span className="muted" title={t("Без количественного учёта","Без кількісного обліку")}>—</span> : <span style={{ color: Number(p.stock) <= 0 ? "#dc2626" : Number(p.stock) < 100 ? "#d97706" : "#16a34a", fontWeight: 600 }}>{Number(p.stock).toLocaleString("ru")}</span>}</td>
                   {canEdit && <td style={{ textAlign: "center" }}><button onClick={() => delProduct(p)} title={t("Удалить / скрыть товар","Видалити / приховати товар")} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#dc2626", fontSize: 14 }}>🗑</button></td>}
                 </tr>
               ))}
@@ -607,7 +607,7 @@ export default function Warehouse() {
                 <button className="btn btn-light" title={t("Скопировать ссылку на товар","Скопіювати посилання на товар")} onClick={() => { navigator.clipboard?.writeText(window.location.origin + "/warehouse?product=" + card.id); alert(t("Ссылка скопирована ✓","Посилання скопійовано ✓")); }}><Icon n="🔗" size={14} /></button>
                 {canEdit && (cardEdit
                   ? <><button className="btn btn-primary" onClick={saveCard}>{t("Сохранить","Зберегти")}</button><button className="btn btn-light" onClick={() => setCardEdit(null)}>✕</button></>
-                  : <button className="btn btn-light" onClick={() => setCardEdit({ name: card.name, sku: card.sku, unit: card.unit, price: card.price, cost: card.cost, category: card.category || 0, description: card.description || "", is_active: card.is_active !== false })}><Icon n="✏️" size={14} /> {t("Изменить","Змінити")}</button>)}
+                  : <button className="btn btn-light" onClick={() => setCardEdit({ name: card.name, sku: card.sku, unit: card.unit, price: card.price, cost: card.cost, category: card.category || 0, description: card.description || "", is_active: card.is_active !== false, track_stock: card.track_stock !== false })}><Icon n="✏️" size={14} /> {t("Изменить","Змінити")}</button>)}
                 <button className="btn btn-light" onClick={() => setCard(null)}>✕</button>
               </div>
             </div>
@@ -622,6 +622,7 @@ export default function Warehouse() {
                 {showCost && <label style={{ fontSize: 12 }} className="muted">{t("Закупочная","Закупівельна")}<input type="number" value={cardEdit.cost} onChange={(e) => setCardEdit({ ...cardEdit, cost: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>}
                 <label style={{ fontSize: 12 }} className="muted">{t("Ед. изм.","Од. вим.")}<input value={cardEdit.unit} onChange={(e) => setCardEdit({ ...cardEdit, unit: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>
                 <label style={{ fontSize: 12, display: "flex", alignItems: "flex-end", gap: 6, paddingBottom: 8 }}><input type="checkbox" checked={cardEdit.is_active} onChange={(e) => setCardEdit({ ...cardEdit, is_active: e.target.checked })} /> {t("Активен (виден в каталоге)","Активний (видно у каталозі)")}</label>
+                <label style={{ fontSize: 12, display: "flex", alignItems: "flex-end", gap: 6, paddingBottom: 8 }} title={t("Выключи для услуг/работ — не списывается со склада, остаток не считается","Вимкни для послуг/робіт — не списується зі складу, залишок не рахується")}><input type="checkbox" checked={cardEdit.track_stock} onChange={(e) => setCardEdit({ ...cardEdit, track_stock: e.target.checked })} /> {t("Количественный учёт склада","Кількісний облік складу")}</label>
                 <label style={{ fontSize: 12, gridColumn: "1 / -1" }} className="muted">{t("Описание","Опис")}<textarea value={cardEdit.description} onChange={(e) => setCardEdit({ ...cardEdit, description: e.target.value })} rows={5} style={{ width: "100%", border: "1px solid #cbd5e1", borderRadius: 7, padding: 8, marginTop: 2, fontFamily: "inherit", fontSize: 13 }} /></label>
               </div>
             ) : (
@@ -661,7 +662,7 @@ export default function Warehouse() {
                 {bundle.components.length === 0 && <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{t("Это обычный товар. Добавь компоненты — станет набором: при продаже списываются компоненты, закупочная цена считается автоматически.","Це звичайний товар. Додай компоненти — стане набором: при продажу списуються компоненти, закупівельна ціна рахується автоматично.")}</div>}
                 {bundle.components.length > 0 && (
                   <table style={{ width: "100%", fontSize: 13 }}>
-                    <thead><tr><th>{t("Компонент","Компонент")}</th><th style={{ textAlign: "right" }}>{t("Кол-во","К-сть")}</th>{showCost && <th style={{ textAlign: "right" }}>{t("Закупка","Закупка")}</th>}<th style={{ textAlign: "right" }}>{t("Остаток","Залишок")}</th>{canEdit && <th></th>}</tr></thead>
+                    <thead><tr><th>{t("Компонент","Компонент")}</th><th style={{ textAlign: "right" }}>{t("Кол-во","К-сть")}</th><th style={{ textAlign: "right" }}>{t("Розничная","Роздрібна")}</th>{showCost && <th style={{ textAlign: "right" }}>{t("Закупка","Закупка")}</th>}<th style={{ textAlign: "right" }}>{t("Остаток","Залишок")}</th>{canEdit && <th></th>}</tr></thead>
                     <tbody>{bundle.components.map((c: any) => (
                       <tr key={c.id}>
                         <td>{c.name} <span className="muted">{c.sku}</span></td>
@@ -670,14 +671,24 @@ export default function Warehouse() {
                             ? <input type="number" step="0.1" defaultValue={c.quantity} onBlur={(e) => { const q = Number(e.target.value) || 0; if (q !== c.quantity) saveBundle(bundle.components.map((x: any) => x.id === c.id ? { ...x, quantity: q } : x).filter((x: any) => x.quantity > 0)); }} style={{ width: 64, height: 26, border: "1px solid #cbd5e1", borderRadius: 6, textAlign: "right", padding: "0 4px" }} />
                             : c.quantity} {c.unit}
                         </td>
+                        <td style={{ textAlign: "right" }}>{Number(c.price || 0).toLocaleString("uk-UA")} ₴</td>
                         {showCost && <td style={{ textAlign: "right" }}>{c.cost.toLocaleString("uk-UA")} ₴</td>}
-                        <td style={{ textAlign: "right", color: c.stock > 0 ? "#166534" : "#b91c1c" }}>{c.stock}</td>
+                        <td style={{ textAlign: "right", color: c.stock > 0 ? "#166534" : "#b91c1c" }}>{c.track_stock === false ? "—" : c.stock}</td>
                         {canEdit && <td style={{ textAlign: "right" }}><button onClick={() => saveBundle(bundle.components.filter((x: any) => x.id !== c.id))} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#dc2626" }}>✕</button></td>}
                       </tr>
                     ))}</tbody>
                   </table>
                 )}
-                {showCost && bundle.components.length > 0 && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t("Закупочная набора (авто)","Закупівельна набору (авто)")}: <b>{bundle.cost.toLocaleString("uk-UA")} ₴</b></div>}
+                {showCost && bundle.components.length > 0 && (
+                  <div style={{ fontSize: 12.5, marginTop: 8, background: "#f8fafc", borderRadius: 8, padding: "8px 10px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}><span className="muted">{t("Компоненты (закупка)","Компоненти (закупка)")}</span><b>{Number(bundle.components_cost || 0).toLocaleString("uk-UA")} ₴</b></div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }} title={t("Меняется в Финансы → Настройка финмодели → Склад/ставки","Змінюється у Фінанси → Налаштування фінмоделі → Склад/ставки")}>
+                      <span className="muted">🛠 {t("Работа склада за сборку (из финмодели)","Робота складу за збірку (з фінмоделі)")}</span><b>{Number(bundle.assembly_fee || 0).toLocaleString("uk-UA")} ₴</b>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #e2e8f0", marginTop: 4, paddingTop: 4 }}><span>{t("Закупочная набора (авто)","Закупівельна набору (авто)")}</span><b style={{ color: "#9a3412" }}>{bundle.cost.toLocaleString("uk-UA")} ₴</b></div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}><span className="muted">{t("Розничная набора / маржа","Роздрібна набору / маржа")}</span><b>{Number(card.price).toLocaleString("uk-UA")} ₴ · <span style={{ color: Number(card.price) - bundle.cost > 0 ? "#166534" : "#b91c1c" }}>{(Number(card.price) - bundle.cost).toLocaleString("uk-UA")} ₴</span></b></div>
+                  </div>
+                )}
                 {canEdit && (
                   <div style={{ position: "relative", marginTop: 8 }}>
                     <input value={bundleQ} onChange={(e) => setBundleQ(e.target.value)} placeholder={t("➕ Найти товар и добавить в состав…","➕ Знайти товар і додати до складу…")} style={{ width: "100%", height: 32, border: "1px dashed #cbd5e1", borderRadius: 7, padding: "0 10px", fontSize: 13 }} />

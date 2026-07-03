@@ -47,9 +47,13 @@ def _expand_deal_items(items):
         comps = list(it.product.components.select_related("component"))
         if comps:
             for row in comps:
+                if not row.component.track_stock:
+                    continue  # послуга/робота у складі набору — не списується
                 out.append((row.component, it.quantity * row.quantity,
                             row.component.cost or Decimal("0")))
         else:
+            if not it.product.track_stock:
+                continue  # номенклатура без кількісного обліку — рух не створюємо
             out.append((it.product, it.quantity, it.product.cost or Decimal("0")))
     return out
 
@@ -81,12 +85,7 @@ def set_bundle_components(bundle, rows):
     bundle.components.all().delete()
     for comp, qty in clean:
         ProductComponent.objects.create(bundle=bundle, component=comp, quantity=qty)
-    # авто-перерахунок собівартості набору
-    total = Decimal("0")
-    for comp, qty in clean:
-        total += (comp.cost or Decimal("0")) * qty
-    bundle.cost = total.quantize(Decimal("0.01"))
-    bundle.save(update_fields=["cost"])
+    _recalc_one_bundle(bundle)  # Σ компонентів + збірка з фінмоделі
     return bundle, None
 
 
@@ -113,22 +112,58 @@ def _weighted_cost_update(doc):
             recalc_bundle_costs(p)
 
 
+def bundle_assembly_fee():
+    """Оплата роботи складу за збірку одного тестового набору — З ФІНМОДЕЛІ.
+    Стаття FinModelArticle(code="bundle_assembly", категорія «Ставки складу»).
+    Олег міняє суму у Фінанси → Налаштування фінмоделі → Склад/ставки — і собівартість
+    усіх наборів перераховується автоматично (маржа та ЗП чесні)."""
+    from decimal import Decimal
+    try:
+        from apps.finance.models import FinModelArticle
+        art, _ = FinModelArticle.objects.get_or_create(
+            code="bundle_assembly",
+            defaults={"category": "warehouse_rate", "name": "Оплата складу за збірку тестового набору",
+                      "value": 0, "value_type": "fixed_per_deal", "unit": "₴/набір"})
+        if not art.active:
+            return Decimal("0")
+        return Decimal(art.value or 0)
+    except Exception:
+        return Decimal("0")
+
+
+def recalc_all_bundle_costs():
+    """Перерахувати собівартість УСІХ наборів (після зміни ставки збірки у фінмоделі)."""
+    from .models import ProductComponent, Product
+    ids = ProductComponent.objects.values_list("bundle_id", flat=True).distinct()
+    n = 0
+    for b in Product.objects.filter(id__in=list(ids)):
+        _recalc_one_bundle(b)
+        n += 1
+    return n
+
+
+def _recalc_one_bundle(bundle):
+    from decimal import Decimal
+    total = Decimal("0")
+    rows = list(bundle.components.select_related("component"))
+    for row in rows:
+        total += (row.component.cost or Decimal("0")) * row.quantity
+    if rows:
+        total += bundle_assembly_fee()  # + робота складу за збірку (з фінмоделі)
+    total = total.quantize(Decimal("0.01"))
+    if bundle.cost != total:
+        bundle.cost = total
+        bundle.save(update_fields=["cost"])
+
+
 def recalc_bundle_costs(component):
     """Перерахувати cost наборів, куди входить цей товар (якщо модель складу є)."""
     try:
         from .models import ProductComponent
     except ImportError:
         return
-    from decimal import Decimal
     for pc in ProductComponent.objects.filter(component=component).select_related("bundle"):
-        b = pc.bundle
-        total = Decimal("0")
-        for row in b.components.select_related("component"):
-            total += (row.component.cost or Decimal("0")) * row.quantity
-        total = total.quantize(Decimal("0.01"))
-        if b.cost != total:
-            b.cost = total
-            b.save(update_fields=["cost"])
+        _recalc_one_bundle(pc.bundle)
 
 
 def _on_posted(doc):

@@ -28,6 +28,16 @@ class FinanceManagePerm(HasPermCode):
 class FinModelArticleViewSet(viewsets.ModelViewSet):
     queryset = FinModelArticle.objects.all()
     serializer_class = FinModelArticleSerializer
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        if obj.code == "bundle_assembly":
+            # ставка збірки набору змінилась → перерахувати собівартість усіх наборів
+            try:
+                from apps.warehouse.services import recalc_all_bundle_costs
+                recalc_all_bundle_costs()
+            except Exception:
+                pass
     permission_classes = [FinanceManagePerm]
     filterset_fields = ["category", "active"]
 
