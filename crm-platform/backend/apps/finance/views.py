@@ -330,14 +330,30 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None):
     from datetime import datetime as _dtm
     from django.utils import timezone as _tz
     cfg = _privat_cfg()
-    token, acc = cfg.get("token"), cfg.get("acc")
-    if not token or not acc:
-        return 0, 0, "ПриватБанк не налаштовано (Інтеграції: token, acc)", None
-    account = None
+    token = cfg.get("token")
+    if not token:
+        return 0, 0, "ПриватБанк не налаштовано (Інтеграції: token)", None
+    default_account = None
     if cfg.get("account_id"):
-        account = Account.objects.filter(id=cfg["account_id"]).first()
-    if account is None:
-        account = Account.objects.filter(name__icontains="ФОП").first() or Account.objects.first()
+        default_account = Account.objects.filter(id=cfg["account_id"]).first()
+    if default_account is None:
+        default_account = Account.objects.filter(name__icontains="ФОП").first() or Account.objects.first()
+    acc_map = dict(cfg.get("acc_map") or {})  # хвіст IBAN (4 цифри) → account_id
+
+    def _resolve_account(iban):
+        """Рахунок CRM для IBAN: (1) мапа; (2) авто-матч по хвосту в назві; (3) створити новий."""
+        tail = (iban or "")[-4:]
+        if not tail:
+            return default_account
+        if tail in acc_map:
+            a = Account.objects.filter(id=acc_map[tail]).first()
+            if a:
+                return a
+        a = Account.objects.filter(name__icontains=tail).first()
+        if a is None:
+            a = Account.objects.create(name="Приват …%s (ФОП)" % tail, kind="bank")
+        acc_map[tail] = a.id
+        return a
     if d_from and d_to:
         start = _dtm.fromisoformat(str(d_from)).strftime("%d-%m-%Y")
         end = _dtm.fromisoformat(str(d_to)).strftime("%d-%m-%Y")
@@ -347,9 +363,9 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None):
     batch = batch or ("PB-" + _tz.now().strftime("%Y%m%d-%H%M%S"))
     txs = []
     follow = ""
-    for _page in range(40):  # пагінація AutoClient (до 20000 операцій)
+    for _page in range(40):  # пагінація AutoClient (до 20000 операцій); БЕЗ acc = усі рахунки токена
         url = ("https://acp.privatbank.ua/api/statements/transactions"
-               "?acc=%s&startDate=%s&endDate=%s&limit=500%s" % (acc, start, end, follow))
+               "?startDate=%s&endDate=%s&limit=500%s" % (start, end, follow))
         req = urllib.request.Request(url, headers={"token": token, "Content-Type": "application/json;charset=utf8"})
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
@@ -382,6 +398,7 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None):
             dte = date.today()
         osnd = (tr.get("OSND") or "")[:180]
         cp = (tr.get("AUT_CNTR_NAM") or "")[:160]
+        account = _resolve_account(tr.get("AUT_MY_ACC") or "")
         # еквайринг по угоді (WCCRM-<id>): дохід ВЖЕ створений CRM при оплаті — не дублюємо,
         # АЛЕ комісію LiqPay (дохід сделки − зарахування банку) розносимо витратою автоматично
         import re as _re
@@ -410,6 +427,15 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None):
             date=dte, counterparty=cp2, category=cat, fin_direction=fdir, fin_article=fart,
             import_batch=batch, comment=(reftag + " · " + osnd)[:255])
         created += 1
+    # зберегти мапу IBAN→рахунок (нові рахунки, авто-матчі)
+    try:
+        from apps.integrations.models import IntegrationSettings
+        st = IntegrationSettings.objects.filter(provider="privatbank").first()
+        if st and (st.config or {}).get("acc_map") != acc_map:
+            st.config["acc_map"] = acc_map
+            st.save(update_fields=["config"])
+    except Exception:
+        pass
     return created, skipped, None, batch
 
 
