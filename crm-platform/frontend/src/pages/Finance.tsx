@@ -448,7 +448,7 @@ function Dashboard() {
         {items.length === 0 ? <div className="muted" style={{ fontSize: 12, padding: 16 }}>{t("Нет данных за период","Немає даних за період")}</div> : (
         <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
           <div style={{ width: 140, height: 140, borderRadius: "50%", flexShrink: 0, background: `conic-gradient(${stops})`, position: "relative" }}>
-            <div style={{ position: "absolute", inset: 34, background: "var(--panel, #fff)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>{items.length}</div>
+            <div style={{ position: "absolute", inset: 34, background: "var(--panel, #fff)", borderRadius: "50%" }} />
           </div>
           <div style={{ flex: 1, minWidth: 180 }}>
             {items.slice(0, 8).map((x: any, i: number) => (
@@ -524,9 +524,8 @@ function Dashboard() {
             ))}
           </div>
           <svg width="100%" height={CH} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} preserveAspectRatio="none" viewBox={`0 0 ${Math.max(rows.length, 1) * 10} ${CH}`}>
-            <line x1="0" y1={CH / 2} x2={rows.length * 10} y2={CH / 2} stroke="#e2e8f0" strokeDasharray="4 4" />
-            <polyline fill="none" stroke="#f97316" strokeWidth="2.5" points={rows.map((x: any, i: number) => `${i * 10 + 5},${netY(x.net)}`).join(" ")} />
-            {rows.map((x: any, i: number) => <circle key={i} cx={i * 10 + 5} cy={netY(x.net)} r="2.6" fill="#f97316" />)}
+            <line x1="0" y1={CH / 2} x2={rows.length * 10} y2={CH / 2} stroke="#94a3b8" strokeWidth="1" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
+            <polyline fill="none" stroke="#f97316" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" points={rows.map((x: any, i: number) => `${i * 10 + 5},${netY(x.net)}`).join(" ")} />
           </svg>
         </div>
         <div style={{ display: "flex", gap: rows.length > 45 ? 1 : 3, marginTop: 4 }}>
@@ -556,9 +555,8 @@ function Dashboard() {
             ))}
           </div>
           <svg width="100%" height={MH} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} preserveAspectRatio="none" viewBox={`0 0 ${Math.max(months.length, 1) * 10} ${MH}`}>
-            <line x1="0" y1={MH / 2} x2={months.length * 10} y2={MH / 2} stroke="#e2e8f0" strokeDasharray="4 4" />
-            <polyline fill="none" stroke="#f97316" strokeWidth="2.5" points={months.map((m: any, i: number) => `${i * 10 + 5},${mNetY(m.net)}`).join(" ")} />
-            {months.map((m: any, i: number) => <circle key={i} cx={i * 10 + 5} cy={mNetY(m.net)} r="2.8" fill="#f97316" />)}
+            <line x1="0" y1={MH / 2} x2={months.length * 10} y2={MH / 2} stroke="#94a3b8" strokeWidth="1" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
+            <polyline fill="none" stroke="#f97316" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" points={months.map((m: any, i: number) => `${i * 10 + 5},${mNetY(m.net)}`).join(" ")} />
           </svg>
         </div>
         <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
@@ -597,6 +595,11 @@ function Dashboard() {
             </table>
           )}
         </div>
+      </div>
+
+      {/* ВАЛЮТНА АНАЛІТИКА (курси, вплив на прибуток) */}
+      <div style={{ marginTop: 12 }}>
+        <FxImpact />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
