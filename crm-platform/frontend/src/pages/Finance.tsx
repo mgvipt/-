@@ -389,6 +389,70 @@ function Attachments({ txId }: { txId: number }) {
   );
 }
 
+function CashflowDyn() {
+  /* Динамічний рух грошей: пресети + довільний період; ≤92 днів по днях, довше — по місяцях. */
+  const { t } = useLang();
+  const today = new Date();
+  const iso = (dt: Date) => dt.toISOString().slice(0, 10);
+  const [from, setFrom] = useState(iso(new Date(today.getTime() - 29 * 864e5)));
+  const [to, setTo] = useState(iso(today));
+  const [d, setD] = useState<any>(null);
+  const [preset, setPreset] = useState("30");
+  useEffect(() => { setD(null); api.get<any>(`/api/finance/cashflow/?from=${from}&to=${to}`).then(setD).catch(() => setD(null)); }, [from, to]);
+  function pick(p: string) {
+    setPreset(p);
+    const now = new Date();
+    if (p === "7") { setFrom(iso(new Date(now.getTime() - 6 * 864e5))); setTo(iso(now)); }
+    else if (p === "30") { setFrom(iso(new Date(now.getTime() - 29 * 864e5))); setTo(iso(now)); }
+    else if (p === "90") { setFrom(iso(new Date(now.getTime() - 89 * 864e5))); setTo(iso(now)); }
+    else if (p === "month") { setFrom(iso(new Date(now.getFullYear(), now.getMonth(), 1))); setTo(iso(now)); }
+    else if (p === "year") { setFrom(iso(new Date(now.getFullYear(), 0, 1))); setTo(iso(now)); }
+    else if (p === "all") { setFrom("2024-01-01"); setTo(iso(now)); }
+  }
+  const rows = d?.rows || [];
+  const max = Math.max(...rows.map((x: any) => Math.max(x.in, x.out)), 1);
+  const lbl = (x: any) => d.granularity === "day" ? x.d.slice(8) + "." + x.d.slice(5, 7) : x.d.slice(5) + "." + x.d.slice(2, 4);
+  return (
+    <div className="panel" style={{ margin: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <b style={{ fontSize: 14 }}>{t("Движение денег","Рух грошей")}</b>
+        {[["7", t("7 дн","7 дн")], ["30", t("30 дн","30 дн")], ["90", t("90 дн","90 дн")], ["month", t("Месяц","Місяць")], ["year", t("Год","Рік")], ["all", t("Всё","Все")]].map(([k, l]) => (
+          <button key={k} onClick={() => pick(k)} style={{ fontSize: 11.5, padding: "2px 9px", borderRadius: 7, cursor: "pointer", border: "1px solid " + (preset === k ? "var(--brand)" : "#cbd5e1"), background: preset === k ? "var(--brand)" : "#fff", color: preset === k ? "#fff" : "#475569" }}>{l}</button>
+        ))}
+        <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPreset(""); }} style={{ height: 26, fontSize: 11, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 4px" }} />
+        <span className="muted" style={{ fontSize: 11 }}>—</span>
+        <input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPreset(""); }} style={{ height: 26, fontSize: 11, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 4px" }} />
+      </div>
+      {!d ? <div className="spin" style={{ padding: 20 }}>…</div> : (
+        <>
+          <div style={{ display: "flex", gap: 14, margin: "8px 0 4px", fontSize: 12.5 }}>
+            <span>🟢 {t("Поступления","Надходження")}: <b style={{ color: "#16a34a" }}>{money(d.totals.in)}</b></span>
+            <span>🔴 {t("Списания","Списання")}: <b style={{ color: "#dc2626" }}>{money(d.totals.out)}</b></span>
+            <span>{t("Чистый","Чистий")}: <b style={{ color: d.totals.net >= 0 ? "#16a34a" : "#dc2626" }}>{money(d.totals.net)}</b></span>
+            <span className="muted">{d.granularity === "day" ? t("по дням","по днях") : t("по месяцам","по місяцях")}</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: rows.length > 40 ? 1 : 2, height: 150, marginTop: 8 }}>
+            {rows.map((x: any, i: number) => (
+              <div key={i} title={`${x.d}\n+${Math.round(x.in).toLocaleString("uk-UA")} / −${Math.round(x.out).toLocaleString("uk-UA")}\n${t("чистый","чистий")}: ${Math.round(x.net).toLocaleString("uk-UA")}`}
+                   style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 1, minWidth: 2 }}>
+                <div style={{ height: `${x.in / max * 70}%`, background: "#22c55e", borderRadius: "2px 2px 0 0" }} />
+                <div style={{ height: `${x.out / max * 70}%`, background: "#f87171", borderRadius: "0 0 2px 2px" }} />
+              </div>
+            ))}
+          </div>
+          {rows.length <= 40 && (
+            <div style={{ display: "flex", gap: rows.length > 40 ? 1 : 2, marginTop: 3 }}>
+              {rows.map((x: any, i: number) => (
+                <div key={i} className="muted" style={{ flex: 1, fontSize: 8, textAlign: "center", overflow: "hidden", whiteSpace: "nowrap" }}>{(rows.length <= 16 || i % Math.ceil(rows.length / 16) === 0) ? lbl(x) : ""}</div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function Dashboard() {
   /* overview-dash: світлофор → тренд → потік → топ-витрати → напрямки → рахунки → алерти → коеф. */
   const { t } = useLang();
@@ -461,19 +525,8 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* 3. ГРОШОВИЙ ПОТІК 30 ДНІВ */}
-        <div className="panel" style={{ margin: 0 }}>
-          <b style={{ fontSize: 14 }}>{t("Денежный поток · 30 дней","Грошовий потік · 30 днів")}</b>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 150, marginTop: 14 }}>
-            {d.cashflow.map((x: any, i: number) => (
-              <div key={i} title={`${x.date}: +${Math.round(x.in)} / -${Math.round(x.out)}`} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 1 }}>
-                <div style={{ height: `${x.in / cfMax * 70}%`, background: "#22c55e", borderRadius: "2px 2px 0 0" }} />
-                <div style={{ height: `${x.out / cfMax * 70}%`, background: "#f87171", borderRadius: "0 0 2px 2px" }} />
-              </div>
-            ))}
-          </div>
-          <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>🟢 {t("поступление","надходження")} · 🔴 {t("списание по дням","списання по днях")}</div>
-        </div>
+        {/* 3. ГРОШОВИЙ ПОТІК — динамічний період */}
+        <CashflowDyn />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>

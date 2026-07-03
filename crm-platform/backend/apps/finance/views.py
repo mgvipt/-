@@ -139,6 +139,49 @@ class FinanceDashboardView(APIView):
         })
 
 
+class CashflowSeriesView(APIView):
+    """Рух грошей за довільний період. ?from=YYYY-MM-DD&to=YYYY-MM-DD.
+    До 92 днів — по днях; довше — по місяцях. Перекази (transfer) не враховуються."""
+    permission_classes = [FinancePerm]
+
+    def get(self, request):
+        from django.db.models.functions import TruncMonth
+        d_from, d_to = _period(request)
+        if d_to < d_from:
+            d_from, d_to = d_to, d_from
+        span = (d_to - d_from).days + 1
+        qs = Transaction.objects.filter(date__gte=d_from, date__lte=d_to).exclude(direction="transfer")
+        rows = []
+        if span <= 92:
+            agg = {r["date"]: r for r in qs.values("date", "direction").annotate(s=Sum("amount_uah"))
+                   .values("date").annotate(
+                       inc=Sum("amount_uah", filter=Q(direction="in")),
+                       out=Sum("amount_uah", filter=Q(direction="out")))}
+            cur = d_from
+            while cur <= d_to:
+                a = agg.get(cur) or {}
+                i = float(a.get("inc") or 0); o = float(a.get("out") or 0)
+                rows.append({"d": cur.isoformat(), "in": i, "out": o, "net": i - o})
+                cur += timedelta(days=1)
+            gran = "day"
+        else:
+            agg = {r["m"].date() if hasattr(r["m"], "date") else r["m"]: r
+                   for r in qs.annotate(m=TruncMonth("date")).values("m").annotate(
+                       inc=Sum("amount_uah", filter=Q(direction="in")),
+                       out=Sum("amount_uah", filter=Q(direction="out")))}
+            cur = d_from.replace(day=1)
+            while cur <= d_to:
+                a = agg.get(cur) or {}
+                i = float(a.get("inc") or 0); o = float(a.get("out") or 0)
+                rows.append({"d": cur.isoformat()[:7], "in": i, "out": o, "net": i - o})
+                cur = (cur.replace(day=28) + timedelta(days=4)).replace(day=1)
+            gran = "month"
+        t_in = sum(r["in"] for r in rows); t_out = sum(r["out"] for r in rows)
+        return Response({"granularity": gran, "rows": rows,
+                         "totals": {"in": round(t_in), "out": round(t_out), "net": round(t_in - t_out)},
+                         "from": d_from.isoformat(), "to": d_to.isoformat()})
+
+
 def _period(request):
     from datetime import date
     from django.utils import timezone
