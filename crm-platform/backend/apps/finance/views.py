@@ -54,9 +54,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         p = self.request.query_params
         if p.get("from"):
-            qs = qs.filter(created_at__date__gte=p["from"])
+            qs = qs.filter(date__gte=p["from"])
         if p.get("to"):
-            qs = qs.filter(created_at__date__lte=p["to"])
+            qs = qs.filter(date__lte=p["to"])
         if p.get("q"):
             from django.db.models import Q as _Q
             term = p["q"]
@@ -104,7 +104,7 @@ class FinanceDashboardView(APIView):
         today = date.today()
         month_start = today.replace(day=1)
         tx = Transaction.objects.all()
-        month = tx.filter(created_at__date__gte=month_start)
+        month = tx.filter(date__gte=month_start)
         income = month.filter(direction="in").aggregate(s=Sum("amount_uah"))["s"] or 0
         expense = month.filter(direction="out").aggregate(s=Sum("amount_uah"))["s"] or 0
         total_balance = sum(a.balance() for a in Account.objects.all())
@@ -113,7 +113,7 @@ class FinanceDashboardView(APIView):
         days = []
         for i in range(29, -1, -1):
             d = today - timedelta(days=i)
-            day_tx = tx.filter(created_at__date=d)
+            day_tx = tx.filter(date=d)
             days.append({
                 "date": d.isoformat(),
                 "in": float(day_tx.filter(direction="in").aggregate(s=Sum("amount_uah"))["s"] or 0),
@@ -175,7 +175,7 @@ class DirectionsReportView(APIView):
         rows = []
         for dr in FinDirection.objects.filter(active=True):
             tx = Transaction.objects.filter(fin_direction=dr,
-                created_at__date__gte=d_from, created_at__date__lte=d_to)
+                date__gte=d_from, date__lte=d_to)
             inc = float(tx.filter(direction="in").aggregate(s=Sum("amount_uah"))["s"] or 0)
             exp = float(tx.filter(direction="out").aggregate(s=Sum("amount_uah"))["s"] or 0)
             profit = inc - exp
@@ -240,7 +240,7 @@ def _fund_stats(period):
     spent = {}
     y, mo = int(period[:4]), int(period[5:7])
     for r in (Transaction.objects.filter(direction="out", fin_article__isnull=False,
-                                          created_at__year=y, created_at__month=mo)
+                                          date__year=y, date__month=mo)
               .values("fin_article").annotate(s=Sum("amount"))):
         spent[r["fin_article"]] = float(r["s"])
     return alloc, spent
@@ -427,7 +427,7 @@ class FxImpactView(APIView):
 
         # витрати у цій валюті за період
         fx = Transaction.objects.filter(direction="out", currency=ccy,
-                                        created_at__date__gte=d_from, created_at__date__lte=d_to)
+                                        date__gte=d_from, date__lte=d_to)
         fx_orig = float(fx.aggregate(s=Sum("amount"))["s"] or 0)
         fx_uah = float(fx.aggregate(s=Sum("amount_uah"))["s"] or 0)
 
@@ -537,7 +537,7 @@ class OverviewView(APIView):
             return f, t
 
         def sums(f, t):
-            q = Transaction.objects.filter(created_at__date__gte=f, created_at__date__lte=t)
+            q = Transaction.objects.filter(date__gte=f, date__lte=t)
             inc = float(q.filter(direction="in").aggregate(s=Sum("amount_uah"))["s"] or 0)
             exp = float(q.filter(direction="out").aggregate(s=Sum("amount_uah"))["s"] or 0)
             return inc, exp
@@ -564,13 +564,13 @@ class OverviewView(APIView):
 
         # топ-витрати (обраний місяць)
         top_exp = [{"name": r["category__name"] or "(без категорії)", "sum": round(float(r["s"]))}
-                   for r in Transaction.objects.filter(direction="out", created_at__date__gte=cf, created_at__date__lte=ct)
+                   for r in Transaction.objects.filter(direction="out", date__gte=cf, date__lte=ct)
                    .values("category__name").annotate(s=Sum("amount_uah")).order_by("-s")[:8]]
 
         # напрямки (обраний місяць)
         dirs = []
         for d in FinDirection.objects.filter(active=True):
-            q = Transaction.objects.filter(fin_direction=d, created_at__date__gte=cf, created_at__date__lte=ct)
+            q = Transaction.objects.filter(fin_direction=d, date__gte=cf, date__lte=ct)
             di = float(q.filter(direction="in").aggregate(s=Sum("amount"))["s"] or 0)
             de = float(q.filter(direction="out").aggregate(s=Sum("amount"))["s"] or 0)
             if di or de:
@@ -586,7 +586,7 @@ class OverviewView(APIView):
         cashflow = []
         for i in range(29, -1, -1):
             dd = today - _td(days=i)
-            dq = Transaction.objects.filter(created_at__date=dd)
+            dq = Transaction.objects.filter(date=dd)
             cashflow.append({"date": dd.isoformat(),
                              "in": float(dq.filter(direction="in").aggregate(s=Sum("amount"))["s"] or 0),
                              "out": float(dq.filter(direction="out").aggregate(s=Sum("amount"))["s"] or 0)})

@@ -11,16 +11,38 @@ def _category(name, direction):
     return Category.objects.get_or_create(name=name, direction=direction)[0]
 
 
+def _default_direction():
+    """Дефолтний напрямок для доходів зі сделок (перший активний, зазвичай «ДЕКОР Товари»)."""
+    from .models import FinDirection
+    return FinDirection.objects.filter(active=True).order_by("id").first()
+
+
 def record_income(amount, *, deal=None, account=None, payment=None, category="Продаж товару"):
+    """Єдина точка створення доходу. Народжується ОДРАЗУ повною:
+    канал/контрагент/напрямок зі сделки → одразу видно в журналі, напрямках, P&L, ЗП."""
+    channel = ""
+    counterparty = ""
+    if deal is not None:
+        channel = (getattr(deal, "source", "") or "")[:24]
+        c = getattr(deal, "contact", None)
+        if c is not None:
+            counterparty = (" ".join(filter(None, [getattr(c, "first_name", ""), getattr(c, "last_name", "")])).strip()
+                            or getattr(c, "nickname", "") or "")[:160]
     return Transaction.objects.create(
-        direction="in", amount=amount, account=account or default_account(),
-        category=_category(category, "in"), deal=deal, payment=payment)
+        direction="in", amount=amount, amount_uah=amount, account=account or default_account(),
+        category=_category(category, "in"), deal=deal, payment=payment,
+        channel=channel, counterparty=counterparty, fin_direction=_default_direction())
 
 
 def record_expense(amount, *, deal=None, account=None, category="Собівартість"):
+    counterparty = ""
+    if deal is not None:
+        c = getattr(deal, "contact", None)
+        if c is not None:
+            counterparty = (" ".join(filter(None, [getattr(c, "first_name", ""), getattr(c, "last_name", "")])).strip() or "")[:160]
     return Transaction.objects.create(
-        direction="out", amount=amount, account=account or default_account(),
-        category=_category(category, "out"), deal=deal)
+        direction="out", amount=amount, amount_uah=amount, account=account or default_account(),
+        category=_category(category, "out"), deal=deal, counterparty=counterparty)
 
 
 # ── Финмодель: P&L (ATM) + точка безубыточности ──────────────────────────
@@ -39,7 +61,7 @@ def _revenue(d_from, d_to):
     Перекази (transfer) НЕ враховуються. Дані перенесені з ФінМапа."""
     from .models import Transaction
     qs = Transaction.objects.filter(direction="in",
-                                    created_at__date__gte=d_from, created_at__date__lte=d_to)
+                                    date__gte=d_from, date__lte=d_to)
     rev = float(qs.aggregate(s=_Sum("amount_uah"))["s"] or 0)
     return rev, qs.count()
 
