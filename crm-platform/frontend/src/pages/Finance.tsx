@@ -12,6 +12,19 @@ import { Icon } from "../Icon";
 function useNav() { return useNavigate(); }
 
 const money = (n: number) => Math.round(n || 0).toLocaleString("ru") + " ₴";
+/* короткий формат грошей для осі: 1.2М / 850К / 0 / −40К */
+function fmtShort(n: number): string {
+  const a = Math.abs(n), sign = n < 0 ? "−" : "";
+  if (a >= 1e6) return sign + (a / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace(".0", "") + "М";
+  if (a >= 1e3) return sign + Math.round(a / 1e3) + "К";
+  return sign + Math.round(a);
+}
+/* красиві поділки осі: верх, половини, нуль, низ */
+function mkTicks(hi: number, lo: number): number[] {
+  const t = [hi, hi / 2, 0];
+  if (lo < 0) { t.push(lo / 2, lo); }
+  return Array.from(new Set(t.map((v) => Math.round(v))));
+}
 /* плавна крива через точки (Catmull-Rom → кубічні Безьє) */
 function smoothPath(pts: number[][]): string {
   if (pts.length < 2) return "";
@@ -432,17 +445,21 @@ function Dashboard() {
   ];
 
   const rows = d.series?.rows || [];
-  const smax = Math.max(...rows.map((x: any) => Math.max(x.in, x.out)), 1);
-  const nmax = Math.max(...rows.map((x: any) => Math.abs(x.net)), 1);
   const slbl = (x: any) => d.series.granularity === "day" ? x.d.slice(8) + "." + x.d.slice(5, 7) : x.d.slice(5) + "." + x.d.slice(2, 4);
-  const CH = 170; // висота графіка руху
-  const netY = (v: number) => CH / 2 - (v / nmax) * (CH / 2 - 8);
+  const CH = 190; // висота графіка руху
+  const sHi = Math.max(...rows.map((x: any) => Math.max(x.in, x.out, x.net)), 1);
+  const sLo = Math.min(...rows.map((x: any) => Math.min(0, x.net)), 0);
+  const sY = (v: number) => 6 + (sHi - v) / (sHi - sLo || 1) * (CH - 12);
+  const sZero = sY(0);
+  const sTicks = mkTicks(sHi, sLo);
 
   const months = d.months || [];
-  const mmax = Math.max(...months.map((m: any) => Math.max(m.income, m.expense)), 1);
-  const mnetmax = Math.max(...months.map((m: any) => Math.abs(m.net)), 1);
-  const MH = 150;
-  const mNetY = (v: number) => MH / 2 - (v / mnetmax) * (MH / 2 - 6);
+  const MH = 170;
+  const mHi = Math.max(...months.map((m: any) => Math.max(m.income, m.expense, m.net)), 1);
+  const mLo = Math.min(...months.map((m: any) => Math.min(0, m.net)), 0);
+  const mY = (v: number) => 6 + (mHi - v) / (mHi - mLo || 1) * (MH - 12);
+  const mZero = mY(0);
+  const mTicks = mkTicks(mHi, mLo);
 
   const PAL = ["#16a34a", "#6366f1", "#f59e0b", "#0ea5e9", "#ec4899", "#8b5cf6", "#14b8a6", "#f97316", "#84cc16", "#64748b"];
   const Donut = ({ items, title, total }: { items: any[]; title: string; total: number }) => {
@@ -523,22 +540,30 @@ function Dashboard() {
           <span style={{ fontSize: 12.5 }}>🟠 {t("Сальдо","Сальдо")}: <b style={{ color: k.net >= 0 ? "#16a34a" : "#dc2626" }}>{money(k.net)}</b></span>
           <span className="muted" style={{ fontSize: 11.5 }}>{d.series.granularity === "day" ? t("по дням","по днях") : t("по месяцам","по місяцях")}</span>
         </div>
-        <div style={{ position: "relative", marginTop: 12 }}>
-          <div style={{ display: "flex", alignItems: "stretch", gap: rows.length > 45 ? 1 : 3, height: CH }}>
-            {rows.map((x: any, i: number) => (
-              <div key={i} title={`${x.d}\n+${Math.round(x.in).toLocaleString("uk-UA")} / −${Math.round(x.out).toLocaleString("uk-UA")} = ${Math.round(x.net).toLocaleString("uk-UA")}`}
-                   style={{ flex: 1, minWidth: 2, height: "100%", display: "flex", alignItems: "flex-end", gap: rows.length > 20 ? 0.5 : 2 }}>
-                <div style={{ flex: 1, height: `${Math.max(x.in / smax * 100, x.in > 0 ? 2 : 0)}%`, background: "#22c55e", borderRadius: "3px 3px 0 0" }} />
-                <div style={{ flex: 1, height: `${Math.max(x.out / smax * 100, x.out > 0 ? 2 : 0)}%`, background: "#334155", borderRadius: "3px 3px 0 0" }} />
-              </div>
+        <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
+          {/* ЛЕСЕНКА ГРОШЕЙ (вісь Y) */}
+          <div style={{ position: "relative", width: 52, height: CH, flexShrink: 0 }}>
+            {sTicks.map((v) => (
+              <div key={v} className="muted" style={{ position: "absolute", top: sY(v) - 7, right: 2, fontSize: 10, fontWeight: v === 0 ? 700 : 400, color: v === 0 ? "#334155" : undefined }}>{fmtShort(v)}</div>
             ))}
           </div>
-          <svg width="100%" height={CH} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} preserveAspectRatio="none" viewBox={`0 0 ${Math.max(rows.length, 1) * 10} ${CH}`}>
-            <line x1="0" y1={CH / 2} x2={rows.length * 10} y2={CH / 2} stroke="#94a3b8" strokeWidth="1" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
-            <path fill="none" stroke="#f97316" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" d={smoothPath(rows.map((x: any, i: number) => [i * 10 + 5, netY(x.net)]))} />
-          </svg>
+          <div style={{ position: "relative", flex: 1, height: CH }}>
+            {sTicks.map((v) => <div key={v} style={{ position: "absolute", left: 0, right: 0, top: sY(v), borderTop: v === 0 ? "1.5px dashed #94a3b8" : "1px solid #e2e8f055" }} />)}
+            <div style={{ display: "flex", gap: rows.length > 45 ? 1 : 3, height: CH }}>
+              {rows.map((x: any, i: number) => (
+                <div key={i} title={`${x.d}\n+${Math.round(x.in).toLocaleString("uk-UA")} / −${Math.round(x.out).toLocaleString("uk-UA")} = ${Math.round(x.net).toLocaleString("uk-UA")}`}
+                     style={{ flex: 1, minWidth: 2, position: "relative" }}>
+                  <div style={{ position: "absolute", left: 0, width: "46%", bottom: CH - sZero, height: Math.max(sZero - sY(x.in), x.in > 0 ? 2 : 0), background: "#22c55e", borderRadius: "3px 3px 0 0" }} />
+                  <div style={{ position: "absolute", right: 0, width: "46%", bottom: CH - sZero, height: Math.max(sZero - sY(x.out), x.out > 0 ? 2 : 0), background: "#334155", borderRadius: "3px 3px 0 0" }} />
+                </div>
+              ))}
+            </div>
+            <svg width="100%" height={CH} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} preserveAspectRatio="none" viewBox={`0 0 ${Math.max(rows.length, 1) * 10} ${CH}`}>
+              <path fill="none" stroke="#f97316" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" d={smoothPath(rows.map((x: any, i: number) => [i * 10 + 5, sY(x.net)]))} />
+            </svg>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: rows.length > 45 ? 1 : 3, marginTop: 4 }}>
+        <div style={{ display: "flex", gap: rows.length > 45 ? 1 : 3, marginTop: 4, marginLeft: 58 }}>
           {rows.map((x: any, i: number) => (
             <div key={i} className="muted" style={{ flex: 1, fontSize: 8.5, textAlign: "center", overflow: "hidden", whiteSpace: "nowrap" }}>{(rows.length <= 16 || i % Math.ceil(rows.length / 16) === 0) ? slbl(x) : ""}</div>
           ))}
@@ -554,22 +579,29 @@ function Dashboard() {
       {/* ТРЕНД 12 МІСЯЦІВ: доходи/витрати + лінія прибутку */}
       <div className="panel" style={{ margin: "12px 0" }}>
         <b style={{ fontSize: 14 }}>{t("Тренд 12 месяцев: доходы / расходы / прибыль","Тренд 12 місяців: доходи / витрати / прибуток")}</b>
-        <div style={{ position: "relative", marginTop: 12 }}>
-          <div style={{ display: "flex", alignItems: "stretch", gap: 6, height: MH }}>
-            {months.map((m: any) => (
-              <div key={m.ym} title={`${m.ym}\n+${money(m.income)} / −${money(m.expense)}\n${t("прибыль","прибуток")}: ${money(m.net)}`}
-                   style={{ flex: 1, height: "100%", display: "flex", alignItems: "flex-end", gap: 2 }}>
-                <div style={{ flex: 1, height: `${Math.max(m.income / mmax * 100, m.income > 0 ? 2 : 0)}%`, background: "#22c55e", borderRadius: "3px 3px 0 0" }} />
-                <div style={{ flex: 1, height: `${Math.max(m.expense / mmax * 100, m.expense > 0 ? 2 : 0)}%`, background: "#334155", borderRadius: "3px 3px 0 0" }} />
-              </div>
+        <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
+          <div style={{ position: "relative", width: 52, height: MH, flexShrink: 0 }}>
+            {mTicks.map((v) => (
+              <div key={v} className="muted" style={{ position: "absolute", top: mY(v) - 7, right: 2, fontSize: 10, fontWeight: v === 0 ? 700 : 400, color: v === 0 ? "#334155" : undefined }}>{fmtShort(v)}</div>
             ))}
           </div>
-          <svg width="100%" height={MH} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} preserveAspectRatio="none" viewBox={`0 0 ${Math.max(months.length, 1) * 10} ${MH}`}>
-            <line x1="0" y1={MH / 2} x2={months.length * 10} y2={MH / 2} stroke="#94a3b8" strokeWidth="1" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
-            <path fill="none" stroke="#f97316" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" d={smoothPath(months.map((m: any, i: number) => [i * 10 + 5, mNetY(m.net)]))} />
-          </svg>
+          <div style={{ position: "relative", flex: 1, height: MH }}>
+            {mTicks.map((v) => <div key={v} style={{ position: "absolute", left: 0, right: 0, top: mY(v), borderTop: v === 0 ? "1.5px dashed #94a3b8" : "1px solid #e2e8f055" }} />)}
+            <div style={{ display: "flex", gap: 6, height: MH }}>
+              {months.map((m: any) => (
+                <div key={m.ym} title={`${m.ym}\n+${money(m.income)} / −${money(m.expense)}\n${t("прибыль","прибуток")}: ${money(m.net)}`}
+                     style={{ flex: 1, position: "relative" }}>
+                  <div style={{ position: "absolute", left: 0, width: "46%", bottom: MH - mZero, height: Math.max(mZero - mY(m.income), m.income > 0 ? 2 : 0), background: "#22c55e", borderRadius: "3px 3px 0 0" }} />
+                  <div style={{ position: "absolute", right: 0, width: "46%", bottom: MH - mZero, height: Math.max(mZero - mY(m.expense), m.expense > 0 ? 2 : 0), background: "#334155", borderRadius: "3px 3px 0 0" }} />
+                </div>
+              ))}
+            </div>
+            <svg width="100%" height={MH} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} preserveAspectRatio="none" viewBox={`0 0 ${Math.max(months.length, 1) * 10} ${MH}`}>
+              <path fill="none" stroke="#f97316" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" d={smoothPath(months.map((m: any, i: number) => [i * 10 + 5, mY(m.net)]))} />
+            </svg>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+        <div style={{ display: "flex", gap: 6, marginTop: 4, marginLeft: 58 }}>
           {months.map((m: any) => <div key={m.ym} className="muted" style={{ flex: 1, fontSize: 9.5, textAlign: "center" }}>{m.ym.slice(5)}.{m.ym.slice(2, 4)}</div>)}
         </div>
         <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>🟩 {t("доходы","доходи")} · ⬛ {t("расходы","витрати")} · 🟠 {t("линия прибыли","лінія прибутку")}</div>
