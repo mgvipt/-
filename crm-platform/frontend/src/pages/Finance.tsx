@@ -12,6 +12,16 @@ import { Icon } from "../Icon";
 function useNav() { return useNavigate(); }
 
 const money = (n: number) => Math.round(n || 0).toLocaleString("ru") + " ₴";
+/* плавна крива через точки (Catmull-Rom → кубічні Безьє) */
+function smoothPath(pts: number[][]): string {
+  if (pts.length < 2) return "";
+  let d = `M ${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+    d += ` C ${p1[0] + (p2[0] - p0[0]) / 6} ${p1[1] + (p2[1] - p0[1]) / 6}, ${p2[0] - (p3[0] - p1[0]) / 6} ${p2[1] - (p3[1] - p1[1]) / 6}, ${p2[0]} ${p2[1]}`;
+  }
+  return d;
+}
 const pad = (n: number) => String(n).padStart(2, "0");
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`; };
@@ -525,7 +535,7 @@ function Dashboard() {
           </div>
           <svg width="100%" height={CH} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} preserveAspectRatio="none" viewBox={`0 0 ${Math.max(rows.length, 1) * 10} ${CH}`}>
             <line x1="0" y1={CH / 2} x2={rows.length * 10} y2={CH / 2} stroke="#94a3b8" strokeWidth="1" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
-            <polyline fill="none" stroke="#f97316" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" points={rows.map((x: any, i: number) => `${i * 10 + 5},${netY(x.net)}`).join(" ")} />
+            <path fill="none" stroke="#f97316" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" d={smoothPath(rows.map((x: any, i: number) => [i * 10 + 5, netY(x.net)]))} />
           </svg>
         </div>
         <div style={{ display: "flex", gap: rows.length > 45 ? 1 : 3, marginTop: 4 }}>
@@ -556,7 +566,7 @@ function Dashboard() {
           </div>
           <svg width="100%" height={MH} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} preserveAspectRatio="none" viewBox={`0 0 ${Math.max(months.length, 1) * 10} ${MH}`}>
             <line x1="0" y1={MH / 2} x2={months.length * 10} y2={MH / 2} stroke="#94a3b8" strokeWidth="1" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
-            <polyline fill="none" stroke="#f97316" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" points={months.map((m: any, i: number) => `${i * 10 + 5},${mNetY(m.net)}`).join(" ")} />
+            <path fill="none" stroke="#f97316" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" d={smoothPath(months.map((m: any, i: number) => [i * 10 + 5, mNetY(m.net)]))} />
           </svg>
         </div>
         <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
