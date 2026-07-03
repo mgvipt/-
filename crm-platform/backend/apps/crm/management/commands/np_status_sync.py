@@ -132,7 +132,32 @@ class Command(BaseCommand):
                     if target and target.order > d.stage.order:
                         if _advance_deal_stage(d, target.order, "НП: %s" % npstatus):
                             moved += 1
+                if received:
+                    _record_cod_payment(d)  # наложка: гроші отримано разом з посилкою
                 _maybe_send(d, row, ctr)
             except Exception as e:
                 self.stderr.write(str(e)[:120])
         self.stdout.write("np sync: moved=%d sent=%d" % (moved, ctr["sent"]))
+
+
+def _record_cod_payment(deal):
+    """Клієнт отримав посилку з наложкою → Payment(np_cod) + дохід у фінанси.
+    Ідемпотентно: один np_cod-платіж на угоду (external_id=ТТН)."""
+    from decimal import Decimal
+    from apps.crm.models import Payment
+    try:
+        cod = Decimal(str((deal.np_data or {}).get("cod_amount") or 0))
+        if cod <= 0:
+            # fallback: залишок = сума угоди мінус оплачене
+            paid = sum((p.amount for p in deal.payments.filter(is_paid=True)), Decimal("0"))
+            cod = (deal.amount or Decimal("0")) - paid
+        if cod <= 0:
+            return
+        if Payment.objects.filter(deal=deal, provider="np_cod").exists():
+            return
+        pay = Payment.objects.create(deal=deal, provider="np_cod", amount=cod,
+                                     is_paid=True, external_id=deal.ttn or "")
+        from apps.finance.services import record_income
+        record_income(cod, deal=deal, payment=pay, category="Накладений платіж НП")
+    except Exception:
+        pass

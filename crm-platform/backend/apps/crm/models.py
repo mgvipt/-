@@ -148,6 +148,8 @@ class DealItem(models.Model):
     price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     reserved = models.BooleanField(default=False, help_text="Товар зарезервовано під цю сделку")
     discount_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="Знижка на позицію, %")
+    cost = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+                               help_text="Знімок собівартості на момент продажу (для чесної маржі в історії)")
 
     @property
     def total(self):
@@ -163,7 +165,8 @@ class DealItem(models.Model):
 
 class Payment(models.Model):
     """Перенос рабочих оплат: LiqPay / Checkbox / наличка. Питает финмодуль."""
-    PROVIDERS = [("liqpay", "LiqPay"), ("checkbox", "Checkbox"), ("cash", "Наличные"), ("bank", "Банк")]
+    PROVIDERS = [("liqpay", "LiqPay"), ("checkbox", "Checkbox"), ("cash", "Наличные"), ("bank", "Банк"),
+                 ("np_cod", "Накладений платіж НП"), ("reqs", "Реквізити")]
     deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="payments")
     provider = models.CharField(max_length=16, choices=PROVIDERS)
     amount = models.DecimalField(max_digits=12, decimal_places=2)

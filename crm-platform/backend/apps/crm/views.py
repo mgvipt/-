@@ -415,7 +415,7 @@ def make_offer(deal, items_spec, user=None, send_pay=True):
         if not prod:
             missing.append((spec or {}).get("name")); continue
         qty = Decimal(str((spec or {}).get("qty") or 1))
-        DealItem.objects.create(deal=deal, product=prod, quantity=qty, price=prod.price)
+        DealItem.objects.create(deal=deal, product=prod, quantity=qty, price=prod.price, cost=prod.cost or 0)
         added.append("%s x %s" % (prod.name[:40], qty))
     if not added:
         return {"ok": False, "missing": missing, "msg": "товар не знайдено в номенклатурі"}
@@ -675,7 +675,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         disc = Decimal(str(request.data.get("discount_pct", 0) or 0))
         if qty <= 0 or price < 0 or disc < 0 or disc > 100:  # #14 захист від дурня/від'ємних
             return Response({"detail": "Кількість > 0, ціна ≥ 0, знижка 0–100%."}, status=status.HTTP_400_BAD_REQUEST)
-        DealItem.objects.create(deal=deal, product=product, quantity=qty, price=price,
+        DealItem.objects.create(deal=deal, product=product, quantity=qty, price=price, cost=(product.cost or 0),
                                 discount_pct=disc, reserved=bool(request.data.get("reserved")))
         self._recalc_amount(deal)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
@@ -1158,7 +1158,10 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         doc = (r.get("data") or [{}])[0]
         ttn = doc.get("IntDocNumber") or doc.get("Number") or ""
         deal.ttn = ttn
-        _nd = dict(deal.np_data or {}); _nd["ttn_ref"] = doc.get("Ref") or ""; deal.np_data = _nd
+        _nd = dict(deal.np_data or {}); _nd["ttn_ref"] = doc.get("Ref") or ""
+        if cod > 0:
+            _nd["cod_amount"] = cod  # наложка: поллер НП створить Payment при отриманні
+        deal.np_data = _nd
         deal.save(update_fields=["ttn", "np_data"])
         try:  # авто-рух на «НП_ТТН створена» (синхронно зі складом)
             _tc = deal.funnel.stages.filter(name__icontains="ТТН створена").order_by("order").first() if deal.funnel_id else None
