@@ -286,7 +286,7 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
               <span>{t("Итого по активным","Разом по активних")} ({accs.filter((a: any) => a.is_active !== false).length})</span>
               <span style={{ color: "#0ea5e9" }}>{money(accs.filter((a: any) => a.is_active !== false).reduce((sm: number, a: any) => sm + Number(a.balance || 0), 0))}</span>
             </div>
-            {accs.map((a: any) => (
+            {accs.map((a: any, ai: number) => (
               <div key={a.id} onClick={() => {
                 const nv = !(a.is_active !== false);
                 setAccs((prev) => prev.map((x: any) => x.id === a.id ? { ...x, is_active: nv } : x));  // одразу
@@ -298,6 +298,14 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
                 <input type="checkbox" readOnly checked={a.is_active !== false} style={{ pointerEvents: "none" }} />
                 <span style={{ flex: 1, opacity: a.is_active === false ? 0.5 : 1 }}>{a.name}</span>
                 <b className="muted">{money(a.balance)}</b>
+                <span onClick={(e) => { e.stopPropagation(); if (ai === 0) return;
+                  const nx = [...accs]; [nx[ai - 1], nx[ai]] = [nx[ai], nx[ai - 1]]; setAccs(nx);
+                  api.post("/api/accounts/reorder/", { ids: nx.map((x: any) => x.id) }).catch(() => {});
+                }} title={t("Выше","Вище")} style={{ cursor: ai === 0 ? "default" : "pointer", opacity: ai === 0 ? 0.25 : 0.7, padding: "0 3px" }}>▲</span>
+                <span onClick={(e) => { e.stopPropagation(); if (ai === accs.length - 1) return;
+                  const nx = [...accs]; [nx[ai + 1], nx[ai]] = [nx[ai], nx[ai + 1]]; setAccs(nx);
+                  api.post("/api/accounts/reorder/", { ids: nx.map((x: any) => x.id) }).catch(() => {});
+                }} title={t("Ниже","Нижче")} style={{ cursor: ai === accs.length - 1 ? "default" : "pointer", opacity: ai === accs.length - 1 ? 0.25 : 0.7, padding: "0 3px" }}>▼</span>
               </div>
             ))}
           </div>

@@ -7,7 +7,7 @@ class AccountSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Account
-        fields = ["id", "name", "kind", "is_active", "balance"]
+        fields = ["id", "name", "kind", "is_active", "balance", "sort_order"]
 
     def get_balance(self, obj):
         return obj.balance()

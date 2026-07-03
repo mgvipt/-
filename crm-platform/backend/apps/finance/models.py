@@ -8,6 +8,10 @@ class Account(models.Model):
     name = models.CharField(max_length=120)
     kind = models.CharField(max_length=24, default="bank")  # bank/cash/acquiring
     is_active = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=0, help_text="Порядок у списках (менше — вище)")
+
+    class Meta:
+        ordering = ["sort_order", "id"]
 
     def __str__(self):
         return self.name

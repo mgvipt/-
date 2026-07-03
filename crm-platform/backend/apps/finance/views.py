@@ -47,6 +47,14 @@ class AccountViewSet(viewsets.ModelViewSet):
     serializer_class = AccountSerializer
     permission_classes = [FinancePerm]
 
+    @action(detail=False, methods=["post"])
+    def reorder(self, request):
+        """Зберегти порядок рахунків: {ids: [id, id, ...]} — позиція у списку = порядок."""
+        ids = request.data.get("ids") or []
+        for i, pk in enumerate(ids):
+            Account.objects.filter(id=pk).update(sort_order=i * 10)
+        return Response({"ok": True, "count": len(ids)})
+
 
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
