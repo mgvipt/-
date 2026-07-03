@@ -796,7 +796,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", fontSize: 13 }}><thead><tr style={{ color: "#64748b", fontSize: 11, textAlign: "left" }}>
                   <th style={{ padding: "6px 4px" }}>№</th><th style={{ padding: "6px 4px" }}>{t("Товар","Товар")}</th>
-                  <th style={{ padding: "6px 4px" }}>{t("Цена","Ціна")}</th><th style={{ padding: "6px 4px" }}>{t("Кол-во","К-сть")}</th>
+                  <th style={{ padding: "6px 4px" }}>{t("Цена","Ціна")}</th>{can("product.cost.view") && <th style={{ padding: "6px 4px" }}>{t("Закупка","Закупка")}</th>}<th style={{ padding: "6px 4px" }}>{t("Кол-во","К-сть")}</th>
                   <th style={{ padding: "6px 4px", textAlign: "center" }}>{t("Резерв","Резерв")}</th><th style={{ padding: "6px 4px" }}>{t("Остаток","Залишок")}</th>
                   <th style={{ padding: "6px 4px" }}>{t("Скидка %","Знижка %")}</th><th style={{ padding: "6px 4px" }}>{t("Сумма скидки","Сума знижки")}</th>
                   <th style={{ padding: "6px 4px" }}>{t("Сумма","Сума")}</th><th></th></tr></thead>
@@ -807,6 +807,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                       <td style={{ padding: "6px 4px", color: "#94a3b8" }}>{idx + 1}</td>
                       <td style={{ padding: "6px 4px" }}><span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/warehouse?p=${it.product}`)}>{it.product_name}</span></td>
                       <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><input defaultValue={Number(it.price)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.price) && updateItem(it.id, { price: e.target.value })} style={editInp} /> ₴</td>
+                      {can("product.cost.view") && <td style={{ padding: "6px 4px", color: "#9a3412", whiteSpace: "nowrap" }} title={t("Себестоимость на момент продажи","Собівартість на момент продажу")}>{Number(it.cost || 0) > 0 ? fmt(Number(it.cost)) + " ₴" : "—"}</td>}
                       <td style={{ padding: "6px 4px" }}><input defaultValue={Number(it.quantity)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.quantity) && updateItem(it.id, { quantity: e.target.value })} style={{ ...editInp, width: 50 }} /></td>
                       <td style={{ padding: "6px 4px", textAlign: "center" }}><input type="checkbox" checked={!!it.reserved} onChange={() => toggleReserve(it)} title={t("Зарезервировать под сделку","Зарезервувати під сделку")} /></td>
                       <td style={{ padding: "6px 4px", color: low ? "#dc2626" : "#64748b" }} title={low ? t("Не хватает на складе","Не вистачає на складі") : ""}>{it.product_stock != null ? Number(it.product_stock) : "—"}{low ? " ⚠" : ""}</td>
@@ -822,6 +823,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                     <div style={rowTot}><span className="muted">{t("Сумма без скидки","Сума без знижки")}</span><b>{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.quantity) * Number(i.price), 0))} ₴</b></div>
                     <div style={rowTot}><span className="muted">{t("Сумма скидки","Сума знижки")}</span><b style={{ color: "#16a34a" }}>−{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.discount_sum || 0), 0))} ₴</b></div>
                     <div style={{ ...rowTot, fontSize: 16, borderTop: "2px solid #e2e8f0", paddingTop: 8, marginTop: 4 }}><span>{t("Итого","Загальна сума")}</span><b>{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.total), 0))} ₴</b></div>
+                    {can("product.cost.view") && (() => { const cogs = deal.items.reduce((s: number, i: any) => s + Number(i.quantity) * Number(i.cost || 0), 0); const rev = deal.items.reduce((s: number, i: any) => s + Number(i.total), 0); return (
+                      <>
+                        <div style={{ ...rowTot, fontSize: 12.5 }}><span className="muted">{t("Сумма по закупке","Сума по закупці")}</span><b style={{ color: "#9a3412" }}>{fmt(cogs)} ₴</b></div>
+                        <div style={{ ...rowTot, fontSize: 12.5 }}><span className="muted">{t("Маржа сделки","Маржа сделки")}</span><b style={{ color: rev - cogs > 0 ? "#166534" : "#dc2626" }}>{fmt(rev - cogs)} ₴{rev > 0 ? " · " + Math.round(((rev - cogs) / rev) * 100) + "%" : ""}</b></div>
+                      </>
+                    ); })()}
                     {(deal as any).realization && (
                       <div style={{ ...rowTot, fontSize: 12.5, marginTop: 6, color: (deal as any).realization.posted ? "#166534" : "#92400e" }}>
                         <span className="muted">{t("Реализация","Реалізація")} 📤</span>

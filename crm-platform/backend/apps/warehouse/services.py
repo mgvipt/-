@@ -167,80 +167,19 @@ def recalc_bundle_costs(component):
 
 
 def _on_posted(doc):
-    """ЄДИНА точка грошових ефектів проведеного документа. Ідемпотентна (теги в comment).
-    out(по угоді) → COGS-витрата; inv → нестача/надлишок у гроші; writeoff → витрата «Списання»;
-    in → перерахунок середньозваженої собівартості."""
-    from decimal import Decimal
-    from apps.finance.models import Transaction
-
+    """Ефекти проведеного документа. МЕТОДОЛОГІЯ (як 1С, кассовий метод):
+    касовий журнал (Transaction) = ТІЛЬКИ реальні гроші — оплата поставщику вноситься
+    при закупівлі і вже є у журналі. Собівартість реалізації / списання / інвентаризація —
+    це рух СКЛАДУ (StockDocument по собівартості), НЕ рух грошей: у журнал НЕ пишемо.
+    Маржа/прибутковість рахується окремо: DealItem.cost (знімок) + складські документи."""
     if doc.kind == "in":
-        _weighted_cost_update(doc)
-        return
-
-    if doc.kind == "out" and doc.deal_id:
-        tag = "COGS doc#%s" % doc.id
-        if not Transaction.objects.filter(comment=tag).exists():
-            cogs = _doc_cogs(doc)
-            if cogs:
-                try:
-                    from apps.finance.services import record_expense
-                    tx = record_expense(cogs, deal=doc.deal)
-                    tx.comment = tag
-                    tx.save(update_fields=["comment"])
-                except Exception:
-                    pass
-        return
-
-    if doc.kind == "writeoff":
-        tag = "WRITEOFF doc#%s" % doc.id
-        if not Transaction.objects.filter(comment=tag).exists():
-            total = _doc_cogs(doc)
-            if total:
-                try:
-                    from apps.finance.services import record_expense
-                    tx = record_expense(total, category="Списання товару")
-                    tx.comment = tag
-                    tx.save(update_fields=["comment"])
-                except Exception:
-                    pass
-        return
-
-    if doc.kind == "inv":
-        tag = "INV doc#%s" % doc.id
-        if Transaction.objects.filter(comment__startswith=tag).exists():
-            return
-        shortage = Decimal("0")   # нестача (qty<0)
-        surplus = Decimal("0")    # надлишок (qty>0)
-        for m in doc.items.all():
-            val = abs(m.quantity) * (m.price or Decimal("0"))
-            if m.quantity < 0:
-                shortage += val
-            else:
-                surplus += val
-        try:
-            from apps.finance.services import record_expense
-            from apps.finance.models import Transaction as _T
-            from apps.finance.services import _category, default_account
-            if shortage:
-                tx = record_expense(shortage, category="Інвентаризаційна нестача")
-                tx.comment = tag + " нестача"
-                tx.save(update_fields=["comment"])
-            if surplus:
-                _T.objects.create(direction="in", amount=surplus, amount_uah=surplus,
-                                  account=default_account(),
-                                  category=_category("Інвентаризаційний надлишок", "in"),
-                                  comment=tag + " надлишок")
-        except Exception:
-            pass
-        return
+        _weighted_cost_update(doc)  # ковзна середньозважена собівартість
 
 
 def _on_unposted(doc):
-    """Сторно грошових ефектів при скасуванні проведення (по тегах)."""
-    from apps.finance.models import Transaction
-    for tag in ("COGS doc#%s" % doc.id, "WRITEOFF doc#%s" % doc.id):
-        Transaction.objects.filter(comment=tag).delete()
-    Transaction.objects.filter(comment__startswith="INV doc#%s" % doc.id).delete()
+    """Скасування проведення — теж лише склад: рухи перестають рахуватись через posted=False.
+    У грошах сторнувати нічого (їх і не було)."""
+    return
 
 
 def _doc_cogs(doc):
