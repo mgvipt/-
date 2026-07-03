@@ -86,7 +86,15 @@ def _trash_section_ids(sections):
         if pid:
             kids.setdefault(int(pid), []).append(int(s["id"]))
     trash = set()
+    excluded = []
+    try:
+        from apps.integrations.models import IntegrationSettings
+        st = IntegrationSettings.objects.filter(provider="b24_excluded").first()
+        excluded = list((st.config or {}).get("sections") or []) if st else []
+    except Exception:
+        pass
     stack = [int(s["id"]) for s in sections if "УДАЛИТЬ" in (s.get("name") or "").upper()]
+    stack += [int(x) for x in excluded]
     while stack:
         x = stack.pop()
         if x in trash:

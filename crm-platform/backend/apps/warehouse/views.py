@@ -76,6 +76,17 @@ class ProductCategoryViewSet(viewsets.ModelViewSet):
             except Exception:
                 p.is_active = False; p.category = None; p.save(update_fields=["is_active", "category"])
                 hid += 1; deleted -= 1
+        # запомнить bitrix_id: следующая синхронизация с Б24 НЕ пересоздаст удалённое
+        bx_ids = [c.bitrix_id for c in cats if c.bitrix_id]
+        if bx_ids:
+            try:
+                from apps.integrations.models import IntegrationSettings
+                st, _ = IntegrationSettings.objects.get_or_create(
+                    provider="b24_excluded", defaults={"config": {"sections": []}, "is_active": True})
+                st.config["sections"] = sorted(set((st.config.get("sections") or []) + bx_ids))
+                st.save(update_fields=["config"])
+            except Exception:
+                pass
         n_cats = len(cats)
         for c in reversed(cats):  # сначала листья
             c.delete()
