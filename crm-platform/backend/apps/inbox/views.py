@@ -186,7 +186,8 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         # «бачити всі чати» (право відділу) → доступ до будь-якого; інакше — лише свої звʼязки
         # (призначений / контакт мій / учасник / у контакта є мій лід чи сделка).
         mine_q = (Q(assigned_to=user) | Q(contact__owner=user) | Q(participants=user)
-                  | Q(contact__leads__owner=user) | Q(contact__deals__owner=user))
+                  | Q(contact__leads__owner=user) | Q(contact__deals__owner=user)
+                  | Q(contact__deals__warehouse_jobs__assignee=user))  # склад: виконавець задачі бачить чат клієнта
         if not can_all:
             # Незайняті чати (нічиї) — СПІЛЬНИЙ ПУЛ: доступні всім, хто має доступ до каналу
             # (бачить + може відкрити/відповісти/взяти). Призначені — лише свої (mine_q).
@@ -340,9 +341,11 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         if not (u.is_superuser or u.has_perm_code("conversation.view.all") or u.can_see_all_deals()):
             from django.db.models import Q as _Q
             from apps.crm.models import Deal, Lead
+            from apps.warehouse.models import WarehouseJob
             ok = (Deal.objects.filter(contact_id=cid, owner=u).exists() or
                   Lead.objects.filter(contact_id=cid, owner=u).exists() or
-                  Conversation.objects.filter(contact_id=cid).filter(_Q(assigned_to=u) | _Q(participants=u)).exists())
+                  Conversation.objects.filter(contact_id=cid).filter(_Q(assigned_to=u) | _Q(participants=u)).exists() or
+                  WarehouseJob.objects.filter(deal__contact_id=cid, assignee=u).exists())
             if not ok:
                 return Response([])
         qs = (Conversation.objects.filter(contact_id=cid)
