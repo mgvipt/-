@@ -61,6 +61,10 @@ export default function Warehouse() {
   const [whs, setWhs] = useState<WH[]>([]);
   const [modal, setModal] = useState<null | "in" | "out">(null);
   const canRealize = can("warehouse.edit") || can("finance.manage");
+  const canTabReal = can("warehouse.tab.realizations");
+  const canTabRec = can("warehouse.tab.receipts");
+  const canTabInv = can("warehouse.tab.inventory");
+  const canTabStat = can("analytics.warehouse");
   const [view, setView] = useState<"goods" | "realiz" | "receipt" | "inv" | "stat">("goods");
   const [realizDocs, setRealizDocs] = useState<any[]>([]);
   const [realizBusy, setRealizBusy] = useState(false);
@@ -364,10 +368,10 @@ export default function Warehouse() {
       {/* ── ВКЛАДКИ: Товари / Реалізації ── */}
       <div style={{ display: "flex", gap: 6, marginBottom: 10, borderBottom: "2px solid #e2e8f0", paddingBottom: 8 }}>
         <button className={"btn" + (view === "goods" ? " btn-primary" : " btn-light")} onClick={() => setView("goods")}><Icon n="📦" size={15} /> {t("Товары и остатки","Товари та залишки")}</button>
-        <button className={"btn" + (view === "realiz" ? " btn-primary" : " btn-light")} onClick={() => { setView("realiz"); setRealizSel(null); openRealizList(); }}><Icon n="📤" size={15} /> {t("Реализации","Реалізації")}</button>
-        <button className={"btn" + (view === "receipt" ? " btn-primary" : " btn-light")} onClick={() => { setView("receipt"); setReceiptSel(null); openReceiptList(); }}><Icon n="📥" size={15} /> {t("Приходные накладные","Прибуткові накладні")}</button>
-        <button className={"btn" + (view === "inv" ? " btn-primary" : " btn-light")} onClick={() => { setView("inv"); openInventory(); }}><Icon n="📋" size={15} /> {t("Инвентаризация","Інвентаризація")}</button>
-        <button className={"btn" + (view === "stat" ? " btn-primary" : " btn-light")} onClick={() => setView("stat")}><Icon n="📊" size={15} /> {t("Аналитика","Аналітика")}</button>
+        {canTabReal && <button className={"btn" + (view === "realiz" ? " btn-primary" : " btn-light")} onClick={() => { setView("realiz"); setRealizSel(null); openRealizList(); }}><Icon n="📤" size={15} /> {t("Реализации","Реалізації")}</button>}
+        {canTabRec && <button className={"btn" + (view === "receipt" ? " btn-primary" : " btn-light")} onClick={() => { setView("receipt"); setReceiptSel(null); openReceiptList(); }}><Icon n="📥" size={15} /> {t("Приходные накладные","Прибуткові накладні")}</button>}
+        {canTabInv && <button className={"btn" + (view === "inv" ? " btn-primary" : " btn-light")} onClick={() => { setView("inv"); openInventory(); }}><Icon n="📋" size={15} /> {t("Инвентаризация","Інвентаризація")}</button>}
+        {canTabStat && <button className={"btn" + (view === "stat" ? " btn-primary" : " btn-light")} onClick={() => setView("stat")}><Icon n="📊" size={15} /> {t("Аналитика","Аналітика")}</button>}
       </div>
 
       {view === "realiz" ? (

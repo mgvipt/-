@@ -304,6 +304,19 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
     serializer_class = StockDocumentSerializer
     filterset_fields = ["kind", "warehouse", "deal", "posted"]
 
+    # право на перегляд документів за типом (вкладки Складського обліку)
+    KIND_PERM = {"out": "warehouse.tab.realizations", "in": "warehouse.tab.receipts",
+                 "inv": "warehouse.tab.inventory", "writeoff": "warehouse.tab.inventory"}
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        u = self.request.user
+        # документи конкретної сделки (блок «Сума» у картці) — доступні відповідальному як і раніше
+        if u.is_superuser or "deal" in self.request.query_params:
+            return qs
+        deny = [k for k, p in self.KIND_PERM.items() if not u.has_perm_code(p)]
+        return qs.exclude(kind__in=deny) if deny else qs
+
     @action(detail=True, methods=["post"], url_path="post", permission_classes=[RealizationManage])
     def post_doc(self, request, pk=None):
         """Провести документ (рухи рахуються у залишок; для реалізації — бронь COGS)."""
@@ -389,7 +402,7 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
 class InventoryAnalyticsView(APIView):
     """Аналитика по складу: стоимость запасов (по закупке/рознице), по категориям, дефицит."""
     permission_classes = [HasPermCode]
-    required_perm = "warehouse.view"
+    required_perm = "analytics.warehouse"
 
     def get(self, request):
         prods = (Product.objects.annotate(stk=Coalesce(Sum("movements__quantity", filter=Q(movements__document__posted=True)), Decimal("0")))
