@@ -337,9 +337,9 @@ function TaskCard({ t, jobId, onBack }: any) {
     <div className="scroll pad fade" style={{ width: "100%" }}>
       <button className="btn btn-light" style={{ marginBottom: 10 }} onClick={onBack}>← {t("Назад к задачам", "Назад до задач")}</button>
       {deal && deal.contact_id ? (
-        <div style={{ position: "fixed", top: 60, right: 0, bottom: 0, zIndex: 70, display: "flex", width: chatOpen ? "min(430px, 94vw)" : 20, transition: "width .28s ease", background: "#fff", borderLeft: "1px solid #e2e8f0", boxShadow: chatOpen ? "-10px 0 28px rgba(15,23,42,.18)" : "none", overflow: "hidden" }}>
+        <div style={{ position: "fixed", top: 68, right: 0, bottom: 12, zIndex: 70, display: "flex", width: chatOpen ? "min(430px, 94vw)" : 22, transition: "width .28s ease", background: "#fff", borderRadius: "14px 0 0 14px", boxShadow: chatOpen ? "-12px 0 30px rgba(15,23,42,.22)" : "-6px 0 16px rgba(99,102,241,.35)", overflow: "hidden" }}>
           <button onClick={() => setChatOpen(!chatOpen)} title={t("Чат с клиентом", "Чат з клієнтом")}
-            style={{ width: 20, flexShrink: 0, border: "none", background: chatOpen ? "#e2e8f0" : C.terra, color: chatOpen ? "#475569" : "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, fontSize: 14, fontWeight: 700 }}>
+            style={{ width: 22, flexShrink: 0, border: "none", background: "linear-gradient(90deg, #8b5cf6 0%, #3b82f6 100%)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, fontSize: 15, fontWeight: 700, borderRadius: chatOpen ? "14px 0 0 14px" : "14px 0 0 14px", textShadow: "0 1px 2px rgba(15,23,42,.35)" }}>
             {chatOpen ? "›" : "‹"}
           </button>
           {chatOpen && (
