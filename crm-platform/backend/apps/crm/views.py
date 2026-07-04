@@ -1193,7 +1193,9 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             "RecipientAddressName": wh_number,
         }
         if cod > 0:
-            props["BackwardDeliveryData"] = [{"PayerType": "Recipient", "CargoType": "Money", "RedeliveryString": str(int(round(cod)))}]
+            # післяплата через «Контроль оплати» (AfterpaymentOnGoodsCost) — класична
+            # послуга Money-переказу у контрагента НП не підключена (НП: «Післяплата недоступна»)
+            props["AfterpaymentOnGoodsCost"] = str(int(round(cod)))
         try:
             r = ad.np_create_ttn(props)
         except Exception as e:
