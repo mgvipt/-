@@ -12,6 +12,8 @@ type Toast = { id: number; name: string; preview: string; channel: string; conv_
 export default function Notifier() {
   const last = useRef<number | null>(null);
   const teamLast = useRef<number | null>(null);
+  const whLast = useRef<number | null>(null);
+  const [whQueue, setWhQueue] = useState(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nav = useNavigate();
   const { t } = useLang();
@@ -43,6 +45,14 @@ export default function Notifier() {
             }
             teamLast.current = d.team_last;
           }
+          const dd: any = d;
+          if (typeof dd.wh_queue === "number") {
+            setWhQueue(dd.wh_queue);
+            if (typeof dd.wh_last === "number") {
+              if (whLast.current !== null && dd.wh_last > whLast.current) playTeamSound(); // нова задача на відвантаження
+              whLast.current = dd.wh_last;
+            }
+          }
           document.title = d.unread > 0 ? `(${d.unread}) Wallcov CRM` : "Wallcov CRM";
         }
       } catch { /* мовчки */ }
@@ -52,8 +62,16 @@ export default function Notifier() {
     return () => { stop = true; clearInterval(tm); };
   }, []);
 
-  if (toasts.length === 0) return null;
+  if (toasts.length === 0 && whQueue === 0) return null;
   return (
+    <>
+    {whQueue > 0 && (
+      <div onClick={() => nav("/wh")} title={t("Открыть задачи склада", "Відкрити задачі складу")}
+        style={{ position: "fixed", top: 8, left: "50%", transform: "translateX(-50%)", zIndex: 99997, background: "linear-gradient(90deg, #8b5cf6, #3b82f6)", color: "#fff", borderRadius: 12, padding: "9px 20px", fontWeight: 700, fontSize: 13.5, cursor: "pointer", boxShadow: "0 10px 26px rgba(99,102,241,.45)", display: "flex", gap: 9, alignItems: "center", whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 16 }}>📦</span>
+        {t("Новые задачи на отгрузке:", "Нові задачі на відвантаженні:")} {whQueue} · {t("нажми — взять в работу", "натисни — взяти в роботу")}
+      </div>
+    )}
     <div style={{ position: "fixed", top: 16, right: 16, zIndex: 99998, display: "flex", flexDirection: "column", gap: 10, width: 320, maxWidth: "90vw" }}>
       {toasts.map((to) => (
         <div key={to.id} onClick={() => { nav(to.channel === "team" ? "/inbox?tab=team" : `/inbox?c=${to.conv_id}`); setToasts((ts) => ts.filter((x) => x.id !== to.id)); }}
@@ -69,5 +87,6 @@ export default function Notifier() {
         </div>
       ))}
     </div>
+    </>
   );
 }

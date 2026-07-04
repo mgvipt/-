@@ -626,15 +626,21 @@ class DataDeletionView(APIView):
 
 
 def _msg_vis(u):
+    """Чиї вхідні ДЗВЕНЯТЬ: закріплений чат — тільки відповідальному та доданим учасникам;
+    незакріплений (нічий) — лише тим, у кого право «Сповіщення про нові незакріплені чати»."""
     from django.db.models import Q as _Q
-    return (_Q(conversation__assigned_to=u) | _Q(conversation__assigned_to__isnull=True)
-            | _Q(conversation__participants=u) | _Q(conversation__contact__owner=u))
+    q = _Q(conversation__assigned_to=u) | _Q(conversation__participants=u)
+    if u.is_superuser or u.has_perm_code("inbox.notify.unassigned"):
+        q = q | _Q(conversation__assigned_to__isnull=True)
+    return q
 
 
 def _conv_vis(u):
     from django.db.models import Q as _Q
-    return (_Q(assigned_to=u) | _Q(assigned_to__isnull=True)
-            | _Q(participants=u) | _Q(contact__owner=u))
+    q = _Q(assigned_to=u) | _Q(participants=u)
+    if u.is_superuser or u.has_perm_code("inbox.notify.unassigned"):
+        q = q | _Q(assigned_to__isnull=True)
+    return q
 
 
 def _cname(conv, fallback=""):
@@ -673,8 +679,21 @@ class InboxPingView(APIView):
         if _tmsg:
             team_latest = {"name": (_tmsg.sender.get_full_name() or _tmsg.sender.username), "preview": (_tmsg.text or "")[:90]}
         unread += team_unread
+        # склад: нові (нічиї) задачі на відвантаження — для полоси і звуку в кабінеті складу
+        wh_queue = wh_last = 0
+        try:
+            _dep = (u.department.name if u.department_id else "") or ""
+            _rl = (u.role.name if u.role_id else "") or ""
+            if "склад" in _dep.lower() or "комірник" in _rl.lower():
+                from apps.warehouse.models import WarehouseJob
+                _qw = WarehouseJob.objects.filter(status="queued", assignee__isnull=True)
+                wh_queue = _qw.count()
+                wh_last = _qw.aggregate(m=Max("id"))["m"] or 0
+        except Exception:
+            pass
         return Response({"last_in": last, "latest": latest, "unread": unread,
-                         "team_last": team_last, "team_unread": team_unread, "team_latest": team_latest})
+                         "team_last": team_last, "team_unread": team_unread, "team_latest": team_latest,
+                         "wh_queue": wh_queue, "wh_last": wh_last})
 
 
 class NotificationsView(APIView):
