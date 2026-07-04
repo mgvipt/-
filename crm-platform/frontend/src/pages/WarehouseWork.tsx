@@ -22,8 +22,11 @@ export default function WarehouseWork() {
   const [view, setView] = useState<"queue" | "mine" | "kanban" | "shift" | "salary" | "control" | "dashboard">(() => (localStorage.getItem("wh_view") as any) || "shift");
   useEffect(() => { try { localStorage.setItem("wh_view", view); } catch (e) { /* noop */ } }, [view]);
   const [sp] = useSearchParams();
-  useEffect(() => { const tb = sp.get("tab"); if (tb && ["queue", "mine", "kanban", "shift", "salary", "control", "dashboard"].includes(tb)) setView(tb as any); }, [sp]);
   const [job, setJob] = useState<number | null>(null);
+  useEffect(() => {
+    const tb = sp.get("tab");
+    if (tb && ["queue", "mine", "kanban", "shift", "salary", "control", "dashboard"].includes(tb)) { setView(tb as any); setJob(null); }
+  }, [sp]);
   if (job) return <TaskCard t={t} jobId={job} onBack={() => setJob(null)} />;
   const { can } = useAuth();
   const mgr = can("warehouse.view.all") || can("roles.manage");
