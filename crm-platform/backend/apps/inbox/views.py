@@ -869,8 +869,11 @@ class ChatPlaceWebhookView(APIView):
         # 1) контакт по username (щоб влучити в наявний діалог з реальним chatId для відповіді)
         contact = None
         if username:
-            contact = (Contact.objects.filter(social_link__icontains=username).first()
-                       or Contact.objects.filter(nickname__icontains=username).first())
+            # ТОЧНИЙ матч (icontains зливав різних клієнтів: «ira» ловив «kira_deco»)
+            un = username.lstrip("@").lower()
+            contact = (Contact.objects.filter(social_link__iendswith="/" + un).first()
+                       or Contact.objects.filter(nickname__iexact="@" + un).first()
+                       or Contact.objects.filter(nickname__iexact=un).first())
         # 2) діалог
         conv = None
         if contact:
