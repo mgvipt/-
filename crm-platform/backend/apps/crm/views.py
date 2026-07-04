@@ -123,6 +123,21 @@ class FunnelViewSet(viewsets.ModelViewSet):
     serializer_class = FunnelSerializer
     queryset = Funnel.objects.prefetch_related("stages").all()
 
+    def _guard_manage(self):
+        u = self.request.user
+        if not (u.is_superuser or u.has_perm_code("funnel.manage") or u.has_perm_code("roles.manage")):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Налаштовувати воронки може лише той, кому видано право «Налаштовувати воронки»")
+
+    def perform_create(self, serializer):
+        self._guard_manage(); serializer.save()
+
+    def perform_update(self, serializer):
+        self._guard_manage(); serializer.save()
+
+    def perform_destroy(self, instance):
+        self._guard_manage(); instance.delete()
+
     def get_queryset(self):
         qs = super().get_queryset()
         allowed = self.request.user.allowed_funnel_ids()
@@ -131,6 +146,7 @@ class FunnelViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"])
     def reorder(self, request):
         """Зберегти порядок воронок. body: {ids: [id, id, ...]} у потрібній послідовності."""
+        self._guard_manage()
         ids = [int(x) for x in (request.data.get("ids") or []) if str(x).isdigit()]
         for idx, fid in enumerate(ids):
             Funnel.objects.filter(id=fid).update(order=idx)
@@ -139,6 +155,7 @@ class FunnelViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def save_stages(self, request, pk=None):
         """Зберегти весь набір стадій воронки (перейменування/колір/порядок/+/видалення)."""
+        self._guard_manage()
         funnel = self.get_object()
         blocked = _save_funnel_stages(funnel, request.data.get("stages", []))
         funnel.refresh_from_db()
@@ -151,6 +168,21 @@ class StageViewSet(viewsets.ModelViewSet):
     queryset = Stage.objects.all()
     serializer_class = StageSerializer
     filterset_fields = ["funnel"]
+
+    def _guard(self):
+        u = self.request.user
+        if not (u.is_superuser or u.has_perm_code("funnel.manage") or u.has_perm_code("roles.manage")):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Змінювати стадії може лише той, у кого право «Налаштовувати воронки»")
+
+    def perform_create(self, serializer):
+        self._guard(); serializer.save()
+
+    def perform_update(self, serializer):
+        self._guard(); serializer.save()
+
+    def perform_destroy(self, instance):
+        self._guard(); instance.delete()
 
 
 def _save_funnel_stages(funnel, items):

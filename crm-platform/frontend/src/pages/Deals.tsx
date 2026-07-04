@@ -5,6 +5,7 @@ import Board from "./Board";
 import ListView from "../ListView";
 import FunnelEditor from "./FunnelEditor";
 import { useLang } from "../i18n";
+import { useAuth } from "../auth";
 import { Icon } from "../Icon";
 
 /* ── Розумний фільтр сделок: пишеш — шукає по назві; клік — панель фільтрів ── */
@@ -261,6 +262,8 @@ export default function Deals() {
   const [fltQuery, setFltQuery] = useState("");
   const [fltStages, setFltStages] = useState<number[]>([]);
   const { t } = useLang();
+  const { can } = useAuth();
+  const canFunnels = can("funnel.manage") || can("roles.manage");
   const nav = useNavigate();
 
   useEffect(() => {
@@ -294,8 +297,8 @@ export default function Deals() {
         <select value={curId ?? ""} onChange={(e) => { const id = Number(e.target.value); setCurId(id); localStorage.setItem("deals_funnel", String(id)); }}>
           {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
         </select>
-        <button className="btn btn-light" onClick={() => setEditFunnel(true)}>{<><Icon n="⚙" size={15} /> {t("Воронка","Воронка")}</>}</button>
-        <button className="btn btn-light" title={t("Порядок воронок","Порядок воронок")} onClick={() => setOrderModal(true)}>⇅ {t("Порядок","Порядок")}</button>
+        {canFunnels && <button className="btn btn-light" onClick={() => setEditFunnel(true)}>{<><Icon n="⚙" size={15} /> {t("Воронка","Воронка")}</>}</button>}
+        {canFunnels && <button className="btn btn-light" title={t("Порядок воронок","Порядок воронок")} onClick={() => setOrderModal(true)}>⇅ {t("Порядок","Порядок")}</button>}
         <SmartFilter funnel={cur} users={users} onQuery={(q, st) => { setFltQuery(q); setFltStages(st); }} />
         <div style={{ display: "flex", gap: 2, background: "#eef2f7", borderRadius: 8, padding: 2 }}>
           <button className={"btn" + (view === "kanban" ? " btn-primary" : " btn-light")} style={{ height: 28 }} onClick={() => { setView("kanban"); localStorage.setItem("deals_view", "kanban"); }}><Icon n="grid" size={15} /> {t("Канбан","Канбан")}</button>
