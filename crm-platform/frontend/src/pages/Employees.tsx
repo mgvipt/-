@@ -216,6 +216,7 @@ function AccessTab({ depts, emps, roles, funnels, reload, t }: any) {
   const [kind, setKind] = useState<"dept" | "user">("dept");
   const [sel, setSel] = useState<any>("");
   const [channels, setChannels] = useState<any[]>([]);
+  const [, setTick] = useState(0); // локальний ререндер без reload (щоб блок не мигав)
   useEffect(() => { api.get<any>("/api/channels/").then((d) => setChannels(d.results || d)).catch(() => {}); }, []);
   const obj: any = kind === "dept" ? depts.find((x: any) => x.id === Number(sel)) : emps.find((x: any) => x.id === Number(sel));
   const fKey = kind === "dept" ? "funnels" : "extra_funnels";
@@ -231,11 +232,19 @@ function AccessTab({ depts, emps, roles, funnels, reload, t }: any) {
     ((rl && rl.open_lines) || []).forEach((i: number) => inhL.add(i));
   }
   async function toggle(key: string, id: number) {
+    const prev = (obj[key] || []).slice();
     const cur = own(key);
     if (cur.has(id)) cur.delete(id); else cur.add(id);
+    const next = Array.from(cur);
+    obj[key] = next;            // оптимістично — галочка перемикається миттєво
+    setTick((v) => v + 1);
     const url = kind === "dept" ? `/api/departments/${obj.id}/` : `/api/users/${obj.id}/`;
-    await api.patch(url, { [key]: Array.from(cur) });
-    reload();
+    try {
+      await api.patch(url, { [key]: next });
+    } catch {
+      obj[key] = prev;          // помилка — відкат
+      setTick((v) => v + 1);
+    }
   }
   const inp: any = { height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13, minWidth: 260 };
   const CheckList = ({ title, items, key_, inh, hint }: any) => (
