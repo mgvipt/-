@@ -1612,6 +1612,56 @@ class AgentConfigView(APIView):
         return Response({"ok": True})
 
 
+def _upsell_test_kit(deal):
+    """Допродаж інструментів після ОПЛАТИ тест-набору.
+    Шлеться ОДИН раз (прапор у deal.np_data), тільки якщо ВСІ товари сделки — тест-набори.
+    Ціни тягнуться ЖИВЦЕМ з номенклатури (конфіг: Інтеграції → upsell_test_kit)."""
+    from apps.integrations.models import IntegrationSettings
+    from apps.warehouse.models import Product
+    from apps.inbox.models import Conversation
+    from apps.inbox.services import send_message
+    from .models import log_activity
+    nd = dict(deal.np_data or {})
+    if nd.get("upsell_sent"):
+        return
+    items = list(deal.items.select_related("product__category"))
+    if not items:
+        return
+    for it in items:
+        cat = (it.product.category.name if it.product.category_id else "") or ""
+        if "тестов" not in cat.lower() and "тест-наб" not in it.product.name.lower() and "тестовий набір" not in it.product.name.lower():
+            return  # у сделці не тільки тест-набори — допродаж не шлемо
+    st = IntegrationSettings.objects.filter(provider="upsell_test_kit").first()
+    cfg = (st.config or {}) if st else {}
+    if st and not st.is_active:
+        return
+    ids = cfg.get("product_ids") or []
+    prods = list(Product.objects.filter(id__in=ids, is_active=True)) if ids else []
+    if not prods:
+        return
+    order = {pid: i for i, pid in enumerate(ids)}
+    prods.sort(key=lambda p: order.get(p.id, 99))
+    lines = "\n".join("%d. %s — %d грн" % (i + 1, p.name, round(float(p.price)))
+                       for i, p in enumerate(prods))
+    msg = ("Дякуємо за оплату! 💚 Ваш тест-набір вже готуємо.\n\n"
+           "Підкажіть, чи є у вас інструменти для нанесення? Для Galateya та шовків потрібні "
+           "пензель-макловиця і пензель для декору — з ними малюнок виходить як у дизайнерських "
+           "інтерʼєрах, і вони знадобляться для основного обʼєму.\n\n"
+           "Можемо додати до вашої відправки, щоб все приїхало разом:\n" + lines +
+           "\n\nНапишіть номери — додамо 😊")
+    conv = Conversation.objects.filter(contact_id=deal.contact_id, status="open").order_by("-last_message_at").first() if deal.contact_id else None
+    if conv is None:
+        return
+    try:
+        send_message(conv, msg, user=None)
+        nd["upsell_sent"] = True
+        deal.np_data = nd
+        deal.save(update_fields=["np_data"])
+        log_activity("deal", deal.id, "Допродаж (інструменти)", "надіслано список інструментів після оплати тест-набору", None, "AI-автоматика")
+    except Exception:
+        pass
+
+
 class LiqPayCallbackView(APIView):
     """Callback LiqPay: підтвердження реальної оплати → Payment(paid) → стадія Оплату отримано."""
     authentication_classes = []
@@ -1658,6 +1708,10 @@ class LiqPayCallbackView(APIView):
         log_activity("deal", deal.id, "Оплата LiqPay", "%s грн отримано (callback, txn %s)" % (amount, pay_id[:12]), None, "LiqPay")
         try:
             _issue_checkbox_for_deal(deal, user=None)
+        except Exception:
+            pass
+        try:
+            _upsell_test_kit(deal)  # допродаж інструментів після оплати тест-набору
         except Exception:
             pass
         return Response({"ok": True})

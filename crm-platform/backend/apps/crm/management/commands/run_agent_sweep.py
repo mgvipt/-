@@ -46,7 +46,7 @@ class Command(BaseCommand):
                 except Exception as e:
                     self.stderr.write(str(e)[:100])
         from apps.inbox.models import Conversation as _Cv
-        deals = (Deal.objects.filter(funnel__name__icontains="\u0422\u0435\u0441\u0442\u043e\u0432\u0438\u0439 \u043d\u0430\u0431\u0456\u0440", closed_at__isnull=True)
+        deals = (Deal.objects.filter(closed_at__isnull=True)
                  .exclude(stage__is_lost=True).exclude(stage__is_won=True).select_related("stage", "funnel", "contact"))
         for deal in deals:
             if done >= cap:

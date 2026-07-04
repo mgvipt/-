@@ -91,7 +91,9 @@ def build_system(entity, kind):
     if entity.funnel_id:
         stages = list(entity.funnel.stages.order_by("order").values_list("name", flat=True))
         parts.append("## Стадії воронки (по порядку): " + " → ".join(stages))
-    if entity.funnel_id and "\u0442\u0435\u0441\u0442\u043e\u0432" in (entity.funnel.name or "").lower():
+    if kind == "deal" and entity.funnel_id and not entity.items.exists():
+        # тест-набори доступні у БУДЬ-ЯКІЙ воронці, поки у сделці немає товарів
+        # (клієнти обирають пробники і в «Основному продукті» — кейс Tatiana 04.07)
         from apps.warehouse.models import Product
         prods = list(Product.objects.filter(is_active=True).filter(name__iregex=r"\u0442\u0435\u0441\u0442\u043e\u0432|\u043f\u0440\u043e\u0431\u043d\u0438").order_by("name").values_list("name", "price")[:120])
         if prods:
