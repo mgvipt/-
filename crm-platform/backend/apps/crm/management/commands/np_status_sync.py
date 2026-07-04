@@ -159,5 +159,12 @@ def _record_cod_payment(deal):
                                      is_paid=True, external_id=deal.ttn or "")
         from apps.finance.services import record_income
         record_income(cod, deal=deal, payment=pay, category="Накладений платіж НП")
+        # фінальний фіскальний чек Checkbox на доплату: ланцюг аванс → фінал
+        # (relation до авансового чека, у фіналі — ТТН; регламент післяплати)
+        try:
+            from apps.crm.views import _issue_checkbox_for_deal
+            _issue_checkbox_for_deal(deal, user=None)
+        except Exception:
+            pass
     except Exception:
         pass

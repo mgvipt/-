@@ -500,8 +500,9 @@ def _issue_checkbox_for_deal(deal, user=None):
     this_kop = int(round(float(pay.amount) * 100))
     if this_kop <= 0:
         return None
-    pm = "CASH" if pay.provider in ("cash", "np") else "CASHLESS"
-    pay_label = {"liqpay": "\u0406\u043d\u0442\u0435\u0440\u043d\u0435\u0442 \u0435\u043a\u0432\u0430\u0439\u0440\u0438\u043d\u0433", "terminal": "\u041a\u0430\u0440\u0442\u043a\u0430", "card": "\u041a\u0430\u0440\u0442\u043a\u0430"}.get(pay.provider)
+    pm = "CASH" if pay.provider in ("cash", "np") else "CASHLESS"  # np_cod = переказ НоваПей → CASHLESS
+    pay_label = {"liqpay": "Інтернет еквайринг", "terminal": "Картка", "card": "Картка",
+                 "np_cod": "Накладений платіж Нова Пошта", "reqs": "Оплата за реквізитами"}.get(pay.provider)
     relation = deal.checkbox_relation_id or None
     closes = cum_kop >= goods_total
     ext = "WCCRM-%s-P%s" % (deal.id, pay.id)
@@ -1704,6 +1705,10 @@ class LiqPayCallbackView(APIView):
             paid = sum((p.amount for p in Payment.objects.filter(deal=dlock, is_paid=True)), Decimal("0"))
             if dlock.amount and paid >= dlock.amount:
                 _advance_deal_stage(dlock, 3, "LiqPay оплата отримана")
+            elif (dlock.pay_type or "") == "prepay_np" and paid > 0:
+                # передоплата + післяплата НП: АВАНС вже рухає на «Оплату отримано»
+                # (решту збере Нова Пошта наложкою — фінальний чек при отриманні)
+                _advance_deal_stage(dlock, 3, "LiqPay аванс отримано (решта — післяплата НП)")
             deal = dlock
         log_activity("deal", deal.id, "Оплата LiqPay", "%s грн отримано (callback, txn %s)" % (amount, pay_id[:12]), None, "LiqPay")
         try:
