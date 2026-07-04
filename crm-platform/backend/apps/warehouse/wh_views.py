@@ -91,7 +91,19 @@ def queue(request):
             .exclude(status__in=["shipped", "cancelled"]).select_related("deal", "deal__contact", "deal__stage")[:50])
     shipped = (WarehouseJob.objects.filter(assignee=request.user, status="shipped")
                .select_related("deal", "deal__contact", "deal__stage").order_by("-shipped_at")[:30])
-    return Response({"queue": [_job_dict(j) for j in jobs], "mine": [_job_dict(j) for j in mine], "shipped": [_job_dict(j) for j in shipped]})
+    out = {"queue": [_job_dict(j) for j in jobs], "mine": [_job_dict(j) for j in mine], "shipped": [_job_dict(j) for j in shipped]}
+    u = request.user
+    if u.is_superuser or (hasattr(u, "has_perm_code") and (u.has_perm_code("warehouse.view.all") or u.has_perm_code("roles.manage"))):
+        # керівник/адмін: УСІ активні задачі всіх співробітників (хто що робить зараз)
+        act = (WarehouseJob.objects.exclude(status__in=["shipped", "cancelled"]).exclude(assignee__isnull=True)
+               .select_related("deal", "deal__contact", "deal__stage", "assignee").order_by("-created_at")[:80])
+        from django.utils import timezone as _tz
+        from datetime import timedelta as _td
+        recent = (WarehouseJob.objects.filter(status="shipped", shipped_at__gte=_tz.now() - _td(days=7))
+                  .select_related("deal", "deal__contact", "deal__stage", "assignee").order_by("-shipped_at")[:40])
+        out["all_active"] = [_job_dict(j) for j in act]
+        out["all_shipped_7d"] = [_job_dict(j) for j in recent]
+    return Response(out)
 
 
 @api_view(["GET"])

@@ -120,7 +120,19 @@ function QueueView({ t, onOpen, mgr }: any) {
   return (
     <div className="scroll pad fade" style={{ width: "100%" }}>
       {prev != null && <JobPreview jobId={prev} t={t} onClose={() => setPrev(null)} onTake={(id: number) => { setPrev(null); take(id); }} />}
-      <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>{t("Очередь по порядку (сверху — раньше). Жми задачу — увидишь товары и потребность. Тип — бейджем в задаче.", "Черга по порядку (зверху — раніше). Тисни задачу — побачиш товари і потребу. Тип — бейджем у задачі.")} {t("Свободно", "Вільно")}: <b>{(d.queue || []).length}</b></div>
+      <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>{t("Очередь по порядку (сверху — раньше). Жми задачу — увидишь товары и потребность. Тип — бейджем в задаче.", "Черга по порядку (зверху — раніше). Тисни задачу — побачиш товари і потребу. Тип — бейджем у задачі.")} {t("Свободно", "Вільно")}: <b>{(d.queue || []).length}</b>{mgr && d.all_active ? <> · {t("В работе у сотрудников","У роботі у співробітників")}: <b>{d.all_active.length}</b></> : null}</div>
+      {mgr && d.all_active && d.all_active.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <b style={{ fontSize: 14 }}>🛡 {t("В работе у сотрудников (руководитель видит всё)","У роботі у співробітників (керівник бачить все)")}</b>
+          {d.all_active.map((j: any) => <JobCard key={"a" + j.id} j={j} t={t} onClick={() => onOpen(j.id)} action={<span />} />)}
+        </div>
+      )}
+      {mgr && d.all_shipped_7d && d.all_shipped_7d.length > 0 && (
+        <details style={{ marginBottom: 14 }}>
+          <summary style={{ cursor: "pointer", fontSize: 13.5, fontWeight: 700 }}>✅ {t("Отгружено за 7 дней (все сотрудники)","Відвантажено за 7 днів (усі співробітники)")} — {d.all_shipped_7d.length}</summary>
+          {d.all_shipped_7d.map((j: any) => <JobCard key={"s" + j.id} j={j} t={t} onClick={() => onOpen(j.id)} action={<span />} />)}
+        </details>
+      )}
       {(d.queue || []).length === 0 && <div className="note">{t("Очередь пуста — все задачи разобраны 👍", "Черга порожня — всі задачі розібрані 👍")}</div>}
       {sal.length > 0 && <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: "10px 12px", marginBottom: 12 }}><div className="label" style={{ margin: "0 0 8px", color: C.terra }}>🔥 {t("Покрытия для стен — приоритет", "Покриття для стін — пріоритет")} <span className="muted" style={{ fontWeight: 400 }}>· {sal.length}</span></div><div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{sal.map(row)}</div></div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{rest.map(row)}</div>
