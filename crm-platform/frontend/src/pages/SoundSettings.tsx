@@ -8,6 +8,7 @@ import { Icon } from "../Icon";
 import {
   SOUNDS, CALL_SOUNDS, getMsgSound, setMsgSound, getCallSound, setCallSound,
   msgSoundOn, setMsgSoundOn, callSoundOn, setCallSoundOn, previewSel, stopPreview,
+  whNotifyOn, setWhNotifyOn,
   getTeamSound, setTeamSound, teamSoundOn, setTeamSoundOn,
   getLibrary, loadSoundLibrary, uploadSound, deleteSound, migrateLocalSounds,
 } from "../sounds";
@@ -22,6 +23,7 @@ export default function SoundSettings() {
   const [msgOn, setMsgOnS] = useState(msgSoundOn());
   const [callOn, setCallOnS] = useState(callSoundOn());
   const [teamOn, setTeamOnS] = useState(teamSoundOn());
+  const [whOn, setWhOnS] = useState(whNotifyOn());
   const [customs, setCustoms] = useState(getLibrary());
   const [busy, setBusy] = useState(false);
   const [migN, setMigN] = useState(0); // скільки старих звуків перенесено у спільну бібліотеку
@@ -113,6 +115,13 @@ export default function SoundSettings() {
         {sel(team, (v) => { setTeam(v); setTeamSound(v); }, msgList, !teamOn, false)}
         <button className="btn btn-light" onClick={() => previewSel(team, false)}><Icon n="bell" size={14} /> {t("Прослушать", "Прослухати")}</button>
       </div>
+
+      {/* нові задачі складу (полоса + звук) */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>📦 {t("Новые задачи на отгрузке (полоса + звук)", "Нові задачі на відвантаженні (полоса + звук)")}</span>
+        <span className={"toggle" + (whOn ? " on" : "")} onClick={() => { const v = !whOn; setWhOnS(v); setWhNotifyOn(v); }} />
+      </div>
+      <div className="muted" style={{ fontSize: 11.5, marginBottom: 16 }}>{t("Только для сотрудников склада. Выключил — не будет ни полосы, ни звука о новых задачах в общей очереди.", "Тільки для співробітників складу. Вимкнув — не буде ні полоси, ні звуку про нові задачі у спільній черзі.")}</div>
 
       {/* дзвінок */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>

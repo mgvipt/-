@@ -124,6 +124,8 @@ export function setCallSound(v: string) { localStorage.setItem(LS_CALL, v); }
 export function msgSoundOn() { return localStorage.getItem(LS_MSG_ON) !== "0"; }
 export function setMsgSoundOn(v: boolean) { localStorage.setItem(LS_MSG_ON, v ? "1" : "0"); }
 export function callSoundOn() { return localStorage.getItem(LS_CALL_ON) !== "0"; }
+export function whNotifyOn() { return localStorage.getItem("snd_wh_on") !== "0"; }
+export function setWhNotifyOn(v: boolean) { localStorage.setItem("snd_wh_on", v ? "1" : "0"); }
 export function setCallSoundOn(v: boolean) { localStorage.setItem(LS_CALL_ON, v ? "1" : "0"); }
 const LS_TEAM = "crm_team_sound", LS_TEAM_ON = "crm_team_sound_on";
 export function getTeamSound() { return localStorage.getItem(LS_TEAM) || "real_confirm"; }

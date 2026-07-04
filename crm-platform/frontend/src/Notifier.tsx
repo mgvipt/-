@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "./api";
-import { playMessageSound, playTeamSound, loadSoundLibrary } from "./sounds";
+import { playMessageSound, playTeamSound, loadSoundLibrary, whNotifyOn } from "./sounds";
 import { useLang } from "./i18n";
 
 type Toast = { id: number; name: string; preview: string; channel: string; conv_id: number };
@@ -14,7 +14,7 @@ export default function Notifier() {
   const teamLast = useRef<number | null>(null);
   const whLast = useRef<number | null>(null);
   const [whQueue, setWhQueue] = useState(0);
-  const [whHidden, setWhHidden] = useState(() => Date.now() < Number(localStorage.getItem("whBannerHideUntil") || 0));
+  const [whHidden, setWhHidden] = useState(() => Date.now() < Number(localStorage.getItem("whBannerHideUntil2") || 0));
   const WH_HIDE_MIN = 30; // хвилин до повторної появи після закриття
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nav = useNavigate();
@@ -49,10 +49,11 @@ export default function Notifier() {
           }
           const dd: any = d;
           if (typeof dd.wh_queue === "number") {
-            setWhQueue(dd.wh_queue);
-            setWhHidden(Date.now() < Number(localStorage.getItem("whBannerHideUntil") || 0));
+            const whOn = whNotifyOn(); // особистий вимикач (Налаштування → Звуки)
+            setWhQueue(whOn ? dd.wh_queue : 0);
+            setWhHidden(Date.now() < Number(localStorage.getItem("whBannerHideUntil2") || 0));
             if (typeof dd.wh_last === "number") {
-              if (whLast.current !== null && dd.wh_last > whLast.current) playTeamSound(); // нова задача на відвантаження
+              if (whOn && whLast.current !== null && dd.wh_last > whLast.current) playTeamSound(); // нова задача на відвантаження
               whLast.current = dd.wh_last;
             }
           }
@@ -73,7 +74,7 @@ export default function Notifier() {
         style={{ position: "fixed", top: 112, left: "50%", transform: "translateX(-50%)", zIndex: 9990, background: "linear-gradient(90deg, #8b5cf6, #3b82f6)", color: "#fff", borderRadius: 16, padding: "16px 18px 16px 26px", fontWeight: 800, fontSize: 17, cursor: "pointer", boxShadow: "0 16px 40px rgba(99,102,241,.55)", display: "flex", gap: 12, alignItems: "center", whiteSpace: "nowrap", maxWidth: "94vw" }}>
         <span style={{ fontSize: 24 }}>📦</span>
         <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t("Новые задачи на отгрузке:", "Нові задачі на відвантаженні:")} {whQueue} · {t("нажми — взять в работу", "натисни — взяти в роботу")}</span>
-        <button onClick={(e) => { e.stopPropagation(); localStorage.setItem("whBannerHideUntil", String(Date.now() + WH_HIDE_MIN * 60 * 1000)); setWhHidden(true); }}
+        <button onClick={(e) => { e.stopPropagation(); localStorage.setItem("whBannerHideUntil2", String(Date.now() + WH_HIDE_MIN * 60 * 1000)); setWhHidden(true); }}
           title={t("Скрыть на 30 минут", "Сховати на 30 хвилин")}
           style={{ border: "none", background: "rgba(255,255,255,.25)", color: "#fff", cursor: "pointer", width: 30, height: 30, borderRadius: "50%", fontSize: 17, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>×</button>
       </div>
