@@ -520,12 +520,28 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                     comment=(reftag + " · Зарахування еквайрингу по угоді #%s" % did)[:255])
                 created += 1
                 continue
-        # переказ власних коштів (на свою картку) — це transfer, не витрата (не спотворює P&L)
+        # переказ власних коштів (на свою картку/рахунок) — це transfer, не витрата (не спотворює P&L)
+        transfer_dest = None
         if "переказ власних" in osnd.lower():
+            # отримувач: карта з призначення («5221 **** **** 6953») → рахунок CRM за хвостом у назві
+            mm = _re.search(r"\*\*\*\*\s*(\d{4})", osnd)
+            if mm:
+                transfer_dest = Account.objects.filter(name__icontains=mm.group(1)).first()
+            if direction == "in":
+                # зарахування переказу: якщо друга сторона (списання /D) вже в журналі — це ТОЙ САМИЙ переказ:
+                # проставляємо їй отримувача і НЕ створюємо другий рядок
+                twin = Transaction.objects.filter(comment__startswith="PB#%s/D" % ref, direction="transfer").first()
+                if twin:
+                    if not twin.transfer_account_id:
+                        twin.transfer_account = account
+                        twin.save(update_fields=["transfer_account"])
+                    skipped += 1
+                    continue
             direction = "transfer"
         cat, fdir, fart, cp2 = apply_bank_rules(direction, osnd, cp)
         Transaction.objects.create(
             direction=direction, amount=amt, amount_uah=amt, account=account,
+            transfer_account=transfer_dest if direction == "transfer" else None,
             date=dte, op_time=op_t, counterparty=cp2, category=cat, fin_direction=fdir, fin_article=fart,
             import_batch=batch, comment=(reftag + " · " + osnd)[:255])
         created += 1
