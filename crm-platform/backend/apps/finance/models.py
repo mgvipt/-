@@ -212,6 +212,28 @@ class AdvisoryReport(models.Model):
         return f"{self.title} ({self.created_at:%Y-%m-%d})"
 
 
+class PlannedPayment(models.Model):
+    """Дебіторка/Кредиторка: заплановані платежі ОКРЕМО від факту (журналу).
+    Кредиторка = ми винні (майбутня витрата), Дебіторка = нам винні (майбутній дохід).
+    «Оплачено» → створюється фактична операція в журналі."""
+    KIND = [("payable", "Кредиторка (ми винні)"), ("receivable", "Дебіторка (нам винні)")]
+    STATUS = [("planned", "Заплановано"), ("paid", "Оплачено"), ("canceled", "Скасовано")]
+    kind = models.CharField(max_length=12, choices=KIND, db_index=True)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    due_date = models.DateField(db_index=True)
+    counterparty = models.CharField(max_length=160, blank=True)
+    category = models.ForeignKey(Category, null=True, blank=True, on_delete=models.SET_NULL, related_name="planned_payments")
+    account = models.ForeignKey(Account, null=True, blank=True, on_delete=models.SET_NULL, related_name="planned_payments")
+    deal = models.ForeignKey("crm.Deal", null=True, blank=True, on_delete=models.SET_NULL, related_name="planned_payments")
+    comment = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=10, choices=STATUS, default="planned", db_index=True)
+    paid_tx = models.ForeignKey("Transaction", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["due_date", "id"]
+
+
 class BankRule(models.Model):
     """Правило авторозноски банківських операцій: якщо поле містить текст →
     проставити категорію / напрямок / фонд / контрагента. Застосовується при

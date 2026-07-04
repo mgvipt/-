@@ -41,8 +41,8 @@ const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pa
 
 export default function Finance() {
   const { t } = useLang();
-  const [tab, setTab] = useState<"dash" | "journal" | "pnl" | "be" | "dir" | "plan" | "grow" | "salary" | "mplan" | "time" | "ref" | "model">("dash");
-  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
+  const [tab, setTab] = useState<"dash" | "journal" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model">("dash");
+  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
   return (
     <div className="scroll pad fade">
       <div className="note warn"><Icon n="🔒" size={15} /> {t("Раздел видят только роли с правом","Розділ бачать тільки ролі з правом")} <b>finance.view</b>.</div>
@@ -55,6 +55,7 @@ export default function Finance() {
       {tab === "be" && <Breakeven />}
       {tab === "dir" && <Directions />}
       {tab === "plan" && <Planning />}
+      {tab === "debts" && <Debts />}
       {tab === "grow" && <Growth />}
       {tab === "salary" && <Salary />}
       {tab === "mplan" && <MPlans />}
@@ -1515,6 +1516,111 @@ function RefConst({ title, items, hint }: { title: string; items: string[]; hint
 
 /* ─── ВКЛАДКА: ФІНМОДЕЛЬ (CRUD статей) ─────────────────────────────────── */
 /* ─── ВКЛАДКА: ПЛАНУВАННЯ ПО ФОНДАХ-КОНВЕРТАХ ──────────────────────────── */
+function Debts() {
+  const { t } = useLang();
+  const [rows, setRows] = useState<any[]>([]);
+  const [st, setSt] = useState("planned");
+  const [cats, setCats] = useState<any[]>([]);
+  const [accs2, setAccs2] = useState<any[]>([]);
+  const [form, setForm] = useState<any>({ kind: "payable", amount: "", due_date: "", counterparty: "", category: "", account: "", comment: "" });
+  const load = () => api.get<any>(`/api/planned-payments/?status=${st}&page_size=500`).then((d) => setRows(d.results || d)).catch(() => {});
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [st]);
+  useEffect(() => {
+    api.get<any>("/api/categories/?page_size=300").then((d) => setCats(d.results || d)).catch(() => {});
+    api.get<any>("/api/accounts/").then((d) => setAccs2((d.results || d).filter((a: any) => a.is_active !== false))).catch(() => {});
+  }, []);
+  const inp: any = { height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", fontSize: 13 };
+  async function add() {
+    if (!form.amount || !form.due_date) { alert(t("Сумма и дата обязательны", "Сума і дата обовʼязкові")); return; }
+    try {
+      await api.post("/api/planned-payments/", { ...form, amount: Number(form.amount),
+        category: form.category ? Number(form.category) : null, account: form.account ? Number(form.account) : null });
+      setForm({ kind: form.kind, amount: "", due_date: "", counterparty: "", category: "", account: "", comment: "" });
+      load();
+    } catch (e: any) { alert(e?.response?.data?.detail || "Помилка"); }
+  }
+  async function markPaid(r: any) {
+    if (!confirm(t(`Отметить оплаченным? Появится фактическая операция в журнале на ${r.amount} грн сегодняшним числом.`, `Позначити оплаченим? Зʼявиться фактична операція в журналі на ${r.amount} грн сьогоднішнім числом.`))) return;
+    await api.post(`/api/planned-payments/${r.id}/mark-paid/`, {}); load();
+  }
+  const Section = ({ kind, title, color }: any) => {
+    const list = rows.filter((r) => r.kind === kind);
+    const total = list.reduce((sm, r) => sm + Number(r.amount || 0), 0);
+    return (
+      <div className="panel" style={{ flex: 1, minWidth: 380 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+          <b style={{ fontSize: 15 }}>{title}</b>
+          <span style={{ fontSize: 19, fontWeight: 800, color }}>{money(total)}</span>
+          <span className="muted" style={{ fontSize: 12 }}>{list.length} {t("шт", "шт")}</span>
+        </div>
+        <table style={{ width: "100%", fontSize: 12.5, borderCollapse: "collapse" }}>
+          <thead><tr className="muted" style={{ fontSize: 11, textAlign: "left" }}>
+            <th style={{ padding: "4px" }}>{t("Срок", "Строк")}</th><th style={{ padding: "4px" }}>{t("Сумма", "Сума")}</th>
+            <th style={{ padding: "4px" }}>{t("Контрагент", "Контрагент")}</th><th style={{ padding: "4px" }}>{t("Категория", "Категорія")}</th><th></th>
+          </tr></thead>
+          <tbody>{list.map((r) => (
+            <tr key={r.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+              <td style={{ padding: "5px 4px", whiteSpace: "nowrap" }}>{r.due_date}</td>
+              <td style={{ padding: "5px 4px", fontWeight: 700, color }}>{money(Number(r.amount))}</td>
+              <td style={{ padding: "5px 4px" }}>{r.counterparty || "—"}</td>
+              <td style={{ padding: "5px 4px" }} title={r.comment}>{r.category_name || "—"}</td>
+              <td style={{ padding: "5px 4px", whiteSpace: "nowrap", textAlign: "right" }}>
+                {st === "planned" && <>
+                  <button className="btn btn-light" style={{ height: 25, padding: "0 8px", fontSize: 11.5 }} onClick={() => markPaid(r)}>✓ {t("Оплачено", "Оплачено")}</button>{" "}
+                  <button title={t("Отменить", "Скасувати")} onClick={async () => { await api.patch(`/api/planned-payments/${r.id}/`, { status: "canceled" }); load(); }}
+                    style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 14 }}>✕</button>
+                </>}
+                {st !== "planned" && <button title={t("Удалить", "Видалити")} onClick={async () => { if (confirm("Видалити запис?")) { await api.del(`/api/planned-payments/${r.id}/`); load(); } }}
+                  style={{ border: "none", background: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14 }}>🗑</button>}
+              </td>
+            </tr>
+          ))}</tbody>
+        </table>
+        {!list.length && <div className="muted" style={{ fontSize: 12, padding: 6 }}>{t("Пусто", "Порожньо")}</div>}
+      </div>
+    );
+  };
+  return (
+    <div className="scroll pad">
+      <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+        {t("Запланированные платежи живут ОТДЕЛЬНО от журнала: на остатки и P&L не влияют. «✓ Оплачено» — создаёт фактическую операцию в журнале.",
+           "Заплановані платежі живуть ОКРЕМО від журналу: на залишки і P&L не впливають. «✓ Оплачено» — створює фактичну операцію в журналі.")}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        {[["planned", t("Запланированные", "Заплановані")], ["paid", t("Оплаченные", "Оплачені")], ["canceled", t("Отменённые", "Скасовані")]].map(([k, l]) => (
+          <button key={k} className={"btn" + (st === k ? " btn-primary" : " btn-light")} onClick={() => setSt(k as string)}>{l}</button>
+        ))}
+      </div>
+      <div className="panel" style={{ marginBottom: 12 }}>
+        <b style={{ fontSize: 13.5 }}>➕ {t("Добавить", "Додати")}</b>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 8 }}>
+          <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })} style={inp}>
+            <option value="payable">{t("Кредиторка (мы должны)", "Кредиторка (ми винні)")}</option>
+            <option value="receivable">{t("Дебиторка (нам должны)", "Дебіторка (нам винні)")}</option>
+          </select>
+          <input type="number" placeholder={t("Сумма", "Сума")} value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} style={{ ...inp, width: 110 }} />
+          <input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} style={inp} />
+          <input placeholder={t("Контрагент", "Контрагент")} value={form.counterparty} onChange={(e) => setForm({ ...form, counterparty: e.target.value })} style={{ ...inp, width: 170 }} />
+          <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} style={{ ...inp, maxWidth: 210 }}>
+            <option value="">{t("— категория —", "— категорія —")}</option>
+            {cats.filter((c: any) => (form.kind === "payable" ? c.direction === "out" : c.direction === "in")).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select value={form.account} onChange={(e) => setForm({ ...form, account: e.target.value })} style={{ ...inp, maxWidth: 190 }}>
+            <option value="">{t("— счёт оплаты —", "— рахунок оплати —")}</option>
+            {accs2.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <input placeholder={t("Комментарий", "Коментар")} value={form.comment} onChange={(e) => setForm({ ...form, comment: e.target.value })} style={{ ...inp, flex: "1 1 160px" }} />
+          <button className="btn btn-primary" onClick={add}>{t("Добавить", "Додати")}</button>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+        <Section kind="payable" title={"🔻 " + t("Кредиторка — мы должны", "Кредиторка — ми винні")} color="#dc2626" />
+        <Section kind="receivable" title={"🔺 " + t("Дебиторка — нам должны", "Дебіторка — нам винні")} color="#16a34a" />
+      </div>
+    </div>
+  );
+}
+
 function Planning() {
   const [period, setPeriod] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; });
   const { t } = useLang();
@@ -1524,8 +1630,18 @@ function Planning() {
   const [auto, setAuto] = useState(false);       // модалка авто-розподілу виручки
   const [openAlloc, setOpenAlloc] = useState<number | null>(null); // розгорнутий список розподілів фонду
   const [spend, setSpend] = useState<any>(null); // фонд, з якого робимо розхід
+  const [debts, setDebts] = useState<any>({ pay: 0, rec: 0, payN: 0, recN: 0 });
   const load = () => api.get<any>(`/api/finance/funds/?period=${period}`).then(setData);
   useEffect(() => { load(); }, [period]);
+  useEffect(() => {
+    api.get<any>("/api/planned-payments/?status=planned&page_size=500").then((d) => {
+      const rows = d.results || d;
+      const pay = rows.filter((r: any) => r.kind === "payable");
+      const rec = rows.filter((r: any) => r.kind === "receivable");
+      setDebts({ pay: pay.reduce((s: number, r: any) => s + Number(r.amount || 0), 0), payN: pay.length,
+                 rec: rec.reduce((s: number, r: any) => s + Number(r.amount || 0), 0), recN: rec.length });
+    }).catch(() => {});
+  }, []);
   useEffect(() => { api.get<any>("/api/fin-directions/?page_size=100").then((d) => setDirs(d.results || d)); }, []);
 
   function FundRow({ f, sub }: { f: any; sub?: boolean }) {
@@ -1549,6 +1665,16 @@ function Planning() {
   }
 
   if (!data) return <div className="spin">{t("Загрузка фондов…","Завантаження фондів…")}</div>;
+  const debtsBar = (debts.payN > 0 || debts.recN > 0) ? (
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+      {debts.payN > 0 && <div className="panel" style={{ margin: 0, padding: "8px 14px", borderLeft: "4px solid #dc2626" }}>
+        🔻 {t("Кредиторка (мы должны):", "Кредиторка (ми винні):")} <b style={{ color: "#dc2626" }}>{money(debts.pay)}</b> <span className="muted" style={{ fontSize: 11 }}>({debts.payN} {t("платежей — учитывай в планах", "платежів — враховуй у планах")})</span>
+      </div>}
+      {debts.recN > 0 && <div className="panel" style={{ margin: 0, padding: "8px 14px", borderLeft: "4px solid #16a34a" }}>
+        🔺 {t("Дебиторка (нам должны):", "Дебіторка (нам винні):")} <b style={{ color: "#16a34a" }}>{money(debts.rec)}</b> <span className="muted" style={{ fontSize: 11 }}>({debts.recN})</span>
+      </div>}
+    </div>
+  ) : null;
   return (
     <>
       <div className="note"><Icon n="💼" size={14} /> {t("Деньги приходят на счёт → распределяешь по фондам-конвертам. В каждом фонде:","Гроші приходять на рахунок → розподіляєш по фондах-конвертах. У кожному фонді:")} <b>{t("Распределено","Розподілено")}</b> {t("(сколько положил)","(скільки поклав)")} − <b>{t("Потрачено","Витрачено")}</b> {t("(сколько списал)","(скільки списав)")} = <b>{t("Остаток","Залишок")}</b>. {t("Порядок:","Порядок:")} <b>ФВ → ФМ → ФСКД</b>.<br/><span style={{fontSize:12}}><Icon n="📌" size={13} /> <b>{t("«Потрачено»","«Витрачено»")}</b> {t("наполняется, когда создаёшь расход с этим фондом — кнопкой «","наповнюється, коли створюєш витрату з цим фондом — кнопкою «")}<b>{t("− расход","− розхід")}</b>{t("» тут или в Журнале выбираешь Фонд = этот. Тогда сумма появляется в столбце.","» тут або у Журналі обираєш Фонд = цей. Тоді сума зʼявляється у стовпці.")}</span></div>
@@ -1558,6 +1684,7 @@ function Planning() {
         <div style={{ flex: 1 }} />
         <button className="btn btn-primary" onClick={() => setAuto(true)}><Icon n="⚡" size={14} /> {t("Авто-распределение выручки","Авто-розподіл виручки")}</button>
       </div>
+      {debtsBar}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         {data.accounts.map((a: any) => (

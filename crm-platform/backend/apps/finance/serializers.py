@@ -19,6 +19,17 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = ["id", "name", "direction", "parent"]
 
 
+class PlannedPaymentSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source="category.name", read_only=True)
+    account_name = serializers.CharField(source="account.name", read_only=True)
+
+    class Meta:
+        from .models import PlannedPayment
+        model = PlannedPayment
+        fields = ["id", "kind", "amount", "due_date", "counterparty", "category", "category_name",
+                  "account", "account_name", "deal", "comment", "status", "created_at"]
+
+
 class TransactionSerializer(serializers.ModelSerializer):
     account_name = serializers.CharField(source="account.name", read_only=True)
     category_name = serializers.CharField(source="category.name", read_only=True)

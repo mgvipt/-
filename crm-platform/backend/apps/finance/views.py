@@ -610,6 +610,34 @@ def mono_pull(d_from, d_to, mono_account=None):
     return created, skipped, None, batch
 
 
+class PlannedPaymentViewSet(viewsets.ModelViewSet):
+    """Дебіторка/Кредиторка. mark-paid → фактична операція в журналі + статус paid."""
+    from .models import PlannedPayment as _PP
+    queryset = _PP.objects.select_related("category", "account")
+    from .serializers import PlannedPaymentSerializer as _PPS
+    serializer_class = _PPS
+    filterset_fields = ["kind", "status"]
+    permission_classes = [FinancePerm]
+
+    @action(detail=True, methods=["post"], url_path="mark-paid")
+    def mark_paid(self, request, pk=None):
+        from django.utils import timezone as _tz
+        pp = self.get_object()
+        if pp.status == "paid":
+            return Response({"detail": "вже оплачено"}, status=400)
+        acc = pp.account or Account.objects.filter(is_active=True).first()
+        tx = Transaction.objects.create(
+            direction="out" if pp.kind == "payable" else "in",
+            amount=pp.amount, amount_uah=pp.amount, account=acc,
+            date=_tz.localdate(), op_time=_tz.localtime().time(),
+            category=pp.category, counterparty=pp.counterparty, deal=pp.deal,
+            comment=("Дт/Кт: " + (pp.comment or ""))[:255])
+        pp.status = "paid"
+        pp.paid_tx = tx
+        pp.save(update_fields=["status", "paid_tx"])
+        return Response(self.get_serializer(pp).data)
+
+
 class BankRuleViewSet(viewsets.ModelViewSet):
     """Правила авторозноски банківських операцій."""
     permission_classes = [FinancePerm]
