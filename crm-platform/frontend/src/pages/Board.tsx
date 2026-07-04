@@ -18,7 +18,7 @@ function socialMeta(link?: string) {
 
 // Универсальный канбан для лидов и сделок. Перетаскивание карточки между
 // колонками меняет стадию через PATCH к API.
-export default function Board({ endpoint, funnel, query }: { endpoint: string; funnel: Funnel; query?: string }) {
+export default function Board({ endpoint, funnel, query, visibleStages }: { endpoint: string; funnel: Funnel; query?: string; visibleStages?: number[] }) {
   const [cards, setCards] = useState<Card[]>([]);
   const { t } = useLang();
   const [loading, setLoading] = useState(true);
@@ -52,7 +52,7 @@ export default function Board({ endpoint, funnel, query }: { endpoint: string; f
   return (
     <div className="board fade">
       <div className="cols">
-        {funnel.stages.map((st) => {
+        {funnel.stages.filter((st) => !visibleStages || visibleStages.length === 0 || visibleStages.includes(st.id)).map((st) => {
           const colCards = cards.filter((c) => c.stage === st.id);
           const sum = colCards.reduce((a, c) => a + Number(c.amount), 0);
           return (

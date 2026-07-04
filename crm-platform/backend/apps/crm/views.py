@@ -643,6 +643,40 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     delete_perm = "deal.delete"
     edit_perm = "deal.edit.all"
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        p = self.request.query_params
+        stages = p.get("stages")
+        if stages:
+            try:
+                qs = qs.filter(stage_id__in=[int(x) for x in stages.split(",") if x.strip()])
+            except ValueError:
+                pass
+        if p.get("created_from"):
+            qs = qs.filter(created_at__date__gte=p["created_from"])
+        if p.get("created_to"):
+            qs = qs.filter(created_at__date__lte=p["created_to"])
+        if p.get("deal_id"):
+            try:
+                qs = qs.filter(id=int(p["deal_id"]))
+            except ValueError:
+                pass
+        return qs
+
+    @action(detail=False, methods=["post"], url_path="bulk-delete")
+    def bulk_delete(self, request):
+        """Масове видалення сделок {ids: [...]}. Право deal.delete."""
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("deal.delete")):
+            return Response({"detail": "Потрібне право «Видаляти сделки»"}, status=403)
+        ids = request.data.get("ids") or []
+        qs = Deal.objects.filter(id__in=ids)
+        n = qs.count()
+        for d in qs:
+            log_activity("deal", d.id, "Видалено (масово)", d.title[:80], request.user)
+        qs.delete()
+        return Response({"ok": True, "deleted": n})
+
     def get_object(self):
         # Стандартний scope (власник/«всі»). Якщо не знайдено — дозволити СКЛАДУ доступ
         # до сделки, у якої є складська задача (щоб заповнити Нову Пошту / ТТН).
