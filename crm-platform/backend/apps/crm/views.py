@@ -128,6 +128,14 @@ class FunnelViewSet(viewsets.ModelViewSet):
         allowed = self.request.user.allowed_funnel_ids()
         return qs if allowed is None else qs.filter(id__in=allowed)
 
+    @action(detail=False, methods=["post"])
+    def reorder(self, request):
+        """Зберегти порядок воронок. body: {ids: [id, id, ...]} у потрібній послідовності."""
+        ids = [int(x) for x in (request.data.get("ids") or []) if str(x).isdigit()]
+        for idx, fid in enumerate(ids):
+            Funnel.objects.filter(id=fid).update(order=idx)
+        return Response({"ok": True, "count": len(ids)})
+
     @action(detail=True, methods=["post"])
     def save_stages(self, request, pk=None):
         """Зберегти весь набір стадій воронки (перейменування/колір/порядок/+/видалення)."""

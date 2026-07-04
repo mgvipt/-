@@ -191,6 +191,62 @@ function SmartFilter({ funnel, users, onQuery }: { funnel: Funnel; users: { id: 
   );
 }
 
+function FunnelOrder({ funnels, onClose, onSaved }: { funnels: Funnel[]; onClose: () => void; onSaved: () => void }) {
+  const [items, setItems] = useState(funnels.map((f) => ({ id: f.id, name: f.name })));
+  const [drag, setDrag] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const { t } = useLang();
+  function move(i: number, dir: number) {
+    const j = i + dir;
+    if (j < 0 || j >= items.length) return;
+    const a = items.slice();
+    [a[i], a[j]] = [a[j], a[i]];
+    setItems(a);
+  }
+  function drop(i: number) {
+    if (drag === null || drag === i) { setDrag(null); return; }
+    const a = items.slice();
+    const [m] = a.splice(drag, 1);
+    a.splice(i, 0, m);
+    setItems(a); setDrag(null);
+  }
+  async function save() {
+    setSaving(true);
+    try {
+      await api.post("/api/funnels/reorder/", { ids: items.map((x) => x.id) });
+      onSaved(); onClose();
+    } finally { setSaving(false); }
+  }
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 22, width: 440, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+        <h3 style={{ margin: "0 0 4px" }}>{t("Порядок воронок", "Порядок воронок")}</h3>
+        <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>{t("Перетащите строки или используйте стрелки — так воронки будут идти в списке.", "Перетягніть рядки або користуйтесь стрілками — так воронки йтимуть у списку.")}</div>
+        <div style={{ overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+          {items.map((f, i) => (
+            <div key={f.id} draggable
+              onDragStart={() => setDrag(i)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => drop(i)}
+              onDragEnd={() => setDrag(null)}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (drag === i ? "#C67D5F" : "#e2e8f0"), background: drag === i ? "#fdf3ef" : "#f8fafc", cursor: "grab", userSelect: "none" }}>
+              <span style={{ color: "#94a3b8", fontSize: 15 }}>⠿</span>
+              <span style={{ width: 22, height: 22, borderRadius: 6, background: "#C67D5F", color: "#fff", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>
+              <span style={{ flex: 1, fontWeight: 600, fontSize: 14 }}>{f.name}</span>
+              <button className="btn btn-light" style={{ height: 26, padding: "0 8px" }} disabled={i === 0} onClick={() => move(i, -1)}>▲</button>
+              <button className="btn btn-light" style={{ height: 26, padding: "0 8px" }} disabled={i === items.length - 1} onClick={() => move(i, 1)}>▼</button>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <button className="btn btn-light" style={{ flex: 1 }} onClick={onClose}>{t("Отмена", "Скасувати")}</button>
+          <button className="btn btn-primary" style={{ flex: 1 }} disabled={saving} onClick={save}>{saving ? "…" : t("Сохранить порядок", "Зберегти порядок")}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Deals() {
   const [funnels, setFunnels] = useState<Funnel[]>([]);
   const [curId, setCurId] = useState<number | null>(null);
@@ -198,6 +254,8 @@ export default function Deals() {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [editFunnel, setEditFunnel] = useState(false);
+  const [orderModal, setOrderModal] = useState(false);
+  const loadFunnels = () => api.get<{ results: Funnel[] }>("/api/funnels/").then((d) => setFunnels(d.results.filter((f) => !f.is_lead_funnel)));
   const [users, setUsers] = useState<{ id: number; name: string }[]>([]);
   const [view, setView] = useState(localStorage.getItem("deals_view") || "kanban");
   const [fltQuery, setFltQuery] = useState("");
@@ -237,6 +295,7 @@ export default function Deals() {
           {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
         </select>
         <button className="btn btn-light" onClick={() => setEditFunnel(true)}>{<><Icon n="⚙" size={15} /> {t("Воронка","Воронка")}</>}</button>
+        <button className="btn btn-light" title={t("Порядок воронок","Порядок воронок")} onClick={() => setOrderModal(true)}>⇅ {t("Порядок","Порядок")}</button>
         <SmartFilter funnel={cur} users={users} onQuery={(q, st) => { setFltQuery(q); setFltStages(st); }} />
         <div style={{ display: "flex", gap: 2, background: "#eef2f7", borderRadius: 8, padding: 2 }}>
           <button className={"btn" + (view === "kanban" ? " btn-primary" : " btn-light")} style={{ height: 28 }} onClick={() => { setView("kanban"); localStorage.setItem("deals_view", "kanban"); }}><Icon n="grid" size={15} /> {t("Канбан","Канбан")}</button>
@@ -261,6 +320,7 @@ export default function Deals() {
           </div>
         </div>
       )}
+      {orderModal && <FunnelOrder funnels={funnels} onClose={() => setOrderModal(false)} onSaved={loadFunnels} />}
       {editFunnel && cur && (
         <FunnelEditor funnel={cur} onClose={() => setEditFunnel(false)}
           onSaved={(f) => { setFunnels((fs) => fs.map((x) => (x.id === f.id ? f : x))); setEditFunnel(false); setVer((v) => v + 1); }} />
