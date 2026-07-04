@@ -27,6 +27,8 @@ class Account(models.Model):
 class Category(models.Model):
     DIRECTION = [("in", "Доход"), ("out", "Расход")]
     name = models.CharField(max_length=120)
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL,
+                               related_name="children", help_text="Батьківська категорія (підкатегорії ФінМапа)")
     direction = models.CharField(max_length=3, choices=DIRECTION)
 
     class Meta:
