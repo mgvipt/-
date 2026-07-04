@@ -1776,8 +1776,8 @@ class LiqPayCallbackView(APIView):
                 return Response({"ok": True, "dup": True})
             pay = Payment.objects.create(deal=dlock, provider="liqpay", amount=amount, is_paid=True, external_id=pay_id)
             try:
-                from apps.finance.services import record_income
-                record_income(amount, deal=dlock, payment=pay)
+                from apps.finance.services import record_income, liqpay_account
+                record_income(amount, deal=dlock, payment=pay, account=liqpay_account())
             except Exception:
                 pass
             paid = sum((p.amount for p in Payment.objects.filter(deal=dlock, is_paid=True)), Decimal("0"))

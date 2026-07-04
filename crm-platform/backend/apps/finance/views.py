@@ -77,7 +77,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Потрібне право «Керування фінмоделлю»"}, status=403)
         d_from, d_to = request.data.get("from"), request.data.get("to")
         days = int(request.data.get("days") or 4)
-        created, skipped, err, batch = privat_pull(days=min(days, 366), d_from=d_from, d_to=d_to)
+        created, skipped, err, batch = privat_pull(days=min(days, 366), d_from=d_from, d_to=d_to, acc=request.data.get("acc"))
         if err:
             return Response({"detail": err}, status=400)
         return Response({"ok": True, "created": created, "skipped_existing": skipped, "batch": batch})
@@ -87,7 +87,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         u = request.user
         if not (u.is_superuser or u.has_perm_code("finance.manage")):
             return Response({"detail": "Потрібне право «Керування фінмоделлю»"}, status=403)
-        created, skipped, err, batch = mono_pull(request.data.get("from"), request.data.get("to"))
+        created, skipped, err, batch = mono_pull(request.data.get("from"), request.data.get("to"), request.data.get("account"))
         if err:
             return Response({"detail": err}, status=400)
         return Response({"ok": True, "created": created, "skipped_existing": skipped, "batch": batch})
@@ -321,7 +321,7 @@ def _fee_category():
     return cat or Category.objects.filter(name__icontains="Комис", direction="out").first()
 
 
-def privat_pull(days=4, d_from=None, d_to=None, batch=None):
+def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
     """Тягне виписку ПриватБанк AutoClient → журнал за період. Ідемпотентно (PB#REF).
     Правила розноски + авто-комісія LiqPay. Повертає (created, skipped, err, batch)."""
     import json as _json
@@ -365,7 +365,7 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None):
     follow = ""
     for _page in range(40):  # пагінація AutoClient (до 20000 операцій); БЕЗ acc = усі рахунки токена
         url = ("https://acp.privatbank.ua/api/statements/transactions"
-               "?startDate=%s&endDate=%s&limit=500%s" % (start, end, follow))
+               "?startDate=%s&endDate=%s&limit=500%s%s" % (start, end, follow, ("&acc=" + str(acc)) if acc else ""))
         req = urllib.request.Request(url, headers={"token": token, "Content-Type": "application/json;charset=utf8"})
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
@@ -414,16 +414,24 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None):
             did = int(m.group(1))
             dealtx = Transaction.objects.filter(deal_id=did, direction="in").order_by("id").first()
             if dealtx:
+                from .services import liqpay_account as _liqacc
+                _liq = _liqacc()
                 feetag = "PBFEE#%s" % ref
                 fee = float(dealtx.amount_uah or dealtx.amount) - amt
                 if fee > 0.009 and not Transaction.objects.filter(comment__startswith=feetag).exists():
                     Transaction.objects.create(
                         direction="out", amount=round(fee, 2), amount_uah=round(fee, 2),
-                        account=account, date=dte, op_time=op_t, deal_id=did, category=_fee_category(),
+                        account=_liq, date=dte, op_time=op_t, deal_id=did, category=_fee_category(),
                         counterparty="LiqPay", import_batch=batch,
                         comment=(feetag + " · Комісія еквайрингу по угоді #%s" % did)[:255])
                     created += 1
-                skipped += 1
+                # зарахування банку = ПЕРЕКАЗ LiqPay → банківський рахунок (нетто), НЕ дохід
+                Transaction.objects.create(
+                    direction="transfer", amount=amt, amount_uah=amt,
+                    account=_liq, transfer_account=account, date=dte, op_time=op_t, deal_id=did,
+                    counterparty="LiqPay", import_batch=batch,
+                    comment=(reftag + " · Зарахування еквайрингу по угоді #%s" % did)[:255])
+                created += 1
                 continue
         # переказ власних коштів (на свою картку) — це transfer, не витрата (не спотворює P&L)
         if "переказ власних" in osnd.lower():
@@ -446,7 +454,7 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None):
     return created, skipped, None, batch
 
 
-def mono_pull(d_from, d_to):
+def mono_pull(d_from, d_to, mono_account=None):
     """Виписка Monobank personal API → журнал. Ліміт API: період ≤31 доби, 1 запит/хв.
     Ідемпотентно (MONO#id). Повертає (created, skipped, err, batch)."""
     import json as _json
@@ -459,8 +467,11 @@ def mono_pull(d_from, d_to):
     token = cfg.get("token")
     if not token:
         return 0, 0, "Monobank не налаштовано (Інтеграції: token)", None
-    mono_acc = cfg.get("mono_account") or "0"
-    account = Account.objects.filter(id=cfg.get("account_id") or 0).first()         or Account.objects.filter(name__icontains="МОНО").first() or Account.objects.first()
+    mono_acc = mono_account or cfg.get("mono_account") or "0"
+    mono_map = dict(cfg.get("mono_map") or {})  # id рахунку mono -> account_id CRM
+    account = (Account.objects.filter(id=mono_map.get(str(mono_acc)) or 0).first()
+               or Account.objects.filter(id=cfg.get("account_id") or 0).first()
+               or Account.objects.filter(name__icontains="МОНО").first() or Account.objects.first())
     f = _dtm.fromisoformat(str(d_from))
     t = _dtm.fromisoformat(str(d_to)) + _td2(days=1)
     if (t - f).days > 31:

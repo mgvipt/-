@@ -2,6 +2,18 @@
 from .models import Account, Category, Transaction
 
 
+def liqpay_account():
+    """Рахунок «LiqPay еквайринг»: валовий дохід клієнта → сюди; комісія — звідси;
+    зарахування банку = переказ LiqPay → ФОП. Баланс ≈ гроші «в дорозі»."""
+    a = Account.objects.filter(name__icontains="liqpay").first()
+    if a is None:
+        a = Account.objects.create(name="LiqPay еквайринг", kind="bank")
+    if not a.is_active:
+        a.is_active = True
+        a.save(update_fields=["is_active"])
+    return a
+
+
 def default_account():
     return (Account.objects.filter(is_active=True).first()
             or Account.objects.create(name="Каса", kind="cash"))

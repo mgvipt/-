@@ -135,6 +135,79 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
   const [period, setPeriod] = useState<any>({ from: "", to: "" });
   const [busy, setBusy] = useState("");
   const [newRule, setNewRule] = useState<any>({ field: "osnd", contains: "", direction: "", set_category: "", set_fin_direction: "", set_counterparty: "" });
+  const [bankAccs, setBankAccs] = useState<any>({ privatbank: null, monobank: null });
+  const [loadingBA, setLoadingBA] = useState("");
+  async function loadBankAccs(prov: string) {
+    setLoadingBA(prov);
+    try {
+      const d = await api.get<any>(`/api/transactions/bank-accounts/?provider=${prov}`);
+      setBankAccs((b: any) => ({ ...b, [prov]: d }));
+    } catch (e: any) { alert(e?.response?.data?.detail || "Помилка"); }
+    setLoadingBA("");
+  }
+  async function mapBank(prov: string, key: string, val: string) {
+    try {
+      if (val === "__new__") {
+        const nm = prompt(t("Название нового счёта в CRM", "Назва нового рахунку в CRM"));
+        if (!nm) return;
+        await api.post("/api/transactions/bank-map/", { provider: prov, key, create_name: nm });
+        api.get<any>("/api/accounts/").then((d) => setAccs(d.results || d)).catch(() => {});
+      } else {
+        await api.post("/api/transactions/bank-map/", { provider: prov, key, account_id: val ? Number(val) : null });
+      }
+      loadBankAccs(prov);
+    } catch (e: any) { alert(e?.response?.data?.detail || "Помилка"); }
+  }
+  async function pullOne(prov: string, key: string) {
+    if (!period.from || !period.to) { alert(t("Выбери период (внизу)", "Обери період (внизу)")); return; }
+    setBusy(prov + key);
+    try {
+      const url = prov === "privatbank" ? "/api/transactions/privat-sync/" : "/api/transactions/mono-sync/";
+      const body: any = { from: period.from, to: period.to };
+      if (prov === "privatbank") body.acc = key; else body.account = key;
+      const r: any = await api.post(url, body);
+      alert(t("Загружено", "Завантажено") + `: ${r.created}, ` + t("дубликатов пропущено", "дублікатів пропущено") + `: ${r.skipped_existing}\n` + t("Партия", "Партія") + `: ${r.batch}`);
+      loadAll();
+    } catch (e: any) { alert(e?.response?.data?.detail || "Помилка"); }
+    setBusy("");
+  }
+  const BankAccTable = ({ prov }: any) => {
+    const rows = bankAccs[prov];
+    if (rows === null) return null;
+    return (
+      <table style={{ width: "100%", fontSize: 12.5, marginTop: 10, borderCollapse: "collapse" }}>
+        <thead><tr className="muted" style={{ fontSize: 11, textAlign: "left" }}>
+          <th style={{ padding: "4px 6px" }}>{t("Счёт в банке", "Рахунок у банку")}</th>
+          <th style={{ padding: "4px 6px" }}>{t("Остаток", "Залишок")}</th>
+          <th style={{ padding: "4px 6px" }}>{t("→ Счёт в CRM (куда пишутся операции)", "→ Рахунок у CRM (куди пишуться операції)")}</th>
+          <th style={{ padding: "4px 6px" }}></th>
+        </tr></thead>
+        <tbody>
+          {rows.map((r: any) => (
+            <tr key={r.key} style={{ borderTop: "1px solid #f1f5f9" }}>
+              <td style={{ padding: "6px" }}>
+                <b>…{r.tail}</b> {r.title && <span className="muted">· {r.title}</span>}
+                <div className="muted" style={{ fontSize: 10.5 }}>{r.iban}</div>
+              </td>
+              <td style={{ padding: "6px", whiteSpace: "nowrap" }}><b>{r.balance}</b> {r.currency}</td>
+              <td style={{ padding: "6px" }}>
+                <select value={r.mapped_account_id || ""} onChange={(e) => mapBank(prov, r.key, e.target.value)} style={{ ...inp, minWidth: 220 }}>
+                  <option value="">{t("— не подключён —", "— не підключено —")}</option>
+                  {accs.filter((a: any) => a.is_active !== false).map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  <option value="__new__">➕ {t("Создать новый счёт…", "Створити новий рахунок…")}</option>
+                </select>
+              </td>
+              <td style={{ padding: "6px" }}>
+                <button className="btn btn-light" disabled={busy !== "" || !r.mapped_account_id} title={!r.mapped_account_id ? t("Сначала выбери счёт CRM", "Спочатку обери рахунок CRM") : ""}
+                  onClick={() => pullOne(prov, r.key)}>{busy === prov + r.key ? "…" : "📥 " + t("Залить период", "Залити період")}</button>
+              </td>
+            </tr>
+          ))}
+          {!rows.length && <tr><td colSpan={4} className="muted" style={{ padding: 8 }}>{t("Банк не вернул счета", "Банк не повернув рахунки")}</td></tr>}
+        </tbody>
+      </table>
+    );
+  };
   const loadAll = () => {
     api.get<any>("/api/transactions/bank-settings/").then(setBanks).catch(() => {});
     api.get<any>("/api/finance/bank-rules/").then((d) => setRules(d.results || d)).catch(() => {});
@@ -195,7 +268,9 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
                   {accs.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
                 <button className="btn btn-primary" onClick={() => saveBank("privatbank", { ...(pbForm.token ? { token: pbForm.token } : {}), ...(pbForm.acc ? { acc: pbForm.acc } : {}), ...(pbForm.account_id ? { account_id: Number(pbForm.account_id) } : {}) })}>{t("Сохранить","Зберегти")}</button>
+                <button className="btn btn-light" disabled={loadingBA !== ""} onClick={() => loadBankAccs("privatbank")}>{loadingBA === "privatbank" ? "…" : "🏦 " + t("Показать счета банка","Показати рахунки банку")}</button>
               </div>
+              <BankAccTable prov="privatbank" />
             </div>
             <div className="panel" style={{ margin: "0 0 12px" }}>
               <b>Monobank (особисті картки)</b> {banks.monobank.connected ? <span style={{ color: "#16a34a", fontWeight: 700 }}>✓ {t("подключён","підключено")} {banks.monobank.token_tail}</span> : <span className="muted">{t("не подключён","не підключено")}</span>}
@@ -207,7 +282,9 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
                   {accs.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
                 <button className="btn btn-primary" onClick={() => saveBank("monobank", { ...(monoForm.token ? { token: monoForm.token } : {}), ...(monoForm.account_id ? { account_id: Number(monoForm.account_id) } : {}) })}>{t("Сохранить","Зберегти")}</button>
+                <button className="btn btn-light" disabled={loadingBA !== ""} onClick={() => loadBankAccs("monobank")}>{loadingBA === "monobank" ? "…" : "🏦 " + t("Показать счета и карты","Показати рахунки і картки")}</button>
               </div>
+              <BankAccTable prov="monobank" />
             </div>
             <div className="panel" style={{ margin: 0 }}>
               <b>📥 {t("Загрузить операции за период","Завантажити операції за період")}</b>
