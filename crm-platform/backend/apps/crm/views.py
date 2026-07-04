@@ -403,6 +403,41 @@ def _find_product(name):
     return p
 
 
+def _is_test_kit_item(it):
+    """Товар — тестовий набір? (за категорією або назвою)"""
+    cat = (it.product.category.name if it.product.category_id else "") or ""
+    nm = it.product.name.lower()
+    return "тестов" in cat.lower() or "тест-наб" in nm or "тестовий набір" in nm
+
+
+def _route_deal_funnel(deal, user=None):
+    """Якщо ВСІ товари сделки — тестові набори, а воронка інша →
+    переносимо сделку у воронку «22 Тестовий набір» на ту саму стадію (за order).
+    Викликається після додавання товарів у make_offer."""
+    from .models import Funnel, Stage, log_activity
+    from django.db.models import Count
+    items = list(deal.items.select_related("product__category"))
+    if not items or not all(_is_test_kit_item(i) for i in items):
+        return False
+    target = (Funnel.objects.filter(name__icontains="тестовий наб")
+              .annotate(n=Count("deals")).order_by("-n", "id").first())
+    if not target or deal.funnel_id == target.id:
+        return False
+    cur_order = deal.stage.order if deal.stage_id else 0
+    new_stage = (Stage.objects.filter(funnel=target, order=cur_order).first()
+                 or Stage.objects.filter(funnel=target).order_by("order").first())
+    if not new_stage:
+        return False
+    old = "%s / %s" % (deal.funnel.name, deal.stage.name if deal.stage_id else "—")
+    deal.funnel = target
+    deal.stage = new_stage
+    deal.save(update_fields=["funnel", "stage"])
+    log_activity("deal", deal.id, "Авто: зміна воронки",
+                 "%s → %s / %s (клієнт обрав тестовий набір)" % (old, target.name, new_stage.name),
+                 user, "AI-автоматика")
+    return True
+
+
 def make_offer(deal, items_spec, user=None, send_pay=True):
     """АВТО-оффер тест-набору: товари з номенклатури -> прорахунок + LiqPay -> стадії «Розрахунок здійснено» → «Домовились про оплату»."""
     from django.conf import settings as _s
@@ -428,6 +463,7 @@ def make_offer(deal, items_spec, user=None, send_pay=True):
     total = sum((i.total for i in items), Decimal("0"))
     deal.amount = total
     deal.save(update_fields=["amount"])
+    _route_deal_funnel(deal, user=user)  # тест-набір → воронка «22 Тестовий набір»
     conv = Conversation.objects.filter(contact_id=deal.contact_id, status="open").order_by("-last_message_at").first() if deal.contact_id else None
 
     def _g(x):
