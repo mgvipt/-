@@ -9,6 +9,7 @@ import VykraskaDoc from "../VykraskaDoc";
 import KpDoc from "../KpDoc";
 import { useAuth } from "../auth";
 import NPDelivery from "./NPDelivery";
+import ClientChat from "../ClientChat";
 
 const C = { terra: "#C67D5F", green: "#16a34a", amber: "#ca8a04", red: "#dc2626", blue: "#2563eb", slate: "#475569" };
 const f = (v: any) => Number(v || 0).toLocaleString("uk").replace(/,/g, " ");
@@ -301,6 +302,7 @@ function TaskCard({ t, jobId, onBack }: any) {
   const { can: canFn } = useAuth();
   const canReassign = canFn("warehouse.view.all") || canFn("roles.manage") || canFn("warehouse.reassign");
   const [reStaff, setReStaff] = useState<any[]>([]);
+  const [chatOpen, setChatOpen] = useState(false);
   useEffect(() => { if (canReassign) api.get<any>("/api/warehouse/jobs/0/reassign/").then(setReStaff).catch(() => {}); }, [canReassign]);
   const loadDeal = (did: number) => api.get<any>(`/api/deals/${did}/`).then(setDeal).catch(() => {});
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
@@ -334,6 +336,22 @@ function TaskCard({ t, jobId, onBack }: any) {
   return (
     <div className="scroll pad fade" style={{ width: "100%" }}>
       <button className="btn btn-light" style={{ marginBottom: 10 }} onClick={onBack}>← {t("Назад к задачам", "Назад до задач")}</button>
+      {deal && deal.contact_id ? (
+        <div style={{ position: "fixed", top: 60, right: 0, bottom: 0, zIndex: 70, display: "flex", width: chatOpen ? "min(430px, 94vw)" : 20, transition: "width .28s ease", background: "#fff", borderLeft: "1px solid #e2e8f0", boxShadow: chatOpen ? "-10px 0 28px rgba(15,23,42,.18)" : "none", overflow: "hidden" }}>
+          <button onClick={() => setChatOpen(!chatOpen)} title={t("Чат с клиентом", "Чат з клієнтом")}
+            style={{ width: 20, flexShrink: 0, border: "none", background: chatOpen ? "#e2e8f0" : C.terra, color: chatOpen ? "#475569" : "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, fontSize: 14, fontWeight: 700 }}>
+            {chatOpen ? "›" : "‹"}
+          </button>
+          {chatOpen && (
+            <div className="fade" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ padding: "9px 12px", fontWeight: 700, borderBottom: "1px solid #eef2f7", fontSize: 14, flexShrink: 0 }}>💬 {t("Чат с клиентом", "Чат з клієнтом")}: {j.client}</div>
+              <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
+                <ClientChat contact={deal.contact_id} />
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
       {docOpen && deal ? <KpDoc deal={deal} onClose={() => setDocOpen(false)} /> : null}
       {vkOpen ? <VykraskaDoc data={{ number: j.deal_id, material: j.needs && j.needs.material, color: j.needs && j.needs.color, area: j.needs && j.needs.area, underlay: j.needs && j.needs.underlay, kits: j.kits, client: j.client, phone: j.phone }} onClose={() => setVkOpen(false)} /> : null}
       {msg && <div style={{ position: "sticky", top: 6, zIndex: 50, background: C.green, color: "#fff", padding: "10px 14px", borderRadius: 10, fontWeight: 600, marginBottom: 8 }}>{msg}</div>}

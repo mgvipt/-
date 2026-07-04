@@ -212,8 +212,77 @@ function InvitesTab({ depts, roles, invites, reload, t }: any) {
   );
 }
 
+function AccessTab({ depts, emps, roles, funnels, reload, t }: any) {
+  const [kind, setKind] = useState<"dept" | "user">("dept");
+  const [sel, setSel] = useState<any>("");
+  const [channels, setChannels] = useState<any[]>([]);
+  useEffect(() => { api.get<any>("/api/channels/").then((d) => setChannels(d.results || d)).catch(() => {}); }, []);
+  const obj: any = kind === "dept" ? depts.find((x: any) => x.id === Number(sel)) : emps.find((x: any) => x.id === Number(sel));
+  const fKey = kind === "dept" ? "funnels" : "extra_funnels";
+  const lKey = kind === "dept" ? "open_lines" : "extra_open_lines";
+  const own = (key: string) => new Set<number>((obj && obj[key]) || []);
+  const inhF = new Set<number>(); const inhL = new Set<number>();
+  if (kind === "user" && obj) {
+    const dep = depts.find((x: any) => x.id === obj.department);
+    ((dep && dep.funnels) || []).forEach((i: number) => inhF.add(i));
+    ((dep && dep.open_lines) || []).forEach((i: number) => inhL.add(i));
+    const rl = roles.find((x: any) => x.id === obj.role);
+    ((rl && rl.funnels) || []).forEach((i: number) => inhF.add(i));
+    ((rl && rl.open_lines) || []).forEach((i: number) => inhL.add(i));
+  }
+  async function toggle(key: string, id: number) {
+    const cur = own(key);
+    if (cur.has(id)) cur.delete(id); else cur.add(id);
+    const url = kind === "dept" ? `/api/departments/${obj.id}/` : `/api/users/${obj.id}/`;
+    await api.patch(url, { [key]: Array.from(cur) });
+    reload();
+  }
+  const inp: any = { height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13, minWidth: 260 };
+  const CheckList = ({ title, items, key_, inh, hint }: any) => (
+    <div className="panel" style={{ flex: 1, minWidth: 300 }}>
+      <div className="label">{title}</div>
+      <div className="muted" style={{ fontSize: 11.5, marginBottom: 8, lineHeight: 1.45 }}>{hint}</div>
+      {items.map((it: any) => {
+        const mine = own(key_).has(it.id); const inherited = inh && inh.has(it.id);
+        return (
+          <label key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "0.5px solid #f1f5f9", cursor: "pointer", fontSize: 13 }}>
+            <input type="checkbox" checked={mine} onChange={() => toggle(key_, it.id)} style={{ width: 16, height: 16, accentColor: "#C67D5F" }} />
+            <span style={{ flex: 1 }}>{it.name}</span>
+            {inherited && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#16a34a", background: "#f0fdf4", borderRadius: 6, padding: "1px 7px", whiteSpace: "nowrap" }}>{t("от отдела/роли ✓", "від відділу/ролі ✓")}</span>}
+          </label>
+        );
+      })}
+      {!items.length && <div className="muted" style={{ fontSize: 12 }}>—</div>}
+    </div>
+  );
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "inline-flex", borderRadius: 8, overflow: "hidden", border: "1px solid #e2e8f0" }}>
+          <button onClick={() => { setKind("dept"); setSel(""); }} style={{ padding: "7px 13px", fontSize: 12.5, fontWeight: 600, border: "none", cursor: "pointer", background: kind === "dept" ? "#C67D5F" : "#f8fafc", color: kind === "dept" ? "#fff" : "#475569" }}>{t("Отдел", "Відділ")}</button>
+          <button onClick={() => { setKind("user"); setSel(""); }} style={{ padding: "7px 13px", fontSize: 12.5, fontWeight: 600, border: "none", cursor: "pointer", background: kind === "user" ? "#C67D5F" : "#f8fafc", color: kind === "user" ? "#fff" : "#475569" }}>{t("Сотрудник", "Співробітник")}</button>
+        </div>
+        <select style={inp} value={sel} onChange={(e) => setSel(e.target.value)}>
+          <option value="">{kind === "dept" ? t("выбери отдел", "обери відділ") : t("выбери сотрудника", "обери співробітника")}</option>
+          {(kind === "dept" ? depts : emps).map((x: any) => <option key={x.id} value={x.id}>{kind === "dept" ? x.name : `${x.full_name} (${x.department_name || "—"})`}</option>)}
+        </select>
+      </div>
+      {obj ? (
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <CheckList title={t("Воронки продаж", "Воронки продажів")} items={funnels} key_={fKey} inh={kind === "user" ? inhF : null}
+            hint={t("Сотрудник работает ТОЛЬКО в отмеченных воронках (отдел + роль + личные вместе). Если нигде не отмечено ни одной — воронок не видит (кроме права «видеть все сделки»).",
+                    "Співробітник працює ТІЛЬКИ у позначених воронках (відділ + роль + особисті разом). Якщо ніде не позначено жодної — воронок не бачить (крім права «бачити всі угоди»).")} />
+          <CheckList title={t("Открытые линии (чаты)", "Відкриті лінії (чати)")} items={channels} key_={lKey} inh={kind === "user" ? inhL : null}
+            hint={t("Отмеченные линии доступны в Чатах. ВАЖНО: пока ни одной линии не отмечено нигде (отдел + роль + лично) — сотрудник видит ВСЕ линии. Как только отмечена хоть одна — только отмеченные.",
+                    "Позначені лінії доступні у Чатах. ВАЖЛИВО: поки жодної лінії не позначено ніде (відділ + роль + особисто) — співробітник бачить УСІ лінії. Щойно позначено хоч одну — тільки позначені.")} />
+        </div>
+      ) : <div className="muted" style={{ fontSize: 13 }}>{t("Выбери отдел или сотрудника выше.", "Обери відділ або співробітника вище.")}</div>}
+    </div>
+  );
+}
+
 function PermsTab({ depts, emps, perms, permGroups, funnels, roles, reload, t, toggleDept, toggleUser }: any) {
-  const [mode, setMode] = useState<"dept" | "user" | "stage">("dept");
+  const [mode, setMode] = useState<"dept" | "user" | "stage" | "access">("dept");
   const [selDept, setSelDept] = useState<any>("");
   const [selUser, setSelUser] = useState<any>("");
   const d = depts.find((x: any) => x.id === Number(selDept));
@@ -260,8 +329,11 @@ function PermsTab({ depts, emps, perms, permGroups, funnels, roles, reload, t, t
         <button className={"btn" + (mode === "dept" ? " btn-primary" : "")} onClick={() => setMode("dept")}>{t("Права отдела", "Права відділу")}</button>
         <button className={"btn" + (mode === "user" ? " btn-primary" : "")} onClick={() => setMode("user")}>{t("Индивидуальные", "Індивідуальні")}</button>
         <button className={"btn" + (mode === "stage" ? " btn-primary" : "")} onClick={() => setMode("stage")}><Icon n="🚦" size={15} /> {t("По статусам", "За статусами")}</button>
+        <button className={"btn" + (mode === "access" ? " btn-primary" : "")} onClick={() => setMode("access")}>🔀 {t("Воронки и линии", "Воронки і лінії")}</button>
       </div>
-      {mode === "stage" ? (
+      {mode === "access" ? (
+        <AccessTab depts={depts} emps={emps} roles={roles} funnels={funnels} reload={reload} t={t} />
+      ) : mode === "stage" ? (
         <StagePerms funnels={funnels} roles={roles} depts={depts} emps={emps} reload={reload} t={t} />
       ) : mode === "dept" ? (
         <div className="panel">

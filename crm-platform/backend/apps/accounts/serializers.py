@@ -34,7 +34,8 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ["id", "username", "first_name", "last_name", "full_name", "email",
                   "phone", "extension", "role", "role_name", "department", "department_name",
-                  "extra_permissions", "denied_permissions", "effective_permissions", "stage_view_all", "stage_lock", "theme", "is_active"]
+                  "extra_permissions", "denied_permissions", "effective_permissions", "stage_view_all", "stage_lock", "theme", "is_active",
+                  "extra_funnels", "extra_open_lines"]
 
     def get_full_name(self, obj):
         return ("%s %s" % (obj.first_name, obj.last_name)).strip() or obj.username
