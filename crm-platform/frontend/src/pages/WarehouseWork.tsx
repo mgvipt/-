@@ -2,6 +2,7 @@
    Зміна (день+обід+ЗП, звʼязано з головною кнопкою «Почати робочий день») · Зарплата (період) · Контроль (керівник). */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
@@ -20,6 +21,8 @@ export default function WarehouseWork() {
   const { t } = useLang();
   const [view, setView] = useState<"queue" | "mine" | "kanban" | "shift" | "salary" | "control" | "dashboard">(() => (localStorage.getItem("wh_view") as any) || "shift");
   useEffect(() => { try { localStorage.setItem("wh_view", view); } catch (e) { /* noop */ } }, [view]);
+  const [sp] = useSearchParams();
+  useEffect(() => { const tb = sp.get("tab"); if (tb && ["queue", "mine", "kanban", "shift", "salary", "control", "dashboard"].includes(tb)) setView(tb as any); }, [sp]);
   const [job, setJob] = useState<number | null>(null);
   if (job) return <TaskCard t={t} jobId={job} onBack={() => setJob(null)} />;
   const { can } = useAuth();

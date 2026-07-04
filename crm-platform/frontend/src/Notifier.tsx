@@ -69,7 +69,7 @@ export default function Notifier() {
   return (
     <>
     {whQueue > 0 && !whHidden && (
-      <div onClick={() => nav("/wh")} title={t("Открыть задачи склада", "Відкрити задачі складу")}
+      <div onClick={() => nav("/wh?tab=queue")} title={t("Открыть задачи склада", "Відкрити задачі складу")}
         style={{ position: "fixed", top: 58, left: "50%", transform: "translateX(-50%)", zIndex: 9990, background: "linear-gradient(90deg, #8b5cf6, #3b82f6)", color: "#fff", borderRadius: 12, padding: "8px 12px 8px 18px", fontWeight: 700, fontSize: 13.5, cursor: "pointer", boxShadow: "0 10px 26px rgba(99,102,241,.45)", display: "flex", gap: 9, alignItems: "center", whiteSpace: "nowrap", maxWidth: "92vw" }}>
         <span style={{ fontSize: 16 }}>📦</span>
         <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t("Новые задачи на отгрузке:", "Нові задачі на відвантаженні:")} {whQueue} · {t("нажми — взять в работу", "натисни — взяти в роботу")}</span>
