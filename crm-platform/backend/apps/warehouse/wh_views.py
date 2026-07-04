@@ -115,6 +115,57 @@ def job_detail(request, pk):
     return Response(_job_dict(job, full=True))
 
 
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def reassign(request, pk):
+    """Змінити відповідального за задачу складу. GET → список складських співробітників.
+    POST {user_id} (0 = зняти виконавця, задача повертається у чергу). Право: керівник."""
+    from django.contrib.auth import get_user_model
+    u = request.user
+    is_mgr = bool(u.is_superuser or (hasattr(u, "has_perm_code") and (u.has_perm_code("warehouse.view.all") or u.has_perm_code("roles.manage"))))
+    if not is_mgr:
+        return Response({"detail": "Потрібне право керівника складу («Бачити задачі ВСІХ»)"}, status=403)
+    U = get_user_model()
+    if request.method == "GET":
+        pool = (U.objects.filter(is_active=True)
+                .filter(department__name__icontains="Склад").order_by("first_name"))
+        if not pool.exists():
+            pool = U.objects.filter(is_active=True, is_superuser=False).order_by("first_name")[:30]
+        return Response([{"id": x.id, "name": (x.get_full_name() or x.username)} for x in pool])
+    with transaction.atomic():
+        job = WarehouseJob.objects.select_for_update().filter(pk=pk).first()
+        if not job:
+            return Response({"detail": "no job"}, status=404)
+        uid = int(request.data.get("user_id") or 0)
+        old_name = job.assignee.get_full_name() if job.assignee_id else "—"
+        if uid == 0:
+            job.assignee = None
+            job.status = "queued"
+            job.save(update_fields=["assignee", "status"])
+            new_name = "черга"
+        else:
+            target = U.objects.filter(id=uid, is_active=True).first()
+            if not target:
+                return Response({"detail": "співробітника не знайдено"}, status=400)
+            job.assignee = target
+            if job.status == "queued":
+                job.status = "taken"
+                job.taken_at = timezone.now()
+                job.save(update_fields=["assignee", "status", "taken_at"])
+            else:
+                job.save(update_fields=["assignee"])
+            new_name = target.get_full_name() or target.username
+        if job.task_id:
+            job.task.assignee = job.assignee
+            job.task.save(update_fields=["assignee"])
+        try:
+            from apps.crm.models import log_activity
+            log_activity("deal", job.deal_id, "Склад: зміна виконавця", "%s → %s" % (old_name, new_name), u)
+        except Exception:
+            pass
+    return Response(_job_dict(job, full=True))
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def take(request, pk):

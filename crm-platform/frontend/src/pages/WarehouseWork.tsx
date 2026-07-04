@@ -105,6 +105,12 @@ function KpDocLoader({ dealId, onClose }: { dealId: number; onClose: () => void 
 }
 
 function QueueView({ t, onOpen, mgr }: any) {
+  const [staff, setStaff] = useState<any[]>([]);
+  useEffect(() => { if (mgr) api.get<any>("/api/warehouse/jobs/0/reassign/").then((d) => setStaff(d)).catch(() => {}); }, [mgr]);
+  async function reassign(jobId: number, uid: number) {
+    try { await api.post(`/api/warehouse/jobs/${jobId}/reassign/`, { user_id: uid }); load(); }
+    catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось","Не вдалося")); }
+  }
   const [d, setD] = useState<any>(null);
   const [prev, setPrev] = useState<number | null>(null);
   const [vkJob, setVkJob] = useState<any>(null);
@@ -114,7 +120,7 @@ function QueueView({ t, onOpen, mgr }: any) {
   if (!d) return <div className="spin">…</div>;
   const take = (id: number) => api.post<any>(`/api/warehouse/jobs/${id}/take/`, {}).then(() => onOpen(id)).catch((e: any) => { alert(e?.response?.data?.by ? t("Уже взяла ", "Вже взяла ") + e.response.data.by : t("Не удалось взять", "Не вдалося взяти")); load(); });
   const cancel = (id: number) => { if (!confirm(t("Удалить задачу из списка? Складовщики её не увидят.", "Видалити задачу зі списку? Складовщики її не побачать."))) return; api.post<any>(`/api/warehouse/jobs/${id}/cancel/`, {}).then(load).catch(() => alert(t("Нет прав (только руководитель склада)", "Немає прав (лише керівник складу)"))); };
-  const row = (j: any) => <JobCard key={j.id} j={j} t={t} onClick={() => setPrev(j.id)} action={<div style={{ display: "flex", gap: 6 }}><button className="btn" title={t("Печать бланка выкраски","Друк бланка викраски")} onClick={(e) => { e.stopPropagation(); setVkJob(j); }} style={{ height: 42, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe" }}><Icon n="🎨" size={16} /></button><button className="btn" title={t("Печать накладной","Друк накладної")} onClick={(e) => { e.stopPropagation(); setKpId(j.deal_id); }} style={{ height: 42, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}><Icon n="file" size={16} /></button>{mgr && <button className="btn" title={t("Удалить неактуальную задачу","Видалити неактуальну задачу")} onClick={(e) => { e.stopPropagation(); cancel(j.id); }} style={{ height: 42, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca" }}><Icon n="trash" size={16} /></button>}<button className="btn btn-primary" style={{ height: 42, fontSize: 14, fontWeight: 600 }} onClick={(e) => { e.stopPropagation(); take(j.id); }}>{t("Взять", "Взяти")}</button></div>} />;
+  const row = (j: any) => <JobCard key={j.id} j={j} t={t} onClick={() => setPrev(j.id)} action={<div style={{ display: "flex", gap: 6 }}><button className="btn" title={t("Печать бланка выкраски","Друк бланка викраски")} onClick={(e) => { e.stopPropagation(); setVkJob(j); }} style={{ height: 42, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe" }}><Icon n="🎨" size={16} /></button><button className="btn" title={t("Печать накладной","Друк накладної")} onClick={(e) => { e.stopPropagation(); setKpId(j.deal_id); }} style={{ height: 42, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}><Icon n="file" size={16} /></button>{mgr && <button className="btn" title={t("Удалить неактуальную задачу","Видалити неактуальну задачу")} onClick={(e) => { e.stopPropagation(); cancel(j.id); }} style={{ height: 42, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca" }}><Icon n="trash" size={16} /></button>}<button className="btn btn-primary" style={{ height: 42, fontSize: 14, fontWeight: 600 }} onClick={(e) => { e.stopPropagation(); take(j.id); }}>{t("Взять", "Взяти")}</button>{mgr && <select value="" onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = Number(e.target.value); if (e.target.value !== "") reassign(j.id, v); }} title={t("Назначить сотрудника","Призначити співробітника")} style={{ height: 42, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 12, maxWidth: 130 }}><option value="">👤 {t("Кому…","Кому…")}</option>{staff.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select>}</div>} />;
   const sal = (d.queue || []).filter((j: any) => j.channel === "offline");
   const rest = (d.queue || []).filter((j: any) => j.channel !== "offline");
   return (
@@ -124,7 +130,14 @@ function QueueView({ t, onOpen, mgr }: any) {
       {mgr && d.all_active && d.all_active.length > 0 && (
         <div style={{ marginBottom: 14 }}>
           <b style={{ fontSize: 14 }}>🛡 {t("В работе у сотрудников (руководитель видит всё)","У роботі у співробітників (керівник бачить все)")}</b>
-          {d.all_active.map((j: any) => <JobCard key={"a" + j.id} j={j} t={t} onClick={() => onOpen(j.id)} action={<span />} />)}
+          {d.all_active.map((j: any) => <JobCard key={"a" + j.id} j={j} t={t} onClick={() => onOpen(j.id)} action={
+            <select value="" onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = Number(e.target.value); if (!isNaN(v) && e.target.value !== "") reassign(j.id, v); }}
+              title={t("Передать задачу другому сотруднику","Передати задачу іншому співробітнику")}
+              style={{ height: 36, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 12, maxWidth: 150 }}>
+              <option value="">👤 {t("Передать…","Передати…")}</option>
+              <option value="0">↩ {t("В очередь (снять)","У чергу (зняти)")}</option>
+              {staff.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>} />)}
         </div>
       )}
       {mgr && d.all_shipped_7d && d.all_shipped_7d.length > 0 && (

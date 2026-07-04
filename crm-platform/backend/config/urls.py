@@ -113,6 +113,7 @@ urlpatterns = [
     path("api/warehouse/queue/", whv.queue),
     path("api/warehouse/jobs/<int:pk>/", whv.job_detail),
     path("api/warehouse/jobs/<int:pk>/take/", whv.take),
+    path("api/warehouse/jobs/<int:pk>/reassign/", whv.reassign),
     path("api/warehouse/jobs/<int:pk>/cancel/", whv.cancel_job),
     path("api/warehouse/jobs/<int:pk>/tinting/", whv.tinting),
     path("api/warehouse/jobs/<int:pk>/packing/", whv.packing),
