@@ -85,7 +85,7 @@ function SmartFilter({ funnel, users, onQuery }: { funnel: Funnel; users: { id: 
   const inp = { height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13, width: "100%" } as any;
 
   return (
-    <div ref={boxRef} style={{ position: "relative", flex: "1 1 300px", maxWidth: 560 }}>
+    <div ref={boxRef} style={{ position: "relative", flex: "1 1 300px", maxWidth: 560, zIndex: 200 }}>
       <input value={text}
         onChange={(e) => { setText(e.target.value); build(e.target.value, selStages); }}
         onFocus={() => setOpen(true)}
@@ -93,7 +93,7 @@ function SmartFilter({ funnel, users, onQuery }: { funnel: Funnel; users: { id: 
         style={{ ...inp, borderColor: active ? "var(--brand)" : "#cbd5e1", borderWidth: active ? 2 : 1 }} />
       {active && <span onClick={reset} title={t("Сбросить фильтры","Скинути фільтри")} style={{ position: "absolute", right: 10, top: 8, cursor: "pointer", color: "#dc2626", fontWeight: 700 }}>✕</span>}
       {open && (
-        <div style={{ position: "absolute", top: 40, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, boxShadow: "0 16px 40px rgba(15,23,42,.18)", padding: 14, zIndex: 40 }}>
+        <div style={{ position: "absolute", top: 40, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, boxShadow: "0 16px 40px rgba(15,23,42,.18)", padding: 14, zIndex: 1000 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             {/* клієнт за іменем */}
             <div style={{ position: "relative" }}>
