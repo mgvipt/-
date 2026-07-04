@@ -53,7 +53,12 @@ export default function Notifier() {
             setWhQueue(whOn ? dd.wh_queue : 0);
             setWhHidden(Date.now() < Number(localStorage.getItem("whBannerHideUntil2") || 0));
             if (typeof dd.wh_last === "number") {
-              if (whOn && whLast.current !== null && dd.wh_last > whLast.current) playTeamSound(); // нова задача на відвантаження
+              if (whOn && whLast.current !== null && dd.wh_last > whLast.current) {
+                // НОВА задача: звук + полоса зʼявляється одразу, скидаємо таймер приховування
+                playTeamSound();
+                localStorage.removeItem("whBannerHideUntil2");
+                setWhHidden(false);
+              }
               whLast.current = dd.wh_last;
             }
           }
