@@ -113,6 +113,97 @@ class TransactionViewSet(viewsets.ModelViewSet):
         return Response([{"batch": r["import_batch"], "count": r["n"], "total": float(r["total"] or 0),
                           "from": r["d_min"], "to": r["d_max"]} for r in rows])
 
+    @action(detail=False, methods=["get"], url_path="bank-accounts")
+    def bank_accounts(self, request):
+        """Рахунки на СТОРОНІ БАНКУ (для мапінгу на рахунки CRM). ?provider=privatbank|monobank"""
+        import json as _json
+        import urllib.request
+        import time as _time
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("finance.manage")):
+            return Response({"detail": "Потрібне право «Керування фінмоделлю»"}, status=403)
+        prov = request.query_params.get("provider")
+        from apps.integrations.models import IntegrationSettings
+        st = IntegrationSettings.objects.filter(provider=prov).first()
+        cfg = (st.config or {}) if st else {}
+        token = cfg.get("token")
+        if not token:
+            return Response({"detail": "Спочатку збережи токен"}, status=400)
+        out = []
+        if prov == "privatbank":
+            acc_map = dict(cfg.get("acc_map") or {})
+            today = _time.strftime("%d-%m-%Y")
+            url = "https://acp.privatbank.ua/api/statements/balance?startDate=%s&endDate=%s&limit=100" % (today, today)
+            req = urllib.request.Request(url, headers={"token": token, "Content-Type": "application/json;charset=utf8"})
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    data = _json.loads(r.read().decode())
+            except Exception as e:
+                return Response({"detail": "AutoClient: %s" % str(e)[:200]}, status=400)
+            for b in data.get("balances", []):
+                iban = b.get("acc") or ""
+                tail = iban[-4:]
+                out.append({"key": iban, "tail": tail, "title": (b.get("nameACC") or "")[:60],
+                            "iban": iban, "balance": b.get("balanceOut") or b.get("balanceOutEq") or "",
+                            "currency": b.get("currency") or "UAH",
+                            "mapped_account_id": acc_map.get(tail)})
+        elif prov == "monobank":
+            mono_map = dict(cfg.get("mono_map") or {})
+            req = urllib.request.Request("https://api.monobank.ua/personal/client-info", headers={"X-Token": token})
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    data = _json.loads(r.read().decode())
+            except Exception as e:
+                return Response({"detail": "Monobank: %s" % str(e)[:200]}, status=400)
+            CCY = {980: "UAH", 840: "USD", 978: "EUR"}
+            for a in data.get("accounts", []):
+                pan = (a.get("maskedPan") or [""])
+                pan = pan[0] if pan else ""
+                out.append({"key": a.get("id"), "tail": (a.get("iban") or "")[-4:],
+                            "title": ("%s %s" % (a.get("type") or "", pan)).strip()[:60],
+                            "iban": a.get("iban") or "", "balance": (a.get("balance") or 0) / 100.0,
+                            "currency": CCY.get(a.get("currencyCode"), str(a.get("currencyCode"))),
+                            "mapped_account_id": mono_map.get(str(a.get("id")))})
+        else:
+            return Response({"detail": "provider: privatbank | monobank"}, status=400)
+        return Response(out)
+
+    @action(detail=False, methods=["post"], url_path="bank-map")
+    def bank_map(self, request):
+        """Привʼязати рахунок банку до рахунку CRM. body: {provider, key, account_id | create_name}"""
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("finance.manage")):
+            return Response({"detail": "Потрібне право «Керування фінмоделлю»"}, status=403)
+        prov = request.data.get("provider")
+        key = str(request.data.get("key") or "")
+        from apps.integrations.models import IntegrationSettings
+        st = IntegrationSettings.objects.filter(provider=prov).first()
+        if not st or not key:
+            return Response({"detail": "нема провайдера або key"}, status=400)
+        cfg = st.config or {}
+        aid = request.data.get("account_id")
+        if request.data.get("create_name"):
+            acc = Account.objects.create(name=str(request.data["create_name"])[:120], kind="bank")
+            aid = acc.id
+        if prov == "privatbank":
+            m = dict(cfg.get("acc_map") or {})
+            tail = key[-4:]
+            if aid:
+                m[tail] = int(aid)
+            else:
+                m.pop(tail, None)
+            cfg["acc_map"] = m
+        else:
+            m = dict(cfg.get("mono_map") or {})
+            if aid:
+                m[key] = int(aid)
+            else:
+                m.pop(key, None)
+            cfg["mono_map"] = m
+        st.config = cfg
+        st.save(update_fields=["config"])
+        return Response({"ok": True, "account_id": aid})
+
     @action(detail=False, methods=["get", "post"], url_path="bank-settings")
     def bank_settings(self, request):
         """Налаштування банків (Приват/Моно) — токени та привʼязка рахунків."""
