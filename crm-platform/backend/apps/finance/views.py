@@ -432,19 +432,12 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
     acc_map = dict(cfg.get("acc_map") or {})  # хвіст IBAN (4 цифри) → account_id
 
     def _resolve_account(iban):
-        """Рахунок CRM для IBAN: (1) мапа; (2) авто-матч по хвосту в назві; (3) створити новий."""
+        """Рахунок CRM для IBAN — ТІЛЬКИ через мапу підключень (⚙️ Банки).
+        Непідключений рахунок банку -> None -> операція НЕ заливається."""
         tail = (iban or "")[-4:]
-        if not tail:
-            return default_account
-        if tail in acc_map:
-            a = Account.objects.filter(id=acc_map[tail]).first()
-            if a:
-                return a
-        a = Account.objects.filter(name__icontains=tail).first()
-        if a is None:
-            a = Account.objects.create(name="Приват …%s (ФОП)" % tail, kind="bank")
-        acc_map[tail] = a.id
-        return a
+        if tail and tail in acc_map:
+            return Account.objects.filter(id=acc_map[tail]).first()
+        return None
     if d_from and d_to:
         start = _dtm.fromisoformat(str(d_from)).strftime("%d-%m-%Y")
         end = _dtm.fromisoformat(str(d_to)).strftime("%d-%m-%Y")
@@ -497,6 +490,9 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
         except ValueError:
             op_t = None
         account = _resolve_account(tr.get("AUT_MY_ACC") or "")
+        if account is None:  # рахунок банку не підключено у ⚙️ Банки — пропускаємо
+            skipped += 1
+            continue
         # еквайринг по угоді (WCCRM-<id>): дохід ВЖЕ створений CRM при оплаті — не дублюємо,
         # АЛЕ комісію LiqPay (дохід сделки − зарахування банку) розносимо витратою автоматично
         import re as _re

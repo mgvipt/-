@@ -481,7 +481,7 @@ function Journal() {
       <div className="panel acc-sidebar" style={{ width: accW, flex: `0 0 ${accW}px`, margin: 0, maxHeight: "80vh", overflowY: "auto" }}>
         {/* Σ активних — над заголовком, у кольорі фону блоку */}
         <div style={{ textAlign: "center", marginBottom: 6 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.3 }}>{money(accounts.reduce((sm: number, a: any) => sm + Number(a.balance || 0), 0))}</div>
+          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.3 }}>{money(accounts.filter((a: any) => !/liqpay/i.test(a.name || "")).reduce((sm: number, a: any) => sm + Number(a.balance || 0), 0))}</div>
           <div className="muted" style={{ fontSize: 10.5 }}>{t("на активных счетах","на активних рахунках")}</div>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -492,7 +492,7 @@ function Journal() {
           </span>
         </div>
         <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>Обери один або кілька — журнал відфільтрується.</div>
-        {accounts.map((a) => {
+        {accounts.filter((a) => !/liqpay/i.test(a.name || "")).map((a) => {
           const on = selAcc.includes(a.id);
           return (
           <div key={a.id} onClick={() => toggleAcc(a.id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: 7, cursor: "pointer", fontSize: 12.5, userSelect: "none",
