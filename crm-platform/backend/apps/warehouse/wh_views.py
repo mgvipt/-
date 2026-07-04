@@ -122,9 +122,10 @@ def reassign(request, pk):
     POST {user_id} (0 = зняти виконавця, задача повертається у чергу). Право: керівник."""
     from django.contrib.auth import get_user_model
     u = request.user
-    is_mgr = bool(u.is_superuser or (hasattr(u, "has_perm_code") and (u.has_perm_code("warehouse.view.all") or u.has_perm_code("roles.manage"))))
+    is_mgr = bool(u.is_superuser or (hasattr(u, "has_perm_code") and (
+        u.has_perm_code("warehouse.view.all") or u.has_perm_code("roles.manage") or u.has_perm_code("warehouse.reassign"))))
     if not is_mgr:
-        return Response({"detail": "Потрібне право керівника складу («Бачити задачі ВСІХ»)"}, status=403)
+        return Response({"detail": "Потрібне право «Передавати задачі складу»"}, status=403)
     U = get_user_model()
     if request.method == "GET":
         pool = (U.objects.filter(is_active=True)

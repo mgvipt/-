@@ -298,6 +298,10 @@ function TaskCard({ t, jobId, onBack }: any) {
   const [msg, setMsg] = useState("");
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2600); };
   const load = () => api.get<any>(`/api/warehouse/jobs/${jobId}/`).then(setJ).catch(() => {});
+  const { can: canFn } = useAuth();
+  const canReassign = canFn("warehouse.view.all") || canFn("roles.manage") || canFn("warehouse.reassign");
+  const [reStaff, setReStaff] = useState<any[]>([]);
+  useEffect(() => { if (canReassign) api.get<any>("/api/warehouse/jobs/0/reassign/").then(setReStaff).catch(() => {}); }, [canReassign]);
   const loadDeal = (did: number) => api.get<any>(`/api/deals/${did}/`).then(setDeal).catch(() => {});
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
   useEffect(() => { if (j && j.deal_id) { loadDeal(j.deal_id); if (["awaiting_photos", "shipped"].includes(j.status)) setPackedLocal(true); } /* eslint-disable-next-line */ }, [j && j.deal_id]);
@@ -340,6 +344,20 @@ function TaskCard({ t, jobId, onBack }: any) {
           <button title={t("Печать бланка выкраски", "Друк бланка викраски")} onClick={() => setVkOpen(true)} style={{ width: 36, height: 32, borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon n="palette" size={17} /></button>
         </div>
         <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>📍 {j.city || "—"} · {j.ship || ""}{(deal && deal.ttn) ? " · ТТН " + deal.ttn : ""}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, fontSize: 13 }}>
+          <span className="muted">👤 {t("Ответственный","Відповідальний")}:</span>
+          <b>{j.assignee_name || t("не назначен","не призначено")}</b>
+          {canReassign && (
+            <select value="" onChange={async (e) => { const v = e.target.value; if (v === "") return;
+              try { await api.post(`/api/warehouse/jobs/${j.id}/reassign/`, { user_id: Number(v) }); load(); }
+              catch (err: any) { alert(err?.response?.data?.detail || t("Не удалось","Не вдалося")); }
+            }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 7, fontSize: 12 }}>
+              <option value="">{t("Сменить…","Змінити…")}</option>
+              <option value="0">↩ {t("В очередь","У чергу")}</option>
+              {reStaff.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          )}
+        </div>
       </div>
 
       <div className="panel" style={{ borderLeft: "4px solid #2563eb" }}>
