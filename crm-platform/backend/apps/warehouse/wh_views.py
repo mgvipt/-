@@ -181,6 +181,14 @@ def take(request, pk):
         if job.task_id:
             job.task.status = "in_progress"; job.task.assignee = request.user
             job.task.save(update_fields=["status", "assignee"])
+        # склад узяв замовлення в роботу → сделка «Оплату отримано» → «Заброньовано»
+        try:
+            deal = job.deal
+            if deal.stage_id and deal.stage.order == 3:
+                from apps.crm.views import _advance_deal_stage
+                _advance_deal_stage(deal, 4, "Склад узяв задачу в роботу (%s)" % (request.user.get_full_name() or request.user.username))
+        except Exception:
+            pass
     return Response(_job_dict(job, full=True))
 
 

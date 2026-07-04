@@ -127,6 +127,9 @@ def build_context(entity, kind):
     return "Контекст картки:\n" + json.dumps(ctx, ensure_ascii=False) + "\n\nПроаналізуй і виклич потрібні інструменти."
 
 
+AGENT_MAX_DEAL_STAGE = 3  # «Оплату отримано». Далі — стадії складу/логістики: їх рухає склад і НП-автоматика
+
+
 def _move_stage(entity, kind, to_name, reason, user, autonomous):
     funnel = entity.funnel
     target = funnel.stages.filter(name__iexact=(to_name or "").strip()).first()
@@ -141,6 +144,8 @@ def _move_stage(entity, kind, to_name, reason, user, autonomous):
         target = funnel.stages.filter(order__gt=entity.stage.order).order_by("order").first() or target
     if not autonomous:
         return {"ok": False, "proposed": "→ %s: %s" % (target.name, reason)}
+    if kind == "deal" and target.order > AGENT_MAX_DEAL_STAGE:
+        return {"ok": False, "msg": "стадія «%s» — складська/логістична, її рухає склад (взяття задачі) та НП-автоматика, не агент" % target.name}
     old = entity.stage.name
     entity.stage = target
     flds = ["stage"]
