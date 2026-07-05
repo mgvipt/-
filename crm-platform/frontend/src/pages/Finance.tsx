@@ -424,7 +424,7 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
           <>
             <div className="panel" style={{ margin: "0 0 12px" }}>
               <b>ПриватБанк (AutoClient · рахунок ФОП)</b> {banks.privatbank.connected ? <span style={{ color: "#16a34a", fontWeight: 700 }}>✓ {t("подключён","підключено")} {banks.privatbank.token_tail}</span> : <span className="muted">{t("не подключён","не підключено")}</span>}
-              <div className="muted" style={{ fontSize: 12, margin: "4px 0 8px" }}>{t("Токен создаётся в Приват24 для бизнеса: Настройки → API AutoClient. Операции тянутся автоматически каждые 3 часа + можно загрузить период.","Токен створюється у Приват24 для бізнесу: Налаштування → API AutoClient. Операції тягнуться автоматично кожні 3 години + можна завантажити період.")}</div>
+              <div className="muted" style={{ fontSize: 12, margin: "4px 0 8px" }}>{t("Токен создаётся в Приват24 для бизнеса: Настройки → API AutoClient. Новые операции подтягиваются автоматически каждые 10 минут + можно загрузить период.","Токен створюється у Приват24 для бізнесу: Налаштування → API AutoClient. Нові операції підтягуються автоматично кожні 10 хвилин + можна завантажити період.")}</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <input placeholder="Token" value={pbForm.token} onChange={(e) => setPbForm({ ...pbForm, token: e.target.value })} style={{ ...inp, width: 220 }} />
                 <input placeholder="IBAN (UA…)" value={pbForm.acc} onChange={(e) => setPbForm({ ...pbForm, acc: e.target.value })} style={{ ...inp, width: 220 }} />
