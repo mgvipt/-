@@ -670,6 +670,7 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
             amount=pp.amount, amount_uah=pp.amount, account=acc,
             date=_tz.localdate(), op_time=_tz.localtime().time(),
             category=pp.category, counterparty=pp.counterparty, deal=pp.deal,
+            fin_direction=pp.fin_direction, fin_article=pp.fin_article, channel=pp.channel or "",
             comment=("Дт/Кт: " + (pp.comment or ""))[:255])
         pp.status = "paid"
         pp.paid_tx = tx

@@ -1651,66 +1651,149 @@ function RefConst({ title, items, hint }: { title: string; items: string[]; hint
 
 /* ─── ВКЛАДКА: ФІНМОДЕЛЬ (CRUD статей) ─────────────────────────────────── */
 /* ─── ВКЛАДКА: ПЛАНУВАННЯ ПО ФОНДАХ-КОНВЕРТАХ ──────────────────────────── */
+function DebtCard({ row, cats, dirs, arts, accs2, t, onClose, onSaved }: any) {
+  const [f, setF] = useState<any>(() => ({
+    kind: row?.kind || "payable", amount: row?.amount || "", due_date: row?.due_date || "",
+    counterparty: row?.counterparty || "", category: row?.category || "", account: row?.account || "",
+    fin_direction: row?.fin_direction || "", fin_article: row?.fin_article || "", channel: row?.channel || "",
+    deal: row?.deal || "", comment: row?.comment || "",
+  }));
+  const [busy, setBusy] = useState(false);
+  const inp: any = { height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 9px", fontSize: 13, background: "#fff" };
+  const lab: any = { fontSize: 11, color: "#64748b", fontWeight: 600, marginBottom: 3 };
+  const Fld = "div";
+  async function save() {
+    if (!f.amount || !f.due_date) { alert(t("Сумма и срок обязательны", "Сума і строк обовʼязкові")); return; }
+    setBusy(true);
+    const body: any = { ...f, amount: Number(f.amount) };
+    ["category", "account", "fin_direction", "fin_article", "deal"].forEach((k) => { body[k] = f[k] ? Number(f[k]) : null; });
+    try {
+      if (row?.id) await api.patch(`/api/planned-payments/${row.id}/`, body);
+      else await api.post("/api/planned-payments/", body);
+      onSaved(); onClose();
+    } catch (e: any) { alert(e?.response?.data?.detail || JSON.stringify(e?.response?.data || "Помилка")); }
+    setBusy(false);
+  }
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 80 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 22, width: "min(680px,96vw)", maxHeight: "92vh", overflowY: "auto" }}>
+        <h3 style={{ margin: "0 0 14px" }}>{row?.id ? t("Карточка операции Дт/Кт", "Картка операції Дт/Кт") + ` №${row.id}` : t("Новая запись Дт/Кт", "Новий запис Дт/Кт")}</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Fld><div style={lab}>{t("Тип", "Тип")}</div>
+            <select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })} style={{ ...inp, width: "100%" }}>
+              <option value="payable">🔻 {t("Кредиторка (мы должны)", "Кредиторка (ми винні)")}</option>
+              <option value="receivable">🔺 {t("Дебиторка (нам должны)", "Дебіторка (нам винні)")}</option>
+            </select></Fld>
+          <Fld><div style={lab}>{t("Сумма, грн", "Сума, грн")}</div>
+            <input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} style={{ ...inp, width: "100%" }} /></Fld>
+          <Fld><div style={lab}>{t("Срок (когда возник долг / оплатить до)", "Строк (коли виник борг / сплатити до)")}</div>
+            <input type="date" value={f.due_date} onChange={(e) => setF({ ...f, due_date: e.target.value })} style={{ ...inp, width: "100%" }} /></Fld>
+          <Fld><div style={lab}>{t("Контрагент", "Контрагент")}</div>
+            <input value={f.counterparty} onChange={(e) => setF({ ...f, counterparty: e.target.value })} style={{ ...inp, width: "100%" }} /></Fld>
+          <Fld><div style={lab}>{t("Категория", "Категорія")}</div>
+            <select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} style={{ ...inp, width: "100%" }}>
+              <option value="">—</option>
+              {cats.filter((c: any) => c.direction === (f.kind === "payable" ? "out" : "in")).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select></Fld>
+          <Fld><div style={lab}>{t("Счёт оплаты", "Рахунок оплати")}</div>
+            <select value={f.account} onChange={(e) => setF({ ...f, account: e.target.value })} style={{ ...inp, width: "100%" }}>
+              <option value="">—</option>
+              {accs2.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select></Fld>
+          <Fld><div style={lab}>{t("Направление (проект)", "Напрямок (проект)")}</div>
+            <select value={f.fin_direction} onChange={(e) => setF({ ...f, fin_direction: e.target.value })} style={{ ...inp, width: "100%" }}>
+              <option value="">—</option>
+              {dirs.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select></Fld>
+          <Fld><div style={lab}>{t("Фонд", "Фонд")}</div>
+            <select value={f.fin_article} onChange={(e) => setF({ ...f, fin_article: e.target.value })} style={{ ...inp, width: "100%" }}>
+              <option value="">—</option>
+              {arts.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select></Fld>
+          <Fld><div style={lab}>{t("Канал", "Канал")}</div>
+            <input value={f.channel} onChange={(e) => setF({ ...f, channel: e.target.value })} placeholder="instagram / tiktok / offline…" style={{ ...inp, width: "100%" }} /></Fld>
+          <Fld><div style={lab}>{t("Сделка (№)", "Сделка (№)")}</div>
+            <input type="number" value={f.deal} onChange={(e) => setF({ ...f, deal: e.target.value })} placeholder="65496" style={{ ...inp, width: "100%" }} /></Fld>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <div style={lab}>{t("Комментарий", "Коментар")}</div>
+          <input value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} style={{ ...inp, width: "100%" }} />
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <button className="btn btn-primary" disabled={busy} style={{ flex: 1 }} onClick={save}>{busy ? "…" : t("Сохранить", "Зберегти")}</button>
+          <button className="btn btn-light" style={{ flex: 1 }} onClick={onClose}>{t("Закрыть", "Закрити")}</button>
+          {row?.id && row.status === "planned" && <button className="btn btn-light" style={{ color: "#dc2626" }} onClick={async () => { if (confirm(t("Удалить запись?", "Видалити запис?"))) { await api.del(`/api/planned-payments/${row.id}/`); onSaved(); onClose(); } }}>🗑</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Debts() {
   const { t } = useLang();
   const [rows, setRows] = useState<any[]>([]);
   const [st, setSt] = useState("planned");
   const [cats, setCats] = useState<any[]>([]);
   const [accs2, setAccs2] = useState<any[]>([]);
-  const [form, setForm] = useState<any>({ kind: "payable", amount: "", due_date: "", counterparty: "", category: "", account: "", comment: "" });
+  const [dirs, setDirs] = useState<any[]>([]);
+  const [arts, setArts] = useState<any[]>([]);
+  const [card, setCard] = useState<any>(undefined); // undefined=закрыто, null=новая, obj=правка
   const load = () => api.get<any>(`/api/planned-payments/?status=${st}&page_size=500`).then((d) => setRows(d.results || d)).catch(() => {});
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [st]);
   useEffect(() => {
     api.get<any>("/api/categories/?page_size=300").then((d) => setCats(d.results || d)).catch(() => {});
     api.get<any>("/api/accounts/").then((d) => setAccs2((d.results || d).filter((a: any) => a.is_active !== false))).catch(() => {});
+    api.get<any>("/api/fin-directions/?page_size=100").then((d) => setDirs(d.results || d)).catch(() => {});
+    api.get<any>("/api/finmodel-articles/?page_size=300").then((d) => setArts(d.results || d)).catch(() => {});
   }, []);
-  const inp: any = { height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", fontSize: 13 };
-  async function add() {
-    if (!form.amount || !form.due_date) { alert(t("Сумма и дата обязательны", "Сума і дата обовʼязкові")); return; }
-    try {
-      await api.post("/api/planned-payments/", { ...form, amount: Number(form.amount),
-        category: form.category ? Number(form.category) : null, account: form.account ? Number(form.account) : null });
-      setForm({ kind: form.kind, amount: "", due_date: "", counterparty: "", category: "", account: "", comment: "" });
-      load();
-    } catch (e: any) { alert(e?.response?.data?.detail || "Помилка"); }
-  }
-  async function markPaid(r: any) {
-    if (!confirm(t(`Отметить оплаченным? Появится фактическая операция в журнале на ${r.amount} грн сегодняшним числом.`, `Позначити оплаченим? Зʼявиться фактична операція в журналі на ${r.amount} грн сьогоднішнім числом.`))) return;
+  async function markPaid(r: any, e: any) {
+    e.stopPropagation();
+    if (!confirm(t(`Оплачено? В журнале появится ${r.kind === "payable" ? "расход" : "доход"} на ${r.amount} грн сегодняшним числом со всеми полями (категория/направление/фонд/канал/сделка).`, `Оплачено? У журналі зʼявиться ${r.kind === "payable" ? "витрата" : "дохід"} на ${r.amount} грн сьогоднішнім числом з усіма полями.`))) return;
     await api.post(`/api/planned-payments/${r.id}/mark-paid/`, {}); load();
   }
   const Section = ({ kind, title, color }: any) => {
     const list = rows.filter((r) => r.kind === kind);
     const total = list.reduce((sm, r) => sm + Number(r.amount || 0), 0);
     return (
-      <div className="panel" style={{ flex: 1, minWidth: 380 }}>
+      <div className="panel" style={{ margin: "0 0 14px" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
           <b style={{ fontSize: 15 }}>{title}</b>
-          <span style={{ fontSize: 19, fontWeight: 800, color }}>{money(total)}</span>
+          <span style={{ fontSize: 20, fontWeight: 800, color }}>{money(total)}</span>
           <span className="muted" style={{ fontSize: 12 }}>{list.length} {t("шт", "шт")}</span>
         </div>
-        <table style={{ width: "100%", fontSize: 12.5, borderCollapse: "collapse" }}>
+        <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", fontSize: 12.5, borderCollapse: "collapse", minWidth: 900 }}>
           <thead><tr className="muted" style={{ fontSize: 11, textAlign: "left" }}>
             <th style={{ padding: "4px" }}>{t("Срок", "Строк")}</th><th style={{ padding: "4px" }}>{t("Сумма", "Сума")}</th>
-            <th style={{ padding: "4px" }}>{t("Контрагент", "Контрагент")}</th><th style={{ padding: "4px" }}>{t("Категория", "Категорія")}</th><th></th>
+            <th style={{ padding: "4px" }}>{t("Контрагент", "Контрагент")}</th><th style={{ padding: "4px" }}>{t("Категория", "Категорія")}</th>
+            <th style={{ padding: "4px" }}>{t("Направление", "Напрямок")}</th><th style={{ padding: "4px" }}>{t("Канал", "Канал")}</th>
+            <th style={{ padding: "4px" }}>{t("Сделка", "Сделка")}</th><th style={{ padding: "4px" }}>{t("Комментарий", "Коментар")}</th><th></th>
           </tr></thead>
           <tbody>{list.map((r) => (
-            <tr key={r.id} style={{ borderTop: "1px solid #f1f5f9" }}>
-              <td style={{ padding: "5px 4px", whiteSpace: "nowrap" }}>{r.due_date}</td>
-              <td style={{ padding: "5px 4px", fontWeight: 700, color }}>{money(Number(r.amount))}</td>
-              <td style={{ padding: "5px 4px" }}>{r.counterparty || "—"}</td>
-              <td style={{ padding: "5px 4px" }} title={r.comment}>{r.category_name || "—"}</td>
-              <td style={{ padding: "5px 4px", whiteSpace: "nowrap", textAlign: "right" }}>
+            <tr key={r.id} onClick={() => setCard(r)} style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer" }} title={t("Открыть карточку", "Відкрити картку")}>
+              <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{r.due_date}</td>
+              <td style={{ padding: "6px 4px", fontWeight: 700, color, whiteSpace: "nowrap" }}>{money(Number(r.amount))}</td>
+              <td style={{ padding: "6px 4px" }}>{r.counterparty || "—"}</td>
+              <td style={{ padding: "6px 4px" }}>{r.category_name || "—"}</td>
+              <td style={{ padding: "6px 4px" }}>{r.fin_direction_name || "—"}</td>
+              <td style={{ padding: "6px 4px" }}>{r.channel || "—"}</td>
+              <td style={{ padding: "6px 4px" }} onClick={(e) => e.stopPropagation()}>
+                {r.deal ? <a href={`/deals/${r.deal}`} style={{ color: "#2563eb", fontWeight: 600 }}>#{r.deal}</a> : "—"}
+              </td>
+              <td style={{ padding: "6px 4px", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.comment}>{r.comment || "—"}</td>
+              <td style={{ padding: "6px 4px", whiteSpace: "nowrap", textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
                 {st === "planned" && <>
-                  <button className="btn btn-light" style={{ height: 25, padding: "0 8px", fontSize: 11.5 }} onClick={() => markPaid(r)}>✓ {t("Оплачено", "Оплачено")}</button>{" "}
-                  <button title={t("Отменить", "Скасувати")} onClick={async () => { await api.patch(`/api/planned-payments/${r.id}/`, { status: "canceled" }); load(); }}
+                  <button className="btn btn-light" style={{ height: 26, padding: "0 9px", fontSize: 11.5 }} onClick={(e) => markPaid(r, e)}>✓ {t("Оплачено", "Оплачено")}</button>{" "}
+                  <button title={t("Отменить (не платим)", "Скасувати (не платимо)")} onClick={async (e) => { e.stopPropagation(); await api.patch(`/api/planned-payments/${r.id}/`, { status: "canceled" }); load(); }}
                     style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 14 }}>✕</button>
                 </>}
-                {st !== "planned" && <button title={t("Удалить", "Видалити")} onClick={async () => { if (confirm("Видалити запис?")) { await api.del(`/api/planned-payments/${r.id}/`); load(); } }}
+                {st !== "planned" && <button title={t("Удалить", "Видалити")} onClick={async (e) => { e.stopPropagation(); if (confirm("Видалити запис?")) { await api.del(`/api/planned-payments/${r.id}/`); load(); } }}
                   style={{ border: "none", background: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14 }}>🗑</button>}
               </td>
             </tr>
           ))}</tbody>
         </table>
+        </div>
         {!list.length && <div className="muted" style={{ fontSize: 12, padding: 6 }}>{t("Пусто", "Порожньо")}</div>}
       </div>
     );
@@ -1718,43 +1801,23 @@ function Debts() {
   return (
     <div className="scroll pad">
       <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
-        {t("Запланированные платежи живут ОТДЕЛЬНО от журнала: на остатки и P&L не влияют. «✓ Оплачено» — создаёт фактическую операцию в журнале.",
-           "Заплановані платежі живуть ОКРЕМО від журналу: на залишки і P&L не впливають. «✓ Оплачено» — створює фактичну операцію в журналі.")}
+        {t("Запланированные платежи живут ОТДЕЛЬНО от журнала: на остатки, расходы и P&L не влияют, пока не оплачены. «✓ Оплачено» — создаёт фактическую операцию в журнале со всеми полями. Клик по строке — карточка операции.",
+           "Заплановані платежі живуть ОКРЕМО від журналу: на залишки, витрати і P&L не впливають, доки не оплачені. «✓ Оплачено» — створює фактичну операцію в журналі з усіма полями. Клік по рядку — картка операції.")}
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <button className="btn btn-primary" onClick={() => setCard(null)}>➕ {t("Добавить", "Додати")}</button>
+        <div style={{ width: 10 }} />
         {[["planned", t("Запланированные", "Заплановані")], ["paid", t("Оплаченные", "Оплачені")], ["canceled", t("Отменённые", "Скасовані")]].map(([k, l]) => (
           <button key={k} className={"btn" + (st === k ? " btn-primary" : " btn-light")} onClick={() => setSt(k as string)}>{l}</button>
         ))}
       </div>
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <b style={{ fontSize: 13.5 }}>➕ {t("Добавить", "Додати")}</b>
-        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 8 }}>
-          <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })} style={inp}>
-            <option value="payable">{t("Кредиторка (мы должны)", "Кредиторка (ми винні)")}</option>
-            <option value="receivable">{t("Дебиторка (нам должны)", "Дебіторка (нам винні)")}</option>
-          </select>
-          <input type="number" placeholder={t("Сумма", "Сума")} value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} style={{ ...inp, width: 110 }} />
-          <input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} style={inp} />
-          <input placeholder={t("Контрагент", "Контрагент")} value={form.counterparty} onChange={(e) => setForm({ ...form, counterparty: e.target.value })} style={{ ...inp, width: 170 }} />
-          <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} style={{ ...inp, maxWidth: 210 }}>
-            <option value="">{t("— категория —", "— категорія —")}</option>
-            {cats.filter((c: any) => (form.kind === "payable" ? c.direction === "out" : c.direction === "in")).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select value={form.account} onChange={(e) => setForm({ ...form, account: e.target.value })} style={{ ...inp, maxWidth: 190 }}>
-            <option value="">{t("— счёт оплаты —", "— рахунок оплати —")}</option>
-            {accs2.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-          <input placeholder={t("Комментарий", "Коментар")} value={form.comment} onChange={(e) => setForm({ ...form, comment: e.target.value })} style={{ ...inp, flex: "1 1 160px" }} />
-          <button className="btn btn-primary" onClick={add}>{t("Добавить", "Додати")}</button>
-        </div>
-      </div>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-        <Section kind="payable" title={"🔻 " + t("Кредиторка — мы должны", "Кредиторка — ми винні")} color="#dc2626" />
-        <Section kind="receivable" title={"🔺 " + t("Дебиторка — нам должны", "Дебіторка — нам винні")} color="#16a34a" />
-      </div>
+      <Section kind="payable" title={"🔻 " + t("Кредиторка — мы должны", "Кредиторка — ми винні")} color="#dc2626" />
+      <Section kind="receivable" title={"🔺 " + t("Дебиторка — нам должны", "Дебіторка — нам винні")} color="#16a34a" />
+      {card !== undefined && <DebtCard row={card} cats={cats} dirs={dirs} arts={arts} accs2={accs2} t={t} onClose={() => setCard(undefined)} onSaved={load} />}
     </div>
   );
 }
+
 
 function Planning() {
   const [period, setPeriod] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; });

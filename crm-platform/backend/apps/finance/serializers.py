@@ -20,14 +20,19 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class PlannedPaymentSerializer(serializers.ModelSerializer):
-    category_name = serializers.CharField(source="category.name", read_only=True)
-    account_name = serializers.CharField(source="account.name", read_only=True)
+    category_name = serializers.CharField(source="category.name", read_only=True, default=None)
+    account_name = serializers.CharField(source="account.name", read_only=True, default=None)
+    fin_direction_name = serializers.CharField(source="fin_direction.name", read_only=True, default=None)
+    fin_article_name = serializers.CharField(source="fin_article.name", read_only=True, default=None)
+    deal_title = serializers.CharField(source="deal.title", read_only=True, default=None)
 
     class Meta:
         from .models import PlannedPayment
         model = PlannedPayment
         fields = ["id", "kind", "amount", "due_date", "counterparty", "category", "category_name",
-                  "account", "account_name", "deal", "comment", "status", "created_at"]
+                  "account", "account_name", "fin_direction", "fin_direction_name",
+                  "fin_article", "fin_article_name", "channel", "deal", "deal_title",
+                  "comment", "status", "created_at"]
 
 
 class TransactionSerializer(serializers.ModelSerializer):
