@@ -696,6 +696,67 @@ class BankRuleViewSet(viewsets.ModelViewSet):
                           "priority", "active", "hits"]
         return S
 
+    @action(detail=False, methods=["get"], url_path="suggest")
+    def suggest(self, request):
+        """Відновлення правил з історії (= правила ФінМапа, бо вони цю історію і розносили):
+        повторюваний контрагент → домінантна категорія/напрямок. Тільки пропозиції, нічого не створює."""
+        from collections import defaultdict
+        from .models import BankRule, FinDirection
+        existing = set()
+        for r in BankRule.objects.all():
+            for cnd in (r.conditions or []):
+                existing.add((cnd.get("text") or "").strip().lower())
+        stats = defaultdict(lambda: defaultdict(int))
+        pretty = {}
+        qs = (Transaction.objects.exclude(counterparty="").exclude(direction="transfer")
+              .exclude(category__isnull=True).values_list("counterparty", "direction", "category_id", "fin_direction_id"))
+        for cp, direction, cat_id, dir_id in qs.iterator(chunk_size=5000):
+            cp = (cp or "").strip()
+            if len(cp) < 3:
+                continue
+            key = (cp.lower(), direction)
+            stats[key][(cat_id, dir_id)] += 1
+            pretty[key] = cp
+        out = []
+        cat_cache = {c.id: c.name for c in Category.objects.all()}
+        dir_cache = {d.id: d.name for d in FinDirection.objects.all()}
+        for key, combos in stats.items():
+            total = sum(combos.values())
+            (cat_id, dir_id), best = max(combos.items(), key=lambda x: x[1])
+            if total < 5 or best / total < 0.8 or not cat_id:
+                continue
+            cp = pretty[key]
+            if cp.lower() in existing:
+                continue
+            out.append({"counterparty": cp, "direction": key[1], "count": total,
+                        "share": int(round(best / total * 100)),
+                        "category": cat_id, "category_name": cat_cache.get(cat_id),
+                        "fin_direction": dir_id, "fin_direction_name": dir_cache.get(dir_id)})
+        out.sort(key=lambda x: -x["count"])
+        return Response(out[:300])
+
+    @action(detail=False, methods=["post"], url_path="suggest-create")
+    def suggest_create(self, request):
+        """Створити правила з обраних пропозицій. body: {items: [...]}"""
+        from .models import BankRule
+        made = 0
+        for it in (request.data.get("items") or []):
+            cp = (it.get("counterparty") or "").strip()
+            actions = {}
+            if it.get("category"):
+                actions["category"] = int(it["category"])
+            if it.get("fin_direction"):
+                actions["fin_direction"] = int(it["fin_direction"])
+            if not cp or not actions:
+                continue
+            BankRule.objects.create(
+                name=("%s → %s" % (cp, it.get("category_name") or ""))[:160],
+                direction=it.get("direction") or "", logic="or",
+                conditions=[{"field": "counterparty", "op": "contains", "text": cp}],
+                actions=actions, active=True)
+            made += 1
+        return Response({"ok": True, "created": made})
+
     @action(detail=False, methods=["post"], url_path="apply-journal")
     def apply_journal(self, request):
         """Прогнати правила по журналу: заповнити ПОРОЖНІ поля (нічого не перезаписуємо).
@@ -706,10 +767,31 @@ class BankRuleViewSet(viewsets.ModelViewSet):
             qs = qs.filter(date__gte=request.data["from"])
         if request.data.get("to"):
             qs = qs.filter(date__lte=request.data["to"])
+        # правила та їх дії — ОДИН раз у памʼять (інакше 20к операцій × запити = таймаут)
+        from .models import BankRule as _BRx, FinDirection as _FDx, FinModelArticle as _FAx
+        _rules = list(_BRx.objects.filter(active=True))
+        _res = {}
+        for _r in _rules:
+            _a = _r.actions or {}
+            _res[_r.id] = {
+                "category": Category.objects.filter(id=_a.get("category") or 0).first(),
+                "fin_direction": _FDx.objects.filter(id=_a.get("fin_direction") or 0).first(),
+                "fin_article": _FAx.objects.filter(id=_a.get("fin_article") or 0).first(),
+                "counterparty": _a.get("counterparty") or "", "channel": _a.get("channel") or "",
+            }
+
+        def _fast_rules(direction, osnd, cp, acc_name):
+            for _r in _rules:
+                if _rule_matches(_r, direction, osnd, cp, acc_name):
+                    d = dict(_res[_r.id])
+                    if not d["counterparty"]:
+                        d["counterparty"] = cp
+                    return d
+            return {"category": None, "fin_direction": None, "fin_article": None, "counterparty": cp, "channel": ""}
         changed = 0
         for tx in qs.iterator(chunk_size=1000):
-            rr = apply_bank_rules(tx.direction, tx.comment or "", tx.counterparty or "",
-                                  tx.account.name if tx.account_id else "", count_hit=False)
+            rr = _fast_rules(tx.direction, tx.comment or "", tx.counterparty or "",
+                             tx.account.name if tx.account_id else "")
             upd = {}
             if rr["category"] and not tx.category_id and tx.direction != "transfer":
                 upd["category"] = rr["category"]

@@ -234,11 +234,86 @@ function RuleEditor({ rule, cats, dirs, arts, onClose, onSaved, t }: any) {
   );
 }
 
+function SuggestModal({ t, onClose, onCreated }: any) {
+  const [items, setItems] = useState<any[] | null>(null);
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.get<any>("/api/finance/bank-rules/suggest/").then((d) => {
+      const rows = d.results || d;
+      setItems(rows);
+      setSel(new Set(rows.map((_: any, i: number) => i)));
+    }).catch(() => setItems([]));
+  }, []);
+  async function create() {
+    if (!items) return;
+    const chosen = items.filter((_: any, i: number) => sel.has(i));
+    if (!chosen.length) { alert(t("Ничего не выбрано", "Нічого не обрано")); return; }
+    setBusy(true);
+    try {
+      const r: any = await api.post("/api/finance/bank-rules/suggest-create/", { items: chosen });
+      alert(t(`Создано правил: ${r.created}`, `Створено правил: ${r.created}`));
+      onCreated(); onClose();
+    } catch (e: any) { alert(e?.response?.data?.detail || "Помилка"); }
+    setBusy(false);
+  }
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 85 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 22, width: "min(820px,96vw)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+        <h3 style={{ margin: "0 0 4px" }}>🤖 {t("Правила из истории (перенос из ФинМапа)", "Правила з історії (перенос із ФінМапа)")}</h3>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+          {t("Анализ всех операций 2021–2026: повторяющийся контрагент → категория, которую он получал в 80%+ случаев. Это и есть правила ФинМапа, восстановленные из его же разноски. Сними галочки с лишних и создай.",
+             "Аналіз усіх операцій 2021–2026: повторюваний контрагент → категорія, яку він отримував у 80%+ випадків. Це і є правила ФінМапа, відновлені з його ж розноски. Зніми галочки із зайвих і створи.")}
+        </div>
+        {items === null ? <div className="spin">{t("Анализирую 20 000 операций…", "Аналізую 20 000 операцій…")}</div> : (
+          <>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
+              <b style={{ fontSize: 13 }}>{t("Найдено:", "Знайдено:")} {items.length}</b>
+              <button className="btn btn-light" style={{ height: 26, fontSize: 11.5 }} onClick={() => setSel(new Set(items.map((_: any, i: number) => i)))}>{t("выбрать все", "обрати всі")}</button>
+              <button className="btn btn-light" style={{ height: 26, fontSize: 11.5 }} onClick={() => setSel(new Set())}>{t("снять все", "зняти всі")}</button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", border: "1px solid #eef2f7", borderRadius: 10 }}>
+              <table style={{ width: "100%", fontSize: 12.5, borderCollapse: "collapse" }}>
+                <thead><tr className="muted" style={{ fontSize: 11, textAlign: "left", position: "sticky", top: 0, background: "#f8fafc" }}>
+                  <th style={{ padding: "6px" }}></th><th style={{ padding: "6px" }}>{t("Контрагент содержит", "Контрагент містить")}</th>
+                  <th style={{ padding: "6px" }}>{t("Тип", "Тип")}</th><th style={{ padding: "6px" }}>→ {t("Категория", "Категорія")}</th>
+                  <th style={{ padding: "6px" }}>→ {t("Направление", "Напрямок")}</th><th style={{ padding: "6px", textAlign: "right" }}>{t("Операций", "Операцій")}</th>
+                  <th style={{ padding: "6px", textAlign: "right" }}>{t("Совпадение", "Збіг")}</th>
+                </tr></thead>
+                <tbody>
+                  {items.map((it: any, i: number) => (
+                    <tr key={i} onClick={() => { const n = new Set(sel); n.has(i) ? n.delete(i) : n.add(i); setSel(n); }}
+                      style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer", background: sel.has(i) ? "#f0f9ff" : "transparent" }}>
+                      <td style={{ padding: "5px 6px" }}><input type="checkbox" readOnly checked={sel.has(i)} /></td>
+                      <td style={{ padding: "5px 6px", fontWeight: 600 }}>{it.counterparty}</td>
+                      <td style={{ padding: "5px 6px" }}>{it.direction === "in" ? "▲ дохід" : "▼ витрата"}</td>
+                      <td style={{ padding: "5px 6px" }}>{it.category_name || "—"}</td>
+                      <td style={{ padding: "5px 6px" }}>{it.fin_direction_name || "—"}</td>
+                      <td style={{ padding: "5px 6px", textAlign: "right" }}>{it.count}</td>
+                      <td style={{ padding: "5px 6px", textAlign: "right", color: it.share >= 95 ? "#16a34a" : "#d97706", fontWeight: 700 }}>{it.share}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!items.length && <div className="muted" style={{ padding: 10, fontSize: 12 }}>{t("Новых закономерностей не найдено — всё уже покрыто правилами.", "Нових закономірностей не знайдено — все вже покрито правилами.")}</div>}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button className="btn btn-primary" disabled={busy || !items.length} style={{ flex: 1 }} onClick={create}>{busy ? "…" : "✓ " + t(`Создать выбранные (${sel.size})`, `Створити обрані (${sel.size})`)}</button>
+              <button className="btn btn-light" style={{ flex: 1 }} onClick={onClose}>{t("Отмена", "Скасувати")}</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RulesTab({ cats, dirs, t }: any) {
   const [rules, setRules] = useState<any[]>([]);
   const [arts, setArts] = useState<any[]>([]);
   const [edit, setEdit] = useState<any>(undefined); // undefined = закрыто, null = новое, obj = правка
   const [busyAJ, setBusyAJ] = useState(false);
+  const [suggest, setSuggest] = useState(false);
   const load = () => api.get<any>("/api/finance/bank-rules/").then((d) => setRules(d.results || d)).catch(() => {});
   useEffect(() => { load(); api.get<any>("/api/finmodel-articles/?page_size=300").then((d) => setArts(d.results || d)).catch(() => {}); }, []);
   const fLab = Object.fromEntries(RULE_FIELDS);
@@ -264,6 +339,7 @@ function RulesTab({ cats, dirs, t }: any) {
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <button className="btn btn-primary" onClick={() => setEdit(null)}>➕ {t("Добавить правило", "Додати правило")}</button>
         <button className="btn btn-light" disabled={busyAJ} onClick={applyJournal}>{busyAJ ? "…" : "⚡ " + t("Прогнать по журналу", "Прогнати по журналу")}</button>
+        <button className="btn btn-light" onClick={() => setSuggest(true)}>🤖 {t("Подобрать из истории", "Підібрати з історії")}</button>
       </div>
       {rules.map((r: any) => (
         <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderTop: "1px solid #f1f5f9", opacity: r.active ? 1 : 0.55 }}>
@@ -281,6 +357,7 @@ function RulesTab({ cats, dirs, t }: any) {
       ))}
       {!rules.length && <div className="muted" style={{ fontSize: 12, padding: 8 }}>{t("Правил пока нет.", "Правил поки немає.")}</div>}
       {edit !== undefined && <RuleEditor rule={edit} cats={cats} dirs={dirs} arts={arts} t={t} onClose={() => setEdit(undefined)} onSaved={load} />}
+      {suggest && <SuggestModal t={t} onClose={() => setSuggest(false)} onCreated={load} />}
     </div>
   );
 }
