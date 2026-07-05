@@ -708,7 +708,10 @@ class BankRuleViewSet(viewsets.ModelViewSet):
                 existing.add((cnd.get("text") or "").strip().lower())
         stats = defaultdict(lambda: defaultdict(int))
         pretty = {}
-        qs = (Transaction.objects.exclude(counterparty="").exclude(direction="transfer")
+        # тільки ПОТОЧНИЙ рік — свіжа розноска найточніша (можна ?from=YYYY-MM-DD)
+        d_from = request.query_params.get("from") or (date.today().replace(month=1, day=1).isoformat())
+        qs = (Transaction.objects.filter(date__gte=d_from)
+              .exclude(counterparty="").exclude(direction="transfer")
               .exclude(category__isnull=True).values_list("counterparty", "direction", "category_id", "fin_direction_id"))
         for cp, direction, cat_id, dir_id in qs.iterator(chunk_size=5000):
             cp = (cp or "").strip()
