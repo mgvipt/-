@@ -678,6 +678,47 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(pp).data)
 
 
+FUND_KEYWORDS = [
+    (["поставщик", "закупівля товару", "закупка товара", "другие материали", "будмаркет", "будматеріали"], "Постачальники (закупка)"),
+    (["доставка", "логистик", "логістик", "нова пошта", "новая почта"], "Логістика / доставка"),
+    (["упак"], "Упаковка (матеріали)"),
+    (["фот % продажи", "фот % продажу", "% продажи(зп)"], "ФОТ % продажу (комісія менеджера)"),
+    (["фот мастера", "мастерам", "майстрам"], "Дивіденди майстрам"),
+    (["ликпей", "liqpay"], "Комісія LiqPay"),
+    (["чекбокс", "checkbox"], "Комісія Чекбокс"),
+    (["маркетинг", "смм", "объявления в соцсетях", "помощьник по маркетингу", "таргетолог", "развитие бренда"], "Маркетинг СММ (контент, копірайт, реклама)"),
+    (["фонд управления зп", "управления(зп)", "управління"], "ФОТ управління"),
+    (["фот оклады", "фот(зп_оклады)", "уборка", "администратор салона", "бухгалтер"], "ФОТ офіс (склад/менеджер/прибиральниця/бухгалтер)"),
+    (["комиссия банка", "комісії банка", "комиссия за перевод", "комісія за поповнення", "користування лімітом", "лiмiто", "обслуговування рахунку", "відсотків"], "Списання відсотків + комісії банку"),
+    (["аренда", "оренд"], "Оренда салону"),
+    (["возврат тела", "погашение кредита", "повернення тіла"], "Кредити (повернення тіла)"),
+    (["коммунальн", "комуналк"], "Комуналка (салон)"),
+    (["связь", "звʼязок", "київстар", "киевстар", "телефон", "интернет", "інтернет"], "Звʼязок (Інтернет + телефонія)"),
+    (["сервисы", "сервіси", "приложени", "программ", "програм", "netflix", "hetzner", "anthropic", "claude", "chat gpt", "chatplace", "canva", "notion", "midjourney"], "Сервіси / Програми"),
+    (["налог", "податк"], "Податки"),
+    (["транспорт", "топливо", "паливо", "поездки"], "Транспортні (паливо, поїздки)"),
+    (["обслуживание оборуд", "обладнання", "інструмент"], "Обслуговування обладнання / інструментів"),
+    (["хоз", "господарськ"], "Господарські витрати"),
+    (["жизнедеятельности офиса", "життєдіяльність офісу"], "Життєдіяльність офісу (вода, кава, канцелярія)"),
+    (["навчання", "обучение"], "Навчання"),
+]
+
+
+def fund_for_category(cat_name, hint=""):
+    """Фонд фінмоделі за назвою категорії (+ контрагент як підказка для таргету)."""
+    from .models import FinModelArticle
+    hay = ("%s %s" % (cat_name or "", hint or "")).lower()
+    if "таргет" in hay:
+        nm = ("Таргет-бюджет Facebook (Meta-ads)"
+              if ("фейсбук" in hay or "facebook" in hay)
+              else "Таргет-бюджет Instagram (Meta-ads)")
+        return FinModelArticle.objects.filter(name=nm, active=True).first()
+    for keys, fund_name in FUND_KEYWORDS:
+        if any(k in hay for k in keys):
+            return FinModelArticle.objects.filter(name=fund_name, active=True).first()
+    return None
+
+
 class BankRuleViewSet(viewsets.ModelViewSet):
     """Правила авторозноски банківських операцій."""
     permission_classes = [FinancePerm]
@@ -731,10 +772,12 @@ class BankRuleViewSet(viewsets.ModelViewSet):
             cp = pretty[key]
             if cp.lower() in existing:
                 continue
+            fund = fund_for_category(cat_cache.get(cat_id) or "", cp) if key[1] == "out" else None
             out.append({"counterparty": cp, "direction": key[1], "count": total,
                         "share": int(round(best / total * 100)),
                         "category": cat_id, "category_name": cat_cache.get(cat_id),
-                        "fin_direction": dir_id, "fin_direction_name": dir_cache.get(dir_id)})
+                        "fin_direction": dir_id, "fin_direction_name": dir_cache.get(dir_id),
+                        "fin_article": fund.id if fund else None, "fin_article_name": fund.name if fund else None})
         out.sort(key=lambda x: -x["count"])
         return Response(out[:300])
 
@@ -750,6 +793,8 @@ class BankRuleViewSet(viewsets.ModelViewSet):
                 actions["category"] = int(it["category"])
             if it.get("fin_direction"):
                 actions["fin_direction"] = int(it["fin_direction"])
+            if it.get("fin_article"):
+                actions["fin_article"] = int(it["fin_article"])
             if not cp or not actions:
                 continue
             BankRule.objects.create(
