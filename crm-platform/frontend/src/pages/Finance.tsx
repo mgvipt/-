@@ -125,7 +125,7 @@ const RULE_FIELDS: [string, string][] = [["osnd", "Коментар / призн
 const RULE_OPS: [string, string][] = [["contains", "містить"], ["not_contains", "не містить"], ["equals", "дорівнює"]];
 const RULE_ACTS: [string, string][] = [["category", "Категорію"], ["fin_direction", "Проект (напрямок)"], ["fin_article", "Фонд"], ["counterparty", "Контрагента"], ["channel", "Канал"]];
 
-function RuleEditor({ rule, cats, dirs, arts, onClose, onSaved, t }: any) {
+function RuleEditor({ rule, cats, dirs, arts, accsR, cps, onClose, onSaved, t }: any) {
   const [r, setR] = useState<any>(() => ({
     name: rule?.name || "",
     direction: rule?.direction || "",
@@ -208,7 +208,19 @@ function RuleEditor({ rule, cats, dirs, arts, onClose, onSaved, t }: any) {
             <select value={c.op} onChange={(e) => setCond(i, { op: e.target.value })} style={{ ...inp, width: 130 }}>
               {RULE_OPS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
-            <input value={c.text} onChange={(e) => setCond(i, { text: e.target.value })} placeholder={t("Текст", "Текст")} style={{ ...inp, flex: 1 }} />
+            {c.field === "account" ? (
+              <select value={c.text} onChange={(e) => setCond(i, { text: e.target.value })} style={{ ...inp, flex: 1 }}>
+                <option value="">{t("— выбери счёт —", "— обери рахунок —")}</option>
+                {accsR.map((a: any) => <option key={a.id} value={a.name}>{a.name}</option>)}
+              </select>
+            ) : c.field === "counterparty" ? (
+              <>
+                <input list={`cp-list-${i}`} value={c.text} onChange={(e) => setCond(i, { text: e.target.value })} placeholder={t("Начни вводить — подскажет из списка…", "Почни вводити — підкаже зі списку…")} style={{ ...inp, flex: 1 }} />
+                <datalist id={`cp-list-${i}`}>{cps.filter((n: string) => !c.text || n.toLowerCase().includes(c.text.toLowerCase())).slice(0, 50).map((n: string) => <option key={n} value={n} />)}</datalist>
+              </>
+            ) : (
+              <input value={c.text} onChange={(e) => setCond(i, { text: e.target.value })} placeholder={t("Текст комментария", "Текст коментаря")} style={{ ...inp, flex: 1 }} />
+            )}
             <button onClick={() => setR((x: any) => ({ ...x, conditions: x.conditions.filter((_: any, j: number) => j !== i) }))} style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 15 }}>🗑</button>
           </div>
         ))}
@@ -315,7 +327,14 @@ function RulesTab({ cats, dirs, t }: any) {
   const [busyAJ, setBusyAJ] = useState(false);
   const [suggest, setSuggest] = useState(false);
   const load = () => api.get<any>("/api/finance/bank-rules/").then((d) => setRules(d.results || d)).catch(() => {});
-  useEffect(() => { load(); api.get<any>("/api/finmodel-articles/?page_size=300").then((d) => setArts(d.results || d)).catch(() => {}); }, []);
+  const [accsR, setAccsR] = useState<any[]>([]);
+  const [cps, setCps] = useState<string[]>([]);
+  useEffect(() => {
+    load();
+    api.get<any>("/api/finmodel-articles/?page_size=300").then((d) => setArts(d.results || d)).catch(() => {});
+    api.get<any>("/api/accounts/").then((d) => setAccsR((d.results || d).filter((a: any) => a.is_active !== false))).catch(() => {});
+    api.get<any>("/api/finance/counterparties/").then((d) => setCps(((d.results || d) as any[]).map((x: any) => x.name || String(x)).filter(Boolean))).catch(() => {});
+  }, []);
   const fLab = Object.fromEntries(RULE_FIELDS);
   const oLab = Object.fromEntries(RULE_OPS);
   async function applyJournal() {
@@ -356,7 +375,7 @@ function RulesTab({ cats, dirs, t }: any) {
         </div>
       ))}
       {!rules.length && <div className="muted" style={{ fontSize: 12, padding: 8 }}>{t("Правил пока нет.", "Правил поки немає.")}</div>}
-      {edit !== undefined && <RuleEditor rule={edit} cats={cats} dirs={dirs} arts={arts} t={t} onClose={() => setEdit(undefined)} onSaved={load} />}
+      {edit !== undefined && <RuleEditor rule={edit} cats={cats} dirs={dirs} arts={arts} accsR={accsR} cps={cps} t={t} onClose={() => setEdit(undefined)} onSaved={load} />}
       {suggest && <SuggestModal t={t} onClose={() => setSuggest(false)} onCreated={load} />}
     </div>
   );
