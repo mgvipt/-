@@ -93,6 +93,7 @@ urlpatterns = [
     path("api/finance/cashflow/", fin_views.CashflowSeriesView.as_view()),
     path("api/finance/bank-rules/", fin_views.BankRuleViewSet.as_view({"get": "list", "post": "create"})),
     path("api/finance/bank-rules/<int:pk>/", fin_views.BankRuleViewSet.as_view({"patch": "partial_update", "delete": "destroy"})),
+    path("api/finance/bank-rules/apply-journal/", fin_views.BankRuleViewSet.as_view({"post": "apply_journal"})),
     path("api/finance/pnl/", fin_views.ProfitLossView.as_view()),
     path("api/finance/breakeven/", fin_views.BreakevenView.as_view()),
     path("api/finance/directions/", fin_views.DirectionsReportView.as_view()),

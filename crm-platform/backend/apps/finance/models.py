@@ -240,7 +240,7 @@ class BankRule(models.Model):
     синку Приват/Моно та імпорті виписок (перше правило за пріоритетом)."""
     FIELDS = [("osnd", "Призначення платежу"), ("counterparty", "Контрагент")]
     field = models.CharField(max_length=16, choices=FIELDS, default="osnd")
-    contains = models.CharField("Містить текст", max_length=160)
+    contains = models.CharField("Містить текст", max_length=160, blank=True, default="")
     direction = models.CharField(max_length=10, blank=True, default="", help_text="Порожньо = будь-який; in/out")
     set_category = models.ForeignKey(Category, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     set_fin_direction = models.ForeignKey("FinDirection", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
@@ -248,6 +248,12 @@ class BankRule(models.Model):
     set_counterparty = models.CharField(max_length=160, blank=True, default="")
     priority = models.IntegerField(default=100)
     active = models.BooleanField(default=True)
+    # ── v2 (як у ФінМап): імʼя, умови І/АБО, дії, лічильник ──
+    name = models.CharField(max_length=160, blank=True, default="")
+    logic = models.CharField(max_length=3, default="or", help_text="and | or — як поєднувати умови")
+    conditions = models.JSONField(default=list, blank=True, help_text="[{field: osnd|counterparty|account, op: contains|not_contains|equals, text}]")
+    actions = models.JSONField(default=dict, blank=True, help_text="{category, fin_direction, fin_article, counterparty, channel}")
+    hits = models.IntegerField(default=0, help_text="скільки разів правило спрацювало")
 
     class Meta:
         ordering = ["priority", "id"]

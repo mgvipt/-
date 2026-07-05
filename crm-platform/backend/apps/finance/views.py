@@ -329,9 +329,10 @@ class TransactionViewSet(viewsets.ModelViewSet):
             if p_to and dte.isoformat() > p_to:
                 continue
             if commit:
-                cat, fdir, fart, cp2 = apply_bank_rules(direction, osnd, cp)
+                _rr = apply_bank_rules(direction, osnd, cp, acc.name if acc else "")
+                cat, fdir, fart, cp2 = _rr["category"], _rr["fin_direction"], _rr["fin_article"], _rr["counterparty"]
                 Transaction.objects.create(direction=direction, amount=amt, amount_uah=amt,
-                                           account=acc, date=dte, counterparty=cp2,
+                                           account=acc, date=dte, counterparty=cp2, channel=_rr["channel"],
                                            category=cat, fin_direction=fdir, fin_article=fart,
                                            import_batch=st_batch,
                                            comment=("Виписка · " + osnd)[:255])
@@ -395,16 +396,52 @@ def _privat_cfg():
     return (st.config or {}) if st and st.is_active else {}
 
 
-def apply_bank_rules(direction, osnd, cp):
-    """Правила авторозноски: перше активне правило що збігається → (category, fin_direction, fin_article, counterparty)."""
-    from .models import BankRule
-    for r in BankRule.objects.filter(active=True).select_related("set_category", "set_fin_direction", "set_fin_article"):
-        if r.direction and r.direction != direction:
+def _rule_matches(r, direction, osnd, cp, acc_name):
+    """Умови правила: І/АБО по полях комментар/контрагент/рахунок."""
+    if r.direction and r.direction != direction:
+        return False
+    conds = [c for c in (r.conditions or []) if (c.get("text") or "").strip()]
+    if not conds:
+        return False
+    vals = {"osnd": (osnd or "").lower(), "counterparty": (cp or "").lower(), "account": (acc_name or "").lower()}
+    res = []
+    for c in conds:
+        hay = vals.get(c.get("field") or "osnd", "")
+        txt = (c.get("text") or "").strip().lower()
+        op = c.get("op") or "contains"
+        if op == "contains":
+            res.append(txt in hay)
+        elif op == "not_contains":
+            res.append(txt not in hay)
+        else:  # equals
+            res.append(hay.strip() == txt)
+    return all(res) if (r.logic or "or") == "and" else any(res)
+
+
+def apply_bank_rules(direction, osnd, cp, acc_name="", count_hit=True):
+    """Перше активне правило (за пріоритетом), що збіглося → dict дій.
+    Повертає {category, fin_direction, fin_article, counterparty, channel}."""
+    from .models import BankRule, FinDirection, FinModelArticle
+    from django.db.models import F as _F
+    out = {"category": None, "fin_direction": None, "fin_article": None, "counterparty": cp, "channel": ""}
+    for r in BankRule.objects.filter(active=True):
+        if not _rule_matches(r, direction, osnd, cp, acc_name):
             continue
-        hay = osnd if r.field == "osnd" else cp
-        if r.contains.lower() in (hay or "").lower():
-            return r.set_category, r.set_fin_direction, r.set_fin_article, (r.set_counterparty or cp)
-    return None, None, None, cp
+        a = r.actions or {}
+        if a.get("category"):
+            out["category"] = Category.objects.filter(id=a["category"]).first()
+        if a.get("fin_direction"):
+            out["fin_direction"] = FinDirection.objects.filter(id=a["fin_direction"]).first()
+        if a.get("fin_article"):
+            out["fin_article"] = FinModelArticle.objects.filter(id=a["fin_article"]).first()
+        if a.get("counterparty"):
+            out["counterparty"] = a["counterparty"]
+        if a.get("channel"):
+            out["channel"] = a["channel"]
+        if count_hit:
+            BankRule.objects.filter(id=r.id).update(hits=_F("hits") + 1)
+        return out
+    return out
 
 
 def _fee_category():
@@ -538,11 +575,12 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                     skipped += 1
                     continue
             direction = "transfer"
-        cat, fdir, fart, cp2 = apply_bank_rules(direction, osnd, cp)
+        _rr = apply_bank_rules(direction, osnd, cp, account.name if account else "")
         Transaction.objects.create(
             direction=direction, amount=amt, amount_uah=amt, account=account,
             transfer_account=transfer_dest if direction == "transfer" else None,
-            date=dte, op_time=op_t, counterparty=cp2, category=cat, fin_direction=fdir, fin_article=fart,
+            date=dte, op_time=op_t, counterparty=_rr["counterparty"], channel=_rr["channel"],
+            category=_rr["category"], fin_direction=_rr["fin_direction"], fin_article=_rr["fin_article"],
             import_batch=batch, comment=(reftag + " · " + osnd)[:255])
         created += 1
     # зберегти мапу IBAN→рахунок (нові рахунки, авто-матчі)
@@ -601,10 +639,11 @@ def mono_pull(d_from, d_to, mono_account=None):
         osnd = (it.get("description") or "")[:180]
         _mdt = _dtm.fromtimestamp(it.get("time") or 0)
         dte = _mdt.date()
-        cat, fdir, fart, cp2 = apply_bank_rules(direction, osnd, osnd)
+        _rr = apply_bank_rules(direction, osnd, osnd, account.name if account else "")
         Transaction.objects.create(
             direction=direction, amount=abs(amt), amount_uah=abs(amt), account=account,
-            date=dte, op_time=_mdt.time(), counterparty=cp2[:160], category=cat, fin_direction=fdir, fin_article=fart,
+            date=dte, op_time=_mdt.time(), counterparty=(_rr["counterparty"] or "")[:160], channel=_rr["channel"],
+            category=_rr["category"], fin_direction=_rr["fin_direction"], fin_article=_rr["fin_article"],
             import_batch=batch, comment=(tag + " · " + osnd)[:255])
         created += 1
     return created, skipped, None, batch
@@ -650,15 +689,44 @@ class BankRuleViewSet(viewsets.ModelViewSet):
         from .models import BankRule as _BR2
 
         class S(_sz.ModelSerializer):
-            category_name = _sz.CharField(source="set_category.name", read_only=True, default=None)
-            direction_name = _sz.CharField(source="set_fin_direction.name", read_only=True, default=None)
-
             class Meta:
                 model = _BR2
-                fields = ["id", "field", "contains", "direction", "set_category", "category_name",
-                          "set_fin_direction", "direction_name", "set_fin_article",
-                          "set_counterparty", "priority", "active"]
+                fields = ["id", "name", "direction", "logic", "conditions", "actions",
+                          "priority", "active", "hits"]
         return S
+
+    @action(detail=False, methods=["post"], url_path="apply-journal")
+    def apply_journal(self, request):
+        """Прогнати правила по журналу: заповнити ПОРОЖНІ поля (нічого не перезаписуємо).
+        body: {dry: 1|0, from?: date, to?: date}"""
+        dry = str(request.data.get("dry") or "") in ("1", "true", "True")
+        qs = Transaction.objects.all().select_related("account")
+        if request.data.get("from"):
+            qs = qs.filter(date__gte=request.data["from"])
+        if request.data.get("to"):
+            qs = qs.filter(date__lte=request.data["to"])
+        changed = 0
+        for tx in qs.iterator(chunk_size=1000):
+            rr = apply_bank_rules(tx.direction, tx.comment or "", tx.counterparty or "",
+                                  tx.account.name if tx.account_id else "", count_hit=False)
+            upd = {}
+            if rr["category"] and not tx.category_id and tx.direction != "transfer":
+                upd["category"] = rr["category"]
+            if rr["fin_direction"] and not tx.fin_direction_id:
+                upd["fin_direction"] = rr["fin_direction"]
+            if rr["fin_article"] and not tx.fin_article_id:
+                upd["fin_article"] = rr["fin_article"]
+            if rr["counterparty"] and rr["counterparty"] != (tx.counterparty or "") and not (tx.counterparty or "").strip():
+                upd["counterparty"] = rr["counterparty"]
+            if rr["channel"] and not (tx.channel or "").strip():
+                upd["channel"] = rr["channel"]
+            if upd:
+                changed += 1
+                if not dry:
+                    for k, v in upd.items():
+                        setattr(tx, k, v)
+                    tx.save(update_fields=list(upd.keys()))
+        return Response({"ok": True, "changed": changed, "dry": dry})
 
 
 class FinanceDashboardView(APIView):

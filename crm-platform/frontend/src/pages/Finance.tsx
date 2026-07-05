@@ -121,6 +121,170 @@ function CpField({ value, onChange }: { value: string; onChange: (v: string) => 
   );
 }
 
+const RULE_FIELDS: [string, string][] = [["osnd", "Коментар / призначення"], ["counterparty", "Контрагент"], ["account", "Рахунок"]];
+const RULE_OPS: [string, string][] = [["contains", "містить"], ["not_contains", "не містить"], ["equals", "дорівнює"]];
+const RULE_ACTS: [string, string][] = [["category", "Категорію"], ["fin_direction", "Проект (напрямок)"], ["fin_article", "Фонд"], ["counterparty", "Контрагента"], ["channel", "Канал"]];
+
+function RuleEditor({ rule, cats, dirs, arts, onClose, onSaved, t }: any) {
+  const [r, setR] = useState<any>(() => ({
+    name: rule?.name || "",
+    direction: rule?.direction || "",
+    logic: rule?.logic || "or",
+    active: rule ? rule.active !== false : true,
+    conditions: (rule?.conditions && rule.conditions.length ? rule.conditions : [{ field: "osnd", op: "contains", text: "" }]).map((c: any) => ({ ...c })),
+    acts: rule?.actions ? Object.entries(rule.actions).map(([k, v]) => ({ type: k, value: String(v) })) : [{ type: "category", value: "" }],
+  }));
+  const [busy, setBusy] = useState(false);
+  const inp: any = { height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 9px", fontSize: 13, background: "#fff" };
+  const setCond = (i: number, patch: any) => setR((x: any) => ({ ...x, conditions: x.conditions.map((c: any, j: number) => j === i ? { ...c, ...patch } : c) }));
+  const setAct = (i: number, patch: any) => setR((x: any) => ({ ...x, acts: x.acts.map((a: any, j: number) => j === i ? { ...a, ...patch } : a) }));
+  async function save() {
+    const conditions = r.conditions.filter((c: any) => (c.text || "").trim());
+    if (!conditions.length) { alert(t("Добавь хотя бы одно условие с текстом", "Додай хоча б одну умову з текстом")); return; }
+    const actions: any = {};
+    r.acts.forEach((a: any) => {
+      if (!a.type || a.value === "" || a.value == null) return;
+      actions[a.type] = ["category", "fin_direction", "fin_article"].includes(a.type) ? Number(a.value) : a.value;
+    });
+    if (!Object.keys(actions).length) { alert(t("Добавь хотя бы одно действие", "Додай хоча б одну дію")); return; }
+    setBusy(true);
+    const body = { name: r.name || conditions.map((c: any) => c.text).join(" / "), direction: r.direction, logic: r.logic, active: r.active, conditions, actions };
+    try {
+      if (rule?.id) await api.patch(`/api/finance/bank-rules/${rule.id}/`, body);
+      else await api.post("/api/finance/bank-rules/", body);
+      onSaved(); onClose();
+    } catch (e: any) { alert(e?.response?.data?.detail || "Помилка збереження"); }
+    setBusy(false);
+  }
+  const valueCtrl = (a: any, i: number) => {
+    if (a.type === "category") return (
+      <select value={a.value} onChange={(e) => setAct(i, { value: e.target.value })} style={{ ...inp, flex: 1 }}>
+        <option value="">{t("— выбери категорию —", "— обери категорію —")}</option>
+        {cats.filter((c: any) => !r.direction || c.direction === r.direction || r.direction === "transfer").map((c: any) => <option key={c.id} value={c.id}>{c.direction === "in" ? "▲ " : "▼ "}{c.name}</option>)}
+      </select>);
+    if (a.type === "fin_direction") return (
+      <select value={a.value} onChange={(e) => setAct(i, { value: e.target.value })} style={{ ...inp, flex: 1 }}>
+        <option value="">{t("— выбери проект —", "— обери проект —")}</option>
+        {dirs.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+      </select>);
+    if (a.type === "fin_article") return (
+      <select value={a.value} onChange={(e) => setAct(i, { value: e.target.value })} style={{ ...inp, flex: 1 }}>
+        <option value="">{t("— выбери фонд —", "— обери фонд —")}</option>
+        {arts.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+      </select>);
+    return <input value={a.value} onChange={(e) => setAct(i, { value: e.target.value })} placeholder={a.type === "channel" ? "instagram / tiktok / offline…" : t("Имя контрагента", "Імʼя контрагента")} style={{ ...inp, flex: 1 }} />;
+  };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 80 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 22, width: "min(760px,96vw)", maxHeight: "92vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+          <h3 style={{ margin: 0, flex: 1 }}>{rule?.id ? t("Редактирование правила", "Редагування правила") : t("Новое правило", "Нове правило")}</h3>
+          <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, cursor: "pointer" }}>
+            <span className={"toggle" + (r.active ? " on" : "")} onClick={() => setR({ ...r, active: !r.active })} />
+            {r.active ? t("Включено", "Увімкнено") : t("Выключено", "Вимкнено")}
+          </label>
+        </div>
+        <input value={r.name} onChange={(e) => setR({ ...r, name: e.target.value })} placeholder={t("Название правила", "Назва правила")} style={{ ...inp, width: "100%", height: 38, marginBottom: 12, fontWeight: 600 }} />
+        <div style={{ display: "flex", gap: 6, marginBottom: 14, alignItems: "center" }}>
+          <span className="muted" style={{ fontSize: 12 }}>{t("Применять для:", "Застосовувати для:")}</span>
+          {[["", t("Любой", "Будь-який")], ["in", t("Доход", "Дохід")], ["out", t("Расход", "Витрата")], ["transfer", t("Перевод", "Переказ")]].map(([k, l]) => (
+            <button key={k} onClick={() => setR({ ...r, direction: k })} className={"btn" + (r.direction === k ? " btn-primary" : " btn-light")} style={{ height: 28, fontSize: 12 }}>{l}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0 8px" }}>
+          <b style={{ fontSize: 13 }}>{t("Условие", "Умова")}</b>
+          <div style={{ display: "inline-flex", borderRadius: 8, overflow: "hidden", border: "1px solid #e2e8f0" }}>
+            {[["and", "І"], ["or", "АБО"]].map(([k, l]) => (
+              <button key={k} onClick={() => setR({ ...r, logic: k })} style={{ padding: "4px 14px", fontSize: 11.5, fontWeight: 700, border: "none", cursor: "pointer", background: r.logic === k ? "#0f172a" : "#f8fafc", color: r.logic === k ? "#fff" : "#64748b" }}>{l}</button>
+            ))}
+          </div>
+          <span className="muted" style={{ fontSize: 11 }}>{r.logic === "and" ? t("должны совпасть ВСЕ строки", "мають збігтися ВСІ рядки") : t("достаточно ЛЮБОЙ строки", "досить БУДЬ-ЯКОГО рядка")}</span>
+        </div>
+        {r.conditions.map((c: any, i: number) => (
+          <div key={i} style={{ display: "flex", gap: 7, marginBottom: 7, alignItems: "center" }}>
+            <select value={c.field} onChange={(e) => setCond(i, { field: e.target.value })} style={{ ...inp, width: 190 }}>
+              {RULE_FIELDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+            <select value={c.op} onChange={(e) => setCond(i, { op: e.target.value })} style={{ ...inp, width: 130 }}>
+              {RULE_OPS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+            <input value={c.text} onChange={(e) => setCond(i, { text: e.target.value })} placeholder={t("Текст", "Текст")} style={{ ...inp, flex: 1 }} />
+            <button onClick={() => setR((x: any) => ({ ...x, conditions: x.conditions.filter((_: any, j: number) => j !== i) }))} style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 15 }}>🗑</button>
+          </div>
+        ))}
+        <button className="btn btn-light" style={{ width: "100%", marginBottom: 16, borderStyle: "dashed" }} onClick={() => setR((x: any) => ({ ...x, conditions: [...x.conditions, { field: "osnd", op: "contains", text: "" }] }))}>＋ {t("Добавить ещё одно условие", "Додати ще одну умову")}</button>
+        <b style={{ fontSize: 13, display: "block", marginBottom: 8 }}>{t("Что проставить, когда условие сработало", "Що проставити, коли умова спрацювала")}</b>
+        {r.acts.map((a: any, i: number) => (
+          <div key={i} style={{ display: "flex", gap: 7, marginBottom: 7, alignItems: "center" }}>
+            <select value={a.type} onChange={(e) => setAct(i, { type: e.target.value, value: "" })} style={{ ...inp, width: 190 }}>
+              {RULE_ACTS.filter(([k]) => k === a.type || !r.acts.some((x: any) => x.type === k)).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+            {valueCtrl(a, i)}
+            <button onClick={() => setR((x: any) => ({ ...x, acts: x.acts.filter((_: any, j: number) => j !== i) }))} style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 15 }}>🗑</button>
+          </div>
+        ))}
+        {r.acts.length < RULE_ACTS.length && <button className="btn btn-light" style={{ width: "100%", marginBottom: 16, borderStyle: "dashed" }} onClick={() => { const used = r.acts.map((a: any) => a.type); const next = RULE_ACTS.find(([k]) => !used.includes(k)); if (next) setR((x: any) => ({ ...x, acts: [...x.acts, { type: next[0], value: "" }] })); }}>＋ {t("Добавить ещё одно действие", "Додати ще одну дію")}</button>}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-primary" disabled={busy} style={{ flex: 1 }} onClick={save}>{busy ? "…" : t("Сохранить", "Зберегти")}</button>
+          <button className="btn btn-light" style={{ flex: 1 }} onClick={onClose}>{t("Отмена", "Скасувати")}</button>
+          {rule?.id && <button className="btn btn-light" style={{ color: "#dc2626" }} onClick={async () => { if (confirm(t("Удалить правило?", "Видалити правило?"))) { await api.del(`/api/finance/bank-rules/${rule.id}/`); onSaved(); onClose(); } }}>{t("Удалить", "Видалити")}</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RulesTab({ cats, dirs, t }: any) {
+  const [rules, setRules] = useState<any[]>([]);
+  const [arts, setArts] = useState<any[]>([]);
+  const [edit, setEdit] = useState<any>(undefined); // undefined = закрыто, null = новое, obj = правка
+  const [busyAJ, setBusyAJ] = useState(false);
+  const load = () => api.get<any>("/api/finance/bank-rules/").then((d) => setRules(d.results || d)).catch(() => {});
+  useEffect(() => { load(); api.get<any>("/api/finmodel-articles/?page_size=300").then((d) => setArts(d.results || d)).catch(() => {}); }, []);
+  const fLab = Object.fromEntries(RULE_FIELDS);
+  const oLab = Object.fromEntries(RULE_OPS);
+  async function applyJournal() {
+    setBusyAJ(true);
+    try {
+      const prev: any = await api.post("/api/finance/bank-rules/apply-journal/", { dry: 1 });
+      if (prev.changed === 0) { alert(t("Правилам нечего заполнить — все поля уже проставлены.", "Правилам нема чого заповнити — всі поля вже проставлені.")); setBusyAJ(false); return; }
+      if (!confirm(t(`Правила заполнят ПУСТЫЕ поля у ${prev.changed} операций журнала (ничего не перезаписывается). Продолжить?`, `Правила заповнять ПОРОЖНІ поля у ${prev.changed} операцій журналу (нічого не перезаписується). Продовжити?`))) { setBusyAJ(false); return; }
+      const r: any = await api.post("/api/finance/bank-rules/apply-journal/", { dry: 0 });
+      alert(t(`Готово: обновлено ${r.changed} операций.`, `Готово: оновлено ${r.changed} операцій.`));
+      load();
+    } catch (e: any) { alert(e?.response?.data?.detail || "Помилка"); }
+    setBusyAJ(false);
+  }
+  return (
+    <div className="panel" style={{ margin: 0 }}>
+      <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+        {t("Автоправила: условие по комментарию/контрагенту/счёту → категория, проект, фонд, контрагент, канал. Срабатывают при синке банков, заливке периода и импорте выписок. Первое совпавшее правило — по порядку списка.",
+           "Автоправила: умова по коментарю/контрагенту/рахунку → категорія, проект, фонд, контрагент, канал. Спрацьовують при синку банків, заливці періоду та імпорті виписок. Перше правило, що збіглося — за порядком списку.")}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <button className="btn btn-primary" onClick={() => setEdit(null)}>➕ {t("Добавить правило", "Додати правило")}</button>
+        <button className="btn btn-light" disabled={busyAJ} onClick={applyJournal}>{busyAJ ? "…" : "⚡ " + t("Прогнать по журналу", "Прогнати по журналу")}</button>
+      </div>
+      {rules.map((r: any) => (
+        <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderTop: "1px solid #f1f5f9", opacity: r.active ? 1 : 0.55 }}>
+          <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => setEdit(r)}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name || "(без назви)"}</div>
+            <div className="muted" style={{ fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {(r.direction === "in" ? "▲ дохід · " : r.direction === "out" ? "▼ витрата · " : r.direction === "transfer" ? "⇄ переказ · " : "")}
+              {(r.conditions || []).map((c: any) => `${fLab[c.field] || c.field} ${oLab[c.op] || c.op} «${c.text}»`).join(r.logic === "and" ? " І " : " АБО ")}
+            </div>
+          </div>
+          {r.hits > 0 && <span title={t("Сколько раз сработало", "Скільки разів спрацювало")} style={{ fontSize: 10.5, fontWeight: 700, color: "#2563eb", background: "#eff6ff", borderRadius: 7, padding: "2px 8px", flexShrink: 0 }}>⚡ {r.hits}</span>}
+          <span className={"toggle" + (r.active ? " on" : "")} onClick={async () => { await api.patch(`/api/finance/bank-rules/${r.id}/`, { active: !r.active }); load(); }} style={{ flexShrink: 0 }} />
+          <button onClick={() => setEdit(r)} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 14, flexShrink: 0 }}>✏️</button>
+        </div>
+      ))}
+      {!rules.length && <div className="muted" style={{ fontSize: 12, padding: 8 }}>{t("Правил пока нет.", "Правил поки немає.")}</div>}
+      {edit !== undefined && <RuleEditor rule={edit} cats={cats} dirs={dirs} arts={arts} t={t} onClose={() => setEdit(undefined)} onSaved={load} />}
+    </div>
+  );
+}
+
 function BankHubModal({ onClose }: { onClose: () => void }) {
   /* Налаштування інтеграцій: банки по API (Приват/Моно), правила розноски, історія завантажень (відкат), рахунки. */
   const { t } = useLang();
@@ -301,36 +465,7 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
           </>
         )}
 
-        {tab === "rules" && (
-          <div className="panel" style={{ margin: 0 }}>
-            <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>{t("Если поле операции содержит текст — автоматически проставляется категория / направление / контрагент. Работает при синке банков и импорте выписок.","Якщо поле операції містить текст — автоматично проставляється категорія / напрямок / контрагент. Працює при синку банків та імпорті виписок.")}</div>
-            <table style={{ width: "100%", fontSize: 13 }}>
-              <thead><tr className="muted" style={{ fontSize: 11, textAlign: "left" }}><th>{t("Поле","Поле")}</th><th>{t("Содержит","Містить")}</th><th>{t("Тип","Тип")}</th><th>{t("Категория","Категорія")}</th><th>{t("Направление","Напрямок")}</th><th>{t("Контрагент","Контрагент")}</th><th></th></tr></thead>
-              <tbody>
-                {rules.map((r: any) => (
-                  <tr key={r.id} style={{ borderTop: "1px solid #f1f5f9" }}>
-                    <td>{r.field === "osnd" ? t("Назначение","Призначення") : t("Контрагент","Контрагент")}</td>
-                    <td><b>{r.contains}</b></td>
-                    <td>{r.direction || t("любой","будь-який")}</td>
-                    <td>{r.category_name || "—"}</td>
-                    <td>{r.direction_name || "—"}</td>
-                    <td>{r.set_counterparty || "—"}</td>
-                    <td><button onClick={async () => { await api.del(`/api/finance/bank-rules/${r.id}/`); loadAll(); }} style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer" }}>✕</button></td>
-                  </tr>
-                ))}
-                <tr style={{ borderTop: "2px solid #e2e8f0" }}>
-                  <td><select value={newRule.field} onChange={(e) => setNewRule({ ...newRule, field: e.target.value })} style={inp}><option value="osnd">{t("Назначение","Призначення")}</option><option value="counterparty">{t("Контрагент","Контрагент")}</option></select></td>
-                  <td><input value={newRule.contains} onChange={(e) => setNewRule({ ...newRule, contains: e.target.value })} placeholder={t("текст…","текст…")} style={{ ...inp, width: 120 }} /></td>
-                  <td><select value={newRule.direction} onChange={(e) => setNewRule({ ...newRule, direction: e.target.value })} style={inp}><option value="">{t("любой","будь-який")}</option><option value="in">{t("Доход","Дохід")}</option><option value="out">{t("Расход","Витрата")}</option></select></td>
-                  <td><select value={newRule.set_category} onChange={(e) => setNewRule({ ...newRule, set_category: e.target.value })} style={{ ...inp, maxWidth: 150 }}><option value="">—</option>{cats.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></td>
-                  <td><select value={newRule.set_fin_direction} onChange={(e) => setNewRule({ ...newRule, set_fin_direction: e.target.value })} style={{ ...inp, maxWidth: 130 }}><option value="">—</option>{dirs.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></td>
-                  <td><input value={newRule.set_counterparty} onChange={(e) => setNewRule({ ...newRule, set_counterparty: e.target.value })} placeholder="—" style={{ ...inp, width: 100 }} /></td>
-                  <td><button className="btn btn-primary" style={{ padding: "3px 10px" }} onClick={addRule}>＋</button></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
+        {tab === "rules" && <RulesTab cats={cats} dirs={dirs} t={t} />}
 
         {tab === "hist" && (
           <div className="panel" style={{ margin: 0 }}>
