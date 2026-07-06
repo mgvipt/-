@@ -574,6 +574,22 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                         twin.save(update_fields=["transfer_account"])
                     skipped += 1
                     continue
+                # друга сторона ще НЕ в журналі: зарахування = переказ НА цей рахунок.
+                # Джерело невідоме поки не прийде /D — тимчасово транзит (при /D зіллється)
+                _transit, _ = Account.objects.get_or_create(
+                    name="Транзит · поповнення карток (нез'ясовано)", defaults={"kind": "bank", "is_active": False})
+                Transaction.objects.create(
+                    direction="transfer", amount=amt, amount_uah=amt, account=_transit, transfer_account=account,
+                    date=dte, op_time=op_t, counterparty=cp, import_batch=batch,
+                    comment=(reftag + " · " + osnd)[:255])
+                created += 1
+                continue
+            # списання (/D): якщо C-сторона вже створена (через транзит) — зливаємо в ОДИН переказ
+            twin_c = Transaction.objects.filter(comment__startswith="PB#%s/C" % ref, direction="transfer").first()
+            if twin_c:
+                dest_acc = twin_c.transfer_account
+                twin_c.delete()
+                transfer_dest = transfer_dest or dest_acc
             direction = "transfer"
         _rr = apply_bank_rules(direction, osnd, cp, account.name if account else "")
         Transaction.objects.create(
