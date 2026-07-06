@@ -802,7 +802,7 @@ function Journal() {
           <button className="btn btn-light" disabled={page >= totalPages} onClick={() => goPage(page + 1)}>→</button>
         </div>
       </div>
-      <div className="panel" style={{ margin: 0, padding: 0, overflowX: "auto" }}>
+      <div className="panel" style={{ margin: 0, padding: 0, overflow: "auto", maxHeight: "calc(100vh - 230px)" }}>
         <table style={{ width: "100%", fontSize: 13 }}>
           <thead><tr>
             <th style={{ padding: "8px 12px", ...{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" } }}>{t("Дата","Дата")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Сумма","Сума")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Вал.","Вал.")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>₴</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Категория","Категорія")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Контрагент","Контрагент")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Счёт","Рахунок")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Сделка","Сделка")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Фонд","Фонд")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Направление","Напрямок")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Канал","Канал")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Комментарий","Коментар")}</th>
@@ -822,7 +822,7 @@ function Journal() {
                 <td>{r.fin_article_name || <span className="muted">—</span>}</td>
                 <td>{r.fin_direction_name || <span className="muted">—</span>}</td>
                 <td className="muted">{(CHANNELS.find((c) => c[0] === r.channel) || ["", "—"])[1]}</td>
-                <td className="muted" style={{ maxWidth: 260, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 11.5, lineHeight: 1.35 }}>{r.comment}</td>
+                <td className="muted" title={r.comment} style={{ maxWidth: 260, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 11.5, lineHeight: 1.35 }}>{(r.comment || "").replace(/^[A-ZА-ЯІЇЄ#]+#\S+\s*·\s*/u, "")}</td>
               </tr>
             ))}
           </tbody>
@@ -1518,7 +1518,7 @@ function DirectionJournal({ directionId, from, to }: { directionId: number; from
                 <td style={{ textAlign: "right", fontWeight: 600, color: r.direction === "in" ? "#16a34a" : "#dc2626" }}>{r.direction === "in" ? "+" : "−"}{Number(r.amount).toLocaleString("ru")} ₴</td>
                 <td>{r.fin_article_name || <span className="muted">—</span>}</td>
                 <td className="muted" style={{ textAlign: "center" }}>{(CHANNELS.find((c) => c[0] === r.channel) || ["", "—"])[1]}</td>
-                <td className="muted" style={{ maxWidth: 260, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 11.5, lineHeight: 1.35 }}>{r.comment}</td>
+                <td className="muted" title={r.comment} style={{ maxWidth: 260, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 11.5, lineHeight: 1.35 }}>{(r.comment || "").replace(/^[A-ZА-ЯІЇЄ#]+#\S+\s*·\s*/u, "")}</td>
               </tr>
             ))}
           </tbody>
