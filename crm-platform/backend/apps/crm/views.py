@@ -1050,7 +1050,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 except Exception:
                     pass
         _advance_deal_stage(deal, 2, "надіслано посилання на оплату")  # Домовились про оплату
-        log_activity("deal", deal.id, "Посилання на оплату", "%s · %s грн · %s" % (kind, amount, "надіслано клієнту" if sent else "НЕ надіслано (немає відкритого чату)"), request.user, "Менеджер")
+        # посилання фіксується в історії — можна скопіювати і переслати вручну (ФБ тощо), навіть якщо чату нема
+        log_activity("deal", deal.id, "Посилання на оплату", "%s · %s грн · %s · %s" % (kind, amount, "надіслано клієнту" if sent else "НЕ надіслано (немає відкритого чату)", url), request.user, "Менеджер")
         return Response({"ok": True, "sent": sent, "url": url, "text": text})
 
     @action(detail=True, methods=["post"])

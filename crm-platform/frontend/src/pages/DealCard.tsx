@@ -328,7 +328,8 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         const r = await api.post<any>(`/api/deals/${id}/send_pay_link/`, { kind: payType, amount: payAmount || deal?.amount });
         const d = await api.get<Deal>(`/api/deals/${id}/`); setDeal(d);
         setPayOpen(false); setPayAmount("");
-        flash(r.sent ? t("✓ Ссылка создана и отправлена клиенту в чат","✓ Посилання створено й надіслано клієнту в чат") : t("⚠ Ссылка создана, но нет открытого чата с клиентом","⚠ Посилання створено, але немає відкритого чату з клієнтом"));
+        try { await navigator.clipboard.writeText(r.url); } catch (er) { /* noop */ }
+        flash((r.sent ? t("✓ Отправлено в чат. Ссылка скопирована в буфер: ","✓ Надіслано в чат. Посилання скопійовано в буфер: ") : t("⚠ Чата нет. Ссылка СКОПИРОВАНА в буфер — вставь клиенту вручную: ","⚠ Чату немає. Посилання СКОПІЙОВАНО в буфер — встав клієнту вручну: ")) + r.url);
       } else {
         try {
           setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType }));
