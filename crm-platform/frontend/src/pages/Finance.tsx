@@ -1374,21 +1374,18 @@ function PnL() {
 
 /* ─── ВКЛАДКА: ТОЧКА БЕЗУБЫТОЧНОСТИ ────────────────────────────────────── */
 function Breakeven() {
-  const [from, setFrom] = useState(monthStart());
-  const [to, setTo] = useState(today());
   const [d, setD] = useState<any>(null);
   const { t: tr } = useLang();
-  const load = (f: string, t: string) => { setFrom(f); setTo(t); api.get<any>(`/api/finance/breakeven/?from=${f}&to=${t}`).then(setD); };
-  useEffect(() => { load(from, to); }, []);
+  useEffect(() => { api.get<any>(`/api/finance/breakeven/`).then(setD); }, []);
   if (!d) return <div className="spin">{tr("Загрузка…","Завантаження…")}</div>;
   const prog = Math.min(100, d.progress);
   const cards: [string, string][] = [
-    [tr("Сумма фондов выручки","Сума фондів виручки"), d.rev_funds_pct + " %"], [tr("Маржа с каждой ₴","Маржа з кожної ₴"), d.margin_pct + " %"],
-    [tr("Точка безубыточности","Точка беззбитковості"), money(d.breakeven)], [tr("Выручка (факт)","Виручка (факт)"), money(d.revenue)], [tr("Расходы / мес","Витрати / міс"), money(d.monthly_costs)],
+    [tr("Сумма фондов выручки (финмодель)","Сума фондів виручки (фінмодель)"), d.rev_funds_pct + " %"], [tr("Маржа с каждой ₴","Маржа з кожної ₴"), d.margin_pct + " %"],
+    [tr("ТБ на месяц (по финмодели)","ТБ на місяць (за фінмоделлю)"), money(d.breakeven)], [tr("Выручка этого месяца (факт)","Виручка цього місяця (факт)"), money(d.revenue)], [tr("Затраты / мес (финмодель)","Витрати / міс (фінмодель)"), money(d.monthly_costs)],
   ];
   return (
     <>
-      <Period from={from} to={to} set={load} />
+      <div className="note" style={{ marginBottom: 10 }}>🎯 {tr("Точка безубыточности считается ОТ ФИНМОДЕЛИ (нормативы затрат и маржи), снизу вверх. Прогресс — факт текущего месяца.","Точка беззбитковості рахується ВІД ФІНМОДЕЛІ (нормативи затрат і маржі), знизу вгору. Прогрес — факт поточного місяця.")}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 12, marginBottom: 14 }}>
         {cards.map(([t, v]) => <div key={t} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{t}</div><div style={{ fontSize: 20, fontWeight: 700 }}>{v}</div></div>)}
       </div>

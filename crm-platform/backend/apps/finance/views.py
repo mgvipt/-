@@ -1115,11 +1115,15 @@ class ProfitLossView(APIView):
 
 
 class BreakevenView(APIView):
-    """Точка безубыточности + прогресс + форекаст за период."""
+    """Точка беззбитковості: рахується ВІД ФІНМОДЕЛІ (нормативи затрат і маржі),
+    факт поточного місяця — лише для прогресу. Період не обирається."""
     permission_classes = [FinancePerm]
 
     def get(self, request):
-        d_from, d_to = _period(request)
+        import calendar
+        today = date.today()
+        d_from = today.replace(day=1)
+        d_to = today.replace(day=calendar.monthrange(today.year, today.month)[1])
         return Response({"from": d_from.isoformat(), "to": d_to.isoformat(), **compute_breakeven(d_from, d_to)})
 
 
