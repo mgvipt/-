@@ -637,6 +637,24 @@ function Journal() {
   const [f, setF] = useState<any>(blank);
   const [ff, setFf] = useState(""); const [ft, setFt] = useState(""); const [fq, setFq] = useState("");
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50); const [count, setCount] = useState(0);
+  // ширини колонок журналу (тягнеться за праву грань заголовка, зберігається)
+  const JCOL_DEF = [95, 95, 50, 90, 190, 190, 150, 140, 130, 140, 95, 300];
+  const [colW, setColW] = useState<number[]>(() => {
+    try { const v = JSON.parse(localStorage.getItem("fin_journal_cols") || "null"); if (Array.isArray(v) && v.length === 12) return v; } catch (e) { /* noop */ }
+    return JCOL_DEF;
+  });
+  const startColResize = (i: number) => (e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX; const w0 = colW[i];
+    function mv(ev: MouseEvent) {
+      setColW((prev) => { const nx = prev.slice(); nx[i] = Math.max(50, w0 + (ev.clientX - startX)); return nx; });
+    }
+    function up() {
+      window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up);
+      setColW((prev) => { try { localStorage.setItem("fin_journal_cols", JSON.stringify(prev)); } catch (er) { /* noop */ } return prev; });
+    }
+    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+  };
   const [showCols, setShowCols] = useState(false);
   const emptyCf = { direction: "", amount_min: "", amount_max: "", currency: "", cat: "", cp: "", account: "", fin_article: "", fin_direction: "", channel: "", comment: "" };
   const [cf, setCf] = useState<any>(emptyCf);
@@ -803,9 +821,16 @@ function Journal() {
         </div>
       </div>
       <div className="panel" style={{ margin: 0, padding: 0, overflow: "auto", maxHeight: "calc(100vh - 230px)" }}>
-        <table style={{ width: "100%", fontSize: 13 }}>
+        <table style={{ width: "100%", fontSize: 13, tableLayout: "fixed" }}>
+          <colgroup>{colW.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
           <thead><tr>
-            <th style={{ padding: "8px 12px", ...{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" } }}>{t("Дата","Дата")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Сумма","Сума")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Вал.","Вал.")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>₴</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Категория","Категорія")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Контрагент","Контрагент")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Счёт","Рахунок")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Сделка","Сделка")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Фонд","Фонд")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Направление","Напрямок")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Канал","Канал")}</th><th style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0" }}>{t("Комментарий","Коментар")}</th>
+            {[t("Дата","Дата"), t("Сумма","Сума"), t("Вал.","Вал."), "₴", t("Категория","Категорія"), t("Контрагент","Контрагент"), t("Счёт","Рахунок"), t("Сделка","Сделка"), t("Фонд","Фонд"), t("Направление","Напрямок"), t("Канал","Канал"), t("Комментарий","Коментар")].map((label, i) => (
+              <th key={i} style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0", padding: "8px 10px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {label}
+                <span onMouseDown={startColResize(i)} title={t("Тяни — ширина колонки", "Тягни — ширина колонки")}
+                  style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 7, cursor: "col-resize", borderRight: "2px solid #e2e8f0" }} />
+              </th>
+            ))}
           </tr></thead>
           <tbody>
             {tx.length === 0 && <tr><td colSpan={12} className="muted" style={{ padding: 14 }}>{t("Операций ещё нет. Добавь вручную или они появятся при оплате сделок.","Операцій ще немає. Додай вручну або вони зʼявляться при оплаті сделок.")}</td></tr>}
