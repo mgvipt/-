@@ -126,7 +126,7 @@ export default function Inbox() {
     if (!active) return;
     const t = setInterval(async () => {
       try {
-        const m = await api.get<ChatMessage[]>(`/api/conversations/${active.id}/messages/`);
+        const m = await api.get<ChatMessage[]>(`/api/conversations/${active.id}/messages/?seen=1`);
         setMsgs((prev) => (m.length !== prev.length ? m : prev));
       } catch { /* ignore */ }
     }, 6000);
@@ -174,7 +174,7 @@ export default function Inbox() {
 
   async function openConv(c: Conversation) {
     setActive(c); setErr(""); setAi(null);
-    const m = await api.get<ChatMessage[]>(`/api/conversations/${c.id}/messages/`);
+    const m = await api.get<ChatMessage[]>(`/api/conversations/${c.id}/messages/?seen=1`);
     setMsgs(m);
     setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, unread: 0 } : x)));
   }

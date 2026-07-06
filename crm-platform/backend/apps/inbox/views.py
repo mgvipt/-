@@ -411,8 +411,11 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                         _cache.set(_ck, 1, timeout=30)
                 except Exception:
                     pass
-        conv.unread = 0
-        conv.save(update_fields=["unread"])
+        # лічильник скидається ЛИШЕ коли менеджер свідомо дивиться чат (?seen=1);
+        # фонові поллінги (склад, автоматика) його не чіпають
+        if request.query_params.get("seen") and conv.unread:
+            conv.unread = 0
+            conv.save(update_fields=["unread"])
         return Response(MessageSerializer(conv.messages.all(), many=True).data)
 
     @action(detail=True, methods=["post"])

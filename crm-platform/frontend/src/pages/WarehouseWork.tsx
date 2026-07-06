@@ -352,7 +352,7 @@ function TaskCard({ t, jobId, onBack }: any) {
             <div className="fade" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div style={{ padding: "9px 12px", fontWeight: 700, borderBottom: "1px solid #eef2f7", fontSize: 14, flexShrink: 0 }}>💬 {t("Чат с клиентом", "Чат з клієнтом")}: {j.client}</div>
               <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
-                <ClientChat contact={deal.contact_id} />
+                <ClientChat contact={deal.contact_id} markSeen={false} />
               </div>
             </div>
           )}

@@ -10,7 +10,7 @@ import { dayLabel, timeLabel, isNewDay, linkify, metaWindow } from "./chatUtils"
 
 const tt = (_r: string, ua: string) => ua;  // ClientChat україномовний
 
-export default function ClientChat({ contact }: { contact?: number | null }) {
+export default function ClientChat({ contact, markSeen = true }: { contact?: number | null; markSeen?: boolean }) {
   const [conv, setConv] = useState<Conversation | null>(null);
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
@@ -35,7 +35,7 @@ export default function ClientChat({ contact }: { contact?: number | null }) {
   }
   async function loadMsgs(id: number) {
     try {
-      const m = await api.get<ChatMessage[]>(`/api/conversations/${id}/messages/`);
+      const m = await api.get<ChatMessage[]>(`/api/conversations/${id}/messages/${markSeen ? "?seen=1" : ""}`);
       setMsgs((prev) => (m.length !== prev.length ? m : prev));
     } catch { /* ignore */ }
   }
