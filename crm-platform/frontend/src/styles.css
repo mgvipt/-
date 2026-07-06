@@ -206,4 +206,11 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
 .deal-drawer-bg { animation: drawerBgIn .2s ease; }
 
 /* журнал: контент не вилазить за межі колонок (fixed layout) */
-.jrnl-tbl td { overflow: hidden; word-break: break-word; overflow-wrap: anywhere; }
+.jrnl-tbl td {
+  overflow: hidden !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+  vertical-align: middle;
+  max-width: 0; /* примушує fixed-layout поважати ширину колонки */
+}
