@@ -881,6 +881,12 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             dlock = Deal.objects.select_for_update().get(pk=deal.pk)
             if Payment.objects.filter(deal=dlock, amount=amount, provider=provider, created_at__gte=_tz.now() - _td(seconds=180)).exists():  # #7 вікно захисту від задвоєння 3 хв
                 return Response(DealDetailSerializer(dlock, context={"request": request}).data)
+            # ОНЛАЙН-воронки (Основний продукт / Тестовий набір): ручний прийом ЗАБОРОНЕНО.
+            # Гроші фіксуються ТІЛЬКИ автоматично: LiqPay-callback (по ID платежу) або
+            # оплата за реквізитами з банківської виписки. Ніяких дублів і зайвих чеків.
+            _fn = (dlock.funnel.name if dlock.funnel_id else '').lower()
+            if 'основний продукт' in _fn or 'тестовий набір' in _fn:
+                return Response({'detail': 'У цій воронці оплати фіксуються лише автоматично: LiqPay (посилання) або оплата за реквізитами ФОП (підтягується з банку). Ручний прийом вимкнено, щоб не було дублів доходу і зайвих фіскальних чеків. Надішли клієнту посилання на оплату.'}, status=status.HTTP_403_FORBIDDEN)
             # ЗАХИСТ від дубля: по сделці є свіже LiqPay-посилання на ЦЮ Ж суму →
             # найімовірніше клієнт оплатить (або вже оплатив) онлайн. Ручна фіксація створить
             # другий дохід і другий фіскальний чек. Блокуємо (обхід: force=1 після підтвердження).
