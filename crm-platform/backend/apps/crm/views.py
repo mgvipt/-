@@ -253,9 +253,16 @@ class ActivityLogMixin:
         return super().destroy(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        obj = serializer.save()
+        u = self.request.user
+        if self.log_kind == "deal" and not (u.is_superuser or u.has_perm_code("deal.create")):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Немає права створювати сделки")
+        # власник = створювач (інакше менеджер зі «своїми» сделками не бачить власну картку)
+        kwargs = {}
+        if hasattr(serializer.Meta.model, "owner") and not serializer.validated_data.get("owner"):
+            kwargs["owner"] = u
+        obj = serializer.save(**kwargs)
         from .models import log_activity
-        u = getattr(self.request, "user", None)
         log_activity(self.log_kind, obj.id, "Створено", getattr(obj, "title", ""), u)
 
     @action(detail=True, methods=["post"])

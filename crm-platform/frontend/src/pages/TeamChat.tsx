@@ -4,6 +4,7 @@ import { api } from "../api";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
 import { Avatar } from "../ui";
+import { linkify } from "../chatUtils";
 
 const EMOJIS = ["👋","🤚","🖐️","✋","🖖","👌","🤌","🤏","✌️","🤞","🫰","🤟","🤘","🤙","👈","👉","👆","👇","☝️","🫵","👍","👎","✊","👊","🤛","🤜","👏","🙌","🫶","👐","🤲","🤝","🙏","✍️","💪","😀","😁","😂","🤣","🙂","😊","😉","😍","🥰","😎","🤩","🤗","😋","😜","🤔","😅","😴","🥳","😇","🤯","😱","😭","😤","👀","❤️","🧡","💛","💚","💙","💜","🖤","🔥","💯","✨","⭐","🎉","🎁","✅","❗","⚠️","📌","📎","📷","📞","💬","🚀","💡","☕","🍕"];
 
@@ -57,7 +58,7 @@ export default function TeamChat() {
             {msgs.map((m) => (
               <div key={m.id} style={{ display: "flex", justifyContent: m.out ? "flex-end" : "flex-start", marginBottom: 8 }}>
                 <div style={{ maxWidth: "70%", background: m.out ? "#2563eb" : "#fff", color: m.out ? "#fff" : "#0f172a", borderRadius: 12, padding: "7px 11px", border: m.out ? "none" : "1px solid #e2e8f0", fontSize: 13.5 }}>
-                  {m.text && <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.text}</div>}
+                  {m.text && <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{linkify(m.text, m.out)}</div>}
                   {(m.attachments || []).map((a: any, i: number) => <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ color: m.out ? "#fff" : "#2563eb", fontSize: 12, textDecoration: "underline", display: "block", marginTop: 2 }}>{a.kind === "image" ? "📷" : "📎"} {a.name}</a>)}
                   <div style={{ fontSize: 10, opacity: 0.6, marginTop: 2, textAlign: "right" }}>{new Date(m.created_at).toLocaleString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</div>
                 </div>
