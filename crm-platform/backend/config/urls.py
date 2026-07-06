@@ -68,6 +68,7 @@ urlpatterns = [
     path("api/gamification/leaderboard/", gam_views.LeaderboardView.as_view()),
     path("api/gamification/manager/<int:pk>/", gam_views.ManagerView.as_view()),
     path("api/inbox/ping/", inbox_views.InboxPingView.as_view()),
+    path("api/inbox/deal-badges/", inbox_views.DealBadgesView.as_view()),
     path("api/sounds/", inbox_views.SoundLibraryView.as_view()),
     path("api/sounds/<int:pk>/file/", inbox_views.SoundFileView.as_view()),
     path("api/sounds/<int:pk>/", inbox_views.SoundDeleteView.as_view()),

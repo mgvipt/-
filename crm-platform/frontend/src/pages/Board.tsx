@@ -27,11 +27,18 @@ export default function Board({ endpoint, funnel, query, visibleStages }: { endp
   const nav = useNavigate();
   const isLead = endpoint.includes("leads");
 
+  const [chatBadges, setChatBadges] = useState<any>({});
   async function load() {
     setLoading(true);
     const data = await api.get<Paginated<Card>>(`${endpoint}?funnel=${funnel.id}&page_size=200${query || ""}`);
     setCards(data.results);
     setLoading(false);
+    if (!isLead && data.results.length) {
+      try {
+        const b = await api.get<any>(`/api/inbox/deal-badges/?ids=${data.results.map((c: any) => c.id).join(",")}`);
+        setChatBadges(b);
+      } catch { /* мовчки */ }
+    }
   }
   useEffect(() => { load(); }, [endpoint, funnel.id, query]);
 
@@ -97,9 +104,11 @@ export default function Board({ endpoint, funnel, query, visibleStages }: { endp
                     {c.owner_name && (
                       <div className="owner"><Avatar name={c.owner_name} />{c.owner_name}</div>
                     )}
-                    <div style={{ marginTop: 6 }}>{!c.is_seen
+                    <div style={{ marginTop: 6, display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>{!c.is_seen
                       ? <span className="chip chip-unseen">{t("НЕ ОТВЕЧЕНО","НЕ ВІДПОВІЛИ")}</span>
                       : <span style={{ fontSize: 10.5, fontWeight: 600, color: "#0F6E56", background: "#E1F5EE", padding: "2px 8px", borderRadius: 20 }}>{t("✓ Отвечено","✓ Відповіли")}</span>}
+                      {chatBadges[c.id]?.unread > 0 && <span title={t("Клиент написал — менеджер не читал", "Клієнт написав — менеджер не читав")} style={{ fontSize: 10.5, fontWeight: 800, background: "#ef4444", color: "#fff", borderRadius: 20, padding: "2px 7px" }}>✉ {chatBadges[c.id].unread}</span>}
+                      {chatBadges[c.id]?.unread > 0 && chatBadges[c.id]?.ai && <span title={t("ИИ-агент ответил, менеджер не смотрел", "ШІ-агент відповів, менеджер не дивився")} style={{ fontSize: 10.5, fontWeight: 700, background: "#eef2ff", color: "#4f46e5", borderRadius: 20, padding: "2px 7px" }}>🤖 {t("відповів ШІ","відповів ШІ")}</span>}
                     </div>
                   </div>
                 ))}

@@ -38,6 +38,7 @@ class ConversationSerializer(serializers.ModelSerializer):
     assigned_to_name = serializers.SerializerMethodField()
     last_text = serializers.SerializerMethodField()
     needs_reply = serializers.SerializerMethodField()
+    ai_answered = serializers.SerializerMethodField()
     deal_stage = serializers.SerializerMethodField()
     deal_id = serializers.SerializerMethodField()
     participant_names = serializers.SerializerMethodField()
@@ -72,7 +73,7 @@ class ConversationSerializer(serializers.ModelSerializer):
         model = Conversation
         fields = ["id", "channel", "channel_kind", "channel_name", "contact",
                   "contact_name", "title", "status", "assigned_to", "assigned_to_name",
-                  "unread", "last_message_at", "last_text", "needs_reply", "participants", "participant_names", "priority", "priority_reason", "deal_stage", "deal_id"]
+                  "unread", "last_message_at", "last_text", "needs_reply", "ai_answered", "participants", "participant_names", "priority", "priority_reason", "deal_stage", "deal_id"]
 
     def get_last_text(self, obj):
         m = obj.messages.last()
@@ -81,3 +82,8 @@ class ConversationSerializer(serializers.ModelSerializer):
     def get_needs_reply(self, obj):
         m = obj.messages.last()
         return bool(m and m.direction == "in")
+
+    def get_ai_answered(self, obj):
+        """Останнє повідомлення — вихідне БЕЗ співробітника (ШІ/Юля) = «відповів агент»."""
+        m = obj.messages.last()
+        return bool(m and m.direction == "out" and m.sender_id is None and not m.internal)

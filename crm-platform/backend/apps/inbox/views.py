@@ -380,6 +380,21 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             owner=(conv.assigned_to or (request.user if request.user.is_authenticated else None)))
         return Response({"deal_id": deal.id, "created": True})
 
+    @action(detail=True, methods=["post"], url_path="mark-unread")
+    def mark_unread(self, request, pk=None):
+        """Позначити чат непрочитаним. body: {from_message?: id} — з цього повідомлення клієнта;
+        без нього — всі вхідні після останньої відповіді МЕНЕДЖЕРА."""
+        conv = self.get_object()
+        from_id = request.data.get("from_message")
+        if from_id:
+            n = conv.messages.filter(direction="in", internal=False, id__gte=int(from_id)).count()
+        else:
+            last_mgr = conv.messages.filter(direction="out", sender__isnull=False).last()
+            n = conv.messages.filter(direction="in", internal=False, id__gt=last_mgr.id if last_mgr else 0).count()
+        conv.unread = max(1, n)
+        conv.save(update_fields=["unread"])
+        return Response({"ok": True, "unread": conv.unread})
+
     @action(detail=True, methods=["get"])
     def messages(self, request, pk=None):
         conv = self.get_object()
@@ -647,6 +662,29 @@ def _cname(conv, fallback=""):
     c = conv.contact
     nm = ((c.first_name + " " + c.last_name).strip() if c else "")
     return nm or conv.title or fallback or "Клієнт"
+
+
+class DealBadgesView(APIView):
+    """Бейджи чату для канбану сделок: {deal_id: {unread, ai}}. ?ids=1,2,3 (до 500)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        ids = [int(x) for x in (request.query_params.get("ids") or "").split(",") if x.strip().isdigit()][:500]
+        from apps.crm.models import Deal
+        deals = list(Deal.objects.filter(id__in=ids).values("id", "contact_id"))
+        contact_ids = [d["contact_id"] for d in deals if d["contact_id"]]
+        conv_by_contact = {}
+        for c in Conversation.objects.filter(contact_id__in=contact_ids, status="open").order_by("last_message_at"):
+            conv_by_contact[c.contact_id] = c
+        out = {}
+        for d in deals:
+            c = conv_by_contact.get(d["contact_id"])
+            if not c:
+                continue
+            m = c.messages.only("direction", "sender_id", "internal").last()
+            ai = bool(m and m.direction == "out" and m.sender_id is None and not m.internal)
+            out[d["id"]] = {"unread": c.unread, "ai": ai, "conv": c.id}
+        return Response(out)
 
 
 class InboxPingView(APIView):

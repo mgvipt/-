@@ -153,6 +153,14 @@ export default function Inbox() {
   }, [params]);
   useEffect(() => { activeRef.current = active; }, [active]);
   useEffect(() => { const f = () => api.get<any>("/api/inbox/ping/").then((d) => setNotifN(d.unread || 0)).catch(() => {}); f(); const tm = setInterval(f, 15000); return () => clearInterval(tm); }, []);
+  const [msgMenu, setMsgMenu] = useState<number | null>(null); // id повідомлення з відкритим меню
+  async function markUnreadFrom(convId: number, msgId: number) {
+    try {
+      const r: any = await api.post(`/api/conversations/${convId}/mark-unread/`, { from_message: msgId });
+      setConvs((cs) => cs.map((x) => (x.id === convId ? { ...x, unread: r.unread } : x)));
+      setMsgMenu(null);
+    } catch { alert("Не вдалося"); }
+  }
   useEffect(() => { api.get<any>("/api/channels/").then((d) => setChannels(((d.results || d) as any[]).map((c) => ({ id: c.id, name: c.name })))).catch(() => {}); }, []);
   useEffect(() => { api.get<any>("/api/conversations/staff/").then((d) => setEmps(((d.results || d) as any[]).map((u) => ({ id: u.id, full_name: u.full_name || u.username })))).catch(() => {}); }, []);
   useEffect(() => { endRef.current?.scrollIntoView(); }, [msgs]);
@@ -353,7 +361,8 @@ export default function Inbox() {
                     {(c as any).priority && PRIO[(c as any).priority] && <span title={(c as any).priority_reason || PRIO[(c as any).priority].label} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 9.5, fontWeight: 700, color: PRIO[(c as any).priority].color, background: PRIO[(c as any).priority].bg, borderRadius: 20, padding: "1px 6px 1px 5px", whiteSpace: "nowrap" }}><Icon n={PRIO[(c as any).priority].icon} size={10} /> {PRIO[(c as any).priority].label}</span>}
                   </FitChips>
                 </div>
-                {c.unread > 0 && <span style={{ width: 16, height: 16, borderRadius: "50%", background: "#ef4444", color: "#fff", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", alignSelf: "center" }}>{c.unread}</span>}
+                {(c as any).ai_answered && <span title={t("Ответил ИИ-агент, менеджер не смотрел", "Відповів ШІ-агент, менеджер не дивився")} style={{ fontSize: 12, alignSelf: "center" }}>🤖</span>}
+                {c.unread > 0 && <span title={t("Сообщений клиента без ответа менеджера", "Повідомлень клієнта без відповіді менеджера")} style={{ minWidth: 17, height: 17, borderRadius: 9, padding: "0 4px", background: "#ef4444", color: "#fff", fontSize: 10.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", alignSelf: "center" }}>{c.unread}</span>}
               </div>
             );
             // 3 категорії: Непризначені (вільний пул, видно всім з доступом до каналу)
@@ -438,7 +447,16 @@ export default function Inbox() {
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: .2, marginBottom: 4, paddingBottom: 3, borderBottom: (m as any).internal ? "1px solid rgba(212,160,23,.3)" : (m.direction === "out" ? "1px solid rgba(37,99,235,.25)" : "1px solid rgba(0,0,0,.08)"), color: (m as any).internal ? "#92400e" : (m.direction === "out" ? "#2563eb" : "var(--brand)") }}>
                     {(m as any).internal ? "📝 " + ((SNDR_MAP[m.sender_name] || m.sender_name) || t("Менеджер","Менеджер")) + " · " + t("только команда","тільки команда") : ((SNDR_MAP[m.sender_name] || m.sender_name) || (m.direction === "out" ? t("Менеджер","Менеджер") : (active?.title || t("Клиент","Клієнт"))))}
                   </div>
-                  <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{linkify(m.text, m.direction === "out")}</span>
+                  <span onClick={() => { if (m.direction === "in") setMsgMenu(msgMenu === m.id ? null : m.id); }}
+                    style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", cursor: m.direction === "in" ? "pointer" : "default" }}>{linkify(m.text, m.direction === "out")}</span>
+                  {msgMenu === m.id && m.direction === "in" && active && (
+                    <div style={{ marginTop: 6 }}>
+                      <button className="btn btn-light" style={{ height: 26, fontSize: 11.5 }}
+                        onClick={(e) => { e.stopPropagation(); markUnreadFrom(active.id, m.id); }}>
+                        👁 {t("Отметить непрочитанным с этого места", "Позначити непрочитаним з цього місця")}
+                      </button>
+                    </div>
+                  )}
                   {m.attachments?.map((a: any, i: number) => (
                     (a.url && a.type === "photo") ? <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 6 }}><img src={a.url} alt="" style={{ maxWidth: 240, maxHeight: 260, borderRadius: 8, display: "block", objectFit: "cover" }} /></a>
                     : (a.url && a.type === "video") ? <video key={i} src={a.url} controls style={{ maxWidth: 240, borderRadius: 8, marginTop: 6, display: "block" }} />
