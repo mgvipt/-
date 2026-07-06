@@ -24,9 +24,10 @@ def _category(name, direction):
 
 
 def _default_direction():
-    """Дефолтний напрямок для доходів зі сделок (перший активний, зазвичай «ДЕКОР Товари»)."""
+    """Напрямок для доходів зі сделок: продажі = «ДЕКОР_Товары(Оффл./Онлайн)» (НЕ Маркетинг)."""
     from .models import FinDirection
-    return FinDirection.objects.filter(active=True).order_by("id").first()
+    return (FinDirection.objects.filter(active=True, name__icontains="ДЕКОР").first()
+            or FinDirection.objects.filter(active=True).order_by("id").first())
 
 
 def record_income(amount, *, deal=None, account=None, payment=None, category="Продаж товару"):
