@@ -840,9 +840,11 @@ function Journal() {
                 <td style={{ fontWeight: 600, color: r.direction === "in" ? "#16a34a" : r.direction === "transfer" ? "#6366f1" : "#dc2626" }}>{r.direction === "in" ? "+" : r.direction === "transfer" ? "⇄ " : "−"}{Number(r.amount).toLocaleString("ru")}</td>
                 <td className="muted">{r.currency || "UAH"}</td>
                 <td className="muted">{Number(r.amount_uah || r.amount).toLocaleString("ru")} ₴</td>
-                <td>{r.direction === "transfer" ? <span style={{ color: "#6366f1" }}>→ {r.transfer_account_name}</span> : (r.category_name || <span className="muted">—</span>)}</td>
+                <td>{r.direction === "transfer" ? <span style={{ color: "#6366f1", fontWeight: 600 }}>Переказ</span> : (r.category_name || <span className="muted">—</span>)}</td>
                 <td>{r.direction === "transfer" ? <span className="muted">переказ</span> : (r.counterparty || <span className="muted">—</span>)}</td>
-                <td className="muted">{r.account_name}</td>
+                <td className="muted">{r.direction === "transfer" && r.transfer_account_name
+                  ? <span><span>{r.account_name}</span><span style={{ color: "#6366f1", fontWeight: 700 }}> → </span><span>{r.transfer_account_name}</span></span>
+                  : r.account_name}</td>
                 <td onClick={(e) => { e.stopPropagation(); if (r.deal) setDrawerDeal(r.deal); }}>{r.deal ? <span style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600 }} title="Відкрити картку сделки">#{r.deal}{r.deal_title ? " · " + r.deal_title.slice(0, 16) : ""} · {Number(r.amount).toLocaleString("ru")}₴</span> : <span className="muted">—</span>}</td>
                 <td>{r.fin_article_name || <span className="muted">—</span>}</td>
                 <td>{r.fin_direction_name || <span className="muted">—</span>}</td>
