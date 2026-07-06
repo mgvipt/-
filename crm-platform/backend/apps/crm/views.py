@@ -1026,27 +1026,11 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 code = _short_code()
             PayLink.objects.create(code=code, deal=deal, target=full_url)
             url = "%s/p/%s/" % (base, code)
-            # РОП пише тепле повідомлення (Claude) на основі діалогу
-            body = "Ваше замовлення готове до оплати 😊"
-            try:
-                from apps.inbox.models import Conversation as _Cv
-                from .ai import claude_json
-                msgs = []
-                if deal.contact_id:
-                    _c = _Cv.objects.filter(contact_id=deal.contact_id).order_by("-last_message_at").first()
-                    if _c:
-                        msgs = list(_c.messages.order_by("id").values("direction", "text"))[-12:]
-                dlg = "\n".join((("Клієнт: " if m["direction"] == "in" else "Ми: ") + (m["text"] or "")) for m in msgs if m.get("text"))
-                items = ", ".join(i.product.name[:40] for i in deal.items.all()[:3])
-                pr = ("Ти РОП Wallcov (декоративні покриття). Напиши КОРОТКЕ (2-3 речення) тепле повідомлення клієнту "
-                      "що замовлення готове до оплати. Подякуй, згадай що замовив, додай що після оплати одразу готуємо/відправляємо. "
-                      "БЕЗ посилання і БЕЗ суми (я додам сам). ЗАВЖДИ УКРАЇНСЬКОЮ мовою (навіть якщо клієнт пише російською). JSON {\"message\":\"...\"}.\n"
-                      "Замовлення: %s\nДіалог:\n%s") % (items or "тест-набір", dlg or "(нема)")
-                r = claude_json(pr, source="Помощник CRM (советы и расчёты)")
-                if r.get("message"):
-                    body = r["message"].strip()
-            except Exception:
-                pass
+            # шаблонне повідомлення (БЕЗ Claude — економія токенів; текст стабільний)
+            items_txt = ", ".join(i.product.name[:40] for i in deal.items.all()[:3])
+            body = ("Дякуємо за замовлення! 💚 %s готовий(і) до оплати — "
+                    "щойно надійде оплата, одразу готуємо та відправляємо. Чекаємо на Вас! 😊"
+                    % (items_txt or "Ваше замовлення"))
             text = "%s\n\n💳 Оплатити онлайн 👉 %s\nСума: %s грн" % (body, url, amount)
         sent = False
         if deal.contact_id:

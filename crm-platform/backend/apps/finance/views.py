@@ -626,6 +626,18 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
             follow = "&followId=" + str(data["next_page_id"])
         else:
             break
+    # + ПРОМІЖНА виписка за сьогодні: операції зʼявляються ОДРАЗУ, не чекаючи проводки банку
+    # (дедуп по PB#REF — коли операція перейде у фінальну виписку, дубль не створиться)
+    try:
+        today_s = _time.strftime("%d-%m-%Y")
+        url_i = ("https://acp.privatbank.ua/api/statements/transactions/interim"
+                 "?startDate=%s&endDate=%s&limit=500%s" % (today_s, today_s, ("&acc=" + str(acc)) if acc else ""))
+        req_i = urllib.request.Request(url_i, headers={"token": token, "Content-Type": "application/json;charset=utf8"})
+        with urllib.request.urlopen(req_i, timeout=60) as r_i:
+            data_i = _json.loads(r_i.read().decode("utf-8", errors="replace"))
+        txs.extend(data_i.get("transactions", []))
+    except Exception:
+        pass
     created = skipped = 0
     for tr in txs:
         ref = tr.get("REF") or ""
