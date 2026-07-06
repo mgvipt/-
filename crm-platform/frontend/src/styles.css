@@ -204,3 +204,6 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
 @keyframes drawerBgIn { from { opacity: 0; } to { opacity: 1; } }
 .deal-drawer { animation: drawerSlideIn .26s cubic-bezier(.22,.61,.36,1); will-change: transform; }
 .deal-drawer-bg { animation: drawerBgIn .2s ease; }
+
+/* журнал: контент не вилазить за межі колонок (fixed layout) */
+.jrnl-tbl td { overflow: hidden; word-break: break-word; overflow-wrap: anywhere; }

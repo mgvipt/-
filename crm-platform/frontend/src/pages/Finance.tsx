@@ -821,7 +821,7 @@ function Journal() {
         </div>
       </div>
       <div className="panel" style={{ margin: 0, padding: 0, overflow: "auto", maxHeight: "calc(100vh - 230px)" }}>
-        <table style={{ width: "100%", fontSize: 13, tableLayout: "fixed" }}>
+        <table className="jrnl-tbl" style={{ width: "100%", fontSize: 13, tableLayout: "fixed" }}>
           <colgroup>{colW.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
           <thead><tr>
             {[t("Дата","Дата"), t("Сумма","Сума"), t("Вал.","Вал."), "₴", t("Категория","Категорія"), t("Контрагент","Контрагент"), t("Счёт","Рахунок"), t("Сделка","Сделка"), t("Фонд","Фонд"), t("Направление","Напрямок"), t("Канал","Канал"), t("Комментарий","Коментар")].map((label, i) => (
