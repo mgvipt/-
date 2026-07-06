@@ -65,7 +65,14 @@ export default function Warehouse() {
   const canTabRec = can("warehouse.tab.receipts");
   const canTabInv = can("warehouse.tab.inventory");
   const canTabStat = can("analytics.warehouse");
-  const [view, setView] = useState<"goods" | "realiz" | "receipt" | "inv" | "stat">("goods");
+  // якщо збережена вкладка стала недоступною (зняли право) — повертаємось до товарів
+  useEffect(() => {
+    if ((view === "realiz" && !canTabReal) || (view === "receipt" && !canTabRec) ||
+        (view === "inv" && !canTabInv) || (view === "stat" && !canTabStat)) setView("goods");
+    // eslint-disable-next-line
+  }, [canTabReal, canTabRec, canTabInv, canTabStat]);
+  const [view, setView] = useState<"goods" | "realiz" | "receipt" | "inv" | "stat">(() => (localStorage.getItem("whacc_tab") as any) || "goods");
+  useEffect(() => { try { localStorage.setItem("whacc_tab", view); } catch (e) { /* noop */ } }, [view]);
   const [realizDocs, setRealizDocs] = useState<any[]>([]);
   const [realizBusy, setRealizBusy] = useState(false);
   const [realizSel, setRealizSel] = useState<any>(null);

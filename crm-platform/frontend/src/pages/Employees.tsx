@@ -20,7 +20,8 @@ class ErrBoundary extends Component<{ children: any }, { err: boolean }> {
 
 export default function Employees() {
   const { t } = useLang();
-  const [tab, setTab] = useState<"map" | "list" | "invites" | "perms">("map");
+  const [tab, setTab] = useState<"map" | "list" | "invites" | "perms">(() => (localStorage.getItem("emp_tab") as any) || "map");
+  useEffect(() => { try { localStorage.setItem("emp_tab", tab); } catch (e) { /* noop */ } }, [tab]);
   const [depts, setDepts] = useState<Dept[]>([]);
   const [emps, setEmps] = useState<Emp[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
