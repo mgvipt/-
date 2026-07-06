@@ -687,7 +687,7 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                 continue
         # оплата за РЕКВІЗИТАМИ з призначенням «Оплата замовлення WCR-<id>» →
         # привʼязка до сделки + Payment (ідемпотентно по банківському REF) + чек + стадія
-        m_r = _re.search(r"WCR[-\s]?(\d+)", osnd)
+        m_r = _re.search(r"(?:WCR|замовлення|заказ|накладна)[\s#-]*(\d{4,6})", osnd, _re.IGNORECASE)
         if m_r and direction == "in":
             did_r = int(m_r.group(1))
             from apps.crm.models import Deal as _Deal, Payment as _Pay, log_activity as _la
