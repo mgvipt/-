@@ -105,7 +105,8 @@ class TeamMessage(models.Model):
     """Внутрішній чат між співробітниками (DM). Текст + файли + згадки (@)."""
     from django.conf import settings as _s
     sender = models.ForeignKey(_s.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="team_sent")
-    recipient = models.ForeignKey(_s.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="team_received")
+    recipient = models.ForeignKey(_s.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE,
+                                  related_name="team_received", help_text="NULL = загальний чат (усім)")
     text = models.TextField(blank=True)
     attachments = models.JSONField(default=list, blank=True)
     mentions = models.JSONField(default=list, blank=True)

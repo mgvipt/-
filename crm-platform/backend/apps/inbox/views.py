@@ -729,8 +729,12 @@ class InboxPingView(APIView):
                 wh_last = _qw.aggregate(m=Max("id"))["m"] or 0
         except Exception:
             pass
+        bc = _TM.objects.filter(recipient__isnull=True).order_by("-id").first()
+        bc_last = bc.id if bc else 0
+        bc_latest = ({"name": (bc.sender.get_full_name() or bc.sender.username), "preview": (bc.text or "")[:200]} if bc else None)
         return Response({"last_in": last, "latest": latest, "unread": unread,
                          "team_last": team_last, "team_unread": team_unread, "team_latest": team_latest,
+                         "bc_last": bc_last, "bc_latest": bc_latest,
                          "wh_queue": wh_queue, "wh_last": wh_last})
 
 
@@ -839,6 +843,12 @@ class TeamContactsView(APIView):
                 "unread": unread,
             })
         out.sort(key=lambda x: (x["last_at"] is None, x["last_at"] and -x["last_at"].timestamp() if x["last_at"] else 0))
+        # загальний чат — завжди зверху
+        bc = TeamMessage.objects.filter(recipient__isnull=True).order_by("-id").first()
+        out.insert(0, {"id": 0, "full_name": "📢 Загальний чат", "dept": "усі співробітники",
+                       "last": (bc.text[:60] if bc else ""), "last_at": (bc.created_at if bc else None),
+                       "unread": 0, "broadcast": True,
+                       "can_write": bool(me.is_superuser or me.has_perm_code("team.broadcast"))})
         return Response(out)
 
 
@@ -850,8 +860,11 @@ class TeamThreadView(APIView):
         from django.db.models import Q
         from .models import TeamMessage
         me = request.user
-        qs = TeamMessage.objects.filter(Q(sender=me, recipient_id=user_id) | Q(sender_id=user_id, recipient=me)).select_related("sender")[:500]
-        TeamMessage.objects.filter(sender_id=user_id, recipient=me, read=False).update(read=True)
+        if int(user_id) == 0:  # загальний чат
+            qs = TeamMessage.objects.filter(recipient__isnull=True).select_related("sender")[:500]
+        else:
+            qs = TeamMessage.objects.filter(Q(sender=me, recipient_id=user_id) | Q(sender_id=user_id, recipient=me)).select_related("sender")[:500]
+            TeamMessage.objects.filter(sender_id=user_id, recipient=me, read=False).update(read=True)
         return Response([{
             "id": m.id, "text": m.text, "attachments": m.attachments or [], "mentions": m.mentions or [],
             "out": m.sender_id == me.id, "sender_name": (m.sender.get_full_name() or m.sender.username),
@@ -863,9 +876,14 @@ class TeamThreadView(APIView):
         from .models import TeamMessage
         me = request.user
         U = get_user_model()
-        rec = U.objects.filter(id=user_id, is_active=True).first()
-        if not rec:
-            return Response({"detail": "Співробітник не знайдений"}, status=status.HTTP_404_NOT_FOUND)
+        rec = None
+        if int(user_id) == 0:  # загальний чат — лише з правом
+            if not (me.is_superuser or me.has_perm_code("team.broadcast")):
+                return Response({"detail": "Писати у загальний чат може лише той, кому видано право «Писати ВСІМ»"}, status=403)
+        else:
+            rec = U.objects.filter(id=user_id, is_active=True).first()
+            if not rec:
+                return Response({"detail": "Співробітник не знайдений"}, status=status.HTTP_404_NOT_FOUND)
         text = (request.data.get("text") or "").strip()
         atts = request.data.get("attachments") or []
         # файл як base64 → SharedLink → посилання

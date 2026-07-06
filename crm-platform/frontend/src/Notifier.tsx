@@ -13,6 +13,7 @@ export default function Notifier() {
   const last = useRef<number | null>(null);
   const teamLast = useRef<number | null>(null);
   const whLast = useRef<number | null>(null);
+  const [bc, setBc] = useState<{ id: number; name: string; preview: string } | null>(null);
   const [whQueue, setWhQueue] = useState(0);
   const [whHidden, setWhHidden] = useState(() => Date.now() < Number(localStorage.getItem("whBannerHideUntil2") || 0));
   const WH_HIDE_MIN = 30; // хвилин до повторної появи після закриття
@@ -48,6 +49,11 @@ export default function Notifier() {
             teamLast.current = d.team_last;
           }
           const dd: any = d;
+          // 📢 загальне повідомлення: показуємо оверлей, поки не закриють (localStorage памʼятає)
+          if (typeof dd.bc_last === "number" && dd.bc_last > 0 && dd.bc_latest) {
+            const seen = Number(localStorage.getItem("bcSeen") || 0);
+            if (dd.bc_last > seen) setBc({ id: dd.bc_last, name: dd.bc_latest.name, preview: dd.bc_latest.preview });
+          }
           if (typeof dd.wh_queue === "number") {
             const whOn = whNotifyOn(); // особистий вимикач (Налаштування → Звуки)
             setWhQueue(whOn ? dd.wh_queue : 0);
@@ -71,9 +77,30 @@ export default function Notifier() {
     return () => { stop = true; clearInterval(tm); };
   }, []);
 
-  if (toasts.length === 0 && (whQueue === 0 || whHidden)) return null;
+  if (toasts.length === 0 && (whQueue === 0 || whHidden) && !bc) return null;
   return (
     <>
+    {bc && (
+      <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ background: "#fff", borderRadius: 18, padding: "22px 26px", width: "min(480px, 92vw)", boxShadow: "0 24px 70px rgba(15,23,42,.35)", borderTop: "5px solid #C67D5F" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <span style={{ fontSize: 22 }}>📢</span>
+            <b style={{ fontSize: 15, flex: 1 }}>{t("Сообщение для всех от", "Повідомлення для всіх від")} {bc.name}</b>
+          </div>
+          <div style={{ fontSize: 14.5, whiteSpace: "pre-wrap", wordBreak: "break-word", marginBottom: 16, lineHeight: 1.5 }}>{bc.preview}</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-primary" style={{ flex: 1 }}
+              onClick={() => { localStorage.setItem("bcSeen", String(bc.id)); localStorage.setItem("team_open_all", "1"); setBc(null); nav("/inbox?tab=team"); }}>
+              💬 {t("Открыть общий чат", "Відкрити загальний чат")}
+            </button>
+            <button className="btn btn-light" style={{ flex: 1 }}
+              onClick={() => { localStorage.setItem("bcSeen", String(bc.id)); setBc(null); }}>
+              {t("Закрыть", "Закрити")}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     {whQueue > 0 && !whHidden && (
       <div onClick={() => nav(`/wh?tab=queue&ts=${Date.now()}`)} title={t("Открыть задачи склада", "Відкрити задачі складу")}
         style={{ position: "fixed", top: 112, left: "50%", transform: "translateX(-50%)", zIndex: 9990, background: "linear-gradient(90deg, #8b5cf6, #3b82f6)", color: "#fff", borderRadius: 16, padding: "16px 18px 16px 26px", fontWeight: 800, fontSize: 17, cursor: "pointer", boxShadow: "0 16px 40px rgba(99,102,241,.55)", display: "flex", gap: 12, alignItems: "center", whiteSpace: "nowrap", maxWidth: "94vw" }}>

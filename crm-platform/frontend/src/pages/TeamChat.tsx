@@ -20,12 +20,20 @@ export default function TeamChat() {
   const fileRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
-  const loadContacts = () => api.get<any>("/api/team-chat/contacts/").then(setContacts).catch(() => {});
+  const loadContacts = () => api.get<any>("/api/team-chat/contacts/").then((d) => {
+    setContacts(d);
+    if (localStorage.getItem("team_open_all") === "1") {
+      localStorage.removeItem("team_open_all");
+      const all = d.find((x: any) => x.id === 0);
+      if (all) setSel(all);
+    }
+  }).catch(() => {});
   useEffect(() => { loadContacts(); const tm = setInterval(loadContacts, 15000); return () => clearInterval(tm); }, []);
   useEffect(() => { if (sel) { api.get<any>(`/api/team-chat/${sel.id}/`).then((d) => { setMsgs(d); setTimeout(() => endRef.current?.scrollIntoView(), 60); }); const tm = setInterval(() => api.get<any>(`/api/team-chat/${sel.id}/`).then(setMsgs).catch(() => {}), 8000); return () => clearInterval(tm); } }, [sel]);
 
+  const canWriteHere = !sel?.broadcast || sel?.can_write;
   async function send() {
-    if (!sel || !text.trim()) return;
+    if (!sel || !text.trim() || !canWriteHere) return;
     try { const m = await api.post<any>(`/api/team-chat/${sel.id}/`, { text, mentions }); setMsgs((p) => [...p, m]); setText(""); setMentions([]); setTimeout(() => endRef.current?.scrollIntoView(), 60); loadContacts(); } catch { /* */ }
   }
   function sendFile(f: File) {
@@ -57,9 +65,10 @@ export default function TeamChat() {
           <div style={{ flex: 1, overflowY: "auto", padding: 14, background: "#f8fafc" }}>
             {msgs.map((m) => (
               <div key={m.id} style={{ display: "flex", justifyContent: m.out ? "flex-end" : "flex-start", marginBottom: 8 }}>
-                <div style={{ maxWidth: "70%", background: m.out ? "#2563eb" : "#fff", color: m.out ? "#fff" : "#0f172a", borderRadius: 12, padding: "7px 11px", border: m.out ? "none" : "1px solid #e2e8f0", fontSize: 13.5 }}>
-                  {m.text && <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{linkify(m.text, m.out)}</div>}
-                  {(m.attachments || []).map((a: any, i: number) => <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ color: m.out ? "#fff" : "#2563eb", fontSize: 12, textDecoration: "underline", display: "block", marginTop: 2 }}>{a.kind === "image" ? "📷" : "📎"} {a.name}</a>)}
+                <div style={{ maxWidth: "70%", background: "#fff", color: "#0f172a", borderRadius: 12, padding: "7px 11px", border: m.out ? "1.5px solid #2563eb" : "1px solid #e2e8f0", boxShadow: m.out ? "0 1px 3px rgba(37,99,235,.15)" : "none", fontSize: 13.5 }}>
+                  {sel?.broadcast && !m.out && <div style={{ fontSize: 10.5, fontWeight: 700, color: "#C67D5F", marginBottom: 2 }}>{m.sender_name}</div>}
+                  {m.text && <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{linkify(m.text, false)}</div>}
+                  {(m.attachments || []).map((a: any, i: number) => <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ color: "#2563eb", fontSize: 12, textDecoration: "underline", display: "block", marginTop: 2 }}>{a.kind === "image" ? "📷" : "📎"} {a.name}</a>)}
                   <div style={{ fontSize: 10, opacity: 0.6, marginTop: 2, textAlign: "right" }}>{new Date(m.created_at).toLocaleString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</div>
                 </div>
               </div>
