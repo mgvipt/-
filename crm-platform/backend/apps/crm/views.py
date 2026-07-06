@@ -1008,7 +1008,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                     "ІПН/ЄДРПОУ: %s\n"
                     "Сума: %s грн\n\n"
                     "Призначення платежу (важливо — скопіюйте як є):\n"
-                    "Оплата замовлення WCR-%s\n\n"
+                    "Оплата замовлення %s\n\n"
                     "Після надходження грошей оплата зафіксується автоматично, і ми одразу готуємо замовлення 😊") % (payee, iban, ipn, amount, deal.id)
         else:
             pub = getattr(_s, "LIQPAY_PUBLIC_KEY", ""); prv = getattr(_s, "LIQPAY_PRIVATE_KEY", "")
@@ -1058,6 +1058,13 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                     send_message(conv, text, user=request.user); sent = True
                 except Exception:
                     pass
+                if sent and kind == "requisites":
+                    # окремими повідомленнями — щоб клієнт скопіював одним тапом
+                    for extra in (iban, "Оплата замовлення %s" % deal.id):
+                        try:
+                            send_message(conv, extra, user=request.user)
+                        except Exception:
+                            pass
         _advance_deal_stage(deal, 2, "надіслано посилання на оплату")  # Домовились про оплату
         # посилання фіксується в історії — можна скопіювати і переслати вручну (ФБ тощо), навіть якщо чату нема
         log_activity("deal", deal.id, "Посилання на оплату", "%s · %s грн · %s · %s" % (kind, amount, "надіслано клієнту" if sent else "НЕ надіслано (немає відкритого чату)", url), request.user, "Менеджер")
