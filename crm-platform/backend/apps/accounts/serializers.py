@@ -5,7 +5,8 @@ from .models import User, Role, Department, Invite, PERMISSION_CHOICES
 class RoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Role
-        fields = ["id", "name", "permissions", "funnels", "open_lines", "stage_view_all", "stage_lock"]
+        fields = ["id", "name", "permissions", "funnels", "open_lines", "stage_view_all", "stage_lock",
+                  "fin_accounts", "fin_cats_in", "fin_cats_out", "fin_dirs", "fin_counterparties"]
 
 
 class DepartmentSerializer(serializers.ModelSerializer):
@@ -15,7 +16,8 @@ class DepartmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Department
         fields = ["id", "name", "parent", "head", "permissions", "funnels",
-                  "open_lines", "color", "pos_x", "pos_y", "sort", "stage_view_all", "stage_lock", "members_count", "eff_permissions"]
+                  "open_lines", "color", "pos_x", "pos_y", "sort", "stage_view_all", "stage_lock", "members_count", "eff_permissions",
+                  "fin_accounts", "fin_cats_in", "fin_cats_out", "fin_dirs", "fin_counterparties"]
 
     def get_members_count(self, obj):
         return obj.members.filter(is_active=True).count()
@@ -35,7 +37,8 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ["id", "username", "first_name", "last_name", "full_name", "email",
                   "phone", "extension", "role", "role_name", "department", "department_name",
                   "extra_permissions", "denied_permissions", "effective_permissions", "stage_view_all", "stage_lock", "theme", "is_active",
-                  "extra_funnels", "extra_open_lines"]
+                  "extra_funnels", "extra_open_lines",
+                  "fin_accounts", "fin_cats_in", "fin_cats_out", "fin_dirs", "fin_counterparties"]
 
     def get_full_name(self, obj):
         return ("%s %s" % (obj.first_name, obj.last_name)).strip() or obj.username

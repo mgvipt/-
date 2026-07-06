@@ -39,6 +39,31 @@ PERMISSION_GROUPS = [
         ("analytics.warehouse", "Аналітика складу (залишки)", ""),
         ("coaching.view.all", "Бачити якість/коучинг команди (РОП)", "Інакше — лише свій"),
     ]),
+    ("Фінанси · вкладки", [
+        ("finance.tab.journal", "Журнал", ""),
+        ("finance.tab.pnl", "Звіт P&L (ATM)", ""),
+        ("finance.tab.be", "Точка беззбитковості", ""),
+        ("finance.tab.dir", "Напрямки (проекти)", ""),
+        ("finance.tab.plan", "Планування", ""),
+        ("finance.tab.debts", "Дт/Кт (кредиторка/дебіторка)", ""),
+        ("finance.tab.grow", "Зростання", ""),
+        ("finance.tab.salary", "ЗП/KPI", ""),
+        ("finance.tab.mplan", "Плани", ""),
+        ("finance.tab.time", "Табель", ""),
+        ("finance.tab.ref", "Довідники", ""),
+        ("finance.tab.model", "Фінмодель", ""),
+    ]),
+    ("Фінанси · дії", [
+        ("finance.tx.edit", "Редагувати операції журналу", "Без цього — тільки перегляд (дохід/витрата/переказ/правка/видалення заблоковані)"),
+        ("finance.balance.total", "Бачити ЗАГАЛЬНИЙ баланс (Σ над рахунками)", ""),
+        ("finance.accounts.manage", "Рахунки: створювати/редагувати/видаляти", ""),
+        ("finance.dirs.manage", "Напрямки: створювати/видаляти", ""),
+        ("finance.ref.edit", "Довідники: редагувати (категорії/контрагенти/валюти/канали)", ""),
+        ("finance.model.edit", "Фінмодель: редагувати", "Без цього — тільки перегляд"),
+        ("finance.period.close", "Закривати період (бухгалтерія)", "Операції до закритої дати не редагуються ніким, крім власників цього права"),
+        ("finance.debts.edit", "Дт/Кт: створювати/редагувати/видаляти", ""),
+        ("finance.debts.pay", "Дт/Кт: відмічати «Оплачено»", ""),
+    ]),
     ("Фінанси", [
         ("finance.view", "Доступ до фінансів", ""),
         ("finance.manage", "Керування фінмоделлю (ТБ/P&L)", ""),
@@ -85,6 +110,11 @@ class Department(models.Model):
     )
     permissions = models.JSONField(default=list, blank=True, help_text="Права отдела (коды), действуют на всех членов")
     funnels = models.ManyToManyField("crm.Funnel", blank=True, related_name="departments")
+    fin_accounts = models.JSONField(default=list, blank=True, help_text="id рахунків; порожньо = всі")
+    fin_cats_in = models.JSONField(default=list, blank=True)
+    fin_cats_out = models.JSONField(default=list, blank=True)
+    fin_dirs = models.JSONField(default=list, blank=True)
+    fin_counterparties = models.JSONField(default=list, blank=True)
     open_lines = models.JSONField(default=list, blank=True)
     color = models.CharField(max_length=9, blank=True)
     pos_x = models.FloatField(default=0)      # координаты узла на интеллект-карте
@@ -141,6 +171,11 @@ class Role(models.Model):
     name = models.CharField(max_length=120, unique=True)
     permissions = models.JSONField(default=list, help_text="Список кодов из PERMISSION_CHOICES")
     funnels = models.ManyToManyField("crm.Funnel", blank=True, related_name="roles")
+    fin_accounts = models.JSONField(default=list, blank=True)
+    fin_cats_in = models.JSONField(default=list, blank=True)
+    fin_cats_out = models.JSONField(default=list, blank=True)
+    fin_dirs = models.JSONField(default=list, blank=True)
+    fin_counterparties = models.JSONField(default=list, blank=True)
     open_lines = models.JSONField(default=list, blank=True)
     stage_view_all = models.JSONField(default=list, blank=True)
     stage_lock = models.JSONField(default=list, blank=True)
@@ -164,6 +199,11 @@ class User(AbstractUser):
     extra_permissions = models.JSONField(default=list, blank=True, help_text="Персонально выданные права")
     denied_permissions = models.JSONField(default=list, blank=True, help_text="Персонально запрещённые (приоритет над всем)")
     extra_funnels = models.ManyToManyField("crm.Funnel", blank=True, related_name="extra_users")
+    fin_accounts = models.JSONField(default=list, blank=True)
+    fin_cats_in = models.JSONField(default=list, blank=True)
+    fin_cats_out = models.JSONField(default=list, blank=True)
+    fin_dirs = models.JSONField(default=list, blank=True)
+    fin_counterparties = models.JSONField(default=list, blank=True)
     extra_open_lines = models.JSONField(default=list, blank=True)
     stage_view_all = models.JSONField(default=list, blank=True)
     stage_lock = models.JSONField(default=list, blank=True)
@@ -210,6 +250,24 @@ class User(AbstractUser):
             ids |= set(self.role.funnels.values_list("id", flat=True))
         ids |= set(self.extra_funnels.values_list("id", flat=True))
         return list(ids)
+
+    def _fin_union(self, attr):
+        vals = set()
+        if self.department_id:
+            for d in self.department.ancestors_incl_self():
+                vals |= set(getattr(d, attr, None) or [])
+        if self.role_id:
+            vals |= set(getattr(self.role, attr, None) or [])
+        vals |= set(getattr(self, attr, None) or [])
+        return vals
+
+    def allowed_fin(self, attr):
+        """Пообʼєктний доступ у фінансах (рахунки/категорії/напрямки/контрагенти).
+        None = обмежень нема (нічого не позначено ніде)."""
+        if self.is_superuser:
+            return None
+        v = self._fin_union(attr)
+        return None if not v else list(v)
 
     def allowed_channel_ids(self):
         if self.is_superuser:

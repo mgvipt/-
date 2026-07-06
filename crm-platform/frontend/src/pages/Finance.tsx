@@ -9,6 +9,7 @@ import DealCard from "./DealCard";
 import { useNavigate } from "react-router-dom";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
+import { useAuth } from "../auth";
 function useNav() { return useNavigate(); }
 
 const money = (n: number) => Math.round(n || 0).toLocaleString("ru") + " ₴";
@@ -43,12 +44,15 @@ export default function Finance() {
   const { t } = useLang();
   const [tab, setTab] = useState<"dash" | "journal" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model">(() => (localStorage.getItem("fin_tab") as any) || "dash");
   useEffect(() => { try { localStorage.setItem("fin_tab", tab); } catch (e) { /* noop */ } }, [tab]);
+  const { can: canF } = useAuth();
+  const tabAllowed = (k: string) => k === "dash" ? true : (canF("finance.tab." + k) || canF("roles.manage"));
+  useEffect(() => { if (!tabAllowed(tab)) setTab("dash"); /* eslint-disable-next-line */ }, [tab]);
   const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
   return (
     <div className="scroll pad fade">
       <div className="note warn"><Icon n="🔒" size={15} /> {t("Раздел видят только роли с правом","Розділ бачать тільки ролі з правом")} <b>finance.view</b>.</div>
       <div style={{ display: "flex", gap: 6, margin: "12px 0", flexWrap: "wrap" }}>
-        {tabs.map(([k, l]) => <button key={k} className={tab === k ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab(k as any)}>{l}</button>)}
+        {tabs.filter(([k]) => tabAllowed(k as string)).map(([k, l]) => <button key={k} className={tab === k ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab(k as any)}>{l}</button>)}
       </div>
       {tab === "dash" && <Dashboard />}
       {tab === "journal" && <Journal />}
@@ -637,6 +641,20 @@ function Journal() {
   const [f, setF] = useState<any>(blank);
   const [ff, setFf] = useState(""); const [ft, setFt] = useState(""); const [fq, setFq] = useState("");
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50); const [count, setCount] = useState(0);
+  const { can: canJ } = useAuth();
+  const canTx = canJ("finance.tx.edit") || canJ("roles.manage");
+  const canTotal = canJ("finance.balance.total") || canJ("roles.manage");
+  const [lock, setLock] = useState<{ closed_until: string | null; can_close: boolean }>({ closed_until: null, can_close: false });
+  useEffect(() => { api.get<any>("/api/transactions/period-lock/").then(setLock).catch(() => {}); }, []);
+  async function setPeriodLock() {
+    const v = prompt(t("Закрыть период ДО даты (включительно), формат ГГГГ-ММ-ДД. Пусто — снять закрытие.", "Закрити період ДО дати (включно), формат РРРР-ММ-ДД. Порожньо — зняти закриття."), lock.closed_until || "");
+    if (v === null) return;
+    try {
+      const r: any = await api.post("/api/transactions/period-lock/", { closed_until: v.trim() || null });
+      setLock(r);
+      alert(r.closed_until ? t("Период закрыт до ", "Період закрито до ") + r.closed_until : t("Закрытие снято", "Закриття знято"));
+    } catch (e: any) { alert(e?.response?.data?.detail || "Помилка"); }
+  }
   // ширини колонок журналу (тягнеться за праву грань заголовка, зберігається)
   const JCOL_DEF = [95, 95, 50, 90, 190, 190, 150, 140, 130, 140, 95, 300];
   const [colW, setColW] = useState<number[]>(() => {
@@ -730,11 +748,12 @@ function Journal() {
   return (
     <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
       <div className="panel acc-sidebar" style={{ width: accW, flex: `0 0 ${accW}px`, margin: 0, maxHeight: "80vh", overflowY: "auto" }}>
-        {/* Σ активних — над заголовком, у кольорі фону блоку */}
+        {/* Σ активних — над заголовком, лише з правом «Бачити ЗАГАЛЬНИЙ баланс» */}
+        {canTotal &&
         <div style={{ textAlign: "center", marginBottom: 6 }}>
           <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.3 }}>{money(accounts.filter((a: any) => !/liqpay/i.test(a.name || "")).reduce((sm: number, a: any) => sm + Number(a.balance || 0), 0))}</div>
           <div className="muted" style={{ fontSize: 10.5 }}>{t("на активных счетах","на активних рахунках")}</div>
-        </div>
+        </div>}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <b style={{ fontSize: 13 }}><Icon n="🏦" size={14} /> Рахунки</b>
           <span>
@@ -784,10 +803,17 @@ function Journal() {
           </>); })()}
         </div>
       )}
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <button className="btn btn-primary" title={t("Добавить поступление денег","Додати надходження грошей")} onClick={() => openNew("in")}>+ {t("Доход","Дохід")}</button>
-        <button className="btn btn-light" title={t("Добавить расход","Додати витрату")} onClick={() => openNew("out")}>− {t("Расход","Витрата")}</button>
-        <label className="btn btn-light" style={{ cursor: "pointer" }} title={t("Импорт банковской выписки CSV","Імпорт банківської виписки CSV")}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
+        {canTx && <button className="btn btn-primary" title={t("Добавить поступление денег","Додати надходження грошей")} onClick={() => openNew("in")}>+ {t("Доход","Дохід")}</button>}
+        {canTx && <button className="btn btn-light" title={t("Добавить расход","Додати витрату")} onClick={() => openNew("out")}>− {t("Расход","Витрата")}</button>}
+        {(lock.closed_until || lock.can_close) && (
+          <span onClick={lock.can_close ? setPeriodLock : undefined} title={lock.can_close ? t("Изменить закрытие периода", "Змінити закриття періоду") : t("Период закрыт бухгалтерией", "Період закрито бухгалтерією")}
+            style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 8, cursor: lock.can_close ? "pointer" : "default",
+                     background: lock.closed_until ? "#fef2f2" : "#f0fdf4", color: lock.closed_until ? "#dc2626" : "#16a34a", border: "1px solid " + (lock.closed_until ? "#fecaca" : "#bbf7d0") }}>
+            🔒 {lock.closed_until ? t("Закрыто до ", "Закрито до ") + lock.closed_until : t("Период открыт", "Період відкритий")}
+          </span>
+        )}
+        {canTx && <label className="btn btn-light" style={{ cursor: "pointer" }} title={t("Импорт банковской выписки CSV","Імпорт банківської виписки CSV")}>
           ⬆ {t("Выписка","Виписка")}
           <input type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={async (e) => {
             const f = e.target.files?.[0]; if (!f) return; (e.target as any).value = "";
@@ -804,13 +830,13 @@ function Journal() {
               alert(t("Готово ✓ Добавлено","Готово ✓ Додано") + `: ${done.created}`); load();
             } catch (err: any) { alert(err?.response?.data?.detail || t("Не удалось импортировать","Не вдалося імпортувати")); }
           }} />
-        </label>
+        </label>}
         <button className="btn btn-light" title={t("Выгрузить журнал в CSV (Excel)","Вивантажити журнал у CSV (Excel)")} onClick={async () => {
           try { const u = await (api as any).blobUrl("/api/transactions/export/"); const a = document.createElement("a"); a.href = u; a.download = "journal.csv"; a.click(); }
           catch { alert(t("Не удалось выгрузить","Не вдалося вивантажити")); }
         }}>⬇ CSV</button>
         {bankHub && <BankHubModal onClose={() => { setBankHub(false); load(); api.get<any>("/api/accounts/").then((d) => setAccounts((d.results || d).filter((a: any) => a.is_active !== false))); }} />}
-        <button className="btn btn-light" title={t("Перевод между счетами — не считается ни в доход, ни в расход","Переказ між рахунками — не рахується ні в дохід, ні у витрати")} onClick={() => openNew("transfer")}>⇄ {t("Перевод","Переказ")}</button>
+        {canTx && <button className="btn btn-light" title={t("Перевод между счетами — не считается ни в доход, ни в расход","Переказ між рахунками — не рахується ні в дохід, ні у витрати")} onClick={() => openNew("transfer")}>⇄ {t("Перевод","Переказ")}</button>}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
           <span className="muted">{t("На стр.","На стор.")}:</span>
           <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6 }}>{[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}</select>
@@ -2008,22 +2034,30 @@ function Planning() {
       </div>
       {debtsBar}
 
+      {/* блоки-підсумки зверху */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        {data.accounts.map((a: any) => (
-          <div key={a.id} className="panel" style={{ flex: "1 1 150px", padding: "10px 12px" }}>
-            <div className="muted" style={{ fontSize: 12 }}>{a.name}</div>
-            <div style={{ fontSize: 20, fontWeight: 700 }}>{money(a.balance)}</div>
-          </div>
-        ))}
-        <div className="panel" style={{ flex: "1 1 150px", padding: "10px 12px", background: "#eff6ff" }}>
+        <div className="panel" style={{ flex: "1 1 180px", padding: "12px 14px", background: "#eff6ff", margin: 0 }}>
           <div className="muted" style={{ fontSize: 12 }} title={t("Деньги на счетах, ещё НЕ разложенные по фондам","Гроші на рахунках, ще НЕ розкладені по фондах")}>{t("К распределению","До розподілу")}</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: "#2563eb" }}>{money(data.accounts.reduce((a: number, x: any) => a + x.balance, 0) - data.totals.balance)}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#2563eb" }}>{money(data.accounts.reduce((a: number, x: any) => a + x.balance, 0) - data.totals.balance)}</div>
         </div>
-        <div className="panel" style={{ flex: "1 1 150px", padding: "10px 12px", background: "#f0fdf4" }}>
+        <div className="panel" style={{ flex: "1 1 180px", padding: "12px 14px", background: "#f0fdf4", margin: 0 }}>
           <div className="muted" style={{ fontSize: 12 }} title={t("Сумма остатков во всех фондах-конвертах","Сума залишків у всіх фондах-конвертах")}>{t("Остаток в фондах","Залишок у фондах")}</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: "#059669" }}>{money(data.totals.balance)}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#059669" }}>{money(data.totals.balance)}</div>
         </div>
       </div>
+
+      {/* рахунки — список збоку (як у журналі), фонди — праворуч */}
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+      <div className="panel" style={{ width: 235, flex: "0 0 235px", margin: 0, maxHeight: "72vh", overflowY: "auto" }}>
+        <b style={{ fontSize: 13 }}>🏦 {t("Счета","Рахунки")}</b>
+        {data.accounts.map((a: any) => (
+          <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 2px", borderBottom: "0.5px solid #f1f5f9", fontSize: 12.5 }}>
+            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
+            <b style={{ fontSize: 11.5, color: a.balance < 0 ? "#dc2626" : "#16a34a", whiteSpace: "nowrap" }}>{money(a.balance)}</b>
+          </div>
+        ))}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
 
       {data.groups.map((g: any) => (
         <div key={g.key} className="panel" style={{ margin: "10px 0 0", borderLeft: `4px solid ${g.color}` }}>
@@ -2038,6 +2072,8 @@ function Planning() {
         </div>
       ))}
 
+      </div>
+      </div>
       {alloc && <AllocModal fund={alloc} period={period} accounts={data.accounts} dirs={dirs} onClose={() => setAlloc(null)} onSaved={() => { setAlloc(null); load(); }} />}
       {auto && <AutoModal period={period} accounts={data.accounts} dirs={dirs} onClose={() => setAuto(false)} onSaved={() => { setAuto(false); load(); }} />}
       {spend && <SpendModal fund={spend} accounts={data.accounts} dirs={dirs} onClose={() => setSpend(null)} onSaved={() => { setSpend(null); load(); }} />}

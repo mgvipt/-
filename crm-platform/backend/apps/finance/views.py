@@ -26,6 +26,18 @@ class FinanceManagePerm(HasPermCode):
 
 
 class FinModelArticleViewSet(viewsets.ModelViewSet):
+    def perform_create(self, serializer):
+        _fin_guard(self.request, "finance.model.edit", "Фінмодель: лише перегляд (нема права редагувати)")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        _fin_guard(self.request, "finance.model.edit", "Фінмодель: лише перегляд (нема права редагувати)")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        _fin_guard(self.request, "finance.model.edit", "Фінмодель: лише перегляд (нема права редагувати)")
+        instance.delete()
+
     queryset = FinModelArticle.objects.all()
     serializer_class = FinModelArticleSerializer
 
@@ -42,8 +54,56 @@ class FinModelArticleViewSet(viewsets.ModelViewSet):
     filterset_fields = ["category", "active"]
 
 
+def _fin_guard(request, code, msg):
+    u = request.user
+    if not (u.is_superuser or u.has_perm_code(code)):
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied(msg)
+
+
+def _closed_until():
+    """Дата закриття періоду (бухгалтерія). Операції до неї включно — не змінюються."""
+    from apps.integrations.models import IntegrationSettings
+    st = IntegrationSettings.objects.filter(provider="finance_lock").first()
+    v = (st.config or {}).get("closed_until") if st else None
+    if not v:
+        return None
+    from datetime import date as _d
+    try:
+        return _d.fromisoformat(str(v))
+    except ValueError:
+        return None
+
+
+def _guard_period(request, tx_date):
+    """Заборона правок у закритому періоді (крім права finance.period.close)."""
+    cu = _closed_until()
+    if cu and tx_date and tx_date <= cu:
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("finance.period.close")):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Період до %s закрито бухгалтерією — операції не змінюються" % cu.isoformat())
+
+
 class AccountViewSet(viewsets.ModelViewSet):
     queryset = Account.objects.all()
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        allowed = self.request.user.allowed_fin("fin_accounts")
+        return qs if allowed is None else qs.filter(id__in=allowed)
+
+    def perform_create(self, serializer):
+        _fin_guard(self.request, "finance.accounts.manage", "Немає права редагувати рахунки")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        _fin_guard(self.request, "finance.accounts.manage", "Немає права редагувати рахунки")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        _fin_guard(self.request, "finance.accounts.manage", "Немає права видаляти рахунки")
+        instance.delete()
     serializer_class = AccountSerializer
     permission_classes = [FinancePerm]
 
@@ -58,6 +118,31 @@ class AccountViewSet(viewsets.ModelViewSet):
 
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        u = self.request.user
+        a_in = u.allowed_fin("fin_cats_in")
+        a_out = u.allowed_fin("fin_cats_out")
+        from django.db.models import Q as _Q
+        cond = _Q()
+        if a_in is not None:
+            cond &= (_Q(direction="out") | _Q(id__in=a_in))
+        if a_out is not None:
+            cond &= (_Q(direction="in") | _Q(id__in=a_out))
+        return qs.filter(cond) if (a_in is not None or a_out is not None) else qs
+
+    def perform_create(self, serializer):
+        _fin_guard(self.request, "finance.ref.edit", "Немає права редагувати довідники")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        _fin_guard(self.request, "finance.ref.edit", "Немає права редагувати довідники")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        _fin_guard(self.request, "finance.ref.edit", "Немає права редагувати довідники")
+        instance.delete()
     serializer_class = CategorySerializer
     permission_classes = [FinancePerm]
 
@@ -68,6 +153,49 @@ class TransactionViewSet(viewsets.ModelViewSet):
     permission_classes = [FinancePerm]
     filterset_fields = ["direction", "account", "category", "deal", "fin_direction", "fin_article", "channel"]
     ordering = ["-date", "-id"]  # журнал завжди за датою операції (нові зверху)
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        allowed = self.request.user.allowed_fin("fin_accounts")
+        if allowed is not None:
+            from django.db.models import Q as _Q
+            qs = qs.filter(_Q(account_id__in=allowed) | _Q(transfer_account_id__in=allowed))
+        return qs
+
+    def perform_create(self, serializer):
+        _fin_guard(self.request, "finance.tx.edit", "Журнал: лише перегляд — нема права створювати операції")
+        _guard_period(self.request, serializer.validated_data.get("date"))
+        serializer.save()
+
+    def perform_update(self, serializer):
+        _fin_guard(self.request, "finance.tx.edit", "Журнал: лише перегляд — нема права редагувати операції")
+        _guard_period(self.request, serializer.instance.date)
+        nd = serializer.validated_data.get("date")
+        if nd:
+            _guard_period(self.request, nd)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        _fin_guard(self.request, "finance.tx.edit", "Журнал: лише перегляд — нема права видаляти операції")
+        _guard_period(self.request, instance.date)
+        instance.delete()
+
+    @action(detail=False, methods=["get", "post"], url_path="period-lock")
+    def period_lock(self, request):
+        """Закриття періоду (бухгалтерія): до цієї дати включно операції не змінюються.
+        POST {closed_until: YYYY-MM-DD | null} — потрібне право finance.period.close."""
+        from apps.integrations.models import IntegrationSettings
+        if request.method == "POST":
+            _fin_guard(request, "finance.period.close", "Немає права закривати період")
+            st, _ = IntegrationSettings.objects.get_or_create(provider="finance_lock", defaults={"config": {}})
+            cfg = st.config or {}
+            cfg["closed_until"] = request.data.get("closed_until") or None
+            st.config = cfg
+            st.is_active = True
+            st.save()
+        cu = _closed_until()
+        return Response({"closed_until": cu.isoformat() if cu else None,
+                         "can_close": request.user.is_superuser or request.user.has_perm_code("finance.period.close")})
 
     @action(detail=False, methods=["post"], url_path="privat-sync")
     def privat_sync(self, request):
@@ -674,9 +802,22 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
     filterset_fields = ["kind", "status"]
     permission_classes = [FinancePerm]
 
+    def perform_create(self, serializer):
+        _fin_guard(self.request, "finance.debts.edit", "Дт/Кт: нема права створювати записи")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        _fin_guard(self.request, "finance.debts.edit", "Дт/Кт: нема права редагувати записи")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        _fin_guard(self.request, "finance.debts.edit", "Дт/Кт: нема права видаляти записи")
+        instance.delete()
+
     @action(detail=True, methods=["post"], url_path="mark-paid")
     def mark_paid(self, request, pk=None):
         from django.utils import timezone as _tz
+        _fin_guard(request, "finance.debts.pay", "Дт/Кт: нема права відмічати оплату")
         pp = self.get_object()
         if pp.status == "paid":
             return Response({"detail": "вже оплачено"}, status=400)
@@ -983,6 +1124,23 @@ class BreakevenView(APIView):
 
 
 class FinDirectionViewSet(viewsets.ModelViewSet):
+    def get_queryset(self):
+        qs = super().get_queryset()
+        allowed = self.request.user.allowed_fin("fin_dirs")
+        return qs if allowed is None else qs.filter(id__in=allowed)
+
+    def perform_create(self, serializer):
+        _fin_guard(self.request, "finance.dirs.manage", "Немає права створювати напрямки")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        _fin_guard(self.request, "finance.dirs.manage", "Немає права редагувати напрямки")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        _fin_guard(self.request, "finance.dirs.manage", "Немає права видаляти напрямки")
+        instance.delete()
+
     queryset = FinDirection.objects.all()
     serializer_class = FinDirectionSerializer
     permission_classes = [FinanceManagePerm]
@@ -1289,14 +1447,19 @@ class FxImpactView(APIView):
 
 
 class CounterpartiesView(APIView):
+    """Контрагенти. Якщо у співробітника позначені дозволені — бачить лише їх."""
+
     """Довідник контрагентів — зведення з операцій (унікальні + к-сть + сума).
     GET /api/finance/counterparties/"""
     permission_classes = [FinancePerm]
 
     def get(self, request):
         from django.db.models import Count, Sum
-        rows = (Transaction.objects.exclude(counterparty="")
-                .values("counterparty")
+        qs = Transaction.objects.exclude(counterparty="")
+        allowed = request.user.allowed_fin("fin_counterparties")
+        if allowed is not None:
+            qs = qs.filter(counterparty__in=allowed)
+        rows = (qs.values("counterparty")
                 .annotate(n=Count("id"), total=Sum("amount_uah"))
                 .order_by("-n"))
         # звʼязок із клієнтами CRM (по імені/назві)

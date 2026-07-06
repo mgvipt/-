@@ -213,6 +213,97 @@ function InvitesTab({ depts, roles, invites, reload, t }: any) {
   );
 }
 
+function FinAccessTab({ depts, emps, roles, reload, t }: any) {
+  const [kind, setKind] = useState<"dept" | "role" | "user">("dept");
+  const [sel, setSel] = useState<any>("");
+  const [accs, setAccs] = useState<any[]>([]);
+  const [cats, setCats] = useState<any[]>([]);
+  const [dirs, setDirs] = useState<any[]>([]);
+  const [cps, setCps] = useState<any[]>([]);
+  const [q, setQ] = useState<any>({});
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    api.get<any>("/api/accounts/").then((d) => setAccs((d.results || d))).catch(() => {});
+    api.get<any>("/api/categories/?page_size=400").then((d) => setCats(d.results || d)).catch(() => {});
+    api.get<any>("/api/fin-directions/?page_size=100").then((d) => setDirs(d.results || d)).catch(() => {});
+    api.get<any>("/api/finance/counterparties/").then((d) => setCps((d.results || d).map((x: any) => x.name).filter(Boolean))).catch(() => {});
+  }, []);
+  const list = kind === "dept" ? depts : kind === "role" ? roles : emps;
+  const obj: any = list.find((x: any) => x.id === Number(sel));
+  const url = kind === "dept" ? `/api/departments/${sel}/` : kind === "role" ? `/api/roles/${sel}/` : `/api/users/${sel}/`;
+  async function toggle(key: string, val: any) {
+    const cur = new Set(obj[key] || []);
+    if (cur.has(val)) cur.delete(val); else cur.add(val);
+    const next = Array.from(cur);
+    const prev = obj[key];
+    obj[key] = next;
+    setTick((v) => v + 1);
+    try { await api.patch(url, { [key]: next }); }
+    catch { obj[key] = prev; setTick((v) => v + 1); alert("Помилка збереження"); }
+  }
+  const inp: any = { height: 32, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13 };
+  const Block = ({ title, hint, items, key_, getId, getLabel }: any) => {
+    const flt = (q[key_] || "").toLowerCase();
+    const chosen = new Set(obj[key_] || []);
+    const shown = items.filter((it: any) => !flt || getLabel(it).toLowerCase().includes(flt)).slice(0, 60);
+    return (
+      <div className="panel" style={{ flex: "1 1 340px", minWidth: 320, maxWidth: 480 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <b style={{ fontSize: 13.5 }}>{title}</b>
+          <span className="muted" style={{ fontSize: 11 }}>{chosen.size ? t(`выбрано: ${chosen.size}`, `обрано: ${chosen.size}`) : t("не ограничено (видит все)", "не обмежено (бачить усі)")}</span>
+        </div>
+        <div className="muted" style={{ fontSize: 11, margin: "3px 0 7px" }}>{hint}</div>
+        <input placeholder={t("Поиск…", "Пошук…")} value={q[key_] || ""} onChange={(e) => setQ({ ...q, [key_]: e.target.value })} style={{ ...inp, width: "100%", marginBottom: 6 }} />
+        <div style={{ maxHeight: 260, overflowY: "auto" }}>
+          {shown.map((it: any) => {
+            const id = getId(it);
+            return (
+              <label key={String(id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 2px", borderBottom: "0.5px solid #f1f5f9", cursor: "pointer", fontSize: 12.5 }}>
+                <input type="checkbox" checked={chosen.has(id)} onChange={() => toggle(key_, id)} style={{ width: 15, height: 15, accentColor: "#C67D5F", flexShrink: 0 }} />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{getLabel(it)}</span>
+              </label>
+            );
+          })}
+          {!shown.length && <div className="muted" style={{ fontSize: 12, padding: 4 }}>—</div>}
+        </div>
+      </div>
+    );
+  };
+  return (
+    <div>
+      <div className="muted" style={{ fontSize: 12.5, marginBottom: 10, lineHeight: 1.5 }}>
+        {t("Пообъектный доступ в Финансах. Если в блоке ничего не отмечено НИГДЕ (отдел + роль + лично) — сотрудник видит всё. Отметил хоть одно — видит только отмеченное. Доступ складывается: отдел ∪ роль ∪ личное. Права на ВКЛАДКИ и ДЕЙСТВИЯ — в «Права отдела»/«Индивидуальные», блоки «Фінанси · вкладки» и «Фінанси · дії».",
+           "Пообʼєктний доступ у Фінансах. Якщо у блоці нічого не позначено НІДЕ (відділ + роль + особисто) — співробітник бачить усе. Позначив хоч одне — бачить лише позначене. Доступ складається: відділ ∪ роль ∪ особисте. Права на ВКЛАДКИ та ДІЇ — у «Права відділу»/«Індивідуальні», блоки «Фінанси · вкладки» і «Фінанси · дії».")}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "inline-flex", borderRadius: 8, overflow: "hidden", border: "1px solid #e2e8f0" }}>
+          {[["dept", t("Отдел", "Відділ")], ["role", t("Роль", "Роль")], ["user", t("Сотрудник", "Співробітник")]].map(([k, l]) => (
+            <button key={k} onClick={() => { setKind(k as any); setSel(""); }} style={{ padding: "7px 13px", fontSize: 12.5, fontWeight: 600, border: "none", cursor: "pointer", background: kind === k ? "#C67D5F" : "#f8fafc", color: kind === k ? "#fff" : "#475569" }}>{l}</button>
+          ))}
+        </div>
+        <select style={{ ...inp, minWidth: 260 }} value={sel} onChange={(e) => setSel(e.target.value)}>
+          <option value="">{t("— выбери —", "— обери —")}</option>
+          {list.map((x: any) => <option key={x.id} value={x.id}>{kind === "user" ? `${x.full_name} (${x.department_name || "—"})` : x.name}</option>)}
+        </select>
+      </div>
+      {obj ? (
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <Block title={"🏦 " + t("Счета", "Рахунки")} hint={t("Видит балансы и операции только этих счетов", "Бачить залишки та операції лише цих рахунків")}
+            items={accs} key_="fin_accounts" getId={(a: any) => a.id} getLabel={(a: any) => a.name} />
+          <Block title={"▲ " + t("Категории доходов", "Категорії доходів")} hint={t("Доступные категории при разноске доходов", "Доступні категорії при розносці доходів")}
+            items={cats.filter((c: any) => c.direction === "in")} key_="fin_cats_in" getId={(c: any) => c.id} getLabel={(c: any) => c.name} />
+          <Block title={"▼ " + t("Категории расходов", "Категорії витрат")} hint={t("Доступные категории при разноске расходов", "Доступні категорії при розносці витрат")}
+            items={cats.filter((c: any) => c.direction === "out")} key_="fin_cats_out" getId={(c: any) => c.id} getLabel={(c: any) => c.name} />
+          <Block title={"🗂 " + t("Проекты (направления)", "Проекти (напрямки)")} hint={t("Видимые направления", "Видимі напрямки")}
+            items={dirs} key_="fin_dirs" getId={(d: any) => d.id} getLabel={(d: any) => d.name} />
+          <Block title={"👥 " + t("Контрагенты", "Контрагенти")} hint={t("Видимые контрагенты (поиск по имени, клик — галочка)", "Видимі контрагенти (пошук за імʼям, клік — галочка)")}
+            items={cps} key_="fin_counterparties" getId={(n: any) => n} getLabel={(n: any) => n} />
+        </div>
+      ) : <div className="muted" style={{ fontSize: 13 }}>{t("Выбери отдел, роль или сотрудника выше.", "Обери відділ, роль або співробітника вище.")}</div>}
+    </div>
+  );
+}
+
 function AccessTab({ depts, emps, roles, funnels, reload, t }: any) {
   const [kind, setKind] = useState<"dept" | "user">("dept");
   const [sel, setSel] = useState<any>("");
@@ -292,7 +383,7 @@ function AccessTab({ depts, emps, roles, funnels, reload, t }: any) {
 }
 
 function PermsTab({ depts, emps, perms, permGroups, funnels, roles, reload, t, toggleDept, toggleUser }: any) {
-  const [mode, setMode] = useState<"dept" | "user" | "stage" | "access">("dept");
+  const [mode, setMode] = useState<"dept" | "user" | "stage" | "access" | "fin">("dept");
   const [selDept, setSelDept] = useState<any>("");
   const [selUser, setSelUser] = useState<any>("");
   const d = depts.find((x: any) => x.id === Number(selDept));
@@ -340,8 +431,11 @@ function PermsTab({ depts, emps, perms, permGroups, funnels, roles, reload, t, t
         <button className={"btn" + (mode === "user" ? " btn-primary" : "")} onClick={() => setMode("user")}>{t("Индивидуальные", "Індивідуальні")}</button>
         <button className={"btn" + (mode === "stage" ? " btn-primary" : "")} onClick={() => setMode("stage")}><Icon n="🚦" size={15} /> {t("По статусам", "За статусами")}</button>
         <button className={"btn" + (mode === "access" ? " btn-primary" : "")} onClick={() => setMode("access")}>🔀 {t("Воронки и линии", "Воронки і лінії")}</button>
+        <button className={"btn" + (mode === "fin" ? " btn-primary" : "")} onClick={() => setMode("fin")}>💰 {t("Финансы", "Фінанси")}</button>
       </div>
-      {mode === "access" ? (
+      {mode === "fin" ? (
+        <FinAccessTab depts={depts} emps={emps} roles={roles} reload={reload} t={t} />
+      ) : mode === "access" ? (
         <AccessTab depts={depts} emps={emps} roles={roles} funnels={funnels} reload={reload} t={t} />
       ) : mode === "stage" ? (
         <StagePerms funnels={funnels} roles={roles} depts={depts} emps={emps} reload={reload} t={t} />
