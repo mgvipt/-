@@ -330,7 +330,15 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         setPayOpen(false); setPayAmount("");
         flash(r.sent ? t("✓ Ссылка создана и отправлена клиенту в чат","✓ Посилання створено й надіслано клієнту в чат") : t("⚠ Ссылка создана, но нет открытого чата с клиентом","⚠ Посилання створено, але немає відкритого чату з клієнтом"));
       } else {
-        setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType }));
+        try {
+          setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType }));
+        } catch (err: any) {
+          // захист від дубля: сервер просить підтвердження (по сделці є LiqPay-посилання/оплата на цю суму)
+          if (err?.response?.status === 409 && err?.response?.data?.need_force) {
+            if (!confirm(err.response.data.detail)) { setSending(false); return; }
+            setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType, force: 1 }));
+          } else { throw err; }
+        }
         setPayOpen(false); setPayAmount(""); flash(t("✓ Оплата проведена в финансы","✓ Оплата проведена у фінанси"));
       }
     } catch (e: any) { flash(e?.response?.data?.detail || t("Не удалось — проверь сумму / сеть","Не вдалося — перевір суму / мережу")); }
