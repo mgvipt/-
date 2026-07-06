@@ -685,6 +685,35 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                     comment=(reftag + " · Зарахування еквайрингу по угоді #%s" % did)[:255])
                 created += 1
                 continue
+        # оплата за РЕКВІЗИТАМИ з призначенням «Оплата замовлення WCR-<id>» →
+        # привʼязка до сделки + Payment (ідемпотентно по банківському REF) + чек + стадія
+        m_r = _re.search(r"WCR[-\s]?(\d+)", osnd)
+        if m_r and direction == "in":
+            did_r = int(m_r.group(1))
+            from apps.crm.models import Deal as _Deal, Payment as _Pay, log_activity as _la
+            _d = _Deal.objects.filter(id=did_r).first()
+            if _d and not _Pay.objects.filter(external_id=ref).exists():
+                rr0 = apply_bank_rules(direction, osnd, cp, account.name if account else "")
+                cust = ((" ".join(filter(None, [_d.contact.first_name or "", _d.contact.last_name or ""])).strip() if _d.contact_id else "") or cp)
+                Transaction.objects.create(
+                    direction="in", amount=amt, amount_uah=amt, account=account, deal=_d,
+                    date=dte, op_time=op_t, counterparty=cust[:160],
+                    category=Category.objects.filter(name="Продаж товару", direction="in").first(),
+                    fin_direction=rr0["fin_direction"], channel=(_d.source or "")[:24],
+                    import_batch=batch, comment=(reftag + " · " + osnd)[:255])
+                _Pay.objects.create(deal=_d, provider="reqs", amount=amt, is_paid=True, external_id=ref)
+                created += 1
+                try:
+                    from apps.crm.views import _advance_deal_stage, _issue_checkbox_for_deal
+                    from decimal import Decimal as _Dec
+                    paid_r = sum((pp.amount for pp in _Pay.objects.filter(deal=_d, is_paid=True)), _Dec("0"))
+                    if paid_r > 0:
+                        _advance_deal_stage(_d, 3, "Оплата за реквізитами отримана (банк, REF %s)" % ref)
+                    _issue_checkbox_for_deal(_d, user=None)
+                    _la("deal", _d.id, "Оплата за реквізитами", "%s грн з банку (REF %s) — авто-фіксація" % (amt, ref), None, "Банк")
+                except Exception:
+                    pass
+                continue
         # переказ власних коштів (на свою картку/рахунок) — це transfer, не витрата (не спотворює P&L)
         transfer_dest = None
         if "переказ власних" in osnd.lower():

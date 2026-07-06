@@ -1000,7 +1000,16 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         url = ""
         if kind == "requisites":
             iban = getattr(_s, "WALLCOV_IBAN", "") or "(вкажіть IBAN у Налаштуваннях)"
-            text = "Реквізити для оплати 💳\nIBAN: %s\nПризначення: Оплата замовлення #%s\nСума: %s грн\nПісля оплати одразу почнемо готувати замовлення 😊" % (iban, deal.id, amount)
+            payee = getattr(_s, "WALLCOV_PAYEE", "") or "ФОП"
+            ipn = getattr(_s, "WALLCOV_IPN", "")
+            text = ("Реквізити для оплати 💳\n\n"
+                    "Отримувач: %s\n"
+                    "IBAN: %s\n"
+                    "ІПН/ЄДРПОУ: %s\n"
+                    "Сума: %s грн\n\n"
+                    "Призначення платежу (важливо — скопіюйте як є):\n"
+                    "Оплата замовлення WCR-%s\n\n"
+                    "Після надходження грошей оплата зафіксується автоматично, і ми одразу готуємо замовлення 😊") % (payee, iban, ipn, amount, deal.id)
         else:
             pub = getattr(_s, "LIQPAY_PUBLIC_KEY", ""); prv = getattr(_s, "LIQPAY_PRIVATE_KEY", "")
             if not (pub and prv):
