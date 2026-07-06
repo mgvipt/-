@@ -821,7 +821,7 @@ function Journal() {
                 <td>{r.fin_article_name || <span className="muted">—</span>}</td>
                 <td>{r.fin_direction_name || <span className="muted">—</span>}</td>
                 <td className="muted">{(CHANNELS.find((c) => c[0] === r.channel) || ["", "—"])[1]}</td>
-                <td className="muted" style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.comment}</td>
+                <td className="muted" style={{ maxWidth: 260, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 11.5, lineHeight: 1.35 }}>{r.comment}</td>
               </tr>
             ))}
           </tbody>
@@ -1517,7 +1517,7 @@ function DirectionJournal({ directionId, from, to }: { directionId: number; from
                 <td style={{ textAlign: "right", fontWeight: 600, color: r.direction === "in" ? "#16a34a" : "#dc2626" }}>{r.direction === "in" ? "+" : "−"}{Number(r.amount).toLocaleString("ru")} ₴</td>
                 <td>{r.fin_article_name || <span className="muted">—</span>}</td>
                 <td className="muted" style={{ textAlign: "center" }}>{(CHANNELS.find((c) => c[0] === r.channel) || ["", "—"])[1]}</td>
-                <td className="muted" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.comment}</td>
+                <td className="muted" style={{ maxWidth: 260, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 11.5, lineHeight: 1.35 }}>{r.comment}</td>
               </tr>
             ))}
           </tbody>
