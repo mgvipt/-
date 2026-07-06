@@ -881,6 +881,17 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             dlock = Deal.objects.select_for_update().get(pk=deal.pk)
             if Payment.objects.filter(deal=dlock, amount=amount, provider=provider, created_at__gte=_tz.now() - _td(seconds=180)).exists():  # #7 вікно захисту від задвоєння 3 хв
                 return Response(DealDetailSerializer(dlock, context={"request": request}).data)
+            # ЗАХИСТ від дубля: по сделці є свіже LiqPay-посилання на ЦЮ Ж суму →
+            # найімовірніше клієнт оплатить (або вже оплатив) онлайн. Ручна фіксація створить
+            # другий дохід і другий фіскальний чек. Блокуємо (обхід: force=1 після підтвердження).
+            if provider != "liqpay" and not request.data.get("force"):
+                link_fresh = PayLink.objects.filter(deal=dlock, created_at__gte=_tz.now() - _td(hours=48)).exists()
+                paid_liq = Payment.objects.filter(deal=dlock, provider="liqpay", is_paid=True,
+                                                  amount=amount, created_at__gte=_tz.now() - _td(hours=48)).exists()
+                if paid_liq:
+                    return Response({"detail": "Ця сума ВЖЕ оплачена через LiqPay — не фіксуй її вдруге (буде подвійний дохід і другий чек). Якщо це справді ІНША оплата — натисни ще раз для підтвердження.", "need_force": True}, status=status.HTTP_409_CONFLICT)
+                if link_fresh:
+                    return Response({"detail": "По сделці надіслано посилання LiqPay. Якщо клієнт оплатить онлайн — оплата зʼявиться сама, і буде дубль. Прийняти вручну все одно? Натисни ще раз для підтвердження.", "need_force": True}, status=status.HTTP_409_CONFLICT)
             pay = Payment.objects.create(deal=dlock, provider=provider, amount=amount, is_paid=True)
             record_income(amount, deal=dlock, account=account, payment=pay)
             paid = sum((p.amount for p in Payment.objects.filter(deal=dlock, is_paid=True)), Decimal("0"))
@@ -1778,6 +1789,20 @@ class LiqPayCallbackView(APIView):
             try:
                 from apps.finance.services import record_income, liqpay_account
                 record_income(amount, deal=dlock, payment=pay, account=liqpay_account())
+                # той самий платіж міг бути зафіксований менеджером вручну заздалегідь → сигналізуємо
+                try:
+                    from django.utils import timezone as _tzz
+                    from datetime import timedelta as _tdd
+                    twin = Payment.objects.filter(deal=dlock, is_paid=True, amount=amount,
+                                                  created_at__gte=_tzz.now() - _tdd(hours=48)).exclude(provider="liqpay").exclude(id=pay.id).first()
+                    if twin:
+                        from .models import Task as _Task, log_activity as _la
+                        _Task.objects.create(title="⚠️ Можливий ДУБЛЬ оплати по угоді #%s" % dlock.id,
+                                             kind="manager", body="Клієнт оплатив %s грн через LiqPay, але така ж сума вже була прийнята вручну (%s). Перевір: якщо це ТА САМА оплата — зніми ручний платіж і сторнуй його чек у Checkbox." % (amount, twin.provider),
+                                             deal=dlock, assignee=dlock.owner)
+                        _la("deal", dlock.id, "⚠️ Можливий дубль оплати", "LiqPay %s грн + ручна фіксація %s грн (%s) за 48 год" % (amount, twin.amount, twin.provider), None, "Автоматика")
+                except Exception:
+                    pass
             except Exception:
                 pass
             paid = sum((p.amount for p in Payment.objects.filter(deal=dlock, is_paid=True)), Decimal("0"))
