@@ -26,5 +26,14 @@ class DealAdmin(admin.ModelAdmin):
 
 
 admin.site.register(Company)
-admin.site.register(Contact)
+
+
+@admin.register(Contact)
+class ContactAdmin(admin.ModelAdmin):
+    list_display = ("__str__", "phone", "owner", "loyalty_tag")
+    search_fields = ("first_name", "last_name", "phone", "email")
+    list_filter = ("loyalty_tag",)
+    filter_horizontal = ("shared_with",)  # админ выдаёт доступ менеджерам к клиенту
+
+
 admin.site.register(Payment)

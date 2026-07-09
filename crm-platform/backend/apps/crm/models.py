@@ -31,6 +31,9 @@ class Contact(models.Model):
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="contacts_owned", help_text="Ответственный менеджер клиента")
+    shared_with = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True, related_name="contacts_shared",
+        help_text="Доступ к клиенту выдан этим менеджерам (шаринг). Свои клиенты видны и без этого.")
     last_touch_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

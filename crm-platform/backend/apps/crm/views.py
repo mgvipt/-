@@ -49,6 +49,26 @@ class ScopedByRoleMixin:
 class ContactViewSet(viewsets.ModelViewSet):
     queryset = Contact.objects.all()
     serializer_class = ContactSerializer
+
+    @action(detail=True, methods=["get"], url_path="finance")
+    def finance(self, request, pk=None):
+        """Гроші по клієнту: доходи/витрати/аванси + останні операції журналу."""
+        from apps.finance.models import Transaction as _Tx
+        from django.db.models import Sum as _Sum
+        from apps.finance.models import PlannedPayment as _PP
+        c = self.get_object()
+        qs = _Tx.objects.filter(contact=c)
+        inc = qs.filter(direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0
+        exp = qs.filter(direction="out").aggregate(s=_Sum("amount_uah"))["s"] or 0
+        # аванс = залишок грошей клієнта в нас (його дохід мінус витрати по його обʼєкту)
+        adv = (inc or 0) - (exp or 0)
+        debt = _PP.objects.filter(contact=c, kind="payable", status="planned").aggregate(s=_Sum("amount"))["s"] or 0
+        ops = [{"id": t.id, "date": t.date, "direction": t.direction, "amount_uah": t.amount_uah,
+                "counterparty": t.counterparty, "category": t.category.name if t.category else "",
+                "comment": (t.comment or "")[:80], "deal": t.deal_id}
+               for t in qs.select_related("category").order_by("-date")[:15]]
+        return Response({"income": inc, "expense": exp, "advance": adv, "debt": debt,
+                         "count": qs.count(), "ops": ops})
     search_fields = ["first_name", "last_name", "phone", "email"]
     filterset_fields = ["loyalty_tag", "source", "owner"]
     ordering_fields = ["created_at", "first_name", "last_touch_at"]
@@ -58,7 +78,7 @@ class ContactViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if not user.can_see_all_clients():
             from django.db.models import Q as _Q
-            qs = qs.filter(_Q(owner=user) | _Q(leads__owner=user) | _Q(deals__owner=user)).distinct()
+            qs = qs.filter(_Q(owner=user) | _Q(leads__owner=user) | _Q(deals__owner=user) | _Q(shared_with=user)).distinct()
         li = self.request.query_params.get("loyalty_in")
         if li:
             qs = qs.filter(loyalty_tag__in=[x for x in li.split(",") if x])
@@ -565,6 +585,10 @@ def _issue_checkbox_for_deal(deal, user=None):
         return None
     pay = _P.objects.filter(deal=deal, is_paid=True, checkbox_receipt_id="").order_by("id").first()
     if not pay:
+        # наложка НП: клієнт ВЖЕ розрахувався на відділенні (фіскальний момент настав),
+        # хоча виплата від НоваПей ще в дорозі (is_paid=False до надходження на рахунок)
+        pay = _P.objects.filter(deal=deal, provider="np_cod", checkbox_receipt_id="").order_by("id").first()
+    if not pay:
         return None
     goods = []
     for it in deal.items.all():
@@ -578,7 +602,8 @@ def _issue_checkbox_for_deal(deal, user=None):
         goods = [{"good": {"code": "DEAL-%s" % deal.id, "name": (deal.title or "Замовлення Wallcov")[:200],
                            "price": int(round(float(deal.amount or 0) * 100))}, "quantity": 1000}]
     goods_total = sum(g["good"]["price"] * g["quantity"] // 1000 for g in goods)
-    cum = sum((p.amount for p in _P.objects.filter(deal=deal, is_paid=True, id__lte=pay.id)), _D("0"))
+    from django.db.models import Q as _Qcb
+    cum = sum((p.amount for p in _P.objects.filter(deal=deal, id__lte=pay.id).filter(_Qcb(is_paid=True) | _Qcb(id=pay.id))), _D("0"))
     cum_kop = int(round(float(cum) * 100))
     this_kop = int(round(float(pay.amount) * 100))
     if this_kop <= 0:
@@ -679,7 +704,7 @@ def _run_sales_analysis(entity, field, user=None, refresh=False):
     return _ser_analysis(da)
 
 
-def _advance_deal_stage(deal, target_order, reason, actor="Автоматизація"):
+def _advance_deal_stage(deal, target_order, reason, actor="Автоматизація", create_wh=True):
     """Рух сделки на стадію за order (тільки вперед). Лог + stage_changed_at."""
     if not deal.stage_id or not deal.funnel_id:
         return False
@@ -699,7 +724,7 @@ def _advance_deal_stage(deal, target_order, reason, actor="Автоматиза�
         deal.closed_at = _tz.now(); flds.append("closed_at")
     deal.save(update_fields=flds)
     log_activity("deal", deal.id, "\u0410\u0432\u0442\u043e-\u0441\u0442\u0430\u0434\u0456\u044f", "%s \u2192 %s (%s)" % (old, target.name, reason), None, actor)
-    if "\u043e\u043f\u043b\u0430\u0442\u0443 \u043e\u0442\u0440\u0438\u043c\u0430\u043d\u043e" in (target.name or "").lower():
+    if create_wh and "\u043e\u043f\u043b\u0430\u0442\u0443 \u043e\u0442\u0440\u0438\u043c\u0430\u043d\u043e" in (target.name or "").lower():
         try:
             from apps.warehouse.services import create_warehouse_job
             create_warehouse_job(deal)
@@ -716,6 +741,11 @@ def _advance_deal_stage(deal, target_order, reason, actor="Автоматиза�
             deal.items.update(reserved=True)  # авто-резерв на ТТН створена
         except Exception:
             pass
+        try:
+            from apps.warehouse.services import sync_job_status_after_ttn
+            sync_job_status_after_ttn(deal)  # задача складу → колонка «ТТН + Фото»
+        except Exception:
+            pass
     return True
 
 
@@ -723,6 +753,25 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     log_kind = "deal"
     queryset = Deal.objects.select_related("owner", "contact", "funnel", "stage")
     serializer_class = DealSerializer
+
+    def perform_update(self, serializer):
+        old_stage_id = serializer.instance.stage_id
+        new_stage = serializer.validated_data.get("stage")
+        if new_stage is not None and getattr(new_stage, "id", None) != old_stage_id:
+            u = self.request.user
+            if not (u.is_superuser or u.has_perm_code("deal.stage.move") or u.has_perm_code("deal.stage.move.all") or u.has_perm_code("roles.manage")):
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Стадію рухає автоматика (оплата/склад/ТТН). Право «Пересувати сделки вручну» видає керівник у Ролях.")
+        super().perform_update(serializer)
+        deal = serializer.instance
+        # менеджер ВРУЧНУ пересунув сделку на «Оплату отримано» → задача складу (ідемпотентно)
+        try:
+            if deal.stage_id and deal.stage_id != old_stage_id and \
+               "оплату отримано" in (deal.stage.name or "").lower():
+                from apps.warehouse.services import create_warehouse_job
+                create_warehouse_job(deal)
+        except Exception:
+            pass
     view_all_method = "can_see_all_deals"
     delete_perm = "deal.delete"
     edit_perm = "deal.edit.all"
@@ -869,6 +918,51 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
+    def credit_sale(self, request, pk=None):
+        """Товарний кредит (воронка салону): відвантажуємо БЕЗ грошей →
+        дебіторка на клієнта зі сделки + (опційно) задача складу + стадія «Выдано в товарный кредит».
+        Дохід зʼявиться, коли в Дт/Кт натиснуть «Оплачено»."""
+        from apps.finance.models import PlannedPayment, Category as _FCat
+        from datetime import date as _d, timedelta as _tdd
+        deal = self.get_object()
+        g = self._guard(deal, money=True)
+        if g:
+            return g
+        amount = Decimal(str(request.data.get("amount") or deal.amount or 0))
+        if amount <= 0:
+            return Response({"detail": "Сума боргу має бути більше 0."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            days = max(1, int(request.data.get("days") or 14))
+        except (TypeError, ValueError):
+            days = 14
+        cp = ""
+        c = deal.contact
+        if c is not None:
+            cp = (" ".join(filter(None, [c.first_name, c.last_name])).strip() or (c.nickname or ""))[:160]
+        cat = _FCat.objects.filter(name="САЛОН(Оффлайн)", direction="in").first()
+        pp = PlannedPayment.objects.create(
+            kind="receivable", amount=amount, due_date=_d.today() + _tdd(days=days),
+            counterparty=cp, deal=deal, contact=c, category=cat, channel="Салон",
+            fin_direction=(cat.fin_direction if cat and cat.fin_direction_id else None),
+            comment="Товарний кредит зі сделки #%s (%s дн.)" % (deal.id, days))
+        ship = str(request.data.get("ship") or "1") in ("1", "true", "True")
+        if ship:
+            try:
+                from apps.warehouse.services import create_warehouse_job
+                create_warehouse_job(deal)
+            except Exception:
+                pass
+        st = deal.funnel.stages.filter(name__icontains="кредит").order_by("order").first() if deal.funnel_id else None
+        if st:
+            _advance_deal_stage(deal, st.order, "видано в товарний кредит (борг %s грн)" % amount, "Менеджер", create_wh=False)
+        from .models import log_activity
+        log_activity("deal", deal.id, "Товарний кредит",
+                     "Дебіторка %s грн, строк %s дн.%s" % (amount, days, " + задача складу" if ship else ""), None, "Менеджер")
+        deal.refresh_from_db()
+        return Response({"ok": True, "planned_id": pp.id,
+                         "deal": DealDetailSerializer(deal, context={"request": request}).data})
+
+    @action(detail=True, methods=["post"])
     def accept_payment(self, request, pk=None):
         """Приём оплаты -> запись Payment + доходная проводка в финансы."""
         from apps.finance.services import record_income
@@ -892,12 +986,14 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             # Гроші фіксуються ТІЛЬКИ автоматично: LiqPay-callback (по ID платежу) або
             # оплата за реквізитами з банківської виписки. Ніяких дублів і зайвих чеків.
             _fn = (dlock.funnel.name if dlock.funnel_id else '').lower()
-            if 'основний продукт' in _fn or 'тестовий набір' in _fn:
+            # готівка/термінал = клієнт КУПУЄ В САЛОНІ — ручний прийом дозволено у будь-якій воронці
+            if ('основний продукт' in _fn or 'тестовий набір' in _fn) and provider not in ('cash', 'terminal'):
                 return Response({'detail': 'У цій воронці оплати фіксуються лише автоматично: LiqPay (посилання) або оплата за реквізитами ФОП (підтягується з банку). Ручний прийом вимкнено, щоб не було дублів доходу і зайвих фіскальних чеків. Надішли клієнту посилання на оплату.'}, status=status.HTTP_403_FORBIDDEN)
             # ЗАХИСТ від дубля: по сделці є свіже LiqPay-посилання на ЦЮ Ж суму →
             # найімовірніше клієнт оплатить (або вже оплатив) онлайн. Ручна фіксація створить
             # другий дохід і другий фіскальний чек. Блокуємо (обхід: force=1 після підтвердження).
             if provider != "liqpay" and not request.data.get("force"):
+                from .models import PayLink
                 link_fresh = PayLink.objects.filter(deal=dlock, created_at__gte=_tz.now() - _td(hours=48)).exists()
                 paid_liq = Payment.objects.filter(deal=dlock, provider="liqpay", is_paid=True,
                                                   amount=amount, created_at__gte=_tz.now() - _td(hours=48)).exists()
@@ -906,21 +1002,59 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 if link_fresh:
                     return Response({"detail": "По сделці надіслано посилання LiqPay. Якщо клієнт оплатить онлайн — оплата зʼявиться сама, і буде дубль. Прийняти вручну все одно? Натисни ще раз для підтвердження.", "need_force": True}, status=status.HTTP_409_CONFLICT)
             pay = Payment.objects.create(deal=dlock, provider=provider, amount=amount, is_paid=True)
-            record_income(amount, deal=dlock, account=account, payment=pay)
+            # готівка = продаж у салоні: рахунок «Касса Салон» + категорія «САЛОН(Оффлайн)»
+            acc_use, cat_use = account, "Продаж товару"
+            if provider == "cash":
+                cat_use = "САЛОН(Оффлайн)"
+                if not acc_use:
+                    acc_use = Account.objects.filter(name__icontains="Касса Салон").first() or account
+            tx = record_income(amount, deal=dlock, account=acc_use, payment=pay, category=cat_use,
+                               channel=('Салон' if provider in ('cash', 'terminal') else None))
+            # вікно перевірки (воронка салону): ручні правки менеджера до полів операції
+            try:
+                ov = request.data
+                _chg = []
+                if ov.get("tx_account"):
+                    _a = Account.objects.filter(pk=int(ov["tx_account"])).first()
+                    if _a:
+                        tx.account = _a; _chg.append("account")
+                if ov.get("tx_category"):
+                    from apps.finance.models import Category as _FCat
+                    _c = _FCat.objects.filter(pk=int(ov["tx_category"]), direction="in").first()
+                    if _c:
+                        tx.category = _c; _chg.append("category")
+                        if _c.fin_direction_id:
+                            tx.fin_direction = _c.fin_direction; _chg.append("fin_direction")
+                        if _c.fin_article_id:
+                            tx.fin_article = _c.fin_article; _chg.append("fin_article")
+                if ov.get("tx_direction"):
+                    tx.fin_direction_id = int(ov["tx_direction"]); _chg.append("fin_direction")
+                if str(ov.get("tx_counterparty") or "").strip():
+                    tx.counterparty = str(ov["tx_counterparty"]).strip()[:160]; _chg.append("counterparty")
+                if str(ov.get("tx_channel") or "").strip():
+                    tx.channel = str(ov["tx_channel"]).strip()[:24]; _chg.append("channel")
+                if str(ov.get("tx_comment") or "").strip():
+                    tx.comment = str(ov["tx_comment"]).strip()[:255]; _chg.append("comment")
+                if _chg:
+                    tx.save(update_fields=sorted(set(_chg)))
+            except Exception:
+                pass
             paid = sum((p.amount for p in Payment.objects.filter(deal=dlock, is_paid=True)), Decimal("0"))
+            no_wh = str(request.data.get("no_warehouse") or "") in ("1", "true", "True")
             pt = (dlock.pay_type or "").lower()
             is_np = any(x in pt for x in ["np", "післяплат", "послеоплат", "prepay", "передопл"])
             if dlock.amount and paid >= dlock.amount:
-                _advance_deal_stage(dlock, 3, "оплата отримана повністю")  # → Оплату отримано
+                _advance_after_payment(dlock, "оплата отримана повністю", create_wh=not no_wh)
             elif paid > 0:
                 if is_np:
-                    _advance_deal_stage(dlock, 3, "передоплату отримано (решта — післяплата НП)")
+                    _advance_after_payment(dlock, "передоплату отримано (решта — післяплата НП)", create_wh=not no_wh)
                 else:
                     _advance_deal_stage(dlock, 2, "часткова оплата (тип Повна — чекаємо решту)")
             deal = dlock
         # авто-чек Checkbox поза транзакцією; для «термінал» чек б'є застосунок Checkbox (Tap to Pay) — НЕ дублюємо
         cbres = None
-        if provider != "terminal":
+        skip_receipt = str(request.data.get("no_receipt") or "") in ("1", "true", "True")
+        if provider != "terminal" and not skip_receipt:
             try:
                 cbres = _issue_checkbox_for_deal(deal, user=getattr(request, "user", None))
             except Exception as _e:
@@ -1219,12 +1353,26 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         from apps.integrations import adapters as ad
         ref = request.query_params.get("settlement_ref", "")
         q = request.query_params.get("q", "")
-        if not ref or len(q) < 2:
+        city = request.query_params.get("city", "").strip()
+        if not (ref or city) or len(q) < 2:
             return Response([])
-        try:
-            r = ad.np_streets(ref, q)
+
+        def _items(sref):
+            r = ad.np_streets(sref, q)
             rows = (r or {}).get("data") or []
-            items = rows[0].get("Addresses", []) if rows else []
+            return rows[0].get("Addresses", []) if rows else []
+
+        try:
+            items = _items(ref) if ref else []
+            # старі чернетки зберігали city_ref замість settlement_ref → вулиць нема;
+            # перерішаємо населений пункт за НАЗВОЮ міста і пробуємо ще раз
+            if not items and city:
+                for c in ad.np_search_cities(city)[:5]:
+                    sref = c.get("settlement_ref") or ""
+                    if sref and sref != ref:
+                        items = _items(sref)
+                        if items:
+                            break
             return Response([{"name": (a.get("Present") or a.get("SettlementStreetDescription") or ""), "ref": a.get("SettlementStreetRef") or a.get("Ref")} for a in items])
         except Exception:
             return Response([])
@@ -1258,7 +1406,14 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         area = (p.get("recipient_area") or "").strip()
         region = (p.get("recipient_region") or "").strip()
         wh_number = str(p.get("warehouse_number") or "").strip()
-        if not (name and phone and city_name and wh_number):
+        service = p.get("service_type") or "WarehouseWarehouse"
+        street = str(p.get("street") or "").strip()
+        house = str(p.get("house") or "").strip()
+        flat = str(p.get("flat") or "").strip()
+        if service == "WarehouseDoors":
+            if not (name and phone and city_name and street and house):
+                return Response({"detail": "Адресна доставка: потрібні отримувач, телефон, місто, вулиця, будинок"}, status=status.HTTP_400_BAD_REQUEST)
+        elif not (name and phone and city_name and wh_number):
             return Response({"detail": "Потрібні: отримувач, телефон, місто, № відділення"}, status=status.HTTP_400_BAD_REQUEST)
         cfg_obj = IntegrationSettings.objects.filter(provider="novaposhta").first()
         cfg = (cfg_obj.config or {}) if cfg_obj else {}
@@ -1275,7 +1430,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             "DateTime": _dt.now().strftime("%d.%m.%Y"),
             "CargoType": "Parcel",
             "Weight": str(p.get("weight") or "0.5"),
-            "ServiceType": p.get("service_type") or "WarehouseWarehouse",
+            "ServiceType": service,
             "SeatsAmount": str(int(p.get("seats") or 1)),
             "Description": (p.get("description") or "Декоративні матеріали")[:100],
             "Cost": str(int(round(float(p.get("cost") or deal.amount or 300)))),
@@ -1291,8 +1446,12 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             "RecipientCityName": city_name,
             "RecipientArea": area,
             "RecipientAreaRegions": region,
-            "RecipientAddressName": wh_number,
+            "RecipientAddressName": (street if service == "WarehouseDoors" else wh_number),
         }
+        if service == "WarehouseDoors":
+            props["RecipientHouse"] = house
+            if flat:
+                props["RecipientFlat"] = flat
         if cod > 0:
             # післяплата через «Контроль оплати» (AfterpaymentOnGoodsCost) — класична
             # послуга Money-переказу у контрагента НП не підключена (НП: «Післяплата недоступна»)
@@ -1433,8 +1592,15 @@ class AnalyticsView(APIView):
         _see_all = _u.is_superuser or _u.can_see_all_deals()
         _deals_base = Deal.objects.all() if _see_all else Deal.objects.filter(owner=_u)
         _leads_base = Lead.objects.all() if _see_all else Lead.objects.filter(owner=_u)
+        # доступ до воронок: співробітник бачить лише свої воронки СКРІЗЬ (список + цифри)
+        _af = _u.allowed_funnel_ids()
+        if _af is not None:
+            _deals_base = _deals_base.filter(funnel_id__in=_af)
+            _leads_base = _leads_base.filter(funnel_id__in=_af)
         funnel_id = request.GET.get("funnel")
         funnels = Funnel.objects.filter(is_lead_funnel=False)
+        if _af is not None:
+            funnels = funnels.filter(id__in=_af)
         if funnel_id:
             funnels = funnels.filter(id=funnel_id)
         funnel = funnels.first()
@@ -1496,7 +1662,7 @@ class AnalyticsView(APIView):
             "managers": [{"name": (m["owner__first_name"] or "") + " " + (m["owner__last_name"] or ""),
                           "deals": m["deals"], "sum": float(m["sum"] or 0)} for m in managers],
             "channels": _channels,
-            "funnels": list(Funnel.objects.filter(is_lead_funnel=False).values("id", "name")),
+            "funnels": list((Funnel.objects.filter(is_lead_funnel=False) if _af is None else Funnel.objects.filter(is_lead_funnel=False, id__in=_af)).values("id", "name")),
         })
 
 
@@ -1598,6 +1764,21 @@ class _RolesManageOrRead(BasePermission):
         return bool(u and (getattr(u, "is_superuser", False) or (hasattr(u, "has_perm_code") and u.has_perm_code("roles.manage"))))
 
 
+
+def _advance_after_payment(deal, reason, actor="Автоматизація", create_wh=True):
+    """Після оплати: тип оплати «Бронь» → стадія «Заброньовано»,
+    інакше → «Оплату отримано» (пошук стадії ЗА НАЗВОЮ у воронці сделки)."""
+    is_bron = "брон" in (deal.pay_type or "").lower()
+    names = ["заброньов"] if is_bron else ["оплату отримано", "оплата отримано", "оплата отримана", "оплата/предоплата"]
+    target = None
+    for nm in names:
+        target = deal.funnel.stages.filter(name__icontains=nm).order_by("order").first()
+        if target:
+            break
+    if target:
+        return _advance_deal_stage(deal, target.order, reason, actor, create_wh=create_wh)
+    return _advance_deal_stage(deal, 3, reason, actor, create_wh=create_wh)
+
 def _manage_or_read(*extra_codes):
     """Читати — будь-який авторизований; редагувати — superuser / roles.manage / делегований settings-код."""
     class _P(BasePermission):
@@ -1672,6 +1853,9 @@ class AiUsageView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("settings.agent") or u.has_perm_code("roles.manage")):
+            return Response({"detail": "Немає права «AI-агент (модель, автономність, витрати)»"}, status=status.HTTP_403_FORBIDDEN)
         from apps.crm.models import AiUsage
         from django.db.models.functions import TruncDate
         from django.db.models import Sum, Count, Max
@@ -1821,11 +2005,11 @@ class LiqPayCallbackView(APIView):
                 pass
             paid = sum((p.amount for p in Payment.objects.filter(deal=dlock, is_paid=True)), Decimal("0"))
             if dlock.amount and paid >= dlock.amount:
-                _advance_deal_stage(dlock, 3, "LiqPay оплата отримана")
+                _advance_after_payment(dlock, "LiqPay оплата отримана")
             elif (dlock.pay_type or "") == "prepay_np" and paid > 0:
                 # передоплата + післяплата НП: АВАНС вже рухає на «Оплату отримано»
                 # (решту збере Нова Пошта наложкою — фінальний чек при отриманні)
-                _advance_deal_stage(dlock, 3, "LiqPay аванс отримано (решта — післяплата НП)")
+                _advance_after_payment(dlock, "LiqPay аванс отримано (решта — післяплата НП)")
             deal = dlock
         log_activity("deal", deal.id, "Оплата LiqPay", "%s грн отримано (callback, txn %s)" % (amount, pay_id[:12]), None, "LiqPay")
         try:
