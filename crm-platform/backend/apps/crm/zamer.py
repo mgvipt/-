@@ -28,6 +28,12 @@ class ZamerView(APIView):
     def post(self, request):
         data = request.data or {}
 
+        # --- 0. Доступ к приложению замера (право zamer.access) ---
+        u = request.user
+        if not (u.is_superuser or "zamer.access" in u.effective_permissions()):
+            return Response({"error": "Нет доступа к приложению замера. Обратитесь к руководителю."},
+                            status=status.HTTP_403_FORBIDDEN)
+
         # --- 1. Найти сделку ---
         deal_id = data.get("deal_id")
         if not deal_id:
