@@ -73,10 +73,26 @@ function methodPair(p: string): [string, string] {
     case "terminal": return ["Терминал · карта/телефон", "Термінал · картка/телефон"];
     case "requisites": return ["Реквизиты IBAN", "Реквізити IBAN"];
     case "np": return ["Наложенный платёж", "Накладений платіж"];
+    case "np_cod": return ["Наложка НП", "Наложка НП"];
+    case "reqs": return ["Реквизиты IBAN", "Реквізити IBAN"];
+    case "credit": return ["Товарный кредит", "Товарний кредит"];
     case "installment": return ["Рассрочка", "Розстрочка"];
     case "bank": return ["Банк", "Банк"];
     case "checkbox": return ["Checkbox", "Checkbox"];
     default: return [p, p];
+  }
+}
+
+function methodIcon(p: string): string {
+  switch (p) {
+    case "cash": return "💵";
+    case "terminal": return "💳";
+    case "liqpay": return "💳";
+    case "requisites": case "reqs": return "🏦";
+    case "np": case "np_cod": return "📦";
+    case "installment": return "📅";
+    case "credit": return "🤝";
+    default: return "💰";
   }
 }
 
@@ -197,7 +213,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [notFound, setNotFound] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [allFunnels, setAllFunnels] = useState<any[]>([]);
-  const [tab, setTab] = useState<"general" | "items" | "cashflow" | "np">(() => (localStorage.getItem("deal_tab") as any) || "general");
+  const [tab, setTab] = useState<"general" | "items" | "cashflow" | "np" | "smeta">(() => (localStorage.getItem("deal_tab") as any) || "general");
   useEffect(() => { try { localStorage.setItem("deal_tab", tab); } catch (e) { /* noop */ } }, [tab]);
   const [docOpen, setDocOpen] = useState(false);
   const [vkOpen, setVkOpen] = useState(false);
@@ -205,8 +221,13 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [addQty, setAddQty] = useState(1);
   const [psearch, setPsearch] = useState(""); const [presults, setPresults] = useState<Product[]>([]); const [psel, setPsel] = useState<Product | null>(null); const [addReserve, setAddReserve] = useState(false); const [showList, setShowList] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
+  const [ciOpen, setCiOpen] = useState(false);
+  const [ci, setCi] = useState<any>({ name: "", qty: 1, price: "" });
   const [payAmount, setPayAmount] = useState("");
   const [payType, setPayType] = useState("cash");
+  const [cashReceipt, setCashReceipt] = useState(false);
+  const [verify, setVerify] = useState<any>(null);   // крок 2 — вікно перевірки платежу (воронка салону)
+  const [vRefs, setVRefs] = useState<any>({ accs: [], cats: [], dirs: [] });
   const [msg, setMsg] = useState("");
   const [chat, setChat] = useState<{ id: number; direction: string; text: string; created_at: string }[]>([]);
   const [draft, setDraft] = useState("");
@@ -292,7 +313,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     const nf = allFunnels.find((f: any) => f.id === fid);
     const first = nf?.stages?.[0]?.id;
     if (!first) return;
-    if (!confirm(t("Сменить воронку на «"+nf.name+"»? Сделка перейдёт на первую стадию новой воронки.","Змінити воронку на «"+nf.name+"»? Сделка перейде на першу стадію нової воронки."))) return;
+    if (!confirm(t("Сменить воронку на «"+nf.name+"»? Сделка перейдёт на первую стадию новой воронки.","Змінити воронку на «"+nf.name+"»? Угода перейде на першу стадію нової воронки."))) return;
     await api.patch(`/api/deals/${id}/`, { funnel: fid, stage: first });
     flash(t("Воронка изменена","Воронку змінено"));
     load();
@@ -319,9 +340,78 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   async function updateItem(itemId: number, body: any) {
     setDeal(await api.post<Deal>(`/api/deals/${id}/update_item/`, { item: itemId, ...body }));
   }
+  async function addCustomItem() {
+    if (!ci.name.trim() || Number(ci.qty) <= 0 || Number(ci.price) < 0) { flash(t("Впиши название, количество и цену","Впиши назву, кількість і ціну")); return; }
+    try {
+      setDeal(await api.post<Deal>(`/api/deals/${id}/add_item/`, { custom_name: ci.name.trim(), quantity: ci.qty, price: ci.price }));
+      setCi({ name: "", qty: 1, price: "" }); setCiOpen(false);
+      flash(t("✓ Позиция добавлена (без складского учёта)","✓ Позицію додано (без складського обліку)"));
+    } catch (e: any) { flash(e?.response?.data?.detail || t("Не удалось добавить","Не вдалося додати")); }
+  }
   async function removeItem(item: number) { setDeal(await api.post<Deal>(`/api/deals/${id}/remove_item/`, { item })); }
 
+  const salonFunnel = (((deal as any)?.funnel_name || "") as string).toLowerCase().includes("покры") || (((deal as any)?.funnel_name || "") as string).toLowerCase().includes("покрит");
+  const inpV: any = { width: "100%", height: 36, marginBottom: 10, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", fontSize: 13 };
+  async function openVerify() {
+    setSending(true);
+    try {
+      const [aRes, cRes, dRes] = await Promise.all([
+        api.get<any>("/api/accounts/"), api.get<any>("/api/categories/?page_size=500"), api.get<any>("/api/fin-directions/?page_size=200")]);
+      const accs = ((aRes.results || aRes) as any[]).filter((x: any) => x.is_active !== false);
+      const cats = ((cRes.results || cRes) as any[]).filter((x: any) => x.direction === "in" && !x.hidden);
+      const dirs = (dRes.results || dRes) as any[];
+      const defAcc = accs.find((x: any) => (x.name || "").toLowerCase().includes("касса салон")) || accs[0];
+      const defCat = cats.find((x: any) => x.name === "САЛОН(Оффлайн)") || cats[0];
+      setVRefs({ accs, cats, dirs });
+      setVerify({
+        mode: payType === "credit" ? "credit" : "pay",
+        amount: payAmount || String(deal?.amount || ""),
+        account: defAcc?.id || 0, category: defCat?.id || 0,
+        direction: defCat?.fin_direction || 0,
+        counterparty: ((deal as any)?.contact_name || "") as string,
+        channel: "Салон", comment: "", ship: true, days: 14,
+      });
+    } catch { flash(t("Не удалось загрузить справочники","Не вдалося завантажити довідники")); }
+    finally { setSending(false); }
+  }
+  async function confirmVerify() {
+    if (!verify) return;
+    setSending(true);
+    try {
+      if (verify.mode === "credit") {
+        let r: any;
+        try {
+          r = await api.post<any>(`/api/deals/${id}/credit_sale/`, { amount: verify.amount, days: verify.days, ship: verify.ship ? 1 : 0 });
+        } catch (err: any) {
+          if (err?.response?.status === 409 && err?.response?.data?.need_force) {
+            if (!confirm(err.response.data.detail)) { setSending(false); return; }
+            r = await api.post<any>(`/api/deals/${id}/credit_sale/`, { amount: verify.amount, days: verify.days, ship: verify.ship ? 1 : 0, force: 1 });
+          } else { throw err; }
+        }
+        setDeal(r.deal);
+        setVerify(null); setPayOpen(false); setPayAmount("");
+        flash(t("✓ Дебиторка создана: долг виден в Финансы → Дт/Кт и в карточке клиента. «Оплачено» там создаст доход.","✓ Дебіторку створено: борг видно у Фінанси → Дт/Кт і в картці клієнта. «Оплачено» там створить дохід."));
+      } else {
+        const body: any = { amount: verify.amount, provider: payType, no_receipt: payType === "cash" && !cashReceipt ? 1 : 0,
+          tx_account: verify.account, tx_category: verify.category, tx_direction: verify.direction,
+          tx_counterparty: verify.counterparty, tx_channel: verify.channel, tx_comment: verify.comment,
+          no_warehouse: verify.ship ? 0 : 1 };
+        try {
+          setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, body));
+        } catch (err: any) {
+          if (err?.response?.status === 409 && err?.response?.data?.need_force) {
+            if (!confirm(err.response.data.detail)) { setSending(false); return; }
+            setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { ...body, force: 1 }));
+          } else { throw err; }
+        }
+        setVerify(null); setPayOpen(false); setPayAmount("");
+        flash(t("✓ Оплата проведена в финансы","✓ Оплата проведена у фінанси"));
+      }
+    } catch (e: any) { flash(e?.response?.data?.detail || t("Не удалось провести","Не вдалося провести")); }
+    finally { setSending(false); }
+  }
   async function acceptPayment() {
+    if (salonFunnel && (payType === "cash" || payType === "terminal" || payType === "credit")) { await openVerify(); return; }
     setSending(true);
     try {
       if (payType === "liqpay" || payType === "requisites" || payType === "installment") {
@@ -332,12 +422,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         flash((r.sent ? t("✓ Отправлено в чат. Ссылка скопирована в буфер: ","✓ Надіслано в чат. Посилання скопійовано в буфер: ") : t("⚠ Чата нет. Ссылка СКОПИРОВАНА в буфер — вставь клиенту вручную: ","⚠ Чату немає. Посилання СКОПІЙОВАНО в буфер — встав клієнту вручну: ")) + r.url);
       } else {
         try {
-          setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType }));
+          setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType, no_receipt: payType === "cash" && !cashReceipt ? 1 : 0 }));
         } catch (err: any) {
           // захист від дубля: сервер просить підтвердження (по сделці є LiqPay-посилання/оплата на цю суму)
           if (err?.response?.status === 409 && err?.response?.data?.need_force) {
             if (!confirm(err.response.data.detail)) { setSending(false); return; }
-            setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType, force: 1 }));
+            setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType, force: 1, no_receipt: payType === "cash" && !cashReceipt ? 1 : 0 }));
           } else { throw err; }
         }
         setPayOpen(false); setPayAmount(""); flash(t("✓ Оплата проведена в финансы","✓ Оплата проведена у фінанси"));
@@ -347,7 +437,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   }
   async function ship() {
     try { const r = await api.post<any>(`/api/deals/${id}/ship/`, {}); setDeal(r.deal); flash(t(`✓ Отгружено. Со склада списано на ${r.cogs} ₴ по закупке (деньги не трогаются)`, `✓ Відвантажено. Зі складу списано на ${r.cogs} ₴ по закупці (гроші не чіпаються)`)); }
-    catch { flash(t("В сделке нет товаров для отгрузки","У сделке немає товарів для відвантаження")); }
+    catch { flash(t("В сделке нет товаров для отгрузки","В угоді немає товарів для відвантаження")); }
   }
   // TODO боевой режим: завести @action в DealViewSet поверх integrations/adapters.py
   //      (np_create_ttn / checkbox_create_receipt / liqpay_checkout_link). Сейчас — заглушки.
@@ -408,10 +498,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     return () => clearTimeout(tm);
   }, [ttnCityQ, ttnOpen, ttnCity]);
   async function setContact(cid: number) { await api.patch(`/api/deals/${id}/`, { contact: cid }); setCliEdit(false); setCliSearch(""); setCliResults([]); setCliNew(false); load(); }
-  async function removeContact() { if (!confirm(t("Убрать клиента из сделки?","Прибрати клієнта зі сделки?"))) return; await api.patch(`/api/deals/${id}/`, { contact: null }); load(); }
+  async function removeContact() { if (!confirm(t("Убрать клиента из сделки?","Прибрати клієнта з угоди?"))) return; await api.patch(`/api/deals/${id}/`, { contact: null }); load(); }
   async function delDeal() {
-    if (!confirm(t("Удалить сделку безвозвратно? Действие необратимо.","Видалити сделку безповоротно? Дію не відмінити."))) return;
-    try { await api.del("/api/deals/" + id + "/"); flash(t("Сделка удалена","Сделку видалено")); nav(-1); }
+    if (!confirm(t("Удалить сделку безвозвратно? Действие необратимо.","Видалити угоду безповоротно? Дію не відмінити."))) return;
+    try { await api.del("/api/deals/" + id + "/"); flash(t("Сделка удалена","Угоду видалено")); nav(-1); }
     catch (e: any) { flash(e?.response?.data?.detail || t("Нет прав на удаление","Немає прав на видалення")); }
   }
   async function resetClient() {
@@ -469,8 +559,8 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   }
 
   /* ─── [6] ВЫЧИСЛЯЕМОЕ ────────────────────────────────────────────────── */
-  if (notFound) return <div className="scroll pad fade"><div className="panel" style={{ textAlign: "center", padding: 40 }}><h3>{t("Сделка не найдена","Сделку не знайдено")}</h3><div className="muted" style={{ marginBottom: 16 }}>{t("Возможно, она удалена или изменён ID после переноса из Битрикса. Открой из списка сделок.","Можливо, її видалено або змінено ID після перенесення з Бітрикса. Відкрий зі списку сделок.")}</div><button className="btn btn-primary" onClick={() => nav("/deals")}>{t("← К списку сделок","← До списку сделок")}</button></div></div>;
-  if (!deal) return <div className="spin">{t("Загрузка сделки…","Загрузка сделки…")}</div>;
+  if (notFound) return <div className="scroll pad fade"><div className="panel" style={{ textAlign: "center", padding: 40 }}><h3>{t("Сделка не найдена","Угоду не знайдено")}</h3><div className="muted" style={{ marginBottom: 16 }}>{t("Возможно, она удалена или изменён ID после переноса из Битрикса. Открой из списка сделок.","Можливо, її видалено або змінено ID після перенесення з Бітрикса. Відкрий зі списку угод.")}</div><button className="btn btn-primary" onClick={() => nav("/deals")}>{t("← К списку сделок","← До списку угод")}</button></div></div>;
+  if (!deal) return <div className="spin">{t("Завантаження угоди…","Завантаження угоди…")}</div>;
   const curOrder = funnel?.stages.find((s) => s.id === deal.stage)?.order ?? 0;
   const remaining = Number(deal.amount) - deal.paid;
   const inp: any = { width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", fontSize: 13, boxSizing: "border-box" };
@@ -480,7 +570,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   // Лента событий из реальных данных (оплаты + системное «создана»):
   const events = [
     ...deal.payments.map((p) => ({ t: p.created_at, kind: "pay", text: t(`Оплата ${fmt(Number(p.amount))} ₴ · ${p.provider}`, `Оплата ${fmt(Number(p.amount))} ₴ · ${p.provider}`) })),
-    { t: deal.payments[0]?.created_at || "", kind: "sys", text: t("Сделка создана","Сделка створена") },
+    { t: deal.payments[0]?.created_at || "", kind: "sys", text: t("Сделка создана","Угоду створено") },
   ].filter((e) => e.t);
 
   return (
@@ -496,26 +586,26 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <button className="btn btn-light" style={{ padding: "3px 9px" }} onClick={() => setTitleEdit(false)}>✕</button>
           </span>
         ) : (<span style={{ cursor: "pointer" }} title={t("Клик — изменить название","Клік — змінити назву")} onClick={() => { setTitleVal(deal.title); setTitleEdit(true); }}>{deal.title} <span style={{ fontSize: 11, opacity: .45 }}><Icon n="✏️" size={11} /></span></span>)}</b>
-        <button className="btn" title={t("Скопировать ссылку на сделку","Скопіювати лінк на сделку")} onClick={() => { navigator.clipboard?.writeText(window.location.origin+"/deals/"+deal.id); flash(t("Ссылка скопирована","Лінк скопійовано")); }}><Icon n="🔗" size={16} /></button>
+        <button className="btn" title={t("Скопировать ссылку на сделку","Скопіювати посилання на угоду")} onClick={() => { navigator.clipboard?.writeText(window.location.origin+"/deals/"+deal.id); flash(t("Ссылка скопирована","Посилання скопійовано")); }}><Icon n="🔗" size={16} /></button>
         {deal.is_seen ? <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", background: "#dcfce7", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap" }} title={t("Ответили клиенту","Відповіли клієнту")}>✓ {t("Відповіли","Відповіли")}</span> : <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "#ef4444", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap", boxShadow: "0 0 0 3px rgba(239,68,68,.18)" }} title={t("Клиент написал — не отвечено","Клієнт написав — не відповіли")}>● {t("Не отвечено","Не відповіли")}</span>}
         {allFunnels.length ? (
-          <select value={deal.funnel} onChange={(e) => changeFunnel(Number(e.target.value))} title={t("Воронка сделки — можно сменить","Воронка сделки — можна змінити")} style={{ height: 30, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 13, background: "#fff", cursor: "pointer", maxWidth: 230 }}>
+          <select value={deal.funnel} onChange={(e) => changeFunnel(Number(e.target.value))} title={t("Воронка сделки — можно сменить","Воронка угоди — можна змінити")} style={{ height: 30, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 13, background: "#fff", cursor: "pointer", maxWidth: 230 }}>
             {allFunnels.filter((f: any) => !f.is_lead_funnel).map((f: any) => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
         ) : <span className="muted">{funnel?.name}</span>}
-        {deal.created_at && <span className="muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }} title={t("Сделка появилась","Сделка зʼявилась")}><Icon n="🕓" size={14} /> {new Date(deal.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
+        {deal.created_at && <span className="muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }} title={t("Сделка появилась","Угода зʼявилась")}><Icon n="🕓" size={14} /> {new Date(deal.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
         {deal.contact_id && <CallButton contact={deal.contact_id} small />}
         <div style={{ position: "relative" }}>
-          <button className="btn" title={t("Действия со сделкой","Дії зі сделкою")} onClick={() => setGearOpen((v) => !v)}><Icon n="settings" size={16} /></button>
+          <button className="btn" title={t("Действия со сделкой","Дії з угодою")} onClick={() => setGearOpen((v) => !v)}><Icon n="settings" size={16} /></button>
           {gearOpen ? (
             <div onMouseLeave={() => setGearOpen(false)} style={{ position: "absolute", top: 42, right: 0, width: 240, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 14px 36px rgba(0,0,0,.18)", zIndex: 41, overflow: "hidden" }}>
-              <div onClick={() => { setGearOpen(false); navigator.clipboard?.writeText(window.location.origin + "/deals/" + deal.id); flash(t("Ссылка скопирована", "Лінк скопійовано")); }} style={gItem}><Icon n="🔗" size={15} /> {t("Копировать ссылку", "Копіювати посилання")}</div>
+              <div onClick={() => { setGearOpen(false); navigator.clipboard?.writeText(window.location.origin + "/deals/" + deal.id); flash(t("Ссылка скопирована", "Посилання скопійовано")); }} style={gItem}><Icon n="🔗" size={15} /> {t("Копировать ссылку", "Копіювати посилання")}</div>
               {deal.contact_id ? <div onClick={() => { setGearOpen(false); nav("/clients/" + deal.contact_id); }} style={gItem}><Icon n="👤" size={15} /> {t("Карточка клиента", "Картка клієнта")}</div> : null}
-              <div onClick={() => { setGearOpen(false); dupDeal(); }} style={gItem}><Icon n="📄" size={15} /> {t("Дублировать сделку", "Дублювати сделку")}</div>
+              <div onClick={() => { setGearOpen(false); dupDeal(); }} style={gItem}><Icon n="📄" size={15} /> {t("Дублировать сделку", "Дублювати угоду")}</div>
               {(can("roles.manage") && deal.contact_id) ? <div onClick={() => { setGearOpen(false); resetClient(); }} style={{ ...gItem, color: "#b45309" }}><Icon n="trash" size={15} /> {t("Сбросить клиента (тест)","Скинути клієнта (тест)")}</div> : null}
-              {can("deal.delete") ? <div onClick={() => { setGearOpen(false); delDeal(); }} style={{ ...gItem, color: "#dc2626", borderTop: "1px solid #f1f5f9", borderBottom: "none" }}><Icon n="trash" size={15} /> {t("Удалить сделку", "Видалити сделку")}</div> : null}
+              {can("deal.delete") ? <div onClick={() => { setGearOpen(false); delDeal(); }} style={{ ...gItem, color: "#dc2626", borderTop: "1px solid #f1f5f9", borderBottom: "none" }}><Icon n="trash" size={15} /> {t("Удалить сделку", "Видалити угоду")}</div> : null}
             </div>
           ) : null}
         </div>
@@ -541,13 +631,20 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         <button className={"btn" + (tab === "general" ? " btn-primary" : "")} onClick={() => setTab("general")}><Icon n="💬" size={15} /> {t("Лента / Чат","Стрічка / Чат")}</button>
         <button className={"btn" + (tab === "items" ? " btn-primary" : "")} onClick={() => setTab("items")}><Icon n="📦" size={15} /> {t("Товары","Товари")} ({deal.items.length})</button>
         <button className={"btn" + (tab === "np" ? " btn-primary" : "")} onClick={() => setTab("np")}><Icon n="🚚" size={15} /> {t("Новая почта","Нова Пошта")}</button>
+        <button className={"btn" + (tab === "smeta" ? " btn-primary" : "")} onClick={() => setTab("smeta")}><Icon n="📐" size={15} /> {t("Смета","Кошторис")}</button>
         <button className="btn" style={{ padding: "0 10px" }} title={t("Накладная / КП (документ)","Накладна / КП (документ)")} onClick={() => setDocOpen(true)}><Icon n="file" size={16} /></button>
         <button className="btn" style={{ padding: "0 10px" }} title={t("Печать бланка выкраски","Друк бланка викраски")} onClick={() => setVkOpen(true)}><Icon n="palette" size={16} /></button>
         <div style={{ width: 1, height: 24, background: "#cbd5e1", margin: "0 6px" }} />
         <button className="btn" onClick={issueCheckbox}><Icon n="🧾" size={15} /> {t("Checkbox","Checkbox")}</button>
       </div>
 
-      {tab === "np" ? (<NPDelivery deal={deal} flash={flash} onReload={() => api.get<Deal>(`/api/deals/${id}/`).then(setDeal)} />) : tab !== "cashflow" ? (
+      {tab === "smeta" ? (
+        <iframe
+          title={t("Кошторис","Кошторис")}
+          src={`https://calc.wallcovdec.com.ua/?cn=${encodeURIComponent((deal as any).contact_name || deal.title || "")}&cd=${deal.id}`}
+          style={{ width: "100%", height: "calc(100vh - 210px)", minHeight: 620, border: "1px solid #e2e8f0", borderRadius: 10, background: "#fff" }}
+        />
+      ) : tab === "np" ? (<NPDelivery deal={deal} flash={flash} onReload={() => api.get<Deal>(`/api/deals/${id}/`).then(setDeal)} />) : tab !== "cashflow" ? (
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div className="grid2" style={{ flex: 1, minWidth: 0 }}>
 
@@ -667,7 +764,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
 
           {/* 10.2 Сумма / оплачено / осталось (сумма — инлайн-edit) */}
           <div className="panel">
-            <div className="label">{t("Сумма сделки","Сума сделки")}</div>
+            <div className="label">{t("Сумма сделки","Сума угоди")}</div>
             <div style={{ fontSize: 22, fontWeight: 700 }}>
               <Inline value={Number(deal.amount)} fmt={(v) => fmt(v) + t(" грн."," грн.")} onSave={(v) => patch({ amount: v })} />
             </div>
@@ -684,9 +781,23 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             </div>
             <div style={{ marginTop: 8 }}>
               <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("Способ оплаты","Спосіб оплати")}</div>
-              {(deal as any).pay_method
-                ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, background: "#eff6ff", color: "#1d4ed8", borderRadius: 8, padding: "5px 11px" }}>💳 {t(...methodPair((deal as any).pay_method))}</span>
-                : <span className="muted" style={{ fontSize: 12 }}>{t("выберется при «Принять оплату»","обереться при «Прийняти оплату»")}</span>}
+              {((deal.payments || []).length > 0)
+                ? <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                    {(deal.payments || []).slice().sort((a: any, b: any) => a.id - b.id).map((p: any) => {
+                      const ok = !!p.is_paid;
+                      const isCod = p.provider === "np_cod" || p.provider === "np";
+                      return (
+                        <span key={p.id}
+                          title={ok ? t("Деньги получены","Гроші отримано") : (isCod ? t("Клиент получил посылку — ждём выплату НоваПей на счёт","Клієнт отримав посилку — чекаємо виплату НоваПей на рахунок") : t("Ожидаем оплату","Очікуємо оплату"))}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 700, background: ok ? "#dcfce7" : "#fef3c7", color: ok ? "#166534" : "#92400e", borderRadius: 8, padding: "4px 9px" }}>
+                          {methodIcon(p.provider)} {t(...methodPair(p.provider))} · {fmt(Number(p.amount))} ₴ {ok ? "✓" : (isCod ? t("· ⏳ ждём выплату НП","· ⏳ чекаємо виплату НП") : t("· ⏳ ждём","· ⏳ чекаємо"))}
+                        </span>
+                      );
+                    })}
+                  </div>
+                : ((deal as any).pay_method
+                  ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, background: "#eff6ff", color: "#1d4ed8", borderRadius: 8, padding: "5px 11px" }}>💳 {t(...methodPair((deal as any).pay_method))}</span>
+                  : <span className="muted" style={{ fontSize: 12 }}>{t("выберется при «Принять оплату»","обереться при «Прийняти оплату»")}</span>)}
             </div>
             <div style={{ height: 8, background: "#e2e8f0", borderRadius: 6, overflow: "hidden", margin: "10px 0 6px" }} title={t("Прогресс оплаты","Прогрес оплати")}>
               <div style={{ height: "100%", width: (Number(deal.amount) > 0 ? Math.min(100, Math.round((deal.paid / Number(deal.amount)) * 100)) : 0) + "%", background: (deal.paid >= Number(deal.amount) && deal.paid > 0) ? "#16a34a" : "#f59e0b", transition: "width .3s" }} />
@@ -763,16 +874,17 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             /* 11.2 Товары в сделке (добавить/удалить → пересчёт суммы на бэке) */
             <div className="panel">
               <div className="label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>{t("Товары в сделке","Товари у сделке")}</span>
+                <span>{t("Товары в сделке","Товари в угоді")}</span>
                 <button className="btn" onClick={() => setDocOpen(true)} title={t("Сформировать документ КП","Сформувати документ КП")}><Icon n="📄" size={14} /> {t("Документ","Документ")}</button>
               </div>
               <div className="prod-search" style={{ position: "relative", margin: "8px 0 12px" }}>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <input value={psearch} onChange={(e) => { setPsearch(e.target.value); setPsel(null); }} placeholder={t("🔍 Поиск товара из номенклатуры по названию…","🔍 Пошук товару з номенклатури за назвою…")} style={{ flex: 1, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px" }} />
                   <input type="number" value={addQty} min={1} onChange={(e) => setAddQty(Number(e.target.value))} title={t("Количество","Кількість")} style={{ width: 56, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px" }} />
-                  <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, whiteSpace: "nowrap" }} title={t("Зарезервировать товар под сделку","Зарезервувати товар під сделку")}><input type="checkbox" checked={addReserve} onChange={(e) => setAddReserve(e.target.checked)} />{t("Резерв","Резерв")}</label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, whiteSpace: "nowrap" }} title={t("Зарезервировать товар под сделку","Зарезервувати товар під угоду")}><input type="checkbox" checked={addReserve} onChange={(e) => setAddReserve(e.target.checked)} />{t("Резерв","Резерв")}</label>
                   <button className="btn btn-primary" onClick={() => addItem()} disabled={!psel}>{t("Добавить","Додати")}</button>
                   <button className="btn" onClick={() => setShowList((s) => !s)} title={t("Показать весь список товаров (двойной клик — добавить)","Показати весь список товарів (подвійний клік — додати)")}>{showList ? <>{t("✕ Список","✕ Список")}</> : <><Icon n="📋" size={14} /> {t("Список","Список")}</>}</button>
+                  {can("deal.items.custom") || can("roles.manage") ? <button className="btn" onClick={() => setCiOpen((v) => !v)} title={t("Добавить позицию НЕ из номенклатуры — без складского учёта и списания","Додати позицію НЕ з номенклатури — без складського обліку і списання")} style={{ whiteSpace: "nowrap" }}>{ciOpen ? "✕" : "➕"} {t("Своя","Своя")}</button> : null}
                 </div>
                 {presults.length > 0 && (
                   <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 260, overflowY: "auto" }}>
@@ -784,16 +896,24 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   </div>
                 )}
                 {psel && <div style={{ fontSize: 12, color: "#16a34a", marginTop: 4 }}>{t("✓ Выбрано:","✓ Обрано:")} {psel.name} · {fmt(Number(psel.price))} ₴ · {t("сумма","сума")} {fmt(Number(psel.price) * addQty)} ₴</div>}
+                {ciOpen && (
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px" }}>
+                    <input value={ci.name} onChange={(e) => setCi({ ...ci, name: e.target.value })} placeholder={t("Название своей позиции (не со склада)","Назва своєї позиції (не зі складу)")} style={{ flex: 1, height: 32, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px", fontSize: 13 }} />
+                    <input type="number" value={ci.qty} min={1} onChange={(e) => setCi({ ...ci, qty: Number(e.target.value) })} title={t("Количество","Кількість")} style={{ width: 56, height: 32, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 13 }} />
+                    <input type="number" value={ci.price} onChange={(e) => setCi({ ...ci, price: e.target.value })} placeholder={t("Цена","Ціна")} style={{ width: 90, height: 32, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 13 }} />
+                    <button className="btn btn-primary" style={{ height: 32 }} onClick={addCustomItem}>{t("Добавить","Додати")}</button>
+                  </div>
+                )}
               </div>
               {showList && (
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, maxHeight: 300, overflowY: "auto", marginBottom: 12 }}>
-                  <div style={{ padding: "6px 10px", fontSize: 11, color: "#64748b", borderBottom: "1px solid #f1f5f9", position: "sticky", top: 0, background: "#f8fafc" }}>{t("Двойной клик по товару — добавить в сделку. Поиск сверху фильтрует список.","Подвійний клік по товару — додати у сделку. Пошук зверху фільтрує список.")}</div>
+                  <div style={{ padding: "6px 10px", fontSize: 11, color: "#64748b", borderBottom: "1px solid #f1f5f9", position: "sticky", top: 0, background: "#f8fafc" }}>{t("Двойной клик по товару — добавить в сделку. Поиск сверху фильтрует список.","Подвійний клік по товару — додати в угоду. Пошук зверху фільтрує список.")}</div>
                   {products.filter((p) => !psearch.trim() || p.name.toLowerCase().includes(psearch.toLowerCase())).map((p) => {
                     const added = deal.items.some((it: any) => it.product === p.id);
                     return (
                       <div key={p.id} onDoubleClick={() => addItem(p)} title={t("Двойной клик — добавить","Подвійний клік — додати")} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13, display: "flex", justifyContent: "space-between", gap: 8 }}>
                         <span><b>{p.name}</b> <span className="muted">· {fmt(Number(p.price))} ₴ · {t("ост.","зал.")} {(p as any).stock}</span></span>
-                        {added && <span style={{ color: "#16a34a", whiteSpace: "nowrap" }}>✓ {t("в сделке","у сделці")}</span>}
+                        {added && <span style={{ color: "#16a34a", whiteSpace: "nowrap" }}>✓ {t("в сделке","в угоді")}</span>}
                       </div>
                     );
                   })}
@@ -818,7 +938,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                       <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><input defaultValue={Number(it.price)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.price) && updateItem(it.id, { price: e.target.value })} style={editInp} /> ₴</td>
                       {can("product.cost.view") && <td style={{ padding: "6px 4px", color: "#9a3412", whiteSpace: "nowrap" }} title={t("Себестоимость на момент продажи","Собівартість на момент продажу")}>{Number(it.cost || 0) > 0 ? fmt(Number(it.cost)) + " ₴" : "—"}</td>}
                       <td style={{ padding: "6px 4px" }}><input defaultValue={Number(it.quantity)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.quantity) && updateItem(it.id, { quantity: e.target.value })} style={{ ...editInp, width: 50 }} /></td>
-                      <td style={{ padding: "6px 4px", textAlign: "center" }}><input type="checkbox" checked={!!it.reserved} onChange={() => toggleReserve(it)} title={t("Зарезервировать под сделку","Зарезервувати під сделку")} /></td>
+                      <td style={{ padding: "6px 4px", textAlign: "center" }}><input type="checkbox" checked={!!it.reserved} onChange={() => toggleReserve(it)} title={t("Зарезервировать под сделку","Зарезервувати під угоду")} /></td>
                       <td style={{ padding: "6px 4px", color: low ? "#dc2626" : "#64748b" }} title={low ? t("Не хватает на складе","Не вистачає на складі") : ""}>{it.product_stock != null ? Number(it.product_stock) : "—"}{low ? " ⚠" : ""}</td>
                       <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><input defaultValue={Number(it.discount_pct || 0)} type="number" min={0} max={100} onBlur={(e) => Number(e.target.value) !== Number(it.discount_pct || 0) && updateItem(it.id, { discount_pct: e.target.value })} style={{ ...editInp, width: 44 }} /> %</td>
                       <td style={{ padding: "6px 4px", color: "#16a34a" }}>{fmt(Number(it.discount_sum || 0))} ₴</td>
@@ -835,7 +955,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                     {can("product.cost.view") && (() => { const cogs = deal.items.reduce((s: number, i: any) => s + Number(i.quantity) * Number(i.cost || 0), 0); const rev = deal.items.reduce((s: number, i: any) => s + Number(i.total), 0); return (
                       <>
                         <div style={{ ...rowTot, fontSize: 12.5 }}><span className="muted">{t("Сумма по закупке","Сума по закупці")}</span><b style={{ color: "#9a3412" }}>{fmt(cogs)} ₴</b></div>
-                        <div style={{ ...rowTot, fontSize: 12.5 }}><span className="muted">{t("Маржа сделки","Маржа сделки")}</span><b style={{ color: rev - cogs > 0 ? "#166534" : "#dc2626" }}>{fmt(rev - cogs)} ₴{rev > 0 ? " · " + Math.round(((rev - cogs) / rev) * 100) + "%" : ""}</b></div>
+                        <div style={{ ...rowTot, fontSize: 12.5 }}><span className="muted">{t("Маржа угоди","Маржа угоди")}</span><b style={{ color: rev - cogs > 0 ? "#166534" : "#dc2626" }}>{fmt(rev - cogs)} ₴{rev > 0 ? " · " + Math.round(((rev - cogs) / rev) * 100) + "%" : ""}</b></div>
                       </>
                     ); })()}
                     {(deal as any).realization && (
@@ -847,7 +967,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   </div>
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 14 }}>
-                  <span className="muted" style={{ fontSize: 12 }}>{t("Зафиксируй список — сделка перейдёт на расчёт","Зафіксуй список — сделка перейде на розрахунок")}</span>
+                  <span className="muted" style={{ fontSize: 12 }}>{t("Зафиксируй список — сделка перейдёт на расчёт","Зафіксуй список — угода перейде на розрахунок")}</span>
                   <button className="btn btn-primary" onClick={confirmItems} title={t("Сохранить список товаров и перейти к расчёту","Зберегти список товарів і перейти до розрахунку")}><Icon n="💾" size={14} /> {t("Сохранить список → Розрахунок","Зберегти список → Розрахунок")}</button>
                 </div>
                 </>
@@ -876,14 +996,14 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       {ncOpen && (
         <div onClick={() => setNcOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 380 }}>
-            <h3 style={{ marginTop: 0 }}>{t("Клиент сделки","Клієнт сделки")}</h3>
+            <h3 style={{ marginTop: 0 }}>{t("Клиент сделки","Клієнт угоди")}</h3>
             <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
               <button className={"btn" + (ncMode === "pick" ? " btn-primary" : " btn-light")} style={{ flex: 1 }} onClick={() => setNcMode("pick")}><Icon n="🔍" size={14} /> {t("Выбрать существующего","Обрати існуючого")}</button>
               <button className={"btn" + (ncMode === "new" ? " btn-primary" : " btn-light")} style={{ flex: 1 }} onClick={() => setNcMode("new")}><Icon n="➕" size={14} /> {t("Создать нового","Створити нового")}</button>
             </div>
             {ncMode === "pick" ? (
               <>
-                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("Найди клиента среди существующих (37 тыс.) и привяжи к сделке.","Знайди клієнта серед існуючих (37 тис.) і привʼяжи до сделки.")}</div>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("Найди клиента среди существующих (37 тыс.) и привяжи к сделке.","Знайди клієнта серед існуючих (37 тис.) і привʼяжи до угоди.")}</div>
                 <input value={ncSearch} autoFocus onChange={(e) => setNcSearch(e.target.value)} placeholder={t("Имя, фамилия, телефон…","Імʼя, прізвище, телефон…")} style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 8 }} />
                 <div style={{ maxHeight: 240, overflowY: "auto", marginBottom: 12 }}>
                   {ncResults.map((c) => (
@@ -897,7 +1017,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
               </>
             ) : (
               <>
-                <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{t("Создастся карточка клиента и привяжется к этой сделке.","Створиться картка клієнта і привʼяжеться до цієї сделки.")}</div>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{t("Создастся карточка клиента и привяжется к этой сделке.","Створиться картка клієнта і привʼяжеться до цієї угоди.")}</div>
                 <label className="label">{t("Имя и фамилия","Імʼя та прізвище")}</label>
                 <input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="Ірина Турок" style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10 }} />
                 <label className="label">{t("Телефон","Телефон")}</label>
@@ -954,21 +1074,78 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <h3 style={{ marginTop: 0 }}>{t("Принять оплату","Прийняти оплату")}</h3>
             <label className="label" style={{ marginBottom: 6 }}>{t("Способ оплаты","Спосіб оплати")}</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 14 }}>
-              {([["cash", t("💵 Наличные","💵 Готівка")], ["liqpay", t("💳 LiqPay (оплата картой онлайн)","💳 LiqPay (оплата картою онлайн)")], ["terminal", t("💳 Терминал · карта/телефон NFC","💳 Термінал · картка/телефон NFC")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]] as [string,string][]).map(([k, label]) => (
+              {([["cash", t("💵 Наличные","💵 Готівка")], ["liqpay", t("💳 LiqPay (оплата картой онлайн)","💳 LiqPay (оплата картою онлайн)")], ["terminal", t("💳 Терминал · карта/телефон NFC","💳 Термінал · картка/телефон NFC")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]].concat(salonFunnel ? [["credit", t("🤝 Товарный кредит (отгрузка в долг)","🤝 Товарний кредит (відвантаження в борг)")]] : []) as [string,string][]).map(([k, label]) => (
                 <button key={k} onClick={() => setPayType(k)} style={{ fontSize: 12, padding: "8px 8px", borderRadius: 8, cursor: "pointer", textAlign: "left", border: "1px solid " + (payType === k ? "var(--brand,#2563eb)" : "#e2e8f0"), background: payType === k ? "#eff6ff" : "#fff", color: payType === k ? "#1d4ed8" : "#475569", fontWeight: payType === k ? 600 : 400 }}>{label}</button>
               ))}
             </div>
+            {payType === "cash" && (
+              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                <span onClick={() => setCashReceipt(false)} style={{ flex: 1, textAlign: "center", padding: "7px 8px", borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: "pointer", background: !cashReceipt ? "#475569" : "#fff", color: !cashReceipt ? "#fff" : "#64748b", border: "1.5px solid " + (!cashReceipt ? "#475569" : "#e2e8f0") }}>{t("Без чека","Без чека")}</span>
+                <span onClick={() => setCashReceipt(true)} style={{ flex: 1, textAlign: "center", padding: "7px 8px", borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: "pointer", background: cashReceipt ? "#16a34a" : "#fff", color: cashReceipt ? "#fff" : "#64748b", border: "1.5px solid " + (cashReceipt ? "#16a34a" : "#e2e8f0") }}>🧾 {t("С фискальным чеком","З фіскальним чеком")}</span>
+              </div>
+            )}
             <label className="label">{t("Сумма, ₴","Сума, ₴")}</label>
             <input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} style={{ width: "100%", height: 38, marginBottom: 14, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} />
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setPayOpen(false)}>{t("Отмена","Скасувати")}</button>
               <button className="btn btn-primary" style={{ flex: 2 }} onClick={acceptPayment} disabled={sending}>{sending ? t("Отправляю…","Надсилаю…") : ((payType === "liqpay" || payType === "requisites" || payType === "installment") ? t("Создать ссылку и отправить","Створити посилання і надіслати") : t("Провести оплату","Провести оплату"))}</button>
             </div>
+            {payType === "credit" && <div className="muted" style={{ fontSize: 11.5, marginBottom: 10, background: "#fef9c3", padding: "8px 10px", borderRadius: 8 }}>{t("Товар отдаём СЕЙЧАС, деньги — потом. Создастся долг клиента (дебиторка) + стадия «Выдано в товарный кредит».","Товар віддаємо ЗАРАЗ, гроші — потім. Створиться борг клієнта (дебіторка) + стадія «Выдано в товарный кредит».")}</div>}
             <div className="muted" style={{ fontSize: 11, marginTop: 10 }}>{payType === "terminal"
-              ? t("Прими оплату в приложении Checkbox (Tap to Pay) — телефон читает карту/телефон клиента и сразу бьёт чек + печать. Потом «Провести оплату» — CRM проведёт доход и закроет сделку.","Прийми оплату в застосунку Checkbox (Tap to Pay) — телефон читає картку/телефон клієнта і одразу б'є чек + друк. Потім «Провести оплату» — CRM проведе дохід і закриє сделку.")
+              ? t("Прими оплату в приложении Checkbox (Tap to Pay) — телефон читает карту/телефон клиента и сразу бьёт чек + печать. Потом «Провести оплату» — CRM проведёт доход и закроет сделку.","Прийми оплату в застосунку Checkbox (Tap to Pay) — телефон читає картку/телефон клієнта і одразу б'є чек + друк. Потім «Провести оплату» — CRM проведе дохід і закриє угоду.")
               : (payType === "liqpay" || payType === "requisites")
               ? t("Создаст ссылку LiqPay и отправит клиенту в чат. Статус сменится только после реальной оплаты.","Створить посилання LiqPay і надішле клієнту в чат. Статус зміниться лише після реальної оплати.")
               : t("Создаст доходную транзакцию в Финансах + двинет стадию.","Створить дохідну транзакцію у Фінансах + рухне стадію.")}</div>
+          </div>
+        </div>
+      )}
+      {verify && (
+        <div onClick={() => setVerify(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 440, maxHeight: "92vh", overflowY: "auto" }}>
+            <h3 style={{ margin: "0 0 4px" }}>{verify.mode === "credit" ? t("Шаг 2 — товарный кредит","Крок 2 — товарний кредит") : t("Шаг 2 — проверь платёж","Крок 2 — перевір платіж")}</h3>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{verify.mode === "credit"
+              ? t("Деньги НЕ приходят сейчас: создаётся долг клиента (дебиторка). Когда оплатит — в Финансы → Дт/Кт жми «Оплачено», доход появится в журнале сам.","Гроші НЕ приходять зараз: створюється борг клієнта (дебіторка). Коли оплатить — у Фінанси → Дт/Кт тисни «Оплачено», дохід зʼявиться в журналі сам.")
+              : t("Так операция запишется в журнал Финансов. Проверь каждое поле — можно поправить прямо тут.","Так операція запишеться в журнал Фінансів. Перевір кожне поле — можна виправити прямо тут.")}</div>
+            <label className="label">{t("Сумма, ₴","Сума, ₴")}</label>
+            <input type="number" value={verify.amount} onChange={(e) => setVerify({ ...verify, amount: e.target.value })} style={inpV} />
+            {verify.mode === "credit" ? (<>
+              <label className="label">{t("Срок долга, дней","Строк боргу, днів")}</label>
+              <input type="number" value={verify.days} onChange={(e) => setVerify({ ...verify, days: e.target.value })} style={inpV} />
+              <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("Должник (из сделки):","Боржник (з угоди):")} <b>{verify.counterparty || "—"}</b></div>
+            </>) : (<>
+              <label className="label">{t("Счёт (куда пришли деньги)","Рахунок (куди прийшли гроші)")}</label>
+              <select value={verify.account} onChange={(e) => setVerify({ ...verify, account: Number(e.target.value) })} style={inpV}>
+                {vRefs.accs.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+              <label className="label">{t("Категория дохода","Категорія доходу")}</label>
+              <select value={verify.category} onChange={(e) => { const c = vRefs.cats.find((x: any) => x.id === Number(e.target.value)); setVerify({ ...verify, category: Number(e.target.value), direction: (c?.fin_direction || verify.direction) }); }} style={inpV}>
+                {vRefs.cats.map((c: any) => <option key={c.id} value={c.id}>{c.parent ? "└ " : ""}{c.name}</option>)}
+              </select>
+              <label className="label">{t("Направление","Напрямок")}</label>
+              <select value={verify.direction} onChange={(e) => setVerify({ ...verify, direction: Number(e.target.value) })} style={inpV}>
+                <option value={0}>—</option>
+                {vRefs.dirs.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              <label className="label">{t("Контрагент (клиент)","Контрагент (клієнт)")}</label>
+              <input value={verify.counterparty} onChange={(e) => setVerify({ ...verify, counterparty: e.target.value })} style={inpV} />
+              <label className="label">{t("Источник (канал)","Джерело (канал)")}</label>
+              <input value={verify.channel} onChange={(e) => setVerify({ ...verify, channel: e.target.value })} style={inpV} />
+              <label className="label">{t("Комментарий","Коментар")}</label>
+              <input value={verify.comment} onChange={(e) => setVerify({ ...verify, comment: e.target.value })} style={inpV} />
+            </>)}
+            <div onClick={() => setVerify({ ...verify, ship: !verify.ship })} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 12px", borderRadius: 10, cursor: "pointer", border: "1.5px solid " + (verify.ship ? "#16a34a" : "#e2e8f0"), background: verify.ship ? "#f0fdf4" : "#fff", margin: "6px 0 12px" }}>
+              <span style={{ fontSize: 18 }}>{verify.ship ? "📦" : "🚫"}</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{verify.ship ? t("Отгрузка со склада: ДА","Відвантаження зі складу: ТАК") : t("Отгрузка со склада: НЕТ","Відвантаження зі складу: НІ")}</div>
+                <div className="muted" style={{ fontSize: 11 }}>{verify.ship
+                  ? t("Создастся задача складу в общем списке, статусы дальше двигаются сами. Кликни, если отгрузка не нужна.","Створиться задача складу в загальному списку, статуси далі рухаються самі. Клікни, якщо відвантаження не потрібне.")
+                  : t("Задача складу НЕ создаётся (товар выдан сразу в салоне / услуга). Кликни, чтобы вернуть.","Задача складу НЕ створюється (товар виданий одразу в салоні / послуга). Клікни, щоб повернути.")}</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setVerify(null)}>{t("← Назад","← Назад")}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} onClick={confirmVerify} disabled={sending}>{sending ? "…" : (verify.mode === "credit" ? t("✓ Создать долг (дебиторку)","✓ Створити борг (дебіторку)") : t("✓ Всё верно — провести","✓ Усе правильно — провести"))}</button>
+            </div>
           </div>
         </div>
       )}
