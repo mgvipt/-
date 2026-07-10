@@ -8,6 +8,7 @@ import OwnerSelect from "../OwnerSelect";
 import CallButton from "../CallButton";
 import { useLang } from "../i18n";
 import TxCardModal from "../TxCardModal";
+import { useAuth } from "../auth";
 import { SocialLink } from "../social";
 
 interface Deal { id: number; title: string; amount: number; stage: string; is_won: boolean; created_at: string; }
@@ -177,6 +178,9 @@ export default function ClientCard() {
 
 function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
   const navFB = useNavigate();
+  const { can } = useAuth();
+  const canDelTx = can("finance.tx.edit") || can("roles.manage");
+  const [selOps, setSelOps] = useState<Record<number, boolean>>({});
   const [txCardId, setTxCardId] = useState<number | null>(null);
   const [opsLimit, setOpsLimit] = useState(50);
   const [opsPage, setOpsPage] = useState(0);
@@ -203,6 +207,13 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
     }
   }, [form]); // eslint-disable-line
   const money0 = (n: number) => Math.round(n || 0).toLocaleString("ru") + " ₴";
+  async function delOps(ids: number[]) {
+    if (!ids.length || busy) return;
+    if (!confirm(t(`Удалить ${ids.length} операц.? Это повлияет на остатки и аналитику. Отменить нельзя.`, `Видалити ${ids.length} операц.? Це вплине на залишки й аналітику. Скасувати не можна.`))) return;
+    setBusy(true);
+    try { for (const id of ids) { try { await api.del(`/api/transactions/${id}/`); } catch { /* пропускаємо збій одного */ } } }
+    finally { setSelOps({}); setBusy(false); load(); }
+  }
   async function add() {
     if (!Number(fa.amount) || busy) return;
     if (payNow && !fa.account) return;
@@ -288,6 +299,10 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
               {[15, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
             <span className="muted">{t("Всего", "Всього")}: <b>{d.count}</b></span>
+            {canDelTx && Object.values(selOps).filter(Boolean).length > 0 && (
+              <button className="btn" style={{ height: 26, padding: "0 10px", background: "#fee2e2", color: "#b91c1c", fontWeight: 700, fontSize: 12 }} disabled={busy}
+                onClick={() => delOps(Object.keys(selOps).filter((k) => selOps[Number(k)]).map(Number))}>🗑 {t("Удалить выбранные", "Видалити обрані")} ({Object.values(selOps).filter(Boolean).length})</button>
+            )}
             {d.count > opsLimit && (
               <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
                 <button className="btn btn-light" style={{ height: 26, padding: "0 8px" }} disabled={opsPage <= 0} onClick={() => setOpsPage(opsPage - 1)}>←</button>
@@ -297,14 +312,31 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
             )}
           </div>
           <div style={{ maxHeight: 420, overflowY: "auto", border: "1px solid #f1f5f9", borderRadius: 8 }}>
-            <table style={{ width: "100%", fontSize: 12 }}>
+            <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ position: "sticky", top: 0, zIndex: 1, background: "#f8fafc", boxShadow: "0 1px 0 #e2e8f0" }}>
+                  {canDelTx && <th style={{ width: 30, padding: "7px 4px", textAlign: "center" }}>
+                    <input type="checkbox" title={t("Выбрать все на странице", "Вибрати всі на сторінці")} style={{ accentColor: "#C67D5F" }}
+                      checked={(d.ops || []).length > 0 && (d.ops || []).every((o: any) => selOps[o.id])}
+                      onChange={(e) => { const n: any = { ...selOps }; (d.ops || []).forEach((o: any) => { n[o.id] = e.target.checked; }); setSelOps(n); }} /></th>}
+                  <th style={{ padding: "7px 8px", textAlign: "left", fontSize: 10.5, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }}>{t("Дата", "Дата")}</th>
+                  <th style={{ padding: "7px 8px", textAlign: "right", fontSize: 10.5, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }}>{t("Сумма", "Сума")}</th>
+                  <th style={{ padding: "7px 8px", textAlign: "left", fontSize: 10.5, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }}>{t("Категория / описание", "Категорія / опис")}</th>
+                  <th style={{ padding: "7px 8px", textAlign: "right", fontSize: 10.5, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }}>{t("Сделка", "Угода")}</th>
+                  {canDelTx && <th style={{ width: 34, padding: "7px 4px" }}></th>}
+                </tr>
+              </thead>
               <tbody>
                 {(d.ops || []).map((o: any) => (
-                  <tr key={o.id} onClick={() => setTxCardId(o.id)} title={t("Открыть карточку операции", "Відкрити картку операції")} style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer" }}>
+                  <tr key={o.id} onClick={() => setTxCardId(o.id)} title={t("Открыть карточку операции", "Відкрити картку операції")} style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer", background: selOps[o.id] ? "#fdf3ec" : undefined }}>
+                    {canDelTx && <td onClick={(e) => e.stopPropagation()} style={{ textAlign: "center", padding: "4px" }}>
+                      <input type="checkbox" checked={!!selOps[o.id]} onChange={(e) => setSelOps({ ...selOps, [o.id]: e.target.checked })} style={{ accentColor: "#C67D5F" }} /></td>}
                     <td style={{ padding: "4px 8px", whiteSpace: "nowrap", color: "#64748b" }}>{o.date}</td>
                     <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: o.direction === "in" ? "#16a34a" : o.direction === "out" ? "#dc2626" : "#6366f1" }}>{o.direction === "in" ? "+" : o.direction === "out" ? "−" : "⇄"}{Math.round(o.amount_uah).toLocaleString("ru")}</td>
                     <td style={{ paddingLeft: 8, color: "#475569", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={o.comment}>{o.category || o.comment || o.counterparty || "—"}</td>
                     <td style={{ padding: "4px 8px", whiteSpace: "nowrap", textAlign: "right" }}>{o.deal ? <a onClick={(e) => { e.stopPropagation(); navFB(`/deals/${o.deal}`); }} style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600, textDecoration: "none" }} title={t("Открыть сделку", "Відкрити угоду") + (o.deal_title ? ": " + o.deal_title : "")}>№{o.deal}{o.deal_title ? " · " + String(o.deal_title).slice(0, 18) : ""}</a> : <span className="muted">—</span>}</td>
+                    {canDelTx && <td onClick={(e) => e.stopPropagation()} style={{ textAlign: "center", padding: "4px" }}>
+                      <span onClick={() => delOps([o.id])} title={t("Удалить операцию", "Видалити операцію")} style={{ cursor: "pointer", color: "#cbd5e1", fontSize: 13 }}>🗑</span></td>}
                   </tr>
                 ))}
               </tbody>
