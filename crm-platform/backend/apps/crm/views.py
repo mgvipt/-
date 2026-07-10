@@ -66,6 +66,19 @@ class ContactViewSet(viewsets.ModelViewSet):
             _byname = _Qc(counterparty__iexact=_nm) | _Qc(counterparty__istartswith=_nm + "/") | _Qc(counterparty__istartswith=_nm + " ") | _Qc(counterparty__istartswith=_nm + ".")
             _match = _match | _byname  # всі платежі цьому контрагенту, навіть привʼязані до обʼєкта (обʼєкт видно окремим стовпцем)
         qs = _Tx.objects.filter(_match)
+        # фільтри блоку операцій (діють на список + лічильник + плитки Дохід/Витрата/Аванс)
+        _ocp = (request.query_params.get("op_cp") or "").strip()
+        if _ocp:
+            qs = qs.filter(counterparty__icontains=_ocp)
+        _oobj = (request.query_params.get("op_obj") or "").strip()
+        if _oobj:
+            qs = qs.filter(_Qc(contact__first_name__icontains=_oobj) | _Qc(contact__last_name__icontains=_oobj) | _Qc(contact__nickname__icontains=_oobj))
+        _ofrom = (request.query_params.get("op_from") or "").strip()
+        if _ofrom:
+            qs = qs.filter(date__gte=_ofrom)
+        _oto = (request.query_params.get("op_to") or "").strip()
+        if _oto:
+            qs = qs.filter(date__lte=_oto)
         inc = qs.filter(direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0
         exp = qs.filter(direction="out").aggregate(s=_Sum("amount_uah"))["s"] or 0
         # аванс = залишок грошей клієнта в нас (його дохід мінус витрати по його обʼєкту)

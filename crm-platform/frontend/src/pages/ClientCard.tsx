@@ -84,7 +84,7 @@ export default function ClientCard() {
         <button className="btn btn-primary" style={{ height: 30, fontSize: 12.5, padding: "0 12px" }} onClick={openNewDeal}>{ndOpen ? "✕" : "➕ " + t("Создать сделку","Створити угоду")}</button>
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
-        <span className="muted" title={t("Сумма выигранных сделок — сколько клиент купил у нас. Это НЕ расходы по объекту (те в блоке «Финансы клиента»).","Сума виграних угод — скільки клієнт купив у нас. Це НЕ витрати по обʼєкту (ті у блоці «Фінанси клієнта»).")}>{t("Купил у нас на","Купив у нас на")}: <b style={{ color: "#16a34a" }}>{money(c.total_spent)}</b></span>
+        <span className="muted" title={t("Сумма выигранных сделок — сколько клиент купил у нас. Это НЕ расходы по объекту (те в блоке «Финансы клиента»).","Сума виграних угод — скільки клієнт купив у нас. Це НЕ витрати по обʼєкту (ті у блоці «Фінанси клієнта»).")}>{t("Купил в нашем магазине (сделки)","Купив у нашому магазині (угоди)")}: <b style={{ color: "#16a34a" }}>{money(c.total_spent)}</b></span>
       </div>
 
       <div className="grid2">
@@ -184,6 +184,10 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
   const [txCardId, setTxCardId] = useState<number | null>(null);
   const [opsLimit, setOpsLimit] = useState(50);
   const [opsPage, setOpsPage] = useState(0);
+  const [opsCp, setOpsCp] = useState("");      // фільтр: кому / від кого
+  const [opsObj, setOpsObj] = useState("");    // фільтр: клієнт-обʼєкт
+  const [opsFrom, setOpsFrom] = useState("");  // період від
+  const [opsTo, setOpsTo] = useState("");      // період до
   /* Гроші по клієнту: доходи/витрати/аванси + останні операції + швидке створення доходу/витрати
      з автопривʼязкою клієнта (контрагент може бути майстром/магазином — гроші все одно по клієнту). */
   const { t } = useLang();
@@ -195,8 +199,8 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
   const [payNow, setPayNow] = useState(true);
   const [recvLoan, setRecvLoan] = useState(false); // дебіторка: позика (мої гроші в борг) vs продаж (прибуток)
   const [busy, setBusy] = useState(false);
-  const load = () => api.get<any>(`/api/contacts/${contactId}/finance/?limit=${opsLimit}&offset=${opsPage * opsLimit}`).then(setD).catch(() => {});
-  useEffect(() => { load(); }, [contactId, opsLimit, opsPage]); // eslint-disable-line
+  const load = () => api.get<any>(`/api/contacts/${contactId}/finance/?limit=${opsLimit}&offset=${opsPage * opsLimit}&op_cp=${encodeURIComponent(opsCp)}&op_obj=${encodeURIComponent(opsObj)}&op_from=${opsFrom}&op_to=${opsTo}`).then(setD).catch(() => {});
+  useEffect(() => { const tmr = setTimeout(() => load(), 300); return () => clearTimeout(tmr); }, [contactId, opsLimit, opsPage, opsCp, opsObj, opsFrom, opsTo]); // eslint-disable-line
   useEffect(() => { setOpsPage(0); }, [contactId]);
   const [cps, setCps] = useState<string[]>([]);
   useEffect(() => {
@@ -298,6 +302,13 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
             <select value={opsLimit} onChange={(e) => { setOpsLimit(Number(e.target.value)); setOpsPage(0); }} style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 12 }}>
               {[15, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
+            <input value={opsCp} onChange={(e) => { setOpsCp(e.target.value); setOpsPage(0); }} placeholder={t("🔎 Кому/от кого", "🔎 Кому/від кого")} style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 12, padding: "0 8px", width: 140 }} />
+            <input value={opsObj} onChange={(e) => { setOpsObj(e.target.value); setOpsPage(0); }} placeholder={t("🔎 Клиент (объект)", "🔎 Клієнт (обʼєкт)")} style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 12, padding: "0 8px", width: 150 }} />
+            <span className="muted" style={{ fontSize: 11 }}>{t("Период:", "Період:")}</span>
+            <input type="date" value={opsFrom} onChange={(e) => { setOpsFrom(e.target.value); setOpsPage(0); }} title={t("Дата от", "Дата від")} style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 12, padding: "0 6px" }} />
+            <span className="muted" style={{ fontSize: 11 }}>—</span>
+            <input type="date" value={opsTo} onChange={(e) => { setOpsTo(e.target.value); setOpsPage(0); }} title={t("Дата до", "Дата до")} style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 12, padding: "0 6px" }} />
+            {(opsCp || opsObj || opsFrom || opsTo) && <button className="btn btn-light" style={{ height: 28, padding: "0 8px", fontSize: 12 }} title={t("Сбросить фильтры", "Скинути фільтри")} onClick={() => { setOpsCp(""); setOpsObj(""); setOpsFrom(""); setOpsTo(""); setOpsPage(0); }}>✕ {t("Сброс", "Скинути")}</button>}
             <span className="muted">{t("Всего", "Всього")}: <b>{d.count}</b></span>
             {canDelTx && Object.values(selOps).filter(Boolean).length > 0 && (
               <button className="btn" style={{ height: 26, padding: "0 10px", background: "#fee2e2", color: "#b91c1c", fontWeight: 700, fontSize: 12 }} disabled={busy}
