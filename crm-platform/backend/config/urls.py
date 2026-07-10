@@ -57,6 +57,7 @@ urlpatterns = [
     path("api/auth/token/", obtain_auth_token),  # POST username/password -> {token}
     path("api/me/", acc_views.MeView.as_view()),
     path("api/search/", crm_views.GlobalSearchView.as_view()),
+    path("api/changelog/", crm_views.ChangeLogView.as_view()),
     path("api/permissions/", acc_views.PermissionsCatalogView.as_view()),
     path("api/ai-usage/", crm_views.AiUsageView.as_view()),
     path("api/invite/<str:token>/", acc_views.AcceptInviteView.as_view()),

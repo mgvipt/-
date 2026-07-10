@@ -131,8 +131,8 @@ function SalesTab() {
       </div>
       <div className="panel" style={{ margin: 0 }}>
         <b style={{ fontSize: 14 }}>{t("Топ менеджеров","Топ менеджерів")}</b>
-        <table style={{ marginTop: 8 }}><thead><tr><th>{t("Менеджер","Менеджер")}</th><th>{t("Сделок","Угод")}</th><th>{t("Сумма","Сума")}</th></tr></thead>
-          <tbody>{d.managers.map((m, i) => <tr key={i}><td>{m.name.trim() || "—"}</td><td>{m.deals}</td><td><b>{fmt(m.sum)} ₴</b></td></tr>)}</tbody>
+        <table style={{ marginTop: 8 }}><thead><tr><th>{t("Менеджер","Менеджер")}</th><th style={{ textAlign: "right" }}>{t("Сделок","Угод")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th></tr></thead>
+          <tbody>{d.managers.map((m, i) => <tr key={i}><td>{m.name.trim() || "—"}</td><td style={{ textAlign: "right" }}>{m.deals}</td><td style={{ textAlign: "right" }}><b>{fmt(m.sum)} ₴</b></td></tr>)}</tbody>
         </table>
       </div>
 

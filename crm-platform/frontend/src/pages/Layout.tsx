@@ -28,6 +28,7 @@ const NAV: [string, string, string, string, string | null][] = [
   ["/employees", "Сотрудники и права", "Співробітники і права", "🛡️", "roles.manage"],
   ["/duplicates", "Дубли", "Дублі", "copy", "roles.manage"],
   ["/settings", "Настройки · Интеграции", "Налаштування · Інтеграції", "settings", "roles.manage"],
+  ["/whats-new", "Что нового", "Що нового", "bulb", null],
 ];
 
 const PRESETS = [

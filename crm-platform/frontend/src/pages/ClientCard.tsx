@@ -154,7 +154,7 @@ export default function ClientCard() {
             )}
             {c.deals.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Сделок ещё нет.","Угод ще немає.")}</div> : (
               <table style={{ width: "100%", fontSize: 13, marginTop: 6 }}>
-                <thead><tr><th style={{ textAlign: "left" }}>{t("Сделка","Угода")}</th><th>{t("Сумма","Сума")}</th><th>{t("Стадия","Стадія")}</th></tr></thead>
+                <thead><tr><th style={{ textAlign: "left" }}>{t("Сделка","Угода")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "center" }}>{t("Стадия","Стадія")}</th></tr></thead>
                 <tbody>
                   {c.deals.map((d) => (
                     <tr key={d.id} onClick={() => nav(`/deals/${d.id}`)} style={{ cursor: "pointer", borderTop: "1px solid #f1f5f9" }}>
@@ -298,11 +298,11 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
             <table style={{ width: "100%", fontSize: 12 }}>
               <tbody>
                 {(d.ops || []).map((o: any) => (
-                  <tr key={o.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <tr key={o.id} onClick={() => navFB(`/finance?tab=journal&tx=${o.id}`)} title={t("Открыть карточку операции (как в журнале)", "Відкрити картку операції (як у журналі)")} style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer" }}>
                     <td style={{ padding: "4px 8px", whiteSpace: "nowrap", color: "#64748b" }}>{o.date}</td>
                     <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: o.direction === "in" ? "#16a34a" : o.direction === "out" ? "#dc2626" : "#6366f1" }}>{o.direction === "in" ? "+" : o.direction === "out" ? "−" : "⇄"}{Math.round(o.amount_uah).toLocaleString("ru")}</td>
                     <td style={{ paddingLeft: 8, color: "#475569", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={o.comment}>{o.category || o.comment || o.counterparty || "—"}</td>
-                    <td style={{ padding: "4px 8px", whiteSpace: "nowrap", textAlign: "right" }}>{o.deal ? <a onClick={() => navFB(`/deals/${o.deal}`)} style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600, textDecoration: "none" }} title={t("Открыть сделку", "Відкрити угоду") + (o.deal_title ? ": " + o.deal_title : "")}>№{o.deal}{o.deal_title ? " · " + String(o.deal_title).slice(0, 18) : ""}</a> : <span className="muted">—</span>}</td>
+                    <td style={{ padding: "4px 8px", whiteSpace: "nowrap", textAlign: "right" }}>{o.deal ? <a onClick={(e) => { e.stopPropagation(); navFB(`/deals/${o.deal}`); }} style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600, textDecoration: "none" }} title={t("Открыть сделку", "Відкрити угоду") + (o.deal_title ? ": " + o.deal_title : "")}>№{o.deal}{o.deal_title ? " · " + String(o.deal_title).slice(0, 18) : ""}</a> : <span className="muted">—</span>}</td>
                   </tr>
                 ))}
               </tbody>

@@ -2132,3 +2132,24 @@ class ContactFormConfigView(APIView):
         obj.config = cfg
         obj.save()
         return self._build(request, cfg)
+
+
+class ChangeLogView(APIView):
+    """Історія змін CRM (сторінка «Що нового»).
+    GET — будь-який залогінений читає; POST — лише суперюзер додає запис."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .models import ChangeLogEntry
+        rows = ChangeLogEntry.objects.all()[:500]
+        return Response([{"id": e.id, "date": e.d.isoformat(), "title": e.title, "body": e.body} for e in rows])
+
+    def post(self, request):
+        if not request.user.is_superuser:
+            return Response({"detail": "Тільки адміністратор"}, status=status.HTTP_403_FORBIDDEN)
+        from django.utils import timezone
+        from .models import ChangeLogEntry
+        d = request.data
+        e = ChangeLogEntry.objects.create(d=(d.get("date") or timezone.now().date()),
+                                          title=(d.get("title") or "")[:200], body=(d.get("body") or ""))
+        return Response({"id": e.id}, status=status.HTTP_201_CREATED)

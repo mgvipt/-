@@ -1727,7 +1727,7 @@ function DirectionJournal({ directionId, from, to }: { directionId: number; from
         <div className="muted" style={{ fontSize: 13 }}>{t("Нет операций по этому направлению за период. Добавь транзакцию во вкладке «Журнал» и выбери это направление.","Немає операцій по цьому напрямку за період. Додай транзакцію у вкладці «Журнал» і обери цей напрямок.")}</div>
       ) : (
         <table style={{ width: "100%", fontSize: 12.5 }}>
-          <thead><tr><th style={{ textAlign: "left", padding: "4px 8px" }}>{t("Дата","Дата")}</th><th>{t("Сумма","Сума")}</th><th>{t("Фонд","Фонд")}</th><th>{t("Канал","Канал")}</th><th style={{ textAlign: "left" }}>{t("Комментарий","Коментар")}</th></tr></thead>
+          <thead><tr><th style={{ textAlign: "left", padding: "4px 8px" }}>{t("Дата","Дата")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "left" }}>{t("Фонд","Фонд")}</th><th style={{ textAlign: "center" }}>{t("Канал","Канал")}</th><th style={{ textAlign: "left" }}>{t("Комментарий","Коментар")}</th></tr></thead>
           <tbody>
             {tx.map((r) => (
               <tr key={r.id} style={{ borderTop: "1px solid #eef2f7" }}>
@@ -2036,7 +2036,7 @@ function RefCounterparties() {
     <div className="panel" style={{ margin: 0 }}>
       <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("Контрагенты сведены из операций. 🔗 = связан с клиентом CRM (клик откроет).","Контрагенти зведені з операцій. 🔗 = звʼязаний із клієнтом CRM (клік відкриє).")}</div>
       <table style={{ width: "100%", fontSize: 13 }}>
-        <thead><tr><th style={{ textAlign: "left", ...tdS }}>{t("Контрагент","Контрагент")}</th><th>{t("Операций","Операцій")}</th><th>{t("Сумма","Сума")}</th><th>{t("Клиент CRM","Клієнт CRM")}</th></tr></thead>
+        <thead><tr><th style={{ textAlign: "left", ...tdS }}>{t("Контрагент","Контрагент")}</th><th style={{ textAlign: "center" }}>{t("Операций","Операцій")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "center" }}>{t("Клиент CRM","Клієнт CRM")}</th></tr></thead>
         <tbody>{items.slice(0, 300).map((c, i) => (
           <tr key={i}><td style={tdS}>{c.name} <span style={{ cursor: "pointer", marginLeft: 4 }} title={t("Переименовать во всех операциях","Перейменувати у всіх операціях")} onClick={() => renameCp(c)}>✏️</span></td><td style={{ ...tdS, textAlign: "center" }}>{c.count}</td>
             <td style={{ ...tdS, textAlign: "right" }}>{money(c.total)}</td>

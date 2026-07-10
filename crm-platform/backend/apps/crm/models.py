@@ -383,3 +383,17 @@ class AiUsage(models.Model):
     cost_usd = models.FloatField(default=0)
     est = models.BooleanField(default=False, help_text="True=оцінка (історія до логування), False=точно")
     note = models.CharField(max_length=200, blank=True)
+
+
+class ChangeLogEntry(models.Model):
+    """Історія змін CRM простою мовою — показується на сторінці «Що нового»."""
+    d = models.DateField(db_index=True)
+    title = models.CharField(max_length=200)
+    body = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-d", "-id"]
+
+    def __str__(self):
+        return "%s %s" % (self.d, self.title)
