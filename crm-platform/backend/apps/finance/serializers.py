@@ -73,7 +73,13 @@ class TransactionSerializer(serializers.ModelSerializer):
     def _resolve_category(self, validated):
         name = (validated.pop("set_category", "") or "").strip()
         if name:
-            cat, _ = Category.objects.get_or_create(name=name, defaults={"direction": validated.get("direction", "out")})
+            direction = validated.get("direction") or getattr(self.instance, "direction", None) or "out"
+            # спершу точний збіг за напрямком (одна назва може бути і в доході, і в витраті),
+            # інакше будь-яка з такою назвою, інакше створюємо
+            cat = (Category.objects.filter(name=name, direction=direction).first()
+                   or Category.objects.filter(name=name).order_by("id").first())
+            if not cat:
+                cat = Category.objects.create(name=name, direction=direction)
             validated["category"] = cat
 
     def create(self, validated_data):
