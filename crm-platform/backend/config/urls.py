@@ -11,7 +11,7 @@ from apps.warehouse import wh_views as whv
 from apps.finance import views as fin_views
 from apps.integrations import views as intg_views
 from apps.crm.duplicates import DuplicatesView
-from apps.crm.zamer import ZamerView, ClientRegisterZamerView
+from apps.crm.zamer import ZamerView, ClientRegisterZamerView, PricelistView
 from apps.gamification import views as gam_views
 from apps.telephony import views as tel_views
 
@@ -54,6 +54,7 @@ urlpatterns = [
     path("api/", include(router.urls)),
     path("api/zamer/", ZamerView.as_view()),  # приёмник замера из iOS-приложения
     path("api/zamer/register/", ClientRegisterZamerView.as_view()),  # клиент из приложения -> лид
+    path("api/pricelist/", PricelistView.as_view()),  # прайс эффектов/материалов/инструментов для приложения
     path("api/auth/", include("rest_framework.urls")),
     path("api/auth/token/", obtain_auth_token),  # POST username/password -> {token}
     path("api/me/", acc_views.MeView.as_view()),

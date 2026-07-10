@@ -186,3 +186,40 @@ class ClientRegisterZamerView(APIView):
                          detail=f"{short}. {detail}", actor="Приложение (клиент)")
 
         return Response({"ok": True, "lead_id": lead.id})
+
+
+# ============================================================================
+#  Прайс для приложения «Wallcov Замер»: эффекты + материалы + инструменты.
+#  GET /api/pricelist/  (без авторизации — клиенту тоже нужен для расчёта)
+#  Эффекты/материалы — из живого Google-листа (файл effects.json, обновляет
+#  крон build_effects.py). Инструменты — из каталога CRM (категория «1.6»).
+# ============================================================================
+import json as _json
+from apps.warehouse.models import Product as _WHProduct
+
+EFFECTS_JSON = "/app/warehouse_photos/pricelist/effects.json"
+TOOLS_CATEGORY_ID = 63  # «1.6 ІНСТРУМЕНТИ»
+
+
+class PricelistView(APIView):
+    """Отдать прайс приложению: эффекты (авто-состав), материалы, инструменты."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        try:
+            with open(EFFECTS_JSON, encoding="utf-8") as f:
+                data = _json.load(f)
+        except Exception:
+            data = {"effects": [], "materials": [], "generated_at": None}
+
+        tools = []
+        try:
+            qs = (_WHProduct.objects
+                  .filter(category_id=TOOLS_CATEGORY_ID, is_active=True)
+                  .order_by("name"))
+            tools = [{"id": p.id, "name": p.name,
+                      "price": float(p.price or 0), "unit": p.unit or "шт"} for p in qs]
+        except Exception:
+            tools = []
+        data["tools"] = tools
+        return Response(data)
