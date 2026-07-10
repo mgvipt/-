@@ -7,6 +7,7 @@ import { Avatar, SourceChip, SOURCES } from "../ui";
 import OwnerSelect from "../OwnerSelect";
 import CallButton from "../CallButton";
 import { useLang } from "../i18n";
+import TxCardModal from "../TxCardModal";
 import { SocialLink } from "../social";
 
 interface Deal { id: number; title: string; amount: number; stage: string; is_won: boolean; created_at: string; }
@@ -176,6 +177,7 @@ export default function ClientCard() {
 
 function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
   const navFB = useNavigate();
+  const [txCardId, setTxCardId] = useState<number | null>(null);
   const [opsLimit, setOpsLimit] = useState(50);
   const [opsPage, setOpsPage] = useState(0);
   /* Гроші по клієнту: доходи/витрати/аванси + останні операції + швидке створення доходу/витрати
@@ -298,7 +300,7 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
             <table style={{ width: "100%", fontSize: 12 }}>
               <tbody>
                 {(d.ops || []).map((o: any) => (
-                  <tr key={o.id} onClick={() => navFB(`/finance?tab=journal&tx=${o.id}`)} title={t("Открыть карточку операции (как в журнале)", "Відкрити картку операції (як у журналі)")} style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer" }}>
+                  <tr key={o.id} onClick={() => setTxCardId(o.id)} title={t("Открыть карточку операции", "Відкрити картку операції")} style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer" }}>
                     <td style={{ padding: "4px 8px", whiteSpace: "nowrap", color: "#64748b" }}>{o.date}</td>
                     <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: o.direction === "in" ? "#16a34a" : o.direction === "out" ? "#dc2626" : "#6366f1" }}>{o.direction === "in" ? "+" : o.direction === "out" ? "−" : "⇄"}{Math.round(o.amount_uah).toLocaleString("ru")}</td>
                     <td style={{ paddingLeft: 8, color: "#475569", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={o.comment}>{o.category || o.comment || o.counterparty || "—"}</td>
@@ -310,6 +312,7 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
           </div>
         </div>
       )}
+      {txCardId && <TxCardModal txId={txCardId} nav={navFB} onClose={() => setTxCardId(null)} onSaved={() => { setTxCardId(null); load(); }} />}
     </div>
   );
 }
