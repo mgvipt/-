@@ -88,6 +88,21 @@ class ContactViewSet(viewsets.ModelViewSet):
         # ДЕБІТОРКА (нам винні): торгова (від продажу, майбутня прибуток) окремо від позики (мої гроші в борг, НЕ прибуток)
         recv_sale = _ppq.filter(kind="receivable", is_loan=False).aggregate(s=_Sum("amount"))["s"] or 0
         recv_loan = _ppq.filter(kind="receivable", is_loan=True).aggregate(s=_Sum("amount"))["s"] or 0
+        # ── ПРИБУТОК ПО КЛІЄНТУ (загальний, без фільтра): виручка − собівартість складу − закупки/послуги ──
+        from decimal import Decimal as _Dp
+        _qf = _Tx.objects.filter(_match)
+        _rev = _qf.filter(direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0     # виручка (усі надходження від клієнта)
+        _cext = _qf.filter(direction="out").aggregate(s=_Sum("amount_uah"))["s"] or 0   # закупки під замовлення + послуги/майстри (журнал)
+        from apps.crm.models import Deal as _Deal
+        _cogs = _Dp("0")  # собівартість складських товарів у виграних угодах клієнта
+        for _dl in _Deal.objects.filter(contact=c, stage__is_won=True).prefetch_related("items", "items__product"):
+            for _it in _dl.items.all():
+                _cu = _it.cost if (_it.cost or 0) > 0 else (getattr(_it.product, "cost", 0) or 0)
+                try:
+                    _cogs += _Dp(str(_it.quantity or 0)) * _Dp(str(_cu or 0))
+                except Exception:
+                    pass
+        _profit = float(_rev or 0) - float(_cext or 0) - float(_cogs)
         # пагінація історії: скільки рядків показувати і з якого зсуву (для >500 — перемикання сторінок)
         try:
             _lim = int(request.query_params.get("limit") or 15)
@@ -112,7 +127,8 @@ class ContactViewSet(viewsets.ModelViewSet):
                for t in qs.select_related("category", "deal", "contact").order_by("-date", "-id")[_off:_off + _lim]]
         return Response({"income": inc, "expense": exp, "advance": adv, "debt": debt,
                          "receivable": (recv_sale or 0) + (recv_loan or 0), "receivable_sale": recv_sale, "receivable_loan": recv_loan,
-                         "count": qs.count(), "ops": ops})
+                         "count": qs.count(), "ops": ops,
+                         "revenue": float(_rev or 0), "cost_ext": float(_cext or 0), "cogs": float(_cogs), "profit": _profit})
     search_fields = ["first_name", "last_name", "phone", "email"]
     filterset_fields = ["loyalty_tag", "source", "owner"]
     ordering_fields = ["created_at", "first_name", "last_touch_at"]

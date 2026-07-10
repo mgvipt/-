@@ -269,6 +269,21 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
           </div>
         ))}
       </div>
+      {(Number(d.revenue) > 0 || Number(d.cost_ext) > 0 || Number(d.cogs) > 0) && (
+        <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 10, background: (Number(d.profit) >= 0 ? "#f0fdf4" : "#fef2f2"), border: "1px solid " + (Number(d.profit) >= 0 ? "#bbf7d0" : "#fecaca") }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            <div className="muted" style={{ fontSize: 11.5 }}>
+              {t("Выручка","Виручка")}: <b style={{ color: "#0f172a" }}>{money0(Number(d.revenue || 0))}</b>
+              <span style={{ margin: "0 5px" }}>−</span>{t("Себест. склада","Собівар. складу")}: <b style={{ color: "#b45309" }}>{money0(Number(d.cogs || 0))}</b>
+              <span style={{ margin: "0 5px" }}>−</span>{t("Закупки/услуги","Закупки/послуги")}: <b style={{ color: "#dc2626" }}>{money0(Number(d.cost_ext || 0))}</b>
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: (Number(d.profit) >= 0 ? "#16a34a" : "#dc2626") }}>
+              {t("Прибыль","Прибуток")}: {money0(Number(d.profit || 0))}
+            </div>
+          </div>
+          <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>{t("Складские товары — из сделок (себестоимость авто при отгрузке), закупки под заказ — из журнала. Без двойного счёта.","Складські товари — зі сделок (собівартість авто при відвантаженні), закупки під замовлення — з журналу. Без подвійного рахунку.")}</div>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
         <button className="btn btn-light" style={{ flex: 1, color: "#16a34a", fontWeight: 700 }} onClick={() => { setPayNow(true); setRecvLoan(false); setFaDeal(0); setForm(form === "in" ? null : "in"); }}>+ {t("Доход","Дохід")}</button>
         <button className="btn btn-light" style={{ flex: 1, color: "#dc2626", fontWeight: 700 }} onClick={() => { setPayNow(true); setForm(form === "out" ? null : "out"); }}>+ {t("Расход","Витрата")}</button>
