@@ -631,14 +631,14 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         <button className={"btn" + (tab === "general" ? " btn-primary" : "")} onClick={() => setTab("general")}><Icon n="💬" size={15} /> {t("Лента / Чат","Стрічка / Чат")}</button>
         <button className={"btn" + (tab === "items" ? " btn-primary" : "")} onClick={() => setTab("items")}><Icon n="📦" size={15} /> {t("Товары","Товари")} ({deal.items.length})</button>
         <button className={"btn" + (tab === "np" ? " btn-primary" : "")} onClick={() => setTab("np")}><Icon n="🚚" size={15} /> {t("Новая почта","Нова Пошта")}</button>
-        {can("calc.access") && <button className={"btn" + (tab === "smeta" ? " btn-primary" : "")} onClick={() => setTab("smeta")}><Icon n="📐" size={15} /> {t("Смета","Кошторис")}</button>}
+        {can("deal.smeta.tab") && <button className={"btn" + (tab === "smeta" ? " btn-primary" : "")} onClick={() => setTab("smeta")}><Icon n="📐" size={15} /> {t("Смета","Кошторис")}</button>}
         <button className="btn" style={{ padding: "0 10px" }} title={t("Накладная / КП (документ)","Накладна / КП (документ)")} onClick={() => setDocOpen(true)}><Icon n="file" size={16} /></button>
         <button className="btn" style={{ padding: "0 10px" }} title={t("Печать бланка выкраски","Друк бланка викраски")} onClick={() => setVkOpen(true)}><Icon n="palette" size={16} /></button>
         <div style={{ width: 1, height: 24, background: "#cbd5e1", margin: "0 6px" }} />
         <button className="btn" onClick={issueCheckbox}><Icon n="🧾" size={15} /> {t("Checkbox","Checkbox")}</button>
       </div>
 
-      {(tab === "smeta" && can("calc.access")) ? (
+      {(tab === "smeta" && can("deal.smeta.tab")) ? (
         <iframe
           title={t("Кошторис","Кошторис")}
           src={`https://calc.wallcovdec.com.ua/?cn=${encodeURIComponent((deal as any).contact_name || deal.title || "")}&cd=${deal.id}`}
