@@ -295,7 +295,7 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
           <button className="btn btn-primary" style={{ width: "100%", background: form === "out" && !payNow ? "#b45309" : (form === "in" && !payNow ? "#0e7490" : undefined) }} disabled={busy || !Number(fa.amount) || (payNow && !fa.account)} onClick={add}>{busy ? "…" : (form === "out" && !payNow ? t("В кредиторку (журнал — после оплаты)","У кредиторку (журнал — після оплати)") : form === "in" && !payNow ? t("В дебиторку (нам должны)","У дебіторку (нам винні)") : t("Сохранить (клиент привяжется сам)","Зберегти (клієнт привʼяжеться сам)"))}</button>
         </div>
       )}
-      {d.count > 0 && (
+      {(d.count > 0 || opsCp || opsObj || opsFrom || opsTo) && (
         <div style={{ marginTop: 4 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6, fontSize: 12 }}>
             <span className="muted">{t("Показывать:", "Показувати:")}</span>
@@ -354,6 +354,7 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
                       <span onClick={() => delOps([o.id])} title={t("Удалить операцию", "Видалити операцію")} style={{ cursor: "pointer", color: "#cbd5e1", fontSize: 13 }}>🗑</span></td>}
                   </tr>
                 ))}
+                {(d.ops || []).length === 0 && <tr><td colSpan={canDelTx ? 8 : 6} style={{ padding: 14, textAlign: "center", color: "#94a3b8" }}>{t("Ничего не найдено по фильтру", "Нічого не знайдено за фільтром")}</td></tr>}
               </tbody>
             </table>
           </div>
