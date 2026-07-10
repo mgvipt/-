@@ -1,6 +1,7 @@
 /* Картка операції (як у Журналі), але відкривається модалкою прямо в картці клієнта —
  * без переходу на список журналу. Перегляд + редагування основних полів + видалення. */
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "./api";
 import { useLang } from "./i18n";
 
@@ -65,7 +66,7 @@ export default function TxCardModal({ txId, onClose, onSaved, nav }: {
   const inp: React.CSSProperties = { height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", width: "100%", marginBottom: 10, fontSize: 13, boxSizing: "border-box" };
   const color = f && (f.direction === "in" ? "#16a34a" : f.direction === "transfer" ? "#6366f1" : "#dc2626");
 
-  return (
+  return createPortal((
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2147483000 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 440, maxWidth: "94vw", maxHeight: "90vh", overflowY: "auto" }}>
         {!f ? <div className="muted" style={{ padding: 20 }}>{t("Загрузка…", "Завантаження…")}</div> : (
@@ -140,5 +141,5 @@ export default function TxCardModal({ txId, onClose, onSaved, nav }: {
         )}
       </div>
     </div>
-  );
+  ), document.body);
 }
