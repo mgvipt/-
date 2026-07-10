@@ -146,7 +146,9 @@ class Deal(TimestampedOwned):
 class DealItem(models.Model):
     """Товар в сделке. Сумма сделки = сумма строк."""
     deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="items")
-    product = models.ForeignKey("warehouse.Product", on_delete=models.PROTECT, related_name="deal_items")
+    product = models.ForeignKey("warehouse.Product", null=True, blank=True, on_delete=models.PROTECT, related_name="deal_items")
+    custom_name = models.CharField(max_length=200, blank=True, default="",
+                                   help_text="Своя позиція НЕ з номенклатури: без складського обліку і списання")
     quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1)
     price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     reserved = models.BooleanField(default=False, help_text="Товар зарезервовано під цю сделку")

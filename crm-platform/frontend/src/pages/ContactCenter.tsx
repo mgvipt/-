@@ -67,7 +67,7 @@ export default function ContactCenter() {
       {/* ── Заголовок ── */}
       <div style={{ display: "flex", alignItems: "center", marginBottom: 18 }}>
         <h2 style={{ margin: 0, fontSize: 22, display: "flex", alignItems: "center", gap: 8 }}><Icon n="🎛️" size={20} /> {t("Контакт-центр","Контакт-центр")}</h2>
-        <span className="muted" style={{ marginLeft: 12, fontSize: 13 }}>{t("Каналы связи с клиентами · лиды с каждого канала падают в CRM разделённо","Канали звʼязку з клієнтами · ліди з кожного каналу падають у CRM розділено")}</span>
+        <span className="muted" style={{ marginLeft: 12, fontSize: 13 }}>{t("Каналы связи с клиентами · лиды с каждого канала падают в CRM разделённо","Канали звʼязку з клієнтами · ліди з кожного каналу потрапляють у CRM окремо")}</span>
       </div>
 
       <EchatBlock t={t} />
@@ -110,7 +110,7 @@ export default function ContactCenter() {
                 ? <div style={{ color: "#16a34a", fontWeight: 600 }}>● {t("Подключено","Підключено")}{sel.via ? ` ${t("через","через")} ${sel.via}` : ""}</div>
                 : <div style={{ color: "#d97706", fontWeight: 600 }}>○ {t("Не подключено","Не підключено")}</div>}
               <button className="btn btn-primary" style={{ marginTop: 10 }} onClick={() => channelAction(sel)}>
-                {sel.status === "connected" ? t("↻ Синхронизировать / Переподключить","↻ Синхронізувати / Переподключити") : t("+ Подключить канал","+ Підключити канал")}
+                {sel.status === "connected" ? t("↻ Синхронизировать / Переподключить","↻ Синхронізувати / Перепідключити") : t("+ Подключить канал","+ Підключити канал")}
               </button>
               {msg && <div style={{ marginTop: 10, fontSize: 12.5, color: "#475569", background: "#f8fafc", borderRadius: 8, padding: "8px 10px" }}>{msg}</div>}
             </div>
@@ -118,7 +118,7 @@ export default function ContactCenter() {
             {/* Черга менеджерів + доступи (як у Бітриксі) */}
             <div className="panel" style={{ marginBottom: 14 }}>
               <div className="label">{t("Очередь ответственных · доступ менеджеров","Черга відповідальних · доступ менеджерів")}</div>
-              <div className="muted" style={{ fontSize: 12.5 }}>{t("Здесь выберем, какие менеджеры видят и отвечают в этом канале. Настройка доступов — следующим шагом (бекенд очереди + роли по каналам).","Тут оберемо, які менеджери бачать і відповідають у цьому каналі. Налаштування доступів — наступним кроком (бекенд черги + ролі по каналах).")}</div>
+              <div className="muted" style={{ fontSize: 12.5 }}>{t("Здесь выберем, какие менеджеры видят и отвечают в этом канале. Настройка доступов — следующим шагом (бекенд очереди + роли по каналам).","Тут оберемо, які менеджери бачать і відповідають у цьому каналі. Налаштування доступів — наступним кроком (бекенд черги + ролі за каналами).")}</div>
             </div>
 
             <div className="muted" style={{ fontSize: 12 }}>{t("Канал-ключ","Канал-ключ")}: <code>{sel.key}</code></div>

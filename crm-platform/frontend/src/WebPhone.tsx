@@ -1,12 +1,13 @@
 /* Веб-телефон Wallcov-CRM — дзвінки прямо з браузера через нашу телефонію (WebRTC/JsSIP).
  * Реєструється як SIP-розширення, дзвонить і приймає. Плаваючий віджет. */
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "./api";
 import { useLang } from "./i18n";
 import { Icon } from "./Icon";
 
 declare global {
-  interface Window { JsSIP: any; wallcovDial?: (n: string) => void; wallcovPhoneReady?: boolean; wallcovAnswer?: () => void; wallcovHangup?: () => void; wallcovIncoming?: boolean; }
+  interface Window { JsSIP: any; wallcovDial?: (n: string) => void; wallcovPhoneReady?: boolean; wallcovAnswer?: () => void; wallcovHangup?: () => void; wallcovIncoming?: boolean; wallcovPhoneReconnect?: () => void; }
 }
 
 const ICE_CFG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }] };
@@ -29,8 +30,31 @@ export default function WebPhone() {
   const uaRef = useRef<any>(null);
   const sessRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const TAB_ID = useRef(Math.random().toString(36).slice(2)).current;
+  const [isLeader, setIsLeader] = useState(false);
+
+  // ── ОДИН активний телефонний таб: реєструється і дзвонить лише лідер (остання активна вкладка) ──
+  useEffect(() => {
+    const KEY = "wallcov_phone_leader";
+    const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch { return null; } };
+    const claim = () => { localStorage.setItem(KEY, JSON.stringify({ id: TAB_ID, ts: Date.now() })); setIsLeader(true); };
+    const check = () => {
+      const l = read();
+      const fresh = l && (Date.now() - l.ts < 7000);
+      if (!fresh || l.id === TAB_ID) { claim(); return; }   // лідера нема/застарів АБО ми лідер → тримаємо
+      setIsLeader(false);                                    // телефон активний в іншій вкладці
+    };
+    const onFocus = () => claim();                           // стала активною → забираємо телефон собі
+    check();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) claim(); });
+    const iv = setInterval(check, 3000);
+    return () => { window.removeEventListener("focus", onFocus); clearInterval(iv);
+      const l = read(); if (l && l.id === TAB_ID) localStorage.removeItem(KEY); };
+  }, []);
 
   useEffect(() => {
+    if (!isLeader) { setEnabled(true); setSt("off"); return; }   // не лідер → JsSIP не піднімаємо (не дзвонить)
     let ua: any, cancelled = false, regTimer: any;
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     (async () => {
@@ -56,6 +80,11 @@ export default function WebPhone() {
         });
         uaRef.current = ua;
         ua.on("connecting", () => setSt("connecting"));
+        ua.on("disconnected", () => {
+          // WS впав (напр. деплой) → JsSIP сам відновлює сокет; підстрахуємо реєстрацію
+          setSt((cur) => (["incoming", "calling", "incall"].includes(cur) ? cur : "connecting"));
+          setTimeout(() => { try { ua.register(); } catch { /* */ } }, 2500);
+        });
         ua.on("registered", () => { clearTimeout(regTimer); setSt("ready"); setEverReady(true); window.wallcovPhoneReady = true; });
         ua.on("unregistered", () => {
           clearTimeout(regTimer);
@@ -81,15 +110,23 @@ export default function WebPhone() {
           session.on("accepted", () => setSt("incall"));
           session.on("confirmed", () => setSt("incall"));
           session.on("ended", () => { setSt("ready"); setPeer(""); sessRef.current = null; });
-          session.on("failed", (e: any) => { setSt("ready"); setPeer(""); sessRef.current = null; setMsg(t("Звонок не удался: ","Дзвінок не вдався: ") + (e?.cause || "")); });
+          session.on("getusermediafailed", (err: any) => { console.error("[phone] getUserMedia FAILED", err); setMsg(t("Нет доступа к микрофону: ","Немає доступу до мікрофона: ") + (err?.name || err?.message || err)); });
+          session.on("peerconnection:createanswerfailed", (err: any) => { console.error("[phone] createAnswer FAILED", err); setMsg("createAnswer: " + (err?.message || err)); });
+          session.on("failed", (e: any) => { console.error("[phone] session FAILED cause=", e?.cause, e); setSt("ready"); setPeer(""); sessRef.current = null; setMsg(t("Звонок не удался: ","Дзвінок не вдався: ") + (e?.cause || "")); });
           setSt(data.originator === "remote" ? "incoming" : "calling");
         });
         ua.start();
         window.wallcovDial = (n: string) => doDial(n);
+        // повне перепідключення телефона БЕЗ перезавантаження сторінки (виклик зі спливашки)
+        window.wallcovPhoneReconnect = () => {
+          try { ua.stop(); } catch { /* */ }
+          setTimeout(() => { try { ua.start(); } catch { /* */ } setTimeout(() => { try { ua.register(); } catch { /* */ } }, 800); }, 400);
+        };
       } catch { /* конфіг недоступний — віджет не показуємо */ }
     })();
-    return () => { cancelled = true; clearTimeout(regTimer); try { window.wallcovDial = undefined; window.wallcovPhoneReady = false; ua?.stop(); } catch { /* */ } };
-  }, []);
+    return () => { cancelled = true; clearTimeout(regTimer); try { window.wallcovDial = undefined; window.wallcovPhoneReconnect = undefined; window.wallcovPhoneReady = false; ua?.stop(); } catch { /* */ } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLeader]);
 
   function doDial(number: string) {
     const ua = uaRef.current;
@@ -107,7 +144,19 @@ export default function WebPhone() {
       setPeer(number); setSt("calling"); setMsg("");
     } catch (e: any) { setMsg(t("Ошибка: ","Помилка: ") + (e?.message || "")); }
   }
-  function answer() { try { sessRef.current?.answer({ mediaConstraints: { audio: true, video: false }, pcConfig: ICE_CFG }); setSt("incall"); } catch { /* */ } }
+  function answer() {
+    const sess = sessRef.current;
+    if (!sess) { setMsg(t("Звонок уже сброшен — обнови страницу","Дзвінок вже скинуто — онови сторінку")); return; }
+    try {
+      console.log("[phone] answering session", sess);
+      setMsg(t("Беру трубку…","Беру слухавку…"));
+      // session.answer сам бере мікрофон (getUserMedia). incall виставиться подіями accepted/confirmed
+      sess.answer({ mediaConstraints: { audio: true, video: false }, pcConfig: ICE_CFG });
+    } catch (e: any) {
+      console.error("[phone] answer() throw", e);
+      setMsg(t("Не удалось взять трубку: ","Не вдалося взяти слухавку: ") + (e?.message || e?.cause || "?"));
+    }
+  }
   useEffect(() => { const f = () => api.get<any>("/api/telephony/lines/").then((d) => { const m: any = {}; (d || []).forEach((l: any) => { m[l.internal] = l; }); setLineStatus((prev: any) => JSON.stringify(prev) === JSON.stringify(m) ? prev : m); }).catch(() => {}); f(); const tm = setInterval(f, 15000); return () => clearInterval(tm); }, []);
   function hangup() { try { sessRef.current?.terminate(); } catch { /* */ } setSt("ready"); setPeer(""); }
   useEffect(() => {
@@ -118,17 +167,17 @@ export default function WebPhone() {
   }, [st, peer]);
 
   const dot = ({ off: "#94a3b8", connecting: "#f59e0b", ready: "#16a34a", incoming: "#16a34a", calling: "#3b82f6", incall: "#3b82f6", error: "#dc2626" } as any)[st];
-  const label = ({ off: t("выключено","вимкнено"), connecting: t("подключение…","підключення…"), ready: t("готов","готовий"), incoming: t("входящий звонок","вхідний дзвінок"), calling: t("набор…","набір…"), incall: t("разговор","розмова"), error: t("ошибка","помилка") } as any)[st];
-  const busy = st === "incoming" || st === "calling" || st === "incall";
+  const label = !isLeader ? t("активен в другой вкладке","активний в іншій вкладці") : ({ off: t("выключено","вимкнено"), connecting: t("подключение…","підключення…"), ready: t("готов","готовий"), incoming: t("входящий звонок","вхідний дзвінок"), calling: t("набор…","набір…"), incall: t("разговор","розмова"), error: t("ошибка","помилка") } as any)[st];
+  const busy = st === "calling" || st === "incall";   // incoming показує ЦЕНТРАЛЬНЕ вікно, віджет не дублює
 
   if (!enabled) return <audio ref={audioRef} autoPlay playsInline />;
 
-  return (
+  const content = (
     <>
       <audio ref={audioRef} autoPlay playsInline />
       <div style={{
         ...(busy
-          ? { position: "fixed" as const, left: 14, bottom: 14, width: 250, zIndex: 9500 }
+          ? { position: "fixed" as const, left: 14, bottom: 14, width: 250, zIndex: 2147483000 }
           : { margin: "0 10px 8px" }),
         background: "#fff", borderRadius: 12, boxShadow: busy ? "0 12px 40px rgba(0,0,0,.32)" : "0 4px 16px rgba(0,0,0,.18)", border: "1px solid #e2e8f0", padding: 11,
       }}>
@@ -140,12 +189,7 @@ export default function WebPhone() {
 
         {busy && <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>{peer || "—"}</div>}
 
-        {st === "incoming" && (
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-green" style={{ flex: 1 }} onClick={answer}><Icon n="✅" size={15} /> {t("Принять","Прийняти")}</button>
-            <button className="btn" style={{ background: "#fee2e2", color: "#b91c1c" }} onClick={hangup}>{t("✖ Сбросить","✖ Скинути")}</button>
-          </div>
-        )}
+
         {(st === "calling" || st === "incall") && (
           <button className="btn" style={{ width: "100%", background: "#fee2e2", color: "#b91c1c" }} onClick={hangup}><Icon n="📵" size={15} /> {t("Завершить","Завершити")}</button>
         )}
@@ -180,4 +224,6 @@ export default function WebPhone() {
       </div>
     </>
   );
+  // у режимі дзвінка виносимо віджет у body (щоб transform/backdrop-filter предків не ховали і не зміщували його)
+  return busy ? createPortal(content, document.body) : content;
 }

@@ -56,18 +56,43 @@ class ContactViewSet(viewsets.ModelViewSet):
         from apps.finance.models import Transaction as _Tx
         from django.db.models import Sum as _Sum
         from apps.finance.models import PlannedPayment as _PP
+        from django.db.models import Q as _Qc
         c = self.get_object()
-        qs = _Tx.objects.filter(contact=c)
+        _nm = (" ".join(filter(None, [c.first_name or "", c.last_name or ""])).strip() or (c.nickname or "")).strip()
+        # операції: привʼязані до контакту АБО (легасі) де контрагент точно = імʼя клієнта
+        _byname = None
+        _match = _Qc(contact=c)
+        if _nm:
+            _byname = _Qc(counterparty__iexact=_nm) | _Qc(counterparty__istartswith=_nm + "/") | _Qc(counterparty__istartswith=_nm + " ") | _Qc(counterparty__istartswith=_nm + ".")
+            _match = _match | (_Qc(contact__isnull=True) & _byname)
+        qs = _Tx.objects.filter(_match)
         inc = qs.filter(direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0
         exp = qs.filter(direction="out").aggregate(s=_Sum("amount_uah"))["s"] or 0
         # аванс = залишок грошей клієнта в нас (його дохід мінус витрати по його обʼєкту)
         adv = (inc or 0) - (exp or 0)
-        debt = _PP.objects.filter(contact=c, kind="payable", status="planned").aggregate(s=_Sum("amount"))["s"] or 0
+        _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | ((_Qc(contact__isnull=True) & _byname) if _byname is not None else _Qc(pk__in=[])))
+        debt = _ppq.filter(kind="payable").aggregate(s=_Sum("amount"))["s"] or 0
+        # ДЕБІТОРКА (нам винні): торгова (від продажу, майбутня прибуток) окремо від позики (мої гроші в борг, НЕ прибуток)
+        recv_sale = _ppq.filter(kind="receivable", is_loan=False).aggregate(s=_Sum("amount"))["s"] or 0
+        recv_loan = _ppq.filter(kind="receivable", is_loan=True).aggregate(s=_Sum("amount"))["s"] or 0
+        # пагінація історії: скільки рядків показувати і з якого зсуву (для >500 — перемикання сторінок)
+        try:
+            _lim = int(request.query_params.get("limit") or 15)
+        except Exception:
+            _lim = 15
+        _lim = max(1, min(_lim, 500))
+        try:
+            _off = int(request.query_params.get("offset") or 0)
+        except Exception:
+            _off = 0
+        _off = max(0, _off)
         ops = [{"id": t.id, "date": t.date, "direction": t.direction, "amount_uah": t.amount_uah,
                 "counterparty": t.counterparty, "category": t.category.name if t.category else "",
-                "comment": (t.comment or "")[:80], "deal": t.deal_id}
-               for t in qs.select_related("category").order_by("-date")[:15]]
+                "comment": (t.comment or "")[:80], "deal": t.deal_id,
+                "deal_title": (t.deal.title if t.deal_id else "")}
+               for t in qs.select_related("category", "deal").order_by("-date", "-id")[_off:_off + _lim]]
         return Response({"income": inc, "expense": exp, "advance": adv, "debt": debt,
+                         "receivable": (recv_sale or 0) + (recv_loan or 0), "receivable_sale": recv_sale, "receivable_loan": recv_loan,
                          "count": qs.count(), "ops": ops})
     search_fields = ["first_name", "last_name", "phone", "email"]
     filterset_fields = ["loyalty_tag", "source", "owner"]
@@ -323,7 +348,7 @@ class ActivityLogMixin:
         auto = False
         if obj.stage_id != old_stage:
             log_activity(self.log_kind, obj.id, "Зміна стадії", f"{old_stage_name} → {obj.stage.name}", request.user, actor)
-            if self.log_kind == "deal" and obj.stage and "оплату отримано" in (obj.stage.name or "").lower():
+            if self.log_kind == "deal" and obj.stage and _is_pay_stage(obj.stage.name):
                 try:
                     from apps.warehouse.services import create_warehouse_job
                     create_warehouse_job(obj)
@@ -340,6 +365,20 @@ class ActivityLogMixin:
                     obj.items.update(reserved=True)  # ТТН створена → товари в РЕЗЕРВ (списання буде на Успішній)
                 except Exception:
                     pass
+            if self.log_kind == "deal":
+                from django.utils import timezone as _tzc
+                _stc = obj.stage
+                _closedc = bool(_stc and (getattr(_stc, "is_won", False) or getattr(_stc, "is_lost", False)))
+                if _closedc and not obj.closed_at:
+                    obj.closed_at = _tzc.now(); obj.save(update_fields=["closed_at"])
+                elif not _closedc and obj.closed_at:
+                    obj.closed_at = None; obj.save(update_fields=["closed_at"])
+                if _closedc:
+                    try:  # закрита угода → активні задачі складу скасовуємо (не висять у канбані)
+                        from apps.warehouse.models import WarehouseJob as _WJc
+                        _WJc.objects.filter(deal=obj).exclude(status__in=("shipped", "cancelled")).update(status="cancelled")
+                    except Exception:
+                        pass
             if hasattr(obj, "stage_changed_at"):
                 from django.utils import timezone as _tzs
                 obj.stage_changed_at = _tzs.now(); obj.save(update_fields=["stage_changed_at"])
@@ -472,6 +511,8 @@ def _find_product(name):
 
 def _is_test_kit_item(it):
     """Товар — тестовий набір? (за категорією або назвою)"""
+    if not it.product_id:
+        return False
     cat = (it.product.category.name if it.product.category_id else "") or ""
     nm = it.product.name.lower()
     return "тестов" in cat.lower() or "тест-наб" in nm or "тестовий набір" in nm
@@ -536,7 +577,7 @@ def make_offer(deal, items_spec, user=None, send_pay=True):
     def _g(x):
         return ("%g" % float(x))
 
-    lines = ["\u2022 %s \u2014 %s \u00d7 %s \u0433\u0440\u043d = %s \u0433\u0440\u043d" % (i.product.name[:55], _g(i.quantity), _g(i.price), _g(i.total)) for i in items]
+    lines = ["\u2022 %s \u2014 %s \u00d7 %s \u0433\u0440\u043d = %s \u0433\u0440\u043d" % (((i.product.name if i.product_id else i.custom_name) or "Позиція")[:55], _g(i.quantity), _g(i.price), _g(i.total)) for i in items]
     quote = "\U0001f9fe \u0412\u0430\u0448 \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a:\n" + "\n".join(lines) + ("\n\n\u0420\u0430\u0437\u043e\u043c \u0434\u043e \u0441\u043f\u043b\u0430\u0442\u0438: %s \u0433\u0440\u043d" % _g(total))
     text_quote = "\u041f\u0456\u0434\u0433\u043e\u0442\u0443\u0432\u0430\u043b\u0438 \u0434\u043b\u044f \u0432\u0430\u0441 \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a \U0001f60a\n\n" + quote
     sent_q = False
@@ -592,7 +633,7 @@ def _issue_checkbox_for_deal(deal, user=None):
         return None
     goods = []
     for it in deal.items.all():
-        nm = (getattr(it.product, "name", None) or "Товар")[:200]
+        nm = ((it.product.name if it.product_id else "") or it.custom_name or "Товар")[:200]
         qty = float(it.quantity) or 1
         unit_kop = int(round(float(it.total) / qty * 100))  # ціна за одиницю ЗІ знижкою (щоб чек = сплаченому)
         goods.append({"good": {"code": str(getattr(it, "product_id", None) or it.id), "name": nm,
@@ -644,7 +685,7 @@ def _issue_checkbox_for_deal(deal, user=None):
                 from .ai import claude_json
                 dmsgs = list(conv.messages.order_by("id").values("direction", "text"))[-12:]
                 dlg = "\n".join((("Клієнт: " if m["direction"] == "in" else "Ми: ") + (m["text"] or "")) for m in dmsgs if m.get("text"))
-                items = ", ".join(i.product.name[:40] for i in deal.items.all()[:3])
+                items = ", ".join(((i.product.name if i.product_id else i.custom_name) or "Позиція")[:40] for i in deal.items.all()[:3])
                 step = "повна оплата пройшла, починаємо готувати і скоро відправимо" if closes else "отримали передоплату, бронюємо і готуємо замовлення"
                 pr = ("Ти РОП Wallcov (декоративні покриття для стін). Напиши КОРОТКЕ (2-3 речення) тепле живе повідомлення клієнту: %s. "
                       "Подякуй, згадай що замовив, додай приємний наступний крок. НЕ пиши слова 'фіскальний' і 'чек' — посилання я додам сам. "
@@ -704,6 +745,15 @@ def _run_sales_analysis(entity, field, user=None, refresh=False):
     return _ser_analysis(da)
 
 
+_PAY_STAGE_KEYS = ("оплату отримано", "оплата отримано", "оплата отримана", "оплата/предоплата")
+
+
+def _is_pay_stage(name):
+    """Стадія «оплата отримана» у БУДЬ-якому написанні (воронки називають її по-різному)."""
+    low = (name or "").lower()
+    return any(k in low for k in _PAY_STAGE_KEYS)
+
+
 def _advance_deal_stage(deal, target_order, reason, actor="Автоматизація", create_wh=True):
     """Рух сделки на стадію за order (тільки вперед). Лог + stage_changed_at."""
     if not deal.stage_id or not deal.funnel_id:
@@ -724,10 +774,16 @@ def _advance_deal_stage(deal, target_order, reason, actor="Автоматиза�
         deal.closed_at = _tz.now(); flds.append("closed_at")
     deal.save(update_fields=flds)
     log_activity("deal", deal.id, "\u0410\u0432\u0442\u043e-\u0441\u0442\u0430\u0434\u0456\u044f", "%s \u2192 %s (%s)" % (old, target.name, reason), None, actor)
-    if create_wh and "\u043e\u043f\u043b\u0430\u0442\u0443 \u043e\u0442\u0440\u0438\u043c\u0430\u043d\u043e" in (target.name or "").lower():
+    if create_wh and _is_pay_stage(target.name):
         try:
             from apps.warehouse.services import create_warehouse_job
             create_warehouse_job(deal)
+        except Exception:
+            pass
+    if getattr(target, "is_won", False) or getattr(target, "is_lost", False):
+        try:  # закрита угода → активні задачі складу скасовуємо
+            from apps.warehouse.models import WarehouseJob as _WJa
+            _WJa.objects.filter(deal=deal).exclude(status__in=("shipped", "cancelled")).update(status="cancelled")
         except Exception:
             pass
     if getattr(target, "is_won", False):
@@ -766,8 +822,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         deal = serializer.instance
         # менеджер ВРУЧНУ пересунув сделку на «Оплату отримано» → задача складу (ідемпотентно)
         try:
-            if deal.stage_id and deal.stage_id != old_stage_id and \
-               "оплату отримано" in (deal.stage.name or "").lower():
+            if deal.stage_id and deal.stage_id != old_stage_id and _is_pay_stage(deal.stage.name):
                 from apps.warehouse.services import create_warehouse_job
                 create_warehouse_job(deal)
         except Exception:
@@ -845,6 +900,21 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         deal = self.get_object()
         g = self._guard(deal)
         if g: return g
+        # своя позиція НЕ з номенклатури (без складського обліку) — окреме право
+        if str(request.data.get("custom_name") or "").strip():
+            u = request.user
+            if not (u.is_superuser or u.has_perm_code("deal.items.custom") or u.has_perm_code("roles.manage")):
+                return Response({"detail": "Немає права «Товари: своя позиція (не з номенклатури)» — видається у Ролях/Правах."},
+                                status=status.HTTP_403_FORBIDDEN)
+            qty = Decimal(str(request.data.get("quantity", 1)))
+            price = Decimal(str(request.data.get("price", 0) or 0))
+            if qty <= 0 or price < 0:
+                return Response({"detail": "Кількість > 0, ціна ≥ 0."}, status=status.HTTP_400_BAD_REQUEST)
+            DealItem.objects.create(deal=deal, product=None,
+                                    custom_name=str(request.data["custom_name"]).strip()[:200],
+                                    quantity=qty, price=price, cost=0)
+            self._recalc_amount(deal)
+            return Response(DealDetailSerializer(deal, context={"request": request}).data)
         from apps.warehouse.models import Product
         product = Product.objects.get(pk=request.data["product"])
         qty = Decimal(str(request.data.get("quantity", 1)))
@@ -928,9 +998,16 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         g = self._guard(deal, money=True)
         if g:
             return g
-        amount = Decimal(str(request.data.get("amount") or deal.amount or 0))
+        _paidc = sum((p.amount for p in deal.payments.filter(is_paid=True)), Decimal("0"))
+        _remc = (deal.amount or Decimal("0")) - _paidc
+        amount = Decimal(str(request.data.get("amount") or (_remc if _remc > 0 else deal.amount) or 0))
         if amount <= 0:
             return Response({"detail": "Сума боргу має бути більше 0."}, status=status.HTTP_400_BAD_REQUEST)
+        if not request.data.get("force"):
+            _exc = PlannedPayment.objects.filter(deal=deal, kind="receivable", status="planned").first()
+            if _exc:
+                return Response({"detail": "По цій угоді ВЖЕ є непогашений товарний кредит на %s грн (Фінанси → Дт/Кт). Другий борг створюється лише після підтвердження." % _exc.amount,
+                                 "need_force": True}, status=status.HTTP_409_CONFLICT)
         try:
             days = max(1, int(request.data.get("days") or 14))
         except (TypeError, ValueError):
@@ -1082,7 +1159,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             deal.save(update_fields=["amount"])
         def _g(x):
             return ("%g" % float(x))
-        lines = ["\u2022 %s \u2014 %s \u00d7 %s \u0433\u0440\u043d = %s \u0433\u0440\u043d" % (i.product.name[:55], _g(i.quantity), _g(i.price), _g(i.total)) for i in items]
+        lines = ["\u2022 %s \u2014 %s \u00d7 %s \u0433\u0440\u043d = %s \u0433\u0440\u043d" % (((i.product.name if i.product_id else i.custom_name) or "Позиція")[:55], _g(i.quantity), _g(i.price), _g(i.total)) for i in items]
         quote = "\U0001f9fe \u0412\u0430\u0448 \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a:\n" + "\n".join(lines) + ("\n\n\u0420\u0430\u0437\u043e\u043c \u0434\u043e \u0441\u043f\u043b\u0430\u0442\u0438: %s \u0433\u0440\u043d" % _g(total))
         intro = "\u041f\u0456\u0434\u0433\u043e\u0442\u0443\u0432\u0430\u043b\u0438 \u0434\u043b\u044f \u0432\u0430\u0441 \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a \U0001f60a"
         try:
@@ -1092,7 +1169,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             if conv0:
                 dmsgs = list(conv0.messages.order_by("id").values("direction", "text"))[-12:]
                 dlg = "\n".join((("\u041a\u043b\u0456\u0454\u043d\u0442: " if m["direction"] == "in" else "\u041c\u0438: ") + (m["text"] or "")) for m in dmsgs if m.get("text"))
-            nm = ", ".join(i.product.name[:40] for i in items[:3])
+            nm = ", ".join(((i.product.name if i.product_id else i.custom_name) or "Позиція")[:40] for i in items[:3])
             pr = ("\u0422\u0438 \u0420\u041e\u041f Wallcov. \u041d\u0430\u043f\u0438\u0448\u0438 \u041a\u041e\u0420\u041e\u0422\u041a\u0415 (1-2 \u0440\u0435\u0447\u0435\u043d\u043d\u044f) \u0442\u0435\u043f\u043b\u0435 \u0456\u043d\u0442\u0440\u043e \u043f\u0435\u0440\u0435\u0434 \u043f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043a\u043e\u043c. "
                   "\u0411\u0415\u0417 \u0446\u0456\u043d \u0456 \u0411\u0415\u0417 \u0441\u043f\u0438\u0441\u043a\u0443 (\u044f \u0434\u043e\u0434\u0430\u043c \u0441\u0430\u043c). \u0417\u0410\u0412\u0416\u0414\u0418 \u0443\u043a\u0440\u0430\u0457\u043d\u0441\u044c\u043a\u043e\u044e. JSON {\"message\":\"...\"}.\n\u0422\u043e\u0432\u0430\u0440\u0438: %s\n\u0414\u0456\u0430\u043b\u043e\u0433:\n%s") % (nm, dlg or "()")
             r = claude_json(pr, source="Помощник CRM (советы и расчёты)")
@@ -1161,7 +1238,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             PayLink.objects.create(code=code, deal=deal, target=full_url)
             url = "%s/p/%s/" % (base, code)
             # шаблонне повідомлення (БЕЗ Claude — економія токенів; текст стабільний)
-            items_txt = ", ".join(i.product.name[:40] for i in deal.items.all()[:3])
+            items_txt = ", ".join(((i.product.name if i.product_id else i.custom_name) or "Позиція")[:40] for i in deal.items.all()[:3])
             body = ("Дякуємо за замовлення! 💚 %s готовий(і) до оплати — "
                     "щойно надійде оплата, одразу готуємо та відправляємо. Чекаємо на Вас! 😊"
                     % (items_txt or "Ваше замовлення"))
@@ -1810,11 +1887,7 @@ class GlobalRuleViewSet(viewsets.ModelViewSet):
     filterset_fields = ["block", "funnel", "enabled"]
 
     def perform_update(self, serializer):
-        deal = serializer.save(updated_by=self.request.user)
-        st = getattr(deal, "stage", None)
-        if st and (getattr(st, "is_won", False) or getattr(st, "is_lost", False)) and not deal.closed_at:
-            from django.utils import timezone as _tz
-            deal.closed_at = _tz.now(); deal.save(update_fields=["closed_at"])
+        serializer.save(updated_by=self.request.user)
 
     def perform_create(self, serializer):
         serializer.save(updated_by=self.request.user)
@@ -1916,6 +1989,8 @@ def _upsell_test_kit(deal):
     if not items:
         return
     for it in items:
+        if not it.product_id:
+            return  # своя позиція — точно не тест-набір
         cat = (it.product.category.name if it.product.category_id else "") or ""
         if "тестов" not in cat.lower() and "тест-наб" not in it.product.name.lower() and "тестовий набір" not in it.product.name.lower():
             return  # у сделці не тільки тест-набори — допродаж не шлемо

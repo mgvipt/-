@@ -206,13 +206,20 @@ def sync_chats(max_chats=40, per_chat=40):
         name = raw_name or "Instagram"
         if not cid:
             continue
-        conv = (Conversation.objects.filter(channel=ch, external_chat_id=str(cid), status="open")
+        # шукаємо діалог в ОБОХ ChatPlace-каналах: визначення платформи (oembed) інколи
+        # «фліпає» IG<->TikTok і той самий клієнт дублювався у два чати/контакти
+        _both = [c for c in (ig_ch, tt_ch) if c is not None]
+        conv = (Conversation.objects.filter(channel__in=_both, external_chat_id=str(cid), status="open")
                 .order_by("-created_at").first())
         was_closed = False
         if conv is None:
-            conv = (Conversation.objects.filter(channel=ch, external_chat_id=str(cid), status="closed")
+            conv = (Conversation.objects.filter(channel__in=_both, external_chat_id=str(cid), status="closed")
                     .order_by("-created_at").first())
             was_closed = conv is not None
+        if conv is not None and conv.channel_id != ch.id:
+            ch = conv.channel            # канал існуючого діалогу — авторитетний
+            is_tt = (ch.kind == "tiktok")
+            platform = ch.kind
         created = conv is None
         if created:
             conv = Conversation.objects.create(channel=ch, external_chat_id=str(cid), title=name[:160])
@@ -330,4 +337,22 @@ def sync_chats(max_chats=40, per_chat=40):
                 pass
         conv.title = name[:160]
         conv.save()
+        # контакт створився ДО того як ChatPlace віддав імʼя (лаг 1-2 хв) → у ньому плейсхолдер.
+        # Дозаповнюємо реальним імʼям (тільки плейсхолдери, справжні імена не чіпаємо).
+        try:
+            c = conv.contact
+            if (c and raw_name and not raw_name.startswith("@")
+                    and (c.first_name or "").strip() in ("Instagram", "TikTok", "Клієнт")
+                    and not (c.last_name or "").strip()):
+                parts = raw_name.split(" ", 1)
+                c.first_name = parts[0][:120]
+                c.last_name = (parts[1] if len(parts) > 1 else "")[:120]
+                if (c.nickname or "").strip() in ("", "Instagram", "TikTok"):
+                    c.nickname = raw_name[:150]
+                c.save(update_fields=["first_name", "last_name", "nickname"])
+                for dl in c.deals.filter(title__in=("Instagram", "TikTok", "Клієнт", "Сделка з чату")):
+                    dl.title = raw_name[:200]
+                    dl.save(update_fields=["title"])
+        except Exception:
+            pass
     return {"chats": len(items), "new_conversations": new_conv, "new_messages": new_msg, "errors": len(errors)}

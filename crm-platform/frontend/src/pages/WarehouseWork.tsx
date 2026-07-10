@@ -122,11 +122,11 @@ function QueueView({ t, onOpen, mgr }: any) {
   const [prev, setPrev] = useState<number | null>(null);
   const [vkJob, setVkJob] = useState<any>(null);
   const [kpId, setKpId] = useState<number | null>(null);
-  const load = () => api.get<any>("/api/warehouse/queue/").then(setD).catch(() => {});
+  const load = () => api.get<any>("/api/warehouse/queue/").then((d) => setD((p: any) => JSON.stringify(p) === JSON.stringify(d) ? p : d)).catch(() => {});
   useEffect(() => { load(); const tm = setInterval(load, 15000); return () => clearInterval(tm); }, []);
   if (!d) return <div className="spin">…</div>;
   const take = (id: number) => api.post<any>(`/api/warehouse/jobs/${id}/take/`, {}).then(() => onOpen(id)).catch((e: any) => { alert(e?.response?.data?.by ? t("Уже взяла ", "Вже взяла ") + e.response.data.by : t("Не удалось взять", "Не вдалося взяти")); load(); });
-  const cancel = (id: number) => { if (!confirm(t("Удалить задачу из списка? Складовщики её не увидят.", "Видалити задачу зі списку? Складовщики її не побачать."))) return; api.post<any>(`/api/warehouse/jobs/${id}/cancel/`, {}).then(load).catch(() => alert(t("Нет прав (только руководитель склада)", "Немає прав (лише керівник складу)"))); };
+  const cancel = (id: number) => { if (!confirm(t("Удалить задачу из списка? Складовщики её не увидят.", "Видалити задачу зі списку? Працівники складу її не побачать."))) return; api.post<any>(`/api/warehouse/jobs/${id}/cancel/`, {}).then(load).catch(() => alert(t("Нет прав (только руководитель склада)", "Немає прав (лише керівник складу)"))); };
   const row = (j: any) => <JobCard key={j.id} j={j} t={t} onClick={() => setPrev(j.id)} action={<div style={{ display: "flex", gap: 6 }}><button className="btn" title={t("Печать бланка выкраски","Друк бланка викраски")} onClick={(e) => { e.stopPropagation(); setVkJob(j); }} style={{ height: 42, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe" }}><Icon n="🎨" size={16} /></button><button className="btn" title={t("Печать накладной","Друк накладної")} onClick={(e) => { e.stopPropagation(); setKpId(j.deal_id); }} style={{ height: 42, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}><Icon n="file" size={16} /></button>{mgr && <button className="btn" title={t("Удалить неактуальную задачу","Видалити неактуальну задачу")} onClick={(e) => { e.stopPropagation(); cancel(j.id); }} style={{ height: 42, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca" }}><Icon n="trash" size={16} /></button>}<button className="btn btn-primary" style={{ height: 42, fontSize: 14, fontWeight: 600 }} onClick={(e) => { e.stopPropagation(); take(j.id); }}>{t("Взять", "Взяти")}</button>{mgr && <select value="" onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = Number(e.target.value); if (e.target.value !== "") reassign(j.id, v); }} title={t("Назначить сотрудника","Призначити співробітника")} style={{ height: 42, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 12, maxWidth: 130 }}><option value="">👤 {t("Кому…","Кому…")}</option>{staff.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select>}</div>} />;
   const sal = (d.queue || []).filter((j: any) => j.channel === "offline");
   const rest = (d.queue || []).filter((j: any) => j.channel !== "offline");
@@ -174,7 +174,7 @@ function JobPreview({ jobId, t, onClose, onTake }: any) {
             <button className="btn btn-light" onClick={onClose} style={{ padding: "4px 11px" }}>✕</button>
           </div>
           <div className="muted" style={{ fontSize: 12.5, margin: "4px 0 12px" }}>📍 {j.city || "—"} · {j.kind_type === "test" ? "🧪 " + t("тест-набор", "тест-набір") : "📦 " + t("основной", "основний")}{j.channel === "offline" ? " · 🏪 " + t("салон", "салон") : ""}</div>
-          <div className="label">📦 {t("Товары в сделке", "Товари у сделці")}</div>
+          <div className="label">📦 {t("Товары в сделке", "Товари в угоді")}</div>
           {(j.items || []).length ? (j.items || []).map((it: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "5px 0", borderBottom: "1px solid #f6f8fb" }}>• {it.name} <b>× {it.qty}</b> {it.weight_kg && it.weight_kg !== "0" && it.weight_kg !== "0.000" ? <span className="muted">· {it.weight_kg} кг</span> : null}</div>) : <div className="muted" style={{ fontSize: 12 }}>—</div>}
           {(j.kits || []).length > 0 && <><div className="label" style={{ marginTop: 14 }}>🎨 {t("Наборы / тонировка", "Набори / тонування")} ({(j.kits || []).length})</div>
             {(j.kits || []).map((k: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "4px 0" }}>• <b>{k.material || "—"}</b> <span className="muted">{k.color}</span>{k.tint ? " · 🎨 " + t("тонировать", "тонувати") : ""}{k.board ? " · " + t("с дощечкой", "з дощечкою") : ""}</div>)}</>}
@@ -196,7 +196,7 @@ function PhotoThumb({ url }: { url: string }) {
 
 function KanbanView({ t, onOpen }: any) {
   const [d, setD] = useState<any>(null);
-  const load = () => api.get<any>("/api/warehouse/queue/").then(setD).catch(() => {});
+  const load = () => api.get<any>("/api/warehouse/queue/").then((d) => setD((p: any) => JSON.stringify(p) === JSON.stringify(d) ? p : d)).catch(() => {});
   useEffect(() => { load(); const tm = setInterval(load, 15000); return () => clearInterval(tm); }, []);
   const take = (id: number) => api.post<any>(`/api/warehouse/jobs/${id}/take/`, {}).then(() => onOpen(id)).catch((e: any) => { alert(e?.response?.data?.by ? t("Уже взяла ", "Вже взяла ") + e.response.data.by : t("Не удалось взять", "Не вдалося взяти")); load(); });
   if (!d) return <div className="scroll pad"><div className="spin">…</div></div>;
@@ -206,12 +206,12 @@ function KanbanView({ t, onOpen }: any) {
   const COLS: any[] = [
     { k: "work", icon: "🆕", title: t("В работе", "В роботі"), color: "#1d4ed8", items: mine.filter((j: any) => j.status === "taken") },
     { k: "tint", icon: "🎨", title: t("Тонировка", "Тонування"), color: "#854d0e", items: mine.filter((j: any) => j.status === "tinting") },
-    { k: "pack", icon: "📦", title: t("Упаковка", "Пакування"), color: "#5b21b6", items: mine.filter((j: any) => j.status === "packing") },
+    { k: "pack", icon: "📦", title: t("Пакування", "Пакування"), color: "#5b21b6", items: mine.filter((j: any) => j.status === "packing") },
     { k: "ship", icon: "🚚", title: t("ТТН + Фото", "ТТН + Фото"), color: "#dc2626", items: mine.filter((j: any) => j.status === "awaiting_photos") },
     { k: "created", icon: "📦", title: t("ТТН создана", "ТТН створена"), color: "#166534", items: shipped.filter((j: any) => npc(j) === "created") },
     { k: "sent", icon: "📤", title: t("НП · Отправлено", "НП · Відправлено"), color: "#0d9488", items: shipped.filter((j: any) => npc(j) === "sent") },
     { k: "transit", icon: "🚛", title: t("НП · В пути", "НП · В дорозі"), color: "#0891b2", items: shipped.filter((j: any) => npc(j) === "transit") },
-    { k: "arrived", icon: "🏤", title: t("НП · Прибыло", "НП · Прибув"), color: "#7c3aed", items: shipped.filter((j: any) => npc(j) === "arrived") },
+    { k: "arrived", icon: "🏤", title: t("НП · Прибыло", "НП · Прибуло"), color: "#7c3aed", items: shipped.filter((j: any) => npc(j) === "arrived") },
     { k: "got", icon: "🎉", title: t("Получено клиентом", "Отримано клієнтом"), color: "#16a34a", items: shipped.filter((j: any) => npc(j) === "got") },
   ];
   return (
@@ -239,7 +239,7 @@ function KanbanView({ t, onOpen }: any) {
 
 function MineView({ t, onOpen }: any) {
   const [d, setD] = useState<any>(null);
-  const load = () => api.get<any>("/api/warehouse/queue/").then(setD).catch(() => {});
+  const load = () => api.get<any>("/api/warehouse/queue/").then((d) => setD((p: any) => JSON.stringify(p) === JSON.stringify(d) ? p : d)).catch(() => {});
   useEffect(() => { load(); const tm = setInterval(load, 15000); return () => clearInterval(tm); }, []);
   if (!d) return <div className="spin">…</div>;
   return (
@@ -253,7 +253,7 @@ function MineView({ t, onOpen }: any) {
 
 function ShiftView({ t }: any) {
   const [d, setD] = useState<any>(null);
-  const load = () => api.get<any>("/api/warehouse/my-shift/").then(setD).catch(() => {});
+  const load = () => api.get<any>("/api/warehouse/my-shift/").then((d) => setD((p: any) => JSON.stringify(p) === JSON.stringify(d) ? p : d)).catch(() => {});
   useEffect(() => { load(); const tm = setInterval(load, 30000); return () => clearInterval(tm); }, []);
   if (!d) return <div className="spin">…</div>;
   const act = (url: string, body: any = {}) => api.post(url, body).then(load).catch(() => {});
@@ -364,7 +364,7 @@ function TaskCard({ t, jobId, onBack }: any) {
       <div className="panel" style={{ borderLeft: `4px solid ${C.terra}` }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
           <b style={{ fontSize: 17, flex: 1 }}>#{j.deal_id} · {j.client}</b>
-          <button title={t("Печать накладной (как в сделке)", "Друк накладної (як у сделці)")} onClick={() => { if (!deal) { alert(t("Сделка ещё загружается…", "Сделка ще завантажується…")); return; } setDocOpen(true); }} style={{ width: 36, height: 32, borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon n="file" size={17} /></button>
+          <button title={t("Печать накладной (как в сделке)", "Друк накладної (як в угоді)")} onClick={() => { if (!deal) { alert(t("Сделка ещё загружается…", "Угода ще завантажується…")); return; } setDocOpen(true); }} style={{ width: 36, height: 32, borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon n="file" size={17} /></button>
           <button title={t("Печать бланка выкраски", "Друк бланка викраски")} onClick={() => setVkOpen(true)} style={{ width: 36, height: 32, borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon n="palette" size={17} /></button>
         </div>
         <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>📍 {j.city || "—"} · {j.ship || ""}{(deal && deal.ttn) ? " · ТТН " + deal.ttn : ""}</div>
@@ -409,7 +409,7 @@ function TaskCard({ t, jobId, onBack }: any) {
         {!hasTint && <div className="muted" style={{ fontSize: 12.5 }}>{t("Тонировка не требуется", "Тонування не потрібне")}</div>}
       </Step>
 
-      <Step n="2" title={t("Упаковка", "Упаковка")} done={packDone} locked={!tintDone} hint={t("Сначала затонируй все наборы", "Спочатку затонуй усі набори")}>
+      <Step n="2" title={t("Пакування", "Пакування")} done={packDone} locked={!tintDone} hint={t("Сначала затонируй все наборы", "Спочатку затонуй усі набори")}>
         <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>{t("Вес считается сам.", "Вага рахується сама.")} {t("Вес", "Вага")}: <b>{j.weight_kg} кг</b></div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn" onClick={() => setPacked(true)} style={{ flex: 1, height: 46, background: (packDone && j.packed) ? C.green : "#f1f5f9", color: (packDone && j.packed) ? "#fff" : C.slate, fontWeight: 600 }}>{t("Ручная упаковка", "Ручне пакування")}</button>
@@ -447,7 +447,7 @@ function SalaryView({ t }: any) {
   const [d, setD] = useState<any>(null);
   const [period, setPeriod] = useState("month");
   useEffect(() => { api.get<any>(`/api/warehouse/my-salary/?period=${period}`).then(setD).catch(() => {}); }, [period]);
-  const LBL: any = { workday: ["Дни (ставка)", "Дні (ставка)"], shipment_weight: ["Вес отгрузки", "Вага відвантаження"], packing: ["Упаковка", "Упаковка"], tinting: ["Тонировка", "Тонування"], bonus_initiative: ["Бонус-идея", "Бонус-ідея"], bonus_cleanliness: ["Бонус-чистота", "Бонус-чистота"], error: ["Ошибки", "Помилки"], wrong_material: ["Не тот материал", "Не той матеріал"] };
+  const LBL: any = { workday: ["Дни (ставка)", "Дні (ставка)"], shipment_weight: ["Вес отгрузки", "Вага відвантаження"], packing: ["Пакування", "Пакування"], tinting: ["Тонировка", "Тонування"], bonus_initiative: ["Бонус-идея", "Бонус-ідея"], bonus_cleanliness: ["Бонус-чистота", "Бонус-чистота"], error: ["Ошибки", "Помилки"], wrong_material: ["Не тот материал", "Не той матеріал"] };
   if (!d) return <div className="spin">…</div>;
   return (
     <div>
@@ -547,19 +547,19 @@ function ControlView({ t }: any) {
   const [id, setId] = useState<any[]>([]);
   const load = () => { api.get<any[]>("/api/warehouse/errors/").then(setEr).catch(() => {}); api.get<any[]>("/api/warehouse/ideas/").then(setId).catch(() => {}); };
   useEffect(load, []);
-  const confirmErr = (e: any) => { const dd = prompt(t("Сумма удержания, ₴", "Сума удержання, ₴"), e.deduction); if (dd === null) return; api.post(`/api/warehouse/errors/${e.id}/confirm/`, { deduction: dd }).then(load).catch(() => {}); };
+  const confirmErr = (e: any) => { const dd = prompt(t("Сумма удержания, ₴", "Сума утримання, ₴"), e.deduction); if (dd === null) return; api.post(`/api/warehouse/errors/${e.id}/confirm/`, { deduction: dd }).then(load).catch(() => {}); };
   const rejectErr = (e: any) => api.post(`/api/warehouse/errors/${e.id}/confirm/`, { action: "reject" }).then(load).catch(() => {});
   const award = (i: any) => { const a = prompt(t("Премия за идею, ₴", "Премія за ідею, ₴"), "200"); if (a === null) return; api.post(`/api/warehouse/ideas/${i.id}/award/`, { status: "accepted", award: a }).then(load).catch(() => {}); };
   const pend = er.filter((e) => e.status === "suggested");
   return (
     <div>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Для руководителя: подтверждай удержания и премируй идеи.", "Для керівника: підтверджуй удержання і премуй ідеї.")}</div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Для руководителя: подтверждай удержания и премируй идеи.", "Для керівника: підтверджуй утримання і преміюй ідеї.")}</div>
       <div className="label" style={{ marginBottom: 8 }}>⚠ {t("Ошибки на подтверждение", "Помилки на підтвердження")}</div>
       {pend.length === 0 && <div className="muted" style={{ fontSize: 13 }}>{t("Нет", "Немає")}</div>}
       {pend.map((e) => (
         <div key={e.id} className="panel" style={{ marginBottom: 8 }}>
           <b>{e.kind}</b> · {e.blamed || "—"}
-          <div className="muted" style={{ fontSize: 12 }}>{e.desc}{e.deal ? " · сделка #" + e.deal : ""}</div>
+          <div className="muted" style={{ fontSize: 12 }}>{e.desc}{e.deal ? " · угода #" + e.deal : ""}</div>
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             <button className="btn" style={{ background: C.red, color: "#fff", flex: 1 }} onClick={() => confirmErr(e)}>{t("Удержать", "Утримати")}</button>
             <button className="btn btn-light" style={{ flex: 1 }} onClick={() => rejectErr(e)}>{t("Отклонить", "Відхилити")}</button>

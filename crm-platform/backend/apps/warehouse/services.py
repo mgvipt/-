@@ -44,6 +44,8 @@ def _expand_deal_items(items):
     from decimal import Decimal
     out = []
     for it in items:
+        if not it.product_id:
+            continue  # своя позиція (не з номенклатури) — складський рух не створюємо
         comps = list(it.product.components.select_related("component"))
         if comps:
             for row in comps:
@@ -209,3 +211,19 @@ def unpost_document(doc):
     doc.save(update_fields=["posted"])
     _on_unposted(doc)  # сторно COGS / списання / інвентаризації
     return True
+
+
+def sync_job_status_after_ttn(deal):
+    """ТТН створена → якщо задача взята/тонується/пакується і немає 2 фото —
+    статус «Потрібні фото» (колонка «ТТН + Фото» у канбані складу). Ідемпотентно."""
+    from .models import WarehouseJob
+    job = (WarehouseJob.objects.filter(deal=deal)
+           .filter(status__in=["taken", "tinting", "packing"]).first())
+    if not job:
+        return None
+    kinds = set(p.kind for p in job.photos.all())
+    if {"buckets", "parcel"} <= kinds:
+        return None  # фото вже є — кладовщик сам натисне «Відвантажено»
+    job.status = "awaiting_photos"
+    job.save(update_fields=["status"])
+    return job

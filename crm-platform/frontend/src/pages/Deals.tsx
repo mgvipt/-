@@ -90,7 +90,7 @@ function SmartFilter({ funnel, users, onQuery }: { funnel: Funnel; users: { id: 
       <input value={text}
         onChange={(e) => { setText(e.target.value); build(e.target.value, selStages); }}
         onFocus={() => setOpen(true)}
-        placeholder={t("🔍 Поиск сделки по названию… (клик — все фильтры)","🔍 Пошук сделки за назвою… (клік — усі фільтри)")}
+        placeholder={t("🔍 Поиск сделки по названию… (клик — все фильтры)","🔍 Пошук угоди за назвою… (клік — усі фільтри)")}
         style={{ ...inp, borderColor: active ? "var(--brand)" : "#cbd5e1", borderWidth: active ? 2 : 1 }} />
       {active && <span onClick={reset} title={t("Сбросить фильтры","Скинути фільтри")} style={{ position: "absolute", right: 10, top: 8, cursor: "pointer", color: "#dc2626", fontWeight: 700 }}>✕</span>}
       {open && (
@@ -133,7 +133,7 @@ function SmartFilter({ funnel, users, onQuery }: { funnel: Funnel; users: { id: 
             </div>
             {/* ID сделки */}
             <div>
-              <label className="muted" style={{ fontSize: 11 }}>{t("ID сделки (#)","ID сделки (#)")}</label>
+              <label className="muted" style={{ fontSize: 11 }}>{t("ID угоди (#)","ID угоди (#)")}</label>
               <input value={dealId} onChange={(e) => setDealId(e.target.value)} placeholder="#65450" style={inp} />
             </div>
             {/* відповідальний */}
@@ -314,8 +314,8 @@ export default function Deals() {
       {creating && (
         <div onClick={() => setCreating(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 380 }}>
-            <h3 style={{ marginTop: 0 }}>{t("Новая сделка","Нова сделка")}</h3>
-            <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && create()} placeholder={t("Название сделки","Назва сделки")} style={{ width: "100%", height: 38, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", marginBottom: 14 }} />
+            <h3 style={{ marginTop: 0 }}>{t("Новая сделка","Нова угода")}</h3>
+            <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && create()} placeholder={t("Название сделки","Назва угоди")} style={{ width: "100%", height: 38, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", marginBottom: 14 }} />
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setCreating(false)}>{t("Отмена","Скасувати")}</button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={create}>{t("Создать","Створити")}</button>

@@ -17,18 +17,20 @@ const PRESETS: any = {
 };
 
 /* автокомпліт міста/відділення/вулиці */
-function Auto({ kind, value, onPick, placeholder, disabled, settlementRef }: any) {
+function Auto({ kind, value, onPick, onType, placeholder, disabled, settlementRef, cityName }: any) {
   const [q, setQ] = useState(value || "");
   const [list, setList] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const box = useRef<any>(null);
+  const picked = useRef(false);   // щойно ВИБРАЛИ зі списку — не шукати повторно
   useEffect(() => { setQ(value || ""); }, [value]);
   useEffect(() => {
-    const minLen = kind === "warehouse" ? 1 : 2; if (!q || q.length < minLen || q === value) { setList([]); return; }
+    if (picked.current) { picked.current = false; setList([]); return; }
+    const minLen = kind === "warehouse" ? 1 : 2; if (!q || q.length < minLen) { setList([]); return; }
     const tm = setTimeout(() => {
       let url = "";
       if (kind === "warehouse") url = `/api/deals/np_warehouses/?settlement_ref=${encodeURIComponent(settlementRef || "")}&q=${encodeURIComponent(q)}`;
-      else if (kind === "street") url = `/api/deals/np_streets/?settlement_ref=${encodeURIComponent(settlementRef || "")}&q=${encodeURIComponent(q)}`;
+      else if (kind === "street") url = `/api/deals/np_streets/?settlement_ref=${encodeURIComponent(settlementRef || "")}&q=${encodeURIComponent(q)}&city=${encodeURIComponent(cityName || "")}`;
       else url = `/api/deals/np_cities/?q=${encodeURIComponent(q)}`;
       api.get<any[]>(url).then((r) => { setList(r || []); setOpen(true); }).catch(() => setList([]));
     }, 320);
@@ -42,9 +44,9 @@ function Auto({ kind, value, onPick, placeholder, disabled, settlementRef }: any
   return (
     <div ref={box} style={{ position: "relative" }}>
       <input type="search" value={q} disabled={disabled} placeholder={placeholder} style={inp}
-        onChange={(e) => setQ(e.target.value)} onFocus={() => list.length && setOpen(true)} />
+        onChange={(e) => { setQ(e.target.value); if (onType) onType(e.target.value); }} onFocus={() => list.length && setOpen(true)} />
       {open && list.length > 0 && <ul style={{ position: "absolute", zIndex: 40, top: 40, left: 0, right: 0, margin: 0, padding: 0, listStyle: "none", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, maxHeight: 220, overflowY: "auto", boxShadow: "0 10px 28px rgba(0,0,0,.14)" }}>
-        {list.map((it, i) => <li key={i} onClick={() => { onPick(it); setQ(it.name || it.desc || it.Present || ""); setOpen(false); }} style={{ padding: "8px 11px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f1f5f9" }}>
+        {list.map((it, i) => <li key={i} onClick={() => { picked.current = true; onPick(it); setQ(it.name || it.desc || it.Present || ""); setOpen(false); }} style={{ padding: "8px 11px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f1f5f9" }}>
           {kind === "warehouse" ? (it.desc || it.name) : kind === "street" ? it.name : <>{it.name} <span style={{ color: "#94a3b8" }}>{it.area}</span></>}
         </li>)}
       </ul>}
@@ -109,11 +111,12 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
   };
   const createTTN = () => {
     if (!rec.name || !rec.phone || !rec.city_name || (rec.service !== "WarehouseDoors" && !rec.wh_number)) { flash && flash(t("Заполни: имя, телефон, город, отделение", "Заповни: імʼя, телефон, місто, відділення")); return; }
+    if (rec.service === "WarehouseDoors" && (!rec.street || !rec.house)) { flash && flash(t("Адресная доставка: заполни улицу и дом", "Адресна доставка: заповни вулицю і будинок")); return; }
     setBusy("ttn");
     save(true);
     api.post<any>(`/api/deals/${deal.id}/create_ttn/`, {
       recipient_name: rec.name, recipient_phone: rec.phone, recipient_city_name: rec.city_name, recipient_area: rec.area, recipient_region: rec.region,
-      warehouse_number: rec.wh_number, street_ref: rec.street_ref, house: rec.house, flat: rec.flat,
+      warehouse_number: rec.wh_number, street: rec.street, street_ref: rec.street_ref, house: rec.house, flat: rec.flat,
       weight: String(chargeW || totW || 1), seats: String(seats.length), cost: par.declared, service_type: rec.service,
       cargo_type: cargo, description: par.descr, cargo_details: items, additional: note, pack_ref: pack.ref, time_interval: timeInterval,
       saturday: pack.saturday, return_docs: pack.return_docs, payer: par.payer, payment_method: par.method,
@@ -134,7 +137,7 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
   const cancelTTN = () => {
     if (!confirm(t("ПОЛНАЯ отмена: удалить ТТН + откат стадии. Деньги вернёшь клиенту вручную. Продолжить?", "ПОВНЕ скасування: видалити ТТН + відкат стадії. Гроші повернеш клієнту вручну. Продовжити?"))) return;
     setBusy("cancel");
-    api.post(`/api/deals/${deal.id}/np_cancel/`, {}).then(() => { flash && flash(t("Заказ отменён — нужен возврат средств вручную", "Замовлення скасовано — потрібен повернення коштів вручну")); onReload && onReload(); }).catch(() => flash && flash(t("Ошибка", "Помилка"))).finally(() => setBusy(""));
+    api.post(`/api/deals/${deal.id}/np_cancel/`, {}).then(() => { flash && flash(t("Заказ отменён — нужен возврат средств вручную", "Замовлення скасовано — потрібне повернення коштів вручну")); onReload && onReload(); }).catch(() => flash && flash(t("Ошибка", "Помилка"))).finally(() => setBusy(""));
   };
 
   /* стилі */
@@ -187,11 +190,11 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
           <Card checked={snd.pickup === "address"} onClick={() => setSnd({ ...snd, pickup: "address" })} icon="🚚" title={t("С адреса", "З адреси")} desc={t("курьер заберёт", "курʼєр забере")} color="#0d9488" />
         </div>
         {snd.pickup === "warehouse" ? <Grid>
-          <div><label style={lbl}>{t("Город-отправитель", "Місто-відправник")}</label><Auto kind="city" value={snd.city} disabled={readOnly} placeholder="Кременчук, Київ…" onPick={(c: any) => setSnd({ ...snd, city: c.name, city_ref: c.settlement_ref || c.ref, wh: "", wh_ref: "" })} /></div>
+          <div><label style={lbl}>{t("Город-отправитель", "Місто-відправник")}</label><Auto kind="city" value={snd.city} disabled={readOnly} placeholder="Кременчук, Київ…" onPick={(c: any) => setSnd({ ...snd, city: c.name, city_ref: c.city_ref || c.settlement_ref || c.ref, settlement_ref: c.settlement_ref || c.ref, wh: "", wh_ref: "" })} /></div>
           <div><label style={lbl}>{t("Отделение-отправитель", "Відділення-відправник")}</label><Auto kind="warehouse" value={snd.wh} disabled={readOnly || !snd.city_ref} settlementRef={snd.city_ref} placeholder={t("сначала город", "спершу місто")} onPick={(w: any) => setSnd({ ...snd, wh: w.desc || w.name, wh_ref: w.ref })} /></div>
         </Grid> : <Grid>
-          <div><label style={lbl}>{t("Город-отправитель", "Місто-відправник")}</label><Auto kind="city" value={snd.city} disabled={readOnly} onPick={(c: any) => setSnd({ ...snd, city: c.name, city_ref: c.settlement_ref || c.ref })} /></div>
-          <div><label style={lbl}>{t("Улица", "Вулиця")}</label><Auto kind="street" value={snd.street} disabled={readOnly || !snd.city_ref} settlementRef={snd.city_ref} onPick={(s: any) => setSnd({ ...snd, street: s.name, street_ref: s.ref })} /></div>
+          <div><label style={lbl}>{t("Город-отправитель", "Місто-відправник")}</label><Auto kind="city" value={snd.city} disabled={readOnly} onPick={(c: any) => setSnd({ ...snd, city: c.name, city_ref: c.city_ref || c.settlement_ref || c.ref, settlement_ref: c.settlement_ref || c.ref })} /></div>
+          <div><label style={lbl}>{t("Улица", "Вулиця")}</label><Auto kind="street" value={snd.street} disabled={readOnly || !(snd.city_ref || snd.city)} settlementRef={snd.settlement_ref || snd.city_ref} cityName={snd.city} onPick={(s: any) => setSnd({ ...snd, street: s.name, street_ref: s.ref })} onType={(v: string) => setSnd({ ...snd, street: v, street_ref: "" })} /></div>
           <div><label style={lbl}>{t("Дом", "Будинок")}</label><input value={snd.house} disabled={readOnly} onChange={(e) => setSnd({ ...snd, house: e.target.value })} style={inp} placeholder="12А" /></div>
           <div><label style={lbl}>{t("Кв./офис", "Кв./офіс")}</label><input value={snd.flat} disabled={readOnly} onChange={(e) => setSnd({ ...snd, flat: e.target.value })} style={inp} /></div>
         </Grid>}
@@ -206,10 +209,10 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
           <Card checked={rec.service === "WarehouseDoors"} onClick={() => setRec({ ...rec, service: "WarehouseDoors" })} icon="🏠" title={t("Адрес", "Адреса")} desc={t("курьер домой", "курʼєр додому")} color="#C67D5F" />
         </div>
         <Grid>
-          <div><label style={lbl}>{t("Город получателя", "Місто отримувача")}</label><Auto kind="city" value={rec.city} disabled={readOnly} placeholder="Кременчук, Київ, Львів…" onPick={(c: any) => setRec({ ...rec, city: c.name, city_name: c.name, area: c.area || "", region: c.region || "", settlement_ref: c.settlement_ref || c.ref, city_ref: c.settlement_ref || c.ref, wh: "", wh_number: "", street: "", street_ref: "" })} /></div>
+          <div><label style={lbl}>{t("Город получателя", "Місто отримувача")}</label><Auto kind="city" value={rec.city} disabled={readOnly} placeholder="Кременчук, Київ, Львів…" onPick={(c: any) => setRec({ ...rec, city: c.name, city_name: c.name, area: c.area || "", region: c.region || "", settlement_ref: c.settlement_ref || c.ref, city_ref: c.city_ref || c.settlement_ref || c.ref, wh: "", wh_number: "", street: "", street_ref: "" })} /></div>
           {rec.service !== "WarehouseDoors" ? <div><label style={lbl}>{rec.service === "WarehousePostomat" ? t("Почтомат", "Поштомат") : t("Отделение", "Відділення")}</label><Auto kind="warehouse" value={rec.wh} disabled={readOnly || !rec.settlement_ref} settlementRef={rec.settlement_ref} placeholder={t("сначала город", "спершу місто")} onPick={(w: any) => setRec({ ...rec, wh: w.desc || w.name, wh_number: w.number })} /></div>
             : <>
-              <div><label style={lbl}>{t("Улица", "Вулиця")}</label><Auto kind="street" value={rec.street} disabled={readOnly || !rec.settlement_ref} settlementRef={rec.settlement_ref} onPick={(s: any) => setRec({ ...rec, street: s.name, street_ref: s.ref })} /></div>
+              <div><label style={lbl}>{t("Улица", "Вулиця")}</label><Auto kind="street" value={rec.street} disabled={readOnly || !(rec.settlement_ref || rec.city_name || rec.city)} settlementRef={rec.settlement_ref} cityName={rec.city_name || rec.city} onPick={(s: any) => setRec({ ...rec, street: s.name, street_ref: s.ref })} onType={(v: string) => setRec({ ...rec, street: v, street_ref: "" })} /></div>
               <div><label style={lbl}>{t("Дом", "Будинок")}</label><input value={rec.house} disabled={readOnly} onChange={(e) => setRec({ ...rec, house: e.target.value })} style={inp} placeholder="12А" /></div>
               <div><label style={lbl}>{t("Квартира", "Квартира")}</label><input value={rec.flat} disabled={readOnly} onChange={(e) => setRec({ ...rec, flat: e.target.value })} style={inp} /></div>
               <div><label style={lbl}>📅 {t("Дата доставки курьером", "Дата доставки курʼєром")}</label><input type="date" value={date} disabled={readOnly} onChange={(e) => setDate(e.target.value)} style={inp} /></div>
@@ -220,14 +223,14 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
           <div><label style={lbl}>{t("Описание вложения", "Опис вкладення")}</label><input value={par.descr} disabled={readOnly} onChange={(e) => setPar({ ...par, descr: e.target.value })} style={inp} /></div>
           <div><label style={lbl}>{t("Оценочная стоимость, ₴", "Оголошена вартість, ₴")}</label><input type="number" value={par.declared} disabled={readOnly} onChange={(e) => setPar({ ...par, declared: e.target.value })} style={inp} /></div>
           <div><label style={lbl}>{t("Плательщик доставки", "Платник доставки")}</label><select value={par.payer} disabled={readOnly} onChange={(e) => setPar({ ...par, payer: e.target.value })} style={inp}><option value="Recipient">{t("Получатель", "Отримувач")}</option><option value="Sender">{t("Отправитель", "Відправник")}</option></select></div>
-          <div><label style={lbl}>{t("Метод оплаты", "Метод оплати")}</label><select value={par.method} disabled={readOnly} onChange={(e) => setPar({ ...par, method: e.target.value })} style={inp}><option value="Cash">{t("Наличные", "Готівка")}</option><option value="NonCash">{t("Безнал", "Безготівково")}</option></select></div>
+          <div><label style={lbl}>{t("Метод оплаты", "Спосіб оплати")}</label><select value={par.method} disabled={readOnly} onChange={(e) => setPar({ ...par, method: e.target.value })} style={inp}><option value="Cash">{t("Наличные", "Готівка")}</option><option value="NonCash">{t("Безнал", "Безготівково")}</option></select></div>
         </Grid>
       </div>
 
       {/* ── ПАКУВАННЯ (blue) ── */}
       <div style={zone("#eff6ff", "#bfdbfe")}>
         <div style={{ fontWeight: 700, fontSize: 13.5, color: "#1e40af", marginBottom: 4 }}>📦 {t("Упаковка — для склада", "Пакування — для складу")}</div>
-        <div style={{ fontSize: 11, color: "#60a5fa", marginBottom: 10 }}>{t("тип груза · места · упаковка НП · регламент", "тип вантажу · місця · упаковка НП · регламент")}</div>
+        <div style={{ fontSize: 11, color: "#60a5fa", marginBottom: 10 }}>{t("тип груза · места · упаковка НП · регламент", "тип вантажу · місця · пакування НП · регламент")}</div>
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
           <Card checked={cargo === "Parcel"} onClick={() => setCargo("Parcel")} icon="📦" title={t("Посылка", "Посилка")} desc={t("коробка до 30 кг", "коробка до 30 кг")} color="#2563eb" />
           <Card checked={cargo === "Cargo"} onClick={() => setCargo("Cargo")} icon="🛢️" title={t("Груз", "Вантаж")} desc={t("вёдра, жидкости · грузовое отд.", "відра, рідини · вантажне відд.")} color="#2563eb" />
@@ -257,9 +260,9 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
 
         {/* Упаковка НП + опції */}
         <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <div style={{ flex: "1 1 240px" }}><label style={lbl}>{t("Упаковка от НП", "Упаковка від НП")} <small style={{ color: "#94a3b8" }}>({t("опц. — иначе своя", "опц. — інакше своя")})</small></label>
-            <select value={pack.ref} disabled={readOnly} onChange={(e) => setPack({ ...pack, ref: e.target.value })} style={inp}><option value="">— {t("Своя упаковка (0 ₴)", "Своя упаковка (0 ₴)")} —</option>{packlist.map((p) => <option key={p.ref} value={p.ref}>{p.descr}</option>)}</select></div>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5 }}><input type="checkbox" checked={!!pack.saturday} disabled={readOnly} onChange={(e) => setPack({ ...pack, saturday: e.target.checked })} /> 📅 {t("Суббота-доставка", "Субота-доставка")}</label>
+          <div style={{ flex: "1 1 240px" }}><label style={lbl}>{t("Упаковка от НП", "Пакування від НП")} <small style={{ color: "#94a3b8" }}>({t("опц. — иначе своя", "опц. — інакше своя")})</small></label>
+            <select value={pack.ref} disabled={readOnly} onChange={(e) => setPack({ ...pack, ref: e.target.value })} style={inp}><option value="">— {t("Своє пакування (0 ₴)", "Своє пакування (0 ₴)")} —</option>{packlist.map((p) => <option key={p.ref} value={p.ref}>{p.descr}</option>)}</select></div>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5 }}><input type="checkbox" checked={!!pack.saturday} disabled={readOnly} onChange={(e) => setPack({ ...pack, saturday: e.target.checked })} /> 📅 {t("Суббота-доставка", "Доставка в суботу")}</label>
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5 }}><input type="checkbox" checked={!!pack.return_docs} disabled={readOnly} onChange={(e) => setPack({ ...pack, return_docs: e.target.checked })} /> 📄 {t("Возвратные документы", "Зворотні документи")}</label>
         </div>
 

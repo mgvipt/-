@@ -38,7 +38,7 @@ export default function GlobalSearch() {
   return (
     <div ref={box} style={{ position: "relative" }}>
       <input className="search" value={q} onChange={(e) => setQ(e.target.value)} onFocus={() => res && setOpen(true)}
-        placeholder={t("🔍  Поиск по CRM (сделки, лиды, клиенты)…", "🔍  Пошук по CRM (сделки, ліди, клієнти)…")} />
+        placeholder={t("🔍  Поиск по CRM (сделки, лиды, клиенты)…", "🔍  Пошук по CRM (угоди, ліди, клієнти)…")} />
       {open && (res || loading) && (
         <div style={{ position: "absolute", top: 40, right: 0, width: 430, maxHeight: 470, overflowY: "auto", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 12px 36px rgba(15,23,42,.18)", zIndex: 80, padding: 6 }}>
           {loading && !res && <div className="muted" style={{ padding: 12, fontSize: 13 }}>{t("Поиск…", "Пошук…")}</div>}
@@ -57,7 +57,7 @@ export default function GlobalSearch() {
           {res?.clients?.length > 0 && <Group title={<><Icon n="👥" size={15} /> {t("Клиенты", "Клієнти")}</>} />}
           {res?.clients?.map((c: any) => (
             <Row key={"c" + c.id} onClick={() => go(`/clients/${c.id}`)}
-              main={c.name} sub={`${c.phone || ""}${c.deals ? " · " + t("сделок:", "сделок:") + " " + c.deals : ""}`} />
+              main={c.name} sub={`${c.phone || ""}${c.deals ? " · " + t("угод:", "угод:") + " " + c.deals : ""}`} />
           ))}
         </div>
       )}

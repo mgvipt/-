@@ -134,14 +134,18 @@ function CallQueuePanel({ t }: any) {
 }
 
 export default function Phone() {
+  const { can: canT } = useAuth();
+  const canBal = canT("telephony.balance") || canT("roles.manage");
+  const canQueue = canT("telephony.queue") || canT("roles.manage");
+  const canCalls = canT("telephony.calls") || canT("roles.manage");
   const [calls, setCalls] = useState<Call[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const nav = useNavigate();
   const { t } = useLang();
 
   function load() {
-    api.get<Paginated<Call>>("/api/calls/?page_size=300").then((d) => setCalls(d.results)).catch(() => {});
-    api.get<Stats>("/api/calls/stats/").then(setStats).catch(() => {});
+    api.get<Paginated<Call>>("/api/calls/?page_size=300").then((d) => setCalls((prev) => JSON.stringify(prev) === JSON.stringify(d.results) ? prev : d.results)).catch(() => {});
+    api.get<Stats>("/api/calls/stats/").then((d) => setStats((prev) => JSON.stringify(prev) === JSON.stringify(d) ? prev : d)).catch(() => {});
   }
   useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, []);
 
@@ -225,7 +229,7 @@ export default function Phone() {
       <h2 style={{ margin: "0 0 4px" }}><Icon n="📞" size={22} /> {t("Телефония","Телефонія")}</h2>
       <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>{t("Собственный SIP-шлюз на нашем сервере (независимо от Битрикса). Звонки и записи — наши.","Власний SIP-шлюз на нашому сервері (незалежно від Бітрикса). Дзвінки і записи — наші.")}</div>
 
-      {stats && (
+      {canCalls && stats && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px,1fr))", gap: 12, marginBottom: 16 }}>
           {[[t("Всего","Всього"), stats.total], [t("С записью","Із записом"), stats.recorded], [t("Пропущенные","Пропущені"), stats.missed], [t("Ср. длительность","Сер. тривалість"), dur(stats.avg_seconds)]].map(([lbl, v]) => (
             <div key={lbl} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{lbl}</div><div style={{ fontSize: 24, fontWeight: 700 }}>{v}</div></div>
@@ -233,13 +237,13 @@ export default function Phone() {
         </div>
       )}
 
-      <LineBalances t={t} />
-      <CallQueuePanel t={t} />
+      {canBal && <LineBalances t={t} />}
+      {canQueue && <CallQueuePanel t={t} />}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px,1fr))", gap: 14, alignItems: "start" }}>
+      {canCalls && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px,1fr))", gap: 14, alignItems: "start" }}>
         <Column title={t("Входящие","Вхідні")} icon="📥" color="#16a34a" list={incoming} />
         <Column title={t("Исходящие","Вихідні")} icon="📤" color="#3b82f6" list={outgoing} />
-      </div>
+      </div>}
 
       <div className="note" style={{ marginTop: 14 }}><Icon n="💡" size={15} /> {t("Журнал обновляется сам каждые 30 сек. Клик на имя клиента → его карточка. Дальше подключим звонок по клику и прослушивание записи прямо тут.","Журнал оновлюється сам кожні 30 сек. Клік на імʼя клієнта → його картка. Далі підключимо дзвінок по кліку і прослуховування запису прямо тут.")}</div>
     </div>

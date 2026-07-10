@@ -7,20 +7,33 @@ class AccountSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Account
-        fields = ["id", "name", "kind", "is_active", "balance", "sort_order"]
+        fields = ["id", "name", "kind", "is_active", "in_planning", "balance", "sort_order"]
 
     def get_balance(self, obj):
         return obj.balance()
 
 
 class CategorySerializer(serializers.ModelSerializer):
+    fin_article_name = serializers.CharField(source="fin_article.name", read_only=True, default="")
+    fin_direction_name = serializers.CharField(source="fin_direction.name", read_only=True, default="")
+
     class Meta:
         model = Category
-        fields = ["id", "name", "direction", "parent"]
+        fields = ["id", "name", "direction", "parent", "fin_article", "fin_article_name",
+                  "fin_direction", "fin_direction_name", "hidden", "sort_order"]
 
 
 class PlannedPaymentSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source="category.name", read_only=True, default=None)
+    contact_name = serializers.SerializerMethodField()
+
+    def get_contact_name(self, obj):
+        c = obj.contact
+        if not c:
+            return ""
+        return (getattr(c, "display_name", "") or
+                (" ".join(filter(None, [c.first_name, c.last_name])).strip()) or
+                c.nickname or c.phone or ("#%d" % c.id))
     account_name = serializers.CharField(source="account.name", read_only=True, default=None)
     fin_direction_name = serializers.CharField(source="fin_direction.name", read_only=True, default=None)
     fin_article_name = serializers.CharField(source="fin_article.name", read_only=True, default=None)
@@ -29,14 +42,30 @@ class PlannedPaymentSerializer(serializers.ModelSerializer):
     class Meta:
         from .models import PlannedPayment
         model = PlannedPayment
-        fields = ["id", "kind", "amount", "due_date", "counterparty", "category", "category_name",
+        fields = ["id", "kind", "amount", "due_date", "counterparty", "contact", "contact_name", "category", "category_name",
                   "account", "account_name", "fin_direction", "fin_direction_name",
                   "fin_article", "fin_article_name", "channel", "deal", "deal_title",
-                  "comment", "status", "created_at"]
+                  "comment", "status", "is_loan", "created_at"]
 
 
 class TransactionSerializer(serializers.ModelSerializer):
     account_name = serializers.CharField(source="account.name", read_only=True)
+    category_path = serializers.SerializerMethodField()
+    contact_name = serializers.SerializerMethodField()
+
+    def get_category_path(self, obj):
+        c = obj.category
+        if not c:
+            return ""
+        return ("%s → %s" % (c.parent.name, c.name)) if c.parent_id else c.name
+
+    def get_contact_name(self, obj):
+        c = obj.contact
+        if not c:
+            return ""
+        return (getattr(c, "display_name", "") or
+                (" ".join(filter(None, [c.first_name, c.last_name])).strip()) or
+                c.nickname or c.phone or ("#%d" % c.id))
     category_name = serializers.CharField(source="category.name", read_only=True)
     set_category = serializers.CharField(write_only=True, required=False, allow_blank=True,
         help_text="Назва категорії текстом — знайде або створить")
@@ -62,10 +91,11 @@ class TransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transaction
         fields = ["id", "direction", "amount", "account", "account_name",
-                  "category", "category_name", "fin_article", "fin_article_name",
+                  "category", "category_name", "category_path", "fin_article", "fin_article_name",
                   "fin_direction", "fin_direction_name", "channel",
                   "counterparty", "currency", "rate", "amount_uah", "date", "op_time",
-                  "transfer_account", "transfer_account_name", "deal_title",
+                  "transfer_account", "transfer_account_name", "transfer_amount", "deal_title",
+                  "contact", "contact_name",
                   "comment", "deal", "date", "created_at", "set_category"]
 
 
@@ -77,7 +107,7 @@ class FinModelArticleSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = FinModelArticle
-        fields = ["id", "category", "category_display", "name", "value",
+        fields = ["id", "category", "category_display", "name", "value", "fin_direction",
                   "value_type", "value_type_display", "unit", "sort_order", "active",
                   "parent", "is_envelope", "fund_group", "margin_kind"]
 

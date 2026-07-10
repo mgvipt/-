@@ -91,7 +91,8 @@ export default function Inbox() {
     const q = listQuery();
     const d = await api.get<Paginated<Conversation>>(`/api/conversations/${q}`);
     setConvs(d.results); setNextUrl((d as any).next || null);
-    if (!activeRef.current && d.results[0]) openConv(d.results[0]);
+    // НЕ відкривати «перший-ліпший» чат, коли прийшли за конкретним клієнтом (?contact= / ?c=)
+    if (!activeRef.current && d.results[0] && !params.get("contact") && !params.get("c")) openConv(d.results[0]);
   }
   async function loadMore() {
     if (!nextUrl) return;
@@ -143,7 +144,7 @@ export default function Inbox() {
       api.get<any>(`/api/conversations/?contact=${contactId}`).then((r) => {
         const conv = ((r as any).results || [])[0];
         if (conv) { setConvs((cs) => cs.some((x) => x.id === conv.id) ? cs : [conv, ...cs]); openConv(conv); }
-        else setErr(t("Переписки с этим клиентом ещё нет","Переписки з цим клієнтом ще немає"));
+        else setErr(t("⚠️ У этого клиента ещё НЕТ переписки — чат не открыт. Напиши первым через карточку клиента или дождись входящего.","⚠️ У цього клієнта ще НЕМАЄ листування — чат не відкрито. Напиши першим через картку клієнта або дочекайся вхідного."));
       }).catch(() => {});
       return;
     }
@@ -189,7 +190,7 @@ export default function Inbox() {
         if (deal) { setDealDrawer(deal.id); return; }
       }
       const r = await api.post<any>(`/api/conversations/${active.id}/create_deal/`, {});
-      if (r.deal_id) setDealDrawer(r.deal_id); else setErr(t("Не удалось создать сделку", "Не вдалося створити сделку"));
+      if (r.deal_id) setDealDrawer(r.deal_id); else setErr(t("Не удалось создать сделку", "Не вдалося створити угоду"));
     } catch { setErr(t("Не удалось открыть карточку", "Не вдалося відкрити картку")); }
   }
 
@@ -208,7 +209,7 @@ export default function Inbox() {
         setMsgs((ms) => [...ms, m]); setText("");
       }
     } catch (e: any) {
-      setErr(e?.response?.data?.detail || t("Не удалось отправить (проверь токен бота / сеть).","Не вдалося відправити (перевір токен бота / мережу)."));
+      setErr(e?.response?.data?.detail || t("Не удалось отправить (проверь токен бота / сеть).","Не вдалося надіслати (перевір токен бота / мережу)."));
     } finally { setSending(false); }
   }
 
@@ -308,11 +309,11 @@ export default function Inbox() {
               ))}
             </div>
             <div style={{ display: "flex", gap: 6, padding: "0 12px 8px", alignItems: "center", flexWrap: "wrap" }}>
-              <select value={chFilter} onChange={(e) => setChFilter(e.target.value)} title={t("Фильтр по каналу (Instagram, Telegram…)","Фільтр по каналу (Instagram, Telegram…)")} style={{ flex: 1, minWidth: 86, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
+              <select value={chFilter} onChange={(e) => setChFilter(e.target.value)} title={t("Фильтр по каналу (Instagram, Telegram…)","Фільтр за каналом (Instagram, Telegram…)")} style={{ flex: 1, minWidth: 86, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
                 <option value="">{t("Все каналы","Всі канали")}</option>
                 {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-              <select value={prio} onChange={(e) => setPrio(e.target.value)} title={t("Фильтр по статусу / приоритету ИИ","Фільтр по статусу / пріоритету ШІ")} style={{ flex: 1, minWidth: 96, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
+              <select value={prio} onChange={(e) => setPrio(e.target.value)} title={t("Фильтр по статусу / приоритету ИИ","Фільтр за статусом / пріоритетом ШІ")} style={{ flex: 1, minWidth: 96, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
                 <option value="">{t("Все статусы","Всі статуси")}</option>
                 <option value="needs_quote">{t("Нужен просчёт","Потрібен прорахунок")}</option>
                 <option value="quoted">{t("Просчитано ИИ","Прораховано ШІ")}</option>
@@ -320,7 +321,7 @@ export default function Inbox() {
                 <option value="complaint">{t("Возмущение","Обурення")}</option>
                 <option value="thinking">{t("Думает","Думає")}</option>
               </select>
-              <select value={period} onChange={(e) => setPeriod(e.target.value)} title={t("Фильтр по дате","Фільтр по даті")} style={{ flex: 1, minWidth: 86, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
+              <select value={period} onChange={(e) => setPeriod(e.target.value)} title={t("Фильтр по дате","Фільтр за датою")} style={{ flex: 1, minWidth: 86, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
                 <option value="all">{t("Все дни","Всі дні")}</option>
                 <option value="today">{t("Сегодня","Сьогодні")}</option>
                 <option value="yesterday">{t("Вчера","Вчора")}</option>
@@ -404,7 +405,7 @@ export default function Inbox() {
                 <span className="muted" style={{ fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{active.assigned_to ? "👤 " + active.assigned_to_name : t("Не назначено","Не призначено")}{(active as any).participant_names && (active as any).participant_names.length > 0 ? " · 👥 " + (active as any).participant_names.join(", ") : ""} · {active.channel_name}</span>
               </div>
               <SourceChip source={active.channel_kind} />
-              {(() => { const w = metaWindow(active, msgs); return w ? <span title={w.closed ? t("Окно Instagram (24ч) закрыто — клиент может НЕ получить обычное сообщение","Вікно Instagram (24г) закрите — клієнт може НЕ отримати звичайне повідомлення") : t("Окно открыто — клиент получит сообщение","Вікно відкрите — клієнт отримає")} style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap", color: w.closed ? "#b91c1c" : "#15803d", background: w.closed ? "#fee2e2" : "#dcfce7" }}>{w.closed ? "\ud83d\udd34 " + t("Окно закрыто","Вікно закрите") + " · " + w.hrs + t("ч","г") : "\ud83d\udfe2 " + t("Окно 24ч","Вікно 24г")}</span> : null; })()}
+              {(() => { const w = metaWindow(active, msgs); return w ? <span title={w.closed ? t("Окно Instagram (24ч) закрыто — клиент может НЕ получить обычное сообщение","Вікно Instagram (24г) закрите — клієнт може НЕ отримати звичайне повідомлення") : t("Окно открыто — клиент получит сообщение","Вікно відкрите — клієнт отримає повідомлення")} style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap", color: w.closed ? "#b91c1c" : "#15803d", background: w.closed ? "#fee2e2" : "#dcfce7" }}>{w.closed ? "\ud83d\udd34 " + t("Окно закрыто","Вікно закрите") + " · " + w.hrs + t("ч","г") : "\ud83d\udfe2 " + t("Окно 24ч","Вікно 24 год")}</span> : null; })()}
               <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                 <button className="btn btn-green" style={{ padding: compact ? "0 9px" : undefined }} title={t("Позвонить","Подзвонити")}><Icon n="phone" size={15} />{!compact && <> {t("Позвонить","Подзвонити")}</>}</button>
                 <button className="btn" style={{ background: "#f1f5f9", fontWeight: 700, lineHeight: 1, padding: "0 11px" }} onClick={() => setMenu((m) => !m)} title={t("Ещё","Ще")}><Icon n="more" size={16} /></button>
@@ -417,7 +418,7 @@ export default function Inbox() {
                 <div onClick={() => { setMenu(false); setPicker("transfer"); }} style={mItem}><Icon n="forward" size={15} /> {t("Переадресовать","Переадресувати")}</div>
                 <div onClick={() => { setMenu(false); setPicker("add"); }} style={mItem}><Icon n="user-plus" size={15} /> {t("Добавить менеджера","Додати менеджера")}</div>
                 {active.contact && <div onClick={goToContact} style={mItem}><Icon n="user" size={15} /> {t("Перейти в контакт","Перейти в контакт")}</div>}
-                <div onClick={() => { setMenu(false); goToCard(); }} style={mItem}><Icon n="handshake" size={15} /> {((active as any).deal_id || active.contact) ? t("Перейти в сделку","Перейти в угоду") : t("Создать сделку из чата","Створити сделку з чату")}</div>
+                <div onClick={() => { setMenu(false); goToCard(); }} style={mItem}><Icon n="handshake" size={15} /> {((active as any).deal_id || active.contact) ? t("Перейти в сделку","Перейти в угоду") : t("Создать сделку из чата","Створити угоду з чату")}</div>
                 <div onClick={closeConv} style={{ ...mItem, color: "#dc2626", borderTop: "1px solid #f1f5f9", fontWeight: 600 }}><Icon n="check" size={15} /> {t("Завершить диалог","Завершити діалог")}</div>
               </div>
             </>)}
@@ -473,7 +474,7 @@ export default function Inbox() {
             </div>
             {err && <div className="err" style={{ padding: "0 16px" }}>{err}</div>}
             <div style={{ background: "#fff", borderTop: "1px solid #e2e8f0", padding: "0 12px 12px" }}>
-              <div onMouseDown={startResizeComposer} title={t("Потяни вверх — увеличить поле ввода","Потягни вгору — збільшити поле вводу")} style={{ height: 13, cursor: "ns-resize", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div onMouseDown={startResizeComposer} title={t("Потяни вверх — увеличить поле ввода","Потягни вгору — збільшити поле введення")} style={{ height: 13, cursor: "ns-resize", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <div style={{ width: 44, height: 4, borderRadius: 4, background: "#cbd5e1" }} />
               </div>
               {pending.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 7 }}>
@@ -497,7 +498,7 @@ export default function Inbox() {
                 onPaste={onPasteFile}
                 placeholder={internalNote ? (compact ? t("Внутренняя заметка…","Внутрішня нотатка…") : t("Внутренняя заметка — клиент НЕ увидит…  (Enter — отправить, Shift+Enter — новая строка)","Внутрішня нотатка — клієнт НЕ побачить…  (Enter — надіслати, Shift+Enter — новий рядок)")) : (compact ? t(`Сообщение в ${active.channel_name}…`,`Повідомлення в ${active.channel_name}…`) : t(`Сообщение в ${active.channel_name}…  (Enter — отправить, Shift+Enter — строка, вставить фото — Ctrl+V)`,`Повідомлення в ${active.channel_name}…  (Enter — надіслати, Shift+Enter — рядок, вставити фото — Ctrl+V)`))}
                 style={{ flex: 1, minHeight: 38, height: composerH ? composerH + "px" : undefined, maxHeight: composerH ? undefined : 170, background: internalNote ? "#fffbeb" : "#f1f5f9", border: internalNote ? "1.5px dashed #d4a017" : "none", borderRadius: 7, padding: "9px 12px", fontSize: 13, outline: "none", resize: "none", lineHeight: 1.4, fontFamily: "inherit", boxSizing: "border-box" }} />
-              <button className="btn btn-primary" onClick={send} disabled={sending} title={internalNote ? t("Заметка","Нотатка") : t("Отправить","Відправити")} style={{ background: internalNote ? "#d4a017" : undefined, height: 38, padding: compact ? "0 11px" : undefined }}>{sending ? "…" : (internalNote ? <><Icon n="file" size={15} />{!compact && <> {t("Заметка","Нотатка")}</>}</> : <><Icon n="send" size={16} />{!compact && <> {t("Отправить","Відправити")}</>}</>)}</button>
+              <button className="btn btn-primary" onClick={send} disabled={sending} title={internalNote ? t("Заметка","Нотатка") : t("Отправить","Надіслати")} style={{ background: internalNote ? "#d4a017" : undefined, height: 38, padding: compact ? "0 11px" : undefined }}>{sending ? "…" : (internalNote ? <><Icon n="file" size={15} />{!compact && <> {t("Заметка","Нотатка")}</>}</> : <><Icon n="send" size={16} />{!compact && <> {t("Отправить","Надіслати")}</>}</>)}</button>
               </div>
             </div>
           </>

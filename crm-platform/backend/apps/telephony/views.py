@@ -20,7 +20,8 @@ class CallViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         u = self.request.user
-        if u.is_authenticated and not u.is_superuser and not u.can_see_all_deals():
+        _all = u.is_authenticated and (u.is_superuser or (hasattr(u, "has_perm_code") and u.has_perm_code("telephony.view.all")))
+        if u.is_authenticated and not _all:
             from django.db.models import Q
             qs = qs.filter(Q(manager=u) | Q(contact__owner=u) | Q(deal__owner=u))
         return qs
@@ -324,11 +325,19 @@ class PhoneLineView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        u = request.user
+        _bal = u.is_superuser or (hasattr(u, "has_perm_code") and (u.has_perm_code("telephony.balance") or u.has_perm_code("roles.manage")))
         from .models import PhoneLine
-        return Response([{"id": l.id, "internal": l.internal, "name": l.name, "number": l.number,
-                          "balance": float(l.balance), "balance_at": l.balance_at, "low_threshold": float(l.low_threshold),
-                          "low": float(l.balance) < float(l.low_threshold), "note": l.note, "busy": l.busy, "busy_at": l.busy_at}
-                         for l in PhoneLine.objects.all().order_by("internal")])
+        rows = []
+        for l in PhoneLine.objects.all().order_by("internal"):
+            r = {"id": l.id, "internal": l.internal, "name": l.name, "number": l.number,
+                 "busy": l.busy, "busy_at": l.busy_at}
+            if _bal:  # баланси/пороги — лише з правом «Блок Баланс ліній»
+                r.update({"balance": float(l.balance), "balance_at": l.balance_at,
+                          "low_threshold": float(l.low_threshold),
+                          "low": float(l.balance) < float(l.low_threshold), "note": l.note})
+            rows.append(r)
+        return Response(rows)
 
     def patch(self, request):
         u = request.user
@@ -388,7 +397,7 @@ class CallQueueView(APIView):
     permission_classes = [IsAuthenticated]
 
     def _admin(self, u):
-        return bool(u.is_superuser or (hasattr(u, "has_perm_code") and (u.has_perm_code("roles.manage") or u.has_perm_code("telephony.view"))))
+        return bool(u.is_superuser or (hasattr(u, "has_perm_code") and (u.has_perm_code("roles.manage") or u.has_perm_code("telephony.queue"))))
 
     def _payload(self, request):
         from .models import CallQueueMember, CallQueueConfig
@@ -481,7 +490,16 @@ class RingPlanView(APIView):
             if cfg.on_shift_only and m.user_id not in on_shift:
                 continue
             plan.append({"ext": m.user.extension, "ring": m.ring_seconds})
-        dial = "&".join("%s:%s" % (p["ext"], p["ring"]) for p in plan) if (cfg.active and plan) else ""
+        # роздільник сегментів «|» (синхронно з extensions.conf у wallcov-webrtc).
+        # ringall: один сегмент «701&PJSIP/702:20» → Dial(PJSIP/701&PJSIP/702,20) — дзвонять УСІ разом.
+        if cfg.active and plan:
+            if cfg.strategy == "ringall":
+                sec = max(p["ring"] for p in plan)
+                dial = "&PJSIP/".join(p["ext"] for p in plan) + ":%s" % sec
+            else:
+                dial = "|".join("%s:%s" % (p["ext"], p["ring"]) for p in plan)
+        else:
+            dial = ""
         if request.GET.get("fmt") == "dial":
             from django.http import HttpResponse
             return HttpResponse(dial, content_type="text/plain")

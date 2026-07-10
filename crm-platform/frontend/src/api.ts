@@ -22,7 +22,14 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     setToken(null);
     window.location.reload();
   }
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const txt = await res.text();
+    const e: any = new Error(`${res.status} ${txt}`);
+    e.status = res.status;
+    try { e.data = JSON.parse(txt); } catch { /* не JSON */ }
+    e.response = { status: res.status, data: e.data };
+    throw e;
+  }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }

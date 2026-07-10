@@ -8,6 +8,7 @@ class Account(models.Model):
     name = models.CharField(max_length=120)
     kind = models.CharField(max_length=24, default="bank")  # bank/cash/acquiring
     is_active = models.BooleanField(default=True)
+    in_planning = models.BooleanField(default=True, help_text="Рахунок бере участь у «До розподілу» (Планування)")
     sort_order = models.IntegerField(default=0, help_text="Порядок у списках (менше — вище)")
 
     class Meta:
@@ -20,7 +21,8 @@ class Account(models.Model):
         inc = self.transactions.filter(direction="in").aggregate(s=Sum("amount"))["s"] or 0
         exp = self.transactions.filter(direction="out").aggregate(s=Sum("amount"))["s"] or 0
         tr_out = self.transactions.filter(direction="transfer").aggregate(s=Sum("amount"))["s"] or 0
-        tr_in = self.incoming_transfers.aggregate(s=Sum("amount"))["s"] or 0
+        from django.db.models.functions import Coalesce
+        tr_in = self.incoming_transfers.aggregate(s=Sum(Coalesce("transfer_amount", "amount")))["s"] or 0
         return inc + tr_in - exp - tr_out
 
 
@@ -29,10 +31,19 @@ class Category(models.Model):
     name = models.CharField(max_length=120)
     parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL,
                                related_name="children", help_text="Батьківська категорія (підкатегорії ФінМапа)")
+    fin_article = models.ForeignKey("FinModelArticle", null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name="categories",
+                                    help_text="Фонд, куди автоматично падає операція цієї категорії")
+    fin_direction = models.ForeignKey("FinDirection", null=True, blank=True, on_delete=models.SET_NULL,
+                                      related_name="categories",
+                                      help_text="Напрямок за замовчуванням для операцій цієї категорії")
+    hidden = models.BooleanField(default=False, help_text="Не показувати у виборі (дублі/застарілі); історія лишається")
+    sort_order = models.PositiveIntegerField(default=0, help_text="Порядок у списках (перетягування у довіднику)")
     direction = models.CharField(max_length=3, choices=DIRECTION)
 
     class Meta:
         verbose_name_plural = "categories"
+        ordering = ["sort_order", "id"]
 
     def __str__(self):
         return self.name
@@ -47,6 +58,9 @@ class Transaction(models.Model):
     category = models.ForeignKey(Category, null=True, blank=True, on_delete=models.SET_NULL, related_name="transactions")
     comment = models.CharField(max_length=255, blank=True)
     deal = models.ForeignKey("crm.Deal", null=True, blank=True, on_delete=models.SET_NULL, related_name="transactions")
+    contact = models.ForeignKey("crm.Contact", null=True, blank=True, on_delete=models.SET_NULL,
+                                related_name="fin_transactions",
+                                help_text="Клієнт (обʼєкт): усі гроші по клієнту видно в його картці, навіть якщо контрагент — майстер чи магазин")
     payment = models.OneToOneField("crm.Payment", null=True, blank=True, on_delete=models.SET_NULL, related_name="transaction")
     fin_direction = models.ForeignKey("FinDirection", null=True, blank=True, on_delete=models.SET_NULL, related_name="transactions")
     fin_article = models.ForeignKey("FinModelArticle", null=True, blank=True, on_delete=models.SET_NULL, related_name="transactions", help_text="Фонд (стаття финмоделі)")
@@ -55,6 +69,8 @@ class Transaction(models.Model):
     currency = models.CharField(max_length=3, default="UAH", help_text="Валюта операції")
     rate = models.DecimalField(max_digits=12, decimal_places=4, default=1, help_text="Курс до гривні (1 одиниця валюти = N грн)")
     amount_uah = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="Сума у гривні (amount × rate) — для аналітики")
+    transfer_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True,
+                                          help_text="Зараховано на рахунок-одержувач у ЙОГО валюті (переказ з конвертацією, напр. грн→USD); пусто = amount")
     date = models.DateField(default=_date.today, db_index=True)
     op_time = models.TimeField(null=True, blank=True, help_text="Час операції (з банку або момент внесення)")
     import_batch = models.CharField(max_length=48, blank=True, default="", db_index=True,
@@ -66,6 +82,24 @@ class Transaction(models.Model):
 
     def save(self, *args, **kwargs):
         self.amount_uah = (self.amount or 0) * (self.rate or 1)
+        # клієнт (обʼєкт) підтягується зі сделки, якщо не заданий явно
+        if self._state.adding and not self.contact_id and self.deal_id:
+            try:
+                self.contact_id = self.deal.contact_id
+            except Exception:
+                pass
+        # звʼязка «категорія → фонд/напрямок»: підставляємо лише при створенні і лише порожні поля
+        if self._state.adding and self.category_id and self.direction != "transfer":
+            try:
+                cat = self.category
+                fa = cat.fin_article_id or (cat.parent.fin_article_id if cat.parent_id else None)
+                fd = cat.fin_direction_id or (cat.parent.fin_direction_id if cat.parent_id else None)
+                if not self.fin_article_id and fa:
+                    self.fin_article_id = fa
+                if not self.fin_direction_id and fd:
+                    self.fin_direction_id = fd
+            except Exception:
+                pass
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -99,6 +133,9 @@ class FinModelArticle(models.Model):
     value_type = models.CharField(max_length=24, choices=VALUE_TYPE, default="percent")
     unit = models.CharField(max_length=24, blank=True, default="")
     sort_order = models.PositiveIntegerField(default=0)
+    fin_direction = models.ForeignKey("FinDirection", null=True, blank=True, on_delete=models.SET_NULL,
+                                      related_name="fund_articles",
+                                      help_text="Напрямок фонду (порожньо = загальний фонд, ділиться між напрямками по виручці)")
     active = models.BooleanField(default=True)
     parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE,
         related_name="subfunds", help_text="Батьківський фонд (для підфондів)")
@@ -225,11 +262,16 @@ class PlannedPayment(models.Model):
     category = models.ForeignKey(Category, null=True, blank=True, on_delete=models.SET_NULL, related_name="planned_payments")
     account = models.ForeignKey(Account, null=True, blank=True, on_delete=models.SET_NULL, related_name="planned_payments")
     deal = models.ForeignKey("crm.Deal", null=True, blank=True, on_delete=models.SET_NULL, related_name="planned_payments")
+    contact = models.ForeignKey("crm.Contact", null=True, blank=True, on_delete=models.SET_NULL,
+                                related_name="planned_payments",
+                                help_text="Клієнт (обʼєкт), по якому цей борг")
     fin_direction = models.ForeignKey("FinDirection", null=True, blank=True, on_delete=models.SET_NULL, related_name="planned_payments")
     fin_article = models.ForeignKey("FinModelArticle", null=True, blank=True, on_delete=models.SET_NULL, related_name="planned_payments")
     channel = models.CharField(max_length=24, blank=True, default="")
     comment = models.CharField(max_length=255, blank=True)
     status = models.CharField(max_length=10, choices=STATUS, default="planned", db_index=True)
+    is_loan = models.BooleanField(default=False,
+                                  help_text="Дебіторка-позика: я дав СВОЇ гроші в борг → повернення НЕ прибуток (лише тіло боргу). Торгова дебіторка (від продажу) = False → прибуток.")
     paid_tx = models.ForeignKey("Transaction", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
 

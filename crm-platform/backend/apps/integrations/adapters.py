@@ -99,7 +99,9 @@ def np_search_cities(q, limit=20):
     for row in (d.get("data") or []):
         for a in (row.get("Addresses") or []):
             out.append({
-                "settlement_ref": a.get("DeliveryCity") or a.get("Ref"),
+                # Ref = довідник населених пунктів (для ВУЛИЦЬ), DeliveryCity = місто доставки (для ТТН/відділень)
+                "settlement_ref": a.get("Ref") or a.get("DeliveryCity") or "",
+                "city_ref": a.get("DeliveryCity") or a.get("Ref") or "",
                 "name": a.get("MainDescription") or "",
                 "area": a.get("Area") or "",
                 "region": a.get("Region") or "",

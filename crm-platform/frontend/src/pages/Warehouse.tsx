@@ -91,7 +91,7 @@ export default function Warehouse() {
     setReceiptBusy(false);
   }
   function docTitle(d: any) {
-    return (d.number || ("РН-" + d.id)) + " · " + (d.deal_title || (d.deal ? t("сделка","сделка") + " #" + d.deal : t("ручное","ручне"))) + " · " + (d.created_at || "").slice(0, 10);
+    return (d.number || ("РН-" + d.id)) + " · " + (d.deal_title || (d.deal ? t("угода","угода") + " #" + d.deal : t("ручное","ручне"))) + " · " + (d.created_at || "").slice(0, 10);
   }
   async function openRealizList(pg?: number, ps?: number) {
     setRealizBusy(true);
@@ -162,7 +162,7 @@ export default function Warehouse() {
     try {
       const dry: any = await api.del(`/api/product-categories/${c.id}/?dry=1`);
       const msg = t("Удалить папку","Видалити папку") + ` «${c.name}»?\n` +
-        t("Подпапок (вкл. эту)","Підпапок (вкл. цю)") + `: ${dry.categories}\n` +
+        t("Подпапок (вкл. эту)","Підпапок (разом із цією)") + `: ${dry.categories}\n` +
         t("Товаров удалится навсегда","Товарів видалиться назавжди") + `: ${dry.products_delete}\n` +
         t("Товаров скроется (есть движения)","Товарів приховається (є рухи)") + `: ${dry.products_hide}`;
       if (!confirm(msg)) return;
@@ -268,7 +268,7 @@ export default function Warehouse() {
     let comment = "";
     if (modal === "out") {
       kind = "writeoff"; // ручне списання = порча/брак/викраска, НЕ реалізація по угоді
-      comment = prompt(t("Причина списания (обязательно): брак, порча, выкраска…","Причина списання (обовʼязково): брак, порча, викраска…")) || "";
+      comment = prompt(t("Причина списания (обязательно): брак, порча, выкраска…","Причина списання (обовʼязково): брак, псування, викраска…")) || "";
       if (!comment.trim()) { alert(t("Без причины списание не проводится.","Без причини списання не проводиться.")); return; }
     }
     await api.post("/api/stock-documents/", {
@@ -409,13 +409,13 @@ export default function Warehouse() {
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
               <h3 style={{ margin: 0 }}>{t("Реализации (расходные накладные)","Реалізації (видаткові накладні)")}</h3>
-              {canEdit && <button className="btn btn-light" onClick={() => setModal("out")} title={t("Списание: брак, порча, выкраска (не по сделке)","Списання: брак, порча, викраска (не по угоді)")}><Icon n="🗑" size={14} /> {t("Списание (брак/порча)","Списання (брак/порча)")}</button>}
+              {canEdit && <button className="btn btn-light" onClick={() => setModal("out")} title={t("Списание: брак, порча, выкраска (не по сделке)","Списання: брак, псування, викраска (не за угодою)")}><Icon n="🗑" size={14} /> {t("Списание (брак/порча)","Списання (брак/псування)")}</button>}
             </div>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Создаются автоматически, когда сделка переходит в стадию «Успешная». «Проведён» = товар списан со склада. Кликните на строку — откроется документ. Провести/отменить может ответственный за склад или бухгалтер.","Створюються автоматично, коли сделка переходить у стадію «Успішна». «Проведено» = товар списано зі складу. Клікніть на рядок — відкриється документ. Провести/скасувати може відповідальний за склад або бухгалтер.")}</div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Создаются автоматически, когда угода переходит в стадию «Успешная». «Проведён» = товар списан со склада. Кликните на строку — откроется документ. Провести/отменить может ответственный за склад или бухгалтер.","Створюються автоматично, коли угода переходить у стадію «Успішна». «Проведено» = товар списано зі складу. Клікніть на рядок — відкриється документ. Провести/скасувати може відповідальний за склад або бухгалтер.")}</div>
             {realizBusy ? <div className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</div> :
              realizDocs.length === 0 ? <div className="muted" style={{ padding: 16 }}>{t("Пока нет реализаций.","Поки немає реалізацій.")}</div> :
             <table style={{ width: "100%" }}>
-              <thead><tr><th>№</th><th>{t("Дата","Дата")}</th><th>{t("Сделка","Сделка")}</th><th>{t("Стадия закрытия","Стадія закриття")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "center" }}>{t("Статус","Статус")}</th><th></th></tr></thead>
+              <thead><tr><th>№</th><th>{t("Дата","Дата")}</th><th>{t("Угода","Угода")}</th><th>{t("Стадия закрытия","Стадія закриття")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "center" }}>{t("Статус","Статус")}</th><th></th></tr></thead>
               <tbody>{realizDocs.map((d: any) => (
                 <tr key={d.id} onClick={() => setRealizSel(d)} style={{ cursor: "pointer" }} title={t("Открыть документ","Відкрити документ")}>
                   <td><b>{d.number || d.id}</b></td>
@@ -536,7 +536,7 @@ export default function Warehouse() {
       <div>
         <div className="toolbar" style={{ borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 10, background: "#fff", display: "flex", gap: 8, alignItems: "center", padding: 8, flexWrap: "wrap" }}>
           {canEdit && <button className="btn btn-primary" onClick={() => setNewOpen(true)}><Icon n="➕" size={15} /> {t("Создать товар","Створити товар")}</button>}
-          <button className={"btn" + ((fltActive !== "active" || fltStock) ? " btn-primary" : " btn-light")} onClick={() => setFltOpen(!fltOpen)} title={t("Фильтр по номенклатуре","Фільтр по номенклатурі")}><Icon n="🔽" size={15} /> {t("Фильтр","Фільтр")}</button>
+          <button className={"btn" + ((fltActive !== "active" || fltStock) ? " btn-primary" : " btn-light")} onClick={() => setFltOpen(!fltOpen)} title={t("Фильтр по номенклатуре","Фільтр за номенклатурою")}><Icon n="🔽" size={15} /> {t("Фильтр","Фільтр")}</button>
           <button className="btn btn-light" onClick={exportCsv} title={t("Выгрузить номенклатуру в CSV (Excel)","Вивантажити номенклатуру в CSV (Excel)")}><Icon n="⬇️" size={15} /> {t("Экспорт","Експорт")}</button>
           {canEdit && <>
           <input ref={nomFileRef} type="file" accept=".csv,text/csv,text/plain" style={{ display: "none" }} onChange={importNom} />
@@ -562,7 +562,7 @@ export default function Warehouse() {
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, marginBottom: 10, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
             <label style={{ fontSize: 13 }}>{t("Активность","Активність")}: <select value={fltActive} onChange={(e) => { setFltActive(e.target.value as any); setPage(1); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, marginLeft: 4 }}>
               <option value="active">{t("Только активные","Тільки активні")}</option>
-              <option value="all">{t("Все (вкл. скрытые)","Всі (вкл. приховані)")}</option>
+              <option value="all">{t("Все (вкл. скрытые)","Всі (разом з прихованими)")}</option>
               <option value="hidden">{t("Только скрытые","Тільки приховані")}</option>
             </select></label>
             <label style={{ fontSize: 13 }}>{t("Остаток","Залишок")}: <select value={fltStock} onChange={(e) => { setFltStock(e.target.value as any); setPage(1); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, marginLeft: 4 }}>
@@ -575,7 +575,7 @@ export default function Warehouse() {
         )}
         <div className="tablewrap" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
           <table style={{ width: "100%" }}>
-            <thead><tr>{canEdit && <th style={{ width: 30 }}><input type="checkbox" checked={products.length > 0 && selIds.size === products.length} onChange={toggleSelAll} title={t("Выбрать все на странице","Вибрати всі на сторінці")} /></th>}{sortTh("name", t("Товар","Товар"))}{sortTh("sku", t("Артикул","Артикул"))}<th>{t("Категория","Категорія")}</th>{sortTh("price", t("Цена","Ціна"))}{showCost && sortTh("cost", t("Закупка","Закупка"))}<th>{t("Ед.","Од.")}</th><th>{t("Остаток","Залишок")}</th>{canEdit && <th></th>}</tr></thead>
+            <thead><tr>{canEdit && <th style={{ width: 30 }}><input type="checkbox" checked={products.length > 0 && selIds.size === products.length} onChange={toggleSelAll} title={t("Выбрать все на странице","Вибрати всі на сторінці")} /></th>}{sortTh("name", t("Товар","Товар"))}{sortTh("sku", t("Артикул","Артикул"))}<th>{t("Категория","Категорія")}</th>{sortTh("price", t("Цена","Ціна"))}{showCost && sortTh("cost", t("Закупівля","Закупівля"))}<th>{t("Ед.","Од.")}</th><th>{t("Остаток","Залишок")}</th>{canEdit && <th></th>}</tr></thead>
             <tbody>
               {loading && <tr><td colSpan={6 + (showCost ? 1 : 0) + (canEdit ? 2 : 0)} className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</td></tr>}
               {!loading && products.length === 0 && <tr><td colSpan={6 + (showCost ? 1 : 0) + (canEdit ? 2 : 0)} className="muted" style={{ padding: 16 }}>{t("Товаров не найдено","Товарів не знайдено")}</td></tr>}
@@ -639,7 +639,7 @@ export default function Warehouse() {
       {modal && (
         <div onClick={() => setModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 380 }}>
-            <h3 style={{ marginTop: 0 }}>{modal === "in" ? t("Приходная накладная","Прибуткова накладна") : t("Списание товара (брак / порча / выкраска)","Списання товару (брак / порча / викраска)")}</h3>
+            <h3 style={{ marginTop: 0 }}>{modal === "in" ? t("Приходная накладная","Прибуткова накладна") : t("Списание товара (брак / порча / выкраска)","Списання товару (брак / псування / викраска)")}</h3>
             <label className="label">{t("Товар","Товар")}</label>
             <select value={form.product} onChange={(e) => setForm({ ...form, product: Number(e.target.value) })} style={{ width: "100%", height: 38, marginBottom: 10, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }}>
               <option value={0}>{t("— выбери товар (из текущей страницы) —","— обери товар (з поточної сторінки) —")}</option>
@@ -700,7 +700,7 @@ export default function Warehouse() {
             )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
               {[[t("Розничная цена","Роздрібна ціна"), Number(card.price).toLocaleString("ru") + " " + (card.currency || "грн")],
-                ...(showCost ? [[t("Закупка","Закупка"), Number(card.cost) > 0 ? Number(card.cost).toLocaleString("ru") + " " + (card.currency || "грн") : "—"], [t("Маржа","Маржа"), (card.margin || 0).toLocaleString("ru") + " ₴" + (Number(card.price) > 0 && card.margin ? " · " + Math.round((card.margin / Number(card.price)) * 100) + "%" : "")]] : []),
+                ...(showCost ? [[t("Закупівля","Закупівля"), Number(card.cost) > 0 ? Number(card.cost).toLocaleString("ru") + " " + (card.currency || "грн") : "—"], [t("Маржа","Маржа"), (card.margin || 0).toLocaleString("ru") + " ₴" + (Number(card.price) > 0 && card.margin ? " · " + Math.round((card.margin / Number(card.price)) * 100) + "%" : "")]] : []),
                 [t("Остаток","Залишок"), Number(card.stock).toLocaleString("ru") + " " + card.unit]].map(([lbl, v]) => (
                 <div key={lbl} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{lbl}</div><div style={{ fontSize: 18, fontWeight: 700 }}>{v}</div></div>
               ))}
@@ -724,7 +724,7 @@ export default function Warehouse() {
                 {bundle.components.length === 0 && <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{t("Это обычный товар. Добавь компоненты — станет набором: при продаже списываются компоненты, закупочная цена считается автоматически.","Це звичайний товар. Додай компоненти — стане набором: при продажу списуються компоненти, закупівельна ціна рахується автоматично.")}</div>}
                 {bundle.components.length > 0 && (
                   <table style={{ width: "100%", fontSize: 13 }}>
-                    <thead><tr><th>{t("Компонент","Компонент")}</th><th style={{ textAlign: "right" }}>{t("Кол-во","К-сть")}</th><th style={{ textAlign: "right" }}>{t("Розничная","Роздрібна")}</th>{showCost && <th style={{ textAlign: "right" }}>{t("Закупка","Закупка")}</th>}<th style={{ textAlign: "right" }}>{t("Остаток","Залишок")}</th>{canEdit && <th></th>}</tr></thead>
+                    <thead><tr><th>{t("Компонент","Компонент")}</th><th style={{ textAlign: "right" }}>{t("Кол-во","К-сть")}</th><th style={{ textAlign: "right" }}>{t("Розничная","Роздрібна")}</th>{showCost && <th style={{ textAlign: "right" }}>{t("Закупівля","Закупівля")}</th>}<th style={{ textAlign: "right" }}>{t("Остаток","Залишок")}</th>{canEdit && <th></th>}</tr></thead>
                     <tbody>{bundle.components.map((c: any) => (
                       <tr key={c.id}>
                         <td>{c.name} <span className="muted">{c.sku}</span></td>
@@ -743,7 +743,7 @@ export default function Warehouse() {
                 )}
                 {showCost && bundle.components.length > 0 && (
                   <div style={{ fontSize: 12.5, marginTop: 8, background: "#f8fafc", borderRadius: 8, padding: "8px 10px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}><span className="muted">{t("Компоненты (закупка)","Компоненти (закупка)")}</span><b>{Number(bundle.components_cost || 0).toLocaleString("uk-UA")} ₴</b></div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}><span className="muted">{t("Компоненты (закупка)","Компоненти (закупівля)")}</span><b>{Number(bundle.components_cost || 0).toLocaleString("uk-UA")} ₴</b></div>
                     <div style={{ display: "flex", justifyContent: "space-between" }} title={t("Меняется в Финансы → Настройка финмодели → Склад/ставки","Змінюється у Фінанси → Налаштування фінмоделі → Склад/ставки")}>
                       <span className="muted">🛠 {t("Работа склада за сборку (из финмодели)","Робота складу за збірку (з фінмоделі)")}</span><b>{Number(bundle.assembly_fee || 0).toLocaleString("uk-UA")} ₴</b>
                     </div>

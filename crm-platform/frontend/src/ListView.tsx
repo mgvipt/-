@@ -24,11 +24,11 @@ export default function ListView({ endpoint, funnel, query, onChanged }: { endpo
   useEffect(() => { setSel(new Set()); load(); /* eslint-disable-next-line */ }, [endpoint, funnel.id, query]);
   function toggle(id: number, e: any) { e.stopPropagation(); setSel((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; }); }
   async function bulkDelete() {
-    if (!confirm(t("Удалить выбранные сделки","Видалити обрані сделки") + ` (${sel.size})? ` + t("Это навсегда.","Це назавжди."))) return;
+    if (!confirm(t("Удалить выбранные сделки","Видалити обрані угоди") + ` (${sel.size})? ` + t("Это навсегда.","Це назавжди."))) return;
     try {
       const r: any = await api.post("/api/deals/bulk-delete/", { ids: Array.from(sel) });
       alert(t("Удалено","Видалено") + `: ${r.deleted}`); setSel(new Set()); load(); onChanged && onChanged();
-    } catch (e: any) { alert(e?.response?.data?.detail || t("Нет права «Удалять сделки»","Немає права «Видаляти сделки»")); }
+    } catch (e: any) { alert(e?.response?.data?.detail || t("Нет права «Удалять сделки»","Немає права «Видаляти угоди»")); }
   }
 
   const path = endpoint.includes("deals") ? "deals" : "leads";

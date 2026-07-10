@@ -41,6 +41,8 @@ def _packing_tiers(weight):
 def _deal_weight(deal):
     w = Decimal("0")
     for it in deal.items.all():
+        if not it.product_id:
+            continue  # своя позиція без номенклатури — ваги не має
         w += (it.product.weight_kg or Decimal("0")) * it.quantity
     return w
 
@@ -72,8 +74,8 @@ def _job_dict(job, full=False):
     except Exception:
         d["np_name"] = ""
     if full:
-        d["items"] = [{"name": it.product.name, "qty": str(it.quantity),
-                       "weight_kg": str(it.product.weight_kg or 0)} for it in deal.items.all()]
+        d["items"] = [{"name": (it.product.name if it.product_id else ((it.custom_name or "Позиція") + " · не зі складу")), "qty": str(it.quantity),
+                       "weight_kg": str((it.product.weight_kg or 0) if it.product_id else 0)} for it in deal.items.all()]
         d["weight_kg"] = str(_deal_weight(deal))
         d["photos"] = [{"id": p.id, "kind": p.kind, "url": "/api/warehouse/jobs/%d/photo/?kind=%s" % (job.id, p.kind)} for p in job.photos.all()]
         d["needs"] = {k: v for k, v in (deal.qualification or {}).items() if k != "kits" and not str(k).startswith("_")}
@@ -140,6 +142,8 @@ def reassign(request, pk):
         uid = int(request.data.get("user_id") or 0)
         old_name = job.assignee.get_full_name() if job.assignee_id else "—"
         if uid == 0:
+            if job.status in ("shipped", "cancelled"):
+                return Response({"detail": "Задача вже завершена — в чергу не повертається"}, status=400)
             job.assignee = None
             job.status = "queued"
             job.save(update_fields=["assignee", "status"])
@@ -181,12 +185,18 @@ def take(request, pk):
         if job.task_id:
             job.task.status = "in_progress"; job.task.assignee = request.user
             job.task.save(update_fields=["status", "assignee"])
-        # склад узяв замовлення в роботу → сделка «Оплату отримано» → «Заброньовано»
+        # склад узяв замовлення в роботу → сделка йде у «Відвантаження» (за НАЗВОЮ стадії).
+        # «Заброньовано» ставиться лише оплатою з типом «Бронь», склад його НЕ ставить.
         try:
             deal = job.deal
-            if deal.stage_id and deal.stage.order == 3:
-                from apps.crm.views import _advance_deal_stage
-                _advance_deal_stage(deal, 4, "Склад узяв задачу в роботу (%s)" % (request.user.get_full_name() or request.user.username))
+            st = (deal.stage.name if deal.stage_id else "").lower()
+            if deal.stage_id and (("оплат" in st and "отриман" in st) or "заброньов" in st or "оплата/предоплата" in st):
+                target = deal.funnel.stages.filter(name__icontains="відвантаж").order_by("order").first()
+                if not target:
+                    target = deal.funnel.stages.filter(name__icontains="в работе").order_by("order").first()
+                if target and target.order > deal.stage.order:
+                    from apps.crm.views import _advance_deal_stage
+                    _advance_deal_stage(deal, target.order, "Склад узяв задачу в роботу (%s)" % (request.user.get_full_name() or request.user.username))
         except Exception:
             pass
     return Response(_job_dict(job, full=True))
@@ -198,6 +208,8 @@ def tinting(request, pk):
     job = WarehouseJob.objects.filter(pk=pk, assignee=request.user).first()
     if not job:
         return Response({"detail": "no job"}, status=404)
+    if job.status in ("shipped", "cancelled"):
+        return Response({"detail": "Задача вже завершена"}, status=400)
     idx = request.data.get("kit")
     tinted = set(job.tinted_kits or [])
     if idx is not None:
@@ -216,8 +228,17 @@ def packing(request, pk):
     job = WarehouseJob.objects.filter(pk=pk, assignee=request.user).first()
     if not job:
         return Response({"detail": "no job"}, status=404)
+    if job.status in ("shipped", "cancelled"):
+        return Response({"detail": "Задача вже завершена"}, status=400)
     job.packed = bool(request.data.get("packed", True))
     job.status = "packing"
+    try:
+        if (job.deal.ttn or "").strip():
+            kinds = set(p.kind for p in job.photos.all())
+            if not ({"buckets", "parcel"} <= kinds):
+                job.status = "awaiting_photos"
+    except Exception:
+        pass
     job.save(update_fields=["packed", "status"])
     return Response(_job_dict(job, full=True))
 
@@ -258,6 +279,9 @@ def ship(request, pk):
     job = WarehouseJob.objects.filter(pk=pk, assignee=request.user).first()
     if not job:
         return Response({"detail": "no job"}, status=404)
+    if job.status == "shipped":
+        # ідемпотентно: повторний клік/запит НЕ нараховує ЗП вдруге
+        return Response(_job_dict(job, full=True))
     kinds = set(p.kind for p in job.photos.all())
     if not ({"buckets", "parcel"} <= kinds):
         job.status = "awaiting_photos"; job.save(update_fields=["status"])
@@ -358,8 +382,9 @@ def day_close(request):
         penalty = (Decimal(excess) / Decimal(60)) * (day_rate / Decimal(DAY_HOURS))
         day_pay = max(Decimal("0"), day_rate - penalty)
         note = "обід %d хв" % lunch_min + ((" (-%s за перебір)" % penalty.quantize(Decimal("0.01"))) if excess else "")
-        WarehousePayrollEntry.objects.create(employee=request.user, work_date=today, op_type="workday",
-                                             amount=day_pay.quantize(Decimal("0.01")), rate_applied=day_rate, note=note)
+        if not WarehousePayrollEntry.objects.filter(employee=request.user, work_date=today, op_type="workday").exists():
+            WarehousePayrollEntry.objects.create(employee=request.user, work_date=today, op_type="workday",
+                                                 amount=day_pay.quantize(Decimal("0.01")), rate_applied=day_rate, note=note)
     clean = (request.data.get("note") or "")[:160]
     if clean:
         wd = WorkDay.objects.filter(user=request.user, date=today).first()
@@ -413,6 +438,9 @@ def errors(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def confirm_error(request, pk):
+    u = request.user
+    if not (u.is_superuser or u.has_perm_code("roles.manage") or u.has_perm_code("warehouse.view.all")):
+        return Response({"detail": "Підтверджувати помилки/утримання може лише керівник складу або адмін"}, status=403)
     from .models import WarehouseError
     e = WarehouseError.objects.filter(pk=pk).first()
     if not e:
@@ -445,6 +473,9 @@ def ideas(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def award_idea(request, pk):
+    u = request.user
+    if not (u.is_superuser or u.has_perm_code("roles.manage") or u.has_perm_code("warehouse.view.all")):
+        return Response({"detail": "Нараховувати премії за ідеї може лише керівник складу або адмін"}, status=403)
     from .models import InitiativeIdea
     i = InitiativeIdea.objects.filter(pk=pk).first()
     if not i:

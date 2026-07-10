@@ -51,7 +51,7 @@ export default function Employees() {
   async function dismissEmp(e: Emp) {
     if (!confirm(t(
       `Уволить «${e.full_name}»?\n\nАккаунт деактивируется (НЕ удаляется), доступ пропадёт. Его клиенты / лиды / сделки / чаты / задачи автоматически перейдут другим сотрудникам.`,
-      `Звільнити «${e.full_name}»?\n\nАкаунт деактивується (НЕ видаляється), доступ зникне. Його клієнти / ліди / сделки / чати / задачі автоматично перейдуть іншим співробітникам.`))) return;
+      `Звільнити «${e.full_name}»?\n\nАкаунт деактивується (НЕ видаляється), доступ зникне. Його клієнти / ліди / угоди / чати / задачі автоматично перейдуть іншим співробітникам.`))) return;
     try {
       const r = await api.post<any>(`/api/users/${e.id}/dismiss/`, {});
       const m = r.moved || {}; const sum = Object.entries(m).map(([k, v]) => `${k}: ${v}`).join(", ");
@@ -191,14 +191,14 @@ function InvitesTab({ depts, roles, invites, reload, t }: any) {
   return (
     <div style={{ maxWidth: 720 }}>
       <div className="panel">
-        <div className="label" style={{ marginBottom: 8 }}>{t("Пригласить сотрудника по почте", "Запросити співробітника по пошті")}</div>
+        <div className="label" style={{ marginBottom: 8 }}>{t("Пригласить сотрудника по почте", "Запросити співробітника поштою")}</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <input style={inp} placeholder="Email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
           <select style={inp} value={f.department} onChange={(e) => setF({ ...f, department: e.target.value })}><option value="">{t("— отдел —", "— відділ —")}</option>{depts.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
           <input style={inp} placeholder={t("Имя", "Імʼя")} value={f.first_name} onChange={(e) => setF({ ...f, first_name: e.target.value })} />
           <input style={inp} placeholder={t("Фамилия", "Прізвище")} value={f.last_name} onChange={(e) => setF({ ...f, last_name: e.target.value })} />
           <select style={inp} value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}><option value="">{t("— роль —", "— роль —")}</option>{roles.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-          <button className="btn btn-green" onClick={create}><Icon n="🔗" size={15} /> {t("Создать ссылку", "Створити лінк")}</button>
+          <button className="btn btn-green" onClick={create}><Icon n="🔗" size={15} /> {t("Создать ссылку", "Створити посилання")}</button>
         </div>
         {link && <div style={{ marginTop: 10, padding: 10, background: "#ecfdf5", borderRadius: 8 }}>
           <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("Скопируй и отправь сотруднику:", "Скопіюй і надішли:")}</div>
@@ -290,9 +290,9 @@ function FinAccessTab({ depts, emps, roles, reload, t }: any) {
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
           <Block title={"🏦 " + t("Счета", "Рахунки")} hint={t("Видит балансы и операции только этих счетов", "Бачить залишки та операції лише цих рахунків")}
             items={accs} key_="fin_accounts" getId={(a: any) => a.id} getLabel={(a: any) => a.name} />
-          <Block title={"▲ " + t("Категории доходов", "Категорії доходів")} hint={t("Доступные категории при разноске доходов", "Доступні категорії при розносці доходів")}
+          <Block title={"▲ " + t("Категории доходов", "Категорії доходів")} hint={t("Доступные категории при разноске доходов", "Доступні категорії при рознесенні доходів")}
             items={cats.filter((c: any) => c.direction === "in")} key_="fin_cats_in" getId={(c: any) => c.id} getLabel={(c: any) => c.name} />
-          <Block title={"▼ " + t("Категории расходов", "Категорії витрат")} hint={t("Доступные категории при разноске расходов", "Доступні категорії при розносці витрат")}
+          <Block title={"▼ " + t("Категории расходов", "Категорії витрат")} hint={t("Доступные категории при разноске расходов", "Доступні категорії при рознесенні витрат")}
             items={cats.filter((c: any) => c.direction === "out")} key_="fin_cats_out" getId={(c: any) => c.id} getLabel={(c: any) => c.name} />
           <Block title={"🗂 " + t("Проекты (направления)", "Проекти (напрямки)")} hint={t("Видимые направления", "Видимі напрямки")}
             items={dirs} key_="fin_dirs" getId={(d: any) => d.id} getLabel={(d: any) => d.name} />
@@ -394,8 +394,8 @@ function PermsTab({ depts, emps, perms, permGroups, funnels, roles, reload, t, t
   const Rows = ({ control }: any) => (
     <div style={{ marginTop: 12 }}>
       {groups.map((g: any) => (
-        <div key={g.group} style={{ marginBottom: 12 }}>
-          {g.group && <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", letterSpacing: 0.3, textTransform: "uppercase", margin: "4px 0 2px" }}>{g.group}</div>}
+        <div key={g.group} className="panel" style={{ margin: "0 0 14px", padding: "12px 16px", borderLeft: "4px solid var(--brand)" }}>
+          {g.group && <div style={{ fontSize: 13, fontWeight: 800, color: "var(--brand)", letterSpacing: 0.6, textTransform: "uppercase", margin: "0 0 4px", paddingBottom: 7, borderBottom: "1.5px solid color-mix(in srgb, var(--brand) 35%, transparent)" }}>{g.group}</div>}
           {g.items.map((p: any) => (
             <div key={p.code} style={{ display: "flex", gap: 10, alignItems: "center", padding: "7px 0", borderBottom: "0.5px solid #f1f5f9" }}>
               <div style={{ flex: 1, minWidth: 0 }}>

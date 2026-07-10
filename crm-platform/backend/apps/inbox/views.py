@@ -281,11 +281,19 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         conv.save(update_fields=["assigned_to"])
         if conv.contact_id:
             from apps.crm.models import Deal, Lead, Contact
-            # Беручи чат — стаємо відповідальним за ВІДКРИТІ сделки + ліди + сам контакт клієнта,
-            # щоб менеджер одразу бачив усе в розділі «Мої». Виграні/програні НЕ чіпаємо (історія+ЗП).
-            Deal.objects.filter(contact_id=conv.contact_id).exclude(stage__is_won=True).exclude(stage__is_lost=True).update(owner=request.user)
-            Lead.objects.filter(contact_id=conv.contact_id).exclude(stage__is_won=True).exclude(stage__is_lost=True).update(owner=request.user)
-            Contact.objects.filter(id=conv.contact_id).update(owner=request.user)
+            # Беручи чат — стаємо відповідальним за клієнта і його ВІДКРИТІ сделки/ліди,
+            # АЛЕ тільки якщо клієнт ВІЛЬНИЙ (без власника) або вже наш. Чужого клієнта
+            # закріплення чату НЕ забирає (виняток — адмін/право «Редагувати клієнтів»).
+            _c = Contact.objects.filter(id=conv.contact_id).first()
+            _can_take = bool(_c) and (
+                _c.owner_id in (None, request.user.id)
+                or request.user.is_superuser
+                or request.user.has_perm_code("roles.manage")
+                or request.user.has_perm_code("contact.edit.all"))
+            if _can_take:
+                Deal.objects.filter(contact_id=conv.contact_id).exclude(stage__is_won=True).exclude(stage__is_lost=True).update(owner=request.user)
+                Lead.objects.filter(contact_id=conv.contact_id).exclude(stage__is_won=True).exclude(stage__is_lost=True).update(owner=request.user)
+                Contact.objects.filter(id=conv.contact_id).update(owner=request.user)
         return Response(ConversationSerializer(conv).data)
 
     @action(detail=True, methods=["post"])
@@ -956,11 +964,12 @@ class ChatPlaceWebhookView(APIView):
                        or Contact.objects.filter(nickname__iexact="@" + un).first()
                        or Contact.objects.filter(nickname__iexact=un).first())
         # 2) діалог
+        _bothcp = list(Channel.objects.filter(name__in=("ChatPlace · Instagram", "ChatPlace · TikTok")))
         conv = None
         if contact:
-            conv = Conversation.objects.filter(channel=ch, contact=contact).order_by("-created_at").first()
+            conv = Conversation.objects.filter(channel__in=_bothcp, contact=contact).order_by("-created_at").first()
         if conv is None and client_id:
-            conv = Conversation.objects.filter(channel=ch, external_chat_id=client_id).order_by("-created_at").first()
+            conv = Conversation.objects.filter(channel__in=_bothcp, external_chat_id=client_id).order_by("-created_at").first()
         created = conv is None
         if created:
             link = ""

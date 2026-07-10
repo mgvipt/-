@@ -112,8 +112,8 @@ tbody tr:hover{background:#f8fafc;}
 /* лёгкі анімації — вмикаються коли body.anim-on */
 body.anim-on .nav-item:hover{padding-left:22px;}
 body.anim-on .btn:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(0,0,0,.12);}
-body.anim-on .panel{animation:wcFadeUp .32s ease both;}
-@keyframes wcFadeUp{from{opacity:0;transform:translateY(7px);}to{opacity:1;transform:none;}}
+/* панелі БЕЗ входної анімації — інакше миготять при кожному оновленні даних (перемонтування вкладених компонентів) */
+@keyframes wcFadeUp{from{opacity:1;}to{opacity:1;}}
 body.anim-on .sidebar{background-size:100% 220%;animation:wcShimmer 18s ease-in-out infinite;}
 @keyframes wcShimmer{0%{background-position:50% 0%;}50%{background-position:50% 100%;}100%{background-position:50% 0%;}}
 body.anim-on .stage{transition:background .3s ease,transform .15s ease;}

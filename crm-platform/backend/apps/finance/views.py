@@ -25,6 +25,19 @@ class FinanceManagePerm(HasPermCode):
         return super().has_permission(request, view) and request.user.has_perm_code("finance.manage")
 
 
+class FinDirectionPerm(HasPermCode):
+    """Напрямки: ЧИТАТИ може кожен, хто працює з фінансами або створює дохід/витрату
+    (finance.view АБО finance.tx.edit) — щоб напрямок було видно у випадаючих списках.
+    Створення/редагування/видалення додатково закриті finance.dirs.manage у perform_*."""
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        u = request.user
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return u.has_perm_code("finance.view") or u.has_perm_code("finance.tx.edit")
+        return u.has_perm_code("finance.view")
+
+
 class FinModelArticleViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         _fin_guard(self.request, "finance.model.edit", "Фінмодель: лише перегляд (нема права редагувати)")
@@ -152,15 +165,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
     serializer_class = TransactionSerializer
     permission_classes = [FinancePerm]
     filterset_fields = ["direction", "account", "category", "deal", "fin_direction", "fin_article", "channel"]
-    ordering = ["-date", "-id"]  # журнал завжди за датою операції (нові зверху)
-
-    def get_queryset(self):
-        qs = super().get_queryset()
-        allowed = self.request.user.allowed_fin("fin_accounts")
-        if allowed is not None:
-            from django.db.models import Q as _Q
-            qs = qs.filter(_Q(account_id__in=allowed) | _Q(transfer_account_id__in=allowed))
-        return qs
+    ordering = ["-date", "-op_time", "-id"]  # журнал завжди за датою і ЧАСОМ операції (нові зверху)
+    from django_filters.rest_framework import DjangoFilterBackend as _DFB
+    filter_backends = [_DFB]  # без OrderingFilter: сортування керує get_queryset (клік по стовпцях)
 
     def perform_create(self, serializer):
         _fin_guard(self.request, "finance.tx.edit", "Журнал: лише перегляд — нема права створювати операції")
@@ -179,6 +186,186 @@ class TransactionViewSet(viewsets.ModelViewSet):
         _fin_guard(self.request, "finance.tx.edit", "Журнал: лише перегляд — нема права видаляти операції")
         _guard_period(self.request, instance.date)
         instance.delete()
+
+    @action(detail=False, methods=["post"], url_path="bulk-edit")
+    def bulk_edit(self, request):
+        """Масова зміна поля у вибраних операціях: {ids: [...], set: {поле: значення}}."""
+        _fin_guard(request, "finance.tx.edit", "Нема права редагувати операції")
+        ids = request.data.get("ids") or []
+        st = request.data.get("set") or {}
+        ALLOWED = {"currency", "category", "counterparty", "account", "deal",
+                   "fin_article", "fin_direction", "channel", "comment"}
+        updates = {k: v for k, v in st.items() if k in ALLOWED}
+        if not ids or not updates:
+            return Response({"detail": "ids і set обовʼязкові"}, status=400)
+        done = 0
+        for t in Transaction.objects.filter(id__in=ids[:500]).select_related("category"):
+            _guard_period(request, t.date)
+            for k, v in updates.items():
+                if k == "category":
+                    t.category_id = int(v) if v else None
+                    if v:
+                        c = Category.objects.filter(id=v).select_related("parent").first()
+                        if c:
+                            fa = c.fin_article_id or (c.parent.fin_article_id if c.parent_id else None)
+                            fd = c.fin_direction_id or (c.parent.fin_direction_id if c.parent_id else None)
+                            if fa and "fin_article" not in updates:
+                                t.fin_article_id = fa
+                            if fd and "fin_direction" not in updates:
+                                t.fin_direction_id = fd
+                elif k == "account":
+                    if v:
+                        t.account_id = int(v)
+                elif k == "deal":
+                    t.deal_id = int(v) if v else None
+                    if v:
+                        from apps.crm.models import Deal as _Dbe
+                        d = _Dbe.objects.filter(id=v).first()
+                        if d and d.contact_id:
+                            t.contact_id = d.contact_id
+                elif k == "fin_article":
+                    t.fin_article_id = int(v) if v else None
+                elif k == "fin_direction":
+                    t.fin_direction_id = int(v) if v else None
+                else:
+                    setattr(t, k, (v or "")[:255] if k == "comment" else (v or ""))
+            t.save()
+            done += 1
+        return Response({"updated": done})
+
+    @action(detail=False, methods=["post"], url_path="counterparty-rename")
+    def counterparty_rename(self, request):
+        """Перейменувати контрагента в УСІХ операціях (обʼєднання написань)."""
+        _fin_guard(self.request, "finance.tx.edit", "Нема права редагувати операції")
+        old_n = (request.data.get("old") or "").strip()
+        new_n = (request.data.get("new") or "").strip()[:160]
+        if not old_n or not new_n:
+            return Response({"detail": "old і new обовʼязкові"}, status=400)
+        n = Transaction.objects.filter(counterparty=old_n).update(counterparty=new_n)
+        return Response({"updated": n})
+
+    @action(detail=False, methods=["post"], url_path="counterparty-delete")
+    def counterparty_delete(self, request):
+        """Прибрати контрагента з усіх операцій (операції ЛИШАЮТЬСЯ, поле очищується)."""
+        _fin_guard(self.request, "finance.tx.edit", "Нема права редагувати операції")
+        old_n = (request.data.get("name") or "").strip()
+        if not old_n:
+            return Response({"detail": "name обовʼязковий"}, status=400)
+        n = Transaction.objects.filter(counterparty=old_n).update(counterparty="")
+        return Response({"updated": n})
+
+    @action(detail=False, methods=["get"], url_path="triage")
+    def triage(self, request):
+        """Розноска «сміттєвих» категорій («Категории расходов/доходов»):
+        кожна операція + пропозиція категорії (історія контрагента / коментар)."""
+        import re as _re
+        from collections import Counter, defaultdict
+        trash = list(Category.objects.filter(name__in=["Категории расходов", "Категории доходов"]))
+        from django.db.models import Q as _Qtr
+        txs = list(Transaction.objects.filter(
+                       _Qtr(category__in=trash) |
+                       _Qtr(category__isnull=True, date__gte="2026-01-01"))
+                   .exclude(direction="transfer")
+                   .exclude(comment__icontains="ЗВІРКА")
+                   .select_related("category", "account").order_by("-date")[:3000])
+        hist = defaultdict(Counter)
+        for cp, cid, cname, dr in (Transaction.objects.exclude(counterparty="").exclude(category__isnull=True)
+                                   .exclude(category__in=trash)
+                                   .values_list("counterparty", "category_id", "category__name", "direction")):
+            if cname in ("Перевод", "Зарплата"):
+                continue
+            hist[(cp.lower(), dr)][(cid, cname)] += 1
+        SEM_OUT = [
+            (r"переказ власних кошт|перевод на свою карту|перевод на карту приватбанка|на картку", None),
+            (r"#корректировка|корректировка после|корректировка полсле", "Корректировка(УДАЛИТЬ В P&L)"),
+            (r"декоративн|штукатур|за декор|будматеріал|будматериал|древесина", "Закупка товара"),
+            (r"нанесення декору|художник|#мастер", "ЗП мастерам (объекты/сверление)"),
+            (r"кондиціонер|кондиционер|тельнюка|спортшкола", "Личные расходы (ЗП управления)"),
+            (r"нова пошта|новапошта|доставк|перевезен", "Доставка / логистика"),
+            (r"оренд|аренд", "Аренда салона"),
+            (r"податок|єсв| есв", "Налоги"),
+            (r"комісі|комиси|комiсi|еквайринг", "Комиссии банка и проценты"),
+            (r"паливо|бензин|азс|wog|okko", "Транспорт (топливо, поездки)"),
+            (r"зарплат|аванс", "ЗП оклады (офис/склад)"),
+            (r"пополнение мобильного|поповнення мобільного", "Связь (интернет + телефония)"),
+            (r"учеба|учоба|educationals", "Обучение"),
+        ]
+        SEM_IN = [
+            (r"liqpay|лікпей|ликпей", "Онлайн (Instagram/TikTok/сайт)"),
+            (r"за декор|декоративн|сплата за замовлення|оплата частинами|за замовлення", "Онлайн (Instagram/TikTok/сайт)"),
+        ]
+        name2 = {}
+        for c in Category.objects.all():
+            name2.setdefault((c.name, c.direction), c.id)
+        OWNER = _re.compile(r"крижевск|кріжевськ|круликовск", _re.I)
+        out = []
+        for t in txs:
+            cp = (t.counterparty or "").strip()
+            osnd = (t.comment or "").lower()
+            sug_id, sug_name, src, to_tr = None, "", "", False
+            for pat, catname in (SEM_OUT if t.direction == "out" else SEM_IN):
+                if _re.search(pat, osnd):
+                    if catname is None:
+                        to_tr, src, sug_name = True, "коментар", "→ Переказ"
+                    else:
+                        cid = name2.get((catname, t.direction))
+                        if cid:
+                            sug_id, sug_name, src = cid, catname, "коментар"
+                    break
+            if not sug_id and not to_tr and cp and t.direction == "out" and OWNER.search(cp):
+                cid = name2.get(("Личные расходы (ЗП управления)", "out"))
+                if cid:
+                    sug_id, sug_name, src = cid, "Личные расходы (ЗП управления)", "власник"
+            if not sug_id and not to_tr and cp:
+                h = hist.get((cp.lower(), t.direction))
+                if h:
+                    (cid, cname), _n = h.most_common(1)[0]
+                    sug_id, sug_name, src = cid, cname, "історія"
+            out.append({"id": t.id, "date": t.date, "direction": t.direction,
+                        "amount_uah": t.amount_uah, "counterparty": cp,
+                        "comment": t.comment, "cat_now": t.category.name if t.category else "",
+                        "suggest": sug_id, "suggest_name": sug_name,
+                        "to_transfer": to_tr, "src": src})
+        return Response(out)
+
+    @action(detail=False, methods=["post"], url_path="triage-apply")
+    def triage_apply(self, request):
+        """Масове застосування розноски: items=[{id, category}|{id, to_transfer, transfer_account?}]."""
+        _fin_guard(request, "finance.tx.edit", "Розноска: потрібне право «Редагувати операції журналу»")
+        items = request.data.get("items") or []
+        done = 0
+        locked = 0
+        for it in items:
+            t = Transaction.objects.filter(id=it.get("id")).first()
+            if not t:
+                continue
+            try:
+                _guard_period(request, t.date)
+            except Exception:
+                locked += 1
+                continue
+            if it.get("to_transfer"):
+                t.direction = "transfer"
+                t.category = None
+                t.fin_article = None
+                t.fin_direction = None
+                t.transfer_account_id = it.get("transfer_account") or None
+                t.save()
+                done += 1
+                continue
+            c = Category.objects.filter(id=it.get("category")).first()
+            if not c:
+                continue
+            t.category = c
+            fa = c.fin_article_id or (c.parent.fin_article_id if c.parent_id else None)
+            fd = c.fin_direction_id or (c.parent.fin_direction_id if c.parent_id else None)
+            if fa:
+                t.fin_article_id = fa
+            if fd:
+                t.fin_direction_id = fd
+            t.save()
+            done += 1
+        return Response({"updated": done, "locked_skipped": locked})
 
     @action(detail=False, methods=["get", "post"], url_path="period-lock")
     def period_lock(self, request):
@@ -424,7 +611,14 @@ class TransactionViewSet(viewsets.ModelViewSet):
         from django.utils import timezone as _tzst
         st_batch = "ST-" + _tzst.now().strftime("%Y%m%d-%H%M%S")
         p_from, p_to = request.data.get("from"), request.data.get("to")
-        created = dup = errs = 0
+        # ГАРД: якщо рахунок вже синхронізується з банком (є PB#-рядки) — файл НЕ може
+        # створювати операції за банківський період (інакше дублі, інцидент 04-07.07)
+        bank_since = None
+        if acc:
+            first_pb = (Transaction.objects.filter(account=acc, comment__icontains="PB#")
+                        .order_by("date").values_list("date", flat=True).first())
+            bank_since = first_pb
+        created = dup = errs = skipped_bank = 0
         preview = []
         for r in rows[1:]:
             if not any((str(c) or "").strip() for c in r):
@@ -456,6 +650,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 continue  # поза обраним періодом
             if p_to and dte.isoformat() > p_to:
                 continue
+            if bank_since and dte >= bank_since:
+                skipped_bank += 1
+                continue
             if commit:
                 _rr = apply_bank_rules(direction, osnd, cp, acc.name if acc else "")
                 cat, fdir, fart, cp2 = _rr["category"], _rr["fin_direction"], _rr["fin_article"], _rr["counterparty"]
@@ -468,12 +665,20 @@ class TransactionViewSet(viewsets.ModelViewSet):
             if len(preview) < 8:
                 preview.append({"date": dte.isoformat(), "dir": direction, "amount": amt, "osnd": osnd[:60]})
         return Response({"created": created, "duplicates": dup, "errors": errs,
+                         "skipped_bank": skipped_bank,
+                         "bank_since": bank_since.isoformat() if bank_since else None,
                          "committed": commit, "preview": preview, "account": acc.name if acc else None,
                          "batch": st_batch if commit else None})
 
     def get_queryset(self):
         qs = super().get_queryset()
+        allowed = self.request.user.allowed_fin("fin_accounts")
+        if allowed is not None:
+            from django.db.models import Q as _Qacc
+            qs = qs.filter(_Qacc(account_id__in=allowed) | _Qacc(transfer_account_id__in=allowed))
         p = self.request.query_params
+        if p.get("contact"):
+            qs = qs.filter(contact_id=p["contact"])
         if p.get("from"):
             qs = qs.filter(date__gte=p["from"])
         if p.get("to"):
@@ -494,7 +699,23 @@ class TransactionViewSet(viewsets.ModelViewSet):
             ids = [int(x) for x in str(p["accounts"]).split(",") if x.strip().isdigit()]
             if ids:
                 qs = qs.filter(_Qa(account_id__in=ids) | _Qa(transfer_account_id__in=ids))
-        return qs
+        # сортування: клік по стовпцю в журналі; дефолт — дата і ЧАС операції
+        ALLOWED_ORD = {"date", "amount_uah", "counterparty", "category__name", "account__name",
+                       "fin_article__name", "fin_direction__name", "channel", "comment", "op_time", "id", "currency"}
+        ordering = (p.get("sort") or p.get("ordering") or "-date").strip()
+        flds = []
+        for f in ordering.split(","):
+            f = f.strip()
+            if f.lstrip("-") in ALLOWED_ORD:
+                flds.append(f)
+        if not flds:
+            flds = ["-date"]
+        if flds[0].lstrip("-") == "date":
+            sign = "-" if flds[0].startswith("-") else ""
+            flds = [sign + "date", sign + "op_time", sign + "id"]
+        else:
+            flds += ["-date", "-op_time"]
+        return qs.order_by(*flds)
 
     @action(detail=True, methods=["get"])
     def attachments(self, request, pk=None):
@@ -658,7 +879,8 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
         except ValueError:
             dte = date.today()
         osnd = (tr.get("OSND") or "")[:180]
-        cp = (tr.get("AUT_CNTR_NAM") or "")[:160]
+        from .services import canonical_counterparty as _ccp
+        cp = _ccp(tr.get("AUT_CNTR_NAM") or "")[:160]
         op_t = None
         try:
             tim = (tr.get("TIM_P") or "").strip()
@@ -676,7 +898,11 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
         m = _re.search(r"WCCRM-(\d+)", osnd)
         if m and direction == "in":
             did = int(m.group(1))
-            dealtx = Transaction.objects.filter(deal_id=did, direction="in").order_by("id").first()
+            # шукаємо САМЕ ту оплату, чиє зарахування прийшло (gross >= net, комісія <= 6%)
+            dealtx = (Transaction.objects.filter(deal_id=did, direction="in",
+                      amount_uah__gte=amt - 1, amount_uah__lte=float(amt) * 1.06 + 5)
+                      .order_by("id").first()
+                      or Transaction.objects.filter(deal_id=did, direction="in").order_by("id").first())
             if dealtx:
                 from .services import liqpay_account as _liqacc
                 _liq = _liqacc()
@@ -699,9 +925,87 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                 continue
         # оплата за РЕКВІЗИТАМИ з призначенням «Оплата замовлення WCR-<id>» →
         # привʼязка до сделки + Payment (ідемпотентно по банківському REF) + чек + стадія
-        m_r = _re.search(r"(?:WCR|замовлення|заказ|накладна)[\s#-]*(\d{4,6})", osnd, _re.IGNORECASE)
-        if m_r and direction == "in":
-            did_r = int(m_r.group(1))
+        # виплата накладених платежів від НоваПей/Нової Пошти = ДОХІД (гроші реально на рахунку).
+        # Категорія «Онлайн (Instagram/TikTok/сайт)», напрямок ДЕКОР — як продаж.
+        if direction == "in" and ("нова пошта" in (cp or "").lower() or "новапошта" in (cp or "").lower()
+                                  or "новапей" in (cp or "").lower() or "novapay" in (cp or "").lower()):
+            cat_np = Category.objects.filter(name="Онлайн (Instagram/TikTok/сайт)", direction="in").first()
+            tx_np = Transaction.objects.create(
+                direction="in", amount=amt, amount_uah=amt, account=account,
+                category=cat_np, date=dte, op_time=op_t, counterparty=(cp or "НоваПей")[:160], rate=1,
+                import_batch=batch, comment=(reftag + " · " + osnd)[:255])
+            created += 1
+            # гроші дійшли → закрити очікування по наложках: старіші виплати покривають
+            # раніше отримані посилки (виплата йде пачкою, тому список, а не одна сделка)
+            try:
+                from apps.crm.models import Payment as _PayNP, log_activity as _laNP
+                waiting = list(_PayNP.objects.filter(provider="np_cod", is_paid=False)
+                               .order_by("created_at"))
+                # спершу ТОЧНИЙ поодинокий матч: виплата = одна наложка мінус комісія (до 8%)
+                _singles = [w for w in waiting if float(amt) <= float(w.amount) <= float(amt) * 1.08]
+                if len(_singles) == 1:
+                    waiting = _singles
+                rest = float(amt) * 1.05  # запас на комісію НоваПей
+                matched = []
+                for w in waiting:
+                    if float(w.amount) <= rest:
+                        w.is_paid = True
+                        w.save(update_fields=["is_paid"])
+                        rest -= float(w.amount)
+                        matched.append(w)
+                        _laNP("deal", w.deal_id, "Наложка виплачена",
+                              "Виплата НоваПей надійшла на рахунок банку — %s грн зараховано як оплату" % w.amount,
+                              None, "Банк")
+                # привʼязка доходу до сделки: рівно ОДНА наложка у виплаті → сделка/клієнт/канал;
+                # кілька — перелічуємо сделки в коменті (одна банківська сума на кілька посилок)
+                if len(matched) == 1 and matched[0].deal_id:
+                    _dnp = matched[0].deal
+                    tx_np.deal = _dnp
+                    if _dnp.contact_id:
+                        tx_np.contact = _dnp.contact
+                        tx_np.counterparty = ((" ".join(filter(None, [_dnp.contact.first_name or "", _dnp.contact.last_name or ""])).strip()
+                                               or (_dnp.contact.nickname or "")) or tx_np.counterparty)[:160]
+                    tx_np.channel = (_dnp.source or "")[:24] or tx_np.channel
+                    tx_np.comment = (tx_np.comment[:200] + " · наложка по сделці #%s" % _dnp.id)[:255]
+                    tx_np.save(update_fields=["deal", "contact", "counterparty", "channel", "comment"])
+                elif len(matched) > 1:
+                    _ids = ", ".join("#%s" % w.deal_id for w in matched if w.deal_id)
+                    tx_np.comment = (tx_np.comment[:180] + " · наложки по сделках: " + _ids)[:255]
+                    tx_np.save(update_fields=["comment"])
+            except Exception:
+                pass
+            continue
+        # ідентифікатор оплати = НОМЕР СДЕЛКИ у призначенні (5-6 цифр).
+        # Роки (4 цифри), телефони (10+), рахунки (7+) під шаблон не потрапляють.
+        did_r = 0
+        if direction == "in":
+            from apps.crm.models import Deal as _DealChk
+            from django.utils import timezone as _tzn
+            from datetime import timedelta as _tdn
+            found = []
+            for numtxt in set(_re.findall(r"(?<!\d)(\d{5,6})(?!\d)", osnd)):
+                num = int(numtxt)
+                # число == сумі платежу — це сума, а не номер угоди
+                try:
+                    if num == int(round(float(amt))):
+                        continue
+                except (TypeError, ValueError):
+                    pass
+                _dc = _DealChk.objects.filter(id=num).select_related("stage").first()
+                if _dc is None:
+                    continue
+                # захист від випадкових збігів (номери рахунків/накладних/суми у призначенні):
+                # угода свіжа (180 днів), не програна, з сумою, і платіж не більший за суму угоди
+                if _dc.created_at < _tzn.now() - _tdn(days=180):
+                    continue
+                if _dc.stage_id and getattr(_dc.stage, "is_lost", False):
+                    continue
+                if not _dc.amount or float(amt) > float(_dc.amount) * 1.05 + 100:
+                    continue
+                found.append(num)
+            if len(found) == 1:
+                did_r = found[0]
+        if did_r and direction == "in":
             from apps.crm.models import Deal as _Deal, Payment as _Pay, log_activity as _la
             _d = _Deal.objects.filter(id=did_r).first()
             if _d and not _Pay.objects.filter(external_id=ref).exists():
@@ -713,14 +1017,20 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                     category=Category.objects.filter(name="Продаж товару", direction="in").first(),
                     fin_direction=rr0["fin_direction"], channel=(_d.source or "")[:24],
                     import_batch=batch, comment=(reftag + " · " + osnd)[:255])
-                _Pay.objects.create(deal=_d, provider="reqs", amount=amt, is_paid=True, external_id=ref)
+                _w = _Pay.objects.filter(deal=_d, provider="reqs", is_paid=False,
+                                         external_id__startswith="WAIT-").first()
+                if _w:
+                    _w.amount = amt; _w.is_paid = True; _w.external_id = ref
+                    _w.save(update_fields=["amount", "is_paid", "external_id"])
+                else:
+                    _Pay.objects.create(deal=_d, provider="reqs", amount=amt, is_paid=True, external_id=ref)
                 created += 1
                 try:
-                    from apps.crm.views import _advance_deal_stage, _issue_checkbox_for_deal
+                    from apps.crm.views import _advance_after_payment, _issue_checkbox_for_deal
                     from decimal import Decimal as _Dec
                     paid_r = sum((pp.amount for pp in _Pay.objects.filter(deal=_d, is_paid=True)), _Dec("0"))
                     if paid_r > 0:
-                        _advance_deal_stage(_d, 3, "Оплата за реквізитами отримана (банк, REF %s)" % ref)
+                        _advance_after_payment(_d, "Оплата за реквізитами отримана (банк, REF %s)" % ref)
                     _issue_checkbox_for_deal(_d, user=None)
                     _la("deal", _d.id, "Оплата за реквізитами", "%s грн з банку (REF %s) — авто-фіксація" % (amt, ref), None, "Банк")
                 except Exception:
@@ -867,7 +1177,7 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
             direction="out" if pp.kind == "payable" else "in",
             amount=pp.amount, amount_uah=pp.amount, account=acc,
             date=_tz.localdate(), op_time=_tz.localtime().time(),
-            category=pp.category, counterparty=pp.counterparty, deal=pp.deal,
+            category=pp.category, counterparty=pp.counterparty, deal=pp.deal, contact=pp.contact,
             fin_direction=pp.fin_direction, fin_article=pp.fin_article, channel=pp.channel or "",
             comment=("Дт/Кт: " + (pp.comment or ""))[:255])
         pp.status = "paid"
@@ -918,11 +1228,23 @@ def fund_for_category(cat_name, hint=""):
 
 
 class BankRuleViewSet(viewsets.ModelViewSet):
-    """Правила авторозноски банківських операцій."""
+    """Правила авторозноски банківських операцій. Читати — finance.view; міняти — finance.tx.edit."""
     permission_classes = [FinancePerm]
     from .models import BankRule as _BR
     queryset = _BR.objects.all()
     pagination_class = None
+
+    def perform_create(self, serializer):
+        _fin_guard(self.request, "finance.tx.edit", "Правила розноски: потрібне право «Редагувати операції журналу»")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        _fin_guard(self.request, "finance.tx.edit", "Правила розноски: потрібне право «Редагувати операції журналу»")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        _fin_guard(self.request, "finance.tx.edit", "Правила розноски: потрібне право «Редагувати операції журналу»")
+        instance.delete()
 
     def get_serializer_class(self):
         from rest_framework import serializers as _sz
@@ -1008,7 +1330,12 @@ class BankRuleViewSet(viewsets.ModelViewSet):
         """Прогнати правила по журналу: заповнити ПОРОЖНІ поля (нічого не перезаписуємо).
         body: {dry: 1|0, from?: date, to?: date}"""
         dry = str(request.data.get("dry") or "") in ("1", "true", "True")
+        if not dry:
+            _fin_guard(request, "finance.tx.edit", "Застосування правил до журналу потребує права «Редагувати операції журналу»")
         qs = Transaction.objects.all().select_related("account")
+        _cu = _closed_until()
+        if _cu:
+            qs = qs.filter(date__gt=_cu)  # закритий період не чіпаємо
         if request.data.get("from"):
             qs = qs.filter(date__gte=request.data["from"])
         if request.data.get("to"):
@@ -1188,7 +1515,7 @@ class FinDirectionViewSet(viewsets.ModelViewSet):
 
     queryset = FinDirection.objects.all()
     serializer_class = FinDirectionSerializer
-    permission_classes = [FinanceManagePerm]
+    permission_classes = [FinDirectionPerm]
 
 
 class DirectionsReportView(APIView):
@@ -1294,7 +1621,14 @@ class FundsView(APIView):
             funds = [node(a) for a in arts if a.fund_group == key]
             if funds:
                 groups.append({"key": key, "label": label, "color": color, "funds": funds})
-        accounts = [{"id": ac.id, "name": ac.name, "balance": round(float(ac.balance()))} for ac in Account.objects.filter(is_active=True)]
+        accounts_qs = Account.objects.filter(is_active=True)
+        try:
+            _allowed = request.user.allowed_fin("fin_accounts")
+        except Exception:
+            _allowed = None
+        if _allowed is not None:
+            accounts_qs = accounts_qs.filter(id__in=_allowed)
+        accounts = [{"id": ac.id, "name": ac.name, "in_planning": ac.in_planning, "balance": round(float(ac.balance()), 2)} for ac in accounts_qs]
         tot_al = sum(alloc.values()); tot_sp = sum(spent.values())
         return Response({"period": period, "groups": groups, "accounts": accounts,
                          "totals": {"allocated": round(tot_al), "spent": round(tot_sp), "balance": round(tot_al - tot_sp)}})
@@ -1619,7 +1953,7 @@ class OverviewView(APIView):
         dirs.sort(key=lambda x: -x["income"])
 
         # рахунки
-        accounts = sorted([{"id": a.id, "name": a.name, "balance": round(float(a.balance()))}
+        accounts = sorted([{"id": a.id, "name": a.name, "balance": round(float(a.balance()), 2)}
                            for a in Account.objects.filter(is_active=True)], key=lambda x: -x["balance"])
 
         # cashflow 30 днів

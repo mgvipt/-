@@ -9,7 +9,6 @@ import IncomingCallPopup from "../IncomingCallPopup";
 import VersionWatcher from "../VersionWatcher";
 import Notifier from "../Notifier";
 import WebPhone from "../WebPhone";
-import CallBar from "../CallBar";
 import GlobalSearch from "../GlobalSearch";
 
 // [путь, заголовок, иконка, требуемое право (или null)]
@@ -25,7 +24,7 @@ const NAV: [string, string, string, string, string | null][] = [
   ["/development", "Развитие", "Розвиток", "trophy", "development.view"],
   ["/finance", "Финансы", "Фінанси", "wallet", "finance.view"],
   ["/analytics", "Аналитика", "Аналітика", "chart", "analytics.view"],
-  ["/ai-costs", "Расходы ИИ", "Витрати ШІ", "money", "finance.view"],
+  ["/ai-costs", "Расходы ИИ", "Витрати ШІ", "money", "settings.agent"],
   ["/employees", "Сотрудники и права", "Співробітники і права", "🛡️", "roles.manage"],
   ["/duplicates", "Дубли", "Дублі", "copy", "roles.manage"],
   ["/settings", "Настройки · Интеграции", "Налаштування · Інтеграції", "settings", "roles.manage"],
@@ -164,7 +163,6 @@ export default function Layout() {
           ))}
         </nav>
         <WebPhone />
-      <CallBar />
         <div className="me">
           <Avatar name={fullName} cls="av-md" />
           <div style={{ flex: 1 }}>

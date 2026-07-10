@@ -3,13 +3,24 @@ from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payme
 
 
 class DealItemSerializer(serializers.ModelSerializer):
-    product_name = serializers.CharField(source="product.name", read_only=True)
-    product_stock = serializers.DecimalField(source="product.stock", max_digits=12, decimal_places=2, read_only=True, default=0)
+    product_name = serializers.SerializerMethodField()
+    product_stock = serializers.SerializerMethodField()
     total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+
+    def get_product_name(self, obj):
+        if obj.product_id:
+            return obj.product.name
+        return (obj.custom_name or "Позиція") + " · не зі складу"
+
+    def get_product_stock(self, obj):
+        if not obj.product_id:
+            return None
+        st = obj.product.stock
+        return st() if callable(st) else st
 
     class Meta:
         model = DealItem
-        fields = ["id", "deal", "product", "product_name", "product_stock", "quantity", "price", "cost", "discount_pct", "discount_sum", "total", "reserved"]
+        fields = ["id", "deal", "product", "custom_name", "product_name", "product_stock", "quantity", "price", "cost", "discount_pct", "discount_sum", "total", "reserved"]
         read_only_fields = ["deal"]
 
 
@@ -82,6 +93,7 @@ class LeadSerializer(serializers.ModelSerializer):
 
 
 class DealSerializer(serializers.ModelSerializer):
+    funnel_name = serializers.SerializerMethodField()
     contact_social_link = serializers.CharField(source="contact.social_link", read_only=True, default="")
     contact_phone = serializers.CharField(source="contact.phone", read_only=True, default="")
     owner_name = serializers.CharField(source="owner.get_full_name", read_only=True)
@@ -90,9 +102,12 @@ class DealSerializer(serializers.ModelSerializer):
     def get_contact_name(self, obj):
         return str(obj.contact) if obj.contact else ""
 
+    def get_funnel_name(self, obj):
+        return obj.funnel.name if obj.funnel_id else ""
+
     class Meta:
         model = Deal
-        fields = ["id", "title", "contact", "contact_name", "contact_social_link", "contact_phone", "funnel", "stage",
+        fields = ["id", "title", "contact", "contact_name", "contact_social_link", "contact_phone", "funnel", "funnel_name", "stage",
                   "source", "amount", "discount_pct", "pay_type", "ttn", "checkbox_status",
                   "qualification", "card_fields", "owner", "owner_name", "closed_at", "is_seen",
                   "created_at", "updated_at"]

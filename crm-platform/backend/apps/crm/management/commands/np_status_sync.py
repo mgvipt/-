@@ -147,18 +147,20 @@ def _record_cod_payment(deal):
     from apps.crm.models import Payment
     try:
         cod = Decimal(str((deal.np_data or {}).get("cod_amount") or 0))
-        if cod <= 0:
-            # fallback: залишок = сума угоди мінус оплачене
-            paid = sum((p.amount for p in deal.payments.filter(is_paid=True)), Decimal("0"))
-            cod = (deal.amount or Decimal("0")) - paid
+        # ⛔ БЕЗ fallback: наложка існує ЛИШЕ якщо її явно вказали при створенні ТТН
+        # (cod_amount у np_data). Інакше поллер фабрикував np_cod-платіж і РЕАЛЬНИЙ
+        # фіскальний чек для угод, де клієнт платив іншим способом (подвійний чек у ДПС).
         if cod <= 0:
             return
         if Payment.objects.filter(deal=deal, provider="np_cod").exists():
             return
+        # клієнт ОПЛАТИВ на відділенні (фіскальний чек бʼється зараз), але ГРОШІ ще у НоваПей:
+        # у сделці «оплачено» стане True лише коли виплата надійде на рахунок банку
         pay = Payment.objects.create(deal=deal, provider="np_cod", amount=cod,
-                                     is_paid=True, external_id=deal.ttn or "")
-        from apps.finance.services import record_income
-        record_income(cod, deal=deal, payment=pay, category="Накладений платіж НП")
+                                     is_paid=False, external_id=deal.ttn or "")
+        # ГРОШІ В ЖУРНАЛ НЕ ПИШЕМО: дохід зʼявиться автоматично, коли виплата від
+        # НоваПей реально надійде на рахунок ПриватБанку (банківська синхронізація).
+        # Payment вище — лише для сделки: «оплачено», стадії, фінальний чек.
         # фінальний фіскальний чек Checkbox на доплату: ланцюг аванс → фінал
         # (relation до авансового чека, у фіналі — ТТН; регламент післяплати)
         try:

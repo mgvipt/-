@@ -30,22 +30,27 @@ def _default_direction():
             or FinDirection.objects.filter(active=True).order_by("id").first())
 
 
-def record_income(amount, *, deal=None, account=None, payment=None, category="Продаж товару"):
+def record_income(amount, *, deal=None, account=None, payment=None, category="Продаж товару", channel=None):
     """Єдина точка створення доходу. Народжується ОДРАЗУ повною:
-    канал/контрагент/напрямок зі сделки → одразу видно в журналі, напрямках, P&L, ЗП."""
-    channel = ""
+    канал/контрагент/напрямок зі сделки → одразу видно в журналі, напрямках, P&L, ЗП.
+    channel: явний канал (напр. «Салон» для готівки) — має пріоритет над deal.source."""
+    ch = (channel or "").strip()
     counterparty = ""
     if deal is not None:
-        channel = (getattr(deal, "source", "") or "")[:24]
+        if not ch:
+            ch = (getattr(deal, "source", "") or "")[:24]
         c = getattr(deal, "contact", None)
         if c is not None:
             counterparty = (" ".join(filter(None, [getattr(c, "first_name", ""), getattr(c, "last_name", "")])).strip()
                             or getattr(c, "nickname", "") or "")[:160]
     from django.utils import timezone as _tz
+    cat = _category(category, "in")
+    # напрямок: звʼязка категорія→напрямок з довідника має пріоритет над дефолтом
+    fdir = (getattr(cat, "fin_direction", None) if cat else None) or _default_direction()
     return Transaction.objects.create(
         direction="in", amount=amount, amount_uah=amount, account=account or default_account(),
-        category=_category(category, "in"), deal=deal, payment=payment, op_time=_tz.localtime().time(),
-        channel=channel, counterparty=counterparty, fin_direction=_default_direction())
+        category=cat, deal=deal, payment=payment, op_time=_tz.localtime().time(),
+        channel=ch[:24], counterparty=counterparty, fin_direction=fdir)
 
 
 def record_expense(amount, *, deal=None, account=None, category="Собівартість"):
@@ -314,3 +319,19 @@ def compute_manager_salary(user, period):
         "min_revenue": round(float(plan.min_revenue)) if plan else None,
         "ambition_revenue": round(float(plan.ambition_revenue)) if plan else None,
     }
+
+
+def canonical_counterparty(name):
+    """Одна сутність — одне написання. Нормалізує пробіли/телефони і шукає
+    вже наявне написання (без урахування регістру), щоб не плодити дублі."""
+    import re
+    from .models import Transaction
+    s = " ".join((name or "").split())
+    if not s:
+        return s
+    digits = re.sub(r"\D", "", s)
+    if re.fullmatch(r"\+?380\d{9}", s.replace(" ", "")) or (digits.startswith("380") and len(digits) == 12 and len(s) <= 14):
+        return "+" + digits
+    ex = (Transaction.objects.exclude(counterparty="")
+          .filter(counterparty__iexact=s).values_list("counterparty", flat=True).first())
+    return ex or s

@@ -12,12 +12,14 @@ export default function Roles() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [cat, setCat] = useState<Cat[]>([]);
   const [chans, setChans] = useState<Chan[]>([]);
+  const [pgroups, setPgroups] = useState<any[]>([]);
   const { t } = useLang();
 
   useEffect(() => {
     api.get<{ results: Role[] }>("/api/roles/").then((d) => setRoles(d.results));
     api.get<any>("/api/me/").then((m) => setCat(m.permission_catalog));
     api.get<any>("/api/channels/").then((d) => setChans(d.results || d || []));
+    api.get<any>("/api/permissions/").then((dd) => setPgroups(dd.groups || [])).catch(() => {});
   }, []);
 
   async function toggle(role: Role, code: string) {
@@ -34,6 +36,11 @@ export default function Roles() {
     await api.patch(`/api/roles/${role.id}/`, { open_lines });
   }
 
+  const blocks: { group: string; items: Cat[] }[] = pgroups.length
+    ? pgroups.map((g: any) => ({ group: g.group, items: g.items }))
+    : [{ group: "", items: cat }];
+  const flatCols: any[] = blocks.flatMap((g) => g.items.map((it: any, i: number) => ({ ...it, first: i === 0 })));
+  const blockLine = "2px solid color-mix(in srgb, var(--brand) 55%, transparent)";
   return (
     <div className="scroll">
       <div className="note">
@@ -44,16 +51,20 @@ export default function Roles() {
           <table>
             <thead>
               <tr>
-                <th>{t("Роль","Роль")}</th>
-                {cat.map((c) => <th key={c.code} style={{ textAlign: "center", fontSize: 10 }}>{c.label}</th>)}
+                <th rowSpan={2} style={{ verticalAlign: "bottom" }}>{t("Роль","Роль")}</th>
+                {blocks.map((g, gi) => <th key={g.group || gi} colSpan={g.items.length}
+                  style={{ textAlign: "center", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.6, color: "var(--brand)", borderLeft: blockLine, background: "color-mix(in srgb, var(--brand) 9%, transparent)", padding: "6px 4px" }}>{g.group}</th>)}
+              </tr>
+              <tr>
+                {flatCols.map((c) => <th key={c.code} style={{ textAlign: "center", fontSize: 10, borderLeft: c.first ? blockLine : undefined }}>{c.label}</th>)}
               </tr>
             </thead>
             <tbody>
               {roles.map((r) => (
                 <tr key={r.id}>
                   <td style={{ fontWeight: 500 }}>{r.name}</td>
-                  {cat.map((c) => (
-                    <td key={c.code} style={{ textAlign: "center" }}>
+                  {flatCols.map((c) => (
+                    <td key={c.code} style={{ textAlign: "center", borderLeft: c.first ? blockLine : undefined }}>
                       <span className={"toggle" + (r.permissions.includes(c.code) ? " on" : "")}
                         onClick={() => toggle(r, c.code)} />
                     </td>

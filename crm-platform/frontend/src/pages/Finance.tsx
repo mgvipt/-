@@ -12,7 +12,35 @@ import { Icon } from "../Icon";
 import { useAuth } from "../auth";
 function useNav() { return useNavigate(); }
 
+/* Контрагент -> клієнт CRM: єдиний кеш, щоб контрагент був клікабельним і в Журналі, і в Дт/Кт */
+let _cpMapCache: Record<string, number> | null = null;
+let _cpMapPromise: Promise<Record<string, number>> | null = null;
+function loadCpMap(): Promise<Record<string, number>> {
+  if (_cpMapCache) return Promise.resolve(_cpMapCache);
+  if (!_cpMapPromise) _cpMapPromise = api.get<any>("/api/finance/counterparties/").then((rows: any) => {
+    const m: Record<string, number> = {};
+    (rows || []).forEach((r: any) => { if (r && r.contact_id) m[String(r.name || "").trim().toLowerCase()] = r.contact_id; });
+    _cpMapCache = m; return m;
+  }).catch(() => ({}));
+  return _cpMapPromise;
+}
+function useCpMap(): Record<string, number> {
+  const [m, setM] = useState<Record<string, number>>(_cpMapCache || {});
+  useEffect(() => { let ok = true; loadCpMap().then((x) => { if (ok) setM(x); }); return () => { ok = false; }; }, []);
+  return m;
+}
+function CpText({ name, contact, cpMap, nav }: { name?: string; contact?: number; cpMap: Record<string, number>; nav: (p: string) => void }) {
+  if (!name) return <span className="muted">—</span>;
+  const cid = contact || cpMap[String(name).trim().toLowerCase()];
+  if (!cid) return <span>{name}</span>;
+  return <a onClick={(e) => { e.stopPropagation(); nav("/clients/" + cid); }}
+    style={{ color: "#0e7490", cursor: "pointer", fontWeight: 600, textDecoration: "none" }}
+    title="Відкрити картку клієнта">{name}</a>;
+}
+
 const money = (n: number) => Math.round(n || 0).toLocaleString("ru") + " ₴";
+const FUND_GROUPS_G: [string, string][] = [["revenue_fund", "ФОНДИ ВИРУЧКИ (ФВ)"], ["variable", "ФОНДИ МАРЖІ — змінні"], ["fixed", "ФОНДИ МАРЖІ — постійні"], ["skd", "СКОРИГОВАНИЙ ДОХІД (СКД)"], ["payment_fee", "Комісії за оплату"], ["upr_cat2", "УПР обовʼязкові"], ["upr_cat3", "УПР відмовні"]];
+const money2 = (n: number) => (Number(n) || 0).toLocaleString("ru", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₴";
 /* короткий формат грошей для осі: 1.2М / 850К / 0 / −40К */
 function fmtShort(n: number): string {
   const a = Math.abs(n), sign = n < 0 ? "−" : "";
@@ -42,12 +70,12 @@ const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pa
 
 export default function Finance() {
   const { t } = useLang();
-  const [tab, setTab] = useState<"dash" | "journal" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model">(() => (localStorage.getItem("fin_tab") as any) || "dash");
+  const [tab, setTab] = useState<"dash" | "journal" | "triage" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model">(() => ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash"));
   useEffect(() => { try { localStorage.setItem("fin_tab", tab); } catch (e) { /* noop */ } }, [tab]);
   const { can: canF } = useAuth();
   const tabAllowed = (k: string) => k === "dash" ? true : (canF("finance.tab." + k) || canF("roles.manage"));
   useEffect(() => { if (!tabAllowed(tab)) setTab("dash"); /* eslint-disable-next-line */ }, [tab]);
-  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
+  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
   return (
     <div className="scroll pad fade">
       <div className="note warn"><Icon n="🔒" size={15} /> {t("Раздел видят только роли с правом","Розділ бачать тільки ролі з правом")} <b>finance.view</b>.</div>
@@ -56,6 +84,7 @@ export default function Finance() {
       </div>
       {tab === "dash" && <Dashboard />}
       {tab === "journal" && <Journal />}
+      {tab === "triage" && <TriageTab />}
       {tab === "pnl" && <PnL />}
       {tab === "be" && <Breakeven />}
       {tab === "dir" && <Directions />}
@@ -203,7 +232,7 @@ function RuleEditor({ rule, cats, dirs, arts, accsR, cps, onClose, onSaved, t }:
               <button key={k} onClick={() => setR({ ...r, logic: k })} style={{ padding: "4px 14px", fontSize: 11.5, fontWeight: 700, border: "none", cursor: "pointer", background: r.logic === k ? "#0f172a" : "#f8fafc", color: r.logic === k ? "#fff" : "#64748b" }}>{l}</button>
             ))}
           </div>
-          <span className="muted" style={{ fontSize: 11 }}>{r.logic === "and" ? t("должны совпасть ВСЕ строки", "мають збігтися ВСІ рядки") : t("достаточно ЛЮБОЙ строки", "досить БУДЬ-ЯКОГО рядка")}</span>
+          <span className="muted" style={{ fontSize: 11 }}>{r.logic === "and" ? t("должны совпасть ВСЕ строки", "мають збігтися ВСІ рядки") : t("достаточно ЛЮБОЙ строки", "достатньо БУДЬ-ЯКОГО рядка")}</span>
         </div>
         {r.conditions.map((c: any, i: number) => (
           <div key={i} style={{ display: "flex", gap: 7, marginBottom: 7, alignItems: "center" }}>
@@ -280,7 +309,7 @@ function SuggestModal({ t, onClose, onCreated }: any) {
         <h3 style={{ margin: "0 0 4px" }}>🤖 {t("Правила из истории (перенос из ФинМапа)", "Правила з історії (перенос із ФінМапа)")}</h3>
         <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
           {t("Анализ всех операций 2021–2026: повторяющийся контрагент → категория, которую он получал в 80%+ случаев. Это и есть правила ФинМапа, восстановленные из его же разноски. Сними галочки с лишних и создай.",
-             "Аналіз усіх операцій 2021–2026: повторюваний контрагент → категорія, яку він отримував у 80%+ випадків. Це і є правила ФінМапа, відновлені з його ж розноски. Зніми галочки із зайвих і створи.")}
+             "Аналіз усіх операцій 2021–2026: повторюваний контрагент → категорія, яку він отримував у 80%+ випадків. Це і є правила ФінМапа, відновлені з його ж рознесення. Зніми галочки із зайвих і створи.")}
         </div>
         {items === null ? <div className="spin">{t("Анализирую 20 000 операций…", "Аналізую 20 000 операцій…")}</div> : (
           <>
@@ -358,7 +387,7 @@ function RulesTab({ cats, dirs, t }: any) {
     <div className="panel" style={{ margin: 0 }}>
       <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
         {t("Автоправила: условие по комментарию/контрагенту/счёту → категория, проект, фонд, контрагент, канал. Срабатывают при синке банков, заливке периода и импорте выписок. Первое совпавшее правило — по порядку списка.",
-           "Автоправила: умова по коментарю/контрагенту/рахунку → категорія, проект, фонд, контрагент, канал. Спрацьовують при синку банків, заливці періоду та імпорті виписок. Перше правило, що збіглося — за порядком списку.")}
+           "Автоправила: умова за коментарем/контрагентом/рахунком → категорія, проект, фонд, контрагент, канал. Спрацьовують при синхронізації банків, заливці періоду та імпорті виписок. Перше правило, що збіглося — за порядком списку.")}
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <button className="btn btn-primary" onClick={() => setEdit(null)}>➕ {t("Добавить правило", "Додати правило")}</button>
@@ -479,8 +508,8 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
     api.get<any>("/api/finance/bank-rules/").then((d) => setRules(d.results || d)).catch(() => {});
     api.get<any>("/api/transactions/import-batches/").then((d) => setHist(d)).catch(() => {});
     api.get<any>("/api/accounts/").then((d) => setAccs(d.results || d)).catch(() => {});
-    api.get<any>("/api/categories/").then((d) => setCats(d.results || d)).catch(() => {});
-    api.get<any>("/api/fin-directions/").then((d) => setDirs(d.results || d)).catch(() => {});
+    api.get<any>("/api/categories/?page_size=500").then((d) => setCats(d.results || d)).catch(() => {});
+    api.get<any>("/api/fin-directions/?page_size=200").then((d) => setDirs(d.results || d)).catch(() => {});
   };
   useEffect(loadAll, []);
   const inp = { height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", fontSize: 13 } as any;
@@ -516,7 +545,7 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
           <button className="btn btn-light" onClick={onClose}>✕</button>
         </div>
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-          {[["banks", "🏦 " + t("Банки","Банки")], ["rules", "🧭 " + t("Правила разноски","Правила розноски")], ["hist", "🕓 " + t("История загрузок","Історія завантажень")], ["accs", "👁 " + t("Счета в учёте","Рахунки в обліку")]].map(([k, l]) => (
+          {[["banks", "🏦 " + t("Банки","Банки")], ["rules", "🧭 " + t("Правила разноски","Правила рознесення")], ["hist", "🕓 " + t("История загрузок","Історія завантажень")], ["accs", "👁 " + t("Счета в учёте","Рахунки в обліку")]].map(([k, l]) => (
             <button key={k} className={"btn" + (tab === k ? " btn-primary" : " btn-light")} onClick={() => setTab(k as any)}>{l}</button>
           ))}
         </div>
@@ -561,7 +590,7 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
                 <button className="btn btn-primary" disabled={busy !== ""} onClick={() => pull("privatbank")}>{busy === "privatbank" ? "…" : t("Загрузить из Привата","Завантажити з Привату")}</button>
                 <button className="btn btn-light" disabled={busy !== ""} onClick={() => pull("monobank")}>{busy === "monobank" ? "…" : t("Загрузить из Mono","Завантажити з Mono")}</button>
               </div>
-              <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t("Комиссия LiqPay по сделкам разносится автоматически в «Комиссия Банка». Переводы между своими счетами не попадают в расходы. Ошиблись — откатите партию во вкладке «История».","Комісія LiqPay по сделках розноситься автоматично у «Комиссия Банка». Перекази між своїми рахунками не потрапляють у витрати. Помилились — відкотіть партію у вкладці «Історія».")}</div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t("Комиссия LiqPay по сделкам разносится автоматически в «Комиссия Банка». Переводы между своими счетами не попадают в расходы. Ошиблись — откатите партию во вкладке «История».","Комісія LiqPay за угодами розноситься автоматично у «Комиссия Банка». Перекази між своїми рахунками не потрапляють у витрати. Помилились — відкотіть партію у вкладці «Історія».")}</div>
             </div>
           </>
         )}
@@ -598,7 +627,7 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
             <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>{t("Выключенные счета скрываются из журнала, дашборда и «Деньги на счетах». Операции не удаляются.","Вимкнені рахунки ховаються з журналу, дашборда та «Гроші на рахунках». Операції не видаляються.")}</div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, padding: "4px 0 8px", borderBottom: "2px solid #e2e8f0" }}>
               <span>{t("Итого по активным","Разом по активних")} ({accs.filter((a: any) => a.is_active !== false).length})</span>
-              <span style={{ color: "#0ea5e9" }}>{money(accs.filter((a: any) => a.is_active !== false).reduce((sm: number, a: any) => sm + Number(a.balance || 0), 0))}</span>
+              <span style={{ color: "#0ea5e9" }}>{money2(accs.filter((a: any) => a.is_active !== false).reduce((sm: number, a: any) => sm + Number(a.balance || 0), 0))}</span>
             </div>
             {accs.map((a: any, ai: number) => (
               <div key={a.id} onClick={() => {
@@ -611,7 +640,7 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
               }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "1px solid #f8fafc", fontSize: 13, cursor: "pointer", userSelect: "none" }}>
                 <input type="checkbox" readOnly checked={a.is_active !== false} style={{ pointerEvents: "none" }} />
                 <span style={{ flex: 1, opacity: a.is_active === false ? 0.5 : 1 }}>{a.name}</span>
-                <b className="muted">{money(a.balance)}</b>
+                <b className="muted">{money2(a.balance)}</b>
                 <span onClick={(e) => { e.stopPropagation(); if (ai === 0) return;
                   const nx = [...accs]; [nx[ai - 1], nx[ai]] = [nx[ai], nx[ai - 1]]; setAccs(nx);
                   api.post("/api/accounts/reorder/", { ids: nx.map((x: any) => x.id) }).catch(() => {});
@@ -631,13 +660,15 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
 
 function Journal() {
   const { t } = useLang();
+  const nav = useNav();
+  const cpMap = useCpMap();
   const [tx, setTx] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [arts, setArts] = useState<any[]>([]);
   const [dirs, setDirs] = useState<any[]>([]);
   const [cats, setCats] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
-  const blank = { id: 0, direction: "out", amount: "", account: 0, transfer_account: 0, fin_article: 0, fin_direction: 0, channel: "", counterparty: "", set_category: "", currency: "UAH", rate: 1, comment: "", date: "" };
+  const blank = { id: 0, direction: "out", amount: "", account: 0, transfer_account: 0, transfer_amount: "", fin_article: 0, fin_direction: 0, channel: "", counterparty: "", set_category: "", currency: "UAH", rate: 1, comment: "", date: "", contact: 0, contact_name: "" };
   const [f, setF] = useState<any>(blank);
   const [ff, setFf] = useState(""); const [ft, setFt] = useState(""); const [fq, setFq] = useState("");
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50); const [count, setCount] = useState(0);
@@ -678,15 +709,39 @@ function Journal() {
   const [cf, setCf] = useState<any>(emptyCf);
   const [selAcc, setSelAcc] = useState<number[]>([]);
   const [drawerDeal, setDrawerDeal] = useState<number | null>(null);
+  const loadAccs = () => api.get<any>("/api/accounts/").then((d) => setAccounts((d.results || d).filter((a: any) => a.is_active !== false)));
   const load = (p = page) => {
     const qp = new URLSearchParams({ page: String(p), page_size: String(pageSize) });
     if (ff) qp.set("from", ff); if (ft) qp.set("to", ft); if (fq.trim()) qp.set("q", fq.trim());
     Object.entries(cf).forEach(([k, v]) => { if (v) qp.set(k, String(v)); });
     if (selAcc.length) qp.set("accounts", selAcc.join(","));
+    if (fContact) qp.set("contact", String(fContact));
+    qp.set("sort", sortF);
     return api.get<any>(`/api/transactions/?${qp.toString()}`).then((d) => { setTx(d.results || d); setCount(d.count ?? (d.results ? d.results.length : (d.length || 0))); });
   };
   function apply() { setPage(1); load(1); }
   const [bankHub, setBankHub] = useState(false);
+  const [sortF, setSortF] = useState("-date");
+  const [selTx, setSelTx] = useState<Record<number, boolean>>({});
+  const [bulkField, setBulkField] = useState("category");
+  const [bulkVal, setBulkVal] = useState<any>("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const selCount = Object.values(selTx).filter(Boolean).length;
+  async function applyBulk() {
+    const ids = Object.entries(selTx).filter(([, v]) => v).map(([k]) => Number(k));
+    if (!ids.length || bulkBusy) return;
+    const v = bulkField === "counterparty" || bulkField === "comment" || bulkField === "channel" || bulkField === "currency" ? bulkVal : (Number(bulkVal) || null);
+    setBulkBusy(true);
+    try {
+      await api.post("/api/transactions/bulk-edit/", { ids, set: { [bulkField]: v } });
+      setBulkVal("");
+      load(page); loadAccs();
+    } catch (e: any) { alert(e?.response?.data?.detail || "Помилка"); }
+    finally { setBulkBusy(false); }
+  }
+  const [fContact, setFContact] = useState(() => Number(new URLSearchParams(window.location.search).get("client")) || 0);
+  const [fContactName, setFContactName] = useState(() => new URLSearchParams(window.location.search).get("cname") || "");
+  useEffect(() => { if (fContact || fContactName === "") { setPage(1); load(1); } /* eslint-disable-next-line */ }, [fContact]);
   const [accW, setAccW] = useState(() => Number(localStorage.getItem("fin_acc_w")) || 220);
   function startAccResize(e: React.MouseEvent) {
     e.preventDefault();
@@ -696,21 +751,91 @@ function Journal() {
     document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up); document.body.style.cursor = "col-resize";
   }
   function goPage(p: number) { setPage(p); load(p); }
-  function resetAll() { setFq(""); setFf(""); setFt(""); setCf(emptyCf); setPage(1); setTimeout(() => load(1), 0); }
+  const bulkPanel = selCount > 0 ? (
+    <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, background: "#26201B", color: "#fff", padding: "10px 18px", zIndex: 60, boxShadow: "0 -8px 30px rgba(0,0,0,.3)" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <b>{t("Выбрано","Вибрано")}: {selCount}</b>
+        <select value={bulkField} onChange={(e) => { setBulkField(e.target.value); setBulkVal(""); }} style={{ padding: "7px 10px", borderRadius: 8, border: "none", fontSize: 13 }}>
+          <option value="category">{t("Категория","Категорія")}</option>
+          <option value="counterparty">{t("Контрагент","Контрагент")}</option>
+          <option value="account">{t("Счёт","Рахунок")}</option>
+          <option value="deal">{t("Угода (№)","Угода (№)")}</option>
+          <option value="fin_article">{t("Фонд","Фонд")}</option>
+          <option value="fin_direction">{t("Направление","Напрямок")}</option>
+          <option value="channel">{t("Канал","Канал")}</option>
+          <option value="comment">{t("Комментарий","Коментар")}</option>
+          <option value="currency">{t("Валюта","Валюта")}</option>
+        </select>
+        {bulkField === "category" && (
+          <select value={bulkVal} onChange={(e) => setBulkVal(e.target.value)} style={{ padding: "7px 10px", borderRadius: 8, border: "none", fontSize: 13, maxWidth: 300 }}>
+            <option value="">{t("— выбери категорию —","— обери категорію —")}</option>
+            {cats.filter((c: any) => !c.hidden).map((c: any) => <option key={c.id} value={c.id}>{c.direction === "in" ? "▲ " : "▼ "}{c.parent ? "└ " : ""}{c.name.slice(0, 42)}</option>)}
+          </select>)}
+        {bulkField === "account" && (
+          <select value={bulkVal} onChange={(e) => setBulkVal(e.target.value)} style={{ padding: "7px 10px", borderRadius: 8, border: "none", fontSize: 13, maxWidth: 280 }}>
+            <option value="">{t("— выбери счёт —","— обери рахунок —")}</option>
+            {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name.slice(0, 40)}</option>)}
+          </select>)}
+        {bulkField === "fin_article" && (
+          <select value={bulkVal} onChange={(e) => setBulkVal(e.target.value)} style={{ padding: "7px 10px", borderRadius: 8, border: "none", fontSize: 13, maxWidth: 300 }}>
+            <option value="">{t("— без фонда —","— без фонду —")}</option>
+            {FUND_GROUPS_G.map(([gk, gl]) => { const gr = arts.filter((a: any) => a.category === gk && !a.parent); return gr.length ? <optgroup key={gk} label={gl}>{gr.map((a: any) => <option key={a.id} value={a.id}>{a.name.slice(0, 40)}</option>)}</optgroup> : null; })}
+          </select>)}
+        {bulkField === "fin_direction" && (
+          <select value={bulkVal} onChange={(e) => setBulkVal(e.target.value)} style={{ padding: "7px 10px", borderRadius: 8, border: "none", fontSize: 13, maxWidth: 260 }}>
+            <option value="">{t("— без направления —","— без напрямку —")}</option>
+            {dirs.map((d: any) => <option key={d.id} value={d.id}>{d.name.slice(0, 36)}</option>)}
+          </select>)}
+        {bulkField === "channel" && (
+          <select value={bulkVal} onChange={(e) => setBulkVal(e.target.value)} style={{ padding: "7px 10px", borderRadius: 8, border: "none", fontSize: 13 }}>
+            {CHANNELS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>)}
+        {bulkField === "currency" && (
+          <select value={bulkVal} onChange={(e) => setBulkVal(e.target.value)} style={{ padding: "7px 10px", borderRadius: 8, border: "none", fontSize: 13 }}>
+            <option value="">—</option>
+            {["UAH", "USD", "EUR", "PLN", "GBP"].map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>)}
+        {(bulkField === "counterparty" || bulkField === "comment" || bulkField === "deal") && (
+          <input value={bulkVal} onChange={(e) => setBulkVal(e.target.value)} placeholder={bulkField === "deal" ? t("№ сделки (пусто — отвязать)","№ угоди (порожньо — відвʼязати)") : t("Новое значение","Нове значення")} style={{ padding: "7px 10px", borderRadius: 8, border: "none", fontSize: 13, minWidth: 220 }} />)}
+        <button disabled={bulkBusy || (bulkVal === "" && !["counterparty", "comment", "deal", "fin_article", "fin_direction"].includes(bulkField))} onClick={applyBulk}
+          style={{ padding: "8px 18px", borderRadius: 9, border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", background: "#C67D5F", color: "#fff", opacity: bulkBusy ? 0.6 : 1 }}>
+          {bulkBusy ? "…" : "✓ " + t("Применить к выбранным","Застосувати до вибраних")}
+        </button>
+        <button onClick={() => setSelTx({})} style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #5a5047", background: "transparent", color: "#cbbfb4", fontSize: 13, cursor: "pointer" }}>{t("снять выделение","зняти виділення")}</button>
+      </div>
+    </div>
+  ) : null;
+  function resetAll() { setFq(""); setFf(""); setFt(""); setCf(emptyCf); setFContact(0); setFContactName(""); setPage(1); setTimeout(() => load(1), 0); }
   useEffect(() => {
     load(1);
-    api.get<any>("/api/accounts/").then((d) => setAccounts((d.results || d).filter((a: any) => a.is_active !== false)));
+    loadAccs();
     api.get<any>("/api/finmodel-articles/?page_size=200").then((d) => setArts(d.results || d));
     api.get<any>("/api/fin-directions/?page_size=100").then((d) => setDirs(d.results || d));
-    api.get<any>("/api/categories/").then((d) => setCats(d.results || d)).catch(() => setCats([]));
+    api.get<any>("/api/categories/?page_size=500").then((d) => setCats(d.results || d)).catch(() => setCats([]));
+    // deep-link: /fin?tab=journal&tx=<id> — відкрити конкретну операцію
+    const txId = new URLSearchParams(window.location.search).get("tx");
+    if (txId) {
+      api.get<any>(`/api/transactions/${txId}/`).then((t0) => { if (t0 && t0.id) openEdit(t0); }).catch(() => {});
+    }
   }, []);
   useEffect(() => { load(1); setPage(1); }, [pageSize]);
+  useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [sortF]);
   const totalPages = Math.max(1, Math.ceil(count / pageSize));
 
-  function openNew(direction: string) { setF({ ...blank, direction, date: new Date().toISOString().slice(0, 10) }); setOpen(true); }
+  const [convAcc, setConvAcc] = useState(0);
+  const [asDebt, setAsDebt] = useState(false);
+  async function toTransfer() {
+    if (!f.id || !convAcc) return;
+    const body: any = { direction: "transfer", category: null, fin_article: null, fin_direction: null, channel: "" };
+    if (f.direction === "out") { body.account = f.account; body.transfer_account = convAcc; }
+    else { body.account = convAcc; body.transfer_account = f.account; }
+    await api.patch(`/api/transactions/${f.id}/`, body);
+    setConvAcc(0); setOpen(false); load(page); loadAccs();
+  }
+  function openNew(direction: string) { setF({ ...blank, direction, date: new Date().toISOString().slice(0, 10) }); setConvAcc(0); setAsDebt(false); setOpen(true); }
   function openEdit(t: any) {
     setF({ id: t.id, direction: t.direction, amount: t.amount, account: t.account || 0, fin_article: t.fin_article || 0, fin_direction: t.fin_direction || 0,
-      transfer_account: t.transfer_account || 0, channel: t.channel || "", counterparty: t.counterparty || "", set_category: t.category_name || "", currency: t.currency || "UAH", rate: t.rate || 1, comment: t.comment || "", date: t.date || "" });
+      transfer_account: t.transfer_account || 0, transfer_amount: (t as any).transfer_amount || "", channel: t.channel || "", counterparty: t.counterparty || "", set_category: t.category_name || "", currency: t.currency || "UAH", rate: t.rate || 1, comment: t.comment || "", date: t.date || "", contact: (t as any).contact || 0, contact_name: (t as any).contact_name || "" });
     setOpen(true);
   }
   async function fetchRate(ccy: string) {
@@ -720,24 +845,34 @@ function Journal() {
   }
   async function save() {
     if (!Number(f.amount)) return;
+    if (!f.id && f.direction === "out" && asDebt) {
+      const catId = (cats.find((cc: any) => cc.name === f.set_category) || {}).id || null;
+      await api.post("/api/planned-payments/", { kind: "payable", amount: Number(f.amount),
+        due_date: f.date || new Date().toISOString().slice(0, 10), counterparty: f.counterparty,
+        contact: (f as any).contact || null, category: catId, account: f.account || null,
+        fin_article: f.fin_article || null, fin_direction: f.fin_direction || null, comment: f.comment });
+      setAsDebt(false); setOpen(false); load(page);
+      return;
+    }
     const isT = f.direction === "transfer";
     const body: any = { direction: f.direction, amount: Number(f.amount), account: f.account || accounts[0]?.id,
       comment: f.comment, currency: f.currency, rate: Number(f.rate) || 1 };
     if (f.date) body.date = f.date;
     if (isT) {
       if (!f.transfer_account || f.transfer_account === f.account) { alert("Оберіть інший рахунок-отримувач"); return; }
-      body.transfer_account = f.transfer_account; body.fin_article = null; body.fin_direction = null;
+      body.transfer_account = f.transfer_account; body.transfer_amount = f.transfer_amount ? Number(String(f.transfer_amount).replace(",", ".")) : null; body.fin_article = null; body.fin_direction = null;
     } else {
       body.channel = f.channel; body.counterparty = f.counterparty; body.set_category = f.set_category;
-      body.fin_article = f.fin_article || null; body.fin_direction = f.fin_direction || null; body.transfer_account = null;
+      body.fin_article = f.fin_article || null; body.fin_direction = f.fin_direction || null; body.transfer_account = null; body.transfer_amount = null;
+      body.contact = (f as any).contact || null;
     }
     if (f.id) await api.patch(`/api/transactions/${f.id}/`, body);
     else await api.post("/api/transactions/", body);
-    setOpen(false); setF(blank); load();
+    setOpen(false); setF(blank); load(); loadAccs();
   }
   async function del() {
     if (!f.id || !confirm("Видалити цю операцію?")) return;
-    await api.del(`/api/transactions/${f.id}/`); setOpen(false); setF(blank); load();
+    await api.del(`/api/transactions/${f.id}/`); setOpen(false); setF(blank); load(); loadAccs();
   }
   const inp = { height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", width: "100%", marginBottom: 10 } as React.CSSProperties;
   const grnEq = Number(f.amount || 0) * (Number(f.rate) || 1);
@@ -751,14 +886,14 @@ function Journal() {
         {/* Σ активних — над заголовком, лише з правом «Бачити ЗАГАЛЬНИЙ баланс» */}
         {canTotal &&
         <div style={{ textAlign: "center", marginBottom: 6 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.3 }}>{money(accounts.filter((a: any) => !/liqpay/i.test(a.name || "")).reduce((sm: number, a: any) => sm + Number(a.balance || 0), 0))}</div>
+          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.3 }}>{money2(accounts.filter((a: any) => !/liqpay/i.test(a.name || "")).reduce((sm: number, a: any) => sm + Number(a.balance || 0), 0))}</div>
           <div className="muted" style={{ fontSize: 10.5 }}>{t("на активных счетах","на активних рахунках")}</div>
         </div>}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <b style={{ fontSize: 13 }}><Icon n="🏦" size={14} /> Рахунки</b>
           <span>
             {selAcc.length > 0 && <span style={{ fontSize: 11, color: "#2563eb", cursor: "pointer", marginRight: 6 }} onClick={() => { setSelAcc([]); setTimeout(() => load(1), 0); }}>скинути</span>}
-            <button onClick={() => setBankHub(true)} title={t("Настройки: банки по API, правила разноски, история загрузок, счета","Налаштування: банки по API, правила розноски, історія завантажень, рахунки")} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 14 }}>⚙️</button>
+            <button onClick={() => setBankHub(true)} title={t("Настройки: банки по API, правила разноски, история загрузок, счета","Налаштування: банки по API, правила рознесення, історія завантажень, рахунки")} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 14 }}>⚙️</button>
           </span>
         </div>
         <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>Обери один або кілька — журнал відфільтрується.</div>
@@ -769,7 +904,7 @@ function Journal() {
             background: on ? "rgba(37, 99, 235, 0.14)" : "transparent",
             boxShadow: on ? "inset 3px 0 0 #2563eb" : "none", fontWeight: on ? 700 : 400 }}>
             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
-            <b style={{ fontSize: 11, color: a.balance < 0 ? "#dc2626" : "#16a34a" }}>{money(a.balance)}</b>
+            <b style={{ fontSize: 11, color: a.balance < 0 ? "#dc2626" : "#16a34a" }}>{money2(a.balance)}</b>
           </div>
         ); })}
       </div>
@@ -777,6 +912,7 @@ function Journal() {
       <div onMouseDown={startAccResize} title={t("Тяни, чтобы изменить ширину","Тягни, щоб змінити ширину")} style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0, minHeight: "60vh" }} />
       <div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }} className="journal-filter">
+        <span style={{ minWidth: 180, display: "inline-block" }}><ClientPick value={fContact} label={fContactName} placeholder={t("Фильтр: клиент…","Фільтр: клієнт…")} onPick={(cid, nm) => { setFContact(cid); setFContactName(nm); }} /></span>
         <input value={fq} onChange={(e) => setFq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && apply()} placeholder={t("🔍 Поиск по всему: сумма, контрагент, комментарий, счёт…","🔍 Пошук по всьому: сума, контрагент, коментар, рахунок…")} style={{ flex: "1 1 220px", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
         <span className="muted" style={{ fontSize: 12 }} title={t("Отдельный фильтр по дате операции","Окремий фільтр по даті операції")}><Icon n="📅" size={13} /> {t("Дата","Дата")}:</span>
         <input type="date" value={ff} onChange={(e) => setFf(e.target.value)} title={t("Дата от","Дата від")} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 6px" }} />
@@ -795,7 +931,7 @@ function Journal() {
             <input value={cf.cat} onChange={(e) => set("cat", e.target.value)} placeholder={t("Категория","Категорія")} style={cs} />
             <input value={cf.cp} onChange={(e) => set("cp", e.target.value)} placeholder={t("Контрагент","Контрагент")} style={cs} />
             <select value={cf.account} onChange={(e) => set("account", e.target.value)} style={cs}><option value="">{t("Счёт: все","Рахунок: усі")}</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
-            <select value={cf.fin_article} onChange={(e) => set("fin_article", e.target.value)} style={cs}><option value="">{t("Фонд: все","Фонд: усі")}</option>{arts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+            <select value={cf.fin_article} onChange={(e) => set("fin_article", e.target.value)} style={cs}><option value="">{t("Фонд: все","Фонд: усі")}</option>{FUND_GROUPS_G.map(([gk, gl]) => { const gr = arts.filter((a: any) => a.category === gk && !a.parent); return gr.length ? <optgroup key={gk} label={gl}>{gr.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}</optgroup> : null; })}</select>
             <select value={cf.fin_direction} onChange={(e) => set("fin_direction", e.target.value)} style={cs}><option value="">{t("Направление: все","Напрямок: усі")}</option>{dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
             <select value={cf.channel} onChange={(e) => set("channel", e.target.value)} style={cs}><option value="">{t("Канал: все","Канал: усі")}</option>{CHANNELS.filter((c) => c[0]).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
             <input value={cf.comment} onChange={(e) => set("comment", e.target.value)} placeholder={t("Комментарий","Коментар")} style={cs} />
@@ -850,28 +986,33 @@ function Journal() {
         <table className="jrnl-tbl" style={{ width: "100%", fontSize: 13, tableLayout: "fixed" }}>
           <colgroup>{colW.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
           <thead><tr>
-            {[t("Дата","Дата"), t("Сумма","Сума"), t("Вал.","Вал."), "₴", t("Категория","Категорія"), t("Контрагент","Контрагент"), t("Счёт","Рахунок"), t("Сделка","Сделка"), t("Фонд","Фонд"), t("Направление","Напрямок"), t("Канал","Канал"), t("Комментарий","Коментар")].map((label, i) => (
-              <th key={i} style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0", padding: "8px 10px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {label}
+            {([[t("Дата","Дата"), "date"], [t("Сумма","Сума"), "amount_uah"], [t("Вал.","Вал."), "currency"], ["₴", "amount_uah"], [t("Категория","Категорія"), "category__name"], [t("Контрагент","Контрагент"), "counterparty"], [t("Счёт","Рахунок"), "account__name"], [t("Угода","Угода"), ""], [t("Фонд","Фонд"), "fin_article__name"], [t("Направление","Напрямок"), "fin_direction__name"], [t("Канал","Канал"), "channel"], [t("Комментарий","Коментар"), "comment"]] as [string, string][]).map(([label, fld], i) => (
+              <th key={i} onClick={() => { if (!fld) return; setSortF(sortF === fld ? "-" + fld : (sortF === "-" + fld ? fld : "-" + fld)); }}
+                title={fld ? t("Клик — сортировать по этому столбцу","Клік — сортувати за цим стовпцем") : undefined}
+                style={{ position: "sticky" as any, top: 0, background: "#f8fafc", zIndex: 5, boxShadow: "0 1px 0 #e2e8f0", padding: "8px 10px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: fld ? "pointer" : "default", userSelect: "none" }}>
+                {i === 0 && <input type="checkbox" checked={tx.length > 0 && tx.every((r: any) => selTx[r.id])} onClick={(e) => e.stopPropagation()} onChange={(e) => { const n: any = { ...selTx }; tx.forEach((r: any) => { n[r.id] = e.target.checked; }); setSelTx(n); }} title={t("Выбрать все на странице","Вибрати всі на сторінці")} style={{ marginRight: 6, verticalAlign: "middle", width: 14, height: 14, accentColor: "#C67D5F" }} />}
+                {label}{sortF.replace("-", "") === fld ? (sortF.startsWith("-") ? " ↓" : " ↑") : ""}
                 <span onMouseDown={startColResize(i)} title={t("Тяни — ширина колонки", "Тягни — ширина колонки")}
                   style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 7, cursor: "col-resize", borderRight: "2px solid #e2e8f0" }} />
               </th>
             ))}
           </tr></thead>
           <tbody>
-            {tx.length === 0 && <tr><td colSpan={12} className="muted" style={{ padding: 14 }}>{t("Операций ещё нет. Добавь вручную или они появятся при оплате сделок.","Операцій ще немає. Додай вручну або вони зʼявляться при оплаті сделок.")}</td></tr>}
+            {tx.length === 0 && <tr><td colSpan={12} className="muted" style={{ padding: 14 }}>{t("Операций ещё нет. Добавь вручную или они появятся при оплате сделок.","Операцій ще немає. Додай вручну або вони зʼявляться при оплаті угод.")}</td></tr>}
             {tx.map((r) => (
-              <tr key={r.id} onClick={() => openEdit(r)} title={t("Кликни, чтобы посмотреть и изменить","Клікни, щоб переглянути та змінити")} style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}>
-                <td className="muted" style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>{new Date(r.date || r.created_at).toLocaleDateString("ru")}{r.op_time ? <span style={{ display: "block", fontSize: 10.5, opacity: 0.75 }}>{String(r.op_time).slice(0, 5)}</span> : null}</td>
+              <tr key={r.id} onClick={() => openEdit(r)} title={t("Кликни, чтобы посмотреть и изменить","Клікни, щоб переглянути та змінити")} style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer", background: selTx[r.id] ? "#fdf3ec" : undefined }}>
+                <td className="muted" style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                  <input type="checkbox" checked={!!selTx[r.id]} onClick={(e) => e.stopPropagation()} onChange={(e) => setSelTx({ ...selTx, [r.id]: e.target.checked })} style={{ marginRight: 6, verticalAlign: "middle", width: 14, height: 14, accentColor: "#C67D5F" }} />
+                  {new Date(r.date || r.created_at).toLocaleDateString("ru")}{r.op_time ? <span style={{ display: "block", fontSize: 10.5, opacity: 0.75, paddingLeft: 20 }}>{String(r.op_time).slice(0, 5)}</span> : null}</td>
                 <td style={{ fontWeight: 600, color: r.direction === "in" ? "#16a34a" : r.direction === "transfer" ? "#6366f1" : "#dc2626" }}>{r.direction === "in" ? "+" : r.direction === "transfer" ? "⇄ " : "−"}{Number(r.amount).toLocaleString("ru")}</td>
                 <td className="muted">{r.currency || "UAH"}</td>
                 <td className="muted">{Number(r.amount_uah || r.amount).toLocaleString("ru")} ₴</td>
-                <td>{r.direction === "transfer" ? <span style={{ color: "#6366f1", fontWeight: 600 }}>Переказ</span> : (r.category_name || <span className="muted">—</span>)}</td>
-                <td>{r.direction === "transfer" ? <span className="muted">переказ</span> : (r.counterparty || <span className="muted">—</span>)}</td>
+                <td>{r.direction === "transfer" ? <span style={{ color: "#6366f1", fontWeight: 600 }}>Переказ</span> : ((r as any).category_path ? ((r as any).category_path.includes(" → ") ? <span><span className="muted" style={{ fontSize: 11 }}>{(r as any).category_path.split(" → ")[0]} → </span><b style={{ fontWeight: 600 }}>{(r as any).category_path.split(" → ")[1]}</b></span> : (r as any).category_path) : (r.category_name || <span className="muted">—</span>))}</td>
+                <td>{r.direction === "transfer" ? <span className="muted">переказ</span> : <CpText name={r.counterparty} contact={(r as any).contact} cpMap={cpMap} nav={nav} />}</td>
                 <td className="muted">{r.direction === "transfer" && r.transfer_account_name
-                  ? <span><span>{r.account_name}</span><span style={{ color: "#6366f1", fontWeight: 700 }}> → </span><span>{r.transfer_account_name}</span></span>
+                  ? <span><span>{r.account_name}</span><span style={{ color: "#6366f1", fontWeight: 700 }}> → </span><span>{r.transfer_account_name}</span>{(r as any).transfer_amount ? <span style={{ color: "#6366f1" }}> ({Number((r as any).transfer_amount).toLocaleString("ru")})</span> : null}</span>
                   : r.account_name}</td>
-                <td onClick={(e) => { e.stopPropagation(); if (r.deal) setDrawerDeal(r.deal); }}>{r.deal ? <span style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600 }} title="Відкрити картку сделки">#{r.deal}{r.deal_title ? " · " + r.deal_title.slice(0, 16) : ""} · {Number(r.amount).toLocaleString("ru")}₴</span> : <span className="muted">—</span>}</td>
+                <td onClick={(e) => { e.stopPropagation(); if (r.deal) setDrawerDeal(r.deal); }}>{r.deal ? <span style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600 }} title="Відкрити картку угоди">#{r.deal}{r.deal_title ? " · " + r.deal_title.slice(0, 16) : ""} · {Number(r.amount).toLocaleString("ru")}₴</span> : <span className="muted">—</span>}{(r as any).contact_name ? <div><a href={"/clients/" + (r as any).contact} onClick={(e) => e.stopPropagation()} style={{ fontSize: 11, color: "#0e7490", textDecoration: "none", fontWeight: 600 }} title="Картка клієнта">👤 {(r as any).contact_name.slice(0, 22)}</a></div> : null}</td>
                 <td>{r.fin_article_name || <span className="muted">—</span>}</td>
                 <td>{r.fin_direction_name || <span className="muted">—</span>}</td>
                 <td className="muted">{(CHANNELS.find((c) => c[0] === r.channel) || ["", "—"])[1]}</td>
@@ -894,10 +1035,11 @@ function Journal() {
         </div>
       )}
 
+      {bulkPanel}
       {open && (
         <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 440, maxHeight: "90vh", overflowY: "auto" }}>
-            <h3 style={{ marginTop: 0 }}>{f.id ? t("Операция №","Операція №") + f.id : (f.direction === "in" ? t("Доход","Дохід") : f.direction === "transfer" ? t("Перевод между счетами","Переказ між рахунками") : t("Расход","Витрата"))}</h3>
+            <h3 style={{ marginTop: 0 }}>{f.id ? <>{t("Операция №","Операція №")}{f.id} · <span style={{ color: f.direction === "in" ? "#16a34a" : f.direction === "transfer" ? "#6366f1" : "#dc2626" }}>{f.direction === "in" ? t("Доход","Дохід") : f.direction === "transfer" ? t("Перевод","Переказ") : t("Расход","Витрата")}</span></> : (f.direction === "in" ? <span style={{ color: "#16a34a" }}>{t("Доход","Дохід")}</span> : f.direction === "transfer" ? t("Перевод между счетами","Переказ між рахунками") : <span style={{ color: "#dc2626" }}>{t("Расход","Витрата")}</span>)}</h3>
             <div style={{ display: "flex", gap: 8 }}>
               <div style={{ flex: 2 }}>
                 <label className="label">{t("Сумма","Сума")}</label>
@@ -924,31 +1066,35 @@ function Journal() {
                 <label className="label" title={t("Откуда списываются деньги","Звідки списуються гроші")}>{t("Со счёта","З рахунку")}</label>
                 <select value={f.account} onChange={(e) => setF({ ...f, account: Number(e.target.value) })} style={inp}>
                   <option value={0}>—</option>
-                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru")} ₴)</option>)}
+                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₴)</option>)}
                 </select>
                 <label className="label" title={t("Куда поступают деньги","Куди надходять гроші")}>{t("На счёт (получатель)","На рахунок (отримувач)")}</label>
                 <select value={f.transfer_account} onChange={(e) => setF({ ...f, transfer_account: Number(e.target.value) })} style={inp}>
                   <option value={0}>—</option>
-                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru")} ₴)</option>)}
+                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₴)</option>)}
                 </select>
+                <label className="label" title={t("Если счёт-получатель в другой валюте: сколько реально зачислено в ЕГО валюте (напр. отправили 11 135.13 грн — зачислено 240 USD)","Якщо рахунок-одержувач в іншій валюті: скільки реально зараховано у ЙОГО валюті (напр. відправили 11 135.13 грн — зараховано 240 USD)")}>{t("Зачислено получателю (если другая валюта)","Зараховано одержувачу (якщо інша валюта)")}</label>
+                <input value={(f as any).transfer_amount} onChange={(e) => setF({ ...f, transfer_amount: e.target.value } as any)} placeholder={t("пусто = та же сумма","пусто = та ж сума")} style={inp} />
                 <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("↔ Перевод не считается ни в доход, ни в расход — только движение между счетами.","↔ Переказ не рахується ні в дохід, ні у витрати — лише рух між рахунками.")}</div>
               </>
             ) : (
               <>
                 <label className="label" title={t("Категория операции (как в Финмапе): Онлайн, Салон, Закупка, Аренда, Реклама…","Категорія операції (як у Фінмапі): Онлайн, Салон, Закупка, Оренда, Реклама…")}>{t("Категория","Категорія")}</label>
-                <input value={f.set_category} onChange={(e) => setF({ ...f, set_category: e.target.value })} list="catlist" placeholder={t("Напр. Онлайн (Instagram/TikTok/сайт)","Напр. Онлайн (Instagram/TikTok/сайт)")} style={inp} />
-                <datalist id="catlist">{cats.map((c) => <option key={c.id} value={c.name} />)}</datalist>
+                <CatPick value={f.set_category} direction={f.direction} cats={cats} onPick={(nm) => {
+                  const c0 = cats.find((cc: any) => cc.name === nm && cc.direction === f.direction);
+                  const par0 = c0 && c0.parent ? cats.find((p2: any) => p2.id === c0.parent) : null;
+                  const fa0 = (c0 && c0.fin_article) || (par0 && par0.fin_article) || 0;
+                  const fd0 = (c0 && c0.fin_direction) || (par0 && par0.fin_direction) || 0;
+                  setF({ ...f, set_category: nm, fin_article: fa0 || f.fin_article, fin_direction: fd0 || f.fin_direction });
+                }} />
                 <label className="label" title={t("От кого поступили / кому уплатили деньги. Связь с клиентами CRM.","Від кого надійшли / кому сплатили гроші. Звʼязок із клієнтами CRM.")}>{t("Мой контрагент","Мій контрагент")}</label>
                 <CpField value={f.counterparty} onChange={(v) => setF({ ...f, counterparty: v })} />
                 <label className="label">{t("Счёт","Рахунок")}</label>
                 <select value={f.account} onChange={(e) => setF({ ...f, account: Number(e.target.value) })} style={inp}>
-                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru")} ₴)</option>)}
+                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₴)</option>)}
                 </select>
-                <label className="label" title={t("Фонд для аналитики и точки безубыточности","Фонд для аналітики та точки беззбитковості")}>{t("Фонд (статья)","Фонд (стаття)")}</label>
-                <select value={f.fin_article} onChange={(e) => setF({ ...f, fin_article: Number(e.target.value) })} style={inp}>
-                  <option value={0}>{t("— без фонда —","— без фонду —")}</option>
-                  {arts.map((a) => <option key={a.id} value={a.id}>{a.category_display}: {a.name}</option>)}
-                </select>
+                <label className="label" title={t("Фонд для аналитики и точки безубыточности. Начни вводить название — список отфильтруется","Фонд для аналітики та точки беззбитковості. Почни вводити назву — список відфільтрується")}>{t("Фонд (статья)","Фонд (стаття)")}</label>
+                <FundPick value={f.fin_article} arts={arts} onPick={(id) => setF({ ...f, fin_article: id })} />
                 <label className="label" title={t("Направление (проект): откуда/куда деньги","Напрямок (проект): звідки/куди гроші")}>{t("Направление","Напрямок")}</label>
                 <select value={f.fin_direction} onChange={(e) => setF({ ...f, fin_direction: Number(e.target.value) })} style={inp}>
                   <option value={0}>{t("— без направления —","— без напрямку —")}</option>
@@ -958,11 +1104,32 @@ function Journal() {
                 <select value={f.channel} onChange={(e) => setF({ ...f, channel: e.target.value })} style={inp}>
                   {CHANNELS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                 </select>
+                <label className="label" title={t("Клиент CRM, к которому относятся эти деньги (объект). Контрагент может быть мастером или магазином — а деньги считаются по этому клиенту. Подставляется сам, если выбрана сделка.","Клієнт CRM, якого стосуються ці гроші (обʼєкт). Контрагент може бути майстром чи магазином — а гроші рахуються по цьому клієнту. Підставляється сам, якщо вибрано угоду.")}>{t("Клиент (объект)","Клієнт (обʼєкт)")}</label>
+                <ClientPick value={(f as any).contact} label={(f as any).contact_name} onPick={(cid, nm) => setF({ ...f, contact: cid, contact_name: nm } as any)} />
+                {!f.id && f.direction === "out" ? (
+                  <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                    <span onClick={() => setAsDebt(false)} style={{ flex: 1, textAlign: "center", padding: "6px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer", background: !asDebt ? "#dc2626" : "#fff", color: !asDebt ? "#fff" : "#64748b", border: "1.5px solid " + (!asDebt ? "#dc2626" : "#e2e8f0") }}>💸 {t("Оплата сейчас — в журнал","Оплата зараз — у журнал")}</span>
+                    <span onClick={() => setAsDebt(true)} title={t("Не оплачено в магазине/мастеру: попадёт в Дт/Кт, в журнал — после кнопки «Оплачено»","Не оплачено в магазині/майстру: потрапить у Дт/Кт, у журнал — після кнопки «Оплачено»")} style={{ flex: 1, textAlign: "center", padding: "6px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer", background: asDebt ? "#b45309" : "#fff", color: asDebt ? "#fff" : "#64748b", border: "1.5px solid " + (asDebt ? "#b45309" : "#e2e8f0") }}>🕐 {t("Кредиторка (оплатим позже)","Кредиторка (оплатимо пізніше)")}</span>
+                  </div>
+                ) : null}
               </>
             )}
             <label className="label">{t("Комментарий","Коментар")}</label>
             <input value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} style={inp} />
             {f.id ? <Attachments txId={f.id} /> : <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}><Icon n="📎" size={14} /> {t("Сохрани операцию — тогда сможешь прикрепить фото/скан чека.","Збережи операцію — тоді зможеш прикріпити фото/скан чека.")}</div>}
+            {f.id && f.direction !== "transfer" ? (
+              <div style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 10, padding: "8px 10px", marginBottom: 10 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "#6d28d9", marginBottom: 6 }}>⇄ {t("Переделать в перевод между счетами","Переробити на переказ між рахунками")}</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <select value={convAcc} onChange={(e) => setConvAcc(Number(e.target.value))} style={{ ...inp, marginBottom: 0, flex: 1 }}>
+                    <option value={0}>{f.direction === "out" ? t("— на какой счёт перешли деньги —","— на який рахунок перейшли гроші —") : t("— с какого счёта пришли деньги —","— з якого рахунку прийшли гроші —")}</option>
+                    {accounts.filter((a: any) => a.id !== f.account).map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                  <button className="btn btn-primary" disabled={!convAcc} style={{ opacity: convAcc ? 1 : 0.5, background: "#7c3aed" }} onClick={toTransfer}>⇄ OK</button>
+                </div>
+                <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{t("Категория и фонд очистятся — перевод не считается ни в доход, ни в расход.","Категорія і фонд очистяться — переказ не рахується ні в дохід, ні у витрату.")}</div>
+              </div>
+            ) : null}
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
               {f.id ? <button className="btn" style={{ background: "#fef2f2", color: "#dc2626" }} onClick={del} title={t("Удалить операцию","Видалити операцію")}><Icon n="🗑" size={15} /></button> : null}
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setOpen(false)}>{t("Отмена","Скасувати")}</button>
@@ -1253,7 +1420,7 @@ function Dashboard() {
           <b style={{ fontSize: 14 }}>{t("Балансы счетов","Баланси рахунків")}</b>
           {accShown.map((a: any) => (
             <div key={a.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid #f8fafc" }}>
-              <span>{a.name}</span><b style={{ color: a.balance < 0 ? "#dc2626" : "#1e293b" }}>{money(a.balance)}</b>
+              <span>{a.name}</span><b style={{ color: a.balance < 0 ? "#dc2626" : "#1e293b" }}>{money2(a.balance)}</b>
             </div>
           ))}
           {d.accounts.length > 8 && <button className="btn btn-light" style={{ marginTop: 8, fontSize: 12 }} onClick={() => setAllAcc(!allAcc)}>{allAcc ? t("Свернуть","Згорнути") : t("Показать все","Показати всі") + ` ${d.accounts.length}`}</button>}
@@ -1385,7 +1552,7 @@ function Breakeven() {
   ];
   return (
     <>
-      <div className="note" style={{ marginBottom: 10 }}>🎯 {tr("Точка безубыточности считается ОТ ФИНМОДЕЛИ (нормативы затрат и маржи), снизу вверх. Прогресс — факт текущего месяца.","Точка беззбитковості рахується ВІД ФІНМОДЕЛІ (нормативи затрат і маржі), знизу вгору. Прогрес — факт поточного місяця.")}</div>
+      <div className="note" style={{ marginBottom: 10 }}>🎯 {tr("Точка безубыточности считается ОТ ФИНМОДЕЛИ (нормативы затрат и маржи), снизу вверх. Прогресс — факт текущего месяца.","Точка беззбитковості рахується ВІД ФІНМОДЕЛІ (нормативи витрат і маржі), знизу вгору. Прогрес — факт поточного місяця.")}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 12, marginBottom: 14 }}>
         {cards.map(([t, v]) => <div key={t} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{t}</div><div style={{ fontSize: 20, fontWeight: 700 }}>{v}</div></div>)}
       </div>
@@ -1546,7 +1713,7 @@ function DirectionJournal({ directionId, from, to }: { directionId: number; from
       </div>
       {chans.length > 0 && (
         <div style={{ marginBottom: 8 }}>
-          <div className="muted" style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 4 }}><Icon n="🌿" size={13} /> {t("Каналы (ветки) направления · продаж × сумма:","Канали (ветки) напрямку · продажів × сума:")}</div>
+          <div className="muted" style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 4 }}><Icon n="🌿" size={13} /> {t("Каналы (ветки) направления · продаж × сумма:","Канали (гілки) напрямку · продажів × сума:")}</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {chans.map(([k, v]) => (
               <span key={k} style={{ fontSize: 12, padding: "4px 10px", borderRadius: 14, background: "#eef2ff", color: "#4338ca", fontWeight: 600 }}>
@@ -1611,7 +1778,7 @@ function Timesheet() {
   const overtime = Object.values(days).filter((s) => s === "overtime").length;
   return (
     <>
-      <div className="note"><Icon n="🕐" size={14} /> <b>{t("Табель рабочего времени","Табель робочого часу")}</b> {t("(как в Битриксе). Клик на день меняет статус по кругу. Влияет на ЗП: оклад платится пропорционально отработанным дням, а","(як у Бітриксі). Клік на день міняє статус по колу. Впливає на ЗП: оклад платиться пропорційно відпрацьованим дням, а")} <b>{t("перевыполнение","перевиконання")}</b> {t("(выход в выходной) добавляет дневную ставку сверху. Если табель не вести — оклад полный по умолчанию.","(вихід у вихідний) додає денну ставку зверху. Якщо табель не вести — оклад повний за замовчуванням.")}</div>
+      <div className="note"><Icon n="🕐" size={14} /> <b>{t("Табель рабочего времени","Табель робочого часу")}</b> {t("(как в Битриксе). Клик на день меняет статус по кругу. Влияет на ЗП: оклад платится пропорционально отработанным дням, а","(як у Бітриксі). Клік на день змінює статус по колу. Впливає на ЗП: оклад платиться пропорційно відпрацьованим дням, а")} <b>{t("перевыполнение","перевиконання")}</b> {t("(выход в выходной) добавляет дневную ставку сверху. Если табель не вести — оклад полный по умолчанию.","(вихід у вихідний) додає денну ставку зверху. Якщо табель не вести — оклад повний за замовчуванням.")}</div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "12px 0" }}>
         <select value={uid ?? ""} onChange={(e) => setUid(Number(e.target.value))} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }}>
           {users.map((u) => <option key={u.id} value={u.id}>{u.full_name || `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.username}</option>)}
@@ -1698,7 +1865,7 @@ function RefAccounts() {
           <tr key={a.id}>
             <td style={tdS}><input defaultValue={a.name} onBlur={(e) => e.target.value !== a.name && save(a, { name: e.target.value })} style={{ ...inpS, width: "100%", border: "1px solid transparent" }} /></td>
             <td style={{ ...tdS, textAlign: "center" }}>{a.kind}</td>
-            <td style={{ ...tdS, textAlign: "right", fontWeight: 600 }}>{money(a.balance)}</td>
+            <td style={{ ...tdS, textAlign: "right", fontWeight: 600 }}>{money2(a.balance)}</td>
             <td style={{ ...tdS, textAlign: "center" }}><input type="checkbox" checked={a.is_active} onChange={(e) => save(a, { is_active: e.target.checked })} /></td>
             <td style={{ ...tdS, textAlign: "center" }}><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => del(a)}>✕</span></td>
           </tr>
@@ -1710,26 +1877,96 @@ function RefAccounts() {
 
 function RefCategories() {
   const [items, setItems] = useState<any[]>([]);
+  const [arts, setArts] = useState<any[]>([]);
+  const [dirs, setDirs] = useState<any[]>([]);
+  const [showHidden, setShowHidden] = useState(false);
   const { t } = useLang();
-  const [nn, setNn] = useState(""); const [nd, setNd] = useState("out");
-  const load = () => api.get<any>("/api/categories/?page_size=200").then((d) => setItems(d.results || d));
-  useEffect(() => { load(); }, []);
-  async function add() { if (!nn.trim()) return; await api.post("/api/categories/", { name: nn.trim(), direction: nd }); setNn(""); load(); }
-  async function del(id: number) { await api.del(`/api/categories/${id}/`); load(); }
+  const [nn, setNn] = useState(""); const [nd, setNd] = useState("out"); const [np, setNp] = useState(0);
+  const load = () => api.get<any>("/api/categories/?page_size=400").then((d) => setItems(d.results || d));
+  useEffect(() => {
+    load();
+    api.get<any>("/api/finmodel-articles/?page_size=300").then((d) => setArts((d.results || d).filter((a: any) => !a.parent && a.active && !["config", "salary", "warehouse_rate"].includes(a.category)))).catch(() => {});
+    api.get<any>("/api/fin-directions/?page_size=100").then((d) => setDirs(d.results || d)).catch(() => {});
+  }, []);
+  async function add() { if (!nn.trim()) return; await api.post("/api/categories/", { name: nn.trim(), direction: nd, parent: np || null }); setNn(""); setNp(0); load(); }
+  async function patch(id: number, body: any) { await api.patch(`/api/categories/${id}/`, body); load(); }
+  async function delCat(c: any) {
+    if (!confirm(t(`Удалить категорию «${c.name}»? Операции НЕ удалятся — они останутся без категории. Подкатегории станут верхнего уровня.`, `Видалити категорію «${c.name}»? Операції НЕ видаляться — лишаться без категорії. Підкатегорії стануть верхнього рівня.`))) return;
+    await api.del(`/api/categories/${c.id}/`); load();
+  }
+  const [dragId, setDragId] = useState<number | null>(null);
+  async function dropOn(target: any) {
+    if (!dragId || dragId === target.id) return;
+    const src = items.find((x) => x.id === dragId);
+    if (!src || src.direction !== target.direction || (src.parent || 0) !== (target.parent || 0)) { setDragId(null); return; }
+    const group = items.filter((x) => x.direction === src.direction && (x.parent || 0) === (src.parent || 0) && (showHidden || !x.hidden));
+    const ordered = group.filter((x) => x.id !== src.id);
+    const idx = ordered.findIndex((x) => x.id === target.id);
+    ordered.splice(idx, 0, src);
+    setDragId(null);
+    for (let i = 0; i < ordered.length; i++) {
+      if (ordered[i].sort_order !== (i + 1) * 10) await api.patch(`/api/categories/${ordered[i].id}/`, { sort_order: (i + 1) * 10 });
+    }
+    load();
+  }
+  const tops = (dr: string) => items.filter((c) => c.direction === dr && !c.parent && (showHidden || !c.hidden));
+  const kids = (pid: number) => items.filter((c) => c.parent === pid && (showHidden || !c.hidden));
+  const FUND_GROUPS: [string, string][] = [["revenue_fund", t("Фонды выручки (ФВ)","Фонди виручки (ФВ)")], ["variable", t("Переменные (ФМ)","Змінні (ФМ)")], ["fixed", t("Постоянные (ФМ)","Постійні (ФМ)")], ["skd", t("СКД (развитие)","СКД (розвиток)")], ["payment_fee", t("Комиссии за оплату","Комісії за оплату")], ["upr_cat2", "УПР"], ["upr_cat3", "УПР (відмовні)"]];
+  const fundSel = (c: any, inherited?: any) => (
+    <select value={c.fin_article || 0} onChange={(e) => patch(c.id, { fin_article: Number(e.target.value) || null })}
+      style={{ ...inpS, fontSize: 11.5, padding: "3px 6px", maxWidth: 230, color: c.fin_article ? "#0f172a" : "#94a3b8" }}
+      title={t("Фонд: подставляется в операцию автоматически по категории. Список живой — новый фонд из Финмодели/Планирования появляется тут сразу","Фонд: підставляється в операцію автоматично за категорією. Список живий — новий фонд з Фінмоделі/Планування зʼявляється тут одразу")}>
+      <option value={0}>{inherited ? "↑ " + inherited.name.slice(0, 26) : t("— фонд не задан —","— фонд не задано —")}</option>
+      {FUND_GROUPS.map(([key, label]) => {
+        const gr = arts.filter((a) => a.category === key);
+        return gr.length ? <optgroup key={key} label={label}>{gr.map((a) => <option key={a.id} value={a.id}>{a.name.slice(0, 44)}</option>)}</optgroup> : null;
+      })}
+    </select>
+  );
+  const dirSel = (c: any) => (
+    <select value={c.fin_direction || 0} onChange={(e) => patch(c.id, { fin_direction: Number(e.target.value) || null })}
+      style={{ ...inpS, fontSize: 11.5, padding: "3px 6px", maxWidth: 150, color: c.fin_direction ? "#0f172a" : "#94a3b8" }}>
+      <option value={0}>{t("общий","загальний")}</option>
+      {dirs.map((d) => <option key={d.id} value={d.id}>{d.name.slice(0, 24)}</option>)}
+    </select>
+  );
+  const row = (c: any, depth: number, parent?: any) => (
+    <tr key={c.id} style={{ opacity: c.hidden ? 0.45 : 1, cursor: "grab", background: dragId === c.id ? "#fdf3ec" : undefined }}
+      draggable onDragStart={() => setDragId(c.id)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropOn(c)}>
+      <td style={{ ...tdS, paddingLeft: 8 + depth * 22 }} title={t("Потяни строку, чтобы поменять порядок","Потягни рядок, щоб змінити порядок")}><span className="muted" style={{ marginRight: 6 }}>⠿</span>{depth > 0 && <span className="muted">└ </span>}{c.name}</td>
+      <td style={{ ...tdS }}>{c.direction === "out" || depth > 0 ? fundSel(c, parent && arts.find((a) => a.id === parent.fin_article)) : null}</td>
+      <td style={{ ...tdS }}>{dirSel(c)}</td>
+      <td style={{ ...tdS, textAlign: "center", whiteSpace: "nowrap" }}>
+        <span style={{ cursor: "pointer" }} title={c.hidden ? t("Показать в выборе","Показати у виборі") : t("Скрыть из выбора (история остаётся)","Приховати з вибору (історія лишається)")}
+          onClick={() => patch(c.id, { hidden: !c.hidden })}>{c.hidden ? "🚫" : "👁"}</span>
+        <span style={{ cursor: "pointer", color: "#ef4444", marginLeft: 8 }} title={t("Удалить категорию","Видалити категорію")} onClick={() => delCat(c)}>🗑</span>
+      </td>
+    </tr>
+  );
   return (
     <div className="panel" style={{ margin: 0 }}>
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <input value={nn} onChange={(e) => setNn(e.target.value)} placeholder={t("Новая категория","Нова категорія")} style={{ ...inpS, flex: 1 }} />
-        <select value={nd} onChange={(e) => setNd(e.target.value)} style={inpS}><option value="in">{t("Доход","Дохід")}</option><option value="out">{t("Расход","Витрата")}</option></select>
+      <div className="note" style={{ marginBottom: 10 }}>{t("Связка «категория → фонд»: фонд и направление из этой таблицы подставляются в операцию автоматически. Подкатегория без своего фонда наследует фонд родителя (серым «↑»).","Звʼязка «категорія → фонд»: фонд і напрямок з цієї таблиці підставляються в операцію автоматично. Підкатегорія без свого фонду наслідує фонд батька (сірим «↑»).")}</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+        <input value={nn} onChange={(e) => setNn(e.target.value)} placeholder={t("Новая категория","Нова категорія")} style={{ ...inpS, flex: 1, minWidth: 160 }} />
+        <select value={nd} onChange={(e) => { setNd(e.target.value); setNp(0); }} style={inpS}><option value="in">{t("Доход","Дохід")}</option><option value="out">{t("Расход","Витрата")}</option></select>
+        <select value={np} onChange={(e) => setNp(Number(e.target.value))} style={{ ...inpS, maxWidth: 220 }}>
+          <option value={0}>{t("— верхний уровень —","— верхній рівень —")}</option>
+          {items.filter((c) => c.direction === nd && !c.parent).map((c) => <option key={c.id} value={c.id}>{t("внутри:","всередині:")} {c.name.slice(0, 30)}</option>)}
+        </select>
         <button className="btn btn-primary" onClick={add}>+ {t("Добавить","Додати")}</button>
+        <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+          <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />{t("показать скрытые","показати приховані")}
+        </label>
       </div>
-      <table style={{ width: "100%", fontSize: 13 }}>
-        <thead><tr><th style={{ textAlign: "left", ...tdS }}>{t("Название","Назва")}</th><th>{t("Тип","Тип")}</th><th></th></tr></thead>
-        <tbody>{items.map((c) => (
-          <tr key={c.id}><td style={tdS}>{c.name}</td><td style={{ ...tdS, textAlign: "center" }}>{c.direction === "in" ? t("Доход","Дохід") : t("Расход","Витрата")}</td>
-            <td style={{ ...tdS, textAlign: "center" }}><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => del(c.id)}>✕</span></td></tr>
-        ))}</tbody>
-      </table>
+      {["out", "in"].map((dr) => (
+        <div key={dr} style={{ marginBottom: 14 }}>
+          <div style={{ fontWeight: 800, fontSize: 13, margin: "6px 0" }}>{dr === "out" ? t("Расходы","Витрати") : t("Доходы","Доходи")}</div>
+          <table style={{ width: "100%", fontSize: 12.5 }}>
+            <thead><tr><th style={{ textAlign: "left", ...tdS }}>{t("Категория","Категорія")}</th><th style={{ textAlign: "left", ...tdS }}>{t("Фонд (автоматом в операцию)","Фонд (автоматом в операцію)")}</th><th style={{ textAlign: "left", ...tdS }}>{t("Направление","Напрямок")}</th><th></th></tr></thead>
+            <tbody>{tops(dr).map((c) => [row(c, 0), ...kids(c.id).map((k) => row(k, 1, c))])}</tbody>
+          </table>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1743,6 +1980,19 @@ function RefDirections() {
   async function add() { if (!nn.trim()) return; await api.post("/api/fin-directions/", { name: nn.trim(), active: true }); setNn(""); load(); }
   async function save(d: any, p: any) { await api.patch(`/api/fin-directions/${d.id}/`, p); load(); }
   async function del(id: number) { if (!confirm(t("Удалить направление? Операции останутся, но потеряют привязку.","Видалити напрямок? Операції лишаться, але втратять привʼязку."))) return; await api.del(`/api/fin-directions/${id}/`); load(); }
+  const [dragId, setDragId] = useState<number | null>(null);
+  async function dropOn(target: any) {
+    if (!dragId || dragId === target.id) { setDragId(null); return; }
+    const src = items.find((x) => x.id === dragId);
+    const ordered = items.filter((x) => x.id !== dragId);
+    const idx = ordered.findIndex((x) => x.id === target.id);
+    ordered.splice(idx, 0, src);
+    setDragId(null);
+    for (let i = 0; i < ordered.length; i++) {
+      if (ordered[i].sort_order !== (i + 1) * 10) await api.patch(`/api/fin-directions/${ordered[i].id}/`, { sort_order: (i + 1) * 10 });
+    }
+    load();
+  }
   return (
     <div className="panel" style={{ margin: 0 }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
@@ -1752,8 +2002,9 @@ function RefDirections() {
       <table style={{ width: "100%", fontSize: 13 }}>
         <thead><tr><th style={{ textAlign: "left", ...tdS }}>{t("Направление","Напрямок")}</th><th>{t("План доход","План дохід")}</th><th>{t("План расходы","План витрати")}</th><th></th></tr></thead>
         <tbody>{items.map((d) => (
-          <tr key={d.id}>
-            <td style={tdS}><input defaultValue={d.name} onBlur={(e) => e.target.value !== d.name && save(d, { name: e.target.value })} style={{ ...inpS, width: "100%", border: "1px solid transparent" }} /></td>
+          <tr key={d.id} draggable onDragStart={() => setDragId(d.id)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropOn(d)}
+            style={{ background: dragId === d.id ? "#fdf3ec" : undefined }}>
+            <td style={tdS}><span className="muted" style={{ marginRight: 6, cursor: "grab" }} title={t("Потяни, чтобы поменять порядок","Потягни, щоб змінити порядок")}>⠿</span><input defaultValue={d.name} onBlur={(e) => e.target.value !== d.name && save(d, { name: e.target.value })} style={{ ...inpS, width: "70%", border: "1px solid transparent" }} /></td>
             <td style={{ ...tdS, textAlign: "right" }}><input type="number" defaultValue={d.plan_income} onBlur={(e) => save(d, { plan_income: Number(e.target.value) })} style={{ ...inpS, width: 110, textAlign: "right" }} /></td>
             <td style={{ ...tdS, textAlign: "right" }}><input type="number" defaultValue={d.plan_expense} onBlur={(e) => save(d, { plan_expense: Number(e.target.value) })} style={{ ...inpS, width: 110, textAlign: "right" }} /></td>
             <td style={{ ...tdS, textAlign: "center" }}><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => del(d.id)}>✕</span></td>
@@ -1768,16 +2019,28 @@ function RefCounterparties() {
   const { t } = useLang();
   const [items, setItems] = useState<any[]>([]);
   const nav = useNav();
-  useEffect(() => { api.get<any>("/api/finance/counterparties/").then(setItems).catch(() => setItems([])); }, []);
+  const load = () => api.get<any>("/api/finance/counterparties/").then(setItems).catch(() => setItems([]));
+  useEffect(() => { load(); }, []);
+  async function renameCp(c: any) {
+    const nn = prompt(t("Новое написание контрагента (обновится во ВСЕХ операциях):","Нове написання контрагента (оновиться у ВСІХ операціях):"), c.name);
+    if (!nn || nn.trim() === c.name) return;
+    await api.post("/api/transactions/counterparty-rename/", { old: c.name, new: nn.trim() });
+    load();
+  }
+  async function delCp(c: any) {
+    if (!confirm(t(`Убрать контрагента «${c.name}» из ${c.count} операций? Операции останутся, поле контрагента очистится.`, `Прибрати контрагента «${c.name}» з ${c.count} операцій? Операції лишаться, поле контрагента очиститься.`))) return;
+    await api.post("/api/transactions/counterparty-delete/", { name: c.name });
+    load();
+  }
   return (
     <div className="panel" style={{ margin: 0 }}>
       <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("Контрагенты сведены из операций. 🔗 = связан с клиентом CRM (клик откроет).","Контрагенти зведені з операцій. 🔗 = звʼязаний із клієнтом CRM (клік відкриє).")}</div>
       <table style={{ width: "100%", fontSize: 13 }}>
         <thead><tr><th style={{ textAlign: "left", ...tdS }}>{t("Контрагент","Контрагент")}</th><th>{t("Операций","Операцій")}</th><th>{t("Сумма","Сума")}</th><th>{t("Клиент CRM","Клієнт CRM")}</th></tr></thead>
         <tbody>{items.slice(0, 300).map((c, i) => (
-          <tr key={i}><td style={tdS}>{c.name}</td><td style={{ ...tdS, textAlign: "center" }}>{c.count}</td>
+          <tr key={i}><td style={tdS}>{c.name} <span style={{ cursor: "pointer", marginLeft: 4 }} title={t("Переименовать во всех операциях","Перейменувати у всіх операціях")} onClick={() => renameCp(c)}>✏️</span></td><td style={{ ...tdS, textAlign: "center" }}>{c.count}</td>
             <td style={{ ...tdS, textAlign: "right" }}>{money(c.total)}</td>
-            <td style={{ ...tdS, textAlign: "center" }}>{c.contact_id ? <span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/clients?contact=${c.contact_id}`)}><Icon n="🔗" size={13} /> {t("открыть","відкрити")}</span> : <span className="muted">—</span>}</td></tr>
+            <td style={{ ...tdS, textAlign: "center", whiteSpace: "nowrap" }}>{c.contact_id ? <span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/clients?contact=${c.contact_id}`)}><Icon n="🔗" size={13} /> {t("открыть","відкрити")}</span> : <span className="muted">—</span>} <span style={{ color: "#ef4444", cursor: "pointer", marginLeft: 8 }} title={t("Убрать из всех операций","Прибрати з усіх операцій")} onClick={() => delCp(c)}>✕</span></td></tr>
         ))}</tbody>
       </table>
       {items.length > 300 && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t("Показано первые 300 из","Показано перші 300 із")} {items.length}.</div>}
@@ -1800,7 +2063,7 @@ function RefConst({ title, items, hint }: { title: string; items: string[]; hint
 /* ─── ВКЛАДКА: ПЛАНУВАННЯ ПО ФОНДАХ-КОНВЕРТАХ ──────────────────────────── */
 function DebtCard({ row, cats, dirs, arts, accs2, t, onClose, onSaved }: any) {
   const [f, setF] = useState<any>(() => ({
-    kind: row?.kind || "payable", amount: row?.amount || "", due_date: row?.due_date || "",
+    kind: row?.kind || "payable", is_loan: row?.is_loan || false, amount: row?.amount || "", due_date: row?.due_date || "",
     counterparty: row?.counterparty || "", category: row?.category || "", account: row?.account || "",
     fin_direction: row?.fin_direction || "", fin_article: row?.fin_article || "", channel: row?.channel || "",
     deal: row?.deal || "", comment: row?.comment || "",
@@ -1831,6 +2094,13 @@ function DebtCard({ row, cats, dirs, arts, accs2, t, onClose, onSaved }: any) {
               <option value="payable">🔻 {t("Кредиторка (мы должны)", "Кредиторка (ми винні)")}</option>
               <option value="receivable">🔺 {t("Дебиторка (нам должны)", "Дебіторка (нам винні)")}</option>
             </select></Fld>
+          {f.kind === "receivable" && (
+            <Fld><div style={lab}>{t("Характер дебиторки", "Характер дебіторки")}</div>
+              <select value={f.is_loan ? "1" : "0"} onChange={(e) => setF({ ...f, is_loan: e.target.value === "1" })} style={{ ...inp, width: "100%" }}>
+                <option value="0">🛒 {t("Продажа (будущая прибыль)", "Продаж (майбутній прибуток)")}</option>
+                <option value="1">🤝 {t("Заём — свои деньги в долг (не прибыль)", "Позика — свої гроші в борг (не прибуток)")}</option>
+              </select></Fld>
+          )}
           <Fld><div style={lab}>{t("Сумма, грн", "Сума, грн")}</div>
             <input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} style={{ ...inp, width: "100%" }} /></Fld>
           <Fld><div style={lab}>{t("Срок (когда возник долг / оплатить до)", "Строк (коли виник борг / сплатити до)")}</div>
@@ -1855,11 +2125,11 @@ function DebtCard({ row, cats, dirs, arts, accs2, t, onClose, onSaved }: any) {
           <Fld><div style={lab}>{t("Фонд", "Фонд")}</div>
             <select value={f.fin_article} onChange={(e) => setF({ ...f, fin_article: e.target.value })} style={{ ...inp, width: "100%" }}>
               <option value="">—</option>
-              {arts.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              {FUND_GROUPS_G.map(([gk, gl]) => { const gr = arts.filter((a: any) => a.category === gk && !a.parent); return gr.length ? <optgroup key={gk} label={gl}>{gr.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</optgroup> : null; })}
             </select></Fld>
           <Fld><div style={lab}>{t("Канал", "Канал")}</div>
             <input value={f.channel} onChange={(e) => setF({ ...f, channel: e.target.value })} placeholder="instagram / tiktok / offline…" style={{ ...inp, width: "100%" }} /></Fld>
-          <Fld><div style={lab}>{t("Сделка (№)", "Сделка (№)")}</div>
+          <Fld><div style={lab}>{t("Угода (№)", "Угода (№)")}</div>
             <input type="number" value={f.deal} onChange={(e) => setF({ ...f, deal: e.target.value })} placeholder="65496" style={{ ...inp, width: "100%" }} /></Fld>
         </div>
         <div style={{ marginTop: 12 }}>
@@ -1878,6 +2148,9 @@ function DebtCard({ row, cats, dirs, arts, accs2, t, onClose, onSaved }: any) {
 
 function Debts() {
   const { t } = useLang();
+  const nav = useNav();
+  const cpMap = useCpMap();
+  const [cpFilter, setCpFilter] = useState("");
   const [rows, setRows] = useState<any[]>([]);
   const [st, setSt] = useState("planned");
   const [cats, setCats] = useState<any[]>([]);
@@ -1899,7 +2172,7 @@ function Debts() {
     await api.post(`/api/planned-payments/${r.id}/mark-paid/`, {}); load();
   }
   const Section = ({ kind, title, color }: any) => {
-    const list = rows.filter((r) => r.kind === kind);
+    const list = rows.filter((r) => r.kind === kind && (!cpFilter || String(r.counterparty || "").toLowerCase().includes(cpFilter.toLowerCase())));
     const total = list.reduce((sm, r) => sm + Number(r.amount || 0), 0);
     return (
       <div className="panel" style={{ margin: "0 0 14px" }}>
@@ -1914,13 +2187,13 @@ function Debts() {
             <th style={{ padding: "4px" }}>{t("Срок", "Строк")}</th><th style={{ padding: "4px" }}>{t("Сумма", "Сума")}</th>
             <th style={{ padding: "4px" }}>{t("Контрагент", "Контрагент")}</th><th style={{ padding: "4px" }}>{t("Категория", "Категорія")}</th>
             <th style={{ padding: "4px" }}>{t("Направление", "Напрямок")}</th><th style={{ padding: "4px" }}>{t("Канал", "Канал")}</th>
-            <th style={{ padding: "4px" }}>{t("Сделка", "Сделка")}</th><th style={{ padding: "4px" }}>{t("Комментарий", "Коментар")}</th><th></th>
+            <th style={{ padding: "4px" }}>{t("Угода", "Угода")}</th><th style={{ padding: "4px" }}>{t("Комментарий", "Коментар")}</th><th></th>
           </tr></thead>
           <tbody>{list.map((r) => (
             <tr key={r.id} onClick={() => setCard(r)} style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer" }} title={t("Открыть карточку", "Відкрити картку")}>
               <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{r.due_date}</td>
               <td style={{ padding: "6px 4px", fontWeight: 700, color, whiteSpace: "nowrap" }}>{money(Number(r.amount))}</td>
-              <td style={{ padding: "6px 4px" }}>{r.counterparty || "—"}</td>
+              <td style={{ padding: "6px 4px" }} onClick={(e) => e.stopPropagation()}><CpText name={r.counterparty} contact={(r as any).contact} cpMap={cpMap} nav={nav} /></td>
               <td style={{ padding: "6px 4px" }}>{r.category_name || "—"}</td>
               <td style={{ padding: "6px 4px" }}>{r.fin_direction_name || "—"}</td>
               <td style={{ padding: "6px 4px" }}>{r.channel || "—"}</td>
@@ -1957,6 +2230,8 @@ function Debts() {
         {[["planned", t("Запланированные", "Заплановані")], ["paid", t("Оплаченные", "Оплачені")], ["canceled", t("Отменённые", "Скасовані")]].map(([k, l]) => (
           <button key={k} className={"btn" + (st === k ? " btn-primary" : " btn-light")} onClick={() => setSt(k as string)}>{l}</button>
         ))}
+        <input value={cpFilter} onChange={(e) => setCpFilter(e.target.value)} placeholder={t("🔎 Фильтр по контрагенту", "🔎 Фільтр за контрагентом")} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 10px", fontSize: 13, minWidth: 210 }} />
+        {cpFilter && <button className="btn btn-light" onClick={() => setCpFilter("")} title={t("Сбросить", "Скинути")}>✕</button>}
       </div>
       <Section kind="payable" title={"🔻 " + t("Кредиторка — мы должны", "Кредиторка — ми винні")} color="#dc2626" />
       <Section kind="receivable" title={"🔺 " + t("Дебиторка — нам должны", "Дебіторка — нам винні")} color="#16a34a" />
@@ -1969,15 +2244,18 @@ function Debts() {
 function Planning() {
   const [period, setPeriod] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; });
   const { t } = useLang();
+  const { can: canP } = useAuth();
+  const canAcc = canP("finance.plan.accounts") || canP("finance.accounts.manage") || canP("roles.manage");
   const [data, setData] = useState<any>(null);
   const [dirs, setDirs] = useState<any[]>([]);
   const [alloc, setAlloc] = useState<any>(null); // {fund} модалка ручного розподілу
   const [auto, setAuto] = useState(false);       // модалка авто-розподілу виручки
   const [openAlloc, setOpenAlloc] = useState<number | null>(null); // розгорнутий список розподілів фонду
-  const [spend, setSpend] = useState<any>(null); // фонд, з якого робимо розхід
+  const [spend, setSpend] = useState<any>(null); // фонд, з якого робимо витрата
   const [debts, setDebts] = useState<any>({ pay: 0, rec: 0, payN: 0, recN: 0 });
   const load = () => api.get<any>(`/api/finance/funds/?period=${period}`).then(setData);
   useEffect(() => { load(); }, [period]);
+  useEffect(() => { const iv = setInterval(() => { api.get<any>(`/api/finance/funds/?period=${period}`).then((d) => setData((prev: any) => JSON.stringify(prev) === JSON.stringify(d) ? prev : d)).catch(() => {}); }, 10000); return () => clearInterval(iv); }, [period]);
   useEffect(() => {
     api.get<any>("/api/planned-payments/?status=planned&page_size=500").then((d) => {
       const rows = d.results || d;
@@ -2001,7 +2279,7 @@ function Planning() {
           <span style={{ width: 110, textAlign: "right", color: "#ef4444" }}>−{money(f.spent)}</span>
           <span style={{ width: 120, textAlign: "right", fontWeight: 700, color: neg ? "#dc2626" : "#059669" }}>{money(f.balance)}</span>
           <button className="btn btn-light" style={{ fontSize: 11, padding: "3px 8px", marginLeft: 8 }} title={t("Положить денег в этот фонд-конверт","Покласти грошей у цей фонд-конверт")} onClick={() => setAlloc(f)}>+ {t("распределение","розподіл")}</button>
-          <button className="btn btn-light" style={{ fontSize: 11, padding: "3px 8px", marginLeft: 4, color: "#dc2626" }} title={t("Сделать расход из этого фонда (наполняет «Потрачено»)","Зробити витрату з цього фонду (наповнює «Витрачено»)")} onClick={() => setSpend(f)}>− {t("расход","розхід")}</button>
+          <button className="btn btn-light" style={{ fontSize: 11, padding: "3px 8px", marginLeft: 4, color: "#dc2626" }} title={t("Сделать расход из этого фонда (наполняет «Потрачено»)","Зробити витрату з цього фонду (наповнює «Витрачено»)")} onClick={() => setSpend(f)}>− {t("расход","витрата")}</button>
         </div>
         {open && <AllocList fundId={f.id} period={period} onChanged={load} />}
         {(f.subfunds || []).map((x: any) => <FundRow key={x.id} f={x} sub />)}
@@ -2022,7 +2300,7 @@ function Planning() {
   ) : null;
   return (
     <>
-      <div className="note"><Icon n="💼" size={14} /> {t("Деньги приходят на счёт → распределяешь по фондам-конвертам. В каждом фонде:","Гроші приходять на рахунок → розподіляєш по фондах-конвертах. У кожному фонді:")} <b>{t("Распределено","Розподілено")}</b> {t("(сколько положил)","(скільки поклав)")} − <b>{t("Потрачено","Витрачено")}</b> {t("(сколько списал)","(скільки списав)")} = <b>{t("Остаток","Залишок")}</b>. {t("Порядок:","Порядок:")} <b>ФВ → ФМ → ФСКД</b>.<br/><span style={{fontSize:12}}><Icon n="📌" size={13} /> <b>{t("«Потрачено»","«Витрачено»")}</b> {t("наполняется, когда создаёшь расход с этим фондом — кнопкой «","наповнюється, коли створюєш витрату з цим фондом — кнопкою «")}<b>{t("− расход","− розхід")}</b>{t("» тут или в Журнале выбираешь Фонд = этот. Тогда сумма появляется в столбце.","» тут або у Журналі обираєш Фонд = цей. Тоді сума зʼявляється у стовпці.")}</span></div>
+      <div className="note"><Icon n="💼" size={14} /> {t("Деньги приходят на счёт → распределяешь по фондам-конвертам. В каждом фонде:","Гроші приходять на рахунок → розподіляєш по фондах-конвертах. У кожному фонді:")} <b>{t("Распределено","Розподілено")}</b> {t("(сколько положил)","(скільки поклав)")} − <b>{t("Потрачено","Витрачено")}</b> {t("(сколько списал)","(скільки списав)")} = <b>{t("Остаток","Залишок")}</b>. {t("Порядок:","Порядок:")} <b>ФВ → ФМ → ФСКД</b>.<br/><span style={{fontSize:12}}><Icon n="📌" size={13} /> <b>{t("«Потрачено»","«Витрачено»")}</b> {t("наполняется, когда создаёшь расход с этим фондом — кнопкой «","наповнюється, коли створюєш витрату з цим фондом — кнопкою «")}<b>{t("− расход","− витрата")}</b>{t("» тут или в Журнале выбираешь Фонд = этот. Тогда сумма появляется в столбце.","» тут або у Журналі обираєш Фонд = цей. Тоді сума зʼявляється у стовпці.")}</span></div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "12px 0" }}>
         <span className="muted" style={{ fontSize: 13 }}>{t("Месяц","Місяць")}:</span>
         <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px" }} />
@@ -2035,7 +2313,7 @@ function Planning() {
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <div className="panel" style={{ flex: "1 1 180px", padding: "12px 14px", background: "#eff6ff", margin: 0 }}>
           <div className="muted" style={{ fontSize: 12 }} title={t("Деньги на счетах, ещё НЕ разложенные по фондам","Гроші на рахунках, ще НЕ розкладені по фондах")}>{t("К распределению","До розподілу")}</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: "#2563eb" }}>{money(data.accounts.reduce((a: number, x: any) => a + x.balance, 0) - data.totals.balance)}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#2563eb" }}>{money(data.accounts.filter((x: any) => x.in_planning !== false).reduce((a: number, x: any) => a + x.balance, 0) - Math.max(0, data.totals.balance))}</div>
         </div>
         <div className="panel" style={{ flex: "1 1 180px", padding: "12px 14px", background: "#f0fdf4", margin: 0 }}>
           <div className="muted" style={{ fontSize: 12 }} title={t("Сумма остатков во всех фондах-конвертах","Сума залишків у всіх фондах-конвертах")}>{t("Остаток в фондах","Залишок у фондах")}</div>
@@ -2045,14 +2323,24 @@ function Planning() {
 
       {/* рахунки — список збоку (як у журналі), фонди — праворуч */}
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-      <div className="panel" style={{ width: 235, flex: "0 0 235px", margin: 0, maxHeight: "72vh", overflowY: "auto" }}>
+      <div className="panel" style={{ width: 235, minWidth: 150, maxWidth: 560, flex: "0 0 auto", margin: 0, maxHeight: "72vh", overflowY: "auto", resize: "horizontal" as any, overflowX: "hidden" }}>
         <b style={{ fontSize: 13 }}>🏦 {t("Счета","Рахунки")}</b>
-        {data.accounts.map((a: any) => (
-          <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 2px", borderBottom: "0.5px solid #f1f5f9", fontSize: 12.5 }}>
-            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
-            <b style={{ fontSize: 11.5, color: a.balance < 0 ? "#dc2626" : "#16a34a", whiteSpace: "nowrap" }}>{money(a.balance)}</b>
-          </div>
-        ))}
+        <div className="muted" style={{ fontSize: 10.5, margin: "2px 0 4px" }}>{t("В «К распределению» идут только выделенные счета.","У «До розподілу» йдуть лише виділені рахунки.")}{canAcc ? " " + t("Клик по счёту — вкл/выкл (общее для всех).","Клік по рахунку — увімк/вимк (спільне для всіх).") : ""}</div>
+        {data.accounts.map((a: any) => {
+          const onP = a.in_planning !== false;
+          return (
+            <div key={a.id}
+              onClick={async () => { if (!canAcc) return; await api.patch(`/api/accounts/${a.id}/`, { in_planning: !onP }); load(); }}
+              title={a.name + " — " + money2(a.balance) + "\n" + (canAcc ? t("Клик — включить/исключить счёт из «К распределению»","Клік — увімкнути/виключити рахунок з «До розподілу»") : t("Менять состав может тот, у кого право «Планування: обирати рахунки»","Змінювати склад може той, у кого право «Планування: обирати рахунки»"))}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 6px", margin: "2px 0", borderRadius: 7, fontSize: 12.5, cursor: canAcc ? "pointer" : "default",
+                       background: onP ? "color-mix(in srgb, var(--brand) 15%, transparent)" : "transparent",
+                       borderLeft: onP ? "3px solid var(--brand)" : "3px solid transparent",
+                       opacity: onP ? 1 : 0.5, fontWeight: onP ? 600 : 400 }}>
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
+              <b style={{ fontSize: 11.5, color: a.balance < 0 ? "#dc2626" : "#16a34a", whiteSpace: "nowrap" }}>{money2(a.balance)}</b>
+            </div>
+          );
+        })}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
 
@@ -2114,7 +2402,7 @@ function SpendModal({ fund, accounts, dirs, onClose, onSaved }: any) {
   const [comment, setComment] = useState("");
   const [cats, setCats] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { api.get<any>("/api/categories/").then((d) => setCats(d.results || d)).catch(() => setCats([])); }, []);
+  useEffect(() => { api.get<any>("/api/categories/?page_size=500").then((d) => setCats(d.results || d)).catch(() => setCats([])); }, []);
   async function fetchRate(c: string) {
     if (c === "UAH") { setCurrency(c); setRate(1); return; }
     setCurrency(c);
@@ -2126,7 +2414,7 @@ function SpendModal({ fund, accounts, dirs, onClose, onSaved }: any) {
     try {
       await api.post("/api/transactions/", { direction: "out", amount: Number(amount), account: account || null,
         fin_article: fund.id, fin_direction: direction || null, set_category: cat, counterparty,
-        currency, rate: Number(rate) || 1, comment: comment || `Розхід: ${fund.name}` });
+        currency, rate: Number(rate) || 1, comment: comment || `Витрата: ${fund.name}` });
       onSaved();
     } finally { setBusy(false); }
   }
@@ -2254,12 +2542,12 @@ function Salary() {
   const tierLabel = (m: number) => m >= 1.3 ? t("перевыполнение ×1.3","перевиконання ×1.3") : m >= 1 ? t("полные премии ×1.0","повні премії ×1.0") : m >= 0.8 ? t("почти план ×0.8","майже план ×0.8") : m >= 0.5 ? t("половина ×0.5","половина ×0.5") : t("старт ×0.3","старт ×0.3");
   return (
     <>
-      <div className="note"><Icon n="💰" size={14} /> {t("ЗП считается","ЗП рахується")} <b>{t("без жёсткого GATE","без жорсткого GATE")}</b>: {t("премии открываются поэтапно с 70% плана (×0.3→×1.3). Ставки меняются во вкладке «Финмодель → ЗП». Планы — во вкладке «Планы».","премії відкриваються поетапно з 70% плану (×0.3→×1.3). Ставки міняються у вкладці «Фінмодель → ЗП». Плани — у вкладці «Плани».")}</div>
+      <div className="note"><Icon n="💰" size={14} /> {t("ЗП считается","ЗП рахується")} <b>{t("без жёсткого GATE","без жорсткого GATE")}</b>: {t("премии открываются поэтапно с 70% плана (×0.3→×1.3). Ставки меняются во вкладке «Финмодель → ЗП». Планы — во вкладке «Планы».","премії відкриваються поетапно з 70% плану (×0.3→×1.3). Ставки змінюються у вкладці «Фінмодель → ЗП». Плани — у вкладці «Плани».")}</div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "12px 0" }}>
         <span className="muted" style={{ fontSize: 13 }}>{t("Месяц","Місяць")}:</span>
         <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px" }} />
         <div style={{ flex: 1 }} />
-        <span className="muted" style={{ fontSize: 12 }}>{t("ФОТ-прогноз","ФОП-прогноз")}: <b>{money(c.total_payroll)}</b></span>
+        <span className="muted" style={{ fontSize: 12 }}>{t("ФОТ-прогноз","ФОТ-прогноз")}: <b>{money(c.total_payroll)}</b></span>
       </div>
       {data.rows.map((r: any) => {
         const pct = r.plan_pct ?? 0;
@@ -2351,7 +2639,7 @@ function MPlans() {
             <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
               <label style={{ fontSize: 12 }} title={t("Минимум — ниже не падать","Мінімум — нижче не падати")}>🟥 {t("Минимум","Мінімум")} <input type="number" defaultValue={p.min_revenue || 0} onBlur={(e) => save(r.user_id, { min_revenue: Number(e.target.value) })} style={inp} /></label>
               <label style={{ fontSize: 12 }} title={t("Норма — главная цель месяца","Норма — головна ціль місяця")}>🟩 {t("Норма","Норма")} <input type="number" defaultValue={p.target_revenue || 0} onBlur={(e) => save(r.user_id, { target_revenue: Number(e.target.value) })} style={inp} /></label>
-              <label style={{ fontSize: 12 }} title={t("Амбиция — сверх-результат","Амбіція — понад-результат")}>🟦 {t("Амбиция","Амбіція")} <input type="number" defaultValue={p.ambition_revenue || 0} onBlur={(e) => save(r.user_id, { ambition_revenue: Number(e.target.value) })} style={inp} /></label>
+              <label style={{ fontSize: 12 }} title={t("Амбиция — сверх-результат","Амбіція — надрезультат")}>🟦 {t("Амбиция","Амбіція")} <input type="number" defaultValue={p.ambition_revenue || 0} onBlur={(e) => save(r.user_id, { ambition_revenue: Number(e.target.value) })} style={inp} /></label>
             </div>
           </div>
         );
@@ -2403,7 +2691,7 @@ function Growth() {
   if (rep === undefined) return <div className="spin">{t("Загрузка…","Завантаження…")}</div>;
   return (
     <div className="panel" style={{ margin: 0 }}>
-      <div className="note"><Icon n="🚀" size={14} /> <b>{t("Рост прибыли","Зростання прибутку")}</b> {t("— план от совещательной системы: бизнес-аналитик, финаналитик, РОП, коуч по команде и маркетолог проанализировали бизнес и конкурентов, проверили друг друга и составили безопасный план удвоения чистой прибыли за 2-3 месяца.","— план від радчої системи: бізнес-аналітик, фінаналітик, РОП, коуч по команді та маркетолог проаналізували бізнес і конкурентів, перевірили одне одного й склали безпечний план подвоєння чистого прибутку за 2-3 місяці.")}</div>
+      <div className="note"><Icon n="🚀" size={14} /> <b>{t("Рост прибыли","Зростання прибутку")}</b> {t("— план от совещательной системы: бизнес-аналитик, финаналитик, РОП, коуч по команде и маркетолог проанализировали бизнес и конкурентов, проверили друг друга и составили безопасный план удвоения чистой прибыли за 2-3 месяца.","— план від дорадчої системи: бізнес-аналітик, фінаналітик, РОП, коуч команди та маркетолог проаналізували бізнес і конкурентів, перевірили одне одного й склали безпечний план подвоєння чистого прибутку за 2-3 місяці.")}</div>
       {!rep ? (
         <div className="muted" style={{ fontSize: 14, padding: 20, textAlign: "center" }}>{t("Отчёт ещё готовится агентами или не сформирован. Зайди немного позже — он появится тут автоматически.","Звіт ще готується агентами або не сформований. Зайди трохи пізніше — він зʼявиться тут автоматично.")}</div>
       ) : (
@@ -2425,7 +2713,7 @@ const GROUP_HINT: Record<string, string> = {
   skd: "ФСКД — фонди розвитку та резерви, що формуються з чистого (скоригованого) доходу.",
   upr: "УПР — управлінські витрати компанії.",
   other: "Технічні налаштування: комісії еквайрингу, ставки складу, ліміти знижок.",
-  salary: "Ставки ЗП: оклад, % обороту, % маржі, премії. Міняєш тут → бонус у картці сделки і ЗП оновлюються синхронно.",
+  salary: "Ставки ЗП: оклад, % обороту, % маржі, премії. Змінюєш тут → бонус у картці угоди і ЗП оновлюються синхронно.",
 };
 
 // Групи фондів у логіці Finmap: спочатку Виручки, потім Маржі (пост/змінні), потім СКД
@@ -2512,5 +2800,232 @@ function FinModel() {
         );
       })}
     </>
+  );
+}
+
+
+function TriageTab() {
+  /* Рознесення сміттєвих категорій: пропозиція з історії/коментаря, масове застосування. */
+  const { t } = useLang();
+  const [rows, setRows] = useState<any[]>([]);
+  const [cats, setCats] = useState<any[]>([]);
+  const [sel, setSel] = useState<Record<number, boolean>>({});
+  const [choice, setChoice] = useState<Record<number, string>>({});
+  const [q, setQ] = useState("");
+  const [onlySug, setOnlySug] = useState(false);
+  const [limit, setLimit] = useState(200);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const load = () => api.get<any>("/api/transactions/triage/").then((d) => { setRows(d || []); setSel({}); setChoice({}); });
+  useEffect(() => {
+    load();
+    api.get<any>("/api/categories/?page_size=400").then((d) => setCats((d.results || d).filter((c: any) => !c.hidden)));
+  }, []);
+  const catName = (id: number) => cats.find((c) => c.id === id)?.name || "";
+  const valOf = (r: any) => choice[r.id] !== undefined ? choice[r.id] : (r.to_transfer ? "TR" : (r.suggest ? String(r.suggest) : ""));
+  const ql = q.toLowerCase();
+  const vis = rows.filter((r) => (!onlySug || valOf(r)) && (!ql || ((r.counterparty || "") + " " + (r.comment || "") + " " + r.amount_uah).toLowerCase().includes(ql)));
+  const shown = vis.slice(0, limit);
+  const selRows = vis.filter((r) => sel[r.id] && valOf(r));
+  async function apply(rowsToApply: any[]) {
+    if (!rowsToApply.length || busy) return;
+    setBusy(true); setMsg("");
+    const items = rowsToApply.map((r) => {
+      const v = valOf(r);
+      return v === "TR" ? { id: r.id, to_transfer: true } : { id: r.id, category: Number(v) };
+    });
+    try {
+      const res = await api.post<any>("/api/transactions/triage-apply/", { items });
+      setMsg(t("Готово: разнесено ", "Готово: рознесено ") + (res.updated || 0) + t(" операций", " операцій"));
+      load();
+    } catch { setMsg(t("Ошибка применения", "Помилка застосування")); }
+    finally { setBusy(false); }
+  }
+  const tdT: React.CSSProperties = { padding: "6px 8px", borderBottom: "1px solid #f1f5f9", verticalAlign: "top", fontSize: 12.6 };
+  return (
+    <div className="panel">
+      <div className="note" style={{ marginBottom: 10 }}><Icon n="🧹" size={14} /> {t("Операции из «Категории расходов/доходов» (мусорные из импорта). Предложение уже подставлено в селект — правь где нужно, отмечай галочками и жми «Применить». Категория + фонд + направление проставятся сразу.","Операції з «Категории расходов/доходов» (сміттєві з імпорту). Пропозиція вже підставлена у селект — виправляй де треба, відмічай галочками і тисни «Застосувати». Категорія + фонд + напрямок проставляться одразу.")}</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("Поиск…","Пошук…")} style={{ ...inpS, minWidth: 200 }} />
+        <label style={{ fontSize: 12.5, display: "flex", gap: 5, alignItems: "center" }}>
+          <input type="checkbox" checked={onlySug} onChange={(e) => setOnlySug(e.target.checked)} />{t("только с предложением","тільки з пропозицією")}
+        </label>
+        <button className="btn btn-light" onClick={() => { const n: any = {}; vis.forEach((r) => { if (valOf(r)) n[r.id] = true; }); setSel(n); }}>{t("Выделить все с предложением","Виділити всі з пропозицією")} ({vis.filter((r) => valOf(r)).length})</button>
+        <button className="btn btn-primary" disabled={!selRows.length || busy} onClick={() => apply(selRows)}>
+          {busy ? "…" : "✓ " + t("Применить отмеченные","Застосувати відмічені") + " (" + selRows.length + ")"}
+        </button>
+        <span className="muted" style={{ fontSize: 12.5 }}>{t("всего","усього")}: {rows.length} · {t("показано","показано")}: {shown.length}</span>
+        {msg && <b style={{ color: "#16a34a", fontSize: 12.5 }}>{msg}</b>}
+      </div>
+      <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 12, background: "#fff" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1000 }}>
+          <thead><tr>
+            <th style={{ ...tdT, background: "#f8fafc" }}><input type="checkbox" onChange={(e) => { const n: any = { ...sel }; shown.forEach((r) => { if (valOf(r)) n[r.id] = e.target.checked; }); setSel(n); }} /></th>
+            {[t("Дата","Дата"), t("Сумма","Сума"), t("Контрагент","Контрагент"), t("Комментарий","Коментар"), t("Станет (категория)","Стане (категорія)"), t("Откуда","Звідки"), ""].map((h, i) => <th key={i} style={{ ...tdT, background: "#f8fafc", textAlign: "left", fontSize: 10.5, textTransform: "uppercase", letterSpacing: ".05em", color: "#64748b" }}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {shown.map((r) => (
+              <tr key={r.id} style={{ background: sel[r.id] ? "#fdf5ef" : undefined }}>
+                <td style={tdT}><input type="checkbox" checked={!!sel[r.id]} disabled={!valOf(r)} onChange={(e) => setSel({ ...sel, [r.id]: e.target.checked })} /></td>
+                <td style={{ ...tdT, whiteSpace: "nowrap" }}>{r.date}<div className="muted" style={{ fontSize: 10.5 }}>{r.direction === "in" ? "▲ " + t("доход","дохід") : "▼ " + t("расход","витрата")}</div></td>
+                <td style={{ ...tdT, textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{Number(r.amount_uah).toLocaleString("ru")}</td>
+                <td style={{ ...tdT, maxWidth: 170, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }} title={r.counterparty}>{r.counterparty || "—"}</td>
+                <td style={{ ...tdT, maxWidth: 360, wordBreak: "break-word", color: "#5b6472" }}>{r.comment || "—"}</td>
+                <td style={tdT}>
+                  <select value={valOf(r)} onChange={(e) => setChoice({ ...choice, [r.id]: e.target.value })}
+                    style={{ ...inpS, fontSize: 12, padding: "4px 6px", maxWidth: 260, color: valOf(r) ? "#0f172a" : "#94a3b8" }}>
+                    <option value="">{t("— не трогать —","— не чіпати —")}</option>
+                    <option value="TR">⇄ {t("Перевод (вне П&Л)","Переказ (поза П&Л)")}</option>
+                    {cats.filter((c: any) => c.direction === r.direction).map((c: any) => <option key={c.id} value={String(c.id)}>{c.parent ? "└ " : ""}{c.name.slice(0, 44)}</option>)}
+                  </select>
+                </td>
+                <td style={{ ...tdT, fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap" }}>{r.src || ""}</td>
+                <td style={tdT}><a href={"/finance?tx=" + r.id} target="_blank" rel="noreferrer" style={{ color: "#C67D5F", fontWeight: 700, fontSize: 11.5, textDecoration: "none", border: "1px solid #eadfd6", borderRadius: 7, padding: "2px 8px", whiteSpace: "nowrap" }}>{t("открыть","відкрити")} ↗</a></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {vis.length > limit && <div style={{ textAlign: "center", margin: "12px 0" }}><button className="btn btn-light" onClick={() => setLimit(limit + 300)}>{t("Показать ещё","Показати ще")} ({vis.length - limit})</button></div>}
+    </div>
+  );
+}
+
+
+function ClientPick({ value, label, placeholder, onPick }: { value?: number; label?: string; placeholder?: string; onPick: (id: number, name: string) => void }) {
+  /* Автокомпліт клієнта CRM: пошук по імені/телефону, ✕ — зняти привʼязку. */
+  const [q, setQ] = useState(label || "");
+  const [opts, setOpts] = useState<any[]>([]);
+  const [openL, setOpenL] = useState(false);
+  useEffect(() => { setQ(label || ""); }, [label]);
+  useEffect(() => {
+    if (q.trim().length < 2 || q === label) { setOpts([]); setOpenL(false); return; }
+    const h = setTimeout(() => {
+      api.get<any>(`/api/contacts/?search=${encodeURIComponent(q.trim())}&page_size=8`)
+        .then((d) => { setOpts(d.results || d || []); setOpenL(true); }).catch(() => {});
+    }, 300);
+    return () => clearTimeout(h);
+  }, [q]); // eslint-disable-line
+  const nm = (o: any) => o.display_name || (`${o.first_name || ""} ${o.last_name || ""}`.trim()) || o.nickname || o.phone || ("#" + o.id);
+  return (
+    <div style={{ position: "relative", marginBottom: 8 }}>
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={placeholder || "почни вводити імʼя або телефон…"}
+        style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: value ? "0 26px 0 10px" : "0 10px", fontSize: 13, background: value ? "#f0fdfa" : "#fff" }} />
+      {value ? <span onClick={() => { onPick(0, ""); setQ(""); }} title="Прибрати клієнта"
+        style={{ position: "absolute", right: 8, top: 7, cursor: "pointer", color: "#94a3b8", fontWeight: 700 }}>✕</span> : null}
+      {openL && opts.length > 0 && (
+        <div style={{ position: "absolute", top: 36, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 10px 30px rgba(15,23,42,.15)", zIndex: 30, maxHeight: 220, overflowY: "auto" }}>
+          {opts.map((o) => (
+            <div key={o.id} onClick={() => { onPick(o.id, nm(o)); setOpenL(false); }}
+              style={{ padding: "7px 10px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f8fafc" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
+              <b>{nm(o)}</b>{o.phone ? <span className="muted" style={{ marginLeft: 6, fontSize: 11.5 }}>{o.phone}</span> : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function FundPick({ value, arts, onPick }: { value: number; arts: any[]; onPick: (id: number) => void }) {
+  /* Пошук фонду: набираєш частину назви — список фільтрується; клік — вибір; ✕ — без фонду. */
+  const { t } = useLang();
+  const sel = arts.find((a) => a.id === value);
+  const [q, setQ] = useState("");
+  const [openL, setOpenL] = useState(false);
+  useEffect(() => { setQ(sel ? sel.name : ""); }, [value]); // eslint-disable-line
+  const ql = q.trim().toLowerCase();
+  const filtered = (openL && ql && (!sel || q !== sel.name))
+    ? arts.filter((a) => (a.name + " " + (a.category_display || "")).toLowerCase().includes(ql))
+    : arts;
+  return (
+    <div style={{ position: "relative", marginBottom: 8 }}>
+      <input value={q}
+        onChange={(e) => { setQ(e.target.value); setOpenL(true); }}
+        onFocus={() => setOpenL(true)}
+        onBlur={() => setTimeout(() => setOpenL(false), 180)}
+        placeholder={t("— без фонда — (начни вводить для поиска)","— без фонду — (почни вводити для пошуку)")}
+        style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: value ? "0 26px 0 10px" : "0 10px", fontSize: 13, background: value ? "#f0fdf4" : "#fff" }} />
+      {value ? <span onMouseDown={(e) => { e.preventDefault(); onPick(0); setQ(""); }} title={t("Без фонда","Без фонду")}
+        style={{ position: "absolute", right: 8, top: 7, cursor: "pointer", color: "#94a3b8", fontWeight: 700 }}>✕</span> : null}
+      {openL && (
+        <div style={{ position: "absolute", top: 36, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 10px 30px rgba(15,23,42,.15)", zIndex: 40, maxHeight: 280, overflowY: "auto" }}>
+          {filtered.length === 0 && <div className="muted" style={{ padding: "8px 10px", fontSize: 12.5 }}>{t("Ничего не найдено","Нічого не знайдено")}</div>}
+          {FUND_GROUPS_G.map(([gk, gl]) => {
+            const gr = filtered.filter((a) => a.category === gk && !a.parent);
+            if (!gr.length) return null;
+            return (
+              <div key={gk}>
+                <div style={{ padding: "6px 10px 3px", fontSize: 10.5, fontWeight: 800, letterSpacing: ".04em", color: "#0f172a", background: "#f5efe9", position: "sticky", top: 0 }}>{gl}</div>
+                {gr.map((a) => (
+                  <div key={a.id} onMouseDown={(e) => { e.preventDefault(); onPick(a.id); setQ(a.name); setOpenL(false); }}
+                    style={{ padding: "6px 10px 6px 16px", cursor: "pointer", fontSize: 12.5, borderBottom: "1px solid #f8fafc", background: a.id === value ? "#f0fdf4" : "" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = a.id === value ? "#f0fdf4" : "")}>
+                    {a.name}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function CatPick({ value, direction, cats, onPick }: { value: string; direction: string; cats: any[]; onPick: (name: string) => void }) {
+  /* Дерево категорій: категорія ЖИРНИМ → підкатегорії з відступом; пошук фільтрує; клік — вибір. */
+  const { t } = useLang();
+  const [q, setQ] = useState(value || "");
+  const [openL, setOpenL] = useState(false);
+  useEffect(() => { setQ(value || ""); }, [value]);
+  const mine = cats.filter((c: any) => !c.hidden && c.direction === direction);
+  const tops = mine.filter((c: any) => !c.parent);
+  const kidsOf = (pid: number) => mine.filter((c: any) => c.parent === pid);
+  const ql = (openL && q.trim() && q !== value) ? q.trim().toLowerCase() : "";
+  const matches = (c: any) => !ql || c.name.toLowerCase().includes(ql);
+  return (
+    <div style={{ position: "relative", marginBottom: 8 }}>
+      <input value={q}
+        onChange={(e) => { setQ(e.target.value); setOpenL(true); }}
+        onFocus={() => setOpenL(true)}
+        onBlur={() => setTimeout(() => setOpenL(false), 180)}
+        placeholder={t("Выбери из списка или начни вводить…","Обери зі списку або почни вводити…")}
+        style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: value ? "0 26px 0 10px" : "0 10px", fontSize: 13, background: value ? "#f0fdf4" : "#fff", marginBottom: 0 }} />
+      {value ? <span onMouseDown={(e) => { e.preventDefault(); onPick(""); setQ(""); }} title={t("Очистить","Очистити")}
+        style={{ position: "absolute", right: 8, top: 7, cursor: "pointer", color: "#94a3b8", fontWeight: 700 }}>✕</span> : null}
+      {openL && (
+        <div style={{ position: "absolute", top: 36, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 10px 30px rgba(15,23,42,.15)", zIndex: 40, maxHeight: 300, overflowY: "auto" }}>
+          {tops.map((c: any) => {
+            const kids = kidsOf(c.id).filter(matches);
+            const showTop = matches(c) || kids.length > 0;
+            if (!showTop) return null;
+            return (
+              <div key={c.id}>
+                <div onMouseDown={(e) => { e.preventDefault(); onPick(c.name); setQ(c.name); setOpenL(false); }}
+                  style={{ padding: "7px 10px", cursor: "pointer", fontSize: 12.5, fontWeight: 800, background: c.name === value ? "#f0fdf4" : "#faf8f5", borderBottom: "1px solid #f1ece6" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f3ede7")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = c.name === value ? "#f0fdf4" : "#faf8f5")}>
+                  {c.name}
+                </div>
+                {(matches(c) ? kidsOf(c.id) : kids).map((k: any) => (
+                  <div key={k.id} onMouseDown={(e) => { e.preventDefault(); onPick(k.name); setQ(k.name); setOpenL(false); }}
+                    style={{ padding: "6px 10px 6px 24px", cursor: "pointer", fontSize: 12.5, background: k.name === value ? "#f0fdf4" : "", borderBottom: "1px solid #fafafa" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = k.name === value ? "#f0fdf4" : "")}>
+                    └ {k.name}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

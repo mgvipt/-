@@ -106,14 +106,14 @@ export default function LeadCard() {
   }, [id]);
   if (notFound) return (
     <div className="spin" style={{ flexDirection: "column", gap: 12 }}>
-      <div>{t("Лид не найден — возможно, уже сконвертирован в сделку или удалён.", "Лід не знайдено — можливо, вже сконвертований у сделку або видалений.")}</div>
+      <div>{t("Лид не найден — возможно, уже сконвертирован в сделку или удалён.", "Лід не знайдено — можливо, вже сконвертований в угоду або видалений.")}</div>
       <div style={{ display: "flex", gap: 8 }}>
         <button className="btn btn-primary" onClick={() => nav("/leads")}>{t("← К лидам", "← До лідів")}</button>
-        <button className="btn" onClick={() => nav("/deals")}>{t("Открыть сделки", "Відкрити сделки")}</button>
+        <button className="btn" onClick={() => nav("/deals")}>{t("Открыть сделки", "Відкрити угоди")}</button>
       </div>
     </div>
   );
-  if (!lead) return <div className="spin">{t("Загрузка лида…","Загрузка ліда…")}</div>;
+  if (!lead) return <div className="spin">{t("Загрузка лида…","Завантаження ліда…")}</div>;
 
   async function setStage(s: number) { await api.patch(`/api/leads/${id}/`, { stage: s }); load(); }
   async function setOwner(uid: number | null) { if (!lead) return; try { await api.patch(`/api/leads/${lead.id}/`, { owner: uid }); load(); } catch { alert(t("Нет прав менять ответственного (можно менять своих лидов)","Немає прав міняти відповідального (можна своїх лідів)")); } }
@@ -141,7 +141,7 @@ export default function LeadCard() {
         {lead.created_at && <span className="muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }} title={t("Лид появился","Лід зʼявився")}><Icon n="🕓" size={13} /> {new Date(lead.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
-        <button className="btn btn-green" onClick={convert}><><Icon n="✅" size={16} /> {t("Конвертировать в сделку","Конвертувати в сделку")}</></button>
+        <button className="btn btn-green" onClick={convert}><><Icon n="✅" size={16} /> {t("Конвертировать в сделку","Конвертувати в угоду")}</></button>
       </div>
 
       {funnel && (
