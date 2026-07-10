@@ -173,6 +173,11 @@ class TransactionViewSet(viewsets.ModelViewSet):
         _fin_guard(self.request, "finance.tx.edit", "Журнал: лише перегляд — нема права створювати операції")
         _guard_period(self.request, serializer.validated_data.get("date"))
         serializer.save()
+        try:
+            from apps.crm.views import sync_deal_payment_from_tx
+            sync_deal_payment_from_tx(serializer.instance)
+        except Exception:
+            pass
 
     def perform_update(self, serializer):
         _fin_guard(self.request, "finance.tx.edit", "Журнал: лише перегляд — нема права редагувати операції")
@@ -181,6 +186,11 @@ class TransactionViewSet(viewsets.ModelViewSet):
         if nd:
             _guard_period(self.request, nd)
         serializer.save()
+        try:
+            from apps.crm.views import sync_deal_payment_from_tx
+            sync_deal_payment_from_tx(serializer.instance)
+        except Exception:
+            pass
 
     def perform_destroy(self, instance):
         _fin_guard(self.request, "finance.tx.edit", "Журнал: лише перегляд — нема права видаляти операції")

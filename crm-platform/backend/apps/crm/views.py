@@ -1875,6 +1875,31 @@ def _advance_after_payment(deal, reason, actor="Автоматизація", cre
         return _advance_deal_stage(deal, target.order, reason, actor, create_wh=create_wh)
     return _advance_deal_stage(deal, 3, reason, actor, create_wh=create_wh)
 
+
+def sync_deal_payment_from_tx(tx):
+    """Дохід у журналі/картці клієнта, привʼязаний до сделки = платіж клієнта.
+    Створюємо Payment (щоб «Оплачено» сделки враховувало його) і рухаємо стадію вперед.
+    Нічого не робимо, якщо: не income / без сделки / у операції вже є Payment (щоб не дублювати accept_payment).
+    Склад авто-задачі НЕ створюємо (create_wh=False) — щоб журнальний запис не тригерив відвантаження."""
+    try:
+        from decimal import Decimal as _D
+        if getattr(tx, "direction", "") != "in" or not getattr(tx, "deal_id", None) or getattr(tx, "payment_id", None):
+            return
+        deal = tx.deal
+        amount = tx.amount_uah or tx.amount or _D("0")
+        if amount is None or amount <= 0:
+            return
+        pay = Payment.objects.create(deal=deal, provider="cash", amount=amount, is_paid=True)
+        tx.payment = pay
+        tx.save(update_fields=["payment"])
+        paid = sum((p.amount for p in Payment.objects.filter(deal=deal, is_paid=True)), _D("0"))
+        if deal.amount and paid >= deal.amount:
+            _advance_after_payment(deal, "оплата отримана повністю (журнал/картка клієнта)", create_wh=False)
+        elif paid > 0:
+            _advance_deal_stage(deal, 2, "часткова оплата (журнал/картка клієнта)", create_wh=False)
+    except Exception:
+        pass
+
 def _manage_or_read(*extra_codes):
     """Читати — будь-який авторизований; редагувати — superuser / roles.manage / делегований settings-код."""
     class _P(BasePermission):

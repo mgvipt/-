@@ -125,7 +125,7 @@ export default function ClientCard() {
           </div>
         </div>
         <div>
-          <FinBlock contactId={c.id} cname={c.display_name} />
+          <FinBlock contactId={c.id} cname={c.display_name} deals={c.deals} />
           <div className="panel">
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div className="label" style={{ flex: 1, margin: 0 }}>{t("Сделки клиента","Угоди клієнта")} ({c.deals.length})</div>
@@ -176,7 +176,7 @@ export default function ClientCard() {
 }
 
 
-function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
+function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: string; deals?: any[] }) {
   const navFB = useNavigate();
   const { can } = useAuth();
   const canDelTx = can("finance.tx.edit") || can("roles.manage");
@@ -198,6 +198,8 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
   const [fa, setFa] = useState({ amount: "", account: 0, cat: "", cp: "", comment: "" });
   const [payNow, setPayNow] = useState(true);
   const [recvLoan, setRecvLoan] = useState(false); // дебіторка: позика (мої гроші в борг) vs продаж (прибуток)
+  const [faDeal, setFaDeal] = useState(0);        // оплата привʼязана до сделки
+  const [faDealInfo, setFaDealInfo] = useState<any>(null); // {amount, paid, remaining}
   const [busy, setBusy] = useState(false);
   const load = () => api.get<any>(`/api/contacts/${contactId}/finance/?limit=${opsLimit}&offset=${opsPage * opsLimit}&op_cp=${encodeURIComponent(opsCp)}&op_obj=${encodeURIComponent(opsObj)}&op_from=${opsFrom}&op_to=${opsTo}`).then(setD).catch(() => {});
   useEffect(() => { const tmr = setTimeout(() => load(), 300); return () => clearTimeout(tmr); }, [contactId, opsLimit, opsPage, opsCp, opsObj, opsFrom, opsTo]); // eslint-disable-line
@@ -211,6 +213,12 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
     }
   }, [form]); // eslint-disable-line
   const money0 = (n: number) => Math.round(n || 0).toLocaleString("ru") + " ₴";
+  useEffect(() => {
+    if (!faDeal) { setFaDealInfo(null); return; }
+    let ok = true;
+    api.get<any>(`/api/deals/${faDeal}/`).then((dl: any) => { if (ok) setFaDealInfo({ title: dl.title, amount: Number(dl.amount || 0), paid: Number(dl.paid || 0), remaining: Number(dl.amount || 0) - Number(dl.paid || 0) }); }).catch(() => { if (ok) setFaDealInfo(null); });
+    return () => { ok = false; };
+  }, [faDeal]);
   async function delOps(ids: number[]) {
     if (!ids.length || busy) return;
     if (!confirm(t(`Удалить ${ids.length} операц.? Это повлияет на остатки и аналитику. Отменить нельзя.`, `Видалити ${ids.length} операц.? Це вплине на залишки й аналітику. Скасувати не можна.`))) return;
@@ -221,6 +229,12 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
   async function add() {
     if (!Number(fa.amount) || busy) return;
     if (payNow && !fa.account) return;
+    if (form === "in" && payNow && faDeal && faDealInfo) {
+      const amt = Number(String(fa.amount).replace(",", "."));
+      const rem = faDealInfo.remaining;
+      if (amt < rem - 0.5 && !confirm(t(`Оплата ${money0(amt)} меньше остатка ${money0(rem)}. Это частичная оплата — останется ${money0(rem - amt)}, остаток внесёшь позже. Провести?`, `Оплата ${money0(amt)} менша за залишок ${money0(rem)}. Це часткова оплата — залишиться ${money0(rem - amt)}, решту внесеш пізніше. Провести?`))) return;
+      if (amt > rem + 0.5 && !confirm(t(`Оплата ${money0(amt)} больше остатка ${money0(rem)} на ${money0(amt - rem)} (переплата). Провести?`, `Оплата ${money0(amt)} більша за залишок ${money0(rem)} на ${money0(amt - rem)} (переплата). Провести?`))) return;
+    }
     setBusy(true);
     try {
       if (form === "out" && !payNow) {
@@ -237,9 +251,9 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
           category: catId, account: fa.account || null, comment: fa.comment });
       } else {
         await api.post("/api/transactions/", { direction: form, amount: Number(String(fa.amount).replace(",", ".")), account: fa.account,
-          set_category: fa.cat, counterparty: fa.cp, comment: fa.comment, contact: contactId, currency: "UAH", rate: 1 });
+          set_category: fa.cat, counterparty: fa.cp, comment: fa.comment, contact: contactId, currency: "UAH", rate: 1, deal: (form === "in" && payNow && faDeal) ? faDeal : undefined });
       }
-      setForm(null); setFa({ amount: "", account: 0, cat: "", cp: "", comment: "" }); setPayNow(true); setRecvLoan(false); load();
+      setForm(null); setFa({ amount: "", account: 0, cat: "", cp: "", comment: "" }); setPayNow(true); setRecvLoan(false); setFaDeal(0); load();
     } finally { setBusy(false); }
   }
   const inpF: React.CSSProperties = { width: "100%", height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 9px", fontSize: 13, marginBottom: 6 };
@@ -256,7 +270,7 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
         ))}
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-        <button className="btn btn-light" style={{ flex: 1, color: "#16a34a", fontWeight: 700 }} onClick={() => { setPayNow(true); setRecvLoan(false); setForm(form === "in" ? null : "in"); }}>+ {t("Доход","Дохід")}</button>
+        <button className="btn btn-light" style={{ flex: 1, color: "#16a34a", fontWeight: 700 }} onClick={() => { setPayNow(true); setRecvLoan(false); setFaDeal(0); setForm(form === "in" ? null : "in"); }}>+ {t("Доход","Дохід")}</button>
         <button className="btn btn-light" style={{ flex: 1, color: "#dc2626", fontWeight: 700 }} onClick={() => { setPayNow(true); setForm(form === "out" ? null : "out"); }}>+ {t("Расход","Витрата")}</button>
         <a href={`/finance?client=${contactId}&cname=${encodeURIComponent(cname || "")}`} className="btn btn-light" style={{ whiteSpace: "nowrap" }} title={t("Открыть журнал с фильтром по клиенту","Відкрити журнал з фільтром за клієнтом")}>🧾</a>
       </div>
@@ -285,6 +299,26 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
             <option value={0}>{t("— счёт —","— рахунок —")}</option>
             {accs.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
+          {form === "in" && payNow && (deals || []).length > 0 && (
+            <>
+              <select value={faDeal} onChange={(e) => setFaDeal(Number(e.target.value))} style={{ ...inpF, borderColor: faDeal ? "#16a34a" : "#cbd5e1" }} title={t("Привязать оплату к сделке — попадёт в «Оплачено» сделки","Привʼязати оплату до сделки — потрапить в «Оплачено» сделки")}>
+                <option value={0}>{t("— оплата по сделке (необязательно) —","— оплата по сделці (необовʼязково) —")}</option>
+                {(deals || []).map((dl: any) => <option key={dl.id} value={dl.id}>№{dl.id} · {String(dl.title).slice(0, 30)}</option>)}
+              </select>
+              {!!faDeal && faDealInfo && (
+                <div style={{ fontSize: 12, margin: "-2px 0 8px", padding: "6px 9px", borderRadius: 7, background: "#f0fdf4", color: "#166534" }}>
+                  {t("Сумма сделки","Сума сделки")}: <b>{money0(faDealInfo.amount)}</b> · {t("оплачено","оплачено")}: <b>{money0(faDealInfo.paid)}</b> · {t("остаток","залишок")}: <b style={{ color: faDealInfo.remaining > 0 ? "#b45309" : "#166534" }}>{money0(faDealInfo.remaining)}</b>
+                  {Number(fa.amount) > 0 && Math.abs(Number(fa.amount) - faDealInfo.remaining) > 0.5 && (
+                    <div style={{ marginTop: 4, fontWeight: 700, color: Number(fa.amount) < faDealInfo.remaining ? "#b45309" : "#dc2626" }}>
+                      {Number(fa.amount) < faDealInfo.remaining
+                        ? "⚠️ " + t("Меньше остатка — частичная. Останется ","Менше залишку — часткова. Залишиться ") + money0(faDealInfo.remaining - Number(fa.amount))
+                        : "⚠️ " + t("Больше остатка на ","Більше залишку на ") + money0(Number(fa.amount) - faDealInfo.remaining) + " " + t("(переплата)","(переплата)")}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
           <select value={fa.cat} onChange={(e) => setFa({ ...fa, cat: e.target.value })} style={inpF}>
             <option value="">{t("— категория —","— категорія —")}</option>
             {cats.filter((cc: any) => cc.direction === form).map((cc: any) => <option key={cc.id} value={cc.name}>{cc.parent ? "└ " : ""}{cc.name}</option>)}
