@@ -311,7 +311,7 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
               </span>
             )}
           </div>
-          <div style={{ maxHeight: 420, overflowY: "auto", border: "1px solid #f1f5f9", borderRadius: 8 }}>
+          <div style={{ maxHeight: 420, overflowY: "auto", overflowX: "auto", border: "1px solid #f1f5f9", borderRadius: 8 }}>
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ position: "sticky", top: 0, zIndex: 1, background: "#f8fafc", boxShadow: "0 1px 0 #e2e8f0" }}>
@@ -323,6 +323,7 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
                   <th style={{ padding: "7px 8px", textAlign: "right", fontSize: 10.5, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }}>{t("Сумма", "Сума")}</th>
                   <th style={{ padding: "7px 8px", textAlign: "left", fontSize: 10.5, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }}>{t("Категория / описание", "Категорія / опис")}</th>
                   <th style={{ padding: "7px 8px", textAlign: "left", fontSize: 10.5, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }} title={t("Кому оплачено (расход) / кто оплатил (доход)", "Кому сплачено (витрата) / хто сплатив (дохід)")}>{t("Кому / от кого", "Кому / від кого")}</th>
+                  <th style={{ padding: "7px 8px", textAlign: "left", fontSize: 10.5, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }} title={t("Клиент-объект, к которому относится платёж (может отличаться от этой карточки)", "Клієнт-обʼєкт, якого стосується платіж (може відрізнятися від цієї картки)")}>{t("Клиент (объект)", "Клієнт (обʼєкт)")}</th>
                   <th style={{ padding: "7px 8px", textAlign: "right", fontSize: 10.5, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }}>{t("Сделка", "Угода")}</th>
                   {canDelTx && <th style={{ width: 34, padding: "7px 4px" }}></th>}
                 </tr>
@@ -336,6 +337,7 @@ function FinBlock({ contactId, cname }: { contactId: number; cname?: string }) {
                     <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: o.direction === "in" ? "#16a34a" : o.direction === "out" ? "#dc2626" : "#6366f1" }}>{o.direction === "in" ? "+" : o.direction === "out" ? "−" : "⇄"}{Math.round(o.amount_uah).toLocaleString("ru")}</td>
                     <td style={{ paddingLeft: 8, color: "#475569", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={o.comment || o.category}>{o.category || o.comment || "—"}</td>
                     <td style={{ padding: "4px 8px", color: "#0f172a", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }} title={o.counterparty}>{o.counterparty || <span className="muted">—</span>}</td>
+                    <td style={{ padding: "4px 8px", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={o.contact_name}>{o.contact ? <a onClick={(e) => { e.stopPropagation(); navFB(`/clients/${o.contact}`); }} style={{ color: "#0e7490", cursor: "pointer", fontWeight: 600, textDecoration: "none" }} title={t("Открыть карточку клиента-объекта", "Відкрити картку клієнта-обʼєкта")}>{o.contact_name}</a> : <span className="muted">—</span>}</td>
                     <td style={{ padding: "4px 8px", whiteSpace: "nowrap", textAlign: "right" }}>{o.deal ? <a onClick={(e) => { e.stopPropagation(); navFB(`/deals/${o.deal}`); }} style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600, textDecoration: "none" }} title={t("Открыть сделку", "Відкрити угоду") + (o.deal_title ? ": " + o.deal_title : "")}>№{o.deal}{o.deal_title ? " · " + String(o.deal_title).slice(0, 18) : ""}</a> : <span className="muted">—</span>}</td>
                     {canDelTx && <td onClick={(e) => e.stopPropagation()} style={{ textAlign: "center", padding: "4px" }}>
                       <span onClick={() => delOps([o.id])} title={t("Удалить операцию", "Видалити операцію")} style={{ cursor: "pointer", color: "#cbd5e1", fontSize: 13 }}>🗑</span></td>}

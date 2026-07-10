@@ -64,13 +64,13 @@ class ContactViewSet(viewsets.ModelViewSet):
         _match = _Qc(contact=c)
         if _nm:
             _byname = _Qc(counterparty__iexact=_nm) | _Qc(counterparty__istartswith=_nm + "/") | _Qc(counterparty__istartswith=_nm + " ") | _Qc(counterparty__istartswith=_nm + ".")
-            _match = _match | (_Qc(contact__isnull=True) & _byname)
+            _match = _match | _byname  # всі платежі цьому контрагенту, навіть привʼязані до обʼєкта (обʼєкт видно окремим стовпцем)
         qs = _Tx.objects.filter(_match)
         inc = qs.filter(direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0
         exp = qs.filter(direction="out").aggregate(s=_Sum("amount_uah"))["s"] or 0
         # аванс = залишок грошей клієнта в нас (його дохід мінус витрати по його обʼєкту)
         adv = (inc or 0) - (exp or 0)
-        _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | ((_Qc(contact__isnull=True) & _byname) if _byname is not None else _Qc(pk__in=[])))
+        _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | (_byname if _byname is not None else _Qc(pk__in=[])))
         debt = _ppq.filter(kind="payable").aggregate(s=_Sum("amount"))["s"] or 0
         # ДЕБІТОРКА (нам винні): торгова (від продажу, майбутня прибуток) окремо від позики (мої гроші в борг, НЕ прибуток)
         recv_sale = _ppq.filter(kind="receivable", is_loan=False).aggregate(s=_Sum("amount"))["s"] or 0
@@ -86,11 +86,17 @@ class ContactViewSet(viewsets.ModelViewSet):
         except Exception:
             _off = 0
         _off = max(0, _off)
+        def _cn(cc):
+            if not cc:
+                return ""
+            return (getattr(cc, "display_name", "") or (" ".join(filter(None, [cc.first_name or "", cc.last_name or ""])).strip())
+                    or cc.nickname or cc.phone or ("#%d" % cc.id))
         ops = [{"id": t.id, "date": t.date, "direction": t.direction, "amount_uah": t.amount_uah,
                 "counterparty": t.counterparty, "category": t.category.name if t.category else "",
                 "comment": (t.comment or "")[:80], "deal": t.deal_id,
-                "deal_title": (t.deal.title if t.deal_id else "")}
-               for t in qs.select_related("category", "deal").order_by("-date", "-id")[_off:_off + _lim]]
+                "deal_title": (t.deal.title if t.deal_id else ""),
+                "contact": t.contact_id, "contact_name": _cn(t.contact)}
+               for t in qs.select_related("category", "deal", "contact").order_by("-date", "-id")[_off:_off + _lim]]
         return Response({"income": inc, "expense": exp, "advance": adv, "debt": debt,
                          "receivable": (recv_sale or 0) + (recv_loan or 0), "receivable_sale": recv_sale, "receivable_loan": recv_loan,
                          "count": qs.count(), "ops": ops})
