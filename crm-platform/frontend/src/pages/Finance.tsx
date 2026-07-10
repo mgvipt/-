@@ -844,10 +844,11 @@ function Journal() {
     try { const r = await api.get<any>(`/api/finance/fx-rate/?ccy=${ccy}`); if (r.rate) setF((x: any) => ({ ...x, rate: r.rate })); } catch { /* лишаємо поточний */ }
   }
   async function save() {
-    if (!Number(f.amount)) return;
+    const _amt = Number(String(f.amount).replace(",", "."));
+    if (!_amt) return;
     if (!f.id && f.direction === "out" && asDebt) {
       const catId = (cats.find((cc: any) => cc.name === f.set_category) || {}).id || null;
-      await api.post("/api/planned-payments/", { kind: "payable", amount: Number(f.amount),
+      await api.post("/api/planned-payments/", { kind: "payable", amount: _amt,
         due_date: f.date || new Date().toISOString().slice(0, 10), counterparty: f.counterparty,
         contact: (f as any).contact || null, category: catId, account: f.account || null,
         fin_article: f.fin_article || null, fin_direction: f.fin_direction || null, comment: f.comment });
@@ -855,7 +856,7 @@ function Journal() {
       return;
     }
     const isT = f.direction === "transfer";
-    const body: any = { direction: f.direction, amount: Number(f.amount), account: f.account || accounts[0]?.id,
+    const body: any = { direction: f.direction, amount: _amt, account: f.account || accounts[0]?.id,
       comment: f.comment, currency: f.currency, rate: Number(f.rate) || 1 };
     if (f.date) body.date = f.date;
     if (isT) {
@@ -2075,7 +2076,7 @@ function DebtCard({ row, cats, dirs, arts, accs2, t, onClose, onSaved }: any) {
   async function save() {
     if (!f.amount || !f.due_date) { alert(t("Сумма и срок обязательны", "Сума і строк обовʼязкові")); return; }
     setBusy(true);
-    const body: any = { ...f, amount: Number(f.amount) };
+    const body: any = { ...f, amount: Number(String(f.amount).replace(",", ".")) };
     ["category", "account", "fin_direction", "fin_article", "deal"].forEach((k) => { body[k] = f[k] ? Number(f[k]) : null; });
     try {
       if (row?.id) await api.patch(`/api/planned-payments/${row.id}/`, body);
