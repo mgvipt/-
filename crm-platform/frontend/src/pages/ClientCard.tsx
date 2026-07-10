@@ -84,7 +84,7 @@ export default function ClientCard() {
         <button className="btn btn-primary" style={{ height: 30, fontSize: 12.5, padding: "0 12px" }} onClick={openNewDeal}>{ndOpen ? "✕" : "➕ " + t("Создать сделку","Створити угоду")}</button>
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
-        <span className="muted">{t("Потратил всего","Витратив усього")}: <b style={{ color: "#16a34a" }}>{money(c.total_spent)}</b></span>
+        <span className="muted" title={t("Сумма выигранных сделок — сколько клиент купил у нас. Это НЕ расходы по объекту (те в блоке «Финансы клиента»).","Сума виграних угод — скільки клієнт купив у нас. Це НЕ витрати по обʼєкту (ті у блоці «Фінанси клієнта»).")}>{t("Купил у нас на","Купив у нас на")}: <b style={{ color: "#16a34a" }}>{money(c.total_spent)}</b></span>
       </div>
 
       <div className="grid2">
