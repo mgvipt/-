@@ -96,3 +96,93 @@ class ZamerView(APIView):
         log_activity("deal", deal.id, LABEL, detail=detail, user=request.user)
 
         return Response({"ok": True, "deal_id": deal.id, "deal_title": deal.title})
+
+
+# ============================================================================
+#  Регистрация клиента из приложения → создаёт ЛИД в CRM (воронка «Лиды»).
+#  POST /api/zamer/register/  (без авторизации — публичный лид-кэптур)
+#  Тело: {name, phone, city?, walls[], net_m2, net_with_reserve_m2,
+#         gross_m2, openings_m2, perimeter_m, floor_m2}
+#  Клиент, замеряющий стены у себя дома, попадает в CRM как лид с замером.
+#  Учётные записи НЕ создаются (безопасно): дедуп контакта/лида по телефону.
+# ============================================================================
+from rest_framework.permissions import AllowAny
+from django.utils import timezone
+from datetime import timedelta
+from apps.crm.models import Contact, Lead, Funnel, Stage
+
+LEAD_FUNNEL_ID = 1   # воронка «Лиды»
+
+
+class ClientRegisterZamerView(APIView):
+    """Клиент из приложения регистрируется → создаётся лид + его замер в CRM."""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        data = request.data or {}
+        name = (data.get("name") or "").strip()
+        phone = "".join(ch for ch in (data.get("phone") or "") if ch.isdigit() or ch == "+")
+        if len(phone.replace("+", "")) < 7:
+            return Response({"error": "Укажите телефон"}, status=status.HTTP_400_BAD_REQUEST)
+        if not name:
+            name = "Клиент из приложения"
+
+        def num(key):
+            try:
+                return round(float(data.get(key) or 0), 1)
+            except (ValueError, TypeError):
+                return 0.0
+        net = num("net_m2"); reserve = num("net_with_reserve_m2")
+
+        # --- контакт (дедуп по телефону) ---
+        contact = Contact.objects.filter(phone=phone).first()
+        if not contact:
+            contact = Contact.objects.create(
+                first_name=name[:120], phone=phone,
+                source="app_zamer",
+                address=(data.get("city") or "")[:255],
+                comment="Пришёл из приложения «Wallcov Замер»",
+            )
+
+        # --- замер: короткая строка + разбивка по стенам ---
+        short = f"чисто {net} м² · с запасом +10% {reserve} м²"
+        walls = data.get("walls") or []
+        wall_lines = []
+        for i, w in enumerate(walls, 1):
+            try:
+                ww = int(float(w.get("width_cm") or 0)); hh = int(float(w.get("height_cm") or 0))
+                wall_lines.append(f"Стена {i}: {ww}×{hh} см")
+            except (ValueError, TypeError, AttributeError):
+                continue
+        detail = "; ".join(wall_lines)
+        card = [
+            {"label": "Замер стен (LiDAR)", "value": short},
+            {"label": "Стены", "value": detail or "—"},
+            {"label": "Длина по полу", "value": f"{num('perimeter_m')} м"},
+            {"label": "Пол", "value": f"{num('floor_m2')} м²"},
+        ]
+
+        # --- дедуп лида: свежий лид (10 мин) по этому контакту — обновить, иначе создать ---
+        recent = (Lead.objects.filter(contact=contact,
+                                      created_at__gte=timezone.now() - timedelta(minutes=10))
+                  .order_by("-created_at").first())
+        if recent:
+            recent.card_fields = card
+            recent.save(update_fields=["card_fields"])
+            lead = recent
+        else:
+            funnel = Funnel.objects.filter(pk=LEAD_FUNNEL_ID).first()
+            if not funnel:
+                return Response({"error": "Воронка лидов не найдена"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            stage = Stage.objects.filter(funnel=funnel).order_by("order", "id").first()
+            if not stage:
+                return Response({"error": "Нет стадий в воронке лидов"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            lead = Lead.objects.create(
+                title=f"Замер из приложения — {name}"[:255],
+                contact=contact, funnel=funnel, stage=stage,
+                source="other", card_fields=card,
+            )
+            log_activity("lead", lead.id, "Замер стен (LiDAR)",
+                         detail=f"{short}. {detail}", actor="Приложение (клиент)")
+
+        return Response({"ok": True, "lead_id": lead.id})
