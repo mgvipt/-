@@ -84,6 +84,14 @@ class ZamerView(APIView):
         deal.card_fields = fields
         deal.save(update_fields=["card_fields"])
 
+        # --- 5b. План комнаты (картинка) → в фото сделки, видно в CRM ---
+        plan = data.get("plan_png")
+        if isinstance(plan, str) and plan.startswith("data:image"):
+            photos = deal.ref_photos if isinstance(deal.ref_photos, list) else []
+            photos.append(plan)
+            deal.ref_photos = photos[-12:]      # не растим бесконечно
+            deal.save(update_fields=["ref_photos"])
+
         # --- 6. Журнал ---
         log_activity("deal", deal.id, LABEL, detail=detail, user=request.user)
 
