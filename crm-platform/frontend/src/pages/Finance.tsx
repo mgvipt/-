@@ -670,6 +670,9 @@ function Journal() {
   const [open, setOpen] = useState(false);
   const blank = { id: 0, direction: "out", amount: "", account: 0, transfer_account: 0, transfer_amount: "", fin_article: 0, fin_direction: 0, channel: "", counterparty: "", set_category: "", currency: "UAH", rate: 1, comment: "", date: "", contact: 0, contact_name: "" };
   const [f, setF] = useState<any>(blank);
+  const [splitOn, setSplitOn] = useState(false);
+  const [payerDir, setPayerDir] = useState(0);
+  const [splitRows, setSplitRows] = useState<any[]>([]);
   const [ff, setFf] = useState(""); const [ft, setFt] = useState(""); const [fq, setFq] = useState("");
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50); const [count, setCount] = useState(0);
   const { can: canJ } = useAuth();
@@ -832,10 +835,13 @@ function Journal() {
     await api.patch(`/api/transactions/${f.id}/`, body);
     setConvAcc(0); setOpen(false); load(page); loadAccs();
   }
-  function openNew(direction: string) { setF({ ...blank, direction, date: new Date().toISOString().slice(0, 10) }); setConvAcc(0); setAsDebt(false); setOpen(true); }
+  function openNew(direction: string) { setF({ ...blank, direction, date: new Date().toISOString().slice(0, 10) }); setConvAcc(0); setAsDebt(false); setSplitOn(false); setSplitRows([]); setPayerDir(0); setOpen(true); }
   function openEdit(t: any) {
     setF({ id: t.id, direction: t.direction, amount: t.amount, account: t.account || 0, fin_article: t.fin_article || 0, fin_direction: t.fin_direction || 0,
       transfer_account: t.transfer_account || 0, transfer_amount: (t as any).transfer_amount || "", channel: t.channel || "", counterparty: t.counterparty || "", set_category: t.category_name || "", currency: t.currency || "UAH", rate: t.rate || 1, comment: t.comment || "", date: t.date || "", contact: (t as any).contact || 0, contact_name: (t as any).contact_name || "" });
+    setSplitOn(((t as any).splits || []).length > 0);
+    setSplitRows(((t as any).splits || []).map((sp: any) => ({ dir: sp.fin_direction || 0, amt: sp.amount })));
+    setPayerDir((t as any).payer_direction || 0);
     setOpen(true);
   }
   async function fetchRate(ccy: string) {
@@ -846,6 +852,11 @@ function Journal() {
   async function save() {
     const _amt = Number(String(f.amount).replace(",", "."));
     if (!_amt) return;
+    if (splitOn) {
+      if (!payerDir) { alert(t("Выбери подразделение, чья касса оплатила", "Обери підрозділ, чия каса сплатила")); return; }
+      const _ss = splitRows.reduce((a: number, r: any) => a + (Number(r.amt) || 0), 0);
+      if (Math.abs(_ss - _amt) > 0.01) { alert(t("Сумма распределения не равна сумме операции", "Сума розподілу не дорівнює сумі операції")); return; }
+    }
     if (!f.id && f.direction === "out" && asDebt) {
       const catId = (cats.find((cc: any) => cc.name === f.set_category) || {}).id || null;
       await api.post("/api/planned-payments/", { kind: "payable", amount: _amt,
@@ -866,6 +877,8 @@ function Journal() {
       body.channel = f.channel; body.counterparty = f.counterparty; body.set_category = f.set_category;
       body.fin_article = f.fin_article || null; body.fin_direction = f.fin_direction || null; body.transfer_account = null; body.transfer_amount = null;
       body.contact = (f as any).contact || null;
+      body.payer_direction = splitOn ? (payerDir || null) : null;
+      body.splits = splitOn ? splitRows.filter((r: any) => r.dir && Number(r.amt)).map((r: any) => ({ fin_direction: r.dir, set_category: f.set_category, amount: Number(r.amt) })) : [];
     }
     if (f.id) await api.patch(`/api/transactions/${f.id}/`, body);
     else await api.post("/api/transactions/", body);
@@ -1101,6 +1114,36 @@ function Journal() {
                   <option value={0}>{t("— без направления —","— без напрямку —")}</option>
                   {dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
+                <div style={{ margin: "2px 0 10px", border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, background: splitOn ? "#fbf7f4" : "#fff" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    <input type="checkbox" checked={splitOn} onChange={(e) => { setSplitOn(e.target.checked); if (e.target.checked && splitRows.length === 0) setSplitRows([{ dir: f.fin_direction || 0, amt: f.amount || "" }]); }} style={{ width: 15, height: 15, accentColor: "#C67D5F" }} />
+                    🔀 {t("Разделить между подразделениями","Розподілити між підрозділами")}
+                  </label>
+                  {splitOn && <div style={{ marginTop: 8 }}>
+                    <label className="label">{t("Оплатило подразделение (чья касса)","Оплатив підрозділ (чия каса)")}</label>
+                    <select value={payerDir} onChange={(e) => setPayerDir(Number(e.target.value))} style={inp}>
+                      <option value={0}>{t("— выбери подразделение —","— обери підрозділ —")}</option>
+                      {dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                    {splitRows.map((r: any, i: number) => (
+                      <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                        <select value={r.dir} onChange={(e) => { const n = [...splitRows]; n[i] = { ...n[i], dir: Number(e.target.value) }; setSplitRows(n); }} style={{ ...inp, marginBottom: 0, flex: 2 }}>
+                          <option value={0}>{t("— подразделение —","— підрозділ —")}</option>
+                          {dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                        </select>
+                        <input type="number" value={r.amt} onChange={(e) => { const n = [...splitRows]; n[i] = { ...n[i], amt: e.target.value }; setSplitRows(n); }} placeholder={t("сумма","сума")} style={{ ...inp, marginBottom: 0, width: 104, textAlign: "right" }} />
+                        <span onClick={() => setSplitRows(splitRows.filter((_: any, j: number) => j !== i))} title={t("убрать","прибрати")} style={{ cursor: "pointer", color: "#cbd5e1", fontSize: 16 }}>×</span>
+                      </div>
+                    ))}
+                    {(() => { const _s = splitRows.reduce((a: number, r: any) => a + (Number(r.amt) || 0), 0); const _rem = (Number(f.amount) || 0) - _s; return (
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+                        <span onClick={() => setSplitRows([...splitRows, { dir: 0, amt: "" }])} style={{ cursor: "pointer", color: "#C67D5F", fontSize: 12.5, fontWeight: 700 }}>+ {t("подразделение","підрозділ")}</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: Math.abs(_rem) < 0.01 ? "#16a34a" : (_rem < 0 ? "#dc2626" : "#b45309") }}>{t("распределено","розподілено")} {Math.round(_s).toLocaleString("ru")} / {Math.round(Number(f.amount) || 0).toLocaleString("ru")} · {_rem < 0 ? t("перерасход ","перевитрата ") + Math.round(-_rem).toLocaleString("ru") : t("остаток ","залишок ") + Math.round(_rem).toLocaleString("ru")}</span>
+                      </div>
+                    ); })()}
+                    <div className="muted" style={{ fontSize: 10.5, marginTop: 5, lineHeight: 1.4 }}>{t("Доли других подразделений станут внутренним долгом перед плательщиком — видно в Дт/Кт и в карточке подразделения.","Частки інших підрозділів стануть внутрішнім боргом перед платником — видно в Дт/Кт і в картці підрозділу.")}</div>
+                  </div>}
+                </div>
                 <label className="label" title={t("Канал/источник поступления","Канал/джерело надходження")}>{t("Канал","Канал")}</label>
                 <select value={f.channel} onChange={(e) => setF({ ...f, channel: e.target.value })} style={inp}>
                   {CHANNELS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}

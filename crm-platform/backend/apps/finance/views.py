@@ -169,10 +169,41 @@ class TransactionViewSet(viewsets.ModelViewSet):
     from django_filters.rest_framework import DjangoFilterBackend as _DFB
     filter_backends = [_DFB]  # без OrderingFilter: сортування керує get_queryset (клік по стовпцях)
 
+    def _apply_splits(self, tx, data):
+        if "splits" not in data:
+            return
+        from apps.finance.models import TransactionSplit, Category, FinDirection
+        from decimal import Decimal as _D
+        splits = data.get("splits") or []
+        rows = []
+        for sp in splits:
+            amt = sp.get("amount")
+            if not amt:
+                continue
+            fd = FinDirection.objects.filter(pk=sp.get("fin_direction")).first() if sp.get("fin_direction") else None
+            cat = None
+            if sp.get("category"):
+                cat = Category.objects.filter(pk=sp.get("category")).first()
+            elif sp.get("set_category"):
+                cat = Category.objects.filter(name=sp.get("set_category"), direction=tx.direction).first() or Category.objects.filter(name=sp.get("set_category")).first()
+            rows.append((fd, cat, _D(str(amt))))
+        if rows and abs(sum((r[2] for r in rows), _D("0")) - (tx.amount or _D("0"))) > _D("0.01"):
+            from rest_framework.exceptions import ValidationError as _VE
+            raise _VE({"splits": "Сума розподілу не дорівнює сумі операції."})
+        TransactionSplit.objects.filter(transaction=tx).delete()
+        for fd, cat, amt in rows:
+            TransactionSplit.objects.create(transaction=tx, fin_direction=fd, category=cat, amount=amt)
+        try:
+            from apps.finance.services import sync_internal_debts
+            sync_internal_debts(tx)
+        except Exception:
+            pass
+
     def perform_create(self, serializer):
         _fin_guard(self.request, "finance.tx.edit", "Журнал: лише перегляд — нема права створювати операції")
         _guard_period(self.request, serializer.validated_data.get("date"))
         serializer.save()
+        self._apply_splits(serializer.instance, self.request.data)
         try:
             from apps.crm.views import sync_deal_payment_from_tx
             sync_deal_payment_from_tx(serializer.instance)
@@ -186,6 +217,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         if nd:
             _guard_period(self.request, nd)
         serializer.save()
+        self._apply_splits(serializer.instance, self.request.data)
         try:
             from apps.crm.views import sync_deal_payment_from_tx
             sync_deal_payment_from_tx(serializer.instance)

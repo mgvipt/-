@@ -178,6 +178,8 @@ class FinDirection(models.Model):
     plan_expense = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="План витрат")
     sort_order = models.PositiveIntegerField(default=0)
     active = models.BooleanField(default=True)
+    internal_contact = models.ForeignKey("crm.Contact", null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+                                         help_text="Внутрішній контрагент цього підрозділу (створюється авто при взаєморозрахунках між підрозділами)")
 
     class Meta:
         ordering = ["sort_order", "id"]
@@ -268,6 +270,11 @@ class PlannedPayment(models.Model):
                                 related_name="planned_payments",
                                 help_text="Клієнт (обʼєкт), по якому цей борг")
     fin_direction = models.ForeignKey("FinDirection", null=True, blank=True, on_delete=models.SET_NULL, related_name="planned_payments")
+    is_internal = models.BooleanField(default=False, db_index=True, help_text="Внутрішній борг між підрозділами (не зовнішній контрагент)")
+    counterparty_contact = models.ForeignKey("crm.Contact", null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+                                             help_text="Друга сторона внутрішнього боргу (підрозділ-кредитор), щоб борг було видно в обох картках")
+    source_transaction = models.ForeignKey("Transaction", null=True, blank=True, on_delete=models.CASCADE, related_name="internal_debts",
+                                           help_text="Операція-розподіл, що породила цей внутрішній борг")
     fin_article = models.ForeignKey("FinModelArticle", null=True, blank=True, on_delete=models.SET_NULL, related_name="planned_payments")
     channel = models.CharField(max_length=24, blank=True, default="")
     comment = models.CharField(max_length=255, blank=True)

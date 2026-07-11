@@ -51,7 +51,14 @@ class PlannedPaymentSerializer(serializers.ModelSerializer):
 class TransactionSerializer(serializers.ModelSerializer):
     account_name = serializers.CharField(source="account.name", read_only=True)
     category_path = serializers.SerializerMethodField()
+    splits = serializers.SerializerMethodField()
+    payer_direction_name = serializers.CharField(source="payer_direction.name", read_only=True, default="")
     contact_name = serializers.SerializerMethodField()
+
+    def get_splits(self, obj):
+        return [{"fin_direction": s.fin_direction_id, "fin_direction_name": (s.fin_direction.name if s.fin_direction_id else ""),
+                 "category": s.category_id, "category_name": (s.category.name if s.category_id else ""),
+                 "amount": float(s.amount)} for s in obj.splits.all()]
 
     def get_category_path(self, obj):
         c = obj.category
@@ -102,7 +109,8 @@ class TransactionSerializer(serializers.ModelSerializer):
                   "counterparty", "currency", "rate", "amount_uah", "date", "op_time",
                   "transfer_account", "transfer_account_name", "transfer_amount", "deal_title",
                   "contact", "contact_name",
-                  "comment", "deal", "date", "created_at", "set_category"]
+                  "comment", "deal", "date", "created_at", "set_category",
+                  "payer_direction", "payer_direction_name", "splits"]
 
 
 class FinModelArticleSerializer(serializers.ModelSerializer):

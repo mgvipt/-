@@ -335,3 +335,41 @@ def canonical_counterparty(name):
     ex = (Transaction.objects.exclude(counterparty="")
           .filter(counterparty__iexact=s).values_list("counterparty", flat=True).first())
     return ex or s
+
+
+def internal_contact_for_direction(fd):
+    """Внутрішній контрагент підрозділу (напрямку) — створюється і привʼязується при першій потребі."""
+    if not fd:
+        return None
+    if getattr(fd, "internal_contact_id", None):
+        return fd.internal_contact
+    from apps.crm.models import Contact
+    c = Contact.objects.create(first_name=((fd.name or "Підрозділ")[:120] + " · підрозділ"))
+    fd.internal_contact = c
+    fd.save(update_fields=["internal_contact"])
+    return c
+
+
+def sync_internal_debts(tx):
+    """Перегенерувати внутрішні борги між підрозділами з розподілу (splits) операції.
+    Борг виникає, коли частка НЕ платника сплачена з каси платника (payer_direction).
+    Борг = PlannedPayment(is_internal): у боржника — кредиторка, у платника — дебіторка (через counterparty_contact)."""
+    from .models import PlannedPayment
+    PlannedPayment.objects.filter(source_transaction=tx, is_internal=True).delete()
+    payer = getattr(tx, "payer_direction", None)
+    if not payer or getattr(tx, "direction", "") == "transfer":
+        return
+    payer_c = internal_contact_for_direction(payer)
+    pname = (" ".join(filter(None, [payer_c.first_name or "", payer_c.last_name or ""])).strip() if payer_c else "")[:160]
+    for sp in tx.splits.all():
+        if not sp.fin_direction_id or sp.fin_direction_id == payer.id:
+            continue
+        if not sp.amount or sp.amount <= 0:
+            continue
+        debtor_c = internal_contact_for_direction(sp.fin_direction)
+        PlannedPayment.objects.create(
+            kind="payable", amount=sp.amount, due_date=(tx.date or __import__("datetime").date.today()),
+            contact=debtor_c, counterparty=pname, counterparty_contact=payer_c,
+            fin_direction=sp.fin_direction, category=sp.category,
+            is_internal=True, source_transaction=tx, status="planned",
+        )

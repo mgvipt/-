@@ -83,11 +83,14 @@ class ContactViewSet(viewsets.ModelViewSet):
         exp = qs.filter(direction="out").aggregate(s=_Sum("amount_uah"))["s"] or 0
         # аванс = залишок грошей клієнта в нас (його дохід мінус витрати по його обʼєкту)
         adv = (inc or 0) - (exp or 0)
-        _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | (_byname if _byname is not None else _Qc(pk__in=[])))
+        _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[])))
         debt = _ppq.filter(kind="payable").aggregate(s=_Sum("amount"))["s"] or 0
         # ДЕБІТОРКА (нам винні): торгова (від продажу, майбутня прибуток) окремо від позики (мої гроші в борг, НЕ прибуток)
         recv_sale = _ppq.filter(kind="receivable", is_loan=False).aggregate(s=_Sum("amount"))["s"] or 0
         recv_loan = _ppq.filter(kind="receivable", is_loan=True).aggregate(s=_Sum("amount"))["s"] or 0
+        # внутрішній борг між підрозділами: якщо цей контакт — КРЕДИТОР (counterparty_contact), йому винні
+        recv_internal = _PP.objects.filter(status="planned", is_internal=True, counterparty_contact=c, kind="payable").aggregate(s=_Sum("amount"))["s"] or 0
+        recv_sale = (recv_sale or 0) + (recv_internal or 0)
         # ── ПРИБУТОК ПО КЛІЄНТУ (загальний, без фільтра): виручка − собівартість складу − закупки/послуги ──
         from decimal import Decimal as _Dp
         _qf = _Tx.objects.filter(_match)
