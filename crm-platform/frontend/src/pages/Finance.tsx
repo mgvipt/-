@@ -821,6 +821,15 @@ function Journal() {
     if (txId) {
       api.get<any>(`/api/transactions/${txId}/`).then((t0) => { if (t0 && t0.id) openEdit(t0); }).catch(() => {});
     }
+    // deep-link: /finance?tab=journal&newop=in|out&contact=<id>&cname=<name> — нова операція з картки клієнта (та сама повна картка)
+    const _sp = new URLSearchParams(window.location.search);
+    const _np = _sp.get("newop");
+    if (_np === "in" || _np === "out") {
+      openNew(_np);
+      const _cid = Number(_sp.get("contact")) || 0;
+      const _cnm = _sp.get("cname") || "";
+      if (_cid) setTimeout(() => setF((x: any) => ({ ...x, contact: _cid, contact_name: _cnm })), 30);
+    }
   }, []);
   useEffect(() => { load(1); setPage(1); }, [pageSize]);
   useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [sortF]);
