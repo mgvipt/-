@@ -746,6 +746,7 @@ function Journal() {
   const [fContactName, setFContactName] = useState(() => new URLSearchParams(window.location.search).get("cname") || "");
   useEffect(() => { if (fContact || fContactName === "") { setPage(1); load(1); } /* eslint-disable-next-line */ }, [fContact]);
   const [accW, setAccW] = useState(() => Number(localStorage.getItem("fin_acc_w")) || 220);
+  const [accCollapsed, setAccCollapsed] = useState(() => localStorage.getItem("fin_acc_collapsed") === "1");
   function startAccResize(e: React.MouseEvent) {
     e.preventDefault();
     const sx = e.clientX, sw = accW;
@@ -896,7 +897,12 @@ function Journal() {
   }
   return (
     <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-      <div className="panel acc-sidebar" style={{ width: accW, flex: `0 0 ${accW}px`, margin: 0, maxHeight: "80vh", overflowY: "auto" }}>
+      <div className="panel acc-sidebar" style={{ width: accCollapsed ? 40 : accW, flex: `0 0 ${accCollapsed ? 40 : accW}px`, margin: 0, maxHeight: "80vh", overflowY: accCollapsed ? "hidden" : "auto", padding: accCollapsed ? "10px 4px" : undefined }}>
+        {accCollapsed ? (
+          <div onClick={() => { setAccCollapsed(false); localStorage.setItem("fin_acc_collapsed", "0"); }} title={t("Развернуть счета","Розгорнути рахунки")} style={{ cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "#64748b", fontWeight: 700 }}>
+            <span style={{ fontSize: 17 }}>»</span><Icon n="🏦" size={16} /><span style={{ writingMode: "vertical-rl", letterSpacing: 1, fontSize: 12 }}>{t("Рахунки","Рахунки")}</span>
+          </div>
+        ) : (<>
         {/* Σ активних — над заголовком, лише з правом «Бачити ЗАГАЛЬНИЙ баланс» */}
         {canTotal &&
         <div style={{ textAlign: "center", marginBottom: 6 }}>
@@ -907,6 +913,7 @@ function Journal() {
           <b style={{ fontSize: 13 }}><Icon n="🏦" size={14} /> Рахунки</b>
           <span>
             {selAcc.length > 0 && <span style={{ fontSize: 11, color: "#2563eb", cursor: "pointer", marginRight: 6 }} onClick={() => { setSelAcc([]); setTimeout(() => load(1), 0); }}>скинути</span>}
+            <button onClick={() => { setAccCollapsed(true); localStorage.setItem("fin_acc_collapsed", "1"); }} title={t("Свернуть блок","Згорнути блок")} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 15, marginRight: 2, color: "#64748b" }}>«</button>
             <button onClick={() => setBankHub(true)} title={t("Настройки: банки по API, правила разноски, история загрузок, счета","Налаштування: банки по API, правила рознесення, історія завантажень, рахунки")} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 14 }}>⚙️</button>
           </span>
         </div>
@@ -921,9 +928,10 @@ function Journal() {
             <b style={{ fontSize: 11, color: a.balance < 0 ? "#dc2626" : "#16a34a" }}>{money2(a.balance)}</b>
           </div>
         ); })}
+        </>)}
       </div>
       {/* ручка зміни ширини блоку рахунків */}
-      <div onMouseDown={startAccResize} title={t("Тяни, чтобы изменить ширину","Тягни, щоб змінити ширину")} style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0, minHeight: "60vh" }} />
+      {!accCollapsed && <div onMouseDown={startAccResize} title={t("Тяни, чтобы изменить ширину","Тягни, щоб змінити ширину")} style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0, minHeight: "60vh" }} />}
       <div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }} className="journal-filter">
         <span style={{ minWidth: 180, display: "inline-block" }}><ClientPick value={fContact} label={fContactName} placeholder={t("Фильтр: клиент…","Фільтр: клієнт…")} onPick={(cid, nm) => { setFContact(cid); setFContactName(nm); }} /></span>
@@ -1121,7 +1129,7 @@ function Journal() {
                   </label>
                   {splitOn && <div style={{ marginTop: 8 }}>
                     <label className="label">{t("Оплатило подразделение (чья касса)","Оплатив підрозділ (чия каса)")}</label>
-                    <select value={payerDir} onChange={(e) => setPayerDir(Number(e.target.value))} style={inp}>
+                    <select value={payerDir} onChange={(e) => { const _pd = Number(e.target.value); setPayerDir(_pd); if (_pd && !splitRows.some((r: any) => r.dir === _pd)) setSplitRows((rows: any[]) => [{ dir: _pd, amt: "" }, ...rows]); }} style={inp}>
                       <option value={0}>{t("— выбери подразделение —","— обери підрозділ —")}</option>
                       {dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </select>
@@ -1141,7 +1149,7 @@ function Journal() {
                         <span style={{ fontSize: 12, fontWeight: 600, color: Math.abs(_rem) < 0.01 ? "#16a34a" : (_rem < 0 ? "#dc2626" : "#b45309") }}>{t("распределено","розподілено")} {Math.round(_s).toLocaleString("ru")} / {Math.round(Number(f.amount) || 0).toLocaleString("ru")} · {_rem < 0 ? t("перерасход ","перевитрата ") + Math.round(-_rem).toLocaleString("ru") : t("остаток ","залишок ") + Math.round(_rem).toLocaleString("ru")}</span>
                       </div>
                     ); })()}
-                    <div className="muted" style={{ fontSize: 10.5, marginTop: 5, lineHeight: 1.4 }}>{t("Доли других подразделений станут внутренним долгом перед плательщиком — видно в Дт/Кт и в карточке подразделения.","Частки інших підрозділів стануть внутрішнім боргом перед платником — видно в Дт/Кт і в картці підрозділу.")}</div>
+                    <div className="muted" style={{ fontSize: 10.5, marginTop: 5, lineHeight: 1.4 }}>{t("Строка плательщика — его СОБСТВЕННАЯ доля (не долг). Долгом станут только доли ДРУГИХ подразделений перед плательщиком — видно в Дт/Кт → Взаиморасчёты.","Рядок платника — його ВЛАСНА частка (не борг). Боргом стануть лише частки ІНШИХ підрозділів перед платником — видно в Дт/Кт → Взаєморозрахунки.")}</div>
                   </div>}
                 </div>
                 <label className="label" title={t("Канал/источник поступления","Канал/джерело надходження")}>{t("Канал","Канал")}</label>
