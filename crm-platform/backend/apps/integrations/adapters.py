@@ -112,23 +112,36 @@ def np_search_cities(q, limit=20):
 
 def np_warehouses(ref, q="", limit=60):
     """Address.getWarehouses — відділення/поштомати. Для міст працює CityRef,
-    для сіл/смт — SettlementRef. Пробуємо обидва (CityRef першим)."""
+    для сіл/смт — SettlementRef. Пробуємо обидва (CityRef першим).
+    ⚠️ NP FindByString ненадійний (пошук '1' повертав 0 відділень) — тому тягнемо
+    список по місту БЕЗ FindByString і фільтруємо САМІ: номер-префікс або підрядок назви."""
+    q = (q or "").strip()
+    qnum = q.replace("№", "").strip()   # прибрати «№» якщо ввели
+    ql = q.lower()
     for key in ("CityRef", "SettlementRef"):
-        props = {key: ref, "Limit": str(limit), "Page": "1"}
-        if q:
-            props["FindByString"] = q
+        props = {key: ref, "Limit": "1000", "Page": "1"}
         try:
             rows = _np_call("Address", "getWarehouses", props).get("data") or []
         except Exception:
             rows = []
-        if rows:
-            return [{
+        if not rows:
+            continue
+        out = []
+        for w in rows:
+            num = str(w.get("Number") or "")
+            desc = w.get("Description") or ""
+            if q and not (num.startswith(qnum) or ql in desc.lower()):
+                continue
+            out.append({
                 "ref": w.get("Ref"),
                 "number": w.get("Number"),
-                "desc": w.get("Description") or "",
+                "desc": desc,
                 "type": w.get("TypeOfWarehouse") or "",
                 "max_weight": w.get("TotalMaxWeightAllowed") or "",
-            } for w in rows]
+            })
+            if len(out) >= limit:
+                break
+        return out
     return []
 
 def np_resolve_sender():
