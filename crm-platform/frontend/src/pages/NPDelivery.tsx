@@ -23,28 +23,37 @@ function Auto({ kind, value, onPick, onType, placeholder, disabled, settlementRe
   const [open, setOpen] = useState(false);
   const box = useRef<any>(null);
   const picked = useRef(false);   // щойно ВИБРАЛИ зі списку — не шукати повторно
+  const focused = useRef(false);
   useEffect(() => { setQ(value || ""); }, [value]);
+  // відділення/поштомати: одразу підвантажуємо ПОВНИЙ список по місту, щоб випадав без набору
   useEffect(() => {
-    if (picked.current) { picked.current = false; setList([]); return; }
-    const minLen = kind === "warehouse" ? 1 : 2; if (!q || q.length < minLen) { setList([]); return; }
+    if (kind !== "warehouse" || !settlementRef) return;
+    let ok = true;
+    api.get<any[]>(`/api/deals/np_warehouses/?settlement_ref=${encodeURIComponent(settlementRef)}&q=`).then((r) => { if (ok) setList(r || []); }).catch(() => {});
+    return () => { ok = false; };
+  }, [settlementRef]);
+  useEffect(() => {
+    if (picked.current) { picked.current = false; return; }
+    const minLen = kind === "warehouse" ? 1 : 2;
+    if (!q || q.length < minLen) { if (kind !== "warehouse") setList([]); return; }
     const tm = setTimeout(() => {
       let url = "";
       if (kind === "warehouse") url = `/api/deals/np_warehouses/?settlement_ref=${encodeURIComponent(settlementRef || "")}&q=${encodeURIComponent(q)}`;
       else if (kind === "street") url = `/api/deals/np_streets/?settlement_ref=${encodeURIComponent(settlementRef || "")}&q=${encodeURIComponent(q)}&city=${encodeURIComponent(cityName || "")}`;
       else url = `/api/deals/np_cities/?q=${encodeURIComponent(q)}`;
-      api.get<any[]>(url).then((r) => { setList(r || []); setOpen(true); }).catch(() => setList([]));
-    }, 320);
+      api.get<any[]>(url).then((r) => { setList(r || []); if (focused.current) setOpen(true); }).catch(() => {});
+    }, 250);
     return () => clearTimeout(tm);
   }, [q]);
   useEffect(() => {
-    const h = (e: any) => { if (box.current && !box.current.contains(e.target)) setOpen(false); };
+    const h = (e: any) => { if (box.current && !box.current.contains(e.target)) { setOpen(false); focused.current = false; } };
     document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h);
   }, []);
   const inp = { width: "100%", height: 38, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", boxSizing: "border-box" as const, fontSize: 13.5, background: disabled ? "#f1f5f9" : "#fff" };
   return (
     <div ref={box} style={{ position: "relative" }}>
       <input type="search" value={q} disabled={disabled} placeholder={placeholder} style={inp}
-        onChange={(e) => { setQ(e.target.value); if (onType) onType(e.target.value); }} onFocus={() => list.length && setOpen(true)} />
+        onChange={(e) => { setQ(e.target.value); if (onType) onType(e.target.value); }} onFocus={() => { focused.current = true; if (list.length) setOpen(true); }} />
       {open && list.length > 0 && <ul style={{ position: "absolute", zIndex: 40, top: 40, left: 0, right: 0, margin: 0, padding: 0, listStyle: "none", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, maxHeight: 220, overflowY: "auto", boxShadow: "0 10px 28px rgba(0,0,0,.14)" }}>
         {list.map((it, i) => <li key={i} onClick={() => { picked.current = true; onPick(it); setQ(it.name || it.desc || it.Present || ""); setOpen(false); }} style={{ padding: "8px 11px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f1f5f9" }}>
           {kind === "warehouse" ? (it.desc || it.name) : kind === "street" ? it.name : <>{it.name} <span style={{ color: "#94a3b8" }}>{it.area}</span></>}
