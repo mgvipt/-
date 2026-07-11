@@ -111,38 +111,49 @@ def np_search_cities(q, limit=20):
 
 
 def np_warehouses(ref, q="", limit=60):
-    """Address.getWarehouses — відділення/поштомати. Для міст працює CityRef,
-    для сіл/смт — SettlementRef. Пробуємо обидва (CityRef першим).
-    ⚠️ NP FindByString ненадійний (пошук '1' повертав 0 відділень) — тому тягнемо
-    список по місту БЕЗ FindByString і фільтруємо САМІ: номер-префікс або підрядок назви."""
+    """Address.getWarehouses — відділення/поштомати. Надійно, бо NP флакує:
+    1) текстовий запит → FindByString; 2) якщо порожньо або пошук по номеру ('1' FindByString дає 0)
+    → тягнемо список і фільтруємо самі за номером/назвою; 3) повтор при порожній відповіді.
+    Пробуємо CityRef (велике місто) і SettlementRef (село/смт)."""
     q = (q or "").strip()
-    qnum = q.replace("№", "").strip()   # прибрати «№» якщо ввели
+    qnum = q.replace("\u2116", "").replace("#", "").strip()
     ql = q.lower()
-    for key in ("CityRef", "SettlementRef"):
-        props = {key: ref, "Limit": "1000", "Page": "1"}
-        try:
-            rows = _np_call("Address", "getWarehouses", props).get("data") or []
-        except Exception:
-            rows = []
-        if not rows:
-            continue
-        out = []
-        for w in rows:
+
+    def _call(extra):
+        for key in ("CityRef", "SettlementRef"):
+            props = {key: ref, "Limit": str(extra.get("Limit", limit)), "Page": "1"}
+            if extra.get("FindByString"):
+                props["FindByString"] = extra["FindByString"]
+            for _try in range(2):  # NP іноді віддає порожньо — одна повторна спроба
+                try:
+                    rows = _np_call("Address", "getWarehouses", props).get("data") or []
+                except Exception:
+                    rows = []
+                if rows:
+                    return rows
+        return []
+
+    rows = []
+    if q and qnum and not qnum.isdigit():
+        rows = _call({"FindByString": q, "Limit": limit})
+    if not rows:
+        allrows = _call({"Limit": 500})
+        for w in allrows:
             num = str(w.get("Number") or "")
             desc = w.get("Description") or ""
             if q and not (num.startswith(qnum) or ql in desc.lower()):
                 continue
-            out.append({
-                "ref": w.get("Ref"),
-                "number": w.get("Number"),
-                "desc": desc,
-                "type": w.get("TypeOfWarehouse") or "",
-                "max_weight": w.get("TotalMaxWeightAllowed") or "",
-            })
-            if len(out) >= limit:
+            rows.append(w)
+            if len(rows) >= limit:
                 break
-        return out
-    return []
+    return [{
+        "ref": w.get("Ref"),
+        "number": w.get("Number"),
+        "desc": w.get("Description") or "",
+        "type": w.get("TypeOfWarehouse") or "",
+        "max_weight": w.get("TotalMaxWeightAllowed") or "",
+    } for w in rows[:limit]]
+
 
 def np_resolve_sender():
     """Резолв відправника (counterparty/contact/phone) один раз — кеш у config інтеграції."""
