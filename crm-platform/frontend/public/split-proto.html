@@ -98,7 +98,7 @@
   </div>
 
   <div class="card">
-    <div class="card-h"><span aria-hidden="true">🧾</span> Операція · витрата <span class="money" id="op-total">1 000</span> грн · Стрімтелеком</div>
+    <div class="card-h"><span aria-hidden="true">🧾</span> Операція · витрата <input id="op-total" type="number" value="1000" aria-label="сума операції" style="width:104px;height:32px;text-align:right;font-family:inherit;font-size:14px;font-variant-numeric:tabular-nums;border:1px solid var(--line2);border-radius:8px;padding:0 8px;color:var(--ink);background:var(--card)"> грн · Стрімтелеком</div>
     <div class="card-b" style="display:flex;flex-direction:column;gap:12px">
       <div class="row">
         <label class="fld" for="payer">Оплатив підрозділ</label>
@@ -109,7 +109,10 @@
         <div class="thead"><div>Підрозділ</div><div>Стаття</div><div style="text-align:right">Сума</div><div></div></div>
         <div id="tbody"></div>
         <div class="foot">
-          <button class="link" id="add" type="button">+ додати підрозділ</button>
+          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+            <button class="link" id="add" type="button">+ додати підрозділ</button>
+            <button class="link" id="sync-total" type="button">= сума операції по рядках</button>
+          </div>
           <span id="foot" class="money" style="font-size:12.5px"></span>
         </div>
       </div>
@@ -169,7 +172,7 @@
 (function(){
   var UNITS=[["tt","Торгова точка"],["im","Інтернет-магазин"],["sk","Склад"],["of","Офіс"]];
   var CATS=["Телефонія","Оренда","Реклама","Комуналка"];
-  var payer="tt", total=1000, settled=false;
+  var payer="tt", settled=false;
   var rows=[{unit:"tt",cat:"Телефонія",amt:500},{unit:"im",cat:"Телефонія",amt:400},{unit:"sk",cat:"Телефонія",amt:100}];
   var $=function(id){return document.getElementById(id)};
   function uname(u){for(var i=0;i<UNITS.length;i++)if(UNITS[i][0]===u)return UNITS[i][1];return "?"}
@@ -181,11 +184,14 @@
     +'<input class="iu-amt" data-i="'+i+'" type="number" value="'+r.amt+'"/>'
     +'<button class="xbtn iu-del" data-i="'+i+'" aria-label="прибрати">×</button></div>'}).join("")}
   function compute(){
+    var total=+($("op-total").value)||0;
     var alloc=rows.reduce(function(s,r){return s+(+r.amt||0)},0), rem=total-alloc, debt={};
     rows.forEach(function(r){if(r.unit!==payer)debt[r.unit]=(debt[r.unit]||0)+(+r.amt||0)});
     var payerGets=0;Object.keys(debt).forEach(function(k){payerGets+=debt[k]});
-    $("op-total").textContent=money(total);
-    $("foot").innerHTML='розподілено '+money(alloc)+' / '+money(total)+' · залишок <span class="'+(rem===0?"ok":"over")+'">'+money(rem)+'</span>';
+    var remTxt = rem===0 ? '<span class="ok">залишок 0</span>'
+      : rem>0 ? '<span style="color:var(--warn-ink)">не розподілено '+money(rem)+'</span>'
+      : '<span class="over">перевитрата '+money(-rem)+' (рядки більші за суму операції)</span>';
+    $("foot").innerHTML='розподілено '+money(alloc)+' / '+money(total)+' · '+remTxt;
     var pv=$("provesti");pv.disabled=(rem!==0);
     // debts list
     if(settled){$("debts").innerHTML='<div class="bal pos"><span>Борг погашено — взаєморозрахунки закриті</span><span class="v money" style="color:var(--good-ink)">✓</span></div>'}
@@ -218,13 +224,14 @@
     $("payer").innerHTML=opt(UNITS,payer,1);
     $("tbody").innerHTML=trows();
     compute();
-    document.querySelector(".inner").addEventListener("input",function(e){var t=e.target;if(t.classList.contains("iu-amt")){rows[+t.dataset.i].amt=+t.value||0;settled=false;compute()}});
+    document.querySelector(".inner").addEventListener("input",function(e){var t=e.target;if(t.classList.contains("iu-amt")){rows[+t.dataset.i].amt=+t.value||0;settled=false;compute()}else if(t.id==="op-total"){settled=false;compute()}});
     document.querySelector(".inner").addEventListener("change",function(e){var t=e.target;if(t.classList.contains("iu-unit")){rows[+t.dataset.i].unit=t.value;settled=false;compute()}else if(t.classList.contains("iu-cat")){rows[+t.dataset.i].cat=t.value}else if(t.id==="payer"){payer=t.value;settled=false;compute()}});
     document.querySelector(".inner").addEventListener("click",function(e){var t=e.target.closest("button");if(!t)return;
       if(t.classList.contains("iu-del")){if(rows.length>1){rows.splice(+t.dataset.i,1);rtable()}}
       else if(t.id==="add"){var used=rows.map(function(r){return r.unit});var free=UNITS.map(function(u){return u[0]}).filter(function(u){return used.indexOf(u)<0})[0]||"of";rows.push({unit:free,cat:"Телефонія",amt:0});rtable()}
+      else if(t.id==="sync-total"){$("op-total").value=rows.reduce(function(s,r){return s+(+r.amt||0)},0);settled=false;compute()}
       else if(t.id==="settle"){settled=true;compute()}
-      else if(t.id==="reset"){payer="tt";settled=false;rows=[{unit:"tt",cat:"Телефонія",amt:500},{unit:"im",cat:"Телефонія",amt:400},{unit:"sk",cat:"Телефонія",amt:100}];$("payer").value="tt";rtable()}
+      else if(t.id==="reset"){payer="tt";settled=false;rows=[{unit:"tt",cat:"Телефонія",amt:500},{unit:"im",cat:"Телефонія",amt:400},{unit:"sk",cat:"Телефонія",amt:100}];$("payer").value="tt";$("op-total").value=1000;rtable()}
       else if(t.id==="provesti"){t.textContent="Проведено ✓";setTimeout(function(){t.textContent="Провести операцію"},1600)}
     });
   }
