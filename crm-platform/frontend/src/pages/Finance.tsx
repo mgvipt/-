@@ -2216,7 +2216,7 @@ function Debts() {
     await api.post(`/api/planned-payments/${r.id}/mark-paid/`, {}); load();
   }
   const Section = ({ kind, title, color }: any) => {
-    const list = rows.filter((r) => r.kind === kind && (!cpFilter || String(r.counterparty || "").toLowerCase().includes(cpFilter.toLowerCase())));
+    const list = rows.filter((r) => r.kind === kind && !r.is_internal && (!cpFilter || String(r.counterparty || "").toLowerCase().includes(cpFilter.toLowerCase())));
     const total = list.reduce((sm, r) => sm + Number(r.amount || 0), 0);
     return (
       <div className="panel" style={{ margin: "0 0 14px" }}>
@@ -2279,6 +2279,39 @@ function Debts() {
       </div>
       <Section kind="payable" title={"🔻 " + t("Кредиторка — мы должны", "Кредиторка — ми винні")} color="#dc2626" />
       <Section kind="receivable" title={"🔺 " + t("Дебиторка — нам должны", "Дебіторка — нам винні")} color="#16a34a" />
+      {(() => {
+        const intl = rows.filter((r: any) => r.is_internal && (!cpFilter || (String(r.counterparty || "") + " " + String(r.contact_name || "")).toLowerCase().includes(cpFilter.toLowerCase())));
+        const itotal = intl.reduce((sm: number, r: any) => sm + Number(r.amount || 0), 0);
+        return (
+          <div className="panel" style={{ margin: "0 0 14px", borderLeft: "4px solid #C67D5F", borderRadius: 0 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+              <b style={{ fontSize: 15 }}>🔁 {t("Взаиморасчёты между подразделениями", "Взаєморозрахунки між підрозділами")}</b>
+              <span style={{ fontSize: 20, fontWeight: 800, color: "#C67D5F" }}>{money(itotal)}</span>
+              <span className="muted" style={{ fontSize: 12 }}>{intl.length} {t("шт", "шт")}</span>
+            </div>
+            <div className="muted" style={{ fontSize: 11.5, marginBottom: 8, lineHeight: 1.45 }}>{t("Внутренний долг между направлениями бизнеса — на баланс компании НЕ влияет (нетто = 0). Одно направление одолжило (заплатило со своей кассы) — другие ему должны. В общую кредиторку/дебиторку выше НЕ входит.", "Внутрішній борг між напрямками бізнесу — на баланс компанії НЕ впливає (нетто = 0). Одне направлення позичило (сплатило зі своєї каси) — інші йому винні. У загальну кредиторку/дебіторку вище НЕ входить.")}</div>
+            {intl.length === 0 ? <div className="muted" style={{ fontSize: 12 }}>{t("Пока пусто — появится при распределении платежа между подразделениями.", "Поки порожньо — зʼявиться при розподілі платежу між підрозділами.")}</div> : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", fontSize: 12.5, borderCollapse: "collapse", minWidth: 640 }}>
+                  <thead><tr className="muted" style={{ fontSize: 11, textAlign: "left" }}>
+                    <th style={{ padding: 4 }}>{t("Срок", "Строк")}</th><th style={{ padding: 4 }}>{t("Кто должен", "Хто винен")}</th><th style={{ padding: 4 }}></th><th style={{ padding: 4 }}>{t("Кому", "Кому")}</th><th style={{ padding: 4, textAlign: "right" }}>{t("Сумма", "Сума")}</th><th style={{ padding: 4 }}>{t("Статья", "Стаття")}</th>
+                  </tr></thead>
+                  <tbody>{intl.map((r: any) => (
+                    <tr key={r.id} onClick={() => setCard(r)} style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer" }} title={t("Открыть карточку", "Відкрити картку")}>
+                      <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{r.due_date}</td>
+                      <td style={{ padding: "6px 4px" }}>{r.contact ? <a onClick={(e) => { e.stopPropagation(); nav("/clients/" + r.contact); }} style={{ color: "#0e7490", fontWeight: 600, cursor: "pointer", textDecoration: "none" }}>{r.contact_name}</a> : r.contact_name}</td>
+                      <td style={{ padding: "6px 4px", color: "#94a3b8", textAlign: "center" }}>→</td>
+                      <td style={{ padding: "6px 4px" }}>{r.counterparty_contact ? <a onClick={(e) => { e.stopPropagation(); nav("/clients/" + r.counterparty_contact); }} style={{ color: "#0e7490", fontWeight: 600, cursor: "pointer", textDecoration: "none" }}>{r.counterparty}</a> : r.counterparty}</td>
+                      <td style={{ padding: "6px 4px", fontWeight: 700, textAlign: "right", color: "#C67D5F", whiteSpace: "nowrap" }}>{money(Number(r.amount))}</td>
+                      <td style={{ padding: "6px 4px" }}>{r.category_name || "—"}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
       {card !== undefined && <DebtCard row={card} cats={cats} dirs={dirs} arts={arts} accs2={accs2} t={t} onClose={() => setCard(undefined)} onSaved={load} />}
     </div>
   );
