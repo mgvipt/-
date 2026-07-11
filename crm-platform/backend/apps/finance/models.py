@@ -63,6 +63,8 @@ class Transaction(models.Model):
                                 help_text="Клієнт (обʼєкт): усі гроші по клієнту видно в його картці, навіть якщо контрагент — майстер чи магазин")
     payment = models.OneToOneField("crm.Payment", null=True, blank=True, on_delete=models.SET_NULL, related_name="transaction")
     fin_direction = models.ForeignKey("FinDirection", null=True, blank=True, on_delete=models.SET_NULL, related_name="transactions")
+    payer_direction = models.ForeignKey("FinDirection", null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+                                        help_text="Підрозділ, чия каса сплатила — для внутрішнього боргу при спільній витраті між підрозділами (пусто = звичайна операція)")
     fin_article = models.ForeignKey("FinModelArticle", null=True, blank=True, on_delete=models.SET_NULL, related_name="transactions", help_text="Фонд (стаття финмоделі)")
     channel = models.CharField(max_length=24, blank=True, default="", help_text="Канал/джерело надходження")
     counterparty = models.CharField(max_length=160, blank=True, default="", help_text="Контрагент (від кого/кому)")
@@ -364,3 +366,19 @@ class WorkSession(models.Model):
         if self.paused_at:
             total -= (timezone.now() - self.paused_at).total_seconds()
         return max(0, int(total))
+
+
+class TransactionSplit(models.Model):
+    """Розподіл однієї операції між напрямками/підрозділами і статтями (спільні витрати між ТТ/ІМ/Складом тощо).
+    Сума splits = сумі операції. Аналітика по напрямках рахує ПО splits, коли вони є, інакше — по одному fin_direction.
+    Якщо напрямок split ≠ payer_direction → цей підрозділ винен платнику (внутрішній борг між підрозділами)."""
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name="splits")
+    fin_direction = models.ForeignKey("FinDirection", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    category = models.ForeignKey(Category, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return "split #%s · %s грн" % (self.transaction_id, self.amount)
