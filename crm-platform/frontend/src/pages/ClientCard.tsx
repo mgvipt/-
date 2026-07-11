@@ -182,6 +182,7 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
   const canDelTx = can("finance.tx.edit") || can("roles.manage");
   const [selOps, setSelOps] = useState<Record<number, boolean>>({});
   const [txCardId, setTxCardId] = useState<number | null>(null);
+  const [createOp, setCreateOp] = useState<null | "in" | "out">(null);
   const [opsLimit, setOpsLimit] = useState(50);
   const [opsPage, setOpsPage] = useState(0);
   const [opsCp, setOpsCp] = useState("");      // фільтр: кому / від кого
@@ -285,8 +286,8 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
         </div>
       )}
       <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-        <button className="btn btn-light" style={{ flex: 1, color: "#16a34a", fontWeight: 700 }} onClick={() => navFB(`/finance?tab=journal&newop=in&contact=${contactId}&cname=${encodeURIComponent(cname || "")}`)} title={t("Полная карточка дохода — как в журнале (клиент подставится)","Повна картка доходу — як у журналі (клієнт підставиться)")}>+ {t("Доход","Дохід")}</button>
-        <button className="btn btn-light" style={{ flex: 1, color: "#dc2626", fontWeight: 700 }} onClick={() => navFB(`/finance?tab=journal&newop=out&contact=${contactId}&cname=${encodeURIComponent(cname || "")}`)} title={t("Полная карточка расхода — как в журнале (клиент подставится)","Повна картка витрати — як у журналі (клієнт підставиться)")}>+ {t("Расход","Витрата")}</button>
+        <button className="btn btn-light" style={{ flex: 1, color: "#16a34a", fontWeight: 700 }} onClick={() => setCreateOp("in")} title={t("Полная карточка дохода — как в журнале (клиент подставится)","Повна картка доходу — як у журналі (клієнт підставиться)")}>+ {t("Доход","Дохід")}</button>
+        <button className="btn btn-light" style={{ flex: 1, color: "#dc2626", fontWeight: 700 }} onClick={() => setCreateOp("out")} title={t("Полная карточка расхода — как в журнале (клиент подставится)","Повна картка витрати — як у журналі (клієнт підставиться)")}>+ {t("Расход","Витрата")}</button>
         <button className="btn btn-light" style={{ color: "#0e7490", fontWeight: 700, whiteSpace: "nowrap" }} onClick={() => { setPayNow(false); setRecvLoan(false); setFaDeal(0); setForm(form ? null : "in"); }} title={t("Быстро: дебиторка (нам должны) или оплата клиента по сделке","Швидко: дебіторка (нам винні) або оплата клієнта по сделці")}>💳 {t("Оплата/долг","Оплата/борг")}</button>
         <a href={`/finance?client=${contactId}&cname=${encodeURIComponent(cname || "")}`} className="btn btn-light" style={{ whiteSpace: "nowrap" }} title={t("Открыть журнал с фильтром по клиенту","Відкрити журнал з фільтром за клієнтом")}>🧾</a>
       </div>
@@ -411,6 +412,7 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
         </div>
       )}
       {txCardId && <TxCardModal txId={txCardId} nav={navFB} onClose={() => setTxCardId(null)} onSaved={() => { setTxCardId(null); load(); }} />}
+      {createOp && <TxCardModal initDirection={createOp} initContact={contactId} initContactName={cname} nav={navFB} onClose={() => setCreateOp(null)} onSaved={() => { setCreateOp(null); load(); }} />}
     </div>
   );
 }
