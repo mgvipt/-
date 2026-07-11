@@ -1,5 +1,5 @@
 /* Повна картка операції (як у Журналі), відкривається модалкою ПРЯМО в картці клієнта.
- * Створення нової + перегляд/редагування + видалення + переказ + розподіл між підрозділами + чек. */
+ * Створення нової (дохід / витрата / переказ) + перегляд/редагування + видалення + переробити на переказ + розподіл + чек. */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "./api";
@@ -36,7 +36,8 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
         setF({
           id: tx.id, direction: tx.direction, amount: tx.amount, amount_uah: tx.amount_uah, currency: tx.currency || "UAH", rate: tx.rate || 1,
           date: tx.date || "", set_category: tx.category_name || "", counterparty: tx.counterparty || "",
-          account: tx.account || 0, fin_article: tx.fin_article || 0, fin_direction: tx.fin_direction || 0,
+          account: tx.account || 0, transfer_account: tx.transfer_account || 0, transfer_amount: "",
+          fin_article: tx.fin_article || 0, fin_direction: tx.fin_direction || 0,
           channel: tx.channel || "", comment: tx.comment || "", deal: tx.deal || 0, deal_title: tx.deal_title || "",
           contact: tx.contact || 0, contact_name: tx.contact_name || "",
         });
@@ -48,7 +49,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
       setF({
         id: 0, direction: initDirection || "out", amount: "", amount_uah: 0, currency: "UAH", rate: 1,
         date: new Date().toISOString().slice(0, 10), set_category: "", counterparty: "",
-        account: 0, fin_article: 0, fin_direction: 0, channel: "", comment: "", deal: 0, deal_title: "",
+        account: 0, transfer_account: 0, transfer_amount: "", fin_article: 0, fin_direction: 0, channel: "", comment: "", deal: 0, deal_title: "",
         contact: initContact || 0, contact_name: initContactName || "",
       });
     }
@@ -63,21 +64,32 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
     if (!f || busy) return;
     const _amt = Number(String(f.amount).replace(",", "."));
     if (!_amt) { alert(t("Впиши сумму", "Впиши суму")); return; }
-    if (splitOn) {
-      if (!payerDir) { alert(t("Выбери подразделение, чья касса оплатила", "Обери підрозділ, чия каса сплатила")); return; }
-      const _ss = splitRows.reduce((a: number, r: any) => a + (Number(r.amt) || 0), 0);
-      if (Math.abs(_ss - _amt) > 0.01) { alert(t("Сумма распределения не равна сумме операции", "Сума розподілу не дорівнює сумі операції")); return; }
+    let body: any;
+    if (f.direction === "transfer") {
+      if (!f.account || !f.transfer_account) { alert(t("Выбери оба счёта перевода", "Обери обидва рахунки переказу")); return; }
+      if (f.account === f.transfer_account) { alert(t("Счета должны быть разными", "Рахунки мають бути різними")); return; }
+      body = {
+        direction: "transfer", amount: _amt, account: f.account, transfer_account: f.transfer_account,
+        transfer_amount: f.transfer_amount ? Number(String(f.transfer_amount).replace(",", ".")) : null,
+        date: f.date || null, comment: f.comment, category: null, fin_article: null, fin_direction: null, channel: "",
+      };
+    } else {
+      if (splitOn) {
+        if (!payerDir) { alert(t("Выбери подразделение, чья касса оплатила", "Обери підрозділ, чия каса сплатила")); return; }
+        const _ss = splitRows.reduce((a: number, r: any) => a + (Number(r.amt) || 0), 0);
+        if (Math.abs(_ss - _amt) > 0.01) { alert(t("Сумма распределения не равна сумме операции", "Сума розподілу не дорівнює сумі операції")); return; }
+      }
+      body = {
+        direction: f.direction, amount: _amt, account: f.account || null, date: f.date || null,
+        set_category: f.set_category, counterparty: f.counterparty,
+        fin_article: f.fin_article || null, fin_direction: f.fin_direction || null,
+        channel: f.channel, comment: f.comment, contact: f.contact || null,
+        currency: f.currency || "UAH", rate: Number(f.rate) || 1,
+        payer_direction: splitOn ? (payerDir || null) : null,
+        splits: splitOn ? splitRows.filter((r: any) => r.dir && Number(r.amt)).map((r: any) => ({ fin_direction: r.dir, set_category: f.set_category, amount: Number(r.amt) })) : [],
+      };
     }
     setBusy(true);
-    const body: any = {
-      direction: f.direction, amount: _amt, account: f.account || null, date: f.date || null,
-      set_category: f.set_category, counterparty: f.counterparty,
-      fin_article: f.fin_article || null, fin_direction: f.fin_direction || null,
-      channel: f.channel, comment: f.comment, contact: f.contact || null,
-      currency: f.currency || "UAH", rate: Number(f.rate) || 1,
-      payer_direction: splitOn ? (payerDir || null) : null,
-      splits: splitOn ? splitRows.filter((r: any) => r.dir && Number(r.amt)).map((r: any) => ({ fin_direction: r.dir, set_category: f.set_category, amount: Number(r.amt) })) : [],
-    };
     try {
       if (f.id) await api.patch(`/api/transactions/${f.id}/`, body);
       else await api.post(`/api/transactions/`, body);
@@ -104,8 +116,9 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
   }
 
   const inp: React.CSSProperties = { height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", width: "100%", marginBottom: 10, fontSize: 13, boxSizing: "border-box" };
-  const color = f && (f.direction === "in" ? "#16a34a" : f.direction === "transfer" ? "#6366f1" : "#dc2626");
-  const dirLabel = f && (f.direction === "in" ? t("Доход", "Дохід") : f.direction === "transfer" ? t("Перевод", "Переказ") : t("Расход", "Витрата"));
+  const isTr = f && f.direction === "transfer";
+  const color = f && (f.direction === "in" ? "#16a34a" : isTr ? "#6366f1" : "#dc2626");
+  const dirLabel = f && (f.direction === "in" ? t("Доход", "Дохід") : isTr ? t("Перевод", "Переказ") : t("Расход", "Витрата"));
 
   return createPortal((
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2147483000 }}>
@@ -117,17 +130,39 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
               <button onClick={onClose} title={t("Закрыть", "Закрити")} style={{ border: "none", background: "transparent", fontSize: 22, cursor: "pointer", color: "#94a3b8" }}>×</button>
             </div>
 
-            {f.direction === "transfer" ? (
-              <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>{t("Это перевод между счетами — редактируется в Журнале.", "Це переказ між рахунками — редагується в Журналі.")}</div>
+            {!f.id && (
+              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                {[["in", "💰", t("Доход", "Дохід"), "#16a34a"], ["out", "💸", t("Расход", "Витрата"), "#dc2626"], ["transfer", "⇄", t("Перевод", "Переказ"), "#6366f1"]].map(([k, ic, lb, cl]: any) => (
+                  <span key={k} onClick={() => setF({ ...f, direction: k })} style={{ flex: 1, textAlign: "center", padding: "7px 6px", borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: "pointer", background: f.direction === k ? cl : "#fff", color: f.direction === k ? "#fff" : "#64748b", border: "1.5px solid " + (f.direction === k ? cl : "#e2e8f0") }}>{ic} {lb}</span>
+                ))}
+              </div>
+            )}
+
+            <label className="label">{t("Сумма, ₴", "Сума, ₴")}</label>
+            <input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} style={inp} autoFocus />
+            {f.currency && f.currency !== "UAH" ? <div className="muted" style={{ fontSize: 12, marginTop: -6, marginBottom: 10 }}>{f.currency} · = {Math.round(Number(f.amount_uah || 0)).toLocaleString("ru")} ₴</div> : null}
+
+            <label className="label">{t("Дата операции", "Дата операції")}</label>
+            <input type="date" value={f.date || ""} onChange={(e) => setF({ ...f, date: e.target.value })} style={inp} />
+
+            {isTr ? (
+              <>
+                <label className="label">{t("Со счёта (откуда)", "З рахунку (звідки)")}</label>
+                <select value={f.account} onChange={(e) => setF({ ...f, account: Number(e.target.value) })} style={inp}>
+                  <option value={0}>—</option>
+                  {accs.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+                <label className="label">{t("На счёт (получатель)", "На рахунок (отримувач)")}</label>
+                <select value={f.transfer_account} onChange={(e) => setF({ ...f, transfer_account: Number(e.target.value) })} style={inp}>
+                  <option value={0}>—</option>
+                  {accs.filter((a: any) => a.id !== f.account).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+                <label className="label">{t("Зачислено получателю (если другая валюта)", "Зараховано одержувачу (якщо інша валюта)")}</label>
+                <input value={f.transfer_amount} onChange={(e) => setF({ ...f, transfer_amount: e.target.value })} placeholder={t("пусто = та же сумма", "пусто = та ж сума")} style={inp} />
+                <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>{t("↔ Перевод не считается ни в доход, ни в расход — только движение между счетами.", "↔ Переказ не рахується ні в дохід, ні у витрати — лише рух між рахунками.")}</div>
+              </>
             ) : (
               <>
-                <label className="label">{t("Сумма, ₴", "Сума, ₴")}</label>
-                <input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} style={inp} autoFocus />
-                {f.currency && f.currency !== "UAH" ? <div className="muted" style={{ fontSize: 12, marginTop: -6, marginBottom: 10 }}>{f.currency} · = {Math.round(Number(f.amount_uah || 0)).toLocaleString("ru")} ₴</div> : null}
-
-                <label className="label">{t("Дата операции", "Дата операції")}</label>
-                <input type="date" value={f.date || ""} onChange={(e) => setF({ ...f, date: e.target.value })} style={inp} />
-
                 <label className="label">{t("Категория", "Категорія")}</label>
                 <select value={f.set_category} onChange={(e) => setF({ ...f, set_category: e.target.value })} style={inp}>
                   <option value="">{t("— категория —", "— категорія —")}</option>
@@ -202,12 +237,12 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
                 <a onClick={() => nav && nav(`/deals/${f.deal}`)} style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600 }} title={t("Открыть сделку", "Відкрити угоду")}>№{f.deal}{f.deal_title ? " · " + f.deal_title : ""}</a>
               </div>
             ) : null}
-            {f.contact ? <div style={{ marginBottom: 10, fontSize: 13 }}><span className="muted">{t("Клиент:", "Клієнт:")} </span><b>{f.contact_name}</b></div> : null}
+            {f.contact && !isTr ? <div style={{ marginBottom: 10, fontSize: 13 }}><span className="muted">{t("Клиент:", "Клієнт:")} </span><b>{f.contact_name}</b></div> : null}
 
             {f.id ? <div style={{ margin: "6px 0 10px" }}><label className="label">📎 {t("Чек / документы", "Чек / документи")}</label><Attachments txId={f.id} /></div>
               : <div className="muted" style={{ fontSize: 11, margin: "0 0 10px" }}>📎 {t("Сохрани операцию — тогда сможешь прикрепить фото/скан чека.", "Збережи операцію — тоді зможеш прикріпити фото/скан чека.")}</div>}
 
-            {f.id && f.direction !== "transfer" && (
+            {f.id && !isTr && (
               <div style={{ margin: "2px 0 12px", padding: 10, border: "1px solid #ede9fe", borderRadius: 10, background: "#faf8ff" }}>
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: "#6d28d9", marginBottom: 6 }}>⇄ {t("Переделать в перевод между счетами", "Переробити на переказ між рахунками")}</div>
                 <div style={{ display: "flex", gap: 6 }}>
@@ -222,7 +257,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
             )}
 
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-              {f.direction !== "transfer" && <button className="btn btn-primary" style={{ flex: 1 }} disabled={busy} onClick={save}>{busy ? "…" : t("Сохранить", "Зберегти")}</button>}
+              <button className="btn btn-primary" style={{ flex: 1 }} disabled={busy} onClick={save}>{busy ? "…" : t("Сохранить", "Зберегти")}</button>
               {f.id ? <button className="btn" style={{ background: "#fee2e2", color: "#b91c1c", fontWeight: 700 }} disabled={busy} onClick={del}>{t("Удалить", "Видалити")}</button> : null}
               <button className="btn btn-light" onClick={onClose}>{t("Закрыть", "Закрити")}</button>
             </div>
