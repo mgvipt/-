@@ -173,8 +173,6 @@ export default function WebPhone() {
   if (!enabled) return <audio ref={audioRef} autoPlay playsInline />;
 
   const content = (
-    <>
-      <audio ref={audioRef} autoPlay playsInline />
       <div style={{
         ...(busy
           ? { position: "fixed" as const, left: 14, bottom: 14, width: 250, zIndex: 2147483000 }
@@ -222,8 +220,13 @@ export default function WebPhone() {
         )}
         {msg && <div style={{ fontSize: 11, marginTop: 7, color: st === "error" ? "#dc2626" : "#64748b" }}>{msg}</div>}
       </div>
+  );
+  // у режимі дзвінка виносимо віджет у body (щоб transform/backdrop-filter предків не ховали).
+  // <audio> тримаємо ПОЗА порталом — інакше при переносі віджета він перемонтовується і srcObject (звук) губиться → вхідний дзвінок без звуку (фікс 11.07).
+  return (
+    <>
+      <audio ref={audioRef} autoPlay playsInline />
+      {busy ? createPortal(content, document.body) : content}
     </>
   );
-  // у режимі дзвінка виносимо віджет у body (щоб transform/backdrop-filter предків не ховали і не зміщували його)
-  return busy ? createPortal(content, document.body) : content;
 }
