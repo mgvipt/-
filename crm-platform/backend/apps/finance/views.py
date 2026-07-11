@@ -1560,6 +1560,20 @@ class FinDirectionViewSet(viewsets.ModelViewSet):
     permission_classes = [FinDirectionPerm]
 
 
+def _direction_sums(dr, d_from, d_to):
+    """Доходи/витрати напрямку З УРАХУВАННЯМ розподілу (splits):
+    операції БЕЗ розподілу — по власному fin_direction; операції З розподілом — по частках splits
+    (щоб спільна витрата ділилась між підрозділами, а не висіла на одному)."""
+    from .models import TransactionSplit as _TS
+    base = Transaction.objects.filter(fin_direction=dr, date__gte=d_from, date__lte=d_to, splits__isnull=True)
+    inc = float(base.filter(direction="in").aggregate(s=Sum("amount_uah"))["s"] or 0)
+    exp = float(base.filter(direction="out").aggregate(s=Sum("amount_uah"))["s"] or 0)
+    sp = _TS.objects.filter(fin_direction=dr, transaction__date__gte=d_from, transaction__date__lte=d_to)
+    inc += float(sp.filter(transaction__direction="in").aggregate(s=Sum("amount"))["s"] or 0)
+    exp += float(sp.filter(transaction__direction="out").aggregate(s=Sum("amount"))["s"] or 0)
+    return inc, exp
+
+
 class DirectionsReportView(APIView):
     """Звіт по напрямках (як Finmap Проекти): доходи/витрати/прибуток/рентабельність + план/факт."""
     permission_classes = [FinancePerm]
@@ -1568,10 +1582,7 @@ class DirectionsReportView(APIView):
         d_from, d_to = _period(request)
         rows = []
         for dr in FinDirection.objects.filter(active=True):
-            tx = Transaction.objects.filter(fin_direction=dr,
-                date__gte=d_from, date__lte=d_to)
-            inc = float(tx.filter(direction="in").aggregate(s=Sum("amount_uah"))["s"] or 0)
-            exp = float(tx.filter(direction="out").aggregate(s=Sum("amount_uah"))["s"] or 0)
+            inc, exp = _direction_sums(dr, d_from, d_to)
             profit = inc - exp
             rows.append({
                 "id": dr.id, "name": dr.name,
@@ -1987,9 +1998,7 @@ class OverviewView(APIView):
         # напрямки (обраний місяць)
         dirs = []
         for d in FinDirection.objects.filter(active=True):
-            q = Transaction.objects.filter(fin_direction=d, date__gte=cf, date__lte=ct)
-            di = float(q.filter(direction="in").aggregate(s=Sum("amount"))["s"] or 0)
-            de = float(q.filter(direction="out").aggregate(s=Sum("amount"))["s"] or 0)
+            di, de = _direction_sums(d, cf, ct)
             if di or de:
                 dirs.append({"name": d.name, "income": round(di), "expense": round(de), "net": round(di - de)})
         dirs.sort(key=lambda x: -x["income"])
