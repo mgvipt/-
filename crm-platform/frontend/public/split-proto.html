@@ -170,7 +170,7 @@
 
 <script>
 (function(){
-  var UNITS=[["tt","Торгова точка"],["im","Інтернет-магазин"],["sk","Склад"],["of","Офіс"]];
+  var UNITS=[["tt","Торгова точка"],["im","Інтернет-магазин"],["sk","Склад"],["of","Офіс"],["pr","Виробництво"],["lg","Логістика"],["mk","Маркетинг"],["sr","Сервіс"]];
   var CATS=["Телефонія","Оренда","Реклама","Комуналка"];
   var payer="tt", settled=false;
   var rows=[{unit:"tt",cat:"Телефонія",amt:500},{unit:"im",cat:"Телефонія",amt:400},{unit:"sk",cat:"Телефонія",amt:100}];
@@ -195,7 +195,7 @@
     var pv=$("provesti");pv.disabled=(rem!==0);
     // debts list
     if(settled){$("debts").innerHTML='<div class="bal pos"><span>Борг погашено — взаєморозрахунки закриті</span><span class="v money" style="color:var(--good-ink)">✓</span></div>'}
-    else if(payerGets>0){$("debts").innerHTML=Object.keys(debt).map(function(k){return '<div class="row" style="justify-content:space-between"><span>'+uname(k)+' винен '+uname(payer)+'</span><b class="money" style="color:var(--warn-ink)">'+money(debt[k])+' грн</b></div>'}).join("")}
+    else if(payerGets>0){var _dl=Object.keys(debt).map(function(k){return '<div class="row" style="justify-content:space-between"><span>'+uname(k)+' винен '+uname(payer)+'</span><b class="money" style="color:var(--warn-ink)">'+money(debt[k])+' грн</b></div>'}).join("");if(Object.keys(debt).length>1)_dl+='<div class="row" style="justify-content:space-between;border-top:1px solid var(--line);margin-top:6px;padding-top:8px"><b>Разом винні '+uname(payer)+'</b><b class="money" style="color:var(--warn-ink)">'+money(payerGets)+' грн</b></div>';$("debts").innerHTML=_dl}
     else{$("debts").innerHTML='<span class="muted" style="font-size:13px">Немає боргу — всі частки на підрозділі, що платив.</span>'}
     // subcards: КАРТКА ДЛЯ КОЖНОГО підрозділу зі split (payer + усі боржники)
     var units=[]; rows.forEach(function(r){if(units.indexOf(r.unit)<0)units.push(r.unit)});
