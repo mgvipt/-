@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Розподіл платежу між підрозділами — Wallcov CRM</title>
+<style>html,body{margin:0;padding:0}</style>
+</head>
+<body>
+<style>
+  :root{
+    --paper:#FAF8F5; --card:#FFFFFF; --ink:#2A2621; --muted:#6E675D; --hint:#9A9288;
+    --line:#E9E4DC; --line2:#DAD3C8;
+    --brand:#C67D5F; --brand-ink:#8A4A30; --brand-bg:#FBEEE7;
+    --good:#1D9E75; --good-ink:#0F6E56; --good-bg:#E4F5EE;
+    --warn:#BA7517; --warn-ink:#854F0B; --warn-bg:#FAEFDD;
+    --danger:#D85A30;
+    --radius:10px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#161310; --card:#211D18; --ink:#EFEAE2; --muted:#A79E92; --hint:#7C7367;
+      --line:#332D26; --line2:#413A31;
+      --brand:#D89A80; --brand-ink:#F0C4B3; --brand-bg:#33231C;
+      --good:#5DCAA5; --good-ink:#9FE1CB; --good-bg:#123329;
+      --warn:#E2A04B; --warn-ink:#FAC775; --warn-bg:#33260F;
+      --danger:#E8794E;
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#FAF8F5; --card:#FFFFFF; --ink:#2A2621; --muted:#6E675D; --hint:#9A9288;
+    --line:#E9E4DC; --line2:#DAD3C8;
+    --brand:#C67D5F; --brand-ink:#8A4A30; --brand-bg:#FBEEE7;
+    --good:#1D9E75; --good-ink:#0F6E56; --good-bg:#E4F5EE;
+    --warn:#BA7517; --warn-ink:#854F0B; --warn-bg:#FAEFDD; --danger:#D85A30;
+  }
+  :root[data-theme="dark"]{
+    --paper:#161310; --card:#211D18; --ink:#EFEAE2; --muted:#A79E92; --hint:#7C7367;
+    --line:#332D26; --line2:#413A31;
+    --brand:#D89A80; --brand-ink:#F0C4B3; --brand-bg:#33231C;
+    --good:#5DCAA5; --good-ink:#9FE1CB; --good-bg:#123329;
+    --warn:#E2A04B; --warn-ink:#FAC775; --warn-bg:#33260F; --danger:#E8794E;
+  }
+  *{box-sizing:border-box}
+  .wrap{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--paper);
+    min-height:100vh;padding:28px 18px 60px;line-height:1.5;}
+  .inner{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+  .lead h1{font-size:22px;font-weight:650;margin:0 0 4px;letter-spacing:-.01em;text-wrap:balance}
+  .lead p{margin:0;color:var(--muted);font-size:14px;max-width:60ch}
+  .tag{display:inline-block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--brand-ink);
+    background:var(--brand-bg);padding:3px 9px;border-radius:999px;margin-bottom:10px;font-weight:600}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .card-h{display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid var(--line);font-weight:600;font-size:15px}
+  .card-b{padding:14px 16px}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .muted{color:var(--muted)} .hint{color:var(--hint);font-size:11.5px}
+  label.fld{font-size:12px;color:var(--muted)}
+  select,input{font-family:inherit;font-size:13.5px;color:var(--ink);background:var(--card);
+    border:1px solid var(--line2);border-radius:8px;height:36px;padding:0 9px}
+  select:focus,input:focus{outline:2px solid var(--brand);outline-offset:1px;border-color:var(--brand)}
+  input[type=number]{text-align:right;font-variant-numeric:tabular-nums}
+  .money{font-variant-numeric:tabular-nums}
+  .tbl{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .thead,.trow{display:grid;grid-template-columns:1.4fr 1.2fr .8fr 40px;align-items:center}
+  .thead{background:var(--paper);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--hint);padding:9px 12px}
+  .trow{padding:8px 12px;border-top:1px solid var(--line)}
+  .trow select,.trow input{width:100%}
+  .xbtn{border:none;background:transparent;color:var(--hint);cursor:pointer;font-size:17px;line-height:1;padding:4px}
+  .xbtn:hover{color:var(--danger)}
+  .foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-top:1px solid var(--line);background:var(--paper);flex-wrap:wrap}
+  .btn{font-family:inherit;font-size:13px;font-weight:600;border-radius:var(--radius);height:38px;padding:0 16px;cursor:pointer;border:1px solid transparent}
+  .btn-primary{background:var(--brand);color:#fff}
+  .btn-primary:disabled{opacity:.45;cursor:not-allowed}
+  .btn-ghost{background:transparent;border-color:var(--line2);color:var(--ink)}
+  .btn-sm{height:32px;padding:0 12px;font-size:12.5px}
+  .link{background:transparent;border:none;color:var(--brand-ink);font-weight:600;cursor:pointer;font-size:12.5px;display:inline-flex;align-items:center;gap:5px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+  .subcard{border:1px solid var(--line);border-radius:12px;padding:13px;background:var(--card)}
+  .subcard .nm{font-size:12.5px;color:var(--muted);margin-bottom:9px;display:flex;align-items:center;gap:6px}
+  .bal{display:flex;align-items:center;justify-content:space-between;padding:9px 11px;border-radius:9px}
+  .bal .v{font-size:16px;font-weight:650}
+  .pos{background:var(--good-bg)} .pos span{color:var(--good-ink)}
+  .neg{background:var(--warn-bg)} .neg span{color:var(--warn-ink)}
+  .zero{background:var(--paper)} .zero span{color:var(--muted)}
+  .rep .thead,.rep .trow{grid-template-columns:1fr 34px 1fr .8fr .9fr}
+  .pill{font-size:11px;padding:2px 9px;border-radius:999px;font-weight:600}
+  .pill.open{background:var(--warn-bg);color:var(--warn-ink)}
+  .pill.done{background:var(--good-bg);color:var(--good-ink)}
+  .ok{color:var(--good-ink)} .over{color:var(--danger)}
+  @media (max-width:520px){.thead,.trow{grid-template-columns:1.2fr 1fr .7fr 34px}}
+</style>
+
+<div class="wrap"><div class="inner">
+  <div class="lead">
+    <span class="tag">Wallcov CRM · тест механіки</span>
+    <h1>Розподіл платежу між підрозділами</h1>
+    <p>Один платіж ділиться між підрозділами по статтях. Хто платив зі своєї каси — тому решта винні їхні частки. Покрути суми, зміни платника, додай підрозділ, погаси борг — картки й звіт оновлюються самі.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><span aria-hidden="true">🧾</span> Операція · витрата <span class="money" id="op-total">1 000</span> грн · Стрімтелеком</div>
+    <div class="card-b" style="display:flex;flex-direction:column;gap:12px">
+      <div class="row">
+        <label class="fld" for="payer">Оплатив підрозділ</label>
+        <select id="payer"></select>
+        <span class="hint">(його каса дала гроші)</span>
+      </div>
+      <div class="tbl">
+        <div class="thead"><div>Підрозділ</div><div>Стаття</div><div style="text-align:right">Сума</div><div></div></div>
+        <div id="tbody"></div>
+        <div class="foot">
+          <button class="link" id="add" type="button">+ додати підрозділ</button>
+          <span id="foot" class="money" style="font-size:12.5px"></span>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end">
+        <button class="btn btn-primary" id="provesti" type="button">Провести операцію</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><span aria-hidden="true">📥</span> Авто-борг між підрозділами</div>
+    <div class="card-b" style="display:flex;flex-direction:column;gap:11px">
+      <div id="debts"></div>
+      <div class="row">
+        <button class="btn btn-ghost btn-sm" id="settle" type="button">Погасити борг (переказ між касами)</button>
+        <button class="btn btn-ghost btn-sm" id="reset" type="button">Скинути приклад</button>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="hint" style="margin:0 0 8px 2px">Картки підрозділів (кожен зі своїм балансом):</div>
+    <div class="cards" id="subcards"></div>
+  </div>
+
+  <div class="card rep">
+    <div class="card-h"><span aria-hidden="true">🔁</span> Звіт «Взаєморозрахунки між підрозділами»</div>
+    <div class="thead"><div>Хто винен</div><div></div><div>Кому</div><div style="text-align:right">Сума</div><div style="text-align:right">Статус</div></div>
+    <div id="report"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><span aria-hidden="true">📊</span> Аналітика</div>
+    <div class="card-b" style="display:flex;flex-direction:column;gap:14px">
+      <div>
+        <div class="hint" style="margin-bottom:9px">Витрати по підрозділах (з розподілу цієї операції)</div>
+        <div id="ana-bars"></div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px">
+        <div class="subcard" style="flex:1;min-width:150px">
+          <div class="nm">Разом по статті «Телефонія»</div>
+          <div class="bal zero"><span>усі підрозділи</span><span class="v money" id="ana-cat">1 000 грн</span></div>
+        </div>
+        <div class="subcard" style="flex:1;min-width:150px">
+          <div class="nm">Відкритий борг між підрозділами</div>
+          <div class="bal" id="ana-debt-wrap"><span>потребує погашення</span><span class="v money" id="ana-debt">0 грн</span></div>
+        </div>
+      </div>
+      <div class="hint">За період аналітика збирається так само: кожна операція додає свою частку у підрозділ і статтю, а борги між підрозділами накопичуються і гасяться — видно в динаміці.</div>
+    </div>
+  </div>
+
+  <p class="hint" style="margin:2px 0 0 2px">Це макет для перевірки логіки — реальні гроші тут не рухаються.</p>
+</div></div>
+
+<script>
+(function(){
+  var UNITS=[["tt","Торгова точка"],["im","Інтернет-магазин"],["sk","Склад"],["of","Офіс"]];
+  var CATS=["Телефонія","Оренда","Реклама","Комуналка"];
+  var payer="tt", total=1000, settled=false;
+  var rows=[{unit:"tt",cat:"Телефонія",amt:500},{unit:"im",cat:"Телефонія",amt:400},{unit:"sk",cat:"Телефонія",amt:100}];
+  var $=function(id){return document.getElementById(id)};
+  function uname(u){for(var i=0;i<UNITS.length;i++)if(UNITS[i][0]===u)return UNITS[i][1];return "?"}
+  function opt(list,sel,m){return list.map(function(x){var v=m?x[0]:x,l=m?x[1]:x;return '<option value="'+v+'"'+(v===sel?" selected":"")+">"+l+"</option>"}).join("")}
+  function money(n){return (Math.round(n)||0).toLocaleString("uk-UA")}
+  function trows(){return rows.map(function(r,i){return '<div class="trow">'
+    +'<select class="iu-unit" data-i="'+i+'">'+opt(UNITS,r.unit,1)+'</select>'
+    +'<select class="iu-cat" data-i="'+i+'">'+opt(CATS,r.cat)+'</select>'
+    +'<input class="iu-amt" data-i="'+i+'" type="number" value="'+r.amt+'"/>'
+    +'<button class="xbtn iu-del" data-i="'+i+'" aria-label="прибрати">×</button></div>'}).join("")}
+  function compute(){
+    var alloc=rows.reduce(function(s,r){return s+(+r.amt||0)},0), rem=total-alloc, debt={};
+    rows.forEach(function(r){if(r.unit!==payer)debt[r.unit]=(debt[r.unit]||0)+(+r.amt||0)});
+    var payerGets=0;Object.keys(debt).forEach(function(k){payerGets+=debt[k]});
+    $("op-total").textContent=money(total);
+    $("foot").innerHTML='розподілено '+money(alloc)+' / '+money(total)+' · залишок <span class="'+(rem===0?"ok":"over")+'">'+money(rem)+'</span>';
+    var pv=$("provesti");pv.disabled=(rem!==0);
+    // debts list
+    if(settled){$("debts").innerHTML='<div class="bal pos"><span>Борг погашено — взаєморозрахунки закриті</span><span class="v money" style="color:var(--good-ink)">✓</span></div>'}
+    else if(payerGets>0){$("debts").innerHTML=Object.keys(debt).map(function(k){return '<div class="row" style="justify-content:space-between"><span>'+uname(k)+' винен '+uname(payer)+'</span><b class="money" style="color:var(--warn-ink)">'+money(debt[k])+' грн</b></div>'}).join("")}
+    else{$("debts").innerHTML='<span class="muted" style="font-size:13px">Немає боргу — всі частки на підрозділі, що платив.</span>'}
+    // subcards: КАРТКА ДЛЯ КОЖНОГО підрозділу зі split (payer + усі боржники)
+    var units=[]; rows.forEach(function(r){if(units.indexOf(r.unit)<0)units.push(r.unit)});
+    if(units.indexOf(payer)<0)units.unshift(payer);
+    $("subcards").innerHTML=units.map(function(u){
+      var isPayer=(u===payer), val, cls, txt;
+      if(isPayer){ val=settled?0:payerGets; cls=val>0?"pos":"zero"; txt="нам винні підрозділи"; }
+      else{ val=settled?0:(debt[u]||0); cls=val>0?"neg":"zero"; txt="винні "+uname(payer); }
+      var sign=isPayer?(val>0?"+":""):(val>0?"−":"");
+      return '<div class="subcard"><div class="nm">'+(isPayer?"🏢 ":"")+"Картка «"+uname(u)+"»"+(isPayer?" · платив":"")+'</div>'
+        +'<div class="bal '+cls+'"><span>'+txt+'</span><span class="v money">'+sign+money(val)+' грн</span></div></div>'
+    }).join("");
+    // report
+    var rr=Object.keys(debt).map(function(k){return '<div class="trow"><div>'+uname(k)+'</div><div style="text-align:center" class="muted">→</div><div>'+uname(payer)+'</div><div style="text-align:right" class="money"><b>'+money(debt[k])+'</b></div><div style="text-align:right"><span class="pill '+(settled?"done":"open")+'">'+(settled?"погашено":"відкрито")+'</span></div></div>'}).join("");
+    $("report").innerHTML=rr||'<div class="trow"><div class="muted" style="grid-column:1/-1">Немає взаєморозрахунків.</div></div>';
+    // analytics: витрати по підрозділах (бари) + разом по статті + відкритий борг
+    var byUnit={},order=[];rows.forEach(function(r){if(order.indexOf(r.unit)<0)order.push(r.unit);byUnit[r.unit]=(byUnit[r.unit]||0)+(+r.amt||0)});
+    var maxv=Math.max.apply(null,order.map(function(k){return byUnit[k]}).concat([1]));
+    $("ana-bars").innerHTML=order.map(function(k){var w=Math.max(3,Math.round((byUnit[k]/maxv)*100));return '<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span>'+uname(k)+'</span><b class="money">'+money(byUnit[k])+' грн</b></div><div style="height:9px;background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow:hidden"><div style="height:100%;width:'+w+'%;background:var(--brand);border-radius:6px"></div></div></div>'}).join("");
+    $("ana-cat").textContent=money(alloc)+" грн";
+    $("ana-debt").textContent=(settled?0:money(payerGets))+" грн";
+    var dw=$("ana-debt-wrap");dw.className="bal "+((!settled&&payerGets>0)?"neg":"zero");
+  }
+  function rtable(){$("tbody").innerHTML=trows();compute()}
+  function init(){
+    $("payer").innerHTML=opt(UNITS,payer,1);
+    $("tbody").innerHTML=trows();
+    compute();
+    document.querySelector(".inner").addEventListener("input",function(e){var t=e.target;if(t.classList.contains("iu-amt")){rows[+t.dataset.i].amt=+t.value||0;settled=false;compute()}});
+    document.querySelector(".inner").addEventListener("change",function(e){var t=e.target;if(t.classList.contains("iu-unit")){rows[+t.dataset.i].unit=t.value;settled=false;compute()}else if(t.classList.contains("iu-cat")){rows[+t.dataset.i].cat=t.value}else if(t.id==="payer"){payer=t.value;settled=false;compute()}});
+    document.querySelector(".inner").addEventListener("click",function(e){var t=e.target.closest("button");if(!t)return;
+      if(t.classList.contains("iu-del")){if(rows.length>1){rows.splice(+t.dataset.i,1);rtable()}}
+      else if(t.id==="add"){var used=rows.map(function(r){return r.unit});var free=UNITS.map(function(u){return u[0]}).filter(function(u){return used.indexOf(u)<0})[0]||"of";rows.push({unit:free,cat:"Телефонія",amt:0});rtable()}
+      else if(t.id==="settle"){settled=true;compute()}
+      else if(t.id==="reset"){payer="tt";settled=false;rows=[{unit:"tt",cat:"Телефонія",amt:500},{unit:"im",cat:"Телефонія",amt:400},{unit:"sk",cat:"Телефонія",amt:100}];$("payer").value="tt";rtable()}
+      else if(t.id==="provesti"){t.textContent="Проведено ✓";setTimeout(function(){t.textContent="Провести операцію"},1600)}
+    });
+  }
+  if(document.readyState!=="loading")init();else document.addEventListener("DOMContentLoaded",init);
+})();
+</script>
+</body>
+</html>
