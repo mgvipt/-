@@ -1194,7 +1194,7 @@ function Journal() {
   );
 }
 
-function Attachments({ txId }: { txId: number }) {
+export function Attachments({ txId }: { txId: number }) {
   const { t } = useLang();
   const [items, setItems] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);

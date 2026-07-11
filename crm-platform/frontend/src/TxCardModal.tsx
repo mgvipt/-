@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "./api";
 import { useLang } from "./i18n";
+import { Attachments } from "./pages/Finance";
 
 const CHANNELS: [string, string][] = [
   ["", "—"], ["instagram", "Instagram"], ["tiktok", "TikTok"], ["facebook", "Facebook"],
@@ -21,6 +22,7 @@ export default function TxCardModal({ txId, onClose, onSaved, nav }: {
   const [dirs, setDirs] = useState<any[]>([]);
   const [arts, setArts] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
+  const [convAcc, setConvAcc] = useState(0);
 
   useEffect(() => {
     let ok = true;
@@ -61,6 +63,17 @@ export default function TxCardModal({ txId, onClose, onSaved, nav }: {
     setBusy(true);
     try { await api.del(`/api/transactions/${f.id}/`); onSaved(); }
     catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось удалить", "Не вдалося видалити")); setBusy(false); }
+  }
+  async function toTransfer() {
+    if (!f || !f.id || !convAcc || busy) return;
+    setBusy(true);
+    try {
+      const body: any = { direction: "transfer", category: null, fin_article: null, fin_direction: null, channel: "" };
+      if (f.direction === "out") { body.account = f.account; body.transfer_account = convAcc; }
+      else { body.account = convAcc; body.transfer_account = f.account; }
+      await api.patch(`/api/transactions/${f.id}/`, body);
+      onSaved();
+    } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось", "Не вдалося")); setBusy(false); }
   }
 
   const inp: React.CSSProperties = { height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", width: "100%", marginBottom: 10, fontSize: 13, boxSizing: "border-box" };
@@ -132,6 +145,20 @@ export default function TxCardModal({ txId, onClose, onSaved, nav }: {
             ) : null}
             {f.contact ? <div style={{ marginBottom: 10, fontSize: 13 }}><span className="muted">{t("Клиент:", "Клієнт:")} </span><b>{f.contact_name}</b></div> : null}
 
+            <div style={{ margin: "6px 0 10px" }}><label className="label">📎 {t("Чек / документы", "Чек / документи")}</label><Attachments txId={f.id} /></div>
+            {f.direction !== "transfer" && (
+              <div style={{ margin: "2px 0 12px", padding: 10, border: "1px solid #ede9fe", borderRadius: 10, background: "#faf8ff" }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "#6d28d9", marginBottom: 6 }}>⇄ {t("Переделать в перевод между счетами", "Переробити на переказ між рахунками")}</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <select value={convAcc} onChange={(e) => setConvAcc(Number(e.target.value))} style={{ ...inp, marginBottom: 0, flex: 1 }}>
+                    <option value={0}>{f.direction === "out" ? t("— на какой счёт перешли деньги —", "— на який рахунок перейшли гроші —") : t("— с какого счёта пришли деньги —", "— з якого рахунку прийшли гроші —")}</option>
+                    {accs.filter((a: any) => a.id !== f.account).map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                  <button className="btn btn-primary" disabled={!convAcc || busy} style={{ opacity: convAcc ? 1 : 0.5, background: "#7c3aed" }} onClick={toTransfer}>⇄ OK</button>
+                </div>
+                <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{t("Категория и фонд очистятся — перевод не считается ни в доход, ни в расход.", "Категорія і фонд очистяться — переказ не рахується ні в дохід, ні у витрату.")}</div>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
               {f.direction !== "transfer" && <button className="btn btn-primary" style={{ flex: 1 }} disabled={busy} onClick={save}>{busy ? "…" : t("Сохранить", "Зберегти")}</button>}
               <button className="btn" style={{ background: "#fee2e2", color: "#b91c1c", fontWeight: 700 }} disabled={busy} onClick={del}>{t("Удалить", "Видалити")}</button>
