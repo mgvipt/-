@@ -29,7 +29,7 @@ function Auto({ kind, value, onPick, onType, placeholder, disabled, settlementRe
   useEffect(() => {
     if (kind !== "warehouse" || !settlementRef) return;
     let ok = true;
-    api.get<any[]>(`/api/deals/np_warehouses/?settlement_ref=${encodeURIComponent(settlementRef)}&q=`).then((r) => { if (ok) setList(r || []); }).catch(() => {});
+    api.get<any[]>(`/api/deals/np_warehouses/?settlement_ref=${encodeURIComponent(settlementRef)}&q=`).then((r) => { if (ok) { setList(r || []); if (focused.current) setOpen(true); } }).catch(() => {});
     return () => { ok = false; };
   }, [settlementRef]);
   useEffect(() => {
@@ -53,7 +53,7 @@ function Auto({ kind, value, onPick, onType, placeholder, disabled, settlementRe
   return (
     <div ref={box} style={{ position: "relative" }}>
       <input type="search" value={q} disabled={disabled} placeholder={placeholder} style={inp}
-        onChange={(e) => { setQ(e.target.value); if (onType) onType(e.target.value); }} onFocus={() => { focused.current = true; if (list.length) setOpen(true); }} />
+        onChange={(e) => { setQ(e.target.value); if (onType) onType(e.target.value); }} onFocus={() => { focused.current = true; if (list.length) { setOpen(true); } else if (kind === "warehouse" && settlementRef) { api.get<any[]>(`/api/deals/np_warehouses/?settlement_ref=${encodeURIComponent(settlementRef)}&q=${encodeURIComponent(q || "")}`).then((r) => { setList(r || []); setOpen(true); }).catch(() => {}); } }} />
       {open && list.length > 0 && <ul style={{ position: "absolute", zIndex: 40, top: 40, left: 0, right: 0, margin: 0, padding: 0, listStyle: "none", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, maxHeight: 220, overflowY: "auto", boxShadow: "0 10px 28px rgba(0,0,0,.14)" }}>
         {list.map((it, i) => <li key={i} onClick={() => { picked.current = true; onPick(it); setQ(it.name || it.desc || it.Present || ""); setOpen(false); }} style={{ padding: "8px 11px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f1f5f9" }}>
           {kind === "warehouse" ? (it.desc || it.name) : kind === "street" ? it.name : <>{it.name} <span style={{ color: "#94a3b8" }}>{it.area}</span></>}
