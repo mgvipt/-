@@ -22,6 +22,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
   const [cats, setCats] = useState<any[]>([]);
   const [dirs, setDirs] = useState<any[]>([]);
   const [arts, setArts] = useState<any[]>([]);
+  const [cps, setCps] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [convAcc, setConvAcc] = useState(0);
   const [splitOn, setSplitOn] = useState(false);
@@ -58,6 +59,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
     api.get<any>("/api/categories/?page_size=500").then((x: any) => setCats((x.results || x).filter((c: any) => !c.hidden)));
     api.get<any>("/api/fin-directions/?page_size=100").then((x: any) => setDirs(x.results || x));
     api.get<any>("/api/finmodel-articles/?page_size=300").then((x: any) => setArts(x.results || x));
+    api.get<any>("/api/finance/counterparties/").then((x: any) => setCps(((x.results || x) as any[]).map((y: any) => y.name || String(y)).filter(Boolean))).catch(() => {});
     return () => { ok = false; };
   }, [txId]); // eslint-disable-line
 
@@ -186,7 +188,8 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
                 </select>
 
                 <label className="label">{t("Контрагент", "Контрагент")}</label>
-                <input value={f.counterparty} onChange={(e) => setF({ ...f, counterparty: e.target.value })} style={inp} placeholder={t("Мастер / магазин / клиент", "Майстер / магазин / клієнт")} />
+                <input value={f.counterparty} onChange={(e) => setF({ ...f, counterparty: e.target.value })} list="txcard-cps" style={inp} placeholder={t("Мастер / магазин / клиент", "Майстер / магазин / клієнт")} />
+                <datalist id="txcard-cps">{cps.slice(0, 500).map((nm) => <option key={nm} value={nm} />)}</datalist>
 
                 <label className="label">{t("Счёт", "Рахунок")}</label>
                 <select value={f.account} onChange={(e) => setF({ ...f, account: Number(e.target.value) })} style={inp}>
