@@ -12,6 +12,52 @@ const CHANNELS: [string, string][] = [
   ["telegram", "Telegram"], ["call", "Дзвінок"], ["other", "Інше"],
 ];
 
+// Пошук угоди за назвою АБО за номером (id) — для привʼязки операції до сделки
+function DealPick({ value, label, onPick }: { value?: number; label?: string; onPick: (id: number, title: string) => void }) {
+  const { t } = useLang();
+  const [q, setQ] = useState("");
+  const [res, setRes] = useState<any[]>([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const qq = q.trim();
+    if (!qq) { setRes([]); return; }
+    const h = setTimeout(async () => {
+      try {
+        if (/^\d+$/.test(qq)) {
+          const one = await api.get<any>(`/api/deals/${qq}/`).catch(() => null);
+          setRes(one && one.id ? [one] : []);
+        } else {
+          const d = await api.get<any>(`/api/deals/?search=${encodeURIComponent(qq)}&page_size=8`);
+          setRes((d.results || d) as any[]);
+        }
+      } catch { setRes([]); }
+    }, 250);
+    return () => clearTimeout(h);
+  }, [q]);
+  const inpS: React.CSSProperties = { height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", width: "100%", fontSize: 13, boxSizing: "border-box" };
+  return (
+    <div style={{ position: "relative", marginBottom: 10 }}>
+      {value ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, height: 36, border: "1px solid #bfdbfe", borderRadius: 8, padding: "0 10px", background: "#eff6ff" }}>
+          <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: "#1d4ed8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>№{value}{label ? " · " + label : ""}</span>
+          <span onClick={() => onPick(0, "")} title={t("Отвязать", "Відвʼязати")} style={{ cursor: "pointer", color: "#94a3b8", fontSize: 16 }}>✕</span>
+        </div>
+      ) : (
+        <input value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder={t("№ или название сделки…", "№ або назва угоди…")} style={inpS} />
+      )}
+      {open && !value && res.length > 0 && (
+        <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 40, maxHeight: 220, overflowY: "auto" }}>
+          {res.map((d) => (
+            <div key={d.id} onClick={() => { onPick(d.id, d.title || ""); setQ(""); setOpen(false); }} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
+              <b style={{ color: "#1d4ed8" }}>№{d.id}</b> · {String(d.title || "").slice(0, 46)} {d.amount ? <span className="muted">· {Math.round(Number(d.amount)).toLocaleString("ru")} ₴</span> : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TxCardModal({ txId, initDirection, initContact, initContactName, onClose, onSaved, nav }: {
   txId?: number; initDirection?: "in" | "out"; initContact?: number; initContactName?: string;
   onClose: () => void; onSaved: () => void; nav?: (p: string) => void;
@@ -100,6 +146,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
         set_category: f.set_category, counterparty: f.counterparty,
         fin_article: f.fin_article || null, fin_direction: f.fin_direction || null,
         channel: f.channel, comment: f.comment, contact: f.contact || null,
+        deal: f.deal || null,
         currency: f.currency || "UAH", rate: Number(f.rate) || 1,
         payer_direction: splitOn ? (payerDir || null) : null,
         splits: splitOn ? splitRows.filter((r: any) => r.dir && Number(r.amt)).map((r: any) => ({ fin_direction: r.dir, set_category: f.set_category, amount: Number(r.amt) })) : [],
@@ -254,12 +301,13 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
             <label className="label">{t("Комментарий", "Коментар")}</label>
             <textarea value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} style={{ ...inp, height: 60, padding: "8px 10px", resize: "vertical" }} />
 
-            {f.deal ? (
-              <div style={{ marginBottom: 10, fontSize: 13 }}>
-                <span className="muted">{t("Сделка:", "Угода:")} </span>
-                <a onClick={() => nav && nav(`/deals/${f.deal}`)} style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600 }} title={t("Открыть сделку", "Відкрити угоду")}>№{f.deal}{f.deal_title ? " · " + f.deal_title : ""}</a>
+            {!isTr && (
+              <div style={{ marginBottom: 10 }}>
+                <label className="label" title={t("Привязать операцию к сделке — найди по номеру или названию. «Оплачено» сделки учтёт этот платёж.", "Привʼязати операцію до сделки — знайди за номером або назвою. «Оплачено» сделки врахує цей платіж.")}>{t("Сделка (№ или название)", "Угода (№ або назва)")}</label>
+                <DealPick value={f.deal || 0} label={f.deal_title} onPick={(did: number, dt: string) => setF({ ...f, deal: did, deal_title: dt })} />
+                {f.deal && nav ? <span onClick={() => nav(`/deals/${f.deal}`)} style={{ fontSize: 12, color: "#1d4ed8", cursor: "pointer" }}>↗ {t("Открыть сделку", "Відкрити угоду")}</span> : null}
               </div>
-            ) : null}
+            )}
             {!isTr && (
               <div style={{ marginBottom: 10 }}>
                 <label className="label" title={t("Клиент CRM, к которому относятся эти деньги (объект). Контрагент может быть мастером/магазином, а деньги считаются по этому клиенту.", "Клієнт CRM, якого стосуються ці гроші (обʼєкт). Контрагент може бути майстром/магазином, а гроші рахуються по цьому клієнту.")}>{t("Клиент (объект)", "Клієнт (обʼєкт)")}</label>
