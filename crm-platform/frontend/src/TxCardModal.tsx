@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "./api";
 import { useLang } from "./i18n";
-import { Attachments } from "./pages/Finance";
+import { Attachments, ClientPick } from "./pages/Finance";
 
 const CHANNELS: [string, string][] = [
   ["", "—"], ["instagram", "Instagram"], ["tiktok", "TikTok"], ["facebook", "Facebook"],
@@ -263,7 +263,12 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
                 <a onClick={() => nav && nav(`/deals/${f.deal}`)} style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600 }} title={t("Открыть сделку", "Відкрити угоду")}>№{f.deal}{f.deal_title ? " · " + f.deal_title : ""}</a>
               </div>
             ) : null}
-            {f.contact && !isTr ? <div style={{ marginBottom: 10, fontSize: 13 }}><span className="muted">{t("Клиент:", "Клієнт:")} </span><b>{f.contact_name}</b></div> : null}
+            {!isTr && (
+              <div style={{ marginBottom: 10 }}>
+                <label className="label" title={t("Клиент CRM, к которому относятся эти деньги (объект). Контрагент может быть мастером/магазином, а деньги считаются по этому клиенту.", "Клієнт CRM, якого стосуються ці гроші (обʼєкт). Контрагент може бути майстром/магазином, а гроші рахуються по цьому клієнту.")}>{t("Клиент (объект)", "Клієнт (обʼєкт)")}</label>
+                <ClientPick value={f.contact} label={f.contact_name} placeholder={t("начни вводить имя или телефон…", "почни вводити імʼя або телефон…")} onPick={(cid: number, nm: string) => setF({ ...f, contact: cid, contact_name: nm })} />
+              </div>
+            )}
 
             {f.id ? <div style={{ margin: "6px 0 10px" }}><label className="label">📎 {t("Чек / документы", "Чек / документи")}</label><Attachments txId={f.id} /></div>
               : <div className="muted" style={{ fontSize: 11, margin: "0 0 10px" }}>📎 {t("Сохрани операцию — тогда сможешь прикрепить фото/скан чека.", "Збережи операцію — тоді зможеш прикріпити фото/скан чека.")}</div>}

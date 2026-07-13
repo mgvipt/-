@@ -2986,7 +2986,7 @@ function TriageTab() {
 }
 
 
-function ClientPick({ value, label, placeholder, onPick }: { value?: number; label?: string; placeholder?: string; onPick: (id: number, name: string) => void }) {
+export function ClientPick({ value, label, placeholder, onPick }: { value?: number; label?: string; placeholder?: string; onPick: (id: number, name: string) => void }) {
   /* Автокомпліт клієнта CRM: пошук по імені/телефону, ✕ — зняти привʼязку. */
   const [q, setQ] = useState(label || "");
   const [opts, setOpts] = useState<any[]>([]);
