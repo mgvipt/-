@@ -155,6 +155,51 @@ export function CpField({ value, onChange }: { value: string; onChange: (v: stri
   );
 }
 
+/* Пошук/вибір угоди: за номером, назвою АБО зі списку угод обраного клієнта (contact) — щоб не шукати номер вручну */
+export function DealPick({ value, label, contact, onPick }: { value?: number; label?: string; contact?: number; onPick: (id: number, title: string) => void }) {
+  const { t } = useLang();
+  const [q, setQ] = useState("");
+  const [res, setRes] = useState<any[]>([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const qq = q.trim();
+    if (qq) {
+      const h = setTimeout(async () => {
+        try {
+          if (/^\d+$/.test(qq)) { const one = await api.get<any>(`/api/deals/${qq}/`).catch(() => null); setRes(one && one.id ? [one] : []); }
+          else { const d = await api.get<any>(`/api/deals/?search=${encodeURIComponent(qq)}&page_size=8`); setRes((d.results || d) as any[]); }
+        } catch { setRes([]); }
+      }, 250);
+      return () => clearTimeout(h);
+    } else if (open && contact) {
+      api.get<any>(`/api/deals/?contact=${contact}&page_size=20`).then((d) => setRes((d.results || d) as any[])).catch(() => setRes([]));
+    } else { setRes([]); }
+  }, [q, open, contact]);
+  const inpS = { height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", width: "100%", fontSize: 13, boxSizing: "border-box" } as React.CSSProperties;
+  return (
+    <div style={{ position: "relative", marginBottom: 10 }}>
+      {value ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, height: 36, border: "1px solid #bfdbfe", borderRadius: 8, padding: "0 10px", background: "#eff6ff" }}>
+          <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: "#1d4ed8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>№{value}{label ? " · " + label : ""}</span>
+          <span onClick={() => onPick(0, "")} title={t("Отвязать", "Відвʼязати")} style={{ cursor: "pointer", color: "#94a3b8", fontSize: 16 }}>✕</span>
+        </div>
+      ) : (
+        <input value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 180)} placeholder={contact ? t("Сделки клиента ↓ или № / название", "Угоди клієнта ↓ або № / назва") : t("№ или название сделки…", "№ або назва угоди…")} style={inpS} />
+      )}
+      {open && !value && res.length > 0 && (
+        <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 40, maxHeight: 240, overflowY: "auto" }}>
+          {!q.trim() && contact ? <div style={{ padding: "5px 10px", fontSize: 11, color: "#94a3b8", background: "#f8fafc" }}>{t("Сделки этого клиента:", "Угоди цього клієнта:")}</div> : null}
+          {res.map((d) => (
+            <div key={d.id} onMouseDown={() => { onPick(d.id, d.title || ""); setQ(""); setOpen(false); }} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
+              <b style={{ color: "#1d4ed8" }}>№{d.id}</b> · {String(d.title || "").slice(0, 42)} {d.amount ? <span className="muted">· {Math.round(Number(d.amount)).toLocaleString("ru")} ₴</span> : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const RULE_FIELDS: [string, string][] = [["osnd", "Коментар / призначення"], ["counterparty", "Контрагент"], ["account", "Рахунок"]];
 const RULE_OPS: [string, string][] = [["contains", "містить"], ["not_contains", "не містить"], ["equals", "дорівнює"]];
 const RULE_ACTS: [string, string][] = [["category", "Категорію"], ["fin_direction", "Проект (напрямок)"], ["fin_article", "Фонд"], ["counterparty", "Контрагента"], ["channel", "Канал"]];
@@ -668,7 +713,7 @@ function Journal() {
   const [dirs, setDirs] = useState<any[]>([]);
   const [cats, setCats] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
-  const blank = { id: 0, direction: "out", amount: "", account: 0, transfer_account: 0, transfer_amount: "", fin_article: 0, fin_direction: 0, channel: "", counterparty: "", set_category: "", currency: "UAH", rate: 1, comment: "", date: "", contact: 0, contact_name: "" };
+  const blank = { id: 0, direction: "out", amount: "", account: 0, transfer_account: 0, transfer_amount: "", fin_article: 0, fin_direction: 0, channel: "", counterparty: "", set_category: "", currency: "UAH", rate: 1, comment: "", date: "", deal: 0, deal_title: "", contact: 0, contact_name: "" };
   const [f, setF] = useState<any>(blank);
   const [splitOn, setSplitOn] = useState(false);
   const [payerDir, setPayerDir] = useState(0);
@@ -848,7 +893,7 @@ function Journal() {
   function openNew(direction: string) { setF({ ...blank, direction, date: new Date().toISOString().slice(0, 10) }); setConvAcc(0); setAsDebt(false); setSplitOn(false); setSplitRows([]); setPayerDir(0); setOpen(true); }
   function openEdit(t: any) {
     setF({ id: t.id, direction: t.direction, amount: t.amount, account: t.account || 0, fin_article: t.fin_article || 0, fin_direction: t.fin_direction || 0,
-      transfer_account: t.transfer_account || 0, transfer_amount: (t as any).transfer_amount || "", channel: t.channel || "", counterparty: t.counterparty || "", set_category: t.category_name || "", currency: t.currency || "UAH", rate: t.rate || 1, comment: t.comment || "", date: t.date || "", contact: (t as any).contact || 0, contact_name: (t as any).contact_name || "" });
+      transfer_account: t.transfer_account || 0, transfer_amount: (t as any).transfer_amount || "", channel: t.channel || "", counterparty: t.counterparty || "", set_category: t.category_name || "", currency: t.currency || "UAH", rate: t.rate || 1, comment: t.comment || "", date: t.date || "", deal: (t as any).deal || 0, deal_title: (t as any).deal_title || "", contact: (t as any).contact || 0, contact_name: (t as any).contact_name || "" });
     setSplitOn(((t as any).splits || []).length > 0);
     setSplitRows(((t as any).splits || []).map((sp: any) => ({ dir: sp.fin_direction || 0, amt: sp.amount })));
     setPayerDir((t as any).payer_direction || 0);
@@ -887,6 +932,7 @@ function Journal() {
       body.channel = f.channel; body.counterparty = f.counterparty; body.set_category = f.set_category;
       body.fin_article = f.fin_article || null; body.fin_direction = f.fin_direction || null; body.transfer_account = null; body.transfer_amount = null;
       body.contact = (f as any).contact || null;
+      body.deal = (f as any).deal || null;
       body.payer_direction = splitOn ? (payerDir || null) : null;
       body.splits = splitOn ? splitRows.filter((r: any) => r.dir && Number(r.amt)).map((r: any) => ({ fin_direction: r.dir, set_category: f.set_category, amount: Number(r.amt) })) : [];
     }
@@ -1167,6 +1213,8 @@ function Journal() {
                 </select>
                 <label className="label" title={t("Клиент CRM, к которому относятся эти деньги (объект). Контрагент может быть мастером или магазином — а деньги считаются по этому клиенту. Подставляется сам, если выбрана сделка.","Клієнт CRM, якого стосуються ці гроші (обʼєкт). Контрагент може бути майстром чи магазином — а гроші рахуються по цьому клієнту. Підставляється сам, якщо вибрано угоду.")}>{t("Клиент (объект)","Клієнт (обʼєкт)")}</label>
                 <ClientPick value={(f as any).contact} label={(f as any).contact_name} onPick={(cid, nm) => setF({ ...f, contact: cid, contact_name: nm } as any)} />
+                <label className="label" title={t("Привязать к сделке — № / название или выбери из сделок клиента","Привʼязати до сделки — № / назва або обери зі сделок клієнта")}>{t("Сделка (необязательно)","Угода (необовʼязково)")}</label>
+                <DealPick value={(f as any).deal} label={(f as any).deal_title} contact={(f as any).contact} onPick={(did: number, dt: string) => setF({ ...f, deal: did, deal_title: dt } as any)} />
                 {!f.id && f.direction === "out" ? (
                   <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
                     <span onClick={() => setAsDebt(false)} style={{ flex: 1, textAlign: "center", padding: "6px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer", background: !asDebt ? "#dc2626" : "#fff", color: !asDebt ? "#fff" : "#64748b", border: "1.5px solid " + (!asDebt ? "#dc2626" : "#e2e8f0") }}>💸 {t("Оплата сейчас — в журнал","Оплата зараз — у журнал")}</span>
