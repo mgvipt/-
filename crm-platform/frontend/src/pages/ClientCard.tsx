@@ -27,6 +27,7 @@ export default function ClientCard() {
   const [sp] = useSearchParams();
   const backChat = sp.get("c");
   const [c, setC] = useState<Contact | null>(null);
+  const { can } = useAuth();
   const [msg, setMsg] = useState("");
   const [ndOpen, setNdOpen] = useState(false);
   const [ndFunnels, setNdFunnels] = useState<any[]>([]);
@@ -58,6 +59,11 @@ export default function ClientCard() {
     finally { setNdBusy(false); }
   }
   const load = () => api.get<Contact>(`/api/contacts/${id}/`).then(setC);
+  async function delDeal(dealId: number) {
+    if (!confirm(t("Удалить сделку безвозвратно? Действие необратимо.","Видалити угоду безповоротно? Дію не відмінити."))) return;
+    try { await api.del("/api/deals/" + dealId + "/"); load(); }
+    catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось удалить сделку","Не вдалося видалити угоду")); }
+  }
   useEffect(() => { load(); }, [id]);
   if (!c) return <div className="spin">{t("Загрузка клиента…","Завантаження клієнта…")}</div>;
 
@@ -156,13 +162,14 @@ export default function ClientCard() {
             )}
             {c.deals.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Сделок ещё нет.","Угод ще немає.")}</div> : (
               <table style={{ width: "100%", fontSize: 13, marginTop: 6 }}>
-                <thead><tr><th style={{ textAlign: "left" }}>{t("Сделка","Угода")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "center" }}>{t("Стадия","Стадія")}</th></tr></thead>
+                <thead><tr><th style={{ textAlign: "left" }}>{t("Сделка","Угода")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "center" }}>{t("Стадия","Стадія")}</th>{can("deal.delete") && <th style={{ width: 30 }}></th>}</tr></thead>
                 <tbody>
                   {c.deals.map((d) => (
                     <tr key={d.id} onClick={() => nav(`/deals/${d.id}`)} style={{ cursor: "pointer", borderTop: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "6px 0", color: "#1d4ed8" }}>{d.title}</td>
                       <td style={{ textAlign: "right" }}>{money(d.amount)}</td>
                       <td style={{ textAlign: "center" }}><span className="chip" style={{ background: d.is_won ? "#dcfce7" : "#f1f5f9", color: d.is_won ? "#166534" : "#475569" }}>{d.stage || "—"}</span></td>
+                      {can("deal.delete") && <td style={{ textAlign: "center", width: 30 }} onClick={(e) => { e.stopPropagation(); delDeal(d.id); }}><span title={t("Удалить сделку","Видалити угоду")} style={{ cursor: "pointer", color: "#dc2626", fontSize: 14 }}>🗑</span></td>}
                     </tr>
                   ))}
                 </tbody>
