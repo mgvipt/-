@@ -27,6 +27,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
   const [splitOn, setSplitOn] = useState(false);
   const [payerDir, setPayerDir] = useState(0);
   const [splitRows, setSplitRows] = useState<any[]>([]);
+  const [asDebt, setAsDebt] = useState(false);   // false = сразу в журнал (оплачено); true = долг (кредиторка/дебиторка)
 
   useEffect(() => {
     let ok = true;
@@ -64,6 +65,21 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
     if (!f || busy) return;
     const _amt = Number(String(f.amount).replace(",", "."));
     if (!_amt) { alert(t("Впиши сумму", "Впиши суму")); return; }
+    // Кредиторка/дебиторка (как в журнале): не транзакция, а плановый платёж (долг) → в Дт/Кт
+    if (!f.id && f.direction !== "transfer" && asDebt) {
+      setBusy(true);
+      try {
+        const catId = (cats.find((c: any) => c.name === f.set_category && c.direction === f.direction) || cats.find((c: any) => c.name === f.set_category) || {}).id || null;
+        await api.post("/api/planned-payments/", {
+          kind: f.direction === "out" ? "payable" : "receivable",
+          amount: _amt, due_date: f.date || new Date().toISOString().slice(0, 10),
+          counterparty: f.counterparty, contact: f.contact || null, category: catId,
+          account: f.account || null, fin_article: f.fin_article || null,
+          fin_direction: f.fin_direction || null, comment: f.comment,
+        });
+        onSaved(); return;
+      } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось сохранить", "Не вдалося зберегти")); setBusy(false); return; }
+    }
     let body: any;
     if (f.direction === "transfer") {
       if (!f.account || !f.transfer_account) { alert(t("Выбери оба счёта перевода", "Обери обидва рахунки переказу")); return; }
@@ -190,7 +206,14 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
                   {dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
 
-                <div style={{ margin: "2px 0 10px", border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, background: splitOn ? "#fbf7f4" : "#fff" }}>
+                {!f.id && (
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                    <span onClick={() => setAsDebt(false)} style={{ flex: 1, textAlign: "center", padding: "7px 6px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer", background: !asDebt ? (f.direction === "out" ? "#dc2626" : "#16a34a") : "#fff", color: !asDebt ? "#fff" : "#64748b", border: "1.5px solid " + (!asDebt ? (f.direction === "out" ? "#dc2626" : "#16a34a") : "#e2e8f0") }}>{f.direction === "out" ? "💸 " + t("Оплата сейчас", "Оплата зараз") : "💰 " + t("Деньги пришли", "Гроші прийшли")}</span>
+                    <span onClick={() => setAsDebt(true)} title={t("Долг: попадёт в Дт/Кт, в журнал — после кнопки «Оплачено»", "Борг: потрапить у Дт/Кт, у журнал — після кнопки «Оплачено»")} style={{ flex: 1, textAlign: "center", padding: "7px 6px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer", background: asDebt ? "#b45309" : "#fff", color: asDebt ? "#fff" : "#64748b", border: "1.5px solid " + (asDebt ? "#b45309" : "#e2e8f0") }}>{f.direction === "out" ? "🕐 " + t("Кредиторка (оплатим позже)", "Кредиторка (оплатимо пізніше)") : "🕐 " + t("Нам должны (дебиторка)", "Нам винні (дебіторка)")}</span>
+                  </div>
+                )}
+
+                {!asDebt && <div style={{ margin: "2px 0 10px", border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, background: splitOn ? "#fbf7f4" : "#fff" }}>
                   <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                     <input type="checkbox" checked={splitOn} onChange={(e) => { setSplitOn(e.target.checked); if (e.target.checked && splitRows.length === 0) setSplitRows([{ dir: f.fin_direction || 0, amt: f.amount || "" }]); }} style={{ width: 15, height: 15, accentColor: "#C67D5F" }} />
                     🔀 {t("Разделить между подразделениями", "Розподілити між підрозділами")}
@@ -219,7 +242,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
                     ); })()}
                     <div className="muted" style={{ fontSize: 10.5, marginTop: 5, lineHeight: 1.4 }}>{t("Строка плательщика — его собственная доля (не долг). Долг — только доли других подразделений. Видно в Дт/Кт → Взаиморасчёты.", "Рядок платника — його власна частка (не борг). Борг — тільки частки інших підрозділів. Видно в Дт/Кт → Взаєморозрахунки.")}</div>
                   </div>}
-                </div>
+                </div>}
 
                 <label className="label">{t("Канал", "Канал")}</label>
                 <select value={f.channel} onChange={(e) => setF({ ...f, channel: e.target.value })} style={inp}>
