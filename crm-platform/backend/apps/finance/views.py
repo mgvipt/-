@@ -38,6 +38,19 @@ class FinDirectionPerm(HasPermCode):
         return u.has_perm_code("finance.view")
 
 
+class FinArticleReadPerm(HasPermCode):
+    """Фонди (статті фінмоделі): ЧИТАТИ може кожен, хто працює з фінансами або створює
+    дохід/витрату (finance.view АБО finance.tx.edit) — щоб фонд було видно у випадаючих
+    списках картки операції. РЕДАГУВАННЯ фондів лишається під finance.manage (як було)."""
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        u = request.user
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return u.has_perm_code("finance.view") or u.has_perm_code("finance.tx.edit")
+        return u.has_perm_code("finance.manage")
+
+
 class FinModelArticleViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         _fin_guard(self.request, "finance.model.edit", "Фінмодель: лише перегляд (нема права редагувати)")
@@ -63,7 +76,7 @@ class FinModelArticleViewSet(viewsets.ModelViewSet):
                 recalc_all_bundle_costs()
             except Exception:
                 pass
-    permission_classes = [FinanceManagePerm]
+    permission_classes = [FinArticleReadPerm]
     filterset_fields = ["category", "active"]
 
 
