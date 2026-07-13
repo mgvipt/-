@@ -53,9 +53,19 @@ class ContactDetailSerializer(ContactSerializer):
         fields = ContactSerializer.Meta.fields + ["deals", "total_spent"]
 
     def get_deals(self, obj):
-        return [{"id": d.id, "title": d.title, "amount": float(d.amount),
-                 "stage": d.stage.name if d.stage else "", "is_won": d.stage.is_won if d.stage else False,
-                 "created_at": d.created_at} for d in obj.deals.select_related("stage").order_by("-created_at")[:50]]
+        out = []
+        for d in obj.deals.select_related("stage").prefetch_related("items", "items__product").order_by("-created_at")[:50]:
+            _cost = 0.0
+            for _it in d.items.all():
+                _cu = _it.cost if (_it.cost or 0) > 0 else (getattr(_it.product, "cost", 0) or 0)
+                try:
+                    _cost += float(_it.quantity or 0) * float(_cu or 0)
+                except Exception:
+                    pass
+            out.append({"id": d.id, "title": d.title, "amount": float(d.amount),
+                        "stage": d.stage.name if d.stage else "", "is_won": d.stage.is_won if d.stage else False,
+                        "cost": round(_cost, 2), "created_at": d.created_at})
+        return out
 
     def get_total_spent(self, obj):
         from django.db.models import Sum

@@ -162,12 +162,13 @@ export default function ClientCard() {
             )}
             {c.deals.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Сделок ещё нет.","Угод ще немає.")}</div> : (
               <table style={{ width: "100%", fontSize: 13, marginTop: 6 }}>
-                <thead><tr><th style={{ textAlign: "left" }}>{t("Сделка","Угода")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "center" }}>{t("Стадия","Стадія")}</th>{can("deal.delete") && <th style={{ width: 30 }}></th>}</tr></thead>
+                <thead><tr><th style={{ textAlign: "left" }}>{t("Сделка","Угода")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th>{can("product.cost.view") && <th style={{ textAlign: "right", color: "#9a3412" }}>{t("Закупка","Закупка")}</th>}<th style={{ textAlign: "center" }}>{t("Стадия","Стадія")}</th>{can("deal.delete") && <th style={{ width: 30 }}></th>}</tr></thead>
                 <tbody>
                   {c.deals.map((d) => (
                     <tr key={d.id} onClick={() => nav(`/deals/${d.id}`)} style={{ cursor: "pointer", borderTop: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "6px 0", color: "#1d4ed8" }}>{d.title}</td>
                       <td style={{ textAlign: "right" }}>{money(d.amount)}</td>
+                      {can("product.cost.view") && <td style={{ textAlign: "right", color: "#9a3412" }} title={t("Себестоимость сделки (закупка товаров)","Собівартість сделки (закупка товарів)")}>{Number((d as any).cost) > 0 ? money((d as any).cost) : "—"}</td>}
                       <td style={{ textAlign: "center" }}><span className="chip" style={{ background: d.is_won ? "#dcfce7" : "#f1f5f9", color: d.is_won ? "#166534" : "#475569" }}>{d.stage || "—"}</span></td>
                       {can("deal.delete") && <td style={{ textAlign: "center", width: 30 }} onClick={(e) => { e.stopPropagation(); delDeal(d.id); }}><span title={t("Удалить сделку","Видалити угоду")} style={{ cursor: "pointer", color: "#dc2626", fontSize: 14 }}>🗑</span></td>}
                     </tr>
@@ -277,7 +278,7 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
           </div>
         ))}
       </div>
-      {(Number(d.revenue) > 0 || Number(d.cost_ext) > 0 || Number(d.cogs) > 0) && (
+      {can("product.cost.view") && (Number(d.revenue) > 0 || Number(d.cost_ext) > 0 || Number(d.cogs) > 0) && (
         <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 10, background: (Number(d.profit) >= 0 ? "#f0fdf4" : "#fef2f2"), border: "1px solid " + (Number(d.profit) >= 0 ? "#bbf7d0" : "#fecaca") }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
             <div className="muted" style={{ fontSize: 11.5 }}>
@@ -286,7 +287,7 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
               <span style={{ margin: "0 5px" }}>−</span>{t("Закупки/услуги","Закупки/послуги")}: <b style={{ color: "#dc2626" }}>{money0(Number(d.cost_ext || 0))}</b>
             </div>
             <div style={{ fontSize: 15, fontWeight: 800, color: (Number(d.profit) >= 0 ? "#16a34a" : "#dc2626") }}>
-              {t("Прибыль","Прибуток")}: {money0(Number(d.profit || 0))}
+              {t("Прибыль","Прибуток")}: {money0(Number(d.profit || 0))}{Number(d.revenue) > 0 ? <span style={{ fontSize: 12.5, fontWeight: 700, marginLeft: 8, color: "#64748b" }}>· {t("маржа","маржа")} {Math.round(Number(d.profit || 0) / Number(d.revenue) * 100)}%</span> : null}
             </div>
           </div>
           <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>{t("Складские товары — из сделок (себестоимость авто при отгрузке), закупки под заказ — из журнала. Без двойного счёта.","Складські товари — зі сделок (собівартість авто при відвантаженні), закупки під замовлення — з журналу. Без подвійного рахунку.")}</div>
