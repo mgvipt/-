@@ -226,6 +226,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [payAmount, setPayAmount] = useState("");
   const [payType, setPayType] = useState("cash");
   const [cashReceipt, setCashReceipt] = useState(false);
+  const [advAvail, setAdvAvail] = useState<number | null>(null);
+  useEffect(() => {
+    if (payOpen && payType === "advance" && deal?.contact_id) {
+      api.get<any>(`/api/contacts/${deal.contact_id}/finance/`).then((d: any) => setAdvAvail(Number(d?.advance || 0))).catch(() => setAdvAvail(null));
+    }
+  }, [payOpen, payType, deal?.contact_id]);
   const [verify, setVerify] = useState<any>(null);   // крок 2 — вікно перевірки платежу (воронка салону)
   const [vRefs, setVRefs] = useState<any>({ accs: [], cats: [], dirs: [] });
   const [msg, setMsg] = useState("");
@@ -1074,7 +1080,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <h3 style={{ marginTop: 0 }}>{t("Принять оплату","Прийняти оплату")}</h3>
             <label className="label" style={{ marginBottom: 6 }}>{t("Способ оплаты","Спосіб оплати")}</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 14 }}>
-              {([["cash", t("💵 Наличные","💵 Готівка")], ["liqpay", t("💳 LiqPay (оплата картой онлайн)","💳 LiqPay (оплата картою онлайн)")], ["terminal", t("💳 Терминал · карта/телефон NFC","💳 Термінал · картка/телефон NFC")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]].concat(salonFunnel ? [["credit", t("🤝 Товарный кредит (отгрузка в долг)","🤝 Товарний кредит (відвантаження в борг)")]] : []) as [string,string][]).map(([k, label]) => (
+              {([["cash", t("💵 Наличные","💵 Готівка")], ["liqpay", t("💳 LiqPay (оплата картой онлайн)","💳 LiqPay (оплата картою онлайн)")], ["terminal", t("💳 Терминал · карта/телефон NFC","💳 Термінал · картка/телефон NFC")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]].concat(salonFunnel ? [["credit", t("🤝 Товарный кредит (отгрузка в долг)","🤝 Товарний кредит (відвантаження в борг)")]] : []).concat(deal.contact_id ? [["advance", t("🏦 Из аванса клиента","🏦 З авансу клієнта")]] : []) as [string,string][]).map(([k, label]) => (
                 <button key={k} onClick={() => setPayType(k)} style={{ fontSize: 12, padding: "8px 8px", borderRadius: 8, cursor: "pointer", textAlign: "left", border: "1px solid " + (payType === k ? "var(--brand,#2563eb)" : "#e2e8f0"), background: payType === k ? "#eff6ff" : "#fff", color: payType === k ? "#1d4ed8" : "#475569", fontWeight: payType === k ? 600 : 400 }}>{label}</button>
               ))}
             </div>
@@ -1082,6 +1088,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
               <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
                 <span onClick={() => setCashReceipt(false)} style={{ flex: 1, textAlign: "center", padding: "7px 8px", borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: "pointer", background: !cashReceipt ? "#475569" : "#fff", color: !cashReceipt ? "#fff" : "#64748b", border: "1.5px solid " + (!cashReceipt ? "#475569" : "#e2e8f0") }}>{t("Без чека","Без чека")}</span>
                 <span onClick={() => setCashReceipt(true)} style={{ flex: 1, textAlign: "center", padding: "7px 8px", borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: "pointer", background: cashReceipt ? "#16a34a" : "#fff", color: cashReceipt ? "#fff" : "#64748b", border: "1.5px solid " + (cashReceipt ? "#16a34a" : "#e2e8f0") }}>🧾 {t("С фискальным чеком","З фіскальним чеком")}</span>
+              </div>
+            )}
+            {payType === "advance" && (
+              <div className="muted" style={{ fontSize: 11.5, marginBottom: 12, background: "#eff6ff", padding: "8px 10px", borderRadius: 8, color: "#1d4ed8" }}>
+                {t("Списываем из уже полученных денег клиента (аванса) — новый доход и чек НЕ создаются.","Списуємо з уже отриманих грошей клієнта (авансу) — новий дохід і чек НЕ створюються.")}
+                {advAvail !== null && <div style={{ marginTop: 4, fontWeight: 700 }}>{t("Доступный аванс:","Доступний аванс:")} {Math.round(advAvail).toLocaleString("ru")} ₴</div>}
               </div>
             )}
             <label className="label">{t("Сумма, ₴","Сума, ₴")}</label>

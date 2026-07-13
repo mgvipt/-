@@ -82,7 +82,8 @@ class ContactViewSet(viewsets.ModelViewSet):
         inc = qs.filter(direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0
         exp = qs.filter(direction="out").aggregate(s=_Sum("amount_uah"))["s"] or 0
         # аванс = залишок грошей клієнта в нас (його дохід мінус витрати по його обʼєкту)
-        adv = (inc or 0) - (exp or 0)
+        _adv_used = Payment.objects.filter(deal__contact=c, provider="advance", is_paid=True).aggregate(s=_Sum("amount"))["s"] or 0
+        adv = (inc or 0) - (exp or 0) - _adv_used
         _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[])))
         debt = _ppq.filter(kind="payable").aggregate(s=_Sum("amount"))["s"] or 0
         # ДЕБІТОРКА (нам винні): торгова (від продажу, майбутня прибуток) окремо від позики (мої гроші в борг, НЕ прибуток)
@@ -1090,6 +1091,22 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             return Response({"detail": "Сума оплати має бути більше 0."}, status=status.HTTP_400_BAD_REQUEST)
         provider = request.data.get("provider", "cash")
         account = Account.objects.filter(pk=request.data.get("account")).first()
+        if provider == "advance":
+            _cc = deal.contact
+            if not _cc:
+                return Response({"detail": "У сделки нет клиента — из аванса платить не с кого."}, status=status.HTTP_400_BAD_REQUEST)
+            from apps.finance.models import Transaction as _AdvTx
+            from django.db.models import Sum as _AdvS, Q as _AdvQ
+            _nm = (" ".join(filter(None, [_cc.first_name or "", _cc.last_name or ""])).strip() or (_cc.nickname or "")).strip()
+            _m = _AdvQ(contact=_cc)
+            if _nm:
+                _m = _m | _AdvQ(counterparty__iexact=_nm) | _AdvQ(counterparty__istartswith=_nm + "/") | _AdvQ(counterparty__istartswith=_nm + " ") | _AdvQ(counterparty__istartswith=_nm + ".")
+            _inc = _AdvTx.objects.filter(_m, direction="in").aggregate(s=_AdvS("amount_uah"))["s"] or 0
+            _exp = _AdvTx.objects.filter(_m, direction="out").aggregate(s=_AdvS("amount_uah"))["s"] or 0
+            _used = Payment.objects.filter(deal__contact=_cc, provider="advance", is_paid=True).aggregate(s=_AdvS("amount"))["s"] or 0
+            _avail = Decimal(str(_inc)) - Decimal(str(_exp)) - Decimal(str(_used))
+            if amount > _avail + Decimal("0.01"):
+                return Response({"detail": "Недостатньо авансу клієнта. Доступно: %.2f грн." % float(_avail)}, status=status.HTTP_400_BAD_REQUEST)
         from django.utils import timezone as _tz
         from datetime import timedelta as _td
         from django.db import transaction as _txn
@@ -1102,12 +1119,12 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             # оплата за реквізитами з банківської виписки. Ніяких дублів і зайвих чеків.
             _fn = (dlock.funnel.name if dlock.funnel_id else '').lower()
             # готівка/термінал = клієнт КУПУЄ В САЛОНІ — ручний прийом дозволено у будь-якій воронці
-            if ('основний продукт' in _fn or 'тестовий набір' in _fn) and provider not in ('cash', 'terminal'):
+            if ('основний продукт' in _fn or 'тестовий набір' in _fn) and provider not in ('cash', 'terminal', 'advance'):
                 return Response({'detail': 'У цій воронці оплати фіксуються лише автоматично: LiqPay (посилання) або оплата за реквізитами ФОП (підтягується з банку). Ручний прийом вимкнено, щоб не було дублів доходу і зайвих фіскальних чеків. Надішли клієнту посилання на оплату.'}, status=status.HTTP_403_FORBIDDEN)
             # ЗАХИСТ від дубля: по сделці є свіже LiqPay-посилання на ЦЮ Ж суму →
             # найімовірніше клієнт оплатить (або вже оплатив) онлайн. Ручна фіксація створить
             # другий дохід і другий фіскальний чек. Блокуємо (обхід: force=1 після підтвердження).
-            if provider != "liqpay" and not request.data.get("force"):
+            if provider not in ("liqpay", "advance") and not request.data.get("force"):
                 from .models import PayLink
                 link_fresh = PayLink.objects.filter(deal=dlock, created_at__gte=_tz.now() - _td(hours=48)).exists()
                 paid_liq = Payment.objects.filter(deal=dlock, provider="liqpay", is_paid=True,
@@ -1123,8 +1140,10 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 cat_use = "САЛОН(Оффлайн)"
                 if not acc_use:
                     acc_use = Account.objects.filter(name__icontains="Касса Салон").first() or account
-            tx = record_income(amount, deal=dlock, account=acc_use, payment=pay, category=cat_use,
-                               channel=('Салон' if provider in ('cash', 'terminal') else None))
+            tx = None
+            if provider != "advance":  # оплата з авансу: дохід уже отримано раніше → новий НЕ створюємо
+                tx = record_income(amount, deal=dlock, account=acc_use, payment=pay, category=cat_use,
+                                   channel=('Салон' if provider in ('cash', 'terminal') else None))
             # вікно перевірки (воронка салону): ручні правки менеджера до полів операції
             try:
                 ov = request.data
@@ -1169,7 +1188,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         # авто-чек Checkbox поза транзакцією; для «термінал» чек б'є застосунок Checkbox (Tap to Pay) — НЕ дублюємо
         cbres = None
         skip_receipt = str(request.data.get("no_receipt") or "") in ("1", "true", "True")
-        if provider != "terminal" and not skip_receipt:
+        if provider not in ("terminal", "advance") and not skip_receipt:
             try:
                 cbres = _issue_checkbox_for_deal(deal, user=getattr(request, "user", None))
             except Exception as _e:
