@@ -120,7 +120,7 @@ const CHANNELS = [
   ["telegram", "Telegram"], ["call", "Дзвінок"], ["other", "Інше"],
 ];
 /* Поле контрагента зі звʼязком із клієнтами CRM: автокомпліт + створення клієнта */
-function CpField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function CpField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const { t } = useLang();
   const [res, setRes] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
