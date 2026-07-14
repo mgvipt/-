@@ -167,7 +167,7 @@ class ContactViewSet(viewsets.ModelViewSet):
                          "count": qs.count(), "ops": ops, "debts_list": debts_list,
                          "revenue": float(_rev or 0), "cost_ext": float(_cext or 0), "cogs": float(_cogs), "profit": _profit,
                          "planned_srv": float(_planned_srv), "actual_srv": float(_actual_srv)})
-    search_fields = ["first_name", "last_name", "phone", "email"]
+    search_fields = ["first_name", "last_name", "phone", "email", "edrpou", "nickname"]
     filterset_fields = ["loyalty_tag", "source", "owner"]
     ordering_fields = ["created_at", "first_name", "last_touch_at"]
 

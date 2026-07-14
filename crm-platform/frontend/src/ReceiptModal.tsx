@@ -16,6 +16,7 @@ export default function ReceiptModal({ productId, productName, dealId, onClose, 
   ]);
   const [sup, setSup] = useState<{ id: number; name: string }>({ id: 0, name: "" });
   const [supQ, setSupQ] = useState(""); const [supRes, setSupRes] = useState<any[]>([]); const [supOpen, setSupOpen] = useState(false);
+  const [creating, setCreating] = useState(false); const [nc, setNc] = useState({ name: "", edrpou: "", phone: "", iban: "" });
   const [invoice, setInvoice] = useState("");
   const [dt, setDt] = useState(new Date().toISOString().slice(0, 10));
   const [paid, setPaid] = useState(true);   // true = оплачено, false = в долг (кредиторка постачальнику)
@@ -38,6 +39,14 @@ export default function ReceiptModal({ productId, productName, dealId, onClose, 
     api.get<any>(`/api/products/?search=${encodeURIComponent(q)}&page_size=8`).then((d) => setRow(i, { res: (d.results || d) as any[] })).catch(() => setRow(i, { res: [] }));
   }
   const total = rows.reduce((s, r) => s + (Number(r.qty) || 0) * (Number(String(r.price).replace(",", ".")) || 0), 0);
+
+  async function createSupplier() {
+    const nm = nc.name.trim(); if (!nm) { setErr(t("Впиши название поставщика", "Впиши назву постачальника")); return; }
+    try {
+      const c: any = await api.post("/api/contacts/", { first_name: nm, edrpou: nc.edrpou.trim(), phone: nc.phone.trim(), iban: nc.iban.trim(), source: "supplier" });
+      setSup({ id: c.id, name: nm }); setCreating(false); setNc({ name: "", edrpou: "", phone: "", iban: "" }); setErr("");
+    } catch (e: any) { setErr(e?.response?.data?.detail || t("Не удалось создать поставщика", "Не вдалося створити постачальника")); }
+  }
 
   async function save() {
     const items = rows.filter((r) => r.product && Number(r.qty) > 0).map((r) => ({ product: r.product, quantity: Number(r.qty), price: Number(String(r.price).replace(",", ".")) || 0 }));
@@ -81,16 +90,35 @@ export default function ReceiptModal({ productId, productName, dealId, onClose, 
               <span onClick={() => { setSup({ id: 0, name: "" }); setSupQ(""); }} style={{ cursor: "pointer", color: "#94a3b8" }}>✕</span>
             </div>
           ) : (
-            <input value={supQ} onChange={(e) => { setSupQ(e.target.value); setSupOpen(true); }} onFocus={() => setSupOpen(true)} onBlur={() => setTimeout(() => setSupOpen(false), 180)} placeholder={t("начни вводить имя магазина…", "почни вводити назву магазину…")} style={inp} />
+            <input value={supQ} onChange={(e) => { setSupQ(e.target.value); setSupOpen(true); }} onFocus={() => setSupOpen(true)} onBlur={() => setTimeout(() => setSupOpen(false), 180)} placeholder={t("имя, ЄДРПОУ, телефон…", "назва, ЄДРПОУ, телефон…")} style={inp} />
           )}
           {supOpen && !sup.id && supRes.length > 0 && (
             <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 200, overflowY: "auto" }}>
               {supRes.map((c) => { const nm = (`${c.first_name || ""} ${c.last_name || ""}`.trim() || c.nickname || c.phone || ("#" + c.id)); return (
-                <div key={c.id} onMouseDown={() => { setSup({ id: c.id, name: nm }); setSupOpen(false); }} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>{nm}{c.phone ? <span className="muted"> · {c.phone}</span> : null}</div>
+                <div key={c.id} onMouseDown={() => { setSup({ id: c.id, name: nm }); setSupOpen(false); }} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>{nm}{c.edrpou ? <span className="muted"> · ЄДРПОУ {c.edrpou}</span> : null}{c.phone ? <span className="muted"> · {c.phone}</span> : null}</div>
               ); })}
             </div>
           )}
         </div>
+        {!sup.id && (
+          creating ? (
+            <div style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: 10, marginTop: 6, background: "#f8fafc" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 6 }}>{t("Новый поставщик", "Новий постачальник")}</div>
+              <input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder={t("Название / ФИО *", "Назва / ПІБ *")} style={{ ...inp, marginBottom: 6 }} />
+              <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                <input value={nc.edrpou} onChange={(e) => setNc({ ...nc, edrpou: e.target.value })} placeholder="ЄДРПОУ / ІПН" style={inp} />
+                <input value={nc.phone} onChange={(e) => setNc({ ...nc, phone: e.target.value })} placeholder={t("телефон", "телефон")} style={inp} />
+              </div>
+              <input value={nc.iban} onChange={(e) => setNc({ ...nc, iban: e.target.value })} placeholder="IBAN / рахунок" style={{ ...inp, marginBottom: 6 }} />
+              <div style={{ display: "flex", gap: 6 }}>
+                <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setCreating(false)}>{t("Отмена", "Скасувати")}</button>
+                <button className="btn btn-primary" style={{ flex: 1 }} onClick={createSupplier}>{t("Создать и выбрать", "Створити і обрати")}</button>
+              </div>
+            </div>
+          ) : (
+            <span onClick={() => { setCreating(true); setNc({ ...nc, name: supQ }); }} style={{ cursor: "pointer", color: "#2563eb", fontSize: 12.5, fontWeight: 600, display: "inline-block", marginTop: 4 }}>+ {t("Создать нового поставщика с реквизитами", "Створити нового постачальника з реквізитами")}</span>
+          )
+        )}
 
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ flex: 1 }}><label style={lbl}>{t("№ накладной", "№ накладної")}</label><input value={invoice} onChange={(e) => setInvoice(e.target.value)} style={inp} /></div>
