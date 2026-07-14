@@ -14,7 +14,7 @@ class WarehousePerm(HasPermCode):
     pass
 
 
-from rest_framework.permissions import BasePermission, SAFE_METHODS
+from rest_framework.permissions import BasePermission, SAFE_METHODS, AllowAny
 
 
 class WarehouseWrite(BasePermission):
@@ -270,7 +270,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                          "components_cost": float(comp_cost), "assembly_fee": float(fee),
                          "can_build": (can_build if rows else None)})
 
-    @action(detail=True, methods=["get"], url_path="image/(?P<img_id>[0-9]+)")
+    @action(detail=True, methods=["get"], url_path="image/(?P<img_id>[0-9]+)", permission_classes=[AllowAny])
     def image(self, request, pk=None, img_id=None):
         """Отдать картинку товара (файл из warehouse_photos/products/)."""
         from django.http import FileResponse, Http404
