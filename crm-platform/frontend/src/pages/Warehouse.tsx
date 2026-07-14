@@ -31,7 +31,7 @@ interface Product {
   id: number; name: string; sku: string; unit: string;
   price: string; cost: string; cost_pct?: string; min_price?: string; currency: string; margin: number;
   category: number | null; category_name: string; stock: number;
-  is_active?: boolean; description?: string; track_stock?: boolean;
+  is_active?: boolean; description?: string; track_stock?: boolean; is_drop?: boolean;
   b24_created_by?: string; b24_modified_by?: string;
   b24_created_at?: string; b24_modified_at?: string;
   images?: { id: number; url: string }[];
@@ -209,7 +209,7 @@ export default function Warehouse() {
       const upd: any = await api.patch(`/api/products/${card.id}/`, {
         name: cardEdit.name, description: cardEdit.description, category: cardEdit.category || null,
         price: Number(cardEdit.price) || 0, cost: Number(cardEdit.cost) || 0, cost_pct: Number(cardEdit.cost_pct) || 0, min_price: Number(cardEdit.min_price) || 0, unit: cardEdit.unit,
-        sku: cardEdit.sku, is_active: cardEdit.is_active, track_stock: cardEdit.track_stock });
+        sku: cardEdit.sku, is_active: cardEdit.is_active, track_stock: cardEdit.track_stock, is_drop: cardEdit.is_drop });
       setCard(upd); setCardEdit(null); loadProducts();
       api.get<Category[]>("/api/product-categories/").then(setCats).catch(() => {});
     } catch { alert(t("Не удалось сохранить","Не вдалося зберегти")); }
@@ -673,7 +673,7 @@ export default function Warehouse() {
                 <button className="btn btn-light" title={t("Скопировать ссылку на товар","Скопіювати посилання на товар")} onClick={() => { navigator.clipboard?.writeText(window.location.origin + "/warehouse?product=" + card.id); alert(t("Ссылка скопирована ✓","Посилання скопійовано ✓")); }}><Icon n="🔗" size={14} /></button>
                 {canEdit && (cardEdit
                   ? <><button className="btn btn-primary" onClick={saveCard}>{t("Сохранить","Зберегти")}</button><button className="btn btn-light" onClick={() => setCardEdit(null)}>✕</button></>
-                  : <button className="btn btn-light" onClick={() => setCardEdit({ name: card.name, sku: card.sku, unit: card.unit, price: card.price, cost: card.cost, cost_pct: card.cost_pct || 0, min_price: card.min_price || 0, category: card.category || 0, description: card.description || "", is_active: card.is_active !== false, track_stock: card.track_stock !== false })}><Icon n="✏️" size={14} /> {t("Изменить","Змінити")}</button>)}
+                  : <button className="btn btn-light" onClick={() => setCardEdit({ name: card.name, sku: card.sku, unit: card.unit, price: card.price, cost: card.cost, cost_pct: card.cost_pct || 0, min_price: card.min_price || 0, category: card.category || 0, description: card.description || "", is_active: card.is_active !== false, track_stock: card.track_stock !== false, is_drop: (card as any).is_drop === true })}><Icon n="✏️" size={14} /> {t("Изменить","Змінити")}</button>)}
                 <button className="btn btn-light" onClick={() => setCard(null)}>✕</button>
               </div>
             </div>
@@ -691,6 +691,7 @@ export default function Warehouse() {
                 <label style={{ fontSize: 12 }} className="muted">{t("Ед. изм.","Од. вим.")}<input value={cardEdit.unit} onChange={(e) => setCardEdit({ ...cardEdit, unit: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>
                 <label style={{ fontSize: 12, display: "flex", alignItems: "flex-end", gap: 6, paddingBottom: 8 }}><input type="checkbox" checked={cardEdit.is_active} onChange={(e) => setCardEdit({ ...cardEdit, is_active: e.target.checked })} /> {t("Активен (виден в каталоге)","Активний (видно у каталозі)")}</label>
                 <label style={{ fontSize: 12, display: "flex", alignItems: "flex-end", gap: 6, paddingBottom: 8 }} title={t("Выключи для услуг/работ — не списывается со склада, остаток не считается","Вимкни для послуг/робіт — не списується зі складу, залишок не рахується")}><input type="checkbox" checked={cardEdit.track_stock} onChange={(e) => setCardEdit({ ...cardEdit, track_stock: e.target.checked })} /> {t("Количественный учёт склада","Кількісний облік складу")}</label>
+                <label style={{ fontSize: 12, display: "flex", alignItems: "flex-end", gap: 6, paddingBottom: 8 }} title={t("Товар под заказ: закупаем ПОСЛЕ продажи. При приходе закупочная цена автоматически обновится во ВСЕХ сделках с этим товаром (в т.ч. закрытых) и в движении товара.","Товар під замовлення: закуповуємо ПІСЛЯ продажу. При приході закупівельна ціна автоматично оновиться в УСІХ угодах з цим товаром (в т.ч. закритих) і в русі товару.")}><input type="checkbox" checked={cardEdit.is_drop} onChange={(e) => setCardEdit({ ...cardEdit, is_drop: e.target.checked })} /> {t("Дроп (докупаем под заказ)","Дроп (докуповуємо під замовлення)")}</label>
                 <label style={{ fontSize: 12, gridColumn: "1 / -1" }} className="muted">{t("Описание","Опис")}<textarea value={cardEdit.description} onChange={(e) => setCardEdit({ ...cardEdit, description: e.target.value })} rows={5} style={{ width: "100%", border: "1px solid #cbd5e1", borderRadius: 7, padding: 8, marginTop: 2, fontFamily: "inherit", fontSize: 13 }} /></label>
               </div>
             ) : (

@@ -29,7 +29,7 @@ class ProductSerializer(serializers.ModelSerializer):
                   "is_active", "category", "category_name", "stock", "margin",
                   "description", "b24_created_by", "b24_modified_by",
                   "b24_created_at", "b24_modified_at", "created_at", "updated_at", "images", "is_bundle",
-                  "track_stock", "reserved_qty"]
+                  "track_stock", "reserved_qty", "is_drop"]
 
     def get_stock(self, obj):
         return obj.stock()

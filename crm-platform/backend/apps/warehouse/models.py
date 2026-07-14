@@ -70,6 +70,8 @@ class Product(models.Model):
     description = models.TextField("Опис", blank=True, default="")
     track_stock = models.BooleanField("Кількісний облік", default=True,
         help_text="Вимкни для послуг/робіт/номенклатури без залишку — не списується зі складу, залишок не рахується")
+    is_drop = models.BooleanField("Дроп (докупаємо під замовлення)", default=False,
+        help_text="Товар, який ми продаємо ПІД замовлення і закуповуємо ПІСЛЯ продажу. Коли робиш прихід — закупівельна ціна автоматично оновлюється в УСІХ угодах з цим товаром (навіть у закритих) і в русі товару. Для звичайних складських товарів вимкнено — там історія собівартості на момент продажу не змінюється.")
     b24_created_by = models.CharField("Хто створив (Б24)", max_length=120, blank=True, default="")
     b24_modified_by = models.CharField("Хто змінив (Б24)", max_length=120, blank=True, default="")
     b24_created_at = models.DateTimeField(null=True, blank=True)

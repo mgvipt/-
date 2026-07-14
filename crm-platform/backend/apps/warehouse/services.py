@@ -116,7 +116,15 @@ def _weighted_cost_update(doc):
             # після приходу). Закриті (won/lost) угоди НЕ чіпаємо — там снапшот на момент продажу (історія).
             try:
                 from apps.crm.models import DealItem
+                from apps.warehouse.models import StockMovement
                 DealItem.objects.filter(product=p, deal__stage__is_won=False, deal__stage__is_lost=False).update(cost=new_cost)
+                # ДРОП-товар: закуповуємо ПІСЛЯ продажу — тому оновлюємо собівартість і в ЗАКРИТИХ (won) угодах,
+                # і в русі товару (розхід), щоб приход «догнав» продаж. lost (програні) не чіпаємо.
+                if getattr(p, "is_drop", False) and doc.deal_id:
+                    # прихід зроблено ІЗ конкретної угоди (кнопка «Прихід» у картці сделки) — оновлюємо
+                    # собівартість САМЕ цієї угоди (навіть закритої) + її рух розходу. Старі угоди не чіпаємо.
+                    DealItem.objects.filter(product=p, deal_id=doc.deal_id).update(cost=new_cost)
+                    StockMovement.objects.filter(product=p, quantity__lt=0, document__deal_id=doc.deal_id).update(price=new_cost)
             except Exception:
                 pass
 
