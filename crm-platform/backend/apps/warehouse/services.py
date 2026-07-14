@@ -112,6 +112,13 @@ def _weighted_cost_update(doc):
             p.cost = new_cost
             p.save(update_fields=["cost"])
             recalc_bundle_costs(p)
+            # оновити «закупку» позицій у ВІДКРИТИХ угодах з цим товаром (щоб деал показував актуальну собівартість
+            # після приходу). Закриті (won/lost) угоди НЕ чіпаємо — там снапшот на момент продажу (історія).
+            try:
+                from apps.crm.models import DealItem
+                DealItem.objects.filter(product=p, deal__stage__is_won=False, deal__stage__is_lost=False).update(cost=new_cost)
+            except Exception:
+                pass
 
 
 def bundle_assembly_fee():
