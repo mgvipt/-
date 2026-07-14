@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { useLang } from "./i18n";
 
-interface Row { product: number; product_name: string; qty: string; price: string; q: string; res: any[]; open: boolean; }
+interface Row { product: number; product_name: string; qty: string; price: string; retail: string; q: string; res: any[]; open: boolean; }
 
 export default function ReceiptModal({ productId, productName, dealId, onClose, onSaved }: {
   productId?: number; productName?: string; dealId?: number; onClose: () => void; onSaved?: () => void;
@@ -12,7 +12,7 @@ export default function ReceiptModal({ productId, productName, dealId, onClose, 
   const { t } = useLang();
   const [wh, setWh] = useState<number>(0);
   const [rows, setRows] = useState<Row[]>([
-    { product: productId || 0, product_name: productName || "", qty: "1", price: "", q: "", res: [], open: false },
+    { product: productId || 0, product_name: productName || "", qty: "1", price: "", retail: "", q: "", res: [], open: false },
   ]);
   const [sup, setSup] = useState<{ id: number; name: string }>({ id: 0, name: "" });
   const [supQ, setSupQ] = useState(""); const [supRes, setSupRes] = useState<any[]>([]); const [supOpen, setSupOpen] = useState(false);
@@ -65,6 +65,11 @@ export default function ReceiptModal({ productId, productName, dealId, onClose, 
           kind: "payable", amount: total, due_date: dt || new Date().toISOString().slice(0, 10),
           counterparty: sup.name || "", contact: sup.id || null, comment: (t("Прихід товару", "Прихід товару") + (invoice ? " №" + invoice : "")).slice(0, 255),
         }).catch(() => {});
+      }
+      // обновить РОЗНИЧНУЮ цену товара, где задана (закупка обновляется сама при проведении прихода)
+      for (const r of rows) {
+        const rp = Number(String(r.retail).replace(",", ".")) || 0;
+        if (r.product && rp > 0) { await api.patch(`/api/products/${r.product}/`, { price: rp }).catch(() => {}); }
       }
       onSaved && onSaved(); onClose();
     } catch (e: any) { setErr(e?.response?.data?.detail || t("Не удалось провести приход", "Не вдалося провести прихід")); setBusy(false); }
@@ -126,7 +131,7 @@ export default function ReceiptModal({ productId, productName, dealId, onClose, 
         </div>
 
         {/* Позиції */}
-        <label style={lbl}>{t("Позиции (товар · кол-во · закупка/ед)", "Позиції (товар · к-сть · закупка/од)")}</label>
+        <label style={lbl}>{t("Позиции: товар · кол-во · закупка · розница", "Позиції: товар · к-сть · закупка · роздріб")}</label>
         {rows.map((r, i) => (
           <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "flex-start" }}>
             <div style={{ flex: 1, position: "relative" }}>
@@ -138,17 +143,18 @@ export default function ReceiptModal({ productId, productName, dealId, onClose, 
               {r.open && !r.product && r.res.length > 0 && (
                 <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 200, overflowY: "auto" }}>
                   {r.res.map((p) => (
-                    <div key={p.id} onMouseDown={() => setRow(i, { product: p.id, product_name: p.name, price: r.price || String(p.cost || p.price || ""), open: false })} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 12.5 }}>{p.name}{p.sku ? <span className="muted"> · {p.sku}</span> : null}</div>
+                    <div key={p.id} onMouseDown={() => setRow(i, { product: p.id, product_name: p.name, price: r.price || String(p.cost || ""), retail: r.retail || String(p.price || ""), open: false })} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 12.5 }}>{p.name}{p.sku ? <span className="muted"> · {p.sku}</span> : null}</div>
                   ))}
                 </div>
               )}
             </div>
-            <input value={r.qty} onChange={(e) => setRow(i, { qty: e.target.value })} type="number" placeholder={t("к-во", "к-сть")} style={{ ...inp, width: 60 }} />
-            <input value={r.price} onChange={(e) => setRow(i, { price: e.target.value })} type="number" placeholder={t("закуп", "закуп")} style={{ ...inp, width: 78 }} />
+            <input value={r.qty} onChange={(e) => setRow(i, { qty: e.target.value })} type="number" title={t("Количество", "Кількість")} placeholder={t("к-во", "к-сть")} style={{ ...inp, width: 46 }} />
+            <input value={r.price} onChange={(e) => setRow(i, { price: e.target.value })} type="number" title={t("Закупочная цена за единицу", "Закупівельна ціна за одиницю")} placeholder={t("закуп", "закуп")} style={{ ...inp, width: 66 }} />
+            <input value={r.retail} onChange={(e) => setRow(i, { retail: e.target.value })} type="number" title={t("Розничная (продажная) цена — обновит цену товара", "Роздрібна (продажна) ціна — оновить ціну товару")} placeholder={t("розн.", "розн.")} style={{ ...inp, width: 66, borderColor: "#a7f3d0" }} />
             {rows.length > 1 && <span onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} style={{ cursor: "pointer", color: "#ef4444", padding: "8px 2px" }}>✕</span>}
           </div>
         ))}
-        <span onClick={() => setRows((rs) => [...rs, { product: 0, product_name: "", qty: "1", price: "", q: "", res: [], open: false }])} style={{ cursor: "pointer", color: "#2563eb", fontSize: 13, fontWeight: 600 }}>+ {t("ещё позиция", "ще позиція")}</span>
+        <span onClick={() => setRows((rs) => [...rs, { product: 0, product_name: "", qty: "1", price: "", retail: "", q: "", res: [], open: false }])} style={{ cursor: "pointer", color: "#2563eb", fontSize: 13, fontWeight: 600 }}>+ {t("ещё позиция", "ще позиція")}</span>
 
         {/* Оплата / долг */}
         <label style={lbl}>{t("Оплата поставщику", "Оплата постачальнику")}</label>
