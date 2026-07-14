@@ -974,7 +974,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
                   <div style={{ minWidth: 290 }}>
-                    <div style={rowTot}><span className="muted">{t("Сумма без скидки","Сума без знижки")}</span><b>{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.quantity) * Number(i.price), 0))} ₴</b></div>
+                    <div style={rowTot}><span className="muted">{t("Сумма без скидки","Сума без знижки")}</span><b>{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.total) + Number(i.discount_sum || 0), 0))} ₴</b></div>
                     <div style={rowTot}><span className="muted">{t("Сумма скидки","Сума знижки")}</span><b style={{ color: "#16a34a" }}>−{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.discount_sum || 0), 0))} ₴</b></div>
                     <div style={{ ...rowTot, fontSize: 16, borderTop: "2px solid #e2e8f0", paddingTop: 8, marginTop: 4 }}><span>{t("Итого","Загальна сума")}</span><b>{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.total), 0))} ₴</b></div>
                     {can("product.cost.view") && (() => { const cogs = deal.items.reduce((s: number, i: any) => s + Number(i.quantity) * Number(i.cost || 0), 0); const rev = deal.items.reduce((s: number, i: any) => s + Number(i.total), 0); return (

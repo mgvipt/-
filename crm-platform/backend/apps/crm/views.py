@@ -850,26 +850,19 @@ def _advance_deal_stage(deal, target_order, reason, actor="Автоматиза�
 
 
 def _deal_item_cost(product, unit_price, qty=1):
-    """Себестоимость ЗА ЕДИНИЦУ для позиции сделки, с учётом МИНИМАЛКИ и количества.
-    База строки = max(qty*price, product.min_price). Если cost_pct>0 (услуга с долей мастеру) —
-    себест. строки = база*cost_pct%% (держит % при любой цене/минималке); иначе фикс. product.cost*qty.
-    Возвращает себестоимость на единицу (cost*qty = себест. строки)."""
+    """Себестоимость ЗА ЕДИНИЦУ. Если cost_pct>0 (услуга с долей мастеру) — цена × cost_pct%%
+    (работает при любой ручной цене). Иначе — фикс. product.cost из карточки.
+    ВАЖНО: минималка (min_price) на себестоимость НЕ влияет — это цена КЛИЕНТУ, а мастеру платим
+    за фактическую работу (напр. сверление: цена клиенту минимум 1500, но закупка = 6,8/см × факт см)."""
     if product is None:
         return Decimal("0")
+    pct = getattr(product, "cost_pct", 0) or 0
     try:
-        q = Decimal(str(qty or 1)) or Decimal("1")
-        base = q * Decimal(str(unit_price or 0))
-        mp = getattr(product, "min_price", 0) or 0
-        if mp and base < Decimal(str(mp)):
-            base = Decimal(str(mp))
-        pct = getattr(product, "cost_pct", 0) or 0
         if pct and Decimal(str(pct)) > 0:
-            line_cost = base * Decimal(str(pct)) / Decimal("100")
-        else:
-            line_cost = (product.cost or Decimal("0")) * q
-        return (line_cost / q).quantize(Decimal("0.01")) if q else Decimal("0")
+            return (Decimal(str(unit_price)) * Decimal(str(pct)) / Decimal("100")).quantize(Decimal("0.01"))
     except Exception:
-        return product.cost or Decimal("0")
+        pass
+    return product.cost or Decimal("0")
 
 
 class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
