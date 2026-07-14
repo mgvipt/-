@@ -240,7 +240,15 @@ class TransactionViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         _fin_guard(self.request, "finance.tx.edit", "Журнал: лише перегляд — нема права видаляти операції")
         _guard_period(self.request, instance.date)
+        # Якщо операція повʼязана з платежем угоди (crm.Payment) — видаляємо і його,
+        # щоб у картці угоди не лишався «привид» платежу з бейджем після видалення з журналу.
+        pay = getattr(instance, "payment", None)
         instance.delete()
+        if pay is not None:
+            try:
+                pay.delete()
+            except Exception:
+                pass
 
     @action(detail=False, methods=["post"], url_path="bulk-edit")
     def bulk_edit(self, request):
