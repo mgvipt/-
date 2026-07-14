@@ -974,7 +974,11 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                             )}
                           </>
                         ) : (
-                          <span style={{ color: "#1d4ed8", cursor: "pointer", borderBottom: "1px dashed #93c5fd" }} title={t("Нажми, чтобы выбрать/сменить товар", "Натисни, щоб обрати/змінити товар")} onClick={() => { setEditProdItem(it.id); setEpq(""); }}>{it.product_name}</span>
+                          <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                            <span style={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={it.product_name}>{it.product_name}</span>
+                            {it.product ? <a href={"/warehouse?product=" + it.product} target="_blank" rel="noreferrer" title={t("Открыть карточку товара", "Відкрити картку товару")} style={{ color: "#1d4ed8", textDecoration: "none", fontSize: 14, flexShrink: 0, lineHeight: 1 }}>↗</a> : null}
+                            <span onClick={() => { setEditProdItem(it.id); setEpq(""); }} title={t("Сменить / перевыбрать товар", "Змінити / перевибрати товар")} style={{ color: "#94a3b8", cursor: "pointer", fontSize: 13, flexShrink: 0, fontWeight: 700, lineHeight: 1 }}>✕</span>
+                          </span>
                         )}
                       </td>
                       <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><input defaultValue={Number(it.price)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.price) && updateItem(it.id, { price: e.target.value })} style={editInp} /> ₴</td>
