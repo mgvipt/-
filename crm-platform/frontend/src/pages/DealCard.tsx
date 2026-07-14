@@ -782,8 +782,9 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <div style={{ fontSize: 22, fontWeight: 700 }}>
               <Inline value={Number(deal.amount)} fmt={(v) => fmt(v) + t(" грн."," грн.")} onSave={(v) => patch({ amount: v })} />
             </div>
-            <div className="row" style={{ marginTop: 8 }}><span className="muted">{t("Оплачено","Оплачено")}</span><b style={{ color: "#16a34a" }}>{fmt(deal.paid)} ₴</b></div>
-            <div className="row"><span className="muted">{t("Осталось","Залишилось")}</span><b style={{ color: remaining > 0 ? "#d97706" : "#16a34a" }}>{fmt(remaining)} ₴</b></div>
+            <div className="row" style={{ marginTop: 8 }}><span className="muted">{t("Оплачено (за сделку)","Оплачено (за угоду)")}</span><b style={{ color: "#16a34a" }}>{fmt(Math.min(deal.paid, Number(deal.amount)))} ₴</b></div>
+            <div className="row"><span className="muted">{t("Осталось","Залишилось")}</span><b style={{ color: remaining > 0 ? "#d97706" : "#16a34a" }}>{fmt(Math.max(0, remaining))} ₴</b></div>
+            {deal.paid > Number(deal.amount) && <div className="row"><span className="muted" style={{ fontSize: 11 }} title={t("Клиент заплатил больше суммы сделки — излишек это его аванс (свободные деньги), виден в карточке клиента","Клієнт заплатив більше суми угоди — надлишок це його аванс (вільні гроші), видно в картці клієнта")}>{t("Переплата → аванс клиента","Переплата → аванс клієнта")}</span><b style={{ color: "#2563eb", fontSize: 12.5 }}>+{fmt(deal.paid - Number(deal.amount))} ₴</b></div>}
             <div style={{ marginTop: 10 }}>
               <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("Тип оплаты","Тип оплати")}</div>
               <select value={deal.pay_type || "full"} onChange={(e) => patch({ pay_type: e.target.value })} style={{ width: "100%", height: 32, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 12.5, padding: "0 8px" }}>
@@ -1229,8 +1230,8 @@ function CashflowTab({ deal, remaining, onPay, createTTN, issueCheckbox }: any) 
       <div className="label" style={{ marginBottom: 12 }}><Icon n="💰" size={16} /> {t("Оплата и доставка","Оплата та доставка")} <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>({t("нативно, без Битрикса","нативно, без Бітрикса")})</span></div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
         <div style={mBox}><div className="muted" style={{ fontSize: 12 }}>{t("Сумма","Сума")}</div><div style={{ fontSize: 20, fontWeight: 600 }}>{f(Number(deal.amount))} ₴</div></div>
-        <div style={mBox}><div className="muted" style={{ fontSize: 12 }}>{t("Оплачено","Оплачено")}</div><div style={{ fontSize: 20, fontWeight: 600, color: "#16a34a" }}>{f(paid)} ₴</div></div>
-        <div style={mBox}><div className="muted" style={{ fontSize: 12 }}>{t("Осталось","Залишилось")}</div><div style={{ fontSize: 20, fontWeight: 600, color: remaining > 0 ? "#d97706" : "#16a34a" }}>{f(remaining)} ₴</div></div>
+        <div style={mBox}><div className="muted" style={{ fontSize: 12 }}>{t("Оплачено (за сделку)","Оплачено (за угоду)")}</div><div style={{ fontSize: 20, fontWeight: 600, color: "#16a34a" }}>{f(Math.min(paid, Number(deal.amount)))} ₴</div>{paid > Number(deal.amount) && <div style={{ fontSize: 11, color: "#2563eb", marginTop: 2 }}>{t("+ аванс","+ аванс")} {f(paid - Number(deal.amount))} ₴</div>}</div>
+        <div style={mBox}><div className="muted" style={{ fontSize: 12 }}>{t("Осталось","Залишилось")}</div><div style={{ fontSize: 20, fontWeight: 600, color: remaining > 0 ? "#d97706" : "#16a34a" }}>{f(Math.max(0, remaining))} ₴</div></div>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
         <button className="btn btn-primary" onClick={onPay}><Icon n="💳" size={15} /> {t("Принять оплату","Прийняти оплату")}</button>
