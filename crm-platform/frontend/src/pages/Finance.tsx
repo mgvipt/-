@@ -1145,8 +1145,10 @@ export function Attachments({ txId }: { txId: number }) {
     finally { setBusy(false); e.target.value = ""; }
   }
   async function openFile(a: any) {
-    try { const url = await api.blobUrl(`/api/attachments/${a.id}/file/`); window.open(url, "_blank"); }
-    catch { setErr(t("Не удалось открыть","Не вдалося відкрити")); }
+    // ВАЖНО: окно открываем СИНХРОННО (в контексте клика), иначе попап блокируется после await
+    const w = window.open("", "_blank");
+    try { const url = await api.blobUrl(`/api/attachments/${a.id}/file/`); if (w) w.location.href = url; else window.open(url, "_blank"); }
+    catch { if (w) w.close(); setErr(t("Не удалось открыть","Не вдалося відкрити")); }
   }
   async function del(id: number) { await api.del(`/api/attachments/${id}/file/`); reload(); }
   return (
@@ -1155,7 +1157,7 @@ export function Attachments({ txId }: { txId: number }) {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
         {items.map((a) => (
           <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 4, background: "#f1f5f9", borderRadius: 8, padding: "4px 8px", fontSize: 12 }}>
-            <span style={{ cursor: "pointer", color: "#1d4ed8", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={t("Открыть","Відкрити")} onClick={() => openFile(a)}>{a.content_type?.startsWith("image/") ? <Icon n="🖼" size={14} /> : <Icon n="📄" size={14} />} {a.filename}</span>
+            <span style={{ cursor: "pointer", color: "#1d4ed8", textDecoration: "underline", fontWeight: 600, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={t("Нажми, чтобы открыть","Натисни, щоб відкрити")} onClick={() => openFile(a)}>{a.content_type?.startsWith("image/") ? <Icon n="🖼" size={14} /> : <Icon n="📄" size={14} />} {a.filename}</span>
             <span style={{ color: "#ef4444", cursor: "pointer" }} title={t("Удалить","Видалити")} onClick={() => del(a.id)}>✕</span>
           </div>
         ))}
