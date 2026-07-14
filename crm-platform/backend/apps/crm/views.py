@@ -87,7 +87,12 @@ class ContactViewSet(viewsets.ModelViewSet):
         from decimal import Decimal as _Dadv
         _adv_used = Payment.objects.filter(deal__contact=c, provider="advance", is_paid=True).aggregate(s=_Sum("amount"))["s"] or 0
         _deals_sum = _Deal_adv.objects.filter(contact=c, stage__is_won=True).aggregate(s=_Sum("amount"))["s"] or 0
-        adv = _Dadv(str(inc or 0)) - _Dadv(str(_deals_sum or 0)) - _Dadv(str(_adv_used or 0))
+        # + вычитаем материалы других магазинов (кредиторки клиента) — клиент должен их покрыть,
+        #   тогда аванс = реальный остаток клиентских денег после сделок И материалов.
+        _cred_mat = _PP.objects.filter(kind="payable", is_internal=False).filter(
+            _Qc(contact=c) | (_byname if _byname is not None else _Qc(pk__in=[]))
+        ).aggregate(s=_Sum("amount"))["s"] or 0
+        adv = _Dadv(str(inc or 0)) - _Dadv(str(_deals_sum or 0)) - _Dadv(str(_cred_mat or 0)) - _Dadv(str(_adv_used or 0))
         _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[])))
         debt = _ppq.filter(kind="payable").aggregate(s=_Sum("amount"))["s"] or 0
         # ДЕБІТОРКА (нам винні): торгова (від продажу, майбутня прибуток) окремо від позики (мої гроші в борг, НЕ прибуток)
@@ -102,19 +107,26 @@ class ContactViewSet(viewsets.ModelViewSet):
         _rev = _qf.filter(direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0     # виручка (усі надходження від клієнта)
         _cext = _qf.filter(direction="out").aggregate(s=_Sum("amount_uah"))["s"] or 0   # закупки під замовлення + послуги/майстри (журнал)
         from apps.crm.models import Deal as _Deal
-        _cogs = _Dp("0")  # собівартість складських товарів у виграних угодах клієнта
+        _cogs = _Dp("0")          # собівартість складських товарів у виграних угодах клієнта
+        _planned_srv = _Dp("0")   # планова закупка послуг/робіт (мастеру) — щоб ловити переплату
         for _dl in _Deal.objects.filter(contact=c, stage__is_won=True).prefetch_related("items", "items__product"):
             for _it in _dl.items.all():
-                # COGS = ТІЛЬКИ фізичні складські товари (track_stock=True). Послуги/роботи/транспорт
-                # (track_stock=False) і свої позиції (без товару) оплачуються через журнал (_cext) —
-                # їхню «закупку» сюди НЕ рахуємо, інакше подвійний рахунок з журналом.
-                if not getattr(_it.product, "track_stock", False):
-                    continue
                 _cu = _it.cost if (_it.cost or 0) > 0 else (getattr(_it.product, "cost", 0) or 0)
                 try:
-                    _cogs += _Dp(str(_it.quantity or 0)) * _Dp(str(_cu or 0))
+                    _line = _Dp(str(_it.quantity or 0)) * _Dp(str(_cu or 0))
+                    if not getattr(_it.product, "track_stock", False):
+                        _planned_srv += _line   # послуга/робота (track_stock=False) — плановая закупка мастеру
+                    else:
+                        _cogs += _line          # склад (track_stock=True) — себестоимость склада
                 except Exception:
                     pass
+        # факт: реально выплачено по журналу НЕ на материалы (категории материалов исключаем) = выплаты мастерам/услуги
+        _MAT_KW = ("матер", "закуп", "постач", "товар", "оприбут")
+        _actual_srv = _Dp("0")
+        for _t in _qf.filter(direction="out").select_related("category"):
+            _cn2 = ((_t.category.name if _t.category_id else "") or "").lower()
+            if not any(_k in _cn2 for _k in _MAT_KW):
+                _actual_srv += _Dp(str(_t.amount_uah or 0))
         _profit = float(_rev or 0) - float(_cext or 0) - float(_cogs)
         # пагінація історії: скільки рядків показувати і з якого зсуву (для >500 — перемикання сторінок)
         try:
@@ -150,7 +162,8 @@ class ContactViewSet(viewsets.ModelViewSet):
         return Response({"income": inc, "expense": exp, "advance": adv, "debt": debt,
                          "receivable": (recv_sale or 0) + (recv_loan or 0), "receivable_sale": recv_sale, "receivable_loan": recv_loan,
                          "count": qs.count(), "ops": ops, "debts_list": debts_list,
-                         "revenue": float(_rev or 0), "cost_ext": float(_cext or 0), "cogs": float(_cogs), "profit": _profit})
+                         "revenue": float(_rev or 0), "cost_ext": float(_cext or 0), "cogs": float(_cogs), "profit": _profit,
+                         "planned_srv": float(_planned_srv), "actual_srv": float(_actual_srv)})
     search_fields = ["first_name", "last_name", "phone", "email"]
     filterset_fields = ["loyalty_tag", "source", "owner"]
     ordering_fields = ["created_at", "first_name", "last_touch_at"]

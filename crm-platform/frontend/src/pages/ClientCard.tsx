@@ -326,6 +326,12 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
             </div>
           </div>
           <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>{t("Складские товары — из сделок (себестоимость авто при отгрузке), закупки под заказ — из журнала. Без двойного счёта.","Складські товари — зі сделок (собівартість авто при відвантаженні), закупки під замовлення — з журналу. Без подвійного рахунку.")}</div>
+          {Number(d.actual_srv || 0) > Number(d.planned_srv || 0) + 1 && (
+            <div style={{ marginTop: 8, padding: "7px 10px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 12, color: "#b91c1c", fontWeight: 600 }}>
+              ⚠️ {t("Мастерам выплачено больше плана на","Майстрам виплачено більше плану на")} {money0(Number(d.actual_srv) - Number(d.planned_srv))} ₴
+              <span style={{ fontWeight: 400, color: "#7f1d1d" }}> · {t("план по услугам","план по послугах")} {money0(Number(d.planned_srv))}, {t("факт (журнал, без материалов)","факт (журнал, без матеріалів)")} {money0(Number(d.actual_srv))}</span>
+            </div>
+          )}
         </div>
       )}
       <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
