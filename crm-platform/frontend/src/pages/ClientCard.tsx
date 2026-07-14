@@ -293,6 +293,30 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
           <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>{t("Складские товары — из сделок (себестоимость авто при отгрузке), закупки под заказ — из журнала. Без двойного счёта.","Складські товари — зі сделок (собівартість авто при відвантаженні), закупки під замовлення — з журналу. Без подвійного рахунку.")}</div>
         </div>
       )}
+      {Array.isArray((d as any).debts_list) && (d as any).debts_list.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          {[["payable", t("Кредиторка (мы должны)","Кредиторка (ми винні)"), "#b45309"], ["receivable", t("Дебиторка (нам должны)","Дебіторка (нам винні)"), "#0e7490"]].map(([kind, title, cl]: any) => {
+            const rows = (d as any).debts_list.filter((x: any) => x.kind === kind);
+            if (rows.length === 0) return null;
+            return (
+              <div key={kind} style={{ marginBottom: 6 }}>
+                <div className="muted" style={{ fontSize: 11, fontWeight: 700, color: cl, marginBottom: 3 }}>{title} · {rows.length}</div>
+                {rows.map((x: any) => {
+                  const paid = x.status === "paid";
+                  return (
+                    <div key={x.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 8, background: paid ? "#f0fdf4" : "#fff7ed", border: "1px solid " + (paid ? "#bbf7d0" : "#fed7aa"), marginBottom: 3, fontSize: 12 }}>
+                      <span style={{ fontSize: 13 }}>{paid ? "✅" : "🕐"}</span>
+                      <span style={{ flex: 1, textDecoration: paid ? "line-through" : "none", color: paid ? "#16a34a" : "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.counterparty || t("Без имени","Без імені")}{x.comment ? " · " + x.comment : ""}{x.deal ? " · №" + x.deal : ""}</span>
+                      <b style={{ color: cl, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{money0(Number(x.amount))} ₴</b>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: paid ? "#16a34a" : "#c2410c", whiteSpace: "nowrap" }}>{paid ? t("оплачено","оплачено") : t("не оплачено","не оплачено")}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
         <button className="btn btn-light" style={{ flex: 1, color: "#16a34a", fontWeight: 700 }} onClick={() => setCreateOp("in")} title={t("Полная карточка дохода — как в журнале (клиент подставится)","Повна картка доходу — як у журналі (клієнт підставиться)")}>+ {t("Доход","Дохід")}</button>
         <button className="btn btn-light" style={{ flex: 1, color: "#dc2626", fontWeight: 700 }} onClick={() => setCreateOp("out")} title={t("Полная карточка расхода — как в журнале (клиент подставится)","Повна картка витрати — як у журналі (клієнт підставиться)")}>+ {t("Расход","Витрата")}</button>

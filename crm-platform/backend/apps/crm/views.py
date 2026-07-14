@@ -138,9 +138,18 @@ class ContactViewSet(viewsets.ModelViewSet):
                 "deal_title": (t.deal.title if t.deal_id else ""),
                 "contact": t.contact_id, "contact_name": _cn(t.contact)}
                for t in qs.select_related("category", "deal", "contact").order_by("-date", "-id")[_off:_off + _lim]]
+        # список боргів клієнта (дебіторка+кредиторка, УСІ статуси) — щоб у картці бачити оплачені/неоплачені
+        _all_pp = _PP.objects.filter(
+            _Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[]))
+        ).select_related("deal").order_by("status", "-id")[:100]
+        debts_list = [{"id": p.id, "kind": p.kind, "amount": float(p.amount or 0), "counterparty": p.counterparty or "",
+                       "status": p.status, "is_loan": bool(p.is_loan),
+                       "due_date": p.due_date.isoformat() if p.due_date else None,
+                       "deal": p.deal_id, "deal_title": (p.deal.title if p.deal_id else ""),
+                       "comment": (p.comment or "")[:70]} for p in _all_pp]
         return Response({"income": inc, "expense": exp, "advance": adv, "debt": debt,
                          "receivable": (recv_sale or 0) + (recv_loan or 0), "receivable_sale": recv_sale, "receivable_loan": recv_loan,
-                         "count": qs.count(), "ops": ops,
+                         "count": qs.count(), "ops": ops, "debts_list": debts_list,
                          "revenue": float(_rev or 0), "cost_ext": float(_cext or 0), "cogs": float(_cogs), "profit": _profit})
     search_fields = ["first_name", "last_name", "phone", "email"]
     filterset_fields = ["loyalty_tag", "source", "owner"]
