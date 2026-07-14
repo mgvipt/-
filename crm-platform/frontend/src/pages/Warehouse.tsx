@@ -28,7 +28,7 @@ import { Icon } from "../Icon";
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 interface Product {
   id: number; name: string; sku: string; unit: string;
-  price: string; cost: string; currency: string; margin: number;
+  price: string; cost: string; cost_pct?: string; min_price?: string; currency: string; margin: number;
   category: number | null; category_name: string; stock: number;
   is_active?: boolean; description?: string; track_stock?: boolean;
   b24_created_by?: string; b24_modified_by?: string;
@@ -204,7 +204,7 @@ export default function Warehouse() {
     try {
       const upd: any = await api.patch(`/api/products/${card.id}/`, {
         name: cardEdit.name, description: cardEdit.description, category: cardEdit.category || null,
-        price: Number(cardEdit.price) || 0, cost: Number(cardEdit.cost) || 0, unit: cardEdit.unit,
+        price: Number(cardEdit.price) || 0, cost: Number(cardEdit.cost) || 0, cost_pct: Number(cardEdit.cost_pct) || 0, min_price: Number(cardEdit.min_price) || 0, unit: cardEdit.unit,
         sku: cardEdit.sku, is_active: cardEdit.is_active, track_stock: cardEdit.track_stock });
       setCard(upd); setCardEdit(null); loadProducts();
       api.get<Category[]>("/api/product-categories/").then(setCats).catch(() => {});
@@ -669,7 +669,7 @@ export default function Warehouse() {
                 <button className="btn btn-light" title={t("Скопировать ссылку на товар","Скопіювати посилання на товар")} onClick={() => { navigator.clipboard?.writeText(window.location.origin + "/warehouse?product=" + card.id); alert(t("Ссылка скопирована ✓","Посилання скопійовано ✓")); }}><Icon n="🔗" size={14} /></button>
                 {canEdit && (cardEdit
                   ? <><button className="btn btn-primary" onClick={saveCard}>{t("Сохранить","Зберегти")}</button><button className="btn btn-light" onClick={() => setCardEdit(null)}>✕</button></>
-                  : <button className="btn btn-light" onClick={() => setCardEdit({ name: card.name, sku: card.sku, unit: card.unit, price: card.price, cost: card.cost, category: card.category || 0, description: card.description || "", is_active: card.is_active !== false, track_stock: card.track_stock !== false })}><Icon n="✏️" size={14} /> {t("Изменить","Змінити")}</button>)}
+                  : <button className="btn btn-light" onClick={() => setCardEdit({ name: card.name, sku: card.sku, unit: card.unit, price: card.price, cost: card.cost, cost_pct: card.cost_pct || 0, min_price: card.min_price || 0, category: card.category || 0, description: card.description || "", is_active: card.is_active !== false, track_stock: card.track_stock !== false })}><Icon n="✏️" size={14} /> {t("Изменить","Змінити")}</button>)}
                 <button className="btn btn-light" onClick={() => setCard(null)}>✕</button>
               </div>
             </div>
@@ -682,6 +682,8 @@ export default function Warehouse() {
                 </select></label>
                 <label style={{ fontSize: 12 }} className="muted">{t("Розничная цена","Роздрібна ціна")}<input type="number" value={cardEdit.price} onChange={(e) => setCardEdit({ ...cardEdit, price: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>
                 {showCost && <label style={{ fontSize: 12 }} className="muted">{t("Закупочная","Закупівельна")}<input type="number" value={cardEdit.cost} onChange={(e) => setCardEdit({ ...cardEdit, cost: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>}
+                {showCost && <label style={{ fontSize: 12 }} className="muted" title={t("Для услуг/работ: себестоимость = цена × этот %. Пример монтаж: мастеру 80% → впиши 80. Тогда при любой цене маржа держит %. 0 = использовать фикс. закупочную.","Для послуг/робіт: собівартість = ціна × цей %. Приклад монтаж: майстру 80% → впиши 80. Тоді при будь-якій ціні маржа тримає %. 0 = фікс. закупівельна.")}>{t("Себест., % от цены","Собівартість, % від ціни")}<input type="number" value={cardEdit.cost_pct} onChange={(e) => setCardEdit({ ...cardEdit, cost_pct: e.target.value })} placeholder="0" style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>}
+                <label style={{ fontSize: 12 }} className="muted" title={t("Минимум за строку в сделке: если цена×кол-во меньше — берётся этот минимум. Пример: сверление 17/см, но минимум 1500. 0 = без минимума.","Мінімум за рядок у сделці: якщо ціна×кількість менша — береться цей мінімум. Приклад: сверління 17/см, але мінімум 1500. 0 = без мінімуму.")}>{t("Минималка за позицию, ₴","Мінімалка за позицію, ₴")}<input type="number" value={cardEdit.min_price} onChange={(e) => setCardEdit({ ...cardEdit, min_price: e.target.value })} placeholder="0" style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>
                 <label style={{ fontSize: 12 }} className="muted">{t("Ед. изм.","Од. вим.")}<input value={cardEdit.unit} onChange={(e) => setCardEdit({ ...cardEdit, unit: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", marginTop: 2 }} /></label>
                 <label style={{ fontSize: 12, display: "flex", alignItems: "flex-end", gap: 6, paddingBottom: 8 }}><input type="checkbox" checked={cardEdit.is_active} onChange={(e) => setCardEdit({ ...cardEdit, is_active: e.target.checked })} /> {t("Активен (виден в каталоге)","Активний (видно у каталозі)")}</label>
                 <label style={{ fontSize: 12, display: "flex", alignItems: "flex-end", gap: 6, paddingBottom: 8 }} title={t("Выключи для услуг/работ — не списывается со склада, остаток не считается","Вимкни для послуг/робіт — не списується зі складу, залишок не рахується")}><input type="checkbox" checked={cardEdit.track_stock} onChange={(e) => setCardEdit({ ...cardEdit, track_stock: e.target.checked })} /> {t("Количественный учёт склада","Кількісний облік складу")}</label>
@@ -700,6 +702,8 @@ export default function Warehouse() {
             )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
               {[[t("Розничная цена","Роздрібна ціна"), Number(card.price).toLocaleString("ru") + " " + (card.currency || "грн")],
+                ...(Number(card.min_price) > 0 ? [[t("Минималка за позицию","Мінімалка за позицію"), Number(card.min_price).toLocaleString("ru") + " " + (card.currency || "грн")]] : []),
+                ...(showCost && Number(card.cost_pct) > 0 ? [[t("Себест., % от цены","Собівартість, % від ціни"), Number(card.cost_pct) + " %"]] : []),
                 ...(showCost ? [[t("Закупівля","Закупівля"), Number(card.cost) > 0 ? Number(card.cost).toLocaleString("ru") + " " + (card.currency || "грн") : "—"], [t("Маржа","Маржа"), (card.margin || 0).toLocaleString("ru") + " ₴" + (Number(card.price) > 0 && card.margin ? " · " + Math.round((card.margin / Number(card.price)) * 100) + "%" : "")]] : []),
                 [t("Остаток","Залишок"), Number(card.stock).toLocaleString("ru") + " " + card.unit]].map(([lbl, v]) => (
                 <div key={lbl} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{lbl}</div><div style={{ fontSize: 18, fontWeight: 700 }}>{v}</div></div>

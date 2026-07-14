@@ -159,16 +159,23 @@ class DealItem(models.Model):
                                help_text="Знімок собівартості на момент продажу (для чесної маржі в історії)")
 
     @property
-    def discount_sum(self):
+    def base_sum(self):
+        """Сума позиції до знижки, з урахуванням МІНІМАЛКИ товару (min_price за рядок)."""
         gross = self.quantity * self.price
+        mp = (getattr(self.product, "min_price", 0) or 0) if self.product_id else 0
+        return mp if (mp and gross < mp) else gross
+
+    @property
+    def discount_sum(self):
+        base = self.base_sum
         if self.discount_amount and self.discount_amount > 0:
-            return min(self.discount_amount, gross)   # знижка сумою ₴ (не більша за рядок)
-        return gross * (self.discount_pct or 0) / 100  # знижка відсотком
+            return min(self.discount_amount, base)   # знижка сумою ₴ (не більша за рядок)
+        return base * (self.discount_pct or 0) / 100  # знижка відсотком
 
     @property
     def total(self):
-        t = self.quantity * self.price - self.discount_sum
-        return t if t > 0 else self.quantity * 0
+        t = self.base_sum - self.discount_sum
+        return t if t > 0 else self.base_sum - self.base_sum
 
     def __str__(self):
         return f"{self.product} × {self.quantity}"

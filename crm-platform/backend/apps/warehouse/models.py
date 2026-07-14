@@ -60,6 +60,8 @@ class Product(models.Model):
     cost = models.DecimalField("Себестоимость", max_digits=12, decimal_places=2, default=0)
     cost_pct = models.DecimalField("Себестоимость, % от цены", max_digits=5, decimal_places=2, default=0,
         help_text="Для услуг/работ, где мастеру платим долю: себестоимость = цена × этот %. 0 = использовать фиксированную Себестоимость. Пример: монтаж, мастер получает 80% → впиши 80.")
+    min_price = models.DecimalField("Минимальная цена за позицию", max_digits=12, decimal_places=2, default=0,
+        help_text="Минимум за строку в сделке: если цена×кол-во меньше — берётся этот минимум. 0 = без минимума. Пример: сверление 17/см, но минимум 1500.")
     weight_kg = models.DecimalField("Вага нетто, кг", max_digits=8, decimal_places=3, null=True, blank=True)
     is_active = models.BooleanField(default=True)
     category = models.ForeignKey("ProductCategory", null=True, blank=True, on_delete=models.SET_NULL, related_name="products")
