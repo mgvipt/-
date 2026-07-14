@@ -2238,7 +2238,7 @@ class LiqPayCallbackView(APIView):
             pay = Payment.objects.create(deal=dlock, provider="liqpay", amount=amount, is_paid=True, external_id=pay_id)
             try:
                 from apps.finance.services import record_income, liqpay_account
-                record_income(amount, deal=dlock, payment=pay, account=liqpay_account())
+                record_income(amount, deal=dlock, payment=pay, account=liqpay_account(), category="Онлайн (Instagram/TikTok/сайт)")  # правило: LiqPay-дохід → Онлайн + напрям Декор (авто з категорії)
                 # той самий платіж міг бути зафіксований менеджером вручну заздалегідь → сигналізуємо
                 try:
                     from django.utils import timezone as _tzz
