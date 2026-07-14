@@ -29,6 +29,21 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
   const [splitRows, setSplitRows] = useState<any[]>([]);
   const [asDebt, setAsDebt] = useState(false);   // false = сразу в журнал (оплачено); true = долг (кредиторка/дебиторка)
   const [recvLoan, setRecvLoan] = useState(false);  // для дебиторки (нам винні): false=продаж (буд. дохід), true=позика (свои деньги в долг, НЕ дохід)
+  const [transitClient, setTransitClient] = useState(false);  // расход: материалы клиента из ЧУЖОГО магазина → авто-дебиторка клиента (транзит)
+  const [transitPrice, setTransitPrice] = useState("");        // цена клиенту за транзит (пусто = сумма закупки, без наценки)
+  async function _maybeTransitDebt() {
+    if (f.direction === "out" && transitClient && f.contact) {
+      const _p = Number(String(transitPrice || f.amount).replace(",", ".")) || 0;
+      if (_p <= 0) return;
+      const _cat = (cats.find((c: any) => c.name === f.set_category) || {}).id || null;
+      await api.post("/api/planned-payments/", {
+        kind: "receivable", is_loan: false, amount: _p,
+        due_date: f.date || new Date().toISOString().slice(0, 10),
+        counterparty: f.contact_name || "", contact: f.contact, category: _cat,
+        account: f.account || null, comment: ("Транзит-матеріали (інший магазин): " + (f.comment || f.counterparty || "")).slice(0, 255),
+      }).catch(() => {});
+    }
+  }
 
   useEffect(() => {
     let ok = true;
@@ -79,6 +94,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
           fin_direction: f.fin_direction || null, comment: f.comment,
           is_loan: (f.direction === "in" && recvLoan) ? true : false,   // позика (свои деньги в долг) — НЕ считается доходом
         });
+        await _maybeTransitDebt();   // транзит: если расход-кредиторка магазину + галочка → дебиторка клиента
         onSaved(); return;
       } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось сохранить", "Не вдалося зберегти")); setBusy(false); return; }
     }
@@ -112,6 +128,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
     try {
       if (f.id) await api.patch(`/api/transactions/${f.id}/`, body);
       else await api.post(`/api/transactions/`, body);
+      await _maybeTransitDebt();   // транзит: если расход оплачен магазину + галочка → дебиторка клиента
       onSaved();
     } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось сохранить", "Не вдалося зберегти")); setBusy(false); }
   }
@@ -292,6 +309,23 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
                 <ClientPick value={f.contact} label={f.contact_name} placeholder={t("начни вводить имя или телефон…", "почни вводити імʼя або телефон…")} onPick={(cid: number, nm: string) => setF({ ...f, contact: cid, contact_name: nm })} />
               </div>
             )}
+            {!isTr && !f.id && f.direction === "out" && f.contact ? (
+              <div style={{ margin: "0 0 10px", border: "1px solid " + (transitClient ? "#a855f7" : "#e2e8f0"), borderRadius: 10, padding: 10, background: transitClient ? "#faf5ff" : "#fff" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+                  <input type="checkbox" checked={transitClient} onChange={(e) => setTransitClient(e.target.checked)} style={{ marginTop: 2 }} />
+                  <span>
+                    <b style={{ fontSize: 13 }}>🛒 {t("Материалы клиента (транзит — другой магазин)", "Матеріали клієнта (транзит — інший магазин)")}</b>
+                    <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{t("Создаст дебиторку на этого клиента (клиент должен нам за материалы). Для оплаты мастеру/логистики — НЕ ставь.", "Створить дебіторку на цього клієнта (клієнт винен нам за матеріали). Для оплати майстру/логістики — НЕ став.")}</div>
+                  </span>
+                </label>
+                {transitClient ? (
+                  <div style={{ marginTop: 8 }}>
+                    <label className="label" title={t("Пусто = сумма закупки (без наценки). Впиши больше — появится маржа.", "Пусто = сума закупівлі (без націнки). Впиши більше — зʼявиться маржа.")}>{t("Цена клиенту (₴)", "Ціна клієнту (₴)")}</label>
+                    <input type="number" value={transitPrice} onChange={(e) => setTransitPrice(e.target.value)} placeholder={String(f.amount || "") + " · " + t("= закупка", "= закупівля")} style={{ height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", width: "100%", fontSize: 13, boxSizing: "border-box" }} />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {f.id ? <div style={{ margin: "6px 0 10px" }}><label className="label">📎 {t("Чек / документы", "Чек / документи")}</label><Attachments txId={f.id} /></div>
               : <div className="muted" style={{ fontSize: 11, margin: "0 0 10px" }}>📎 {t("Сохрани операцию — тогда сможешь прикрепить фото/скан чека.", "Збережи операцію — тоді зможеш прикріпити фото/скан чека.")}</div>}
