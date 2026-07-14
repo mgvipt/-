@@ -101,6 +101,11 @@ class ContactViewSet(viewsets.ModelViewSet):
         _cogs = _Dp("0")  # собівартість складських товарів у виграних угодах клієнта
         for _dl in _Deal.objects.filter(contact=c, stage__is_won=True).prefetch_related("items", "items__product"):
             for _it in _dl.items.all():
+                # COGS = ТІЛЬКИ фізичні складські товари (track_stock=True). Послуги/роботи/транспорт
+                # (track_stock=False) і свої позиції (без товару) оплачуються через журнал (_cext) —
+                # їхню «закупку» сюди НЕ рахуємо, інакше подвійний рахунок з журналом.
+                if not getattr(_it.product, "track_stock", False):
+                    continue
                 _cu = _it.cost if (_it.cost or 0) > 0 else (getattr(_it.product, "cost", 0) or 0)
                 try:
                     _cogs += _Dp(str(_it.quantity or 0)) * _Dp(str(_cu or 0))
