@@ -271,7 +271,7 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
     <div className="panel" style={{ marginBottom: 12 }}>
       <div className="label" style={{ marginBottom: 8 }}>{t("Финансы клиента","Фінанси клієнта")} <span className="muted" style={{ fontWeight: 400 }}>({d.count} {t("операций","операцій")})</span></div>
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-        {[[t("Доход","Дохід"), d.income, "#16a34a", "#f0fdf4"], [t("Расход","Витрата"), d.expense, "#dc2626", "#fef2f2"], [t("Аванс (остаток денег клиента)","Аванс (залишок грошей клієнта)"), d.advance, "#2563eb", "#eff6ff"], [t("Кредиторка (мы должны)","Кредиторка (ми винні)"), d.debt, "#b45309", "#fffbeb"], [t("Дебиторка (нам должны)","Дебіторка (нам винні)"), d.receivable, "#0e7490", "#ecfeff"]].map(([l, v, cl, bg]: any, i) => (
+        {[[t("Доход","Дохід"), d.income, "#16a34a", "#f0fdf4"], [t("Расход","Витрата"), d.expense, "#dc2626", "#fef2f2"], (Number(d.advance) < 0 ? [t("Недоплата по сделкам","Недоплата по угодах"), Math.abs(Number(d.advance)), "#dc2626", "#fef2f2"] : [t("Аванс (свободные деньги клиента)","Аванс (вільні гроші клієнта)"), d.advance, "#2563eb", "#eff6ff"]), [t("Кредиторка (мы должны)","Кредиторка (ми винні)"), d.debt, "#b45309", "#fffbeb"], [t("Дебиторка (нам должны)","Дебіторка (нам винні)"), d.receivable, "#0e7490", "#ecfeff"]].map(([l, v, cl, bg]: any, i) => (
           <div key={i} style={{ flex: 1, minWidth: 110, background: bg, borderRadius: 10, padding: "8px 10px" }}>
             <div className="muted" style={{ fontSize: 10.5 }}>{l}</div>
             <b style={{ color: cl, fontSize: 15, fontVariantNumeric: "tabular-nums" }}>{money0(Number(v))}</b>

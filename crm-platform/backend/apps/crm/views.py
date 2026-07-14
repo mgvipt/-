@@ -81,9 +81,13 @@ class ContactViewSet(viewsets.ModelViewSet):
             qs = qs.filter(date__lte=_oto)
         inc = qs.filter(direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0
         exp = qs.filter(direction="out").aggregate(s=_Sum("amount_uah"))["s"] or 0
-        # аванс = залишок грошей клієнта в нас (його дохід мінус витрати по його обʼєкту)
+        # аванс = ВІЛЬНІ гроші клієнта = скільки він заплатив МІНУС сума його угод (won) − вже використані аванси.
+        # Тобто клієнт оплатив і сделки, і матеріали; аванс показує, скільки грошей ще не «перекрито» угодами.
+        from apps.crm.models import Deal as _Deal_adv
+        from decimal import Decimal as _Dadv
         _adv_used = Payment.objects.filter(deal__contact=c, provider="advance", is_paid=True).aggregate(s=_Sum("amount"))["s"] or 0
-        adv = (inc or 0) - (exp or 0) - _adv_used
+        _deals_sum = _Deal_adv.objects.filter(contact=c, stage__is_won=True).aggregate(s=_Sum("amount"))["s"] or 0
+        adv = _Dadv(str(inc or 0)) - _Dadv(str(_deals_sum or 0)) - _Dadv(str(_adv_used or 0))
         _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[])))
         debt = _ppq.filter(kind="payable").aggregate(s=_Sum("amount"))["s"] or 0
         # ДЕБІТОРКА (нам винні): торгова (від продажу, майбутня прибуток) окремо від позики (мої гроші в борг, НЕ прибуток)
