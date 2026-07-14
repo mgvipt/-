@@ -305,6 +305,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
 
             <label className="label">{t("Комментарий", "Коментар")}</label>
             <textarea value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} style={{ ...inp, height: 60, padding: "8px 10px", resize: "vertical" }} />
+            {(() => { const m = (f.comment || "").match(/https?:\/\/\S+/); return m ? <a href={m[0]} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 2, marginBottom: 6, fontSize: 12.5, color: "#0e7490", fontWeight: 700 }}>🧾 {t("Открыть чек / ссылку", "Відкрити чек / посилання")}</a> : null; })()}
 
             {!isTr && (
               <div style={{ marginBottom: 10 }}>

@@ -739,6 +739,16 @@ def _issue_checkbox_for_deal(deal, user=None):
         return {"error": str(e)}
     pay.checkbox_receipt_id = r["id"]
     pay.save(update_fields=["checkbox_receipt_id"])
+    # ссылка на фискальный чек → в комментарий связанной операции журнала (видно/копируется в карточке платежа)
+    try:
+        _tx = getattr(pay, "transaction", None)
+        if _tx is not None and r.get("url"):
+            _cl = "🧾 Чек: " + r["url"]
+            if _cl not in (_tx.comment or ""):
+                _tx.comment = (((_tx.comment or "").strip() + " " + _cl).strip())[:255]
+                _tx.save(update_fields=["comment"])
+    except Exception:
+        pass
     deal.checkbox_status = "фіскальний" if closes else "аванс"
     deal.checkbox_url = r["url"]
     deal.checkbox_receipt_id = r["id"]
