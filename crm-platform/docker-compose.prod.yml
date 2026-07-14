@@ -50,6 +50,7 @@ services:
       CHECKBOX_API_BASE: ${CHECKBOX_API_BASE}
       CHECKBOX_PASSWORD: ${CHECKBOX_PASSWORD}
       CHECKBOX_LICENSE_KEY: ${CHECKBOX_LICENSE_KEY}
+      SHOP_WEBHOOK_SECRET: ${SHOP_WEBHOOK_SECRET}
     depends_on: [db]
     restart: unless-stopped
 

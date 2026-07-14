@@ -154,4 +154,5 @@ urlpatterns = [
     path("api/integrations/settings/", intg_views.IntegrationSettingsView.as_view()),
     path("api/integrations/liqpay/link/", intg_views.LiqpayLinkView.as_view()),
     path("api/integrations/novaposhta/track/", intg_views.NovaPoshtaTrackView.as_view()),
+    path("api/integrations/shop/orders/", intg_views.ShopOrderWebhookView.as_view()),
 ]
