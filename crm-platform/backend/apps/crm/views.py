@@ -973,10 +973,11 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         qty = Decimal(str(request.data.get("quantity", 1)))
         price = Decimal(str(request.data.get("price", product.price)))
         disc = Decimal(str(request.data.get("discount_pct", 0) or 0))
-        if qty <= 0 or price < 0 or disc < 0 or disc > 100:  # #14 захист від дурня/від'ємних
-            return Response({"detail": "Кількість > 0, ціна ≥ 0, знижка 0–100%."}, status=status.HTTP_400_BAD_REQUEST)
+        disc_amt = Decimal(str(request.data.get("discount_amount", 0) or 0))
+        if qty <= 0 or price < 0 or disc < 0 or disc > 100 or disc_amt < 0:  # #14 захист від дурня/від'ємних
+            return Response({"detail": "Кількість > 0, ціна ≥ 0, знижка 0–100% або сума ≥ 0."}, status=status.HTTP_400_BAD_REQUEST)
         DealItem.objects.create(deal=deal, product=product, quantity=qty, price=price, cost=_deal_item_cost(product, price),
-                                discount_pct=disc, reserved=bool(request.data.get("reserved")))
+                                discount_pct=disc, discount_amount=disc_amt, reserved=bool(request.data.get("reserved")))
         self._recalc_amount(deal)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
@@ -1027,7 +1028,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         it = DealItem.objects.filter(deal=deal, pk=request.data.get("item")).first()
         if not it:
             return Response({"detail": "Позицію не знайдено"}, status=status.HTTP_404_NOT_FOUND)
-        for f in ("price", "quantity", "discount_pct"):
+        for f in ("price", "quantity", "discount_pct", "discount_amount"):
             val = request.data.get(f)
             if val not in (None, ""):
                 try:

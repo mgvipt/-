@@ -45,7 +45,7 @@ import NPDelivery from "./NPDelivery";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
-interface Item { id: number; product: number; product_name: string; quantity: string; price: string; discount_pct?: string; discount_sum?: string; total: string; reserved?: boolean; product_stock?: number | null; }
+interface Item { id: number; product: number; product_name: string; quantity: string; price: string; discount_pct?: string; discount_amount?: string; discount_sum?: string; total: string; reserved?: boolean; product_stock?: number | null; }
 interface Pay { id: number; provider: string; amount: string; is_paid: boolean; created_at: string; }
 interface Deal {
   qualification?: any; card_fields?: any[];
@@ -207,6 +207,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [gearOpen, setGearOpen] = useState(false);
   const gItem: any = { display: "flex", alignItems: "center", gap: 8, padding: "9px 13px", fontSize: 13.5, cursor: "pointer", borderBottom: "1px solid #f6f8fb" };
   const [deal, setDeal] = useState<Deal | null>(null);
+  const [discMode, setDiscMode] = useState<Record<number, "pct" | "amt">>({});   // режим скидки на позицию: % или ₴
   const { t } = useLang();
   const [chatW, setChatW] = useState(() => Number(localStorage.getItem("crm_card_chatW")) || 360);
   const [funnel, setFunnel] = useState<Funnel | null>(null);
@@ -940,7 +941,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   <th style={{ padding: "6px 4px" }}>№</th><th style={{ padding: "6px 4px" }}>{t("Товар","Товар")}</th>
                   <th style={{ padding: "6px 4px" }}>{t("Цена","Ціна")}</th>{can("product.cost.view") && <th style={{ padding: "6px 4px" }}>{t("Закупка","Закупка")}</th>}<th style={{ padding: "6px 4px" }}>{t("Кол-во","К-сть")}</th>
                   <th style={{ padding: "6px 4px", textAlign: "center" }}>{t("Резерв","Резерв")}</th><th style={{ padding: "6px 4px" }}>{t("Остаток","Залишок")}</th>
-                  <th style={{ padding: "6px 4px" }}>{t("Скидка %","Знижка %")}</th><th style={{ padding: "6px 4px" }}>{t("Сумма скидки","Сума знижки")}</th>
+                  <th style={{ padding: "6px 4px" }}>{t("Скидка","Знижка")}</th><th style={{ padding: "6px 4px" }}>{t("Сумма скидки","Сума знижки")}</th>
                   <th style={{ padding: "6px 4px" }}>{t("Сумма","Сума")}</th><th></th></tr></thead>
                   <tbody>{deal.items.map((it: any, idx: number) => {
                     const low = it.product_stock != null && Number(it.quantity) > Number(it.product_stock);
@@ -953,7 +954,18 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                       <td style={{ padding: "6px 4px" }}><input defaultValue={Number(it.quantity)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.quantity) && updateItem(it.id, { quantity: e.target.value })} style={{ ...editInp, width: 50 }} /></td>
                       <td style={{ padding: "6px 4px", textAlign: "center" }}><input type="checkbox" checked={!!it.reserved} onChange={() => toggleReserve(it)} title={t("Зарезервировать под сделку","Зарезервувати під угоду")} /></td>
                       <td style={{ padding: "6px 4px", color: low ? "#dc2626" : "#64748b" }} title={low ? t("Не хватает на складе","Не вистачає на складі") : ""}>{it.product_stock != null ? Number(it.product_stock) : "—"}{low ? " ⚠" : ""}</td>
-                      <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><input defaultValue={Number(it.discount_pct || 0)} type="number" min={0} max={100} onBlur={(e) => Number(e.target.value) !== Number(it.discount_pct || 0) && updateItem(it.id, { discount_pct: e.target.value })} style={{ ...editInp, width: 44 }} /> %</td>
+                      <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{(() => {
+                        const mode = discMode[it.id] || (Number(it.discount_amount || 0) > 0 ? "amt" : "pct");
+                        return (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                            <input key={it.id + "-" + mode} defaultValue={mode === "amt" ? Number(it.discount_amount || 0) : Number(it.discount_pct || 0)} type="number" min={0} max={mode === "pct" ? 100 : undefined}
+                              onBlur={(e) => { const v = e.target.value; if (mode === "amt") updateItem(it.id, { discount_amount: v, discount_pct: 0 }); else updateItem(it.id, { discount_pct: v, discount_amount: 0 }); }}
+                              style={{ ...editInp, width: 46 }} />
+                            <span onClick={() => setDiscMode((m) => ({ ...m, [it.id]: mode === "pct" ? "amt" : "pct" }))} title={t("Переключить: % или сумма ₴","Перемкнути: % або сума ₴")}
+                              style={{ cursor: "pointer", userSelect: "none", fontWeight: 800, fontSize: 12, color: "#2563eb", minWidth: 14, textAlign: "center" }}>{mode === "pct" ? "%" : "₴"}</span>
+                          </span>
+                        );
+                      })()}</td>
                       <td style={{ padding: "6px 4px", color: "#16a34a" }}>{fmt(Number(it.discount_sum || 0))} ₴</td>
                       <td style={{ padding: "6px 4px" }}><b>{fmt(Number(it.total))} ₴</b></td>
                       <td style={{ padding: "6px 4px" }}><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => removeItem(it.id)}>✕</span></td></tr>
