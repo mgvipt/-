@@ -127,7 +127,7 @@ def build_context(entity, kind):
     return "Контекст картки:\n" + json.dumps(ctx, ensure_ascii=False) + "\n\nПроаналізуй і виклич потрібні інструменти."
 
 
-AGENT_MAX_DEAL_STAGE = 3  # «Оплату отримано». Далі — стадії складу/логістики: їх рухає склад і НП-автоматика
+AGENT_MAX_DEAL_STAGE = 2  # «Домовились про оплату». «Оплату отримано» та далі ставить ТІЛЬКИ реальна оплата (LiqPay-callback / прийом оплати / вручну) і склад/НП — НЕ агент
 
 
 def _move_stage(entity, kind, to_name, reason, user, autonomous):
@@ -144,8 +144,12 @@ def _move_stage(entity, kind, to_name, reason, user, autonomous):
         target = funnel.stages.filter(order__gt=entity.stage.order).order_by("order").first() or target
     if not autonomous:
         return {"ok": False, "proposed": "→ %s: %s" % (target.name, reason)}
-    if kind == "deal" and target.order > AGENT_MAX_DEAL_STAGE:
-        return {"ok": False, "msg": "стадія «%s» — складська/логістична, її рухає склад (взяття задачі) та НП-автоматика, не агент" % target.name}
+    if kind == "deal":
+        _tn = (target.name or "").lower()
+        if "оплат" in _tn and ("отрим" in _tn or "получ" in _tn or "отрым" in _tn):
+            return {"ok": False, "msg": "стадію «%s» НЕ ставить агент — її виставляє ТІЛЬКИ реальна оплата (LiqPay/прийом/вручну). Клієнт ще не оплатив." % target.name}
+        if target.order > AGENT_MAX_DEAL_STAGE:
+            return {"ok": False, "msg": "стадія «%s» — складська/логістична/оплата, її рухає склад (взяття задачі), НП-автоматика та реальна оплата, не агент" % target.name}
     old = entity.stage.name
     entity.stage = target
     flds = ["stage"]
