@@ -602,7 +602,7 @@ def make_offer(deal, items_spec, user=None, send_pay=True):
         if not prod:
             missing.append((spec or {}).get("name")); continue
         qty = Decimal(str((spec or {}).get("qty") or 1))
-        DealItem.objects.create(deal=deal, product=prod, quantity=qty, price=prod.price, cost=prod.cost or 0)
+        DealItem.objects.create(deal=deal, product=prod, quantity=qty, price=prod.price, cost=_deal_item_cost(prod, prod.price))
         added.append("%s x %s" % (prod.name[:40], qty))
     if not added:
         return {"ok": False, "missing": missing, "msg": "товар не знайдено в номенклатурі"}
@@ -844,6 +844,20 @@ def _advance_deal_stage(deal, target_order, reason, actor="Автоматиза�
     return True
 
 
+def _deal_item_cost(product, unit_price):
+    """Себестоимость позиции сделки. Если у товара cost_pct>0 (услуга/работа с долей мастеру) —
+    себестоимость = цена × cost_pct%% (работает и при РУЧНОЙ цене менеджера). Иначе — фиксированная product.cost."""
+    if product is None:
+        return Decimal("0")
+    pct = getattr(product, "cost_pct", 0) or 0
+    try:
+        if pct and Decimal(str(pct)) > 0:
+            return (Decimal(str(unit_price)) * Decimal(str(pct)) / Decimal("100")).quantize(Decimal("0.01"))
+    except Exception:
+        pass
+    return product.cost or Decimal("0")
+
+
 class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     log_kind = "deal"
     queryset = Deal.objects.select_related("owner", "contact", "funnel", "stage")
@@ -961,7 +975,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         disc = Decimal(str(request.data.get("discount_pct", 0) or 0))
         if qty <= 0 or price < 0 or disc < 0 or disc > 100:  # #14 захист від дурня/від'ємних
             return Response({"detail": "Кількість > 0, ціна ≥ 0, знижка 0–100%."}, status=status.HTTP_400_BAD_REQUEST)
-        DealItem.objects.create(deal=deal, product=product, quantity=qty, price=price, cost=(product.cost or 0),
+        DealItem.objects.create(deal=deal, product=product, quantity=qty, price=price, cost=_deal_item_cost(product, price),
                                 discount_pct=disc, reserved=bool(request.data.get("reserved")))
         self._recalc_amount(deal)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
@@ -1020,6 +1034,9 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                     setattr(it, f, Decimal(str(val)))
                 except Exception:
                     pass
+        # услуга с долей мастеру (cost_pct>0): себестоимость авто-пересчёт от НОВОЙ цены — маржа держит %
+        if it.product_id and getattr(it.product, "cost_pct", 0) and it.product.cost_pct > 0:
+            it.cost = (it.price * it.product.cost_pct / Decimal("100")).quantize(Decimal("0.01"))
         if it.quantity <= 0 or it.price < 0 or (it.discount_pct or 0) < 0 or (it.discount_pct or 0) > 100:  # #14
             return Response({"detail": "Кількість > 0, ціна ≥ 0, знижка 0–100%."}, status=status.HTTP_400_BAD_REQUEST)
         it.save()
