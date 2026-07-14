@@ -87,12 +87,14 @@ class ContactViewSet(viewsets.ModelViewSet):
         from decimal import Decimal as _Dadv
         _adv_used = Payment.objects.filter(deal__contact=c, provider="advance", is_paid=True).aggregate(s=_Sum("amount"))["s"] or 0
         _deals_sum = _Deal_adv.objects.filter(contact=c, stage__is_won=True).aggregate(s=_Sum("amount"))["s"] or 0
-        # + вычитаем материалы других магазинов (кредиторки клиента) — клиент должен их покрыть,
-        #   тогда аванс = реальный остаток клиентских денег после сделок И материалов.
-        _cred_mat = _PP.objects.filter(kind="payable", is_internal=False).filter(
-            _Qc(contact=c) | (_byname if _byname is not None else _Qc(pk__in=[]))
-        ).aggregate(s=_Sum("amount"))["s"] or 0
-        adv = _Dadv(str(inc or 0)) - _Dadv(str(_deals_sum or 0)) - _Dadv(str(_cred_mat or 0)) - _Dadv(str(_adv_used or 0))
+        # Аванс = вільні гроші клієнта = Дохід − сделки − що клієнт має за транзит-матеріали.
+        #   Транзит-чекбокс у Витраті створює ДЕБІТОРКУ клієнта (заряд з націнкою) + кредиторку магазину.
+        #   Вычитаем: (а) дебіторки клієнта (заряд) + (б) кредиторки-матеріали БЕЗ парної дебіторки (стара запись).
+        _cli_q = _Qc(contact=c) | (_byname if _byname is not None else _Qc(pk__in=[]))
+        _recv_mat = _PP.objects.filter(kind="receivable", is_internal=False, is_loan=False).filter(_cli_q).aggregate(s=_Sum("amount"))["s"] or 0
+        _paired = set(_PP.objects.filter(kind="receivable", source_planned__isnull=False).values_list("source_planned_id", flat=True))
+        _cred_mat = _PP.objects.filter(kind="payable", is_internal=False).filter(_cli_q).exclude(id__in=_paired).aggregate(s=_Sum("amount"))["s"] or 0
+        adv = _Dadv(str(inc or 0)) - _Dadv(str(_deals_sum or 0)) - _Dadv(str(_recv_mat or 0)) - _Dadv(str(_cred_mat or 0)) - _Dadv(str(_adv_used or 0))
         _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[])))
         debt = _ppq.filter(kind="payable").aggregate(s=_Sum("amount"))["s"] or 0
         # ДЕБІТОРКА (нам винні): торгова (від продажу, майбутня прибуток) окремо від позики (мої гроші в борг, НЕ прибуток)
