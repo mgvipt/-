@@ -388,6 +388,8 @@ class AiUsage(models.Model):
 class ChangeLogEntry(models.Model):
     """Історія змін CRM простою мовою — показується на сторінці «Що нового»."""
     d = models.DateField(db_index=True)
+    section = models.CharField(max_length=48, blank=True, default="", db_index=True,
+                               help_text="Блок-розділ для групування: Фінанси / Склад / Клієнти / Загальне")
     title = models.CharField(max_length=200)
     body = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)

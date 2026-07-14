@@ -2259,7 +2259,7 @@ class ChangeLogView(APIView):
     def get(self, request):
         from .models import ChangeLogEntry
         rows = ChangeLogEntry.objects.all()[:500]
-        return Response([{"id": e.id, "date": e.d.isoformat(), "title": e.title, "body": e.body} for e in rows])
+        return Response([{"id": e.id, "date": e.d.isoformat(), "section": e.section, "title": e.title, "body": e.body} for e in rows])
 
     def post(self, request):
         if not request.user.is_superuser:
@@ -2268,5 +2268,6 @@ class ChangeLogView(APIView):
         from .models import ChangeLogEntry
         d = request.data
         e = ChangeLogEntry.objects.create(d=(d.get("date") or timezone.now().date()),
+                                          section=(d.get("section") or "")[:48],
                                           title=(d.get("title") or "")[:200], body=(d.get("body") or ""))
         return Response({"id": e.id}, status=status.HTTP_201_CREATED)
