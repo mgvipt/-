@@ -148,10 +148,11 @@ class ContactViewSet(viewsets.ModelViewSet):
                     or cc.nickname or cc.phone or ("#%d" % cc.id))
         ops = [{"id": t.id, "date": t.date, "direction": t.direction, "amount_uah": t.amount_uah,
                 "counterparty": t.counterparty, "category": t.category.name if t.category else "",
+                "fin_direction": (t.fin_direction.name if t.fin_direction_id else ""),
                 "comment": (t.comment or "")[:80], "deal": t.deal_id,
                 "deal_title": (t.deal.title if t.deal_id else ""),
                 "contact": t.contact_id, "contact_name": _cn(t.contact)}
-               for t in qs.select_related("category", "deal", "contact").order_by("-date", "-id")[_off:_off + _lim]]
+               for t in qs.select_related("category", "deal", "contact", "fin_direction").order_by("-date", "-id")[_off:_off + _lim]]
         # список боргів клієнта (дебіторка+кредиторка, УСІ статуси) — щоб у картці бачити оплачені/неоплачені
         _all_pp = _PP.objects.filter(
             _Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[]))
