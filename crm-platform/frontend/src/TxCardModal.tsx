@@ -157,9 +157,25 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
               </div>
             )}
 
-            <label className="label">{t("Сумма, ₴", "Сума, ₴")}</label>
-            <input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} style={inp} autoFocus />
-            {f.currency && f.currency !== "UAH" ? <div className="muted" style={{ fontSize: 12, marginTop: -6, marginBottom: 10 }}>{f.currency} · = {Math.round(Number(f.amount_uah || 0)).toLocaleString("ru")} ₴</div> : null}
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <label className="label">{t("Сумма", "Сума")}</label>
+                <input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} style={inp} autoFocus />
+              </div>
+              <div style={{ width: 92 }}>
+                <label className="label">{t("Валюта", "Валюта")}</label>
+                <select value={f.currency} onChange={(e) => { const cc = e.target.value; if (cc === "UAH") { setF({ ...f, currency: cc, rate: 1 }); } else { setF({ ...f, currency: cc }); api.get<any>(`/api/finance/fx-rate/?ccy=${cc}`).then((r: any) => { if (r?.rate) setF((x: any) => ({ ...x, currency: cc, rate: r.rate })); }).catch(() => {}); } }} style={inp}>
+                  {["UAH", "USD", "EUR", "PLN", "GBP"].map((cc) => <option key={cc} value={cc}>{cc}</option>)}
+                </select>
+              </div>
+            </div>
+            {f.currency && f.currency !== "UAH" ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, fontSize: 13 }}>
+                <span className="muted">{t("Курс НБУ", "Курс НБУ")}:</span>
+                <input type="number" value={f.rate} onChange={(e) => setF({ ...f, rate: e.target.value })} style={{ width: 90, height: 30, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }} title={t("Курс грн за 1 единицу валюты (можно исправить вручную)", "Курс грн за 1 одиницю валюти (можна виправити вручну)")} />
+                <span style={{ fontWeight: 600, color: "#0ea5e9" }}>= {Math.round(Number(f.amount || 0) * (Number(f.rate) || 1)).toLocaleString("ru")} ₴</span>
+              </div>
+            ) : null}
 
             <label className="label">{t("Дата операции", "Дата операції")}</label>
             <input type="date" value={f.date || ""} onChange={(e) => setF({ ...f, date: e.target.value })} style={inp} />
