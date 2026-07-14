@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "./api";
 import { useLang } from "./i18n";
-import { Attachments, ClientPick, CpField, DealPick } from "./pages/Finance";
+import { Attachments, ClientPick, CpField, DealPick, CatPick } from "./pages/Finance";
 
 const CHANNELS: [string, string][] = [
   ["", "—"], ["instagram", "Instagram"], ["tiktok", "TikTok"], ["facebook", "Facebook"],
@@ -215,11 +215,14 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
               </>
             ) : (
               <>
-                <label className="label">{t("Категория", "Категорія")}</label>
-                <select value={f.set_category} onChange={(e) => setF({ ...f, set_category: e.target.value })} style={inp}>
-                  <option value="">{t("— категория —", "— категорія —")}</option>
-                  {cats.filter((c: any) => c.direction === f.direction).map((c: any) => <option key={c.id} value={c.name}>{c.parent ? "└ " : ""}{c.name}</option>)}
-                </select>
+                <label className="label" title={t("Категория операции: главная жирным, подкатегории ниже. Можно искать.", "Категорія операції: головна жирним, підкатегорії нижче. Можна шукати.")}>{t("Категория", "Категорія")}</label>
+                <CatPick value={f.set_category} direction={f.direction} cats={cats} onPick={(nm: string) => {
+                  const c0 = cats.find((cc: any) => cc.name === nm && cc.direction === f.direction);
+                  const par0 = c0 && c0.parent ? cats.find((p2: any) => p2.id === c0.parent) : null;
+                  const fa0 = (c0 && c0.fin_article) || (par0 && par0.fin_article) || 0;
+                  const fd0 = (c0 && c0.fin_direction) || (par0 && par0.fin_direction) || 0;
+                  setF({ ...f, set_category: nm, fin_article: fa0 || f.fin_article, fin_direction: fd0 || f.fin_direction });
+                }} />
 
                 <label className="label" title={t("Кто заплатил / кому платим — из базы CRM. Начни вводить имя или телефон.", "Хто заплатив / кому платимо — з бази CRM. Почни вводити імʼя або телефон.")}>{t("Контрагент", "Контрагент")}</label>
                 <CpField value={f.counterparty} onChange={(v: string) => setF({ ...f, counterparty: v })} />

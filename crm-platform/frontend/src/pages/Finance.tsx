@@ -2999,7 +2999,7 @@ function FundPick({ value, arts, onPick }: { value: number; arts: any[]; onPick:
 }
 
 
-function CatPick({ value, direction, cats, onPick }: { value: string; direction: string; cats: any[]; onPick: (name: string) => void }) {
+export function CatPick({ value, direction, cats, onPick }: { value: string; direction: string; cats: any[]; onPick: (name: string) => void }) {
   /* Дерево категорій: категорія ЖИРНИМ → підкатегорії з відступом; пошук фільтрує; клік — вибір. */
   const { t } = useLang();
   const [q, setQ] = useState(value || "");
