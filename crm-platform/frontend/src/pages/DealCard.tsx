@@ -33,6 +33,7 @@ import { Avatar, SOURCES } from "../ui";
 import NeedsForm from "../NeedsForm";
 import CardFields from "../CardFields";
 import ClientChat from "../ClientChat";
+import ReceiptModal from "../ReceiptModal";
 import ActivityLog from "../ActivityLog";
 import CallButton from "../CallButton";
 import KpDoc from "../KpDoc";
@@ -203,6 +204,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const params = useParams();
   const id = dealId != null ? String(dealId) : params.id;
   const nav = useNavigate();
+  const [showReceipt, setShowReceipt] = useState(false);
   const { can } = useAuth();
   const [gearOpen, setGearOpen] = useState(false);
   const gItem: any = { display: "flex", alignItems: "center", gap: 8, padding: "9px 13px", fontSize: 13.5, cursor: "pointer", borderBottom: "1px solid #f6f8fb" };
@@ -900,6 +902,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   <button className="btn btn-primary" onClick={() => addItem()} disabled={!psel}>{t("Добавить","Додати")}</button>
                   <button className="btn" onClick={() => setShowList((s) => !s)} title={t("Показать весь список товаров (двойной клик — добавить)","Показати весь список товарів (подвійний клік — додати)")}>{showList ? <>{t("✕ Список","✕ Список")}</> : <><Icon n="📋" size={14} /> {t("Список","Список")}</>}</button>
                   {can("deal.items.custom") || can("roles.manage") ? <button className="btn" onClick={() => setCiOpen((v) => !v)} title={t("Добавить позицию НЕ из номенклатуры — без складского учёта и списания","Додати позицію НЕ з номенклатури — без складського обліку і списання")} style={{ whiteSpace: "nowrap" }}>{ciOpen ? "✕" : "➕"} {t("Своя","Своя")}</button> : null}
+                  <button className="btn" onClick={() => setShowReceipt(true)} title={t("Оприходовать товар (дроп/закупка у поставщика) — приход на склад с выбором поставщика","Оприбуткувати товар (дроп/закупка у постачальника) — прихід на склад з вибором постачальника")} style={{ whiteSpace: "nowrap" }}><Icon n="📥" size={14} /> {t("Приход","Прихід")}</button>
                 </div>
                 {presults.length > 0 && (
                   <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 260, overflowY: "auto" }}>
@@ -1061,6 +1064,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       )}
 
       {/* ─── [12] РЕНДЕР: модалка приёма оплаты ───────────────────────── */}
+      {showReceipt && <ReceiptModal dealId={deal.id} onClose={() => setShowReceipt(false)} onSaved={() => { setShowReceipt(false); flash(t("Приход проведён ✓","Прихід проведено ✓")); }} />}
       {ttnOpen && (
         <div onClick={() => setTtnOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 420, maxHeight: "88vh", overflowY: "auto" }}>

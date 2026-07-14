@@ -82,11 +82,19 @@ class StockDocumentSerializer(serializers.ModelSerializer):
     total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
     deal_title = serializers.CharField(source="deal.title", read_only=True, default=None)
+    supplier_name = serializers.SerializerMethodField()
+
+    def get_supplier_name(self, obj):
+        c = obj.supplier
+        if not c:
+            return ""
+        return (getattr(c, "display_name", "") or " ".join(filter(None, [c.first_name, c.last_name])).strip() or c.nickname or c.phone or ("#%d" % c.id))
 
     class Meta:
         model = StockDocument
         fields = ["id", "kind", "kind_display", "number", "warehouse", "comment",
-                  "deal", "deal_title", "total", "created_at", "items", "posted", "close_stage"]
+                  "deal", "deal_title", "total", "created_at", "items", "posted", "close_stage",
+                  "supplier", "supplier_name", "supplier_invoice", "doc_date"]
         read_only_fields = ["created_at"]
 
     def validate(self, attrs):

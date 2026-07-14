@@ -24,6 +24,7 @@ import { api, Paginated } from "../api";
 import { useLang } from "../i18n";
 import { useAuth } from "../auth";
 import { Icon } from "../Icon";
+import ReceiptModal from "../ReceiptModal";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 interface Product {
@@ -60,6 +61,7 @@ export default function Warehouse() {
   const [pageSize, setPageSize] = useState(50);
   const [whs, setWhs] = useState<WH[]>([]);
   const [modal, setModal] = useState<null | "in" | "out">(null);
+  const [receiptFor, setReceiptFor] = useState<{ productId?: number; productName?: string } | null>(null);
   const canRealize = can("warehouse.edit") || can("finance.manage");
   const canTabReal = can("warehouse.tab.realizations");
   const canTabRec = can("warehouse.tab.receipts");
@@ -471,7 +473,7 @@ export default function Warehouse() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
               <h3 style={{ margin: 0 }}>{t("Приходные накладные","Прибуткові накладні")}</h3>
               {canEdit && <div style={{ display: "flex", gap: 6 }}>
-                <button className="btn btn-light" onClick={() => setModal("in")} title={t("Ручной приход","Ручний прихід")}><Icon n="📥" size={14} /> {t("Приход","Прихід")}</button>
+                <button className="btn btn-primary" onClick={() => setReceiptFor({})} title={t("Приход с поставщиком, несколькими позициями и оплатой/долгом","Прихід з постачальником, кількома позиціями і оплатою/боргом")}><Icon n="📥" size={14} /> {t("Приход","Прихід")}</button>
                 <input ref={receiptFileRef} type="file" accept=".csv,text/csv,text/plain" style={{ display: "none" }} onChange={importReceipt} />
                 <button className="btn btn-light" onClick={() => receiptFileRef.current?.click()} title={t("Приход из файла: артикул, кол-во, цена","Прихід з файлу: артикул, к-сть, ціна")}><Icon n="📄" size={14} /> {t("Приход файлом","Прихід файлом")}</button>
               </div>}
@@ -771,7 +773,10 @@ export default function Warehouse() {
                 )}
               </div>
             )}
-            <div className="label" style={{ marginBottom: 6 }}>{t("Движение товара (приход / расход / инвентаризация)","Рух товару (прихід / витрата / інвентаризація)")}</div>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+              <div className="label" style={{ flex: 1, margin: 0 }}>{t("Движение товара (приход / расход / инвентаризация)","Рух товару (прихід / витрата / інвентаризація)")}</div>
+              {canEdit && <button className="btn btn-light" style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => setReceiptFor({ productId: card.id, productName: card.name })} title={t("Оприходовать этот товар (приход с поставщиком)","Оприбуткувати цей товар (прихід з постачальником)")}><Icon n="📥" size={13} /> {t("Приход","Прихід")}</button>}
+            </div>
             {movements.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Движений ещё не было.","Рухів ще не було.")}</div> : (
               <table style={{ width: "100%", fontSize: 13 }}>
                 <thead><tr><th>{t("Дата","Дата")}</th><th>{t("Тип","Тип")}</th><th>{t("Кол-во","К-сть")}</th><th>{t("Цена","Ціна")}</th></tr></thead>
@@ -827,6 +832,7 @@ export default function Warehouse() {
             </div>
           </div>
       )}
+      {receiptFor && <ReceiptModal productId={receiptFor.productId} productName={receiptFor.productName} onClose={() => setReceiptFor(null)} onSaved={() => { loadProducts(); openReceiptList(); if (card) api.get<Movement[]>(`/api/products/${card.id}/movements/`).then(setMovements).catch(() => {}); }} />}
     </div>
   );
 }

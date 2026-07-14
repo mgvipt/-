@@ -103,6 +103,10 @@ class StockDocument(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     posted = models.BooleanField("Проведено", default=True)  # чернетка (False) не впливає на залишок/COGS
     close_stage = models.CharField("Стадія закриття", max_length=120, blank=True, default="")  # на якій стадії створено реалізацію
+    supplier = models.ForeignKey("crm.Contact", null=True, blank=True, on_delete=models.SET_NULL,
+                                 related_name="supplied_documents", help_text="Постачальник (контрагент)")
+    supplier_invoice = models.CharField("№ накладної постачальника", max_length=80, blank=True, default="")
+    doc_date = models.DateField("Дата документа", null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
