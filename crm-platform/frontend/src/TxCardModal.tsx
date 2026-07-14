@@ -13,7 +13,7 @@ const CHANNELS: [string, string][] = [
 ];
 
 export default function TxCardModal({ txId, initDirection, initContact, initContactName, onClose, onSaved, nav }: {
-  txId?: number; initDirection?: "in" | "out"; initContact?: number; initContactName?: string;
+  txId?: number; initDirection?: "in" | "out" | "transfer"; initContact?: number; initContactName?: string;
   onClose: () => void; onSaved: () => void; nav?: (p: string) => void;
 }) {
   const { t } = useLang();

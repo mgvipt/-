@@ -6,6 +6,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { api } from "../api";
 import DealCard from "./DealCard";
+import TxCardModal from "../TxCardModal";
 import { useNavigate } from "react-router-dom";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
@@ -1114,138 +1115,16 @@ function Journal() {
 
       {bulkPanel}
       {open && (
-        <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 440, maxHeight: "90vh", overflowY: "auto" }}>
-            <h3 style={{ marginTop: 0 }}>{f.id ? <>{t("Операция №","Операція №")}{f.id} · <span style={{ color: f.direction === "in" ? "#16a34a" : f.direction === "transfer" ? "#6366f1" : "#dc2626" }}>{f.direction === "in" ? t("Доход","Дохід") : f.direction === "transfer" ? t("Перевод","Переказ") : t("Расход","Витрата")}</span></> : (f.direction === "in" ? <span style={{ color: "#16a34a" }}>{t("Доход","Дохід")}</span> : f.direction === "transfer" ? t("Перевод между счетами","Переказ між рахунками") : <span style={{ color: "#dc2626" }}>{t("Расход","Витрата")}</span>)}</h3>
-            <div style={{ display: "flex", gap: 8 }}>
-              <div style={{ flex: 2 }}>
-                <label className="label">{t("Сумма","Сума")}</label>
-                <input type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} style={inp} autoFocus title={t("Сумма в выбранной валюте","Сума у вибраній валюті")} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label className="label">{t("Валюта","Валюта")}</label>
-                <select value={f.currency} onChange={(e) => fetchRate(e.target.value)} style={inp} title={t("Курс подтянется из НБУ автоматически","Курс підтягнеться з НБУ автоматично")}>
-                  {["UAH", "USD", "EUR", "PLN", "GBP"].map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-            </div>
-            {f.currency !== "UAH" && (
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, fontSize: 13 }}>
-                <span className="muted">{t("Курс НБУ","Курс НБУ")}:</span>
-                <input type="number" value={f.rate} onChange={(e) => setF({ ...f, rate: e.target.value })} style={{ width: 90, height: 30, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }} title={t("Курс грн за 1 единицу валюты (можно исправить вручную)","Курс грн за 1 одиницю валюти (можна виправити вручну)")} />
-                <span style={{ fontWeight: 600, color: "#0ea5e9" }}>= {money(grnEq)}</span>
-              </div>
-            )}
-            <label className="label">{t("Дата операции","Дата операції")}</label>
-            <input type="date" value={f.date || ""} onChange={(e) => setF({ ...f, date: e.target.value })} style={inp} title={t("Можно указать прошедшую дату","Можна вказати минулу дату")} />
-            {f.direction === "transfer" ? (
-              <>
-                <label className="label" title={t("Откуда списываются деньги","Звідки списуються гроші")}>{t("Со счёта","З рахунку")}</label>
-                <select value={f.account} onChange={(e) => setF({ ...f, account: Number(e.target.value) })} style={inp}>
-                  <option value={0}>—</option>
-                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₴)</option>)}
-                </select>
-                <label className="label" title={t("Куда поступают деньги","Куди надходять гроші")}>{t("На счёт (получатель)","На рахунок (отримувач)")}</label>
-                <select value={f.transfer_account} onChange={(e) => setF({ ...f, transfer_account: Number(e.target.value) })} style={inp}>
-                  <option value={0}>—</option>
-                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₴)</option>)}
-                </select>
-                <label className="label" title={t("Если счёт-получатель в другой валюте: сколько реально зачислено в ЕГО валюте (напр. отправили 11 135.13 грн — зачислено 240 USD)","Якщо рахунок-одержувач в іншій валюті: скільки реально зараховано у ЙОГО валюті (напр. відправили 11 135.13 грн — зараховано 240 USD)")}>{t("Зачислено получателю (если другая валюта)","Зараховано одержувачу (якщо інша валюта)")}</label>
-                <input value={(f as any).transfer_amount} onChange={(e) => setF({ ...f, transfer_amount: e.target.value } as any)} placeholder={t("пусто = та же сумма","пусто = та ж сума")} style={inp} />
-                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("↔ Перевод не считается ни в доход, ни в расход — только движение между счетами.","↔ Переказ не рахується ні в дохід, ні у витрати — лише рух між рахунками.")}</div>
-              </>
-            ) : (
-              <>
-                <label className="label" title={t("Категория операции (как в Финмапе): Онлайн, Салон, Закупка, Аренда, Реклама…","Категорія операції (як у Фінмапі): Онлайн, Салон, Закупка, Оренда, Реклама…")}>{t("Категория","Категорія")}</label>
-                <CatPick value={f.set_category} direction={f.direction} cats={cats} onPick={(nm) => {
-                  const c0 = cats.find((cc: any) => cc.name === nm && cc.direction === f.direction);
-                  const par0 = c0 && c0.parent ? cats.find((p2: any) => p2.id === c0.parent) : null;
-                  const fa0 = (c0 && c0.fin_article) || (par0 && par0.fin_article) || 0;
-                  const fd0 = (c0 && c0.fin_direction) || (par0 && par0.fin_direction) || 0;
-                  setF({ ...f, set_category: nm, fin_article: fa0 || f.fin_article, fin_direction: fd0 || f.fin_direction });
-                }} />
-                <label className="label" title={t("От кого поступили / кому уплатили деньги. Связь с клиентами CRM.","Від кого надійшли / кому сплатили гроші. Звʼязок із клієнтами CRM.")}>{t("Мой контрагент","Мій контрагент")}</label>
-                <CpField value={f.counterparty} onChange={(v) => setF({ ...f, counterparty: v })} />
-                <label className="label">{t("Счёт","Рахунок")}</label>
-                <select value={f.account} onChange={(e) => setF({ ...f, account: Number(e.target.value) })} style={inp}>
-                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({Number(a.balance).toLocaleString("ru", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₴)</option>)}
-                </select>
-                <label className="label" title={t("Фонд для аналитики и точки безубыточности. Начни вводить название — список отфильтруется","Фонд для аналітики та точки беззбитковості. Почни вводити назву — список відфільтрується")}>{t("Фонд (статья)","Фонд (стаття)")}</label>
-                <FundPick value={f.fin_article} arts={arts} onPick={(id) => setF({ ...f, fin_article: id })} />
-                <label className="label" title={t("Направление (проект): откуда/куда деньги","Напрямок (проект): звідки/куди гроші")}>{t("Направление","Напрямок")}</label>
-                <select value={f.fin_direction} onChange={(e) => setF({ ...f, fin_direction: Number(e.target.value) })} style={inp}>
-                  <option value={0}>{t("— без направления —","— без напрямку —")}</option>
-                  {dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-                <div style={{ margin: "2px 0 10px", border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, background: splitOn ? "#fbf7f4" : "#fff" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                    <input type="checkbox" checked={splitOn} onChange={(e) => { setSplitOn(e.target.checked); if (e.target.checked && splitRows.length === 0) setSplitRows([{ dir: f.fin_direction || 0, amt: f.amount || "" }]); }} style={{ width: 15, height: 15, accentColor: "#C67D5F" }} />
-                    🔀 {t("Разделить между подразделениями","Розподілити між підрозділами")}
-                  </label>
-                  {splitOn && <div style={{ marginTop: 8 }}>
-                    <label className="label">{t("Оплатило подразделение (чья касса)","Оплатив підрозділ (чия каса)")}</label>
-                    <select value={payerDir} onChange={(e) => { const _pd = Number(e.target.value); setPayerDir(_pd); if (_pd && !splitRows.some((r: any) => r.dir === _pd)) setSplitRows((rows: any[]) => [{ dir: _pd, amt: "" }, ...rows]); }} style={inp}>
-                      <option value={0}>{t("— выбери подразделение —","— обери підрозділ —")}</option>
-                      {dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                    </select>
-                    {splitRows.map((r: any, i: number) => (
-                      <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
-                        <select value={r.dir} onChange={(e) => { const n = [...splitRows]; n[i] = { ...n[i], dir: Number(e.target.value) }; setSplitRows(n); }} style={{ ...inp, marginBottom: 0, flex: 2 }}>
-                          <option value={0}>{t("— подразделение —","— підрозділ —")}</option>
-                          {dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                        </select>
-                        <input type="number" value={r.amt} onChange={(e) => { const n = [...splitRows]; n[i] = { ...n[i], amt: e.target.value }; setSplitRows(n); }} placeholder={t("сумма","сума")} style={{ ...inp, marginBottom: 0, width: 104, textAlign: "right" }} />
-                        <span onClick={() => setSplitRows(splitRows.filter((_: any, j: number) => j !== i))} title={t("убрать","прибрати")} style={{ cursor: "pointer", color: "#cbd5e1", fontSize: 16 }}>×</span>
-                      </div>
-                    ))}
-                    {(() => { const _s = splitRows.reduce((a: number, r: any) => a + (Number(r.amt) || 0), 0); const _rem = (Number(f.amount) || 0) - _s; return (
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-                        <span onClick={() => setSplitRows([...splitRows, { dir: 0, amt: "" }])} style={{ cursor: "pointer", color: "#C67D5F", fontSize: 12.5, fontWeight: 700 }}>+ {t("подразделение","підрозділ")}</span>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: Math.abs(_rem) < 0.01 ? "#16a34a" : (_rem < 0 ? "#dc2626" : "#b45309") }}>{t("распределено","розподілено")} {Math.round(_s).toLocaleString("ru")} / {Math.round(Number(f.amount) || 0).toLocaleString("ru")} · {_rem < 0 ? t("перерасход ","перевитрата ") + Math.round(-_rem).toLocaleString("ru") : t("остаток ","залишок ") + Math.round(_rem).toLocaleString("ru")}</span>
-                      </div>
-                    ); })()}
-                    <div className="muted" style={{ fontSize: 10.5, marginTop: 5, lineHeight: 1.4 }}>{t("Строка плательщика — его СОБСТВЕННАЯ доля (не долг). Долгом станут только доли ДРУГИХ подразделений перед плательщиком — видно в Дт/Кт → Взаиморасчёты.","Рядок платника — його ВЛАСНА частка (не борг). Боргом стануть лише частки ІНШИХ підрозділів перед платником — видно в Дт/Кт → Взаєморозрахунки.")}</div>
-                  </div>}
-                </div>
-                <label className="label" title={t("Канал/источник поступления","Канал/джерело надходження")}>{t("Канал","Канал")}</label>
-                <select value={f.channel} onChange={(e) => setF({ ...f, channel: e.target.value })} style={inp}>
-                  {CHANNELS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                </select>
-                <label className="label" title={t("Клиент CRM, к которому относятся эти деньги (объект). Контрагент может быть мастером или магазином — а деньги считаются по этому клиенту. Подставляется сам, если выбрана сделка.","Клієнт CRM, якого стосуються ці гроші (обʼєкт). Контрагент може бути майстром чи магазином — а гроші рахуються по цьому клієнту. Підставляється сам, якщо вибрано угоду.")}>{t("Клиент (объект)","Клієнт (обʼєкт)")}</label>
-                <ClientPick value={(f as any).contact} label={(f as any).contact_name} onPick={(cid, nm) => setF({ ...f, contact: cid, contact_name: nm } as any)} />
-                <label className="label" title={t("Привязать к сделке — № / название или выбери из сделок клиента","Привʼязати до сделки — № / назва або обери зі сделок клієнта")}>{t("Сделка (необязательно)","Угода (необовʼязково)")}</label>
-                <DealPick value={(f as any).deal} label={(f as any).deal_title} contact={(f as any).contact} onPick={(did: number, dt: string) => setF({ ...f, deal: did, deal_title: dt } as any)} />
-                {!f.id && f.direction === "out" ? (
-                  <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                    <span onClick={() => setAsDebt(false)} style={{ flex: 1, textAlign: "center", padding: "6px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer", background: !asDebt ? "#dc2626" : "#fff", color: !asDebt ? "#fff" : "#64748b", border: "1.5px solid " + (!asDebt ? "#dc2626" : "#e2e8f0") }}>💸 {t("Оплата сейчас — в журнал","Оплата зараз — у журнал")}</span>
-                    <span onClick={() => setAsDebt(true)} title={t("Не оплачено в магазине/мастеру: попадёт в Дт/Кт, в журнал — после кнопки «Оплачено»","Не оплачено в магазині/майстру: потрапить у Дт/Кт, у журнал — після кнопки «Оплачено»")} style={{ flex: 1, textAlign: "center", padding: "6px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer", background: asDebt ? "#b45309" : "#fff", color: asDebt ? "#fff" : "#64748b", border: "1.5px solid " + (asDebt ? "#b45309" : "#e2e8f0") }}>🕐 {t("Кредиторка (оплатим позже)","Кредиторка (оплатимо пізніше)")}</span>
-                  </div>
-                ) : null}
-              </>
-            )}
-            <label className="label">{t("Комментарий","Коментар")}</label>
-            <input value={f.comment} onChange={(e) => setF({ ...f, comment: e.target.value })} style={inp} />
-            {f.id ? <Attachments txId={f.id} /> : <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}><Icon n="📎" size={14} /> {t("Сохрани операцию — тогда сможешь прикрепить фото/скан чека.","Збережи операцію — тоді зможеш прикріпити фото/скан чека.")}</div>}
-            {f.id && f.direction !== "transfer" ? (
-              <div style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 10, padding: "8px 10px", marginBottom: 10 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: "#6d28d9", marginBottom: 6 }}>⇄ {t("Переделать в перевод между счетами","Переробити на переказ між рахунками")}</div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <select value={convAcc} onChange={(e) => setConvAcc(Number(e.target.value))} style={{ ...inp, marginBottom: 0, flex: 1 }}>
-                    <option value={0}>{f.direction === "out" ? t("— на какой счёт перешли деньги —","— на який рахунок перейшли гроші —") : t("— с какого счёта пришли деньги —","— з якого рахунку прийшли гроші —")}</option>
-                    {accounts.filter((a: any) => a.id !== f.account).map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  </select>
-                  <button className="btn btn-primary" disabled={!convAcc} style={{ opacity: convAcc ? 1 : 0.5, background: "#7c3aed" }} onClick={toTransfer}>⇄ OK</button>
-                </div>
-                <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{t("Категория и фонд очистятся — перевод не считается ни в доход, ни в расход.","Категорія і фонд очистяться — переказ не рахується ні в дохід, ні у витрату.")}</div>
-              </div>
-            ) : null}
-            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              {f.id ? <button className="btn" style={{ background: "#fef2f2", color: "#dc2626" }} onClick={del} title={t("Удалить операцию","Видалити операцію")}><Icon n="🗑" size={15} /></button> : null}
-              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setOpen(false)}>{t("Отмена","Скасувати")}</button>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={save}>{t("Сохранить","Зберегти")}</button>
-            </div>
-          </div>
-        </div>
+        <TxCardModal
+          key={"txm-" + (f.id || "new") + "-" + f.direction + "-" + (f.contact || 0)}
+          txId={f.id || undefined}
+          initDirection={f.direction === "in" || f.direction === "transfer" ? f.direction : "out"}
+          initContact={f.contact || undefined}
+          initContactName={f.contact_name || ""}
+          onClose={() => setOpen(false)}
+          onSaved={() => { setOpen(false); load(page); loadAccs(); }}
+          nav={(pth: string) => nav(pth)}
+        />
       )}
     </div>
   );
