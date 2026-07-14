@@ -28,6 +28,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
   const [payerDir, setPayerDir] = useState(0);
   const [splitRows, setSplitRows] = useState<any[]>([]);
   const [asDebt, setAsDebt] = useState(false);   // false = сразу в журнал (оплачено); true = долг (кредиторка/дебиторка)
+  const [recvLoan, setRecvLoan] = useState(false);  // для дебиторки (нам винні): false=продаж (буд. дохід), true=позика (свои деньги в долг, НЕ дохід)
 
   useEffect(() => {
     let ok = true;
@@ -76,6 +77,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
           counterparty: f.counterparty, contact: f.contact || null, category: catId,
           account: f.account || null, fin_article: f.fin_article || null,
           fin_direction: f.fin_direction || null, comment: f.comment,
+          is_loan: (f.direction === "in" && recvLoan) ? true : false,   // позика (свои деньги в долг) — НЕ считается доходом
         });
         onSaved(); return;
       } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось сохранить", "Не вдалося зберегти")); setBusy(false); return; }
@@ -211,6 +213,12 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
                   <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
                     <span onClick={() => setAsDebt(false)} style={{ flex: 1, textAlign: "center", padding: "7px 6px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer", background: !asDebt ? (f.direction === "out" ? "#dc2626" : "#16a34a") : "#fff", color: !asDebt ? "#fff" : "#64748b", border: "1.5px solid " + (!asDebt ? (f.direction === "out" ? "#dc2626" : "#16a34a") : "#e2e8f0") }}>{f.direction === "out" ? "💸 " + t("Оплата сейчас", "Оплата зараз") : "💰 " + t("Деньги пришли", "Гроші прийшли")}</span>
                     <span onClick={() => setAsDebt(true)} title={t("Долг: попадёт в Дт/Кт, в журнал — после кнопки «Оплачено»", "Борг: потрапить у Дт/Кт, у журнал — після кнопки «Оплачено»")} style={{ flex: 1, textAlign: "center", padding: "7px 6px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer", background: asDebt ? "#b45309" : "#fff", color: asDebt ? "#fff" : "#64748b", border: "1.5px solid " + (asDebt ? "#b45309" : "#e2e8f0") }}>{f.direction === "out" ? "🕐 " + t("Кредиторка (оплатим позже)", "Кредиторка (оплатимо пізніше)") : "🕐 " + t("Нам должны (дебиторка)", "Нам винні (дебіторка)")}</span>
+                  </div>
+                )}
+                {!f.id && asDebt && f.direction === "in" && (
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                    <span onClick={() => setRecvLoan(false)} title={t("Клиент должен за товар/услугу — будущая прибыль", "Клієнт винен за товар/послугу — майбутній прибуток")} style={{ flex: 1, textAlign: "center", padding: "6px 6px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, cursor: "pointer", background: !recvLoan ? "#16a34a" : "#fff", color: !recvLoan ? "#fff" : "#64748b", border: "1.5px solid " + (!recvLoan ? "#16a34a" : "#e2e8f0") }}>🛒 {t("Продажа", "Продаж")}</span>
+                    <span onClick={() => setRecvLoan(true)} title={t("Я дал свои деньги в долг — возврат НЕ прибыль (не считается доходом)", "Я дав свої гроші в борг — повернення НЕ прибуток (не рахується доходом)")} style={{ flex: 1, textAlign: "center", padding: "6px 6px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, cursor: "pointer", background: recvLoan ? "#7c3aed" : "#fff", color: recvLoan ? "#fff" : "#64748b", border: "1.5px solid " + (recvLoan ? "#7c3aed" : "#e2e8f0") }}>🤝 {t("Заём (в долг)", "Позика (в борг)")}</span>
                   </div>
                 )}
 
