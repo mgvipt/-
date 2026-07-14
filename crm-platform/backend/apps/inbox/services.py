@@ -22,8 +22,10 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
             contact = Contact.objects.filter(social_link=_link).first()
         if not contact and _phone:
             contact = Contact.objects.filter(phone=_phone).first()
+        contact_created = False
         if not contact:
             contact = Contact.objects.create(first_name=inc.sender_name, channels=[channel.kind], social_link=_link, phone=_phone)
+            contact_created = True
         conv.contact = contact
         conv.save(update_fields=["contact"])
         # Telegram: одразу попросити номер кнопкою (request_contact) у нового клієнта
@@ -38,7 +40,7 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
             from apps.crm.models import Lead, Funnel
             f = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
             st = f.stages.order_by("order").first() if f else None
-            if f and st:
+            if f and st and contact_created:
                 src = channel.kind if channel.kind in dict(Lead.SOURCES) else "other"
                 from apps.crm.lead_routing import make_lead_for_contact
                 make_lead_for_contact(contact, f, src)

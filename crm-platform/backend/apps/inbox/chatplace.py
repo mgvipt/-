@@ -229,11 +229,13 @@ def sync_chats(max_chats=40, per_chat=40):
             nm = (name or "Instagram").lstrip("@").strip() or "Instagram"
             link = ((("https://www.tiktok.com/@" if is_tt else "https://instagram.com/") + nm) if name.startswith("@") else "")
             existing = Contact.objects.filter(social_link=link).first() if link else None
+            contact_created = False
             if existing:
                 conv.contact = existing
             elif name.startswith("@"):
                 conv.contact = Contact.objects.create(first_name=nm[:120], nickname=name[:150], channels=[platform],
                                                       social_link=link, comment="З ChatPlace " + platform.upper())
+                contact_created = True
             else:
                 # БЕЗ матчингу по голому імені (зливав різних клієнтів в один контакт).
                 # IG-клієнт без @username → завжди новий контакт (external_chat_id унікальний per-діалог).
@@ -241,6 +243,7 @@ def sync_chats(max_chats=40, per_chat=40):
                 conv.contact = Contact.objects.create(first_name=parts[0][:120],
                                                       last_name=(parts[1] if len(parts) > 1 else "")[:120],
                                                       nickname=name[:150], channels=[platform], comment="З ChatPlace " + platform.upper())
+                contact_created = True
             conv.save(update_fields=["contact"])
             # посилання на IG-акаунт (username з chats_get)
             try:
@@ -256,7 +259,7 @@ def sync_chats(max_chats=40, per_chat=40):
             try:
                 f = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
                 st = f.stages.order_by("order").first() if f else None
-                if f and st:
+                if f and st and contact_created:
                     from apps.crm.lead_routing import make_lead_for_contact
                     make_lead_for_contact(conv.contact, f, platform)
             except Exception:
@@ -312,13 +315,7 @@ def sync_chats(max_chats=40, per_chat=40):
             if chad_in:
                 conv.status = "open"; conv.assigned_to = None
                 conv.save(update_fields=["status", "assigned_to"])  # клієнт написав → відкрити у вільний пул
-                try:  # клієнт повернувся → новий лід з перенесеним контекстом + стартом зі стадії відвалу
-                    from apps.crm.lead_routing import make_lead_for_contact
-                    _lf = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
-                    if _lf and conv.contact_id:
-                        make_lead_for_contact(conv.contact, _lf, platform)
-                except Exception:
-                    pass
+                # Повернення відкриває діалог того самого контакту, але не створює новий лід.
             # інакше лишаємо закритим — у списку не зʼявиться (status-фільтр)
         if conv.contact_id:
             try:

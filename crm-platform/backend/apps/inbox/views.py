@@ -971,6 +971,7 @@ class ChatPlaceWebhookView(APIView):
         if conv is None and client_id:
             conv = Conversation.objects.filter(channel__in=_bothcp, external_chat_id=client_id).order_by("-created_at").first()
         created = conv is None
+        contact_created = False
         if created:
             link = ""
             if username:
@@ -979,6 +980,7 @@ class ChatPlaceWebhookView(APIView):
                 contact = Contact.objects.create(first_name=(username or full_name or "Клієнт")[:120],
                                                  nickname=(("@" + username) if username else full_name)[:150],
                                                  channels=[platform], social_link=link, comment="ChatPlace " + platform)
+                contact_created = True
             conv = Conversation.objects.create(channel=ch, external_chat_id=(client_id or username or ""),
                                                title=(("@" + username) if username else (full_name or "Клієнт"))[:160], contact=contact)
         if conv.status == "closed":
@@ -1017,7 +1019,7 @@ class ChatPlaceWebhookView(APIView):
                 on_incoming(contact, text)
             except Exception:
                 pass
-            if created:
+            if created and contact_created:
                 try:
                     f = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
                     if f:
