@@ -1080,6 +1080,15 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         it = DealItem.objects.filter(deal=deal, pk=request.data.get("item")).first()
         if not it:
             return Response({"detail": "Позицію не знайдено"}, status=status.HTTP_404_NOT_FOUND)
+        # зміна ТОВАРУ в позиції (перевибір) — підставляємо ціну/собівартість нового товару
+        _np = request.data.get("product")
+        if _np:
+            from apps.warehouse.models import Product as _Prod
+            _prod = _Prod.objects.filter(id=_np).first()
+            if _prod is not None:
+                it.product = _prod; it.custom_name = ""
+                it.price = _prod.price or Decimal("0")
+                it.cost = _deal_item_cost(_prod, it.price, it.quantity)
         for f in ("price", "quantity", "discount_pct", "discount_amount"):
             val = request.data.get(f)
             if val not in (None, ""):

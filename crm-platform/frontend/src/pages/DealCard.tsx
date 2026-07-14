@@ -223,6 +223,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [addProd, setAddProd] = useState(0);
   const [addQty, setAddQty] = useState(1);
   const [psearch, setPsearch] = useState(""); const [presults, setPresults] = useState<Product[]>([]); const [psel, setPsel] = useState<Product | null>(null); const [addReserve, setAddReserve] = useState(false); const [showList, setShowList] = useState(false);
+  const [editProdItem, setEditProdItem] = useState<number>(0); const [epq, setEpq] = useState(""); const [epr, setEpr] = useState<Product[]>([]);
   const [payOpen, setPayOpen] = useState(false);
   const [ciOpen, setCiOpen] = useState(false);
   const [ci, setCi] = useState<any>({ name: "", qty: 1, price: "" });
@@ -350,6 +351,16 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     const t = setTimeout(() => api.get<Paginated<Product>>(`/api/products/?search=${encodeURIComponent(psearch)}&page_size=12`).then((d) => setPresults(d.results)).catch(() => setPresults([])), 250);
     return () => clearTimeout(t);
   }, [psearch, psel]);
+  // поиск для ПЕРЕВЫБОРА товара в позиции
+  useEffect(() => {
+    if (!editProdItem || !epq.trim()) { setEpr([]); return; }
+    const t = setTimeout(() => api.get<Paginated<Product>>(`/api/products/?search=${encodeURIComponent(epq)}&page_size=10`).then((d) => setEpr(d.results)).catch(() => setEpr([])), 250);
+    return () => clearTimeout(t);
+  }, [epq, editProdItem]);
+  async function reselectItemProduct(itemId: number, prodId: number) {
+    setDeal(await api.post<Deal>(`/api/deals/${id}/update_item/`, { item: itemId, product: prodId }));
+    setEditProdItem(0); setEpq(""); setEpr([]);
+  }
   async function toggleReserve(it: any) {
     setDeal(await api.post<Deal>(`/api/deals/${id}/set_reserve/`, { item: it.id, reserved: !it.reserved }));
   }
@@ -952,7 +963,20 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                     return (
                     <tr key={it.id} style={{ borderTop: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "6px 4px", color: "#94a3b8" }}>{idx + 1}</td>
-                      <td style={{ padding: "6px 4px" }}><span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/warehouse?p=${it.product}`)}>{it.product_name}</span></td>
+                      <td style={{ padding: "6px 4px", position: "relative" }}>
+                        {editProdItem === it.id ? (
+                          <>
+                            <input autoFocus value={epq} onChange={(e) => setEpq(e.target.value)} onBlur={() => setTimeout(() => setEditProdItem(0), 200)} placeholder={t("товар по названию/артикулу…", "товар за назвою/артикулом…")} style={{ width: "100%", height: 30, border: "1px solid #2563eb", borderRadius: 6, padding: "0 8px", fontSize: 12.5, boxSizing: "border-box" }} />
+                            {epr.length > 0 && (
+                              <div style={{ position: "absolute", top: 34, left: 4, right: 4, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 30, maxHeight: 220, overflowY: "auto" }}>
+                                {epr.map((p: any) => <div key={p.id} onMouseDown={() => reselectItemProduct(it.id, p.id)} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 12.5 }}>{p.name}{p.sku ? <span className="muted"> · {p.sku}</span> : null}</div>)}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <span style={{ color: "#1d4ed8", cursor: "pointer", borderBottom: "1px dashed #93c5fd" }} title={t("Нажми, чтобы выбрать/сменить товар", "Натисни, щоб обрати/змінити товар")} onClick={() => { setEditProdItem(it.id); setEpq(""); }}>{it.product_name}</span>
+                        )}
+                      </td>
                       <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><input defaultValue={Number(it.price)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.price) && updateItem(it.id, { price: e.target.value })} style={editInp} /> ₴</td>
                       {can("product.cost.view") && <td style={{ padding: "6px 4px", color: "#9a3412", whiteSpace: "nowrap" }} title={t("Закупка за позицию (себестоимость × кол-во). Для услуг с минималкой считается от суммы строки.","Закупка за позицію (собівартість × кількість). Для послуг з мінімалкою рахується від суми рядка.")}>{Number(it.cost || 0) > 0 ? fmt(Number(it.cost) * Number(it.quantity)) + " ₴" : "—"}</td>}
                       <td style={{ padding: "6px 4px" }}><input defaultValue={Number(it.quantity)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.quantity) && updateItem(it.id, { quantity: e.target.value })} style={{ ...editInp, width: 50 }} /></td>
