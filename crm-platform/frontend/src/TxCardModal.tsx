@@ -31,7 +31,10 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
   const [recvLoan, setRecvLoan] = useState(false);  // для дебиторки (нам винні): false=продаж (буд. дохід), true=позика (свои деньги в долг, НЕ дохід)
   const [transitClient, setTransitClient] = useState(false);  // расход: материалы клиента из ЧУЖОГО магазина → авто-дебиторка клиента (транзит)
   const [transitPrice, setTransitPrice] = useState("");        // цена клиенту за транзит (пусто = сумма закупки, без наценки)
-  async function _maybeTransitDebt() {
+  // Транзит-материалы: создаём дебиторку клиента, ПРИВЯЗАННУЮ к источнику (транзакции или кредиторке магазина),
+  // чтобы при удалении источника дебиторка удалялась каскадом (не висела сиротой). src = {tx?} | {planned?}
+  async function _maybeTransitDebt(src?: { tx?: number; planned?: number }) {
+    if (f.id) return;  // только при создании нового расхода
     if (f.direction === "out" && transitClient && f.contact) {
       const _p = Number(String(transitPrice || f.amount).replace(",", ".")) || 0;
       if (_p <= 0) return;
@@ -41,6 +44,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
         due_date: f.date || new Date().toISOString().slice(0, 10),
         counterparty: f.contact_name || "", contact: f.contact, category: _cat,
         account: f.account || null, comment: ("Транзит-матеріали (інший магазин): " + (f.comment || f.counterparty || "")).slice(0, 255),
+        source_transaction: src?.tx || null, source_planned: src?.planned || null,
       }).catch(() => {});
     }
   }
@@ -86,7 +90,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
       setBusy(true);
       try {
         const catId = (cats.find((c: any) => c.name === f.set_category && c.direction === f.direction) || cats.find((c: any) => c.name === f.set_category) || {}).id || null;
-        await api.post("/api/planned-payments/", {
+        const _cred: any = await api.post("/api/planned-payments/", {
           kind: f.direction === "out" ? "payable" : "receivable",
           amount: _amt, due_date: f.date || new Date().toISOString().slice(0, 10),
           counterparty: f.counterparty, contact: f.contact || null, category: catId,
@@ -94,7 +98,8 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
           fin_direction: f.fin_direction || null, comment: f.comment,
           is_loan: (f.direction === "in" && recvLoan) ? true : false,   // позика (свои деньги в долг) — НЕ считается доходом
         });
-        await _maybeTransitDebt();   // транзит: если расход-кредиторка магазину + галочка → дебиторка клиента
+        // транзит: расход-кредиторка магазину + галочка → дебиторка клиента, ПРИВЯЗАННАЯ к этой кредиторке (удалишь её — дебиторка уйдёт каскадом)
+        await _maybeTransitDebt({ planned: _cred?.id });
         onSaved(); return;
       } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось сохранить", "Не вдалося зберегти")); setBusy(false); return; }
     }
@@ -126,9 +131,11 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
     }
     setBusy(true);
     try {
+      let _created: any = null;
       if (f.id) await api.patch(`/api/transactions/${f.id}/`, body);
-      else await api.post(`/api/transactions/`, body);
-      await _maybeTransitDebt();   // транзит: если расход оплачен магазину + галочка → дебиторка клиента
+      else _created = await api.post(`/api/transactions/`, body);
+      // транзит: расход оплачен магазину + галочка → дебиторка клиента, ПРИВЯЗАННАЯ к этой транзакции (удалишь операцию — дебиторка уйдёт каскадом)
+      await _maybeTransitDebt({ tx: _created?.id });
       onSaved();
     } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось сохранить", "Не вдалося зберегти")); setBusy(false); }
   }

@@ -45,7 +45,8 @@ class PlannedPaymentSerializer(serializers.ModelSerializer):
         fields = ["id", "kind", "amount", "due_date", "counterparty", "contact", "contact_name", "category", "category_name",
                   "account", "account_name", "fin_direction", "fin_direction_name",
                   "fin_article", "fin_article_name", "channel", "deal", "deal_title",
-                  "comment", "status", "is_loan", "is_internal", "counterparty_contact", "created_at"]
+                  "comment", "status", "is_loan", "is_internal", "counterparty_contact",
+                  "source_transaction", "source_planned", "created_at"]
 
 
 class TransactionSerializer(serializers.ModelSerializer):
