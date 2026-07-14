@@ -177,8 +177,43 @@ export default function ClientCard() {
               </table>
             )}
           </div>
+          <ClientDebtsBlock contactId={c.id} />
         </div>
       </div>
+    </div>
+  );
+}
+
+function ClientDebtsBlock({ contactId }: { contactId: number }) {
+  const { t } = useLang();
+  const [rows, setRows] = useState<any[]>([]);
+  useEffect(() => {
+    api.get<any>(`/api/contacts/${contactId}/finance/`).then((d) => setRows(d?.debts_list || [])).catch(() => setRows([]));
+  }, [contactId]);
+  if (!rows.length) return null;
+  return (
+    <div className="panel" style={{ marginTop: 12 }}>
+      <div className="label" style={{ marginBottom: 8 }}>{t("Долги по клиенту (дебиторка / кредиторка)","Борги по клієнту (дебіторка / кредиторка)")}</div>
+      {[["receivable", t("Дебиторка — нам должны","Дебіторка — нам винні"), "#0e7490"], ["payable", t("Кредиторка — мы должны","Кредиторка — ми винні"), "#b45309"]].map(([kind, title, cl]: any) => {
+        const list = rows.filter((x) => x.kind === kind);
+        if (!list.length) return null;
+        return (
+          <div key={kind} style={{ marginBottom: 8 }}>
+            <div className="muted" style={{ fontSize: 11.5, fontWeight: 700, color: cl, marginBottom: 4 }}>{title} · {list.length}</div>
+            {list.map((x) => {
+              const paid = x.status === "paid";
+              return (
+                <div key={x.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 9px", borderRadius: 8, background: paid ? "#f0fdf4" : "#fff7ed", border: "1px solid " + (paid ? "#bbf7d0" : "#fed7aa"), marginBottom: 4, fontSize: 12.5 }}>
+                  <span>{paid ? "✅" : "🕐"}</span>
+                  <span style={{ flex: 1, textDecoration: paid ? "line-through" : "none", color: paid ? "#16a34a" : "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.counterparty || t("Без имени","Без імені")}{x.comment ? " · " + x.comment : ""}{x.deal ? " · №" + x.deal : ""}</span>
+                  <b style={{ color: cl, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{Math.round(Number(x.amount)).toLocaleString("ru")} ₴</b>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: paid ? "#16a34a" : "#c2410c", whiteSpace: "nowrap" }}>{paid ? t("оплачено","оплачено") : t("не оплачено","не оплачено")}</span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -271,7 +306,7 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
     <div className="panel" style={{ marginBottom: 12 }}>
       <div className="label" style={{ marginBottom: 8 }}>{t("Финансы клиента","Фінанси клієнта")} <span className="muted" style={{ fontWeight: 400 }}>({d.count} {t("операций","операцій")})</span></div>
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-        {[[t("Доход","Дохід"), d.income, "#16a34a", "#f0fdf4"], [t("Расход","Витрата"), d.expense, "#dc2626", "#fef2f2"], (Number(d.advance) < 0 ? [t("Недоплата по сделкам","Недоплата по угодах"), Math.abs(Number(d.advance)), "#dc2626", "#fef2f2"] : [t("Аванс (свободные деньги клиента)","Аванс (вільні гроші клієнта)"), d.advance, "#2563eb", "#eff6ff"]), [t("Кредиторка (мы должны)","Кредиторка (ми винні)"), d.debt, "#b45309", "#fffbeb"], [t("Дебиторка (нам должны)","Дебіторка (нам винні)"), d.receivable, "#0e7490", "#ecfeff"]].map(([l, v, cl, bg]: any, i) => (
+        {[[t("Доход","Дохід"), d.income, "#16a34a", "#f0fdf4"], [t("Расход (журнал+склад)","Витрата (журнал+склад)"), Number(d.expense || 0) + Number(d.cogs || 0), "#dc2626", "#fef2f2"], (Number(d.advance) < 0 ? [t("Недоплата по сделкам","Недоплата по угодах"), Math.abs(Number(d.advance)), "#dc2626", "#fef2f2"] : [t("Аванс (свободные деньги клиента)","Аванс (вільні гроші клієнта)"), d.advance, "#2563eb", "#eff6ff"]), [t("Кредиторка (мы должны)","Кредиторка (ми винні)"), d.debt, "#b45309", "#fffbeb"], [t("Дебиторка (нам должны)","Дебіторка (нам винні)"), d.receivable, "#0e7490", "#ecfeff"]].map(([l, v, cl, bg]: any, i) => (
           <div key={i} style={{ flex: 1, minWidth: 110, background: bg, borderRadius: 10, padding: "8px 10px" }}>
             <div className="muted" style={{ fontSize: 10.5 }}>{l}</div>
             <b style={{ color: cl, fontSize: 15, fontVariantNumeric: "tabular-nums" }}>{money0(Number(v))}</b>
@@ -291,30 +326,6 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
             </div>
           </div>
           <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>{t("Складские товары — из сделок (себестоимость авто при отгрузке), закупки под заказ — из журнала. Без двойного счёта.","Складські товари — зі сделок (собівартість авто при відвантаженні), закупки під замовлення — з журналу. Без подвійного рахунку.")}</div>
-        </div>
-      )}
-      {Array.isArray((d as any).debts_list) && (d as any).debts_list.length > 0 && (
-        <div style={{ marginBottom: 10 }}>
-          {[["payable", t("Кредиторка (мы должны)","Кредиторка (ми винні)"), "#b45309"], ["receivable", t("Дебиторка (нам должны)","Дебіторка (нам винні)"), "#0e7490"]].map(([kind, title, cl]: any) => {
-            const rows = (d as any).debts_list.filter((x: any) => x.kind === kind);
-            if (rows.length === 0) return null;
-            return (
-              <div key={kind} style={{ marginBottom: 6 }}>
-                <div className="muted" style={{ fontSize: 11, fontWeight: 700, color: cl, marginBottom: 3 }}>{title} · {rows.length}</div>
-                {rows.map((x: any) => {
-                  const paid = x.status === "paid";
-                  return (
-                    <div key={x.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 8, background: paid ? "#f0fdf4" : "#fff7ed", border: "1px solid " + (paid ? "#bbf7d0" : "#fed7aa"), marginBottom: 3, fontSize: 12 }}>
-                      <span style={{ fontSize: 13 }}>{paid ? "✅" : "🕐"}</span>
-                      <span style={{ flex: 1, textDecoration: paid ? "line-through" : "none", color: paid ? "#16a34a" : "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.counterparty || t("Без имени","Без імені")}{x.comment ? " · " + x.comment : ""}{x.deal ? " · №" + x.deal : ""}</span>
-                      <b style={{ color: cl, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{money0(Number(x.amount))} ₴</b>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: paid ? "#16a34a" : "#c2410c", whiteSpace: "nowrap" }}>{paid ? t("оплачено","оплачено") : t("не оплачено","не оплачено")}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
         </div>
       )}
       <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
