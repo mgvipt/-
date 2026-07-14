@@ -232,6 +232,13 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       api.get<any>(`/api/contacts/${deal.contact_id}/finance/`).then((d: any) => setAdvAvail(Number(d?.advance || 0))).catch(() => setAdvAvail(null));
     }
   }, [payOpen, payType, deal?.contact_id]);
+  const [debtList, setDebtList] = useState<any[]>([]);
+  const [selDebts, setSelDebts] = useState<number[]>([]);
+  useEffect(() => {
+    if (payOpen && deal?.contact_id) {
+      api.get<any>(`/api/planned-payments/?kind=receivable&status=planned&page_size=200`).then((r: any) => setDebtList(((r.results || r) as any[]).filter((x: any) => x.contact === deal.contact_id))).catch(() => setDebtList([]));
+    } else { setDebtList([]); setSelDebts([]); }
+  }, [payOpen, deal?.contact_id]);
   const [verify, setVerify] = useState<any>(null);   // крок 2 — вікно перевірки платежу (воронка салону)
   const [vRefs, setVRefs] = useState<any>({ accs: [], cats: [], dirs: [] });
   const [msg, setMsg] = useState("");
@@ -401,7 +408,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         const body: any = { amount: verify.amount, provider: payType, no_receipt: payType === "cash" && !cashReceipt ? 1 : 0,
           tx_account: verify.account, tx_category: verify.category, tx_direction: verify.direction,
           tx_counterparty: verify.counterparty, tx_channel: verify.channel, tx_comment: verify.comment,
-          no_warehouse: verify.ship ? 0 : 1 };
+          no_warehouse: verify.ship ? 0 : 1, debt_ids: selDebts };
         try {
           setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, body));
         } catch (err: any) {
@@ -428,12 +435,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         flash((r.sent ? t("✓ Отправлено в чат. Ссылка скопирована в буфер: ","✓ Надіслано в чат. Посилання скопійовано в буфер: ") : t("⚠ Чата нет. Ссылка СКОПИРОВАНА в буфер — вставь клиенту вручную: ","⚠ Чату немає. Посилання СКОПІЙОВАНО в буфер — встав клієнту вручну: ")) + r.url);
       } else {
         try {
-          setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType, no_receipt: payType === "cash" && !cashReceipt ? 1 : 0 }));
+          setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType, no_receipt: payType === "cash" && !cashReceipt ? 1 : 0, debt_ids: selDebts }));
         } catch (err: any) {
           // захист від дубля: сервер просить підтвердження (по сделці є LiqPay-посилання/оплата на цю суму)
           if (err?.response?.status === 409 && err?.response?.data?.need_force) {
             if (!confirm(err.response.data.detail)) { setSending(false); return; }
-            setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType, force: 1, no_receipt: payType === "cash" && !cashReceipt ? 1 : 0 }));
+            setDeal(await api.post<Deal>(`/api/deals/${id}/accept_payment/`, { amount: payAmount || deal?.amount, provider: payType, force: 1, no_receipt: payType === "cash" && !cashReceipt ? 1 : 0, debt_ids: selDebts }));
           } else { throw err; }
         }
         setPayOpen(false); setPayAmount(""); flash(t("✓ Оплата проведена в финансы","✓ Оплата проведена у фінанси"));
@@ -1098,6 +1105,18 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             )}
             <label className="label">{t("Сумма, ₴","Сума, ₴")}</label>
             <input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} style={{ width: "100%", height: 38, marginBottom: 14, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} />
+            {debtList.length > 0 && (
+              <div style={{ marginBottom: 12, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#92400e", marginBottom: 6 }}>💳 {t("Клиент должен (закрыть этой оплатой):","Клієнт винен (закрити цією оплатою):")}</div>
+                {debtList.map((d0: any) => (
+                  <label key={d0.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, padding: "3px 0", cursor: "pointer" }}>
+                    <input type="checkbox" checked={selDebts.includes(d0.id)} onChange={(e) => setSelDebts(e.target.checked ? [...selDebts, d0.id] : selDebts.filter((x) => x !== d0.id))} style={{ accentColor: "#C67D5F" }} />
+                    <span style={{ flex: 1 }}>{d0.counterparty || d0.comment || t("материалы","матеріали")} — <b>{Math.round(Number(d0.amount)).toLocaleString("ru")} ₴</b></span>
+                  </label>
+                ))}
+                <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>{t("Отмеченное закроется как оплаченное (транзит-материалы). Остаток платежа пойдёт на сделку.","Відмічене закриється як оплачене (транзит-матеріали). Решта платежу піде на сделку.")}</div>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setPayOpen(false)}>{t("Отмена","Скасувати")}</button>
               <button className="btn btn-primary" style={{ flex: 2 }} onClick={acceptPayment} disabled={sending}>{sending ? t("Отправляю…","Надсилаю…") : ((payType === "liqpay" || payType === "requisites" || payType === "installment") ? t("Создать ссылку и отправить","Створити посилання і надіслати") : t("Провести оплату","Провести оплату"))}</button>

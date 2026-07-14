@@ -1107,6 +1107,41 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             _avail = Decimal(str(_inc)) - Decimal(str(_exp)) - Decimal(str(_used))
             if amount > _avail + Decimal("0.01"):
                 return Response({"detail": "Недостатньо авансу клієнта. Доступно: %.2f грн." % float(_avail)}, status=status.HTTP_400_BAD_REQUEST)
+        # ── РОЗПОДІЛ ПЛАТЕЖУ: частина на сделку, частина закриває дебіторки клієнта (транзит-матеріали БудМаркет тощо) ──
+        _debt_ids = request.data.get("debt_ids") or []
+        if _debt_ids:
+            from apps.finance.models import PlannedPayment as _PPd, Transaction as _DTx
+            from django.utils import timezone as _tzd
+            from django.db import transaction as _txnd
+            _cc = deal.contact
+            _debts = [d0 for d0 in _PPd.objects.filter(id__in=_debt_ids, kind="receivable", status="planned") if (_cc and d0.contact_id == _cc.id)]
+            _dtot = sum((Decimal(str(d0.amount)) for d0 in _debts), Decimal("0"))
+            if _dtot > amount + Decimal("0.01"):
+                return Response({"detail": "Сума боргів (%.2f) більша за платіж (%.2f)." % (float(_dtot), float(amount))}, status=status.HTTP_400_BAD_REQUEST)
+            _deal_amt = amount - _dtot
+            with _txnd.atomic():
+                dlock = Deal.objects.select_for_update().get(pk=deal.pk)
+                if _deal_amt > 0:
+                    _accu = account or Account.objects.filter(name__icontains="Касса Салон").first() or account
+                    _payd = Payment.objects.create(deal=dlock, provider=provider, amount=_deal_amt, is_paid=True)
+                    record_income(_deal_amt, deal=dlock, account=_accu, payment=_payd,
+                                  category=("САЛОН(Оффлайн)" if provider == "cash" else "Продаж товару"),
+                                  channel=("Салон" if provider in ("cash", "terminal") else None))
+                for d0 in _debts:  # закрити дебіторку транзиту → дохід (як mark-paid)
+                    _acc0 = d0.account or account or Account.objects.filter(is_active=True).first()
+                    _DTx.objects.create(direction="in", amount=d0.amount, amount_uah=d0.amount, account=_acc0,
+                        date=_tzd.localdate(), op_time=_tzd.localtime().time(), category=d0.category,
+                        counterparty=d0.counterparty, deal=d0.deal, contact=d0.contact,
+                        fin_direction=d0.fin_direction, fin_article=d0.fin_article, channel=d0.channel or "",
+                        comment=("Транзит-матеріали (оплата клієнта): " + (d0.comment or ""))[:255])
+                    d0.status = "paid"; d0.save(update_fields=["status"])
+                _paid = sum((pp.amount for pp in Payment.objects.filter(deal=dlock, is_paid=True)), Decimal("0"))
+                if dlock.amount and _paid >= dlock.amount:
+                    _advance_after_payment(dlock, "оплата отримана (розподіл: сделка + транзит-матеріали)", create_wh=True)
+                elif _paid > 0:
+                    _advance_deal_stage(dlock, 2, "часткова оплата (розподіл)")
+                deal = dlock
+            return Response(DealDetailSerializer(deal, context={"request": request}).data)
         from django.utils import timezone as _tz
         from datetime import timedelta as _td
         from django.db import transaction as _txn
