@@ -8,6 +8,16 @@ interface Entry { id: number; date: string; title: string; body: string; }
 
 /* Мінімальний рендер рядка: **жирний** + • для списків */
 function renderLine(line: string, key: number) {
+  // Картинка: рядок виду ![підпис](/whatsnew/xxx.png) -> зображення (клік = відкрити повністю)
+  const img = line.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+  if (img) {
+    return (
+      <a key={key} href={img[2]} target="_blank" rel="noreferrer" style={{ display: "block", margin: "10px 0" }}>
+        <img src={img[2]} alt={img[1]} loading="lazy" style={{ maxWidth: "100%", borderRadius: 10, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,.08)", cursor: "zoom-in" }} />
+        {img[1] && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>{img[1]}</div>}
+      </a>
+    );
+  }
   const isBullet = line.trimStart().startsWith("- ");
   const text = isBullet ? line.trimStart().slice(2) : line;
   const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
