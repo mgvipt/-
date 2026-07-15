@@ -23,7 +23,7 @@
  *  КАК ДОБАВИТЬ ПОЛЕ СДЕЛКИ: тип в [1] + строка в нужном блоке-панели [10].
  * ========================================================================== */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth";
@@ -224,6 +224,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [addQty, setAddQty] = useState(1);
   const [psearch, setPsearch] = useState(""); const [presults, setPresults] = useState<Product[]>([]); const [psel, setPsel] = useState<Product | null>(null); const [addReserve, setAddReserve] = useState(false); const [showList, setShowList] = useState(false);
   const [editProdItem, setEditProdItem] = useState<number>(0); const [epq, setEpq] = useState(""); const [epr, setEpr] = useState<Product[]>([]);
+  const epBoxRef = useRef<HTMLDivElement>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [ciOpen, setCiOpen] = useState(false);
   const [ci, setCi] = useState<any>({ name: "", qty: 1, price: "" });
@@ -973,16 +974,19 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                       <td style={{ padding: "6px 4px", position: "relative" }}>
                         {editProdItem === it.id ? (
                           <>
-                            <div style={{ display: "flex", alignItems: "center", gap: 4, border: "1px solid #2563eb", borderRadius: 6, padding: "0 6px", height: 30, background: "#fff", boxSizing: "border-box" }}>
+                            <div ref={epBoxRef} style={{ display: "flex", alignItems: "center", gap: 4, border: "1px solid #2563eb", borderRadius: 6, padding: "0 6px", height: 30, background: "#fff", boxSizing: "border-box" }}>
                               <input autoFocus value={epq} onFocus={(e) => e.target.select()} onChange={(e) => setEpq(e.target.value)} onBlur={() => setTimeout(() => setEditProdItem(0), 200)} placeholder={t("товар по названию/артикулу…", "товар за назвою/артикулом…")} style={{ flex: 1, minWidth: 0, height: 26, border: "none", outline: "none", fontSize: 12.5, background: "transparent" }} />
                               {it.product ? <a onMouseDown={(e) => e.preventDefault()} onClick={(e) => e.stopPropagation()} href={"/warehouse?product=" + it.product} target="_blank" rel="noreferrer" title={t("Открыть карточку товара", "Відкрити картку товару")} style={{ color: "#1d4ed8", textDecoration: "none", fontSize: 14, flexShrink: 0, lineHeight: 1 }}>↗</a> : null}
                               <span onMouseDown={(e) => { e.preventDefault(); setEpq(""); setEpr([]); }} title={t("Очистить", "Очистити")} style={{ color: "#94a3b8", cursor: "pointer", fontSize: 13, flexShrink: 0, fontWeight: 700, lineHeight: 1 }}>✕</span>
                             </div>
-                            {epr.length > 0 && (
-                              <div style={{ position: "absolute", top: 34, left: 4, right: 4, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 30, maxHeight: 220, overflowY: "auto" }}>
-                                {epr.map((p: any) => <div key={p.id} onMouseDown={() => reselectItemProduct(it.id, p.id)} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 12.5 }}>{p.name}{p.sku ? <span className="muted"> · {p.sku}</span> : null}</div>)}
-                              </div>
-                            )}
+                            {epr.length > 0 && epBoxRef.current && createPortal((() => {
+                              const r = epBoxRef.current!.getBoundingClientRect();
+                              return (
+                                <div style={{ position: "fixed", top: r.bottom + 2, left: r.left, width: Math.max(r.width, 240), background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 12px 32px rgba(15,23,42,.25)", zIndex: 2147483000, maxHeight: 300, overflowY: "auto" }}>
+                                  {epr.map((p: any) => <div key={p.id} onMouseDown={() => reselectItemProduct(it.id, p.id)} style={{ padding: "8px 11px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 12.5 }}>{p.name}{p.sku ? <span className="muted"> · {p.sku}</span> : null}</div>)}
+                                </div>
+                              );
+                            })(), document.body)}
                           </>
                         ) : (
                           <div onClick={() => { setEditProdItem(it.id); setEpq(it.product_name || ""); setEpr([]); }} title={t("Нажми, чтобы набрать и выбрать другой товар", "Натисни, щоб набрати й обрати інший товар")} style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, border: "1px solid #e2e8f0", borderRadius: 6, padding: "0 6px", height: 30, background: "#fff", boxSizing: "border-box", cursor: "text" }}>
