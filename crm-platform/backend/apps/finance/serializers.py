@@ -38,6 +38,18 @@ class PlannedPaymentSerializer(serializers.ModelSerializer):
     fin_direction_name = serializers.CharField(source="fin_direction.name", read_only=True, default=None)
     fin_article_name = serializers.CharField(source="fin_article.name", read_only=True, default=None)
     deal_title = serializers.CharField(source="deal.title", read_only=True, default=None)
+    remaining = serializers.SerializerMethodField()
+    source_doc_id = serializers.SerializerMethodField()
+
+    def get_remaining(self, obj):
+        return round(float(obj.amount or 0) - float(obj.paid_amount or 0), 2)
+
+    def get_source_doc_id(self, obj):
+        try:
+            from apps.integrations.models import IncomingDoc
+            return IncomingDoc.objects.filter(created_payable_id=obj.id).values_list("id", flat=True).first()
+        except Exception:
+            return None
 
     class Meta:
         from .models import PlannedPayment
@@ -45,7 +57,7 @@ class PlannedPaymentSerializer(serializers.ModelSerializer):
         fields = ["id", "kind", "amount", "due_date", "counterparty", "contact", "contact_name", "category", "category_name",
                   "account", "account_name", "fin_direction", "fin_direction_name",
                   "fin_article", "fin_article_name", "channel", "deal", "deal_title",
-                  "comment", "status", "is_loan", "is_internal", "counterparty_contact",
+                  "comment", "status", "paid_amount", "remaining", "source_doc_id", "is_loan", "is_internal", "counterparty_contact",
                   "source_transaction", "source_planned", "created_at"]
 
 

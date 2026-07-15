@@ -261,6 +261,7 @@ class PlannedPayment(models.Model):
     STATUS = [("planned", "Заплановано"), ("paid", "Оплачено"), ("canceled", "Скасовано")]
     kind = models.CharField(max_length=12, choices=KIND, db_index=True)
     amount = models.DecimalField(max_digits=14, decimal_places=2)
+    paid_amount = models.DecimalField("Погашено", max_digits=12, decimal_places=2, default=0)
     due_date = models.DateField(db_index=True)
     counterparty = models.CharField(max_length=160, blank=True)
     category = models.ForeignKey(Category, null=True, blank=True, on_delete=models.SET_NULL, related_name="planned_payments")

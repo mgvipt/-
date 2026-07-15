@@ -1235,17 +1235,30 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         pp = self.get_object()
         if pp.status == "paid":
             return Response({"detail": "вже оплачено"}, status=400)
+        from decimal import Decimal as _D
+        remaining = _D(str(pp.amount)) - _D(str(pp.paid_amount or 0))
+        raw = request.data.get("amount")
+        try:
+            amt = _D(str(raw)) if raw not in (None, "") else remaining
+        except Exception:
+            amt = remaining
+        if amt <= 0:
+            return Response({"detail": "Сума погашення має бути > 0"}, status=400)
+        if amt > remaining:
+            amt = remaining
         acc = pp.account or Account.objects.filter(is_active=True).first()
         tx = Transaction.objects.create(
             direction="out" if pp.kind == "payable" else "in",
-            amount=pp.amount, amount_uah=pp.amount, account=acc,
+            amount=amt, amount_uah=amt, account=acc,
             date=_tz.localdate(), op_time=_tz.localtime().time(),
             category=pp.category, counterparty=pp.counterparty, deal=pp.deal, contact=pp.contact,
             fin_direction=pp.fin_direction, fin_article=pp.fin_article, channel=pp.channel or "",
-            comment=("Дт/Кт: " + (pp.comment or ""))[:255])
-        pp.status = "paid"
+            comment=("Дт/Кт погашення: " + (pp.comment or ""))[:255])
+        pp.paid_amount = _D(str(pp.paid_amount or 0)) + amt
+        if pp.paid_amount >= _D(str(pp.amount)):
+            pp.status = "paid"
         pp.paid_tx = tx
-        pp.save(update_fields=["status", "paid_tx"])
+        pp.save(update_fields=["paid_amount", "status", "paid_tx"])
         return Response(self.get_serializer(pp).data)
 
     @action(detail=True, methods=["post"], url_path="pay-with-fop")
@@ -1285,6 +1298,15 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         cfg = (cfg.config if cfg else {}) or {}
         payer = (cfg.get("acc") or "").strip()
         token = (cfg.get("token") or "").strip()
+        from decimal import Decimal as _D2
+        remaining = float(_D2(str(pp.amount)) - _D2(str(pp.paid_amount or 0)))
+        raw_amt = request.data.get("amount")
+        try:
+            pay_amt = float(raw_amt) if raw_amt not in (None, "") else remaining
+        except Exception:
+            pay_amt = remaining
+        if pay_amt <= 0 or pay_amt > remaining:
+            pay_amt = remaining
         dest = ("Оплата: " + (pp.comment or "рахунку"))[:420]
         if len(dest) < 5:
             dest = "Оплата рахунку постачальника"
@@ -1295,7 +1317,7 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
             "recipient_account": iban,
             "recipient_nceo": nceo or "0000000000",
             "payment_naming": name[:120] or "Отримувач",
-            "payment_amount": ("%.2f" % float(pp.amount)),
+            "payment_amount": ("%.2f" % pay_amt),
             "payment_destination": dest,
         }
         confirm = str(request.data.get("confirm") or "").lower() in ("1", "true", "yes", "on")

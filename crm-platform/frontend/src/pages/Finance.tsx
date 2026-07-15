@@ -2159,9 +2159,17 @@ function Debts() {
   }, []);
   async function markPaid(r: any, e: any) {
     e.stopPropagation();
-    if (!confirm(t(`Оплачено? В журнале появится ${r.kind === "payable" ? "расход" : "доход"} на ${r.amount} грн сегодняшним числом со всеми полями (категория/направление/фонд/канал/сделка).`, `Оплачено? У журналі зʼявиться ${r.kind === "payable" ? "витрата" : "дохід"} на ${r.amount} грн сьогоднішнім числом з усіма полями.`))) return;
-    await api.post(`/api/planned-payments/${r.id}/mark-paid/`, {}); load();
+    const rem = Number(r.remaining ?? (Number(r.amount) - Number(r.paid_amount || 0)));
+    const inp = prompt(t(`Сумма погашения. Остаток по этому долгу: ${money(rem)} грн. Можно частично (напр. половину).`, `Сума погашення. Залишок за цим боргом: ${money(rem)} грн. Можна частково (напр. половину).`), String(rem));
+    if (inp === null) return;
+    const amt = parseFloat(String(inp).replace(",", "."));
+    if (!amt || amt <= 0) return;
+    await api.post(`/api/planned-payments/${r.id}/mark-paid/`, { amount: amt }); load();
   }
+  const openDoc = async (id: number) => {
+    try { const u = await api.blobUrl(`/api/integrations/incoming-docs/${id}/view/`); window.open(u, "_blank"); }
+    catch { alert(t("Не удалось открыть накладную", "Не вдалося відкрити накладну")); }
+  };
   const payFop = async (r: any, e: any) => {
     e.stopPropagation();
     try {
@@ -2196,7 +2204,7 @@ function Debts() {
           <tbody>{list.map((r) => (
             <tr key={r.id} onClick={() => setCard(r)} style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer" }} title={t("Открыть карточку", "Відкрити картку")}>
               <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{r.due_date}</td>
-              <td style={{ padding: "6px 4px", fontWeight: 700, color, whiteSpace: "nowrap" }}>{money(Number(r.amount))}</td>
+              <td style={{ padding: "6px 4px", fontWeight: 700, color, whiteSpace: "nowrap" }}>{money(Number(r.amount))}{Number(r.paid_amount) > 0 && <div style={{ fontWeight: 400, fontSize: 11, color: "#64748b" }}>{t("залишок", "залишок")} {money(Number(r.remaining))}</div>}</td>
               <td style={{ padding: "6px 4px" }} onClick={(e) => e.stopPropagation()}><CpText name={r.counterparty} contact={(r as any).contact} cpMap={cpMap} nav={nav} /></td>
               <td style={{ padding: "6px 4px" }}>{r.category_name || "—"}</td>
               <td style={{ padding: "6px 4px" }}>{r.fin_direction_name || "—"}</td>
@@ -2204,7 +2212,7 @@ function Debts() {
               <td style={{ padding: "6px 4px" }} onClick={(e) => e.stopPropagation()}>
                 {r.deal ? <a href={`/deals/${r.deal}`} style={{ color: "#2563eb", fontWeight: 600 }}>#{r.deal}</a> : "—"}
               </td>
-              <td style={{ padding: "6px 4px", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.comment}>{r.comment || "—"}</td>
+              <td style={{ padding: "6px 4px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.comment} onClick={(e) => e.stopPropagation()}>{r.source_doc_id ? <span onClick={() => openDoc(r.source_doc_id)} style={{ cursor: "pointer", color: "#2563eb", textDecoration: "underline" }} title={t("Открыть накладную", "Відкрити накладну")}>📄 {r.comment || t("накладна", "накладна")}</span> : (r.comment || "—")}</td>
               <td style={{ padding: "6px 4px", whiteSpace: "nowrap", textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
                 {st === "planned" && <>
                   <button className="btn btn-light" style={{ height: 26, padding: "0 9px", fontSize: 11.5 }} onClick={(e) => markPaid(r, e)}>✓ {t("Оплачено", "Оплачено")}</button>{" "}
