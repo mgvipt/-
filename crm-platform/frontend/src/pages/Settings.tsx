@@ -10,7 +10,8 @@ import { Icon } from "../Icon";
 
 interface Prov { provider: string; fields: string[]; values: Record<string, string>; is_active: boolean; }
 
-const TITLES: Record<string, string> = { liqpay: "LiqPay", checkbox: "Checkbox", novaposhta: "Нова Пошта" };
+const TITLES: Record<string, string> = { liqpay: "LiqPay", checkbox: "Checkbox", novaposhta: "Нова Пошта", email_invoices: "Пошта накладних" };
+const FIELD_LABELS: Record<string, string> = { imap_host: "IMAP-сервер (Gmail: imap.gmail.com)", email: "E-mail скриньки", app_password: "Пароль застосунку (app-password)", senders: "Відправники через кому (Нова Пошта, постачальники)" };
 
 export default function Settings() {
   const { t, lang, setLang } = useLang();
@@ -95,7 +96,7 @@ export default function Settings() {
               </div>
               {p.fields.map((f) => (
                 <div key={f} style={{ marginBottom: 8 }}>
-                  <label className="label" style={{ display: "block", marginBottom: 3 }}>{f}</label>
+                  <label className="label" style={{ display: "block", marginBottom: 3 }}>{FIELD_LABELS[f] || f}</label>
                   <input
                     placeholder={p.values[f] ? `${t("сейчас", "зараз")}: ${p.values[f]}` : t("не задано", "не задано")}
                     value={edit[p.provider]?.[f] ?? ""}
@@ -106,6 +107,15 @@ export default function Settings() {
               <button className="btn btn-primary" style={{ marginTop: 6 }} onClick={() => save(p)}>
                 {saved === p.provider ? t("✓ Сохранено", "✓ Збережено") : t("Сохранить", "Зберегти")}
               </button>
+              {p.provider === "email_invoices" && (
+                <button className="btn btn-light" style={{ marginTop: 6, marginLeft: 8 }} onClick={async () => {
+                  try {
+                    const r: any = await api.post("/api/integrations/email-invoices/test/", {});
+                    if (r.ok) alert(t("Связь есть ✓", "Зв'язок є ✓") + `\n${r.email}\n` + t("Писем от отправителей", "Листів від відправників") + `: ${r.matched}\n\n` + (r.samples || []).join("\n"));
+                    else alert(r.detail || "?");
+                  } catch (e: any) { alert(e?.response?.data?.detail || t("Ошибка связи", "Помилка зв'язку")); }
+                }}>📬 {t("Проверить связь", "Перевірити зв'язок")}</button>
+              )}
             </div>
           ))}
         </div>

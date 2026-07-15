@@ -1,3 +1,4 @@
+import re
 import hashlib
 import hmac
 import json
@@ -22,6 +23,7 @@ PROVIDERS = {
     "liqpay": ["public_key", "private_key", "currency"],
     "checkbox": ["token", "license_key"],
     "novaposhta": ["api_key", "sender_ref", "sender_city_ref", "sender_contact", "sender_phone"],
+    "email_invoices": ["imap_host", "email", "app_password", "senders"],
 }
 
 
@@ -302,3 +304,43 @@ class ShopOrderWebhookView(APIView):
             {"label": "Товари", "value": product_text},
             {"label": "Коментар клієнта", "value": order.get("customer_comment") or "—"},
         ]
+
+
+class EmailInvoicesTestView(APIView):
+    """Перевірка зв'язку з поштовою скринькою накладних (Gmail IMAP).
+    Читає провайдер email_invoices, підключається, рахує листи від відправників білого списку."""
+    permission_classes = [ManagePerm]
+
+    def post(self, request):
+        import imaplib
+        obj = IntegrationSettings.objects.filter(provider="email_invoices").first()
+        cfg = (obj.config if obj else {}) or {}
+        host = (cfg.get("imap_host") or "imap.gmail.com").strip()
+        user = (cfg.get("email") or "").strip()
+        pwd = (cfg.get("app_password") or "").strip()
+        senders = [x.strip().lower() for x in re.split(r"[,;\s]+", cfg.get("senders") or "") if x.strip()]
+        if not user or not pwd:
+            return Response({"ok": False, "detail": "Заповни e-mail і пароль застосунку (app-password)"}, status=400)
+        try:
+            M = imaplib.IMAP4_SSL(host)
+            M.login(user, pwd)
+            M.select("INBOX", readonly=True)
+            matched, samples = 0, []
+            targets = senders or [None]
+            for snd in targets:
+                typ, data = (M.search(None, "FROM", '"%s"' % snd) if snd else M.search(None, "ALL"))
+                ids = data[0].split() if (data and data[0]) else []
+                matched += len(ids)
+                for i in ids[-3:]:
+                    typ, md = M.fetch(i, "(BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE)])")
+                    if md and md[0]:
+                        try:
+                            raw = md[0][1].decode("utf-8", "ignore")
+                        except Exception:
+                            raw = str(md[0][1])
+                        samples.append(" ".join(raw.split())[:160])
+            M.logout()
+            return Response({"ok": True, "host": host, "email": user, "senders": senders,
+                             "matched": matched, "samples": samples[-6:]})
+        except Exception as e:
+            return Response({"ok": False, "detail": "Не вдалося підключитися: %s" % e}, status=400)
