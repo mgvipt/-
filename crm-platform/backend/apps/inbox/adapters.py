@@ -285,11 +285,88 @@ class EchatViberAdapter(ChannelAdapter):
             raise
 
 
+class EchatTelegramAdapter(ChannelAdapter):
+    """Telegram особистого номера через e-chat.tech.
+
+    config: {echat_telegram: True, api_key, number}. API-ключ Telegram E-chat
+    окремий від ключа Viber, навіть якщо обидві лінії працюють на одному номері.
+    """
+    kind = "echat_telegram"
+    BASE = "https://telegram.e-chat.tech/api"
+
+    def parse_webhook(self, payload: dict):
+        sender = payload.get("sender", {}) or {}
+        msg = payload.get("message", {}) or {}
+        sender_id = str(sender.get("id") or sender.get("username") or sender.get("phone") or "")
+        if not sender_id:
+            return None
+        username = str(sender.get("username") or "").lstrip("@")
+        attachments = []
+        if msg.get("media"):
+            attachments.append({
+                "type": "document" if msg.get("type") == "media" else (msg.get("type") or "file"),
+                "url": msg.get("media"),
+                "name": msg.get("file_name") or "файл",
+                "size": msg.get("file_size"),
+            })
+        return IncomingMessage(
+            external_chat_id=sender_id,
+            text=msg.get("text") or "",
+            sender_name=sender.get("name") or ("@" + username if username else sender_id),
+            external_id=str(msg.get("id") or msg.get("telegram_id") or ""),
+            attachments=attachments,
+            phone=str(sender.get("phone") or ""),
+            social_link=("https://t.me/" + username) if username else "",
+        )
+
+    def _post(self, path, body):
+        req = urllib.request.Request(self.BASE + path, data=json.dumps(body).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "API": self.config.get("api_key", ""),
+                "User-Agent": "WallcovCRM/1.0 (+https://crm.wallcovdec.com.ua)",
+            })
+        with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310
+            return json.loads((r.read().decode() or "{}") or "{}")
+
+    def send(self, external_chat_id: str, text: str) -> str:
+        if not self.config.get("api_key"):
+            raise RuntimeError("В каналі Telegram E-chat не задано api_key")
+        import re
+        import time
+        ext = "wcv-tg-%d" % int(time.time() * 1000)
+        address = str(external_chat_id or "")
+        if address.startswith("@"):
+            receiver = {"username": address}
+        elif re.fullmatch(r"380\d{9}", address):
+            receiver = {"phone": address}
+        else:
+            receiver = {"id": address}
+        resp = self._post("/SendMessage.php", {
+            "user": {"number": self.config.get("number", "")},
+            "message": {"id": ext, "text": text},
+            "receiver": receiver,
+        })
+        if str(resp.get("status") or "").upper() == "ERROR":
+            raise RuntimeError("Telegram E-chat: " + str(resp.get("description") or "помилка відправки"))
+        return str(resp.get("message_id") or ext)
+
+    def connect(self):
+        resp = self._post("/CreateChannel.php", {"number": self.config.get("number", "")})
+        if str(resp.get("status") or "").upper() == "ERROR":
+            raise RuntimeError(str(resp.get("description") or "Telegram E-chat: помилка підключення"))
+        return resp
+
+
 ADAPTERS = {TelegramAdapter.kind: TelegramAdapter, ViberAdapter.kind: ViberAdapter,
-            EchatViberAdapter.kind: EchatViberAdapter}
+            EchatViberAdapter.kind: EchatViberAdapter,
+            EchatTelegramAdapter.kind: EchatTelegramAdapter}
 
 
 def get_adapter(channel) -> ChannelAdapter:
+    if (channel.config or {}).get("echat_telegram"):
+        return EchatTelegramAdapter(channel)
     if (channel.config or {}).get("echat"):
         return EchatViberAdapter(channel)
     if (channel.config or {}).get("chatplace"):

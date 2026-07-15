@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 from apps.accounts.models import Role
 from apps.crm.models import Contact
 from .models import Channel, Conversation, Message
-from .adapters import EchatViberAdapter, TelegramAdapter
+from .adapters import EchatTelegramAdapter, EchatViberAdapter, TelegramAdapter
 
 User = get_user_model()
 
@@ -80,6 +80,9 @@ class OutboundChannelSelectionTests(TestCase):
                                              config={"echat": True, "number": "380970000001", "api_key": "key1"})
         self.viber2 = Channel.objects.create(kind="echat", name="Viber 2",
                                              config={"echat": True, "number": "380970000002", "api_key": "key2"})
+        self.telegram = Channel.objects.create(kind="echat_telegram", name="Telegram E-chat",
+                                               config={"echat_telegram": True, "number": "380970000001",
+                                                       "api_key": "tg-key"})
         self.conv = Conversation.objects.create(channel=self.ig, contact=self.contact,
                                                 external_chat_id="ig-test", title="Олег тест")
 
@@ -89,6 +92,8 @@ class OutboundChannelSelectionTests(TestCase):
         rows = r.json()
         self.assertEqual({x["number"] for x in rows if x["channel_kind"] == "echat"},
                          {"380970000001", "380970000002"})
+        self.assertEqual({x["number"] for x in rows if x["channel_kind"] == "echat_telegram"},
+                         {"380970000001"})
         self.assertNotIn("api_key", str(rows))
 
     def test_use_channel_creates_one_open_viber_conversation_and_reuses_it(self):
@@ -101,6 +106,14 @@ class OutboundChannelSelectionTests(TestCase):
         self.assertEqual(selected.external_chat_id, "380670000001")
         self.assertEqual(selected.channel, self.viber2)
 
+    def test_use_channel_can_start_telegram_echat_by_contact_phone(self):
+        r = self.client.post(f"/api/conversations/{self.conv.id}/use_channel/",
+                             {"channel_id": self.telegram.id}, format="json")
+        self.assertEqual(r.status_code, 200)
+        selected = Conversation.objects.get(id=r.json()["id"])
+        self.assertEqual(selected.external_chat_id, "380670000001")
+        self.assertEqual(selected.channel, self.telegram)
+
     @patch.object(EchatViberAdapter, "connect", return_value={"status": "Success"})
     def test_setup_adds_second_echat_number_instead_of_overwriting_first(self, _connect):
         r = self.client.post("/api/inbox/echat/setup/",
@@ -109,7 +122,43 @@ class OutboundChannelSelectionTests(TestCase):
         self.assertEqual(Channel.objects.filter(kind="echat").count(), 3)
         self.assertTrue(Channel.objects.filter(kind="echat", config__number="380970000003").exists())
         listing = self.client.get("/api/inbox/echat/setup/").json()
-        self.assertEqual(len(listing["channels"]), 3)
+        self.assertEqual(len(listing["channels"]), 4)
+
+    @patch.object(EchatTelegramAdapter, "connect", return_value={"status": "SUCCESS"})
+    def test_setup_adds_telegram_line_separately_from_viber(self, _connect):
+        r = self.client.post("/api/inbox/echat/setup/",
+                             {"platform": "telegram", "number": "+380 97 000 00 03",
+                              "api_key": "tg-key-3"}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["platform"], "telegram")
+        self.assertTrue(Channel.objects.filter(kind="echat_telegram", is_active=True,
+                                               config__number="380970000003").exists())
+
+    def test_telegram_echat_webhook_ingests_incoming_reply(self):
+        payload = {
+            "direction": "incoming", "number": "380970000001",
+            "sender": {"id": "77123456", "name": "Олег тест", "phone": "380670000001",
+                       "username": "@machplaster"},
+            "message": {"id": "m-1", "telegram_id": "123", "text": "Відповідь клієнта",
+                        "type": "text"},
+        }
+        r = APIClient().post(f"/api/inbox/echat/webhook/{self.telegram.id}/", payload, format="json")
+        self.assertEqual(r.status_code, 200)
+        conv = Conversation.objects.get(channel=self.telegram, external_chat_id="77123456")
+        self.assertEqual(conv.messages.get().text, "Відповідь клієнта")
+        self.assertEqual(conv.contact.phone, "380670000001")
+
+    @patch("apps.inbox.adapters.urllib.request.urlopen")
+    def test_telegram_echat_send_uses_phone_for_new_contact(self, urlopen):
+        response = urlopen.return_value.__enter__.return_value
+        response.read.return_value = b'{"status":"SUCCESS","message_id":"tg-55"}'
+        result = EchatTelegramAdapter(self.telegram).send("380670000001", "Тест")
+        self.assertEqual(result, "tg-55")
+        request = urlopen.call_args.args[0]
+        body = __import__("json").loads(request.data.decode())
+        self.assertEqual(body["user"]["number"], "380970000001")
+        self.assertEqual(body["receiver"], {"phone": "380670000001"})
+        self.assertEqual(request.get_header("Api"), "tg-key")
 
     @patch("apps.inbox.adapters.urllib.request.urlopen")
     def test_echat_request_has_user_agent_required_by_cloudflare(self, urlopen):

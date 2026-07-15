@@ -74,12 +74,13 @@ class ViberWebhookView(APIView):
 
 
 class EchatWebhookView(APIView):
-    """Приём входящих Viber-сообщений через e-chat.tech. URL: /api/inbox/echat/webhook/<channel_id>/"""
+    """Приём входящих Viber/Telegram-сообщений через e-chat.tech."""
     authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request, channel_id):
-        channel = get_object_or_404(Channel, pk=channel_id, is_active=True)
+        channel = get_object_or_404(Channel, pk=channel_id,
+                                    kind__in=("echat", "echat_telegram"), is_active=True)
         d = request.data
         direction = str(d.get("direction") or "")
         event = str(d.get("event") or "")
@@ -92,7 +93,12 @@ class EchatWebhookView(APIView):
 
 
 class EchatSetupView(APIView):
-    """Налаштування кількох Viber-номерів через e-chat.tech."""
+    """Налаштування Viber і Telegram особистого номера через e-chat.tech."""
+
+    PLATFORMS = {
+        "viber": ("echat", "echat", "Viber (e-chat)"),
+        "telegram": ("echat_telegram", "echat_telegram", "Telegram (e-chat)"),
+    }
 
     @staticmethod
     def _number(raw):
@@ -104,9 +110,12 @@ class EchatSetupView(APIView):
         return number
 
     def _row(self, request, ch):
-        cfg = ch.config or {}
+        old_config = dict(ch.config or {})
+        old_name = ch.name
+        cfg = dict(old_config)
         return {
             "connected": bool(ch.is_active),
+            "platform": "telegram" if ch.kind == "echat_telegram" else "viber",
             "number": cfg.get("number", ""),
             "has_key": bool(cfg.get("api_key")),
             "channel_id": ch.id,
@@ -114,7 +123,8 @@ class EchatSetupView(APIView):
         }
 
     def get(self, request):
-        rows = [self._row(request, ch) for ch in Channel.objects.filter(kind="echat").order_by("id")]
+        rows = [self._row(request, ch) for ch in
+                Channel.objects.filter(kind__in=("echat", "echat_telegram")).order_by("kind", "id")]
         # Старі поля лишаємо для сумісності зі старим фронтендом під час rolling deploy.
         first = rows[0] if rows else {"connected": False, "number": "", "has_key": False,
                                      "webhook": "", "channel_id": None}
@@ -123,28 +133,44 @@ class EchatSetupView(APIView):
     def post(self, request):
         if not request.user.has_perm_code("roles.manage"):
             return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        platform = str(request.data.get("platform") or "viber").lower()
+        if platform not in self.PLATFORMS:
+            return Response({"detail": "Невідомий тип E-chat каналу"}, status=status.HTTP_400_BAD_REQUEST)
+        kind, config_flag, title = self.PLATFORMS[platform]
         api_key = (request.data.get("api_key") or "").strip()
         number = self._number(request.data.get("number"))
         if not number:
-            return Response({"detail": "Вкажіть Viber-номер каналу"}, status=status.HTTP_400_BAD_REQUEST)
-        ch = next((row for row in Channel.objects.filter(kind="echat")
+            return Response({"detail": "Вкажіть номер каналу"}, status=status.HTTP_400_BAD_REQUEST)
+        ch = next((row for row in Channel.objects.filter(kind=kind)
                    if self._number((row.config or {}).get("number")) == number), None)
+        is_new = ch is None
         if ch is None:
-            ch = Channel(kind="echat", name="Viber (e-chat) " + number)
+            ch = Channel(kind=kind, name=title + " " + number, is_active=False)
         cfg = ch.config or {}
         if not api_key and not cfg.get("api_key"):
-            return Response({"detail": "Для нового номера вкажіть API-ключ E-chat"},
+            return Response({"detail": "Для нового каналу вкажіть його API-ключ E-chat"},
                             status=status.HTTP_400_BAD_REQUEST)
-        cfg["echat"] = True; cfg["number"] = number
+        cfg[config_flag] = True; cfg["number"] = number
         if api_key:
             cfg["api_key"] = api_key
-        ch.config = cfg; ch.is_active = True; ch.name = "Viber (e-chat) " + number; ch.save()
-        result = {}
+        was_active = bool(ch.is_active)
+        ch.config = cfg; ch.name = title + " " + number; ch.save()
         try:
             result = get_adapter(ch).connect()
         except Exception as e:
-            result = {"warn": str(e)}
+            if is_new:
+                ch.is_active = False
+                ch.save(update_fields=["is_active"])
+            else:
+                ch.config = old_config
+                ch.name = old_name
+                ch.is_active = was_active
+                ch.save(update_fields=["config", "name", "is_active"])
+            return Response({"detail": str(e), "channel_id": ch.id}, status=status.HTTP_400_BAD_REQUEST)
+        ch.is_active = True
+        ch.save(update_fields=["is_active"])
         return Response({"ok": True, "channel_id": ch.id,
+                         "platform": platform,
                          "number": number,
                          "webhook": request.build_absolute_uri("/api/inbox/echat/webhook/%d/" % ch.id),
                          "connect_result": result})
@@ -398,7 +424,8 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         rows = []
         for channel in channels:
             current = existing.get(channel.id)
-            can_start = bool(channel.kind == "echat" and conv.contact and conv.contact.phone)
+            can_start = bool(channel.kind in ("echat", "echat_telegram")
+                             and conv.contact and conv.contact.phone)
             if not current and channel.id != conv.channel_id and not can_start:
                 continue
             rows.append({
@@ -433,7 +460,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         selected = (Conversation.objects.filter(contact_id=conv.contact_id, channel=target, status="open")
                     .order_by("-last_message_at", "-id").first())
         if selected is None:
-            if target.kind != "echat" or not conv.contact or not conv.contact.phone:
+            if target.kind not in ("echat", "echat_telegram") or not conv.contact or not conv.contact.phone:
                 return Response({"detail": "Немає адреси клієнта для цього каналу"},
                                 status=status.HTTP_400_BAD_REQUEST)
             external_chat_id = re.sub(r"\D", "", conv.contact.phone)
