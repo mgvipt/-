@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 import json
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
@@ -275,7 +276,13 @@ class EchatViberAdapter(ChannelAdapter):
         return str((resp.get("message") or {}).get("message_id") or ext)
 
     def connect(self):
-        return self._post("/channel/connect", {"number": self.config.get("number", "")})
+        try:
+            return self._post("/channel/connect", {"number": self.config.get("number", "")})
+        except urllib.error.HTTPError as exc:
+            # Повторне підключення вже активної лінії — штатний idempotent результат E-chat.
+            if exc.code == 409:
+                return {"status": "Success", "description": "Integration already exists"}
+            raise
 
 
 ADAPTERS = {TelegramAdapter.kind: TelegramAdapter, ViberAdapter.kind: ViberAdapter,

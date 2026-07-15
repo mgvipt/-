@@ -1,4 +1,5 @@
 from unittest.mock import patch
+import urllib.error
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
@@ -119,3 +120,11 @@ class OutboundChannelSelectionTests(TestCase):
         self.assertEqual(request.get_header("User-agent"),
                          "WallcovCRM/1.0 (+https://crm.wallcovdec.com.ua)")
         self.assertEqual(request.get_header("Accept"), "application/json")
+
+    @patch("apps.inbox.adapters.urllib.request.urlopen")
+    def test_echat_connect_treats_already_connected_as_success(self, urlopen):
+        urlopen.side_effect = urllib.error.HTTPError(
+            "https://e-chat.tech/api/viber/v2/channel/connect", 409, "Conflict", {}, None)
+        result = EchatViberAdapter(self.viber1).connect()
+        self.assertEqual(result["status"], "Success")
+        self.assertEqual(result["description"], "Integration already exists")
