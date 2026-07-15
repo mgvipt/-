@@ -1249,6 +1249,103 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(pp).data)
 
 
+    # ── Імпорт акта Нової Пошти → кредиторка (пункт 4) ──────────────────────
+    @action(detail=False, methods=["post"], url_path="import-np-act",
+            parser_classes=[MultiPartParser, FormParser])
+    def import_np_act(self, request):
+        """Імпорт акта Нової Пошти (Специфікація [+ опц. Рахунок-фактура] xlsx) → КРЕДИТОРКА.
+        files: spec (обов'язково), rahunok (опц). commit=1 — застосувати, інакше preview.
+        Створює ОДИН PlannedPayment(payable) на суму акта. Собівартість доставки по кожній
+        сделці пишеться в Deal.np_data['delivery_acts'] БЕЗ грошової операції — щоб не задвоїти
+        P&L (реальна витрата зайде один раз при оплаті кредиторки). Ідемпотентно за номером акта."""
+        from .np_act import parse_act
+        from .models import PlannedPayment
+        from apps.crm.models import Deal
+        from django.utils import timezone as _tz
+        import datetime as _dt
+
+        _fin_guard(request, "finance.debts.edit", "Дт/Кт: нема права створювати записи")
+        spec_f = request.FILES.get("spec")
+        rah_f = request.FILES.get("rahunok")
+        if not spec_f:
+            return Response({"detail": "Потрібен файл Специфікації (xlsx)"}, status=400)
+        try:
+            act = parse_act(spec_f, rah_f)
+        except Exception as e:
+            return Response({"detail": "Не вдалося розібрати файл: %s" % e}, status=400)
+        inv = act.get("invoice_number")
+        amount = act.get("amount")
+        if not inv or not amount:
+            return Response({"detail": "У файлі не знайдено номер акта або суму"}, status=400)
+
+        # мапимо відправлення на сделки за номером ЕН (Deal.ttn)
+        ship_rows = []
+        for s in act["shipments"]:
+            d = Deal.objects.filter(ttn=s["ttn"]).first() if s.get("ttn") else None
+            ship_rows.append({"ttn": s["ttn"], "date": s["date"], "route": s["route"],
+                              "cost": s["cost"],
+                              "deal_id": d.id if d else None,
+                              "deal_title": (getattr(d, "title", "") or "")[:40] if d else ""})
+        matched = sum(1 for r in ship_rows if r["deal_id"])
+        fund = FinModelArticle.objects.filter(name="Логістика / доставка", active=True).first()
+
+        existing = PlannedPayment.objects.filter(kind="payable", comment__icontains=inv).first()
+        preview = {
+            "invoice_number": inv, "invoice_date": act.get("invoice_date"),
+            "contract": act.get("contract"), "amount": amount, "vat": act.get("vat"),
+            "counterparty": act.get("counterparty"), "fund": fund.name if fund else None,
+            "shipments_count": len(ship_rows), "matched_deals": matched,
+            "unmatched": len(ship_rows) - matched, "shipments": ship_rows,
+            "checks": act.get("checks"),
+            "already_imported": bool(existing),
+            "existing_payable_id": existing.id if existing else None,
+        }
+        commit = str(request.data.get("commit") or "").lower() in ("1", "true", "yes", "on")
+        if existing or not commit:
+            return Response({"committed": False, **preview})
+
+        # ── COMMIT ──
+        due = None
+        if act.get("invoice_date"):
+            try:
+                due = _dt.datetime.strptime(act["invoice_date"], "%d.%m.%Y").date()
+            except ValueError:
+                due = None
+        due = due or _tz.localdate()
+        cp = act.get("counterparty") or {}
+        detail = "ЄДРПОУ %s · IBAN %s" % (cp.get("edrpou") or "?", cp.get("iban") or "?")
+        pp = PlannedPayment.objects.create(
+            kind="payable", amount=amount, due_date=due,
+            counterparty=(cp.get("name") or "Нова Пошта")[:160],
+            fin_article=fund, status="planned",
+            comment=("Нова Пошта · акт %s від %s · договір %s · %d відправлень · %s"
+                     % (inv, act.get("invoice_date") or "?",
+                        (act.get("contract") or {}).get("number", "?"),
+                        len(ship_rows), detail))[:255],
+        )
+        # собівартість доставки по сделкам — в Deal.np_data (без грошової операції)
+        deals_updated = 0
+        for r in ship_rows:
+            if not r["deal_id"]:
+                continue
+            d = Deal.objects.filter(id=r["deal_id"]).first()
+            if not d:
+                continue
+            nd = d.np_data if isinstance(d.np_data, dict) else {}
+            acts = nd.get("delivery_acts") or []
+            if any(a.get("act") == inv and a.get("ttn") == r["ttn"] for a in acts):
+                continue  # дедуп
+            acts.append({"act": inv, "ttn": r["ttn"], "cost": r["cost"],
+                         "date": r["date"], "route": r["route"]})
+            nd["delivery_acts"] = acts
+            nd["delivery_cost_total"] = round(sum(a.get("cost") or 0 for a in acts), 2)
+            d.np_data = nd
+            d.save(update_fields=["np_data"])
+            deals_updated += 1
+        return Response({"committed": True, "payable_id": pp.id,
+                         "deals_updated": deals_updated, **preview})
+
+
 FUND_KEYWORDS = [
     (["поставщик", "закупівля товару", "закупка товара", "другие материали", "будмаркет", "будматеріали"], "Постачальники (закупка)"),
     (["доставка", "логистик", "логістик", "нова пошта", "новая почта"], "Логістика / доставка"),
