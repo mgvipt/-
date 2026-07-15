@@ -71,12 +71,12 @@ const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pa
 
 export default function Finance() {
   const { t } = useLang();
-  const [tab, setTab] = useState<"dash" | "journal" | "triage" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model">(() => ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash"));
+  const [tab, setTab] = useState<"dash" | "journal" | "triage" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model" | "incoming">(() => ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash"));
   useEffect(() => { try { localStorage.setItem("fin_tab", tab); } catch (e) { /* noop */ } }, [tab]);
   const { can: canF } = useAuth();
   const tabAllowed = (k: string) => k === "dash" ? true : (canF("finance.tab." + k) || canF("roles.manage"));
   useEffect(() => { if (!tabAllowed(tab)) setTab("dash"); /* eslint-disable-next-line */ }, [tab]);
-  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
+  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["incoming", <><Icon n="📥" size={15} /> {t("Вх. накладные","Вхідні накладні")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
   return (
     <div className="scroll pad fade">
       <div className="note warn"><Icon n="🔒" size={15} /> {t("Раздел видят только роли с правом","Розділ бачать тільки ролі з правом")} <b>finance.view</b>.</div>
@@ -91,6 +91,7 @@ export default function Finance() {
       {tab === "dir" && <Directions />}
       {tab === "plan" && <Planning />}
       {tab === "debts" && <Debts />}
+      {tab === "incoming" && <IncomingDocsTab />}
       {tab === "grow" && <Growth />}
       {tab === "salary" && <Salary />}
       {tab === "mplan" && <MPlans />}
@@ -3071,6 +3072,65 @@ export function CatPick({ value, direction, cats, onPick }: { value: string; dir
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+
+function IncomingDocsTab() {
+  const { t } = useLang();
+  const [rows, setRows] = useState<any[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [sub, setSub] = useState<"np_act" | "supplier">("np_act");
+  const load = () => api.get<any[]>("/api/integrations/incoming-docs/?status=draft").then(setRows).catch(() => setRows([]));
+  useEffect(() => { load(); }, []);
+  const pull = async () => {
+    setBusy(true);
+    try {
+      const r: any = await api.post("/api/integrations/email-invoices/poll/", { backfill: false });
+      alert(t("Проверено ✓", "Перевірено ✓") + `\n` + t("Новых", "Нових") + `: ${r.created} (` + t("акты НП", "акти НП") + ` ${r.np}, ` + t("поставщики", "постачальники") + ` ${r.supplier})`);
+      load();
+    } catch (e: any) { alert(e?.response?.data?.detail || "?"); } finally { setBusy(false); }
+  };
+  const act = async (id: number, action: string, ask?: string) => {
+    if (ask && !confirm(ask)) return;
+    try {
+      const r: any = await api.post(`/api/integrations/incoming-docs/${id}/action/`, { action });
+      if (action === "confirm") alert(t("Кредиторка создана ✓", "Кредиторка створена ✓") + ` №${r.payable_id}\n` + t("сделок обновлено", "сделок оновлено") + `: ${r.deals_updated} / ${r.shipments}`);
+      load();
+    } catch (e: any) { alert(e?.response?.data?.detail || t("Ошибка", "Помилка")); }
+  };
+  const np = rows.filter((r) => r.doc_type === "np_act");
+  const sup = rows.filter((r) => r.doc_type === "supplier");
+  const list = sub === "np_act" ? np : sup;
+  return (
+    <div className="scroll pad">
+      <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+        {t("Накладные и акты приходят на почту и сами попадают сюда как черновики. Проверь и «Проведи» — или «Отклони». Ничего не создаётся, пока не подтвердишь.",
+           "Накладні та акти приходять на пошту і самі потрапляють сюди як чернетки. Перевір і «Проведи» — або «Відхили». Нічого не створюється, доки не підтвердиш.")}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <button className={"btn" + (sub === "np_act" ? " btn-primary" : " btn-light")} onClick={() => setSub("np_act")}>🚚 {t("Нова Пошта", "Нова Пошта")} ({np.length})</button>
+        <button className={"btn" + (sub === "supplier" ? " btn-primary" : " btn-light")} onClick={() => setSub("supplier")}>📦 {t("Поставщики", "Постачальники")} ({sup.length})</button>
+        <div style={{ flex: 1 }} />
+        <button className="btn btn-light" disabled={busy} onClick={pull}>{busy ? "…" : "📬 " + t("Проверить почту", "Перевірити пошту")}</button>
+      </div>
+      {!list.length && <div className="muted" style={{ padding: 8 }}>{t("Пусто — новых документов нет", "Порожньо — нових документів немає")}</div>}
+      {list.map((r) => (
+        <div key={r.id} className="panel" style={{ margin: "0 0 8px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            {r.doc_type === "np_act" ? (
+              <><b>{r.invoice_number}</b> <span className="muted">{t("от", "від")} {r.invoice_date}</span><br />
+                <span style={{ fontSize: 13 }}>{Number(r.amount || 0).toLocaleString()} ₴ · {r.shipments_count} {t("отправлений", "відправлень")}{r.vat ? ` · ${t("НДС", "ПДВ")} ${r.vat}` : ""}</span></>
+            ) : (
+              <><b>{r.subject || r.sender}</b><br /><span className="muted" style={{ fontSize: 12 }}>{r.sender} · {(r.files || []).join(", ")}</span></>
+            )}
+          </div>
+          {r.doc_type === "np_act" && <button className="btn btn-primary" onClick={() => act(r.id, "confirm")}>✓ {t("Провести", "Провести")}</button>}
+          <button className="btn btn-light" onClick={() => act(r.id, "reject", t("Отклонить документ?", "Відхилити документ?"))}>{t("Отклонить", "Відхилити")}</button>
+          <button className="btn btn-light" style={{ color: "#dc2626" }} onClick={() => act(r.id, "delete", t("Удалить?", "Видалити?"))}>🗑</button>
+        </div>
+      ))}
     </div>
   );
 }
