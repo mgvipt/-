@@ -2,6 +2,8 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
+from django.contrib.auth import get_user_model
+from rest_framework.test import APIClient
 
 from .models import Product, ProductCategory, ProductImage, ShopSyncEvent
 from .shop_sync import catalog_validation_errors, infer_sample_metadata, prepare_product_for_shop, queue_product_sync
@@ -90,3 +92,40 @@ class ShopCatalogServiceTest(TestCase):
         first.refresh_from_db(); second.refresh_from_db()
         self.assertEqual(first.shop_status, "published")
         self.assertEqual(second.shop_status, "published")
+
+    def test_shop_dashboard_groups_variants_and_reports_readiness(self):
+        for order in range(1, 5):
+            product = self.product(
+                name="Travertino variant %s" % order,
+                sku="SAMPLE-%s" % order,
+                shop_managed=True,
+                shop_enabled=True,
+                shop_status="published",
+                shop_group_key="sample-travertino",
+                shop_parent_name="Travertino",
+                shop_slug="travertino-probnik",
+                shop_variant_type="sample",
+                shop_has_board=order > 2,
+                shop_is_tinted=order in (2, 4),
+                shop_variant_order=order,
+                shop_variant_name="Variant %s" % order,
+                shop_remote_url="https://wallcov.com.ua/new/product/travertino-probnik",
+            )
+            ProductImage.objects.create(
+                product=product,
+                file_path="/tmp/sample-%s.jpg" % order,
+                is_primary=True,
+                is_approved=True,
+            )
+
+        client = APIClient()
+        client.force_authenticate(get_user_model().objects.create_user(username="shop-dashboard"))
+        response = client.get("/api/products/shop-dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["summary"]["products"], 4)
+        self.assertEqual(response.data["summary"]["groups"], 1)
+        self.assertEqual(response.data["summary"]["published_groups"], 1)
+        self.assertEqual(response.data["summary"]["missing_photo"], 0)
+        self.assertEqual(response.data["groups"][0]["variants_count"], 4)
+        self.assertEqual(response.data["groups"][0]["status"], "published")

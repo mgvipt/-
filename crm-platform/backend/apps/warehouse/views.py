@@ -118,6 +118,110 @@ class ProductViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(Q(_stock__lte=0) | Q(_stock__isnull=True))
         return qs
 
+    @action(detail=False, methods=["get"], url_path="shop-dashboard")
+    def shop_dashboard(self, request):
+        """Єдиний read-only огляд каталогу сайту для CRM-адмінки."""
+        from django.utils import timezone
+        from .models import ShopSyncEvent
+        from .shop_sync import SAMPLE_CATEGORY_ID, catalog_validation_errors
+
+        products = list(
+            Product.objects.filter(Q(shop_managed=True) | Q(category_id=SAMPLE_CATEGORY_ID))
+            .select_related("category")
+            .prefetch_related("images")
+            .order_by("shop_parent_name", "shop_group_key", "shop_variant_order", "id")
+        )
+        grouped = {}
+        product_errors = {}
+        missing_photo = 0
+
+        for product in products:
+            errors = catalog_validation_errors(product)
+            product_errors[product.id] = errors
+            approved = [image for image in product.images.all() if image.is_approved]
+            if not approved:
+                missing_photo += 1
+            image = next((image for image in approved if image.is_primary), approved[0] if approved else None)
+            key = product.shop_group_key or "product-%s" % product.id
+            group = grouped.setdefault(key, {
+                "key": key,
+                "name": product.shop_parent_name or product.name,
+                "slug": product.shop_slug,
+                "remote_url": product.shop_remote_url,
+                "updated_at": product.updated_at,
+                "variants": [],
+            })
+            if product.shop_remote_url:
+                group["remote_url"] = product.shop_remote_url
+            if product.updated_at and (not group["updated_at"] or product.updated_at > group["updated_at"]):
+                group["updated_at"] = product.updated_at
+            group["variants"].append({
+                "id": product.id,
+                "sku": product.sku,
+                "name": product.name,
+                "price": str(product.price),
+                "variant_order": product.shop_variant_order,
+                "variant_name": product.shop_variant_name,
+                "enabled": product.shop_enabled,
+                "status": product.shop_status,
+                "approved_photo": bool(approved),
+                "image_url": "/api/products/%s/image/%s/" % (product.id, image.id) if image else "",
+                "errors": errors,
+            })
+
+        groups = []
+        published_groups = 0
+        for group in grouped.values():
+            variants = sorted(group["variants"], key=lambda row: (row["variant_order"] or 99, row["id"]))
+            errors = []
+            for variant in variants:
+                for error in variant["errors"]:
+                    if error not in errors:
+                        errors.append(error)
+            if len(variants) != 4:
+                errors.insert(0, "У групі має бути 4 комплектації, зараз %s" % len(variants))
+            statuses = {variant["status"] for variant in variants}
+            enabled_count = sum(1 for variant in variants if variant["enabled"])
+            if "error" in statuses:
+                status = "error"
+            elif len(variants) == 4 and statuses == {"published"}:
+                status = "published"
+                published_groups += 1
+            elif enabled_count and not errors:
+                status = "ready"
+            else:
+                status = "draft"
+            groups.append({
+                **{key: value for key, value in group.items() if key != "variants"},
+                "status": status,
+                "variants_count": len(variants),
+                "enabled_count": enabled_count,
+                "approved_photos": sum(1 for variant in variants if variant["approved_photo"]),
+                "errors": errors,
+                "variants": variants,
+                "updated_at": group["updated_at"].isoformat() if group["updated_at"] else None,
+            })
+
+        status_order = {"error": 0, "draft": 1, "ready": 2, "published": 3}
+        groups.sort(key=lambda group: (status_order[group["status"]], group["name"].lower()))
+        pending_events = ShopSyncEvent.objects.filter(status__in=["pending", "processing"]).count()
+        failed_events = ShopSyncEvent.objects.filter(status="failed").count()
+        return Response({
+            "summary": {
+                "products": len(products),
+                "groups": len(groups),
+                "published_groups": published_groups,
+                "draft_groups": len(groups) - published_groups,
+                "enabled_products": sum(1 for product in products if product.shop_enabled),
+                "missing_photo": missing_photo,
+                "problem_products": sum(1 for errors in product_errors.values() if errors),
+                "pending_events": pending_events,
+                "failed_events": failed_events,
+            },
+            "groups": groups,
+            "generated_at": timezone.now().isoformat(),
+        })
+
     def destroy(self, request, *args, **kwargs):
         from rest_framework.response import Response as _R
         p = self.get_object()
