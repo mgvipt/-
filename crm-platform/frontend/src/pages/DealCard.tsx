@@ -961,12 +961,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 <>
                 <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", fontSize: 13, tableLayout: "fixed" as const }}>
-                <colgroup><col style={{ width: 24 }} /><col /><col style={{ width: 62 }} />{can("product.cost.view") && <col style={{ width: 56 }} />}<col style={{ width: 46 }} /><col style={{ width: 44 }} /><col style={{ width: 48 }} /><col style={{ width: 54 }} /><col style={{ width: 58 }} /><col style={{ width: 62 }} /><col style={{ width: 24 }} /></colgroup>
+                <colgroup><col style={{ width: 22 }} /><col /><col style={{ width: 64 }} />{can("product.cost.view") && <col style={{ width: 58 }} />}<col style={{ width: 44 }} /><col style={{ width: 40 }} /><col style={{ width: 44 }} /><col style={{ width: 98 }} /><col style={{ width: 62 }} /><col style={{ width: 22 }} /></colgroup>
                 <thead><tr style={{ color: "#64748b", fontSize: 11, textAlign: "left" }}>
                   <th style={{ padding: "6px 4px" }}>№</th><th style={{ padding: "6px 4px" }}>{t("Товар","Товар")}</th>
-                  <th style={{ padding: "6px 4px" }}>{t("Цена","Ціна")}</th>{can("product.cost.view") && <th style={{ padding: "6px 4px" }}>{t("Закупка","Закупка")}</th>}<th style={{ padding: "6px 4px" }}>{t("Кол-во","К-сть")}</th>
-                  <th style={{ padding: "6px 4px", textAlign: "center" }}>{t("Резерв","Резерв")}</th><th style={{ padding: "6px 4px" }}>{t("Остаток","Залишок")}</th>
-                  <th style={{ padding: "6px 4px" }}>{t("Скидка","Знижка")}</th><th style={{ padding: "6px 4px" }}>{t("Сумма скидки","Сума знижки")}</th>
+                  <th style={{ padding: "6px 4px" }}>{t("Цена","Ціна")}</th>{can("product.cost.view") && <th style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{t("Закуп.","Закуп.")}</th>}<th style={{ padding: "6px 4px" }}>{t("Кол-во","К-сть")}</th>
+                  <th style={{ padding: "6px 4px", textAlign: "center", whiteSpace: "nowrap" }}>{t("Рез.","Рез.")}</th><th style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{t("Ост.","Зал.")}</th>
+                  <th style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{t("Скидка","Знижка")}</th>
                   <th style={{ padding: "6px 4px" }}>{t("Сумма","Сума")}</th><th></th></tr></thead>
                   <tbody>{deal.items.map((it: any, idx: number) => {
                     const low = it.product_stock != null && Number(it.quantity) > Number(it.product_stock);
@@ -1010,12 +1010,11 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                             <input key={it.id + "-" + mode} defaultValue={mode === "amt" ? Number(it.discount_amount || 0) : Number(it.discount_pct || 0)} type="number" min={0} max={mode === "pct" ? 100 : undefined}
                               onBlur={(e) => { const v = e.target.value; if (mode === "amt") updateItem(it.id, { discount_amount: v, discount_pct: 0 }); else updateItem(it.id, { discount_pct: v, discount_amount: 0 }); }}
                               style={{ ...editInp, width: 46 }} />
-                            <span onClick={() => setDiscMode((m) => ({ ...m, [it.id]: mode === "pct" ? "amt" : "pct" }))} title={t("Переключить: % или сумма ₴","Перемкнути: % або сума ₴")}
-                              style={{ cursor: "pointer", userSelect: "none", fontWeight: 800, fontSize: 12, color: "#2563eb", minWidth: 14, textAlign: "center" }}>{mode === "pct" ? "%" : "₴"}</span>
+                            <select value={mode} onChange={(e) => setDiscMode((m) => ({ ...m, [it.id]: e.target.value as "pct" | "amt" }))} title={t("Скидка в % или в гривнах","Знижка у % або в гривнях")} style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 12, color: "#2563eb", fontWeight: 700, padding: "0 1px", background: "#fff" }}><option value="pct">%</option><option value="amt">₴</option></select>
                           </span>
                         );
                       })()}</td>
-                      <td style={{ padding: "6px 4px", color: "#16a34a" }}>{fmt(Number(it.discount_sum || 0))} ₴</td>
+                      
                       <td style={{ padding: "6px 4px" }}><b>{fmt(Number(it.total))} ₴</b></td>
                       <td style={{ padding: "6px 4px" }}><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => removeItem(it.id)}>✕</span></td></tr>
                   ); })}</tbody>
