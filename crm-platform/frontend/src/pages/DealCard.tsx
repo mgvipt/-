@@ -960,7 +960,9 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
               {deal.items.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Товаров пока нет.","Товарів поки немає.")}</div> : (
                 <>
                 <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", fontSize: 13 }}><thead><tr style={{ color: "#64748b", fontSize: 11, textAlign: "left" }}>
+                <table style={{ width: "100%", fontSize: 13, tableLayout: "fixed" as const }}>
+                <colgroup><col style={{ width: 24 }} /><col /><col style={{ width: 62 }} />{can("product.cost.view") && <col style={{ width: 56 }} />}<col style={{ width: 46 }} /><col style={{ width: 44 }} /><col style={{ width: 48 }} /><col style={{ width: 54 }} /><col style={{ width: 58 }} /><col style={{ width: 62 }} /><col style={{ width: 24 }} /></colgroup>
+                <thead><tr style={{ color: "#64748b", fontSize: 11, textAlign: "left" }}>
                   <th style={{ padding: "6px 4px" }}>№</th><th style={{ padding: "6px 4px" }}>{t("Товар","Товар")}</th>
                   <th style={{ padding: "6px 4px" }}>{t("Цена","Ціна")}</th>{can("product.cost.view") && <th style={{ padding: "6px 4px" }}>{t("Закупка","Закупка")}</th>}<th style={{ padding: "6px 4px" }}>{t("Кол-во","К-сть")}</th>
                   <th style={{ padding: "6px 4px", textAlign: "center" }}>{t("Резерв","Резерв")}</th><th style={{ padding: "6px 4px" }}>{t("Остаток","Залишок")}</th>
@@ -989,8 +991,8 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                             })(), document.body)}
                           </>
                         ) : (
-                          <div onClick={() => { setEditProdItem(it.id); setEpq(it.product_name || ""); setEpr([]); }} title={t("Нажми, чтобы набрать и выбрать другой товар", "Натисни, щоб набрати й обрати інший товар")} style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, border: "1px solid #e2e8f0", borderRadius: 6, padding: "0 6px", height: 30, background: "#fff", boxSizing: "border-box", cursor: "text" }}>
-                            <span style={{ fontWeight: 500, flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={it.product_name}>{it.product_name || <span className="muted">{t("— выбрать товар —", "— обрати товар —")}</span>}</span>
+                          <div onClick={() => { setEditProdItem(it.id); setEpq(it.product_name || ""); setEpr([]); }} title={t("Нажми, чтобы набрать и выбрать другой товар", "Натисни, щоб набрати й обрати інший товар")} style={{ display: "flex", alignItems: "flex-start", gap: 4, minWidth: 0, border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 6px", minHeight: 30, background: "#fff", boxSizing: "border-box", cursor: "text" }}>
+                            <span style={{ fontWeight: 500, flex: 1, minWidth: 0, whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.25 }} title={it.product_name}>{it.product_name || <span className="muted">{t("— выбрать товар —", "— обрати товар —")}</span>}</span>
                             {it.product ? <a onClick={(e) => e.stopPropagation()} href={"/warehouse?product=" + it.product} target="_blank" rel="noreferrer" title={t("Открыть карточку товара", "Відкрити картку товару")} style={{ color: "#1d4ed8", textDecoration: "none", fontSize: 14, flexShrink: 0, lineHeight: 1 }}>↗</a> : null}
                             <span onClick={(e) => { e.stopPropagation(); setEditProdItem(it.id); setEpq(""); setEpr([]); }} title={t("Удалить и выбрать другой", "Видалити й обрати інший")} style={{ color: "#94a3b8", cursor: "pointer", fontSize: 13, flexShrink: 0, fontWeight: 700, lineHeight: 1 }}>✕</span>
                           </div>
