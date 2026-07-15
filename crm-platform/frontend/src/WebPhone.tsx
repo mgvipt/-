@@ -29,7 +29,6 @@ export default function WebPhone() {
   const [recent, setRecent] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem("crm_phone_recent") || "[]"); } catch { return []; } });
   const uaRef = useRef<any>(null);
   const sessRef = useRef<any>(null);
-  const pcRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const TAB_ID = useRef(Math.random().toString(36).slice(2)).current;
   const [isLeader, setIsLeader] = useState(false);
@@ -97,7 +96,6 @@ export default function WebPhone() {
           setPeer(session.remote_identity?.uri?.user || "");
           const attach = (pc: any) => {
             if (!pc) return;
-            pcRef.current = pc;
             pc.addEventListener("track", (ev: any) => {
               const stream = ev.streams && ev.streams[0];
               if (stream && audioRef.current) {
@@ -111,7 +109,7 @@ export default function WebPhone() {
           if (session.connection) attach(session.connection);
           session.on("accepted", () => setSt("incall"));
           session.on("confirmed", () => setSt("incall"));
-          session.on("ended", () => { setSt("ready"); setPeer(""); sessRef.current = null; pcRef.current = null; });
+          session.on("ended", () => { setSt("ready"); setPeer(""); sessRef.current = null; });
           session.on("getusermediafailed", (err: any) => { console.error("[phone] getUserMedia FAILED", err); setMsg(t("Нет доступа к микрофону: ","Немає доступу до мікрофона: ") + (err?.name || err?.message || err)); });
           session.on("peerconnection:createanswerfailed", (err: any) => { console.error("[phone] createAnswer FAILED", err); setMsg("createAnswer: " + (err?.message || err)); });
           session.on("failed", (e: any) => { console.error("[phone] session FAILED cause=", e?.cause, e); setSt("ready"); setPeer(""); sessRef.current = null; setMsg(t("Звонок не удался: ","Дзвінок не вдався: ") + (e?.cause || "")); });
@@ -161,25 +159,6 @@ export default function WebPhone() {
   }
   useEffect(() => { const f = () => api.get<any>("/api/telephony/lines/").then((d) => { const m: any = {}; (d || []).forEach((l: any) => { m[l.internal] = l; }); setLineStatus((prev: any) => JSON.stringify(prev) === JSON.stringify(m) ? prev : m); }).catch(() => {}); f(); const tm = setInterval(f, 15000); return () => clearInterval(tm); }, []);
   function hangup() { try { sessRef.current?.terminate(); } catch { /* */ } setSt("ready"); setPeer(""); }
-  // Страховка ВХІДНОГО звуку: якщо трек прийшов ДО навішування listener (гонка) — у розмові
-  // добираємо потік із pc.getReceivers() (кілька спроб ~4с). Робочий track-handler не чіпаємо.
-  useEffect(() => {
-    if (st !== "incall") return;
-    let n = 0;
-    const tm = setInterval(() => {
-      n += 1;
-      const pc = pcRef.current || sessRef.current?.connection;
-      const a = audioRef.current;
-      if (a && pc && !a.srcObject) {
-        try {
-          const tracks = (pc.getReceivers?.() || []).map((r: any) => r && r.track).filter((tr: any) => tr && tr.kind === "audio");
-          if (tracks.length) { a.srcObject = new MediaStream(tracks); a.muted = false; a.play().catch(() => {}); }
-        } catch { /* */ }
-      }
-      if ((a && a.srcObject) || n > 10) clearInterval(tm);
-    }, 400);
-    return () => clearInterval(tm);
-  }, [st]);
   useEffect(() => {
     window.wallcovAnswer = answer;
     window.wallcovHangup = hangup;
