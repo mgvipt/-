@@ -551,3 +551,41 @@ class IncomingDocFileView(APIView):
         resp = HttpResponse(raw, content_type=ct)
         resp["Content-Disposition"] = 'attachment; filename="%s"' % name.encode("ascii", "ignore").decode() or "file.xls"
         return resp
+
+
+class IncomingDocViewView(APIView):
+    """Відкриває накладну як HTML-таблицю (перегляд у браузері, а не завантаження)."""
+    def get(self, request, pk):
+        _owner_only(request)
+        from .models import IncomingDoc
+        from django.http import HttpResponse
+        d = IncomingDoc.objects.filter(id=pk).first()
+        if not d:
+            return HttpResponse("<h3>не знайдено</h3>", content_type="text/html; charset=utf-8", status=404)
+        p = d.parsed or {}
+        def esc(x):
+            return (str(x) if x is not None else "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        if d.doc_type == "np_act":
+            title = "Акт Нової Пошти №%s від %s" % (esc(p.get("invoice_number")), esc(p.get("invoice_date")))
+            head = "<tr><th>ЕН</th><th>Дата</th><th>Маршрут</th><th>Сума, грн</th></tr>"
+            body = "".join("<tr><td>%s</td><td>%s</td><td>%s</td><td class=r>%s</td></tr>" % (
+                esc(s.get("ttn")), esc(s.get("date")), esc(s.get("route")), esc(s.get("cost"))) for s in (p.get("shipments") or []))
+        else:
+            title = "Накладна №%s від %s" % (esc(p.get("invoice_number")), esc(p.get("invoice_date")))
+            head = "<tr><th>Товар</th><th>К-сть</th><th>Ціна, грн</th><th>Сума, грн</th></tr>"
+            body = "".join("<tr><td>%s</td><td class=r>%s</td><td class=r>%s</td><td class=r>%s</td></tr>" % (
+                esc(l.get("name")), esc(l.get("qty")), esc(l.get("price")), esc(l.get("sum"))) for l in (p.get("lines") or []))
+        sup = p.get("supplier") or {}
+        sub = " · ".join(x for x in [esc(sup.get("name") or ""), esc(sup.get("iban") or ""), ("ІПН " + esc(sup.get("ipn"))) if sup.get("ipn") else ""] if x)
+        html = ("<!doctype html><html><head><meta charset='utf-8'><title>" + esc(title) + "</title>"
+                "<style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;color:#1e293b;max-width:840px;margin:0 auto}"
+                "h2{margin:0 0 4px}.m{color:#64748b;font-size:13px;margin-bottom:16px}"
+                "table{width:100%;border-collapse:collapse;font-size:14px}"
+                "th{background:#f1f5f9;text-align:left;padding:9px 8px;border-bottom:2px solid #cbd5e1}"
+                "td{padding:8px;border-bottom:1px solid #e2e8f0}.r{text-align:right}"
+                "tfoot td{font-weight:700;border-top:2px solid #cbd5e1;font-size:15px}</style></head><body>"
+                "<h2>" + esc(title) + "</h2><div class='m'>" + sub + "</div>"
+                "<table><thead>" + head + "</thead><tbody>" + body + "</tbody>"
+                "<tfoot><tr><td colspan='3' class=r>Разом:</td><td class=r>" + esc(p.get("amount")) + " грн</td></tr></tfoot></table>"
+                "</body></html>")
+        return HttpResponse(html, content_type="text/html; charset=utf-8")

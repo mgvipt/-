@@ -30,6 +30,7 @@ def _dec(h):
 
 def _body_text(msg):
     import re as _re
+    import html as _html
     text = ""
     for part in msg.walk():
         if part.get_content_type() == "text/plain" and not part.get_filename():
@@ -42,10 +43,23 @@ def _body_text(msg):
             if part.get_content_type() == "text/html" and not part.get_filename():
                 try:
                     html = part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8", "ignore")
-                    text = _re.sub(r"<[^>]+>", " ", html)
+                    html = _re.sub(r"(?is)<(script|style).*?</\1>", " ", html)
+                    html = _re.sub(r"(?i)<br\s*/?>", "\n", html)
+                    html = _re.sub(r"(?i)</(p|div|tr|li|h[1-6])>", "\n", html)
+                    text = _html.unescape(_re.sub(r"<[^>]+>", "", html))
                 except Exception:
                     pass
-    return " ".join(text.split())[:4000]
+    # прибрати google-redirect та задовгі tracking-URL
+    text = _re.sub(r"https?://www\.google\.com/url\?[^\s>]+", "", text)
+    text = _re.sub(r"<https?://\S+>", "", text)
+    text = _re.sub(r"https?://\S{70,}", "", text)
+    text = _re.sub(r"[ \t]+", " ", text)
+    lines = [l.strip() for l in text.splitlines()]
+    out = []
+    for l in lines:
+        if l or (out and out[-1]):
+            out.append(l)
+    return "\n".join(out).strip()[:4000]
 
 
 def _load():

@@ -3197,9 +3197,13 @@ function IncomingMsgModal({ docId, onClose, onProvesti, onReject }: { docId: num
   const { t } = useLang();
   const [d, setD] = useState<any>(null);
   useEffect(() => { api.get<any>(`/api/integrations/incoming-docs/${docId}/`).then(setD).catch(() => {}); }, [docId]);
-  const openFile = async (idx: number) => {
-    try { const u = await api.blobUrl(`/api/integrations/incoming-docs/${docId}/file/${idx}/`); window.open(u, "_blank"); }
-    catch { alert(t("Не удалось открыть файл", "Не вдалося відкрити файл")); }
+  const openView = async () => {
+    try { const u = await api.blobUrl(`/api/integrations/incoming-docs/${docId}/view/`); window.open(u, "_blank"); }
+    catch { alert(t("Не удалось открыть накладную", "Не вдалося відкрити накладну")); }
+  };
+  const downloadFile = async (idx: number, name: string) => {
+    try { const u = await api.blobUrl(`/api/integrations/incoming-docs/${docId}/file/${idx}/`); const a = document.createElement("a"); a.href = u; a.download = name || "file"; document.body.appendChild(a); a.click(); a.remove(); }
+    catch { alert(t("Не удалось скачать файл", "Не вдалося завантажити файл")); }
   };
   if (!d) return null;
   const isSup = d.doc_type === "supplier";
@@ -3208,13 +3212,12 @@ function IncomingMsgModal({ docId, onClose, onProvesti, onReject }: { docId: num
       <div className="panel" style={{ maxWidth: 680, margin: "24px auto", background: "#fff" }} onClick={(e) => e.stopPropagation()}>
         <h3 style={{ margin: "0 0 4px" }}>{d.subject || (isSup ? t("Накладная поставщика", "Накладна постачальника") : t("Акт Новой Почты", "Акт Нової Пошти"))}</h3>
         <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("От", "Від")}: {d.sender}{d.invoice_number ? ` · №${d.invoice_number} ${t("от", "від")} ${d.invoice_date}` : ""}{d.amount ? ` · ${Number(d.amount).toLocaleString()} ₴` : ""}</div>
-        {(d.files || []).length > 0 && (
-          <div style={{ marginBottom: 10 }}>
-            {(d.files || []).map((f: any) => (
-              <button key={f.idx} className="btn btn-light" style={{ marginRight: 6, marginBottom: 4 }} onClick={() => openFile(f.idx)}>📎 {t("Открыть накладную", "Відкрити накладну")}: {f.name}</button>
-            ))}
-          </div>
-        )}
+        <div style={{ marginBottom: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {d.invoice_number && <button className="btn btn-primary" onClick={openView}>📄 {t("Открыть накладную", "Відкрити накладну")}</button>}
+          {(d.files || []).map((f: any) => (
+            <button key={f.idx} className="btn btn-light" onClick={() => downloadFile(f.idx, f.name)}>⬇ {t("Скачать", "Завантажити")}: {f.name}</button>
+          ))}
+        </div>
         {d.email_text
           ? <div style={{ background: "#f8fafc", borderRadius: 8, padding: 10, fontSize: 13, whiteSpace: "pre-wrap", maxHeight: 260, overflow: "auto", marginBottom: 12 }}>{d.email_text}</div>
           : <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{t("Текст письма пуст — смотри вложение", "Текст листа порожній — дивись вкладення")}</div>}
