@@ -26,6 +26,10 @@ export default function WebPhone() {
   const [line, setLine] = useState<string>(() => localStorage.getItem("crm_phone_line") || "789");
   const lineRef = useRef<string>(localStorage.getItem("crm_phone_line") || "789");
   function pickLine(l: string) { setLine(l); lineRef.current = l; localStorage.setItem("crm_phone_line", l); }
+  const [mics, setMics] = useState<{ id: string; label: string }[]>([]);
+  const [micId, setMicId] = useState<string>(() => localStorage.getItem("crm_phone_mic") || "");
+  const micRef = useRef<string>(localStorage.getItem("crm_phone_mic") || "");
+  function pickMic(id: string) { setMicId(id); micRef.current = id; localStorage.setItem("crm_phone_mic", id); }
   const [recent, setRecent] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem("crm_phone_recent") || "[]"); } catch { return []; } });
   const uaRef = useRef<any>(null);
   const sessRef = useRef<any>(null);
@@ -139,7 +143,7 @@ export default function WebPhone() {
     setRecent((r) => { const nr = [dn, ...r.filter((x) => x !== dn)].slice(0, 5); localStorage.setItem("crm_phone_recent", JSON.stringify(nr)); return nr; });
     try {
       ua.call(`sip:${lineRef.current}*${dn}@${window.location.host}`, {
-        mediaConstraints: { audio: true, video: false },
+        mediaConstraints: { audio: micRef.current ? { deviceId: { exact: micRef.current } } : true, video: false },
         rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
         pcConfig: ICE_CFG,
       });
@@ -153,13 +157,21 @@ export default function WebPhone() {
       console.log("[phone] answering session", sess);
       setMsg(t("Беру трубку…","Беру слухавку…"));
       // session.answer сам бере мікрофон (getUserMedia). incall виставиться подіями accepted/confirmed
-      sess.answer({ mediaConstraints: { audio: true, video: false }, pcConfig: ICE_CFG });
+      sess.answer({ mediaConstraints: { audio: micRef.current ? { deviceId: { exact: micRef.current } } : true, video: false }, pcConfig: ICE_CFG });
     } catch (e: any) {
       console.error("[phone] answer() throw", e);
       setMsg(t("Не удалось взять трубку: ","Не вдалося взяти слухавку: ") + (e?.message || e?.cause || "?"));
     }
   }
   useEffect(() => { const f = () => api.get<any>("/api/telephony/lines/").then((d) => { const m: any = {}; (d || []).forEach((l: any) => { m[l.internal] = l; }); setLineStatus((prev: any) => JSON.stringify(prev) === JSON.stringify(m) ? prev : m); }).catch(() => {}); f(); const tm = setInterval(f, 15000); return () => clearInterval(tm); }, []);
+  // список мікрофонів (щоб менеджер обрав свою гарнітуру, а не "за замовчуванням")
+  useEffect(() => {
+    const load = () => { try { navigator.mediaDevices?.enumerateDevices?.().then((ds) => setMics(ds.filter((d) => d.kind === "audioinput").map((d, i) => ({ id: d.deviceId, label: d.label || (t("Микрофон ", "Мікрофон ") + (i + 1)) })))).catch(() => {}); } catch { /* */ } };
+    load();
+    try { navigator.mediaDevices?.addEventListener?.("devicechange", load); } catch { /* */ }
+    return () => { try { navigator.mediaDevices?.removeEventListener?.("devicechange", load); } catch { /* */ } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   function hangup() { try { sessRef.current?.terminate(); } catch { /* */ } setSt("ready"); setPeer(""); }
   // Страховка ВХІДНОГО звуку: якщо трек прийшов ДО навішування listener (гонка) — у розмові
   // добираємо потік із pc.getReceivers() (кілька спроб ~4с). Робочий track-handler не чіпаємо.
@@ -220,6 +232,13 @@ export default function WebPhone() {
               <option value="789">{t("Салон · 0964191890","Салон · 0964191890")}</option>
               <option value="788">{t("Алмазное · 0673812702","Алмазне · 0673812702")}</option>
             </select>
+            {mics.length > 0 && (<>
+              <div className="muted" style={{ fontSize: 11, margin: "2px 0 3px" }}>{t("Микрофон:", "Мікрофон:")}</div>
+              <select value={micId} onChange={(e) => pickMic(e.target.value)} style={{ width: "100%", height: 30, borderRadius: 7, border: "1px solid #cbd5e1", fontSize: 12, marginBottom: 6 }}>
+                <option value="">{t("По умолчанию", "За замовчуванням")}</option>
+                {mics.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+            </>)}
             {lineStatus[line] && <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 6, color: lineStatus[line].busy ? "#dc2626" : "#16a34a" }}>{lineStatus[line].busy ? t("🔴 Линия занята — возьми другую","🔴 Лінія зайнята — візьми іншу") : t("🟢 Линия свободна","🟢 Лінія вільна")}</div>}
           <div style={{ display: "flex", gap: 6 }}>
             <input value={dialN} onChange={(e) => setDialN(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doDial(dialN)}
