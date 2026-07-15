@@ -181,6 +181,10 @@ class ShopOrderWebhookView(APIView):
             else:
                 changed = []
                 channels = list(contact.channels or [])
+                if contact.first_name.strip().casefold() in {"", "гость", "гість", "guest"} and name_parts:
+                    contact.first_name = name_parts[0]
+                    contact.last_name = name_parts[1] if len(name_parts) > 1 else ""
+                    changed.extend(["first_name", "last_name"])
                 if "site" not in channels:
                     contact.channels = channels + ["site"]
                     changed.append("channels")

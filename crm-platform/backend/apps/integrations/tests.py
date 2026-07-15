@@ -57,6 +57,24 @@ class ShopOrderWebhookTest(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(Deal.objects.get().funnel.name, "23 Інтернет-магазин")
 
+    def test_checkout_name_replaces_only_generic_existing_contact_name(self):
+        contact = Contact.objects.create(first_name="Гость", phone="+380501112233")
+        payload = {
+            "event_uuid": str(uuid.uuid4()),
+            "order": {
+                "number": "WV-NAME-1", "customer_name": "Олег Тест", "phone": "+380501112233",
+                "total": "399.00", "payment_method": "after_confirmation",
+                "items": [{"product_name": "Galateya", "type": "sample", "quantity": 1, "unit_price": "399.00"}],
+            },
+        }
+
+        response = self._post(payload)
+
+        contact.refresh_from_db()
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(contact.first_name, "Олег")
+        self.assertEqual(contact.last_name, "Тест")
+
     def test_invalid_signature_is_rejected(self):
         response = self.client.post(
             "/api/integrations/shop/orders/", data=b"{}", content_type="application/json",
