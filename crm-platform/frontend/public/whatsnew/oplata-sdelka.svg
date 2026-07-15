@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" font-family="Arial, Helvetica, sans-serif">
+  <rect width="720" height="400" rx="14" fill="#f8fafc"/>
+  <text x="24" y="40" font-size="19" font-weight="700" fill="#0f172a">Оплата за сделку — как проходит</text>
+
+  <!-- шаги -->
+  <g>
+    <rect x="20" y="64" width="150" height="66" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+    <text x="95" y="94" font-size="13" font-weight="700" fill="#0f172a" text-anchor="middle">1. Открыть</text>
+    <text x="95" y="113" font-size="12" fill="#475569" text-anchor="middle">сделку клиента</text>
+
+    <rect x="200" y="64" width="150" height="66" rx="10" fill="#C67D5F" stroke="#b36a4d"/>
+    <text x="275" y="94" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">2. «Принять</text>
+    <text x="275" y="113" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">оплату»</text>
+
+    <rect x="380" y="64" width="150" height="66" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+    <text x="455" y="94" font-size="13" font-weight="700" fill="#0f172a" text-anchor="middle">3. Сумма</text>
+    <text x="455" y="113" font-size="12" fill="#475569" text-anchor="middle">+ счёт/способ</text>
+
+    <rect x="560" y="64" width="140" height="66" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+    <text x="630" y="94" font-size="13" font-weight="700" fill="#0f172a" text-anchor="middle">4. Провести</text>
+    <text x="630" y="113" font-size="12" fill="#16a34a" text-anchor="middle">готово ✓</text>
+  </g>
+  <!-- стрелки -->
+  <g fill="#94a3b8">
+    <path d="M172 97 l26 0 -6 -6 12 6 -12 6 6 -6 z"/>
+    <path d="M352 97 l26 0 -6 -6 12 6 -12 6 6 -6 z"/>
+    <path d="M532 97 l26 0 -6 -6 12 6 -12 6 6 -6 z"/>
+  </g>
+
+  <line x1="24" y1="170" x2="696" y2="170" stroke="#e2e8f0"/>
+  <text x="24" y="200" font-size="15" font-weight="700" fill="#0f172a">Дальше система делает сама:</text>
+
+  <!-- итоги -->
+  <g>
+    <rect x="20" y="220" width="215" height="72" rx="10" fill="#f0fdf4" stroke="#bbf7d0"/>
+    <text x="127" y="250" font-size="13" font-weight="700" fill="#166534" text-anchor="middle">«Оплачено» растёт</text>
+    <text x="127" y="270" font-size="12" fill="#166534" text-anchor="middle">сделка идёт по стадиям</text>
+
+    <rect x="252" y="220" width="215" height="72" rx="10" fill="#eff6ff" stroke="#bfdbfe"/>
+    <text x="359" y="250" font-size="13" font-weight="700" fill="#1e40af" text-anchor="middle">Доход в журнале</text>
+    <text x="359" y="270" font-size="12" fill="#1e40af" text-anchor="middle">(Финансы)</text>
+
+    <rect x="484" y="220" width="216" height="72" rx="10" fill="#fffbeb" stroke="#fde68a"/>
+    <text x="592" y="250" font-size="13" font-weight="700" fill="#92400e" text-anchor="middle">Чек (Checkbox)</text>
+    <text x="592" y="270" font-size="12" fill="#92400e" text-anchor="middle">создаётся сам</text>
+  </g>
+
+  <rect x="20" y="316" width="680" height="60" rx="10" fill="#fef2f2" stroke="#fecaca"/>
+  <text x="40" y="342" font-size="13" font-weight="700" fill="#991b1b">⚠ Правило:</text>
+  <text x="40" y="362" font-size="12.5" fill="#991b1b">деньги всегда через «Принять оплату», не как ручной доход в журнале — иначе сделка не сдвинется.</text>
+</svg>
