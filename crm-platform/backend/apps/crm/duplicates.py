@@ -150,8 +150,9 @@ class DuplicatesView(APIView):
             if f not in ALLOWED:
                 continue
             if f == "birthday":
-                v = v or None
-            setattr(k, f, v if v is not None else "")
+                setattr(k, f, v or None)
+            else:
+                setattr(k, f, v if v is not None else "")
         # 2) обʼєднати канали месенджерів (union усіх)
         try:
             chans = set(k.channels or [])
