@@ -1043,6 +1043,50 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         _advance_deal_stage(deal, 1, "список товарів збережено")
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
+    @action(detail=True, methods=["post"])
+    def change_funnel(self, request, pk=None):
+        """Перенос угоди в ІНШУ воронку зі ЗБЕРЕЖЕННЯМ стадії за назвою.
+        НЕ скидає на першу стадію і НЕ ретригерить автоматизації входу в стадію
+        (склад/реалізація вже відпрацювали раніше). Угода лишається на тій самій
+        логічній стадії, а всі МАЙБУТНІ автоматизації (НП-поллер, оплати, пріоритети)
+        продовжують працювати вже у новій воронці. Якщо у новій воронці немає стадії
+        з такою назвою — fallback на першу стадію (структури воронок різні)."""
+        from .models import log_activity
+        deal = self.get_object()
+        if not self._can_edit(deal):
+            return Response({"detail": "Немає прав редагувати цю картку."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            nf = Funnel.objects.prefetch_related("stages").get(id=request.data.get("funnel"))
+        except (Funnel.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "Воронку не знайдено."}, status=status.HTTP_400_BAD_REQUEST)
+        if nf.id == deal.funnel_id:
+            return Response(DealDetailSerializer(deal, context={"request": request}).data)
+        old_funnel_name = deal.funnel.name if deal.funnel_id else ""
+        old_stage_name = (deal.stage.name if deal.stage_id else "").strip()
+        stages = list(nf.stages.all())
+        if not stages:
+            return Response({"detail": "У новій воронці немає стадій."}, status=status.HTTP_400_BAD_REQUEST)
+        # 1) точний збіг за назвою (реєстронезалежно) — головний шлях (21↔22 мають однакові стадії)
+        target = next((st for st in stages if (st.name or "").strip().lower() == old_stage_name.lower()), None)
+        same_stage = target is not None
+        # 2) fallback — перша стадія за order (коли структури воронок різні)
+        if target is None:
+            target = sorted(stages, key=lambda st: st.order)[0]
+        actor = request.user.get_full_name() or request.user.username
+        deal.funnel = nf
+        deal.stage = target
+        fields = ["funnel", "stage"]
+        # логічно та сама стадія → таймер НЕ чіпаємо (SLA/пріоритет як був);
+        # впали на першу (інша структура) → оновлюємо таймер як новий вхід у стадію
+        if not same_stage and hasattr(deal, "stage_changed_at"):
+            from django.utils import timezone as _tz
+            deal.stage_changed_at = _tz.now(); fields.append("stage_changed_at")
+        deal.save(update_fields=fields)
+        detail = ("%s \u2192 %s \u00b7 стадію збережено: %s" % (old_funnel_name, nf.name, target.name)) if same_stage \
+            else ("%s \u2192 %s \u00b7 стадії «%s» немає у новій воронці, перенесено на «%s»" % (old_funnel_name, nf.name, old_stage_name or "\u2014", target.name))
+        log_activity("deal", deal.id, "Зміна воронки", detail, request.user, actor)
+        return Response(DealDetailSerializer(deal, context={"request": request}).data)
+
     @action(detail=True, methods=["get"])
     def loyalty(self, request, pk=None):
         """Реальна статистика лояльності клієнта (тільки виграні угоди)."""

@@ -328,11 +328,18 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   async function changeFunnel(fid: number) {
     if (!deal || fid === deal.funnel) return;
     const nf = allFunnels.find((f: any) => f.id === fid);
-    const first = nf?.stages?.[0]?.id;
-    if (!first) return;
-    if (!confirm(t("Сменить воронку на «"+nf.name+"»? Сделка перейдёт на первую стадию новой воронки.","Змінити воронку на «"+nf.name+"»? Угода перейде на першу стадію нової воронки."))) return;
-    await api.patch(`/api/deals/${id}/`, { funnel: fid, stage: first });
-    flash(t("Воронка изменена","Воронку змінено"));
+    if (!nf || !nf.stages?.length) return;
+    const cf = allFunnels.find((f: any) => f.id === deal.funnel);
+    const curName = ((cf?.stages || []).find((s: any) => s.id === deal.stage)?.name || "").trim();
+    const keep = (nf.stages || []).some((s: any) => (s.name || "").trim().toLowerCase() === curName.toLowerCase());
+    const msg = keep
+      ? t("Перенести сделку в воронку «" + nf.name + "»? Стадия «" + curName + "» сохранится, все автоматизации продолжат работать.",
+          "Перенести угоду у воронку «" + nf.name + "»? Стадія «" + curName + "» збережеться, всі автоматизації продовжать працювати.")
+      : t("Перенести в воронку «" + nf.name + "»? В ней нет такой же стадии «" + curName + "» — сделка встанет на первую стадию новой воронки.",
+          "Перенести у воронку «" + nf.name + "»? У ній немає такої ж стадії «" + curName + "» — угода стане на першу стадію нової воронки.");
+    if (!confirm(msg)) return;
+    await api.post(`/api/deals/${id}/change_funnel/`, { funnel: fid });
+    flash(t("Воронка изменена", "Воронку змінено"));
     load();
   }
 
