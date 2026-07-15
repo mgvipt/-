@@ -132,19 +132,27 @@ export default function ContactCenter() {
 
 // ─── Блок: Viber через e-chat.tech ──────────────────────────────────────────
 function EchatBlock({ t }: any) {
-  const [st, setSt] = useState<any>(null);
+  const [lines, setLines] = useState<any[]>([]);
   const [key, setKey] = useState("");
   const [num, setNum] = useState("");
   const [msg, setMsg] = useState("");
-  useEffect(() => { api.get<any>("/api/inbox/echat/setup/").then((d) => { setSt(d); setNum(d.number || ""); }).catch(() => {}); }, []);
+  async function reload() {
+    try {
+      const d = await api.get<any>("/api/inbox/echat/setup/");
+      setLines(d.channels || (d.channel_id ? [d] : []));
+    } catch { /* ignore */ }
+  }
+  useEffect(() => { reload(); }, []);
   async function connect() {
     if (!num.trim()) { setMsg(t("Укажите Viber-номер","Вкажіть Viber-номер")); return; }
     setMsg("…");
     try {
       const r = await api.post<any>("/api/inbox/echat/setup/", { api_key: key.trim(), number: num.trim() });
-      setSt({ ...(st || {}), connected: true, channel_id: r.channel_id, webhook: r.webhook, has_key: (st && st.has_key) || !!key.trim(), number: num.trim() });
-      setKey(""); setMsg(t("✓ Подключено","✓ Підключено"));
-    } catch { setMsg(t("Ошибка подключения","Помилка підключення")); }
+      await reload(); setKey(""); setNum("");
+      setMsg(r.connect_result?.warn
+        ? t("Номер сохранён, но E-chat вернул предупреждение. Проверьте webhook в кабинете.", "Номер збережено, але E-chat повернув попередження. Перевірте webhook у кабінеті.")
+        : t("✓ Номер подключён", "✓ Номер підключено"));
+    } catch (e: any) { setMsg(e?.response?.data?.detail || t("Ошибка подключения","Помилка підключення")); }
   }
   const inp: any = { height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", fontSize: 13 };
   return (
@@ -152,24 +160,27 @@ function EchatBlock({ t }: any) {
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
         <span style={{ width: 26, height: 26, borderRadius: 7, background: "#7360F2", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>V</span>
         <b style={{ fontSize: 15 }}>Viber через e-chat.tech</b>
-        {st?.connected && <span className="chip" style={{ background: "#16a34a" }}>{t("подключено","підключено")}</span>}
+        {lines.length > 0 && <span className="chip" style={{ background: "#16a34a" }}>{t("подключено", "підключено")}: {lines.length}</span>}
       </div>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Введите API-ключ и Viber-номер канала из панели e-chat.tech. Входящие/исходящие пойдут в Чаты CRM.","Введіть API-ключ і Viber-номер каналу з панелі e-chat.tech. Вхідні/вихідні підуть у Чати CRM.")}</div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <input style={{ ...inp, flex: 2, minWidth: 200 }} placeholder={st?.has_key ? t("API-ключ (сохранён, можно не вводить)","API-ключ (збережено, можна не вводити)") : "Api-Key"} value={key} onChange={(e) => setKey(e.target.value)} />
-        <input style={{ ...inp, flex: 1, minWidth: 150 }} placeholder={t("Viber-номер, напр. 380XXXXXXXXX","Viber-номер, напр. 380XXXXXXXXX")} value={num} onChange={(e) => setNum(e.target.value)} />
-        <button className="btn btn-primary" onClick={connect}>{st?.connected ? t("Обновить","Оновити") : t("Подключить","Підключити")}</button>
-        {msg && <span style={{ fontSize: 13, color: "#16a34a" }}>{msg}</span>}
-      </div>
-      {st?.webhook && (
-        <div style={{ marginTop: 10, padding: 10, background: "#f1f5f9", borderRadius: 8 }}>
-          <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("Webhook URL — вставь в панель e-chat.tech (callback для входящих):","Webhook URL — встав у панель e-chat.tech (callback для вхідних):")}</div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <input readOnly value={st.webhook} style={{ ...inp, flex: 1, fontSize: 12 }} onFocus={(e) => e.target.select()} />
-            <button className="btn" onClick={() => navigator.clipboard?.writeText(st.webhook)}><Icon n="📋" size={16} /></button>
-          </div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Каждый Viber-номер подключается отдельной линией. Эти линии можно выбрать прямо над кнопками чата в карточке сделки.", "Кожен Viber-номер підключається окремою лінією. Ці лінії можна вибрати прямо над кнопками чату в картці угоди.")}</div>
+      {lines.map((line) => (
+        <div key={line.channel_id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", marginBottom: 8, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+          <span style={{ color: line.connected ? "#16a34a" : "#d97706", fontWeight: 700 }}>{line.connected ? "●" : "○"}</span>
+          <b style={{ fontSize: 13, flex: 1 }}>+{String(line.number || "").replace(/^\+/, "")}</b>
+          <span className="muted" style={{ fontSize: 11 }}>Channel #{line.channel_id}</span>
+          <button className="btn" style={{ height: 28, fontSize: 11 }} title={t("Скопировать webhook", "Скопіювати webhook")} onClick={() => navigator.clipboard?.writeText(line.webhook || "")}><Icon n="📋" size={14} /></button>
+          <button className="btn" style={{ height: 28, fontSize: 11 }} onClick={() => { setNum(line.number || ""); setMsg(""); }}>
+            {t("Обновить ключ", "Оновити ключ")}
+          </button>
         </div>
-      )}
+      ))}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <input style={{ ...inp, flex: 2, minWidth: 200 }} placeholder={t("API-ключ E-chat (для нового номера обязателен)", "API-ключ E-chat (для нового номера обовʼязковий)")} value={key} onChange={(e) => setKey(e.target.value)} />
+        <input style={{ ...inp, flex: 1, minWidth: 150 }} placeholder={t("Viber-номер, напр. 380XXXXXXXXX","Viber-номер, напр. 380XXXXXXXXX")} value={num} onChange={(e) => setNum(e.target.value)} />
+        <button className="btn btn-primary" onClick={connect}>{t("Подключить / обновить", "Підключити / оновити")}</button>
+        {msg && <span style={{ fontSize: 13, color: msg.startsWith("✓") ? "#16a34a" : "#b45309" }}>{msg}</span>}
+      </div>
+      {lines.length > 0 && <div className="muted" style={{ marginTop: 9, fontSize: 11 }}>{t("Для входящих сообщений добавьте webhook каждой линии в кабинете E-chat; кнопка 📋 копирует адрес нужного номера.", "Для вхідних повідомлень додайте webhook кожної лінії у кабінеті E-chat; кнопка 📋 копіює адресу потрібного номера.")}</div>}
     </div>
   );
 }
