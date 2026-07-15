@@ -45,6 +45,15 @@ async function uploadFile<T>(url: string, file: File): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function uploadForm<T>(url: string, fd: FormData): Promise<T> {
+  const headers: Record<string, string> = {};
+  const tok = getToken();
+  if (tok) headers["Authorization"] = `Token ${tok}`;
+  const res = await fetch(url, { method: "POST", headers, body: fd });
+  if (!res.ok) { const e: any = new Error(`${res.status}`); try { e.response = { data: JSON.parse(await res.text()) }; } catch { /* ignore */ } throw e; }
+  return res.json() as Promise<T>;
+}
+
 // Завантажує захищений файл і повертає blob-URL (для <img>/перегляду)
 async function blobUrl(url: string): Promise<string> {
   const headers: Record<string, string> = {};
@@ -62,6 +71,7 @@ export const api = {
   put: <T>(u: string, b?: unknown) => request<T>("PUT", u, b),
   del: <T>(u: string) => request<T>("DELETE", u),
   upload: uploadFile,
+  uploadForm,
   blobUrl,
 };
 

@@ -2216,6 +2216,28 @@ function Debts() {
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
         <button className="btn btn-primary" onClick={() => setCard(null)}>➕ {t("Добавить", "Додати")}</button>
+        <label className="btn btn-light" style={{ cursor: "pointer" }} title={t("Импорт акта Новой Почты (Специфікація + Рахунок .xlsx)","Імпорт акта Нової Пошти (Специфікація + Рахунок .xlsx)")}>
+          ⬆ {t("Акт НП","Акт НП")}
+          <input type="file" accept=".xlsx" multiple style={{ display: "none" }} onChange={async (e) => {
+            const fs = Array.from(e.target.files || []); (e.target as any).value = "";
+            if (!fs.length) return;
+            const spec = fs.find((f) => f.name.toLowerCase().includes("специф")) || fs.find((f) => !/рахун/i.test(f.name)) || fs[0];
+            const rah = fs.find((f) => f.name.toLowerCase().includes("рахун"));
+            const build = (commit: boolean) => { const fd = new FormData(); fd.append("spec", spec); if (rah) fd.append("rahunok", rah); if (commit) fd.append("commit", "1"); return fd; };
+            try {
+              const dry: any = await (api as any).uploadForm("/api/planned-payments/import-np-act/", build(false));
+              if (dry.already_imported) { alert(t("Этот акт уже загружен","Цей акт вже завантажено") + ` №${dry.invoice_number}`); return; }
+              const msg = t("Акт Новой Почты","Акт Нової Пошти") + ` №${dry.invoice_number} ${t("от","від")} ${dry.invoice_date}\n` +
+                t("Сумма","Сума") + `: ${dry.amount} ₴ (${t("НДС","ПДВ")} ${dry.vat || 0})\n` +
+                t("Отправлений","Відправлень") + `: ${dry.shipments_count} · ${t("к сделкам","до сделок")}: ${dry.matched_deals} · ${t("без сделки","без сделки")}: ${dry.unmatched}\n\n` +
+                t("Создать кредиторку на Нову Пошту и разнести доставку по сделкам?","Створити кредиторку на Нову Пошту і рознести доставку по сделкам?");
+              if (!confirm(msg)) return;
+              const done: any = await (api as any).uploadForm("/api/planned-payments/import-np-act/", build(true));
+              alert(t("Готово ✓ Кредиторка создана","Готово ✓ Кредиторка створена") + ` №${done.payable_id}, ` + t("сделок обновлено","сделок оновлено") + `: ${done.deals_updated}`);
+              load();
+            } catch (err: any) { alert(err?.response?.data?.detail || t("Не удалось загрузить акт","Не вдалося завантажити акт")); }
+          }} />
+        </label>
         <div style={{ width: 10 }} />
         {[["planned", t("Запланированные", "Заплановані")], ["paid", t("Оплаченные", "Оплачені")], ["canceled", t("Отменённые", "Скасовані")]].map(([k, l]) => (
           <button key={k} className={"btn" + (st === k ? " btn-primary" : " btn-light")} onClick={() => setSt(k as string)}>{l}</button>
