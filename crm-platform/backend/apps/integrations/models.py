@@ -56,3 +56,17 @@ class IncomingDoc(models.Model):
 
     def __str__(self):
         return "IncomingDoc#%s %s %s" % (self.pk, self.doc_type, self.status)
+
+
+class SupplierProductMap(models.Model):
+    """Правило: назва товару постачальника → наш склад-товар. Налаштував раз — далі авто-підстановка."""
+    supplier_key = models.CharField(max_length=120, db_index=True, default="")  # e-mail відправника
+    their_name = models.CharField(max_length=300)
+    product = models.ForeignKey("warehouse.Product", on_delete=models.CASCADE, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("supplier_key", "their_name")]
+
+    def __str__(self):
+        return "%s → #%s" % (self.their_name[:40], self.product_id)

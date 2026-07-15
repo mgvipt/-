@@ -388,6 +388,22 @@ class IncomingDocDetailView(APIView):
         if not d:
             return Response({"detail": "не знайдено"}, status=404)
         p = d.parsed or {}
+        if d.doc_type == "supplier":
+            from .models import SupplierProductMap
+            import re as _re
+            m = _re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", d.sender or "")
+            skey = (m.group(0).lower() if m else (d.sender or "").lower())
+            lrows = []
+            for ln in (p.get("lines") or []):
+                tn = (ln.get("name") or "").strip()
+                rule = SupplierProductMap.objects.filter(supplier_key=skey, their_name=tn).select_related("product").first()
+                lrows.append({"their_name": tn, "qty": ln.get("qty"), "price": ln.get("price"), "sum": ln.get("sum"),
+                              "product_id": (rule.product_id if rule else None),
+                              "product_name": (rule.product.name if rule else "")})
+            return Response({"id": d.id, "doc_type": "supplier", "status": d.status, "sender": d.sender,
+                             "subject": d.subject, "invoice_number": p.get("invoice_number"),
+                             "invoice_date": p.get("invoice_date"), "supplier": p.get("supplier"),
+                             "amount": p.get("amount"), "lines": lrows})
         rows = []
         for s in (p.get("shipments") or []):
             deal = Deal.objects.filter(ttn=s.get("ttn")).first() if s.get("ttn") else None
@@ -416,8 +432,8 @@ class IncomingDocActionView(APIView):
             d.delete()
             return Response({"ok": True, "deleted": True})
         if act == "confirm":
-            if d.doc_type != "np_act":
-                return Response({"detail": "Постачальники поки проводяться вручну (парсер у роботі)"}, status=400)
+            if d.doc_type == "supplier":
+                return _confirm_supplier(d, request)
             from apps.finance.np_act import create_kreditorka_from_act
             res = create_kreditorka_from_act(d.parsed or {}, request.user)
             if res.get("error"):
@@ -439,3 +455,74 @@ class EmailInvoicesPollView(APIView):
         limit = int(request.data.get("limit") or 80)
         res = poll(limit=limit, backfill=backfill)
         return Response(res)
+
+
+def _confirm_supplier(d, request):
+    """Провести накладну постачальника: правила товарів + прихід на склад + кредиторка."""
+    from apps.warehouse.models import StockDocument, StockMovement, Product, Warehouse
+    from apps.crm.models import Contact
+    from apps.finance.models import PlannedPayment
+    from .models import SupplierProductMap
+    from django.utils import timezone as _tz
+    import datetime as _dt
+    import re as _re
+
+    p = d.parsed or {}
+    lines = request.data.get("lines") or []
+    if not lines:
+        return Response({"detail": "Немає рядків для проведення"}, status=400)
+    m = _re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", d.sender or "")
+    skey = (m.group(0).lower() if m else (d.sender or "").lower())
+    inv = p.get("invoice_number")
+    if inv and StockDocument.objects.filter(kind="in", supplier_invoice=inv).exists():
+        d.status = "confirmed"; d.save(update_fields=["status"])
+        return Response({"ok": True, "already": True, "detail": "Прихід за цією накладною вже є"})
+    wh = Warehouse.objects.filter(id=1).first() or Warehouse.objects.first()
+    sup = p.get("supplier") or {}
+    contact = None
+    if sup.get("ipn"):
+        contact = Contact.objects.filter(edrpou=sup["ipn"]).first()
+    if not contact:
+        contact = Contact.objects.filter(first_name__icontains="Корженевськ").first()
+    if not contact and sup.get("name"):
+        contact = Contact.objects.create(first_name=sup["name"][:120], edrpou=sup.get("ipn") or "", iban=sup.get("iban") or "")
+    dd = None
+    if p.get("invoice_date"):
+        try:
+            dd = _dt.datetime.strptime(p["invoice_date"], "%d.%m.%Y").date()
+        except ValueError:
+            dd = None
+    doc = StockDocument.objects.create(
+        kind="in", warehouse=wh, number=("Постач. %s" % (inv or ""))[:40], supplier=contact,
+        supplier_invoice=(inv or "")[:80], doc_date=(dd or _tz.localdate()),
+        author=(request.user if request.user.is_authenticated else None),
+        comment=("Прихід від %s, накладна %s" % ((sup.get("name") or "постачальник"), inv or "?"))[:255])
+    total = 0.0
+    positions = rules = 0
+    for ln in lines:
+        pid = ln.get("product_id")
+        if not pid:
+            continue
+        prod = Product.objects.filter(id=pid).first()
+        if not prod:
+            continue
+        qty = ln.get("qty") or 0
+        price = ln.get("price") or 0
+        StockMovement.objects.create(document=doc, product=prod, quantity=qty, price=price)
+        total += float(qty) * float(price)
+        positions += 1
+        tn = (ln.get("their_name") or "").strip()
+        if tn:
+            SupplierProductMap.objects.update_or_create(supplier_key=skey, their_name=tn, defaults={"product": prod})
+            rules += 1
+    amt = p.get("amount") or round(total, 2)
+    pp = PlannedPayment.objects.create(
+        kind="payable", amount=amt, due_date=(dd or _tz.localdate()),
+        counterparty=(sup.get("name") or "Постачальник")[:160], contact=contact, status="planned",
+        comment=("Постачальник · накладна %s від %s · %d позицій · ІПН %s"
+                 % (inv or "?", p.get("invoice_date") or "?", positions, sup.get("ipn") or "?"))[:255])
+    d.status = "confirmed"
+    d.created_payable_id = pp.id
+    d.save(update_fields=["status", "created_payable"])
+    return Response({"ok": True, "stock_document_id": doc.id, "payable_id": pp.id,
+                     "positions": positions, "rules_saved": rules, "amount": amt})

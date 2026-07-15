@@ -3082,6 +3082,7 @@ function IncomingDocsTab() {
   const [rows, setRows] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [sub, setSub] = useState<"np_act" | "supplier">("np_act");
+  const [mapDoc, setMapDoc] = useState<number | null>(null);
   const load = () => api.get<any[]>("/api/integrations/incoming-docs/?status=draft").then(setRows).catch(() => setRows([]));
   useEffect(() => { load(); }, []);
   const pull = async () => {
@@ -3115,6 +3116,7 @@ function IncomingDocsTab() {
         <div style={{ flex: 1 }} />
         <button className="btn btn-light" disabled={busy} onClick={pull}>{busy ? "…" : "📬 " + t("Проверить почту", "Перевірити пошту")}</button>
       </div>
+      {mapDoc && <SupplierMapModal docId={mapDoc} onClose={() => setMapDoc(null)} onDone={load} />}
       {!list.length && <div className="muted" style={{ padding: 8 }}>{t("Пусто — новых документов нет", "Порожньо — нових документів немає")}</div>}
       {list.map((r) => (
         <div key={r.id} className="panel" style={{ margin: "0 0 8px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -3127,10 +3129,63 @@ function IncomingDocsTab() {
             )}
           </div>
           {r.doc_type === "np_act" && <button className="btn btn-primary" onClick={() => act(r.id, "confirm")}>✓ {t("Провести", "Провести")}</button>}
+          {r.doc_type === "supplier" && <button className="btn btn-primary" onClick={() => setMapDoc(r.id)}>✓ {t("Провести", "Провести")}</button>}
           <button className="btn btn-light" onClick={() => act(r.id, "reject", t("Отклонить документ?", "Відхилити документ?"))}>{t("Отклонить", "Відхилити")}</button>
           <button className="btn btn-light" style={{ color: "#dc2626" }} onClick={() => act(r.id, "delete", t("Удалить?", "Видалити?"))}>🗑</button>
         </div>
       ))}
+    </div>
+  );
+}
+
+
+function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: () => void; onDone: () => void }) {
+  const { t } = useLang();
+  const [det, setDet] = useState<any>(null);
+  const [prods, setProds] = useState<any[]>([]);
+  const [lines, setLines] = useState<any[]>([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.get<any>(`/api/integrations/incoming-docs/${docId}/`).then((d) => { setDet(d); setLines((d.lines || []).map((l: any) => ({ ...l }))); }).catch(() => {});
+    api.get<any>("/api/products/?page_size=3000").then((d) => setProds(d.results || d)).catch(() => setProds([]));
+  }, [docId]);
+  const setLine = (i: number, patch: any) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const pick = (i: number, name: string) => { const p = prods.find((x) => x.name === name); setLine(i, { product_name: name, product_id: p ? p.id : null }); };
+  const post = async () => {
+    if (lines.some((l) => !l.product_id) && !confirm(t("Не все строки сопоставлены — провести только сопоставленные?", "Не всі рядки зіставлені — провести лише зіставлені?"))) return;
+    setBusy(true);
+    try {
+      const r: any = await api.post(`/api/integrations/incoming-docs/${docId}/action/`, { action: "confirm", lines });
+      alert(t("Приход проведён ✓", "Прихід проведено ✓") + `\n` + t("позиций", "позицій") + `: ${r.positions}, ` + t("кредиторка", "кредиторка") + ` №${r.payable_id} на ${r.amount} ₴, ` + t("правил", "правил") + `: ${r.rules_saved}`);
+      onDone(); onClose();
+    } catch (e: any) { alert(e?.response?.data?.detail || t("Ошибка", "Помилка")); } finally { setBusy(false); }
+  };
+  if (!det) return null;
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 1000, overflow: "auto", padding: 16 }} onClick={onClose}>
+      <div className="panel" style={{ maxWidth: 920, margin: "16px auto", background: "#fff" }} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ margin: "0 0 4px" }}>{t("Накладная поставщика", "Накладна постачальника")} №{det.invoice_number} {t("от", "від")} {det.invoice_date}</h3>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{det.supplier?.name} · {t("сумма", "сума")} {det.amount} ₴. {t("Под каждый его товар выбери наш со склада — запомнится как правило.", "Під кожен його товар обери наш зі складу — запамʼятається як правило.")}</div>
+        <datalist id="wh-prods">{prods.map((p) => <option key={p.id} value={p.name} />)}</datalist>
+        <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+          <thead><tr style={{ textAlign: "left", borderBottom: "1px solid #e2e8f0" }}>
+            <th style={{ padding: 4 }}>{t("Его товар", "Його товар")}</th><th>{t("Наш товар (склад)", "Наш товар (склад)")}</th><th style={{ width: 60 }}>{t("К-во", "К-сть")}</th><th style={{ width: 80 }}>{t("Цена", "Ціна")}</th></tr></thead>
+          <tbody>
+            {lines.map((l, i) => (
+              <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                <td style={{ padding: "6px 4px" }}>{l.their_name}</td>
+                <td><input list="wh-prods" defaultValue={l.product_name || ""} onChange={(e) => pick(i, e.target.value)} placeholder={t("выбери…", "обери…")} style={{ width: "100%", height: 30, border: "1px solid " + (l.product_id ? "#86efac" : "#fca5a5"), borderRadius: 6, padding: "0 8px" }} /></td>
+                <td><input type="number" value={l.qty} onChange={(e) => setLine(i, { qty: parseFloat(e.target.value) })} style={{ width: 55, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
+                <td><input type="number" value={l.price} onChange={(e) => setLine(i, { price: parseFloat(e.target.value) })} style={{ width: 75, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <button className="btn btn-primary" disabled={busy} onClick={post}>{busy ? "…" : "✓ " + t("Провести приход + кредиторку", "Провести прихід + кредиторку")}</button>
+          <button className="btn btn-light" onClick={onClose}>{t("Отмена", "Скасувати")}</button>
+        </div>
+      </div>
     </div>
   );
 }

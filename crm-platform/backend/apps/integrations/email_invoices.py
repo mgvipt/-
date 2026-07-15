@@ -119,11 +119,21 @@ def poll(limit=60, backfill=False, log=lambda m: None):
                     created += 1
                     np_created += 1
             elif atts:
+                from .supplier_act import parse_korzh
+                xls = next((pp for nn, pp in atts if nn.lower().endswith((".xls", ".xlsx"))), None)
+                sp = {"files": [n for n, _ in atts], "email_date": date_hdr}
+                if xls:
+                    try:
+                        sa = parse_korzh(xls)
+                        if sa.get("invoice_number") and IncomingDoc.objects.filter(doc_type="supplier", parsed__invoice_number=sa["invoice_number"]).exists():
+                            continue
+                        sp.update({"invoice_number": sa.get("invoice_number"), "invoice_date": sa.get("invoice_date"),
+                                   "supplier": sa.get("supplier"), "lines": sa.get("lines"), "amount": sa.get("total")})
+                    except Exception as e:  # noqa
+                        log("supplier parse fail uid=%s: %s" % (u, e))
                 IncomingDoc.objects.create(
                     mailbox=user, message_uid=str(u), sender=frm[:200], subject=subj[:300],
-                    doc_type="supplier", status="draft",
-                    parsed={"files": [n for n, _ in atts], "email_date": date_hdr},
-                    attachments_b64=b64)
+                    doc_type="supplier", status="draft", parsed=sp, attachments_b64=b64)
                 created += 1
                 sup_created += 1
         if uids:
