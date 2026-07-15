@@ -75,3 +75,18 @@ class ShopCatalogServiceTest(TestCase):
         self.assertEqual(product.shop_status, "draft")
         sent = urlopen.call_args.args[0]
         self.assertTrue(sent.get_header("X-wallcov-signature"))
+
+    @override_settings(SHOP_WEBHOOK_SECRET="test-secret")
+    @patch("apps.warehouse.shop_sync.urllib.request.urlopen")
+    def test_delivery_updates_status_for_every_variant_in_group(self, urlopen):
+        first = self.product(shop_group_key="sample-group", shop_status="ready", shop_managed=True)
+        second = self.product(name="Travertino (з дощечкою, з тонуванням)",
+                              sku="SAMPLE-2", shop_group_key="sample-group", shop_status="ready", shop_managed=True)
+        event = queue_product_sync(first)
+        response = urlopen.return_value.__enter__.return_value
+        response.read.return_value = b'{"status":"published","url":"https://wallcov.com.ua/new/product/travertino"}'
+        from .shop_sync import deliver_event
+        deliver_event(event)
+        first.refresh_from_db(); second.refresh_from_db()
+        self.assertEqual(first.shop_status, "published")
+        self.assertEqual(second.shop_status, "published")

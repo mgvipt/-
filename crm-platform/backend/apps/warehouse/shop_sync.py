@@ -223,11 +223,21 @@ def deliver_event(event):
     event.next_retry_at = None
     event.last_error = ""
     event.save(update_fields=["status", "processed_at", "next_retry_at", "last_error", "updated_at"])
+    remote_status = body.get("status", "draft")
+    remote_url = body.get("url", "")
     Product.objects.filter(pk=event.product_id).update(
-        shop_status=body.get("status", "draft"),
+        shop_status=remote_status,
         shop_last_sync_at=timezone.now(), shop_sync_error="",
-        shop_remote_url=body.get("url", ""),
+        shop_remote_url=remote_url,
     )
+    # Публікується/ховається вся група з чотирьох комплектацій, тому статус у CRM
+    # теж має бути однаковим для всіх її SKU. Час синхронізації змінюємо лише
+    # фактично переданому SKU, щоб контрольне звірення не пропустило інші зміни.
+    group_key = Product.objects.filter(pk=event.product_id).values_list("shop_group_key", flat=True).first()
+    if group_key:
+        Product.objects.filter(shop_managed=True, shop_group_key=group_key).update(
+            shop_status=remote_status, shop_remote_url=remote_url,
+        )
     return body
 
 
