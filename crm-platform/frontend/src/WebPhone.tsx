@@ -1,13 +1,5 @@
-/* ═══════════════════════════════════════════════════════════════════════════════
- * ЄДИНИЙ МОДУЛЬ ТЕЛЕФОНІЇ Wallcov-CRM. ТУТ і ТІЛЬКИ ТУТ живе логіка дзвінків.
- * Веб-телефон: дзвінки прямо з браузера через нашу телефонію (WebRTC/JsSIP).
- * Монтується ОДИН раз у Layout.tsx (<WebPhone/>). CallBar.tsx лише слухає подію
- * wallcov-phone-state і дає кнопку «покласти».  <audio> живого дзвінка — ТІЛЬКИ тут.
- * НЕ додавати srcObject / new RTCPeerConnection / другий <audio> живого дзвінка в
- * інших файлах — інакше вхідний звук ламається. Інші <audio> (голосові, записи
- * розмов) — це просто src-файли, не чіпають живий потік.
- * Правило: перед будь-якою правкою цього файлу — прочитати memory feedback_telephony_single_module.
- * ═══════════════════════════════════════════════════════════════════════════════ */
+/* Веб-телефон Wallcov-CRM — дзвінки прямо з браузера через нашу телефонію (WebRTC/JsSIP).
+ * Реєструється як SIP-розширення, дзвонить і приймає. Плаваючий віджет. */
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "./api";
@@ -103,36 +95,22 @@ export default function WebPhone() {
         ua.on("newRTCSession", (data: any) => {
           const session = data.session; sessRef.current = session;
           setPeer(session.remote_identity?.uri?.user || "");
-          // ── ЄДИНЕ місце прив'язки ВХІДНОГО звуку до <audio>. Не дублювати в інших файлах. ──
-          // Трек може прийти ПОДІЄЮ (track/addstream) АБО вже бути у pc.getReceivers() (гонка на вхідних).
-          // Тому bindRemote читає receivers і чіпляє потік; викликаємо і по подіях, і одразу, і в accepted/confirmed,
-          // + страховочний ретрай у useEffect(st==="incall"). Це прибирає баг «не чути клієнта на вхідних».
-          const bindRemote = (pc: any) => {
-            if (!pc || !audioRef.current) return false;
-            let stream: MediaStream | null = null;
-            try {
-              const tracks = (pc.getReceivers?.() || []).map((r: any) => r && r.track).filter((tr: any) => tr && tr.kind === "audio");
-              if (tracks.length) stream = new MediaStream(tracks);
-            } catch { /* */ }
-            if (!stream) return false;
-            if (audioRef.current.srcObject !== stream) {
-              audioRef.current.srcObject = stream;
-              audioRef.current.muted = false;
-              audioRef.current.play().catch(() => {});
-            }
-            return true;
-          };
           const attach = (pc: any) => {
             if (!pc) return;
             pcRef.current = pc;
-            pc.addEventListener("track", () => bindRemote(pc));
-            pc.addEventListener("addstream", () => bindRemote(pc));
-            bindRemote(pc);
+            pc.addEventListener("track", (ev: any) => {
+              const stream = ev.streams && ev.streams[0];
+              if (stream && audioRef.current) {
+                audioRef.current.srcObject = stream;
+                audioRef.current.muted = false;
+                audioRef.current.play().catch(() => {});
+              }
+            });
           };
           session.on("peerconnection", (e: any) => attach(e.peerconnection));
           if (session.connection) attach(session.connection);
-          session.on("accepted", () => { setSt("incall"); bindRemote(pcRef.current || sessRef.current?.connection); });
-          session.on("confirmed", () => { setSt("incall"); bindRemote(pcRef.current || sessRef.current?.connection); });
+          session.on("accepted", () => setSt("incall"));
+          session.on("confirmed", () => setSt("incall"));
           session.on("ended", () => { setSt("ready"); setPeer(""); sessRef.current = null; pcRef.current = null; });
           session.on("getusermediafailed", (err: any) => { console.error("[phone] getUserMedia FAILED", err); setMsg(t("Нет доступа к микрофону: ","Немає доступу до мікрофона: ") + (err?.name || err?.message || err)); });
           session.on("peerconnection:createanswerfailed", (err: any) => { console.error("[phone] createAnswer FAILED", err); setMsg("createAnswer: " + (err?.message || err)); });
@@ -183,7 +161,8 @@ export default function WebPhone() {
   }
   useEffect(() => { const f = () => api.get<any>("/api/telephony/lines/").then((d) => { const m: any = {}; (d || []).forEach((l: any) => { m[l.internal] = l; }); setLineStatus((prev: any) => JSON.stringify(prev) === JSON.stringify(m) ? prev : m); }).catch(() => {}); f(); const tm = setInterval(f, 15000); return () => clearInterval(tm); }, []);
   function hangup() { try { sessRef.current?.terminate(); } catch { /* */ } setSt("ready"); setPeer(""); }
-  // Страховка вхідного звуку: у розмові переконуємось що <audio> має потік (кілька спроб ~4с).
+  // Страховка ВХІДНОГО звуку: якщо трек прийшов ДО навішування listener (гонка) — у розмові
+  // добираємо потік із pc.getReceivers() (кілька спроб ~4с). Робочий track-handler не чіпаємо.
   useEffect(() => {
     if (st !== "incall") return;
     let n = 0;
