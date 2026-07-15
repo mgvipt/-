@@ -14,6 +14,7 @@ from rest_framework.permissions import AllowAny
 
 from apps.common.permissions import HasPermCode
 from apps.crm.models import Contact, Deal, DealItem, Funnel, log_activity
+from apps.warehouse.models import Product as WarehouseProduct
 from .models import IntegrationSettings, ShopOrderImport
 from . import adapters
 
@@ -151,6 +152,17 @@ class ShopOrderWebhookView(APIView):
         except (AttributeError, InvalidOperation, ValueError):
             return Response({"detail": "Некорректная позиция заказа"}, status=400)
 
+        resolved_items = []
+        for item, qty, unit_price in normalised_items:
+            sku = str(item.get("sku") or "").strip()
+            product = WarehouseProduct.objects.filter(sku=sku, is_active=True).first() if sku else None
+            if item.get("type") == "sample" and product is None:
+                return Response(
+                    {"detail": f"Тест-набор {sku or 'без SKU'} отсутствует в номенклатуре CRM"},
+                    status=422,
+                )
+            resolved_items.append((item, qty, unit_price, product))
+
         funnel_name = "23 Інтернет-магазин"
         funnel = Funnel.objects.filter(name=funnel_name).prefetch_related("stages").first()
         if funnel is None or not funnel.stages.exists():
@@ -217,15 +229,24 @@ class ShopOrderWebhookView(APIView):
                 qualification={"shop_order": order_number, "attribution": order.get("attribution") or {}},
                 card_fields=self._card_fields(order),
             )
-            for item, qty, unit_price in normalised_items:
-                suffix = "пробник" if item.get("type") == "sample" else f"комплект на {item.get('area') or '?'} м²"
-                DealItem.objects.create(
-                    deal=deal,
-                    custom_name=f"{item.get('product_name') or 'Товар'} — {suffix}"[:200],
-                    quantity=qty,
-                    price=unit_price,
-                    cost=0,
-                )
+            for item, qty, unit_price, product in resolved_items:
+                if product is not None:
+                    DealItem.objects.create(
+                        deal=deal,
+                        product=product,
+                        quantity=qty,
+                        price=unit_price,
+                        cost=product.cost,
+                    )
+                else:
+                    suffix = f"комплект на {item.get('area') or '?'} м²"
+                    DealItem.objects.create(
+                        deal=deal,
+                        custom_name=f"{item.get('product_name') or 'Товар'} — {suffix}"[:200],
+                        quantity=qty,
+                        price=unit_price,
+                        cost=0,
+                    )
 
             imported.event_uuid = event_uuid
             imported.payload = body

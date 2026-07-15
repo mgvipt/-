@@ -36,9 +36,15 @@ class ScopedByRoleMixin:
             from django.db.models import Q as _Q
             _va = user.viewable_all_stage_ids()
             if _va:
-                qs = qs.filter(_Q(owner=user) | _Q(stage_id__in=list(_va)))
+                qs = qs.filter(
+                    _Q(owner=user)
+                    | _Q(stage_id__in=list(_va))
+                    | _Q(owner__isnull=True, stage__order=0)
+                )
             else:
-                qs = qs.filter(owner=user)
+                # Нічиї картки першого статусу — спільна черга. Після ручного
+                # переміщення ActivityLogMixin призначить менеджера власником.
+                qs = qs.filter(_Q(owner=user) | _Q(owner__isnull=True, stage__order=0))
         return qs
 
     def perform_create(self, serializer):
