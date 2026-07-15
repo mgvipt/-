@@ -317,6 +317,16 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
         deny = [k for k, p in self.KIND_PERM.items() if not u.has_perm_code(p)]
         return qs.exclude(kind__in=deny) if deny else qs
 
+    def create(self, request, *args, **kwargs):
+        # створювати документ конкретного типу може лише той, у кого право на цей тип
+        # (напр. «Прихід» in → warehouse.tab.receipts). Відділ продажів такого права не має.
+        u = request.user
+        kind = request.data.get("kind", "out")
+        perm = self.KIND_PERM.get(kind)
+        if perm and not (u.is_superuser or u.has_perm_code(perm)):
+            return Response({"detail": "Немає права створювати документ цього типу."}, status=status.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
+
     @action(detail=True, methods=["post"], url_path="post", permission_classes=[RealizationManage])
     def post_doc(self, request, pk=None):
         """Провести документ (рухи рахуються у залишок; для реалізації — бронь COGS)."""
@@ -337,6 +347,9 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
     def import_receipt(self, request):
         """Прихід файлом: CSV (Артикул;Кількість;Ціна) → знайти товар по артикулу/назві → прихід одним документом.
         commit=false → лише прев'ю (нічого не пише). Ненайдені товари — у помилки (прихід для невідомого товару не робимо)."""
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("warehouse.tab.receipts")):
+            return Response({"detail": "Немає права на прихід."}, status=status.HTTP_403_FORBIDDEN)
         import csv
         import io as _io
         from apps.warehouse.models import Product, Warehouse, StockMovement, StockDocument

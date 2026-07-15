@@ -778,7 +778,7 @@ export default function Warehouse() {
             )}
             <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
               <div className="label" style={{ flex: 1, margin: 0 }}>{t("Движение товара (приход / расход / инвентаризация)","Рух товару (прихід / витрата / інвентаризація)")}</div>
-              {canEdit && <button className="btn btn-light" style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => setReceiptFor({ productId: card.id, productName: card.name })} title={t("Оприходовать этот товар (приход с поставщиком)","Оприбуткувати цей товар (прихід з постачальником)")}><Icon n="📥" size={13} /> {t("Приход","Прихід")}</button>}
+              {canTabRec && <button className="btn btn-light" style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => setReceiptFor({ productId: card.id, productName: card.name })} title={t("Оприходовать этот товар (приход с поставщиком)","Оприбуткувати цей товар (прихід з постачальником)")}><Icon n="📥" size={13} /> {t("Приход","Прихід")}</button>}
             </div>
             {movements.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Движений ещё не было.","Рухів ще не було.")}</div> : (
               <table style={{ width: "100%", fontSize: 13 }}>
