@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
 from apps.accounts.models import Role
-from apps.crm.models import Contact
+from apps.crm.models import Contact, Lead
 from .models import Channel, Conversation, Message
 from .adapters import EchatTelegramAdapter, EchatViberAdapter, TelegramAdapter
 
@@ -147,6 +147,59 @@ class OutboundChannelSelectionTests(TestCase):
         conv = Conversation.objects.get(channel=self.telegram, external_chat_id="77123456")
         self.assertEqual(conv.messages.get().text, "Відповідь клієнта")
         self.assertEqual(conv.contact.phone, "380670000001")
+
+    def test_telegram_reply_reuses_phone_started_chat_and_existing_contact(self):
+        self.contact.phone = "0972382295"
+        self.contact.social_link = "https://instagram.com/OlegKri"
+        self.contact.messengers = ["https://instagram.com/OlegKri", "https://t.me/OlegKri"]
+        self.contact.save(update_fields=["phone", "social_link", "messengers"])
+        started = Conversation.objects.create(
+            channel=self.telegram, contact=self.contact,
+            external_chat_id="380972382295", title="Олег",
+        )
+        leads_before = Lead.objects.count()
+        payload = {
+            "direction": "incoming", "number": "380970000001",
+            "sender": {"id": "495051750", "name": "Олег Крижевски",
+                       "phone": "+380972382295", "username": "@OlegKri"},
+            "message": {"id": "m-reply", "telegram_id": "5041", "text": "Про", "type": "text"},
+        }
+
+        r = APIClient().post(f"/api/inbox/echat/webhook/{self.telegram.id}/", payload, format="json")
+
+        self.assertEqual(r.status_code, 200)
+        started.refresh_from_db()
+        self.contact.refresh_from_db()
+        self.assertEqual(Conversation.objects.filter(channel=self.telegram).count(), 1)
+        self.assertEqual(started.external_chat_id, "495051750")
+        self.assertEqual(started.messages.get().text, "Про")
+        self.assertEqual(Contact.objects.filter(phone__in=["0972382295", "+380972382295"]).count(), 1)
+        self.assertEqual(Lead.objects.count(), leads_before)
+        self.assertEqual(self.contact.social_link, "https://instagram.com/OlegKri")
+        self.assertIn("telegram", self.contact.channels)
+        self.assertIn("https://t.me/OlegKri", self.contact.messengers)
+
+    def test_telegram_username_matches_additional_messenger_without_phone(self):
+        self.contact.social_link = "https://instagram.com/OlegKri"
+        self.contact.messengers = ["https://instagram.com/OlegKri", "https://t.me/OlegKri"]
+        self.contact.save(update_fields=["social_link", "messengers"])
+        contacts_before = Contact.objects.count()
+        leads_before = Lead.objects.count()
+        payload = {
+            "direction": "incoming", "number": "380970000001",
+            "sender": {"id": "495051750", "name": "Олег Крижевски", "username": "@OlegKri"},
+            "message": {"id": "m-link", "telegram_id": "5042", "text": "Ще відповідь", "type": "text"},
+        }
+
+        r = APIClient().post(f"/api/inbox/echat/webhook/{self.telegram.id}/", payload, format="json")
+
+        self.assertEqual(r.status_code, 200)
+        conv = Conversation.objects.get(channel=self.telegram, external_chat_id="495051750")
+        self.contact.refresh_from_db()
+        self.assertEqual(conv.contact_id, self.contact.id)
+        self.assertEqual(Contact.objects.count(), contacts_before)
+        self.assertEqual(Lead.objects.count(), leads_before)
+        self.assertIn("telegram", self.contact.channels)
 
     @patch("apps.inbox.adapters.urllib.request.urlopen")
     def test_telegram_echat_send_uses_phone_for_new_contact(self, urlopen):

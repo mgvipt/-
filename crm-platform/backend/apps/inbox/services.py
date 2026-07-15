@@ -4,30 +4,96 @@ from .adapters import IncomingMessage, get_adapter
 from .models import Channel, Conversation, Message
 
 
+def _phone_variants(raw: str) -> set[str]:
+    """Поширені записи одного UA-номера: 097…, 38097…, +38097…"""
+    import re
+    value = str(raw or "").strip()
+    digits = re.sub(r"\D", "", value)
+    variants = {value, digits}
+    if digits:
+        variants.add("+" + digits)
+    if len(digits) == 10 and digits.startswith("0"):
+        international = "38" + digits
+        variants.update({international, "+" + international})
+    elif len(digits) == 12 and digits.startswith("38"):
+        variants.add("0" + digits[2:])
+    return {item for item in variants if item}
+
+
+def _find_contact(inc: IncomingMessage) -> Contact | None:
+    """Знайти єдину картку клієнта за основним або додатковим месенджером/телефоном."""
+    from django.db.models import Q
+    link = str(inc.social_link or "").strip()
+    phone = str(getattr(inc, "phone", "") or "").strip()
+    if link:
+        contact = Contact.objects.filter(
+            Q(social_link__iexact=link) | Q(messengers__contains=[link])
+        ).order_by("id").first()
+        if contact:
+            return contact
+    if phone:
+        return Contact.objects.filter(phone__in=_phone_variants(phone)).order_by("id").first()
+    return None
+
+
+def _attach_contact_channel(contact: Contact, channel: Channel, inc: IncomingMessage):
+    """Дописати новий канал у картку контакту, не перетираючи Instagram/інші зв'язки."""
+    update_fields = []
+    channel_name = {"echat": "viber", "echat_telegram": "telegram"}.get(channel.kind, channel.kind)
+    channels = list(contact.channels or [])
+    if channel_name and channel_name not in channels:
+        channels.append(channel_name)
+        contact.channels = channels
+        update_fields.append("channels")
+    link = str(inc.social_link or "").strip()
+    messengers = list(contact.messengers or [])
+    if link and link not in messengers:
+        messengers.append(link)
+        contact.messengers = messengers
+        update_fields.append("messengers")
+    if link and not contact.social_link:
+        contact.social_link = link
+        update_fields.append("social_link")
+    phone = str(getattr(inc, "phone", "") or "").strip()
+    if phone and not contact.phone:
+        contact.phone = phone
+        update_fields.append("phone")
+    if update_fields:
+        contact.save(update_fields=update_fields)
+
+
 def ingest(channel: Channel, inc: IncomingMessage) -> Message:
     """Принять входящее сообщение: создать/найти диалог и контакт, записать сообщение."""
     # Беремо лише ВІДКРИТИЙ діалог. Якщо менеджер завершив попередній — новий лист
     # від клієнта створює НОВИЙ діалог (і новий лід нижче).
     conv = (Conversation.objects.filter(channel=channel, external_chat_id=inc.external_chat_id, status="open")
             .order_by("-created_at").first())
+    contact = conv.contact if conv else _find_contact(inc)
+    # Перший вихідний E-chat-діалог створюється за телефоном, але webhook повертає
+    # стабільний sender.id. Якщо контакт той самий — це той самий чат, а не новий лід.
+    if conv is None and contact is not None:
+        conv = (Conversation.objects.filter(channel=channel, contact=contact, status="open")
+                .order_by("-last_message_at", "-created_at").first())
+        if conv and conv.external_chat_id != inc.external_chat_id:
+            conv.external_chat_id = inc.external_chat_id
+            conv.save(update_fields=["external_chat_id"])
     created = conv is None
     if created:
         conv = Conversation.objects.create(channel=channel, external_chat_id=inc.external_chat_id,
                                            title=inc.sender_name or "")
-    if created:
-        # контакт = єдине джерело: спершу шукаємо існуючий по social_link/phone, інакше створюємо
-        _link = (inc.social_link or ""); _phone = (getattr(inc, "phone", "") or "")
-        contact = None
-        if _link:
-            contact = Contact.objects.filter(social_link=_link).first()
-        if not contact and _phone:
-            contact = Contact.objects.filter(phone=_phone).first()
-        contact_created = False
-        if not contact:
-            contact = Contact.objects.create(first_name=inc.sender_name, channels=[channel.kind], social_link=_link, phone=_phone)
-            contact_created = True
+    contact_created = False
+    if contact is None:
+        contact = _find_contact(inc)
+    if contact is None:
+        _link = str(inc.social_link or "").strip()
+        _phone = str(getattr(inc, "phone", "") or "").strip()
+        contact = Contact.objects.create(first_name=inc.sender_name, channels=[], social_link=_link, phone=_phone)
+        contact_created = True
+    if conv.contact_id != contact.id:
         conv.contact = contact
         conv.save(update_fields=["contact"])
+    _attach_contact_channel(contact, channel, inc)
+    if created:
         # Telegram: одразу попросити номер кнопкою (request_contact) у нового клієнта
         if (channel.kind == "telegram" and getattr(inc, "direction", "in") == "in"
                 and (channel.config or {}).get("ask_phone", True) and not contact.phone):
@@ -50,12 +116,6 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
     # RBAC-привязка: чат → ответственному клиента (owner контакта либо owner его
     # последней активной сделки). None = «Не призначені» — НЕ fallback на чужого юзера.
     contact = conv.contact
-    if contact is not None and getattr(inc, "social_link", "") and not contact.social_link:
-        contact.social_link = inc.social_link
-        contact.save(update_fields=["social_link"])
-    if contact is not None and getattr(inc, "phone", "") and not contact.phone:
-        contact.phone = inc.phone
-        contact.save(update_fields=["phone"])
     if conv.assigned_to_id is None and contact is not None and not created:
         from apps.crm.models import Deal
         owner_id = contact.owner_id or (
