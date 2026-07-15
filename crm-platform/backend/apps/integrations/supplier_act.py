@@ -5,7 +5,6 @@
 Закупівельна ціна за од. = Сума / Кількість. Повертає рядки для звірки зі складом.
 """
 import re
-import xlrd
 
 _UA_MONTHS = {
     "січня": 1, "лютого": 2, "березня": 3, "квітня": 4, "травня": 5, "червня": 6,
@@ -27,13 +26,27 @@ def _f(v):
         return None
 
 
+def _rows_from_bytes(data):
+    """Читає .xls (BIFF, xlrd) або .xlsx (openpyxl). Повертає список рядків (список клітинок-рядків)."""
+    if data[:4] == b"\xd0\xcf\x11\xe0":  # OLE2 = старий .xls
+        import xlrd
+        wb = xlrd.open_workbook(file_contents=data)
+        ws = wb.sheet_by_index(0)
+        return [[str(ws.cell_value(r, c)).strip() for c in range(ws.ncols)] for r in range(ws.nrows)]
+    # інакше .xlsx
+    import io
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True)
+    ws = wb.active
+    out = []
+    for row in ws.iter_rows(values_only=True):
+        out.append(["" if v is None else str(v).strip() for v in row])
+    return out
+
+
 def parse_korzh(file_contents):
-    """file_contents — bytes .xls. Повертає dict акта постачальника."""
-    wb = xlrd.open_workbook(file_contents=file_contents)
-    ws = wb.sheet_by_index(0)
-    rows = []
-    for r in range(ws.nrows):
-        rows.append([str(ws.cell_value(r, c)).strip() for c in range(ws.ncols)])
+    """file_contents — bytes .xls/.xlsx. Повертає dict акта постачальника."""
+    rows = _rows_from_bytes(file_contents)
 
     out = {"invoice_number": None, "invoice_date": None,
            "supplier": {"name": None, "iban": None, "ipn": None},
@@ -44,10 +57,10 @@ def parse_korzh(file_contents):
     for r, row in enumerate(rows):
         line = " ".join(x for x in row if x)
         if not out["invoice_number"]:
-            m = re.search(r"Замовлення покупця\s*№\s*(\S+)\s*від\s*(.+?)\s*р", line, re.I)
+            m = re.search(r"Замовлення покупця\s*№\s*(\S+)", line, re.I)
             if m:
                 out["invoice_number"] = m.group(1)
-                out["invoice_date"] = _ua_date(m.group(2)) or m.group(2)
+                out["invoice_date"] = _ua_date(line)  # шукаємо дату по всьому рядку (надійніше)
         if "Постачальник" in line and not out["supplier"]["name"]:
             # ім'я — у наступних непорожніх клітинках цього ж рядка
             after = [x for x in row if x and "Постачальник" not in x]

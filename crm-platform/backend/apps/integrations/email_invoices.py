@@ -28,6 +28,26 @@ def _dec(h):
     return "".join(out)
 
 
+def _body_text(msg):
+    import re as _re
+    text = ""
+    for part in msg.walk():
+        if part.get_content_type() == "text/plain" and not part.get_filename():
+            try:
+                text += part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8", "ignore")
+            except Exception:
+                pass
+    if not text:
+        for part in msg.walk():
+            if part.get_content_type() == "text/html" and not part.get_filename():
+                try:
+                    html = part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8", "ignore")
+                    text = _re.sub(r"<[^>]+>", " ", html)
+                except Exception:
+                    pass
+    return " ".join(text.split())[:4000]
+
+
 def _load():
     from .models import IntegrationSettings
     o = IntegrationSettings.objects.filter(provider="email_invoices").first()
@@ -90,6 +110,7 @@ def poll(limit=60, backfill=False, log=lambda m: None):
             frm = _dec(msg.get("From"))
             subj = _dec(msg.get("Subject"))
             date_hdr = msg.get("Date")
+            body = _body_text(msg)
             if IncomingDoc.objects.filter(mailbox=user, message_uid=str(u)).exists():
                 continue
             atts = _attachments(msg)
@@ -114,14 +135,14 @@ def poll(limit=60, backfill=False, log=lambda m: None):
                                 "amount": act.get("amount"), "vat": act.get("vat"),
                                 "contract": act.get("contract"), "counterparty": act.get("counterparty"),
                                 "shipments": act.get("shipments"), "checks": act.get("checks"),
-                                "email_date": date_hdr},
+                                "email_date": date_hdr, "email_text": body},
                         attachments_b64=b64)
                     created += 1
                     np_created += 1
             elif atts:
                 from .supplier_act import parse_korzh
                 xls = next((pp for nn, pp in atts if nn.lower().endswith((".xls", ".xlsx"))), None)
-                sp = {"files": [n for n, _ in atts], "email_date": date_hdr}
+                sp = {"files": [n for n, _ in atts], "email_date": date_hdr, "email_text": body}
                 if xls:
                     try:
                         sa = parse_korzh(xls)

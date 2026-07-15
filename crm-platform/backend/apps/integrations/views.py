@@ -388,6 +388,8 @@ class IncomingDocDetailView(APIView):
         if not d:
             return Response({"detail": "не знайдено"}, status=404)
         p = d.parsed or {}
+        files = [{"idx": i, "name": a.get("name")} for i, a in enumerate(d.attachments_b64 or [])]
+        body = p.get("email_text")
         if d.doc_type == "supplier":
             from .models import SupplierProductMap
             import re as _re
@@ -403,7 +405,7 @@ class IncomingDocDetailView(APIView):
             return Response({"id": d.id, "doc_type": "supplier", "status": d.status, "sender": d.sender,
                              "subject": d.subject, "invoice_number": p.get("invoice_number"),
                              "invoice_date": p.get("invoice_date"), "supplier": p.get("supplier"),
-                             "amount": p.get("amount"), "lines": lrows})
+                             "amount": p.get("amount"), "lines": lrows, "files": files, "email_text": body})
         rows = []
         for s in (p.get("shipments") or []):
             deal = Deal.objects.filter(ttn=s.get("ttn")).first() if s.get("ttn") else None
@@ -412,7 +414,8 @@ class IncomingDocDetailView(APIView):
                          "deal_id": deal.id if deal else None,
                          "deal_title": (getattr(deal, "title", "") or "")[:50] if deal else ""})
         return Response({"id": d.id, "doc_type": d.doc_type, "status": d.status,
-                         "sender": d.sender, "subject": d.subject, "parsed": p, "shipments": rows})
+                         "sender": d.sender, "subject": d.subject, "parsed": p, "shipments": rows,
+                         "files": files, "email_text": body})
 
 
 class IncomingDocActionView(APIView):
@@ -526,3 +529,25 @@ def _confirm_supplier(d, request):
     d.save(update_fields=["status", "created_payable"])
     return Response({"ok": True, "stock_document_id": doc.id, "payable_id": pp.id,
                      "positions": positions, "rules_saved": rules, "amount": amt})
+
+
+class IncomingDocFileView(APIView):
+    """Віддає вкладення (накладну) для відкриття/завантаження з CRM."""
+    def get(self, request, pk, idx):
+        _owner_only(request)
+        from .models import IncomingDoc
+        import base64
+        from django.http import HttpResponse
+        d = IncomingDoc.objects.filter(id=pk).first()
+        if not d:
+            return Response({"detail": "не знайдено"}, status=404)
+        atts = d.attachments_b64 or []
+        if idx < 0 or idx >= len(atts):
+            return Response({"detail": "файл не знайдено"}, status=404)
+        a = atts[idx]
+        raw = base64.b64decode(a.get("b64") or "")
+        name = a.get("name") or "file.xls"
+        ct = "application/vnd.ms-excel" if name.lower().endswith(".xls") else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        resp = HttpResponse(raw, content_type=ct)
+        resp["Content-Disposition"] = 'attachment; filename="%s"' % name.encode("ascii", "ignore").decode() or "file.xls"
+        return resp

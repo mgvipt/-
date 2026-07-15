@@ -157,6 +157,7 @@ urlpatterns = [
     path("api/integrations/incoming-docs/", intg_views.IncomingDocListView.as_view()),
     path("api/integrations/incoming-docs/<int:pk>/", intg_views.IncomingDocDetailView.as_view()),
     path("api/integrations/incoming-docs/<int:pk>/action/", intg_views.IncomingDocActionView.as_view()),
+    path("api/integrations/incoming-docs/<int:pk>/file/<int:idx>/", intg_views.IncomingDocFileView.as_view()),
     path("api/integrations/liqpay/link/", intg_views.LiqpayLinkView.as_view()),
     path("api/integrations/novaposhta/track/", intg_views.NovaPoshtaTrackView.as_view()),
     path("api/integrations/shop/orders/", intg_views.ShopOrderWebhookView.as_view()),

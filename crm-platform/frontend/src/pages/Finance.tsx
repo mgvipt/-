@@ -3083,6 +3083,7 @@ function IncomingDocsTab() {
   const [busy, setBusy] = useState(false);
   const [sub, setSub] = useState<"np_act" | "supplier">("np_act");
   const [mapDoc, setMapDoc] = useState<number | null>(null);
+  const [msgDoc, setMsgDoc] = useState<number | null>(null);
   const load = () => api.get<any[]>("/api/integrations/incoming-docs/?status=draft").then(setRows).catch(() => setRows([]));
   useEffect(() => { load(); }, []);
   const pull = async () => {
@@ -3117,10 +3118,11 @@ function IncomingDocsTab() {
         <button className="btn btn-light" disabled={busy} onClick={pull}>{busy ? "…" : "📬 " + t("Проверить почту", "Перевірити пошту")}</button>
       </div>
       {mapDoc && <SupplierMapModal docId={mapDoc} onClose={() => setMapDoc(null)} onDone={load} />}
+      {msgDoc && <IncomingMsgModal docId={msgDoc} onClose={() => setMsgDoc(null)} onProvesti={(id, dt) => { setMsgDoc(null); if (dt === "supplier") setMapDoc(id); else act(id, "confirm"); }} onReject={(id) => { act(id, "reject"); setMsgDoc(null); }} />}
       {!list.length && <div className="muted" style={{ padding: 8 }}>{t("Пусто — новых документов нет", "Порожньо — нових документів немає")}</div>}
       {list.map((r) => (
         <div key={r.id} className="panel" style={{ margin: "0 0 8px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 240 }}>
+          <div style={{ flex: 1, minWidth: 240, cursor: "pointer" }} onClick={() => setMsgDoc(r.id)} title={t("Открыть письмо", "Відкрити лист")}>
             {r.doc_type === "np_act" ? (
               <><b>{r.invoice_number}</b> <span className="muted">{t("от", "від")} {r.invoice_date}</span><br />
                 <span style={{ fontSize: 13 }}>{Number(r.amount || 0).toLocaleString()} ₴ · {r.shipments_count} {t("отправлений", "відправлень")}{r.vat ? ` · ${t("НДС", "ПДВ")} ${r.vat}` : ""}</span></>
@@ -3184,6 +3186,43 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           <button className="btn btn-primary" disabled={busy} onClick={post}>{busy ? "…" : "✓ " + t("Провести приход + кредиторку", "Провести прихід + кредиторку")}</button>
           <button className="btn btn-light" onClick={onClose}>{t("Отмена", "Скасувати")}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function IncomingMsgModal({ docId, onClose, onProvesti, onReject }: { docId: number; onClose: () => void; onProvesti: (id: number, dt: string) => void; onReject: (id: number) => void }) {
+  const { t } = useLang();
+  const [d, setD] = useState<any>(null);
+  useEffect(() => { api.get<any>(`/api/integrations/incoming-docs/${docId}/`).then(setD).catch(() => {}); }, [docId]);
+  const openFile = async (idx: number) => {
+    try { const u = await api.blobUrl(`/api/integrations/incoming-docs/${docId}/file/${idx}/`); window.open(u, "_blank"); }
+    catch { alert(t("Не удалось открыть файл", "Не вдалося відкрити файл")); }
+  };
+  if (!d) return null;
+  const isSup = d.doc_type === "supplier";
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 1000, overflow: "auto", padding: 16 }} onClick={onClose}>
+      <div className="panel" style={{ maxWidth: 680, margin: "24px auto", background: "#fff" }} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ margin: "0 0 4px" }}>{d.subject || (isSup ? t("Накладная поставщика", "Накладна постачальника") : t("Акт Новой Почты", "Акт Нової Пошти"))}</h3>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("От", "Від")}: {d.sender}{d.invoice_number ? ` · №${d.invoice_number} ${t("от", "від")} ${d.invoice_date}` : ""}{d.amount ? ` · ${Number(d.amount).toLocaleString()} ₴` : ""}</div>
+        {(d.files || []).length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            {(d.files || []).map((f: any) => (
+              <button key={f.idx} className="btn btn-light" style={{ marginRight: 6, marginBottom: 4 }} onClick={() => openFile(f.idx)}>📎 {t("Открыть накладную", "Відкрити накладну")}: {f.name}</button>
+            ))}
+          </div>
+        )}
+        {d.email_text
+          ? <div style={{ background: "#f8fafc", borderRadius: 8, padding: 10, fontSize: 13, whiteSpace: "pre-wrap", maxHeight: 260, overflow: "auto", marginBottom: 12 }}>{d.email_text}</div>
+          : <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{t("Текст письма пуст — смотри вложение", "Текст листа порожній — дивись вкладення")}</div>}
+        {isSup && (d.lines || []).length > 0 && <div style={{ fontSize: 12.5, marginBottom: 12 }}>{t("Позиций в накладной", "Позицій у накладній")}: {d.lines.length}</div>}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn btn-primary" onClick={() => onProvesti(docId, d.doc_type)}>✓ {t("Провести", "Провести")}</button>
+          <button className="btn btn-light" onClick={() => { if (confirm(t("Отклонить документ?", "Відхилити документ?"))) onReject(docId); }}>{t("Отклонить", "Відхилити")}</button>
+          <button className="btn btn-light" onClick={onClose}>{t("Закрыть", "Закрити")}</button>
         </div>
       </div>
     </div>
