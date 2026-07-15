@@ -14,10 +14,21 @@ const REASON_ICON: Record<string, string> = { phone: "phone", email: "mail", soc
 const REASON_LABEL: Record<string, [string, string]> = { phone: ["Телефон", "Телефон"], email: ["Email", "Email"], social: ["Мессенджер/ник", "Мессенджер/нік"], name: ["Имя", "Імʼя"], contact: ["Один контакт — несколько", "Один контакт — декілька"] };
 
 // поля, які можна перенести при обʼєднанні (ключ, RU, UA)
+function msgLabel(v: string): string {
+  const l = (v || "").toLowerCase();
+  if (l.includes("instagram")) return "Instagram";
+  if (l.includes("t.me") || l.includes("telegram") || l.startsWith("tg://")) return "Telegram";
+  if (l.includes("viber")) return "Viber";
+  if (l.includes("facebook") || l.includes("fb.") || l.includes("m.me")) return "Facebook";
+  if (l.includes("tiktok")) return "TikTok";
+  if (/^\+?\d[\d\s()-]{6,}$/.test(v.trim())) return "Телефон/Viber";
+  return "Мессенджер";
+}
+
 const MFIELDS: [string, string, string][] = [
   ["first_name", "Имя", "Імʼя"], ["last_name", "Фамилия", "Прізвище"], ["middle_name", "Отчество", "По батькові"],
   ["nickname", "Ник (мессенджер)", "Нік (месенджер)"], ["phone", "Телефон", "Телефон"], ["email", "Email", "Email"],
-  ["social_link", "Ссылка IG/TG/FB", "Посилання IG/TG/FB"], ["address", "Адрес", "Адреса"],
+  ["address", "Адрес", "Адреса"],
   ["birthday", "Дата рождения", "Дата народження"], ["source", "Источник", "Джерело"],
   ["edrpou", "ЄДРПОУ/ИНН", "ЄДРПОУ/ІПН"], ["iban", "IBAN", "IBAN"], ["comment", "Комментарий", "Коментар"],
 ];
@@ -31,7 +42,7 @@ export default function Duplicates() {
   const [busy, setBusy] = useState<number | null>(null);
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
-  const [mm, setMm] = useState<null | { ids: number[]; keepId: number; contacts: any[]; choice: Record<string, number> }>(null);
+  const [mm, setMm] = useState<null | { ids: number[]; keepId: number; contacts: any[]; choice: Record<string, number>; msgSel: Record<string, boolean> }>(null);
   const [mmBusy, setMmBusy] = useState(false);
 
   const load = () => {
@@ -56,7 +67,7 @@ export default function Duplicates() {
   const openMerge = async (gi: number, g: Group) => {
     const ids = g.items.map((i) => i.id);
     const preKeep = keep[gi] ?? ids[0];
-    setMm({ ids, keepId: preKeep, contacts: [], choice: {} });
+    setMm({ ids, keepId: preKeep, contacts: [], choice: {}, msgSel: {} });
     try {
       const full = await Promise.all(ids.map((id) => api.get<any>(`/api/contacts/${id}/`)));
       const choice: Record<string, number> = {};
@@ -64,7 +75,9 @@ export default function Duplicates() {
         const withVal = full.filter((c: any) => (c[f] ?? "") !== "");
         choice[f] = (withVal.find((c: any) => c.id === preKeep) || withVal[0] || full[0])?.id;
       });
-      setMm({ ids, keepId: preKeep, contacts: full, choice });
+      const msgSel: Record<string, boolean> = {};
+      full.forEach((c: any) => { [c.social_link, ...(c.messengers || [])].forEach((m: string) => { if (m && m.trim()) msgSel[m.trim()] = true; }); });
+      setMm({ ids, keepId: preKeep, contacts: full, choice, msgSel });
     } catch { alert(t("Не удалось загрузить контакты", "Не вдалося завантажити контакти")); setMm(null); }
   };
 
@@ -73,8 +86,9 @@ export default function Duplicates() {
     const { ids, keepId, contacts, choice } = mm;
     const fields: Record<string, any> = {};
     MFIELDS.forEach(([f]) => { const c = contacts.find((x: any) => x.id === choice[f]); fields[f] = c ? (c[f] ?? "") : ""; });
+    const messengers = Object.keys(mm.msgSel).filter((m) => mm.msgSel[m]);
     setMmBusy(true);
-    try { await api.post("/api/duplicates/", { keep: keepId, ids, fields }); setMm(null); load(); }
+    try { await api.post("/api/duplicates/", { keep: keepId, ids, fields, messengers }); setMm(null); load(); }
     catch { alert(t("Не удалось объединить", "Не вдалося обʼєднати")); }
     finally { setMmBusy(false); }
   };
@@ -205,6 +219,21 @@ export default function Duplicates() {
                       </tr>); })}
                   </tbody>
                 </table>
+              </div>
+            )}
+            {mm.contacts.length > 0 && Object.keys(mm.msgSel).length > 0 && (
+              <div style={{ marginTop: 14, border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", background: "#f8fafc" }}>
+                <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>{t("Мессенджеры / контакты (можно несколько)", "Месенджери / контакти (можна декілька)")}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px" }}>
+                  {Object.keys(mm.msgSel).map((m) => (
+                    <label key={m} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12.5 }}>
+                      <input type="checkbox" checked={!!mm.msgSel[m]} onChange={() => setMm({ ...mm, msgSel: { ...mm.msgSel, [m]: !mm.msgSel[m] } })} />
+                      <span style={{ fontWeight: 700, fontSize: 10.5, color: "#2563eb", background: "#eff6ff", borderRadius: 5, padding: "1px 6px" }}>{msgLabel(m)}</span>
+                      <span style={{ wordBreak: "break-all" }}>{m}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{t("Отмеченные останутся у объединённого контакта.", "Відмічені залишаться в обʼєднаного контакту.")}</div>
               </div>
             )}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>

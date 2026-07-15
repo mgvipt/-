@@ -28,6 +28,7 @@ class Contact(models.Model):
     address = models.CharField(max_length=255, blank=True, default="", help_text="Адреса доставки / місто")
     comment = models.TextField(blank=True, default="", help_text="Нотатки менеджера про клієнта")
     social_link = models.CharField(max_length=300, blank=True, default="", help_text="Посилання на акаунт клієнта в месенджері (IG/TG/FB)")
+    messengers = models.JSONField(default=list, blank=True, help_text="Кілька месенджерів/контактів клієнта (IG/TG/Viber/номер) — список посилань")
     edrpou = models.CharField("ЄДРПОУ / ІПН", max_length=32, blank=True, default="", db_index=True)
     iban = models.CharField("IBAN / рахунок", max_length=64, blank=True, default="")
     owner = models.ForeignKey(

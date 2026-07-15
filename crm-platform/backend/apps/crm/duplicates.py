@@ -153,6 +153,25 @@ class DuplicatesView(APIView):
                 setattr(k, f, v or None)
             else:
                 setattr(k, f, v if v is not None else "")
+        # 1b) МУЛЬТИ-месенджери: зберігаємо обраний список (галочки) + дозаповнюємо з дублів
+        msgs = request.data.get("messengers")
+        if isinstance(msgs, list):
+            seen, res = set(), []
+            src_all = [k] + list(Contact.objects.filter(id__in=ids))
+            pool = list(msgs)
+            for c in src_all:
+                if c.social_link:
+                    pool.append(c.social_link)
+                for m in (c.messengers or []):
+                    pool.append(m)
+            picked = set((x or "").strip().lower() for x in msgs if (x or "").strip())
+            for m in pool:
+                m = (m or "").strip()
+                if m and m.lower() in picked and m.lower() not in seen:
+                    seen.add(m.lower()); res.append(m)
+            k.messengers = res
+            if res and not (request.data.get("fields") or {}).get("social_link"):
+                k.social_link = res[0]
         # 2) обʼєднати канали месенджерів (union усіх)
         try:
             chans = set(k.channels or [])
