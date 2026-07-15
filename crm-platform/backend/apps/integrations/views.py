@@ -151,8 +151,7 @@ class ShopOrderWebhookView(APIView):
         except (AttributeError, InvalidOperation, ValueError):
             return Response({"detail": "Некорректная позиция заказа"}, status=400)
 
-        all_samples = all(str(item.get("type")) == "sample" for item in items)
-        funnel_name = "22 Тестовий набір" if all_samples else "21 Основний продукт"
+        funnel_name = "23 Інтернет-магазин"
         funnel = Funnel.objects.filter(name=funnel_name).prefetch_related("stages").first()
         if funnel is None or not funnel.stages.exists():
             return Response({"detail": f"В CRM не настроена воронка {funnel_name}"}, status=503)

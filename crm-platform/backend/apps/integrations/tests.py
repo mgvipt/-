@@ -15,7 +15,7 @@ from .models import ShopOrderImport
 class ShopOrderWebhookTest(TestCase):
     def setUp(self):
         self.client = APIClient()
-        for name in ("21 Основний продукт", "22 Тестовий набір"):
+        for name in ("21 Основний продукт", "22 Тестовий набір", "23 Інтернет-магазин"):
             funnel = Funnel.objects.create(name=name)
             Stage.objects.create(funnel=funnel, name="Данні для розрахунку", order=0)
 
@@ -40,7 +40,22 @@ class ShopOrderWebhookTest(TestCase):
         self.assertEqual(Contact.objects.count(), 1)
         self.assertEqual(ShopOrderImport.objects.count(), 1)
         self.assertEqual(Deal.objects.get().items.count(), 1)
-        self.assertEqual(Deal.objects.get().funnel.name, "21 Основний продукт")
+        self.assertEqual(Deal.objects.get().funnel.name, "23 Інтернет-магазин")
+
+    def test_sample_order_also_uses_only_shop_funnel(self):
+        payload = {
+            "event_uuid": str(uuid.uuid4()),
+            "order": {
+                "number": "WV-SAMPLE-1", "customer_name": "Олег Тест", "phone": "+380501112233",
+                "total": "399.00", "payment_method": "after_confirmation",
+                "items": [{"product_name": "Galateya", "type": "sample", "quantity": 1, "unit_price": "399.00"}],
+            },
+        }
+
+        response = self._post(payload)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Deal.objects.get().funnel.name, "23 Інтернет-магазин")
 
     def test_invalid_signature_is_rejected(self):
         response = self.client.post(
