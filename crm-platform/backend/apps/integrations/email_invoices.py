@@ -1,0 +1,138 @@
+# -*- coding: utf-8 -*-
+"""
+Читання поштової скриньки накладних (Gmail IMAP) → чернетки IncomingDoc.
+Акти Нової Пошти (є Специфікація .xlsx) розбираються одразу; накладні постачальників
+зберігаються як чернетки для ручної обробки. Ідемпотентно за IMAP UID (last_uid у конфізі).
+НЕ змінює прапорці листів (readonly). Реальні кредиторки/приходи створюються тільки при підтвердженні.
+"""
+import imaplib
+import email
+import re
+import base64
+import io
+from email.header import decode_header
+
+
+def _dec(h):
+    if not h:
+        return ""
+    out = []
+    for txt, enc in decode_header(h):
+        if isinstance(txt, bytes):
+            try:
+                out.append(txt.decode(enc or "utf-8", "ignore"))
+            except (LookupError, TypeError):
+                out.append(txt.decode("utf-8", "ignore"))
+        else:
+            out.append(txt)
+    return "".join(out)
+
+
+def _load():
+    from .models import IntegrationSettings
+    o = IntegrationSettings.objects.filter(provider="email_invoices").first()
+    return o, ((o.config if o else {}) or {})
+
+
+def _attachments(msg):
+    atts = []
+    for part in msg.walk():
+        fn = part.get_filename()
+        if not fn:
+            continue
+        fn = _dec(fn)
+        if fn.lower().endswith((".xlsx", ".xls")):
+            payload = part.get_payload(decode=True)
+            if payload:
+                atts.append((fn, payload))
+    return atts
+
+
+def poll(limit=60, backfill=False, log=lambda m: None):
+    """Забирає нові листи від відправників білого списку, робить чернетки.
+    backfill=True — ігнорує last_uid (для ручного першого затягування)."""
+    from .models import IncomingDoc
+    from apps.finance.np_act import parse_act
+
+    obj, cfg = _load()
+    if obj is None:
+        return {"error": "not_configured"}
+    host = (cfg.get("imap_host") or "imap.gmail.com").strip()
+    user = (cfg.get("email") or "").strip()
+    pwd = (cfg.get("app_password") or "").strip()
+    senders = [x.strip().lower() for x in re.split(r"[,;\s]+", cfg.get("senders") or "") if x.strip()]
+    if not user or not pwd:
+        return {"error": "not_configured"}
+
+    last_uid = dict(cfg.get("last_uid") or {})
+    M = imaplib.IMAP4_SSL(host)
+    M.login(user, pwd)
+    M.select("INBOX", readonly=True)
+    scanned = created = np_created = sup_created = 0
+
+    for snd in (senders or [None]):
+        typ, data = (M.uid("search", None, "FROM", '"%s"' % snd) if snd else M.uid("search", None, "ALL"))
+        uids = sorted(int(x) for x in data[0].split()) if (data and data[0]) else []
+        if not uids:
+            continue
+        prev = 0 if backfill else int(last_uid.get(snd or "*", 0))
+        new = [u for u in uids if u > prev]
+        if prev == 0 and not backfill:
+            new = uids[-limit:]        # перший запуск — останні N
+        else:
+            new = new[-limit:]
+        for u in new:
+            scanned += 1
+            typ, md = M.uid("fetch", str(u), "(RFC822)")
+            if not md or not md[0]:
+                continue
+            msg = email.message_from_bytes(md[0][1])
+            frm = _dec(msg.get("From"))
+            subj = _dec(msg.get("Subject"))
+            date_hdr = msg.get("Date")
+            if IncomingDoc.objects.filter(mailbox=user, message_uid=str(u)).exists():
+                continue
+            atts = _attachments(msg)
+            spec = next((p for n, p in atts if "специф" in n.lower()), None)
+            rah = next((p for n, p in atts if "рахун" in n.lower()), None)
+            is_np = ("novaposhta" in (frm or "").lower()) or (spec is not None)
+
+            b64 = [{"name": n, "b64": base64.b64encode(p).decode()} for n, p in atts][:4]
+            if is_np and spec:
+                try:
+                    act = parse_act(io.BytesIO(spec), io.BytesIO(rah) if rah else None)
+                except Exception as e:  # noqa
+                    log("parse fail uid=%s: %s" % (u, e))
+                    act = None
+                if act and act.get("invoice_number"):
+                    if IncomingDoc.objects.filter(doc_type="np_act", parsed__invoice_number=act["invoice_number"]).exists():
+                        continue  # вже є чернетка/проведено цього акта
+                    IncomingDoc.objects.create(
+                        mailbox=user, message_uid=str(u), sender=frm[:200], subject=subj[:300],
+                        doc_type="np_act", status="draft",
+                        parsed={"invoice_number": act["invoice_number"], "invoice_date": act.get("invoice_date"),
+                                "amount": act.get("amount"), "vat": act.get("vat"),
+                                "contract": act.get("contract"), "counterparty": act.get("counterparty"),
+                                "shipments": act.get("shipments"), "checks": act.get("checks"),
+                                "email_date": date_hdr},
+                        attachments_b64=b64)
+                    created += 1
+                    np_created += 1
+            elif atts:
+                IncomingDoc.objects.create(
+                    mailbox=user, message_uid=str(u), sender=frm[:200], subject=subj[:300],
+                    doc_type="supplier", status="draft",
+                    parsed={"files": [n for n, _ in atts], "email_date": date_hdr},
+                    attachments_b64=b64)
+                created += 1
+                sup_created += 1
+        if uids:
+            last_uid[snd or "*"] = max(uids)
+
+    M.logout()
+    # зберегти last_uid (тільки якщо не backfill, щоб не збити прогрес)
+    if not backfill:
+        cfg["last_uid"] = last_uid
+        obj.config = cfg
+        obj.save(update_fields=["config"])
+    return {"scanned": scanned, "created": created, "np": np_created, "supplier": sup_created}

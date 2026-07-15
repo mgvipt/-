@@ -163,3 +163,59 @@ def parse_act(spec_file, rahunok_file=None):
         "shipments": spec["shipments"],
         "checks": checks,
     }
+
+
+def create_kreditorka_from_act(act, user=None):
+    """Створює кредиторку (PlannedPayment payable) з розібраного акта НП + рознесення доставки
+    по сделкам (Deal.np_data, без грошової операції). Ідемпотентно за № акта.
+    Спільна логіка для ручного завантаження і підтвердження з пошти."""
+    from .models import PlannedPayment, FinModelArticle
+    from apps.crm.models import Deal
+    from django.utils import timezone as _tz
+    import datetime as _dt
+
+    inv = act.get("invoice_number")
+    amount = act.get("amount")
+    if not inv or not amount:
+        return {"error": "no_invoice_or_amount"}
+    existing = PlannedPayment.objects.filter(kind="payable", comment__icontains=inv).first()
+    if existing:
+        return {"already": True, "payable_id": existing.id, "invoice_number": inv}
+    fund = FinModelArticle.objects.filter(name="Логістика / доставка", active=True).first()
+    due = None
+    if act.get("invoice_date"):
+        try:
+            due = _dt.datetime.strptime(act["invoice_date"], "%d.%m.%Y").date()
+        except ValueError:
+            due = None
+    due = due or _tz.localdate()
+    cp = act.get("counterparty") or {}
+    detail = "ЄДРПОУ %s · IBAN %s" % (cp.get("edrpou") or "?", cp.get("iban") or "?")
+    ship = act.get("shipments") or []
+    pp = PlannedPayment.objects.create(
+        kind="payable", amount=amount, due_date=due,
+        counterparty=(cp.get("name") or "Нова Пошта")[:160],
+        fin_article=fund, status="planned",
+        comment=("Нова Пошта · акт %s від %s · договір %s · %d відправлень · %s" % (
+            inv, act.get("invoice_date") or "?", (act.get("contract") or {}).get("number", "?"),
+            len(ship), detail))[:255])
+    deals_updated = 0
+    matched = 0
+    for s in ship:
+        ttn = s.get("ttn")
+        d = Deal.objects.filter(ttn=ttn).first() if ttn else None
+        if not d:
+            continue
+        matched += 1
+        nd = d.np_data if isinstance(d.np_data, dict) else {}
+        acts = nd.get("delivery_acts") or []
+        if any(a.get("act") == inv and a.get("ttn") == ttn for a in acts):
+            continue
+        acts.append({"act": inv, "ttn": ttn, "cost": s.get("cost"), "date": s.get("date"), "route": s.get("route")})
+        nd["delivery_acts"] = acts
+        nd["delivery_cost_total"] = round(sum(a.get("cost") or 0 for a in acts), 2)
+        d.np_data = nd
+        d.save(update_fields=["np_data"])
+        deals_updated += 1
+    return {"payable_id": pp.id, "deals_updated": deals_updated, "matched": matched,
+            "amount": amount, "invoice_number": inv, "shipments": len(ship)}

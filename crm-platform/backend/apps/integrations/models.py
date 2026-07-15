@@ -30,3 +30,29 @@ class ShopOrderImport(models.Model):
 
     def __str__(self):
         return f"{self.order_number} -> deal #{self.deal_id or '-'}"
+
+
+class IncomingDoc(models.Model):
+    """Вхідний документ з пошти накладних (акт НП / накладна постачальника). Чернетка → підтвердження."""
+    DOC_TYPES = [("np_act", "Акт Нової Пошти"), ("supplier", "Накладна постачальника"), ("unknown", "Інше")]
+    STATUSES = [("draft", "Чернетка"), ("confirmed", "Проведено"), ("rejected", "Відхилено")]
+    mailbox = models.CharField(max_length=120, blank=True, default="")
+    sender = models.CharField(max_length=200, blank=True, default="")
+    subject = models.CharField(max_length=300, blank=True, default="")
+    message_uid = models.CharField(max_length=64, db_index=True)
+    received_at = models.DateTimeField(null=True, blank=True)
+    doc_type = models.CharField(max_length=12, choices=DOC_TYPES, default="unknown")
+    status = models.CharField(max_length=10, choices=STATUSES, default="draft", db_index=True)
+    parsed = models.JSONField(default=dict, blank=True)
+    attachments_b64 = models.JSONField(default=list, blank=True)
+    note = models.CharField(max_length=255, blank=True, default="")
+    created_payable = models.ForeignKey("finance.PlannedPayment", null=True, blank=True,
+                                        on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("mailbox", "message_uid")]
+        ordering = ["-id"]
+
+    def __str__(self):
+        return "IncomingDoc#%s %s %s" % (self.pk, self.doc_type, self.status)

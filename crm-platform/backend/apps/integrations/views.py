@@ -344,3 +344,98 @@ class EmailInvoicesTestView(APIView):
                              "matched": matched, "samples": samples[-6:]})
         except Exception as e:
             return Response({"ok": False, "detail": "Не вдалося підключитися: %s" % e}, status=400)
+
+
+def _owner_only(request):
+    u = request.user
+    if not (u and u.is_authenticated and u.is_superuser):
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied("Розділ доступний тільки власнику")
+
+
+class IncomingDocListView(APIView):
+    """Список вхідних документів з пошти (чернетки). Тільки власник (superuser)."""
+    def get(self, request):
+        _owner_only(request)
+        from .models import IncomingDoc
+        st = request.query_params.get("status", "draft")
+        qs = IncomingDoc.objects.all()
+        if st:
+            qs = qs.filter(status=st)
+        out = []
+        for d in qs[:300]:
+            p = d.parsed or {}
+            out.append({
+                "id": d.id, "doc_type": d.doc_type, "status": d.status,
+                "sender": d.sender, "subject": d.subject,
+                "invoice_number": p.get("invoice_number"), "invoice_date": p.get("invoice_date"),
+                "amount": p.get("amount"), "vat": p.get("vat"),
+                "shipments_count": len(p.get("shipments") or []),
+                "files": [a.get("name") for a in (d.attachments_b64 or [])] or p.get("files") or [],
+                "email_date": p.get("email_date"),
+                "created_payable": d.created_payable_id,
+            })
+        return Response(out)
+
+
+class IncomingDocDetailView(APIView):
+    """Деталі одного документа (рядки специфікації для звірки по сделкам)."""
+    def get(self, request, pk):
+        _owner_only(request)
+        from .models import IncomingDoc
+        from apps.crm.models import Deal
+        d = IncomingDoc.objects.filter(id=pk).first()
+        if not d:
+            return Response({"detail": "не знайдено"}, status=404)
+        p = d.parsed or {}
+        rows = []
+        for s in (p.get("shipments") or []):
+            deal = Deal.objects.filter(ttn=s.get("ttn")).first() if s.get("ttn") else None
+            rows.append({"ttn": s.get("ttn"), "date": s.get("date"), "route": s.get("route"),
+                         "cost": s.get("cost"),
+                         "deal_id": deal.id if deal else None,
+                         "deal_title": (getattr(deal, "title", "") or "")[:50] if deal else ""})
+        return Response({"id": d.id, "doc_type": d.doc_type, "status": d.status,
+                         "sender": d.sender, "subject": d.subject, "parsed": p, "shipments": rows})
+
+
+class IncomingDocActionView(APIView):
+    """confirm — провести (акт НП → кредиторка); reject — відхилити; delete — видалити."""
+    def post(self, request, pk):
+        _owner_only(request)
+        from .models import IncomingDoc
+        d = IncomingDoc.objects.filter(id=pk).first()
+        if not d:
+            return Response({"detail": "не знайдено"}, status=404)
+        act = request.data.get("action")
+        if act == "reject":
+            d.status = "rejected"
+            d.save(update_fields=["status"])
+            return Response({"ok": True, "status": d.status})
+        if act == "delete":
+            d.delete()
+            return Response({"ok": True, "deleted": True})
+        if act == "confirm":
+            if d.doc_type != "np_act":
+                return Response({"detail": "Постачальники поки проводяться вручну (парсер у роботі)"}, status=400)
+            from apps.finance.np_act import create_kreditorka_from_act
+            res = create_kreditorka_from_act(d.parsed or {}, request.user)
+            if res.get("error"):
+                return Response({"detail": "Не вдалося: %s" % res["error"]}, status=400)
+            d.status = "confirmed"
+            d.created_payable_id = res.get("payable_id")
+            d.save(update_fields=["status", "created_payable"])
+            return Response({"ok": True, "status": d.status, **res})
+        return Response({"detail": "невідома дія"}, status=400)
+
+
+class EmailInvoicesPollView(APIView):
+    """Ручний запуск читання пошти (кнопка «Затягнути зараз»)."""
+    permission_classes = [ManagePerm]
+
+    def post(self, request):
+        from .email_invoices import poll
+        backfill = bool(request.data.get("backfill"))
+        limit = int(request.data.get("limit") or 80)
+        res = poll(limit=limit, backfill=backfill)
+        return Response(res)
