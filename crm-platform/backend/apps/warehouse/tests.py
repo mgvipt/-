@@ -52,6 +52,15 @@ class ShopCatalogServiceTest(TestCase):
         self.assertFalse(product.shop_has_board)
         self.assertFalse(product.shop_is_tinted)
 
+    def test_new_event_supersedes_old_failed_payload(self):
+        product = self.product()
+        old = queue_product_sync(product)
+        old.status = "failed"; old.save(update_fields=["status"])
+        current = queue_product_sync(product)
+        old.refresh_from_db()
+        self.assertEqual(old.status, "superseded")
+        self.assertEqual(current.status, "pending")
+
     @override_settings(SHOP_WEBHOOK_SECRET="test-secret")
     @patch("apps.warehouse.shop_sync.urllib.request.urlopen")
     def test_delivery_is_signed_and_marks_processed(self, urlopen):

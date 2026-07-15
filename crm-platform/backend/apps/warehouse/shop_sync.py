@@ -183,7 +183,9 @@ def product_payload(product, action=None):
 @transaction.atomic
 def queue_product_sync(product, action=None):
     payload = product_payload(product, action=action)
-    ShopSyncEvent.objects.filter(product=product, status="pending").update(status="superseded")
+    # Стара невдала подія теж стає неактуальною: інакше після відновлення зв'язку
+    # вона могла б прийти пізніше й перезаписати свіжішу версію картки.
+    ShopSyncEvent.objects.filter(product=product, status__in=["pending", "failed"]).update(status="superseded")
     event = ShopSyncEvent.objects.create(product=product, action=payload["action"], payload=payload)
     desired = "hidden" if payload["action"] == "hide" else (
         "ready" if payload["product"]["publish_requested"] and payload["product"]["publishable"] else "draft"
