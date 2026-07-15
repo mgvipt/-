@@ -996,7 +996,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                           </div>
                         )}
                       </td>
-                      <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><input defaultValue={Number(it.price)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.price) && updateItem(it.id, { price: e.target.value })} style={editInp} /> ₴</td>
+                      <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><input key={"pr-" + it.id + "-" + it.price} defaultValue={Number(it.price)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.price) && updateItem(it.id, { price: e.target.value })} style={editInp} /> ₴</td>
                       {can("product.cost.view") && <td style={{ padding: "6px 4px", color: "#9a3412", whiteSpace: "nowrap" }} title={t("Закупка за позицию (себестоимость × кол-во). Для услуг с минималкой считается от суммы строки.","Закупка за позицію (собівартість × кількість). Для послуг з мінімалкою рахується від суми рядка.")}>{Number(it.cost || 0) > 0 ? fmt(Number(it.cost) * Number(it.quantity)) + " ₴" : "—"}</td>}
                       <td style={{ padding: "6px 4px" }}><input defaultValue={Number(it.quantity)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.quantity) && updateItem(it.id, { quantity: e.target.value })} style={{ ...editInp, width: 50 }} /></td>
                       <td style={{ padding: "6px 4px", textAlign: "center" }}><input type="checkbox" checked={!!it.reserved} onChange={() => toggleReserve(it)} title={t("Зарезервировать под сделку","Зарезервувати під угоду")} /></td>
