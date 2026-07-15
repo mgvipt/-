@@ -22,6 +22,9 @@ class ProductCategorySerializer(serializers.ModelSerializer):
 class ProductSerializer(serializers.ModelSerializer):
     stock = serializers.SerializerMethodField()
     category_name = serializers.CharField(source="category.name", read_only=True, default="")
+    shop_validation_errors = serializers.SerializerMethodField()
+    shop_group_variants = serializers.SerializerMethodField()
+    shop_sync_history = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -29,7 +32,16 @@ class ProductSerializer(serializers.ModelSerializer):
                   "is_active", "category", "category_name", "stock", "margin",
                   "description", "b24_created_by", "b24_modified_by",
                   "b24_created_at", "b24_modified_at", "created_at", "updated_at", "images", "is_bundle",
-                  "track_stock", "reserved_qty", "is_drop"]
+                  "track_stock", "reserved_qty", "is_drop",
+                  "shop_managed", "shop_enabled", "shop_status", "shop_group_key", "shop_parent_name",
+                  "shop_slug", "shop_short_description", "shop_full_description", "shop_benefits",
+                  "shop_effect", "shop_rooms", "shop_beginner", "shop_video_url", "shop_instruction_url",
+                  "shop_sort", "shop_badges", "shop_variant_type", "shop_has_board", "shop_is_tinted",
+                  "shop_variant_order", "shop_variant_name", "shop_contents", "seo_title", "seo_description",
+                  "seo_h1", "seo_categories", "seo_faqs", "seo_index", "shop_last_sync_at",
+                  "shop_sync_error", "shop_remote_url", "shop_validation_errors", "shop_group_variants",
+                  "shop_sync_history"]
+        read_only_fields = ["shop_managed", "shop_status", "shop_last_sync_at", "shop_sync_error", "shop_remote_url"]
 
     def get_stock(self, obj):
         return obj.stock()
@@ -37,7 +49,28 @@ class ProductSerializer(serializers.ModelSerializer):
     images = serializers.SerializerMethodField()
 
     def get_images(self, obj):
-        return [{"id": im.id, "url": "/api/products/%d/image/%d/" % (obj.id, im.id)} for im in obj.images.all()]
+        return [{
+            "id": im.id, "url": "/api/products/%d/image/%d/" % (obj.id, im.id),
+            "alt_text": im.alt_text, "is_primary": im.is_primary,
+            "is_approved": im.is_approved, "variant_key": im.variant_key,
+        } for im in obj.images.all()]
+
+    def get_shop_validation_errors(self, obj):
+        from .shop_sync import catalog_validation_errors
+        return catalog_validation_errors(obj) if obj.shop_managed or obj.category_id == 59 else []
+
+    def get_shop_group_variants(self, obj):
+        if not obj.shop_group_key:
+            return []
+        return list(Product.objects.filter(shop_group_key=obj.shop_group_key).order_by("shop_variant_order", "id").values(
+            "id", "sku", "name", "price", "shop_variant_name", "shop_has_board", "shop_is_tinted",
+            "shop_variant_order", "shop_status", "shop_enabled",
+        ))
+
+    def get_shop_sync_history(self, obj):
+        return list(obj.shop_sync_events.order_by("-created_at")[:8].values(
+            "event_uuid", "action", "status", "attempts", "last_error", "created_at", "processed_at"
+        ))
 
     reserved_qty = serializers.SerializerMethodField()
 
@@ -67,6 +100,29 @@ class ProductSerializer(serializers.ModelSerializer):
         if not (u and (getattr(u, "is_superuser", False) or (hasattr(u, "has_perm_code") and u.has_perm_code("product.cost.view")))):
             data.pop("cost", None); data.pop("margin", None)
         return data
+
+    def create(self, validated_data):
+        product = super().create(validated_data)
+        self._queue_shop_change(product)
+        return Product.objects.get(pk=product.pk)
+
+    def update(self, instance, validated_data):
+        was_managed = instance.shop_managed
+        product = super().update(instance, validated_data)
+        self._queue_shop_change(product, was_managed=was_managed)
+        return Product.objects.get(pk=product.pk)
+
+    def _queue_shop_change(self, product, was_managed=False):
+        from .shop_sync import SAMPLE_CATEGORY_ID, prepare_product_for_shop, queue_product_sync
+        if product.category_id == SAMPLE_CATEGORY_ID:
+            prepare_product_for_shop(product)
+            product.refresh_from_db()
+            queue_product_sync(product)
+        elif product.shop_managed or was_managed:
+            if not product.shop_managed:
+                Product.objects.filter(pk=product.pk).update(shop_managed=True)
+                product.shop_managed = True
+            queue_product_sync(product, action="hide")
 
 
 class MovementSerializer(serializers.ModelSerializer):

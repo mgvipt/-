@@ -142,7 +142,25 @@ class DuplicatesView(APIView):
                     model.objects.filter(**{f"{fname}__in": ids}).update(**{fname: k})
             except Exception:
                 pass
-        # дозаповнити порожні поля keep з дублів
+        # 1) ЯВНИЙ вибір полів (галочки в модалці об'єднання): що обрано — те й ставимо на keep
+        fields = request.data.get("fields") or {}
+        ALLOWED = {"first_name", "last_name", "middle_name", "nickname", "phone", "email",
+                   "social_link", "address", "birthday", "source", "edrpou", "iban", "comment"}
+        for f, v in fields.items():
+            if f not in ALLOWED:
+                continue
+            if f == "birthday":
+                v = v or None
+            setattr(k, f, v if v is not None else "")
+        # 2) обʼєднати канали месенджерів (union усіх)
+        try:
+            chans = set(k.channels or [])
+            for src in Contact.objects.filter(id__in=ids):
+                chans |= set(src.channels or [])
+            k.channels = sorted(chans)
+        except Exception:
+            pass
+        # 3) дозаповнити ПОРОЖНІ поля keep з дублів (для полів, що НЕ обрані явно)
         for src in Contact.objects.filter(id__in=ids):
             for f in ["phone", "email", "social_link", "first_name", "last_name", "address", "company", "birthday"]:
                 if not getattr(k, f) and getattr(src, f):

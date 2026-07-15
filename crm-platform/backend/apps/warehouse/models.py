@@ -1,6 +1,7 @@
 from django.db import models
 from django.db.models import Sum
 from django.conf import settings
+import uuid
 
 
 class Warehouse(models.Model):
@@ -32,6 +33,10 @@ class ProductImage(models.Model):
     file_path = models.CharField(max_length=255)
     b24_file_id = models.IntegerField(null=True, blank=True, db_index=True)
     order = models.IntegerField(default=0)
+    alt_text = models.CharField(max_length=255, blank=True, default="")
+    is_primary = models.BooleanField(default=False)
+    is_approved = models.BooleanField(default=False)
+    variant_key = models.CharField(max_length=40, blank=True, default="")
 
     class Meta:
         ordering = ["order", "id"]
@@ -72,6 +77,42 @@ class Product(models.Model):
         help_text="Вимкни для послуг/робіт/номенклатури без залишку — не списується зі складу, залишок не рахується")
     is_drop = models.BooleanField("Дроп (докупаємо під замовлення)", default=False,
         help_text="Товар, який ми продаємо ПІД замовлення і закуповуємо ПІСЛЯ продажу. Коли робиш прихід — закупівельна ціна автоматично оновлюється в УСІХ угодах з цим товаром (навіть у закритих) і в русі товару. Для звичайних складських товарів вимкнено — там історія собівартості на момент продажу не змінюється.")
+    SHOP_STATUSES = [
+        ("draft", "Чернетка"), ("ready", "Готовий"),
+        ("published", "Опублікований"), ("hidden", "Прихований"),
+        ("error", "Помилка"),
+    ]
+    shop_managed = models.BooleanField(default=False, db_index=True)
+    shop_enabled = models.BooleanField("Показувати на сайті", default=False)
+    shop_status = models.CharField(max_length=16, choices=SHOP_STATUSES, default="draft", db_index=True)
+    shop_group_key = models.CharField(max_length=96, blank=True, default="", db_index=True)
+    shop_parent_name = models.CharField("Назва покриття на сайті", max_length=255, blank=True, default="")
+    shop_slug = models.SlugField(max_length=160, blank=True, default="")
+    shop_short_description = models.TextField(blank=True, default="")
+    shop_full_description = models.TextField(blank=True, default="")
+    shop_benefits = models.JSONField(default=list, blank=True)
+    shop_effect = models.CharField(max_length=120, blank=True, default="")
+    shop_rooms = models.JSONField(default=list, blank=True)
+    shop_beginner = models.BooleanField(default=False)
+    shop_video_url = models.URLField(max_length=500, blank=True, default="")
+    shop_instruction_url = models.URLField(max_length=500, blank=True, default="")
+    shop_sort = models.PositiveIntegerField(default=0)
+    shop_badges = models.JSONField(default=list, blank=True)
+    shop_variant_type = models.CharField(max_length=32, blank=True, default="sample")
+    shop_has_board = models.BooleanField(null=True, blank=True)
+    shop_is_tinted = models.BooleanField(null=True, blank=True)
+    shop_variant_order = models.PositiveSmallIntegerField(default=0)
+    shop_variant_name = models.CharField(max_length=255, blank=True, default="")
+    shop_contents = models.TextField(blank=True, default="")
+    seo_title = models.CharField(max_length=255, blank=True, default="")
+    seo_description = models.TextField(blank=True, default="")
+    seo_h1 = models.CharField(max_length=255, blank=True, default="")
+    seo_categories = models.JSONField(default=list, blank=True)
+    seo_faqs = models.JSONField(default=list, blank=True)
+    seo_index = models.BooleanField(default=False)
+    shop_last_sync_at = models.DateTimeField(null=True, blank=True)
+    shop_sync_error = models.TextField(blank=True, default="")
+    shop_remote_url = models.URLField(max_length=500, blank=True, default="")
     b24_created_by = models.CharField("Хто створив (Б24)", max_length=120, blank=True, default="")
     b24_modified_by = models.CharField("Хто змінив (Б24)", max_length=120, blank=True, default="")
     b24_created_at = models.DateTimeField(null=True, blank=True)
@@ -91,6 +132,28 @@ class Product(models.Model):
         if warehouse:
             qs = qs.filter(document__warehouse=warehouse)
         return qs.aggregate(s=Sum("quantity"))["s"] or 0
+
+
+class ShopSyncEvent(models.Model):
+    STATUSES = [
+        ("pending", "Очікує"), ("processing", "Передається"),
+        ("processed", "Готово"), ("failed", "Помилка"),
+        ("superseded", "Замінено новішою подією"),
+    ]
+    event_uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="shop_sync_events")
+    action = models.CharField(max_length=16, default="upsert")
+    payload = models.JSONField(default=dict)
+    status = models.CharField(max_length=16, choices=STATUSES, default="pending", db_index=True)
+    attempts = models.PositiveIntegerField(default=0)
+    next_retry_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
 
 
 class StockDocument(models.Model):

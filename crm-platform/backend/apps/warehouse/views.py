@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from django.db.models import Sum, Q
 from django.db.models.functions import Coalesce
 from apps.common.permissions import HasPermCode
-from .models import Warehouse, Product, ProductCategory, StockDocument, StockMovement
+from .models import Warehouse, Product, ProductCategory, ProductImage, StockDocument, StockMovement
 from .serializers import WarehouseSerializer, ProductSerializer, StockDocumentSerializer, ProductCategorySerializer
 
 
@@ -280,6 +280,97 @@ class ProductViewSet(viewsets.ModelViewSet):
             return FileResponse(open(im.file_path, "rb"))
         except (ProductImage.DoesNotExist, FileNotFoundError):
             raise Http404
+
+    @action(detail=True, methods=["get"], url_path="shop-validate")
+    def shop_validate(self, request, pk=None):
+        """Чекліст готовності товару до публікації."""
+        from .shop_sync import catalog_validation_errors, prepare_product_for_shop
+        product = prepare_product_for_shop(self.get_object())
+        errors = catalog_validation_errors(product)
+        return Response({"ok": not errors, "status": product.shop_status, "errors": errors})
+
+    @action(detail=True, methods=["post"], url_path="shop-sync")
+    def shop_sync(self, request, pk=None):
+        """Поставити одну актуальну версію картки в надійну чергу магазину."""
+        from .shop_sync import queue_product_sync
+        product = self.get_object()
+        if not product.shop_managed and product.category_id != 59:
+            return Response({"detail": "Товар не належить до каталогу інтернет-магазину."}, status=400)
+        event = queue_product_sync(product)
+        product.refresh_from_db()
+        return Response({"queued": True, "event_uuid": event.event_uuid,
+                         "status": product.shop_status,
+                         "errors": event.payload.get("product", {}).get("validation_errors", [])})
+
+    @action(detail=True, methods=["post"], url_path="shop-images")
+    def upload_shop_image(self, request, pk=None):
+        """Завантажити фото; воно не піде на сайт, поки менеджер його не затвердить."""
+        import mimetypes
+        import os
+        import uuid
+        from django.conf import settings
+        from .shop_sync import queue_product_sync
+        product = self.get_object()
+        uploaded = request.FILES.get("file")
+        if not uploaded:
+            return Response({"detail": "Оберіть файл."}, status=400)
+        allowed = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+        content_type = (uploaded.content_type or mimetypes.guess_type(uploaded.name)[0] or "").lower()
+        if content_type not in allowed:
+            return Response({"detail": "Дозволені JPG, PNG або WEBP."}, status=400)
+        if uploaded.size > 10 * 1024 * 1024:
+            return Response({"detail": "Фото завелике. Максимум 10 МБ."}, status=400)
+        root = getattr(settings, "WAREHOUSE_PHOTOS_DIR", "/app/warehouse_photos")
+        folder = os.path.join(root, "products")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, f"shop_{product.id}_{uuid.uuid4().hex}{allowed[content_type]}")
+        with open(path, "wb") as target:
+            for chunk in uploaded.chunks():
+                target.write(chunk)
+        image = ProductImage.objects.create(
+            product=product, file_path=path, order=product.images.count(),
+            alt_text=(request.data.get("alt_text") or product.shop_parent_name or product.name)[:255],
+            variant_key=(request.data.get("variant_key") or "")[:40],
+        )
+        queue_product_sync(product)
+        return Response({"id": image.id, "url": f"/api/products/{product.id}/image/{image.id}/",
+                         "is_approved": False, "is_primary": False}, status=201)
+
+    @action(detail=True, methods=["patch", "delete"], url_path="shop-images/(?P<img_id>[0-9]+)")
+    def manage_shop_image(self, request, pk=None, img_id=None):
+        """Затвердити/обрати головне/описати або видалити фото конкретного товару."""
+        import os
+        from .shop_sync import queue_product_sync
+        product = self.get_object()
+        try:
+            image = ProductImage.objects.get(pk=img_id, product=product)
+        except ProductImage.DoesNotExist:
+            return Response({"detail": "Фото не знайдено."}, status=404)
+        if request.method == "DELETE":
+            path = image.file_path
+            image.delete()
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+            queue_product_sync(product)
+            return Response(status=204)
+        fields = []
+        for field in ("alt_text", "variant_key", "is_approved", "is_primary"):
+            if field in request.data:
+                value = request.data[field]
+                if field in ("is_approved", "is_primary"):
+                    value = str(value).lower() in ("1", "true", "yes", "on")
+                setattr(image, field, value)
+                fields.append(field)
+        if image.is_primary:
+            ProductImage.objects.filter(product=product).exclude(pk=image.pk).update(is_primary=False)
+        if fields:
+            image.save(update_fields=fields)
+        queue_product_sync(product)
+        return Response({"id": image.id, "alt_text": image.alt_text,
+                         "variant_key": image.variant_key, "is_approved": image.is_approved,
+                         "is_primary": image.is_primary})
 
     @action(detail=True, methods=["get"])
     def movements(self, request, pk=None):

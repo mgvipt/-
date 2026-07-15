@@ -2,6 +2,7 @@
    Контакти можна обʼєднати в один (перепривʼязка лідів/сделок/чатів + дозаповнення полів). */
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { api } from "../api";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
@@ -12,6 +13,15 @@ type Group = { reason: string; by: string; key: string; count: number; items: It
 const REASON_ICON: Record<string, string> = { phone: "phone", email: "mail", social: "link", name: "user", contact: "user" };
 const REASON_LABEL: Record<string, [string, string]> = { phone: ["Телефон", "Телефон"], email: ["Email", "Email"], social: ["Мессенджер/ник", "Мессенджер/нік"], name: ["Имя", "Імʼя"], contact: ["Один контакт — несколько", "Один контакт — декілька"] };
 
+// поля, які можна перенести при обʼєднанні (ключ, RU, UA)
+const MFIELDS: [string, string, string][] = [
+  ["first_name", "Имя", "Імʼя"], ["last_name", "Фамилия", "Прізвище"], ["middle_name", "Отчество", "По батькові"],
+  ["nickname", "Ник (мессенджер)", "Нік (месенджер)"], ["phone", "Телефон", "Телефон"], ["email", "Email", "Email"],
+  ["social_link", "Ссылка IG/TG/FB", "Посилання IG/TG/FB"], ["address", "Адрес", "Адреса"],
+  ["birthday", "Дата рождения", "Дата народження"], ["source", "Источник", "Джерело"],
+  ["edrpou", "ЄДРПОУ/ИНН", "ЄДРПОУ/ІПН"], ["iban", "IBAN", "IBAN"], ["comment", "Комментарий", "Коментар"],
+];
+
 export default function Duplicates() {
   const { t } = useLang();
   const [tab, setTab] = useState<"contacts" | "leads" | "deals">("contacts");
@@ -21,6 +31,8 @@ export default function Duplicates() {
   const [busy, setBusy] = useState<number | null>(null);
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
+  const [mm, setMm] = useState<null | { ids: number[]; keepId: number; contacts: any[]; choice: Record<string, number> }>(null);
+  const [mmBusy, setMmBusy] = useState(false);
 
   const load = () => {
     setLoading(true); setData(null); setPage(1);
@@ -39,6 +51,32 @@ export default function Duplicates() {
       load();
     } catch { alert(t("Не удалось объединить", "Не вдалося обʼєднати")); }
     finally { setBusy(null); }
+  };
+
+  const openMerge = async (gi: number, g: Group) => {
+    const ids = g.items.map((i) => i.id);
+    const preKeep = keep[gi] ?? ids[0];
+    setMm({ ids, keepId: preKeep, contacts: [], choice: {} });
+    try {
+      const full = await Promise.all(ids.map((id) => api.get<any>(`/api/contacts/${id}/`)));
+      const choice: Record<string, number> = {};
+      MFIELDS.forEach(([f]) => {
+        const withVal = full.filter((c: any) => (c[f] ?? "") !== "");
+        choice[f] = (withVal.find((c: any) => c.id === preKeep) || withVal[0] || full[0])?.id;
+      });
+      setMm({ ids, keepId: preKeep, contacts: full, choice });
+    } catch { alert(t("Не удалось загрузить контакты", "Не вдалося завантажити контакти")); setMm(null); }
+  };
+
+  const doMerge = async () => {
+    if (!mm) return;
+    const { ids, keepId, contacts, choice } = mm;
+    const fields: Record<string, any> = {};
+    MFIELDS.forEach(([f]) => { const c = contacts.find((x: any) => x.id === choice[f]); fields[f] = c ? (c[f] ?? "") : ""; });
+    setMmBusy(true);
+    try { await api.post("/api/duplicates/", { keep: keepId, ids, fields }); setMm(null); load(); }
+    catch { alert(t("Не удалось объединить", "Не вдалося обʼєднати")); }
+    finally { setMmBusy(false); }
   };
 
   const tabs: [typeof tab, string, string][] = [
@@ -92,7 +130,7 @@ export default function Duplicates() {
                   <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "#ef4444", borderRadius: 20, padding: "1px 9px" }}>{g.count}</span>
                   <div style={{ flex: 1 }} />
                   {tab === "contacts" && (
-                    <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={busy === gi} onClick={() => merge(gi, g)}>
+                    <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={busy === gi} onClick={() => openMerge(gi, g)}>
                       <Icon n="check" size={14} /> {busy === gi ? "…" : t("Объединить", "Обʼєднати")}
                     </button>
                   )}
@@ -130,6 +168,53 @@ export default function Duplicates() {
           })}
         </>
       )}
+      {mm && createPortal(
+        <div onClick={() => !mmBusy && setMm(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 2147483000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 920, maxWidth: "97vw", maxHeight: "90vh", overflow: "auto", background: "#fff", borderRadius: 14, boxShadow: "0 24px 70px rgba(0,0,0,.35)", padding: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+              <h3 style={{ margin: 0, fontSize: 17 }}>{t("Объединение контактов", "Обʼєднання контактів")}</h3>
+              <div style={{ flex: 1 }} />
+              <button className="btn btn-light" onClick={() => !mmBusy && setMm(null)}>✕</button>
+            </div>
+            <div className="muted" style={{ fontSize: 12.5, marginBottom: 12 }}>{t("Выбери контакт, который ОСТАНЕТСЯ (получит все сделки/лиды/чаты), и галочками — какие данные перенести в него.", "Обери контакт, що ЗАЛИШИТЬСЯ (отримає всі сделки/ліди/чати), і галочками — які дані перенести в нього.")}</div>
+            {mm.contacts.length === 0 ? <div style={{ padding: 30, textAlign: "center" }} className="muted">…</div> : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", fontSize: 12.5, borderCollapse: "collapse" }}>
+                  <thead><tr>
+                    <th style={{ textAlign: "left", padding: "6px 8px", color: "#64748b", fontSize: 11, borderBottom: "2px solid #e2e8f0" }}>{t("Поле", "Поле")}</th>
+                    {mm.contacts.map((c: any) => { const isK = mm.keepId === c.id; return (
+                      <th key={c.id} style={{ textAlign: "left", padding: "6px 8px", borderBottom: "2px solid #e2e8f0", background: isK ? "#ecfdf5" : "", minWidth: 190 }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                          <input type="radio" name="keepc" checked={isK} onChange={() => setMm({ ...mm, keepId: c.id })} />
+                          <span style={{ fontWeight: 700 }}>{c.display_name || ((c.first_name || "") + " " + (c.last_name || "")).trim() || ("#" + c.id)}</span>
+                          <span className="muted" style={{ fontWeight: 400, fontSize: 10.5 }}>#{c.id}</span>
+                          {isK && <span style={{ fontSize: 10, fontWeight: 800, color: "#16a34a" }}>{t("ОСТАВИТЬ", "ЗАЛИШИТИ")}</span>}
+                        </label>
+                      </th>); })}
+                  </tr></thead>
+                  <tbody>
+                    {MFIELDS.map(([f, ru, ua]) => {
+                      if (!mm.contacts.some((c: any) => (c[f] ?? "") !== "")) return null;
+                      return (<tr key={f}>
+                        <td style={{ padding: "6px 8px", color: "#475569", fontWeight: 600, borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap" }}>{t(ru, ua)}</td>
+                        {mm.contacts.map((c: any) => { const val = c[f] ?? ""; const chosen = mm.choice[f] === c.id; const isK = mm.keepId === c.id;
+                          return (<td key={c.id} onClick={() => val !== "" && setMm({ ...mm, choice: { ...mm.choice, [f]: c.id } })}
+                            style={{ padding: "5px 8px", borderBottom: "1px solid #f1f5f9", cursor: val !== "" ? "pointer" : "default", background: chosen ? "#dcfce7" : (isK ? "#f0fdf4" : ""), wordBreak: "break-word" }}>
+                            {val !== "" ? <label style={{ display: "flex", alignItems: "flex-start", gap: 6, cursor: "pointer" }}><input type="radio" name={"ff-" + f} checked={chosen} onChange={() => setMm({ ...mm, choice: { ...mm.choice, [f]: c.id } })} style={{ marginTop: 2 }} /><span>{String(val)}</span></label> : <span className="muted">—</span>}
+                          </td>); })}
+                      </tr>); })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+              <button className="btn btn-light" onClick={() => !mmBusy && setMm(null)}>{t("Отмена", "Скасувати")}</button>
+              <button className="btn btn-primary" disabled={mmBusy || mm.contacts.length === 0} onClick={doMerge}>
+                <Icon n="check" size={14} /> {mmBusy ? "…" : t("Объединить", "Обʼєднати")}
+              </button>
+            </div>
+          </div>
+        </div>, document.body)}
     </div>
   );
 }

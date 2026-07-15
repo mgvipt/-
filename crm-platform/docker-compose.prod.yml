@@ -1,6 +1,4 @@
-# Боевой запуск GMIdeas CRM. Запускать из каталога crm-platform/:
-#   cp .env.prod.example .env && nano .env   (укажи DOMAIN, пароли, SECRET_KEY)
-#   docker compose -f docker-compose.prod.yml up -d --build
+# Боевой запуск GMIdeas CRM. Запускать из каталога crm-platform/.
 services:
   db:
     image: postgres:16-alpine
@@ -21,7 +19,7 @@ services:
              python manage.py collectstatic --noinput &&
              python manage.py seed_demo &&
              gunicorn config.wsgi:application -b 0.0.0.0:8000 -w 3 --timeout 60"
-    environment:
+    environment: &crm-environment
       DEBUG: "0"
       SECRET_KEY: ${SECRET_KEY}
       ALLOWED_HOSTS: ${DOMAIN}
@@ -51,6 +49,17 @@ services:
       CHECKBOX_PASSWORD: ${CHECKBOX_PASSWORD}
       CHECKBOX_LICENSE_KEY: ${CHECKBOX_LICENSE_KEY}
       SHOP_WEBHOOK_SECRET: ${SHOP_WEBHOOK_SECRET}
+      SHOP_CATALOG_URL: https://wallcov.com.ua/new/api/crm/catalog-products
+      CRM_PUBLIC_URL: https://crm.wallcovdec.com.ua
+    depends_on: [db]
+    restart: unless-stopped
+
+  shop-sync:
+    build: { context: ./backend }
+    volumes:
+      - /root/crm-media/warehouse_photos:/app/warehouse_photos
+    command: python manage.py process_shop_catalog --watch --interval 30 --reconcile-minutes 15
+    environment: *crm-environment
     depends_on: [db]
     restart: unless-stopped
 
@@ -58,8 +67,6 @@ services:
     build: { context: ., dockerfile: deploy/Dockerfile.caddy }
     environment:
       DOMAIN: ${DOMAIN}
-    # Слушаем только на localhost (порт настраивается через EDGE_PORT, по умолч. 8137).
-    # Публичные 80/443 у системного nginx, который проксирует сюда поддомен CRM и держит TLS.
     ports: ["127.0.0.1:${EDGE_PORT:-8137}:80"]
     depends_on: [web]
     extra_hosts: ["host.docker.internal:host-gateway"]
