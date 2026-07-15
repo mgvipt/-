@@ -9,6 +9,7 @@ import ChatActions from "./ChatActions";
 import { dayLabel, timeLabel, isNewDay, linkify, metaWindow } from "./chatUtils";
 
 const tt = (_r: string, ua: string) => ua;  // ClientChat україномовний
+type ReplyChannel = { channel_id: number; channel_kind: string; channel_name: string; number?: string; conversation_id?: number | null; selected?: boolean };
 
 export default function ClientChat({ contact, markSeen = true }: { contact?: number | null; markSeen?: boolean }) {
   const [conv, setConv] = useState<Conversation | null>(null);
@@ -20,6 +21,8 @@ export default function ClientChat({ contact, markSeen = true }: { contact?: num
   const [aiLoad, setAiLoad] = useState(false);
   const [err, setErr] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [replyChannels, setReplyChannels] = useState<ReplyChannel[]>([]);
+  const [switchingChannel, setSwitchingChannel] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -39,9 +42,26 @@ export default function ClientChat({ contact, markSeen = true }: { contact?: num
       setMsgs((prev) => (m.length !== prev.length ? m : prev));
     } catch { /* ignore */ }
   }
+  async function loadReplyChannels(id: number) {
+    try { setReplyChannels(await api.get<ReplyChannel[]>(`/api/conversations/${id}/reply_channels/`)); }
+    catch { setReplyChannels([]); }
+  }
+  async function useChannel(channelId: number) {
+    if (!conv || channelId === conv.channel) return;
+    setSwitchingChannel(true); setErr("");
+    try {
+      const selected = await api.post<Conversation>(`/api/conversations/${conv.id}/use_channel/`, { channel_id: channelId });
+      setConv(selected); setMsgs([]); setAi(null);
+      await Promise.all([loadMsgs(selected.id), loadReplyChannels(selected.id)]);
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || "Не вдалося вибрати канал");
+    }
+    setSwitchingChannel(false);
+  }
   useEffect(() => { loadConv(); /* eslint-disable-next-line */ }, [contact]);
   useEffect(() => {
     if (!conv) return;
+    loadReplyChannels(conv.id);
     const t = setInterval(() => loadMsgs(conv.id), 6000);
     return () => clearInterval(t);
   }, [conv]);
@@ -92,6 +112,19 @@ export default function ClientChat({ contact, markSeen = true }: { contact?: num
 
   return (
     <div style={{ display: "flex", flexDirection: "column", containerType: "inline-size" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
+        <span style={{ fontSize: 10.5, color: "#64748b", fontWeight: 700, whiteSpace: "nowrap" }}>Відповідати через</span>
+        <select value={conv.channel} onChange={(e) => useChannel(Number(e.target.value))} disabled={switchingChannel}
+          title="Оберіть канал і номер, від імені якого CRM напише клієнту"
+          style={{ minWidth: 0, flex: 1, height: 30, border: "1px solid #cbd5e1", borderRadius: 7, background: "#fff", color: "#334155", padding: "0 7px", fontSize: 11.5, fontWeight: 600 }}>
+          {replyChannels.length === 0 && <option value={conv.channel}>{conv.channel_name}</option>}
+          {replyChannels.map((line) => (
+            <option key={line.channel_id} value={line.channel_id}>
+              {line.channel_name}{line.number && !line.channel_name.includes(line.number) ? ` · ${line.number}` : ""}
+            </option>
+          ))}
+        </select>
+      </div>
       <ChatActions convId={conv.id} onClosed={() => { setConv(null); setMsgs([]); }} onChanged={(c) => setConv(c)} />
       {/* СТРІЧКА — заповнює доступну висоту */}
       <div style={{ height: "calc(100vh - 300px)", minHeight: 160, maxHeight: "calc(100vh - 170px)", resize: "vertical", overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>

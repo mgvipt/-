@@ -252,7 +252,13 @@ class EchatViberAdapter(ChannelAdapter):
 
     def _post(self, path, body):
         req = urllib.request.Request(self.BASE + path, data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json", "Api-Key": self.config.get("api_key", "")})
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Api-Key": self.config.get("api_key", ""),
+                # Без явного User-Agent Cloudflare E-chat відхиляє urllib як error 1010.
+                "User-Agent": "WallcovCRM/1.0 (+https://crm.wallcovdec.com.ua)",
+            })
         with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310
             return json.loads((r.read().decode() or "{}") or "{}")
 

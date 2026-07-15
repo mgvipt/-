@@ -92,27 +92,49 @@ class EchatWebhookView(APIView):
 
 
 class EchatSetupView(APIView):
-    """Налаштування Viber через e-chat: створення каналу + увімкнення вебхуків + лінк вебхука."""
-    def _ch(self):
-        return Channel.objects.filter(kind="echat").first()
+    """Налаштування кількох Viber-номерів через e-chat.tech."""
+
+    @staticmethod
+    def _number(raw):
+        """E-chat очікує міжнародний номер без пробілів і символу +."""
+        import re
+        number = re.sub(r"\D", "", str(raw or ""))
+        if len(number) == 10 and number.startswith("0"):
+            number = "38" + number
+        return number
+
+    def _row(self, request, ch):
+        cfg = ch.config or {}
+        return {
+            "connected": bool(ch.is_active),
+            "number": cfg.get("number", ""),
+            "has_key": bool(cfg.get("api_key")),
+            "channel_id": ch.id,
+            "webhook": request.build_absolute_uri("/api/inbox/echat/webhook/%d/" % ch.id),
+        }
 
     def get(self, request):
-        ch = self._ch()
-        if not ch:
-            return Response({"connected": False, "number": "", "has_key": False, "webhook": "", "channel_id": None})
-        return Response({"connected": bool(ch.is_active), "number": (ch.config or {}).get("number", ""),
-                         "has_key": bool((ch.config or {}).get("api_key")), "channel_id": ch.id,
-                         "webhook": request.build_absolute_uri("/api/inbox/echat/webhook/%d/" % ch.id)})
+        rows = [self._row(request, ch) for ch in Channel.objects.filter(kind="echat").order_by("id")]
+        # Старі поля лишаємо для сумісності зі старим фронтендом під час rolling deploy.
+        first = rows[0] if rows else {"connected": False, "number": "", "has_key": False,
+                                     "webhook": "", "channel_id": None}
+        return Response({**first, "channels": rows})
 
     def post(self, request):
         if not request.user.has_perm_code("roles.manage"):
             return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
         api_key = (request.data.get("api_key") or "").strip()
-        number = (request.data.get("number") or "").strip()
+        number = self._number(request.data.get("number"))
         if not number:
             return Response({"detail": "Вкажіть Viber-номер каналу"}, status=status.HTTP_400_BAD_REQUEST)
-        ch = self._ch() or Channel.objects.create(kind="echat", name="Viber (e-chat)")
+        ch = next((row for row in Channel.objects.filter(kind="echat")
+                   if self._number((row.config or {}).get("number")) == number), None)
+        if ch is None:
+            ch = Channel(kind="echat", name="Viber (e-chat) " + number)
         cfg = ch.config or {}
+        if not api_key and not cfg.get("api_key"):
+            return Response({"detail": "Для нового номера вкажіть API-ключ E-chat"},
+                            status=status.HTTP_400_BAD_REQUEST)
         cfg["echat"] = True; cfg["number"] = number
         if api_key:
             cfg["api_key"] = api_key
@@ -123,6 +145,7 @@ class EchatSetupView(APIView):
         except Exception as e:
             result = {"warn": str(e)}
         return Response({"ok": True, "channel_id": ch.id,
+                         "number": number,
                          "webhook": request.build_absolute_uri("/api/inbox/echat/webhook/%d/" % ch.id),
                          "connect_result": result})
 
@@ -360,6 +383,72 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
               .select_related("channel", "contact", "assigned_to").prefetch_related("participants")
               .order_by("-last_message_at"))
         return Response(ConversationSerializer(qs, many=True, context={"request": request}).data)
+
+    def _allowed_reply_channels(self, request, conv):
+        """Лінії, якими цьому контакту реально можна відповісти."""
+        allowed = request.user.allowed_channel_ids()
+        channels = Channel.objects.filter(is_active=True).order_by("kind", "name")
+        if allowed is not None:
+            channels = channels.filter(id__in=allowed)
+        existing = {}
+        if conv.contact_id:
+            for row in (Conversation.objects.filter(contact_id=conv.contact_id, status="open")
+                        .select_related("channel").order_by("-last_message_at", "-id")):
+                existing.setdefault(row.channel_id, row)
+        rows = []
+        for channel in channels:
+            current = existing.get(channel.id)
+            can_start = bool(channel.kind == "echat" and conv.contact and conv.contact.phone)
+            if not current and channel.id != conv.channel_id and not can_start:
+                continue
+            rows.append({
+                "channel_id": channel.id,
+                "channel_kind": channel.kind,
+                "channel_name": channel.name,
+                "number": (channel.config or {}).get("number", ""),
+                "conversation_id": current.id if current else (conv.id if channel.id == conv.channel_id else None),
+                "selected": channel.id == conv.channel_id,
+            })
+        return rows
+
+    @action(detail=True, methods=["get"])
+    def reply_channels(self, request, pk=None):
+        """Повертає доступні вихідні канали/номери без секретів конфігурації."""
+        conv = self.get_object()
+        return Response(self._allowed_reply_channels(request, conv))
+
+    @action(detail=True, methods=["post"])
+    def use_channel(self, request, pk=None):
+        """Вибрати існуючий діалог або підготувати E-chat-діалог за телефоном контакту."""
+        import re
+        conv = self.get_object()
+        try:
+            channel_id = int(request.data.get("channel_id"))
+        except (TypeError, ValueError):
+            return Response({"detail": "Оберіть канал"}, status=status.HTTP_400_BAD_REQUEST)
+        candidates = {row["channel_id"]: row for row in self._allowed_reply_channels(request, conv)}
+        if channel_id not in candidates:
+            return Response({"detail": "Цей канал недоступний для контакту"}, status=status.HTTP_400_BAD_REQUEST)
+        target = Channel.objects.get(pk=channel_id)
+        selected = (Conversation.objects.filter(contact_id=conv.contact_id, channel=target, status="open")
+                    .order_by("-last_message_at", "-id").first())
+        if selected is None:
+            if target.kind != "echat" or not conv.contact or not conv.contact.phone:
+                return Response({"detail": "Немає адреси клієнта для цього каналу"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            external_chat_id = re.sub(r"\D", "", conv.contact.phone)
+            if len(external_chat_id) == 10 and external_chat_id.startswith("0"):
+                external_chat_id = "38" + external_chat_id
+            if len(external_chat_id) < 10:
+                return Response({"detail": "У клієнта некоректний номер телефону"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            selected = Conversation.objects.create(
+                channel=target, contact=conv.contact, external_chat_id=external_chat_id,
+                title=conv.title or str(conv.contact),
+                assigned_to=conv.assigned_to,
+            )
+            selected.participants.set(conv.participants.all())
+        return Response(ConversationSerializer(selected, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
     def create_deal(self, request, pk=None):
