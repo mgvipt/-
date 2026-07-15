@@ -1248,6 +1248,77 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         pp.save(update_fields=["status", "paid_tx"])
         return Response(self.get_serializer(pp).data)
 
+    @action(detail=True, methods=["post"], url_path="pay-with-fop")
+    def pay_with_fop(self, request, pk=None):
+        """Готує платіж по кредиторці через ПриватБанк Автоклієнт (ФОП).
+        БЕЗ confirm=1 — dry-run (показує що піде, нічого не шле). З confirm=1 — створює
+        ЧЕРНЕТКУ платежу у Приват24 (НЕ підписану). Гроші йдуть лише коли Олег підпише КЕП у Приват24."""
+        import json as _json
+        import urllib.request as _ur
+        import urllib.error as _ue
+        import re as _re2
+        from django.utils import timezone as _tz
+        from apps.integrations.models import IntegrationSettings
+
+        _fin_guard(request, "finance.debts.pay", "Немає права оплачувати")
+        pp = self.get_object()
+        if pp.kind != "payable":
+            return Response({"detail": "Оплата тільки для кредиторки"}, status=400)
+        if pp.status == "paid":
+            return Response({"detail": "Вже оплачено"}, status=400)
+        # реквізити отримувача
+        iban = nceo = None
+        if pp.contact_id:
+            iban = (getattr(pp.contact, "iban", "") or "").strip() or None
+            nceo = (getattr(pp.contact, "edrpou", "") or "").strip() or None
+        text = pp.comment or ""
+        if not iban:
+            m = _re2.search(r"(UA\d{27})", text)
+            iban = m.group(1) if m else None
+        if not nceo:
+            m = _re2.search(r"(?:ЄДРПОУ|ІПН)\s*(\d{8,12})", text)
+            nceo = m.group(1) if m else None
+        name = (pp.counterparty or (pp.contact.first_name if pp.contact_id else "") or "").strip()
+        if not iban:
+            return Response({"detail": "Немає IBAN отримувача — впиши реквізити у картці контрагента"}, status=400)
+        cfg = IntegrationSettings.objects.filter(provider="privatbank").first()
+        cfg = (cfg.config if cfg else {}) or {}
+        payer = (cfg.get("acc") or "").strip()
+        token = (cfg.get("token") or "").strip()
+        dest = ("Оплата: " + (pp.comment or "рахунку"))[:420]
+        if len(dest) < 5:
+            dest = "Оплата рахунку постачальника"
+        docnum = "CRM%s-%s" % (pp.id, _tz.now().strftime("%y%m%d%H%M"))
+        payload = {
+            "document_number": docnum,
+            "payer_account": payer,
+            "recipient_account": iban,
+            "recipient_nceo": nceo or "0000000000",
+            "payment_naming": name[:120] or "Отримувач",
+            "payment_amount": ("%.2f" % float(pp.amount)),
+            "payment_destination": dest,
+        }
+        confirm = str(request.data.get("confirm") or "").lower() in ("1", "true", "yes", "on")
+        if not confirm or not token or not payer:
+            return Response({"dry_run": True, "would_send": payload, "ready": bool(token and payer),
+                             "note": "Для відправки — confirm=1. Створиться ЧЕРНЕТКА у Приват24 — підпиши її КЕП (SmartID), тоді гроші підуть."})
+        # LIVE — створити чернетку платежу (Олег ініціює кнопкою)
+        body = _json.dumps(payload, ensure_ascii=False).encode("cp1251", "replace")
+        req = _ur.Request("https://acp.privatbank.ua/api/proxy/payment/create_pred", data=body, method="POST",
+                          headers={"token": token, "User-Agent": "WallcovCRM", "Content-Type": "application/json;charset=cp1251"})
+        try:
+            with _ur.urlopen(req, timeout=40) as r:
+                resp = _json.loads(r.read().decode("cp1251", "ignore"))
+        except _ue.HTTPError as e:
+            return Response({"detail": "Приват відхилив: %s" % e.read().decode("cp1251", "ignore")[:400]}, status=400)
+        except Exception as e:  # noqa
+            return Response({"detail": "Помилка звʼязку з Приват: %s" % e}, status=400)
+        ref = resp.get("payment_ref")
+        pp.comment = ((pp.comment or "")[:200] + (" · Privat:%s" % (ref or "?")))[:255]
+        pp.save(update_fields=["comment"])
+        return Response({"ok": True, "payment_ref": ref, "payment_status": resp.get("payment_status"),
+                         "note": "Платіж створено у Приват24 як чернетку. Підпиши його КЕП у Приват24 Бізнес — тоді гроші підуть."})
+
 
     # ── Імпорт акта Нової Пошти → кредиторка (пункт 4) ──────────────────────
     @action(detail=False, methods=["post"], url_path="import-np-act",

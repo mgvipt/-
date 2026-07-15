@@ -2162,6 +2162,19 @@ function Debts() {
     if (!confirm(t(`Оплачено? В журнале появится ${r.kind === "payable" ? "расход" : "доход"} на ${r.amount} грн сегодняшним числом со всеми полями (категория/направление/фонд/канал/сделка).`, `Оплачено? У журналі зʼявиться ${r.kind === "payable" ? "витрата" : "дохід"} на ${r.amount} грн сьогоднішнім числом з усіма полями.`))) return;
     await api.post(`/api/planned-payments/${r.id}/mark-paid/`, {}); load();
   }
+  const payFop = async (r: any, e: any) => {
+    e.stopPropagation();
+    try {
+      const dry: any = await api.post(`/api/planned-payments/${r.id}/pay-with-fop/`, {});
+      if (dry.detail) { alert(dry.detail); return; }
+      const w = dry.would_send || {};
+      if (!confirm(t("Создать платёж в Приват24?", "Створити платіж у Приват24?") + `\n\n` + t("Получатель", "Отримувач") + `: ${w.payment_naming}\n` + t("Счёт", "Рахунок") + `: ${w.recipient_account}\nЄДРПОУ/ІПН: ${w.recipient_nceo}\n` + t("Сумма", "Сума") + `: ${w.payment_amount} грн\n` + t("Назначение", "Призначення") + `: ${w.payment_destination}\n\n` + t("Платёж создастся как ЧЕРНОВИК — подпишешь его КЕП в Приват24.", "Платіж створиться як ЧЕРНЕТКА — підпишеш його КЕП у Приват24."))) return;
+      const res: any = await api.post(`/api/planned-payments/${r.id}/pay-with-fop/`, { confirm: 1 });
+      if (res.detail) { alert(res.detail); return; }
+      alert("✓ " + (res.note || t("Платёж создан", "Платіж створено")) + (res.payment_ref ? `\nref: ${res.payment_ref}` : ""));
+      load();
+    } catch (err: any) { alert(err?.response?.data?.detail || t("Ошибка", "Помилка")); }
+  };
   const Section = ({ kind, title, color }: any) => {
     const list = rows.filter((r) => r.kind === kind && !r.is_internal && (!cpFilter || String(r.counterparty || "").toLowerCase().includes(cpFilter.toLowerCase())));
     const total = list.reduce((sm, r) => sm + Number(r.amount || 0), 0);
@@ -2195,6 +2208,7 @@ function Debts() {
               <td style={{ padding: "6px 4px", whiteSpace: "nowrap", textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
                 {st === "planned" && <>
                   <button className="btn btn-light" style={{ height: 26, padding: "0 9px", fontSize: 11.5 }} onClick={(e) => markPaid(r, e)}>✓ {t("Оплачено", "Оплачено")}</button>{" "}
+                  {r.kind === "payable" && <><button className="btn btn-light" style={{ height: 26, padding: "0 9px", fontSize: 11.5 }} title={t("Оплатить с ФОП через Приват (создаст черновик — подпишешь КЕП)", "Оплатити з ФОП через Приват (створить чернетку — підпишеш КЕП)")} onClick={(e) => payFop(r, e)}>💳 {t("ФОП", "ФОП")}</button>{" "}</>}
                   <button title={t("Отменить (не платим)", "Скасувати (не платимо)")} onClick={async (e) => { e.stopPropagation(); await api.patch(`/api/planned-payments/${r.id}/`, { status: "canceled" }); load(); }}
                     style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 14 }}>✕</button>
                 </>}
