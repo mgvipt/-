@@ -1,5 +1,13 @@
-/* Веб-телефон Wallcov-CRM — дзвінки прямо з браузера через нашу телефонію (WebRTC/JsSIP).
- * Реєструється як SIP-розширення, дзвонить і приймає. Плаваючий віджет. */
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * ЄДИНИЙ МОДУЛЬ ТЕЛЕФОНІЇ Wallcov-CRM. ТУТ і ТІЛЬКИ ТУТ живе логіка дзвінків.
+ * Веб-телефон: дзвінки прямо з браузера через нашу телефонію (WebRTC/JsSIP).
+ * Монтується ОДИН раз у Layout.tsx (<WebPhone/>). CallBar.tsx лише слухає подію
+ * wallcov-phone-state і дає кнопку «покласти».  <audio> живого дзвінка — ТІЛЬКИ тут.
+ * НЕ додавати srcObject / new RTCPeerConnection / другий <audio> живого дзвінка в
+ * інших файлах — інакше вхідний звук ламається. Інші <audio> (голосові, записи
+ * розмов) — це просто src-файли, не чіпають живий потік.
+ * Правило: перед будь-якою правкою цього файлу — прочитати memory feedback_telephony_single_module.
+ * ═══════════════════════════════════════════════════════════════════════════════ */
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "./api";
@@ -29,6 +37,7 @@ export default function WebPhone() {
   const [recent, setRecent] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem("crm_phone_recent") || "[]"); } catch { return []; } });
   const uaRef = useRef<any>(null);
   const sessRef = useRef<any>(null);
+  const pcRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const TAB_ID = useRef(Math.random().toString(36).slice(2)).current;
   const [isLeader, setIsLeader] = useState(false);
@@ -94,22 +103,37 @@ export default function WebPhone() {
         ua.on("newRTCSession", (data: any) => {
           const session = data.session; sessRef.current = session;
           setPeer(session.remote_identity?.uri?.user || "");
+          // ── ЄДИНЕ місце прив'язки ВХІДНОГО звуку до <audio>. Не дублювати в інших файлах. ──
+          // Трек може прийти ПОДІЄЮ (track/addstream) АБО вже бути у pc.getReceivers() (гонка на вхідних).
+          // Тому bindRemote читає receivers і чіпляє потік; викликаємо і по подіях, і одразу, і в accepted/confirmed,
+          // + страховочний ретрай у useEffect(st==="incall"). Це прибирає баг «не чути клієнта на вхідних».
+          const bindRemote = (pc: any) => {
+            if (!pc || !audioRef.current) return false;
+            let stream: MediaStream | null = null;
+            try {
+              const tracks = (pc.getReceivers?.() || []).map((r: any) => r && r.track).filter((tr: any) => tr && tr.kind === "audio");
+              if (tracks.length) stream = new MediaStream(tracks);
+            } catch { /* */ }
+            if (!stream) return false;
+            if (audioRef.current.srcObject !== stream) {
+              audioRef.current.srcObject = stream;
+              audioRef.current.muted = false;
+              audioRef.current.play().catch(() => {});
+            }
+            return true;
+          };
           const attach = (pc: any) => {
             if (!pc) return;
-            pc.addEventListener("track", (ev: any) => {
-              const stream = ev.streams && ev.streams[0];
-              if (stream && audioRef.current) {
-                audioRef.current.srcObject = stream;
-                audioRef.current.muted = false;
-                audioRef.current.play().catch(() => {});
-              }
-            });
+            pcRef.current = pc;
+            pc.addEventListener("track", () => bindRemote(pc));
+            pc.addEventListener("addstream", () => bindRemote(pc));
+            bindRemote(pc);
           };
           session.on("peerconnection", (e: any) => attach(e.peerconnection));
           if (session.connection) attach(session.connection);
-          session.on("accepted", () => setSt("incall"));
-          session.on("confirmed", () => setSt("incall"));
-          session.on("ended", () => { setSt("ready"); setPeer(""); sessRef.current = null; });
+          session.on("accepted", () => { setSt("incall"); bindRemote(pcRef.current || sessRef.current?.connection); });
+          session.on("confirmed", () => { setSt("incall"); bindRemote(pcRef.current || sessRef.current?.connection); });
+          session.on("ended", () => { setSt("ready"); setPeer(""); sessRef.current = null; pcRef.current = null; });
           session.on("getusermediafailed", (err: any) => { console.error("[phone] getUserMedia FAILED", err); setMsg(t("Нет доступа к микрофону: ","Немає доступу до мікрофона: ") + (err?.name || err?.message || err)); });
           session.on("peerconnection:createanswerfailed", (err: any) => { console.error("[phone] createAnswer FAILED", err); setMsg("createAnswer: " + (err?.message || err)); });
           session.on("failed", (e: any) => { console.error("[phone] session FAILED cause=", e?.cause, e); setSt("ready"); setPeer(""); sessRef.current = null; setMsg(t("Звонок не удался: ","Дзвінок не вдався: ") + (e?.cause || "")); });
@@ -159,6 +183,24 @@ export default function WebPhone() {
   }
   useEffect(() => { const f = () => api.get<any>("/api/telephony/lines/").then((d) => { const m: any = {}; (d || []).forEach((l: any) => { m[l.internal] = l; }); setLineStatus((prev: any) => JSON.stringify(prev) === JSON.stringify(m) ? prev : m); }).catch(() => {}); f(); const tm = setInterval(f, 15000); return () => clearInterval(tm); }, []);
   function hangup() { try { sessRef.current?.terminate(); } catch { /* */ } setSt("ready"); setPeer(""); }
+  // Страховка вхідного звуку: у розмові переконуємось що <audio> має потік (кілька спроб ~4с).
+  useEffect(() => {
+    if (st !== "incall") return;
+    let n = 0;
+    const tm = setInterval(() => {
+      n += 1;
+      const pc = pcRef.current || sessRef.current?.connection;
+      const a = audioRef.current;
+      if (a && pc && !a.srcObject) {
+        try {
+          const tracks = (pc.getReceivers?.() || []).map((r: any) => r && r.track).filter((tr: any) => tr && tr.kind === "audio");
+          if (tracks.length) { a.srcObject = new MediaStream(tracks); a.muted = false; a.play().catch(() => {}); }
+        } catch { /* */ }
+      }
+      if ((a && a.srcObject) || n > 10) clearInterval(tm);
+    }, 400);
+    return () => clearInterval(tm);
+  }, [st]);
   useEffect(() => {
     window.wallcovAnswer = answer;
     window.wallcovHangup = hangup;
