@@ -273,3 +273,12 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
 
 /* --- Шапка на телефоні: слоган прихований --- */
 @media (max-width: 768px) { .topbar-motto { display: none !important; } }
+
+/* --- Місце під нижній таб-бар на телефоні --- */
+@media (max-width: 640px) { .scroll.pad { padding-bottom: 66px !important; } }
+
+/* --- Шапка на телефоні: слоган повертаємо, але компактно (не вилазить) --- */
+@media (max-width: 768px) {
+  .topbar-motto { display: flex !important; max-width: 150px; overflow: hidden; }
+  .topbar-motto span { font-size: 11px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}

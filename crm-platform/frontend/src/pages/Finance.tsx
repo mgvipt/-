@@ -80,24 +80,24 @@ export default function Finance() {
   useEffect(() => { if (!tabAllowed(tab)) setTab("dash"); /* eslint-disable-next-line */ }, [tab]);
   const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["incoming", <><Icon n="📥" size={15} /> {t("Вх. накладные","Вхідні накладні")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
   const tabMap: any = Object.fromEntries(tabs);
-  const GROUPS: [string, string[]][] = [
-    [t("Обзор", "Огляд"), ["dash"]],
-    [t("Операции", "Операції"), ["journal", "triage", "debts", "incoming"]],
-    [t("Аналитика", "Аналітика"), ["pnl", "be", "grow", "dir"]],
-    [t("Планы", "Плани"), ["plan", "mplan", "salary", "time"]],
-    [t("Справочники", "Довідники"), ["ref", "model"]],
+  const GROUPS: [string, string[], string][] = [
+    [t("Обзор", "Огляд"), ["dash"], "💰"],
+    [t("Операции", "Операції"), ["journal", "triage", "debts", "incoming"], "🧾"],
+    [t("Аналитика", "Аналітика"), ["pnl", "be", "grow", "dir"], "📊"],
+    [t("Планы", "Плани"), ["plan", "mplan", "salary", "time"], "💼"],
+    [t("Справочники", "Довідники"), ["ref", "model"], "📚"],
   ];
   const activeGroup = GROUPS.find(([, ks]) => ks.includes(tab)) || GROUPS[0];
   return (
     <div className="scroll pad fade">
       <button onClick={() => setQuickOpen(true)} title={t("Быстрый платёж", "Швидкий платіж")}
-        style={{ position: "fixed", right: 18, bottom: 18, zIndex: 900, width: 62, height: 62, borderRadius: "50%", border: "none", background: "#C67D5F", color: "#fff", fontSize: 26, boxShadow: "0 6px 20px rgba(198,125,95,.5)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⚡</button>
+        style={{ position: "fixed", right: 16, bottom: isMobile ? 74 : 18, zIndex: 900, width: 56, height: 56, borderRadius: "50%", border: "none", background: "#C67D5F", color: "#fff", fontSize: 24, boxShadow: "0 6px 20px rgba(198,125,95,.5)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⚡</button>
       {quickOpen && <QuickExpenseModal onClose={() => setQuickOpen(false)} />}
-      <div className="fin-tabs" style={{ display: "flex", gap: 6, margin: "12px 0 6px" }}>
+      {!isMobile && <div className="fin-tabs" style={{ display: "flex", gap: 6, margin: "12px 0 6px" }}>
         {GROUPS.filter(([, ks]) => ks.some((k) => tabAllowed(k))).map(([gl, ks]) => (
           <button key={gl} className={activeGroup[0] === gl ? "btn btn-primary" : "btn btn-light"} onClick={() => { const first = ks.find((k) => tabAllowed(k)); if (first) setTab(first as any); }} style={{ fontWeight: 700 }}>{gl}</button>
         ))}
-      </div>
+      </div>}
       {activeGroup[1].filter((k) => tabAllowed(k)).length > 1 && (
         <div className="fin-tabs" style={{ display: "flex", gap: 6, marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid #e2e8f0" }}>
           {activeGroup[1].filter((k) => tabAllowed(k)).map((k) => (
@@ -120,6 +120,14 @@ export default function Finance() {
       {tab === "time" && <Timesheet />}
       {tab === "ref" && <Reference />}
       {tab === "model" && <FinModel />}
+      {isMobile && (
+        <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 950, display: "flex", background: "#fff", borderTop: "1px solid #e2e8f0", boxShadow: "0 -2px 12px rgba(0,0,0,.08)" }}>
+          {GROUPS.filter(([, ks]) => ks.some((k) => tabAllowed(k))).map(([gl, ks, ic]) => {
+            const act = activeGroup[0] === gl;
+            return <button key={gl} onClick={() => { const first = ks.find((k) => tabAllowed(k)); if (first) setTab(first as any); }} style={{ flex: 1, border: "none", background: "none", padding: "7px 2px", cursor: "pointer", color: act ? "#2563eb" : "#64748b", fontWeight: act ? 700 : 500, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><span style={{ fontSize: 19 }}>{ic}</span><span style={{ fontSize: 10 }}>{gl}</span></button>;
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1090,8 +1098,8 @@ function Journal() {
         </div>
       )}
       <div className="jrnl-actions" style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
-        {canTx && <button className="btn btn-primary" title={t("Добавить поступление денег","Додати надходження грошей")} onClick={() => openNew("in")}>+{isMobile ? "" : " " + t("Доход","Дохід")}</button>}
-        {canTx && <button className="btn btn-light" title={t("Добавить расход","Додати витрату")} onClick={() => openNew("out")}>−{isMobile ? "" : " " + t("Расход","Витрата")}</button>}
+        {canTx && <button className="btn btn-primary" title={t("Добавить поступление денег","Додати надходження грошей")} onClick={() => openNew("in")}>+ {t("Доход","Дохід")}</button>}
+        {canTx && <button className="btn btn-light" title={t("Добавить расход","Додати витрату")} onClick={() => openNew("out")}>− {t("Расход","Витрата")}</button>}
         {(lock.closed_until || lock.can_close) && (
           <span onClick={lock.can_close ? setPeriodLock : undefined} title={lock.can_close ? t("Изменить закрытие периода", "Змінити закриття періоду") : t("Период закрыт бухгалтерией", "Період закрито бухгалтерією")}
             style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 8, cursor: lock.can_close ? "pointer" : "default",
@@ -1122,11 +1130,11 @@ function Journal() {
           catch { alert(t("Не удалось выгрузить","Не вдалося вивантажити")); }
         }}>⬇{isMobile ? "" : " CSV"}</button>
         {bankHub && <BankHubModal onClose={() => { setBankHub(false); load(); api.get<any>("/api/accounts/").then((d) => setAccounts((d.results || d).filter((a: any) => a.is_active !== false))); }} />}
-        {canTx && <button className="btn btn-light" title={t("Перевод между счетами — не считается ни в доход, ни в расход","Переказ між рахунками — не рахується ні в дохід, ні у витрати")} onClick={() => openNew("transfer")}>⇄{isMobile ? "" : " " + t("Перевод","Переказ")}</button>}
+        {canTx && <button className="btn btn-light" title={t("Перевод между счетами — не считается ни в доход, ни в расход","Переказ між рахунками — не рахується ні в дохід, ні у витрати")} onClick={() => openNew("transfer")}>⇄ {t("Перевод","Переказ")}</button>}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-          <span className="muted">{t("На стр.","На стор.")}:</span>
+          {!isMobile && <span className="muted">{t("На стр.","На стор.")}:</span>}
           <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6 }}>{[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}</select>
-          <span className="muted">{t("Всего","Всього")}: <b>{count}</b></span>
+          {!isMobile && <span className="muted">{t("Всего","Всього")}: <b>{count}</b></span>}
           <button className="btn btn-light" disabled={page <= 1} onClick={() => goPage(page - 1)}>←</button>
           <span>{t("стр.","стор.")} <b>{page}</b> {t("из","з")} {totalPages}</span>
           <button className="btn btn-light" disabled={page >= totalPages} onClick={() => goPage(page + 1)}>→</button>
