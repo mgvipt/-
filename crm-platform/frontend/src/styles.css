@@ -285,3 +285,6 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
 
 /* --- Панель дій Журналу на телефоні: дозволити перенос у другий рядок --- */
 @media (max-width: 640px) { .jrnl-actions { flex-wrap: wrap !important; overflow-x: visible !important; } }
+
+/* --- Шапка на телефоні: годинник ховаємо (місце для лупи+слогана) --- */
+@media (max-width: 768px) { .topbar .clock { display: none; } }

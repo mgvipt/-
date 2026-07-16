@@ -13,6 +13,8 @@ export default function GlobalSearch() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const [mopen, setMopen] = useState(false);
+  const isMob = typeof window !== "undefined" && window.innerWidth <= 768;
 
   useEffect(() => {
     if (q.trim().length < 2) { setRes(null); setLoading(false); return; }
@@ -35,30 +37,47 @@ export default function GlobalSearch() {
   function go(path: string) { setOpen(false); setQ(""); setRes(null); nav(path); }
   const empty = res && !res.deals.length && !res.leads.length && !res.clients.length;
 
+  const resultsInner = (
+    <>
+      {loading && !res && <div className="muted" style={{ padding: 12, fontSize: 13 }}>{t("Поиск…", "Пошук…")}</div>}
+      {empty && <div className="muted" style={{ padding: 12, fontSize: 13 }}>{t("Ничего не найдено", "Нічого не знайдено")}</div>}
+      {res?.deals?.length > 0 && <Group title={<><Icon n="🤝" size={15} /> {t("Сделки", "Угоди")}</>} />}
+      {res?.deals?.map((d: any) => (
+        <Row key={"d" + d.id} onClick={() => go(`/deals/${d.id}`)} main={`#${d.id} · ${d.title}`} sub={`${d.client || ""}${d.stage ? " · " + d.stage : ""}`} right={d.amount ? `${Number(d.amount).toLocaleString("uk-UA")} ₴` : ""} />
+      ))}
+      {res?.leads?.length > 0 && <Group title={<><Icon n="📋" size={15} /> {t("Лиды", "Ліди")}</>} />}
+      {res?.leads?.map((l: any) => (
+        <Row key={"l" + l.id} onClick={() => go(`/leads/${l.id}`)} main={`#${l.id} · ${l.title}`} sub={`${l.client || ""}${l.stage ? " · " + l.stage : ""}`} />
+      ))}
+      {res?.clients?.length > 0 && <Group title={<><Icon n="👥" size={15} /> {t("Клиенты", "Клієнти")}</>} />}
+      {res?.clients?.map((c: any) => (
+        <Row key={"c" + c.id} onClick={() => go(`/clients/${c.id}`)} main={c.name} sub={`${c.phone || ""}${c.deals ? " · " + t("угод:", "угод:") + " " + c.deals : ""}`} />
+      ))}
+    </>
+  );
+  const inp = <input className="search" style={{ width: isMob ? "100%" : undefined }} value={q} onChange={(e) => setQ(e.target.value)} onFocus={() => res && setOpen(true)} placeholder={t("Поиск по CRM (сделки, лиды, клиенты)…", "Пошук по CRM (угоди, ліди, клієнти)…")} />;
+  if (isMob) return (
+    <>
+      <button className="btn btn-light" onClick={() => setMopen(true)} title={t("Поиск по CRM", "Пошук по CRM")} style={{ padding: "6px 9px" }}><Icon n="🔍" size={16} /></button>
+      {mopen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 1200, padding: 12 }} onClick={() => setMopen(false)}>
+          <div className="panel" style={{ background: "#fff", maxWidth: 560, margin: "6px auto", padding: 12 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>{inp}</div>
+              <button onClick={() => setMopen(false)} style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ maxHeight: "72vh", overflowY: "auto" }}>{resultsInner}</div>
+          </div>
+        </div>
+      )}
+    </>
+  );
   return (
     <div ref={box} style={{ position: "relative" }}>
-      <input className="search" value={q} onChange={(e) => setQ(e.target.value)} onFocus={() => res && setOpen(true)}
-        placeholder={t("🔍  Поиск по CRM (сделки, лиды, клиенты)…", "🔍  Пошук по CRM (угоди, ліди, клієнти)…")} />
+      {inp}
       {open && (res || loading) && (
         <div style={{ position: "absolute", top: 40, right: 0, width: 430, maxHeight: 470, overflowY: "auto", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 12px 36px rgba(15,23,42,.18)", zIndex: 80, padding: 6 }}>
-          {loading && !res && <div className="muted" style={{ padding: 12, fontSize: 13 }}>{t("Поиск…", "Пошук…")}</div>}
-          {empty && <div className="muted" style={{ padding: 12, fontSize: 13 }}>{t("Ничего не найдено", "Нічого не знайдено")}</div>}
-          {res?.deals?.length > 0 && <Group title={<><Icon n="🤝" size={15} /> {t("Сделки", "Угоди")}</>} />}
-          {res?.deals?.map((d: any) => (
-            <Row key={"d" + d.id} onClick={() => go(`/deals/${d.id}`)}
-              main={`#${d.id} · ${d.title}`} sub={`${d.client || ""}${d.stage ? " · " + d.stage : ""}`}
-              right={d.amount ? `${Number(d.amount).toLocaleString("uk-UA")} ₴` : ""} />
-          ))}
-          {res?.leads?.length > 0 && <Group title={<><Icon n="📋" size={15} /> {t("Лиды", "Ліди")}</>} />}
-          {res?.leads?.map((l: any) => (
-            <Row key={"l" + l.id} onClick={() => go(`/leads/${l.id}`)}
-              main={`#${l.id} · ${l.title}`} sub={`${l.client || ""}${l.stage ? " · " + l.stage : ""}`} />
-          ))}
-          {res?.clients?.length > 0 && <Group title={<><Icon n="👥" size={15} /> {t("Клиенты", "Клієнти")}</>} />}
-          {res?.clients?.map((c: any) => (
-            <Row key={"c" + c.id} onClick={() => go(`/clients/${c.id}`)}
-              main={c.name} sub={`${c.phone || ""}${c.deals ? " · " + t("угод:", "угод:") + " " + c.deals : ""}`} />
-          ))}
+          {resultsInner}
         </div>
       )}
     </div>
