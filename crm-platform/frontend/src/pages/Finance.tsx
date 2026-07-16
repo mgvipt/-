@@ -74,33 +74,43 @@ export default function Finance() {
   const [tab, setTab] = useState<"dash" | "journal" | "triage" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model" | "incoming">(() => ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash"));
   useEffect(() => { try { localStorage.setItem("fin_tab", tab); } catch (e) { /* noop */ } }, [tab]);
   const [quickOpen, setQuickOpen] = useState(false);
+  const isMobile = useIsMobile();
   const { can: canF } = useAuth();
   const tabAllowed = (k: string) => k === "dash" ? true : (canF("finance.tab." + k) || canF("roles.manage"));
   useEffect(() => { if (!tabAllowed(tab)) setTab("dash"); /* eslint-disable-next-line */ }, [tab]);
   const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["incoming", <><Icon n="📥" size={15} /> {t("Вх. накладные","Вхідні накладні")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
   return (
     <div className="scroll pad fade">
-      <div className="fin-tabs" style={{ display: "flex", gap: 6, margin: "12px 0" }}>
-        {tabs.filter(([k]) => tabAllowed(k as string)).map(([k, l]) => <button key={k} className={tab === k ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab(k as any)}>{l}</button>)}
-      </div>
       <button onClick={() => setQuickOpen(true)} title={t("Быстрый платёж", "Швидкий платіж")}
         style={{ position: "fixed", right: 18, bottom: 18, zIndex: 900, width: 62, height: 62, borderRadius: "50%", border: "none", background: "#C67D5F", color: "#fff", fontSize: 26, boxShadow: "0 6px 20px rgba(198,125,95,.5)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⚡</button>
       {quickOpen && <QuickExpenseModal onClose={() => setQuickOpen(false)} />}
-      {tab === "dash" && <Dashboard />}
-      {tab === "journal" && <Journal />}
-      {tab === "triage" && <TriageTab />}
-      {tab === "pnl" && <PnL />}
-      {tab === "be" && <Breakeven />}
-      {tab === "dir" && <Directions />}
-      {tab === "plan" && <Planning />}
-      {tab === "debts" && <Debts />}
-      {tab === "incoming" && <IncomingDocsTab />}
-      {tab === "grow" && <Growth />}
-      {tab === "salary" && <Salary />}
-      {tab === "mplan" && <MPlans />}
-      {tab === "time" && <Timesheet />}
-      {tab === "ref" && <Reference />}
-      {tab === "model" && <FinModel />}
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 0 : 14, alignItems: "flex-start" }}>
+        <div className={isMobile ? "fin-tabs" : "fin-vtabs"} style={isMobile
+          ? { display: "flex", gap: 6, margin: "12px 0", width: "100%" }
+          : { display: "flex", flexDirection: "column", gap: 3, margin: "12px 0 0", flex: "0 0 178px", position: "sticky", top: 8, maxHeight: "calc(100vh - 80px)", overflowY: "auto" }}>
+          {tabs.filter(([k]) => tabAllowed(k as string)).map(([k, l]) => (
+            <button key={k} className={tab === k ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab(k as any)}
+              style={isMobile ? {} : { justifyContent: "flex-start", textAlign: "left", width: "100%", fontSize: 13, whiteSpace: "normal", lineHeight: 1.25, height: "auto", padding: "8px 11px" }}>{l}</button>
+          ))}
+        </div>
+        <div style={{ flex: 1, minWidth: 0, width: isMobile ? "100%" : "auto" }}>
+          {tab === "dash" && <Dashboard />}
+          {tab === "journal" && <Journal />}
+          {tab === "triage" && <TriageTab />}
+          {tab === "pnl" && <PnL />}
+          {tab === "be" && <Breakeven />}
+          {tab === "dir" && <Directions />}
+          {tab === "plan" && <Planning />}
+          {tab === "debts" && <Debts />}
+          {tab === "incoming" && <IncomingDocsTab />}
+          {tab === "grow" && <Growth />}
+          {tab === "salary" && <Salary />}
+          {tab === "mplan" && <MPlans />}
+          {tab === "time" && <Timesheet />}
+          {tab === "ref" && <Reference />}
+          {tab === "model" && <FinModel />}
+        </div>
+      </div>
     </div>
   );
 }
