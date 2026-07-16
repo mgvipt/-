@@ -3279,6 +3279,7 @@ function PayFopModal({ r, onClose, onDone }: { r: any; onClose: () => void; onDo
           </>
         ) : dry ? (
           <>
+            {dry.already_created && <div style={{ background: "#fffbeb", color: "#b45309", borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 12 }}>⚠️ {t("По этому долгу платёж уже создавался. Проверь в Приват24, чтобы не оплатить дважды.", "За цим боргом платіж вже створювався. Перевір у Приват24, щоб не сплатити двічі.")}</div>}
             <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px", fontSize: 13.5, lineHeight: 1.7, marginBottom: 14 }}>
               <div><span style={{ color: "#64748b" }}>{t("Получатель", "Отримувач")}:</span> <b>{w.payment_naming}</b></div>
               <div><span style={{ color: "#64748b" }}>{t("Счёт", "Рахунок")}:</span> {w.recipient_account}</div>

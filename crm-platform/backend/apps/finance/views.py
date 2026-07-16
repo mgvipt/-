@@ -1170,6 +1170,13 @@ def auto_settle_payables(batch):
     payables = list(PlannedPayment.objects.filter(kind="payable", status="planned").select_related("contact"))
     if not payables:
         return 0
+    def _invoice_of(txt):
+        m = _re.search(r"(НП-\d+)", txt or "")
+        if m:
+            return m.group(1)
+        m = _re.search(r"(?:накладн\w*|акт)\s+№?\s*(\S+)", txt or "", _re.I)
+        return m.group(1) if m else None
+
     settled = 0
     for tx in Transaction.objects.filter(import_batch=batch, direction="out"):
         if tx.id in used_tx:
@@ -1202,7 +1209,10 @@ def auto_settle_payables(batch):
                 iban = mm.group(1) if mm else ""
             if not ((tx_crf and nceo and tx_crf == nceo) or (tx_iban and iban and tx_iban == iban)):
                 continue
-            score = 3 if abs(remaining - amount) < 0.01 else (2 if abs(float(pp.amount) - amount) < 0.01 else 1)
+            inv = _invoice_of(ptext)
+            inv_match = bool(inv and len(str(inv)) >= 3 and str(inv) in text)  # № накладної у призначенні = точний борг
+            base = 3 if abs(remaining - amount) < 0.01 else (2 if abs(float(pp.amount) - amount) < 0.01 else 1)
+            score = base + (100 if inv_match else 0)
             if best is None or score > best[1]:
                 best = (pp, score)
         if best:
@@ -1384,9 +1394,11 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
             "payment_amount": ("%.2f" % pay_amt),
             "payment_destination": dest,
         }
+        already = "Privat:" in (pp.comment or "")
         confirm = str(request.data.get("confirm") or "").lower() in ("1", "true", "yes", "on")
         if not confirm or not token or not payer:
             return Response({"dry_run": True, "would_send": payload, "ready": bool(token and payer),
+                             "already_created": already,
                              "note": "Для відправки — confirm=1. Створиться ЧЕРНЕТКА у Приват24 — підпиши її КЕП (SmartID), тоді гроші підуть."})
         # LIVE — створити чернетку платежу (Олег ініціює кнопкою)
         body = _json.dumps(payload, ensure_ascii=False).encode("cp1251", "replace")
