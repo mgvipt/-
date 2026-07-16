@@ -214,3 +214,11 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
   vertical-align: middle;
   max-width: 0; /* примушує fixed-layout поважати ширину колонки */
 }
+
+/* --- Мобільна адаптація (тільки вузькі екрани, десктоп не чіпає) --- */
+@media (max-width: 640px) {
+  .scroll.pad { padding: 10px !important; }
+  .fin-tabs { flex-wrap: nowrap !important; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+  .fin-tabs > button { flex: 0 0 auto; white-space: nowrap; }
+  .panel { padding: 12px !important; }
+}

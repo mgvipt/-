@@ -81,7 +81,7 @@ export default function Finance() {
   return (
     <div className="scroll pad fade">
       <div className="note warn"><Icon n="🔒" size={15} /> {t("Раздел видят только роли с правом","Розділ бачать тільки ролі з правом")} <b>finance.view</b>.</div>
-      <div style={{ display: "flex", gap: 6, margin: "12px 0", flexWrap: "wrap" }}>
+      <div className="fin-tabs" style={{ display: "flex", gap: 6, margin: "12px 0", flexWrap: "wrap" }}>
         {tabs.filter(([k]) => tabAllowed(k as string)).map(([k, l]) => <button key={k} className={tab === k ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab(k as any)}>{l}</button>)}
       </div>
       <button onClick={() => setQuickOpen(true)} title={t("Быстрый платёж", "Швидкий платіж")}
@@ -2146,6 +2146,7 @@ function Debts() {
   const nav = useNav();
   const cpMap = useCpMap();
   const [cpFilter, setCpFilter] = useState("");
+  const isMobile = useIsMobile();
   const [rows, setRows] = useState<any[]>([]);
   const [st, setSt] = useState("planned");
   const [sortF, setSortF] = useState("");
@@ -2199,6 +2200,31 @@ function Debts() {
       && (!dirFilter || r.fin_direction_name === dirFilter)
       && (!catFilter || r.category_name === catFilter)));
     const total = list.reduce((sm, r) => sm + Number(r.amount || 0), 0);
+    if (isMobile) return (
+      <div className="panel" style={{ margin: "0 0 12px" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+          <b style={{ fontSize: 14 }}>{title}</b>
+          <span style={{ fontSize: 18, fontWeight: 800, color }}>{money(total)}</span>
+          <span className="muted" style={{ fontSize: 11 }}>{list.length}</span>
+        </div>
+        {list.map((r) => (
+          <div key={r.id} onClick={() => setCard(r)} style={{ borderTop: "1px solid #f1f5f9", padding: "11px 2px", cursor: "pointer" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <span onClick={(e) => e.stopPropagation()} style={{ fontWeight: 600, fontSize: 14 }}><CpText name={r.counterparty} contact={(r as any).contact} cpMap={cpMap} nav={nav} /></span>
+              <span style={{ fontWeight: 800, color, fontSize: 15, whiteSpace: "nowrap" }}>{money(Number(r.amount))}</span>
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{r.due_date}{r.category_name ? " · " + r.category_name : ""}{Number(r.paid_amount) > 0 ? " · " + t("залишок", "залишок") + " " + money(Number(r.remaining)) : ""}</div>
+            {st === "paid" && r.paid_date && <div style={{ fontSize: 11.5, color: "#16a34a", marginTop: 2 }}>✓ {r.paid_date}{r.paid_account_name ? ` · ${r.paid_account_name}` : ""}</div>}
+            {r.source_doc_id && <div onClick={(e) => { e.stopPropagation(); openDoc(r.source_doc_id); }} style={{ fontSize: 12.5, color: "#2563eb", marginTop: 3 }}>📄 {t("Открыть накладную", "Відкрити накладну")}</div>}
+            {st === "planned" && <div style={{ display: "flex", gap: 6, marginTop: 9 }} onClick={(e) => e.stopPropagation()}>
+              <button className="btn btn-light" style={{ height: 34, fontSize: 12.5, flex: 1 }} onClick={(e) => markPaid(r, e)}>✓ {t("Оплачено", "Оплачено")}</button>
+              {r.kind === "payable" && <button className="btn btn-light" style={{ height: 34, fontSize: 12.5, flex: 1 }} onClick={(e) => payFop(r, e)}>💳 {t("ФОП", "ФОП")}</button>}
+            </div>}
+          </div>
+        ))}
+        {!list.length && <div className="muted" style={{ fontSize: 12, padding: 6 }}>{t("Пусто", "Порожньо")}</div>}
+      </div>
+    );
     return (
       <div className="panel" style={{ margin: "0 0 14px" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
@@ -3377,11 +3403,12 @@ function QuickExpenseModal({ onClose }: { onClose: () => void }) {
   const inp: any = { width: "100%", border: "1px solid #cbd5e1", borderRadius: 10, padding: "0 12px", fontSize: 15, boxSizing: "border-box" };
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 1200, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
-      <div className="panel" style={{ width: "100%", maxWidth: 460, background: "#fff", borderRadius: "16px 16px 0 0", maxHeight: "92vh", overflowY: "auto", padding: 18 }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, position: "sticky", top: 0, background: "#fff", paddingTop: 2, paddingBottom: 6, zIndex: 2 }}>
-          <h3 style={{ margin: 0, fontSize: 18 }}>⚡ {t("Быстрый платёж", "Швидкий платіж")}</h3>
-          <button onClick={onClose} style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer" }}>✕</button>
+      <div className="panel" style={{ width: "100%", maxWidth: 460, background: "#fff", borderRadius: "18px 18px 0 0", maxHeight: "92vh", overflowY: "auto", padding: 0 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, background: "linear-gradient(90deg,#C67D5F,#b5674a)", color: "#fff", padding: "14px 18px", borderRadius: "18px 18px 0 0", zIndex: 2 }}>
+          <h3 style={{ margin: 0, fontSize: 17, color: "#fff", fontWeight: 800 }}>⚡ {t("Быстрый платёж", "Швидкий платіж")}</h3>
+          <button onClick={onClose} style={{ border: "none", background: "rgba(255,255,255,.2)", width: 30, height: 30, borderRadius: "50%", fontSize: 17, color: "#fff", cursor: "pointer" }}>✕</button>
         </div>
+        <div style={{ padding: 18 }}>
         {done ? (
           <div style={{ textAlign: "center", padding: "30px 10px" }}>
             <div style={{ fontSize: 46 }}>✅</div>
@@ -3414,7 +3441,14 @@ function QuickExpenseModal({ onClose }: { onClose: () => void }) {
           <button className="btn btn-primary" disabled={busy} onClick={save} style={{ width: "100%", height: 52, fontSize: 16, fontWeight: 700 }}>{busy ? "…" : "✓ " + t("Зафиксировать", "Зафіксувати")}</button>
           <div style={{ fontSize: 11.5, color: "#64748b", textAlign: "center", marginTop: 8 }}>{method === "card" ? t("Выписка склеится сама — дубля не будет", "Виписка склеїться сама — дубля не буде") : t("Наличка фиксируется только здесь", "Готівка фіксується лише тут")}</div>
         </>)}
+        </div>
       </div>
     </div>
   );
+}
+
+function useIsMobile() {
+  const [m, setM] = useState(typeof window !== "undefined" && window.innerWidth <= 640);
+  useEffect(() => { const h = () => setM(window.innerWidth <= 640); window.addEventListener("resize", h); return () => window.removeEventListener("resize", h); }, []);
+  return m;
 }
