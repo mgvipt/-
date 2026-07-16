@@ -111,7 +111,7 @@ export default function ClientChat({ contact, markSeen = true }: { contact?: num
   const pts = ai ? (ai.points && ai.points.length ? ai.points : (ai.context ? [ai.context] : [])) : [];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", containerType: "inline-size" }}>
+    <div style={{ display: "flex", flexDirection: "column", containerType: "inline-size", height: "calc(100vh - 96px)", maxHeight: "calc(100vh - 96px)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
         <span style={{ fontSize: 10.5, color: "#64748b", fontWeight: 700, whiteSpace: "nowrap" }}>Відповідати через</span>
         <select value={conv.channel} onChange={(e) => useChannel(Number(e.target.value))} disabled={switchingChannel}
@@ -127,7 +127,7 @@ export default function ClientChat({ contact, markSeen = true }: { contact?: num
       </div>
       <ChatActions convId={conv.id} onClosed={() => { setConv(null); setMsgs([]); }} onChanged={(c) => setConv(c)} />
       {/* СТРІЧКА — заповнює доступну висоту */}
-      <div style={{ height: "calc(100vh - 300px)", minHeight: 160, maxHeight: "calc(100vh - 170px)", resize: "vertical", overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
+      <div style={{ flex: 1, minHeight: 80, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
         {msgs.length === 0 && <div className="muted" style={{ fontSize: 13 }}>Повідомлень поки немає</div>}
         {msgs.map((m, i) => (
           <Fragment key={m.id}>
