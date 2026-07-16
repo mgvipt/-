@@ -1132,8 +1132,7 @@ function Journal() {
         {isMobile && <button className="btn btn-light" onClick={() => setAccOpen(true)} title={t("Счета","Рахунки")}><Icon n="🏦" size={14} /></button>}
         <div style={{ marginLeft: isMobile ? 0 : "auto", width: "auto", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: isMobile ? 5 : 8, fontSize: isMobile ? 12.5 : 13 }}>
           {!isMobile && <span className="muted">{t("На стр.","На стор.")}:</span>}
-          {isMobile && <span className="muted" style={{ fontSize: 12 }}>{t("Рядків","Рядків")}:</span>}
-          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ height: isMobile ? 28 : 30, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: isMobile ? 12.5 : 13, padding: "0 2px" }}>{[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}</select>
+          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ height: isMobile ? 28 : 30, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: isMobile ? 12.5 : 13, padding: "0 2px", flexShrink: 0 }}>{[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}</select>
           {!isMobile && <span className="muted">{t("Всего","Всього")}: <b>{count}</b></span>}
           <button className="btn btn-light" style={{ padding: isMobile ? "4px 10px" : undefined, fontSize: isMobile ? 15 : undefined }} disabled={page <= 1} onClick={() => goPage(page - 1)}>←</button>
           <span style={{ whiteSpace: "nowrap" }}>{!isMobile && (t("стр.","стор.") + " ")}<b>{page}</b> {t("из","з")} {totalPages}</span>
