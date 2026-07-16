@@ -10,6 +10,7 @@ import { useLang } from "../i18n";
 import TxCardModal from "../TxCardModal";
 import { useAuth } from "../auth";
 import { SocialLink } from "../social";
+import ClientChat from "../ClientChat";
 
 interface Deal { id: number; title: string; amount: number; stage: string; is_won: boolean; created_at: string; }
 interface Contact {
@@ -33,6 +34,7 @@ export default function ClientCard() {
   const [ndFunnels, setNdFunnels] = useState<any[]>([]);
   const [nd, setNd] = useState<any>({ funnel: 0, title: "", amount: "" });
   const [ndBusy, setNdBusy] = useState(false);
+  const [chatOpen, setChatOpen] = useState(Boolean(backChat));
   async function openNewDeal() {
     if (ndOpen) { setNdOpen(false); return; }
     try {
@@ -65,6 +67,7 @@ export default function ClientCard() {
     catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось удалить сделку","Не вдалося видалити угоду")); }
   }
   useEffect(() => { load(); }, [id]);
+  useEffect(() => { if (backChat) setChatOpen(true); }, [backChat, id]);
   if (!c) return <div className="spin">{t("Загрузка клиента…","Завантаження клієнта…")}</div>;
 
   async function save(patch: Partial<Contact>) {
@@ -87,6 +90,8 @@ export default function ClientCard() {
         <b style={{ fontSize: 16 }}>{c.display_name}</b>
         {c.loyalty_tag && <span className="chip" style={{ background: "#eef2ff", color: "#4338ca" }}>{c.loyalty_tag}</span>}
         <CallButton contact={c.id} small />
+        <button data-testid="client-chat-toggle" className="btn" style={{ height: 30, fontSize: 12.5, padding: "0 12px", background: chatOpen ? "#dbeafe" : "#eff6ff", color: "#1d4ed8" }}
+          onClick={() => setChatOpen((open) => !open)}>💬 {chatOpen ? t("Свернуть чат","Згорнути чат") : t("Открыть чат","Відкрити чат")}</button>
         <button className="btn btn-primary" style={{ height: 30, fontSize: 12.5, padding: "0 12px" }} onClick={openNewDeal}>{ndOpen ? "✕" : "➕ " + t("Создать сделку","Створити угоду")}</button>
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
@@ -181,6 +186,29 @@ export default function ClientCard() {
           <ClientDebtsBlock contactId={c.id} />
         </div>
       </div>
+      {chatOpen && (
+        <>
+          <div data-testid="client-chat-backdrop" onClick={() => setChatOpen(false)}
+            style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.28)", zIndex: 70 }} />
+          <aside data-testid="client-chat-drawer" role="dialog" aria-label={t("Диалог с клиентом","Діалог з клієнтом")}
+            style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: "min(500px, calc(100vw - 12px))", background: "#fff", zIndex: 71, boxShadow: "-18px 0 46px rgba(15,23,42,.22)", display: "flex", flexDirection: "column", borderLeft: "1px solid #dbe3ef" }}>
+            <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid #e2e8f0", background: "linear-gradient(90deg,#f8fafc,#eef2ff)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 9 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: ".04em" }}>{t("Диалог с клиентом","Діалог з клієнтом")}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.display_name}</div>
+                </div>
+                <button className="btn" data-testid="client-chat-close" onClick={() => setChatOpen(false)}
+                  title={t("Свернуть чат","Згорнути чат")} style={{ height: 32, padding: "0 11px", background: "#fff" }}>✕ {t("Свернуть","Згорнути")}</button>
+              </div>
+              <div id={`client-reply-channel-${c.id}`} data-testid="client-reply-channel-target" />
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflow: "hidden", padding: "10px 12px 12px" }}>
+              <ClientChat contact={c.id} channelPickerTargetId={`client-reply-channel-${c.id}`} />
+            </div>
+          </aside>
+        </>
+      )}
     </div>
   );
 }

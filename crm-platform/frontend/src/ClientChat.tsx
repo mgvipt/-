@@ -37,7 +37,8 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
     if (!contact) { setLoaded(true); return; }
     try {
       const r = await api.get<Paginated<Conversation>>(`/api/conversations/by_contact/?contact=${contact}`);
-      const c = ((r as any).results || (r as any) || [])[0] || null;
+      const rows = ((r as any).results || (r as any) || []) as Conversation[];
+      const c = rows.find((row) => row.status === "open") || null;
       setConv(c);
       if (c) { setStartChannels([]); loadMsgs(c.id); }
       else await loadStartChannels();
