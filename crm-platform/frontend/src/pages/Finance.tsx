@@ -91,7 +91,7 @@ export default function Finance() {
   return (
     <div className="scroll pad fade">
       <button onClick={() => setQuickOpen(true)} title={t("Быстрый платёж", "Швидкий платіж")}
-        style={{ position: "fixed", right: 16, bottom: isMobile ? 74 : 18, zIndex: 900, width: 56, height: 56, borderRadius: "50%", border: "none", background: "#C67D5F", color: "#fff", fontSize: 24, boxShadow: "0 6px 20px rgba(198,125,95,.5)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⚡</button>
+        style={{ position: "fixed", right: 16, bottom: isMobile ? 74 : 18, zIndex: 900, width: 56, height: 56, borderRadius: "50%", border: "none", background: "#C67D5F", color: "#fff", fontSize: 24, boxShadow: "0 6px 20px rgba(198,125,95,.5)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon n="⚡" size={24} /></button>
       {quickOpen && <QuickExpenseModal onClose={() => setQuickOpen(false)} />}
       {!isMobile && <div className="fin-tabs" style={{ display: "flex", gap: 6, margin: "12px 0 6px" }}>
         {GROUPS.filter(([, ks]) => ks.some((k) => tabAllowed(k))).map(([gl, ks]) => (
@@ -332,7 +332,7 @@ function RuleEditor({ rule, cats, dirs, arts, accsR, cps, onClose, onSaved, t }:
             ) : (
               <input value={c.text} onChange={(e) => setCond(i, { text: e.target.value })} placeholder={t("Текст комментария", "Текст коментаря")} style={{ ...inp, flex: 1 }} />
             )}
-            <button onClick={() => setR((x: any) => ({ ...x, conditions: x.conditions.filter((_: any, j: number) => j !== i) }))} style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 15 }}>🗑</button>
+            <button onClick={() => setR((x: any) => ({ ...x, conditions: x.conditions.filter((_: any, j: number) => j !== i) }))} style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 15 }}><Icon n="🗑" size={15} /></button>
           </div>
         ))}
         <button className="btn btn-light" style={{ width: "100%", marginBottom: 16, borderStyle: "dashed" }} onClick={() => setR((x: any) => ({ ...x, conditions: [...x.conditions, { field: "osnd", op: "contains", text: "" }] }))}>＋ {t("Добавить ещё одно условие", "Додати ще одну умову")}</button>
@@ -343,7 +343,7 @@ function RuleEditor({ rule, cats, dirs, arts, accsR, cps, onClose, onSaved, t }:
               {RULE_ACTS.filter(([k]) => k === a.type || !r.acts.some((x: any) => x.type === k)).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
             {valueCtrl(a, i)}
-            <button onClick={() => setR((x: any) => ({ ...x, acts: x.acts.filter((_: any, j: number) => j !== i) }))} style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 15 }}>🗑</button>
+            <button onClick={() => setR((x: any) => ({ ...x, acts: x.acts.filter((_: any, j: number) => j !== i) }))} style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 15 }}><Icon n="🗑" size={15} /></button>
           </div>
         ))}
         {r.acts.length < RULE_ACTS.length && <button className="btn btn-light" style={{ width: "100%", marginBottom: 16, borderStyle: "dashed" }} onClick={() => { const used = r.acts.map((a: any) => a.type); const next = RULE_ACTS.find(([k]) => !used.includes(k)); if (next) setR((x: any) => ({ ...x, acts: [...x.acts, { type: next[0], value: "" }] })); }}>＋ {t("Добавить ещё одно действие", "Додати ще одну дію")}</button>}
@@ -383,7 +383,7 @@ function SuggestModal({ t, onClose, onCreated }: any) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 85 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 22, width: "min(820px,96vw)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
-        <h3 style={{ margin: "0 0 4px" }}>🤖 {t("Правила из истории (перенос из ФинМапа)", "Правила з історії (перенос із ФінМапа)")}</h3>
+        <h3 style={{ margin: "0 0 4px" }}><Icon n="🤖" size={18} /> {t("Правила из истории (перенос из ФинМапа)", "Правила з історії (перенос із ФінМапа)")}</h3>
         <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
           {t("Анализ всех операций 2021–2026: повторяющийся контрагент → категория, которую он получал в 80%+ случаев. Это и есть правила ФинМапа, восстановленные из его же разноски. Сними галочки с лишних и создай.",
              "Аналіз усіх операцій 2021–2026: повторюваний контрагент → категорія, яку він отримував у 80%+ випадків. Це і є правила ФінМапа, відновлені з його ж рознесення. Зніми галочки із зайвих і створи.")}
@@ -467,9 +467,9 @@ function RulesTab({ cats, dirs, t }: any) {
            "Автоправила: умова за коментарем/контрагентом/рахунком → категорія, проект, фонд, контрагент, канал. Спрацьовують при синхронізації банків, заливці періоду та імпорті виписок. Перше правило, що збіглося — за порядком списку.")}
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <button className="btn btn-primary" onClick={() => setEdit(null)}>➕ {t("Добавить правило", "Додати правило")}</button>
-        <button className="btn btn-light" disabled={busyAJ} onClick={applyJournal}>{busyAJ ? "…" : "⚡ " + t("Прогнать по журналу", "Прогнати по журналу")}</button>
-        <button className="btn btn-light" onClick={() => setSuggest(true)}>🤖 {t("Подобрать из истории", "Підібрати з історії")}</button>
+        <button className="btn btn-primary" onClick={() => setEdit(null)}><Icon n="➕" size={14} /> {t("Добавить правило", "Додати правило")}</button>
+        <button className="btn btn-light" disabled={busyAJ} onClick={applyJournal}>{busyAJ ? "…" : <><Icon n="⚡" size={14} /> {t("Прогнать по журналу", "Прогнати по журналу")}</>}</button>
+        <button className="btn btn-light" onClick={() => setSuggest(true)}><Icon n="🤖" size={14} /> {t("Подобрать из истории", "Підібрати з історії")}</button>
       </div>
       {rules.map((r: any) => (
         <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderTop: "1px solid #f1f5f9", opacity: r.active ? 1 : 0.55 }}>
@@ -480,9 +480,9 @@ function RulesTab({ cats, dirs, t }: any) {
               {(r.conditions || []).map((c: any) => `${fLab[c.field] || c.field} ${oLab[c.op] || c.op} «${c.text}»`).join(r.logic === "and" ? " І " : " АБО ")}
             </div>
           </div>
-          {r.hits > 0 && <span title={t("Сколько раз сработало", "Скільки разів спрацювало")} style={{ fontSize: 10.5, fontWeight: 700, color: "#2563eb", background: "#eff6ff", borderRadius: 7, padding: "2px 8px", flexShrink: 0 }}>⚡ {r.hits}</span>}
+          {r.hits > 0 && <span title={t("Сколько раз сработало", "Скільки разів спрацювало")} style={{ fontSize: 10.5, fontWeight: 700, color: "#2563eb", background: "#eff6ff", borderRadius: 7, padding: "2px 8px", flexShrink: 0 }}><Icon n="⚡" size={12} /> {r.hits}</span>}
           <span className={"toggle" + (r.active ? " on" : "")} onClick={async () => { await api.patch(`/api/finance/bank-rules/${r.id}/`, { active: !r.active }); load(); }} style={{ flexShrink: 0 }} />
-          <button onClick={() => setEdit(r)} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 14, flexShrink: 0 }}>✏️</button>
+          <button onClick={() => setEdit(r)} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 14, flexShrink: 0 }}><Icon n="✏️" size={14} /></button>
         </div>
       ))}
       {!rules.length && <div className="muted" style={{ fontSize: 12, padding: 8 }}>{t("Правил пока нет.", "Правил поки немає.")}</div>}
@@ -571,7 +571,7 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
               </td>
               <td style={{ padding: "6px" }}>
                 <button className="btn btn-light" disabled={busy !== "" || !r.mapped_account_id} title={!r.mapped_account_id ? t("Сначала выбери счёт CRM", "Спочатку обери рахунок CRM") : ""}
-                  onClick={() => pullOne(prov, r.key)}>{busy === prov + r.key ? "…" : "📥 " + t("Залить период", "Залити період")}</button>
+                  onClick={() => pullOne(prov, r.key)}>{busy === prov + r.key ? "…" : <><Icon n="📥" size={14} /> {t("Залить период", "Залити період")}</>}</button>
               </td>
             </tr>
           ))}
@@ -618,12 +618,12 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 22, width: "min(880px,96vw)", maxHeight: "90vh", overflow: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <h3 style={{ margin: 0 }}>⚙️ {t("Интеграции и правила","Інтеграції та правила")}</h3>
+          <h3 style={{ margin: 0 }}><Icon n="⚙️" size={18} /> {t("Интеграции и правила","Інтеграції та правила")}</h3>
           <button className="btn btn-light" onClick={onClose}>✕</button>
         </div>
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-          {[["banks", "🏦 " + t("Банки","Банки")], ["rules", "🧭 " + t("Правила разноски","Правила рознесення")], ["hist", "🕓 " + t("История загрузок","Історія завантажень")], ["accs", "👁 " + t("Счета в учёте","Рахунки в обліку")]].map(([k, l]) => (
-            <button key={k} className={"btn" + (tab === k ? " btn-primary" : " btn-light")} onClick={() => setTab(k as any)}>{l}</button>
+          {[["banks", "🏦", t("Банки","Банки")], ["rules", "🧭", t("Правила разноски","Правила рознесення")], ["hist", "🕓", t("История загрузок","Історія завантажень")], ["accs", "👁", t("Счета в учёте","Рахунки в обліку")]].map(([k, ic, l]) => (
+            <button key={k} className={"btn" + (tab === k ? " btn-primary" : " btn-light")} onClick={() => setTab(k as any)}><Icon n={ic} size={14} /> {l}</button>
           ))}
         </div>
 
@@ -640,7 +640,7 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
                   {accs.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
                 <button className="btn btn-primary" onClick={() => saveBank("privatbank", { ...(pbForm.token ? { token: pbForm.token } : {}), ...(pbForm.acc ? { acc: pbForm.acc } : {}), ...(pbForm.account_id ? { account_id: Number(pbForm.account_id) } : {}) })}>{t("Сохранить","Зберегти")}</button>
-                <button className="btn btn-light" disabled={loadingBA !== ""} onClick={() => loadBankAccs("privatbank")}>{loadingBA === "privatbank" ? "…" : "🏦 " + t("Показать счета банка","Показати рахунки банку")}</button>
+                <button className="btn btn-light" disabled={loadingBA !== ""} onClick={() => loadBankAccs("privatbank")}>{loadingBA === "privatbank" ? "…" : <><Icon n="🏦" size={14} /> {t("Показать счета банка","Показати рахунки банку")}</>}</button>
               </div>
               <BankAccTable prov="privatbank" />
             </div>
@@ -654,12 +654,12 @@ function BankHubModal({ onClose }: { onClose: () => void }) {
                   {accs.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
                 <button className="btn btn-primary" onClick={() => saveBank("monobank", { ...(monoForm.token ? { token: monoForm.token } : {}), ...(monoForm.account_id ? { account_id: Number(monoForm.account_id) } : {}) })}>{t("Сохранить","Зберегти")}</button>
-                <button className="btn btn-light" disabled={loadingBA !== ""} onClick={() => loadBankAccs("monobank")}>{loadingBA === "monobank" ? "…" : "🏦 " + t("Показать счета и карты","Показати рахунки і картки")}</button>
+                <button className="btn btn-light" disabled={loadingBA !== ""} onClick={() => loadBankAccs("monobank")}>{loadingBA === "monobank" ? "…" : <><Icon n="🏦" size={14} /> {t("Показать счета и карты","Показати рахунки і картки")}</>}</button>
               </div>
               <BankAccTable prov="monobank" />
             </div>
             <div className="panel" style={{ margin: 0 }}>
-              <b>📥 {t("Загрузить операции за период","Завантажити операції за період")}</b>
+              <b><Icon n="📥" size={14} /> {t("Загрузить операции за период","Завантажити операції за період")}</b>
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
                 <input type="date" value={period.from} onChange={(e) => setPeriod({ ...period, from: e.target.value })} style={inp} />
                 <span className="muted">—</span>
@@ -1003,7 +1003,7 @@ function Journal() {
           <span>
             {selAcc.length > 0 && <span style={{ fontSize: 11, color: "#2563eb", cursor: "pointer", marginRight: 6 }} onClick={() => { setSelAcc([]); setTimeout(() => load(1), 0); }}>скинути</span>}
             <button onClick={() => { setAccCollapsed(true); localStorage.setItem("fin_acc_collapsed", "1"); }} title={t("Свернуть блок","Згорнути блок")} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 15, marginRight: 2, color: "#64748b" }}>«</button>
-            <button onClick={() => setBankHub(true)} title={t("Настройки: банки по API, правила разноски, история загрузок, счета","Налаштування: банки по API, правила рознесення, історія завантажень, рахунки")} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 14 }}>⚙️</button>
+            <button onClick={() => setBankHub(true)} title={t("Настройки: банки по API, правила разноски, история загрузок, счета","Налаштування: банки по API, правила рознесення, історія завантажень, рахунки")} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 14 }}><Icon n="⚙️" size={16} /></button>
           </span>
         </div>
         <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>Обери один або кілька — журнал відфільтрується.</div>
@@ -1033,7 +1033,7 @@ function Journal() {
       {searchOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 1100, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 16 }} onClick={() => setSearchOpen(false)}>
           <div className="panel" style={{ maxWidth: 480, width: "100%", background: "#fff", margin: "16px auto" }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}><h3 style={{ margin: 0, fontSize: 16 }}>🔍 {t("Поиск","Пошук")}</h3><button onClick={() => setSearchOpen(false)} style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer" }}>✕</button></div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}><h3 style={{ margin: 0, fontSize: 16 }}><Icon n="🔍" size={16} /> {t("Поиск","Пошук")}</h3><button onClick={() => setSearchOpen(false)} style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer" }}>✕</button></div>
             <input autoFocus value={fq} onChange={(e) => setFq(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { apply(); setSearchOpen(false); } }} placeholder={t("Сумма, контрагент, категория, комментарий…","Сума, контрагент, категорія, коментар…")} style={{ width: "100%", height: 44, border: "1px solid #cbd5e1", borderRadius: 10, padding: "0 14px", fontSize: 15, boxSizing: "border-box", marginBottom: 12 }} />
             <button className="btn btn-primary" style={{ width: "100%", height: 46 }} onClick={() => { apply(); setSearchOpen(false); }}>{t("Найти","Знайти")}</button>
           </div>
@@ -1042,7 +1042,7 @@ function Journal() {
       {accOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 1100, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 16, overflowY: "auto" }} onClick={() => setAccOpen(false)}>
           <div className="panel" style={{ maxWidth: 480, width: "100%", background: "#fff", margin: "16px auto", maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}><h3 style={{ margin: 0, fontSize: 16 }}>🏦 {t("Счета","Рахунки")}</h3><button onClick={() => setAccOpen(false)} style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer" }}>✕</button></div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}><h3 style={{ margin: 0, fontSize: 16 }}><Icon n="🏦" size={16} /> {t("Счета","Рахунки")}</h3><button onClick={() => setAccOpen(false)} style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer" }}>✕</button></div>
             {canTotal && <div style={{ textAlign: "center", marginBottom: 10 }}><div style={{ fontSize: 22, fontWeight: 800 }}>{money2(accounts.filter((a: any) => !/liqpay/i.test(a.name || "")).reduce((sm: number, a: any) => sm + Number(a.balance || 0), 0))}</div><div className="muted" style={{ fontSize: 11 }}>{t("на активных счетах","на активних рахунках")}</div></div>}
             <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{t("Тапни счёт — журнал отфильтруется","Тапни рахунок — журнал відфільтрується")}</div>
             {accounts.map((a: any) => (
@@ -1062,7 +1062,7 @@ function Journal() {
       {showCols && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 1100, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 16, overflowY: "auto" }} onClick={() => setShowCols(false)}>
         <div className="panel" style={{ maxWidth: 580, width: "100%", background: "#fff", margin: "24px auto" }} onClick={(e) => e.stopPropagation()}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 17 }}>⚙ {t("Фильтры журнала","Фільтри журналу")}</h3><button onClick={() => setShowCols(false)} style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer" }}>✕</button></div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 17 }}><Icon n="⚙" size={16} /> {t("Фильтры журнала","Фільтри журналу")}</h3><button onClick={() => setShowCols(false)} style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer" }}>✕</button></div>
           <label className="label" style={{ display: "block", marginBottom: 4 }}>{t("Клиент","Клієнт")}</label>
           <div style={{ marginBottom: 10 }}><ClientPick value={fContact} label={fContactName} placeholder={t("Клиент / контрагент…","Клієнт / контрагент…")} onPick={(cid, nm) => { setFContact(cid); setFContactName(nm); }} /></div>
           <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
@@ -1183,7 +1183,7 @@ function Journal() {
                 <td className="muted">{r.direction === "transfer" && r.transfer_account_name
                   ? <span><span>{r.account_name}</span><span style={{ color: "#6366f1", fontWeight: 700 }}> → </span><span>{r.transfer_account_name}</span>{(r as any).transfer_amount ? <span style={{ color: "#6366f1" }}> ({Number((r as any).transfer_amount).toLocaleString("ru")})</span> : null}</span>
                   : r.account_name}</td>
-                <td onClick={(e) => { e.stopPropagation(); if (r.deal) setDrawerDeal(r.deal); }}>{r.deal ? <span style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600 }} title="Відкрити картку угоди">#{r.deal}{r.deal_title ? " · " + r.deal_title.slice(0, 16) : ""} · {Number(r.amount).toLocaleString("ru")}₴</span> : <span className="muted">—</span>}{(r as any).contact_name ? <div><a href={"/clients/" + (r as any).contact} onClick={(e) => e.stopPropagation()} style={{ fontSize: 11, color: "#0e7490", textDecoration: "none", fontWeight: 600 }} title="Картка клієнта">👤 {(r as any).contact_name.slice(0, 22)}</a></div> : null}</td>
+                <td onClick={(e) => { e.stopPropagation(); if (r.deal) setDrawerDeal(r.deal); }}>{r.deal ? <span style={{ color: "#1d4ed8", cursor: "pointer", fontWeight: 600 }} title="Відкрити картку угоди">#{r.deal}{r.deal_title ? " · " + r.deal_title.slice(0, 16) : ""} · {Number(r.amount).toLocaleString("ru")}₴</span> : <span className="muted">—</span>}{(r as any).contact_name ? <div><a href={"/clients/" + (r as any).contact} onClick={(e) => e.stopPropagation()} style={{ fontSize: 11, color: "#0e7490", textDecoration: "none", fontWeight: 600 }} title="Картка клієнта"><Icon n="👤" size={11} /> {(r as any).contact_name.slice(0, 22)}</a></div> : null}</td>
                 <td>{r.fin_article_name || <span className="muted">—</span>}</td>
                 <td>{r.fin_direction_name || <span className="muted">—</span>}</td>
                 <td className="muted">{(CHANNELS.find((c) => c[0] === r.channel) || ["", "—"])[1]}</td>
@@ -1636,7 +1636,7 @@ function Breakeven() {
   ];
   return (
     <>
-      <div className="note" style={{ marginBottom: 10 }}>🎯 {tr("Точка безубыточности считается ОТ ФИНМОДЕЛИ (нормативы затрат и маржи), снизу вверх. Прогресс — факт текущего месяца.","Точка беззбитковості рахується ВІД ФІНМОДЕЛІ (нормативи витрат і маржі), знизу вгору. Прогрес — факт поточного місяця.")}</div>
+      <div className="note" style={{ marginBottom: 10 }}><Icon n="🎯" size={14} /> {tr("Точка безубыточности считается ОТ ФИНМОДЕЛИ (нормативы затрат и маржи), снизу вверх. Прогресс — факт текущего месяца.","Точка беззбитковості рахується ВІД ФІНМОДЕЛІ (нормативи витрат і маржі), знизу вгору. Прогрес — факт поточного місяця.")}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 12, marginBottom: 14 }}>
         {cards.map(([t, v]) => <div key={t} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{t}</div><div style={{ fontSize: 20, fontWeight: 700 }}>{v}</div></div>)}
       </div>
@@ -2022,8 +2022,8 @@ function RefCategories() {
       <td style={{ ...tdS }}>{dirSel(c)}</td>
       <td style={{ ...tdS, textAlign: "center", whiteSpace: "nowrap" }}>
         <span style={{ cursor: "pointer" }} title={c.hidden ? t("Показать в выборе","Показати у виборі") : t("Скрыть из выбора (история остаётся)","Приховати з вибору (історія лишається)")}
-          onClick={() => patch(c.id, { hidden: !c.hidden })}>{c.hidden ? "🚫" : "👁"}</span>
-        <span style={{ cursor: "pointer", color: "#ef4444", marginLeft: 8 }} title={t("Удалить категорию","Видалити категорію")} onClick={() => delCat(c)}>🗑</span>
+          onClick={() => patch(c.id, { hidden: !c.hidden })}>{c.hidden ? <Icon n="🚫" size={14} /> : <Icon n="👁" size={14} />}</span>
+        <span style={{ cursor: "pointer", color: "#ef4444", marginLeft: 8 }} title={t("Удалить категорию","Видалити категорію")} onClick={() => delCat(c)}><Icon n="🗑" size={14} /></span>
       </td>
     </tr>
   );
@@ -2122,7 +2122,7 @@ function RefCounterparties() {
       <table style={{ width: "100%", fontSize: 13 }}>
         <thead><tr><th style={{ textAlign: "left", ...tdS }}>{t("Контрагент","Контрагент")}</th><th style={{ textAlign: "center" }}>{t("Операций","Операцій")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "center" }}>{t("Клиент CRM","Клієнт CRM")}</th></tr></thead>
         <tbody>{items.slice(0, 300).map((c, i) => (
-          <tr key={i}><td style={tdS}>{c.name} <span style={{ cursor: "pointer", marginLeft: 4 }} title={t("Переименовать во всех операциях","Перейменувати у всіх операціях")} onClick={() => renameCp(c)}>✏️</span></td><td style={{ ...tdS, textAlign: "center" }}>{c.count}</td>
+          <tr key={i}><td style={tdS}>{c.name} <span style={{ cursor: "pointer", marginLeft: 4 }} title={t("Переименовать во всех операциях","Перейменувати у всіх операціях")} onClick={() => renameCp(c)}><Icon n="✏️" size={13} /></span></td><td style={{ ...tdS, textAlign: "center" }}>{c.count}</td>
             <td style={{ ...tdS, textAlign: "right" }}>{money(c.total)}</td>
             <td style={{ ...tdS, textAlign: "center", whiteSpace: "nowrap" }}>{c.contact_id ? <span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/clients?contact=${c.contact_id}`)}><Icon n="🔗" size={13} /> {t("открыть","відкрити")}</span> : <span className="muted">—</span>} <span style={{ color: "#ef4444", cursor: "pointer", marginLeft: 8 }} title={t("Убрать из всех операций","Прибрати з усіх операцій")} onClick={() => delCp(c)}>✕</span></td></tr>
         ))}</tbody>
@@ -2223,7 +2223,7 @@ function DebtCard({ row, cats, dirs, arts, accs2, t, onClose, onSaved }: any) {
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
           <button className="btn btn-primary" disabled={busy} style={{ flex: 1 }} onClick={save}>{busy ? "…" : t("Сохранить", "Зберегти")}</button>
           <button className="btn btn-light" style={{ flex: 1 }} onClick={onClose}>{t("Закрыть", "Закрити")}</button>
-          {row?.id && row.status === "planned" && <button className="btn btn-light" style={{ color: "#dc2626" }} onClick={async () => { if (confirm(t("Удалить запись?", "Видалити запис?"))) { await api.del(`/api/planned-payments/${row.id}/`); onSaved(); onClose(); } }}>🗑</button>}
+          {row?.id && row.status === "planned" && <button className="btn btn-light" style={{ color: "#dc2626" }} onClick={async () => { if (confirm(t("Удалить запись?", "Видалити запис?"))) { await api.del(`/api/planned-payments/${row.id}/`); onSaved(); onClose(); } }}><Icon n="🗑" size={15} /></button>}
         </div>
       </div>
     </div>
@@ -2304,10 +2304,10 @@ function Debts() {
             </div>
             <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{r.due_date}{r.category_name ? " · " + r.category_name : ""}{Number(r.paid_amount) > 0 ? " · " + t("залишок", "залишок") + " " + money(Number(r.remaining)) : ""}</div>
             {st === "paid" && r.paid_date && <div style={{ fontSize: 11.5, color: "#16a34a", marginTop: 2 }}>✓ {r.paid_date}{r.paid_account_name ? ` · ${r.paid_account_name}` : ""}</div>}
-            {r.source_doc_id && <div onClick={(e) => { e.stopPropagation(); openDoc(r.source_doc_id); }} style={{ fontSize: 12.5, color: "#2563eb", marginTop: 3 }}>📄 {t("Открыть накладную", "Відкрити накладну")}</div>}
+            {r.source_doc_id && <div onClick={(e) => { e.stopPropagation(); openDoc(r.source_doc_id); }} style={{ fontSize: 12.5, color: "#2563eb", marginTop: 3 }}><Icon n="📄" size={13} /> {t("Открыть накладную", "Відкрити накладну")}</div>}
             {st === "planned" && <div style={{ display: "flex", gap: 6, marginTop: 9 }} onClick={(e) => e.stopPropagation()}>
               <button className="btn btn-light" style={{ height: 34, fontSize: 12.5, flex: 1 }} onClick={(e) => markPaid(r, e)}>✓ {t("Оплачено", "Оплачено")}</button>
-              {r.kind === "payable" && <button className="btn btn-light" style={{ height: 34, fontSize: 12.5, flex: 1 }} onClick={(e) => payFop(r, e)}>💳 {t("ФОП", "ФОП")}</button>}
+              {r.kind === "payable" && <button className="btn btn-light" style={{ height: 34, fontSize: 12.5, flex: 1 }} onClick={(e) => payFop(r, e)}><Icon n="💳" size={13} /> {t("ФОП", "ФОП")}</button>}
             </div>}
           </div>
         ))}
@@ -2340,16 +2340,16 @@ function Debts() {
               <td style={{ padding: "6px 4px" }} onClick={(e) => e.stopPropagation()}>
                 {r.deal ? <a href={`/deals/${r.deal}`} style={{ color: "#2563eb", fontWeight: 600 }}>#{r.deal}</a> : "—"}
               </td>
-              <td style={{ padding: "6px 4px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.comment} onClick={(e) => e.stopPropagation()}>{r.source_doc_id ? <span onClick={() => openDoc(r.source_doc_id)} style={{ cursor: "pointer", color: "#2563eb", textDecoration: "underline" }} title={t("Открыть накладную", "Відкрити накладну")}>📄 {r.comment || t("накладна", "накладна")}</span> : (r.comment || "—")}</td>
+              <td style={{ padding: "6px 4px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.comment} onClick={(e) => e.stopPropagation()}>{r.source_doc_id ? <span onClick={() => openDoc(r.source_doc_id)} style={{ cursor: "pointer", color: "#2563eb", textDecoration: "underline" }} title={t("Открыть накладную", "Відкрити накладну")}><Icon n="📄" size={12} /> {r.comment || t("накладна", "накладна")}</span> : (r.comment || "—")}</td>
               <td style={{ padding: "6px 4px", whiteSpace: "nowrap", textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
                 {st === "planned" && <>
                   <button className="btn btn-light" style={{ height: 26, padding: "0 9px", fontSize: 11.5 }} onClick={(e) => markPaid(r, e)}>✓ {t("Оплачено", "Оплачено")}</button>{" "}
-                  {r.kind === "payable" && <><button className="btn btn-light" style={{ height: 26, padding: "0 9px", fontSize: 11.5 }} title={t("Оплатить с ФОП через Приват (создаст черновик — подпишешь КЕП)", "Оплатити з ФОП через Приват (створить чернетку — підпишеш КЕП)")} onClick={(e) => payFop(r, e)}>💳 {t("ФОП", "ФОП")}</button>{" "}</>}
+                  {r.kind === "payable" && <><button className="btn btn-light" style={{ height: 26, padding: "0 9px", fontSize: 11.5 }} title={t("Оплатить с ФОП через Приват (создаст черновик — подпишешь КЕП)", "Оплатити з ФОП через Приват (створить чернетку — підпишеш КЕП)")} onClick={(e) => payFop(r, e)}><Icon n="💳" size={12} /> {t("ФОП", "ФОП")}</button>{" "}</>}
                   <button title={t("Отменить (не платим)", "Скасувати (не платимо)")} onClick={async (e) => { e.stopPropagation(); await api.patch(`/api/planned-payments/${r.id}/`, { status: "canceled" }); load(); }}
                     style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 14 }}>✕</button>
                 </>}
                 {st !== "planned" && <button title={t("Удалить", "Видалити")} onClick={async (e) => { e.stopPropagation(); if (confirm("Видалити запис?")) { await api.del(`/api/planned-payments/${r.id}/`); load(); } }}
-                  style={{ border: "none", background: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14 }}>🗑</button>}
+                  style={{ border: "none", background: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14 }}><Icon n="🗑" size={15} /></button>}
               </td>
             </tr>
           ))}</tbody>
@@ -2366,9 +2366,9 @@ function Debts() {
            "Заплановані платежі живуть ОКРЕМО від журналу: на залишки, витрати і P&L не впливають, доки не оплачені. «✓ Оплачено» — створює фактичну операцію в журналі з усіма полями. Клік по рядку — картка операції.")}
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <button className="btn btn-primary" onClick={() => setCard(null)}>➕ {t("Добавить", "Додати")}</button>
+        <button className="btn btn-primary" onClick={() => setCard(null)}><Icon n="➕" size={14} /> {t("Добавить", "Додати")}</button>
         <label className="btn btn-light" style={{ cursor: "pointer" }} title={t("Импорт акта Новой Почты (Специфікація + Рахунок .xlsx)","Імпорт акта Нової Пошти (Специфікація + Рахунок .xlsx)")}>
-          ⬆ {t("Акт НП","Акт НП")}
+          <Icon n="📤" size={14} /> {t("Акт НП","Акт НП")}
           <input type="file" accept=".xlsx" multiple style={{ display: "none" }} onChange={async (e) => {
             const fs = Array.from(e.target.files || []); (e.target as any).value = "";
             if (!fs.length) return;
@@ -2530,7 +2530,7 @@ function Planning() {
       {/* рахунки — список збоку (як у журналі), фонди — праворуч */}
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
       <div className="panel" style={{ width: 235, minWidth: 150, maxWidth: 560, flex: "0 0 auto", margin: 0, maxHeight: "72vh", overflowY: "auto", resize: "horizontal" as any, overflowX: "hidden" }}>
-        <b style={{ fontSize: 13 }}>🏦 {t("Счета","Рахунки")}</b>
+        <b style={{ fontSize: 13 }}><Icon n="🏦" size={13} /> {t("Счета","Рахунки")}</b>
         <div className="muted" style={{ fontSize: 10.5, margin: "2px 0 4px" }}>{t("В «К распределению» идут только выделенные счета.","У «До розподілу» йдуть лише виділені рахунки.")}{canAcc ? " " + t("Клик по счёту — вкл/выкл (общее для всех).","Клік по рахунку — увімк/вимк (спільне для всіх).") : ""}</div>
         {data.accounts.map((a: any) => {
           const onP = a.in_planning !== false;
@@ -2854,9 +2854,9 @@ function MPlans() {
   );
 }
 
-const CAT_LABEL: Record<string, string> = {
+const CAT_LABEL: Record<string, React.ReactNode> = {
   revenue_fund: "Фонди виручки (% від кожної угоди)", payment_fee: "Витрати на обробку (грн/угода)",
-  variable: "🔁 Змінні витрати (ростуть із продажами)", fixed: "📌 Постійні витрати (фікс щомісяця)",
+  variable: <><Icon n="🔁" size={13} /> Змінні витрати (ростуть із продажами)</>, fixed: <><Icon n="📌" size={13} /> Постійні витрати (фікс щомісяця)</>,
   skd: "Фонди СКД / розвитку (грн/міс)", upr_cat2: "УПР обов'язкові (у ТБ)", upr_cat3: "УПР відмовні",
   warehouse_rate: "Склад / ставки", config: "Конфіг / ліміти", salary: "Ставки ЗП / KPI менеджера",
 };
@@ -2923,13 +2923,13 @@ const GROUP_HINT: Record<string, string> = {
 };
 
 // Групи фондів у логіці Finmap: спочатку Виручки, потім Маржі (пост/змінні), потім СКД
-const FUND_GROUPS: { key: string; label: string; color: string; cats: string[] }[] = [
-  { key: "revenue", label: "📊 ФОНДИ ВИРУЧКИ (ФВ)", color: "#2563eb", cats: ["revenue_fund"] },
-  { key: "margin", label: "💎 ФОНДИ МАРЖІ (ФМ) · постійні + змінні", color: "#7c3aed", cats: ["fixed", "variable"] },
-  { key: "skd", label: "🎯 ФОНДИ СКОРИГОВАНОГО ДОХОДУ (ФСКД)", color: "#059669", cats: ["skd"] },
-  { key: "upr", label: "🏛 УПРАВЛІНСЬКІ (УПР)", color: "#475569", cats: ["upr_cat2", "upr_cat3"] },
-  { key: "other", label: "⚙️ ІНШЕ / КОНФІГ", color: "#64748b", cats: ["payment_fee", "warehouse_rate", "config"] },
-  { key: "salary", label: "💰 ЗП / KPI МЕНЕДЖЕРА (ставки)", color: "#d97706", cats: ["salary"] },
+const FUND_GROUPS: { key: string; label: React.ReactNode; color: string; cats: string[] }[] = [
+  { key: "revenue", label: <><Icon n="📊" size={13} /> ФОНДИ ВИРУЧКИ (ФВ)</>, color: "#2563eb", cats: ["revenue_fund"] },
+  { key: "margin", label: <><Icon n="💎" size={13} /> ФОНДИ МАРЖІ (ФМ) · постійні + змінні</>, color: "#7c3aed", cats: ["fixed", "variable"] },
+  { key: "skd", label: <><Icon n="🎯" size={13} /> ФОНДИ СКОРИГОВАНОГО ДОХОДУ (ФСКД)</>, color: "#059669", cats: ["skd"] },
+  { key: "upr", label: <><Icon n="🏛" size={13} /> УПРАВЛІНСЬКІ (УПР)</>, color: "#475569", cats: ["upr_cat2", "upr_cat3"] },
+  { key: "other", label: <><Icon n="⚙️" size={13} /> ІНШЕ / КОНФІГ</>, color: "#64748b", cats: ["payment_fee", "warehouse_rate", "config"] },
+  { key: "salary", label: <><Icon n="💰" size={13} /> ЗП / KPI МЕНЕДЖЕРА (ставки)</>, color: "#d97706", cats: ["salary"] },
 ];
 
 function FinModel() {
@@ -3272,8 +3272,8 @@ function IncomingDocsTab() {
            "Накладні та акти приходять на пошту і самі потрапляють сюди як чернетки. Перевір і «Проведи» — або «Відхили». Нічого не створюється, доки не підтвердиш.")}
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <button className={"btn" + (sub === "np_act" ? " btn-primary" : " btn-light")} onClick={() => setSub("np_act")}>🚚 {t("Нова Пошта", "Нова Пошта")} ({np.length})</button>
-        <button className={"btn" + (sub === "supplier" ? " btn-primary" : " btn-light")} onClick={() => setSub("supplier")}>📦 {t("Поставщики", "Постачальники")} ({sup.length})</button>
+        <button className={"btn" + (sub === "np_act" ? " btn-primary" : " btn-light")} onClick={() => setSub("np_act")}><Icon n="🚚" size={14} /> {t("Нова Пошта", "Нова Пошта")} ({np.length})</button>
+        <button className={"btn" + (sub === "supplier" ? " btn-primary" : " btn-light")} onClick={() => setSub("supplier")}><Icon n="📦" size={14} /> {t("Поставщики", "Постачальники")} ({sup.length})</button>
         <div style={{ flex: 1 }} />
         <button className="btn btn-light" disabled={busy} onClick={pull}>{busy ? "…" : "📬 " + t("Проверить почту", "Перевірити пошту")}</button>
       </div>
@@ -3293,7 +3293,7 @@ function IncomingDocsTab() {
           {r.doc_type === "np_act" && <button className="btn btn-primary" onClick={() => act(r.id, "confirm")}>✓ {t("Провести", "Провести")}</button>}
           {r.doc_type === "supplier" && <button className="btn btn-primary" onClick={() => setMapDoc(r.id)}>✓ {t("Провести", "Провести")}</button>}
           <button className="btn btn-light" onClick={() => act(r.id, "reject", t("Отклонить документ?", "Відхилити документ?"))}>{t("Отклонить", "Відхилити")}</button>
-          <button className="btn btn-light" style={{ color: "#dc2626" }} onClick={() => act(r.id, "delete", t("Удалить?", "Видалити?"))}>🗑</button>
+          <button className="btn btn-light" style={{ color: "#dc2626" }} onClick={() => act(r.id, "delete", t("Удалить?", "Видалити?"))}><Icon n="🗑" size={15} /></button>
         </div>
       ))}
     </div>
@@ -3373,9 +3373,9 @@ function IncomingMsgModal({ docId, onClose, onProvesti, onReject }: { docId: num
         <h3 style={{ margin: "0 0 4px" }}>{d.subject || (isSup ? t("Накладная поставщика", "Накладна постачальника") : t("Акт Новой Почты", "Акт Нової Пошти"))}</h3>
         <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("От", "Від")}: {d.sender}{d.invoice_number ? ` · №${d.invoice_number} ${t("от", "від")} ${d.invoice_date}` : ""}{d.amount ? ` · ${Number(d.amount).toLocaleString()} ₴` : ""}</div>
         <div style={{ marginBottom: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {d.invoice_number && <button className="btn btn-primary" onClick={openView}>📄 {t("Открыть накладную", "Відкрити накладну")}</button>}
+          {d.invoice_number && <button className="btn btn-primary" onClick={openView}><Icon n="📄" size={14} /> {t("Открыть накладную", "Відкрити накладну")}</button>}
           {(d.files || []).map((f: any) => (
-            <button key={f.idx} className="btn btn-light" onClick={() => downloadFile(f.idx, f.name)}>⬇ {t("Скачать", "Завантажити")}: {f.name}</button>
+            <button key={f.idx} className="btn btn-light" onClick={() => downloadFile(f.idx, f.name)}><Icon n="📥" size={14} /> {t("Скачать", "Завантажити")}: {f.name}</button>
           ))}
         </div>
         {d.email_text
@@ -3421,7 +3421,7 @@ function PayFopModal({ r, onClose, onDone }: { r: any; onClose: () => void; onDo
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
       <div className="panel" style={{ maxWidth: 500, width: "100%", background: "#fff", boxShadow: "0 20px 60px rgba(0,0,0,.25)" }} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ margin: "0 0 14px", display: "flex", alignItems: "center", gap: 8 }}>💳 {t("Оплата с ФОП через Приват", "Оплата з ФОП через Приват")}</h3>
+        <h3 style={{ margin: "0 0 14px", display: "flex", alignItems: "center", gap: 8 }}><Icon n="💳" size={18} /> {t("Оплата с ФОП через Приват", "Оплата з ФОП через Приват")}</h3>
         {err && <div style={{ background: "#fef2f2", color: "#dc2626", borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 12 }}>{err}</div>}
         {result ? (
           <>
@@ -3430,7 +3430,7 @@ function PayFopModal({ r, onClose, onDone }: { r: any; onClose: () => void; onDo
           </>
         ) : dry ? (
           <>
-            {dry.already_created && <div style={{ background: "#fffbeb", color: "#b45309", borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 12 }}>⚠️ {t("По этому долгу платёж уже создавался. Проверь в Приват24, чтобы не оплатить дважды.", "За цим боргом платіж вже створювався. Перевір у Приват24, щоб не сплатити двічі.")}</div>}
+            {dry.already_created && <div style={{ background: "#fffbeb", color: "#b45309", borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 12 }}><Icon n="⚠️" size={13} /> {t("По этому долгу платёж уже создавался. Проверь в Приват24, чтобы не оплатить дважды.", "За цим боргом платіж вже створювався. Перевір у Приват24, щоб не сплатити двічі.")}</div>}
             <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px", fontSize: 13.5, lineHeight: 1.7, marginBottom: 14 }}>
               <div><span style={{ color: "#64748b" }}>{t("Получатель", "Отримувач")}:</span> <b>{w.payment_naming}</b></div>
               <div><span style={{ color: "#64748b" }}>{t("Счёт", "Рахунок")}:</span> {w.recipient_account}</div>
@@ -3444,7 +3444,7 @@ function PayFopModal({ r, onClose, onDone }: { r: any; onClose: () => void; onDo
               {accs.length === 0 && <option value={payer}>{payer ? "…" + payer.slice(-4) : t("основной счёт", "основний рахунок")}</option>}
               {accs.map((a: any) => <option key={a.iban} value={a.iban}>…{a.iban.slice(-4)} · {a.name} · {t("остаток", "залишок")} {Number(a.balance).toLocaleString()} {a.ccy}</option>)}
             </select>
-            {(() => { const sel = accs.find((a: any) => a.iban === payer); if (sel && Number(sel.balance) < Number(amount)) return <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 8 }}>⚠️ {t("На счету меньше суммы платежа", "На рахунку менше суми платежу")}: {Number(sel.balance).toLocaleString()} {sel.ccy}</div>; return null; })()}
+            {(() => { const sel = accs.find((a: any) => a.iban === payer); if (sel && Number(sel.balance) < Number(amount)) return <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 8 }}><Icon n="⚠️" size={12} /> {t("На счету меньше суммы платежа", "На рахунку менше суми платежу")}: {Number(sel.balance).toLocaleString()} {sel.ccy}</div>; return null; })()}
             <div style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>{t("Создастся ЧЕРНОВИК в Приват24 — подпишешь его КЕП (SmartID), тогда деньги уйдут.", "Створиться ЧЕРНЕТКА у Приват24 — підпишеш її КЕП (SmartID), тоді гроші підуть.")}</div>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-primary" disabled={busy || !dry.ready} onClick={send}>{busy ? "…" : "✓ " + t("Создать платёж", "Створити платіж")}</button>
@@ -3494,7 +3494,7 @@ function QuickExpenseModal({ onClose }: { onClose: () => void }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 1200, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
       <div className="panel" style={{ width: "100%", maxWidth: 460, background: "#fff", borderRadius: "18px 18px 0 0", maxHeight: "92vh", overflowY: "auto", padding: 0 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, background: "linear-gradient(90deg,#C67D5F,#b5674a)", color: "#fff", padding: "14px 18px", borderRadius: "18px 18px 0 0", zIndex: 2 }}>
-          <h3 style={{ margin: 0, fontSize: 17, color: "#fff", fontWeight: 800 }}>⚡ {t("Быстрый платёж", "Швидкий платіж")}</h3>
+          <h3 style={{ margin: 0, fontSize: 17, color: "#fff", fontWeight: 800 }}><Icon n="⚡" size={17} /> {t("Быстрый платёж", "Швидкий платіж")}</h3>
           <button onClick={onClose} style={{ border: "none", background: "rgba(255,255,255,.2)", width: 30, height: 30, borderRadius: "50%", fontSize: 17, color: "#fff", cursor: "pointer" }}>✕</button>
         </div>
         <div style={{ padding: 18 }}>
@@ -3522,8 +3522,8 @@ function QuickExpenseModal({ onClose }: { onClose: () => void }) {
           <input value={cp} onChange={(e) => setCp(e.target.value)} style={{ ...inp, height: 44, marginBottom: 14 }} />
           <label className="label" style={{ display: "block", marginBottom: 6 }}>{t("Чем платил", "Чим платив")}</label>
           <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            {[["card", "💳 " + t("Карта", "Картка")], ["cash", "💵 " + t("Наличка", "Готівка")]].map(([m, l]) => (
-              <button key={m} onClick={() => setMethod(m)} style={{ flex: 1, height: 46, borderRadius: 10, fontSize: 14.5, cursor: "pointer", fontWeight: 700, border: "1.5px solid " + (method === m ? "#2563eb" : "#cbd5e1"), background: method === m ? "#eff6ff" : "#fff", color: method === m ? "#2563eb" : "#1e293b" }}>{l}</button>
+            {[["card", "💳", t("Карта", "Картка")], ["cash", "💵", t("Наличка", "Готівка")]].map(([m, ic, l]) => (
+              <button key={m} onClick={() => setMethod(m)} style={{ flex: 1, height: 46, borderRadius: 10, fontSize: 14.5, cursor: "pointer", fontWeight: 700, border: "1.5px solid " + (method === m ? "#2563eb" : "#cbd5e1"), background: method === m ? "#eff6ff" : "#fff", color: method === m ? "#2563eb" : "#1e293b" }}><Icon n={ic} size={15} /> {l}</button>
             ))}
           </div>
           <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t("Комментарий (необязательно)", "Коментар (необовʼязково)")} style={{ ...inp, height: 44, marginBottom: 16 }} />
