@@ -238,3 +238,9 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
 .fin-tabs::-webkit-scrollbar{ height:6px; }
 .fin-tabs::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:3px; }
 .fin-tabs > button{ flex:0 0 auto; white-space:nowrap; }
+
+/* --- Компактнее кнопки Фінансів на телефоні --- */
+@media (max-width: 640px) {
+  .scroll.pad .fin-tabs .btn { padding: 6px 11px !important; font-size: 13px !important; height: auto !important; }
+  .journal-filter .btn { height: 38px; }
+}

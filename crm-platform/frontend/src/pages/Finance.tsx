@@ -795,6 +795,7 @@ function Journal() {
   const [bankHub, setBankHub] = useState(false);
   const [sortF, setSortF] = useState("-date");
   const [selTx, setSelTx] = useState<Record<number, boolean>>({});
+  const isMobile = useIsMobile();
   const [bulkField, setBulkField] = useState("category");
   const [bulkVal, setBulkVal] = useState<any>("");
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -1093,6 +1094,21 @@ function Journal() {
           <button className="btn btn-light" disabled={page >= totalPages} onClick={() => goPage(page + 1)}>→</button>
         </div>
       </div>
+      {isMobile ? (
+        <div className="panel" style={{ margin: 0, padding: "2px 4px" }}>
+          {tx.length === 0 && <div className="muted" style={{ padding: 14 }}>{t("Операций ещё нет","Операцій ще немає")}</div>}
+          {tx.map((r) => (
+            <div key={r.id} onClick={() => openEdit(r)} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, padding: "12px 6px", borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.direction === "transfer" ? t("Перевод","Переказ") : (r.counterparty || r.category_name || "—")}</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{new Date(r.date || r.created_at).toLocaleDateString("ru")}{r.op_time ? " · " + String(r.op_time).slice(0, 5) : ""}{r.category_name && r.direction !== "transfer" ? " · " + r.category_name : ""}</div>
+                {r.deal ? <div style={{ fontSize: 11.5, color: "#1d4ed8", marginTop: 2 }}>#{r.deal}{r.deal_title ? " · " + r.deal_title.slice(0, 22) : ""}</div> : null}
+              </div>
+              <div style={{ fontWeight: 800, fontSize: 15, whiteSpace: "nowrap", color: r.direction === "in" ? "#16a34a" : r.direction === "transfer" ? "#6366f1" : "#dc2626" }}>{r.direction === "in" ? "+" : r.direction === "transfer" ? "⇄ " : "−"}{Number(r.amount).toLocaleString("ru")} ₴</div>
+            </div>
+          ))}
+        </div>
+      ) : (
       <div className="panel" style={{ margin: 0, padding: 0, overflow: "auto", maxHeight: "calc(100vh - 230px)" }}>
         <table className="jrnl-tbl" style={{ width: "100%", fontSize: 13, tableLayout: "fixed" }}>
           <colgroup>{colW.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
@@ -1133,6 +1149,7 @@ function Journal() {
           </tbody>
         </table>
       </div>
+      )}
       </div>
 
       {drawerDeal && (
