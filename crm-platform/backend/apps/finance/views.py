@@ -1221,7 +1221,8 @@ def auto_settle_payables(batch):
             if pp.paid_amount >= _D(str(pp.amount)):
                 pp.status = "paid"
             pp.paid_tx = tx
-            pp.save(update_fields=["paid_amount", "status", "paid_tx"])
+            pp.account = tx.account or pp.account
+            pp.save(update_fields=["paid_amount", "status", "paid_tx", "account"])
             used_tx.add(tx.id)
             settled += 1
     return settled
@@ -1332,7 +1333,8 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         if pp.paid_amount >= _D(str(pp.amount)):
             pp.status = "paid"
         pp.paid_tx = tx
-        pp.save(update_fields=["paid_amount", "status", "paid_tx"])
+        pp.account = tx.account or pp.account
+        pp.save(update_fields=["paid_amount", "status", "paid_tx", "account"])
         return Response(self.get_serializer(pp).data)
 
     @action(detail=True, methods=["post"], url_path="pay-with-fop")

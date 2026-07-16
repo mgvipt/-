@@ -38,6 +38,8 @@ class PlannedPaymentSerializer(serializers.ModelSerializer):
     fin_direction_name = serializers.CharField(source="fin_direction.name", read_only=True, default=None)
     fin_article_name = serializers.CharField(source="fin_article.name", read_only=True, default=None)
     deal_title = serializers.CharField(source="deal.title", read_only=True, default=None)
+    paid_date = serializers.DateField(source="paid_tx.date", read_only=True, default=None)
+    paid_account_name = serializers.CharField(source="paid_tx.account.name", read_only=True, default=None)
     remaining = serializers.SerializerMethodField()
     source_doc_id = serializers.SerializerMethodField()
 
@@ -57,7 +59,7 @@ class PlannedPaymentSerializer(serializers.ModelSerializer):
         fields = ["id", "kind", "amount", "due_date", "counterparty", "contact", "contact_name", "category", "category_name",
                   "account", "account_name", "fin_direction", "fin_direction_name",
                   "fin_article", "fin_article_name", "channel", "deal", "deal_title",
-                  "comment", "status", "paid_amount", "remaining", "source_doc_id", "is_loan", "is_internal", "counterparty_contact",
+                  "comment", "status", "paid_amount", "remaining", "source_doc_id", "paid_date", "paid_account_name", "is_loan", "is_internal", "counterparty_contact",
                   "source_transaction", "source_planned", "created_at"]
 
 

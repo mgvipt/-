@@ -2144,6 +2144,9 @@ function Debts() {
   const [cpFilter, setCpFilter] = useState("");
   const [rows, setRows] = useState<any[]>([]);
   const [st, setSt] = useState("planned");
+  const [sortF, setSortF] = useState("");
+  const [dirFilter, setDirFilter] = useState("");
+  const [catFilter, setCatFilter] = useState("");
   const [cats, setCats] = useState<any[]>([]);
   const [accs2, setAccs2] = useState<any[]>([]);
   const [dirs, setDirs] = useState<any[]>([]);
@@ -2151,6 +2154,7 @@ function Debts() {
   const [card, setCard] = useState<any>(undefined); // undefined=закрыто, null=новая, obj=правка
   const load = () => api.get<any>(`/api/planned-payments/?status=${st}&page_size=500`).then((d) => setRows(d.results || d)).catch(() => {});
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [st]);
+  useEffect(() => { setSortF(st === "paid" ? "-paid_date" : st === "planned" ? "due_date" : "-due_date"); }, [st]);
   useEffect(() => {
     api.get<any>("/api/categories/?page_size=300").then((d) => setCats(d.results || d)).catch(() => {});
     api.get<any>("/api/accounts/").then((d) => setAccs2((d.results || d).filter((a: any) => a.is_active !== false))).catch(() => {});
@@ -2173,7 +2177,23 @@ function Debts() {
   const [payFopDoc, setPayFopDoc] = useState<any>(null);
   const payFop = (r: any, e: any) => { e.stopPropagation(); setPayFopDoc(r); };
   const Section = ({ kind, title, color }: any) => {
-    const list = rows.filter((r) => r.kind === kind && !r.is_internal && (!cpFilter || String(r.counterparty || "").toLowerCase().includes(cpFilter.toLowerCase())));
+    const arw = (f: string) => (sortF === f ? " ▲" : sortF === "-" + f ? " ▼" : "");
+    const Hh = (f: string, label: string) => <th style={{ padding: "4px", cursor: "pointer", whiteSpace: "nowrap" }} onClick={() => setSortF(sortF === f ? "-" + f : f)}>{label}{arw(f)}</th>;
+    const sortRows = (arr: any[]) => {
+      if (!sortF) return arr;
+      const desc = sortF[0] === "-"; const f = desc ? sortF.slice(1) : sortF;
+      const g = (r: any) => {
+        if (f === "amount") return Number(r.amount || 0);
+        if (f === "deal") return Number(r.deal || 0);
+        if (f === "due_date" || f === "paid_date") return r[f] || "";
+        return String(r[f] || "").toLowerCase();
+      };
+      return [...arr].sort((a, b) => { const x = g(a), y = g(b); const c = x < y ? -1 : x > y ? 1 : 0; return desc ? -c : c; });
+    };
+    const list = sortRows(rows.filter((r) => r.kind === kind && !r.is_internal
+      && (!cpFilter || String(r.counterparty || "").toLowerCase().includes(cpFilter.toLowerCase()))
+      && (!dirFilter || r.fin_direction_name === dirFilter)
+      && (!catFilter || r.category_name === catFilter)));
     const total = list.reduce((sm, r) => sm + Number(r.amount || 0), 0);
     return (
       <div className="panel" style={{ margin: "0 0 14px" }}>
@@ -2185,15 +2205,15 @@ function Debts() {
         <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", fontSize: 12.5, borderCollapse: "collapse", minWidth: 900 }}>
           <thead><tr className="muted" style={{ fontSize: 11, textAlign: "left" }}>
-            <th style={{ padding: "4px" }}>{t("Срок", "Строк")}</th><th style={{ padding: "4px" }}>{t("Сумма", "Сума")}</th>
-            <th style={{ padding: "4px" }}>{t("Контрагент", "Контрагент")}</th><th style={{ padding: "4px" }}>{t("Категория", "Категорія")}</th>
-            <th style={{ padding: "4px" }}>{t("Направление", "Напрямок")}</th><th style={{ padding: "4px" }}>{t("Канал", "Канал")}</th>
-            <th style={{ padding: "4px" }}>{t("Угода", "Угода")}</th><th style={{ padding: "4px" }}>{t("Комментарий", "Коментар")}</th><th></th>
+            {Hh("due_date", t("Срок", "Строк"))}{Hh("amount", t("Сумма", "Сума"))}
+            {Hh("counterparty", t("Контрагент", "Контрагент"))}{Hh("category_name", t("Категория", "Категорія"))}
+            {Hh("fin_direction_name", t("Направление", "Напрямок"))}{Hh("channel", t("Канал", "Канал"))}
+            {Hh("deal", t("Угода", "Угода"))}{Hh("comment", t("Комментарий", "Коментар"))}<th></th>
           </tr></thead>
           <tbody>{list.map((r) => (
             <tr key={r.id} onClick={() => setCard(r)} style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer" }} title={t("Открыть карточку", "Відкрити картку")}>
               <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{r.due_date}</td>
-              <td style={{ padding: "6px 4px", fontWeight: 700, color, whiteSpace: "nowrap" }}>{money(Number(r.amount))}{Number(r.paid_amount) > 0 && <div style={{ fontWeight: 400, fontSize: 11, color: "#64748b" }}>{t("залишок", "залишок")} {money(Number(r.remaining))}</div>}</td>
+              <td style={{ padding: "6px 4px", fontWeight: 700, color, whiteSpace: "nowrap" }}>{money(Number(r.amount))}{Number(r.paid_amount) > 0 && <div style={{ fontWeight: 400, fontSize: 11, color: "#64748b" }}>{t("залишок", "залишок")} {money(Number(r.remaining))}</div>}{st === "paid" && r.paid_date && <div style={{ fontWeight: 400, fontSize: 11, color: "#16a34a" }}>✓ {r.paid_date}{r.paid_account_name ? ` · ${r.paid_account_name}` : ""}</div>}</td>
               <td style={{ padding: "6px 4px" }} onClick={(e) => e.stopPropagation()}><CpText name={r.counterparty} contact={(r as any).contact} cpMap={cpMap} nav={nav} /></td>
               <td style={{ padding: "6px 4px" }}>{r.category_name || "—"}</td>
               <td style={{ padding: "6px 4px" }}>{r.fin_direction_name || "—"}</td>
@@ -2256,6 +2276,15 @@ function Debts() {
         ))}
         <input value={cpFilter} onChange={(e) => setCpFilter(e.target.value)} placeholder={t("🔎 Фильтр по контрагенту", "🔎 Фільтр за контрагентом")} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 10px", fontSize: 13, minWidth: 210 }} />
         {cpFilter && <button className="btn btn-light" onClick={() => setCpFilter("")} title={t("Сбросить", "Скинути")}>✕</button>}
+        <select value={dirFilter} onChange={(e) => setDirFilter(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px", fontSize: 13 }}>
+          <option value="">{t("Все направления", "Всі напрямки")}</option>
+          {dirs.map((d: any) => <option key={d.id} value={d.name}>{d.name}</option>)}
+        </select>
+        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px", fontSize: 13, maxWidth: 220 }}>
+          <option value="">{t("Все категории", "Всі категорії")}</option>
+          {cats.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}
+        </select>
+        {(dirFilter || catFilter) && <button className="btn btn-light" onClick={() => { setDirFilter(""); setCatFilter(""); }} title={t("Сбросить фильтры", "Скинути фільтри")}>✕ {t("фильтры", "фільтри")}</button>}
       </div>
       {payFopDoc && <PayFopModal r={payFopDoc} onClose={() => setPayFopDoc(null)} onDone={load} />}
       <Section kind="payable" title={"🔻 " + t("Кредиторка — мы должны", "Кредиторка — ми винні")} color="#dc2626" />
