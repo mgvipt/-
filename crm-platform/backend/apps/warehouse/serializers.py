@@ -33,7 +33,7 @@ class ProductSerializer(serializers.ModelSerializer):
                   "description", "b24_created_by", "b24_modified_by",
                   "b24_created_at", "b24_modified_at", "created_at", "updated_at", "images", "is_bundle",
                   "track_stock", "reserved_qty", "is_drop",
-                  "shop_managed", "shop_enabled", "shop_status", "shop_group_key", "shop_parent_name",
+                  "shop_managed", "shop_enabled", "shop_category_path", "shop_status", "shop_group_key", "shop_parent_name",
                   "shop_slug", "shop_short_description", "shop_full_description", "shop_benefits",
                   "shop_effect", "shop_rooms", "shop_beginner", "shop_video_url", "shop_instruction_url",
                   "shop_sort", "shop_badges", "shop_variant_type", "shop_has_board", "shop_is_tinted",
@@ -117,12 +117,11 @@ class ProductSerializer(serializers.ModelSerializer):
         if product.category_id == SAMPLE_CATEGORY_ID:
             prepare_product_for_shop(product)
             product.refresh_from_db()
-            queue_product_sync(product)
-        elif product.shop_managed or was_managed:
-            if not product.shop_managed:
-                Product.objects.filter(pk=product.pk).update(shop_managed=True)
-                product.shop_managed = True
-            queue_product_sync(product, action="hide")
+        if product.shop_enabled and not product.shop_managed:
+            Product.objects.filter(pk=product.pk).update(shop_managed=True)
+            product.shop_managed = True
+        if product.shop_enabled or product.shop_managed or was_managed:
+            queue_product_sync(product, action=None if product.shop_enabled else "hide")
 
 
 class MovementSerializer(serializers.ModelSerializer):

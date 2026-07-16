@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
+import { useAuth } from "../auth";
 import { Icon } from "../Icon";
 import { useLang } from "../i18n";
 
@@ -24,7 +24,9 @@ type ShopGroup = {
   slug: string;
   status: "published" | "ready" | "draft" | "error";
   remote_url: string;
+  category_path: string[];
   variants_count: number;
+  expected_variants: number;
   enabled_count: number;
   approved_photos: number;
   updated_at: string;
@@ -50,6 +52,19 @@ type ShopDashboard = {
 
 type Filter = "all" | "published" | "draft" | "problems";
 
+type MirrorProduct = ShopVariant & {
+  price: string; unit: string; category: number | null; category_name: string;
+  shop_enabled: boolean; shop_category_path: string[]; shop_parent_name: string; shop_slug: string;
+  shop_short_description: string; shop_full_description: string; shop_effect: string; shop_beginner: boolean;
+  shop_group_key: string; shop_variant_type: string; shop_variant_order: number; shop_variant_name: string;
+  shop_has_board: boolean | null; shop_is_tinted: boolean | null; shop_contents: string;
+  shop_status: string; shop_remote_url: string; shop_validation_errors: string[];
+  images: { id: number; url: string; is_approved: boolean; is_primary: boolean; alt_text: string }[];
+};
+
+const pathText = (path?: string[]) => (path || []).join(" → ");
+const parsePath = (value: string) => value.split(/\s*(?:→|>|\/)\s*/).map((part) => part.trim()).filter(Boolean);
+
 const statusStyle: Record<string, { bg: string; color: string }> = {
   published: { bg: "#dcfce7", color: "#166534" },
   ready: { bg: "#dbeafe", color: "#1d4ed8" },
@@ -59,12 +74,60 @@ const statusStyle: Record<string, { bg: string; color: string }> = {
 
 export default function ShopCatalog() {
   const { t } = useLang();
-  const navigate = useNavigate();
+  const { can } = useAuth();
+  const canEdit = can("warehouse.edit");
   const [data, setData] = useState<ShopDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [editor, setEditor] = useState<MirrorProduct | null>(null);
+  const [form, setForm] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const imageRef = useRef<HTMLInputElement>(null);
+
+  async function openEditor(id: number) {
+    const product = await api.get<MirrorProduct>(`/api/products/${id}/`);
+    setEditor(product);
+    setForm({ ...product, shop_category_path: product.shop_category_path || [] });
+  }
+
+  async function refreshEditor() {
+    if (!editor) return;
+    const product = await api.get<MirrorProduct>(`/api/products/${editor.id}/`);
+    setEditor(product); setForm({ ...product, shop_category_path: product.shop_category_path || [] });
+  }
+
+  async function saveEditor() {
+    if (!editor || !form) return;
+    setSaving(true);
+    try {
+      const product = await api.patch<MirrorProduct>(`/api/products/${editor.id}/`, {
+        name: form.name, sku: form.sku, price: Number(form.price) || 0, unit: form.unit,
+        shop_enabled: form.shop_enabled, shop_category_path: form.shop_category_path,
+        shop_parent_name: form.shop_parent_name, shop_slug: form.shop_slug,
+        shop_short_description: form.shop_short_description, shop_full_description: form.shop_full_description,
+        shop_effect: form.shop_effect, shop_beginner: form.shop_beginner,
+        shop_group_key: form.shop_group_key, shop_variant_type: form.shop_variant_type,
+        shop_variant_order: Number(form.shop_variant_order) || 0, shop_variant_name: form.shop_variant_name,
+        shop_has_board: form.shop_has_board, shop_is_tinted: form.shop_is_tinted, shop_contents: form.shop_contents,
+      });
+      setEditor(product); setForm({ ...product, shop_category_path: product.shop_category_path || [] });
+      await load(true);
+    } finally { setSaving(false); }
+  }
+
+  async function uploadImage(file?: File) {
+    if (!editor || !file) return;
+    await api.upload(`/api/products/${editor.id}/shop-images/`, file);
+    await refreshEditor();
+  }
+
+  async function patchImage(id: number, body: any) {
+    if (!editor) return;
+    await api.patch(`/api/products/${editor.id}/shop-images/${id}/`, body);
+    await refreshEditor();
+  }
 
   async function load(silent = false) {
     if (!silent) setLoading(true);
@@ -185,7 +248,7 @@ export default function ShopCatalog() {
                     </div>
                   </td>
                   <td style={{ padding: "14px 10px" }}>
-                    <b style={{ color: group.variants_count === 4 ? "#15803d" : "#b91c1c" }}>{group.variants_count}/4</b>
+                    <b style={{ color: group.variants_count === group.expected_variants ? "#15803d" : "#b91c1c" }}>{group.variants_count}/{group.expected_variants}</b>
                     <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>{group.enabled_count} {t("разрешено", "дозволено")}</div>
                   </td>
                   <td style={{ padding: "14px 10px" }}><b style={{ color: group.approved_photos === group.variants_count && group.variants_count > 0 ? "#15803d" : "#d97706" }}>{group.approved_photos}/{group.variants_count}</b></td>
@@ -195,7 +258,7 @@ export default function ShopCatalog() {
                       <div style={{ color: "#b45309", fontSize: 12.5 }}>{group.errors.slice(0, 2).join(" · ")}{group.errors.length > 2 ? ` · +${group.errors.length - 2}` : ""}</div>}
                   </td>
                   <td style={{ padding: "14px 16px", textAlign: "right", whiteSpace: "nowrap" }}>
-                    <button className="btn btn-light" onClick={() => first && navigate(`/warehouse?product=${first.id}`)}><Icon n="pencil" /> {t("Редактировать", "Редагувати")}</button>
+                    <button className="btn btn-light" onClick={() => first && openEditor(first.id)}><Icon n="pencil" /> {t("Открыть карточку", "Відкрити картку")}</button>
                     {group.remote_url && <a className="btn btn-light" href={group.remote_url} target="_blank" rel="noreferrer" style={{ marginLeft: 6 }}><Icon n="eye" /></a>}
                   </td>
                 </tr>
@@ -210,6 +273,30 @@ export default function ShopCatalog() {
       <div style={{ marginTop: 14, color: "var(--card-text-2, #64748b)", fontSize: 12.5 }}>
         {t("Изменения товара отправляются на сайт автоматически. Покупатель открывает каталог из локальной базы магазина — скорость CRM на сайт не влияет.", "Зміни товару надсилаються на сайт автоматично. Покупець відкриває каталог з локальної бази магазину — швидкість CRM на сайт не впливає.")}
       </div>
+
+      {editor && form && <div onClick={() => setEditor(null)} style={{position:'fixed',inset:0,zIndex:80,background:'rgba(15,23,42,.45)',display:'flex',justifyContent:'flex-end'}}>
+        <div onClick={e=>e.stopPropagation()} style={{width:'min(700px,96vw)',height:'100%',overflow:'auto',background:'#fff',padding:'20px 22px',color:'#0f172a'}}>
+          <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'flex-start'}}><div><h2 style={{margin:0}}>{form.name}</h2><div className="muted" style={{fontSize:12,marginTop:4}}>{t('Зеркальная карточка той же номенклатуры','Дзеркальна картка тієї самої номенклатури')} #{editor.id}</div></div><button className="btn btn-light" onClick={()=>setEditor(null)}>✕</button></div>
+          <div style={{margin:'16px 0',padding:12,borderRadius:10,background:form.shop_enabled?'#dcfce7':'#f1f5f9'}}><label><input disabled={!canEdit} type="checkbox" checked={!!form.shop_enabled} onChange={e=>setForm({...form,shop_enabled:e.target.checked})}/> <b>{t('Отображать в интернет-магазине','Показувати в інтернет-магазині')}</b></label></div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:11}}>
+            <label className="muted" style={{fontSize:12}}>{t('Название в номенклатуре','Назва в номенклатурі')}<input disabled={!canEdit} value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})} style={{width:'100%',height:36}}/></label>
+            <label className="muted" style={{fontSize:12}}>SKU<input disabled={!canEdit} value={form.sku||''} onChange={e=>setForm({...form,sku:e.target.value})} style={{width:'100%',height:36}}/></label>
+            <label className="muted" style={{fontSize:12}}>{t('Цена','Ціна')}<input disabled={!canEdit} type="number" value={form.price||0} onChange={e=>setForm({...form,price:e.target.value})} style={{width:'100%',height:36}}/></label>
+            <label className="muted" style={{fontSize:12}}>{t('Тип карточки','Тип картки')}<select disabled={!canEdit} value={form.shop_variant_type||'product'} onChange={e=>setForm({...form,shop_variant_type:e.target.value,shop_variant_order:e.target.value==='sample'?form.shop_variant_order:1,shop_variant_name:e.target.value==='sample'?form.shop_variant_name:t('Основной товар','Основний товар')})} style={{width:'100%',height:36}}><option value="product">{t('Обычный товар','Звичайний товар')}</option><option value="sample">{t('Пробник — 4 комплектации','Пробник — 4 комплектації')}</option></select></label>
+            <label className="muted" style={{fontSize:12,gridColumn:'1 / -1'}}>{t('Категория → подкатегория → следующий уровень','Категорія → підкатегорія → наступний рівень')}<input disabled={!canEdit} value={pathText(form.shop_category_path)} onChange={e=>setForm({...form,shop_category_path:parsePath(e.target.value)})} placeholder={t('Пробники или Декоративные покрытия → Шёлк','Пробники або Декоративні покриття → Шовк')} style={{width:'100%',height:36}}/><small>{t('Глубина не ограничена — разделяйте уровни стрелкой →','Глибина не обмежена — розділяйте рівні стрілкою →')}</small></label>
+            <label className="muted" style={{fontSize:12}}>{t('Название для покупателя','Назва для покупця')}<input disabled={!canEdit} value={form.shop_parent_name||''} onChange={e=>setForm({...form,shop_parent_name:e.target.value})} style={{width:'100%',height:36}}/></label>
+            <label className="muted" style={{fontSize:12}}>URL<input disabled={!canEdit} value={form.shop_slug||''} onChange={e=>setForm({...form,shop_slug:e.target.value})} style={{width:'100%',height:36}}/></label>
+            <label className="muted" style={{fontSize:12}}>{t('Группа товара','Група товару')}<input disabled={!canEdit} value={form.shop_group_key||''} onChange={e=>setForm({...form,shop_group_key:e.target.value})} style={{width:'100%',height:36}}/></label>
+            <label className="muted" style={{fontSize:12}}>{t('Эффект','Ефект')}<input disabled={!canEdit} value={form.shop_effect||''} onChange={e=>setForm({...form,shop_effect:e.target.value})} style={{width:'100%',height:36}}/></label>
+            {form.shop_variant_type==='sample'&&<><label className="muted" style={{fontSize:12}}>{t('Название комплектации','Назва комплектації')}<input disabled={!canEdit} value={form.shop_variant_name||''} onChange={e=>setForm({...form,shop_variant_name:e.target.value})} style={{width:'100%',height:36}}/></label><label className="muted" style={{fontSize:12}}>{t('Порядок 1–4','Порядок 1–4')}<input disabled={!canEdit} type="number" min="1" max="4" value={form.shop_variant_order||0} onChange={e=>setForm({...form,shop_variant_order:e.target.value})} style={{width:'100%',height:36}}/></label></>}
+            <label className="muted" style={{fontSize:12,gridColumn:'1 / -1'}}>{t('Короткое описание','Короткий опис')}<textarea disabled={!canEdit} rows={2} value={form.shop_short_description||''} onChange={e=>setForm({...form,shop_short_description:e.target.value})} style={{width:'100%'}}/></label>
+            <label className="muted" style={{fontSize:12,gridColumn:'1 / -1'}}>{t('Полное описание','Повний опис')}<textarea disabled={!canEdit} rows={4} value={form.shop_full_description||''} onChange={e=>setForm({...form,shop_full_description:e.target.value})} style={{width:'100%'}}/></label>
+          </div>
+          <div style={{marginTop:18}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><b>📷 {t('Фотографии','Фотографії')}</b>{canEdit&&<><input ref={imageRef} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>{uploadImage(e.target.files?.[0]);e.target.value='';}}/><button className="btn btn-light" onClick={()=>imageRef.current?.click()}>{t('Добавить фото','Додати фото')}</button></>}</div><div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginTop:9}}>{(editor.images||[]).map(image=><div key={image.id} style={{border:'1px solid #e2e8f0',padding:6,borderRadius:8}}><img src={image.url} alt="" style={{width:'100%',height:110,objectFit:'cover',borderRadius:6}}/><button disabled={!canEdit} className="btn btn-light" style={{marginTop:5,width:'100%'}} onClick={()=>patchImage(image.id,{is_approved:!image.is_approved})}>{image.is_approved?'✅ '+t('Утверждено','Затверджено'):t('Утвердить','Затвердити')}</button></div>)}</div></div>
+          <div style={{marginTop:18,padding:12,borderRadius:9,background:(editor.shop_validation_errors||[]).length?'#fff7ed':'#ecfdf5'}}>{(editor.shop_validation_errors||[]).length?<><b style={{color:'#b45309'}}>{t('Нужно заполнить','Потрібно заповнити')}:</b><ul>{editor.shop_validation_errors.map((problem)=><li key={problem}>{problem}</li>)}</ul></>:<b style={{color:'#15803d'}}>✓ {t('Карточка готова','Картка готова')}</b>}</div>
+          <div style={{display:'flex',justifyContent:'space-between',gap:8,marginTop:18}}><a className="btn btn-light" href={`/warehouse?product=${editor.id}`}>{t('Открыть в номенклатуре','Відкрити в номенклатурі')}</a>{canEdit&&<button className="btn btn-primary" disabled={saving} onClick={saveEditor}>{saving?t('Сохраняю…','Зберігаю…'):t('Сохранить','Зберегти')}</button>}</div>
+        </div>
+      </div>}
     </div>
   );
 }

@@ -35,7 +35,7 @@ interface Product {
   b24_created_by?: string; b24_modified_by?: string;
   b24_created_at?: string; b24_modified_at?: string;
   images?: { id: number; url: string; alt_text?: string; is_primary?: boolean; is_approved?: boolean; variant_key?: string }[];
-  shop_managed?: boolean; shop_enabled?: boolean; shop_status?: string; shop_group_key?: string;
+  shop_managed?: boolean; shop_enabled?: boolean; shop_category_path?: string[]; shop_status?: string; shop_group_key?: string;
   shop_parent_name?: string; shop_slug?: string; shop_short_description?: string; shop_full_description?: string;
   shop_benefits?: string[]; shop_effect?: string; shop_rooms?: string[]; shop_beginner?: boolean;
   shop_video_url?: string; shop_instruction_url?: string; shop_sort?: number; shop_badges?: string[];
@@ -51,6 +51,16 @@ interface Movement { id: number; kind: string; kind_display: string; quantity: n
 
 interface SheetRow { id: number; name: string; unit: string; opening: number; received: number; sold: number; book: number; }
 const PAGE_SIZES = [5, 20, 50, 100, 500];
+const SHOP_CATEGORY_SUGGESTIONS = [
+  "Декоративные покрытия",
+  "Декоративные покрытия → Мягкий шёлк",
+  "Декоративные покрытия → Камень и травертин",
+  "Декоративные покрытия → Бетон",
+  "Декоративные покрытия → Перламутр",
+  "Пробники",
+];
+const categoryPathText = (path?: string[]) => (path || []).join(" → ");
+const parseCategoryPath = (value: string) => value.split(/\s*(?:→|>|\/)\s*/).map((part) => part.trim()).filter(Boolean);
 const pad = (n: number) => String(n).padStart(2, "0");
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`; };
@@ -221,7 +231,7 @@ export default function Warehouse() {
         name: cardEdit.name, description: cardEdit.description, category: cardEdit.category || null,
         price: Number(cardEdit.price) || 0, cost: Number(cardEdit.cost) || 0, cost_pct: Number(cardEdit.cost_pct) || 0, min_price: Number(cardEdit.min_price) || 0, unit: cardEdit.unit,
         sku: cardEdit.sku, is_active: cardEdit.is_active, track_stock: cardEdit.track_stock, is_drop: cardEdit.is_drop,
-        shop_enabled: cardEdit.shop_enabled, shop_group_key: cardEdit.shop_group_key,
+        shop_enabled: cardEdit.shop_enabled, shop_category_path: cardEdit.shop_category_path, shop_group_key: cardEdit.shop_group_key,
         shop_parent_name: cardEdit.shop_parent_name, shop_slug: cardEdit.shop_slug,
         shop_short_description: cardEdit.shop_short_description, shop_full_description: cardEdit.shop_full_description,
         shop_effect: cardEdit.shop_effect, shop_rooms: cardEdit.shop_rooms,
@@ -720,42 +730,47 @@ export default function Warehouse() {
                 {canEdit && (cardEdit
                   ? <><button className="btn btn-primary" onClick={saveCard}>{t("Сохранить","Зберегти")}</button><button className="btn btn-light" onClick={() => setCardEdit(null)}>✕</button></>
                   : <button className="btn btn-light" onClick={() => setCardEdit({ name: card.name, sku: card.sku, unit: card.unit, price: card.price, cost: card.cost, cost_pct: card.cost_pct || 0, min_price: card.min_price || 0, category: card.category || 0, description: card.description || "", is_active: card.is_active !== false, track_stock: card.track_stock !== false, is_drop: (card as any).is_drop === true,
-                      shop_enabled: !!card.shop_enabled, shop_group_key: card.shop_group_key || "", shop_parent_name: card.shop_parent_name || "", shop_slug: card.shop_slug || "", shop_short_description: card.shop_short_description || "", shop_full_description: card.shop_full_description || "", shop_effect: card.shop_effect || "", shop_rooms: card.shop_rooms || [], shop_beginner: !!card.shop_beginner, shop_video_url: card.shop_video_url || "", shop_instruction_url: card.shop_instruction_url || "", shop_sort: card.shop_sort || 0, shop_variant_type: card.shop_variant_type || "sample", shop_has_board: card.shop_has_board ?? null, shop_is_tinted: card.shop_is_tinted ?? null, shop_variant_order: card.shop_variant_order || 0, shop_variant_name: card.shop_variant_name || "", shop_contents: card.shop_contents || "", seo_title: card.seo_title || "", seo_description: card.seo_description || "", seo_h1: card.seo_h1 || "", seo_index: !!card.seo_index })}><Icon n="✏️" size={14} /> {t("Изменить","Змінити")}</button>)}
+                      shop_enabled: !!card.shop_enabled, shop_category_path: card.shop_category_path?.length ? card.shop_category_path : (card.category === 59 ? ["Пробники"] : []), shop_group_key: card.shop_group_key || "", shop_parent_name: card.shop_parent_name || "", shop_slug: card.shop_slug || "", shop_short_description: card.shop_short_description || "", shop_full_description: card.shop_full_description || "", shop_effect: card.shop_effect || "", shop_rooms: card.shop_rooms || [], shop_beginner: !!card.shop_beginner, shop_video_url: card.shop_video_url || "", shop_instruction_url: card.shop_instruction_url || "", shop_sort: card.shop_sort || 0, shop_variant_type: card.shop_variant_type || (card.category === 59 ? "sample" : "product"), shop_has_board: card.shop_has_board ?? null, shop_is_tinted: card.shop_is_tinted ?? null, shop_variant_order: card.shop_variant_order || (card.category === 59 ? 0 : 1), shop_variant_name: card.shop_variant_name || (card.category === 59 ? "" : t("Основной товар", "Основний товар")), shop_contents: card.shop_contents || "", seo_title: card.seo_title || "", seo_description: card.seo_description || "", seo_h1: card.seo_h1 || "", seo_index: !!card.seo_index })}><Icon n="✏️" size={14} /> {t("Изменить","Змінити")}</button>)}
                 <button className="btn btn-light" onClick={() => setCard(null)}>✕</button>
               </div>
             </div>
-            {card.shop_managed && <div style={{ display: "flex", gap: 6, margin: "14px 0 10px", borderBottom: "1px solid #e2e8f0", paddingBottom: 8 }}>
+            <div style={{ display: "flex", gap: 6, margin: "14px 0 10px", borderBottom: "1px solid #e2e8f0", paddingBottom: 8 }}>
               {([['main', t('Карточка','Картка')], ['shop', t('На сайте','На сайті')], ['media', t('Фото','Фото')], ['sync', t('Проверка','Перевірка')]] as const).map(([key, label]) =>
                 <button key={key} className={cardTab === key ? "btn btn-primary" : "btn btn-light"} onClick={() => setCardTab(key)}>{label}</button>)}
-            </div>}
-            {card.shop_managed && cardTab === "shop" && <div className="panel" style={{ margin: "0 0 14px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            </div>
+            {cardTab === "shop" && <div className="panel" style={{ margin: "0 0 14px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "space-between", alignItems: "center" }}><b>🛒 {t("Карточка интернет-магазина","Картка інтернет-магазину")}</b><span style={{ color: card.shop_status === 'published' ? '#15803d' : card.shop_status === 'error' ? '#b91c1c' : '#a16207' }}>{card.shop_status || 'draft'}</span></div>
               {cardEdit ? <>
+                <label style={{fontSize:13,gridColumn:'1 / -1',padding:'10px 12px',borderRadius:9,background:cardEdit.shop_enabled?'#dcfce7':'#f1f5f9'}}><input type="checkbox" checked={cardEdit.shop_enabled} onChange={e => setCardEdit({...cardEdit,shop_enabled:e.target.checked})}/> <b>{t('Отображать в интернет-магазине','Показувати в інтернет-магазині')}</b><div className="muted" style={{fontSize:11,marginLeft:20}}>{t('После включения товар появится в разделе магазина и будет отправлен на сайт после проверки.','Після увімкнення товар з’явиться в розділі магазину й буде надісланий на сайт після перевірки.')}</div></label>
+                <label className="muted" style={{ fontSize: 12, gridColumn:'1 / -1' }}>{t("Категория → подкатегория на сайте","Категорія → підкатегорія на сайті")}<input list="shop-category-paths" value={categoryPathText(cardEdit.shop_category_path)} onChange={e => setCardEdit({...cardEdit, shop_category_path:parseCategoryPath(e.target.value)})} placeholder={t("Например: Декоративные покрытия → Шёлк","Наприклад: Декоративні покриття → Шовк")} style={{width:'100%',height:34}} /><datalist id="shop-category-paths">{SHOP_CATEGORY_SUGGESTIONS.map(path=><option key={path} value={path}/>)}</datalist><small>{t('Можно указать любую глубину через стрелку →','Можна вказати будь-яку глибину через стрілку →')}</small></label>
+                <label className="muted" style={{ fontSize: 12 }}>{t("Тип карточки","Тип картки")}<select value={cardEdit.shop_variant_type} onChange={e => setCardEdit({...cardEdit,shop_variant_type:e.target.value,shop_variant_order:e.target.value==='sample'?cardEdit.shop_variant_order:1,shop_variant_name:e.target.value==='sample'?cardEdit.shop_variant_name:t('Основной товар','Основний товар')})} style={{width:'100%',height:34}}><option value="product">{t('Обычный товар','Звичайний товар')}</option><option value="sample">{t('Пробник — 4 комплектации','Пробник — 4 комплектації')}</option></select></label>
                 <label className="muted" style={{ fontSize: 12 }}>{t("Общее название покрытия","Спільна назва покриття")}<input value={cardEdit.shop_parent_name} onChange={e => setCardEdit({...cardEdit, shop_parent_name:e.target.value})} style={{width:'100%',height:34}} /></label>
                 <label className="muted" style={{ fontSize: 12 }}>URL<input value={cardEdit.shop_slug} onChange={e => setCardEdit({...cardEdit, shop_slug:e.target.value})} style={{width:'100%',height:34}} /></label>
                 <label className="muted" style={{ fontSize: 12 }}>{t("Группа четырёх вариантов","Група чотирьох варіантів")}<input value={cardEdit.shop_group_key} onChange={e => setCardEdit({...cardEdit, shop_group_key:e.target.value})} style={{width:'100%',height:34}} /></label>
-                <label className="muted" style={{ fontSize: 12 }}>{t("Название комплектации","Назва комплектації")}<input value={cardEdit.shop_variant_name} onChange={e => setCardEdit({...cardEdit, shop_variant_name:e.target.value})} style={{width:'100%',height:34}} /></label>
+                {cardEdit.shop_variant_type === 'sample' && <><label className="muted" style={{ fontSize: 12 }}>{t("Название комплектации","Назва комплектації")}<input value={cardEdit.shop_variant_name} onChange={e => setCardEdit({...cardEdit, shop_variant_name:e.target.value})} style={{width:'100%',height:34}} /></label>
                 <label className="muted" style={{ fontSize: 12 }}>{t("Порядок 1–4","Порядок 1–4")}<input type="number" min="1" max="4" value={cardEdit.shop_variant_order} onChange={e => setCardEdit({...cardEdit, shop_variant_order:e.target.value})} style={{width:'100%',height:34}} /></label>
                 <label className="muted" style={{ fontSize: 12 }}>{t("Дощечка","Дощечка")}<select value={cardEdit.shop_has_board === null ? '' : String(cardEdit.shop_has_board)} onChange={e => setCardEdit({...cardEdit, shop_has_board:e.target.value === '' ? null : e.target.value === 'true'})} style={{width:'100%',height:34}}><option value="">—</option><option value="false">{t('Без дощечки','Без дощечки')}</option><option value="true">{t('С дощечкой','З дощечкою')}</option></select></label>
                 <label className="muted" style={{ fontSize: 12 }}>{t("Тонировка","Тонування")}<select value={cardEdit.shop_is_tinted === null ? '' : String(cardEdit.shop_is_tinted)} onChange={e => setCardEdit({...cardEdit, shop_is_tinted:e.target.value === '' ? null : e.target.value === 'true'})} style={{width:'100%',height:34}}><option value="">—</option><option value="false">{t('Без тонировки','Без тонування')}</option><option value="true">{t('С тонировкой','З тонуванням')}</option></select></label>
+                </>}
                 <label className="muted" style={{ fontSize: 12 }}>{t("Эффект","Ефект")}<input value={cardEdit.shop_effect} onChange={e => setCardEdit({...cardEdit, shop_effect:e.target.value})} style={{width:'100%',height:34}} /></label>
                 <label className="muted" style={{ fontSize: 12, gridColumn:'1 / -1' }}>{t("Коротко и простыми словами","Коротко і простими словами")}<textarea rows={2} value={cardEdit.shop_short_description} onChange={e => setCardEdit({...cardEdit, shop_short_description:e.target.value})} style={{width:'100%'}} /></label>
                 <label className="muted" style={{ fontSize: 12, gridColumn:'1 / -1' }}>{t("Полное описание","Повний опис")}<textarea rows={4} value={cardEdit.shop_full_description} onChange={e => setCardEdit({...cardEdit, shop_full_description:e.target.value})} style={{width:'100%'}} /></label>
                 <label style={{fontSize:12}}><input type="checkbox" checked={cardEdit.shop_beginner} onChange={e => setCardEdit({...cardEdit,shop_beginner:e.target.checked})}/> {t('Подходит новичку','Підходить новачку')}</label>
-                <label style={{fontSize:12}}><input type="checkbox" checked={cardEdit.shop_enabled} onChange={e => setCardEdit({...cardEdit,shop_enabled:e.target.checked})}/> {t('Разрешить публикацию после проверки','Дозволити публікацію після перевірки')}</label>
               </> : <>
+                <div style={{gridColumn:'1 / -1'}}><span className="muted">{t('Показывать в магазине','Показувати в магазині')}</span><br/><b style={{color:card.shop_enabled?'#15803d':'#64748b'}}>{card.shop_enabled?t('Да','Так'):t('Нет','Ні')}</b></div>
+                <div style={{gridColumn:'1 / -1'}}><span className="muted">{t('Категория на сайте','Категорія на сайті')}</span><br/><b>{categoryPathText(card.shop_category_path?.length ? card.shop_category_path : (card.category === 59 ? ['Пробники'] : [])) || '—'}</b></div>
                 <div><span className="muted">{t('Покрытие','Покриття')}</span><br/><b>{card.shop_parent_name || '—'}</b></div><div><span className="muted">URL</span><br/>{card.shop_slug || '—'}</div>
                 <div><span className="muted">{t('Комплектация','Комплектація')}</span><br/>{card.shop_variant_name || '—'}</div><div><span className="muted">{t('Группа','Група')}</span><br/>{card.shop_group_key || '—'}</div>
                 <div style={{gridColumn:'1 / -1'}}>{card.shop_short_description || t('Описание ещё не заполнено','Опис ще не заповнений')}</div>
                 <div style={{gridColumn:'1 / -1'}}><b>{t('Варианты в этой группе','Варіанти у цій групі')}: {card.shop_group_variants?.length || 0}/4</b>{card.shop_group_variants?.map((v:any)=><div key={v.id}>#{v.id} · {v.sku} · {v.shop_variant_name || v.name} · {v.shop_status}</div>)}</div>
               </>}
             </div>}
-            {card.shop_managed && cardTab === "media" && <div className="panel" style={{margin:'0 0 14px'}}>
+            {cardTab === "media" && <div className="panel" style={{margin:'0 0 14px'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><b>📷 {t('Фотографии этой комплектации','Фотографії цієї комплектації')}</b>{canEdit && <><input ref={shopImageRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={e=>{uploadShopImage(e.target.files?.[0]); e.target.value='';}}/><button className="btn btn-primary" onClick={()=>shopImageRef.current?.click()}>{t('Добавить фото','Додати фото')}</button></>}</div>
               <div className="muted" style={{fontSize:12,margin:'6px 0 10px'}}>{t('Новое фото сначала черновик. Проверьте его и нажмите «Утвердить».','Нове фото спочатку чернетка. Перевірте його й натисніть «Затвердити».')}</div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10}}>{(card.images||[]).map(im=><div key={im.id} style={{border:'1px solid #e2e8f0',borderRadius:8,padding:8}}><img src={im.url} alt={im.alt_text||''} style={{width:'100%',height:150,objectFit:'cover',borderRadius:6}}/><div style={{fontSize:12,marginTop:6}}>{im.is_approved?'✅ '+t('Утверждено','Затверджено'):'⏳ '+t('Не утверждено','Не затверджено')} {im.is_primary?' · ⭐ '+t('Главное','Головне'):''}</div>{canEdit&&<div style={{display:'flex',gap:5,marginTop:6,flexWrap:'wrap'}}><button className="btn btn-light" onClick={()=>patchShopImage(im.id,{is_approved:!im.is_approved})}>{im.is_approved?t('Снять утверждение','Зняти затвердження'):t('Утвердить','Затвердити')}</button><button className="btn btn-light" onClick={()=>patchShopImage(im.id,{is_primary:true})}>⭐</button><button className="btn btn-light" onClick={()=>deleteShopImage(im.id)}>🗑</button></div>}</div>)}</div>
             </div>}
-            {card.shop_managed && cardTab === "sync" && <div className="panel" style={{margin:'0 0 14px'}}>
+            {cardTab === "sync" && <div className="panel" style={{margin:'0 0 14px'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><b>🔄 {t('Проверка и передача на сайт','Перевірка й передача на сайт')}</b>{canEdit&&<button className="btn btn-primary" onClick={queueShopSync}>{t('Проверить и отправить','Перевірити й надіслати')}</button>}</div>
               <div style={{marginTop:8}}>{(card.shop_validation_errors||[]).length===0?<span style={{color:'#15803d'}}>✅ {t('Карточка заполнена','Картку заповнено')}</span>:<><b style={{color:'#b91c1c'}}>Не готово:</b><ul>{card.shop_validation_errors?.map(x=><li key={x}>{x}</li>)}</ul></>}</div>
               {card.shop_sync_error&&<div style={{color:'#b91c1c'}}>Ошибка связи: {card.shop_sync_error}</div>}

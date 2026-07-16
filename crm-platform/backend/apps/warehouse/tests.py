@@ -29,13 +29,13 @@ class ShopCatalogServiceTest(TestCase):
         self.assertEqual({row["shop_group_key"] for row in rows}, {rows[0]["shop_group_key"]})
         self.assertEqual([row["shop_variant_order"] for row in rows], [1, 2, 3, 4])
 
-    def test_new_sample_stays_draft_and_creates_outbox(self):
+    def test_unselected_sample_stays_hidden_and_creates_outbox(self):
         product = self.product()
         prepare_product_for_shop(product)
         event = queue_product_sync(product)
         product.refresh_from_db()
         self.assertTrue(product.shop_managed)
-        self.assertEqual(product.shop_status, "draft")
+        self.assertEqual(product.shop_status, "hidden")
         self.assertIn("Немає затвердженого фото", event.payload["product"]["validation_errors"])
 
     def test_publish_checklist_requires_price_and_approved_image(self):
@@ -100,6 +100,7 @@ class ShopCatalogServiceTest(TestCase):
                 sku="SAMPLE-%s" % order,
                 shop_managed=True,
                 shop_enabled=True,
+                shop_category_path=["Пробники"],
                 shop_status="published",
                 shop_group_key="sample-travertino",
                 shop_parent_name="Travertino",
@@ -128,4 +129,42 @@ class ShopCatalogServiceTest(TestCase):
         self.assertEqual(response.data["summary"]["published_groups"], 1)
         self.assertEqual(response.data["summary"]["missing_photo"], 0)
         self.assertEqual(response.data["groups"][0]["variants_count"], 4)
+        self.assertEqual(response.data["groups"][0]["expected_variants"], 4)
         self.assertEqual(response.data["groups"][0]["status"], "published")
+
+    def test_shop_dashboard_is_a_mirror_of_enabled_products_only(self):
+        self.product(
+            name="Internal draft",
+            sku="INTERNAL-1",
+            shop_managed=True,
+            shop_enabled=False,
+            shop_group_key="internal-draft",
+            shop_parent_name="Internal draft",
+            shop_slug="internal-draft",
+            shop_variant_type="product",
+        )
+        visible = self.product(
+            name="Decorative coating",
+            sku="COATING-1",
+            shop_managed=True,
+            shop_enabled=True,
+            shop_category_path=["Декоративні покриття", "Шовк"],
+            shop_status="published",
+            shop_group_key="coating-1",
+            shop_parent_name="Decorative coating",
+            shop_slug="decorative-coating",
+            shop_variant_type="product",
+            shop_variant_order=1,
+            shop_variant_name="Основний товар",
+        )
+        ProductImage.objects.create(product=visible, file_path="/tmp/coating.jpg", is_approved=True)
+
+        client = APIClient()
+        client.force_authenticate(get_user_model().objects.create_user(username="shop-enabled-only"))
+        response = client.get("/api/products/shop-dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["summary"]["products"], 1)
+        self.assertEqual(response.data["summary"]["groups"], 1)
+        self.assertEqual(response.data["groups"][0]["expected_variants"], 1)
+        self.assertEqual(response.data["groups"][0]["category_path"], ["Декоративні покриття", "Шовк"])

@@ -84,6 +84,7 @@ class Product(models.Model):
     ]
     shop_managed = models.BooleanField(default=False, db_index=True)
     shop_enabled = models.BooleanField("Показувати на сайті", default=False)
+    shop_category_path = models.JSONField("Категорія на сайті", default=list, blank=True)
     shop_status = models.CharField(max_length=16, choices=SHOP_STATUSES, default="draft", db_index=True)
     shop_group_key = models.CharField(max_length=96, blank=True, default="", db_index=True)
     shop_parent_name = models.CharField("Назва покриття на сайті", max_length=255, blank=True, default="")

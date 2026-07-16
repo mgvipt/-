@@ -91,6 +91,13 @@ def prepare_product_for_shop(product, save=True):
     return product
 
 
+def effective_category_path(product):
+    path = [str(part).strip() for part in product.shop_category_path if str(part).strip()]
+    if not path and product.category_id == SAMPLE_CATEGORY_ID:
+        return ["Пробники"]
+    return path
+
+
 def catalog_validation_errors(product):
     errors = []
     if not product.sku.strip():
@@ -105,6 +112,8 @@ def catalog_validation_errors(product):
         errors.append("Не вказана назва покриття для покупця")
     if not product.shop_slug.strip():
         errors.append("Не вказана URL-адреса")
+    if product.shop_enabled and not effective_category_path(product):
+        errors.append("Не вибрана категорія інтернет-магазину")
     if product.shop_variant_type == "sample":
         if product.shop_has_board is None or product.shop_is_tinted is None or not product.shop_variant_order:
             errors.append("Не визначена комплектація пробника")
@@ -117,9 +126,7 @@ def catalog_validation_errors(product):
 
 def product_payload(product, action=None):
     product = prepare_product_for_shop(product)
-    hidden = action == "hide" or not product.is_active or (
-        product.shop_managed and product.category_id != SAMPLE_CATEGORY_ID
-    )
+    hidden = action == "hide" or not product.is_active or not product.shop_enabled
     errors = catalog_validation_errors(product)
     publish = bool(product.shop_enabled and not hidden and not errors)
     images = []
@@ -142,6 +149,7 @@ def product_payload(product, action=None):
             "unit": product.unit,
             "stock": str(product.stock()),
             "availability": "order" if product.is_drop else ("in_stock" if product.stock() > 0 else "out_of_stock"),
+            "category_path": effective_category_path(product),
             "group_key": product.shop_group_key,
             "parent_name": product.shop_parent_name,
             "slug": product.shop_slug,

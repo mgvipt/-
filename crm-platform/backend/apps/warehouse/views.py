@@ -123,10 +123,10 @@ class ProductViewSet(viewsets.ModelViewSet):
         """Єдиний read-only огляд каталогу сайту для CRM-адмінки."""
         from django.utils import timezone
         from .models import ShopSyncEvent
-        from .shop_sync import SAMPLE_CATEGORY_ID, catalog_validation_errors
+        from .shop_sync import catalog_validation_errors, effective_category_path
 
         products = list(
-            Product.objects.filter(Q(shop_managed=True) | Q(category_id=SAMPLE_CATEGORY_ID))
+            Product.objects.filter(shop_enabled=True)
             .select_related("category")
             .prefetch_related("images")
             .order_by("shop_parent_name", "shop_group_key", "shop_variant_order", "id")
@@ -148,6 +148,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                 "name": product.shop_parent_name or product.name,
                 "slug": product.shop_slug,
                 "remote_url": product.shop_remote_url,
+                "category_path": effective_category_path(product),
                 "updated_at": product.updated_at,
                 "variants": [],
             })
@@ -162,6 +163,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                 "price": str(product.price),
                 "variant_order": product.shop_variant_order,
                 "variant_name": product.shop_variant_name,
+                "variant_type": product.shop_variant_type,
                 "enabled": product.shop_enabled,
                 "status": product.shop_status,
                 "approved_photo": bool(approved),
@@ -178,13 +180,14 @@ class ProductViewSet(viewsets.ModelViewSet):
                 for error in variant["errors"]:
                     if error not in errors:
                         errors.append(error)
-            if len(variants) != 4:
-                errors.insert(0, "У групі має бути 4 комплектації, зараз %s" % len(variants))
+            expected_variants = 4 if any(variant["variant_type"] == "sample" for variant in variants) else 1
+            if len(variants) != expected_variants:
+                errors.insert(0, "У групі має бути %s комплектацій, зараз %s" % (expected_variants, len(variants)))
             statuses = {variant["status"] for variant in variants}
             enabled_count = sum(1 for variant in variants if variant["enabled"])
             if "error" in statuses:
                 status = "error"
-            elif len(variants) == 4 and statuses == {"published"}:
+            elif len(variants) == expected_variants and statuses == {"published"}:
                 status = "published"
                 published_groups += 1
             elif enabled_count and not errors:
@@ -195,6 +198,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                 **{key: value for key, value in group.items() if key != "variants"},
                 "status": status,
                 "variants_count": len(variants),
+                "expected_variants": expected_variants,
                 "enabled_count": enabled_count,
                 "approved_photos": sum(1 for variant in variants if variant["approved_photo"]),
                 "errors": errors,
@@ -398,8 +402,8 @@ class ProductViewSet(viewsets.ModelViewSet):
         """Поставити одну актуальну версію картки в надійну чергу магазину."""
         from .shop_sync import queue_product_sync
         product = self.get_object()
-        if not product.shop_managed and product.category_id != 59:
-            return Response({"detail": "Товар не належить до каталогу інтернет-магазину."}, status=400)
+        if not product.shop_enabled:
+            return Response({"detail": "Спочатку увімкніть «Показувати в інтернет-магазині»."}, status=400)
         event = queue_product_sync(product)
         product.refresh_from_db()
         return Response({"queued": True, "event_uuid": event.event_uuid,

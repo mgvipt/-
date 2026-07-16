@@ -964,11 +964,11 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
               {deal.items.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Товаров пока нет.","Товарів поки немає.")}</div> : (
                 <>
                 <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", minWidth: 660, fontSize: 13, tableLayout: "fixed" as const }}>
-                <colgroup><col style={{ width: 22 }} /><col /><col style={{ width: 64 }} />{can("product.cost.view") && <col style={{ width: 58 }} />}<col style={{ width: 44 }} /><col style={{ width: 40 }} /><col style={{ width: 44 }} /><col style={{ width: 98 }} /><col style={{ width: 62 }} /><col style={{ width: 22 }} /></colgroup>
+                <table style={{ width: "100%", minWidth: 730, fontSize: 13, tableLayout: "fixed" as const }}>
+                <colgroup><col style={{ width: 22 }} /><col /><col style={{ width: 74 }} />{can("product.cost.view") && <><col style={{ width: 58 }} /><col style={{ width: 68 }} /></>}<col style={{ width: 44 }} /><col style={{ width: 40 }} /><col style={{ width: 44 }} /><col style={{ width: 98 }} /><col style={{ width: 62 }} /><col style={{ width: 22 }} /></colgroup>
                 <thead><tr style={{ color: "#64748b", fontSize: 11, textAlign: "left" }}>
                   <th style={{ padding: "6px 4px" }}>№</th><th style={{ padding: "6px 4px" }}>{t("Товар","Товар")}</th>
-                  <th style={{ padding: "6px 4px" }}>{t("Цена","Ціна")}</th>{can("product.cost.view") && <th style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{t("Закуп.","Закуп.")}</th>}<th style={{ padding: "6px 4px" }}>{t("Кол-во","К-сть")}</th>
+                  <th style={{ padding: "6px 4px" }}>{t("Цена","Ціна")}</th>{can("product.cost.view") && <><th style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{t("Закуп/ед","Закуп/од")}</th><th style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{t("Сумма закуп","Сума закуп")}</th></>}<th style={{ padding: "6px 4px" }}>{t("Кол-во","К-сть")}</th>
                   <th style={{ padding: "6px 4px", textAlign: "center", whiteSpace: "nowrap" }}>{t("Рез.","Рез.")}</th><th style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{t("Ост.","Зал.")}</th>
                   <th style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{t("Скидка","Знижка")}</th>
                   <th style={{ padding: "6px 4px" }}>{t("Сумма","Сума")}</th><th></th></tr></thead>
@@ -1003,7 +1003,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                         )}
                       </td>
                       <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><input key={"pr-" + it.id + "-" + it.price} defaultValue={Number(it.price)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.price) && updateItem(it.id, { price: e.target.value })} style={editInp} /> ₴</td>
-                      {can("product.cost.view") && <td style={{ padding: "6px 4px", color: "#9a3412", whiteSpace: "nowrap" }} title={t("Закупка за позицию (себестоимость × кол-во). Для услуг с минималкой считается от суммы строки.","Закупка за позицію (собівартість × кількість). Для послуг з мінімалкою рахується від суми рядка.")}>{Number(it.cost || 0) > 0 ? fmt(Number(it.cost) * Number(it.quantity)) + " ₴" : "—"}</td>}
+                      {can("product.cost.view") && <><td style={{ padding: "6px 4px", color: "#9a3412", whiteSpace: "nowrap" }} title={t("Закупка за единицу (себестоимость товара)","Закупка за одиницю (собівартість товару)")}>{Number(it.cost || 0) > 0 ? fmt(Number(it.cost)) + " ₴" : "—"}</td><td style={{ padding: "6px 4px", color: "#9a3412", whiteSpace: "nowrap", fontWeight: 600 }} title={t("Сумма закупки по строке (себестоимость × кол-во)","Сума закупки по рядку (собівартість × кількість)")}>{Number(it.cost || 0) > 0 ? fmt(Number(it.cost) * Number(it.quantity)) + " ₴" : "—"}</td></>}
                       <td style={{ padding: "6px 4px" }}><input defaultValue={Number(it.quantity)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.quantity) && updateItem(it.id, { quantity: e.target.value })} style={{ ...editInp, width: 50 }} /></td>
                       <td style={{ padding: "6px 4px", textAlign: "center" }}><input type="checkbox" checked={!!it.reserved} onChange={() => toggleReserve(it)} title={t("Зарезервировать под сделку","Зарезервувати під угоду")} /></td>
                       <td style={{ padding: "6px 4px", color: low ? "#dc2626" : "#64748b" }} title={low ? t("Не хватает на складе","Не вистачає на складі") : ""}>{it.product_stock != null ? Number(it.product_stock) : "—"}{low ? " ⚠" : ""}</td>
