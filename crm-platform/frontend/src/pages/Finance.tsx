@@ -1094,6 +1094,8 @@ function Journal() {
       <div className="jrnl-actions" style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
         {canTx && <button className="btn btn-primary" title={t("Добавить поступление денег","Додати надходження грошей")} onClick={() => openNew("in")}><Icon n="➕" size={13} /> {t("Доход","Дохід")}</button>}
         {canTx && <button className="btn btn-light" title={t("Добавить расход","Додати витрату")} onClick={() => openNew("out")}>− {t("Расход","Витрата")}</button>}
+        {canTx && <button className="btn btn-light" title={t("Перевод между счетами — не считается ни в доход, ни в расход","Переказ між рахунками — не рахується ні в дохід, ні у витрати")} onClick={() => openNew("transfer")}>⇄ {t("Перевод","Переказ")}</button>}
+        {isMobile && <div style={{ flexBasis: "100%", height: 0 }} />}
         {(lock.closed_until || lock.can_close) && (
           <span onClick={lock.can_close ? setPeriodLock : undefined} title={lock.can_close ? t("Изменить закрытие периода", "Змінити закриття періоду") : t("Период закрыт бухгалтерией", "Період закрито бухгалтерією")}
             style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 8, cursor: lock.can_close ? "pointer" : "default",
@@ -1124,7 +1126,9 @@ function Journal() {
           catch { alert(t("Не удалось выгрузить","Не вдалося вивантажити")); }
         }}><Icon n="📥" size={14} />{isMobile ? "" : " CSV"}</button>
         {bankHub && <BankHubModal onClose={() => { setBankHub(false); load(); api.get<any>("/api/accounts/").then((d) => setAccounts((d.results || d).filter((a: any) => a.is_active !== false))); }} />}
-        {canTx && <button className="btn btn-light" title={t("Перевод между счетами — не считается ни в доход, ни в расход","Переказ між рахунками — не рахується ні в дохід, ні у витрати")} onClick={() => openNew("transfer")}>⇄ {t("Перевод","Переказ")}</button>}
+        {isMobile && <button className="btn btn-light" onClick={() => setSearchOpen(true)} title={t("Поиск","Пошук")}><Icon n="🔍" size={14} />{fq ? " •" : ""}</button>}
+        {isMobile && <button className="btn btn-light" onClick={() => setShowCols(true)}><Icon n="⚙" size={14} />{(() => { const n = (fContact ? 1 : 0) + (ff ? 1 : 0) + (ft ? 1 : 0) + Object.values(cf).filter((v: any) => v !== "" && v != null).length; return n ? ` ${n}` : ""; })()}</button>}
+        {isMobile && <button className="btn btn-light" onClick={() => setAccOpen(true)} title={t("Счета","Рахунки")}><Icon n="🏦" size={14} /></button>}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
           {!isMobile && <span className="muted">{t("На стр.","На стор.")}:</span>}
           <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6 }}>{[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}</select>
@@ -1134,13 +1138,6 @@ function Journal() {
           <button className="btn btn-light" disabled={page >= totalPages} onClick={() => goPage(page + 1)}>→</button>
         </div>
       </div>
-      {isMobile && (
-      <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
-        <button className="btn btn-light" onClick={() => setSearchOpen(true)} title={t("Поиск","Пошук")}><Icon n="🔍" size={15} />{fq ? " •" : ""}</button>
-        <button className="btn btn-light" onClick={() => setShowCols(true)}><Icon n="⚙" size={15} />{(() => { const n = (fContact ? 1 : 0) + (ff ? 1 : 0) + (ft ? 1 : 0) + Object.values(cf).filter((v: any) => v !== "" && v != null).length; return n ? ` ${n}` : ""; })()}</button>
-        <button className="btn btn-light" onClick={() => setAccOpen(true)} title={t("Счета","Рахунки")}><Icon n="🏦" size={15} /></button>
-      </div>
-      )}
       {isMobile ? (
         <div className="panel" style={{ margin: 0, padding: "2px 4px" }}>
           {tx.length === 0 && <div className="muted" style={{ padding: 14 }}>{t("Операций ещё нет","Операцій ще немає")}</div>}

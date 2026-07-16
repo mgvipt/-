@@ -282,3 +282,6 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
   .topbar-motto { display: flex !important; max-width: 150px; overflow: hidden; }
   .topbar-motto span { font-size: 11px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* --- Панель дій Журналу на телефоні: дозволити перенос у другий рядок --- */
+@media (max-width: 640px) { .jrnl-actions { flex-wrap: wrap !important; overflow-x: visible !important; } }
