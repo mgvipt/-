@@ -1150,7 +1150,71 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
             st.save(update_fields=["config"])
     except Exception:
         pass
+    try:
+        auto_settle_payables(batch)
+    except Exception:
+        pass
     return created, skipped, None, batch
+
+
+def auto_settle_payables(batch):
+    """Авто-погашення кредиторки: вихідні операції виписки цього батчу матчимо з planned-payable
+    ТІЛЬКИ за отримувачем (ЄДРПОУ або IBAN) + сума <= залишок. Інкремент paid_amount, закриваємо при 0.
+    Один платіж гасить один борг (гард used_tx). Назва-матч НЕ використовуємо (щоб не переплутати)."""
+    import re as _re
+    from decimal import Decimal as _D
+    from .models import PlannedPayment
+    if not batch:
+        return 0
+    used_tx = set(PlannedPayment.objects.exclude(paid_tx=None).values_list("paid_tx_id", flat=True))
+    payables = list(PlannedPayment.objects.filter(kind="payable", status="planned").select_related("contact"))
+    if not payables:
+        return 0
+    settled = 0
+    for tx in Transaction.objects.filter(import_batch=batch, direction="out"):
+        if tx.id in used_tx:
+            continue
+        amount = float(tx.amount_uah or tx.amount or 0)
+        if amount <= 0:
+            continue
+        text = tx.comment or ""
+        m = _re.search(r"(?:ЄДРПОУ|ІПН)\s*(\d{8,12})", text)
+        tx_crf = m.group(1) if m else None
+        m = _re.search(r"(UA\d{27})", text)
+        tx_iban = m.group(1) if m else None
+        if not tx_crf and not tx_iban:
+            continue  # немає надійного ідентифікатора отримувача — не чіпаємо
+        best = None
+        for pp in payables:
+            if pp.status != "planned":
+                continue
+            remaining = float(pp.amount) - float(pp.paid_amount or 0)
+            if remaining <= 0.01 or amount > remaining + 0.5:
+                continue
+            nceo = (getattr(pp.contact, "edrpou", "") if pp.contact_id else "") or ""
+            iban = (getattr(pp.contact, "iban", "") if pp.contact_id else "") or ""
+            ptext = pp.comment or ""
+            if not nceo:
+                mm = _re.search(r"(?:ЄДРПОУ|ІПН)\s*(\d{8,12})", ptext)
+                nceo = mm.group(1) if mm else ""
+            if not iban:
+                mm = _re.search(r"(UA\d{27})", ptext)
+                iban = mm.group(1) if mm else ""
+            if not ((tx_crf and nceo and tx_crf == nceo) or (tx_iban and iban and tx_iban == iban)):
+                continue
+            score = 3 if abs(remaining - amount) < 0.01 else (2 if abs(float(pp.amount) - amount) < 0.01 else 1)
+            if best is None or score > best[1]:
+                best = (pp, score)
+        if best:
+            pp = best[0]
+            pp.paid_amount = _D(str(pp.paid_amount or 0)) + _D(str(amount))
+            if pp.paid_amount >= _D(str(pp.amount)):
+                pp.status = "paid"
+            pp.paid_tx = tx
+            pp.save(update_fields=["paid_amount", "status", "paid_tx"])
+            used_tx.add(tx.id)
+            settled += 1
+    return settled
 
 
 def mono_pull(d_from, d_to, mono_account=None):
