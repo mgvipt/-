@@ -261,3 +261,12 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
   .acc-sidebar { display: none !important; }
   .scroll.pad .btn { min-height: 34px; }
 }
+
+/* --- Панель дій Журналу на телефоні: один рядок з прокруткою, компактно --- */
+@media (max-width: 640px) {
+  .jrnl-actions { flex-wrap: nowrap !important; overflow-x: auto; gap: 6px !important; padding-bottom: 4px; }
+  .jrnl-actions::-webkit-scrollbar { height: 5px; }
+  .jrnl-actions > * { flex: 0 0 auto; }
+  .jrnl-actions .btn { padding: 6px 9px !important; font-size: 12px !important; }
+  .journal-filter .btn { padding: 6px 9px !important; font-size: 12.5px !important; }
+}

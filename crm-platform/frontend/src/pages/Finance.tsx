@@ -1051,7 +1051,7 @@ function Journal() {
         </div>
         </div>
       )}
-      <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
+      <div className="jrnl-actions" style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
         {canTx && <button className="btn btn-primary" title={t("Добавить поступление денег","Додати надходження грошей")} onClick={() => openNew("in")}>+ {t("Доход","Дохід")}</button>}
         {canTx && <button className="btn btn-light" title={t("Добавить расход","Додати витрату")} onClick={() => openNew("out")}>− {t("Расход","Витрата")}</button>}
         {(lock.closed_until || lock.can_close) && (
