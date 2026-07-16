@@ -2170,19 +2170,8 @@ function Debts() {
     try { const u = await api.blobUrl(`/api/integrations/incoming-docs/${id}/view/`); window.open(u, "_blank"); }
     catch { alert(t("Не удалось открыть накладную", "Не вдалося відкрити накладну")); }
   };
-  const payFop = async (r: any, e: any) => {
-    e.stopPropagation();
-    try {
-      const dry: any = await api.post(`/api/planned-payments/${r.id}/pay-with-fop/`, {});
-      if (dry.detail) { alert(dry.detail); return; }
-      const w = dry.would_send || {};
-      if (!confirm(t("Создать платёж в Приват24?", "Створити платіж у Приват24?") + `\n\n` + t("Получатель", "Отримувач") + `: ${w.payment_naming}\n` + t("Счёт", "Рахунок") + `: ${w.recipient_account}\nЄДРПОУ/ІПН: ${w.recipient_nceo}\n` + t("Сумма", "Сума") + `: ${w.payment_amount} грн\n` + t("Назначение", "Призначення") + `: ${w.payment_destination}\n\n` + t("Платёж создастся как ЧЕРНОВИК — подпишешь его КЕП в Приват24.", "Платіж створиться як ЧЕРНЕТКА — підпишеш його КЕП у Приват24."))) return;
-      const res: any = await api.post(`/api/planned-payments/${r.id}/pay-with-fop/`, { confirm: 1 });
-      if (res.detail) { alert(res.detail); return; }
-      alert("✓ " + (res.note || t("Платёж создан", "Платіж створено")) + (res.payment_ref ? `\nref: ${res.payment_ref}` : ""));
-      load();
-    } catch (err: any) { alert(err?.response?.data?.detail || t("Ошибка", "Помилка")); }
-  };
+  const [payFopDoc, setPayFopDoc] = useState<any>(null);
+  const payFop = (r: any, e: any) => { e.stopPropagation(); setPayFopDoc(r); };
   const Section = ({ kind, title, color }: any) => {
     const list = rows.filter((r) => r.kind === kind && !r.is_internal && (!cpFilter || String(r.counterparty || "").toLowerCase().includes(cpFilter.toLowerCase())));
     const total = list.reduce((sm, r) => sm + Number(r.amount || 0), 0);
@@ -2268,6 +2257,7 @@ function Debts() {
         <input value={cpFilter} onChange={(e) => setCpFilter(e.target.value)} placeholder={t("🔎 Фильтр по контрагенту", "🔎 Фільтр за контрагентом")} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 10px", fontSize: 13, minWidth: 210 }} />
         {cpFilter && <button className="btn btn-light" onClick={() => setCpFilter("")} title={t("Сбросить", "Скинути")}>✕</button>}
       </div>
+      {payFopDoc && <PayFopModal r={payFopDoc} onClose={() => setPayFopDoc(null)} onDone={load} />}
       <Section kind="payable" title={"🔻 " + t("Кредиторка — мы должны", "Кредиторка — ми винні")} color="#dc2626" />
       <Section kind="receivable" title={"🔺 " + t("Дебиторка — нам должны", "Дебіторка — нам винні")} color="#16a34a" />
       {(() => {
@@ -3249,6 +3239,62 @@ function IncomingMsgModal({ docId, onClose, onProvesti, onReject }: { docId: num
           <button className="btn btn-light" onClick={() => { if (confirm(t("Отклонить документ?", "Відхилити документ?"))) onReject(docId); }}>{t("Отклонить", "Відхилити")}</button>
           <button className="btn btn-light" onClick={onClose}>{t("Закрыть", "Закрити")}</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+function PayFopModal({ r, onClose, onDone }: { r: any; onClose: () => void; onDone: () => void }) {
+  const { t } = useLang();
+  const [dry, setDry] = useState<any>(null);
+  const [amount, setAmount] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [err, setErr] = useState<string>("");
+  useEffect(() => {
+    api.post<any>(`/api/planned-payments/${r.id}/pay-with-fop/`, {}).then((d: any) => {
+      if (d.detail) { setErr(d.detail); return; }
+      setDry(d); setAmount(String(d.would_send?.payment_amount || ""));
+    }).catch((e: any) => setErr(e?.response?.data?.detail || t("Не удалось подготовить платёж", "Не вдалося підготувати платіж")));
+  }, [r.id]);
+  const send = async () => {
+    setBusy(true); setErr("");
+    try {
+      const res: any = await api.post(`/api/planned-payments/${r.id}/pay-with-fop/`, { confirm: 1, amount });
+      if (res.detail) { setErr(res.detail); setBusy(false); return; }
+      setResult(res); onDone();
+    } catch (e: any) { setErr(e?.response?.data?.detail || t("Ошибка", "Помилка")); } finally { setBusy(false); }
+  };
+  const w = dry?.would_send || {};
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div className="panel" style={{ maxWidth: 500, width: "100%", background: "#fff", boxShadow: "0 20px 60px rgba(0,0,0,.25)" }} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ margin: "0 0 14px", display: "flex", alignItems: "center", gap: 8 }}>💳 {t("Оплата с ФОП через Приват", "Оплата з ФОП через Приват")}</h3>
+        {err && <div style={{ background: "#fef2f2", color: "#dc2626", borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 12 }}>{err}</div>}
+        {result ? (
+          <>
+            <div style={{ background: "#f0fdf4", color: "#15803d", borderRadius: 8, padding: 12, fontSize: 13.5, marginBottom: 14 }}>✓ {result.note}{result.payment_ref ? ` (ref: ${result.payment_ref})` : ""}</div>
+            <button className="btn btn-primary" onClick={onClose}>{t("Закрыть", "Закрити")}</button>
+          </>
+        ) : dry ? (
+          <>
+            <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px", fontSize: 13.5, lineHeight: 1.7, marginBottom: 14 }}>
+              <div><span style={{ color: "#64748b" }}>{t("Получатель", "Отримувач")}:</span> <b>{w.payment_naming}</b></div>
+              <div><span style={{ color: "#64748b" }}>{t("Счёт", "Рахунок")}:</span> {w.recipient_account}</div>
+              <div><span style={{ color: "#64748b" }}>ЄДРПОУ/ІПН:</span> {w.recipient_nceo}</div>
+              <div style={{ whiteSpace: "normal" }}><span style={{ color: "#64748b" }}>{t("Назначение", "Призначення")}:</span> {w.payment_destination}</div>
+            </div>
+            <label className="label" style={{ display: "block", marginBottom: 4 }}>{t("Сумма к оплате, грн", "Сума до оплати, грн")}</label>
+            <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: "100%", height: 40, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 12px", fontSize: 17, fontWeight: 700, marginBottom: 12, boxSizing: "border-box" }} />
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>{t("Создастся ЧЕРНОВИК в Приват24 — подпишешь его КЕП (SmartID), тогда деньги уйдут.", "Створиться ЧЕРНЕТКА у Приват24 — підпишеш її КЕП (SmartID), тоді гроші підуть.")}</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-primary" disabled={busy || !dry.ready} onClick={send}>{busy ? "…" : "✓ " + t("Создать платёж", "Створити платіж")}</button>
+              <button className="btn btn-light" onClick={onClose}>{t("Отмена", "Скасувати")}</button>
+            </div>
+            {!dry.ready && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>{t("Приват не настроен (токен/счёт)", "Приват не налаштований (токен/рахунок)")}</div>}
+          </>
+        ) : <div className="muted" style={{ padding: 10 }}>{t("Загрузка…", "Завантаження…")}</div>}
       </div>
     </div>
   );
