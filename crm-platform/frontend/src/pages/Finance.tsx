@@ -80,8 +80,7 @@ export default function Finance() {
   const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["incoming", <><Icon n="📥" size={15} /> {t("Вх. накладные","Вхідні накладні")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
   return (
     <div className="scroll pad fade">
-      <div className="note warn"><Icon n="🔒" size={15} /> {t("Раздел видят только роли с правом","Розділ бачать тільки ролі з правом")} <b>finance.view</b>.</div>
-      <div className="fin-tabs" style={{ display: "flex", gap: 6, margin: "12px 0", flexWrap: "wrap" }}>
+      <div className="fin-tabs" style={{ display: "flex", gap: 6, margin: "12px 0" }}>
         {tabs.filter(([k]) => tabAllowed(k as string)).map(([k, l]) => <button key={k} className={tab === k ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab(k as any)}>{l}</button>)}
       </div>
       <button onClick={() => setQuickOpen(true)} title={t("Быстрый платёж", "Швидкий платіж")}
@@ -994,19 +993,24 @@ function Journal() {
       {/* ручка зміни ширини блоку рахунків */}
       {!accCollapsed && <div onMouseDown={startAccResize} title={t("Тяни, чтобы изменить ширину","Тягни, щоб змінити ширину")} style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0, minHeight: "60vh" }} />}
       <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }} className="journal-filter">
-        <span style={{ minWidth: 180, display: "inline-block" }}><ClientPick value={fContact} label={fContactName} placeholder={t("Фильтр: клиент…","Фільтр: клієнт…")} onPick={(cid, nm) => { setFContact(cid); setFContactName(nm); }} /></span>
-        <input value={fq} onChange={(e) => setFq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && apply()} placeholder={t("🔍 Поиск по всему: сумма, контрагент, комментарий, счёт…","🔍 Пошук по всьому: сума, контрагент, коментар, рахунок…")} style={{ flex: "1 1 220px", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
-        <span className="muted" style={{ fontSize: 12 }} title={t("Отдельный фильтр по дате операции","Окремий фільтр по даті операції")}><Icon n="📅" size={13} /> {t("Дата","Дата")}:</span>
-        <input type="date" value={ff} onChange={(e) => setFf(e.target.value)} title={t("Дата от","Дата від")} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 6px" }} />
-        <input type="date" value={ft} onChange={(e) => setFt(e.target.value)} title={t("Дата до","Дата до")} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 6px" }} />
-        <button className="btn btn-light" onClick={() => setShowCols((x) => !x)} title={t("Фильтры по каждому столбцу","Фільтри по кожному стовпцю")}><Icon n="⚙" size={14} /> {t("Столбцы","Стовпці")} {showCols ? "▲" : "▼"}</button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }} className="journal-filter">
+        <input value={fq} onChange={(e) => setFq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && apply()} placeholder={t("🔍 Поиск: сумма, контрагент, категория, комментарий, счёт…","🔍 Пошук: сума, контрагент, категорія, коментар, рахунок…")} style={{ flex: 1, height: 40, border: "1px solid #cbd5e1", borderRadius: 10, padding: "0 14px", fontSize: 14 }} />
+        <button className="btn btn-light" onClick={() => setShowCols(true)} title={t("Все фильтры","Всі фільтри")} style={{ whiteSpace: "nowrap" }}><Icon n="⚙" size={14} /> {t("Фильтры","Фільтри")}{(() => { const n = (fContact ? 1 : 0) + (ff ? 1 : 0) + (ft ? 1 : 0) + Object.values(cf).filter((v: any) => v !== "" && v != null).length; return n ? ` (${n})` : ""; })()}</button>
         <button className="btn btn-primary" onClick={apply}>{t("Найти","Знайти")}</button>
-        <button className="btn btn-light" onClick={resetAll}>{t("Сбросить всё","Скинути все")}</button>
+        <button className="btn btn-light" onClick={resetAll} title={t("Сбросить всё","Скинути все")}>✕</button>
       </div>
       {showCols && (
-        <div className="panel journal-cols" style={{ margin: "0 0 8px", padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px,1fr))", gap: 8 }}>
-          {(() => { const cs = { height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", width: "100%" } as React.CSSProperties; const set = (k: string, v: any) => setCf((c: any) => ({ ...c, [k]: v })); return (<>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 1100, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 16, overflowY: "auto" }} onClick={() => setShowCols(false)}>
+        <div className="panel" style={{ maxWidth: 580, width: "100%", background: "#fff", margin: "24px auto" }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h3 style={{ margin: 0, fontSize: 17 }}>⚙ {t("Фильтры журнала","Фільтри журналу")}</h3><button onClick={() => setShowCols(false)} style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer" }}>✕</button></div>
+          <label className="label" style={{ display: "block", marginBottom: 4 }}>{t("Клиент","Клієнт")}</label>
+          <div style={{ marginBottom: 10 }}><ClientPick value={fContact} label={fContactName} placeholder={t("Клиент / контрагент…","Клієнт / контрагент…")} onPick={(cid, nm) => { setFContact(cid); setFContactName(nm); }} /></div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <div style={{ flex: 1 }}><label className="label" style={{ display: "block", marginBottom: 4 }}>{t("Дата от","Дата від")}</label><input type="date" value={ff} onChange={(e) => setFf(e.target.value)} style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px", boxSizing: "border-box" }} /></div>
+            <div style={{ flex: 1 }}><label className="label" style={{ display: "block", marginBottom: 4 }}>{t("Дата до","Дата до")}</label><input type="date" value={ft} onChange={(e) => setFt(e.target.value)} style={{ width: "100%", height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px", boxSizing: "border-box" }} /></div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {(() => { const cs = { height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px", width: "100%", boxSizing: "border-box" } as React.CSSProperties; const set = (k: string, v: any) => setCf((c: any) => ({ ...c, [k]: v })); return (<>
             <select value={cf.direction} onChange={(e) => set("direction", e.target.value)} style={cs}><option value="">{t("Тип: все","Тип: усі")}</option><option value="in">{t("Доход","Дохід")}</option><option value="out">{t("Расход","Витрата")}</option><option value="transfer">{t("Перевод","Переказ")}</option></select>
             <input value={cf.amount_min} onChange={(e) => set("amount_min", e.target.value)} type="number" placeholder={t("Сумма от","Сума від")} style={cs} />
             <input value={cf.amount_max} onChange={(e) => set("amount_max", e.target.value)} type="number" placeholder={t("Сумма до","Сума до")} style={cs} />
@@ -1018,8 +1022,13 @@ function Journal() {
             <select value={cf.fin_direction} onChange={(e) => set("fin_direction", e.target.value)} style={cs}><option value="">{t("Направление: все","Напрямок: усі")}</option>{dirs.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
             <select value={cf.channel} onChange={(e) => set("channel", e.target.value)} style={cs}><option value="">{t("Канал: все","Канал: усі")}</option>{CHANNELS.filter((c) => c[0]).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
             <input value={cf.comment} onChange={(e) => set("comment", e.target.value)} placeholder={t("Комментарий","Коментар")} style={cs} />
-            <button className="btn btn-primary" onClick={apply}>{t("Применить фильтры","Застосувати фільтри")}</button>
           </>); })()}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+            <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { apply(); setShowCols(false); }}>{t("Применить","Застосувати")}</button>
+            <button className="btn btn-light" onClick={resetAll}>{t("Сбросить всё","Скинути все")}</button>
+          </div>
+        </div>
         </div>
       )}
       <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>

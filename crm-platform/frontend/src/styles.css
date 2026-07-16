@@ -232,3 +232,9 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
   .nav-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:999; }
   .main{ width:100% !important; }
 }
+
+/* --- Вкладки Фінансів: один ряд + горизонтальний скрол (десктоп і моб.) --- */
+.fin-tabs{ flex-wrap:nowrap; overflow-x:auto; scrollbar-width:thin; padding-bottom:4px; }
+.fin-tabs::-webkit-scrollbar{ height:6px; }
+.fin-tabs::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:3px; }
+.fin-tabs > button{ flex:0 0 auto; white-space:nowrap; }
