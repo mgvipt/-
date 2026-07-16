@@ -752,6 +752,8 @@ function Journal() {
   const [splitRows, setSplitRows] = useState<any[]>([]);
   const [ff, setFf] = useState(""); const [ft, setFt] = useState(""); const [fq, setFq] = useState("");
   const [searchOpen, setSearchOpen] = useState(false); const [accOpen, setAccOpen] = useState(false);
+  const [actMenu, setActMenu] = useState(false);
+  const mrow: any = { display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", background: "transparent", border: "none", borderRadius: 8, fontSize: 15, fontWeight: 600, color: "#1e293b", cursor: "pointer", textAlign: "left", width: "100%" };
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50); const [count, setCount] = useState(0);
   const { can: canJ } = useAuth();
   const canTx = canJ("finance.tx.edit") || canJ("roles.manage");
@@ -1096,16 +1098,15 @@ function Journal() {
         {canTx && <button className="btn btn-light" title={t("Добавить расход","Додати витрату")} onClick={() => openNew("out")}>− {t("Расход","Витрата")}</button>}
         {canTx && <button className="btn btn-light" title={t("Перевод между счетами — не считается ни в доход, ни в расход","Переказ між рахунками — не рахується ні в дохід, ні у витрати")} onClick={() => openNew("transfer")}>⇄ {t("Перевод","Переказ")}</button>}
         {isMobile && <div style={{ flexBasis: "100%", height: 0 }} />}
-        <div style={isMobile ? { display: "flex", flexWrap: "nowrap", overflowX: "auto", width: "100%", gap: 8, alignItems: "center", paddingBottom: 2, WebkitOverflowScrolling: "touch" } : { display: "contents" }}>
-        {(lock.closed_until || lock.can_close) && (
+        {!isMobile && (lock.closed_until || lock.can_close) && (
           <span onClick={lock.can_close ? setPeriodLock : undefined} title={lock.can_close ? t("Изменить закрытие периода", "Змінити закриття періоду") : t("Период закрыт бухгалтерией", "Період закрито бухгалтерією")}
             style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 8, cursor: lock.can_close ? "pointer" : "default",
                      background: lock.closed_until ? "#fef2f2" : "#f0fdf4", color: lock.closed_until ? "#dc2626" : "#16a34a", border: "1px solid " + (lock.closed_until ? "#fecaca" : "#bbf7d0") }}>
-            <Icon n="🔒" size={14} />{isMobile ? "" : " " + (lock.closed_until ? t("Закрыто до ", "Закрито до ") + lock.closed_until : t("Период открыт", "Період відкритий"))}
+            <Icon n="🔒" size={14} /> {lock.closed_until ? t("Закрыто до ", "Закрито до ") + lock.closed_until : t("Период открыт", "Період відкритий")}
           </span>
         )}
-        {canTx && <label className="btn btn-light" style={{ cursor: "pointer" }} title={t("Импорт банковской выписки CSV","Імпорт банківської виписки CSV")}>
-          <Icon n="📤" size={14} />{isMobile ? "" : " " + t("Выписка","Виписка")}
+        {!isMobile && canTx && <label className="btn btn-light" style={{ cursor: "pointer" }} title={t("Импорт банковской выписки CSV","Імпорт банківської виписки CSV")}>
+          <Icon n="📤" size={14} /> {t("Выписка","Виписка")}
           <input type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={async (e) => {
             const f = e.target.files?.[0]; if (!f) return; (e.target as any).value = "";
             const text = await f.text();
@@ -1122,22 +1123,50 @@ function Journal() {
             } catch (err: any) { alert(err?.response?.data?.detail || t("Не удалось импортировать","Не вдалося імпортувати")); }
           }} />
         </label>}
-        <button className="btn btn-light" title={t("Выгрузить журнал в CSV (Excel)","Вивантажити журнал у CSV (Excel)")} onClick={async () => {
+        {!isMobile && <button className="btn btn-light" title={t("Выгрузить журнал в CSV (Excel)","Вивантажити журнал у CSV (Excel)")} onClick={async () => {
           try { const u = await (api as any).blobUrl("/api/transactions/export/"); const a = document.createElement("a"); a.href = u; a.download = "journal.csv"; a.click(); }
           catch { alert(t("Не удалось выгрузить","Не вдалося вивантажити")); }
-        }}><Icon n="📥" size={14} />{isMobile ? "" : " CSV"}</button>
+        }}><Icon n="📥" size={14} /> CSV</button>}
+        {isMobile && (
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            <button className="btn btn-light" style={{ fontWeight: 700 }} onClick={() => setActMenu((v) => !v)}><Icon n="📋" size={15} /> {t("Дії","Дії")} ▾</button>
+            {actMenu && (<>
+              <div onClick={() => setActMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 340 }} />
+              <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, background: "#fff", borderRadius: 14, boxShadow: "0 18px 50px rgba(15,23,42,.28)", border: "1px solid #e8edf3", padding: 8, zIndex: 350, minWidth: 244, display: "flex", flexDirection: "column", gap: 2 }}>
+                <button style={mrow} onClick={() => { setSearchOpen(true); setActMenu(false); }}><Icon n="🔍" size={17} /> <span>{t("Поиск","Пошук")}{fq ? " •" : ""}</span></button>
+                <button style={mrow} onClick={() => { setShowCols(true); setActMenu(false); }}><Icon n="⚙" size={17} /> <span>{t("Фильтры","Фільтри")}{(() => { const n = (fContact ? 1 : 0) + (ff ? 1 : 0) + (ft ? 1 : 0) + Object.values(cf).filter((v: any) => v !== "" && v != null).length; return n ? ` (${n})` : ""; })()}</span></button>
+                <button style={mrow} onClick={() => { setAccOpen(true); setActMenu(false); }}><Icon n="🏦" size={17} /> <span>{t("Счета","Рахунки")}</span></button>
+                {canTx && <label style={{ ...mrow, cursor: "pointer" }}><Icon n="📤" size={17} /> <span>{t("Загрузить выписку","Завантажити виписку")}</span>
+                  <input type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={async (e) => {
+                    const f = e.target.files?.[0]; if (!f) return; (e.target as any).value = ""; setActMenu(false);
+                    const text = await f.text();
+                    try {
+                      const dry: any = await api.post("/api/transactions/import-statement/", { data: text, commit: false });
+                      const msg = t("Импорт выписки на счёт","Імпорт виписки на рахунок") + ` «${dry.account}»:\n` +
+                        t("Новых операций","Нових операцій") + `: ${dry.created}\n` + t("Дубликатов (пропустим)","Дублікатів (пропустимо)") + `: ${dry.duplicates}\n` +
+                        t("Ошибок строк","Помилок рядків") + `: ${dry.errors}\n\n` +
+                        (dry.preview || []).map((p: any) => `${p.date} ${p.dir === "in" ? "+" : "−"}${p.amount} ${p.osnd}`).join("\n") +
+                        "\n\n" + t("Применить?","Застосувати?");
+                      if (!confirm(msg)) return;
+                      const done: any = await api.post("/api/transactions/import-statement/", { data: text, commit: true });
+                      alert(t("Готово ✓ Добавлено","Готово ✓ Додано") + `: ${done.created}`); load();
+                    } catch (err: any) { alert(err?.response?.data?.detail || t("Не удалось импортировать","Не вдалося імпортувати")); }
+                  }} />
+                </label>}
+                <button style={mrow} onClick={async () => { setActMenu(false); try { const u = await (api as any).blobUrl("/api/transactions/export/"); const a = document.createElement("a"); a.href = u; a.download = "journal.csv"; a.click(); } catch { alert(t("Не удалось выгрузить","Не вдалося вивантажити")); } }}><Icon n="📥" size={17} /> <span>{t("Экспорт в CSV (Excel)","Експорт у CSV (Excel)")}</span></button>
+                {(lock.closed_until || lock.can_close) && <button style={{ ...mrow, color: lock.closed_until ? "#dc2626" : "#16a34a" }} onClick={lock.can_close ? () => { setPeriodLock(); setActMenu(false); } : () => setActMenu(false)}><Icon n="🔒" size={17} /> <span>{lock.closed_until ? t("Период: закрыт до ","Період: закрито до ") + lock.closed_until : t("Период открыт","Період відкритий")}</span></button>}
+              </div>
+            </>)}
+          </div>
+        )}
         {bankHub && <BankHubModal onClose={() => { setBankHub(false); load(); api.get<any>("/api/accounts/").then((d) => setAccounts((d.results || d).filter((a: any) => a.is_active !== false))); }} />}
-        {isMobile && <button className="btn btn-light" onClick={() => setSearchOpen(true)} title={t("Поиск","Пошук")}><Icon n="🔍" size={14} />{fq ? " •" : ""}</button>}
-        {isMobile && <button className="btn btn-light" onClick={() => setShowCols(true)}><Icon n="⚙" size={14} />{(() => { const n = (fContact ? 1 : 0) + (ff ? 1 : 0) + (ft ? 1 : 0) + Object.values(cf).filter((v: any) => v !== "" && v != null).length; return n ? ` ${n}` : ""; })()}</button>}
-        {isMobile && <button className="btn btn-light" onClick={() => setAccOpen(true)} title={t("Счета","Рахунки")}><Icon n="🏦" size={14} /></button>}
-        <div style={{ marginLeft: isMobile ? 0 : "auto", width: "auto", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: isMobile ? 5 : 8, fontSize: isMobile ? 12.5 : 13 }}>
+        <div style={{ marginLeft: isMobile ? 0 : "auto", width: "auto", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: isMobile ? 6 : 8, fontSize: isMobile ? 13 : 13 }}>
           {!isMobile && <span className="muted">{t("На стр.","На стор.")}:</span>}
-          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ height: isMobile ? 28 : 30, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: isMobile ? 12.5 : 13, padding: "0 2px", flexShrink: 0 }}>{[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}</select>
+          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ height: isMobile ? 30 : 30, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: isMobile ? 13 : 13, padding: "0 2px", flexShrink: 0 }}>{[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}</select>
           {!isMobile && <span className="muted">{t("Всего","Всього")}: <b>{count}</b></span>}
-          <button className="btn btn-light" style={{ padding: isMobile ? "4px 10px" : undefined, fontSize: isMobile ? 15 : undefined }} disabled={page <= 1} onClick={() => goPage(page - 1)}>←</button>
+          <button className="btn btn-light" style={{ padding: isMobile ? "5px 12px" : undefined, fontSize: isMobile ? 16 : undefined }} disabled={page <= 1} onClick={() => goPage(page - 1)}>←</button>
           <span style={{ whiteSpace: "nowrap" }}>{!isMobile && (t("стр.","стор.") + " ")}<b>{page}</b> {t("из","з")} {totalPages}</span>
-          <button className="btn btn-light" style={{ padding: isMobile ? "4px 10px" : undefined, fontSize: isMobile ? 15 : undefined }} disabled={page >= totalPages} onClick={() => goPage(page + 1)}>→</button>
-        </div>
+          <button className="btn btn-light" style={{ padding: isMobile ? "5px 12px" : undefined, fontSize: isMobile ? 16 : undefined }} disabled={page >= totalPages} onClick={() => goPage(page + 1)}>→</button>
         </div>
       </div>
       {isMobile ? (
