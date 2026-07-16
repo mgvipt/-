@@ -1,7 +1,7 @@
 /* Карточка лида: стадии + левая колонка (контакт/ответственный/сумма/источник)
  * + конвертация в сделку. Открывается из канбана лидов (/leads/:id). */
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import OwnerSelect from "../OwnerSelect";
 import { api, Funnel } from "../api";
 import { Avatar, SourceChip } from "../ui";
@@ -22,6 +22,7 @@ interface Lead {
 export default function LeadCard() {
   const { id } = useParams();
   const nav = useNavigate();
+  const loc = useLocation();
   const [lead, setLead] = useState<Lead | null>(null);
   const [notFound, setNotFound] = useState(false);
   const { t } = useLang();
@@ -126,7 +127,7 @@ export default function LeadCard() {
   return (
     <div className="scroll fade" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 52px)", overflow: "hidden" }}>
       <div className="dealhead">
-        <button className="back" onClick={() => nav("/leads")}>←</button>
+        <button className="back" title="Назад" onClick={() => loc.key !== "default" ? nav(-1) : nav("/leads")}>←</button>
         {titleEdit ? (
           <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
             <input value={titleVal} autoFocus onChange={(e) => setTitleVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setTitleEdit(false); }} style={{ fontSize: 15, fontWeight: 700, padding: "3px 7px", borderRadius: 6, border: "1px solid #cbd5e1", minWidth: 200 }} />

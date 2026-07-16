@@ -25,7 +25,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
 import { api, Funnel, Paginated } from "../api";
 import OwnerSelect from "../OwnerSelect";
@@ -204,6 +204,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const params = useParams();
   const id = dealId != null ? String(dealId) : params.id;
   const nav = useNavigate();
+  const loc = useLocation();
   const [showReceipt, setShowReceipt] = useState(false);
   const { can } = useAuth();
   const [gearOpen, setGearOpen] = useState(false);
@@ -613,7 +614,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
 
       {/* ─── [7] РЕНДЕР: шапка ─────────────────────────────────────────── */}
       <div className="dealhead">
-        <button className="back" onClick={() => onClose ? onClose() : nav("/deals")}>←</button>
+        <button className="back" title="Назад" onClick={() => onClose ? onClose() : (loc.key !== "default" ? nav(-1) : nav("/deals"))}>←</button>
         <b style={{ fontSize: 16 }}><span title={t("Клик — скопировать № (идентификатор для оплат)","Клік — скопіювати № (ідентифікатор для оплат)")} style={{ cursor: "pointer" }} onClick={() => { navigator.clipboard?.writeText(String(deal.id)); flash(t("№ "+deal.id+" скопирован","№ "+deal.id+" скопійовано")); }}>#{deal.id}</span> · {titleEdit ? (
           <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
             <input value={titleVal} autoFocus onChange={(e) => setTitleVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setTitleEdit(false); }} style={{ fontSize: 15, fontWeight: 700, padding: "3px 7px", borderRadius: 6, border: "1px solid #cbd5e1", minWidth: 200 }} />
