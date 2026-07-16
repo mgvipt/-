@@ -1096,6 +1096,7 @@ function Journal() {
         {canTx && <button className="btn btn-light" title={t("Добавить расход","Додати витрату")} onClick={() => openNew("out")}>− {t("Расход","Витрата")}</button>}
         {canTx && <button className="btn btn-light" title={t("Перевод между счетами — не считается ни в доход, ни в расход","Переказ між рахунками — не рахується ні в дохід, ні у витрати")} onClick={() => openNew("transfer")}>⇄ {t("Перевод","Переказ")}</button>}
         {isMobile && <div style={{ flexBasis: "100%", height: 0 }} />}
+        <div style={isMobile ? { display: "flex", flexWrap: "nowrap", overflowX: "auto", width: "100%", gap: 8, alignItems: "center", paddingBottom: 2, WebkitOverflowScrolling: "touch" } : { display: "contents" }}>
         {(lock.closed_until || lock.can_close) && (
           <span onClick={lock.can_close ? setPeriodLock : undefined} title={lock.can_close ? t("Изменить закрытие периода", "Змінити закриття періоду") : t("Период закрыт бухгалтерией", "Період закрито бухгалтерією")}
             style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 8, cursor: lock.can_close ? "pointer" : "default",
@@ -1137,6 +1138,7 @@ function Journal() {
           <button className="btn btn-light" style={{ padding: isMobile ? "4px 10px" : undefined, fontSize: isMobile ? 15 : undefined }} disabled={page <= 1} onClick={() => goPage(page - 1)}>←</button>
           <span style={{ whiteSpace: "nowrap" }}>{!isMobile && (t("стр.","стор.") + " ")}<b>{page}</b> {t("из","з")} {totalPages}</span>
           <button className="btn btn-light" style={{ padding: isMobile ? "4px 10px" : undefined, fontSize: isMobile ? 15 : undefined }} disabled={page >= totalPages} onClick={() => goPage(page + 1)}>→</button>
+        </div>
         </div>
       </div>
       {isMobile ? (
