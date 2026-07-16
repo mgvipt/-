@@ -671,6 +671,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         <button className="btn" style={{ padding: "0 10px" }} title={t("Печать бланка выкраски","Друк бланка викраски")} onClick={() => setVkOpen(true)}><Icon n="palette" size={16} /></button>
         <div style={{ width: 1, height: 24, background: "#cbd5e1", margin: "0 6px" }} />
         <button className="btn" onClick={issueCheckbox}><Icon n="🧾" size={15} /> {t("Checkbox","Checkbox")}</button>
+        {deal.contact_id && (
+          <div id={`deal-reply-channel-${deal.id}`} data-testid="deal-reply-channel-target"
+            style={{ marginLeft: "auto", minWidth: 260, maxWidth: 380, flex: "0 1 380px" }} />
+        )}
       </div>
 
       {(tab === "smeta" && can("deal.smeta.tab")) ? (
@@ -1056,7 +1060,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           <div style={{ width: chatW, flexShrink: 0, position: "sticky", top: 56, alignSelf: "flex-start" }}>
             <div className="panel">
               <div className="label"><Icon n="💬" size={14} /> {t("Чат с клиентом","Чат з клієнтом")}</div>
-              <ClientChat contact={deal.contact_id} />
+              <ClientChat contact={deal.contact_id} channelPickerTargetId={`deal-reply-channel-${deal.id}`} />
             </div>
           </div>
         )}

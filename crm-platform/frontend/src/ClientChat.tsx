@@ -2,6 +2,7 @@
  * обидва з регульованою висотою (тягни за правий нижній кут). AI-РОП показує
  * тези діалогу + рекомендовану відповідь прямо тут. */
 import { Fragment, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { EmojiButton } from "./ChatCompose";
 import { Icon } from "./Icon";
 import { api, ChatMessage, Conversation, Paginated } from "./api";
@@ -11,7 +12,7 @@ import { dayLabel, timeLabel, isNewDay, linkify, metaWindow } from "./chatUtils"
 const tt = (_r: string, ua: string) => ua;  // ClientChat україномовний
 type ReplyChannel = { channel_id: number; channel_kind: string; channel_name: string; number?: string; conversation_id?: number | null; selected?: boolean };
 
-export default function ClientChat({ contact, markSeen = true }: { contact?: number | null; markSeen?: boolean }) {
+export default function ClientChat({ contact, markSeen = true, channelPickerTargetId }: { contact?: number | null; markSeen?: boolean; channelPickerTargetId?: string }) {
   const [conv, setConv] = useState<Conversation | null>(null);
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
@@ -23,6 +24,7 @@ export default function ClientChat({ contact, markSeen = true }: { contact?: num
   const [loaded, setLoaded] = useState(false);
   const [replyChannels, setReplyChannels] = useState<ReplyChannel[]>([]);
   const [switchingChannel, setSwitchingChannel] = useState(false);
+  const [channelPickerTarget, setChannelPickerTarget] = useState<HTMLElement | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -59,6 +61,9 @@ export default function ClientChat({ contact, markSeen = true }: { contact?: num
     setSwitchingChannel(false);
   }
   useEffect(() => { loadConv(); /* eslint-disable-next-line */ }, [contact]);
+  useEffect(() => {
+    setChannelPickerTarget(channelPickerTargetId ? document.getElementById(channelPickerTargetId) : null);
+  }, [channelPickerTargetId]);
   useEffect(() => {
     if (!conv) return;
     loadReplyChannels(conv.id);
@@ -109,22 +114,25 @@ export default function ClientChat({ contact, markSeen = true }: { contact?: num
   if (!conv) return <div className="muted" style={{ fontSize: 13 }}>Переписки ще немає — зʼявиться після першого повідомлення клієнта в Instagram</div>;
 
   const pts = ai ? (ai.points && ai.points.length ? ai.points : (ai.context ? [ai.context] : [])) : [];
+  const channelPicker = (
+    <div data-testid="reply-channel-picker" style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: channelPickerTargetId ? 0 : 7, width: "100%" }}>
+      <span style={{ fontSize: 10.5, color: "#64748b", fontWeight: 700, whiteSpace: "nowrap" }}>Відповідати через</span>
+      <select value={conv.channel} onChange={(e) => useChannel(Number(e.target.value))} disabled={switchingChannel}
+        title="Оберіть канал і номер, від імені якого CRM напише клієнту"
+        style={{ minWidth: 0, flex: 1, height: 30, border: "1px solid #cbd5e1", borderRadius: 7, background: "#fff", color: "#334155", padding: "0 7px", fontSize: 11.5, fontWeight: 600 }}>
+        {replyChannels.length === 0 && <option value={conv.channel}>{conv.channel_name}</option>}
+        {replyChannels.map((line) => (
+          <option key={line.channel_id} value={line.channel_id}>
+            {line.channel_name}{line.number && !line.channel_name.includes(line.number) ? ` · ${line.number}` : ""}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", containerType: "inline-size", height: "calc(100vh - 96px)", maxHeight: "calc(100vh - 96px)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
-        <span style={{ fontSize: 10.5, color: "#64748b", fontWeight: 700, whiteSpace: "nowrap" }}>Відповідати через</span>
-        <select value={conv.channel} onChange={(e) => useChannel(Number(e.target.value))} disabled={switchingChannel}
-          title="Оберіть канал і номер, від імені якого CRM напише клієнту"
-          style={{ minWidth: 0, flex: 1, height: 30, border: "1px solid #cbd5e1", borderRadius: 7, background: "#fff", color: "#334155", padding: "0 7px", fontSize: 11.5, fontWeight: 600 }}>
-          {replyChannels.length === 0 && <option value={conv.channel}>{conv.channel_name}</option>}
-          {replyChannels.map((line) => (
-            <option key={line.channel_id} value={line.channel_id}>
-              {line.channel_name}{line.number && !line.channel_name.includes(line.number) ? ` · ${line.number}` : ""}
-            </option>
-          ))}
-        </select>
-      </div>
+      {channelPickerTargetId ? (channelPickerTarget ? createPortal(channelPicker, channelPickerTarget) : null) : channelPicker}
       <ChatActions convId={conv.id} onClosed={() => { setConv(null); setMsgs([]); }} onChanged={(c) => setConv(c)} />
       {/* СТРІЧКА — заповнює доступну висоту */}
       <div style={{ flex: 1, minHeight: 80, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
