@@ -1384,7 +1384,7 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         dest = ("Оплата: " + (pp.comment or "рахунку"))[:420]
         if len(dest) < 5:
             dest = "Оплата рахунку постачальника"
-        docnum = "CRM%s-%s" % (pp.id, _tz.now().strftime("%y%m%d%H%M"))
+        docnum = _tz.now().strftime("%m%d%H%M%S")  # ТІЛЬКИ цифри — Приват вимагає числовий номер документа
         payload = {
             "document_number": docnum,
             "payer_account": payer,
