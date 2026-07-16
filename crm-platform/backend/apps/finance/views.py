@@ -447,6 +447,47 @@ class TransactionViewSet(viewsets.ModelViewSet):
         return Response({"closed_until": cu.isoformat() if cu else None,
                          "can_close": request.user.is_superuser or request.user.has_perm_code("finance.period.close")})
 
+    @action(detail=False, methods=["post"], url_path="quick-expense")
+    def quick_expense(self, request):
+        """⚡ Швидкий платіж: фіксує розхід одразу (сума + фонд + контрагент), поки памʼятаєш.
+        Виписка пізніше склеїться з ним (без дубля). method=card|cash."""
+        from django.utils import timezone as _tzq
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("finance.tx.edit") or u.has_perm_code("finance.manage")):
+            return Response({"detail": "Немає права додавати операції"}, status=403)
+        try:
+            amount = float(str(request.data.get("amount")).replace(",", "."))
+        except (TypeError, ValueError):
+            amount = 0
+        if amount <= 0:
+            return Response({"detail": "Вкажи суму"}, status=400)
+        counterparty = (request.data.get("counterparty") or "Нова Пошта").strip()[:160]
+        method = (request.data.get("method") or "card").lower()
+        comment_in = (request.data.get("comment") or "").strip()
+        art = cat = fdir = None
+        if request.data.get("fin_article"):
+            art = FinModelArticle.objects.filter(id=request.data.get("fin_article")).first()
+        if request.data.get("category"):
+            cat = Category.objects.filter(id=request.data.get("category")).first()
+            if cat and not art:
+                art = cat.fin_article or (cat.parent.fin_article if cat.parent_id else None)
+            if cat:
+                fdir = cat.fin_direction or (cat.parent.fin_direction if cat.parent_id else None)
+        acc = None
+        if method == "cash":
+            acc = Account.objects.filter(name__icontains="каса").first() or Account.objects.filter(name__icontains="готів").first()
+        acc = acc or Account.objects.filter(is_active=True).first() or Account.objects.first()
+        tx = Transaction.objects.create(
+            direction="out", amount=amount, amount_uah=amount, account=acc,
+            date=_tzq.localdate(), op_time=_tzq.localtime().time(), counterparty=counterparty,
+            category=cat, fin_article=art, fin_direction=fdir, channel="",
+            import_batch="QUICK-" + _tzq.now().strftime("%Y%m%d-%H%M%S"),
+            comment=("⚡ Швидкий платіж (%s)%s" % ("готівка" if method == "cash" else "картка",
+                     (" · " + comment_in) if comment_in else ""))[:255])
+        return Response({"ok": True, "id": tx.id, "amount": amount, "counterparty": counterparty,
+                         "method": method, "fin_article": art.name if art else None,
+                         "note": "Розхід зафіксовано. Виписка склеїться сама." if method == "card" else "Готівковий розхід зафіксовано."})
+
     @action(detail=False, methods=["post"], url_path="privat-sync")
     def privat_sync(self, request):
         """Синк ПриватБанку: за N днів або за довільний період {from,to}."""
@@ -861,6 +902,31 @@ def _fee_category():
     return cat or Category.objects.filter(name__icontains="Комис", direction="out").first()
 
 
+def _merge_quick_note(amount, dte, cp, osnd, account, reftag, op_t, batch):
+    """Склеює банківську out-операцію з швидкою заміткою (⚡ Швидкий платіж), якщо збігаються
+    сума + близька дата + контрагент. Оновлює замітку банк-даними, БЕЗ дубля. True якщо злито."""
+    import re as _re
+    def _norm(x):
+        return _re.sub(r"[^a-zа-яіїєґ0-9]", "", (x or "").lower())
+    hay = _norm(cp) + _norm(osnd)
+    for qt in Transaction.objects.filter(import_batch__startswith="QUICK", direction="out", amount=amount):
+        if "PB#" in (qt.comment or ""):
+            continue
+        if abs((qt.date - dte).days) > 3:
+            continue
+        qcp = _norm(qt.counterparty)
+        if qcp and (qcp in hay or "новапошта" in hay or (len(qcp) >= 6 and qcp[:6] in hay)):
+            qt.date = dte
+            if op_t:
+                qt.op_time = op_t
+            qt.account = account
+            qt.comment = (reftag + " · ⚡ " + (qt.comment or ""))[:255]
+            qt.import_batch = batch
+            qt.save(update_fields=["date", "op_time", "account", "comment", "import_batch"])
+            return True
+    return False
+
+
 def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
     """Тягне виписку ПриватБанк AutoClient → журнал за період. Ідемпотентно (PB#REF).
     Правила розноски + авто-комісія LiqPay. Повертає (created, skipped, err, batch)."""
@@ -1133,6 +1199,9 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                 twin_c.delete()
                 transfer_dest = transfer_dest or dest_acc
             direction = "transfer"
+        if direction == "out" and _merge_quick_note(amt, dte, cp, osnd, account, reftag, op_t, batch):
+            created += 1
+            continue
         _rr = apply_bank_rules(direction, osnd, cp, account.name if account else "")
         Transaction.objects.create(
             direction=direction, amount=amt, amount_uah=amt, account=account,

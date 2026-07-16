@@ -73,6 +73,7 @@ export default function Finance() {
   const { t } = useLang();
   const [tab, setTab] = useState<"dash" | "journal" | "triage" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model" | "incoming">(() => ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash"));
   useEffect(() => { try { localStorage.setItem("fin_tab", tab); } catch (e) { /* noop */ } }, [tab]);
+  const [quickOpen, setQuickOpen] = useState(false);
   const { can: canF } = useAuth();
   const tabAllowed = (k: string) => k === "dash" ? true : (canF("finance.tab." + k) || canF("roles.manage"));
   useEffect(() => { if (!tabAllowed(tab)) setTab("dash"); /* eslint-disable-next-line */ }, [tab]);
@@ -83,6 +84,9 @@ export default function Finance() {
       <div style={{ display: "flex", gap: 6, margin: "12px 0", flexWrap: "wrap" }}>
         {tabs.filter(([k]) => tabAllowed(k as string)).map(([k, l]) => <button key={k} className={tab === k ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab(k as any)}>{l}</button>)}
       </div>
+      <button onClick={() => setQuickOpen(true)} title={t("Быстрый платёж", "Швидкий платіж")}
+        style={{ position: "fixed", right: 18, bottom: 18, zIndex: 900, width: 62, height: 62, borderRadius: "50%", border: "none", background: "#C67D5F", color: "#fff", fontSize: 26, boxShadow: "0 6px 20px rgba(198,125,95,.5)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⚡</button>
+      {quickOpen && <QuickExpenseModal onClose={() => setQuickOpen(false)} />}
       {tab === "dash" && <Dashboard />}
       {tab === "journal" && <Journal />}
       {tab === "triage" && <TriageTab />}
@@ -3334,6 +3338,76 @@ function PayFopModal({ r, onClose, onDone }: { r: any; onClose: () => void; onDo
             {!dry.ready && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>{t("Приват не настроен (токен/счёт)", "Приват не налаштований (токен/рахунок)")}</div>}
           </>
         ) : <div className="muted" style={{ padding: 10 }}>{t("Загрузка…", "Завантаження…")}</div>}
+      </div>
+    </div>
+  );
+}
+
+
+function QuickExpenseModal({ onClose }: { onClose: () => void }) {
+  const { t } = useLang();
+  const [amount, setAmount] = useState("");
+  const [arts, setArts] = useState<any[]>([]);
+  const [artId, setArtId] = useState<number | null>(null);
+  const [cp, setCp] = useState("Нова Пошта");
+  const [method, setMethod] = useState("card");
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState("");
+  useEffect(() => { api.get<any>("/api/finmodel-articles/?page_size=300").then((d) => setArts(d.results || d)).catch(() => {}); }, []);
+  const PIN = ["упаков", "доставк", "логіст", "логист", "матеріал", "материал", "транспорт"];
+  const pinned = arts.filter((a: any) => PIN.some((k) => (a.name || "").toLowerCase().includes(k))).slice(0, 6);
+  const save = async () => {
+    const amt = parseFloat(String(amount).replace(",", "."));
+    if (!amt || amt <= 0) { alert(t("Впиши сумму", "Впиши суму")); return; }
+    if (!artId) { alert(t("Выбери фонд «за что»", "Обери фонд «за що»")); return; }
+    setBusy(true);
+    try {
+      const r: any = await api.post("/api/transactions/quick-expense/", { amount: amt, fin_article: artId, counterparty: cp, method, comment });
+      setDone(r.note || t("Готово", "Готово"));
+      setTimeout(onClose, 1400);
+    } catch (e: any) { alert(e?.response?.data?.detail || t("Ошибка", "Помилка")); setBusy(false); }
+  };
+  const inp: any = { width: "100%", border: "1px solid #cbd5e1", borderRadius: 10, padding: "0 12px", fontSize: 15, boxSizing: "border-box" };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 1200, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
+      <div className="panel" style={{ width: "100%", maxWidth: 460, background: "#fff", borderRadius: "16px 16px 0 0", maxHeight: "92vh", overflowY: "auto", padding: 18 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <h3 style={{ margin: 0, fontSize: 18 }}>⚡ {t("Быстрый платёж", "Швидкий платіж")}</h3>
+          <button onClick={onClose} style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer" }}>✕</button>
+        </div>
+        {done ? (
+          <div style={{ textAlign: "center", padding: "30px 10px" }}>
+            <div style={{ fontSize: 46 }}>✅</div>
+            <div style={{ fontSize: 15, color: "#15803d", marginTop: 8 }}>{done}</div>
+          </div>
+        ) : (<>
+          <label className="label" style={{ display: "block", marginBottom: 4 }}>{t("Сумма, грн", "Сума, грн")}</label>
+          <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="0" autoFocus
+            style={{ ...inp, height: 56, fontSize: 30, fontWeight: 800, textAlign: "center", marginBottom: 14 }} />
+          <label className="label" style={{ display: "block", marginBottom: 6 }}>{t("За что (фонд)", "За що (фонд)")}</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+            {pinned.map((a: any) => (
+              <button key={a.id} onClick={() => setArtId(a.id)}
+                style={{ padding: "9px 14px", borderRadius: 20, fontSize: 13.5, cursor: "pointer", border: "1.5px solid " + (artId === a.id ? "#C67D5F" : "#cbd5e1"), background: artId === a.id ? "#C67D5F" : "#fff", color: artId === a.id ? "#fff" : "#1e293b", fontWeight: 600 }}>{a.name.replace(/\s*\(.*\)/, "")}</button>
+            ))}
+          </div>
+          <select value={artId ?? ""} onChange={(e) => setArtId(e.target.value ? Number(e.target.value) : null)} style={{ ...inp, height: 44, marginBottom: 14 }}>
+            <option value="">{t("…или выбери из всех фондов", "…або обери з усіх фондів")}</option>
+            {arts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <label className="label" style={{ display: "block", marginBottom: 4 }}>{t("Кому", "Кому")}</label>
+          <input value={cp} onChange={(e) => setCp(e.target.value)} style={{ ...inp, height: 44, marginBottom: 14 }} />
+          <label className="label" style={{ display: "block", marginBottom: 6 }}>{t("Чем платил", "Чим платив")}</label>
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {[["card", "💳 " + t("Карта", "Картка")], ["cash", "💵 " + t("Наличка", "Готівка")]].map(([m, l]) => (
+              <button key={m} onClick={() => setMethod(m)} style={{ flex: 1, height: 46, borderRadius: 10, fontSize: 14.5, cursor: "pointer", fontWeight: 700, border: "1.5px solid " + (method === m ? "#2563eb" : "#cbd5e1"), background: method === m ? "#eff6ff" : "#fff", color: method === m ? "#2563eb" : "#1e293b" }}>{l}</button>
+            ))}
+          </div>
+          <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t("Комментарий (необязательно)", "Коментар (необовʼязково)")} style={{ ...inp, height: 44, marginBottom: 16 }} />
+          <button className="btn btn-primary" disabled={busy} onClick={save} style={{ width: "100%", height: 52, fontSize: 16, fontWeight: 700 }}>{busy ? "…" : "✓ " + t("Зафиксировать", "Зафіксувати")}</button>
+          <div style={{ fontSize: 11.5, color: "#64748b", textAlign: "center", marginTop: 8 }}>{method === "card" ? t("Выписка склеится сама — дубля не будет", "Виписка склеїться сама — дубля не буде") : t("Наличка фиксируется только здесь", "Готівка фіксується лише тут")}</div>
+        </>)}
       </div>
     </div>
   );
