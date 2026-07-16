@@ -1129,7 +1129,7 @@ function Journal() {
         {isMobile && <button className="btn btn-light" onClick={() => setSearchOpen(true)} title={t("Поиск","Пошук")}><Icon n="🔍" size={14} />{fq ? " •" : ""}</button>}
         {isMobile && <button className="btn btn-light" onClick={() => setShowCols(true)}><Icon n="⚙" size={14} />{(() => { const n = (fContact ? 1 : 0) + (ff ? 1 : 0) + (ft ? 1 : 0) + Object.values(cf).filter((v: any) => v !== "" && v != null).length; return n ? ` ${n}` : ""; })()}</button>}
         {isMobile && <button className="btn btn-light" onClick={() => setAccOpen(true)} title={t("Счета","Рахунки")}><Icon n="🏦" size={14} /></button>}
-        <div style={{ marginLeft: isMobile ? 0 : "auto", width: isMobile ? "100%" : "auto", display: "flex", alignItems: "center", justifyContent: isMobile ? "center" : "flex-end", gap: isMobile ? 5 : 8, fontSize: isMobile ? 12.5 : 13, marginTop: isMobile ? 2 : 0 }}>
+        <div style={{ marginLeft: isMobile ? 0 : "auto", width: "auto", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: isMobile ? 5 : 8, fontSize: isMobile ? 12.5 : 13 }}>
           {!isMobile && <span className="muted">{t("На стр.","На стор.")}:</span>}
           {isMobile && <span className="muted" style={{ fontSize: 12 }}>{t("Рядків","Рядків")}:</span>}
           <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ height: isMobile ? 28 : 30, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: isMobile ? 12.5 : 13, padding: "0 2px" }}>{[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}</select>
@@ -1271,6 +1271,7 @@ function Dashboard() {
   /* Дашборд v2 (за мотивами ФінМапа): ГЛОБАЛЬНИЙ період на всі блоки,
      рух грошей grouped-bars + лінія сальдо, донати по категоріях, тренд 12 міс. */
   const { t } = useLang();
+  const isMobile = useIsMobile();
   const today = new Date();
   const iso = (dt: Date) => dt.toISOString().slice(0, 10);
   const [from, setFrom] = useState(iso(new Date(today.getFullYear(), today.getMonth(), 1)));
@@ -1426,7 +1427,7 @@ function Dashboard() {
       </div>
 
       {/* ДОНАТИ ПО КАТЕГОРІЯХ */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
         <Donut items={d.by_cat_in || []} title={t("Поступления по категориям","Надходження по категоріях")} total={k.income} />
         <Donut items={d.top_expense || []} title={t("Списания по категориям","Списання по категоріях")} total={k.expense} />
       </div>
@@ -1462,7 +1463,7 @@ function Dashboard() {
         <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>🟩 {t("доходы","доходи")} · ⬛ {t("расходы","витрати")} · 🟠 {t("линия прибыли","лінія прибутку")}</div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
         {/* ТОП ВИТРАТИ */}
         <div className="panel" style={{ margin: 0 }}>
           <b style={{ fontSize: 14 }}>{t("Топ расходы периода","Топ витрати періоду")}</b>
@@ -1499,7 +1500,7 @@ function Dashboard() {
         <FxImpact />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginTop: 12 }}>
         {/* РАХУНКИ */}
         <div className="panel" style={{ margin: 0 }}>
           <b style={{ fontSize: 14 }}>{t("Балансы счетов","Баланси рахунків")}</b>
@@ -1513,7 +1514,7 @@ function Dashboard() {
         {/* КОЕФІЦІЄНТИ */}
         <div className="panel" style={{ margin: 0 }}>
           <b style={{ fontSize: 14 }}>{t("Ключевые коэффициенты","Ключові коефіцієнти")}</b>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginTop: 10 }}>
             {[[t("Маржинальность","Маржинальність"), `${d.ratios.margin_pct}%`, d.ratios.margin_pct > 20 ? "#16a34a" : "#d97706"],
               [t("Расходы / Доходы","Витрати / Доходи"), `${d.ratios.expense_ratio}%`, d.ratios.expense_ratio <= 100 ? "#16a34a" : "#dc2626"],
               [t("Личные в расходах","Особисті у витратах"), `${d.ratios.personal_pct}%`, d.ratios.personal_pct < 10 ? "#16a34a" : "#dc2626"],
@@ -1671,6 +1672,7 @@ function Directions() {
   const [to, setTo] = useState(today());
   const [d, setD] = useState<any>(null);
   const { t } = useLang();
+  const isMobile = useIsMobile();
   const [openId, setOpenId] = useState<number | null>(null);
   const [edit, setEdit] = useState<any>(null); // напрямок для додавання/редагування або null
   const reload = () => { setD(null); api.get<any>(`/api/finance/directions/?from=${from}&to=${to}`).then(setD); };
@@ -1689,7 +1691,8 @@ function Directions() {
       </div>
       <Period from={from} to={to} set={(f, tt) => { setFrom(f); setTo(tt); }} />
       <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}><Icon n="👆" size={13} /> {t("Нажми на направление — ниже откроется его журнал операций за период.","Натисни на напрямок — нижче відкриється його журнал операцій за період.")}</div>
-      <table style={{ width: "100%", marginTop: 4, fontSize: 13 }}>
+      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+      <table style={{ width: "100%", marginTop: 4, fontSize: 13, minWidth: isMobile ? 720 : undefined }}>
         <thead><tr><th></th><th>{t("Направление","Напрямок")}</th><th>{t("План доход","План дохід")}</th><th>{t("План расходы","План витрати")}</th><th>{t("План прибыль","План прибуток")}</th><th>{t("Рентаб.","Рентаб.")}</th><th>{t("Факт доход","Факт дохід")}</th><th>{t("Факт прибыль","Факт прибуток")}</th><th></th></tr></thead>
         <tbody>
           {d.rows.map((r: any) => {
@@ -1729,6 +1732,7 @@ function Directions() {
           </tr>
         </tbody>
       </table>
+      </div>
       <div className="muted" style={{ fontSize: 12, marginTop: 8 }}><Icon n="📋" size={13} /> {t("Направления перенесены из Finmap (Проекты). «План» — ориентир из Finmap. «Факт» считается из транзакций CRM, привязанных к направлению. Изменения тут синхронизируются в журнале, планировании и аналитике.","Напрямки перенесені з Finmap (Проекти). «План» — орієнтир із Finmap. «Факт» рахується з транзакцій CRM, привʼязаних до напрямку. Зміни тут синхронізуються у журналі, плануванні та аналітиці.")}</div>
       {edit && <DirModal dir={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload(); }} />}
     </div>
@@ -1864,7 +1868,7 @@ function Timesheet() {
   return (
     <>
       <div className="note"><Icon n="🕐" size={14} /> <b>{t("Табель рабочего времени","Табель робочого часу")}</b> {t("(как в Битриксе). Клик на день меняет статус по кругу. Влияет на ЗП: оклад платится пропорционально отработанным дням, а","(як у Бітриксі). Клік на день змінює статус по колу. Впливає на ЗП: оклад платиться пропорційно відпрацьованим дням, а")} <b>{t("перевыполнение","перевиконання")}</b> {t("(выход в выходной) добавляет дневную ставку сверху. Если табель не вести — оклад полный по умолчанию.","(вихід у вихідний) додає денну ставку зверху. Якщо табель не вести — оклад повний за замовчуванням.")}</div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "12px 0" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "12px 0", flexWrap: "wrap", rowGap: 8 }}>
         <select value={uid ?? ""} onChange={(e) => setUid(Number(e.target.value))} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }}>
           {users.map((u) => <option key={u.id} value={u.id}>{u.full_name || `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.username}</option>)}
         </select>
@@ -1966,6 +1970,7 @@ function RefCategories() {
   const [dirs, setDirs] = useState<any[]>([]);
   const [showHidden, setShowHidden] = useState(false);
   const { t } = useLang();
+  const isMobile = useIsMobile();
   const [nn, setNn] = useState(""); const [nd, setNd] = useState("out"); const [np, setNp] = useState(0);
   const load = () => api.get<any>("/api/categories/?page_size=400").then((d) => setItems(d.results || d));
   useEffect(() => {
@@ -2046,10 +2051,12 @@ function RefCategories() {
       {["out", "in"].map((dr) => (
         <div key={dr} style={{ marginBottom: 14 }}>
           <div style={{ fontWeight: 800, fontSize: 13, margin: "6px 0" }}>{dr === "out" ? t("Расходы","Витрати") : t("Доходы","Доходи")}</div>
-          <table style={{ width: "100%", fontSize: 12.5 }}>
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <table style={{ width: "100%", fontSize: 12.5, minWidth: isMobile ? 520 : undefined }}>
             <thead><tr><th style={{ textAlign: "left", ...tdS }}>{t("Категория","Категорія")}</th><th style={{ textAlign: "left", ...tdS }}>{t("Фонд (автоматом в операцию)","Фонд (автоматом в операцію)")}</th><th style={{ textAlign: "left", ...tdS }}>{t("Направление","Напрямок")}</th><th></th></tr></thead>
             <tbody>{tops(dr).map((c) => [row(c, 0), ...kids(c.id).map((k) => row(k, 1, c))])}</tbody>
           </table>
+          </div>
         </div>
       ))}
     </div>
@@ -2058,6 +2065,7 @@ function RefCategories() {
 
 function RefDirections() {
   const { t } = useLang();
+  const isMobile = useIsMobile();
   const [items, setItems] = useState<any[]>([]);
   const [nn, setNn] = useState("");
   const load = () => api.get<any>("/api/fin-directions/?page_size=100").then((d) => setItems(d.results || d));
@@ -2084,7 +2092,8 @@ function RefDirections() {
         <input value={nn} onChange={(e) => setNn(e.target.value)} placeholder={t("Новое направление (проект)","Новий напрямок (проект)")} style={{ ...inpS, flex: 1 }} />
         <button className="btn btn-primary" onClick={add}>+ {t("Добавить","Додати")}</button>
       </div>
-      <table style={{ width: "100%", fontSize: 13 }}>
+      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+      <table style={{ width: "100%", fontSize: 13, minWidth: isMobile ? 480 : undefined }}>
         <thead><tr><th style={{ textAlign: "left", ...tdS }}>{t("Направление","Напрямок")}</th><th>{t("План доход","План дохід")}</th><th>{t("План расходы","План витрати")}</th><th></th></tr></thead>
         <tbody>{items.map((d) => (
           <tr key={d.id} draggable onDragStart={() => setDragId(d.id)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropOn(d)}
@@ -2096,6 +2105,7 @@ function RefDirections() {
           </tr>
         ))}</tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -2451,6 +2461,7 @@ function Debts() {
 function Planning() {
   const [period, setPeriod] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; });
   const { t } = useLang();
+  const isMobile = useIsMobile();
   const { can: canP } = useAuth();
   const canAcc = canP("finance.plan.accounts") || canP("finance.accounts.manage") || canP("roles.manage");
   const [data, setData] = useState<any>(null);
@@ -2529,8 +2540,8 @@ function Planning() {
       </div>
 
       {/* рахунки — список збоку (як у журналі), фонди — праворуч */}
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-      <div className="panel" style={{ width: 235, minWidth: 150, maxWidth: 560, flex: "0 0 auto", margin: 0, maxHeight: "72vh", overflowY: "auto", resize: "horizontal" as any, overflowX: "hidden" }}>
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 12, alignItems: "flex-start" }}>
+      <div className="panel" style={{ width: isMobile ? "100%" : 235, minWidth: isMobile ? 0 : 150, maxWidth: isMobile ? "100%" : 560, flex: "0 0 auto", margin: 0, maxHeight: isMobile ? "40vh" : "72vh", overflowY: "auto", resize: isMobile ? "none" : "horizontal" as any, overflowX: "hidden" }}>
         <b style={{ fontSize: 13 }}><Icon n="🏦" size={13} /> {t("Счета","Рахунки")}</b>
         <div className="muted" style={{ fontSize: 10.5, margin: "2px 0 4px" }}>{t("В «К распределению» идут только выделенные счета.","У «До розподілу» йдуть лише виділені рахунки.")}{canAcc ? " " + t("Клик по счёту — вкл/выкл (общее для всех).","Клік по рахунку — увімк/вимк (спільне для всіх).") : ""}</div>
         {data.accounts.map((a: any) => {
@@ -2907,7 +2918,9 @@ function Growth() {
             <h2 style={{ margin: 0, fontSize: 20 }}>{rep.title}</h2>
             <span className="muted" style={{ fontSize: 12 }}>{new Date(rep.created_at).toLocaleString("ru")}</span>
           </div>
-          <div style={{ marginTop: 10 }} dangerouslySetInnerHTML={{ __html: mdToHtml(rep.body) }} />
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+            <div style={{ marginTop: 10 }} dangerouslySetInnerHTML={{ __html: mdToHtml(rep.body) }} />
+          </div>
         </>
       )}
     </div>
