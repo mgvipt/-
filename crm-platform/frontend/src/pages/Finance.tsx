@@ -3356,7 +3356,13 @@ function QuickExpenseModal({ onClose }: { onClose: () => void }) {
   const [done, setDone] = useState("");
   useEffect(() => { api.get<any>("/api/finmodel-articles/?page_size=300").then((d) => setArts(d.results || d)).catch(() => {}); }, []);
   const PIN = ["упаков", "доставк", "логіст", "логист", "матеріал", "материал", "транспорт"];
-  const pinned = arts.filter((a: any) => PIN.some((k) => (a.name || "").toLowerCase().includes(k))).slice(0, 6);
+  const shortF = (n: string) => (n || "").replace(/^ФОНД\s+/i, "").replace(/\s*\(.*\)/, "").split(/[—/]/)[0].trim();
+  const _seen = new Set<string>();
+  const pinned = arts.filter((a: any) => {
+    const nl = (a.name || "").toLowerCase();
+    if (nl.startsWith("фот") || !PIN.some((k) => nl.includes(k))) return false;
+    const sh = shortF(a.name); if (_seen.has(sh)) return false; _seen.add(sh); return true;
+  }).slice(0, 5);
   const save = async () => {
     const amt = parseFloat(String(amount).replace(",", "."));
     if (!amt || amt <= 0) { alert(t("Впиши сумму", "Впиши суму")); return; }
@@ -3372,7 +3378,7 @@ function QuickExpenseModal({ onClose }: { onClose: () => void }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 1200, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
       <div className="panel" style={{ width: "100%", maxWidth: 460, background: "#fff", borderRadius: "16px 16px 0 0", maxHeight: "92vh", overflowY: "auto", padding: 18 }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, position: "sticky", top: 0, background: "#fff", paddingTop: 2, paddingBottom: 6, zIndex: 2 }}>
           <h3 style={{ margin: 0, fontSize: 18 }}>⚡ {t("Быстрый платёж", "Швидкий платіж")}</h3>
           <button onClick={onClose} style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer" }}>✕</button>
         </div>
@@ -3389,7 +3395,7 @@ function QuickExpenseModal({ onClose }: { onClose: () => void }) {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
             {pinned.map((a: any) => (
               <button key={a.id} onClick={() => setArtId(a.id)}
-                style={{ padding: "9px 14px", borderRadius: 20, fontSize: 13.5, cursor: "pointer", border: "1.5px solid " + (artId === a.id ? "#C67D5F" : "#cbd5e1"), background: artId === a.id ? "#C67D5F" : "#fff", color: artId === a.id ? "#fff" : "#1e293b", fontWeight: 600 }}>{a.name.replace(/\s*\(.*\)/, "")}</button>
+                style={{ padding: "8px 13px", borderRadius: 18, fontSize: 13, cursor: "pointer", border: "1.5px solid " + (artId === a.id ? "#C67D5F" : "#cbd5e1"), background: artId === a.id ? "#C67D5F" : "#fff", color: artId === a.id ? "#fff" : "#1e293b", fontWeight: 600, whiteSpace: "nowrap" }}>{shortF(a.name)}</button>
             ))}
           </div>
           <select value={artId ?? ""} onChange={(e) => setArtId(e.target.value ? Number(e.target.value) : null)} style={{ ...inp, height: 44, marginBottom: 14 }}>
