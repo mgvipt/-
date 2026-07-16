@@ -438,6 +438,106 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             })
         return rows
 
+    def _can_start_for_contact(self, request, contact_id):
+        """Ті самі права, що й для чату у картці контакту/угоди."""
+        u = request.user
+        if u.is_superuser or u.has_perm_code("conversation.view.all") or u.can_see_all_deals():
+            return True
+        from apps.crm.models import Deal, Lead
+        from apps.warehouse.models import WarehouseJob
+        return (Deal.objects.filter(contact_id=contact_id, owner=u).exists()
+                or Lead.objects.filter(contact_id=contact_id, owner=u).exists()
+                or Conversation.objects.filter(contact_id=contact_id)
+                .filter(Q(assigned_to=u) | Q(participants=u)).exists()
+                or WarehouseJob.objects.filter(deal__contact_id=contact_id, assignee=u).exists())
+
+    def _allowed_start_channels(self, request, contact):
+        """Безпечний список E-chat ліній для першого вихідного повідомлення."""
+        if not contact.phone:
+            return []
+        allowed = request.user.allowed_channel_ids()
+        channels = Channel.objects.filter(
+            is_active=True, kind__in=("echat", "echat_telegram")
+        ).order_by("kind", "name")
+        if allowed is not None:
+            channels = channels.filter(id__in=allowed)
+        return [{
+            "channel_id": channel.id,
+            "channel_kind": channel.kind,
+            "channel_name": channel.name,
+            "number": (channel.config or {}).get("number", ""),
+        } for channel in channels]
+
+    @action(detail=False, methods=["get"])
+    def start_channels(self, request):
+        """Лінії Viber/Telegram, через які можна почати чат за номером контакту."""
+        from apps.crm.models import Contact
+        try:
+            contact_id = int(request.query_params.get("contact"))
+        except (TypeError, ValueError):
+            return Response({"detail": "Вкажіть контакт"}, status=status.HTTP_400_BAD_REQUEST)
+        if not self._can_start_for_contact(request, contact_id):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        contact = get_object_or_404(Contact, pk=contact_id)
+        return Response(self._allowed_start_channels(request, contact))
+
+    @action(detail=False, methods=["post"])
+    def start_channel(self, request):
+        """Надіслати перше повідомлення на номер і створити (або повторно використати) чат."""
+        import re
+        from django.db import transaction
+        from apps.crm.models import Contact, Deal
+        try:
+            contact_id = int(request.data.get("contact_id"))
+            channel_id = int(request.data.get("channel_id"))
+        except (TypeError, ValueError):
+            return Response({"detail": "Оберіть контакт і канал"}, status=status.HTTP_400_BAD_REQUEST)
+        text = (request.data.get("text") or "").strip()
+        if not text:
+            return Response({"detail": "Напишіть повідомлення"}, status=status.HTTP_400_BAD_REQUEST)
+        if not self._can_start_for_contact(request, contact_id):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        contact = get_object_or_404(Contact, pk=contact_id)
+        candidates = {row["channel_id"]: row for row in self._allowed_start_channels(request, contact)}
+        if channel_id not in candidates:
+            detail = "Додайте коректний номер телефону" if not contact.phone else "Цей канал недоступний"
+            return Response({"detail": detail}, status=status.HTTP_400_BAD_REQUEST)
+        external_chat_id = re.sub(r"\D", "", contact.phone)
+        if len(external_chat_id) == 10 and external_chat_id.startswith("0"):
+            external_chat_id = "38" + external_chat_id
+        if len(external_chat_id) < 10:
+            return Response({"detail": "У клієнта некоректний номер телефону"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        target = Channel.objects.get(pk=channel_id)
+        created = False
+        try:
+            with transaction.atomic():
+                selected = (Conversation.objects.select_for_update()
+                            .filter(contact=contact, channel=target, status="open")
+                            .order_by("-last_message_at", "-id").first())
+                if selected is None:
+                    owner_id = (contact.owner_id
+                                or Deal.objects.filter(contact=contact).exclude(stage__is_lost=True)
+                                .order_by("-created_at").values_list("owner_id", flat=True).first()
+                                or request.user.id)
+                    selected = Conversation.objects.create(
+                        channel=target, contact=contact, external_chat_id=external_chat_id,
+                        title=str(contact), assigned_to_id=owner_id,
+                    )
+                    created = True
+                msg = send_message(selected, text, user=request.user)
+                channel_name = "telegram" if target.kind == "echat_telegram" else "viber"
+                contact_channels = list(contact.channels or [])
+                if channel_name not in contact_channels:
+                    contact.channels = contact_channels + [channel_name]
+                    contact.save(update_fields=["channels"])
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response({
+            "conversation": ConversationSerializer(selected, context={"request": request}).data,
+            "message": MessageSerializer(msg).data,
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
     @action(detail=True, methods=["get"])
     def reply_channels(self, request, pk=None):
         """Повертає доступні вихідні канали/номери без секретів конфігурації."""

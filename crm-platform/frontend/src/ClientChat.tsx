@@ -11,6 +11,7 @@ import { dayLabel, timeLabel, isNewDay, linkify, metaWindow } from "./chatUtils"
 
 const tt = (_r: string, ua: string) => ua;  // ClientChat україномовний
 type ReplyChannel = { channel_id: number; channel_kind: string; channel_name: string; number?: string; conversation_id?: number | null; selected?: boolean };
+type StartConversationResult = { conversation: Conversation; message: ChatMessage };
 
 export default function ClientChat({ contact, markSeen = true, channelPickerTargetId }: { contact?: number | null; markSeen?: boolean; channelPickerTargetId?: string }) {
   const [conv, setConv] = useState<Conversation | null>(null);
@@ -25,6 +26,10 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   const [replyChannels, setReplyChannels] = useState<ReplyChannel[]>([]);
   const [switchingChannel, setSwitchingChannel] = useState(false);
   const [channelPickerTarget, setChannelPickerTarget] = useState<HTMLElement | null>(null);
+  const [startChannels, setStartChannels] = useState<ReplyChannel[]>([]);
+  const [startChannelId, setStartChannelId] = useState(0);
+  const [firstText, setFirstText] = useState("");
+  const [starting, setStarting] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -34,9 +39,19 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
       const r = await api.get<Paginated<Conversation>>(`/api/conversations/by_contact/?contact=${contact}`);
       const c = ((r as any).results || (r as any) || [])[0] || null;
       setConv(c);
-      if (c) loadMsgs(c.id);
+      if (c) { setStartChannels([]); loadMsgs(c.id); }
+      else await loadStartChannels();
     } catch { /* ignore */ }
     setLoaded(true);
+  }
+  async function loadStartChannels() {
+    if (!contact) return;
+    try {
+      const lines = await api.get<ReplyChannel[]>(`/api/conversations/start_channels/?contact=${contact}`);
+      setStartChannels(lines);
+      setStartChannelId((current) => lines.some((line) => line.channel_id === current)
+        ? current : (lines[0]?.channel_id || 0));
+    } catch { setStartChannels([]); setStartChannelId(0); }
   }
   async function loadMsgs(id: number) {
     try {
@@ -60,7 +75,11 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
     }
     setSwitchingChannel(false);
   }
-  useEffect(() => { loadConv(); /* eslint-disable-next-line */ }, [contact]);
+  useEffect(() => {
+    setLoaded(false); setConv(null); setMsgs([]); setFirstText(""); setErr("");
+    loadConv();
+    /* eslint-disable-next-line */
+  }, [contact]);
   useEffect(() => {
     setChannelPickerTarget(channelPickerTargetId ? document.getElementById(channelPickerTargetId) : null);
   }, [channelPickerTargetId]);
@@ -80,6 +99,20 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
       setMsgs((p) => [...p, m]); setText("");
     } catch (e: any) { setErr(e?.response?.data?.detail || "Не вдалося надіслати — чат має бути відкритий оператором"); }
     setBusy(false);
+  }
+  async function startConversation() {
+    if (!contact || !startChannelId || !firstText.trim()) return;
+    setStarting(true); setErr("");
+    try {
+      const result = await api.post<StartConversationResult>("/api/conversations/start_channel/", {
+        contact_id: contact, channel_id: startChannelId, text: firstText,
+      });
+      setConv(result.conversation); setMsgs([result.message]); setFirstText(""); setStartChannels([]);
+      await loadReplyChannels(result.conversation.id);
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || "Не вдалося створити чат і надіслати повідомлення");
+    }
+    setStarting(false);
   }
   // ── Надіслати фото/відео клієнту ──
   function onPasteFile(e: any) {
@@ -111,7 +144,49 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
 
   if (!loaded) return <div className="muted" style={{ fontSize: 13 }}>Завантаження чату…</div>;
   if (!contact) return <div className="muted" style={{ fontSize: 13 }}>Немає привʼязаного клієнта</div>;
-  if (!conv) return <div className="muted" style={{ fontSize: 13 }}>Переписки ще немає — зʼявиться після першого повідомлення клієнта в Instagram</div>;
+  if (!conv) {
+    const startPicker = startChannels.length ? (
+      <div data-testid="reply-channel-picker" style={{ display: "flex", alignItems: "center", gap: 7, width: "100%" }}>
+        <span style={{ fontSize: 10.5, color: "#64748b", fontWeight: 700, whiteSpace: "nowrap" }}>Відповідати через</span>
+        <select value={startChannelId} onChange={(e) => setStartChannelId(Number(e.target.value))} disabled={starting}
+          title="Оберіть Viber або Telegram і номер, з якого CRM напише клієнту"
+          style={{ minWidth: 0, flex: 1, height: 30, border: "1px solid #cbd5e1", borderRadius: 7, background: "#fff", color: "#334155", padding: "0 7px", fontSize: 11.5, fontWeight: 600 }}>
+          {startChannels.map((line) => (
+            <option key={line.channel_id} value={line.channel_id}>
+              {line.channel_name}{line.number && !line.channel_name.includes(line.number) ? ` · ${line.number}` : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+    ) : null;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", minHeight: 180 }}>
+        {channelPickerTargetId ? (channelPickerTarget && startPicker ? createPortal(startPicker, channelPickerTarget) : null) : startPicker}
+        <div style={{ flex: 1, minHeight: 92, padding: 12, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 5 }}>Почати чат з клієнтом</div>
+          <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.4 }}>
+            Перше повідомлення буде надіслано на номер із картки клієнта. Після відправки чат створиться автоматично.
+          </div>
+        </div>
+        {startChannels.length ? (
+          <>
+            <textarea value={firstText} onChange={(e) => setFirstText(e.target.value)} rows={3}
+              placeholder="Напишіть перше повідомлення клієнту…"
+              style={{ width: "100%", fontSize: 13, padding: 9, borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", marginTop: 8, boxSizing: "border-box", resize: "vertical", minHeight: 70 }} />
+            <button className="btn btn-primary" onClick={startConversation}
+              disabled={starting || !startChannelId || !firstText.trim()} style={{ marginTop: 6, alignSelf: "flex-end", minWidth: 130 }}>
+              {starting ? "Надсилаємо…" : "Надіслати"}
+            </button>
+          </>
+        ) : (
+          <div style={{ color: "#b45309", fontSize: 12, marginTop: 8 }}>
+            Додайте коректний номер у картку клієнта та перевірте підключення Viber/Telegram у Контакт-центрі.
+          </div>
+        )}
+        {err && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 6 }}>{err}</div>}
+      </div>
+    );
+  }
 
   const pts = ai ? (ai.points && ai.points.length ? ai.points : (ai.context ? [ai.context] : [])) : [];
   const channelPicker = (
@@ -133,7 +208,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   return (
     <div style={{ display: "flex", flexDirection: "column", containerType: "inline-size", height: "calc(100vh - 96px)", maxHeight: "calc(100vh - 96px)" }}>
       {channelPickerTargetId ? (channelPickerTarget ? createPortal(channelPicker, channelPickerTarget) : null) : channelPicker}
-      <ChatActions convId={conv.id} onClosed={() => { setConv(null); setMsgs([]); }} onChanged={(c) => setConv(c)} />
+      <ChatActions convId={conv.id} onClosed={() => { setConv(null); setMsgs([]); loadStartChannels(); }} onChanged={(c) => setConv(c)} />
       {/* СТРІЧКА — заповнює доступну висоту */}
       <div style={{ flex: 1, minHeight: 80, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
         {msgs.length === 0 && <div className="muted" style={{ fontSize: 13 }}>Повідомлень поки немає</div>}

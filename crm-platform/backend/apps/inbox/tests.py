@@ -114,6 +114,51 @@ class OutboundChannelSelectionTests(TestCase):
         self.assertEqual(selected.external_chat_id, "380670000001")
         self.assertEqual(selected.channel, self.telegram)
 
+    @patch.object(EchatViberAdapter, "send", side_effect=["first-1", "first-2"])
+    def test_start_channel_sends_first_message_and_reuses_chat_without_new_lead(self, send):
+        self.conv.delete()
+        leads_before = Lead.objects.count()
+        listing = self.client.get(f"/api/conversations/start_channels/?contact={self.contact.id}")
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual({row["channel_id"] for row in listing.json()},
+                         {self.viber1.id, self.viber2.id, self.telegram.id})
+        self.assertNotIn("api_key", str(listing.json()))
+
+        url = "/api/conversations/start_channel/"
+        first = self.client.post(url, {
+            "contact_id": self.contact.id, "channel_id": self.viber1.id,
+            "text": "Перше повідомлення",
+        }, format="json")
+        second = self.client.post(url, {
+            "contact_id": self.contact.id, "channel_id": self.viber1.id,
+            "text": "Друге повідомлення",
+        }, format="json")
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 200)
+        selected = Conversation.objects.get(channel=self.viber1, contact=self.contact)
+        self.assertEqual(first.json()["conversation"]["id"], selected.id)
+        self.assertEqual(second.json()["conversation"]["id"], selected.id)
+        self.assertEqual(selected.external_chat_id, "380670000001")
+        self.assertEqual(list(selected.messages.values_list("text", flat=True)),
+                         ["Перше повідомлення", "Друге повідомлення"])
+        self.assertEqual(Lead.objects.count(), leads_before)
+        self.contact.refresh_from_db()
+        self.assertIn("viber", self.contact.channels)
+        self.assertEqual(send.call_count, 2)
+
+    def test_start_channels_requires_contact_phone(self):
+        self.conv.delete()
+        self.contact.phone = ""
+        self.contact.save(update_fields=["phone"])
+        listing = self.client.get(f"/api/conversations/start_channels/?contact={self.contact.id}")
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual(listing.json(), [])
+        started = self.client.post("/api/conversations/start_channel/", {
+            "contact_id": self.contact.id, "channel_id": self.viber1.id, "text": "Тест",
+        }, format="json")
+        self.assertEqual(started.status_code, 400)
+
     @patch.object(EchatViberAdapter, "connect", return_value={"status": "Success"})
     def test_setup_adds_second_echat_number_instead_of_overwriting_first(self, _connect):
         r = self.client.post("/api/inbox/echat/setup/",
