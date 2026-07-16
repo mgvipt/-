@@ -3252,7 +3252,10 @@ function PayFopModal({ r, onClose, onDone }: { r: any; onClose: () => void; onDo
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [err, setErr] = useState<string>("");
+  const [accs, setAccs] = useState<any[]>([]);
+  const [payer, setPayer] = useState<string>("");
   useEffect(() => {
+    api.get<any>("/api/planned-payments/fop-accounts/").then((d: any) => { setAccs(d.accounts || []); setPayer(d.default || ""); }).catch(() => {});
     api.post<any>(`/api/planned-payments/${r.id}/pay-with-fop/`, {}).then((d: any) => {
       if (d.detail) { setErr(d.detail); return; }
       setDry(d); setAmount(String(d.would_send?.payment_amount || ""));
@@ -3261,7 +3264,7 @@ function PayFopModal({ r, onClose, onDone }: { r: any; onClose: () => void; onDo
   const send = async () => {
     setBusy(true); setErr("");
     try {
-      const res: any = await api.post(`/api/planned-payments/${r.id}/pay-with-fop/`, { confirm: 1, amount });
+      const res: any = await api.post(`/api/planned-payments/${r.id}/pay-with-fop/`, { confirm: 1, amount, payer_account: payer });
       if (res.detail) { setErr(res.detail); setBusy(false); return; }
       setResult(res); onDone();
     } catch (e: any) { setErr(e?.response?.data?.detail || t("Ошибка", "Помилка")); } finally { setBusy(false); }
@@ -3288,6 +3291,12 @@ function PayFopModal({ r, onClose, onDone }: { r: any; onClose: () => void; onDo
             </div>
             <label className="label" style={{ display: "block", marginBottom: 4 }}>{t("Сумма к оплате, грн", "Сума до оплати, грн")}</label>
             <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: "100%", height: 40, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 12px", fontSize: 17, fontWeight: 700, marginBottom: 12, boxSizing: "border-box" }} />
+            <label className="label" style={{ display: "block", margin: "0 0 4px" }}>{t("Счёт списания", "Рахунок списання")}</label>
+            <select value={payer} onChange={(e) => setPayer(e.target.value)} style={{ width: "100%", height: 40, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13, marginBottom: 6, boxSizing: "border-box" }}>
+              {accs.length === 0 && <option value={payer}>{payer ? "…" + payer.slice(-4) : t("основной счёт", "основний рахунок")}</option>}
+              {accs.map((a: any) => <option key={a.iban} value={a.iban}>…{a.iban.slice(-4)} · {a.name} · {t("остаток", "залишок")} {Number(a.balance).toLocaleString()} {a.ccy}</option>)}
+            </select>
+            {(() => { const sel = accs.find((a: any) => a.iban === payer); if (sel && Number(sel.balance) < Number(amount)) return <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 8 }}>⚠️ {t("На счету меньше суммы платежа", "На рахунку менше суми платежу")}: {Number(sel.balance).toLocaleString()} {sel.ccy}</div>; return null; })()}
             <div style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>{t("Создастся ЧЕРНОВИК в Приват24 — подпишешь его КЕП (SmartID), тогда деньги уйдут.", "Створиться ЧЕРНЕТКА у Приват24 — підпишеш її КЕП (SmartID), тоді гроші підуть.")}</div>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-primary" disabled={busy || !dry.ready} onClick={send}>{busy ? "…" : "✓ " + t("Создать платёж", "Створити платіж")}</button>

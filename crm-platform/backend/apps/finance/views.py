@@ -1370,7 +1370,7 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Немає IBAN отримувача — впиши реквізити у картці контрагента"}, status=400)
         cfg = IntegrationSettings.objects.filter(provider="privatbank").first()
         cfg = (cfg.config if cfg else {}) or {}
-        payer = (cfg.get("acc") or "").strip()
+        payer = (request.data.get("payer_account") or cfg.get("acc") or "").strip()
         token = (cfg.get("token") or "").strip()
         from decimal import Decimal as _D2
         remaining = float(_D2(str(pp.amount)) - _D2(str(pp.paid_amount or 0)))
@@ -1416,6 +1416,34 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         pp.save(update_fields=["comment"])
         return Response({"ok": True, "payment_ref": ref, "payment_status": resp.get("payment_status"),
                          "note": "Платіж створено у Приват24 як чернетку. Підпиши його КЕП у Приват24 Бізнес — тоді гроші підуть."})
+
+    @action(detail=False, methods=["get"], url_path="fop-accounts")
+    def fop_accounts(self, request):
+        """Рахунки ФОП у Приваті + залишок (для вибору рахунку списання у вікні оплати)."""
+        import json as _json
+        import urllib.request as _ur
+        import time as _tm
+        from apps.integrations.models import IntegrationSettings
+        _fin_guard(request, "finance.debts.pay", "Немає права")
+        cfg = IntegrationSettings.objects.filter(provider="privatbank").first()
+        cfg = (cfg.config if cfg else {}) or {}
+        token = (cfg.get("token") or "").strip()
+        if not token:
+            return Response({"accounts": [], "default": ""})
+        today = _tm.strftime("%d-%m-%Y")
+        url = "https://acp.privatbank.ua/api/statements/balance?startDate=%s&endDate=%s&limit=100" % (today, today)
+        req = _ur.Request(url, headers={"token": token, "Content-Type": "application/json;charset=utf8"})
+        try:
+            with _ur.urlopen(req, timeout=40) as r:
+                data = _json.loads(r.read().decode())
+        except Exception as e:  # noqa
+            return Response({"accounts": [], "default": cfg.get("acc") or "", "detail": "AutoClient: %s" % str(e)[:150]})
+        accs = []
+        for b in data.get("balances", []):
+            accs.append({"iban": b.get("acc") or "", "name": (b.get("nameACC") or "")[:60],
+                         "balance": b.get("balanceOut") or b.get("balanceOutEq") or "0",
+                         "ccy": b.get("currency") or "UAH"})
+        return Response({"accounts": accs, "default": cfg.get("acc") or (accs[0]["iban"] if accs else "")})
 
 
     # ── Імпорт акта Нової Пошти → кредиторка (пункт 4) ──────────────────────
