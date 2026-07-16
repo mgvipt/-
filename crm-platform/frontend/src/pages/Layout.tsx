@@ -152,14 +152,16 @@ export default function Layout() {
   const title = _cur ? t(_cur[1], _cur[2]) : "CRM";
   const fullName = me ? `${me.first_name} ${me.last_name}`.trim() || me.username : "";
 
+  const [navOpen, setNavOpen] = useState(false);
   return (
     <div className="app">
       {theme.animBg && theme.animBg !== "none" && <div className={"appbg viewbg-" + theme.animBg} aria-hidden="true" />}
-      <aside className="sidebar">
+      {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
+      <aside className={"sidebar" + (navOpen ? " open" : "")}>
         <div className="logo"><div className="logo-badge">W</div><b>Wallcov</b></div>
         <nav className="nav">
           {items.map(([path, ru, uk, icon]) => (
-            <NavLink key={path} to={path} className="nav-item">
+            <NavLink key={path} to={path} className="nav-item" onClick={() => setNavOpen(false)}>
               <span style={{ width: 18, textAlign: "center", display: "inline-flex", justifyContent: "center" }}><Icon n={icon as string} size={17} /></span><span>{t(ru, uk)}</span>
             </NavLink>
           ))}
@@ -176,6 +178,7 @@ export default function Layout() {
 
       <div className="main">
         <header className="topbar">
+          <button className="burger" onClick={() => setNavOpen((v) => !v)} aria-label="Меню">☰</button>
           <h1>{title}</h1>
           <div onMouseEnter={() => setMotto(true)} onMouseLeave={() => setMotto(false)} onClick={() => setMotto((v) => !v)}
             style={{ position: "relative", marginLeft: 16, display: "flex", alignItems: "center", gap: 7, cursor: "help" }}>

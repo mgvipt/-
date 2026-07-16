@@ -222,3 +222,13 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
   .fin-tabs > button { flex: 0 0 auto; white-space: nowrap; }
   .panel { padding: 12px !important; }
 }
+
+/* --- Бургер-меню на телефоні (десктоп: бургер прихований) --- */
+.burger{ display:none; align-items:center; justify-content:center; width:40px; height:40px; margin-right:2px; border:none; background:transparent; font-size:22px; cursor:pointer; color:var(--topbar-text,#0f172a); border-radius:8px; }
+@media (max-width: 768px){
+  .burger{ display:flex !important; }
+  .sidebar{ position:fixed; left:0; top:0; bottom:0; height:100vh; width:250px; flex-basis:250px; transform:translateX(-100%); transition:transform .25s ease; z-index:1000; box-shadow:2px 0 24px rgba(0,0,0,.35); }
+  .sidebar.open{ transform:translateX(0); }
+  .nav-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:999; }
+  .main{ width:100% !important; }
+}
