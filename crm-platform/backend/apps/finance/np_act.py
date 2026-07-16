@@ -192,9 +192,18 @@ def create_kreditorka_from_act(act, user=None):
     cp = act.get("counterparty") or {}
     detail = "ЄДРПОУ %s · IBAN %s" % (cp.get("edrpou") or "?", cp.get("iban") or "?")
     ship = act.get("shipments") or []
+    # контакт-постачальник (щоб контрагент був клікабельним у Дт/Кт)
+    from apps.crm.models import Contact as _Contact
+    contact = None
+    edrpou = (cp.get("edrpou") or "").strip()
+    cp_name = (cp.get("name") or "Нова Пошта").strip()
+    if edrpou:
+        contact = _Contact.objects.filter(edrpou=edrpou).first()
+    if contact is None and edrpou:
+        contact = _Contact.objects.create(first_name=cp_name[:120], edrpou=edrpou, iban=(cp.get("iban") or ""))
     pp = PlannedPayment.objects.create(
         kind="payable", amount=amount, due_date=due,
-        counterparty=(cp.get("name") or "Нова Пошта")[:160],
+        counterparty=(cp.get("name") or "Нова Пошта")[:160], contact=contact,
         fin_article=fund, status="planned",
         comment=("Нова Пошта · акт %s від %s · договір %s · %d відправлень · %s" % (
             inv, act.get("invoice_date") or "?", (act.get("contract") or {}).get("number", "?"),
