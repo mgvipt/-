@@ -79,38 +79,47 @@ export default function Finance() {
   const tabAllowed = (k: string) => k === "dash" ? true : (canF("finance.tab." + k) || canF("roles.manage"));
   useEffect(() => { if (!tabAllowed(tab)) setTab("dash"); /* eslint-disable-next-line */ }, [tab]);
   const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["incoming", <><Icon n="📥" size={15} /> {t("Вх. накладные","Вхідні накладні")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
+  const tabMap: any = Object.fromEntries(tabs);
+  const GROUPS: [string, string[]][] = [
+    [t("Обзор", "Огляд"), ["dash"]],
+    [t("Операции", "Операції"), ["journal", "triage", "debts", "incoming"]],
+    [t("Аналитика", "Аналітика"), ["pnl", "be", "grow", "dir"]],
+    [t("Планы", "Плани"), ["plan", "mplan", "salary", "time"]],
+    [t("Справочники", "Довідники"), ["ref", "model"]],
+  ];
+  const activeGroup = GROUPS.find(([, ks]) => ks.includes(tab)) || GROUPS[0];
   return (
     <div className="scroll pad fade">
       <button onClick={() => setQuickOpen(true)} title={t("Быстрый платёж", "Швидкий платіж")}
         style={{ position: "fixed", right: 18, bottom: 18, zIndex: 900, width: 62, height: 62, borderRadius: "50%", border: "none", background: "#C67D5F", color: "#fff", fontSize: 26, boxShadow: "0 6px 20px rgba(198,125,95,.5)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⚡</button>
       {quickOpen && <QuickExpenseModal onClose={() => setQuickOpen(false)} />}
-      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 0 : 14, alignItems: "flex-start" }}>
-        <div className={isMobile ? "fin-tabs" : "fin-vtabs"} style={isMobile
-          ? { display: "flex", gap: 6, margin: "12px 0", width: "100%" }
-          : { display: "flex", flexDirection: "column", gap: 3, margin: "12px 0 0", flex: "0 0 178px", position: "sticky", top: 8, maxHeight: "calc(100vh - 80px)", overflowY: "auto" }}>
-          {tabs.filter(([k]) => tabAllowed(k as string)).map(([k, l]) => (
-            <button key={k} className={tab === k ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab(k as any)}
-              style={isMobile ? {} : { justifyContent: "flex-start", textAlign: "left", width: "100%", fontSize: 13, whiteSpace: "normal", lineHeight: 1.25, height: "auto", padding: "8px 11px" }}>{l}</button>
+      <div className="fin-tabs" style={{ display: "flex", gap: 6, margin: "12px 0 6px" }}>
+        {GROUPS.filter(([, ks]) => ks.some((k) => tabAllowed(k))).map(([gl, ks]) => (
+          <button key={gl} className={activeGroup[0] === gl ? "btn btn-primary" : "btn btn-light"} onClick={() => { const first = ks.find((k) => tabAllowed(k)); if (first) setTab(first as any); }} style={{ fontWeight: 700 }}>{gl}</button>
+        ))}
+      </div>
+      {activeGroup[1].filter((k) => tabAllowed(k)).length > 1 && (
+        <div className="fin-tabs" style={{ display: "flex", gap: 6, marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid #e2e8f0" }}>
+          {activeGroup[1].filter((k) => tabAllowed(k)).map((k) => (
+            <button key={k} className={tab === k ? "btn btn-primary" : "btn btn-light"} style={{ height: 30, fontSize: 12.5 }} onClick={() => setTab(k as any)}>{tabMap[k]}</button>
           ))}
         </div>
-        <div style={{ flex: 1, minWidth: 0, width: isMobile ? "100%" : "auto" }}>
-          {tab === "dash" && <Dashboard />}
-          {tab === "journal" && <Journal />}
-          {tab === "triage" && <TriageTab />}
-          {tab === "pnl" && <PnL />}
-          {tab === "be" && <Breakeven />}
-          {tab === "dir" && <Directions />}
-          {tab === "plan" && <Planning />}
-          {tab === "debts" && <Debts />}
-          {tab === "incoming" && <IncomingDocsTab />}
-          {tab === "grow" && <Growth />}
-          {tab === "salary" && <Salary />}
-          {tab === "mplan" && <MPlans />}
-          {tab === "time" && <Timesheet />}
-          {tab === "ref" && <Reference />}
-          {tab === "model" && <FinModel />}
-        </div>
-      </div>
+      )}
+      {tab === "dash" && <Dashboard />}
+      {tab === "journal" && <Journal />}
+      {tab === "triage" && <TriageTab />}
+      {tab === "pnl" && <PnL />}
+      {tab === "be" && <Breakeven />}
+      {tab === "dir" && <Directions />}
+      {tab === "plan" && <Planning />}
+      {tab === "debts" && <Debts />}
+      {tab === "incoming" && <IncomingDocsTab />}
+      {tab === "grow" && <Growth />}
+      {tab === "salary" && <Salary />}
+      {tab === "mplan" && <MPlans />}
+      {tab === "time" && <Timesheet />}
+      {tab === "ref" && <Reference />}
+      {tab === "model" && <FinModel />}
     </div>
   );
 }
