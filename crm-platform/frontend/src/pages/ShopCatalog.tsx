@@ -89,13 +89,13 @@ export default function ShopCatalog() {
   async function openEditor(id: number) {
     const product = await api.get<MirrorProduct>(`/api/products/${id}/`);
     setEditor(product);
-    setForm({ ...product, shop_category_path: product.shop_category_path || [] });
+    setForm({ ...product, shop_category_path: product.shop_category_path?.length ? product.shop_category_path : (product.category === 59 ? ["Пробники"] : []) });
   }
 
   async function refreshEditor() {
     if (!editor) return;
     const product = await api.get<MirrorProduct>(`/api/products/${editor.id}/`);
-    setEditor(product); setForm({ ...product, shop_category_path: product.shop_category_path || [] });
+    setEditor(product); setForm({ ...product, shop_category_path: product.shop_category_path?.length ? product.shop_category_path : (product.category === 59 ? ["Пробники"] : []) });
   }
 
   async function saveEditor() {
@@ -112,7 +112,7 @@ export default function ShopCatalog() {
         shop_variant_order: Number(form.shop_variant_order) || 0, shop_variant_name: form.shop_variant_name,
         shop_has_board: form.shop_has_board, shop_is_tinted: form.shop_is_tinted, shop_contents: form.shop_contents,
       });
-      setEditor(product); setForm({ ...product, shop_category_path: product.shop_category_path || [] });
+      setEditor(product); setForm({ ...product, shop_category_path: product.shop_category_path?.length ? product.shop_category_path : (product.category === 59 ? ["Пробники"] : []) });
       await load(true);
     } finally { setSaving(false); }
   }
