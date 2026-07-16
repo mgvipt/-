@@ -271,16 +271,14 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
   .journal-filter .btn { padding: 6px 9px !important; font-size: 12.5px !important; }
 }
 
-/* --- Шапка на телефоні: слоган прихований --- */
-@media (max-width: 768px) { .topbar-motto { display: none !important; } }
 
 /* --- Місце під нижній таб-бар на телефоні --- */
 @media (max-width: 640px) { .scroll.pad { padding-bottom: 66px !important; } }
 
-/* --- Шапка на телефоні: слоган повертаємо, але компактно (не вилазить) --- */
+/* --- Шапка на телефоні: слоган видно, компактно --- */
 @media (max-width: 768px) {
-  .topbar-motto { display: flex !important; max-width: 150px; overflow: hidden; }
-  .topbar-motto span { font-size: 11px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar-motto { display: flex !important; max-width: 60vw; overflow: hidden; }
+  .topbar-motto span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 
 /* --- Панель дій Журналу на телефоні: дозволити перенос у другий рядок --- */

@@ -153,6 +153,14 @@ export default function Layout() {
   const fullName = me ? `${me.first_name} ${me.last_name}`.trim() || me.username : "";
 
   const [navOpen, setNavOpen] = useState(false);
+  const [mobMenu, setMobMenu] = useState(false);
+  const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth <= 768);
+  useEffect(() => {
+    const on = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  useEffect(() => { if (!isMobile) setMobMenu(false); }, [isMobile]);
   return (
     <div className="app">
       {theme.animBg && theme.animBg !== "none" && <div className={"appbg viewbg-" + theme.animBg} aria-hidden="true" />}
@@ -179,12 +187,12 @@ export default function Layout() {
       <div className="main">
         <header className="topbar">
           <button className="burger" onClick={() => setNavOpen((v) => !v)} aria-label="Меню">☰</button>
-          <h1>{title}</h1>
+          {!isMobile && <h1>{title}</h1>}
           <div className="topbar-motto" onMouseEnter={() => setMotto(true)} onMouseLeave={() => setMotto(false)} onClick={() => setMotto((v) => !v)}
-            style={{ position: "relative", marginLeft: 16, display: "flex", alignItems: "center", gap: 7, cursor: "help" }}>
+            style={{ position: "relative", marginLeft: isMobile ? 8 : 16, display: "flex", alignItems: "center", gap: 7, cursor: "help" }}>
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--brand)", flexShrink: 0 }} />
-            <span style={{ fontWeight: 800, fontSize: 13.5, color: "var(--topbar-text)", whiteSpace: "nowrap" }}>«Держим слово — держим клиента»</span>
-            <Icon n="bulb" size={14} style={{ opacity: .55 }} />
+            <span style={{ fontWeight: 800, fontSize: isMobile ? 11.5 : 13.5, color: "var(--topbar-text)", whiteSpace: "nowrap" }}>«Держим слово — держим клиента»</span>
+            {!isMobile && <Icon n="bulb" size={14} style={{ opacity: .55 }} />}
             {motto && (
               <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: "calc(100% + 12px)", left: 0, width: 480, maxWidth: "82vw", background: "#fff", color: "#1e293b", borderRadius: 18, boxShadow: "0 22px 60px rgba(15,23,42,.30)", padding: "22px 24px", zIndex: 300, border: "1px solid #e8edf3", cursor: "default" }}>
                 <div style={{ fontSize: 19, fontWeight: 800, color: "#0f172a" }}>Держим слово — держим клиента</div>
@@ -208,9 +216,24 @@ export default function Layout() {
           </div>
           <div className="spacer" />
           <GlobalSearch />
-          <WorkTimer />
-          <button className="btn btn-light" onClick={() => setShowTheme((v) => !v)}><Icon n="🎨" size={15} /> Тема</button>
-          <div className="clock">{new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</div>
+          {!isMobile && <WorkTimer />}
+          {!isMobile && <button className="btn btn-light" onClick={() => setShowTheme((v) => !v)}><Icon n="🎨" size={15} /> Тема</button>}
+          {!isMobile && <div className="clock">{new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</div>}
+          {isMobile && (
+            <div style={{ position: "relative" }}>
+              <button className="btn btn-light" aria-label="Ще" onClick={() => setMobMenu((v) => !v)} style={{ fontSize: 20, lineHeight: 1, padding: "2px 10px" }}>⋯</button>
+              {mobMenu && (
+                <>
+                  <div onClick={() => setMobMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 340 }} />
+                  <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, background: "#fff", borderRadius: 14, boxShadow: "0 18px 50px rgba(15,23,42,.28)", border: "1px solid #e8edf3", padding: 12, zIndex: 350, minWidth: 210, display: "flex", flexDirection: "column", gap: 10 }}>
+                    <WorkTimer />
+                    <button className="btn btn-light" onClick={() => { setShowTheme((v) => !v); setMobMenu(false); }} style={{ justifyContent: "center" }}><Icon n="🎨" size={15} /> Тема</button>
+                    <div style={{ textAlign: "center", fontSize: 13, color: "#64748b", fontWeight: 700 }}>{new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </header>
 
         {showTheme && (
