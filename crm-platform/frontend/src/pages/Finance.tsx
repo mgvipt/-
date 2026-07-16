@@ -743,6 +743,7 @@ function Journal() {
   const [payerDir, setPayerDir] = useState(0);
   const [splitRows, setSplitRows] = useState<any[]>([]);
   const [ff, setFf] = useState(""); const [ft, setFt] = useState(""); const [fq, setFq] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false); const [accOpen, setAccOpen] = useState(false);
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50); const [count, setCount] = useState(0);
   const { can: canJ } = useAuth();
   const canTx = canJ("finance.tx.edit") || canJ("roles.manage");
@@ -1013,12 +1014,49 @@ function Journal() {
       {/* ручка зміни ширини блоку рахунків */}
       {!accCollapsed && <div onMouseDown={startAccResize} title={t("Тяни, чтобы изменить ширину","Тягни, щоб змінити ширину")} style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0, minHeight: "60vh" }} />}
       <div style={{ flex: 1, minWidth: 0 }}>
+      {isMobile ? (
+      <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
+        <button className="btn btn-light" onClick={() => setSearchOpen(true)} title={t("Поиск","Пошук")} style={{ fontSize: 15 }}>🔍{fq ? " •" : ""}</button>
+        <button className="btn btn-light" onClick={() => setShowCols(true)}><Icon n="⚙" size={14} />{(() => { const n = (fContact ? 1 : 0) + (ff ? 1 : 0) + (ft ? 1 : 0) + Object.values(cf).filter((v: any) => v !== "" && v != null).length; return n ? ` ${n}` : ""; })()}</button>
+        <button className="btn btn-light" onClick={() => setAccOpen(true)} title={t("Счета","Рахунки")}>🏦{selAcc.length ? ` ${selAcc.length}` : ""}</button>
+      </div>
+      ) : (
       <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }} className="journal-filter">
         <input value={fq} onChange={(e) => setFq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && apply()} placeholder={t("🔍 Поиск: сумма, контрагент, категория, комментарий, счёт…","🔍 Пошук: сума, контрагент, категорія, коментар, рахунок…")} style={{ flex: 1, height: 40, border: "1px solid #cbd5e1", borderRadius: 10, padding: "0 14px", fontSize: 14 }} />
         <button className="btn btn-light" onClick={() => setShowCols(true)} title={t("Все фильтры","Всі фільтри")} style={{ whiteSpace: "nowrap" }}><Icon n="⚙" size={14} /> {t("Фильтры","Фільтри")}{(() => { const n = (fContact ? 1 : 0) + (ff ? 1 : 0) + (ft ? 1 : 0) + Object.values(cf).filter((v: any) => v !== "" && v != null).length; return n ? ` (${n})` : ""; })()}</button>
         <button className="btn btn-primary" onClick={apply}>{t("Найти","Знайти")}</button>
         <button className="btn btn-light" onClick={resetAll} title={t("Сбросить всё","Скинути все")}>✕</button>
       </div>
+      )}
+      {searchOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 1100, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 16 }} onClick={() => setSearchOpen(false)}>
+          <div className="panel" style={{ maxWidth: 480, width: "100%", background: "#fff", margin: "16px auto" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}><h3 style={{ margin: 0, fontSize: 16 }}>🔍 {t("Поиск","Пошук")}</h3><button onClick={() => setSearchOpen(false)} style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer" }}>✕</button></div>
+            <input autoFocus value={fq} onChange={(e) => setFq(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { apply(); setSearchOpen(false); } }} placeholder={t("Сумма, контрагент, категория, комментарий…","Сума, контрагент, категорія, коментар…")} style={{ width: "100%", height: 44, border: "1px solid #cbd5e1", borderRadius: 10, padding: "0 14px", fontSize: 15, boxSizing: "border-box", marginBottom: 12 }} />
+            <button className="btn btn-primary" style={{ width: "100%", height: 46 }} onClick={() => { apply(); setSearchOpen(false); }}>{t("Найти","Знайти")}</button>
+          </div>
+        </div>
+      )}
+      {accOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 1100, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 16, overflowY: "auto" }} onClick={() => setAccOpen(false)}>
+          <div className="panel" style={{ maxWidth: 480, width: "100%", background: "#fff", margin: "16px auto", maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}><h3 style={{ margin: 0, fontSize: 16 }}>🏦 {t("Счета","Рахунки")}</h3><button onClick={() => setAccOpen(false)} style={{ border: "none", background: "none", fontSize: 22, color: "#94a3b8", cursor: "pointer" }}>✕</button></div>
+            {canTotal && <div style={{ textAlign: "center", marginBottom: 10 }}><div style={{ fontSize: 22, fontWeight: 800 }}>{money2(accounts.filter((a: any) => !/liqpay/i.test(a.name || "")).reduce((sm: number, a: any) => sm + Number(a.balance || 0), 0))}</div><div className="muted" style={{ fontSize: 11 }}>{t("на активных счетах","на активних рахунках")}</div></div>}
+            <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{t("Тапни счёт — журнал отфильтруется","Тапни рахунок — журнал відфільтрується")}</div>
+            {accounts.map((a: any) => (
+              <div key={a.id} onClick={() => setSelAcc((cur) => { const n = cur.includes(a.id) ? cur.filter((x) => x !== a.id) : [...cur, a.id]; setTimeout(() => { setPage(1); const qp = new URLSearchParams({ page: "1", page_size: String(pageSize) }); if (ff) qp.set("from", ff); if (ft) qp.set("to", ft); if (fq.trim()) qp.set("q", fq.trim()); Object.entries(cf).forEach(([k, v]) => { if (v) qp.set(k, String(v)); }); if (n.length) qp.set("accounts", n.join(",")); api.get<any>(`/api/transactions/?${qp.toString()}`).then((d) => { setTx(d.results || d); setCount(d.count ?? 0); }); }, 0); return n; })}
+                style={{ display: "flex", justifyContent: "space-between", padding: "10px 6px", borderBottom: "1px solid #f1f5f9", cursor: "pointer", background: selAcc.includes(a.id) ? "#fdf3ec" : undefined }}>
+                <span style={{ fontSize: 13.5 }}>{selAcc.includes(a.id) ? "✓ " : ""}{a.name}</span>
+                <span style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap" }}>{money2(Number(a.balance || 0))}</span>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              {selAcc.length > 0 && <button className="btn btn-light" onClick={() => { setSelAcc([]); setTimeout(() => load(1), 0); }}>{t("Сбросить","Скинути")}</button>}
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => setAccOpen(false)}>{t("Готово","Готово")}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showCols && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", zIndex: 1100, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 16, overflowY: "auto" }} onClick={() => setShowCols(false)}>
         <div className="panel" style={{ maxWidth: 580, width: "100%", background: "#fff", margin: "24px auto" }} onClick={(e) => e.stopPropagation()}>
@@ -1052,17 +1090,17 @@ function Journal() {
         </div>
       )}
       <div className="jrnl-actions" style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
-        {canTx && <button className="btn btn-primary" title={t("Добавить поступление денег","Додати надходження грошей")} onClick={() => openNew("in")}>+ {t("Доход","Дохід")}</button>}
-        {canTx && <button className="btn btn-light" title={t("Добавить расход","Додати витрату")} onClick={() => openNew("out")}>− {t("Расход","Витрата")}</button>}
+        {canTx && <button className="btn btn-primary" title={t("Добавить поступление денег","Додати надходження грошей")} onClick={() => openNew("in")}>+{isMobile ? "" : " " + t("Доход","Дохід")}</button>}
+        {canTx && <button className="btn btn-light" title={t("Добавить расход","Додати витрату")} onClick={() => openNew("out")}>−{isMobile ? "" : " " + t("Расход","Витрата")}</button>}
         {(lock.closed_until || lock.can_close) && (
           <span onClick={lock.can_close ? setPeriodLock : undefined} title={lock.can_close ? t("Изменить закрытие периода", "Змінити закриття періоду") : t("Период закрыт бухгалтерией", "Період закрито бухгалтерією")}
             style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 8, cursor: lock.can_close ? "pointer" : "default",
                      background: lock.closed_until ? "#fef2f2" : "#f0fdf4", color: lock.closed_until ? "#dc2626" : "#16a34a", border: "1px solid " + (lock.closed_until ? "#fecaca" : "#bbf7d0") }}>
-            🔒 {lock.closed_until ? t("Закрыто до ", "Закрито до ") + lock.closed_until : t("Период открыт", "Період відкритий")}
+            🔒{isMobile ? "" : " " + (lock.closed_until ? t("Закрыто до ", "Закрито до ") + lock.closed_until : t("Период открыт", "Період відкритий"))}
           </span>
         )}
         {canTx && <label className="btn btn-light" style={{ cursor: "pointer" }} title={t("Импорт банковской выписки CSV","Імпорт банківської виписки CSV")}>
-          ⬆ {t("Выписка","Виписка")}
+          ⬆{isMobile ? "" : " " + t("Выписка","Виписка")}
           <input type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={async (e) => {
             const f = e.target.files?.[0]; if (!f) return; (e.target as any).value = "";
             const text = await f.text();
@@ -1082,9 +1120,9 @@ function Journal() {
         <button className="btn btn-light" title={t("Выгрузить журнал в CSV (Excel)","Вивантажити журнал у CSV (Excel)")} onClick={async () => {
           try { const u = await (api as any).blobUrl("/api/transactions/export/"); const a = document.createElement("a"); a.href = u; a.download = "journal.csv"; a.click(); }
           catch { alert(t("Не удалось выгрузить","Не вдалося вивантажити")); }
-        }}>⬇ CSV</button>
+        }}>⬇{isMobile ? "" : " CSV"}</button>
         {bankHub && <BankHubModal onClose={() => { setBankHub(false); load(); api.get<any>("/api/accounts/").then((d) => setAccounts((d.results || d).filter((a: any) => a.is_active !== false))); }} />}
-        {canTx && <button className="btn btn-light" title={t("Перевод между счетами — не считается ни в доход, ни в расход","Переказ між рахунками — не рахується ні в дохід, ні у витрати")} onClick={() => openNew("transfer")}>⇄ {t("Перевод","Переказ")}</button>}
+        {canTx && <button className="btn btn-light" title={t("Перевод между счетами — не считается ни в доход, ни в расход","Переказ між рахунками — не рахується ні в дохід, ні у витрати")} onClick={() => openNew("transfer")}>⇄{isMobile ? "" : " " + t("Перевод","Переказ")}</button>}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
           <span className="muted">{t("На стр.","На стор.")}:</span>
           <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6 }}>{[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}</select>

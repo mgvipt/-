@@ -180,7 +180,7 @@ export default function Layout() {
         <header className="topbar">
           <button className="burger" onClick={() => setNavOpen((v) => !v)} aria-label="Меню">☰</button>
           <h1>{title}</h1>
-          <div onMouseEnter={() => setMotto(true)} onMouseLeave={() => setMotto(false)} onClick={() => setMotto((v) => !v)}
+          <div className="topbar-motto" onMouseEnter={() => setMotto(true)} onMouseLeave={() => setMotto(false)} onClick={() => setMotto((v) => !v)}
             style={{ position: "relative", marginLeft: 16, display: "flex", alignItems: "center", gap: 7, cursor: "help" }}>
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--brand)", flexShrink: 0 }} />
             <span style={{ fontWeight: 800, fontSize: 13.5, color: "var(--topbar-text)", whiteSpace: "nowrap" }}>«Держим слово — держим клиента»</span>
