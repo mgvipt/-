@@ -38,6 +38,7 @@ class ProductSerializer(serializers.ModelSerializer):
                   "shop_effect", "shop_rooms", "shop_beginner", "shop_video_url", "shop_instruction_url",
                   "shop_sort", "shop_badges", "shop_variant_type", "shop_has_board", "shop_is_tinted",
                   "shop_variant_order", "shop_variant_name", "shop_contents", "seo_title", "seo_description",
+                  "shop_specs",
                   "seo_h1", "seo_categories", "seo_faqs", "seo_index", "shop_last_sync_at",
                   "shop_sync_error", "shop_remote_url", "shop_validation_errors", "shop_group_variants",
                   "shop_sync_history"]
@@ -113,9 +114,12 @@ class ProductSerializer(serializers.ModelSerializer):
         return Product.objects.get(pk=product.pk)
 
     def _queue_shop_change(self, product, was_managed=False):
-        from .shop_sync import SAMPLE_CATEGORY_ID, prepare_product_for_shop, queue_product_sync
+        from .shop_sync import SAMPLE_CATEGORY_ID, prepare_product_for_shop, prepare_regular_product_for_shop, queue_product_sync
         if product.category_id == SAMPLE_CATEGORY_ID:
             prepare_product_for_shop(product)
+            product.refresh_from_db()
+        elif product.shop_enabled:
+            prepare_regular_product_for_shop(product)
             product.refresh_from_db()
         if product.shop_enabled and not product.shop_managed:
             Product.objects.filter(pk=product.pk).update(shop_managed=True)

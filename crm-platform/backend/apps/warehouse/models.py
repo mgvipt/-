@@ -105,6 +105,7 @@ class Product(models.Model):
     shop_variant_order = models.PositiveSmallIntegerField(default=0)
     shop_variant_name = models.CharField(max_length=255, blank=True, default="")
     shop_contents = models.TextField(blank=True, default="")
+    shop_specs = models.JSONField(default=dict, blank=True)
     seo_title = models.CharField(max_length=255, blank=True, default="")
     seo_description = models.TextField(blank=True, default="")
     seo_h1 = models.CharField(max_length=255, blank=True, default="")
@@ -155,6 +156,41 @@ class ShopSyncEvent(models.Model):
 
     class Meta:
         ordering = ["created_at", "id"]
+
+
+class ShopCatalogImportBatch(models.Model):
+    STATUSES = [("review", "На перевірці"), ("partially_applied", "Частково збережено"), ("applied", "Збережено")]
+    source_name = models.CharField(max_length=255)
+    source_hash = models.CharField(max_length=64, db_index=True)
+    status = models.CharField(max_length=24, choices=STATUSES, default="review", db_index=True)
+    summary = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+
+class ShopCatalogImportRow(models.Model):
+    batch = models.ForeignKey(ShopCatalogImportBatch, on_delete=models.CASCADE, related_name="rows")
+    sheet_name = models.CharField(max_length=80)
+    source_row = models.PositiveIntegerField()
+    external_id = models.CharField(max_length=80, db_index=True)
+    product = models.ForeignKey(Product, null=True, blank=True, on_delete=models.SET_NULL, related_name="shop_import_rows")
+    source_data = models.JSONField(default=dict)
+    proposed_data = models.JSONField(default=dict)
+    warnings = models.JSONField(default=list, blank=True)
+    errors = models.JSONField(default=list, blank=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sheet_name", "source_row", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["batch", "sheet_name", "source_row"], name="uniq_shop_import_source_row"),
+        ]
 
 
 class StockDocument(models.Model):

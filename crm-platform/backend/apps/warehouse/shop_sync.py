@@ -18,7 +18,7 @@ from .models import Product, ShopSyncEvent
 
 SAMPLE_CATEGORY_ID = int(os.environ.get("SHOP_SAMPLE_CATEGORY_ID", "59"))
 SHOP_CATALOG_URL = os.environ.get(
-    "SHOP_CATALOG_URL", "https://wallcov.com.ua/new/api/crm/catalog-products"
+    "SHOP_CATALOG_URL", "https://wallcovdec.com.ua/api/crm/catalog-products"
 ).rstrip("/")
 CRM_PUBLIC_URL = os.environ.get("CRM_PUBLIC_URL", "https://crm.wallcovdec.com.ua").rstrip("/")
 
@@ -91,6 +91,28 @@ def prepare_product_for_shop(product, save=True):
     return product
 
 
+def prepare_regular_product_for_shop(product, save=True):
+    """Звичайний товар не змушує користувача вигадувати технічну групу та URL."""
+    if product.shop_variant_type == "sample":
+        return product
+    changed = []
+    defaults = {
+        "shop_group_key": f"product-{product.pk}",
+        "shop_slug": f"product-{product.pk}",
+        "shop_parent_name": product.name,
+        "shop_variant_type": "product",
+        "shop_variant_order": 1,
+        "shop_variant_name": "Основний товар",
+    }
+    for field, value in defaults.items():
+        if getattr(product, field) in ("", None, 0):
+            setattr(product, field, value)
+            changed.append(field)
+    if changed and save:
+        product.save(update_fields=changed + ["updated_at"])
+    return product
+
+
 def effective_category_path(product):
     path = [str(part).strip() for part in product.shop_category_path if str(part).strip()]
     if not path and product.category_id == SAMPLE_CATEGORY_ID:
@@ -122,6 +144,24 @@ def catalog_validation_errors(product):
     if not product.images.filter(is_approved=True).exists():
         errors.append("Немає затвердженого фото")
     return errors
+
+
+def normalized_shop_specs(specs):
+    specs = dict(specs or {})
+    columns = specs.get("source_columns") or {}
+    mapping = {
+        "Цена: модель": "price_model", "Цена за кг, грн": "price_per_kg",
+        "Цена за м², грн": "price_per_m2", "Цена ОТ, грн": "price_from",
+        "Расход min, кг/м²": "consumption_min", "Расход max, кг/м²": "consumption_max",
+        "Расчётная цена min, грн/м²": "price_per_m2_min",
+        "Расчётная цена max, грн/м²": "price_per_m2_max",
+        "Финиш": "finish", "Можно мыть?": "washable",
+        "Износостойкость": "durability", "Фасовка / отгрузка": "packaging",
+    }
+    for source_name, target_name in mapping.items():
+        if source_name in columns:
+            specs[target_name] = columns[source_name]
+    return specs
 
 
 def product_payload(product, action=None):
@@ -163,6 +203,7 @@ def product_payload(product, action=None):
             "instruction_url": product.shop_instruction_url,
             "sort": product.shop_sort,
             "badges": product.shop_badges,
+            "specs": normalized_shop_specs(product.shop_specs),
             "variant": {
                 "type": product.shop_variant_type,
                 "has_board": product.shop_has_board,
