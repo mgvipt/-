@@ -1129,13 +1129,14 @@ function Journal() {
         {isMobile && <button className="btn btn-light" onClick={() => setSearchOpen(true)} title={t("Поиск","Пошук")}><Icon n="🔍" size={14} />{fq ? " •" : ""}</button>}
         {isMobile && <button className="btn btn-light" onClick={() => setShowCols(true)}><Icon n="⚙" size={14} />{(() => { const n = (fContact ? 1 : 0) + (ff ? 1 : 0) + (ft ? 1 : 0) + Object.values(cf).filter((v: any) => v !== "" && v != null).length; return n ? ` ${n}` : ""; })()}</button>}
         {isMobile && <button className="btn btn-light" onClick={() => setAccOpen(true)} title={t("Счета","Рахунки")}><Icon n="🏦" size={14} /></button>}
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+        <div style={{ marginLeft: isMobile ? 0 : "auto", width: isMobile ? "100%" : "auto", display: "flex", alignItems: "center", justifyContent: isMobile ? "center" : "flex-end", gap: isMobile ? 5 : 8, fontSize: isMobile ? 12.5 : 13, marginTop: isMobile ? 2 : 0 }}>
           {!isMobile && <span className="muted">{t("На стр.","На стор.")}:</span>}
-          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6 }}>{[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}</select>
+          {isMobile && <span className="muted" style={{ fontSize: 12 }}>{t("Рядків","Рядків")}:</span>}
+          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ height: isMobile ? 28 : 30, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: isMobile ? 12.5 : 13, padding: "0 2px" }}>{[20, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}</select>
           {!isMobile && <span className="muted">{t("Всего","Всього")}: <b>{count}</b></span>}
-          <button className="btn btn-light" disabled={page <= 1} onClick={() => goPage(page - 1)}>←</button>
-          <span>{t("стр.","стор.")} <b>{page}</b> {t("из","з")} {totalPages}</span>
-          <button className="btn btn-light" disabled={page >= totalPages} onClick={() => goPage(page + 1)}>→</button>
+          <button className="btn btn-light" style={{ padding: isMobile ? "4px 10px" : undefined, fontSize: isMobile ? 15 : undefined }} disabled={page <= 1} onClick={() => goPage(page - 1)}>←</button>
+          <span style={{ whiteSpace: "nowrap" }}>{!isMobile && (t("стр.","стор.") + " ")}<b>{page}</b> {t("из","з")} {totalPages}</span>
+          <button className="btn btn-light" style={{ padding: isMobile ? "4px 10px" : undefined, fontSize: isMobile ? 15 : undefined }} disabled={page >= totalPages} onClick={() => goPage(page + 1)}>→</button>
         </div>
       </div>
       {isMobile ? (
