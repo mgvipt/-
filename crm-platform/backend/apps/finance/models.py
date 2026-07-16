@@ -84,6 +84,10 @@ class Transaction(models.Model):
 
     def save(self, *args, **kwargs):
         self.amount_uah = (self.amount or 0) * (self.rate or 1)
+        # час операції: якщо не заданий (ручне внесення) — ставимо поточний, щоб журнал сортувався коректно
+        if self._state.adding and not self.op_time:
+            from django.utils import timezone as _tzop
+            self.op_time = _tzop.localtime().time()
         # клієнт (обʼєкт) підтягується зі сделки, якщо не заданий явно
         if self._state.adding and not self.contact_id and self.deal_id:
             try:
