@@ -169,11 +169,11 @@ export default function ClientCard() {
             )}
             {c.deals.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Сделок ещё нет.","Угод ще немає.")}</div> : (
               <table style={{ width: "100%", fontSize: 13, marginTop: 6 }}>
-                <thead><tr><th style={{ textAlign: "left" }}>{t("Сделка","Угода")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th>{can("product.cost.view") && <th style={{ textAlign: "right", color: "#9a3412" }}>{t("Закупка","Закупка")}</th>}<th style={{ textAlign: "center" }}>{t("Стадия","Стадія")}</th>{can("deal.delete") && <th style={{ width: 30 }}></th>}</tr></thead>
+                <thead><tr><th style={{ textAlign: "left", width: 66 }}>№</th><th style={{ textAlign: "left" }}>{t("Сделка","Угода")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th>{can("product.cost.view") && <th style={{ textAlign: "right", color: "#9a3412" }}>{t("Закупка","Закупка")}</th>}<th style={{ textAlign: "center" }}>{t("Стадия","Стадія")}</th>{can("deal.delete") && <th style={{ width: 30 }}></th>}</tr></thead>
                 <tbody>
                   {c.deals.map((d) => (
                     <tr key={d.id} onClick={() => nav(`/deals/${d.id}`)} style={{ cursor: "pointer", borderTop: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "6px 0", color: "#1d4ed8" }}>{d.title}</td>
+                      <td style={{ padding: "6px 0", color: "#64748b", fontSize: 12, whiteSpace: "nowrap" }}>#{d.id}</td><td style={{ padding: "6px 0", color: "#1d4ed8" }}>{d.title}</td>
                       <td style={{ textAlign: "right" }}>{money(d.amount)}</td>
                       {can("product.cost.view") && <td style={{ textAlign: "right", color: "#9a3412" }} title={t("Себестоимость сделки (закупка товаров)","Собівартість сделки (закупка товарів)")}>{Number((d as any).cost) > 0 ? money((d as any).cost) : "—"}</td>}
                       <td style={{ textAlign: "center" }}><span className="chip" style={{ background: d.is_won ? "#dcfce7" : "#f1f5f9", color: d.is_won ? "#166534" : "#475569" }}>{d.stage || "—"}</span></td>
