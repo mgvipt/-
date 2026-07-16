@@ -255,3 +255,9 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
   .scroll.pad .note, .scroll.pad h2, .scroll.pad h3 { font-size: 15px; }
   .scroll.pad * { overflow-wrap: anywhere; }
 }
+
+/* --- На телефоні: блок Рахунки прихований, Журнал на всю ширину --- */
+@media (max-width: 640px) {
+  .acc-sidebar { display: none !important; }
+  .scroll.pad .btn { min-height: 34px; }
+}
