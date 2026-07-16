@@ -124,7 +124,7 @@ export default function Finance() {
         <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 950, display: "flex", background: "#fff", borderTop: "1px solid #e2e8f0", boxShadow: "0 -2px 12px rgba(0,0,0,.08)" }}>
           {GROUPS.filter(([, ks]) => ks.some((k) => tabAllowed(k))).map(([gl, ks, ic]) => {
             const act = activeGroup[0] === gl;
-            return <button key={gl} onClick={() => { const first = ks.find((k) => tabAllowed(k)); if (first) setTab(first as any); }} style={{ flex: 1, border: "none", background: "none", padding: "7px 2px", cursor: "pointer", color: act ? "#2563eb" : "#64748b", fontWeight: act ? 700 : 500, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><span style={{ fontSize: 19 }}>{ic}</span><span style={{ fontSize: 10 }}>{gl}</span></button>;
+            return <button key={gl} onClick={() => { const first = ks.find((k) => tabAllowed(k)); if (first) setTab(first as any); }} style={{ flex: 1, border: "none", background: "none", padding: "7px 2px", cursor: "pointer", color: act ? "#2563eb" : "#64748b", fontWeight: act ? 700 : 500, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><Icon n={ic} size={20} /><span style={{ fontSize: 10 }}>{gl}</span></button>;
           })}
         </div>
       )}
@@ -1022,13 +1022,7 @@ function Journal() {
       {/* ручка зміни ширини блоку рахунків */}
       {!accCollapsed && <div onMouseDown={startAccResize} title={t("Тяни, чтобы изменить ширину","Тягни, щоб змінити ширину")} style={{ width: 6, alignSelf: "stretch", cursor: "col-resize", background: "#e2e8f0", borderRadius: 3, flexShrink: 0, minHeight: "60vh" }} />}
       <div style={{ flex: 1, minWidth: 0 }}>
-      {isMobile ? (
-      <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
-        <button className="btn btn-light" onClick={() => setSearchOpen(true)} title={t("Поиск","Пошук")} style={{ fontSize: 15 }}>🔍{fq ? " •" : ""}</button>
-        <button className="btn btn-light" onClick={() => setShowCols(true)}><Icon n="⚙" size={14} />{(() => { const n = (fContact ? 1 : 0) + (ff ? 1 : 0) + (ft ? 1 : 0) + Object.values(cf).filter((v: any) => v !== "" && v != null).length; return n ? ` ${n}` : ""; })()}</button>
-        <button className="btn btn-light" onClick={() => setAccOpen(true)} title={t("Счета","Рахунки")}>🏦{selAcc.length ? ` ${selAcc.length}` : ""}</button>
-      </div>
-      ) : (
+      {!isMobile && (
       <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }} className="journal-filter">
         <input value={fq} onChange={(e) => setFq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && apply()} placeholder={t("🔍 Поиск: сумма, контрагент, категория, комментарий, счёт…","🔍 Пошук: сума, контрагент, категорія, коментар, рахунок…")} style={{ flex: 1, height: 40, border: "1px solid #cbd5e1", borderRadius: 10, padding: "0 14px", fontSize: 14 }} />
         <button className="btn btn-light" onClick={() => setShowCols(true)} title={t("Все фильтры","Всі фільтри")} style={{ whiteSpace: "nowrap" }}><Icon n="⚙" size={14} /> {t("Фильтры","Фільтри")}{(() => { const n = (fContact ? 1 : 0) + (ff ? 1 : 0) + (ft ? 1 : 0) + Object.values(cf).filter((v: any) => v !== "" && v != null).length; return n ? ` (${n})` : ""; })()}</button>
@@ -1098,17 +1092,17 @@ function Journal() {
         </div>
       )}
       <div className="jrnl-actions" style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
-        {canTx && <button className="btn btn-primary" title={t("Добавить поступление денег","Додати надходження грошей")} onClick={() => openNew("in")}>+ {t("Доход","Дохід")}</button>}
+        {canTx && <button className="btn btn-primary" title={t("Добавить поступление денег","Додати надходження грошей")} onClick={() => openNew("in")}><Icon n="➕" size={13} /> {t("Доход","Дохід")}</button>}
         {canTx && <button className="btn btn-light" title={t("Добавить расход","Додати витрату")} onClick={() => openNew("out")}>− {t("Расход","Витрата")}</button>}
         {(lock.closed_until || lock.can_close) && (
           <span onClick={lock.can_close ? setPeriodLock : undefined} title={lock.can_close ? t("Изменить закрытие периода", "Змінити закриття періоду") : t("Период закрыт бухгалтерией", "Період закрито бухгалтерією")}
             style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 8, cursor: lock.can_close ? "pointer" : "default",
                      background: lock.closed_until ? "#fef2f2" : "#f0fdf4", color: lock.closed_until ? "#dc2626" : "#16a34a", border: "1px solid " + (lock.closed_until ? "#fecaca" : "#bbf7d0") }}>
-            🔒{isMobile ? "" : " " + (lock.closed_until ? t("Закрыто до ", "Закрито до ") + lock.closed_until : t("Период открыт", "Період відкритий"))}
+            <Icon n="🔒" size={14} />{isMobile ? "" : " " + (lock.closed_until ? t("Закрыто до ", "Закрито до ") + lock.closed_until : t("Период открыт", "Період відкритий"))}
           </span>
         )}
         {canTx && <label className="btn btn-light" style={{ cursor: "pointer" }} title={t("Импорт банковской выписки CSV","Імпорт банківської виписки CSV")}>
-          ⬆{isMobile ? "" : " " + t("Выписка","Виписка")}
+          <Icon n="📤" size={14} />{isMobile ? "" : " " + t("Выписка","Виписка")}
           <input type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={async (e) => {
             const f = e.target.files?.[0]; if (!f) return; (e.target as any).value = "";
             const text = await f.text();
@@ -1128,7 +1122,7 @@ function Journal() {
         <button className="btn btn-light" title={t("Выгрузить журнал в CSV (Excel)","Вивантажити журнал у CSV (Excel)")} onClick={async () => {
           try { const u = await (api as any).blobUrl("/api/transactions/export/"); const a = document.createElement("a"); a.href = u; a.download = "journal.csv"; a.click(); }
           catch { alert(t("Не удалось выгрузить","Не вдалося вивантажити")); }
-        }}>⬇{isMobile ? "" : " CSV"}</button>
+        }}><Icon n="📥" size={14} />{isMobile ? "" : " CSV"}</button>
         {bankHub && <BankHubModal onClose={() => { setBankHub(false); load(); api.get<any>("/api/accounts/").then((d) => setAccounts((d.results || d).filter((a: any) => a.is_active !== false))); }} />}
         {canTx && <button className="btn btn-light" title={t("Перевод между счетами — не считается ни в доход, ни в расход","Переказ між рахунками — не рахується ні в дохід, ні у витрати")} onClick={() => openNew("transfer")}>⇄ {t("Перевод","Переказ")}</button>}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
@@ -1140,6 +1134,13 @@ function Journal() {
           <button className="btn btn-light" disabled={page >= totalPages} onClick={() => goPage(page + 1)}>→</button>
         </div>
       </div>
+      {isMobile && (
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+        <button className="btn btn-light" onClick={() => setSearchOpen(true)} title={t("Поиск","Пошук")}><Icon n="🔍" size={15} />{fq ? " •" : ""}</button>
+        <button className="btn btn-light" onClick={() => setShowCols(true)}><Icon n="⚙" size={15} />{(() => { const n = (fContact ? 1 : 0) + (ff ? 1 : 0) + (ft ? 1 : 0) + Object.values(cf).filter((v: any) => v !== "" && v != null).length; return n ? ` ${n}` : ""; })()}</button>
+        <button className="btn btn-light" onClick={() => setAccOpen(true)} title={t("Счета","Рахунки")}><Icon n="🏦" size={15} /></button>
+      </div>
+      )}
       {isMobile ? (
         <div className="panel" style={{ margin: 0, padding: "2px 4px" }}>
           {tx.length === 0 && <div className="muted" style={{ padding: 14 }}>{t("Операций ещё нет","Операцій ще немає")}</div>}
