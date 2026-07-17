@@ -188,6 +188,18 @@ class ContactViewSet(viewsets.ModelViewSet):
             qs = qs.filter(loyalty_tag__in=[x for x in li.split(",") if x])
         if self.request.query_params.get("has_phone") == "1":
             qs = qs.exclude(phone="")
+        # ── ПРАВА ПО СЕГМЕНТАХ: видно лише дозволені типи (порожньо = всі) ──
+        from django.db.models import Q as _Qk
+        _ak = user.allowed_contact_kinds() if hasattr(user, "allowed_contact_kinds") else None
+        if _ak is not None:
+            _cond = _Qk(kinds=[])          # контрагенти без типу видні всім (ще не розмічені)
+            for _k in _ak:
+                _cond |= _Qk(kinds__contains=[_k])
+            qs = qs.filter(_cond)
+        # ── ФІЛЬТР списку за сегментом (вкладки Клієнти / Постачальники / ...) ──
+        _kf = (self.request.query_params.get("kind") or "").strip()
+        if _kf:
+            qs = qs.filter(kinds__contains=[_kf])
         return qs
 
     def get_serializer_class(self):

@@ -23,6 +23,11 @@ PERMISSION_GROUPS = [
         ("contact.export", "Експорт бази клієнтів", ""),
         ("contact.delete", "Видаляти клієнтів", "Менеджер без цього права не може видалити клієнта"),
         ("contact.fields.config", "Налаштування обовʼязкових полів клієнта", "Хто бачить і змінює ⚙ обовʼязкові поля у картці"),
+        ("contact.kind.client", "Сегмент: Клієнти", "Якщо НЕ відмічено жодного сегмента — видно ВСІ (як зараз)"),
+        ("contact.kind.supplier", "Сегмент: Постачальники", "Закупівельні ціни та реквізити. Менеджерам зазвичай НЕ давати"),
+        ("contact.kind.master", "Сегмент: Майстри", ""),
+        ("contact.kind.staff", "Сегмент: Співробітники", ""),
+        ("contact.kind.partner", "Сегмент: Партнери / Дизайнери", ""),
     ]),
     ("Чати / Відкриті лінії", [
         ("conversation.view.all", "Бачити ВСІ чати (командна черга)", "Інакше — лише свої чати"),
@@ -254,6 +259,16 @@ class User(AbstractUser):
 
     def can_see_all_clients(self) -> bool:
         return self.has_perm_code("contact.view.all") or self.can_see_all_deals()
+
+    def allowed_contact_kinds(self):
+        """Які сегменти контрагентів бачить користувач.
+        None = ВСІ (адмін або жодного сегмента не відмічено — сумісність зі старою поведінкою).
+        Інакше — множина дозволених типів."""
+        if self.is_superuser:
+            return None
+        ks = {k for k in ("client", "supplier", "master", "staff", "partner")
+              if self.has_perm_code("contact.kind." + k)}
+        return None if not ks else ks
 
     def allowed_funnel_ids(self):
         # None = бачить ВСЕ (тільки адмін/право). Порожній список = нічого (НЕ fail-open).
