@@ -12,6 +12,15 @@ class Company(models.Model):
         return self.name
 
 
+CONTACT_KINDS = [
+    ("client", "Клієнт"),
+    ("supplier", "Постачальник"),
+    ("master", "Майстер"),
+    ("staff", "Співробітник"),
+    ("partner", "Партнер / Дизайнер"),
+]
+
+
 class Contact(models.Model):
     """Карточка клиента. Каналы (Instagram/Viber/...) накапливаются по мере общения."""
     first_name = models.CharField(max_length=120, blank=True)
@@ -31,6 +40,15 @@ class Contact(models.Model):
     messengers = models.JSONField(default=list, blank=True, help_text="Кілька месенджерів/контактів клієнта (IG/TG/Viber/номер) — список посилань")
     edrpou = models.CharField("ЄДРПОУ / ІПН", max_length=32, blank=True, default="", db_index=True)
     iban = models.CharField("IBAN / рахунок", max_length=64, blank=True, default="")
+    kinds = models.JSONField("Типи контрагента", default=list, blank=True,
+                             help_text="client/supplier/master/staff/partner — контрагент може бути кількох типів одразу")
+    gender = models.CharField("Стать", max_length=1, blank=True, default="",
+                              choices=[("m", "Чоловіча"), ("f", "Жіноча")],
+                              help_text="Визначається автоматично за по батькові/іменем; можна виправити руками")
+    monitor_docs = models.BooleanField("Моніторити накладні", default=False,
+                                       help_text="Забирати накладні/рахунки цього постачальника з пошти та месенджерів у «Вх. накладні»")
+    doc_email = models.CharField("Пошта для накладних", max_length=190, blank=True, default="",
+                                 help_text="Якщо накладні приходять з іншої адреси, ніж основний e-mail")
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="contacts_owned", help_text="Ответственный менеджер клиента")

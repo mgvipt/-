@@ -38,7 +38,8 @@ class ContactSerializer(serializers.ModelSerializer):
         model = Contact
         fields = ["id", "first_name", "last_name", "middle_name", "nickname", "display_name", "phone",
                   "email", "social_link", "messengers", "company", "channels", "loyalty_tag", "birthday",
-                  "source", "address", "comment", "edrpou", "iban", "owner", "owner_name", "created_at"]
+                  "source", "address", "comment", "edrpou", "iban", "owner", "owner_name", "created_at",
+                  "kinds", "gender", "monitor_docs", "doc_email"]
 
     def get_display_name(self, obj):
         return str(obj)
