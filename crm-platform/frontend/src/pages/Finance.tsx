@@ -3331,7 +3331,10 @@ function IncomingDocsTab() {
               <><b>{r.invoice_number}</b> <span className="muted">{t("от", "від")} {r.invoice_date}</span><br />
                 <span style={{ fontSize: 13 }}>{Number(r.amount || 0).toLocaleString()} ₴ · {r.shipments_count} {t("отправлений", "відправлень")}{r.vat ? ` · ${t("НДС", "ПДВ")} ${r.vat}` : ""}</span></>
             ) : (
-              <><b>{r.subject || r.sender}</b><br /><span className="muted" style={{ fontSize: 12 }}>{r.sender} · {(r.files || []).join(", ")}</span></>
+              <><b>{(r.subject || t("Накладная", "Накладна"))}{r.invoice_number ? ` №${r.invoice_number}` : ""}</b>
+                {r.invoice_date ? <span className="muted"> {t("от", "від")} {r.invoice_date}</span> : null}
+                {(r.amount || r.lines_count) ? <><br /><span style={{ fontSize: 13 }}>{r.amount ? Number(r.amount).toLocaleString() + " ₴" : ""}{r.amount && r.lines_count ? " · " : ""}{r.lines_count ? `${r.lines_count} ${t("позиций", "позицій")}` : ""}</span></> : null}
+                <br /><span className="muted" style={{ fontSize: 12 }}>{r.sender} · {(r.files || []).join(", ")}</span></>
             )}
           </div>
           {r.doc_type === "np_act" && <button className="btn btn-primary" onClick={() => act(r.id, "confirm")}>✓ {t("Провести", "Провести")}</button>}
