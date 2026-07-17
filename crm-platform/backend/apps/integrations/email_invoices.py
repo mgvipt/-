@@ -62,6 +62,21 @@ def _body_text(msg):
     return "\n".join(out).strip()[:4000]
 
 
+def _contact_senders():
+    """Пошти постачальників, у яких у картці стоїть «Моніторити накладні».
+    Так список ведеться з CRM (картка контрагента), а не рядком у налаштуваннях."""
+    try:
+        from apps.crm.models import Contact
+    except Exception:
+        return []
+    out = []
+    for c in Contact.objects.filter(monitor_docs=True).only("id", "email", "doc_email"):
+        e = ((c.doc_email or "").strip() or (c.email or "").strip()).lower()
+        if e and "@" in e:
+            out.append(e)
+    return out
+
+
 def _load():
     from .models import IntegrationSettings
     o = IntegrationSettings.objects.filter(provider="email_invoices").first()
@@ -95,6 +110,8 @@ def poll(limit=60, backfill=False, log=lambda m: None):
     user = (cfg.get("email") or "").strip()
     pwd = (cfg.get("app_password") or "").strip()
     senders = [x.strip().lower() for x in re.split(r"[,;\s]+", cfg.get("senders") or "") if x.strip()]
+    # + постачальники, позначені в CRM «Моніторити накладні» (дедуп, порядок збережено)
+    senders = list(dict.fromkeys(senders + _contact_senders()))
     if not user or not pwd:
         return {"error": "not_configured"}
 

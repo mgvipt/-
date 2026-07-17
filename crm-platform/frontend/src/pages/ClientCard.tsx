@@ -16,10 +16,15 @@ interface Deal { id: number; title: string; amount: number; stage: string; is_wo
 interface Contact {
   id: number; first_name: string; last_name: string; display_name: string; phone: string; email: string; social_link: string; messengers?: string[];
   source: string; address: string; comment: string; loyalty_tag: string; birthday: string | null;
+  kinds?: string[]; gender?: string; monitor_docs?: boolean; doc_email?: string;
   channels: string[]; owner?: number | null; owner_name?: string; deals: Deal[]; total_spent: number;
 }
 const money = (n: number) => Math.round(n || 0).toLocaleString("ru") + " ₴";
 const LOYALTY = ["", "Новий", "Активний", "VIP", "Сплячий"];
+const KINDS: [string, string][] = [
+  ["client", "Клієнт"], ["supplier", "Постачальник"], ["master", "Майстер"],
+  ["staff", "Співробітник"], ["partner", "Партнер / Дизайнер"],
+];
 
 export default function ClientCard() {
   const { id } = useParams();
@@ -73,6 +78,7 @@ export default function ClientCard() {
 
   async function save(patch: Partial<Contact>) {
     await api.patch(`/api/contacts/${id}/`, patch);
+    setC((cur) => (cur ? { ...cur, ...patch } as Contact : cur));  // одразу оновити картку
     setMsg(t("Сохранено","Збережено")); setTimeout(() => setMsg(""), 1500);
   }
   const fld = (label: string, key: keyof Contact, hint?: string) => (
@@ -90,6 +96,12 @@ export default function ClientCard() {
         <Avatar name={c.display_name} cls="av-md" />
         <b style={{ fontSize: 16 }}>{c.display_name}</b>
         {c.loyalty_tag && <span className="chip" style={{ background: "#eef2ff", color: "#4338ca" }}>{c.loyalty_tag}</span>}
+        {(c.kinds || []).map((k) => {
+          const lbl = (KINDS.find(([kk]) => kk === k) || ["", k])[1];
+          const clr: any = { supplier: ["#fff7ed", "#c2410c"], master: ["#f0fdf4", "#15803d"], staff: ["#f5f3ff", "#6d28d9"], partner: ["#fdf2f8", "#be185d"], client: ["#eff6ff", "#1d4ed8"] };
+          const [bg, fg] = clr[k] || ["#f1f5f9", "#475569"];
+          return <span key={k} className="chip" style={{ background: bg, color: fg, fontWeight: 700 }}>{lbl}</span>;
+        })}
         <CallButton contact={c.id} small />
         <button data-testid="client-chat-toggle" className="btn" style={{ height: 30, fontSize: 12.5, padding: "0 12px", background: chatOpen ? "#dbeafe" : "#eff6ff", color: "#1d4ed8" }}
           onClick={() => setChatOpen((open) => !open)}>💬 {chatOpen ? t("Свернуть чат","Згорнути чат") : t("Открыть чат","Відкрити чат")}</button>
@@ -128,6 +140,50 @@ export default function ClientCard() {
                 {Object.keys(SOURCES).map((k) => <option key={k} value={k}>{(SOURCES as any)[k][0]}</option>)}
               </select>
             </div>
+            {/* ── ТИП КОНТРАГЕНТА (можна кілька) ── */}
+            <div style={{ marginBottom: 10 }}>
+              <div className="label">{t("Тип контрагента","Тип контрагента")} <span className="muted" style={{ fontWeight: 400 }}>{t("(можно несколько)","(можна кілька)")}</span></div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {KINDS.map(([k, lbl]) => {
+                  const on = (c.kinds || []).includes(k);
+                  return (
+                    <button key={k} onClick={() => {
+                      const cur = c.kinds || [];
+                      save({ kinds: on ? cur.filter((x) => x !== k) : [...cur, k] });
+                    }} style={{ cursor: "pointer", padding: "5px 11px", borderRadius: 999, fontSize: 12.5,
+                                border: "1px solid " + (on ? "#4338ca" : "#e2e8f0"), background: on ? "#eef2ff" : "#fff",
+                                color: on ? "#4338ca" : "#64748b", fontWeight: on ? 700 : 500 }}>
+                      {on ? "✓ " : ""}{lbl}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ── СТАТЬ ── */}
+            <div style={{ marginBottom: 10 }}>
+              <div className="label">{t("Пол","Стать")} <span className="muted" style={{ fontWeight: 400 }}>{t("(определён по имени — можно исправить)","(визначено за іменем — можна виправити)")}</span></div>
+              <select value={c.gender || ""} onChange={(e) => save({ gender: e.target.value })}
+                style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7 }}>
+                <option value="">— {t("не определён","не визначено")} —</option>
+                <option value="m">{t("Мужской","Чоловіча")}</option>
+                <option value="f">{t("Женский","Жіноча")}</option>
+              </select>
+            </div>
+
+            {/* ── МОНІТОРИНГ НАКЛАДНИХ — лише для постачальника ── */}
+            {(c.kinds || []).includes("supplier") && (
+              <div style={{ marginBottom: 10, padding: 10, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+                  <input type="checkbox" checked={!!c.monitor_docs} onChange={(e) => save({ monitor_docs: e.target.checked })} />
+                  {t("Мониторить накладные этого поставщика","Моніторити накладні цього постачальника")}
+                </label>
+                <div className="muted" style={{ fontSize: 11.5, margin: "4px 0 8px" }}>
+                  {t("Его накладные и счета сами попадут в Финансы → «Вх. накладные», кредиторка создастся автоматически.","Його накладні та рахунки самі потраплять у Фінанси → «Вх. накладні», кредиторка створиться автоматично.")}
+                </div>
+                {fld(t("Почта для накладных (если другая)","Пошта для накладних (якщо інша)"), "doc_email", t("Если пусто — берём основной Email","Якщо порожньо — беремо основний Email"))}
+              </div>
+            )}
             <div>
               <div className="label">{t("Заметки менеджера","Нотатки менеджера")}</div>
               <textarea defaultValue={c.comment} onBlur={(e) => save({ comment: e.target.value })}
