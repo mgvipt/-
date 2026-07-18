@@ -433,3 +433,27 @@ class ChangeLogEntry(models.Model):
 
     def __str__(self):
         return "%s %s" % (self.d, self.title)
+
+
+class ZamerProject(models.Model):
+    """Проект замера из приложения «Wallcov Замер».
+    Привязан к устройству (device_uuid из Keychain — переживает переустановку),
+    и к пользователю если он вошёл. Хранит полный замер (payload) — чтобы
+    проекты не терялись после переустановки/переделки приложения."""
+    device_uuid = models.CharField(max_length=64, db_index=True)
+    project_uuid = models.CharField(max_length=64, db_index=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                             on_delete=models.SET_NULL, related_name="zamer_projects")
+    title = models.CharField(max_length=255, blank=True, default="")
+    payload = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["device_uuid", "project_uuid"], name="uniq_device_project"),
+        ]
+
+    def __str__(self):
+        return f"ZamerProject {self.project_uuid} ({self.device_uuid[:8]})"

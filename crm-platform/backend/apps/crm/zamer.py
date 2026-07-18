@@ -223,3 +223,60 @@ class PricelistView(APIView):
             tools = []
         data["tools"] = tools
         return Response(data)
+
+
+# ============================================================================
+#  Проекты замера (устойчивое хранение) — чтобы не терялись после
+#  переустановки/переделки приложения. Привязка к устройству (device_uuid
+#  из Keychain) и к пользователю (если вошёл).
+#  GET  /api/zamer/projects/?device_uuid=...            → список проектов
+#  POST /api/zamer/projects/  {device_uuid, project_uuid, title, payload}  → upsert
+#  DELETE /api/zamer/projects/?device_uuid=&project_uuid=                  → удалить
+# ============================================================================
+from apps.crm.models import ZamerProject
+
+
+class ZamerProjectsView(APIView):
+    permission_classes = [AllowAny]
+
+    def _user(self, request):
+        u = getattr(request, "user", None)
+        return u if (u is not None and getattr(u, "is_authenticated", False)) else None
+
+    def get(self, request):
+        dev = (request.query_params.get("device_uuid") or "").strip()
+        user = self._user(request)
+        if not dev and not user:
+            return Response([])
+        from django.db.models import Q as _Q
+        q = _Q()
+        if dev:  q |= _Q(device_uuid=dev)
+        if user: q |= _Q(user=user)
+        rows = ZamerProject.objects.filter(q)
+        return Response([{
+            "project_uuid": p.project_uuid,
+            "title": p.title,
+            "payload": p.payload,
+            "updated_at": p.updated_at.isoformat(),
+        } for p in rows])
+
+    def post(self, request):
+        d = request.data or {}
+        dev = (d.get("device_uuid") or "").strip()
+        pu = (d.get("project_uuid") or "").strip()
+        if not dev or not pu:
+            return Response({"error": "device_uuid и project_uuid обязательны"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        obj, _ = ZamerProject.objects.update_or_create(
+            device_uuid=dev, project_uuid=pu,
+            defaults={"title": (d.get("title") or "")[:255],
+                      "payload": d.get("payload") or {},
+                      "user": self._user(request)})
+        return Response({"ok": True, "project_uuid": obj.project_uuid})
+
+    def delete(self, request):
+        dev = (request.query_params.get("device_uuid") or "").strip()
+        pu = (request.query_params.get("project_uuid") or "").strip()
+        if dev and pu:
+            ZamerProject.objects.filter(device_uuid=dev, project_uuid=pu).delete()
+        return Response({"ok": True})
