@@ -18,7 +18,7 @@ from .models import Product, ShopSyncEvent
 
 SAMPLE_CATEGORY_ID = int(os.environ.get("SHOP_SAMPLE_CATEGORY_ID", "59"))
 SHOP_CATALOG_URL = os.environ.get(
-    "SHOP_CATALOG_URL", "https://wallcovdec.com.ua/api/crm/catalog-products"
+    "SHOP_CATALOG_URL", "https://wallcov.com.ua/api/crm/catalog-products"
 ).rstrip("/")
 CRM_PUBLIC_URL = os.environ.get("CRM_PUBLIC_URL", "https://crm.wallcovdec.com.ua").rstrip("/")
 

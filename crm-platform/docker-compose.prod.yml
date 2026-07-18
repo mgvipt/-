@@ -49,7 +49,8 @@ services:
       CHECKBOX_PASSWORD: ${CHECKBOX_PASSWORD}
       CHECKBOX_LICENSE_KEY: ${CHECKBOX_LICENSE_KEY}
       SHOP_WEBHOOK_SECRET: ${SHOP_WEBHOOK_SECRET}
-      SHOP_CATALOG_URL: https://wallcovdec.com.ua/api/crm/catalog-products
+      SHOP_PUBLIC_URL: https://wallcov.com.ua
+      SHOP_CATALOG_URL: https://wallcov.com.ua/api/crm/catalog-products
       CRM_PUBLIC_URL: https://crm.wallcovdec.com.ua
     depends_on: [db]
     restart: unless-stopped
