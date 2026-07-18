@@ -44,7 +44,8 @@ class Command(BaseCommand):
             self.stdout.write(f"Клієнти (мають угоду): {len(cli_ids)}")
 
             changed = 0
-            for cid, kind in [(sup_ids, "supplier"), (cli_ids, "client")]:
+            # ⚠️ Постачальників авто-НЕ проставляємо — тип ставить Олег руками в картці.
+            for cid, kind in [(cli_ids, "client")]:
                 qs = Contact.objects.filter(id__in=cid)
                 if limit:
                     qs = qs[:limit]
