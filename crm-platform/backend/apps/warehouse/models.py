@@ -193,6 +193,24 @@ class ShopCatalogImportRow(models.Model):
         ]
 
 
+class ShopSiteSettings(models.Model):
+    """Черновик и опубликованная версия текстов/фото витрины."""
+    key = models.CharField(max_length=80, unique=True, default="home")
+    draft = models.JSONField(default=dict, blank=True)
+    published = models.JSONField(default=dict, blank=True)
+    last_published_at = models.DateTimeField(null=True, blank=True)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class ShopSiteMedia(models.Model):
+    file = models.FileField(upload_to="shop_site_content/")
+    alt = models.CharField(max_length=255, blank=True, default="")
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class StockDocument(models.Model):
     """Складской документ: приход / расход / инвентаризация."""
     KINDS = [("in", "Приход"), ("out", "Расход"), ("inv", "Инвентаризация"), ("writeoff", "Списание")]

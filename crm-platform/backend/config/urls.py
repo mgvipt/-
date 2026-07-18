@@ -9,6 +9,7 @@ from apps.inbox import views as inbox_views
 from apps.warehouse import views as wh_views
 from apps.warehouse import wh_views as whv
 from apps.warehouse import shop_import_views
+from apps.warehouse import shop_site
 from apps.finance import views as fin_views
 from apps.integrations import views as intg_views
 from apps.crm.duplicates import DuplicatesView
@@ -147,6 +148,10 @@ urlpatterns = [
     path("api/shop-import/batches/<int:pk>/", shop_import_views.ShopImportBatchDetailView.as_view()),
     path("api/shop-import/batches/<int:pk>/apply/", shop_import_views.ShopImportApplyView.as_view()),
     path("api/shop-import/rows/<int:pk>/", shop_import_views.ShopImportRowView.as_view()),
+    path("api/shop-site/content/", shop_site.ShopSiteContentView.as_view()),
+    path("api/shop-site/publish/", shop_site.ShopSitePublishView.as_view()),
+    path("api/shop-site/media/", shop_site.ShopSiteMediaView.as_view()),
+    path("api/shop-site/analytics/", shop_site.ShopSiteAnalyticsView.as_view()),
     path("api/telephony/webhook/", tel_views.CallWebhookView.as_view()),
     path("api/telephony/rec/<int:pk>/", tel_views.RecordingView.as_view()),
     path("api/telephony/pending-transcribe/", tel_views.PendingTranscribeView.as_view()),

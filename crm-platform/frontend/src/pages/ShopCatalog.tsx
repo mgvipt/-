@@ -4,6 +4,7 @@ import { useAuth } from "../auth";
 import { Icon } from "../Icon";
 import { useLang } from "../i18n";
 import ShopCatalogImport from "./ShopCatalogImport";
+import ShopSiteAdmin from "./ShopSiteAdmin";
 
 type ShopVariant = {
   id: number;
@@ -86,6 +87,7 @@ export default function ShopCatalog() {
   const [editor, setEditor] = useState<MirrorProduct | null>(null);
   const [form, setForm] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+  const [shopTab, setShopTab] = useState<"products" | "content" | "analytics">("products");
   const imageRef = useRef<HTMLInputElement>(null);
 
   async function openEditor(id: number) {
@@ -181,6 +183,8 @@ export default function ShopCatalog() {
     [t("Ошибки передачи", "Помилки передачі"), data.summary.failed_events, "zap", "#be123c"],
   ] as const : [];
 
+  if (shopTab !== "products") return <ShopSiteAdmin mode={shopTab} onModeChange={setShopTab} />;
+
   return (
     <div style={{ padding: "22px 26px 50px", maxWidth: 1560, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 18, flexWrap: "wrap" }}>
@@ -191,12 +195,18 @@ export default function ShopCatalog() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 9 }}>
-          <a className="btn btn-light" href="https://wallcovdec.com.ua/" target="_blank" rel="noreferrer"><Icon n="eye" /> {t("Открыть сайт", "Відкрити сайт")}</a>
+          <a className="btn btn-light" href="https://wallcov.com.ua/" target="_blank" rel="noreferrer"><Icon n="eye" /> {t("Открыть сайт", "Відкрити сайт")}</a>
           <button className="btn btn-primary" onClick={() => load()} disabled={loading}><Icon n="refresh" /> {t("Обновить", "Оновити")}</button>
         </div>
       </div>
 
       {error && <div style={{ marginTop: 18, padding: 14, borderRadius: 12, background: "#fee2e2", color: "#b91c1c" }}>{error}</div>}
+
+      <div className="panel" style={{ margin: "18px 0", padding: 8, display: "flex", gap: 7, flexWrap: "wrap" }}>
+        <button className="btn btn-primary" onClick={() => setShopTab("products")}><Icon n="bag" /> {t("Товары и цены", "Товари й ціни")}</button>
+        <button className="btn btn-light" onClick={() => setShopTab("content")}><Icon n="pencil" /> {t("Главная и дизайн", "Головна й дизайн")}</button>
+        <button className="btn btn-light" onClick={() => setShopTab("analytics")}><Icon n="chart" /> {t("Аналитика сайта", "Аналітика сайту")}</button>
+      </div>
 
       <ShopCatalogImport canEdit={canEdit} onApplied={() => load(true)} />
 
