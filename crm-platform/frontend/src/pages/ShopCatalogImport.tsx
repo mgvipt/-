@@ -18,6 +18,28 @@ type ImportBatch = {
 };
 
 const money = (value: unknown) => value === null || value === undefined || value === "" ? "—" : `${Number(value).toLocaleString("uk-UA", { maximumFractionDigits: 2 })} ₴`;
+type EditorSection = "main" | "price" | "customer" | "service";
+const editorSections: Array<[EditorSection, string, string]> = [
+  ["main", "1. Основное", "Название, статус и категория"],
+  ["price", "2. Цена и расход", "Упаковка, единицы и расчёт"],
+  ["customer", "3. Для покупателя", "Что увидит и поймёт клиент"],
+  ["service", "4. Служебные данные", "Остальные поля исходной таблицы"],
+];
+function editorGroup(key: string): EditorSection {
+  const name = key.toLowerCase();
+  if (/цена|расход|фасов|модель|мыть|износ|упаков|кг|м²|(^|\s)литр/.test(name)) return "price";
+  if (/клиент|покуп|эффект|ассоц|рекоменд|использ|нанос|финиш|альтернатив/.test(name)) return "customer";
+  if (/id|sku|статус|категор|внутреннее название|название$|товар/.test(name)) return "main";
+  return "service";
+}
+const fieldHelp = (key: string) => {
+  const name = key.toLowerCase();
+  if (name.includes("клиент")) return "Это название увидит покупатель — пишите коротко и понятно.";
+  if (name.includes("расход")) return "Укажите реальный диапазон: минимальное значение не должно быть больше максимального.";
+  if (name.includes("цена")) return "После проверки значение сохранится в карточке CRM; на сайт попадёт только опубликованный товар.";
+  if (name.includes("внутрен")) return "Служебное название для команды. Покупатель его не увидит.";
+  return "";
+};
 
 export default function ShopCatalogImport({ canEdit, onApplied }: { canEdit: boolean; onApplied: () => void }) {
   const { t } = useLang();
@@ -27,6 +49,7 @@ export default function ShopCatalogImport({ canEdit, onApplied }: { canEdit: boo
   const [selected, setSelected] = useState<number[]>([]);
   const [editor, setEditor] = useState<ImportRow | null>(null);
   const [editorData, setEditorData] = useState<Record<string, unknown>>({});
+  const [editorSection, setEditorSection] = useState<EditorSection>("main");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [open, setOpen] = useState(true);
@@ -133,19 +156,50 @@ export default function ShopCatalogImport({ canEdit, onApplied }: { canEdit: boo
               <td style={{ padding: "9px 6px", maxWidth: 280 }}><b>{row.product_name || t("Не найден", "Не знайдено")}</b><small style={{ display: "block", color: "#64748b" }}>{row.sku}</small></td>
               <td>{money(row.current_price)}</td><td><b>{money(sourcePrice)}</b></td>
               <td style={{ padding: "9px 6px", maxWidth: 360 }}>{row.applied_at ? <span style={{ color: "#15803d" }}>✓ {t("Сохранено", "Збережено")}</span> : <>{row.errors.map(error => <div key={error} style={{ color: "#b91c1c", fontSize: 12 }}>● {error}</div>)}{row.warnings.map(warning => <div key={warning} style={{ color: "#b45309", fontSize: 12 }}>● {warning}</div>)}{!row.errors.length && !row.warnings.length && <span style={{ color: "#15803d" }}>✓ {t("Совпадает", "Збігається")}</span>}</>}</td>
-              <td style={{ padding: 8, textAlign: "right" }}><button className="btn btn-light" onClick={() => { setEditor(row); setEditorData({ ...row.source_data }); }}>{t("Проверить все поля", "Перевірити всі поля")}</button></td>
+              <td style={{ padding: 8, textAlign: "right" }}><button className="btn btn-light" onClick={() => { setEditor(row); setEditorData({ ...row.source_data }); setEditorSection(row.errors.length ? "price" : "main"); }}>{t("Открыть понятную карточку", "Відкрити зрозумілу картку")}</button></td>
             </tr>;
           })}</tbody>
         </table></div>
       </>}
     </div>}
 
-    {editor && <div onClick={() => setEditor(null)} style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(15,23,42,.5)", display: "flex", justifyContent: "flex-end" }}><div onClick={event => event.stopPropagation()} style={{ width: "min(760px,97vw)", height: "100%", overflow: "auto", background: "white", padding: 20, color: "#0f172a" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}><div><h2 style={{ margin: 0 }}>{editor.product_name || t("Строка без товара", "Рядок без товару")}</h2><small style={{ color: "#64748b" }}>{editor.sheet_name} · {t("строка", "рядок")} {editor.source_row} · ID {editor.external_id}</small></div><button className="btn btn-light" onClick={() => setEditor(null)}>✕</button></div>
-      <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: editor.errors.length ? "#fef2f2" : "#ecfdf5" }}>{editor.errors.length ? editor.errors.map(error => <div key={error} style={{ color: "#b91c1c" }}>● {error}</div>) : <span style={{ color: "#15803d" }}>✓ {t("Строку можно сохранить", "Рядок можна зберегти")}</span>}</div>
-      <p style={{ color: "#64748b", fontSize: 13 }}>{t("Здесь показан каждый столбец исходной таблицы. Исправьте значение и нажмите «Перепроверить строку». Изменения пока останутся в черновике проверки.", "Тут показано кожен стовпець вихідної таблиці. Виправте значення й натисніть «Перевірити рядок знову». Зміни поки залишаться у чернетці перевірки.")}</p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 10 }}>{Object.entries(editorData).map(([key, value]) => <label key={key} style={{ fontSize: 12, color: "#64748b" }}>{key}<textarea disabled={!canEdit || !!editor.applied_at} rows={String(value ?? "").length > 80 ? 3 : 1} value={String(value ?? "")} onChange={event => setEditorData(current => ({ ...current, [key]: event.target.value }))} style={{ width: "100%", marginTop: 3 }} /></label>)}</div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>{canEdit && !editor.applied_at && <button className="btn btn-primary" disabled={busy} onClick={saveRow}>{busy ? t("Проверяю…", "Перевіряю…") : t("Перепроверить строку", "Перевірити рядок знову")}</button>}</div>
-    </div></div>}
+    {editor && <ProductReviewDrawer editor={editor} data={editorData} setData={setEditorData} section={editorSection} setSection={setEditorSection} canEdit={canEdit} busy={busy} onSave={saveRow} onClose={() => setEditor(null)} t={t} />}
   </div>;
+}
+
+function ProductReviewDrawer({ editor, data, setData, section, setSection, canEdit, busy, onSave, onClose, t }: { editor: ImportRow; data: Record<string, unknown>; setData: React.Dispatch<React.SetStateAction<Record<string, unknown>>>; section: EditorSection; setSection: (value: EditorSection) => void; canEdit: boolean; busy: boolean; onSave: () => void; onClose: () => void; t: (ru: string, uk: string) => string }) {
+  const entries = Object.entries(data);
+  const visibleEntries = entries.filter(([key]) => editorGroup(key) === section);
+  const minKey = entries.find(([key]) => /расход min/i.test(key))?.[0];
+  const maxKey = entries.find(([key]) => /расход max/i.test(key))?.[0];
+  const minValue = minKey ? Number(data[minKey]) : NaN;
+  const maxValue = maxKey ? Number(data[maxKey]) : NaN;
+  const inverted = Number.isFinite(minValue) && Number.isFinite(maxValue) && minValue > maxValue;
+  const clientName = String(entries.find(([key]) => /клиент.*назван|назван.*клиент/i.test(key))?.[1] || editor.product_name || "");
+  const packagePrice = entries.find(([key]) => /^цена за кг/i.test(key))?.[1] ?? entries.find(([key]) => /^цена, грн$/i.test(key))?.[1] ?? entries.find(([key]) => /^цена от/i.test(key))?.[1];
+  const swapConsumption = () => { if (minKey && maxKey) setData(current => ({ ...current, [minKey]: current[maxKey], [maxKey]: current[minKey] })); };
+  return <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(15,23,42,.58)", display: "flex", justifyContent: "flex-end" }}><div onClick={event => event.stopPropagation()} style={{ width: "min(980px,98vw)", height: "100%", overflow: "auto", background: "#f7f8fa", color: "#0f172a", display: "flex", flexDirection: "column" }}>
+    <header style={{ position: "sticky", top: 0, zIndex: 4, background: "rgba(255,255,255,.97)", borderBottom: "1px solid #e2e8f0", padding: "17px 20px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}><div><div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 7 }}><span style={{ padding: "4px 8px", borderRadius: 12, background: "#eff6ff", color: "#1d4ed8", fontSize: 11, fontWeight: 800 }}>ИЗ EXCEL</span><span style={{ padding: "4px 8px", borderRadius: 12, background: editor.product_id ? "#ecfdf5" : "#fef2f2", color: editor.product_id ? "#15803d" : "#b91c1c", fontSize: 11, fontWeight: 800 }}>{editor.product_id ? "НАЙДЕН В CRM" : "НЕ НАЙДЕН В CRM"}</span>{editor.errors.length > 0 && <span style={{ padding: "4px 8px", borderRadius: 12, background: "#fef2f2", color: "#b91c1c", fontSize: 11, fontWeight: 800 }}>НУЖНО ИСПРАВИТЬ: {editor.errors.length}</span>}</div><h2 style={{ margin: 0, fontSize: 22 }}>{clientName || t("Товар без понятного названия", "Товар без зрозумілої назви")}</h2><small style={{ color: "#64748b" }}>SKU {editor.sku || editor.external_id} · {editor.sheet_name}, {t("строка", "рядок")} {editor.source_row}</small></div><button className="btn btn-light" onClick={onClose} aria-label="Закрыть">✕</button></div>
+    </header>
+
+    <div style={{ padding: 18 }}>
+      <div style={{ padding: 14, borderRadius: 12, background: editor.errors.length ? "#fff1f2" : "#ecfdf5", border: `1px solid ${editor.errors.length ? "#fecdd3" : "#bbf7d0"}` }}>{editor.errors.length ? <><b style={{ color: "#b91c1c" }}>Что нужно исправить</b>{editor.errors.map(error => <div key={error} style={{ color: "#b91c1c", marginTop: 5 }}>● {error}</div>)}{inverted && <button className="btn" onClick={swapConsumption} style={{ marginTop: 10, background: "#fff", border: "1px solid #fda4af", color: "#be123c" }}>Поменять минимальный и максимальный расход местами</button>}</> : <span style={{ color: "#15803d", fontWeight: 750 }}>✓ Данные прошли проверку. Их можно сохранить в карточку CRM.</span>}</div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 9, margin: "14px 0" }}>
+        <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}><small className="muted">Сейчас в CRM</small><div style={{ fontWeight: 850, fontSize: 20, marginTop: 4 }}>{money(editor.current_price)}</div></div>
+        <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: 12 }}><small style={{ color: "#9a3412" }}>Цена из таблицы</small><div style={{ fontWeight: 850, fontSize: 20, marginTop: 4 }}>{money(packagePrice)}</div></div>
+        <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}><small className="muted">Расход на 1 м²</small><div style={{ fontWeight: 850, fontSize: 20, marginTop: 4 }}>{Number.isFinite(minValue) ? minValue : "—"}–{Number.isFinite(maxValue) ? maxValue : "—"} кг</div></div>
+      </div>
+
+      <nav style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 4, marginBottom: 14 }}>{editorSections.map(([key,title,description]) => <button key={key} onClick={() => setSection(key)} className={section === key ? "btn btn-primary" : "btn btn-light"} style={{ height: "auto", minHeight: 44, padding: "7px 11px", flexShrink: 0 }}><span style={{ textAlign: "left" }}><b style={{ display: "block" }}>{title}</b><small style={{ opacity: .78 }}>{description}</small></span></button>)}</nav>
+
+      <section style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 14, padding: 17 }}>
+        <h3 style={{ margin: "0 0 4px" }}>{editorSections.find(([key]) => key === section)?.[1]}</h3><p className="muted" style={{ margin: "0 0 15px", fontSize: 13 }}>{section === "price" ? "Проверьте цену, единицу продажи и реальный расход. Система пересчитает строку после сохранения черновика." : section === "customer" ? "Эти данные помогают покупателю понять товар простыми словами." : section === "service" ? "Исходные поля для команды. Они не должны запутывать покупателя на сайте." : "Сначала убедитесь, что выбран правильный товар и категория."}</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 12 }}>{visibleEntries.map(([key,value]) => { const text=String(value ?? ""); const numeric=/цена|расход|кг|м²|id/i.test(key) && text.length < 30; const multiline=text.length>75 || /опис|комментар|рекоменд|где использовать|когда/i.test(key); return <label key={key} style={{ fontSize: 12, color: "#475569" }}><b style={{ display: "block", marginBottom: 5, color: "#334155" }}>{key}</b>{multiline ? <textarea disabled={!canEdit || !!editor.applied_at} rows={3} value={text} onChange={event => setData(current => ({ ...current, [key]: event.target.value }))} style={{ width: "100%" }} /> : <input disabled={!canEdit || !!editor.applied_at} inputMode={numeric ? "decimal" : "text"} value={text} onChange={event => setData(current => ({ ...current, [key]: event.target.value }))} style={{ width: "100%", height: 40 }} />}{fieldHelp(key) && <small style={{ display: "block", marginTop: 4, color: "#64748b" }}>{fieldHelp(key)}</small>}{inverted && (key===minKey || key===maxKey) && <small style={{ display: "block", marginTop: 4, color: "#b91c1c", fontWeight: 750 }}>Минимальный расход должен быть меньше или равен максимальному.</small>}</label>; })}</div>
+      </section>
+    </div>
+
+    <footer style={{ position: "sticky", bottom: 0, zIndex: 4, marginTop: "auto", background: "rgba(255,255,255,.97)", borderTop: "1px solid #e2e8f0", padding: "13px 18px", display: "flex", alignItems: "center", gap: 9, justifyContent: "flex-end", flexWrap: "wrap" }}><span style={{ marginRight: "auto", fontSize: 12, color: editor.errors.length ? "#b91c1c" : "#15803d" }}>{editor.errors.length ? `Исправьте ошибок: ${editor.errors.length}, затем перепроверьте строку` : "После сохранения данные останутся в проверке до общего подтверждения"}</span><button className="btn btn-light" onClick={onClose}>Закрыть без изменений</button>{canEdit && !editor.applied_at && <button className="btn btn-primary" disabled={busy} onClick={onSave}>{busy ? t("Проверяю…", "Перевіряю…") : t("Сохранить и перепроверить", "Зберегти й перевірити")}</button>}</footer>
+  </div></div>;
 }
