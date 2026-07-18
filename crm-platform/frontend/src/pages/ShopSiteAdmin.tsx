@@ -95,7 +95,7 @@ export default function ShopSiteAdmin({ mode, onModeChange }: Props) {
 
   if (mode === "analytics") {
     const s = analytics?.summary || {};
-    return <div style={{ padding: "22px 26px 50px", maxWidth: 1560, margin: "0 auto" }}>
+    return <div className="scroll fade" style={{ padding: "22px 26px 50px", maxWidth: 1560, margin: "0 auto", width: "100%", minHeight: 0, overflowX: "hidden", WebkitOverflowScrolling: "touch" }}>
       <h1 style={{ margin: 0 }}>Аналитика интернет-магазина</h1><p className="muted">Показывает путь посетителя от просмотра страницы до заказа. Личные данные здесь не собираются.</p>{nav}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>{[7, 30, 90].map(n => <button key={n} className={days === n ? "btn btn-primary" : "btn btn-light"} onClick={() => { setDays(n); loadAnalytics(n); }}>{n} дней</button>)}</div>
       {message && <div className="panel" style={{ padding: 14, color: "#b45309" }}>{message}</div>}
@@ -108,7 +108,7 @@ export default function ShopSiteAdmin({ mode, onModeChange }: Props) {
     </div>;
   }
 
-  return <div style={{ padding: "22px 26px 60px", maxWidth: 1280, margin: "0 auto" }}>
+  return <div className="scroll fade" style={{ padding: "22px 26px 60px", maxWidth: 1280, margin: "0 auto", width: "100%", minHeight: 0, overflowX: "hidden", WebkitOverflowScrolling: "touch" }}>
     <div style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}><div><h1 style={{ margin: 0 }}>Главная страница и дизайн</h1><p className="muted">Измените нужный блок, сохраните черновик, проверьте и только затем нажмите «Опубликовать».</p></div><a className="btn btn-light" href="https://wallcov.com.ua/" target="_blank" rel="noreferrer"><Icon n="eye" /> Открыть сайт</a></div>
     {nav}{message && <div className="panel" style={{ padding: 14, color: message.startsWith("Готово") ? "#15803d" : "#475569" }}>{message}</div>}
     {Object.entries(content).map(([sectionKey, section]: [string, any]) => <section className="panel" key={sectionKey} style={{ padding: 18, margin: "0 0 13px" }}>

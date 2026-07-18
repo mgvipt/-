@@ -186,7 +186,7 @@ export default function ShopCatalog() {
   if (shopTab !== "products") return <ShopSiteAdmin mode={shopTab} onModeChange={setShopTab} />;
 
   return (
-    <div style={{ padding: "22px 26px 50px", maxWidth: 1560, margin: "0 auto" }}>
+    <div className="scroll fade" style={{ padding: "22px 26px 50px", maxWidth: 1560, margin: "0 auto", width: "100%", minHeight: 0, overflowX: "hidden", WebkitOverflowScrolling: "touch" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 18, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontSize: 27, fontWeight: 850, color: "var(--card-text, #0f172a)" }}>{t("Интернет-магазин", "Інтернет-магазин")}</div>
