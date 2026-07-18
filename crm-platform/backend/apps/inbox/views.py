@@ -214,6 +214,9 @@ def _close_contact_leads(contact_id):
 # Скільки хвилин чат лишається у загальному списку менеджера після того,
 # як ВІН написав у чужий (закріплений за іншим) чат. Закріпити = назавжди.
 _RECENT_REPLY_MIN = 30
+# Мʼяке перехоплення «остиглого» клієнта: якщо клієнт закріплений за іншим,
+# але той не писав йому стільки днів — беручи живий чат, забираємо клієнта собі.
+_TAKEOVER_STALE_DAYS = 30
 
 
 class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
@@ -339,6 +342,31 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                 or request.user.is_superuser
                 or request.user.has_perm_code("roles.manage")
                 or request.user.has_perm_code("contact.edit.all"))
+            # ── Мʼяке перехоплення «остиглого» клієнта (Wallcov: мало менеджерів) ──
+            # Клієнт закріплений за ІНШИМ, але той давно (≥_TAKEOVER_STALE_DAYS днів) не
+            # писав йому → живий чат важливіший за «заморожене» закріплення: забираємо
+            # клієнта+відкриті сделки собі і повідомляємо попереднього відповідального.
+            _prev_owner_id = _c.owner_id if _c else None
+            if (not _can_take) and _prev_owner_id and _prev_owner_id != request.user.id:
+                from django.utils import timezone as _tz
+                from datetime import timedelta as _td
+                _cutoff = _tz.now() - _td(days=_TAKEOVER_STALE_DAYS)
+                _owner_active = Message.objects.filter(
+                    conversation__contact_id=conv.contact_id,
+                    direction="out", sender_id=_prev_owner_id,
+                    created_at__gte=_cutoff).exists()
+                if not _owner_active:
+                    _can_take = True
+                    try:
+                        from .models import Notification
+                        Notification.objects.create(
+                            user_id=_prev_owner_id, kind="system", conversation=conv,
+                            actor=request.user,
+                            text=(f"Клієнта «{_c}» перехопив "
+                                  f"{request.user.get_full_name() or request.user.username}: "
+                                  f"ви давно не писали йому, а він знову звернувся."))
+                    except Exception:
+                        pass
             if _can_take:
                 Deal.objects.filter(contact_id=conv.contact_id).exclude(stage__is_won=True).exclude(stage__is_lost=True).update(owner=request.user)
                 Lead.objects.filter(contact_id=conv.contact_id).exclude(stage__is_won=True).exclude(stage__is_lost=True).update(owner=request.user)
