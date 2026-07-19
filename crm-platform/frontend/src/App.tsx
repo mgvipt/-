@@ -12,7 +12,6 @@ import Duplicates from "./pages/Duplicates";
 import Razvitok from "./pages/Razvitok";
 import ContactCenter from "./pages/ContactCenter";
 import Warehouse from "./pages/Warehouse";
-import ShopCatalog from "./pages/ShopCatalog";
 import WarehouseWork from "./pages/WarehouseWork";
 import Finance from "./pages/Finance";
 import Clients from "./pages/Clients";
@@ -48,7 +47,6 @@ function Shell() {
           <Route path="/contact-center" element={<ContactCenter />} />
           <Route path="/phone" element={<Phone />} />
           <Route path="/warehouse" element={<Warehouse />} />
-          <Route path="/shop-catalog" element={<ShopCatalog />} />
           <Route path="/wh" element={<WarehouseWork />} />
           <Route path="/clients" element={<Clients />} />
           <Route path="/clients/:id" element={<ClientCard />} />
