@@ -2155,7 +2155,9 @@ class StaffActivityView(APIView):
                  "detail": a.detail, "at": a.created_at} for a in logs.order_by("-created_at")[:300]]
         sessions = [{"started_at": s.started_at, "ended_at": s.ended_at,
                      "worked_hours": round(s.worked_seconds() / 3600, 2),
-                     "on_pause": bool(s.paused_at)} for s in sess.order_by("-started_at")[:120]]
+                     "paused_seconds": s.paused_seconds,
+                     "on_pause": bool(s.paused_at),
+                     "pauses": s.pauses or []} for s in sess.order_by("-started_at")[:120]]
         return Response({
             "user": {"id": u.id, "full_name": u.get_full_name() or u.username,
                      "department_name": u.department.name if u.department else "—",

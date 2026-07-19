@@ -369,6 +369,9 @@ class WorkSession(models.Model):
     ended_at = models.DateTimeField(null=True, blank=True)
     paused_seconds = models.PositiveIntegerField(default=0)
     paused_at = models.DateTimeField(null=True, blank=True)
+    # Журнал пауз (обід/відлучення): [{"start": iso, "end": iso|null, "reason": "manual|idle"}].
+    # forward-only: старі зміни мають порожній список.
+    pauses = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ["-started_at"]

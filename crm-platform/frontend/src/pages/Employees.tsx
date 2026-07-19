@@ -262,6 +262,9 @@ function ActivityTab({ depts, t, statusChip }: any) {
     api.get<any>(`/api/staff/activity/?${q.toString()}`).then(setSelData).catch(() => setSelData({ feed: [], sessions: [] }));
   }
   const fmtDt = (s: string) => s ? new Date(s).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+  const fmtT = (s: string) => s ? new Date(s).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }) : "—";
+  const fmtD = (s: string) => s ? new Date(s).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" }) : "—";
+  const fmtDur = (sec: number) => { const m = Math.round((sec || 0) / 60); return m < 60 ? `${m} ${t("мин", "хв")}` : `${Math.floor(m / 60)} ${t("ч", "год")} ${m % 60} ${t("мин", "хв")}`; };
 
   if (denied) return <div className="pad muted">{t("Нет доступа к аналитике по сотрудникам (нужны права ЗП/KPI или управление сотрудниками).", "Немає доступу до аналітики по співробітниках (потрібні права ЗП/KPI або керування співробітниками).")}</div>;
 
@@ -350,12 +353,34 @@ function ActivityTab({ depts, t, statusChip }: any) {
             {!selData && <div className="pad muted">{t("Загрузка…", "Завантаження…")}</div>}
             {selData && <div style={{ padding: "12px 18px" }}>
               {selData.sessions?.length > 0 && <>
-                <div className="muted" style={{ fontSize: 12, fontWeight: 600, margin: "4px 0 8px" }}>{t("Смены (вход/выход)", "Зміни (вхід/вихід)")}</div>
-                {selData.sessions.slice(0, 10).map((s: any, i: number) => (
-                  <div key={i} style={{ fontSize: 12.5, padding: "4px 0", borderBottom: "1px solid #f6f2ec" }}>
-                    {fmtDt(s.started_at)} → {s.ended_at ? fmtDt(s.ended_at) : <span style={{ color: "#16a34a" }}>{t("в работе", "в роботі")}</span>} · <b>{s.worked_hours} {t("ч", "год")}</b>
-                  </div>
-                ))}
+                <div className="muted" style={{ fontSize: 12, fontWeight: 600, margin: "4px 0 8px" }}>{t("Смены и паузы", "Зміни та паузи")}</div>
+                <div className="tablewrap"><table style={{ fontSize: 12.5, width: "100%" }}>
+                  <thead><tr>
+                    <th style={{ textAlign: "left" }}>{t("Дата", "Дата")}</th>
+                    <th style={{ textAlign: "center" }}>{t("Приход", "Прихід")}</th>
+                    <th style={{ textAlign: "center" }}>{t("Уход", "Вихід")}</th>
+                    <th style={{ textAlign: "center" }}>{t("Паузы (обед/отлучки)", "Паузи (обід/відлучки)")}</th>
+                    <th style={{ textAlign: "right" }}>{t("Пауза всего", "Пауза всього")}</th>
+                    <th style={{ textAlign: "right" }}>{t("Отработано", "Відпрацьовано")}</th>
+                  </tr></thead>
+                  <tbody>{selData.sessions.slice(0, 20).map((s: any, i: number) => {
+                    const ps = (s.pauses || []) as any[];
+                    return <tr key={i}>
+                      <td style={{ fontVariantNumeric: "tabular-nums" }}>{fmtD(s.started_at)}</td>
+                      <td style={{ textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{fmtT(s.started_at)}</td>
+                      <td style={{ textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{s.ended_at ? fmtT(s.ended_at) : <span style={{ color: "#16a34a" }}>{t("в работе", "в роботі")}</span>}</td>
+                      <td style={{ textAlign: "center", fontSize: 11.5 }}>
+                        {ps.length === 0 ? <span className="muted">—</span> : ps.map((p: any, j: number) => (
+                          <span key={j} style={{ display: "inline-block", background: p.reason === "idle" ? "#fef2f2" : "#fef9c3", color: p.reason === "idle" ? "#dc2626" : "#a16207", borderRadius: 6, padding: "1px 6px", margin: 2, whiteSpace: "nowrap" }} title={p.reason === "idle" ? t("Авто-пауза (простой)", "Авто-пауза (простій)") : t("Ручная пауза", "Ручна пауза")}>
+                            {fmtT(p.start)}–{p.end ? fmtT(p.end) : "…"}
+                          </span>
+                        ))}
+                      </td>
+                      <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }} className="muted">{s.paused_seconds ? fmtDur(s.paused_seconds) : "—"}</td>
+                      <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{s.worked_hours} {t("ч", "год")}</td>
+                    </tr>;
+                  })}</tbody>
+                </table></div>
               </>}
               <div className="muted" style={{ fontSize: 12, fontWeight: 600, margin: "14px 0 8px" }}>{t("Действия (лента)", "Дії (стрічка)")}</div>
               {selData.feed?.length === 0 && <div className="muted" style={{ fontSize: 12.5 }}>{t("Нет действий за период", "Немає дій за період")}</div>}

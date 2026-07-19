@@ -2499,16 +2499,29 @@ class WorkTimeView(APIView):
             return {"active": False}
         return {"active": True, "id": ws.id, "started_at": ws.started_at,
                 "on_pause": bool(ws.paused_at), "paused_seconds": ws.paused_seconds,
-                "worked_seconds": ws.worked_seconds()}
+                "worked_seconds": ws.worked_seconds(), "pauses": ws.pauses or []}
 
     def get(self, request):
         ws = WorkSession.objects.filter(user=request.user, ended_at__isnull=True).first()
         return Response(self._payload(ws))
 
+    def _resume(self, ws, now):
+        """Зняти з паузи: додати тривалість у paused_seconds і закрити відкритий інтервал у журналі."""
+        ws.paused_seconds += int((now - ws.paused_at).total_seconds())
+        ws.paused_at = None
+        plist = ws.pauses or []
+        for p in reversed(plist):
+            if not p.get("end"):
+                p["end"] = now.isoformat()
+                break
+        ws.pauses = plist
+
     def post(self, request):
         from django.utils import timezone
         from datetime import date as _date
         action = request.data.get("action")
+        reason = (request.data.get("reason") or "manual")  # manual | idle (для антипростою)
+        now = timezone.now()
         ws = WorkSession.objects.filter(user=request.user, ended_at__isnull=True).first()
         if action == "start":
             if not ws:
@@ -2516,13 +2529,16 @@ class WorkTimeView(APIView):
                 WorkDay.objects.update_or_create(user=request.user, date=_date.today(), defaults={"status": "worked"})
         elif action == "pause" and ws:
             if ws.paused_at:
-                ws.paused_seconds += int((timezone.now() - ws.paused_at).total_seconds()); ws.paused_at = None
+                self._resume(ws, now)
             else:
-                ws.paused_at = timezone.now()
+                ws.paused_at = now
+                plist = ws.pauses or []
+                plist.append({"start": now.isoformat(), "end": None, "reason": reason})
+                ws.pauses = plist
             ws.save()
         elif action == "stop" and ws:
             if ws.paused_at:
-                ws.paused_seconds += int((timezone.now() - ws.paused_at).total_seconds()); ws.paused_at = None
-            ws.ended_at = timezone.now(); ws.save()
+                self._resume(ws, now)
+            ws.ended_at = now; ws.save()
             return Response({"active": False, "worked_seconds": ws.worked_seconds()})
         return Response(self._payload(ws))
