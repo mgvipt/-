@@ -143,6 +143,9 @@ class Department(models.Model):
     sort = models.IntegerField(default=0)
     stage_view_all = models.JSONField(default=list, blank=True, help_text="ID стадій, де бачать ВСІ картки")
     stage_lock = models.JSONField(default=list, blank=True, help_text="ID стадій, куди ЗАБОРОНЕНО ручне переміщення")
+    idle_timeout_min = models.IntegerField(
+        default=15,
+        help_text="Хвилин простою (без активності) до авто-паузи зміни. 0 = контроль простою вимкнено (напр. Склад/Тонування — працюють руками).")
 
     class Meta:
         ordering = ["sort", "name"]

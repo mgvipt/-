@@ -17,6 +17,7 @@ class DepartmentSerializer(serializers.ModelSerializer):
         model = Department
         fields = ["id", "name", "parent", "head", "permissions", "funnels",
                   "open_lines", "color", "pos_x", "pos_y", "sort", "stage_view_all", "stage_lock", "members_count", "eff_permissions",
+                  "idle_timeout_min",
                   "fin_accounts", "fin_cats_in", "fin_cats_out", "fin_dirs", "fin_counterparties"]
 
     def get_members_count(self, obj):

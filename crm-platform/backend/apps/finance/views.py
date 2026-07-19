@@ -2494,16 +2494,32 @@ class WorkTimeView(APIView):
     from rest_framework.permissions import IsAuthenticated as _IsAuth
     permission_classes = [_IsAuth]
 
-    def _payload(self, ws):
+    def _idle_timeout(self, user):
+        """Хвилин простою до авто-паузи для відділу співробітника. 0 = контроль вимкнено."""
+        dep = getattr(user, "department", None)
+        try:
+            return int(dep.idle_timeout_min) if dep else 15
+        except Exception:
+            return 15
+
+    def _payload(self, ws, user=None):
         if not ws:
-            return {"active": False}
+            return {"active": False, "idle_timeout_min": self._idle_timeout(user) if user else 0}
+        pause_reason = ""
+        if ws.paused_at:
+            for p in reversed(ws.pauses or []):
+                if not p.get("end"):
+                    pause_reason = p.get("reason", "manual"); break
         return {"active": True, "id": ws.id, "started_at": ws.started_at,
                 "on_pause": bool(ws.paused_at), "paused_seconds": ws.paused_seconds,
-                "worked_seconds": ws.worked_seconds(), "pauses": ws.pauses or []}
+                "pause_reason": pause_reason,
+                "worked_seconds": ws.worked_seconds(), "pauses": ws.pauses or [],
+                "last_seen_at": ws.last_seen_at,
+                "idle_timeout_min": self._idle_timeout(ws.user)}
 
     def get(self, request):
         ws = WorkSession.objects.filter(user=request.user, ended_at__isnull=True).first()
-        return Response(self._payload(ws))
+        return Response(self._payload(ws, request.user))
 
     def _resume(self, ws, now):
         """Зняти з паузи: додати тривалість у paused_seconds і закрити відкритий інтервал у журналі."""
@@ -2525,20 +2541,33 @@ class WorkTimeView(APIView):
         ws = WorkSession.objects.filter(user=request.user, ended_at__isnull=True).first()
         if action == "start":
             if not ws:
-                ws = WorkSession.objects.create(user=request.user)
+                ws = WorkSession.objects.create(user=request.user, last_seen_at=now)
                 WorkDay.objects.update_or_create(user=request.user, date=_date.today(), defaults={"status": "worked"})
+        elif action == "heartbeat" and ws:
+            # «пульс» присутності — оновлює last_seen_at (тільки коли реально працює, не на паузі)
+            if not ws.paused_at:
+                ws.last_seen_at = now; ws.save(update_fields=["last_seen_at"])
         elif action == "pause" and ws:
             if ws.paused_at:
-                self._resume(ws, now)
+                self._resume(ws, now); ws.last_seen_at = now  # зняв паузу → знову «на місці»
             else:
                 ws.paused_at = now
                 plist = ws.pauses or []
                 plist.append({"start": now.isoformat(), "end": None, "reason": reason})
                 ws.pauses = plist
+                # авто-пауза за простій → у журнал активності
+                if reason == "idle":
+                    try:
+                        from apps.crm.models import log_activity
+                        log_activity("contact", 0, "Авто-пауза (простій)",
+                                     "%s відлучився — авто-пауза" % (request.user.get_full_name() or request.user.username),
+                                     request.user, "Система")
+                    except Exception:
+                        pass
             ws.save()
         elif action == "stop" and ws:
             if ws.paused_at:
                 self._resume(ws, now)
             ws.ended_at = now; ws.save()
             return Response({"active": False, "worked_seconds": ws.worked_seconds()})
-        return Response(self._payload(ws))
+        return Response(self._payload(ws, request.user))

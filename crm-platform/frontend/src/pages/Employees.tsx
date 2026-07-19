@@ -4,7 +4,7 @@ import { api } from "../api";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
 
-interface Dept { id: number; name: string; parent: number | null; permissions: string[]; color: string; pos_x: number; pos_y: number; members_count: number; eff_permissions: string[]; }
+interface Dept { id: number; name: string; parent: number | null; permissions: string[]; color: string; pos_x: number; pos_y: number; members_count: number; eff_permissions: string[]; idle_timeout_min?: number; }
 interface Emp { id: number; username: string; full_name: string; email: string; role: number | null; role_name: string; department: number | null; department_name: string; extra_permissions: string[]; denied_permissions: string[]; is_active: boolean; employment_status?: string; dismissed_at?: string | null; date_joined?: string; }
 interface Invite { id: number; email: string; department_name: string; status: string; link: string; }
 interface Perm { code: string; label: string; }
@@ -248,6 +248,7 @@ function ActivityTab({ depts, t, statusChip }: any) {
   const [sel, setSel] = useState<any>(null); // выбранный сотрудник (drill-down)
   const [selData, setSelData] = useState<any>(null);
   const [denied, setDenied] = useState(false);
+  const [showIdleCfg, setShowIdleCfg] = useState(false);
 
   useEffect(() => {
     setLoading(true); setDenied(false);
@@ -283,7 +284,26 @@ function ActivityTab({ depts, t, statusChip }: any) {
           {depts.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
         {loading && <span className="muted" style={{ fontSize: 12 }}>{t("Загрузка…", "Завантаження…")}</span>}
+        <button className="btn" style={{ fontSize: 12.5, marginLeft: "auto" }} onClick={() => setShowIdleCfg((v) => !v)} title={t("Настройка контроля простоя", "Налаштування контролю простою")}>⏱ {t("Контроль простоя", "Контроль простою")}</button>
       </div>
+
+      {showIdleCfg && (
+        <div style={{ background: "#faf8f5", border: "1px solid #ece7df", borderRadius: 12, padding: "12px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{t("Через сколько минут простоя ставить авто-паузу", "Через скільки хвилин простою ставити авто-паузу")}</div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("0 = выключить для отдела (напр. Склад/Тонировка — работают руками).", "0 = вимкнути для відділу (напр. Склад/Тонування — працюють руками).")}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {depts.filter((d: any) => d.parent != null || depts.every((x: any) => x.parent == null)).map((d: any) => (
+              <label key={d.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "5px 10px" }}>
+                <b>{d.name}</b>
+                <input type="number" min={0} max={480} defaultValue={d.idle_timeout_min ?? 15}
+                  onBlur={(e) => { const v = Math.max(0, Math.min(480, Number(e.target.value) || 0)); api.patch(`/api/departments/${d.id}/`, { idle_timeout_min: v }).then(() => { d.idle_timeout_min = v; }).catch(() => {}); }}
+                  style={{ width: 58, padding: "3px 6px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 13, textAlign: "right" }} />
+                <span className="muted" style={{ fontSize: 12 }}>{t("мин", "хв")}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       {data && <>
         {/* сводка totals */}

@@ -372,6 +372,8 @@ class WorkSession(models.Model):
     # Журнал пауз (обід/відлучення): [{"start": iso, "end": iso|null, "reason": "manual|idle"}].
     # forward-only: старі зміни мають порожній список.
     pauses = models.JSONField(default=list, blank=True)
+    # Останній «пульс» присутності (heartbeat з фронту / будь-яка дія). Для антипростою і авто-завершення.
+    last_seen_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-started_at"]

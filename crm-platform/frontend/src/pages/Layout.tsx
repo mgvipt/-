@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
 import { api } from "../api";
@@ -87,9 +87,18 @@ const SIDEBARS: [string, string][] = [
 const ACCENTS = ["#C67D5F", "#2a6df4", "#7c3aed", "#0ea5e9", "#059669", "#f43f5e", "#d97706", "#8b5cf6", "#ec4899", "#14b8a6", "#eab308", "#ef4444", "#6366f1", "#10b981", "#f97316", "#06b6d4"];
 const BGS = ["#f3efe9", "#eef2f7", "#edf5ef", "#f1ecfa", "#faecef", "#fff7ed", "#ecfeff", "#fef2f2", "linear-gradient(135deg,#e0f2fe,#ede9fe)", "linear-gradient(135deg,#fef3c7,#fde68a)", "linear-gradient(135deg,#d1fae5,#a7f3d0)", "linear-gradient(135deg,#fce7f3,#fbcfe8)"];
 
+// ── Контроль присутності: heartbeat + детектор простою + обов'язкове зняття з авто-паузи ──
+const IDLE_WARN_SEC = 60;        // скільки секунд показувати «Ви на місці?» перед авто-паузою
+const HEARTBEAT_MS = 90000;      // пульс присутності на сервер (щоб не рахувало «пішов»)
 function WorkTimer() {
   const [st, setSt] = useState<any>(null);
   const [sec, setSec] = useState(0);
+  const [idleWarn, setIdleWarn] = useState(false);   // модалка «Ви на місці?»
+  const [countdown, setCountdown] = useState(IDLE_WARN_SEC);
+  const [backModal, setBackModal] = useState(false);  // модалка «З поверненням, зняти паузу?»
+  const lastAct = useRef(Date.now());
+  const stRef = useRef<any>(null); stRef.current = st;
+
   function load() { api.get<any>("/api/worktime/").then((d) => { setSt(d); setSec(d.worked_seconds || 0); }).catch(() => setSt({ active: false })); }
   useEffect(() => { load(); const _t = setInterval(load, 12000); const _f = () => load(); window.addEventListener("focus", _f); document.addEventListener("visibilitychange", _f); return () => { clearInterval(_t); window.removeEventListener("focus", _f); document.removeEventListener("visibilitychange", _f); }; }, []);
   useEffect(() => {
@@ -97,19 +106,83 @@ function WorkTimer() {
     const t = setInterval(() => setSec((x) => x + 1), 1000);
     return () => clearInterval(t);
   }, [st?.active, st?.on_pause]);
-  async function act(action: string) {
-    const d = await api.post<any>("/api/worktime/", { action });
+  async function act(action: string, reason?: string) {
+    const d = await api.post<any>("/api/worktime/", reason ? { action, reason } : { action });
     if (action === "stop") { setSt({ active: false }); setSec(0); } else { setSt(d); setSec(d.worked_seconds || 0); }
   }
+
+  // фіксуємо будь-яку активність користувача
+  useEffect(() => {
+    const mark = () => {
+      lastAct.current = Date.now();
+      const s = stRef.current;
+      // повернувся під час авто-паузи (простій) → обов'язково зняти паузу
+      if (s?.active && s?.on_pause && s?.pause_reason === "idle" && !backModal) setBackModal(true);
+    };
+    const evs = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"];
+    evs.forEach((e) => window.addEventListener(e, mark, { passive: true }));
+    return () => evs.forEach((e) => window.removeEventListener(e, mark));
+  }, [backModal]);
+
+  // heartbeat + детектор простою (тільки коли відділ має idle_timeout_min > 0)
+  useEffect(() => {
+    const timeout = st?.idle_timeout_min || 0;
+    if (!st?.active) return;
+    const hb = setInterval(() => { if (stRef.current?.active && !stRef.current?.on_pause) api.post("/api/worktime/", { action: "heartbeat" }).catch(() => {}); }, HEARTBEAT_MS);
+    let chk: any = null;
+    if (timeout > 0) {
+      chk = setInterval(() => {
+        const s = stRef.current; if (!s?.active || s?.on_pause) { setIdleWarn(false); return; }
+        const idleMs = Date.now() - lastAct.current;
+        if (idleMs >= (timeout * 60 - IDLE_WARN_SEC) * 1000) setIdleWarn((w) => w || true);
+      }, 5000);
+    }
+    return () => { clearInterval(hb); if (chk) clearInterval(chk); };
+  }, [st?.active, st?.idle_timeout_min]);
+
+  // відлік у модалці «Ви на місці?» → авто-пауза при 0
+  useEffect(() => {
+    if (!idleWarn) { setCountdown(IDLE_WARN_SEC); return; }
+    if (countdown <= 0) { setIdleWarn(false); act("pause", "idle"); return; }
+    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [idleWarn, countdown]);
+
   const hhmmss = (n: number) => [Math.floor(n / 3600), Math.floor((n % 3600) / 60), n % 60].map((x) => String(x).padStart(2, "0")).join(":");
   if (!st) return null;
   if (!st.active) return <button className="btn btn-primary" style={{ height: 32, padding: "0 12px", fontSize: 13 }} onClick={() => act("start")} title="Почати робочий день — табель відмітиться сам">▶ Почати робочий день</button>;
   return (
-    <div style={{ display: "flex", gap: 6, alignItems: "center", background: "#fff", borderRadius: 8, padding: "3px 8px", border: "1px solid #e2e8f0" }}>
-      <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 15, color: st.on_pause ? "#d97706" : "#16a34a" }} title="Відпрацьовано сьогодні">{st.on_pause ? "⏸ " : "🟢 "}{hhmmss(sec)}</span>
-      <button className="btn btn-light" style={{ height: 28, padding: "0 8px", fontSize: 12 }} onClick={() => act("pause")} title="Обід/пауза">{st.on_pause ? "▶ Продовжити" : <><Icon n="☕" size={14} /> Обід</>}</button>
-      <button className="btn btn-light" style={{ height: 28, padding: "0 8px", fontSize: 12, color: "#dc2626" }} onClick={() => act("stop")} title="Завершити робочий день">⏹ Завершити</button>
-    </div>
+    <>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", background: "#fff", borderRadius: 8, padding: "3px 8px", border: "1px solid #e2e8f0" }}>
+        <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 15, color: st.on_pause ? "#d97706" : "#16a34a" }} title="Відпрацьовано сьогодні">{st.on_pause ? (st.pause_reason === "idle" ? "🔴 " : "⏸ ") : "🟢 "}{hhmmss(sec)}</span>
+        <button className="btn btn-light" style={{ height: 28, padding: "0 8px", fontSize: 12 }} onClick={() => act("pause")} title="Обід/пауза">{st.on_pause ? "▶ Продовжити" : <><Icon n="☕" size={14} /> Обід</>}</button>
+        <button className="btn btn-light" style={{ height: 28, padding: "0 8px", fontSize: 12, color: "#dc2626" }} onClick={() => act("stop")} title="Завершити робочий день">⏹ Завершити</button>
+      </div>
+
+      {/* «Ви на місці?» — за 60 сек до авто-паузи */}
+      {idleWarn && !st.on_pause && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 28, maxWidth: 380, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+            <div style={{ fontSize: 44 }}>👀</div>
+            <div style={{ fontSize: 19, fontWeight: 700, margin: "8px 0" }}>Ви на місці?</div>
+            <div className="muted" style={{ fontSize: 14, marginBottom: 6 }}>Немає активності. Через <b style={{ color: "#dc2626" }}>{countdown}</b> сек зміна стане на паузу (простій).</div>
+            <button className="btn btn-primary" style={{ height: 40, padding: "0 22px", fontSize: 15, marginTop: 8 }} onClick={() => { lastAct.current = Date.now(); setIdleWarn(false); api.post("/api/worktime/", { action: "heartbeat" }).catch(() => {}); }}>✅ Так, я працюю</button>
+          </div>
+        </div>
+      )}
+
+      {/* «З поверненням» — обов'язково зняти авто-паузу */}
+      {backModal && st.on_pause && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 28, maxWidth: 400, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+            <div style={{ fontSize: 44 }}>👋</div>
+            <div style={{ fontSize: 19, fontWeight: 700, margin: "8px 0" }}>З поверненням!</div>
+            <div className="muted" style={{ fontSize: 14, marginBottom: 12 }}>Зміна на авто-паузі (ви відлучалися). Щоб час знову рахувався — зніміть паузу.</div>
+            <button className="btn btn-primary" style={{ height: 42, padding: "0 24px", fontSize: 15 }} onClick={async () => { setBackModal(false); lastAct.current = Date.now(); await act("pause"); }}>▶ Я повернувся — продовжити роботу</button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
