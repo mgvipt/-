@@ -176,7 +176,7 @@ function WorkTimer() {
           <div style={{ background: "#fff", borderRadius: 16, padding: 28, maxWidth: 380, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
             <div style={{ fontSize: 44 }}>👀</div>
             <div style={{ fontSize: 19, fontWeight: 700, margin: "8px 0" }}>Ви на місці?</div>
-            <div className="muted" style={{ fontSize: 14, marginBottom: 6 }}>Немає активності. Через <b style={{ color: "#dc2626" }}>{countdown}</b> сек зміна стане на паузу (простій).</div>
+            <div className="muted" style={{ fontSize: 14, marginBottom: 6 }}>Підтвердіть, що ви на робочому місці.</div>
             <button className="btn btn-primary" style={{ height: 40, padding: "0 22px", fontSize: 15, marginTop: 8 }} onClick={() => { lastAct.current = Date.now(); idleWarnRef.current = false; setIdleWarn(false); api.post("/api/worktime/", { action: "heartbeat" }).catch(() => {}); }}>✅ Так, я працюю</button>
           </div>
         </div>
@@ -188,8 +188,8 @@ function WorkTimer() {
           <div style={{ background: "#fff", borderRadius: 16, padding: 28, maxWidth: 400, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
             <div style={{ fontSize: 44 }}>👋</div>
             <div style={{ fontSize: 19, fontWeight: 700, margin: "8px 0" }}>З поверненням!</div>
-            <div className="muted" style={{ fontSize: 14, marginBottom: 12 }}>Зміна на авто-паузі (ви відлучалися). Щоб час знову рахувався — зніміть паузу.</div>
-            <button className="btn btn-primary" style={{ height: 42, padding: "0 24px", fontSize: 15 }} onClick={async () => { setBackModal(false); lastAct.current = Date.now(); await act("pause"); }}>▶ Я повернувся — продовжити роботу</button>
+            <div className="muted" style={{ fontSize: 14, marginBottom: 12 }}>Раді бачити вас знову 🙂</div>
+            <button className="btn btn-primary" style={{ height: 42, padding: "0 24px", fontSize: 15 }} onClick={async () => { setBackModal(false); lastAct.current = Date.now(); await act("pause"); }}>▶ Продовжити роботу</button>
           </div>
         </div>
       )}
