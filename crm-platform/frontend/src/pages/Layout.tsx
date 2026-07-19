@@ -97,7 +97,11 @@ function WorkTimer() {
   const [countdown, setCountdown] = useState(IDLE_WARN_SEC);
   const [backModal, setBackModal] = useState(false);  // модалка «З поверненням, зняти паузу?»
   const lastAct = useRef(Date.now());
+  const idleWarnRef = useRef(false);   // чи показана зараз модалка «Ви на місці?»
   const stRef = useRef<any>(null); stRef.current = st;
+  // Скільки секунд показувати попередження перед авто-паузою: не більше половини порогу
+  // (для малих порогів, напр. 1 хв → 30 сек), і не більше IDLE_WARN_SEC.
+  const warnSecFor = (timeoutMin: number) => Math.max(10, Math.min(IDLE_WARN_SEC, Math.floor(timeoutMin * 60 / 2)));
 
   function load() { api.get<any>("/api/worktime/").then((d) => { setSt(d); setSec(d.worked_seconds || 0); }).catch(() => setSt({ active: false })); }
   useEffect(() => { load(); const _t = setInterval(load, 12000); const _f = () => load(); window.addEventListener("focus", _f); document.addEventListener("visibilitychange", _f); return () => { clearInterval(_t); window.removeEventListener("focus", _f); document.removeEventListener("visibilitychange", _f); }; }, []);
@@ -116,6 +120,8 @@ function WorkTimer() {
     const mark = () => {
       lastAct.current = Date.now();
       const s = stRef.current;
+      // рухнув мишею під час «Ви на місці?» → людина на місці, ховаємо попередження
+      if (idleWarnRef.current) { idleWarnRef.current = false; setIdleWarn(false); }
       // повернувся під час авто-паузи (простій) → обов'язково зняти паузу
       if (s?.active && s?.on_pause && s?.pause_reason === "idle" && !backModal) setBackModal(true);
     };
@@ -131,19 +137,24 @@ function WorkTimer() {
     const hb = setInterval(() => { if (stRef.current?.active && !stRef.current?.on_pause) api.post("/api/worktime/", { action: "heartbeat" }).catch(() => {}); }, HEARTBEAT_MS);
     let chk: any = null;
     if (timeout > 0) {
+      const warn = warnSecFor(timeout);            // тривалість попередження (сек)
+      const triggerMs = (timeout * 60 - warn) * 1000;  // коли показати «Ви на місці?»
       chk = setInterval(() => {
-        const s = stRef.current; if (!s?.active || s?.on_pause) { setIdleWarn(false); return; }
+        const s = stRef.current;
+        if (!s?.active || s?.on_pause) { if (idleWarnRef.current) { idleWarnRef.current = false; setIdleWarn(false); } return; }
         const idleMs = Date.now() - lastAct.current;
-        if (idleMs >= (timeout * 60 - IDLE_WARN_SEC) * 1000) setIdleWarn((w) => w || true);
-      }, 5000);
+        if (idleMs >= triggerMs && !idleWarnRef.current) {
+          idleWarnRef.current = true; setCountdown(warn); setIdleWarn(true);
+        }
+      }, 2000);
     }
     return () => { clearInterval(hb); if (chk) clearInterval(chk); };
   }, [st?.active, st?.idle_timeout_min]);
 
   // відлік у модалці «Ви на місці?» → авто-пауза при 0
   useEffect(() => {
-    if (!idleWarn) { setCountdown(IDLE_WARN_SEC); return; }
-    if (countdown <= 0) { setIdleWarn(false); act("pause", "idle"); return; }
+    if (!idleWarn) return;
+    if (countdown <= 0) { idleWarnRef.current = false; setIdleWarn(false); act("pause", "idle"); return; }
     const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
     return () => clearTimeout(t);
   }, [idleWarn, countdown]);
@@ -166,7 +177,7 @@ function WorkTimer() {
             <div style={{ fontSize: 44 }}>👀</div>
             <div style={{ fontSize: 19, fontWeight: 700, margin: "8px 0" }}>Ви на місці?</div>
             <div className="muted" style={{ fontSize: 14, marginBottom: 6 }}>Немає активності. Через <b style={{ color: "#dc2626" }}>{countdown}</b> сек зміна стане на паузу (простій).</div>
-            <button className="btn btn-primary" style={{ height: 40, padding: "0 22px", fontSize: 15, marginTop: 8 }} onClick={() => { lastAct.current = Date.now(); setIdleWarn(false); api.post("/api/worktime/", { action: "heartbeat" }).catch(() => {}); }}>✅ Так, я працюю</button>
+            <button className="btn btn-primary" style={{ height: 40, padding: "0 22px", fontSize: 15, marginTop: 8 }} onClick={() => { lastAct.current = Date.now(); idleWarnRef.current = false; setIdleWarn(false); api.post("/api/worktime/", { action: "heartbeat" }).catch(() => {}); }}>✅ Так, я працюю</button>
           </div>
         </div>
       )}
