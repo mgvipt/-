@@ -34,6 +34,46 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [HasPermCode]
 
+    def get_queryset(self):
+        """Фільтр за статусом занятості: ?status=active|inactive|dismissed|all.
+        За замовчуванням (без параметра) — тільки активні (сумісність зі старим фронтом).
+        ⚠️ Тільки для списку — detail-дії (set_status/dismiss/patch) мусять бачити ВСІХ,
+        інакше повернення звільненого/неактивного дає 404."""
+        qs = super().get_queryset()
+        if self.action != "list":
+            return qs
+        st = (self.request.query_params.get("status") or "").strip().lower()
+        if st in ("active", "inactive", "dismissed"):
+            return qs.filter(employment_status=st)
+        if st == "all":
+            return qs
+        # дефолт: активні (включно зі старими записами де employment_status ще 'active' за замовч.)
+        return qs.filter(is_active=True)
+
+    @action(detail=True, methods=["post"])
+    def set_status(self, request, pk=None):
+        """Змінити статус занятості: active / inactive / dismissed. Лише адмін / roles.manage.
+        Для 'dismissed' краще використовувати /dismiss/ (він ще й розподіляє сутності)."""
+        actor = request.user
+        if not (actor.is_superuser or (hasattr(actor, "has_perm_code") and actor.has_perm_code("roles.manage"))):
+            return Response({"detail": "Лише адмін може змінювати статус"}, status=status.HTTP_403_FORBIDDEN)
+        u = self.get_object()
+        new_status = (request.data.get("status") or "").strip().lower()
+        if new_status not in dict(User.EMPLOYMENT_STATUS):
+            return Response({"detail": "Невідомий статус"}, status=status.HTTP_400_BAD_REQUEST)
+        if u.id == actor.id and new_status != "active":
+            return Response({"detail": "Не можна деактивувати себе"}, status=status.HTTP_400_BAD_REQUEST)
+        old = u.employment_status
+        u.apply_employment_status(new_status)
+        try:
+            from apps.crm.models import log_activity
+            log_activity("contact", 0, "Зміна статусу співробітника",
+                         "%s: %s → %s" % (u.get_full_name() or u.username, old, new_status), actor, "Адмін")
+        except Exception:
+            pass
+        return Response({"ok": True, "employment_status": u.employment_status,
+                         "is_active": u.is_active, "dismissed_at": u.dismissed_at})
+
     @action(detail=True, methods=["post"])
     def dismiss(self, request, pk=None):
         """Звільнення: акаунт деактивується (доступ зникає, НЕ видаляється), а його сутності
@@ -74,9 +114,7 @@ class UserViewSet(viewsets.ModelViewSet):
             moved["склад_задачи"] = _rr_reassign(WarehouseJob.objects.filter(assignee=u), "assignee", pool)
             moved["сделки"] = _rr_reassign(Deal.objects.filter(owner=u), "owner", pool)
             moved["лиды"] = _rr_reassign(Lead.objects.filter(owner=u), "owner", pool)
-        u.is_active = False
-        u.is_superuser = False
-        u.save(update_fields=["is_active", "is_superuser"])
+        u.apply_employment_status("dismissed")  # → is_active=False, is_superuser=False, dismissed_at=сьогодні
         targets = [p.get_full_name() or p.username for p in pool]
         try:
             from apps.crm.models import log_activity

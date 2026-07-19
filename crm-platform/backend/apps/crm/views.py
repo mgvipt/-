@@ -2003,6 +2003,169 @@ class ActivityLogView(APIView):
         } for a in qs[:200]])
 
 
+def _staff_can_view(user):
+    """Доступ до аналітики по співробітниках: адмін / roles.manage / finance.tab.salary (ЗП-KPI)."""
+    if user.is_superuser:
+        return True
+    return (hasattr(user, "has_perm_code")
+            and (user.has_perm_code("roles.manage") or user.has_perm_code("finance.tab.salary")))
+
+
+def _month_range(period):
+    """'YYYY-MM' → (перший день, останній день місяця). Порожнє → поточний місяць."""
+    from datetime import date
+    from django.utils import timezone
+    import calendar
+    today = timezone.localdate()
+    try:
+        y, m = period.split("-"); y, m = int(y), int(m)
+    except Exception:
+        y, m = today.year, today.month
+    last = calendar.monthrange(y, m)[1]
+    return date(y, m, 1), date(y, m, last)
+
+
+class StaffAnalyticsView(APIView):
+    """Аналітика по співробітниках за місяць: посещаемость (табель+зміни) + активність.
+    GET /api/staff/analytics/?period=YYYY-MM[&dept=ID][&status=active|inactive|dismissed|all]
+    Повертає рядки по кожному співробітнику + зведення по відділах."""
+    def get(self, request):
+        if not _staff_can_view(request.user):
+            return Response({"detail": "Немає доступу"}, status=status.HTTP_403_FORBIDDEN)
+        from apps.accounts.models import User
+        from apps.finance.models import WorkSession, WorkDay
+        from datetime import datetime, time
+        from django.utils import timezone
+        from .models import ActivityLog
+
+        period = request.GET.get("period", "")
+        d_from, d_to = _month_range(period)
+        # межі для datetime-полів
+        tz = timezone.get_current_timezone()
+        dt_from = timezone.make_aware(datetime.combine(d_from, time.min), tz)
+        dt_to = timezone.make_aware(datetime.combine(d_to, time.max), tz)
+
+        qs = User.objects.filter(is_superuser=False).select_related("department", "role")
+        st = (request.GET.get("status") or "").strip().lower()
+        if st in ("active", "inactive", "dismissed"):
+            qs = qs.filter(employment_status=st)
+        elif st != "all":
+            qs = qs.filter(is_active=True)
+        dept = request.GET.get("dept")
+        if dept:
+            qs = qs.filter(department_id=dept)
+
+        rows = []
+        for u in qs:
+            wds = WorkDay.objects.filter(user=u, date__gte=d_from, date__lte=d_to)
+            by_status = {}
+            for w in wds:
+                by_status[w.status] = by_status.get(w.status, 0) + 1
+            sessions = WorkSession.objects.filter(user=u, started_at__gte=dt_from, started_at__lte=dt_to)
+            worked_seconds = sum(s.worked_seconds() for s in sessions)
+            acts = ActivityLog.objects.filter(user=u, created_at__gte=dt_from, created_at__lte=dt_to).count()
+            last_ses = WorkSession.objects.filter(user=u).order_by("-started_at").first()
+            last_act = ActivityLog.objects.filter(user=u).order_by("-created_at").first()
+            candidates = [x for x in (last_ses.started_at if last_ses else None,
+                                      last_act.created_at if last_act else None) if x]
+            last_seen = max(candidates) if candidates else None
+            worked_days = by_status.get("worked", 0) + by_status.get("overtime", 0)
+            rows.append({
+                "id": u.id, "full_name": u.get_full_name() or u.username,
+                "department": u.department_id, "department_name": u.department.name if u.department else "—",
+                "role_name": u.role.name if u.role else "—",
+                "employment_status": u.employment_status, "dismissed_at": u.dismissed_at,
+                "date_joined": u.date_joined,
+                "worked_days": worked_days,
+                "worked_hours": round(worked_seconds / 3600, 1),
+                "sessions": sessions.count(),
+                "sick": by_status.get("sick", 0), "vacation": by_status.get("vacation", 0),
+                "absent": by_status.get("absent", 0), "dayoff": by_status.get("dayoff", 0),
+                "overtime": by_status.get("overtime", 0),
+                "actions": acts,
+                "avg_hours_per_day": round(worked_seconds / 3600 / worked_days, 1) if worked_days else 0,
+                "last_seen": last_seen,
+            })
+        rows.sort(key=lambda r: (-r["worked_hours"], -r["actions"]))
+
+        # зведення по відділах
+        depts = {}
+        for r in rows:
+            key = r["department_name"]
+            d = depts.setdefault(key, {"department_name": key, "people": 0, "worked_hours": 0.0,
+                                       "worked_days": 0, "actions": 0})
+            d["people"] += 1; d["worked_hours"] += r["worked_hours"]
+            d["worked_days"] += r["worked_days"]; d["actions"] += r["actions"]
+        for d in depts.values():
+            d["worked_hours"] = round(d["worked_hours"], 1)
+
+        return Response({
+            "period": {"from": d_from, "to": d_to},
+            "rows": rows,
+            "departments": sorted(depts.values(), key=lambda x: -x["worked_hours"]),
+            "totals": {
+                "people": len(rows),
+                "worked_hours": round(sum(r["worked_hours"] for r in rows), 1),
+                "worked_days": sum(r["worked_days"] for r in rows),
+                "actions": sum(r["actions"] for r in rows),
+            },
+        })
+
+
+class StaffActivityView(APIView):
+    """Лента активності конкретного співробітника + таймлайн змін.
+    GET /api/staff/activity/?user=ID[&from=YYYY-MM-DD&to=YYYY-MM-DD][&kind=]"""
+    def get(self, request):
+        if not _staff_can_view(request.user):
+            return Response({"detail": "Немає доступу"}, status=status.HTTP_403_FORBIDDEN)
+        from apps.accounts.models import User
+        from apps.finance.models import WorkSession
+        from datetime import datetime, time
+        from django.utils import timezone
+        from .models import ActivityLog
+
+        uid = request.GET.get("user")
+        if not uid:
+            return Response({"detail": "Вкажіть user"}, status=status.HTTP_400_BAD_REQUEST)
+        u = User.objects.filter(id=uid).select_related("department", "role").first()
+        if not u:
+            return Response({"detail": "Немає такого"}, status=status.HTTP_404_NOT_FOUND)
+
+        tz = timezone.get_current_timezone()
+        logs = ActivityLog.objects.filter(user=u)
+        sess = WorkSession.objects.filter(user=u)
+        f = request.GET.get("from"); tt = request.GET.get("to")
+        if f:
+            try:
+                df = timezone.make_aware(datetime.combine(datetime.strptime(f, "%Y-%m-%d").date(), time.min), tz)
+                logs = logs.filter(created_at__gte=df); sess = sess.filter(started_at__gte=df)
+            except Exception:
+                pass
+        if tt:
+            try:
+                dt = timezone.make_aware(datetime.combine(datetime.strptime(tt, "%Y-%m-%d").date(), time.max), tz)
+                logs = logs.filter(created_at__lte=dt); sess = sess.filter(started_at__lte=dt)
+            except Exception:
+                pass
+        kind = request.GET.get("kind")
+        if kind:
+            logs = logs.filter(kind=kind)
+
+        feed = [{"kind": a.kind, "object_id": a.object_id, "action": a.action,
+                 "detail": a.detail, "at": a.created_at} for a in logs.order_by("-created_at")[:300]]
+        sessions = [{"started_at": s.started_at, "ended_at": s.ended_at,
+                     "worked_hours": round(s.worked_seconds() / 3600, 2),
+                     "on_pause": bool(s.paused_at)} for s in sess.order_by("-started_at")[:120]]
+        return Response({
+            "user": {"id": u.id, "full_name": u.get_full_name() or u.username,
+                     "department_name": u.department.name if u.department else "—",
+                     "role_name": u.role.name if u.role else "—",
+                     "employment_status": u.employment_status, "dismissed_at": u.dismissed_at,
+                     "date_joined": u.date_joined},
+            "feed": feed, "sessions": sessions,
+        })
+
+
 class GlobalSearchView(APIView):
     """Глибокий пошук по CRM: сделки, ліди, клієнти — за назвою/іменем/телефоном/ID.
     Поважає права: менеджер не знайде чужі сделки/ліди/клієнтів."""

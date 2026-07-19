@@ -5,7 +5,7 @@ import { useLang } from "../i18n";
 import { Icon } from "../Icon";
 
 interface Dept { id: number; name: string; parent: number | null; permissions: string[]; color: string; pos_x: number; pos_y: number; members_count: number; eff_permissions: string[]; }
-interface Emp { id: number; username: string; full_name: string; email: string; role: number | null; role_name: string; department: number | null; department_name: string; extra_permissions: string[]; denied_permissions: string[]; is_active: boolean; }
+interface Emp { id: number; username: string; full_name: string; email: string; role: number | null; role_name: string; department: number | null; department_name: string; extra_permissions: string[]; denied_permissions: string[]; is_active: boolean; employment_status?: string; dismissed_at?: string | null; date_joined?: string; }
 interface Invite { id: number; email: string; department_name: string; status: string; link: string; }
 interface Perm { code: string; label: string; }
 interface Role { id: number; name: string; }
@@ -20,7 +20,9 @@ class ErrBoundary extends Component<{ children: any }, { err: boolean }> {
 
 export default function Employees() {
   const { t } = useLang();
-  const [tab, setTab] = useState<"map" | "list" | "invites" | "perms">(() => (localStorage.getItem("emp_tab") as any) || "map");
+  const [tab, setTab] = useState<"map" | "list" | "activity" | "invites" | "perms">(() => (localStorage.getItem("emp_tab") as any) || "map");
+  const [listStatus, setListStatus] = useState<"active" | "inactive" | "dismissed" | "all">("active");
+  const [listEmps, setListEmps] = useState<Emp[]>([]);
   useEffect(() => { try { localStorage.setItem("emp_tab", tab); } catch (e) { /* noop */ } }, [tab]);
   const [depts, setDepts] = useState<Dept[]>([]);
   const [emps, setEmps] = useState<Emp[]>([]);
@@ -41,6 +43,11 @@ export default function Employees() {
     api.get<any>("/api/funnels/").then((d) => setFunnels(d.results || d)).catch(() => {});
   }
   useEffect(() => { load(); }, []);
+  // список сотрудников для вкладки «Список» — с фильтром по статусу занятости
+  function loadList() {
+    api.get<any>(`/api/users/?status=${listStatus}&page_size=500`).then((d) => setListEmps((d.results || d) as Emp[])).catch(() => {});
+  }
+  useEffect(() => { if (tab === "list") loadList(); /* eslint-disable-next-line */ }, [tab, listStatus]);
   function flash(m: string) { setMsg(m); setTimeout(() => setMsg(""), 2200); }
   const byDept = (id: number | null) => emps.filter((e) => e.department === id);
 
@@ -56,7 +63,16 @@ export default function Employees() {
       const r = await api.post<any>(`/api/users/${e.id}/dismiss/`, {});
       const m = r.moved || {}; const sum = Object.entries(m).map(([k, v]) => `${k}: ${v}`).join(", ");
       flash(t(`Уволен. Передано (${sum || "ничего"}) → ${(r.to || []).join(", ") || "—"}`, `Звільнено. Передано (${sum || "нічого"}) → ${(r.to || []).join(", ") || "—"}`));
-      load();
+      load(); loadList();
+    } catch (err: any) { flash(err?.response?.data?.detail || t("Ошибка", "Помилка")); }
+  }
+  async function setEmpStatus(e: Emp, newStatus: "active" | "inactive" | "dismissed") {
+    const labels: any = { active: t("вернуть в активные", "повернути в активні"), inactive: t("пометить неактивным", "позначити неактивним"), dismissed: t("уволить", "звільнити") };
+    if (newStatus === "dismissed") { dismissEmp(e); return; }
+    if (!confirm(t(`Точно ${labels[newStatus]} «${e.full_name}»?`, `Точно ${labels[newStatus]} «${e.full_name}»?`))) return;
+    try {
+      await api.post(`/api/users/${e.id}/set_status/`, { status: newStatus });
+      flash(t("Статус изменён", "Статус змінено")); load(); loadList();
     } catch (err: any) { flash(err?.response?.data?.detail || t("Ошибка", "Помилка")); }
   }
   async function setParent(childId: number, parentId: number | null) {
@@ -93,9 +109,16 @@ export default function Employees() {
   const TABS: [typeof tab, string, string, string][] = [
     ["map", "🗺", "Структура компании", "Структура компанії"],
     ["list", "👥", "Сотрудники", "Співробітники"],
+    ["activity", "📊", "Активность", "Активність"],
     ["invites", "✉️", "Приглашения", "Запрошення"],
     ["perms", "🛡", "Права", "Права"],
   ];
+  const STATUS_META: any = {
+    active: { ru: "Активный", uk: "Активний", bg: "#dcfce7", fg: "#16a34a" },
+    inactive: { ru: "Неактивный", uk: "Неактивний", bg: "#fef9c3", fg: "#ca8a04" },
+    dismissed: { ru: "Уволен", uk: "Звільнений", bg: "#fee2e2", fg: "#dc2626" },
+  };
+  const statusChip = (s?: string) => { const m = STATUS_META[s || "active"] || STATUS_META.active; return <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: m.bg, color: m.fg }}>{t(m.ru, m.uk)}</span>; };
 
   return (
     <ErrBoundary>
@@ -168,17 +191,185 @@ export default function Employees() {
         )}
 
         {tab === "list" && (
-          <div className="tablewrap" style={{ maxHeight: "calc(100vh - 240px)", overflowY: "auto" }}><table>
-            <thead><tr><th>{t("Сотрудник", "Співробітник")}</th><th>{t("Отдел", "Відділ")}</th><th>{t("Роль", "Роль")}</th><th>Email</th><th>{t("Действие", "Дія")}</th></tr></thead>
-            <tbody>{emps.map((e) => <tr key={e.id}><td>{e.full_name}</td><td>{e.department_name || "—"}</td><td>{e.role_name || "—"}</td><td className="muted">{e.email || "—"}</td><td><button onClick={() => dismissEmp(e)} title={t("Уволить — деактивировать + передать сущности", "Звільнити — деактивувати + передати сутності")} style={{ fontSize: 11.5, padding: "3px 9px", borderRadius: 7, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}><Icon n="🚪" size={13} /> {t("Уволить", "Звільнити")}</button></td></tr>)}</tbody>
-          </table></div>
+          <div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+              {([["active", "Активные", "Активні"], ["inactive", "Неактивные", "Неактивні"], ["dismissed", "Уволенные", "Звільнені"], ["all", "Все", "Всі"]] as const).map(([k, ru, uk]) => (
+                <button key={k} className={"btn" + (listStatus === k ? " btn-primary" : "")} style={{ fontSize: 12.5, padding: "4px 12px" }} onClick={() => setListStatus(k as any)}>{t(ru, uk)}</button>
+              ))}
+              <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{listEmps.length} {t("чел.", "осіб")}</span>
+            </div>
+            <div className="tablewrap" style={{ maxHeight: "calc(100vh - 280px)", overflowY: "auto" }}><table>
+              <thead><tr><th>{t("Сотрудник", "Співробітник")}</th><th>{t("Отдел", "Відділ")}</th><th>{t("Роль", "Роль")}</th><th>{t("Статус", "Статус")}</th><th>{t("Принят / Уволен", "Прийнятий / Звільнений")}</th><th>{t("Действие", "Дія")}</th></tr></thead>
+              <tbody>{listEmps.map((e) => {
+                const st = e.employment_status || (e.is_active ? "active" : "dismissed");
+                const dj = e.date_joined ? new Date(e.date_joined).toLocaleDateString("uk-UA") : "—";
+                const da = e.dismissed_at ? new Date(e.dismissed_at).toLocaleDateString("uk-UA") : "";
+                const btn = (label: string, onClick: () => void, color: string, bg: string, border: string) => (
+                  <button onClick={onClick} style={{ fontSize: 11.5, padding: "3px 9px", borderRadius: 7, border: `1px solid ${border}`, background: bg, color, cursor: "pointer", marginRight: 5 }}>{label}</button>
+                );
+                return <tr key={e.id}>
+                  <td>{e.full_name}</td><td>{e.department_name || "—"}</td><td>{e.role_name || "—"}</td>
+                  <td>{statusChip(st)}</td>
+                  <td className="muted" style={{ fontSize: 12 }}>{dj}{da && <> → <span style={{ color: "#dc2626" }}>{da}</span></>}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {st === "active" && <>
+                      {btn(t("⏸ Неактивный", "⏸ Неактивний"), () => setEmpStatus(e, "inactive"), "#ca8a04", "#fefce8", "#fde68a")}
+                      {btn(t("🚪 Уволить", "🚪 Звільнити"), () => setEmpStatus(e, "dismissed"), "#dc2626", "#fef2f2", "#fecaca")}
+                    </>}
+                    {st === "inactive" && <>
+                      {btn(t("▶ Вернуть", "▶ Повернути"), () => setEmpStatus(e, "active"), "#16a34a", "#f0fdf4", "#bbf7d0")}
+                      {btn(t("🚪 Уволить", "🚪 Звільнити"), () => setEmpStatus(e, "dismissed"), "#dc2626", "#fef2f2", "#fecaca")}
+                    </>}
+                    {st === "dismissed" && btn(t("▶ Вернуть в активные", "▶ Повернути в активні"), () => setEmpStatus(e, "active"), "#16a34a", "#f0fdf4", "#bbf7d0")}
+                  </td>
+                </tr>;
+              })}</tbody>
+            </table></div>
+          </div>
         )}
+        {tab === "activity" && <ActivityTab depts={depts} t={t} statusChip={statusChip} />}
         {tab === "invites" && <InvitesTab depts={depts} roles={roles} invites={invites} reload={load} t={t} />}
         {tab === "perms" && <PermsTab depts={depts} emps={emps} perms={perms} permGroups={permGroups} funnels={funnels} roles={roles} reload={load} t={t}
           toggleDept={async (d: Dept, code: string) => { const next = d.permissions.includes(code) ? d.permissions.filter((c) => c !== code) : [...d.permissions, code]; await api.patch(`/api/departments/${d.id}/`, { permissions: next }); load(); }}
           toggleUser={async (e: Emp, code: string, kind: "extra" | "denied") => { const field = kind === "extra" ? "extra_permissions" : "denied_permissions"; const cur = (kind === "extra" ? e.extra_permissions : e.denied_permissions) || []; const next = cur.includes(code) ? cur.filter((c) => c !== code) : [...cur, code]; await api.patch(`/api/users/${e.id}/`, { [field]: next }); load(); }} />}
       </div>
     </ErrBoundary>
+  );
+}
+
+function ActivityTab({ depts, t, statusChip }: any) {
+  const now = new Date();
+  const curMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const [period, setPeriod] = useState(curMonth);
+  const [status, setStatus] = useState<"active" | "inactive" | "dismissed" | "all">("active");
+  const [dept, setDept] = useState<number | "">("");
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [sel, setSel] = useState<any>(null); // выбранный сотрудник (drill-down)
+  const [selData, setSelData] = useState<any>(null);
+  const [denied, setDenied] = useState(false);
+
+  useEffect(() => {
+    setLoading(true); setDenied(false);
+    const q = new URLSearchParams({ period, status }); if (dept) q.set("dept", String(dept));
+    api.get<any>(`/api/staff/analytics/?${q.toString()}`).then((d) => { setData(d); setLoading(false); })
+      .catch((e) => { setLoading(false); if (e?.response?.status === 403) setDenied(true); });
+  }, [period, status, dept]);
+
+  function openEmp(row: any) {
+    setSel(row); setSelData(null);
+    const q = new URLSearchParams({ user: String(row.id), from: `${period}-01` });
+    api.get<any>(`/api/staff/activity/?${q.toString()}`).then(setSelData).catch(() => setSelData({ feed: [], sessions: [] }));
+  }
+  const fmtDt = (s: string) => s ? new Date(s).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+
+  if (denied) return <div className="pad muted">{t("Нет доступа к аналитике по сотрудникам (нужны права ЗП/KPI или управление сотрудниками).", "Немає доступу до аналітики по співробітниках (потрібні права ЗП/KPI або керування співробітниками).")}</div>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ padding: "5px 8px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13 }} />
+        <select value={status} onChange={(e) => setStatus(e.target.value as any)} style={{ padding: "5px 8px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13 }}>
+          <option value="active">{t("Активные", "Активні")}</option>
+          <option value="inactive">{t("Неактивные", "Неактивні")}</option>
+          <option value="dismissed">{t("Уволенные", "Звільнені")}</option>
+          <option value="all">{t("Все", "Всі")}</option>
+        </select>
+        <select value={dept} onChange={(e) => setDept(e.target.value ? Number(e.target.value) : "")} style={{ padding: "5px 8px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13 }}>
+          <option value="">{t("Все отделы", "Всі відділи")}</option>
+          {depts.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+        {loading && <span className="muted" style={{ fontSize: 12 }}>{t("Загрузка…", "Завантаження…")}</span>}
+      </div>
+
+      {data && <>
+        {/* сводка totals */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+          {[[t("Сотрудников", "Співробітників"), data.totals.people], [t("Часов", "Годин"), data.totals.worked_hours], [t("Раб. дней", "Роб. днів"), data.totals.worked_days], [t("Действий", "Дій"), data.totals.actions]].map(([lbl, val]: any, i) => (
+            <div key={i} style={{ background: "#fff", border: "1px solid #ece7df", borderRadius: 12, padding: "10px 16px", minWidth: 110 }}>
+              <div className="muted" style={{ fontSize: 11 }}>{lbl}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{val}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* по отделам */}
+        {data.departments?.length > 1 && (
+          <div style={{ marginBottom: 14 }}>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 6, fontWeight: 600 }}>{t("По отделам", "По відділах")}</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {data.departments.map((d: any, i: number) => (
+                <div key={i} style={{ background: "#faf8f5", border: "1px solid #ece7df", borderRadius: 10, padding: "8px 12px", fontSize: 12.5 }}>
+                  <b>{d.department_name}</b> · {d.people} {t("чел", "ос")} · <span style={{ color: "#C67D5F", fontWeight: 600 }}>{d.worked_hours} {t("ч", "год")}</span> · {d.actions} {t("действ", "дій")}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* таблица по сотрудникам */}
+        <div className="tablewrap" style={{ maxHeight: "calc(100vh - 420px)", overflowY: "auto" }}><table>
+          <thead><tr>
+            <th>{t("Сотрудник", "Співробітник")}</th><th>{t("Отдел", "Відділ")}</th><th>{t("Статус", "Статус")}</th>
+            <th style={{ textAlign: "right" }}>{t("Часов", "Годин")}</th><th style={{ textAlign: "right" }}>{t("Дней", "Днів")}</th>
+            <th style={{ textAlign: "right" }}>{t("Ср/день", "Сер/день")}</th><th style={{ textAlign: "right" }}>{t("Действий", "Дій")}</th>
+            <th>{t("Больн/Отп/Прог", "Лік/Відп/Прог")}</th><th>{t("Последний вход", "Останній вхід")}</th>
+          </tr></thead>
+          <tbody>{data.rows.map((r: any) => (
+            <tr key={r.id} onClick={() => openEmp(r)} style={{ cursor: "pointer" }} title={t("Клик — лента активности", "Клік — стрічка активності")}>
+              <td style={{ fontWeight: 600 }}>{r.full_name}</td>
+              <td className="muted" style={{ fontSize: 12 }}>{r.department_name}</td>
+              <td>{statusChip(r.employment_status)}</td>
+              <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600, color: r.worked_hours > 0 ? "#111" : "#cbd5e1" }}>{r.worked_hours}</td>
+              <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.worked_days}</td>
+              <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }} className="muted">{r.avg_hours_per_day || "—"}</td>
+              <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600, color: r.actions > 0 ? "#111" : "#cbd5e1" }}>{r.actions}</td>
+              <td className="muted" style={{ fontSize: 12 }}>{r.sick || 0}/{r.vacation || 0}/{r.absent || 0}</td>
+              <td className="muted" style={{ fontSize: 12 }}>{fmtDt(r.last_seen)}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+      </>}
+
+      {/* drill-down панель */}
+      {sel && (
+        <div onClick={() => setSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.35)", zIndex: 50, display: "flex", justifyContent: "flex-end" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(560px, 96vw)", background: "#fff", height: "100%", overflowY: "auto", boxShadow: "-8px 0 30px rgba(0,0,0,.2)" }}>
+            <div style={{ padding: "16px 18px", borderBottom: "1px solid #ece7df", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 17, fontWeight: 700 }}>{sel.full_name}</div>
+                <div className="muted" style={{ fontSize: 12.5 }}>{sel.department_name} · {statusChip(sel.employment_status)}</div>
+              </div>
+              <button className="btn" onClick={() => setSel(null)}>✕</button>
+            </div>
+            <div style={{ padding: "12px 18px", display: "flex", gap: 14, fontSize: 13, borderBottom: "1px solid #f1ece4" }}>
+              <span>⏱ <b>{sel.worked_hours}</b> {t("ч", "год")}</span>
+              <span>📅 <b>{sel.worked_days}</b> {t("дней", "днів")}</span>
+              <span>⚡ <b>{sel.actions}</b> {t("действий", "дій")}</span>
+            </div>
+            {!selData && <div className="pad muted">{t("Загрузка…", "Завантаження…")}</div>}
+            {selData && <div style={{ padding: "12px 18px" }}>
+              {selData.sessions?.length > 0 && <>
+                <div className="muted" style={{ fontSize: 12, fontWeight: 600, margin: "4px 0 8px" }}>{t("Смены (вход/выход)", "Зміни (вхід/вихід)")}</div>
+                {selData.sessions.slice(0, 10).map((s: any, i: number) => (
+                  <div key={i} style={{ fontSize: 12.5, padding: "4px 0", borderBottom: "1px solid #f6f2ec" }}>
+                    {fmtDt(s.started_at)} → {s.ended_at ? fmtDt(s.ended_at) : <span style={{ color: "#16a34a" }}>{t("в работе", "в роботі")}</span>} · <b>{s.worked_hours} {t("ч", "год")}</b>
+                  </div>
+                ))}
+              </>}
+              <div className="muted" style={{ fontSize: 12, fontWeight: 600, margin: "14px 0 8px" }}>{t("Действия (лента)", "Дії (стрічка)")}</div>
+              {selData.feed?.length === 0 && <div className="muted" style={{ fontSize: 12.5 }}>{t("Нет действий за период", "Немає дій за період")}</div>}
+              {selData.feed?.map((f: any, i: number) => (
+                <div key={i} style={{ fontSize: 12.5, padding: "6px 0", borderBottom: "1px solid #f6f2ec", display: "flex", gap: 8 }}>
+                  <span className="muted" style={{ minWidth: 82, fontVariantNumeric: "tabular-nums" }}>{fmtDt(f.at)}</span>
+                  <span><b>{f.action}</b>{f.detail && <span className="muted"> · {f.detail}</span>}</span>
+                </div>
+              ))}
+            </div>}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

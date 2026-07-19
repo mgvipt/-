@@ -2137,7 +2137,13 @@ class SalaryView(APIView):
             if str(u.id) != str(me.id) and not (me.is_superuser or me.has_perm_code("roles.manage") or same_dept):
                 return Response({"detail": "Немає доступу до ЗП цього співробітника."}, status=403)
             return Response(compute_manager_salary(u, period))
-        rows = [compute_manager_salary(u, period) for u in _sales_team()]
+        team = _sales_team()
+        st = (request.query_params.get("status") or "").strip().lower()
+        if st in ("active", "inactive", "dismissed"):
+            team = team.filter(employment_status=st)
+        elif st == "active_only":
+            team = team.filter(is_active=True)
+        rows = [compute_manager_salary(u, period) for u in team]
         rows.sort(key=lambda r: r["revenue"], reverse=True)
         # покриття цілі компанії
         y, mo = int(period[:4]), int(period[5:7])

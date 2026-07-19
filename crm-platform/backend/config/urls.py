@@ -93,6 +93,8 @@ urlpatterns = [
     path("api/inbox/chatplace/webhook/", inbox_views.ChatPlaceWebhookView.as_view()),
     path("api/contact-center/", inbox_views.ContactCenterView.as_view()),
     path("api/activity/", crm_views.ActivityLogView.as_view()),
+    path("api/staff/analytics/", crm_views.StaffAnalyticsView.as_view()),
+    path("api/staff/activity/", crm_views.StaffActivityView.as_view()),
     path("api/privacy/", inbox_views.PrivacyPolicyView.as_view()),
     path("api/privacy", inbox_views.PrivacyPolicyView.as_view()),
     path("api/data-deletion/", inbox_views.DataDeletionView.as_view()),

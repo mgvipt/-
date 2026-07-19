@@ -216,6 +216,16 @@ class User(AbstractUser):
     phone = models.CharField(max_length=32, blank=True)
     extension = models.CharField(max_length=16, blank=True, help_text="внутрішній номер у АТС, напр. 789")
     theme = models.JSONField(default=dict, blank=True, help_text="Персональные настройки фона/акцента")
+    # ── Статус занятости сотрудника (для аналитики и фильтров: активные / неактивные / уволенные) ──
+    EMPLOYMENT_STATUS = [
+        ("active", "Активний"),
+        ("inactive", "Неактивний (тимчасово — відпустка/пауза, без доступу)"),
+        ("dismissed", "Звільнений"),
+    ]
+    employment_status = models.CharField(
+        max_length=12, choices=EMPLOYMENT_STATUS, default="active", db_index=True,
+        help_text="Активний / Неактивний / Звільнений. Керує доступом (is_active) і фільтрами аналітики.")
+    dismissed_at = models.DateField(null=True, blank=True, help_text="Дата звільнення (для розрахунку скільки пропрацював)")
     # Индивидуальные права (поверх отдела/роли)
     extra_permissions = models.JSONField(default=list, blank=True, help_text="Персонально выданные права")
     denied_permissions = models.JSONField(default=list, blank=True, help_text="Персонально запрещённые (приоритет над всем)")
@@ -228,6 +238,21 @@ class User(AbstractUser):
     extra_open_lines = models.JSONField(default=list, blank=True)
     stage_view_all = models.JSONField(default=list, blank=True)
     stage_lock = models.JSONField(default=list, blank=True)
+
+    def apply_employment_status(self, new_status, when=None):
+        """Змінити статус занятості і синхронно доступ. active→доступ є; inactive/dismissed→доступу нема.
+        dismissed фіксує дату звільнення; повернення на active/inactive її очищає."""
+        from django.utils import timezone
+        if new_status not in dict(self.EMPLOYMENT_STATUS):
+            return
+        self.employment_status = new_status
+        self.is_active = (new_status == "active")
+        if new_status == "dismissed":
+            self.dismissed_at = when or timezone.localdate()
+            self.is_superuser = False
+        else:
+            self.dismissed_at = None
+        self.save(update_fields=["employment_status", "is_active", "dismissed_at", "is_superuser"])
 
     # ── РЕЗОЛЮЦИЯ ПРАВ: отдел ∪ роль ∪ индивидуальные − запрещённые ──
     def effective_permissions(self) -> set:
