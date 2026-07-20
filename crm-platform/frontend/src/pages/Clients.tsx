@@ -27,7 +27,7 @@ const LOY_COLOR: Record<string, string> = { VIP: "#7c3aed", Активний: "#
 function AddSupplier({ onClose, onSaved }: { onClose: () => void; onSaved: (id: number) => void }) {
   const { t } = useLang();
   const [f, setF] = useState<any>({
-    last_name: "", first_name: "", edrpou: "", iban: "",
+    last_name: "", first_name: "", middle_name: "", edrpou: "", iban: "",
     doc_email: "", phone: "", monitor_docs: true, comment: "",
   });
   const [busy, setBusy] = useState(false);
@@ -44,7 +44,7 @@ function AddSupplier({ onClose, onSaved }: { onClose: () => void; onSaved: (id: 
     setBusy(true); setErr("");
     try {
       const d: any = await api.post("/api/contacts/", {
-        first_name: f.first_name.trim(), last_name: f.last_name.trim(),
+        first_name: f.first_name.trim(), last_name: f.last_name.trim(), middle_name: f.middle_name.trim(),
         edrpou: f.edrpou.trim(), iban: f.iban.trim().replace(/\s/g, ""),
         email: f.doc_email.trim(), doc_email: f.doc_email.trim(),
         phone: f.phone.trim(), comment: f.comment.trim(),
@@ -75,6 +75,10 @@ function AddSupplier({ onClose, onSaved }: { onClose: () => void; onSaved: (id: 
             <div style={lbl}>{t("Имя", "Імʼя")}</div>
             <input style={inp} value={f.first_name} onChange={(e) => set("first_name", e.target.value)} placeholder="Євгеній" />
           </div>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <div style={lbl}>{t("Отчество", "По батькові")}</div>
+          <input style={inp} value={f.middle_name} onChange={(e) => set("middle_name", e.target.value)} placeholder="Олександрович" />
         </div>
 
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>

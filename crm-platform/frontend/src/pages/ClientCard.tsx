@@ -14,7 +14,7 @@ import ClientChat from "../ClientChat";
 
 interface Deal { id: number; title: string; amount: number; stage: string; is_won: boolean; created_at: string; }
 interface Contact {
-  id: number; first_name: string; last_name: string; display_name: string; phone: string; email: string; social_link: string; messengers?: string[];
+  id: number; first_name: string; last_name: string; middle_name?: string; display_name: string; phone: string; email: string; social_link: string; messengers?: string[];
   source: string; address: string; comment: string; loyalty_tag: string; birthday: string | null;
   kinds?: string[]; gender?: string; monitor_docs?: boolean; doc_email?: string;
   channels: string[]; owner?: number | null; owner_name?: string; deals: Deal[]; total_spent: number;
@@ -116,8 +116,9 @@ export default function ClientCard() {
           <div className="panel">
             <div className="label" style={{ marginBottom: 8 }}>{t("Данные клиента","Дані клієнта")} <span className="muted" style={{ fontWeight: 400 }}>{t("(кликни поле, чтобы изменить)","(клікни поле, щоб змінити)")}</span></div>
             <div style={{ display: "flex", gap: 8 }}>
-              <div style={{ flex: 1 }}>{fld(t("Имя","Імʼя"), "first_name")}</div>
               <div style={{ flex: 1 }}>{fld(t("Фамилия","Прізвище"), "last_name")}</div>
+              <div style={{ flex: 1 }}>{fld(t("Имя","Імʼя"), "first_name")}</div>
+              <div style={{ flex: 1 }}>{fld(t("Отчество","По батькові"), "middle_name", t("По отчеству точно определяется пол (Олександрович / Олександрівна)","За по батькові точно визначається стать (Олександрович / Олександрівна)"))}</div>
             </div>
             {fld(t("Телефон","Телефон"), "phone", t("Основной контактный номер","Основний контактний номер"))}
             {fld(t("Email","Email"), "email")}
