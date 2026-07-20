@@ -102,7 +102,8 @@ class ContactViewSet(viewsets.ModelViewSet):
         _cred_mat = _PP.objects.filter(kind="payable", is_internal=False).filter(_cli_q).exclude(id__in=_paired).aggregate(s=_Sum("amount"))["s"] or 0
         adv = _Dadv(str(inc or 0)) - _Dadv(str(_deals_sum or 0)) - _Dadv(str(_recv_mat or 0)) - _Dadv(str(_cred_mat or 0)) - _Dadv(str(_adv_used or 0))
         _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[])))
-        debt = _ppq.filter(kind="payable").aggregate(s=_Sum("amount"))["s"] or 0
+        from django.db.models import F as _F
+        debt = _ppq.filter(kind="payable").aggregate(s=_Sum(_F("amount") - _F("paid_amount")))["s"] or 0
         # ДЕБІТОРКА (нам винні): торгова (від продажу, майбутня прибуток) окремо від позики (мої гроші в борг, НЕ прибуток)
         recv_sale = _ppq.filter(kind="receivable", is_loan=False).aggregate(s=_Sum("amount"))["s"] or 0
         recv_loan = _ppq.filter(kind="receivable", is_loan=True).aggregate(s=_Sum("amount"))["s"] or 0
@@ -164,6 +165,7 @@ class ContactViewSet(viewsets.ModelViewSet):
             _Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[]))
         ).select_related("deal").order_by("status", "-id")[:100]
         debts_list = [{"id": p.id, "kind": p.kind, "amount": float(p.amount or 0), "counterparty": p.counterparty or "",
+                       "paid_amount": float(p.paid_amount or 0), "remaining": float((p.amount or 0) - (p.paid_amount or 0)),
                        "status": p.status, "is_loan": bool(p.is_loan),
                        "due_date": p.due_date.isoformat() if p.due_date else None,
                        "deal": p.deal_id, "deal_title": (p.deal.title if p.deal_id else ""),
@@ -172,7 +174,8 @@ class ContactViewSet(viewsets.ModelViewSet):
                          "receivable": (recv_sale or 0) + (recv_loan or 0), "receivable_sale": recv_sale, "receivable_loan": recv_loan,
                          "count": qs.count(), "ops": ops, "debts_list": debts_list,
                          "revenue": float(_rev or 0), "cost_ext": float(_cext or 0), "cogs": float(_cogs), "profit": _profit,
-                         "planned_srv": float(_planned_srv), "actual_srv": float(_actual_srv)})
+                         "planned_srv": float(_planned_srv), "actual_srv": float(_actual_srv),
+                         "is_supplier": ("supplier" in (getattr(c, "kinds", None) or []))})
     search_fields = ["first_name", "last_name", "phone", "email", "edrpou", "nickname"]
     filterset_fields = ["loyalty_tag", "source", "owner"]
     ordering_fields = ["created_at", "first_name", "last_touch_at"]
