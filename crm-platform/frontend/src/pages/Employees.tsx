@@ -5,12 +5,28 @@ import { useLang } from "../i18n";
 import { Icon } from "../Icon";
 
 interface Dept { id: number; name: string; parent: number | null; permissions: string[]; color: string; pos_x: number; pos_y: number; members_count: number; eff_permissions: string[]; idle_timeout_min?: number; }
-interface Emp { id: number; username: string; full_name: string; email: string; role: number | null; role_name: string; department: number | null; department_name: string; extra_permissions: string[]; denied_permissions: string[]; is_active: boolean; employment_status?: string; dismissed_at?: string | null; date_joined?: string; }
+interface Emp { id: number; username: string; full_name: string; email: string; role: number | null; role_name: string; department: number | null; department_name: string; extra_permissions: string[]; denied_permissions: string[]; is_active: boolean; employment_status?: string; dismissed_at?: string | null; date_joined?: string; photo?: string; position?: string; birthday?: string | null; about?: string; interests?: string; telegram?: string; phone?: string; on_shift?: boolean; shift_paused?: boolean; }
 interface Invite { id: number; email: string; department_name: string; status: string; link: string; }
 interface Perm { code: string; label: string; }
 interface Role { id: number; name: string; }
 
 const NODE_W = 210;
+
+// ── Аватар: фото/лого якщо є, інакше ініціали кольором ──
+function initialsOf(name: string) { return (name || "?").split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase(); }
+function colorOf(name: string) { let h = 0; for (let i = 0; i < (name || "").length; i++) h = (h * 31 + name.charCodeAt(i)) % 360; return `hsl(${h} 45% 62%)`; }
+function PhotoAvatar({ photo, name, size = 34 }: { photo?: string; name: string; size?: number }) {
+  const st: any = { width: size, height: size, borderRadius: "50%", flexShrink: 0, objectFit: "cover" };
+  if (photo) return <img src={photo} alt={name} style={st} />;
+  return <span style={{ ...st, background: colorOf(name), color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.38, fontWeight: 700 }}>{initialsOf(name)}</span>;
+}
+// ── Зелений бейдж «зараз на робочому дні» ──
+function ShiftBadge({ on, paused, t }: { on?: boolean; paused?: boolean; t: any }) {
+  if (!on) return null;
+  return paused
+    ? <span title={t("На смене, но на паузе/обеде", "На зміні, але на паузі/обіді")} style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "#fef9c3", color: "#a16207", whiteSpace: "nowrap" }}>⏸ {t("Пауза", "Пауза")}</span>
+    : <span title={t("Рабочий день идёт прямо сейчас", "Робочий день триває просто зараз")} style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "#dcfce7", color: "#16a34a", whiteSpace: "nowrap" }}>🟢 {t("На работе", "На роботі")}</span>;
+}
 
 class ErrBoundary extends Component<{ children: any }, { err: boolean }> {
   state = { err: false };
@@ -23,6 +39,8 @@ export default function Employees() {
   const [tab, setTab] = useState<"map" | "list" | "activity" | "invites" | "perms">(() => (localStorage.getItem("emp_tab") as any) || "map");
   const [listStatus, setListStatus] = useState<"active" | "inactive" | "dismissed" | "all">("active");
   const [listEmps, setListEmps] = useState<Emp[]>([]);
+  const [cardEmp, setCardEmp] = useState<Emp | null>(null);   // відкрита картка співробітника
+  const [me, setMe] = useState<any>(null);
   useEffect(() => { try { localStorage.setItem("emp_tab", tab); } catch (e) { /* noop */ } }, [tab]);
   const [depts, setDepts] = useState<Dept[]>([]);
   const [emps, setEmps] = useState<Emp[]>([]);
@@ -41,6 +59,7 @@ export default function Employees() {
     api.get<any>("/api/permissions/").then((dd) => { setPerms(dd.flat || dd); setPermGroups(dd.groups || []); }).catch(() => {});
     api.get<any>("/api/roles/").then((d) => setRoles(d.results || d)).catch(() => {});
     api.get<any>("/api/funnels/").then((d) => setFunnels(d.results || d)).catch(() => {});
+    api.get<any>("/api/me/").then(setMe).catch(() => {});
   }
   useEffect(() => { load(); }, []);
   // список сотрудников для вкладки «Список» — с фильтром по статусу занятости
@@ -168,8 +187,10 @@ export default function Employees() {
                   <div style={{ padding: 7, display: "flex", flexDirection: "column", gap: 4, minHeight: 26 }}>
                     {byDept(d.id).map((e) => (
                       <div key={e.id} draggable onDragStart={(ev) => ev.dataTransfer.setData("emp", String(e.id))}
-                        style={{ cursor: "grab", background: "#f1f5f9", borderRadius: 7, padding: "3px 8px", fontSize: 12 }}>
-                        {e.full_name} {e.role_name && <span className="muted" style={{ fontSize: 10 }}>· {e.role_name}</span>}
+                        style={{ cursor: "grab", background: "#f1f5f9", borderRadius: 7, padding: "3px 8px", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}>
+                        {e.on_shift && <span title={e.shift_paused ? t("На паузе", "На паузі") : t("На работе сейчас", "На роботі зараз")} style={{ width: 7, height: 7, borderRadius: "50%", background: e.shift_paused ? "#eab308" : "#16a34a", flexShrink: 0 }} />}
+                        <span onClick={() => setCardEmp(e)} style={{ cursor: "pointer" }}>{e.full_name}</span>
+                        {e.role_name && <span className="muted" style={{ fontSize: 10 }}>· {e.role_name}</span>}
                       </div>
                     ))}
                     {d.parent != null && <div className="muted" style={{ fontSize: 10 }}>↳ {depts.find((x) => x.id === d.parent)?.name} <a onClick={(ev) => { ev.stopPropagation(); setParent(d.id, null); }} style={{ cursor: "pointer" }}>✖</a></div>}
@@ -208,7 +229,17 @@ export default function Employees() {
                   <button onClick={onClick} style={{ fontSize: 11.5, padding: "3px 9px", borderRadius: 7, border: `1px solid ${border}`, background: bg, color, cursor: "pointer", marginRight: 5 }}>{label}</button>
                 );
                 return <tr key={e.id}>
-                  <td>{e.full_name}</td><td>{e.department_name || "—"}</td><td>{e.role_name || "—"}</td>
+                  <td>
+                    <div onClick={() => setCardEmp(e)} title={t("Открыть карточку сотрудника", "Відкрити картку співробітника")} style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}>
+                      <PhotoAvatar photo={e.photo} name={e.full_name} size={32} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600 }}>{e.full_name}</div>
+                        {e.position && <div className="muted" style={{ fontSize: 11.5 }}>{e.position}</div>}
+                      </div>
+                      <ShiftBadge on={e.on_shift} paused={e.shift_paused} t={t} />
+                    </div>
+                  </td>
+                  <td>{e.department_name || "—"}</td><td>{e.role_name || "—"}</td>
                   <td>{statusChip(st)}</td>
                   <td className="muted" style={{ fontSize: 12 }}>{dj}{da && <> → <span style={{ color: "#dc2626" }}>{da}</span></>}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
@@ -227,7 +258,12 @@ export default function Employees() {
             </table></div>
           </div>
         )}
-        {tab === "activity" && <ActivityTab depts={depts} t={t} statusChip={statusChip} />}
+        {tab === "activity" && <ActivityTab depts={depts} t={t} statusChip={statusChip} openCard={(e: any) => setCardEmp(e)} />}
+
+        {cardEmp && <EmployeeCard emp={cardEmp} t={t}
+          canEdit={!!(me?.is_superuser || me?.permissions?.includes("roles.manage") || me?.id === cardEmp.id)}
+          onClose={() => setCardEmp(null)}
+          onSaved={(upd: any) => { setListEmps((xs) => xs.map((x) => x.id === upd.id ? { ...x, ...upd } : x)); load(); }} />}
         {tab === "invites" && <InvitesTab depts={depts} roles={roles} invites={invites} reload={load} t={t} />}
         {tab === "perms" && <PermsTab depts={depts} emps={emps} perms={perms} permGroups={permGroups} funnels={funnels} roles={roles} reload={load} t={t}
           toggleDept={async (d: Dept, code: string) => { const next = d.permissions.includes(code) ? d.permissions.filter((c) => c !== code) : [...d.permissions, code]; await api.patch(`/api/departments/${d.id}/`, { permissions: next }); load(); }}
@@ -237,7 +273,103 @@ export default function Employees() {
   );
 }
 
-function ActivityTab({ depts, t, statusChip }: any) {
+// ── Картка співробітника: фото/лого + особисті дані + інтереси ──
+function EmployeeCard({ emp, canEdit, onClose, onSaved, t }: any) {
+  const [f, setF] = useState<any>({
+    position: emp.position || "", birthday: emp.birthday || "", about: emp.about || "",
+    interests: emp.interests || "", telegram: emp.telegram || "", phone: emp.phone || "",
+  });
+  const [photo, setPhoto] = useState<string>(emp.photo || "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const set = (k: string, v: string) => setF((p: any) => ({ ...p, [k]: v }));
+
+  // стискаємо фото в браузері до 256px — щоб не вантажити базу
+  function pickPhoto(file: File) {
+    if (!file) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const S = 256, c = document.createElement("canvas");
+        const side = Math.min(img.width, img.height);
+        c.width = S; c.height = S;
+        const ctx = c.getContext("2d");
+        if (ctx) { ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, S, S); setPhoto(c.toDataURL("image/jpeg", 0.82)); }
+      };
+      img.src = String(rd.result);
+    };
+    rd.readAsDataURL(file);
+  }
+
+  async function save() {
+    setSaving(true); setErr("");
+    try {
+      const d = await api.patch<any>(`/api/users/${emp.id}/profile/`, { ...f, photo, birthday: f.birthday || null });
+      onSaved?.(d); onClose();
+    } catch (e: any) { setErr(e?.response?.data?.detail || t("Не удалось сохранить", "Не вдалося зберегти")); }
+    setSaving(false);
+  }
+
+  const Field = ({ label, k, area, type }: any) => (
+    <label style={{ display: "block", marginBottom: 10 }}>
+      <div className="muted" style={{ fontSize: 11.5, marginBottom: 3 }}>{label}</div>
+      {area
+        ? <textarea value={f[k]} onChange={(e) => set(k, e.target.value)} disabled={!canEdit} rows={3} style={{ width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13.5, fontFamily: "inherit", resize: "vertical" }} />
+        : <input type={type || "text"} value={f[k]} onChange={(e) => set(k, e.target.value)} disabled={!canEdit} style={{ width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13.5 }} />}
+    </label>
+  );
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: "min(560px, 96vw)", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.25)" }}>
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid #ece7df", display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ position: "relative" }}>
+            <PhotoAvatar photo={photo} name={emp.full_name} size={64} />
+            {canEdit && (
+              <label title={t("Загрузить фото или лого", "Завантажити фото або лого")} style={{ position: "absolute", right: -2, bottom: -2, background: "#C67D5F", color: "#fff", width: 24, height: 24, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 12, border: "2px solid #fff" }}>
+                <Icon n="📷" size={12} />
+                <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => e.target.files && pickPhoto(e.target.files[0])} />
+              </label>
+            )}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 19, fontWeight: 700 }}>{emp.full_name}</div>
+            <div className="muted" style={{ fontSize: 13 }}>{emp.department_name || "—"}{emp.role_name ? ` · ${emp.role_name}` : ""}</div>
+            <div style={{ marginTop: 5, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <ShiftBadge on={emp.on_shift} paused={emp.shift_paused} t={t} />
+              {photo && canEdit && <a onClick={() => setPhoto("")} style={{ fontSize: 11.5, color: "#dc2626", cursor: "pointer" }}>{t("убрать фото", "прибрати фото")}</a>}
+            </div>
+          </div>
+          <button className="btn" onClick={onClose}>✕</button>
+        </div>
+
+        <div style={{ padding: "16px 20px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            {Field({ label: t("Должность", "Посада"), k: "position" })}
+            {Field({ label: t("День рождения", "День народження"), k: "birthday", type: "date" })}
+            {Field({ label: t("Телефон", "Телефон"), k: "phone" })}
+            {Field({ label: "Telegram", k: "telegram" })}
+          </div>
+          {Field({ label: t("О сотруднике", "Про співробітника"), k: "about", area: true })}
+          {Field({ label: t("Интересы, хобби", "Інтереси, хобі"), k: "interests", area: true })}
+          <div className="muted" style={{ fontSize: 12 }}>
+            {t("Email", "Email")}: {emp.email || "—"} · {t("В компании с", "У компанії з")} {emp.date_joined ? new Date(emp.date_joined).toLocaleDateString("uk-UA") : "—"}
+          </div>
+          {err && <div style={{ color: "#dc2626", fontSize: 12.5, marginTop: 8 }}>{err}</div>}
+          {canEdit && (
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? t("Сохраняю…", "Зберігаю…") : t("Сохранить", "Зберегти")}</button>
+              <button className="btn" onClick={onClose}>{t("Отмена", "Скасувати")}</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActivityTab({ depts, t, statusChip, openCard }: any) {
   const now = new Date();
   const curMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const [period, setPeriod] = useState(curMonth);
@@ -340,7 +472,15 @@ function ActivityTab({ depts, t, statusChip }: any) {
           </tr></thead>
           <tbody>{data.rows.map((r: any) => (
             <tr key={r.id} onClick={() => openEmp(r)} style={{ cursor: "pointer" }} title={t("Клик — лента активности", "Клік — стрічка активності")}>
-              <td style={{ fontWeight: 600 }}>{r.full_name}</td>
+              <td>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span onClick={(ev) => { ev.stopPropagation(); openCard?.(r); }} title={t("Открыть карточку", "Відкрити картку")} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                    <PhotoAvatar photo={r.photo} name={r.full_name} size={30} />
+                    <span style={{ fontWeight: 600 }}>{r.full_name}</span>
+                  </span>
+                  <ShiftBadge on={r.on_shift} paused={r.shift_paused} t={t} />
+                </div>
+              </td>
               <td className="muted" style={{ fontSize: 12 }}>{r.department_name}</td>
               <td>{statusChip(r.employment_status)}</td>
               <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600, color: r.worked_hours > 0 ? "#111" : "#cbd5e1" }}>{r.worked_hours}</td>

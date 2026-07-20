@@ -2055,6 +2055,9 @@ class StaffAnalyticsView(APIView):
         if dept:
             qs = qs.filter(department_id=dept)
 
+        # хто ЗАРАЗ на робочому дні (зелений бейдж) — одним запитом
+        live = dict(WorkSession.objects.filter(ended_at__isnull=True).values_list("user_id", "paused_at"))
+
         rows = []
         for u in qs:
             wds = WorkDay.objects.filter(user=u, date__gte=d_from, date__lte=d_to)
@@ -2072,6 +2075,8 @@ class StaffAnalyticsView(APIView):
             worked_days = by_status.get("worked", 0) + by_status.get("overtime", 0)
             rows.append({
                 "id": u.id, "full_name": u.get_full_name() or u.username,
+                "photo": u.photo or "", "position": u.position or "",
+                "on_shift": u.id in live, "shift_paused": bool(live.get(u.id)),
                 "department": u.department_id, "department_name": u.department.name if u.department else "—",
                 "role_name": u.role.name if u.role else "—",
                 "employment_status": u.employment_status, "dismissed_at": u.dismissed_at,
@@ -2160,6 +2165,9 @@ class StaffActivityView(APIView):
                      "pauses": s.pauses or []} for s in sess.order_by("-started_at")[:120]]
         return Response({
             "user": {"id": u.id, "full_name": u.get_full_name() or u.username,
+                     "photo": u.photo or "", "position": u.position or "",
+                     "about": u.about or "", "interests": u.interests or "",
+                     "telegram": u.telegram or "", "birthday": u.birthday,
                      "department_name": u.department.name if u.department else "—",
                      "role_name": u.role.name if u.role else "—",
                      "employment_status": u.employment_status, "dismissed_at": u.dismissed_at,

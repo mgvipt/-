@@ -32,6 +32,8 @@ class UserSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source="department.name", read_only=True)
     full_name = serializers.SerializerMethodField()
     effective_permissions = serializers.SerializerMethodField()
+    on_shift = serializers.SerializerMethodField()      # зараз на робочому дні (зелений бейдж)
+    shift_paused = serializers.SerializerMethodField()  # на зміні, але на паузі/обіді
 
     class Meta:
         model = User
@@ -39,6 +41,8 @@ class UserSerializer(serializers.ModelSerializer):
                   "phone", "extension", "role", "role_name", "department", "department_name",
                   "extra_permissions", "denied_permissions", "effective_permissions", "stage_view_all", "stage_lock", "theme", "is_active",
                   "employment_status", "dismissed_at", "date_joined",
+                  "photo", "position", "birthday", "about", "interests", "telegram",
+                  "on_shift", "shift_paused",
                   "extra_funnels", "extra_open_lines",
                   "fin_accounts", "fin_cats_in", "fin_cats_out", "fin_dirs", "fin_counterparties"]
         read_only_fields = ["date_joined"]
@@ -48,6 +52,27 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_effective_permissions(self, obj):
         return list(obj.effective_permissions())
+
+    # ── «на зміні зараз»: множини id беруться ОДНИМ запитом у context (без N+1) ──
+    def _shift_sets(self):
+        ctx = self.context
+        if "on_shift_ids" not in ctx:
+            try:
+                from apps.finance.models import WorkSession
+                act = WorkSession.objects.filter(ended_at__isnull=True).values_list("user_id", "paused_at")
+                ctx["on_shift_ids"] = {uid for uid, _ in act}
+                ctx["paused_ids"] = {uid for uid, p in act if p}
+            except Exception:
+                ctx["on_shift_ids"] = set(); ctx["paused_ids"] = set()
+        return ctx["on_shift_ids"], ctx["paused_ids"]
+
+    def get_on_shift(self, obj):
+        on, _ = self._shift_sets()
+        return obj.id in on
+
+    def get_shift_paused(self, obj):
+        _, paused = self._shift_sets()
+        return obj.id in paused
 
 
 class MeSerializer(UserSerializer):

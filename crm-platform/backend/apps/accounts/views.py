@@ -50,6 +50,39 @@ class UserViewSet(viewsets.ModelViewSet):
         # дефолт: активні (включно зі старими записами де employment_status ще 'active' за замовч.)
         return qs.filter(is_active=True)
 
+    # поля картки, які можна редагувати (решта — тільки через адмінку/права)
+    PROFILE_FIELDS = ["photo", "position", "birthday", "about", "interests", "telegram", "phone"]
+
+    def get_permissions(self):
+        # свою картку співробітник редагує сам — без права roles.manage
+        if getattr(self, "action", None) == "profile":
+            from rest_framework.permissions import IsAuthenticated
+            return [IsAuthenticated()]
+        return super().get_permissions()
+
+    @action(detail=True, methods=["patch"])
+    def profile(self, request, pk=None):
+        """Картка співробітника: свою редагує сам, чужу — адмін / roles.manage."""
+        u = User.objects.filter(pk=pk).first()
+        if not u:
+            return Response({"detail": "Немає такого"}, status=status.HTTP_404_NOT_FOUND)
+        actor = request.user
+        is_admin = actor.is_superuser or (hasattr(actor, "has_perm_code") and actor.has_perm_code("roles.manage"))
+        if u.id != actor.id and not is_admin:
+            return Response({"detail": "Можна редагувати лише свою картку"}, status=status.HTTP_403_FORBIDDEN)
+        data = {f: request.data[f] for f in self.PROFILE_FIELDS if f in request.data}
+        if not data:
+            return Response(UserSerializer(u, context={"request": request}).data)
+        # фото зберігається як data URL у БД — обмежуємо розмір (фронт стискає до 256px)
+        if data.get("photo") and len(str(data["photo"])) > 400000:
+            return Response({"detail": "Фото завелике — стисніть зображення"}, status=status.HTTP_400_BAD_REQUEST)
+        if "birthday" in data and not data["birthday"]:
+            data["birthday"] = None
+        for k, v in data.items():
+            setattr(u, k, v)
+        u.save(update_fields=list(data.keys()))
+        return Response(UserSerializer(u, context={"request": request}).data)
+
     @action(detail=True, methods=["post"])
     def set_status(self, request, pk=None):
         """Змінити статус занятості: active / inactive / dismissed. Лише адмін / roles.manage.

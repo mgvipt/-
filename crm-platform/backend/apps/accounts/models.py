@@ -229,6 +229,13 @@ class User(AbstractUser):
         max_length=12, choices=EMPLOYMENT_STATUS, default="active", db_index=True,
         help_text="Активний / Неактивний / Звільнений. Керує доступом (is_active) і фільтрами аналітики.")
     dismissed_at = models.DateField(null=True, blank=True, help_text="Дата звільнення (для розрахунку скільки пропрацював)")
+    # ── Картка співробітника (особисті дані, заповнює сам або керівник) ──
+    photo = models.TextField(blank=True, default="", help_text="Фото/лого — data URL (стиснене до 256px у браузері)")
+    position = models.CharField(max_length=120, blank=True, default="", help_text="Посада (вільний текст, напр. «Старший менеджер»)")
+    birthday = models.DateField(null=True, blank=True, help_text="День народження")
+    about = models.TextField(blank=True, default="", help_text="Коротко про співробітника")
+    interests = models.TextField(blank=True, default="", help_text="Інтереси, хобі (щоб краще знати команду)")
+    telegram = models.CharField(max_length=64, blank=True, default="", help_text="Telegram (@nick)")
     # Индивидуальные права (поверх отдела/роли)
     extra_permissions = models.JSONField(default=list, blank=True, help_text="Персонально выданные права")
     denied_permissions = models.JSONField(default=list, blank=True, help_text="Персонально запрещённые (приоритет над всем)")
