@@ -3354,18 +3354,43 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
   const [prods, setProds] = useState<any[]>([]);
   const [lines, setLines] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
+  // постачальник: обрати наявного / створити нового з пошти
+  const [sups, setSups] = useState<any[]>([]);
+  const [supId, setSupId] = useState<number | 0>(0);
+  const [newSup, setNewSup] = useState<any | null>(null);
+  // оплата: кредиторка (заплачу потім) або привʼязка до вже зробленого платежу
+  const [payMode, setPayMode] = useState<"payable" | "paid">("payable");
+  const [cands, setCands] = useState<any[]>([]);
+  const [txId, setTxId] = useState<number | 0>(0);
   useEffect(() => {
     api.get<any>(`/api/integrations/incoming-docs/${docId}/`).then((d) => { setDet(d); setLines((d.lines || []).map((l: any) => ({ ...l }))); }).catch(() => {});
     api.get<any>("/api/products/?page_size=3000").then((d) => setProds(d.results || d)).catch(() => setProds([]));
+    api.get<any>("/api/contacts/?kind=supplier&page_size=300").then((d) => setSups(d.results || d)).catch(() => setSups([]));
   }, [docId]);
+  useEffect(() => {
+    if (payMode === "paid" && !cands.length) {
+      api.get<any>(`/api/integrations/incoming-docs/${docId}/pay-candidates/`).then((d) => setCands(d.rows || [])).catch(() => setCands([]));
+    }
+  }, [payMode, docId, cands.length]);
+  // пошта відправника — з неї створюємо нового постачальника
+  const senderMail = ((det?.sender || "").match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [""])[0];
   const setLine = (i: number, patch: any) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const pick = (i: number, name: string) => { const p = prods.find((x) => x.name === name); setLine(i, { product_name: name, product_id: p ? p.id : null }); };
   const post = async () => {
     if (lines.some((l) => !l.product_id) && !confirm(t("Не все строки сопоставлены — провести только сопоставленные?", "Не всі рядки зіставлені — провести лише зіставлені?"))) return;
     setBusy(true);
     try {
-      const r: any = await api.post(`/api/integrations/incoming-docs/${docId}/action/`, { action: "confirm", lines });
-      alert(t("Приход проведён ✓", "Прихід проведено ✓") + `\n` + t("позиций", "позицій") + `: ${r.positions}, ` + t("кредиторка", "кредиторка") + ` №${r.payable_id} на ${r.amount} ₴, ` + t("правил", "правил") + `: ${r.rules_saved}`);
+      const body: any = { action: "confirm", lines };
+      if (supId) body.contact_id = supId;
+      if (newSup) body.new_supplier = newSup;
+      if (payMode === "paid" && txId) { body.pay_mode = "paid"; body.tx_id = txId; }
+      const r: any = await api.post(`/api/integrations/incoming-docs/${docId}/action/`, body);
+      alert(t("Приход проведён ✓", "Прихід проведено ✓") + `\n` +
+        t("поставщик", "постачальник") + `: ${r.supplier}\n` +
+        t("позиций", "позицій") + `: ${r.positions}, ` + t("правил", "правил") + `: ${r.rules_saved}\n` +
+        (r.settled_tx
+          ? t("Долг закрыт платежом из журнала №", "Борг закрито платежем із журналу №") + `${r.settled_tx}`
+          : t("кредиторка", "кредиторка") + ` №${r.payable_id} на ${r.amount} ₴`));
       onDone(); onClose();
     } catch (e: any) { alert(e?.response?.data?.detail || t("Ошибка", "Помилка")); } finally { setBusy(false); }
   };
@@ -3375,6 +3400,76 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
       <div className="panel" style={{ maxWidth: 920, margin: "16px auto", background: "#fff" }} onClick={(e) => e.stopPropagation()}>
         <h3 style={{ margin: "0 0 4px" }}>{t("Накладная поставщика", "Накладна постачальника")} №{det.invoice_number} {t("от", "від")} {det.invoice_date}</h3>
         <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{det.supplier?.name} · {t("сумма", "сума")} {det.amount} ₴. {t("Под каждый его товар выбери наш со склада — запомнится как правило.", "Під кожен його товар обери наш зі складу — запамʼятається як правило.")}</div>
+        {/* ── ПОСТАЧАЛЬНИК ── */}
+        <div style={{ padding: 10, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "#475569", marginBottom: 6 }}>{t("Поставщик", "Постачальник")}</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <select value={supId} onChange={(e) => { setSupId(Number(e.target.value)); setNewSup(null); }}
+              style={{ flex: "1 1 260px", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }}>
+              <option value={0}>{t("— определить автоматически (по ІПН / почте) —", "— визначити автоматично (за ІПН / поштою) —")}</option>
+              {sups.map((c) => <option key={c.id} value={c.id}>{c.display_name}</option>)}
+            </select>
+            {!newSup && (
+              <button className="btn btn-light" onClick={() => setNewSup({
+                name: det?.supplier?.name || "", edrpou: det?.supplier?.ipn || "",
+                iban: det?.supplier?.iban || "", email: senderMail, phone: "",
+              })}>+ {t("Новый поставщик", "Новий постачальник")}</button>
+            )}
+          </div>
+          {newSup && (
+            <div style={{ marginTop: 8, padding: 10, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+              <div className="muted" style={{ fontSize: 11.5, marginBottom: 6 }}>
+                {t("Создастся контрагент с типом «Постачальник» и включённым мониторингом накладных с этой почты.",
+                   "Створиться контрагент із типом «Постачальник» і увімкненим моніторингом накладних із цієї пошти.")}
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {([["name", t("Название / ФИО", "Назва / ПІБ"), "1 1 200px"], ["edrpou", "ЄДРПОУ / ІПН", "0 1 140px"],
+                   ["iban", "IBAN", "1 1 220px"], ["email", t("Почта (отправитель)", "Пошта (відправник)"), "1 1 200px"],
+                   ["phone", t("Телефон", "Телефон"), "0 1 140px"]] as [string, string, string][]).map(([k, ph, fl]) => (
+                  <input key={k} value={newSup[k] || ""} placeholder={ph} onChange={(e) => setNewSup({ ...newSup, [k]: e.target.value })}
+                    style={{ flex: fl, height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px", fontSize: 13 }} />
+                ))}
+              </div>
+              <button className="btn btn-light" style={{ marginTop: 6 }} onClick={() => setNewSup(null)}>{t("Отмена", "Скасувати")}</button>
+            </div>
+          )}
+        </div>
+
+        {/* ── ОПЛАТА ── */}
+        <div style={{ padding: 10, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "#475569", marginBottom: 6 }}>{t("Оплата", "Оплата")}</div>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
+              <input type="radio" checked={payMode === "payable"} onChange={() => setPayMode("payable")} />
+              {t("Ещё не оплачено — создать долг (кредиторку)", "Ще не оплачено — створити борг (кредиторку)")}
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
+              <input type="radio" checked={payMode === "paid"} onChange={() => setPayMode("paid")} />
+              {t("Уже оплатил — привязать платёж из журнала", "Вже оплатив — привʼязати платіж із журналу")}
+            </label>
+          </div>
+          {payMode === "paid" && (
+            <div style={{ marginTop: 8, maxHeight: 210, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff" }}>
+              {!cands.length && <div className="muted" style={{ padding: 10, fontSize: 12.5 }}>{t("Ищу подходящие расходы…", "Шукаю відповідні витрати…")}</div>}
+              {cands.map((r) => {
+                const on = txId === r.id;
+                const exact = Math.abs(r.diff) < 0.01;
+                return (
+                  <div key={r.id} onClick={() => setTxId(on ? 0 : r.id)}
+                    style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", cursor: "pointer",
+                             borderBottom: "1px solid #f1f5f9", background: on ? "#eef2ff" : "transparent" }}>
+                    <input type="radio" checked={on} readOnly />
+                    <b style={{ minWidth: 92, fontSize: 13 }}>{Number(r.amount).toLocaleString()} ₴</b>
+                    <span className="muted" style={{ fontSize: 12, minWidth: 78 }}>{r.date}</span>
+                    <span style={{ fontSize: 12.5, flex: 1 }}>{r.counterparty || r.comment || "—"}</span>
+                    {exact && <span className="chip" style={{ background: "#f0fdf4", color: "#15803d", fontSize: 11 }}>{t("сумма совпала", "сума збіглася")}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <datalist id="wh-prods">{prods.map((p) => <option key={p.id} value={p.name} />)}</datalist>
         <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
           <thead><tr style={{ textAlign: "left", borderBottom: "1px solid #e2e8f0" }}>
@@ -3391,7 +3486,11 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
           </tbody>
         </table>
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-          <button className="btn btn-primary" disabled={busy} onClick={post}>{busy ? "…" : "✓ " + t("Провести приход + кредиторку", "Провести прихід + кредиторку")}</button>
+          <button className="btn btn-primary" disabled={busy || (payMode === "paid" && !txId)} onClick={post}>
+            {busy ? "…" : "✓ " + (payMode === "paid"
+              ? t("Оприходовать и закрыть платежом", "Оприбуткувати і закрити платежем")
+              : t("Провести приход + кредиторку", "Провести прихід + кредиторку"))}
+          </button>
           <button className="btn btn-light" onClick={onClose}>{t("Отмена", "Скасувати")}</button>
         </div>
       </div>

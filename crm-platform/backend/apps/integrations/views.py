@@ -483,13 +483,31 @@ def _confirm_supplier(d, request):
         return Response({"ok": True, "already": True, "detail": "Прихід за цією накладною вже є"})
     wh = Warehouse.objects.filter(id=1).first() or Warehouse.objects.first()
     sup = p.get("supplier") or {}
+    # ── ПОСТАЧАЛЬНИК ──
+    # Порядок: явно обраний у вікні → новий з пошти → за ІПН → за поштою відправника.
+    # ⚠️ Жодних «здогадок» за назвою — інакше чужа накладна прилипає не до того контрагента.
+    from django.db.models import Q as _Qs
     contact = None
-    if sup.get("ipn"):
+    _cid = request.data.get("contact_id")
+    if _cid:
+        contact = Contact.objects.filter(id=_cid).first()
+    _ns = request.data.get("new_supplier") or {}
+    if not contact and (_ns.get("name") or "").strip():
+        _mail = ((_ns.get("email") or "").strip() or (skey if "@" in (skey or "") else "")).lower()
+        contact = Contact.objects.create(
+            first_name=(_ns.get("name") or "").strip()[:120],
+            edrpou=(_ns.get("edrpou") or "").strip(),
+            iban=(_ns.get("iban") or "").strip().replace(" ", ""),
+            phone=(_ns.get("phone") or "").strip(),
+            email=_mail, doc_email=_mail,
+            kinds=["supplier"], monitor_docs=bool(_mail))
+    if not contact and sup.get("ipn"):
         contact = Contact.objects.filter(edrpou=sup["ipn"]).first()
+    if not contact and skey and "@" in skey:
+        contact = Contact.objects.filter(_Qs(doc_email__iexact=skey) | _Qs(email__iexact=skey)).first()
     if not contact:
-        contact = Contact.objects.filter(first_name__icontains="Корженевськ").first()
-    if not contact and sup.get("name"):
-        contact = Contact.objects.create(first_name=sup["name"][:120], edrpou=sup.get("ipn") or "", iban=sup.get("iban") or "")
+        return Response({"detail": "Не вдалося визначити постачальника. Оберіть існуючого або створіть нового у вікні проведення.",
+                         "need_supplier": True, "sender": skey}, status=400)
     dd = None
     if p.get("invoice_date"):
         try:
@@ -520,16 +538,70 @@ def _confirm_supplier(d, request):
             SupplierProductMap.objects.update_or_create(supplier_key=skey, their_name=tn, defaults={"product": prod})
             rules += 1
     amt = p.get("amount") or round(total, 2)
+    _cp = (contact and str(contact)) or sup.get("name") or "Постачальник"
     pp = PlannedPayment.objects.create(
         kind="payable", amount=amt, due_date=(dd or _tz.localdate()),
-        counterparty=(sup.get("name") or "Постачальник")[:160], contact=contact, status="planned",
+        counterparty=_cp[:160], contact=contact, status="planned",
         comment=("Постачальник · накладна %s від %s · %d позицій · ІПН %s"
                  % (inv or "?", p.get("invoice_date") or "?", positions, sup.get("ipn") or "?"))[:255])
+
+    # ── ВЖЕ ОПЛАЧЕНО: привʼязати до наявного платежу з журналу (нова кредиторка одразу гаситься) ──
+    # Гроші в P&L беруться з Transaction, тож подвоєння немає: кредиторка — лише облік зобовʼязання.
+    settled_tx = None
+    if (request.data.get("pay_mode") or "payable") == "paid" and request.data.get("tx_id"):
+        from apps.finance.models import Transaction as _Tx
+        _tx = _Tx.objects.filter(id=request.data.get("tx_id"), direction="out").first()
+        if _tx:
+            pp.paid_amount = pp.amount
+            pp.status = "paid"
+            pp.paid_tx = _tx
+            pp.save(update_fields=["paid_amount", "status", "paid_tx"])
+            _upd = []
+            if not _tx.contact_id:
+                _tx.contact = contact; _upd.append("contact")
+            _mark = "накладна %s" % (inv or "?")
+            if _mark not in (_tx.comment or ""):
+                _tx.comment = ((_tx.comment or "") + (" · " if _tx.comment else "") + _mark)[:255]; _upd.append("comment")
+            if _upd:
+                _tx.save(update_fields=_upd)
+            settled_tx = _tx.id
+
     d.status = "confirmed"
     d.created_payable_id = pp.id
     d.save(update_fields=["status", "created_payable"])
     return Response({"ok": True, "stock_document_id": doc.id, "payable_id": pp.id,
-                     "positions": positions, "rules_saved": rules, "amount": amt})
+                     "positions": positions, "rules_saved": rules, "amount": amt,
+                     "settled_tx": settled_tx, "supplier": str(contact), "supplier_id": contact.id})
+
+
+class IncomingDocPayCandidatesView(APIView):
+    """Кандидати на привʼязку накладної до вже зробленого платежу.
+    Недавні ВИТРАТИ з журналу, відсортовані за близькістю до суми накладної."""
+
+    def get(self, request, pk):
+        _owner_only(request)
+        from .models import IncomingDoc
+        from apps.finance.models import Transaction as _Tx
+        from django.utils import timezone as _tz
+        import datetime as _dt
+        d = IncomingDoc.objects.filter(id=pk).first()
+        if not d:
+            return Response({"detail": "не знайдено"}, status=404)
+        p = d.parsed or {}
+        amt = float(p.get("amount") or p.get("total") or 0)
+        since = _tz.localdate() - _dt.timedelta(days=int(request.query_params.get("days") or 120))
+        rows = []
+        for tx in _Tx.objects.filter(direction="out", date__gte=since).select_related("account").order_by("-date")[:600]:
+            a = float(tx.amount_uah or 0)
+            rows.append({
+                "id": tx.id, "date": str(tx.date), "amount": a,
+                "counterparty": tx.counterparty or "", "comment": (tx.comment or "")[:120],
+                "account": getattr(tx.account, "name", "") or "",
+                "linked": bool(getattr(tx, "contact_id", None)),
+                "diff": abs(a - amt) if amt else 0,
+            })
+        rows.sort(key=lambda r: (r["diff"], r["date"]))
+        return Response({"invoice_amount": amt, "rows": rows[:30]})
 
 
 class IncomingDocFileView(APIView):

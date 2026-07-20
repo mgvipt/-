@@ -173,6 +173,7 @@ urlpatterns = [
     path("api/integrations/incoming-docs/<int:pk>/action/", intg_views.IncomingDocActionView.as_view()),
     path("api/integrations/incoming-docs/<int:pk>/file/<int:idx>/", intg_views.IncomingDocFileView.as_view()),
     path("api/integrations/incoming-docs/<int:pk>/view/", intg_views.IncomingDocViewView.as_view()),
+    path("api/integrations/incoming-docs/<int:pk>/pay-candidates/", intg_views.IncomingDocPayCandidatesView.as_view()),
     path("api/integrations/liqpay/link/", intg_views.LiqpayLinkView.as_view()),
     path("api/integrations/novaposhta/track/", intg_views.NovaPoshtaTrackView.as_view()),
     path("api/integrations/shop/orders/", intg_views.ShopOrderWebhookView.as_view()),
