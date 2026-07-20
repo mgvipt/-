@@ -3431,7 +3431,21 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
 
   useEffect(() => {
     api.get<any>(`/api/integrations/incoming-docs/${docId}/`).then((d) => { setDet(d); setLines((d.lines || []).map((l: any) => ({ ...l }))); }).catch(() => {});
-    api.get<any>("/api/products/?page_size=3000").then((d) => setProds(d.results || d)).catch(() => setProds([]));
+    (async () => {
+      // API обмежує сторінку 500 → тягнемо всі сторінки, поки є next
+      try {
+        let all: any[] = [];
+        let page = 1;
+        while (page <= 20) {
+          const d: any = await api.get(`/api/products/?page_size=500&page=${page}`);
+          const rows = d.results || d;
+          all = all.concat(rows);
+          if (!d.next || rows.length === 0) break;
+          page++;
+        }
+        setProds(all);
+      } catch { setProds([]); }
+    })();
     api.get<any>("/api/contacts/?kind=supplier&page_size=300").then((d) => setSups(d.results || d)).catch(() => setSups([]));
   }, [docId]);
   useEffect(() => {
