@@ -3413,6 +3413,49 @@ function ProductPicker({ value, productId, prods, onPick }:
   );
 }
 
+// Пошук категорії закупівлі (з батьківською категорією у назві)
+function CategoryPicker({ cats, value, onPick }:
+  { cats: any[]; value: number | 0; onPick: (id: number | 0) => void }) {
+  const { t } = useLang();
+  const byId = (id: number) => cats.find((c) => c.id === id);
+  const label = (c: any) => {
+    if (!c) return "";
+    const parent = c.parent ? byId(c.parent) : null;
+    return (parent ? parent.name + " → " : "") + c.name;
+  };
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  useEffect(() => { const c = value ? byId(value) : null; setQ(c ? label(c) : ""); /* eslint-disable-next-line */ }, [value, cats.length]);
+  const ql = q.trim().toLowerCase();
+  const words = ql.split(/\s+/).filter(Boolean);
+  const list = cats.map((c) => ({ c, lbl: label(c) }))
+    .filter(({ lbl }) => !words.length || words.every((w) => lbl.toLowerCase().includes(w)))
+    .sort((a, b) => a.lbl.localeCompare(b.lbl)).slice(0, 80);
+  return (
+    <div style={{ position: "relative" }}>
+      <input value={q}
+        onChange={(e) => { setQ(e.target.value); onPick(0); setOpen(true); }}
+        onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 160)}
+        placeholder={t("выбери категорию…", "обери категорію…")}
+        style={{ width: "100%", height: 34, borderRadius: 7, padding: "0 10px",
+                 border: "1px solid " + (value ? "#86efac" : "#cbd5e1") }} />
+      {open && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20, background: "#fff",
+                      border: "1px solid #cbd5e1", borderRadius: 8, marginTop: 2, maxHeight: 260, overflowY: "auto",
+                      boxShadow: "0 12px 30px rgba(15,23,42,.18)" }}>
+          {!list.length && <div className="muted" style={{ padding: "8px 10px", fontSize: 12 }}>{t("Ничего не найдено", "Нічого не знайдено")}</div>}
+          {list.map(({ c, lbl }) => (
+            <div key={c.id} onMouseDown={() => { onPick(c.id); setQ(lbl); setOpen(false); }}
+              style={{ padding: "6px 10px", cursor: "pointer", fontSize: 12.5, borderBottom: "1px solid #f4f6fb" }}>
+              {lbl}{c.fin_article_name ? <span className="muted" style={{ fontSize: 11 }}>  · {c.fin_article_name}</span> : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: () => void; onDone: () => void }) {
   const { t } = useLang();
   const [det, setDet] = useState<any>(null);
@@ -3428,6 +3471,8 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
   const [cands, setCands] = useState<any[]>([]);
   const [txId, setTxId] = useState<number | 0>(0);
   const [candQ, setCandQ] = useState("");   // пошук платежу
+  const [cats, setCats] = useState<any[]>([]);   // категорії закупівлі (out)
+  const [catId, setCatId] = useState<number | 0>(0);
 
   useEffect(() => {
     api.get<any>(`/api/integrations/incoming-docs/${docId}/`).then((d) => { setDet(d); setLines((d.lines || []).map((l: any) => ({ ...l }))); }).catch(() => {});
@@ -3447,7 +3492,16 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
       } catch { setProds([]); }
     })();
     api.get<any>("/api/contacts/?kind=supplier&page_size=300").then((d) => setSups(d.results || d)).catch(() => setSups([]));
+    api.get<any>("/api/categories/?page_size=400").then((d) => setCats((d.results || d).filter((c: any) => c.direction === "out" && !c.hidden))).catch(() => setCats([]));
   }, [docId]);
+  // автопідстановка категорії постачальника: за обраним у списку АБО за ІПН з файлу
+  useEffect(() => {
+    if (catId) return;
+    let sup: any = null;
+    if (supId) sup = sups.find((x) => x.id === supId);
+    else if (det?.supplier?.ipn) sup = sups.find((x) => (x.edrpou || "") === det.supplier.ipn);
+    if (sup && sup.default_purchase_category) setCatId(sup.default_purchase_category);
+  }, [supId, sups, det, catId]);
   useEffect(() => {
     if (payMode === "paid" && !cands.length) {
       api.get<any>(`/api/integrations/incoming-docs/${docId}/pay-candidates/`).then((d) => setCands(d.rows || [])).catch(() => setCands([]));
@@ -3466,6 +3520,7 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
       if (supId) body.contact_id = supId;
       if (newSup) body.new_supplier = newSup;
       if (payMode === "paid" && txId) { body.pay_mode = "paid"; body.tx_id = txId; }
+      if (catId) body.category_id = catId;
       const r: any = await api.post(`/api/integrations/incoming-docs/${docId}/action/`, body);
       alert(t("Приход проведён ✓", "Прихід проведено ✓") + `\n` +
         t("поставщик", "постачальник") + `: ${r.supplier}\n` +
@@ -3567,6 +3622,16 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
               </div>
             );
           })()}
+        </div>
+
+        {/* ── КАТЕГОРІЯ ЗАКУПІВЛІ (правило постачальника) ── */}
+        <div style={{ padding: 10, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "#475569", marginBottom: 6 }}>{t("Категория закупки", "Категорія закупівлі")}</div>
+          <CategoryPicker cats={cats} value={catId} onPick={(id) => setCatId(id)} />
+          <div className="muted" style={{ fontSize: 11.5, marginTop: 5 }}>
+            {t("Фонд и направление подтянутся автоматически. Запомнится для этого поставщика — в следующий раз подставится сама.",
+               "Фонд і напрямок підтягнуться автоматично. Запамʼятається для цього постачальника — наступного разу підставиться сама.")}
+          </div>
         </div>
 
         <datalist id="wh-prods">{prods.map((p) => <option key={p.id} value={p.name} />)}</datalist>

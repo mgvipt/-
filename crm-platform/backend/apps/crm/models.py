@@ -49,6 +49,9 @@ class Contact(models.Model):
                                        help_text="Забирати накладні/рахунки цього постачальника з пошти та месенджерів у «Вх. накладні»")
     doc_email = models.CharField("Пошта для накладних", max_length=190, blank=True, default="",
                                  help_text="Якщо накладні приходять з іншої адреси, ніж основний e-mail")
+    default_purchase_category = models.PositiveIntegerField(
+        "Категорія закупівлі за замовчуванням", null=True, blank=True,
+        help_text="finance.Category — підставляється при проведенні накладної цього постачальника (фонд/напрямок тягнуться з категорії)")
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="contacts_owned", help_text="Ответственный менеджер клиента")

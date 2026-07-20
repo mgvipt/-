@@ -566,6 +566,37 @@ def _confirm_supplier(d, request):
                 _tx.save(update_fields=_upd)
             settled_tx = _tx.id
 
+    # ── КАТЕГОРІЯ ЗАКУПІВЛІ: застосувати до кредиторки/платежу + запамʼятати як правило постачальника ──
+    _cat_id = request.data.get("category_id")
+    if _cat_id:
+        from apps.finance.models import Category as _Cat
+        _cat = _Cat.objects.filter(id=_cat_id).first()
+        if _cat:
+            _fa = _cat.fin_article_id or (_cat.parent.fin_article_id if _cat.parent_id else None)
+            _fd = _cat.fin_direction_id or (_cat.parent.fin_direction_id if _cat.parent_id else None)
+            # кредиторка
+            pp.category_id = _cat.id
+            if _fa:
+                pp.fin_article_id = _fa
+            if _fd:
+                pp.fin_direction_id = _fd
+            pp.save(update_fields=["category", "fin_article", "fin_direction"])
+            # платіж із журналу (якщо привʼязали) — категорія + фонд/напрямок
+            if settled_tx:
+                from apps.finance.models import Transaction as _Tx2
+                _t2 = _Tx2.objects.filter(id=settled_tx).first()
+                if _t2 and _t2.direction != "transfer":
+                    _t2.category_id = _cat.id
+                    if _fa:
+                        _t2.fin_article_id = _fa
+                    if _fd:
+                        _t2.fin_direction_id = _fd
+                    _t2.save(update_fields=["category", "fin_article", "fin_direction"])
+            # ПРАВИЛО: запамʼятати категорію в картці постачальника → наступного разу підставиться сама
+            if contact and contact.default_purchase_category != _cat.id:
+                contact.default_purchase_category = _cat.id
+                contact.save(update_fields=["default_purchase_category"])
+
     d.status = "confirmed"
     d.created_payable_id = pp.id
     d.save(update_fields=["status", "created_payable"])
