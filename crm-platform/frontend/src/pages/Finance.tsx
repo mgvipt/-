@@ -3366,6 +3366,53 @@ function IncomingDocsTab() {
 }
 
 
+// Пошук товару складу по БУДЬ-ЯКІЙ частині назви (заміна кривого <datalist>)
+function ProductPicker({ value, productId, prods, onPick }:
+  { value: string; productId: number | null; prods: any[]; onPick: (p: any | null, name: string) => void }) {
+  const { t } = useLang();
+  const [q, setQ] = useState(value || "");
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  useEffect(() => { setQ(value || ""); }, [value]);
+  const ql = q.trim().toLowerCase();
+  const words = ql.split(/\s+/).filter(Boolean);
+  const matches = (words.length
+    ? prods.filter((p) => { const n = (p.name || "").toLowerCase(); return words.every((w) => n.includes(w)); })
+    : prods).slice(0, 60);
+  return (
+    <div style={{ position: "relative" }}>
+      <input value={q}
+        onChange={(e) => { setQ(e.target.value); onPick(null, e.target.value); setOpen(true); setHi(0); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 160)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") { setHi((h) => Math.min(h + 1, matches.length - 1)); e.preventDefault(); }
+          else if (e.key === "ArrowUp") { setHi((h) => Math.max(h - 1, 0)); e.preventDefault(); }
+          else if (e.key === "Enter" && matches[hi]) { const p = matches[hi]; onPick(p, p.name); setQ(p.name); setOpen(false); e.preventDefault(); }
+        }}
+        placeholder={t("поиск товара…", "пошук товару…")}
+        style={{ width: "100%", height: 30, borderRadius: 6, padding: "0 8px",
+                 border: "1px solid " + (productId ? "#86efac" : "#fca5a5") }} />
+      {open && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20, background: "#fff",
+                      border: "1px solid #cbd5e1", borderRadius: 8, marginTop: 2, maxHeight: 240, overflowY: "auto",
+                      boxShadow: "0 12px 30px rgba(15,23,42,.18)" }}>
+          {!matches.length && <div className="muted" style={{ padding: "8px 10px", fontSize: 12 }}>{t("Ничего не найдено", "Нічого не знайдено")}</div>}
+          {matches.map((p, j) => (
+            <div key={p.id} onMouseDown={() => { onPick(p, p.name); setQ(p.name); setOpen(false); }}
+              onMouseEnter={() => setHi(j)}
+              style={{ padding: "6px 10px", cursor: "pointer", fontSize: 12.5,
+                       background: j === hi ? "#eef2ff" : "transparent",
+                       borderBottom: "1px solid #f4f6fb" }}>
+              {p.name}{(p.stock !== undefined && p.stock !== null) ? <span className="muted" style={{ fontSize: 11 }}>  · {t("ост.", "зал.")} {p.stock}</span> : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: () => void; onDone: () => void }) {
   const { t } = useLang();
   const [det, setDet] = useState<any>(null);
@@ -3395,7 +3442,6 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
   // пошта відправника — з неї створюємо нового постачальника
   const senderMail = ((det?.sender || "").match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [""])[0];
   const setLine = (i: number, patch: any) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
-  const pick = (i: number, name: string) => { const p = prods.find((x) => x.name === name); setLine(i, { product_name: name, product_id: p ? p.id : null }); };
   const addLine = () => setLines((ls) => [...ls, { their_name: "", qty: 1, price: 0, product_id: null, product_name: "" }]);
   const delLine = (i: number) => setLines((ls) => ls.filter((_, j) => j !== i));
   const post = async () => {
@@ -3522,7 +3568,7 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
             {lines.map((l, i) => (
               <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
                 <td style={{ padding: "6px 4px" }}><input value={l.their_name || ""} onChange={(e) => setLine(i, { their_name: e.target.value })} placeholder={t("наименование", "найменування")} style={{ width: "100%", height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px" }} /></td>
-                <td><input list="wh-prods" defaultValue={l.product_name || ""} onChange={(e) => pick(i, e.target.value)} placeholder={t("выбери…", "обери…")} style={{ width: "100%", height: 30, border: "1px solid " + (l.product_id ? "#86efac" : "#fca5a5"), borderRadius: 6, padding: "0 8px" }} /></td>
+                <td><ProductPicker value={l.product_name || ""} productId={l.product_id || null} prods={prods} onPick={(p, name) => setLine(i, { product_name: name, product_id: p ? p.id : null })} /></td>
                 <td><input type="number" value={l.qty} onChange={(e) => setLine(i, { qty: parseFloat(e.target.value) })} style={{ width: 55, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
                 <td><input type="number" value={l.price} onChange={(e) => setLine(i, { price: parseFloat(e.target.value) })} style={{ width: 75, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
                 <td style={{ textAlign: "center" }}><button onClick={() => delLine(i)} title={t("Удалить строку", "Видалити рядок")} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#dc2626", fontSize: 16 }}>×</button></td>
