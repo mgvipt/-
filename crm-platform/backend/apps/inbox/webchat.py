@@ -267,6 +267,8 @@ class WebChatView(APIView):
             "area_m2": str(area) if area is not None else "",
             "product_key": product_key,
             "product": product["label"] if product else "",
+            "velvet_color": str(request.data.get("velvet_color") or "")[:120],
+            "velvet_formula": str(request.data.get("velvet_formula") or "")[:120],
             "estimate_from": str(low),
             "estimate_to": str(high),
             "minimum_order": str(TEST_KIT_MINIMUM),
@@ -286,10 +288,15 @@ class WebChatView(APIView):
             deal.qualification = {**(deal.qualification or {}), **qualification}
             deal.is_seen = False
             deal.save(update_fields=["amount", "qualification", "is_seen", "updated_at"])
+        color_note = ""
+        if product_key == "luna" and qualification["velvet_color"]:
+            color_note = "; колір: %s (%s)" % (
+                qualification["velvet_color"], qualification["velvet_formula"] or "формула не вказана"
+            )
         note = (
             "Заявка з лендингу: %s; площа: %s м²; попередній матеріал: %s–%s грн; "
-            "мінімальне замовлення: тест-набір %s грн; бажаний зв’язок: %s."
-            % (product["label"] if product else "ще не обрано", area or "не вказано", low, high, TEST_KIT_MINIMUM, preferred)
+            "мінімальне замовлення: тест-набір %s грн; бажаний зв’язок: %s%s."
+            % (product["label"] if product else "ще не обрано", area or "не вказано", low, high, TEST_KIT_MINIMUM, preferred, color_note)
         )
         Message.objects.create(conversation=conv, direction="out", internal=True, text=note, sender_name="Лендинг")
         if not conv.messages.filter(external_id="web-contact:%s" % deal.id).exists():
