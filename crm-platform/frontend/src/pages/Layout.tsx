@@ -89,6 +89,7 @@ const BGS = ["#f3efe9", "#eef2f7", "#edf5ef", "#f1ecfa", "#faecef", "#fff7ed", "
 // ── Контроль присутності: heartbeat + детектор простою + обов'язкове зняття з авто-паузи ──
 const IDLE_WARN_SEC = 60;        // скільки секунд показувати «Ви на місці?» перед авто-паузою
 const HEARTBEAT_MS = 90000;      // пульс присутності на сервер (щоб не рахувало «пішов»)
+const ACT_KEY = "wc_last_activity";  // спільна мітка активності для ВСІХ вкладок/вікон CRM
 function WorkTimer() {
   const [st, setSt] = useState<any>(null);
   const [sec, setSec] = useState(0);
@@ -96,7 +97,14 @@ function WorkTimer() {
   const [countdown, setCountdown] = useState(IDLE_WARN_SEC);
   const [backModal, setBackModal] = useState(false);  // модалка «З поверненням, зняти паузу?»
   const lastAct = useRef(Date.now());
+  const lastWrite = useRef(0);         // коли востаннє писали спільну мітку (тротлінг)
   const idleWarnRef = useRef(false);   // чи показана зараз модалка «Ви на місці?»
+  // остання активність з урахуванням ІНШИХ вкладок CRM
+  const sharedLastAct = () => {
+    let shared = 0;
+    try { shared = Number(localStorage.getItem(ACT_KEY)) || 0; } catch (e) { /* noop */ }
+    return Math.max(lastAct.current, shared);
+  };
   const stRef = useRef<any>(null); stRef.current = st;
   // Скільки секунд показувати попередження перед авто-паузою: не більше половини порогу
   // (для малих порогів, напр. 1 хв → 30 сек), і не більше IDLE_WARN_SEC.
@@ -114,19 +122,41 @@ function WorkTimer() {
     if (action === "stop") { setSt({ active: false }); setSec(0); } else { setSt(d); setSec(d.worked_seconds || 0); }
   }
 
-  // фіксуємо будь-яку активність користувача
+  // фіксуємо будь-яку активність користувача — СПІЛЬНО для всіх вкладок/вікон CRM.
+  // Активність у будь-якій вкладці = людина працює → в інших вкладках вікно не виринає.
   useEffect(() => {
     const mark = () => {
-      lastAct.current = Date.now();
+      const now = Date.now();
+      lastAct.current = now;
+      // ділимося міткою з іншими вкладками (не частіше разу на 2 сек)
+      if (now - lastWrite.current > 2000) {
+        lastWrite.current = now;
+        try { localStorage.setItem(ACT_KEY, String(now)); } catch (e) { /* noop */ }
+      }
       const s = stRef.current;
-      // рухнув мишею під час «Ви на місці?» → людина на місці, ховаємо попередження
+      // будь-яка активність під час «Ви на місці?» → людина на місці, ховаємо попередження
       if (idleWarnRef.current) { idleWarnRef.current = false; setIdleWarn(false); }
       // повернувся під час авто-паузи (простій) → обов'язково зняти паузу
       if (s?.active && s?.on_pause && s?.pause_reason === "idle" && !backModal) setBackModal(true);
     };
-    const evs = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"];
+    // перехід на вкладку / фокус вікна — теж ознака присутності
+    const evs = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "wheel", "focus"];
     evs.forEach((e) => window.addEventListener(e, mark, { passive: true }));
-    return () => evs.forEach((e) => window.removeEventListener(e, mark));
+    const vis = () => { if (document.visibilityState === "visible") mark(); };
+    document.addEventListener("visibilitychange", vis);
+    // активність в ІНШІЙ вкладці CRM → підтягуємо мітку і ховаємо вікно тут
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== ACT_KEY || !e.newValue) return;
+      const v = Number(e.newValue) || 0;
+      if (v > lastAct.current) lastAct.current = v;
+      if (idleWarnRef.current) { idleWarnRef.current = false; setIdleWarn(false); }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      evs.forEach((e) => window.removeEventListener(e, mark));
+      document.removeEventListener("visibilitychange", vis);
+      window.removeEventListener("storage", onStorage);
+    };
   }, [backModal]);
 
   // heartbeat + детектор простою (тільки коли відділ має idle_timeout_min > 0)
@@ -141,7 +171,8 @@ function WorkTimer() {
       chk = setInterval(() => {
         const s = stRef.current;
         if (!s?.active || s?.on_pause) { if (idleWarnRef.current) { idleWarnRef.current = false; setIdleWarn(false); } return; }
-        const idleMs = Date.now() - lastAct.current;
+        // враховуємо активність у БУДЬ-ЯКІЙ вкладці/вікні CRM
+        const idleMs = Date.now() - sharedLastAct();
         if (idleMs >= triggerMs && !idleWarnRef.current) {
           idleWarnRef.current = true; setCountdown(warn); setIdleWarn(true);
         }
@@ -153,6 +184,8 @@ function WorkTimer() {
   // відлік у модалці «Ви на місці?» → авто-пауза при 0
   useEffect(() => {
     if (!idleWarn) return;
+    // якщо тим часом була активність (у цій чи іншій вкладці) — знімаємо попередження
+    if (Date.now() - sharedLastAct() < 3000) { idleWarnRef.current = false; setIdleWarn(false); return; }
     if (countdown <= 0) { idleWarnRef.current = false; setIdleWarn(false); act("pause", "idle"); return; }
     const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
     return () => clearTimeout(t);
