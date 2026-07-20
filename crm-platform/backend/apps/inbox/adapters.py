@@ -359,9 +359,19 @@ class EchatTelegramAdapter(ChannelAdapter):
         return resp
 
 
+class WebChatAdapter(ChannelAdapter):
+    """Відповідь менеджера зберігається у CRM; браузер клієнта забирає її polling-запитом."""
+    kind = "web"
+
+    def send(self, external_chat_id: str, text: str) -> str:
+        import secrets
+        return "web-out-" + secrets.token_urlsafe(10)
+
+
 ADAPTERS = {TelegramAdapter.kind: TelegramAdapter, ViberAdapter.kind: ViberAdapter,
             EchatViberAdapter.kind: EchatViberAdapter,
-            EchatTelegramAdapter.kind: EchatTelegramAdapter}
+            EchatTelegramAdapter.kind: EchatTelegramAdapter,
+            WebChatAdapter.kind: WebChatAdapter}
 
 
 def get_adapter(channel) -> ChannelAdapter:

@@ -11,6 +11,68 @@ from .adapters import EchatTelegramAdapter, EchatViberAdapter, TelegramAdapter
 
 User = get_user_model()
 
+
+class _WebChatAiResponse:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self):
+        return b'{"confidence": 0.91, "answer": "AI answer", "reasoning": "kb"}'
+
+
+class WebChatLandingTests(TestCase):
+    origin = "https://wallcov-dlia-stin.olegwallcov.chatgpt.site"
+
+    def _post(self, payload):
+        return self.client.post(
+            "/api/inbox/web-chat/", data=payload, content_type="application/json", HTTP_ORIGIN=self.origin,
+        )
+
+    def test_start_message_and_manager_poll_share_one_crm_conversation(self):
+        from apps.inbox.services import send_message
+
+        started = self._post({"action": "start", "visitor_id": "visitor-1"})
+        self.assertEqual(started.status_code, 200)
+        token = started.json()["token"]
+        self.assertEqual(Channel.objects.filter(kind="web").count(), 1)
+        with patch("apps.inbox.webchat.urllib.request.urlopen", return_value=_WebChatAiResponse()):
+            sent = self._post({
+                "action": "message", "token": token, "text": "Яка ціна Сирени?", "client_message_id": "m-1",
+            })
+        self.assertEqual(sent.status_code, 200)
+        self.assertEqual([m["text"] for m in sent.json()["messages"]][-2:], ["Яка ціна Сирени?", "AI answer"])
+        conv = Conversation.objects.get(pk=started.json()["conversation_id"])
+        send_message(conv, "Відповідь менеджера")
+        polled = self._post({"action": "poll", "token": token})
+        self.assertEqual(polled.json()["messages"][-1]["text"], "Відповідь менеджера")
+
+    def test_quiz_creates_landing_deal_and_applies_test_kit_minimum(self):
+        from apps.crm.models import Deal, Funnel, Stage
+        funnel = Funnel.objects.create(name="Лендинг · wallcovdliastin.com.ua")
+        Stage.objects.create(funnel=funnel, name="Новая заявка", order=0)
+        started = self._post({"action": "start", "visitor_id": "visitor-2"})
+        lead = self._post({
+            "action": "lead", "token": started.json()["token"], "name": "Тест",
+            "phone": "0970000011", "preferred": "telegram", "consent": True,
+            "room": "bedroom", "area": 1, "product": "mermi", "analytics": {"utm_source": "test"},
+        })
+        self.assertEqual(lead.status_code, 200)
+        deal = Deal.objects.get(pk=lead.json()["deal_id"])
+        self.assertEqual(str(deal.amount), "220.00")
+        self.assertEqual(deal.qualification["product"], "Шовк · Мерми")
+        self.assertEqual(deal.qualification["minimum_order"], "220.00")
+        self.assertEqual(deal.funnel, funnel)
+
+    def test_unknown_origin_is_rejected(self):
+        response = self.client.post(
+            "/api/inbox/web-chat/", data={"action": "start"}, content_type="application/json",
+            HTTP_ORIGIN="https://evil.example",
+        )
+        self.assertEqual(response.status_code, 403)
+
 UPDATE = {
     "message": {
         "message_id": 11,

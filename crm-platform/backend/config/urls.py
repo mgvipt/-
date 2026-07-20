@@ -6,6 +6,7 @@ from rest_framework.authtoken.views import obtain_auth_token
 from apps.crm import views as crm_views
 from apps.accounts import views as acc_views
 from apps.inbox import views as inbox_views
+from apps.inbox.webchat import WebChatView
 from apps.warehouse import views as wh_views
 from apps.warehouse import wh_views as whv
 from apps.warehouse import shop_import_views
@@ -91,6 +92,7 @@ urlpatterns = [
     path("api/inbox/meta/webhook", inbox_views.MetaWebhookView.as_view()),
     path("api/inbox/chatplace/sync/", inbox_views.ChatPlaceSyncView.as_view()),
     path("api/inbox/chatplace/webhook/", inbox_views.ChatPlaceWebhookView.as_view()),
+    path("api/inbox/web-chat/", WebChatView.as_view()),
     path("api/contact-center/", inbox_views.ContactCenterView.as_view()),
     path("api/activity/", crm_views.ActivityLogView.as_view()),
     path("api/staff/analytics/", crm_views.StaffAnalyticsView.as_view()),

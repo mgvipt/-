@@ -8,6 +8,7 @@ class Channel(models.Model):
     KINDS = [
         ("telegram", "Telegram"), ("viber", "Viber"), ("instagram", "Instagram"),
         ("facebook", "Facebook"), ("whatsapp", "WhatsApp"), ("google_business", "Google Бизнес"),
+        ("web", "Web Chat"),
     ]
     kind = models.CharField(max_length=24, choices=KINDS)
     name = models.CharField(max_length=120)

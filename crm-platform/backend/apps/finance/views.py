@@ -293,6 +293,13 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 else:
                     setattr(t, k, (v or "")[:255] if k == "comment" else (v or ""))
             t.save()
+            # ПРАВИЛО: категорію змінили ПОСТАЧАЛЬНИКУ → запамʼятати на його картці (авто-підстановка при накладних)
+            if "category" in updates and t.category_id and t.contact_id:
+                from apps.crm.models import Contact as _Ct
+                _sc = _Ct.objects.filter(id=t.contact_id).first()
+                if _sc and "supplier" in (_sc.kinds or []) and _sc.default_purchase_category != t.category_id:
+                    _sc.default_purchase_category = t.category_id
+                    _sc.save(update_fields=["default_purchase_category"])
             done += 1
         return Response({"updated": done})
 
