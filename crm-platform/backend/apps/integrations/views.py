@@ -604,6 +604,49 @@ class IncomingDocPayCandidatesView(APIView):
         return Response({"invoice_amount": amt, "rows": rows[:30]})
 
 
+class IncomingDocUploadView(APIView):
+    """Ручне завантаження накладної постачальника (.xls/.xlsx) → чернетка у «Вх. накладні».
+    Для випадків, коли рахунок прийшов не на пошту CRM (інша скринька, Viber, тощо)."""
+    permission_classes = [ManagePerm]
+
+    def post(self, request):
+        _owner_only(request)
+        from .models import IncomingDoc
+        from .supplier_act import parse_korzh
+        import base64, hashlib
+        f = request.FILES.get("file")
+        if not f:
+            return Response({"detail": "Файл не передано"}, status=400)
+        name = f.name or "invoice.xlsx"
+        if not name.lower().endswith((".xls", ".xlsx")):
+            return Response({"detail": "Підтримуються лише .xls / .xlsx (для фото — OCR окремо)"}, status=400)
+        raw = f.read()
+        try:
+            act = parse_korzh(raw)
+        except Exception as e:  # noqa
+            return Response({"detail": "Не вдалося розібрати файл: %s" % e}, status=400)
+        inv = act.get("invoice_number")
+        # дедуп: якщо накладна з цим номером вже є (чернетка/проведена) — не плодимо
+        if inv:
+            ex = IncomingDoc.objects.filter(doc_type="supplier", parsed__invoice_number=inv).first()
+            if ex:
+                return Response({"ok": True, "duplicate": True, "id": ex.id, "invoice_number": inv,
+                                 "detail": "Накладна №%s вже є у списку" % inv})
+        uid = "UP-" + hashlib.md5(raw).hexdigest()[:16]
+        sender = (request.data.get("sender") or "").strip()
+        d = IncomingDoc.objects.create(
+            mailbox="manual", message_uid=uid,
+            sender=sender or ("Ручне завантаження · %s" % name)[:200],
+            subject=("Накладна %s" % (inv or name))[:300],
+            doc_type="supplier", status="draft",
+            parsed={"invoice_number": inv, "invoice_date": act.get("invoice_date"),
+                    "supplier": act.get("supplier"), "amount": act.get("total"),
+                    "lines": act.get("lines"), "files": [name], "manual": True},
+            attachments_b64=[{"name": name, "b64": base64.b64encode(raw).decode()}])
+        return Response({"ok": True, "id": d.id, "invoice_number": inv,
+                         "lines": len(act.get("lines") or []), "amount": act.get("total")})
+
+
 class IncomingDocFileView(APIView):
     """Віддає вкладення (накладну) для відкриття/завантаження з CRM."""
     def get(self, request, pk, idx):

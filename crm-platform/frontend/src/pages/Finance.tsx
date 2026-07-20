@@ -3319,6 +3319,24 @@ function IncomingDocsTab() {
         <button className={"btn" + (sub === "np_act" ? " btn-primary" : " btn-light")} onClick={() => setSub("np_act")}><Icon n="🚚" size={14} /> {t("Нова Пошта", "Нова Пошта")} ({np.length})</button>
         <button className={"btn" + (sub === "supplier" ? " btn-primary" : " btn-light")} onClick={() => setSub("supplier")}><Icon n="📦" size={14} /> {t("Поставщики", "Постачальники")} ({sup.length})</button>
         <div style={{ flex: 1 }} />
+        <label className="btn btn-light" style={{ cursor: "pointer" }} title={t("Загрузить накладную .xls/.xlsx с любой почты (если пришла не на почту CRM)", "Завантажити накладну .xls/.xlsx з будь-якої пошти (якщо прийшла не на пошту CRM)")}>
+          <Icon n="📤" size={14} /> {t("Загрузить накладную", "Завантажити накладну")}
+          <input type="file" accept=".xls,.xlsx" style={{ display: "none" }} onChange={async (e) => {
+            const f = e.target.files?.[0]; if (!f) return; (e.target as any).value = "";
+            setBusy(true);
+            try {
+              const fd = new FormData(); fd.append("file", f);
+              const r: any = await api.uploadForm("/api/integrations/incoming-docs/upload/", fd);
+              await load();
+              if (r.duplicate) { alert(r.detail); }
+              else {
+                setSub("supplier");
+                if (r.id) setMapDoc(r.id);   // одразу відкрити вікно проведення
+              }
+            } catch (err: any) { alert(err?.response?.data?.detail || t("Не удалось загрузить", "Не вдалося завантажити")); }
+            finally { setBusy(false); }
+          }} />
+        </label>
         <button className="btn btn-light" disabled={busy} onClick={pull}>{busy ? "…" : "📬 " + t("Проверить почту", "Перевірити пошту")}</button>
       </div>
       {mapDoc && <SupplierMapModal docId={mapDoc} onClose={() => setMapDoc(null)} onDone={load} />}
