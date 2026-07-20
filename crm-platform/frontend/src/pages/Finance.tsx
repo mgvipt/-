@@ -3482,7 +3482,7 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
         let all: any[] = [];
         let page = 1;
         while (page <= 20) {
-          const d: any = await api.get(`/api/products/?page_size=500&page=${page}`);
+          const d: any = await api.get(`/api/products/?page_size=500&page=${page}&is_active=true`);
           const rows = d.results || d;
           all = all.concat(rows);
           if (!d.next || rows.length === 0) break;
