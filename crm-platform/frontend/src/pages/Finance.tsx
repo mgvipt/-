@@ -3488,7 +3488,7 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
           if (!d.next || rows.length === 0) break;
           page++;
         }
-        setProds(all);
+        setProds(all.filter((p: any) => p.is_active !== false));   // лише активні (без вимкнених дублів)
       } catch { setProds([]); }
     })();
     api.get<any>("/api/contacts/?kind=supplier&page_size=300").then((d) => setSups(d.results || d)).catch(() => setSups([]));
