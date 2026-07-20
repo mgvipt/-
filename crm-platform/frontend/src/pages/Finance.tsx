@@ -3380,6 +3380,8 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
   const [payMode, setPayMode] = useState<"payable" | "paid">("payable");
   const [cands, setCands] = useState<any[]>([]);
   const [txId, setTxId] = useState<number | 0>(0);
+  const [candQ, setCandQ] = useState("");   // пошук платежу
+
   useEffect(() => {
     api.get<any>(`/api/integrations/incoming-docs/${docId}/`).then((d) => { setDet(d); setLines((d.lines || []).map((l: any) => ({ ...l }))); }).catch(() => {});
     api.get<any>("/api/products/?page_size=3000").then((d) => setProds(d.results || d)).catch(() => setProds([]));
@@ -3394,6 +3396,8 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
   const senderMail = ((det?.sender || "").match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [""])[0];
   const setLine = (i: number, patch: any) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const pick = (i: number, name: string) => { const p = prods.find((x) => x.name === name); setLine(i, { product_name: name, product_id: p ? p.id : null }); };
+  const addLine = () => setLines((ls) => [...ls, { their_name: "", qty: 1, price: 0, product_id: null, product_name: "" }]);
+  const delLine = (i: number) => setLines((ls) => ls.filter((_, j) => j !== i));
   const post = async () => {
     if (lines.some((l) => !l.product_id) && !confirm(t("Не все строки сопоставлены — провести только сопоставленные?", "Не всі рядки зіставлені — провести лише зіставлені?"))) return;
     setBusy(true);
@@ -3466,43 +3470,67 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
               {t("Уже оплатил — привязать платёж из журнала", "Вже оплатив — привʼязати платіж із журналу")}
             </label>
           </div>
-          {payMode === "paid" && (
-            <div style={{ marginTop: 8, maxHeight: 210, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff" }}>
-              {!cands.length && <div className="muted" style={{ padding: 10, fontSize: 12.5 }}>{t("Ищу подходящие расходы…", "Шукаю відповідні витрати…")}</div>}
-              {cands.map((r) => {
-                const on = txId === r.id;
-                const exact = Math.abs(r.diff) < 0.01;
-                return (
-                  <div key={r.id} onClick={() => setTxId(on ? 0 : r.id)}
-                    style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", cursor: "pointer",
-                             borderBottom: "1px solid #f1f5f9", background: on ? "#eef2ff" : "transparent" }}>
-                    <input type="radio" checked={on} readOnly />
-                    <b style={{ minWidth: 92, fontSize: 13 }}>{Number(r.amount).toLocaleString()} ₴</b>
-                    <span className="muted" style={{ fontSize: 12, minWidth: 78 }}>{r.date}</span>
-                    <span style={{ fontSize: 12.5, flex: 1 }}>{r.counterparty || r.comment || "—"}</span>
-                    {exact && <span className="chip" style={{ background: "#f0fdf4", color: "#15803d", fontSize: 11 }}>{t("сумма совпала", "сума збіглася")}</span>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          {payMode === "paid" && (() => {
+            const inv = Number(det?.amount || 0);
+            const q = candQ.trim().toLowerCase();
+            const shown = cands.filter((r) => !q
+              || String((r.counterparty || "") + " " + (r.comment || "")).toLowerCase().includes(q)
+              || String(Math.round(Number(r.amount))).includes(q.replace(/\s/g, "")));
+            return (
+              <div style={{ marginTop: 8 }}>
+                <input value={candQ} onChange={(e) => setCandQ(e.target.value)}
+                  placeholder={t("🔍 Поиск платежа: контрагент, назначение или сумма", "🔍 Пошук платежу: контрагент, призначення або сума")}
+                  style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px", marginBottom: 6 }} />
+                <div className="muted" style={{ fontSize: 11.5, marginBottom: 4 }}>
+                  {inv ? t("Сумма накладной", "Сума накладної") + ": " + inv.toLocaleString() + " ₴. " : ""}
+                  {t("Выбери расход, которым оплатил (последние 120 дней, ближайшие по сумме сверху).", "Обери витрату, якою оплатив (останні 120 днів, найближчі за сумою зверху).")}
+                </div>
+                <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff" }}>
+                  {!cands.length && <div className="muted" style={{ padding: 10, fontSize: 12.5 }}>{t("Ищу подходящие расходы…", "Шукаю відповідні витрати…")}</div>}
+                  {cands.length > 0 && !shown.length && <div className="muted" style={{ padding: 10, fontSize: 12.5 }}>{t("Ничего не найдено по поиску", "Нічого не знайдено за пошуком")}</div>}
+                  {shown.map((r) => {
+                    const on = txId === r.id;
+                    const exact = inv > 0 && Math.abs(Number(r.amount) - inv) < 0.01;
+                    return (
+                      <div key={r.id} onClick={() => setTxId(on ? 0 : r.id)}
+                        style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", cursor: "pointer",
+                                 borderBottom: "1px solid #f1f5f9", background: on ? "#eef2ff" : "transparent" }}>
+                        <input type="radio" checked={on} readOnly />
+                        <b style={{ minWidth: 92, fontSize: 13 }}>{Number(r.amount).toLocaleString()} ₴</b>
+                        <span className="muted" style={{ fontSize: 12, minWidth: 78 }}>{r.date}</span>
+                        <span style={{ fontSize: 12.5, flex: 1 }}>{r.counterparty || r.comment || "—"}</span>
+                        {exact && <span className="chip" style={{ background: "#f0fdf4", color: "#15803d", fontSize: 11 }}>{t("сумма совпала", "сума збіглася")}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         <datalist id="wh-prods">{prods.map((p) => <option key={p.id} value={p.name} />)}</datalist>
         <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
           <thead><tr style={{ textAlign: "left", borderBottom: "1px solid #e2e8f0" }}>
-            <th style={{ padding: 4 }}>{t("Его товар", "Його товар")}</th><th>{t("Наш товар (склад)", "Наш товар (склад)")}</th><th style={{ width: 60 }}>{t("К-во", "К-сть")}</th><th style={{ width: 80 }}>{t("Цена", "Ціна")}</th></tr></thead>
+            <th style={{ padding: 4 }}>{t("Его товар", "Його товар")}</th><th>{t("Наш товар (склад)", "Наш товар (склад)")}</th><th style={{ width: 60 }}>{t("К-во", "К-сть")}</th><th style={{ width: 80 }}>{t("Цена", "Ціна")}</th><th style={{ width: 30 }}></th></tr></thead>
           <tbody>
+            {!lines.length && (
+              <tr><td colSpan={5} className="muted" style={{ padding: "10px 4px", fontSize: 12.5 }}>
+                {t("Позиции не распознаны в файле — добавь строки вручную кнопкой ниже.", "Позиції не розпізнані у файлі — додай рядки вручну кнопкою нижче.")}
+              </td></tr>
+            )}
             {lines.map((l, i) => (
               <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                <td style={{ padding: "6px 4px" }}>{l.their_name}</td>
+                <td style={{ padding: "6px 4px" }}><input value={l.their_name || ""} onChange={(e) => setLine(i, { their_name: e.target.value })} placeholder={t("наименование", "найменування")} style={{ width: "100%", height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px" }} /></td>
                 <td><input list="wh-prods" defaultValue={l.product_name || ""} onChange={(e) => pick(i, e.target.value)} placeholder={t("выбери…", "обери…")} style={{ width: "100%", height: 30, border: "1px solid " + (l.product_id ? "#86efac" : "#fca5a5"), borderRadius: 6, padding: "0 8px" }} /></td>
                 <td><input type="number" value={l.qty} onChange={(e) => setLine(i, { qty: parseFloat(e.target.value) })} style={{ width: 55, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
                 <td><input type="number" value={l.price} onChange={(e) => setLine(i, { price: parseFloat(e.target.value) })} style={{ width: 75, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
+                <td style={{ textAlign: "center" }}><button onClick={() => delLine(i)} title={t("Удалить строку", "Видалити рядок")} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#dc2626", fontSize: 16 }}>×</button></td>
               </tr>
             ))}
           </tbody>
         </table>
+        <button className="btn btn-light" style={{ marginTop: 8 }} onClick={addLine}>+ {t("Добавить строку", "Додати рядок")}</button>
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           <button className="btn btn-primary" disabled={busy || (payMode === "paid" && !txId)} onClick={post}>
             {busy ? "…" : "✓ " + (payMode === "paid"
