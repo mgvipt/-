@@ -2271,6 +2271,74 @@ function DebtCard({ row, cats, dirs, arts, accs2, t, onClose, onSaved }: any) {
   );
 }
 
+// Привʼязати вже зроблений платіж із журналу як (часткове) погашення боргу
+function LinkPaymentModal({ row, onClose, onDone }: { row: any; onClose: () => void; onDone: () => void }) {
+  const { t } = useLang();
+  const [cands, setCands] = useState<any[]>([]);
+  const [q, setQ] = useState("");
+  const [txId, setTxId] = useState<number | 0>(0);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    api.get<any>(`/api/planned-payments/${row.id}/pay-candidates/`).then((d) => { setCands(d.rows || []); setLoading(false); }).catch(() => setLoading(false));
+  }, [row.id]);
+  const rem = Number(row.remaining ?? (Number(row.amount) - Number(row.paid_amount || 0)));
+  const ql = q.trim().toLowerCase();
+  const shown = cands.filter((r) => !ql
+    || String((r.counterparty || "") + " " + (r.comment || "")).toLowerCase().includes(ql)
+    || String(Math.round(Number(r.amount))).includes(ql.replace(/\s/g, "")));
+  const link = async () => {
+    if (!txId) return;
+    setBusy(true);
+    try {
+      const r: any = await api.post(`/api/planned-payments/${row.id}/link-payment/`, { tx_id: txId });
+      alert(t("Платёж привязан ✓", "Платіж привʼязано ✓") + `\n` +
+        t("зачтено", "зараховано") + `: ${money(Number(r.linked_amount))}` +
+        (r.status === "paid" ? "\n" + t("долг закрыт полностью", "борг закрито повністю")
+          : "\n" + t("остаток", "залишок") + `: ${money(Number(r.remaining))}`));
+      onDone();
+    } catch (e: any) { alert(e?.response?.data?.detail || t("Ошибка", "Помилка")); } finally { setBusy(false); }
+  };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "5vh 12px", overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 18, width: 620, maxWidth: "100%", boxShadow: "0 24px 70px rgba(15,23,42,.35)" }}>
+        <h3 style={{ margin: "0 0 4px" }}>{t("Привязать платёж из журнала", "Привʼязати платіж із журналу")}</h3>
+        <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+          {t("Деньги уже ушли — привязываем существующую операцию как погашение (без новой). Можно частично.",
+             "Гроші вже пішли — привʼязуємо існуючу операцію як погашення (без нової). Можна частково.")}
+          <br />{t("Долг", "Борг")}: <b>{row.counterparty}</b> · {t("остаток", "залишок")}: <b>{money(rem)}</b>
+        </div>
+        <input value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder={t("🔍 Поиск: контрагент, назначение или сумма", "🔍 Пошук: контрагент, призначення або сума")}
+          style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px", marginBottom: 8 }} />
+        <div style={{ maxHeight: 320, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+          {loading && <div className="muted" style={{ padding: 10, fontSize: 12.5 }}>{t("Ищу платежи…", "Шукаю платежі…")}</div>}
+          {!loading && !shown.length && <div className="muted" style={{ padding: 10, fontSize: 12.5 }}>{t("Подходящих платежей не найдено", "Відповідних платежів не знайдено")}</div>}
+          {shown.map((r) => {
+            const on = txId === r.id;
+            const exact = Math.abs(Number(r.amount) - rem) < 0.01;
+            return (
+              <div key={r.id} onClick={() => setTxId(on ? 0 : r.id)}
+                style={{ display: "flex", gap: 8, alignItems: "center", padding: "9px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", background: on ? "#eef2ff" : "transparent" }}>
+                <input type="radio" checked={on} readOnly />
+                <b style={{ minWidth: 96, fontSize: 13 }}>{Number(r.amount).toLocaleString()} ₴</b>
+                <span className="muted" style={{ fontSize: 12, minWidth: 78 }}>{r.date}</span>
+                <span style={{ fontSize: 12.5, flex: 1 }}>{r.counterparty || r.comment || "—"}</span>
+                {r.same_contact && <span className="chip" style={{ background: "#eff6ff", color: "#1d4ed8", fontSize: 11 }}>{t("тот же", "той самий")}</span>}
+                {exact && <span className="chip" style={{ background: "#f0fdf4", color: "#15803d", fontSize: 11 }}>{t("сумма совпала", "сума збіглася")}</span>}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 14, justifyContent: "flex-end" }}>
+          <button className="btn btn-light" onClick={onClose}>{t("Отмена", "Скасувати")}</button>
+          <button className="btn btn-primary" disabled={busy || !txId} onClick={link}>{busy ? "…" : t("Привязать как оплату", "Привʼязати як оплату")}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Debts() {
   const { t } = useLang();
   const nav = useNav();
@@ -2310,6 +2378,7 @@ function Debts() {
     catch { alert(t("Не удалось открыть накладную", "Не вдалося відкрити накладну")); }
   };
   const [payFopDoc, setPayFopDoc] = useState<any>(null);
+  const [linkR, setLinkR] = useState<any>(null);   // кредиторка для привʼязки платежу з журналу
   const payFop = (r: any, e: any) => { e.stopPropagation(); setPayFopDoc(r); };
   const Section = ({ kind, title, color }: any) => {
     const arw = (f: string) => (sortF === f ? " ▲" : sortF === "-" + f ? " ▼" : "");
@@ -2348,6 +2417,7 @@ function Debts() {
             {r.source_doc_id && <div onClick={(e) => { e.stopPropagation(); openDoc(r.source_doc_id); }} style={{ fontSize: 12.5, color: "#2563eb", marginTop: 3 }}><Icon n="📄" size={13} /> {t("Открыть накладную", "Відкрити накладну")}</div>}
             {st === "planned" && <div style={{ display: "flex", gap: 6, marginTop: 9 }} onClick={(e) => e.stopPropagation()}>
               <button className="btn btn-light" style={{ height: 34, fontSize: 12.5, flex: 1 }} onClick={(e) => markPaid(r, e)}>✓ {t("Оплачено", "Оплачено")}</button>
+              {r.kind === "payable" && <button className="btn btn-light" style={{ height: 34, fontSize: 12.5, flex: 1 }} title={t("Привязать уже сделанный платёж из журнала (частично)", "Привʼязати вже зроблений платіж із журналу (частково)")} onClick={(e) => { e.stopPropagation(); setLinkR(r); }}><Icon n="🔗" size={13} /> {t("З журналу", "З журналу")}</button>}
               {r.kind === "payable" && <button className="btn btn-light" style={{ height: 34, fontSize: 12.5, flex: 1 }} onClick={(e) => payFop(r, e)}><Icon n="💳" size={13} /> {t("ФОП", "ФОП")}</button>}
             </div>}
           </div>
@@ -2385,6 +2455,7 @@ function Debts() {
               <td style={{ padding: "6px 4px", whiteSpace: "nowrap", textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
                 {st === "planned" && <>
                   <button className="btn btn-light" style={{ height: 26, padding: "0 9px", fontSize: 11.5 }} onClick={(e) => markPaid(r, e)}>✓ {t("Оплачено", "Оплачено")}</button>{" "}
+                  {r.kind === "payable" && <><button className="btn btn-light" style={{ height: 26, padding: "0 9px", fontSize: 11.5 }} title={t("Привязать уже сделанный платёж из журнала (частично)", "Привʼязати вже зроблений платіж із журналу (частково)")} onClick={(e) => { e.stopPropagation(); setLinkR(r); }}><Icon n="🔗" size={12} /> {t("З журналу", "З журналу")}</button>{" "}</>}
                   {r.kind === "payable" && <><button className="btn btn-light" style={{ height: 26, padding: "0 9px", fontSize: 11.5 }} title={t("Оплатить с ФОП через Приват (создаст черновик — подпишешь КЕП)", "Оплатити з ФОП через Приват (створить чернетку — підпишеш КЕП)")} onClick={(e) => payFop(r, e)}><Icon n="💳" size={12} /> {t("ФОП", "ФОП")}</button>{" "}</>}
                   <button title={t("Отменить (не платим)", "Скасувати (не платимо)")} onClick={async (e) => { e.stopPropagation(); await api.patch(`/api/planned-payments/${r.id}/`, { status: "canceled" }); load(); }}
                     style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 14 }}>✕</button>
@@ -2446,6 +2517,7 @@ function Debts() {
         </select>
         {(dirFilter || catFilter) && <button className="btn btn-light" onClick={() => { setDirFilter(""); setCatFilter(""); }} title={t("Сбросить фильтры", "Скинути фільтри")}>✕ {t("фильтры", "фільтри")}</button>}
       </div>
+      {linkR && <LinkPaymentModal row={linkR} onClose={() => setLinkR(null)} onDone={() => { setLinkR(null); load(); }} />}
       {payFopDoc && <PayFopModal r={payFopDoc} onClose={() => setPayFopDoc(null)} onDone={load} />}
       <Section kind="payable" title={"🔻 " + t("Кредиторка — мы должны", "Кредиторка — ми винні")} color="#dc2626" />
       <Section kind="receivable" title={"🔺 " + t("Дебиторка — нам должны", "Дебіторка — нам винні")} color="#16a34a" />

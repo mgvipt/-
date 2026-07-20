@@ -1413,6 +1413,71 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         pp.save(update_fields=["paid_amount", "status", "paid_tx", "account"])
         return Response(self.get_serializer(pp).data)
 
+    @action(detail=True, methods=["get"], url_path="pay-candidates")
+    def pay_candidates(self, request, pk=None):
+        """Операції з журналу — кандидати на привʼязку як оплата цієї кредиторки/дебіторки.
+        Уже привʼязані до інших боргів — не показуємо. Спочатку той самий контрагент і найближчі за сумою."""
+        import datetime as _dt
+        from django.utils import timezone as _tz
+        from .models import PlannedPayment
+        pp = self.get_object()
+        remaining = float(pp.amount) - float(pp.paid_amount or 0)
+        since = _tz.localdate() - _dt.timedelta(days=int(request.query_params.get("days") or 180))
+        direction = "out" if pp.kind == "payable" else "in"
+        used = set(PlannedPayment.objects.exclude(paid_tx=None).values_list("paid_tx_id", flat=True))
+        rows = []
+        for tx in Transaction.objects.filter(direction=direction, date__gte=since).select_related("account").order_by("-date")[:900]:
+            if tx.id in used:
+                continue
+            a = float(tx.amount_uah or 0)
+            same = bool(pp.contact_id and tx.contact_id == pp.contact_id)
+            rows.append({"id": tx.id, "date": str(tx.date), "amount": a,
+                         "counterparty": tx.counterparty or "", "comment": (tx.comment or "")[:120],
+                         "account": getattr(tx.account, "name", "") or "",
+                         "same_contact": same, "diff": abs(a - remaining) if remaining else 0})
+        rows.sort(key=lambda r: (0 if r["same_contact"] else 1, r["diff"]))
+        return Response({"remaining": remaining, "rows": rows[:40]})
+
+    @action(detail=True, methods=["post"], url_path="link-payment")
+    def link_payment(self, request, pk=None):
+        """Привʼязати ІСНУЮЧИЙ платіж із журналу як (часткове) погашення — БЕЗ створення нової операції
+        (гроші вже пішли, тож дублювати не можна)."""
+        from decimal import Decimal as _D
+        from .models import PlannedPayment
+        _fin_guard(request, "finance.debts.pay", "Дт/Кт: нема права відмічати оплату")
+        pp = self.get_object()
+        if pp.status == "paid":
+            return Response({"detail": "Вже оплачено"}, status=400)
+        tx = Transaction.objects.filter(id=request.data.get("tx_id")).first()
+        if not tx:
+            return Response({"detail": "Операцію не знайдено"}, status=400)
+        if PlannedPayment.objects.filter(paid_tx=tx).exclude(id=pp.id).exists():
+            return Response({"detail": "Цей платіж уже привʼязаний до іншого боргу"}, status=400)
+        remaining = _D(str(pp.amount)) - _D(str(pp.paid_amount or 0))
+        if remaining <= 0:
+            return Response({"detail": "Вже погашено"}, status=400)
+        amt = _D(str(tx.amount_uah or 0))
+        if amt > remaining:
+            amt = remaining
+        pp.paid_amount = _D(str(pp.paid_amount or 0)) + amt
+        if pp.paid_amount >= _D(str(pp.amount)):
+            pp.status = "paid"
+        pp.paid_tx = tx
+        pp.account = tx.account or pp.account
+        pp.save(update_fields=["paid_amount", "status", "paid_tx", "account"])
+        # доукомплектувати платіж даними боргу (контакт/категорія) якщо порожні + позначка
+        _upd = []
+        if not tx.contact_id and pp.contact_id:
+            tx.contact_id = pp.contact_id; _upd.append("contact")
+        if not tx.category_id and pp.category_id:
+            tx.category_id = pp.category_id; _upd.append("category")
+        _mk = "→ борг #%d" % pp.id
+        if _mk not in (tx.comment or ""):
+            tx.comment = ((tx.comment or "") + (" · " if tx.comment else "") + _mk)[:255]; _upd.append("comment")
+        if _upd:
+            tx.save(update_fields=_upd)
+        return Response({**self.get_serializer(pp).data, "linked_amount": float(amt), "linked_tx": tx.id})
+
     @action(detail=True, methods=["post"], url_path="pay-with-fop")
     def pay_with_fop(self, request, pk=None):
         """Готує платіж по кредиторці через ПриватБанк Автоклієнт (ФОП).
