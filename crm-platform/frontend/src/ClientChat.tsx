@@ -211,11 +211,11 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", containerType: "inline-size", height: "100%", minHeight: "min(340px, calc(100vh - 120px))", maxHeight: "calc(100vh - 120px)" }}>
+    <div style={{ display: "flex", flexDirection: "column", containerType: "inline-size", height: "auto" }}>
       {channelPickerTargetId ? (channelPickerTarget ? createPortal(channelPicker, channelPickerTarget) : null) : channelPicker}
       <ChatActions convId={conv.id} onClosed={() => { setConv(null); setMsgs([]); loadStartChannels(); }} onChanged={(c) => setConv(c)} />
       {/* СТРІЧКА — заповнює доступну висоту */}
-      <div style={{ flex: 1, minHeight: 80, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
+      <div title="Тягни за правий нижній кут, щоб збільшити вікно чату" style={{ height: 300, minHeight: 150, maxHeight: "72vh", resize: "vertical", overflow: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
         {msgs.length === 0 && <div className="muted" style={{ fontSize: 13 }}>Повідомлень поки немає</div>}
         {msgs.map((m, i) => (
           <Fragment key={m.id}>
