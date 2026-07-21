@@ -11,6 +11,11 @@ import ChatActions from "./ChatActions";
 import { dayLabel, timeLabel, isNewDay, linkify, metaWindow } from "./chatUtils";
 
 const tt = (_r: string, ua: string) => ua;  // ClientChat україномовний
+const CH_META: Record<string, { i: string; l: string }> = {
+  instagram: { i: "📸", l: "Instagram" }, telegram: { i: "✈️", l: "Telegram" }, echat_telegram: { i: "✈️", l: "Telegram" },
+  facebook: { i: "📘", l: "Facebook" }, echat: { i: "🟣", l: "Viber" }, viber: { i: "🟣", l: "Viber" },
+  echat_whatsapp: { i: "🟢", l: "WhatsApp" }, whatsapp: { i: "🟢", l: "WhatsApp" }, web: { i: "🌐", l: "Web" }, tiktok: { i: "🎵", l: "TikTok" },
+};
 type ReplyChannel = { channel_id: number; channel_kind: string; channel_name: string; number?: string; conversation_id?: number | null; selected?: boolean };
 type StartConversationResult = { conversation: Conversation; message: ChatMessage };
 
@@ -31,6 +36,8 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   const [startChannelId, setStartChannelId] = useState(0);
   const [firstText, setFirstText] = useState("");
   const [starting, setStarting] = useState(false);
+  const [allConvs, setAllConvs] = useState<Conversation[]>([]);
+  const [cinfo, setCinfo] = useState<any>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -39,6 +46,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
     try {
       const r = await api.get<Paginated<Conversation>>(`/api/conversations/by_contact/?contact=${contact}`);
       const rows = ((r as any).results || (r as any) || []) as Conversation[];
+      setAllConvs(rows);
       const c = rows.find((row) => row.status === "open") || null;
       setConv(c);
       if (c) { setStartChannels([]); loadMsgs(c.id); }
@@ -77,9 +85,18 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
     }
     setSwitchingChannel(false);
   }
+  async function switchConv(c: Conversation) {
+    if (!c || c.id === conv?.id) return;
+    setConv(c); setMsgs([]); setAi(null); setErr("");
+    await Promise.all([loadMsgs(c.id), loadReplyChannels(c.id)]);
+  }
+  async function loadContactInfo() {
+    if (!contact) { setCinfo(null); return; }
+    try { setCinfo(await api.get<any>(`/api/contacts/${contact}/`)); } catch { setCinfo(null); }
+  }
   useEffect(() => {
-    setLoaded(false); setConv(null); setMsgs([]); setFirstText(""); setErr("");
-    loadConv();
+    setLoaded(false); setConv(null); setMsgs([]); setFirstText(""); setErr(""); setAllConvs([]); setCinfo(null);
+    loadConv(); loadContactInfo();
     /* eslint-disable-next-line */
   }, [contact]);
   useEffect(() => {
@@ -146,6 +163,28 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
 
   if (!loaded) return <div className="muted" style={{ fontSize: 13 }}>Завантаження чату…</div>;
   if (!contact) return <div className="muted" style={{ fontSize: 13 }}>Немає привʼязаного клієнта</div>;
+  const clientHead = (cinfo || allConvs.length > 0) ? (
+    <div style={{ marginBottom: 7 }}>
+      {cinfo && (cinfo.nickname || cinfo.social_link || cinfo.display_name) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, flexWrap: "wrap", marginBottom: allConvs.length ? 5 : 0 }}>
+          <b style={{ color: "#334155" }}>{cinfo.display_name || `${cinfo.first_name || ""} ${cinfo.last_name || ""}`.trim() || "Клієнт"}</b>
+          {cinfo.nickname && <span style={{ color: "#7c3aed", fontWeight: 600 }}>{String(cinfo.nickname).startsWith("@") ? cinfo.nickname : "@" + cinfo.nickname}</span>}
+          {cinfo.social_link && <a href={cinfo.social_link} target="_blank" rel="noreferrer" style={{ color: "#2563eb", fontSize: 11.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 3 }}><Icon n="link" size={12} /> профіль</a>}
+        </div>
+      )}
+      {allConvs.length > 0 && (
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+          {allConvs.map((c) => { const meta = CH_META[(c as any).channel_kind] || { i: "💬", l: (c as any).channel_name || "Чат" }; const on = conv?.id === c.id; return (
+            <button key={c.id} type="button" onClick={() => switchConv(c)} title={"Відкрити чат: " + ((c as any).channel_name || meta.l)}
+              style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, cursor: "pointer", whiteSpace: "nowrap",
+                border: "1px solid " + (on ? "#7c3aed" : "#e2e8f0"), background: on ? "#f5f3ff" : "#fff", color: on ? "#6d28d9" : "#475569", opacity: (c as any).status === "open" ? 1 : 0.62 }}>
+              <span>{meta.i}</span> {meta.l}
+            </button>
+          ); })}
+        </div>
+      )}
+    </div>
+  ) : null;
   if (!conv) {
     const startPicker = startChannels.length ? (
       <div data-testid="reply-channel-picker" style={{ display: "flex", alignItems: "center", gap: 7, width: "100%" }}>
@@ -163,6 +202,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
     ) : null;
     return (
       <div style={{ display: "flex", flexDirection: "column", minHeight: 180 }}>
+        {clientHead}
         {channelPickerTargetId ? (channelPickerTarget && startPicker ? createPortal(startPicker, channelPickerTarget) : null) : startPicker}
         <div style={{ flex: 1, minHeight: 92, padding: 12, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 5 }}>Почати чат з клієнтом</div>
@@ -212,6 +252,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
 
   return (
     <div style={{ display: "flex", flexDirection: "column", containerType: "inline-size", height: "auto" }}>
+      {clientHead}
       {channelPickerTargetId ? (channelPickerTarget ? createPortal(channelPicker, channelPickerTarget) : null) : channelPicker}
       <ChatActions convId={conv.id} onClosed={() => { setConv(null); setMsgs([]); loadStartChannels(); }} onChanged={(c) => setConv(c)} />
       {/* СТРІЧКА — заповнює доступну висоту */}
