@@ -15,14 +15,19 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 
-from apps.crm.models import Deal, log_activity
+from apps.crm.models import Contact, Deal, Funnel, Stage, ZamerProject, log_activity
 
 LABEL = "Замер стен (LiDAR)"
 WALL_FUNNEL_ID = 5  # воронка «1.С/Покрытия для стен» — замер только для неё
 
 
 class ZamerView(APIView):
-    """Принять замер из iOS-приложения и прикрепить к сделке."""
+    """Принять проект замера и смету строго для выбранного клиента.
+
+    Новый контракт передаёт ``client_id`` и массив ``rooms``. CRM находит
+    открытую сделку этого клиента в воронке покрытий или создаёт её. Старый
+    контракт с ``deal_id`` и одной комнатой оставлен для совместимости.
+    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -34,57 +39,163 @@ class ZamerView(APIView):
             return Response({"error": "Нет доступа к приложению замера. Обратитесь к руководителю."},
                             status=status.HTTP_403_FORBIDDEN)
 
-        # --- 1. Найти сделку ---
-        deal_id = data.get("deal_id")
-        if not deal_id:
-            return Response({"error": "deal_id обязателен"}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            deal = Deal.objects.get(pk=int(deal_id))
-        except (Deal.DoesNotExist, ValueError, TypeError):
-            return Response({"error": "Сделка не найдена"}, status=status.HTTP_404_NOT_FOUND)
-
-        # --- 1b. Только воронка «Покрытия для стен» ---
-        if deal.funnel_id != WALL_FUNNEL_ID:
-            return Response({"error": "Замер только для воронки «Покрытия для стен»"},
-                            status=status.HTTP_400_BAD_REQUEST)
-
-        # --- 2. Разобрать цифры (безопасно) ---
-        def num(key):
+        def num(source, key):
             try:
-                return round(float(data.get(key) or 0), 1)
+                return round(float((source or {}).get(key) or 0), 2)
             except (ValueError, TypeError):
                 return 0.0
 
-        gross = num("gross_m2")
-        openings = num("openings_m2")
-        net = num("net_m2")
-        reserve = num("net_with_reserve_m2")
-
-        walls = data.get("walls") or []
-        wall_lines = []
-        for i, w in enumerate(walls, 1):
+        # --- 1. Определить выбранного клиента и не допустить смешивания ---
+        deal = None
+        deal_id = data.get("deal_id")
+        if deal_id:
             try:
-                ww = int(float(w.get("width_cm") or 0))
-                hh = int(float(w.get("height_cm") or 0))
-                wall_lines.append(f"Стена {i}: {ww}×{hh} см")
-            except (ValueError, TypeError, AttributeError):
+                deal = Deal.objects.select_related("contact", "stage").get(pk=int(deal_id))
+            except (Deal.DoesNotExist, ValueError, TypeError):
+                return Response({"error": "Сделка не найдена"}, status=status.HTTP_404_NOT_FOUND)
+            if deal.funnel_id != WALL_FUNNEL_ID:
+                return Response({"error": "Замер только для воронки «Покрытия для стен»"},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        client_id = data.get("client_id") or (deal.contact_id if deal else None)
+        if not client_id:
+            return Response({"error": "Сначала выберите клиента в проекте замера"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            contact = Contact.objects.get(pk=int(client_id))
+        except (Contact.DoesNotExist, ValueError, TypeError):
+            return Response({"error": "Выбранный клиент не найден"}, status=status.HTTP_404_NOT_FOUND)
+        if deal and deal.contact_id != contact.id:
+            return Response({"error": "Эта сделка принадлежит другому клиенту"},
+                            status=status.HTTP_409_CONFLICT)
+
+        # --- 2. Комнаты: новый массив или одна legacy-комната ---
+        rooms = data.get("rooms") if isinstance(data.get("rooms"), list) else []
+        if not rooms:
+            rooms = [{
+                "name": data.get("room_name") or "Комната 1",
+                "walls": data.get("walls") or [],
+                "openings": data.get("openings") or [],
+                "gross_m2": data.get("gross_m2"),
+                "openings_m2": data.get("openings_m2"),
+                "net_m2": data.get("net_m2"),
+                "net_with_reserve_m2": data.get("net_with_reserve_m2"),
+                "perimeter_m": data.get("perimeter_m"),
+                "floor_m2": data.get("floor_m2"),
+                "ceiling_m2": data.get("ceiling_m2"),
+                "reveals_linear_m": data.get("reveals_linear_m"),
+                "reveals_area_m2": data.get("reveals_area_m2"),
+            }]
+
+        clean_rooms = []
+        for index, room in enumerate(rooms, 1):
+            if not isinstance(room, dict):
                 continue
+            walls = room.get("walls") if isinstance(room.get("walls"), list) else []
+            openings = room.get("openings") if isinstance(room.get("openings"), list) else []
+            clean_rooms.append({
+                "name": str(room.get("name") or f"Комната {index}")[:120],
+                "walls": walls,
+                "openings": openings,
+                "gross_m2": num(room, "gross_m2"),
+                "openings_m2": num(room, "openings_m2"),
+                "net_m2": num(room, "net_m2"),
+                "net_with_reserve_m2": num(room, "net_with_reserve_m2"),
+                "perimeter_m": num(room, "perimeter_m"),
+                "floor_m2": num(room, "floor_m2"),
+                "ceiling_m2": num(room, "ceiling_m2"),
+                "reveals_linear_m": num(room, "reveals_linear_m"),
+                "reveals_area_m2": num(room, "reveals_area_m2"),
+            })
+        if not clean_rooms:
+            return Response({"error": "В проекте нет комнат для отправки"},
+                            status=status.HTTP_400_BAD_REQUEST)
 
-        # --- 3. Короткое значение для карточки сделки ---
-        short = f"чисто {net} м² · с запасом +10% {reserve} м²"
+        totals = {
+            key: round(sum(float(room.get(key) or 0) for room in clean_rooms), 2)
+            for key in ("gross_m2", "openings_m2", "net_m2", "net_with_reserve_m2",
+                        "perimeter_m", "floor_m2", "ceiling_m2",
+                        "reveals_linear_m", "reveals_area_m2")
+        }
 
-        # --- 4. Полный текст для журнала ---
-        detail = "; ".join(wall_lines)
-        detail += f" | все стены {gross} м², минус проёмы {openings} м², чисто {net} м², +10% {reserve} м²"
+        # --- 3. Сделка только выбранного клиента: найти или создать ---
+        if not deal:
+            deal = (Deal.objects.select_related("stage")
+                    .filter(contact=contact, funnel_id=WALL_FUNNEL_ID,
+                            stage__is_won=False, stage__is_lost=False)
+                    .order_by("-updated_at", "-id").first())
+        if not deal:
+            funnel = Funnel.objects.filter(pk=WALL_FUNNEL_ID).first()
+            first_stage = (Stage.objects.filter(funnel_id=WALL_FUNNEL_ID, auto_only=False)
+                           .order_by("order", "id").first())
+            if not funnel or not first_stage:
+                return Response({"error": "Воронка замера не настроена"},
+                                status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            deal = Deal.objects.create(
+                title=f"Замер · {contact}"[:255], contact=contact,
+                funnel=funnel, stage=first_stage, source="other", owner=request.user,
+            )
 
-        # --- 5. Записать в card_fields (заменить прошлый замер, если был) ---
+        # --- 4. Читаемая разбивка по комнатам для карточки и журнала ---
+        room_lines = []
+        for room in clean_rooms:
+            wall_sizes = []
+            for wall_index, wall in enumerate(room["walls"], 1):
+                if not isinstance(wall, dict):
+                    continue
+                try:
+                    wall_sizes.append(
+                        f"С{wall_index} {int(float(wall.get('width_cm') or 0))}×"
+                        f"{int(float(wall.get('height_cm') or 0))} см"
+                    )
+                except (ValueError, TypeError):
+                    continue
+            line = (
+                f"{room['name']}: стены {room['net_m2']} м², пол {room['floor_m2']} м², "
+                f"потолок {room['ceiling_m2']} м², откосы {room['reveals_linear_m']} м.п. / "
+                f"{room['reveals_area_m2']} м²"
+            )
+            if wall_sizes:
+                line += " · " + ", ".join(wall_sizes)
+            room_lines.append(line)
+
+        project_uuid = str(data.get("project_uuid") or "legacy")[:64]
+        measurement_label = f"Замер Wallcov · {project_uuid}"
+        short = (f"{len(clean_rooms)} комн. · стены {totals['net_m2']} м² · "
+                 f"пол/потолок {totals['floor_m2']} м² · откосы {totals['reveals_linear_m']} м.п.")
+
+        # --- 5. В карточке сделки обновляется только проект этого клиента ---
         fields = deal.card_fields if isinstance(deal.card_fields, list) else []
-        fields = [f for f in fields if not (isinstance(f, dict) and f.get("label") == LABEL)]
-        fields.append({"label": LABEL, "value": short})
-        deal.card_fields = fields
-        deal.save(update_fields=["card_fields"])
+        fields = [f for f in fields if not (
+            isinstance(f, dict) and f.get("label") in (LABEL, measurement_label)
+        )]
+        fields.append({"label": measurement_label, "value": short + "\n" + "\n".join(room_lines)})
 
-        # --- 5b. План комнаты (картинка) → в фото сделки, видно в CRM ---
+        estimate = data.get("estimate") if isinstance(data.get("estimate"), dict) else {}
+        estimate_total = num(estimate, "total")
+        if estimate:
+            estimate_label = f"Смета Wallcov · {project_uuid}"
+            fields = [f for f in fields if not (isinstance(f, dict) and f.get("label") == estimate_label)]
+            estimate_lines = estimate.get("lines") if isinstance(estimate.get("lines"), list) else []
+            positions = []
+            for line in estimate_lines[:80]:
+                if not isinstance(line, dict):
+                    continue
+                positions.append(
+                    f"{line.get('role') or 'Позиция'}: {line.get('title') or '—'} · "
+                    f"{num(line, 'quantity')} {line.get('unit') or ''} · {num(line, 'cost')} грн"
+                )
+            estimate_value = f"Площадь {num(estimate, 'area_m2')} м² · итого {estimate_total} грн"
+            if positions:
+                estimate_value += "\n" + "\n".join(positions)
+            fields.append({"label": estimate_label, "value": estimate_value})
+            if estimate_total > 0:
+                deal.amount = estimate_total
+
+        deal.card_fields = fields
+        deal.save(update_fields=["card_fields", "amount", "updated_at"])
+
+        # --- 6. План комнаты → фото сделки ---
         plan = data.get("plan_png")
         if isinstance(plan, str) and plan.startswith("data:image"):
             photos = deal.ref_photos if isinstance(deal.ref_photos, list) else []
@@ -92,10 +203,31 @@ class ZamerView(APIView):
             deal.ref_photos = photos[-12:]      # не растим бесконечно
             deal.save(update_fields=["ref_photos"])
 
-        # --- 6. Журнал ---
-        log_activity("deal", deal.id, LABEL, detail=detail, user=request.user)
+        # --- 7. Канонический проект для карточки конкретного клиента ---
+        device_uuid = str(data.get("device_uuid") or f"crm-user-{request.user.id}")[:64]
+        project_payload = {
+            "id": project_uuid,
+            "clientId": contact.id,
+            "clientName": str(contact),
+            "rooms": clean_rooms,
+            "totals": totals,
+            "estimate": estimate,
+            "dealId": deal.id,
+        }
+        ZamerProject.objects.update_or_create(
+            device_uuid=device_uuid, project_uuid=project_uuid,
+            defaults={"title": str(data.get("project_name") or contact)[:255],
+                      "payload": project_payload, "user": request.user},
+        )
 
-        return Response({"ok": True, "deal_id": deal.id, "deal_title": deal.title})
+        detail = "\n".join(room_lines)
+        if estimate:
+            detail += f"\nСмета: {estimate_total} грн"
+        log_activity("deal", deal.id, "Замер и смета Wallcov", detail=detail, user=request.user)
+
+        return Response({"ok": True, "deal_id": deal.id, "deal_title": deal.title,
+                         "client_id": contact.id, "rooms_count": len(clean_rooms),
+                         "totals": totals})
 
 
 # ============================================================================
@@ -109,7 +241,7 @@ class ZamerView(APIView):
 from rest_framework.permissions import AllowAny
 from django.utils import timezone
 from datetime import timedelta
-from apps.crm.models import Contact, Lead, Funnel, Stage
+from apps.crm.models import Lead
 
 LEAD_FUNNEL_ID = 1   # воронка «Лиды»
 
@@ -233,9 +365,6 @@ class PricelistView(APIView):
 #  POST /api/zamer/projects/  {device_uuid, project_uuid, title, payload}  → upsert
 #  DELETE /api/zamer/projects/?device_uuid=&project_uuid=                  → удалить
 # ============================================================================
-from apps.crm.models import ZamerProject
-
-
 class ZamerProjectsView(APIView):
     permission_classes = [AllowAny]
 

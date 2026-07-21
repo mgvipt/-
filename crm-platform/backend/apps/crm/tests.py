@@ -56,3 +56,69 @@ class RoleScopingTests(TestCase):
         c.force_authenticate(self.m1)
         names = {f["name"] for f in c.get("/api/funnels/").json()["results"]}
         self.assertEqual(names, {"21 Основний"})
+
+
+class ZamerClientScopingTests(TestCase):
+    """Замеры и смета никогда не смешиваются между клиентами."""
+
+    def setUp(self):
+        from apps.crm.models import Contact, Deal, ZamerProject
+        self.Contact = Contact
+        self.Deal = Deal
+        self.ZamerProject = ZamerProject
+        self.user = User.objects.create_superuser("zamer-admin", "zamer@example.com", "x")
+        self.client_a = Contact.objects.create(first_name="Клиент А", phone="+380000000001")
+        self.client_b = Contact.objects.create(first_name="Клиент Б", phone="+380000000002")
+        self.funnel = Funnel.objects.create(id=5, name="Покрытия для стен", order=5)
+        self.stage = Stage.objects.create(funnel=self.funnel, name="Новая", order=0)
+        self.api = APIClient()
+        self.api.force_authenticate(self.user)
+
+    def payload(self, client_id):
+        return {
+            "client_id": client_id,
+            "project_uuid": "project-a",
+            "device_uuid": "test-device",
+            "project_name": "Квартира А",
+            "rooms": [{
+                "name": "Гостиная",
+                "walls": [{"width_cm": 500, "height_cm": 270}],
+                "openings": [],
+                "gross_m2": 13.5,
+                "openings_m2": 1.5,
+                "net_m2": 12,
+                "net_with_reserve_m2": 13.2,
+                "perimeter_m": 14,
+                "floor_m2": 20,
+                "ceiling_m2": 20,
+                "reveals_linear_m": 5.4,
+                "reveals_area_m2": 1.1,
+            }],
+            "estimate": {"area_m2": 12, "total": 25000, "lines": []},
+        }
+
+    def test_creates_scoped_deal_and_project_for_selected_client(self):
+        response = self.api.post("/api/zamer/", self.payload(self.client_a.id), format="json")
+        self.assertEqual(response.status_code, 200, response.json())
+        deal = self.Deal.objects.get(pk=response.json()["deal_id"])
+        self.assertEqual(deal.contact_id, self.client_a.id)
+        self.assertEqual(float(deal.amount), 25000)
+        project = self.ZamerProject.objects.get(project_uuid="project-a")
+        self.assertEqual(project.payload["clientId"], self.client_a.id)
+        self.assertEqual(project.payload["rooms"][0]["name"], "Гостиная")
+
+        a = self.api.get(f"/api/contacts/{self.client_a.id}/").json()
+        b = self.api.get(f"/api/contacts/{self.client_b.id}/").json()
+        self.assertEqual(len(a["zamer_projects"]), 1)
+        self.assertEqual(b["zamer_projects"], [])
+
+    def test_rejects_deal_owned_by_another_client(self):
+        foreign = self.Deal.objects.create(
+            title="Чужая сделка", contact=self.client_b,
+            funnel=self.funnel, stage=self.stage,
+        )
+        body = self.payload(self.client_a.id)
+        body["deal_id"] = foreign.id
+        response = self.api.post("/api/zamer/", body, format="json")
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(foreign.contact_id, self.client_b.id)

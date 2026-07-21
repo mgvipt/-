@@ -13,11 +13,13 @@ import { SocialLink } from "../social";
 import ClientChat from "../ClientChat";
 
 interface Deal { id: number; title: string; amount: number; stage: string; is_won: boolean; created_at: string; }
+interface ZamerProject { project_uuid: string; title: string; payload: any; updated_at: string; }
 interface Contact {
   id: number; first_name: string; last_name: string; middle_name?: string; display_name: string; phone: string; email: string; social_link: string; messengers?: string[];
   source: string; address: string; comment: string; loyalty_tag: string; birthday: string | null;
   kinds?: string[]; gender?: string; monitor_docs?: boolean; doc_email?: string;
   channels: string[]; owner?: number | null; owner_name?: string; deals: Deal[]; total_spent: number;
+  zamer_projects?: ZamerProject[];
 }
 const money = (n: number) => Math.round(n || 0).toLocaleString("ru") + " ₴";
 const LOYALTY = ["", "Новий", "Активний", "VIP", "Сплячий"];
@@ -196,6 +198,7 @@ export default function ClientCard() {
         </div>
         <div>
           <FinBlock contactId={c.id} cname={c.display_name} deals={c.deals} />
+          <ZamerProjectsBlock projects={c.zamer_projects || []} />
           <div className="panel">
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div className="label" style={{ flex: 1, margin: 0 }}>{t("Сделки клиента","Угоди клієнта")} ({c.deals.length})</div>
@@ -267,6 +270,61 @@ export default function ClientCard() {
           </aside>
         </>
       )}
+    </div>
+  );
+}
+
+function ZamerProjectsBlock({ projects }: { projects: ZamerProject[] }) {
+  const { t } = useLang();
+  if (!projects.length) return null;
+  const metric = (room: any, snake: string, camel: string) => {
+    const source = room?.scanResult || room || {};
+    return Number(source[snake] ?? source[camel] ?? 0);
+  };
+  return (
+    <div className="panel" style={{ marginTop: 12 }} data-testid="client-zamer-projects">
+      <div className="label" style={{ marginBottom: 8 }}>
+        {t("Замеры из приложения", "Заміри із застосунку")} ({projects.length})
+      </div>
+      {projects.map((project) => {
+        const rooms = Array.isArray(project.payload?.rooms) ? project.payload.rooms : [];
+        const totals = project.payload?.totals || {};
+        const totalNet = Number(totals.net_m2 ?? rooms.reduce((sum: number, room: any) => sum + metric(room, "net_m2", "netM2"), 0));
+        return (
+          <details key={project.project_uuid} style={{ border: "1px solid #e2e8f0", borderRadius: 9, padding: "8px 10px", marginBottom: 7, background: "#f8fafc" }}>
+            <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 700, color: "#0f172a" }}>
+              {project.title || t("Проект замера", "Проєкт заміру")} · {rooms.length} {t("комн.", "кімн.")} · {totalNet.toFixed(1)} м²
+            </summary>
+            <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+              {rooms.map((room: any, index: number) => {
+                const name = room?.name || `${t("Комната", "Кімната")} ${index + 1}`;
+                const net = metric(room, "net_m2", "netM2");
+                const floor = metric(room, "floor_m2", "floorM2");
+                const ceiling = metric(room, "ceiling_m2", "ceilingM2") || floor;
+                const revealsM = metric(room, "reveals_linear_m", "revealsLinearM");
+                const revealsM2 = metric(room, "reveals_area_m2", "revealsAreaM2");
+                const walls = Array.isArray(room?.walls) ? room.walls : (Array.isArray(room?.scanResult?.walls) ? room.scanResult.walls : []);
+                return (
+                  <div key={room?.id || index} style={{ background: "#fff", borderRadius: 7, padding: "7px 9px", border: "1px solid #edf2f7", fontSize: 12.5 }}>
+                    <b>{name}</b>
+                    <div className="muted" style={{ marginTop: 3 }}>
+                      {t("Стены", "Стіни")}: {net.toFixed(1)} м² · {t("пол", "підлога")}: {floor.toFixed(1)} м² · {t("потолок", "стеля")}: {ceiling.toFixed(1)} м²
+                    </div>
+                    <div className="muted">
+                      {t("Откосы", "Укоси")}: {revealsM.toFixed(1)} м.п. / {revealsM2.toFixed(1)} м² · {t("стен", "стін")}: {walls.length}
+                    </div>
+                  </div>
+                );
+              })}
+              {project.payload?.estimate && (
+                <div style={{ color: "#9a3412", fontSize: 12.5, fontWeight: 700 }}>
+                  {t("Смета", "Кошторис")}: {Math.round(Number(project.payload.estimate.total || 0)).toLocaleString("ru")} ₴
+                </div>
+              )}
+            </div>
+          </details>
+        );
+      })}
     </div>
   );
 }

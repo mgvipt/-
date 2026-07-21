@@ -49,9 +49,22 @@ class ContactDetailSerializer(ContactSerializer):
     """Картка клієнта: + історія сделок + сумарні витрати."""
     deals = serializers.SerializerMethodField()
     total_spent = serializers.SerializerMethodField()
+    zamer_projects = serializers.SerializerMethodField()
 
     class Meta(ContactSerializer.Meta):
-        fields = ContactSerializer.Meta.fields + ["deals", "total_spent"]
+        fields = ContactSerializer.Meta.fields + ["deals", "total_spent", "zamer_projects"]
+
+    def get_zamer_projects(self, obj):
+        """Только проекты замера выбранного клиента, без данных других клиентов."""
+        from .models import ZamerProject
+        rows = (ZamerProject.objects.filter(payload__clientId=obj.id)
+                .order_by("-updated_at")[:50])
+        return [{
+            "project_uuid": row.project_uuid,
+            "title": row.title,
+            "payload": row.payload,
+            "updated_at": row.updated_at,
+        } for row in rows]
 
     def get_deals(self, obj):
         out = []
