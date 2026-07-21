@@ -4,6 +4,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { EmojiButton } from "./ChatCompose";
+import { AiComposeAssist } from "./AiComposeAssist";
 import { Icon } from "./Icon";
 import { api, ChatMessage, Conversation, Paginated } from "./api";
 import ChatActions from "./ChatActions";
@@ -174,10 +175,13 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
             <textarea value={firstText} onChange={(e) => setFirstText(e.target.value)} rows={3}
               placeholder="Напишіть перше повідомлення клієнту…"
               style={{ width: "100%", fontSize: 13, padding: 9, borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", marginTop: 8, boxSizing: "border-box", resize: "vertical", minHeight: 70 }} />
-            <button className="btn btn-primary" onClick={startConversation}
-              disabled={starting || !startChannelId || !firstText.trim()} style={{ marginTop: 6, alignSelf: "flex-end", minWidth: 130 }}>
-              {starting ? "Надсилаємо…" : "Надіслати"}
-            </button>
+            <div style={{ display: "flex", gap: 6, marginTop: 6, alignSelf: "flex-end", alignItems: "center" }}>
+              <AiComposeAssist draft={firstText} contactId={contact} onApply={setFirstText} />
+              <button className="btn btn-primary" onClick={startConversation}
+                disabled={starting || !startChannelId || !firstText.trim()} style={{ minWidth: 130 }}>
+                {starting ? "Надсилаємо…" : "Надіслати"}
+              </button>
+            </div>
           </>
         ) : (
           <div style={{ color: "#b45309", fontSize: 12, marginTop: 8 }}>
@@ -268,6 +272,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
         <button className="btn" type="button" style={{ background: internal ? "#fde68a" : "#f1f5f9", color: internal ? "#92400e" : "#475569", flex: "0 0 auto", fontWeight: internal ? 700 : 400 }} title="Прихована нотатка для менеджерів (клієнт не побачить)" onClick={() => setInternal((v) => !v)}><Icon n="eye" size={17} /></button>
         <EmojiButton onPick={(e) => setText((t) => t + e)} />
         <button className="btn" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title="Надіслати фото / відео" onClick={() => fileRef.current?.click()} disabled={busy}><Icon n="paperclip" size={17} /></button>
+        <AiComposeAssist draft={text} convId={conv.id} onApply={setText} compact />
         <button className="btn" style={{ flex: "1.8 1 0", minWidth: 0, background: "#fef3c7", color: "#92400e", fontSize: "clamp(9px, 2.7cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "0 6px" }} onClick={analyze} disabled={aiLoad} title="AI-РОП підказати відповідь">{aiLoad ? "AI аналізує…" : <><Icon n="🧠" size={13} /> AI-РОП підказати відповідь</>}</button>
         <button className="btn btn-primary" style={{ flex: "1 1 0", minWidth: 0, fontSize: "clamp(9px, 2.7cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "0 6px", background: internal ? "#d4a017" : undefined }} onClick={send} disabled={busy || !text.trim()}>{busy ? "…" : (internal ? <><Icon n="📝" size={13} /> Нотатка</> : "Надіслати")}</button>
       </div>

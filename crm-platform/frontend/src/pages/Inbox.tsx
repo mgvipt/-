@@ -7,6 +7,7 @@ import { useLang } from "../i18n";
 import TeamChat from "./TeamChat";
 import DealCard from "./DealCard";
 import { EmojiButton } from "../ChatCompose";
+import { AiComposeAssist } from "../AiComposeAssist";
 import { linkify, dayLabel, metaWindow, SNDR_MAP } from "../chatUtils";
 import { Icon } from "../Icon";
 import { msgSoundOn, setMsgSoundOn, teamSoundOn, setTeamSoundOn } from "../sounds";
@@ -498,6 +499,7 @@ export default function Inbox() {
                 onPaste={onPasteFile}
                 placeholder={internalNote ? (compact ? t("Внутренняя заметка…","Внутрішня нотатка…") : t("Внутренняя заметка — клиент НЕ увидит…  (Enter — отправить, Shift+Enter — новая строка)","Внутрішня нотатка — клієнт НЕ побачить…  (Enter — надіслати, Shift+Enter — новий рядок)")) : (compact ? t(`Сообщение в ${active.channel_name}…`,`Повідомлення в ${active.channel_name}…`) : t(`Сообщение в ${active.channel_name}…  (Enter — отправить, Shift+Enter — строка, вставить фото — Ctrl+V)`,`Повідомлення в ${active.channel_name}…  (Enter — надіслати, Shift+Enter — рядок, вставити фото — Ctrl+V)`))}
                 style={{ flex: 1, minHeight: 38, height: composerH ? composerH + "px" : undefined, maxHeight: composerH ? undefined : 170, background: internalNote ? "#fffbeb" : "#f1f5f9", border: internalNote ? "1.5px dashed #d4a017" : "none", borderRadius: 7, padding: "9px 12px", fontSize: 13, outline: "none", resize: "none", lineHeight: 1.4, fontFamily: "inherit", boxSizing: "border-box" }} />
+              <AiComposeAssist draft={text} convId={active.id} onApply={setText} compact t={t} />
               <button className="btn btn-primary" onClick={send} disabled={sending} title={internalNote ? t("Заметка","Нотатка") : t("Отправить","Надіслати")} style={{ background: internalNote ? "#d4a017" : undefined, height: 38, padding: compact ? "0 11px" : undefined }}>{sending ? "…" : (internalNote ? <><Icon n="file" size={15} />{!compact && <> {t("Заметка","Нотатка")}</>}</> : <><Icon n="send" size={16} />{!compact && <> {t("Отправить","Надіслати")}</>}</>)}</button>
               </div>
             </div>

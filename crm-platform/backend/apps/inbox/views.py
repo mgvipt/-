@@ -710,6 +710,56 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 
+    @action(detail=False, methods=["post"])
+    def ai_compose(self, request):
+        """Помічник менеджеру: покращити або перекласти ЙОГО чернетку ПЕРЕД відправкою.
+        НЕ надсилає нічого клієнту — лише повертає варіант тексту, який менеджер сам
+        вставляє у поле і сам тисне «Надіслати». Працює у всіх місцях чату."""
+        draft = (request.data.get("draft") or "").strip()
+        mode = (request.data.get("mode") or "improve").strip()
+        if not draft:
+            return Response({"detail": "Спочатку напишіть чернетку"}, status=status.HTTP_400_BAD_REQUEST)
+        conv = None
+        try:
+            cid = request.data.get("conversation_id")
+            contact = request.data.get("contact_id")
+            if cid:
+                conv = Conversation.objects.filter(id=cid).first()
+            elif contact:
+                conv = Conversation.objects.filter(contact_id=contact).order_by("-id").first()
+        except Exception:
+            conv = None
+        dialog = ""
+        if conv:
+            msgs = list(conv.messages.order_by("id").values("direction", "text"))[-20:]
+            dialog = "\n".join(
+                ("Клієнт: " if m["direction"] == "in" else "Менеджер: ") + (m["text"] or "")
+                for m in msgs if m.get("text"))
+        if mode == "translate":
+            task = (
+                "Переклади ЧЕРНЕТКУ менеджера на мову, якою пише клієнт у переписці "
+                "(якщо переписки немає — залиши українською). Нічого не додавай і не прибирай — "
+                "лише точний природний переклад.")
+        else:
+            task = (
+                "Перепиши ЧЕРНЕТКУ менеджера як готове повідомлення клієнту: грамотно, ввічливо, "
+                "у теплому діловому тоні Wallcov, ТІЄЮ Ж МОВОЮ що й чернетка. Збережи всі факти, "
+                "цифри, ціни й домовленості — НЕ вигадуй нових. Не додавай зайвого, лише зроби "
+                "текст чистішим і переконливішим.")
+        prompt = (
+            "Ти — досвідчений менеджер з продажу Wallcov (декоративні покриття та фарби для стін).\n"
+            + task + "\n\n"
+            "Контекст переписки (для тону й мови клієнта):\n" + (dialog or "(переписки ще немає)") + "\n\n"
+            "ЧЕРНЕТКА менеджера:\n" + draft + "\n\n"
+            'Поверни СТРОГО JSON без пояснень: {"text": "готовий текст повідомлення"}')
+        from apps.crm.ai import claude_json
+        try:
+            r = claude_json(prompt, model="claude-haiku-4-5", max_tokens=900, source="Помічник у чаті")
+            txt = (r.get("text") or r.get("suggestion") or "").strip()
+            return Response({"text": txt})
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
     @action(detail=True, methods=["post"])
     def send_media(self, request, pk=None):
         """Надіслати клієнту фото/відео/документ (base64 у JSON)."""
