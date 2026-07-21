@@ -418,6 +418,27 @@ class EchatWhatsappAdapter(ChannelAdapter):
             raise RuntimeError("WhatsApp e-chat: " + str(resp.get("description") or "помилка відправки"))
         return str((resp.get("message") or {}).get("message_id") or ext)
 
+    def send_media(self, external_chat_id: str, content: bytes, filename: str, kind: str) -> str:
+        """WhatsApp e-chat приймає файл як публічний URL у message.file — надсилаємо
+        нативним вкладенням (фото/відео/документ), а не текстовим посиланням."""
+        if not self.config.get("api_key"):
+            raise RuntimeError("В каналі WhatsApp e-chat не задано api_key")
+        from .models import SharedLink
+        import secrets, mimetypes, time
+        tok = secrets.token_urlsafe(16)
+        ct = mimetypes.guess_type(filename)[0] or ("image/jpeg" if kind in ("photo", "image") else "application/octet-stream")
+        SharedLink.objects.create(token=tok, filename=(filename or "file")[:255], content_type=ct, data=content)
+        url = "https://crm.wallcovdec.com.ua/api/f/%s/" % tok
+        ext = "wcw-%d" % int(time.time() * 1000)
+        resp = self._post("/messages/send", {
+            "number": self.config.get("number", ""),
+            "message": {"id": ext, "text": "", "file": url},
+            "contact": {"number": external_chat_id},
+        })
+        if str(resp.get("status") or "").upper() == "ERROR":
+            raise RuntimeError("WhatsApp e-chat (файл): " + str(resp.get("description") or "помилка"))
+        return str((resp.get("message") or {}).get("message_id") or ext)
+
     def connect(self):
         try:
             return self._post("/channel/connect", {"number": self.config.get("number", "")})
