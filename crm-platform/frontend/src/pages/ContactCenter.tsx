@@ -135,7 +135,7 @@ function EchatBlock({ t }: any) {
   const [lines, setLines] = useState<any[]>([]);
   const [key, setKey] = useState("");
   const [num, setNum] = useState("");
-  const [platform, setPlatform] = useState<"viber" | "telegram">("viber");
+  const [platform, setPlatform] = useState<"viber" | "telegram" | "whatsapp">("viber");
   const [msg, setMsg] = useState("");
   async function reload() {
     try {
@@ -154,10 +154,10 @@ function EchatBlock({ t }: any) {
     } catch (e: any) { setMsg(e?.response?.data?.detail || t("Ошибка подключения","Помилка підключення")); }
   }
   const inp: any = { height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", fontSize: 13 };
-  const renderLines = (kind: "viber" | "telegram") => lines.filter((x) => (x.platform || "viber") === kind).map((line) => (
+  const renderLines = (kind: "viber" | "telegram" | "whatsapp") => lines.filter((x) => (x.platform || "viber") === kind).map((line) => (
     <div key={line.channel_id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", marginBottom: 8, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
       <span style={{ color: line.connected ? "#16a34a" : "#d97706", fontWeight: 700 }}>{line.connected ? "●" : "○"}</span>
-      <b style={{ fontSize: 13, flex: 1 }}>{kind === "telegram" ? "Telegram" : "Viber"} · +{String(line.number || "").replace(/^\+/, "")}</b>
+      <b style={{ fontSize: 13, flex: 1 }}>{kind === "telegram" ? "Telegram" : kind === "whatsapp" ? "WhatsApp" : "Viber"} · +{String(line.number || "").replace(/^\+/, "")}</b>
       <span className="muted" style={{ fontSize: 11 }}>Channel #{line.channel_id}</span>
       <button className="btn" style={{ height: 28, fontSize: 11 }} title={t("Скопировать webhook", "Скопіювати webhook")} onClick={() => navigator.clipboard?.writeText(line.webhook || "")}><Icon n="📋" size={14} /></button>
       <button className="btn" style={{ height: 28, fontSize: 11 }} onClick={() => { setPlatform(kind); setNum(line.number || ""); setMsg(""); }}>
@@ -169,17 +169,18 @@ function EchatBlock({ t }: any) {
     <div className="panel" style={{ margin: "0 0 18px", borderLeft: "4px solid #7360F2" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
         <span style={{ width: 26, height: 26, borderRadius: 7, background: "#7360F2", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>E</span>
-        <b style={{ fontSize: 15 }}>E-chat · Viber + Telegram</b>
+        <b style={{ fontSize: 15 }}>E-chat · Viber + Telegram + WhatsApp</b>
         {lines.filter((x) => x.connected).length > 0 && <span className="chip" style={{ background: "#16a34a" }}>{t("подключено", "підключено")}: {lines.filter((x) => x.connected).length}</span>}
       </div>
       <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Viber и Telegram на одном номере являются отдельными линиями с отдельными API-ключами. Обе появятся в выборе «Отвечать через» в карточке сделки.", "Viber і Telegram на одному номері є окремими лініями з окремими API-ключами. Обидві зʼявляться у виборі «Відповідати через» у картці угоди.")}</div>
       {renderLines("viber")}
       {renderLines("telegram")}
+      {renderLines("whatsapp")}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <select style={{ ...inp, minWidth: 130 }} value={platform} onChange={(e) => setPlatform(e.target.value as "viber" | "telegram")}>
-          <option value="viber">Viber</option><option value="telegram">Telegram</option>
+        <select style={{ ...inp, minWidth: 130 }} value={platform} onChange={(e) => setPlatform(e.target.value as "viber" | "telegram" | "whatsapp")}>
+          <option value="viber">Viber</option><option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option>
         </select>
-        <input style={{ ...inp, flex: 2, minWidth: 200 }} placeholder={t(`API-ключ E-chat для ${platform === "telegram" ? "Telegram" : "Viber"}`, `API-ключ E-chat для ${platform === "telegram" ? "Telegram" : "Viber"}`)} value={key} onChange={(e) => setKey(e.target.value)} />
+        <input style={{ ...inp, flex: 2, minWidth: 200 }} placeholder={t(`API-ключ E-chat для ${platform === "telegram" ? "Telegram" : platform === "whatsapp" ? "WhatsApp" : "Viber"}`, `API-ключ E-chat для ${platform === "telegram" ? "Telegram" : platform === "whatsapp" ? "WhatsApp" : "Viber"}`)} value={key} onChange={(e) => setKey(e.target.value)} />
         <input style={{ ...inp, flex: 1, minWidth: 150 }} placeholder={t("Номер, напр. 380XXXXXXXXX","Номер, напр. 380XXXXXXXXX")} value={num} onChange={(e) => setNum(e.target.value)} />
         <button className="btn btn-primary" onClick={connect}>{t("Подключить / обновить", "Підключити / оновити")}</button>
         {msg && <span style={{ fontSize: 13, color: msg.startsWith("✓") ? "#16a34a" : "#b45309" }}>{msg}</span>}

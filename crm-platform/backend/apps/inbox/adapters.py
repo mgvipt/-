@@ -368,13 +368,75 @@ class WebChatAdapter(ChannelAdapter):
         return "web-out-" + secrets.token_urlsafe(10)
 
 
+class EchatWhatsappAdapter(ChannelAdapter):
+    """WhatsApp через агрегатор e-chat.tech. config: {echat_whatsapp:True, api_key, number}.
+    API ідентичне Viber e-chat: POST /messages/send, header Api-Key. База whatsapp/v1."""
+    kind = "echat_whatsapp"
+    BASE = "https://e-chat.tech/api/whatsapp/v1"
+
+    def parse_webhook(self, payload: dict):
+        contact = payload.get("contact", {}) or {}
+        msg = payload.get("message", {}) or {}
+        att = []
+        if msg.get("file"):
+            att.append({"type": msg.get("type", "file"), "url": msg["file"]})
+        num = str(contact.get("number", "") or "")
+        if not num:
+            return None
+        return IncomingMessage(
+            external_chat_id=num,
+            text=msg.get("text") or "",
+            sender_name=(contact.get("name") or num),
+            external_id=str(msg.get("message_id", "")),
+            attachments=att,
+            phone=num,
+            social_link=("https://wa.me/" + num.lstrip("+")),
+        )
+
+    def _post(self, path, body):
+        req = urllib.request.Request(self.BASE + path, data=json.dumps(body).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Api-Key": self.config.get("api_key", ""),
+                "User-Agent": "WallcovCRM/1.0 (+https://crm.wallcovdec.com.ua)",
+            })
+        with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310
+            return json.loads((r.read().decode() or "{}") or "{}")
+
+    def send(self, external_chat_id: str, text: str) -> str:
+        if not self.config.get("api_key"):
+            raise RuntimeError("В каналі WhatsApp e-chat не задано api_key")
+        import time
+        ext = "wcw-%d" % int(time.time() * 1000)
+        resp = self._post("/messages/send", {
+            "number": self.config.get("number", ""),
+            "message": {"id": ext, "text": text},
+            "contact": {"number": external_chat_id},
+        })
+        if str(resp.get("status") or "").upper() == "ERROR":
+            raise RuntimeError("WhatsApp e-chat: " + str(resp.get("description") or "помилка відправки"))
+        return str((resp.get("message") or {}).get("message_id") or ext)
+
+    def connect(self):
+        try:
+            return self._post("/channel/connect", {"number": self.config.get("number", "")})
+        except urllib.error.HTTPError as exc:
+            if exc.code == 409:
+                return {"status": "Success", "description": "Integration already exists"}
+            raise
+
+
 ADAPTERS = {TelegramAdapter.kind: TelegramAdapter, ViberAdapter.kind: ViberAdapter,
             EchatViberAdapter.kind: EchatViberAdapter,
             EchatTelegramAdapter.kind: EchatTelegramAdapter,
+            EchatWhatsappAdapter.kind: EchatWhatsappAdapter,
             WebChatAdapter.kind: WebChatAdapter}
 
 
 def get_adapter(channel) -> ChannelAdapter:
+    if (channel.config or {}).get("echat_whatsapp"):
+        return EchatWhatsappAdapter(channel)
     if (channel.config or {}).get("echat_telegram"):
         return EchatTelegramAdapter(channel)
     if (channel.config or {}).get("echat"):

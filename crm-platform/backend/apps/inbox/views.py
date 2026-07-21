@@ -80,7 +80,7 @@ class EchatWebhookView(APIView):
 
     def post(self, request, channel_id):
         channel = get_object_or_404(Channel, pk=channel_id,
-                                    kind__in=("echat", "echat_telegram"), is_active=True)
+                                    kind__in=("echat", "echat_telegram", "echat_whatsapp"), is_active=True)
         d = request.data
         direction = str(d.get("direction") or "")
         event = str(d.get("event") or "")
@@ -98,6 +98,7 @@ class EchatSetupView(APIView):
     PLATFORMS = {
         "viber": ("echat", "echat", "Viber (e-chat)"),
         "telegram": ("echat_telegram", "echat_telegram", "Telegram (e-chat)"),
+        "whatsapp": ("echat_whatsapp", "echat_whatsapp", "WhatsApp (e-chat)"),
     }
 
     @staticmethod
@@ -115,7 +116,7 @@ class EchatSetupView(APIView):
         cfg = dict(old_config)
         return {
             "connected": bool(ch.is_active),
-            "platform": "telegram" if ch.kind == "echat_telegram" else "viber",
+            "platform": {"echat_telegram": "telegram", "echat_whatsapp": "whatsapp"}.get(ch.kind, "viber"),
             "number": cfg.get("number", ""),
             "has_key": bool(cfg.get("api_key")),
             "channel_id": ch.id,
@@ -124,7 +125,7 @@ class EchatSetupView(APIView):
 
     def get(self, request):
         rows = [self._row(request, ch) for ch in
-                Channel.objects.filter(kind__in=("echat", "echat_telegram")).order_by("kind", "id")]
+                Channel.objects.filter(kind__in=("echat", "echat_telegram", "echat_whatsapp")).order_by("kind", "id")]
         # Старі поля лишаємо для сумісності зі старим фронтендом під час rolling deploy.
         first = rows[0] if rows else {"connected": False, "number": "", "has_key": False,
                                      "webhook": "", "channel_id": None}
@@ -452,7 +453,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         rows = []
         for channel in channels:
             current = existing.get(channel.id)
-            can_start = bool(channel.kind in ("echat", "echat_telegram")
+            can_start = bool(channel.kind in ("echat", "echat_telegram", "echat_whatsapp")
                              and conv.contact and conv.contact.phone)
             if not current and channel.id != conv.channel_id and not can_start:
                 continue
@@ -485,7 +486,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             return []
         allowed = request.user.allowed_channel_ids()
         channels = Channel.objects.filter(
-            is_active=True, kind__in=("echat", "echat_telegram")
+            is_active=True, kind__in=("echat", "echat_telegram", "echat_whatsapp")
         ).order_by("kind", "name")
         if allowed is not None:
             channels = channels.filter(id__in=allowed)
@@ -554,7 +555,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                     )
                     created = True
                 msg = send_message(selected, text, user=request.user)
-                channel_name = "telegram" if target.kind == "echat_telegram" else "viber"
+                channel_name = {"echat_telegram": "telegram", "echat_whatsapp": "whatsapp"}.get(target.kind, "viber")
                 contact_channels = list(contact.channels or [])
                 if channel_name not in contact_channels:
                     contact.channels = contact_channels + [channel_name]
@@ -588,7 +589,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         selected = (Conversation.objects.filter(contact_id=conv.contact_id, channel=target, status="open")
                     .order_by("-last_message_at", "-id").first())
         if selected is None:
-            if target.kind not in ("echat", "echat_telegram") or not conv.contact or not conv.contact.phone:
+            if target.kind not in ("echat", "echat_telegram", "echat_whatsapp") or not conv.contact or not conv.contact.phone:
                 return Response({"detail": "Немає адреси клієнта для цього каналу"},
                                 status=status.HTTP_400_BAD_REQUEST)
             external_chat_id = re.sub(r"\D", "", conv.contact.phone)
