@@ -192,6 +192,55 @@ class ChannelViewSet(viewsets.ModelViewSet):
         allowed = self.request.user.allowed_channel_ids()
         return qs if allowed is None else qs.filter(id__in=allowed)
 
+    @action(detail=True, methods=["post"])
+    def set_active(self, request, pk=None):
+        """Підключити/відключити канал від CRM (кнопка у Контакт-центрі)."""
+        if not request.user.has_perm_code("roles.manage"):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        ch = self.get_object()
+        ch.is_active = bool(request.data.get("active"))
+        ch.save(update_fields=["is_active"])
+        if not ch.is_active and (ch.config or {}).get("echat_whatsapp"):
+            try:
+                get_adapter(ch)._post("/channel/disconnect", {"number": (ch.config or {}).get("number", "")})
+            except Exception:
+                pass
+        return Response({"ok": True, "is_active": ch.is_active})
+
+    @action(detail=True, methods=["get", "post"])
+    def access(self, request, pk=None):
+        """Доступ менеджерів до каналу. GET — список співробітників + доступ;
+        POST {user_id, grant} — видати/зняти індивідуальний доступ (extra_open_lines)."""
+        if not request.user.has_perm_code("roles.manage"):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        ch = self.get_object()
+        from apps.accounts.models import User
+        if request.method == "POST":
+            u = User.objects.filter(id=request.data.get("user_id")).first()
+            if not u:
+                return Response({"detail": "Немає користувача"}, status=status.HTTP_400_BAD_REQUEST)
+            extra = [x for x in (u.extra_open_lines or []) if x != ch.id]
+            if request.data.get("grant"):
+                base = set(u.role.open_lines or []) if u.role_id else set()
+                if u.department_id:
+                    try:
+                        base |= set(u.department.eff_open_lines())
+                    except Exception:
+                        pass
+                if bool(base) or bool(u.extra_open_lines):
+                    extra.append(ch.id)  # користувач вже обмежений — додаємо канал
+                # інакше він бачить усі канали — не обмежуємо
+            u.extra_open_lines = extra
+            u.save(update_fields=["extra_open_lines"])
+        rows = []
+        for u in User.objects.filter(is_active=True).exclude(is_superuser=True).order_by("first_name", "last_name", "username"):
+            allowed = u.allowed_channel_ids()
+            individual = ch.id in set(u.extra_open_lines or [])
+            eff = (allowed is None) or (ch.id in (allowed or []))
+            rows.append({"id": u.id, "full_name": (u.get_full_name() or u.username),
+                         "has_access": eff, "individual": individual, "via_role_dept": eff and not individual})
+        return Response({"channel_id": ch.id, "channel_name": ch.name, "staff": rows})
+
 
 def _close_contact_leads(contact_id):
     """При завершенні чату — фіналізувати відкриті ліди контакту (в lost),

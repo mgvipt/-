@@ -131,12 +131,38 @@ export default function ContactCenter() {
 
 
 // ─── Блок: Viber + Telegram особистого номера через e-chat.tech ─────────────
+function ChannelAccessPanel({ channelId, t }: { channelId: number; t: any }) {
+  const [staff, setStaff] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  async function load() { try { const d = await api.get<any>(`/api/channels/${channelId}/access/`); setStaff(d.staff || []); } catch { setStaff([]); } setLoading(false); }
+  useEffect(() => { setLoading(true); load(); /* eslint-disable-next-line */ }, [channelId]);
+  async function toggle(u: any) { try { await api.post(`/api/channels/${channelId}/access/`, { user_id: u.id, grant: !u.has_access }); load(); } catch { /* ignore */ } }
+  return (
+    <div style={{ border: "1px solid #ddd6fe", borderTop: "none", borderRadius: "0 0 8px 8px", padding: "8px 10px", background: "#faf5ff" }}>
+      <div style={{ fontSize: 11.5, color: "#6d28d9", fontWeight: 700, marginBottom: 6 }}>{t("Кто видит и отвечает в этом канале", "Хто бачить і відповідає в цьому каналі")}</div>
+      {loading ? <div className="muted" style={{ fontSize: 12 }}>…</div> : staff.length === 0 ? <div className="muted" style={{ fontSize: 12 }}>{t("Нет сотрудников", "Немає співробітників")}</div> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 240, overflowY: "auto" }}>
+          {staff.map((u) => (
+            <label key={u.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, padding: "3px 4px", cursor: "pointer", borderRadius: 5 }}>
+              <input type="checkbox" checked={!!u.has_access} onChange={() => toggle(u)} />
+              <span style={{ flex: 1 }}>{u.full_name}</span>
+              {u.via_role_dept && <span className="muted" style={{ fontSize: 10 }}>{t("через роль/отдел", "через роль/відділ")}</span>}
+            </label>
+          ))}
+        </div>
+      )}
+      <div className="muted" style={{ fontSize: 10.5, marginTop: 6, lineHeight: 1.35 }}>{t("Галочка даёт сотруднику доступ к каналу. Если у него не было ограничений — он и так видит все каналы. Полное распределение — на странице «Сотрудники».", "Галочка дає співробітнику доступ до каналу. Якщо у нього не було обмежень — він і так бачить усі канали. Повний розподіл — на сторінці «Співробітники».")}</div>
+    </div>
+  );
+}
+
 function EchatBlock({ t }: any) {
   const [lines, setLines] = useState<any[]>([]);
   const [key, setKey] = useState("");
   const [num, setNum] = useState("");
   const [platform, setPlatform] = useState<"viber" | "telegram" | "whatsapp">("viber");
   const [msg, setMsg] = useState("");
+  const [accessFor, setAccessFor] = useState<number | null>(null);
   async function reload() {
     try {
       const d = await api.get<any>("/api/inbox/echat/setup/");
@@ -153,16 +179,23 @@ function EchatBlock({ t }: any) {
       setMsg(t("✓ Канал подключён. Добавьте его webhook в кабинете E-chat.", "✓ Канал підключено. Додайте його webhook у кабінеті E-chat."));
     } catch (e: any) { setMsg(e?.response?.data?.detail || t("Ошибка подключения","Помилка підключення")); }
   }
+  async function toggleActive(channelId: number, active: boolean) {
+    try { await api.post(`/api/channels/${channelId}/set_active/`, { active }); await reload(); }
+    catch (e: any) { setMsg(e?.response?.data?.detail || t("Ошибка", "Помилка")); }
+  }
   const inp: any = { height: 36, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", fontSize: 13 };
   const renderLines = (kind: "viber" | "telegram" | "whatsapp") => lines.filter((x) => (x.platform || "viber") === kind).map((line) => (
-    <div key={line.channel_id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", marginBottom: 8, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
-      <span style={{ color: line.connected ? "#16a34a" : "#d97706", fontWeight: 700 }}>{line.connected ? "●" : "○"}</span>
-      <b style={{ fontSize: 13, flex: 1 }}>{kind === "telegram" ? "Telegram" : kind === "whatsapp" ? "WhatsApp" : "Viber"} · +{String(line.number || "").replace(/^\+/, "")}</b>
-      <span className="muted" style={{ fontSize: 11 }}>Channel #{line.channel_id}</span>
-      <button className="btn" style={{ height: 28, fontSize: 11 }} title={t("Скопировать webhook", "Скопіювати webhook")} onClick={() => navigator.clipboard?.writeText(line.webhook || "")}><Icon n="📋" size={14} /></button>
-      <button className="btn" style={{ height: 28, fontSize: 11 }} onClick={() => { setPlatform(kind); setNum(line.number || ""); setMsg(""); }}>
-        {t("Обновить ключ", "Оновити ключ")}
-      </button>
+    <div key={line.channel_id} style={{ marginBottom: 8 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "8px 10px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: accessFor === line.channel_id ? "8px 8px 0 0" : 8, flexWrap: "wrap" }}>
+        <span style={{ color: line.connected ? "#16a34a" : "#d97706", fontWeight: 700 }}>{line.connected ? "●" : "○"}</span>
+        <b style={{ fontSize: 13, flex: 1, minWidth: 130 }}>{kind === "telegram" ? "Telegram" : kind === "whatsapp" ? "WhatsApp" : "Viber"} · +{String(line.number || "").replace(/^\+/, "")}</b>
+        <span className="muted" style={{ fontSize: 11 }}>#{line.channel_id}</span>
+        <button className="btn" style={{ height: 28, fontSize: 11 }} title={t("Скопировать webhook", "Скопіювати webhook")} onClick={() => navigator.clipboard?.writeText(line.webhook || "")}><Icon n="📋" size={14} /></button>
+        <button className="btn" style={{ height: 28, fontSize: 11 }} title={t("Обновить ключ", "Оновити ключ")} onClick={() => { setPlatform(kind); setNum(line.number || ""); setMsg(""); }}>{t("Ключ", "Ключ")}</button>
+        <button className="btn" style={{ height: 28, fontSize: 11, background: accessFor === line.channel_id ? "#ede9fe" : undefined, color: "#6d28d9" }} onClick={() => setAccessFor(accessFor === line.channel_id ? null : line.channel_id)}><Icon n="👥" size={13} /> {t("Доступ", "Доступ")}</button>
+        <button className="btn" style={{ height: 28, fontSize: 11, color: line.connected ? "#dc2626" : "#16a34a" }} onClick={() => toggleActive(line.channel_id, !line.connected)}>{line.connected ? t("Отключить", "Відключити") : t("Включить", "Увімкнути")}</button>
+      </div>
+      {accessFor === line.channel_id && <ChannelAccessPanel channelId={line.channel_id} t={t} />}
     </div>
   ));
   return (
