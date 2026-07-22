@@ -12,11 +12,20 @@ def _phone_variants(raw: str) -> set[str]:
     variants = {value, digits}
     if digits:
         variants.add("+" + digits)
+    local = intl = ""
     if len(digits) == 10 and digits.startswith("0"):
-        international = "38" + digits
-        variants.update({international, "+" + international})
-    elif len(digits) == 12 and digits.startswith("38"):
-        variants.add("0" + digits[2:])
+        local = digits                 # 0XXXXXXXXX
+        intl = "38" + digits           # -> 380XXXXXXXXX
+    elif len(digits) == 12 and digits.startswith("380"):
+        intl = digits                  # 380XXXXXXXXX
+        local = "0" + digits[3:]       # -> 0XXXXXXXXX (виправлено: без подвійного 0)
+    elif len(digits) == 11 and digits.startswith("80"):
+        intl = "3" + digits            # 80XXXXXXXXX -> 380XXXXXXXXX
+        local = "0" + digits[2:]
+    if local:
+        variants.update({local, "+" + local})
+    if intl:
+        variants.update({intl, "+" + intl})
     return {item for item in variants if item}
 
 
