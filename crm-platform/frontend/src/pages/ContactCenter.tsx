@@ -87,21 +87,25 @@ export default function ContactCenter() {
 
       {/* ── Сітка плиток каналів ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 14 }}>
-        {channels.map((ch) => (
+        {channels.map((ch) => {
+          const _m = CARD_MAP[ch.key] || {};
+          const _rc = _m.kind ? realChans.find((c: any) => c.kind === _m.kind) : null;
+          const conn = _rc ? !!_rc.is_active : ch.status === "connected";
+          const via = ch.via || (_m.platform ? "e-chat" : "");
+          return (
           <div key={ch.key} onClick={() => setSel(ch)}
             style={{ position: "relative", background: ch.color, color: "#fff", borderRadius: 14, padding: "18px 16px", minHeight: 120, cursor: "pointer", boxShadow: "0 4px 14px rgba(15,23,42,.12)", transition: "transform .1s" }}
             onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-2px)")}
             onMouseLeave={(e) => (e.currentTarget.style.transform = "")}>
-            {/* статус-галочка */}
-            {ch.status === "connected" && (
+            {conn && (
               <span style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderRadius: "50%", background: "#22c55e", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>✓</span>
             )}
             <div style={{ width: 42, height: 42, borderRadius: 12, background: "rgba(255,255,255,.22)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, marginBottom: 12 }}><Icon n={ch.icon} size={22} /></div>
             <div style={{ fontSize: 15, fontWeight: 700 }}>{ch.name}</div>
             <div style={{ fontSize: 11.5, opacity: .9, marginTop: 3 }}>{ch.sub}</div>
-            <div style={{ fontSize: 11, marginTop: 8, opacity: .95 }}>{ch.status === "connected" ? `● ${t("Подключено","Підключено")}${ch.via ? " · " + ch.via : ""}` : t("○ Доступно для подключения","○ Доступно для підключення")}</div>
+            <div style={{ fontSize: 11, marginTop: 8, opacity: .95 }}>{conn ? `● ${t("Подключено","Підключено")}${via ? " · " + via : ""}` : t("○ Доступно для подключения","○ Доступно для підключення")}</div>
           </div>
-        ))}
+          ); })}
       </div>
 
       {/* ── Панель налаштувань каналу (праворуч) ── */}

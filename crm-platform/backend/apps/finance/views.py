@@ -1017,6 +1017,7 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
         osnd = (tr.get("OSND") or "")[:180]
         from .services import canonical_counterparty as _ccp
         cp = _ccp(tr.get("AUT_CNTR_NAM") or "")[:160]
+        _crf = (str(tr.get("AUT_CNTR_CRF") or "")).strip()   # ЄДРПОУ отримувача (окреме поле банку) — для авто-звірки
         op_t = None
         try:
             tim = (tr.get("TIM_P") or "").strip()
@@ -1215,7 +1216,7 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
             transfer_account=transfer_dest if direction == "transfer" else None,
             date=dte, op_time=op_t, counterparty=_rr["counterparty"], channel=_rr["channel"],
             category=_rr["category"], fin_direction=_rr["fin_direction"], fin_article=_rr["fin_article"],
-            import_batch=batch, comment=(reftag + " · " + osnd)[:255])
+            import_batch=batch, comment=(reftag + " · " + osnd + ((" · ЄДРПОУ %s" % _crf) if (_crf and direction == "out" and "ЄДРПОУ" not in osnd and "ІПН" not in osnd) else ""))[:255])
         created += 1
     # зберегти мапу IBAN→рахунок (нові рахунки, авто-матчі)
     try:
@@ -1524,9 +1525,14 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
             pay_amt = remaining
         if pay_amt <= 0 or pay_amt > remaining:
             pay_amt = remaining
-        dest = ("Оплата: " + (pp.comment or "рахунку"))[:420]
-        if len(dest) < 5:
-            dest = "Оплата рахунку постачальника"
+        import re as _redst
+        _minv = _redst.search(r"накладн\w*\s+№?\s*(\S+)\s+від\s+(\S+)", pp.comment or "", _redst.I)
+        if _minv:
+            dest = "Оплата рахунку №%s від %s" % (_minv.group(1), _minv.group(2))
+        else:
+            _mnum = _redst.search(r"(?:рахун\w*|накладн\w*|№)\s*№?\s*(\S+)", pp.comment or "", _redst.I)
+            dest = ("Оплата рахунку №%s" % _mnum.group(1)) if _mnum else "Оплата рахунку постачальника"
+        dest = dest[:120]
         docnum = _tz.now().strftime("%m%d%H%M%S")  # ТІЛЬКИ цифри — Приват вимагає числовий номер документа
         payload = {
             "document_number": docnum,
