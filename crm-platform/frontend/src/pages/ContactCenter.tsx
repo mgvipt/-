@@ -33,16 +33,31 @@ const FALLBACK: Channel[] = [
   { key: "whatsapp", name: "WhatsApp", sub: "Повідомлення", icon: "whatsapp", color: "#25D366", status: "available" },
 ];
 
+// карта: картка -> реальний канал (kind) / e-chat платформа
+const CARD_MAP: Record<string, { kind?: string; platform?: "viber" | "telegram" | "whatsapp" }> = {
+  instagram: { kind: "instagram" }, facebook: { kind: "facebook" },
+  telegram_bot: { kind: "telegram" }, telegram_phone: { kind: "echat_telegram", platform: "telegram" },
+  tiktok: { kind: "tiktok" }, viber_bot: {}, viber_phone: { kind: "echat", platform: "viber" },
+  whatsapp: { kind: "echat_whatsapp", platform: "whatsapp" },
+};
+
 // ─── Сторінка ──────────────────────────────────────────────────────────────
 export default function ContactCenter() {
   const [channels, setChannels] = useState<Channel[]>(FALLBACK);
   const [sel, setSel] = useState<Channel | null>(null);
   const [msg, setMsg] = useState("");
+  const [realChans, setRealChans] = useState<any[]>([]);
   const { t } = useLang();
 
+  function loadReal() { api.get<any>("/api/channels/").then((d) => setRealChans((d.results || d) as any[])).catch(() => {}); }
   useEffect(() => {
     api.get<Channel[]>("/api/contact-center/").then((d) => { if (Array.isArray(d) && d.length) setChannels(d); }).catch(() => {});
+    loadReal();
   }, []);
+  async function toggleChannelActive(id: number, active: boolean) {
+    try { await api.post(`/api/channels/${id}/set_active/`, { active }); loadReal(); setMsg(active ? t("✓ Канал включён","✓ Канал увімкнено") : t("✓ Канал отключён от CRM","✓ Канал відключено від CRM")); }
+    catch (e: any) { setMsg(e?.response?.data?.detail || t("Ошибка","Помилка")); }
+  }
 
   // ─── Дія кнопки картки: ChatPlace-канали синхронізуємо, інші — інструкція ───
   async function channelAction(ch: Channel) {
@@ -69,8 +84,6 @@ export default function ContactCenter() {
         <h2 style={{ margin: 0, fontSize: 22, display: "flex", alignItems: "center", gap: 8 }}><Icon n="🎛️" size={20} /> {t("Контакт-центр","Контакт-центр")}</h2>
         <span className="muted" style={{ marginLeft: 12, fontSize: 13 }}>{t("Каналы связи с клиентами · лиды с каждого канала падают в CRM разделённо","Канали звʼязку з клієнтами · ліди з кожного каналу потрапляють у CRM окремо")}</span>
       </div>
-
-      <EchatBlock t={t} />
 
       {/* ── Сітка плиток каналів ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 14 }}>
@@ -103,23 +116,45 @@ export default function ContactCenter() {
               </div>
             </div>
 
-            {/* Статус */}
-            <div className="panel" style={{ marginBottom: 14 }}>
-              <div className="label">{t("Статус подключения","Статус підключення")}</div>
-              {sel.status === "connected"
-                ? <div style={{ color: "#16a34a", fontWeight: 600 }}>● {t("Подключено","Підключено")}{sel.via ? ` ${t("через","через")} ${sel.via}` : ""}</div>
-                : <div style={{ color: "#d97706", fontWeight: 600 }}>○ {t("Не подключено","Не підключено")}</div>}
-              <button className="btn btn-primary" style={{ marginTop: 10 }} onClick={() => channelAction(sel)}>
-                {sel.status === "connected" ? t("↻ Синхронизировать / Переподключить","↻ Синхронізувати / Перепідключити") : t("+ Подключить канал","+ Підключити канал")}
-              </button>
-              {msg && <div style={{ marginTop: 10, fontSize: 12.5, color: "#475569", background: "#f8fafc", borderRadius: 8, padding: "8px 10px" }}>{msg}</div>}
-            </div>
+            {(() => {
+              const map = CARD_MAP[sel.key] || {};
+              const rc = map.kind ? realChans.find((c: any) => c.kind === map.kind) : null;
+              return (<>
+                {/* Статус + активність */}
+                <div className="panel" style={{ marginBottom: 14 }}>
+                  <div className="label">{t("Статус подключения","Статус підключення")}</div>
+                  {map.platform ? (
+                    <div className="muted" style={{ fontSize: 12.5 }}>{t("Номера, ключ, вебхук, вкл/выкл и доступ — в блоке ниже.","Номери, ключ, вебхук, увімк/вимк і доступ — у блоці нижче.")}</div>
+                  ) : rc ? (<>
+                    <div style={{ color: rc.is_active ? "#16a34a" : "#d97706", fontWeight: 600 }}>{rc.is_active ? "● " + t("Подключено","Підключено") : "○ " + t("Отключено","Відключено")}{sel.via ? ` · ${sel.via}` : ""}</div>
+                    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                      <button className="btn" style={{ color: rc.is_active ? "#dc2626" : "#16a34a" }} onClick={() => toggleChannelActive(rc.id, !rc.is_active)}>{rc.is_active ? t("Отключить от CRM","Відключити від CRM") : t("Включить","Увімкнути")}</button>
+                      {sel.via === "ChatPlace" && <button className="btn btn-primary" onClick={() => channelAction(sel)}>↻ {t("Синхронизировать","Синхронізувати")}</button>}
+                    </div>
+                  </>) : (<>
+                    <div style={{ color: "#d97706", fontWeight: 600 }}>○ {t("Не подключено","Не підключено")}</div>
+                    <button className="btn btn-primary" style={{ marginTop: 10 }} onClick={() => channelAction(sel)}>+ {t("Подключить канал","Підключити канал")}</button>
+                  </>)}
+                  {msg && <div style={{ marginTop: 10, fontSize: 12.5, color: "#475569", background: "#f8fafc", borderRadius: 8, padding: "8px 10px" }}>{msg}</div>}
+                </div>
 
-            {/* Черга менеджерів + доступи (як у Бітриксі) */}
-            <div className="panel" style={{ marginBottom: 14 }}>
-              <div className="label">{t("Очередь ответственных · доступ менеджеров","Черга відповідальних · доступ менеджерів")}</div>
-              <div className="muted" style={{ fontSize: 12.5 }}>{t("Здесь выберем, какие менеджеры видят и отвечают в этом канале. Настройка доступов — следующим шагом (бекенд очереди + роли по каналам).","Тут оберемо, які менеджери бачать і відповідають у цьому каналі. Налаштування доступів — наступним кроком (бекенд черги + ролі за каналами).")}</div>
-            </div>
+                {/* e-chat: підключення номерів + доступ/вимк на кожній лінії */}
+                {map.platform && <div className="panel" style={{ marginBottom: 14 }}>
+                  <div className="label">{t("Номера e-chat","Номери e-chat")}</div>
+                  <EchatBlock t={t} only={map.platform} />
+                </div>}
+
+                {/* Доступ менеджерів (не-e-chat реальні канали) */}
+                {!map.platform && rc && <div className="panel" style={{ marginBottom: 14 }}>
+                  <div className="label">{t("Очередь ответственных · доступ менеджеров","Черга відповідальних · доступ менеджерів")}</div>
+                  <ChannelAccessPanel channelId={rc.id} t={t} />
+                </div>}
+                {!map.platform && !rc && <div className="panel" style={{ marginBottom: 14 }}>
+                  <div className="label">{t("Доступ менеджеров","Доступ менеджерів")}</div>
+                  <div className="muted" style={{ fontSize: 12.5 }}>{t("Доступ можно настроить после подключения канала.","Доступ можна налаштувати після підключення каналу.")}</div>
+                </div>}
+              </>);
+            })()}
 
             <div className="muted" style={{ fontSize: 12 }}>{t("Канал-ключ","Канал-ключ")}: <code>{sel.key}</code></div>
           </div>
@@ -156,11 +191,11 @@ function ChannelAccessPanel({ channelId, t }: { channelId: number; t: any }) {
   );
 }
 
-function EchatBlock({ t }: any) {
+function EchatBlock({ t, only }: any) {
   const [lines, setLines] = useState<any[]>([]);
   const [key, setKey] = useState("");
   const [num, setNum] = useState("");
-  const [platform, setPlatform] = useState<"viber" | "telegram" | "whatsapp">("viber");
+  const [platform, setPlatform] = useState<"viber" | "telegram" | "whatsapp">(only || "viber");
   const [msg, setMsg] = useState("");
   const [accessFor, setAccessFor] = useState<number | null>(null);
   async function reload() {
@@ -199,20 +234,18 @@ function EchatBlock({ t }: any) {
     </div>
   ));
   return (
-    <div className="panel" style={{ margin: "0 0 18px", borderLeft: "4px solid #7360F2" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+    <div className={only ? "" : "panel"} style={only ? {} : { margin: "0 0 18px", borderLeft: "4px solid #7360F2" }}>
+      {!only && <><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
         <span style={{ width: 26, height: 26, borderRadius: 7, background: "#7360F2", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>E</span>
         <b style={{ fontSize: 15 }}>E-chat · Viber + Telegram + WhatsApp</b>
         {lines.filter((x) => x.connected).length > 0 && <span className="chip" style={{ background: "#16a34a" }}>{t("подключено", "підключено")}: {lines.filter((x) => x.connected).length}</span>}
       </div>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Viber и Telegram на одном номере являются отдельными линиями с отдельными API-ключами. Обе появятся в выборе «Отвечать через» в карточке сделки.", "Viber і Telegram на одному номері є окремими лініями з окремими API-ключами. Обидві зʼявляться у виборі «Відповідати через» у картці угоди.")}</div>
-      {renderLines("viber")}
-      {renderLines("telegram")}
-      {renderLines("whatsapp")}
+      <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Viber и Telegram на одном номере — отдельные линии с отдельными ключами.", "Viber і Telegram на одному номері — окремі лінії з окремими ключами.")}</div></>}
+      {only ? renderLines(only) : <>{renderLines("viber")}{renderLines("telegram")}{renderLines("whatsapp")}</>}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <select style={{ ...inp, minWidth: 130 }} value={platform} onChange={(e) => setPlatform(e.target.value as "viber" | "telegram" | "whatsapp")}>
+        {!only && <select style={{ ...inp, minWidth: 130 }} value={platform} onChange={(e) => setPlatform(e.target.value as "viber" | "telegram" | "whatsapp")}>
           <option value="viber">Viber</option><option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option>
-        </select>
+        </select>}
         <input style={{ ...inp, flex: 2, minWidth: 200 }} placeholder={t(`API-ключ E-chat для ${platform === "telegram" ? "Telegram" : platform === "whatsapp" ? "WhatsApp" : "Viber"}`, `API-ключ E-chat для ${platform === "telegram" ? "Telegram" : platform === "whatsapp" ? "WhatsApp" : "Viber"}`)} value={key} onChange={(e) => setKey(e.target.value)} />
         <input style={{ ...inp, flex: 1, minWidth: 150 }} placeholder={t("Номер, напр. 380XXXXXXXXX","Номер, напр. 380XXXXXXXXX")} value={num} onChange={(e) => setNum(e.target.value)} />
         <button className="btn btn-primary" onClick={connect}>{t("Подключить / обновить", "Підключити / оновити")}</button>
