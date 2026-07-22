@@ -3582,7 +3582,7 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
   // пошта відправника — з неї створюємо нового постачальника
   const senderMail = ((det?.sender || "").match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [""])[0];
   const setLine = (i: number, patch: any) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
-  const addLine = () => setLines((ls) => [...ls, { their_name: "", qty: 1, price: 0, product_id: null, product_name: "" }]);
+  const addLine = () => setLines((ls) => [...ls, { their_name: "", qty: 1, price: 0, sum: 0, factor: 1, product_id: null, product_name: "" }]);
   const delLine = (i: number) => setLines((ls) => ls.filter((_, j) => j !== i));
   const post = async () => {
     if (lines.some((l) => !l.product_id) && !confirm(t("Не все строки сопоставлены — провести только сопоставленные?", "Не всі рядки зіставлені — провести лише зіставлені?"))) return;
@@ -3608,7 +3608,7 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 1000, overflow: "auto", padding: 16 }} onClick={onClose}>
       <div className="panel" style={{ maxWidth: 920, margin: "16px auto", background: "#fff" }} onClick={(e) => e.stopPropagation()}>
         <h3 style={{ margin: "0 0 4px" }}>{t("Накладная поставщика", "Накладна постачальника")} №{det.invoice_number} {t("от", "від")} {det.invoice_date}</h3>
-        <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{det.supplier?.name} · {t("сумма", "сума")} {det.amount} ₴. {t("Под каждый его товар выбери наш со склада — запомнится как правило.", "Під кожен його товар обери наш зі складу — запамʼятається як правило.")}</div>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{det.supplier?.name} · {t("сумма", "сума")} <b>{det.amount} ₴</b>. {t("Под каждый его товар выбери наш со склада — запомнится как правило.", "Під кожен його товар обери наш зі складу — запамʼятається як правило.")}<br />{t("Закупаешь в единицах поставщика (вёдра), а склад в кг — впиши «Коэф →скл» (напр. 15). Сумма — со скидкой (можно править).", "Закуповуєш в одиницях постачальника (відра), а склад у кг — впиши «Коеф →скл» (напр. 15). Сума — зі знижкою (можна правити).")}</div>
         {/* ── ПОСТАЧАЛЬНИК ── */}
         <div style={{ padding: 10, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 10 }}>
           <div style={{ fontSize: 12, fontWeight: 800, color: "#475569", marginBottom: 6 }}>{t("Поставщик", "Постачальник")}</div>
@@ -3709,19 +3709,20 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
         <datalist id="wh-prods">{prods.map((p) => <option key={p.id} value={p.name} />)}</datalist>
         <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
           <thead><tr style={{ textAlign: "left", borderBottom: "1px solid #e2e8f0" }}>
-            <th style={{ padding: 4 }}>{t("Его товар", "Його товар")}</th><th>{t("Наш товар (склад)", "Наш товар (склад)")}</th><th style={{ width: 60 }}>{t("К-во", "К-сть")}</th><th style={{ width: 80 }}>{t("Цена", "Ціна")}</th><th style={{ width: 30 }}></th></tr></thead>
+            <th style={{ padding: 4 }}>{t("Его товар", "Його товар")}</th><th>{t("Наш товар (склад)", "Наш товар (склад)")}</th><th style={{ width: 52 }} title={t("Кол-во в единицах поставщика (напр. вёдра)", "К-сть в одиницях постачальника (напр. відра)")}>{t("К-во", "К-сть")}</th><th style={{ width: 66 }} title={t("Сколько наших единиц (кг) в 1 единице поставщика (ведро). 1 = одинаковые", "Скільки наших одиниць (кг) в 1 одиниці постачальника (відро). 1 = однакові")}>{t("Коэф →скл", "Коеф →скл")}</th><th style={{ width: 80 }} title={t("Итоговая сумма строки со скидкой", "Підсумкова сума рядка зі знижкою")}>{t("Сумма", "Сума")}</th><th style={{ width: 30 }}></th></tr></thead>
           <tbody>
             {!lines.length && (
-              <tr><td colSpan={5} className="muted" style={{ padding: "10px 4px", fontSize: 12.5 }}>
+              <tr><td colSpan={6} className="muted" style={{ padding: "10px 4px", fontSize: 12.5 }}>
                 {t("Позиции не распознаны в файле — добавь строки вручную кнопкой ниже.", "Позиції не розпізнані у файлі — додай рядки вручну кнопкою нижче.")}
               </td></tr>
             )}
             {lines.map((l, i) => (
               <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
                 <td style={{ padding: "6px 4px" }}><input value={l.their_name || ""} onChange={(e) => setLine(i, { their_name: e.target.value })} placeholder={t("наименование", "найменування")} style={{ width: "100%", height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px" }} /></td>
-                <td><ProductPicker value={l.product_name || ""} productId={l.product_id || null} prods={prods} onPick={(p, name) => setLine(i, { product_name: name, product_id: p ? p.id : null })} /></td>
-                <td><input type="number" value={l.qty} onChange={(e) => setLine(i, { qty: parseFloat(e.target.value) })} style={{ width: 55, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
-                <td><input type="number" value={l.price} onChange={(e) => setLine(i, { price: parseFloat(e.target.value) })} style={{ width: 75, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
+                <td><ProductPicker value={l.product_name || ""} productId={l.product_id || null} prods={prods} onPick={(p, name) => setLine(i, { product_name: name, product_id: p ? p.id : null })} />{(Number(l.factor) || 1) !== 1 && (() => { const q = Number(l.qty) || 0; const f = Number(l.factor) || 1; const tot = (l.sum != null && l.sum !== "") ? Number(l.sum) : q * (Number(l.price) || 0); const sq = q * f; const cost = sq ? tot / sq : 0; return <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>→ {sq.toLocaleString()} {t("ед.", "од.")} · {cost.toLocaleString(undefined, { maximumFractionDigits: 2 })} ₴/{t("ед.", "од.")}</div>; })()}</td>
+                <td><input type="number" value={l.qty} onChange={(e) => setLine(i, { qty: parseFloat(e.target.value) })} style={{ width: 48, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 5px" }} /></td>
+                <td><input type="number" value={l.factor ?? 1} onChange={(e) => setLine(i, { factor: parseFloat(e.target.value) || 1 })} style={{ width: 60, height: 30, border: "1px solid " + ((Number(l.factor) || 1) !== 1 ? "#93c5fd" : "#cbd5e1"), borderRadius: 6, padding: "0 5px" }} /></td>
+                <td><input type="number" value={l.sum ?? ""} placeholder={String(Math.round((Number(l.qty) || 0) * (Number(l.price) || 0)))} onChange={(e) => setLine(i, { sum: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ width: 76, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
                 <td style={{ textAlign: "center" }}><button onClick={() => delLine(i)} title={t("Удалить строку", "Видалити рядок")} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#dc2626", fontSize: 16 }}>×</button></td>
               </tr>
             ))}

@@ -402,7 +402,9 @@ class IncomingDocDetailView(APIView):
                 rule = SupplierProductMap.objects.filter(supplier_key=skey, their_name=tn).select_related("product").first()
                 lrows.append({"their_name": tn, "qty": ln.get("qty"), "price": ln.get("price"), "sum": ln.get("sum"),
                               "product_id": (rule.product_id if rule else None),
-                              "product_name": (rule.product.name if rule else "")})
+                              "product_name": (rule.product.name if rule else ""),
+                              "factor": (float(rule.qty_factor) if (rule and rule.qty_factor) else 1),
+                              "unit": (getattr(rule.product, "unit", "") if rule else "")})
             return Response({"id": d.id, "doc_type": "supplier", "status": d.status, "sender": d.sender,
                              "subject": d.subject, "invoice_number": p.get("invoice_number"),
                              "invoice_date": p.get("invoice_date"), "supplier": p.get("supplier"),
@@ -528,14 +530,21 @@ def _confirm_supplier(d, request):
         prod = Product.objects.filter(id=pid).first()
         if not prod:
             continue
-        qty = ln.get("qty") or 0
-        price = ln.get("price") or 0
-        StockMovement.objects.create(document=doc, product=prod, quantity=qty, price=price)
-        total += float(qty) * float(price)
+        qty_their = float(ln.get("qty") or 0)          # к-сть в одиницях постачальника (напр. відра)
+        price_their = float(ln.get("price") or 0)      # ціна за одиницю постачальника (може бути ДО знижки)
+        _sm = ln.get("sum")
+        line_total = float(_sm) if _sm not in (None, "") else qty_their * price_their   # сума рядка = реальні гроші (зі знижкою)
+        factor = float(ln.get("factor") or 1) or 1     # скільки НАШИХ одиниць (кг) в 1 їхній (відро)
+        stock_qty = round(qty_their * factor, 4)       # на склад — у наших одиницях
+        stock_price = round(line_total / stock_qty, 4) if stock_qty else 0   # собівартість за нашу одиницю (зі знижкою)
+        StockMovement.objects.create(document=doc, product=prod, quantity=stock_qty, price=stock_price)
+        total += line_total
         positions += 1
         tn = (ln.get("their_name") or "").strip()
         if tn:
-            SupplierProductMap.objects.update_or_create(supplier_key=skey, their_name=tn, defaults={"product": prod})
+            from decimal import Decimal as _Df
+            SupplierProductMap.objects.update_or_create(supplier_key=skey, their_name=tn,
+                                                        defaults={"product": prod, "qty_factor": _Df(str(factor))})
             rules += 1
     amt = p.get("amount") or round(total, 2)
     _cp = (contact and str(contact)) or sup.get("name") or "Постачальник"

@@ -63,6 +63,8 @@ class SupplierProductMap(models.Model):
     supplier_key = models.CharField(max_length=120, db_index=True, default="")  # e-mail відправника
     their_name = models.CharField(max_length=300)
     product = models.ForeignKey("warehouse.Product", on_delete=models.CASCADE, related_name="+")
+    qty_factor = models.DecimalField("Коеф. одиниць складу за 1 одиницю постачальника", max_digits=12, decimal_places=4, default=1,
+                                     help_text="Скільки НАШИХ одиниць (напр. кг) в 1 одиниці постачальника (напр. відро). 1 = однакові одиниці")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
