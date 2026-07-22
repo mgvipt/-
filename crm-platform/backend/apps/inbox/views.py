@@ -85,7 +85,13 @@ class EchatWebhookView(APIView):
         direction = str(d.get("direction") or "")
         event = str(d.get("event") or "")
         if "outgoing" in direction or "outgoing" in event:
-            return Response({"status": 0})  # власні вихідні / статуси — ігноруємо
+            # статуси доставки вихідних (delivered/failed/read) — логуємо для діагностики
+            try:
+                import json as _j, sys as _sys
+                print("ECHAT-OUT-STATUS ch=%s: %s" % (channel_id, _j.dumps(d, ensure_ascii=False)[:600]), file=_sys.stderr, flush=True)
+            except Exception:
+                pass
+            return Response({"status": 0})  # власні вихідні / статуси — не створюємо повідомлень
         inc = get_adapter(channel).parse_webhook(d)
         if inc and inc.external_chat_id:
             ingest(channel, inc)
