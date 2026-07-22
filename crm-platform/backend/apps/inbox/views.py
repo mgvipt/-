@@ -811,7 +811,7 @@ class SharedFileView(APIView):
     authentication_classes = []
     permission_classes = [_AllowAny]
 
-    def get(self, request, token):
+    def get(self, request, token, name=None):
         from .models import SharedLink
         f = SharedLink.objects.filter(token=token).first()
         if not f:

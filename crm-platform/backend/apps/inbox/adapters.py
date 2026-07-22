@@ -428,7 +428,9 @@ class EchatWhatsappAdapter(ChannelAdapter):
         tok = secrets.token_urlsafe(16)
         ct = mimetypes.guess_type(filename)[0] or ("image/jpeg" if kind in ("photo", "image") else "application/octet-stream")
         SharedLink.objects.create(token=tok, filename=(filename or "file")[:255], content_type=ct, data=content)
-        url = "https://crm.wallcovdec.com.ua/api/f/%s/" % tok
+        import re as _re
+        safe = _re.sub(r"[^A-Za-z0-9._-]", "_", (filename or "file"))[:80] or "file"
+        url = "https://crm.wallcovdec.com.ua/api/f/%s/%s" % (tok, safe)
         ext = "wcw-%d" % int(time.time() * 1000)
         resp = self._post("/messages/send", {
             "number": self.config.get("number", ""),
