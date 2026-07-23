@@ -2163,7 +2163,7 @@ class StaffActivityView(APIView):
                  "detail": a.detail, "at": a.created_at} for a in logs.order_by("-created_at")[:300]]
         sessions = [{"started_at": s.started_at, "ended_at": s.ended_at,
                      "worked_hours": round(s.worked_seconds() / 3600, 2),
-                     "paused_seconds": s.paused_seconds,
+                     "paused_seconds": s.paused_capped(),
                      "on_pause": bool(s.paused_at),
                      "pauses": s.pauses or []} for s in sess.order_by("-started_at")[:120]]
         return Response({

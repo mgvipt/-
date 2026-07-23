@@ -2589,7 +2589,7 @@ class WorkTimeView(APIView):
                 if not p.get("end"):
                     pause_reason = p.get("reason", "manual"); break
         return {"active": True, "id": ws.id, "started_at": ws.started_at,
-                "on_pause": bool(ws.paused_at), "paused_seconds": ws.paused_seconds,
+                "on_pause": bool(ws.paused_at), "paused_seconds": ws.paused_capped(),
                 "pause_reason": pause_reason,
                 "worked_seconds": ws.worked_seconds(), "pauses": ws.pauses or [],
                 "last_seen_at": ws.last_seen_at,
@@ -2600,13 +2600,20 @@ class WorkTimeView(APIView):
         return Response(self._payload(ws, request.user))
 
     def _resume(self, ws, now):
-        """Зняти з паузи: додати тривалість у paused_seconds і закрити відкритий інтервал у журналі."""
-        ws.paused_seconds += int((now - ws.paused_at).total_seconds())
+        """Зняти з паузи: додати тривалість у paused_seconds і закрити відкритий інтервал у журналі.
+        Захист від зіпсованого paused_at (у майбутньому / дуже давно): додаємо лише додатну
+        тривалість і не даємо паузі перевищити тривалість зміни."""
+        delta = (now - ws.paused_at).total_seconds() if ws.paused_at else 0
+        gross = (now - ws.started_at).total_seconds()
+        delta = max(0, min(delta, gross))                       # не менше 0 і не більше зміни
+        ws.paused_seconds = int(min(ws.paused_seconds + delta, max(0, gross)))  # пауза ≤ зміна
         ws.paused_at = None
         plist = ws.pauses or []
         for p in reversed(plist):
             if not p.get("end"):
-                p["end"] = now.isoformat()
+                # закриваємо коректно: кінець не раніше початку
+                start = p.get("start") or now.isoformat()
+                p["end"] = now.isoformat() if now.isoformat() >= start else start
                 break
         ws.pauses = plist
 

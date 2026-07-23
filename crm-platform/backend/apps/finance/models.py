@@ -378,13 +378,25 @@ class WorkSession(models.Model):
     class Meta:
         ordering = ["-started_at"]
 
-    def worked_seconds(self):
+    def gross_seconds(self):
+        """Тривалість зміни від приходу до виходу (без урахування пауз)."""
         from django.utils import timezone
         end = self.ended_at or timezone.now()
-        total = (end - self.started_at).total_seconds() - self.paused_seconds
-        if self.paused_at:
-            total -= (timezone.now() - self.paused_at).total_seconds()
-        return max(0, int(total))
+        return max(0, (end - self.started_at).total_seconds())
+
+    def paused_capped(self):
+        """Пауза, обмежена тривалістю зміни — щоб зіпсовані дані не показували
+        неможливе (напр. 4 год паузи на 20-хв зміні)."""
+        from django.utils import timezone
+        gross = self.gross_seconds()
+        paused = min(max(0, self.paused_seconds), gross)
+        now = timezone.now()
+        if self.paused_at and now > self.paused_at:
+            paused = min(gross, paused + (now - self.paused_at).total_seconds())
+        return int(paused)
+
+    def worked_seconds(self):
+        return max(0, int(self.gross_seconds() - self.paused_capped()))
 
 
 class TransactionSplit(models.Model):
