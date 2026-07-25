@@ -197,6 +197,18 @@ def run_agent(entity, kind, trigger="manual", user=None, model=None):
     cfg = AgentConfig.get()
     if not cfg.enabled:
         return {"skipped": "agent disabled"}
+    # ── Координація з auto_topup_flow (доданo 2026-07-24) ──
+    # Якщо сделка/лід має marker AI-AutoTopup=waiting_for_payment — інший AI-агент
+    # створив її та чекає оплати клієнта. run_agent не втручається (не читає чат,
+    # не пропонує задач, не рухає стадії), щоб не було конфлікту.
+    # Після оплати LiqPay callback змінить value на "paid" — тоді run_agent
+    # прийме естафету.
+    try:
+        for _f in (getattr(entity, "card_fields", None) or []):
+            if _f.get("label") == "AI-AutoTopup" and _f.get("value") == "waiting_for_payment":
+                return {"skipped": "AI-AutoTopup waiting for payment — не чіпаємо"}
+    except Exception:
+        pass
     model = model or cfg.model
     run = AgentRun(kind=kind, trigger=trigger, user=user, model=model)
     setattr(run, kind, entity)

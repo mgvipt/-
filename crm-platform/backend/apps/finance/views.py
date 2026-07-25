@@ -1300,6 +1300,18 @@ def auto_settle_payables(batch):
             pp.paid_tx = tx
             pp.account = tx.account or pp.account
             pp.save(update_fields=["paid_amount", "status", "paid_tx", "account"])
+            # обогатить сам платіж даними кредиторки: контакт (щоб було в картці) + категорія/фонд/напрямок
+            _tu = []
+            if not tx.contact_id and pp.contact_id:
+                tx.contact_id = pp.contact_id; _tu.append("contact")
+            if not tx.category_id and pp.category_id:
+                tx.category_id = pp.category_id; _tu.append("category")
+            if not tx.fin_article_id and pp.fin_article_id:
+                tx.fin_article_id = pp.fin_article_id; _tu.append("fin_article")
+            if not tx.fin_direction_id and pp.fin_direction_id:
+                tx.fin_direction_id = pp.fin_direction_id; _tu.append("fin_direction")
+            if _tu:
+                tx.save(update_fields=_tu)
             used_tx.add(tx.id)
             settled += 1
     return settled

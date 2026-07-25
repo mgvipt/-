@@ -2513,12 +2513,31 @@ class LiqPayCallbackView(APIView):
             except Exception:
                 pass
             paid = sum((p.amount for p in Payment.objects.filter(deal=dlock, is_paid=True)), Decimal("0"))
+            _paid_advanced = False
             if dlock.amount and paid >= dlock.amount:
                 _advance_after_payment(dlock, "LiqPay оплата отримана")
+                _paid_advanced = True
             elif (dlock.pay_type or "") == "prepay_np" and paid > 0:
                 # передоплата + післяплата НП: АВАНС вже рухає на «Оплату отримано»
                 # (решту збере Нова Пошта наложкою — фінальний чек при отриманні)
                 _advance_after_payment(dlock, "LiqPay аванс отримано (решта — післяплата НП)")
+                _paid_advanced = True
+            # Знімаємо AI-AutoTopup marker → передаємо естафету run_agent
+            if _paid_advanced:
+                try:
+                    _cf = list(dlock.card_fields or [])
+                    _changed = False
+                    for _f in _cf:
+                        if _f.get("label") == "AI-AutoTopup" and _f.get("value") == "waiting_for_payment":
+                            _f["value"] = "paid"
+                            from django.utils import timezone as _tzp
+                            _f["paid_at"] = _tzp.now().isoformat()
+                            _changed = True
+                    if _changed:
+                        dlock.card_fields = _cf
+                        dlock.save(update_fields=["card_fields"])
+                except Exception:
+                    pass
             deal = dlock
         log_activity("deal", deal.id, "Оплата LiqPay", "%s грн отримано (callback, txn %s)" % (amount, pay_id[:12]), None, "LiqPay")
         try:
