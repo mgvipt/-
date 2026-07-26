@@ -447,8 +447,13 @@ class ZamerProject(models.Model):
     project_uuid = models.CharField(max_length=64, db_index=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                              on_delete=models.SET_NULL, related_name="zamer_projects")
+    contact = models.ForeignKey(Contact, null=True, blank=True, on_delete=models.SET_NULL,
+                                related_name="measurement_projects")
+    deal = models.ForeignKey(Deal, null=True, blank=True, on_delete=models.SET_NULL,
+                             related_name="measurement_projects")
     title = models.CharField(max_length=255, blank=True, default="")
     payload = models.JSONField(default=dict)
+    revision = models.PositiveBigIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -460,3 +465,69 @@ class ZamerProject(models.Model):
 
     def __str__(self):
         return f"ZamerProject {self.project_uuid} ({self.device_uuid[:8]})"
+
+
+def default_calc_settings():
+    """Безопасные серверные значения калькулятора; внутренние ставки не попадают в публичный JS."""
+    return {
+        "reserve_pct": 10,
+        "labor_wall_m2": 0,
+        "labor_reveal_linear_m": 0,
+        "material_reveal_m2": 0,
+        "transport_per_km": 0,
+        "transport_min": 0,
+        "minimum_order": 0,
+        "overhead_pct": 0,
+        "max_discount_pct": 15,
+        "rounding_step": 1,
+        "reveal_sides": ["left", "right", "top"],
+        "show_internal_rates_to_client": False,
+    }
+
+
+class CalcSettings(models.Model):
+    """Единая административная конфигурация калькулятора Wallcov в CRM."""
+    key = models.CharField(max_length=32, unique=True, default="default")
+    values = models.JSONField(default=default_calc_settings)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                   on_delete=models.SET_NULL, related_name="calc_settings_updates")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "Calculator settings"
+
+
+class Estimate(models.Model):
+    """Смета из приложения замера; всегда привязана к одному клиенту и одной сделке."""
+    STATUS = [
+        ("draft", "Чернетка"),
+        ("sent", "Надіслано"),
+        ("accepted", "Погоджено"),
+        ("archived", "Архів"),
+    ]
+    name = models.CharField(max_length=255)
+    contact = models.ForeignKey(Contact, on_delete=models.PROTECT, related_name="estimates")
+    deal = models.ForeignKey(Deal, null=True, blank=True, on_delete=models.SET_NULL,
+                             related_name="estimates")
+    project = models.ForeignKey(ZamerProject, null=True, blank=True, on_delete=models.SET_NULL,
+                                related_name="estimates")
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                              on_delete=models.SET_NULL, related_name="estimates")
+    measurement_snapshot = models.JSONField(default=dict)
+    lines = models.JSONField(default=list)
+    totals = models.JSONField(default=dict)
+    status = models.CharField(max_length=16, choices=STATUS, default="draft", db_index=True)
+    version = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["project", "deal"],
+                                    condition=models.Q(project__isnull=False, deal__isnull=False),
+                                    name="uniq_project_deal_estimate"),
+        ]
+
+    def __str__(self):
+        return self.name

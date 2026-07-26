@@ -43,6 +43,7 @@ import { SocialLink } from "../social";
 import { SalesAnalystPanel } from "../SalesAnalyst";
 import { Icon } from "../Icon";
 import NPDelivery from "./NPDelivery";
+import DealEstimatePanel from "./DealEstimatePanel";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
@@ -679,11 +680,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       </div>
 
       {(tab === "smeta" && can("deal.smeta.tab")) ? (
-        <iframe
-          title={t("Кошторис","Кошторис")}
-          src={`https://calc.wallcovdec.com.ua/?cn=${encodeURIComponent((deal as any).contact_name || deal.title || "")}&cd=${deal.id}`}
-          style={{ width: "100%", height: "calc(100vh - 210px)", minHeight: 620, border: "1px solid #e2e8f0", borderRadius: 10, background: "#fff" }}
-        />
+        <DealEstimatePanel dealId={deal.id} />
       ) : tab === "np" ? (<NPDelivery deal={deal} flash={flash} onReload={() => api.get<Deal>(`/api/deals/${id}/`).then(setDeal)} />) : tab !== "cashflow" ? (
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div className="grid2" style={{ flex: 1, minWidth: 0 }}>

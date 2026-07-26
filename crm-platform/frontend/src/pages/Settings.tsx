@@ -6,6 +6,7 @@ import SettingsGlobalRules from "./SettingsGlobalRules";
 import SettingsAutomations from "./SettingsAutomations";
 import SoundSettings from "./SoundSettings";
 import SettingsAgent from "./SettingsAgent";
+import CalculatorSettings from "./CalculatorSettings";
 import { Icon } from "../Icon";
 
 interface Prov { provider: string; fields: string[]; values: Record<string, string>; is_active: boolean; }
@@ -30,6 +31,7 @@ export default function Settings() {
     ["automations", <><Icon n="⚙️" size={15} /> {t("Автоматизации", "Автоматизації")}</>, "settings.automations"],
     ["agent", <><Icon n="🤖" size={15} /> {t("AI-агент", "AI-агент")}</>, "settings.agent"],
     ["sounds", <><Icon n="bell" size={15} /> {t("Звуки", "Звуки")}</>, "settings.sounds"],
+    ["calculator", <><Icon n="calculator" size={15} /> {t("Калькулятор", "Калькулятор")}</>, "calc.settings.manage"],
     ["language", <><Icon n="🌐" size={15} /> {t("Язык", "Мова")}</>, ""],
     ["integrations", <><Icon n="🔌" size={15} /> {t("Интеграции", "Інтеграції")}</>, "roles.manage"],
   ];
@@ -68,6 +70,7 @@ export default function Settings() {
       {tab === "automations" && <SettingsAutomations />}
       {tab === "agent" && <SettingsAgent />}
       {tab === "sounds" && <SoundSettings />}
+      {tab === "calculator" && <CalculatorSettings />}
 
       {tab === "language" && (
         <div className="panel" style={{ margin: 0, maxWidth: 360 }}>

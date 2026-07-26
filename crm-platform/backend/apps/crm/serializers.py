@@ -57,7 +57,9 @@ class ContactDetailSerializer(ContactSerializer):
     def get_zamer_projects(self, obj):
         """Только проекты замера выбранного клиента, без данных других клиентов."""
         from .models import ZamerProject
-        rows = (ZamerProject.objects.filter(payload__clientId=obj.id)
+        # Связь с клиентом проверяет endpoint при сохранении. Не доверяем
+        # clientId внутри JSON: старый payload мог быть неполным или смешанным.
+        rows = (ZamerProject.objects.filter(contact=obj)
                 .order_by("-updated_at")[:50])
         return [{
             "project_uuid": row.project_uuid,

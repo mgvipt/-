@@ -14,7 +14,10 @@ from apps.warehouse import shop_site
 from apps.finance import views as fin_views
 from apps.integrations import views as intg_views
 from apps.crm.duplicates import DuplicatesView
-from apps.crm.zamer import ZamerView, ClientRegisterZamerView, PricelistView, ZamerProjectsView
+from apps.crm.zamer import (
+    CalcSettingsView, ClientRegisterZamerView, EstimateView, PricelistView,
+    ZamerProjectsView, ZamerView,
+)
 from apps.gamification import views as gam_views
 from apps.telephony import views as tel_views
 
@@ -59,6 +62,9 @@ urlpatterns = [
     path("api/zamer/register/", ClientRegisterZamerView.as_view()),  # клиент из приложения -> лид
     path("api/pricelist/", PricelistView.as_view()),  # прайс эффектов/материалов/инструментов для приложения
     path("api/zamer/projects/", ZamerProjectsView.as_view()),  # устойчивые проекты замера
+    path("api/calc-settings/", CalcSettingsView.as_view()),  # административные условия калькулятора
+    path("api/estimates/", EstimateView.as_view()),  # сметы из замеров с CRM-scope
+    path("api/estimates/<int:pk>/", EstimateView.as_view()),
     path("api/auth/", include("rest_framework.urls")),
     path("api/auth/token/", obtain_auth_token),  # POST username/password -> {token}
     path("api/me/", acc_views.MeView.as_view()),

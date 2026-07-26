@@ -62,10 +62,11 @@ class ZamerClientScopingTests(TestCase):
     """Замеры и смета никогда не смешиваются между клиентами."""
 
     def setUp(self):
-        from apps.crm.models import Contact, Deal, ZamerProject
+        from apps.crm.models import Contact, Deal, Estimate, ZamerProject
         self.Contact = Contact
         self.Deal = Deal
         self.ZamerProject = ZamerProject
+        self.Estimate = Estimate
         self.user = User.objects.create_superuser("zamer-admin", "zamer@example.com", "x")
         self.client_a = Contact.objects.create(first_name="Клиент А", phone="+380000000001")
         self.client_b = Contact.objects.create(first_name="Клиент Б", phone="+380000000002")
@@ -104,6 +105,8 @@ class ZamerClientScopingTests(TestCase):
         self.assertEqual(deal.contact_id, self.client_a.id)
         self.assertEqual(float(deal.amount), 25000)
         project = self.ZamerProject.objects.get(project_uuid="project-a")
+        self.assertEqual(project.contact_id, self.client_a.id)
+        self.assertEqual(project.deal_id, deal.id)
         self.assertEqual(project.payload["clientId"], self.client_a.id)
         self.assertEqual(project.payload["rooms"][0]["name"], "Гостиная")
 
@@ -111,6 +114,10 @@ class ZamerClientScopingTests(TestCase):
         b = self.api.get(f"/api/contacts/{self.client_b.id}/").json()
         self.assertEqual(len(a["zamer_projects"]), 1)
         self.assertEqual(b["zamer_projects"], [])
+        estimate = self.Estimate.objects.get(project=project, deal=deal)
+        self.assertEqual(estimate.contact_id, self.client_a.id)
+        self.assertEqual(estimate.measurement_snapshot["rooms"][0]["name"], "Гостиная")
+        self.assertEqual(response.json()["estimate_id"], estimate.id)
 
     def test_rejects_deal_owned_by_another_client(self):
         foreign = self.Deal.objects.create(
@@ -122,3 +129,101 @@ class ZamerClientScopingTests(TestCase):
         response = self.api.post("/api/zamer/", body, format="json")
         self.assertEqual(response.status_code, 409)
         self.assertEqual(foreign.contact_id, self.client_b.id)
+
+
+class ZamerResponsibilityAndCalculatorTests(TestCase):
+    def setUp(self):
+        from apps.crm.models import Contact, Deal, Estimate
+        self.Contact = Contact
+        self.Deal = Deal
+        self.Estimate = Estimate
+        role = Role.objects.create(
+            name="Замерщик",
+            permissions=["zamer.access", "zamer.deal.create", "calc.access", "deal.smeta.tab"],
+        )
+        role_manage = Role.objects.create(
+            name="Ответственный за калькулятор",
+            permissions=["calc.access", "calc.settings.manage"],
+        )
+        self.worker = User.objects.create_user("worker", password="x", role=role)
+        self.other = User.objects.create_user("other", password="x", role=role)
+        self.calc_manager = User.objects.create_user("calc-manager", password="x", role=role_manage)
+        self.own_contact = Contact.objects.create(first_name="Свой", phone="+380000000011", owner=self.worker)
+        self.foreign_contact = Contact.objects.create(first_name="Чужой", phone="+380000000012", owner=self.other)
+        self.funnel = Funnel.objects.create(id=5, name="Покрытия для стен", order=5)
+        self.stage = Stage.objects.create(funnel=self.funnel, name="Новая", order=0)
+        role.funnels.add(self.funnel)
+        self.api = APIClient()
+        self.api.force_authenticate(self.worker)
+
+    def payload(self, contact_id, project_uuid="scoped-project"):
+        return {
+            "client_id": contact_id,
+            "project_uuid": project_uuid,
+            "device_uuid": "shared-iphone",
+            "project_name": "Объект",
+            "rooms": [{"name": "Комната", "walls": [], "openings": [], "net_m2": 12}],
+            "estimate": {"area_m2": 12, "total": 1000, "lines": []},
+        }
+
+    def test_guessed_foreign_contact_is_not_visible(self):
+        response = self.api.post("/api/zamer/", self.payload(self.foreign_contact.id), format="json")
+        self.assertEqual(response.status_code, 404)
+
+    def test_shared_device_does_not_mix_accounts(self):
+        own = self.api.post("/api/zamer/", self.payload(self.own_contact.id), format="json")
+        self.assertEqual(own.status_code, 200, own.json())
+        rows = self.api.get("/api/zamer/projects/?device_uuid=shared-iphone").json()
+        self.assertEqual([row["project_uuid"] for row in rows], ["scoped-project"])
+
+        other_api = APIClient(); other_api.force_authenticate(self.other)
+        self.assertEqual(other_api.get("/api/zamer/projects/?device_uuid=shared-iphone").json(), [])
+
+        conflict = other_api.post(
+            "/api/zamer/", self.payload(self.foreign_contact.id), format="json",
+        )
+        self.assertEqual(conflict.status_code, 409, conflict.json())
+        self.assertFalse(self.Deal.objects.filter(contact=self.foreign_contact).exists())
+
+    def test_calc_settings_are_delegated_by_permission(self):
+        denied = self.api.patch("/api/calc-settings/", {"values": {"reserve_pct": 17}}, format="json")
+        self.assertEqual(denied.status_code, 403)
+
+        manager_api = APIClient(); manager_api.force_authenticate(self.calc_manager)
+        saved = manager_api.patch("/api/calc-settings/", {"values": {"reserve_pct": 17}}, format="json")
+        self.assertEqual(saved.status_code, 200, saved.json())
+        self.assertEqual(saved.json()["values"]["reserve_pct"], 17)
+
+        staff_values = self.api.get("/api/calc-settings/").json()["values"]
+        self.assertEqual(staff_values["reserve_pct"], 17)
+        self.assertIn("labor_wall_m2", staff_values)
+
+    def test_estimate_patch_requires_calculator_or_deal_tab_permission(self):
+        created = self.api.post(
+            "/api/zamer/", self.payload(self.own_contact.id), format="json",
+        )
+        self.assertEqual(created.status_code, 200, created.json())
+        estimate_id = created.json()["estimate_id"]
+        self.worker.role.permissions = ["zamer.access", "zamer.deal.create"]
+        self.worker.role.save(update_fields=["permissions"])
+
+        denied = self.api.patch(
+            f"/api/estimates/{estimate_id}/", {"status": "accepted"}, format="json",
+        )
+        self.assertEqual(denied.status_code, 403)
+
+    def test_estimate_scope_excludes_deal_from_disallowed_funnel(self):
+        hidden_funnel = Funnel.objects.create(name="Скрытая воронка", order=99)
+        hidden_stage = Stage.objects.create(funnel=hidden_funnel, name="Новая", order=0)
+        hidden_deal = self.Deal.objects.create(
+            title="Скрытая сделка", contact=self.own_contact, owner=self.worker,
+            funnel=hidden_funnel, stage=hidden_stage,
+        )
+        self.Estimate.objects.create(
+            name="Скрытая смета", contact=self.own_contact,
+            deal=hidden_deal, owner=self.worker,
+        )
+
+        response = self.api.get(f"/api/estimates/?deal_id={hidden_deal.id}")
+        self.assertEqual(response.status_code, 200, response.json())
+        self.assertEqual(response.json(), [])
