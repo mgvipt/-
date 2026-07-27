@@ -1164,10 +1164,28 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
               <div className="muted" style={{ fontSize: 11.5, marginBottom: 12, background: "#eff6ff", padding: "8px 10px", borderRadius: 8, color: "#1d4ed8" }}>
                 {t("Списываем из уже полученных денег клиента (аванса) — новый доход и чек НЕ создаются.","Списуємо з уже отриманих грошей клієнта (авансу) — новий дохід і чек НЕ створюються.")}
                 {advAvail !== null && <div style={{ marginTop: 4, fontWeight: 700 }}>{t("Доступный аванс:","Доступний аванс:")} {Math.round(advAvail).toLocaleString("ru")} ₴</div>}
+                {advAvail !== null && advAvail <= 0 && (
+                  <div style={{ marginTop: 6, padding: "6px 8px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, color: "#b91c1c", fontWeight: 700 }}>
+                    {t("У клиента нет свободного аванса — все его деньги уже разнесены по сделкам. Выбери реальный способ оплаты (наличные/карта/LiqPay).","У клієнта немає вільного авансу — усі його гроші вже рознесені по сделках. Обери реальний спосіб оплати (готівка/картка/LiqPay).")}
+                  </div>
+                )}
+                {advAvail !== null && advAvail > 0 && advAvail + 0.01 < remaining && (
+                  <div style={{ marginTop: 6, padding: "6px 8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, color: "#92400e", fontWeight: 700 }}>
+                    {t(`Аванс покрывает только ${Math.round(advAvail).toLocaleString("ru")} ₴ из ${Math.round(remaining).toLocaleString("ru")} ₴. Остаток ${Math.round(remaining - advAvail).toLocaleString("ru")} ₴ проведи отдельно другим способом (наличные/карта).`,`Аванс покриває лише ${Math.round(advAvail).toLocaleString("ru")} ₴ з ${Math.round(remaining).toLocaleString("ru")} ₴. Решту ${Math.round(remaining - advAvail).toLocaleString("ru")} ₴ проведи окремо іншим способом (готівка/картка).`)}
+                    <button type="button" onClick={() => setPayAmount(String(Math.round(Number(advAvail))))} style={{ marginTop: 6, width: "100%", height: 30, borderRadius: 8, border: "1px solid #2563eb", background: "#fff", color: "#1d4ed8", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                      {t(`Списать весь аванс (${Math.round(advAvail).toLocaleString("ru")} ₴)`,`Списати весь аванс (${Math.round(advAvail).toLocaleString("ru")} ₴)`)}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
             <label className="label">{t("Сумма, ₴","Сума, ₴")}</label>
             <input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} style={{ width: "100%", height: 38, marginBottom: 14, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} />
+            {payType === "advance" && advAvail !== null && Number(payAmount || 0) > advAvail + 0.01 && (
+              <div style={{ marginTop: -10, marginBottom: 12, color: "#dc2626", fontSize: 11.5, fontWeight: 700 }}>
+                {t(`Сумма больше доступного аванса (${Math.round(advAvail).toLocaleString("ru")} ₴) — оплата не пройдёт. Уменьши сумму или проведи остаток другим способом.`,`Сума більша за доступний аванс (${Math.round(advAvail).toLocaleString("ru")} ₴) — оплата не пройде. Зменш суму або проведи решту іншим способом.`)}
+              </div>
+            )}
             {debtList.length > 0 && (
               <div style={{ marginBottom: 12, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px" }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#92400e", marginBottom: 6 }}>💳 {t("Клиент должен (закрыть этой оплатой):","Клієнт винен (закрити цією оплатою):")}</div>
