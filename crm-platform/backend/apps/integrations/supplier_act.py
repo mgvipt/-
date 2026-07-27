@@ -212,7 +212,7 @@ def parse_generic_invoice(raw, name=""):
         ssum = _num(r[col["sum"]]) if col.get("sum") is not None and col["sum"] < len(r) else None
         if qty is None and ssum is None:
             continue
-        lines.append({"their_name": nm[:200], "qty": qty or 0, "price": price or 0, "sum": ssum})
+        lines.append({"name": nm[:200], "qty": qty or 0, "price": price or 0, "sum": ssum})
 
     alltext = "\n".join(" ".join(_s(c) for c in r) for r in rows)
     mi = _re.search(r"[Рр]ахунок[-\s]*фактура\s*[№N]?\s*([^\s,;]+)", alltext)

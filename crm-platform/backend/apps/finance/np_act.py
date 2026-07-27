@@ -189,18 +189,31 @@ def create_kreditorka_from_act(act, user=None):
         except ValueError:
             due = None
     due = due or _tz.localdate()
-    cp = act.get("counterparty") or {}
+    cp = dict(act.get("counterparty") or {})
+    cp_name = (cp.get("name") or "Нова Пошта").strip()
+    # ⚠️ Нова Пошта: акт/специфікація НЕ містить ЄДРПОУ+IBAN — вони у РАХУНКУ. Підставляємо відомі
+    # сталі реквізити НП, щоб контрагент і IBAN підтягувались для оплати з ФОП.
+    if "нова пошта" in cp_name.lower():
+        if not (cp.get("edrpou") or "").strip():
+            cp["edrpou"] = "31316718"
+        if not (cp.get("iban") or "").strip():
+            cp["iban"] = "UA533314670000026005300918092"
     detail = "ЄДРПОУ %s · IBAN %s" % (cp.get("edrpou") or "?", cp.get("iban") or "?")
     ship = act.get("shipments") or []
     # контакт-постачальник (щоб контрагент був клікабельним у Дт/Кт)
     from apps.crm.models import Contact as _Contact
     contact = None
     edrpou = (cp.get("edrpou") or "").strip()
-    cp_name = (cp.get("name") or "Нова Пошта").strip()
     if edrpou:
         contact = _Contact.objects.filter(edrpou=edrpou).first()
     if contact is None and edrpou:
-        contact = _Contact.objects.create(first_name=cp_name[:120], edrpou=edrpou, iban=(cp.get("iban") or ""))
+        contact = _Contact.objects.create(first_name=cp_name[:120], edrpou=edrpou, iban=(cp.get("iban") or ""), kinds=["supplier"])
+    # контакт знайдено, але без IBAN → дозаповнюємо з реквізитів рахунка/сталих НП
+    if contact is not None and not (getattr(contact, "iban", "") or "").strip() and (cp.get("iban") or "").strip():
+        try:
+            contact.iban = cp["iban"]; contact.save(update_fields=["iban"])
+        except Exception:
+            pass
     pp = PlannedPayment.objects.create(
         kind="payable", amount=amount, due_date=due,
         counterparty=(cp.get("name") or "Нова Пошта")[:160], contact=contact,
