@@ -516,6 +516,15 @@ export default function Warehouse() {
               <div>
                 <h3 style={{ margin: "0 0 4px" }}>{t("Приходная накладная","Прибуткова накладна")} {receiptSel.number || ("#" + receiptSel.id)} <button className="btn btn-light" style={{ padding: "2px 8px" }} title={t("Скопировать ссылку","Скопіювати посилання")} onClick={() => { navigator.clipboard?.writeText(window.location.origin + "/warehouse?doc=" + receiptSel.id); alert(t("Ссылка скопирована ✓","Посилання скопійовано ✓")); }}>🔗</button></h3>
                 <div className="muted" style={{ fontSize: 12 }}>{(receiptSel.created_at || "").slice(0, 10)}{receiptSel.comment ? " · " + receiptSel.comment : ""}</div>
+                {(receiptSel.supplier_name || receiptSel.supplier_invoice) && (
+                  <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                    {receiptSel.supplier_name ? t("Поставщик: ","Постачальник: ") + receiptSel.supplier_name : ""}
+                    {receiptSel.supplier_invoice ? " · " + t("накладная №","накладна №") + receiptSel.supplier_invoice : ""}
+                  </div>
+                )}
+                {receiptSel.source_invoice_doc ? (
+                  <button className="btn btn-light" style={{ marginTop: 8, fontSize: 12.5, fontWeight: 700 }} title={t("Открыть исходную накладную поставщика (файл/письмо)","Відкрити вихідну накладну постачальника (файл/лист)")} onClick={async () => { try { const u = await (api as any).blobUrl(`/api/integrations/incoming-docs/${receiptSel.source_invoice_doc}/view/`); window.open(u, "_blank"); } catch { alert(t("Не удалось открыть накладную","Не вдалося відкрити накладну")); } }}><Icon n="📄" size={13} /> {t("Открыть накладную-источник","Відкрити накладну-джерело")}</button>
+                ) : null}
               </div>
               <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 13, fontWeight: 700, background: receiptSel.posted ? "#dcfce7" : "#fef3c7", color: receiptSel.posted ? "#166534" : "#92400e" }}>{receiptSel.posted ? t("Проведён","Проведено") : t("Черновик","Чернетка")}</span>
             </div>
