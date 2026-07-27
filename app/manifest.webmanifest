@@ -1,0 +1,15 @@
+{
+  "name": "Цикл вдвоём",
+  "short_name": "Цикл вдвоём",
+  "description": "Приложение о женском цикле — для женщины и партнёра. Данные хранятся только на вашем устройстве.",
+  "lang": "ru",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f0ef",
+  "theme_color": "#9b3f63",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
