@@ -43,6 +43,8 @@ export default function ClientCard() {
   const [nd, setNd] = useState<any>({ funnel: 0, title: "", amount: "" });
   const [ndBusy, setNdBusy] = useState(false);
   const [chatOpen, setChatOpen] = useState(Boolean(backChat));
+  const [dealsPer, setDealsPer] = useState(5);
+  const [dealsPage, setDealsPage] = useState(0);
   async function openNewDeal() {
     if (ndOpen) { setNdOpen(false); return; }
     try {
@@ -107,7 +109,7 @@ export default function ClientCard() {
         <CallButton contact={c.id} small />
         <button data-testid="client-chat-toggle" className="btn" style={{ height: 30, fontSize: 12.5, padding: "0 12px", background: chatOpen ? "#dbeafe" : "#eff6ff", color: "#1d4ed8" }}
           onClick={() => setChatOpen((open) => !open)}>💬 {chatOpen ? t("Свернуть чат","Згорнути чат") : t("Открыть чат","Відкрити чат")}</button>
-        <button className="btn btn-primary" style={{ height: 30, fontSize: 12.5, padding: "0 12px" }} onClick={openNewDeal}>{ndOpen ? "✕" : "➕ " + t("Создать сделку","Створити угоду")}</button>
+        <button className="btn btn-primary" style={{ height: 30, fontSize: 12.5, padding: "0 12px" }} onClick={openNewDeal}>{"➕ " + t("Создать сделку","Створити угоду")}</button>
         <div className="spacer" />
         {msg && <span style={{ color: "#16a34a", fontSize: 13, marginRight: 10 }}>{msg}</span>}
         <span className="muted" title={t("Сумма выигранных сделок — сколько клиент купил у нас. Это НЕ расходы по объекту (те в блоке «Финансы клиента»).","Сума виграних угод — скільки клієнт купив у нас. Це НЕ витрати по обʼєкту (ті у блоці «Фінанси клієнта»).")}>{t("Купил в нашем магазине (сделки)","Купив у нашому магазині (угоди)")}: <b style={{ color: "#16a34a" }}>{money(c.total_spent)}</b></span>
@@ -200,38 +202,48 @@ export default function ClientCard() {
           <FinBlock contactId={c.id} cname={c.display_name} deals={c.deals} />
           <ZamerProjectsBlock projects={c.zamer_projects || []} />
           <div className="panel">
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <div className="label" style={{ flex: 1, margin: 0 }}>{t("Сделки клиента","Угоди клієнта")} ({c.deals.length})</div>
-              <button className="btn btn-primary" style={{ height: 28, fontSize: 12, padding: "0 12px" }} onClick={openNewDeal}>{ndOpen ? "✕" : "➕ " + t("Создать сделку","Створити угоду")}</button>
+              {c.deals.length > 0 && (<><span className="muted" style={{ fontSize: 11 }}>{t("Показывать:","Показувати:")}</span>
+              <select value={dealsPer} onChange={(e) => { setDealsPer(Number(e.target.value)); setDealsPage(0); }} style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 12 }}>
+                {[5, 10, 25, 50].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select></>)}
+              <button className="btn btn-primary" style={{ height: 28, fontSize: 12, padding: "0 12px" }} onClick={openNewDeal}>{"➕ " + t("Создать сделку","Створити угоду")}</button>
             </div>
             {ndOpen && (
-              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, margin: "8px 0" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <div>
-                    <div className="label" style={{ fontSize: 11 }}>{t("Воронка","Воронка")}</div>
-                    <select value={nd.funnel} onChange={(e) => setNd({ ...nd, funnel: Number(e.target.value) })} style={{ width: "100%", height: 34, borderRadius: 7, border: "1px solid #cbd5e1", fontSize: 13 }}>
-                      {ndFunnels.map((f: any) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                    </select>
+              <div onClick={() => setNdOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", zIndex: 5000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+                <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 20, width: "min(460px, 96vw)", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <h3 style={{ margin: 0, fontSize: 17 }}>{t("Создать сделку","Створити угоду")}</h3>
+                    <button className="btn btn-light" style={{ padding: "2px 10px" }} onClick={() => setNdOpen(false)}>✕</button>
                   </div>
-                  <div>
-                    <div className="label" style={{ fontSize: 11 }}>{t("Сумма, ₴ (можно потом)","Сума, ₴ (можна потім)")}</div>
-                    <input type="number" value={nd.amount} onChange={(e) => setNd({ ...nd, amount: e.target.value })} style={{ width: "100%", height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 13, boxSizing: "border-box" }} />
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div>
+                      <div className="label" style={{ fontSize: 11 }}>{t("Воронка","Воронка")}</div>
+                      <select value={nd.funnel} onChange={(e) => setNd({ ...nd, funnel: Number(e.target.value) })} style={{ width: "100%", height: 34, borderRadius: 7, border: "1px solid #cbd5e1", fontSize: 13 }}>
+                        {ndFunnels.map((f: any) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <div className="label" style={{ fontSize: 11 }}>{t("Сумма, ₴ (можно потом)","Сума, ₴ (можна потім)")}</div>
+                      <input type="number" value={nd.amount} onChange={(e) => setNd({ ...nd, amount: e.target.value })} style={{ width: "100%", height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 13, boxSizing: "border-box" }} />
+                    </div>
                   </div>
+                  <div className="label" style={{ fontSize: 11, marginTop: 8 }}>{t("Название сделки","Назва угоди")}</div>
+                  <input value={nd.title} onChange={(e) => setNd({ ...nd, title: e.target.value })} style={{ width: "100%", height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 13, boxSizing: "border-box" }} />
+                  <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                    <button className="btn btn-primary" style={{ flex: 1 }} disabled={ndBusy} onClick={createDeal}>{ndBusy ? "…" : t("✓ Создать и открыть","✓ Створити і відкрити")}</button>
+                    <button className="btn btn-light" onClick={() => setNdOpen(false)}>{t("Отмена","Скасувати")}</button>
+                  </div>
+                  <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>{t("Сделка создаётся на первой стадии воронки, клиент подставится автоматически. Товары добавишь в карточке.","Угода створюється на першій стадії воронки, клієнт підставиться автоматично. Товари додаси в картці.")}</div>
                 </div>
-                <div className="label" style={{ fontSize: 11, marginTop: 8 }}>{t("Название сделки","Назва угоди")}</div>
-                <input value={nd.title} onChange={(e) => setNd({ ...nd, title: e.target.value })} style={{ width: "100%", height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 13, boxSizing: "border-box" }} />
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <button className="btn btn-primary" style={{ flex: 1 }} disabled={ndBusy} onClick={createDeal}>{ndBusy ? "…" : t("✓ Создать и открыть","✓ Створити і відкрити")}</button>
-                  <button className="btn btn-light" onClick={() => setNdOpen(false)}>{t("Отмена","Скасувати")}</button>
-                </div>
-                <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{t("Сделка создаётся на первой стадии воронки, клиент подставится автоматически. Товары добавишь в карточке.","Угода створюється на першій стадії воронки, клієнт підставиться автоматично. Товари додаси в картці.")}</div>
               </div>
             )}
             {c.deals.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Сделок ещё нет.","Угод ще немає.")}</div> : (
-              <table style={{ width: "100%", fontSize: 13, marginTop: 6 }}>
+              <><div style={{ maxHeight: 360, overflowY: "auto", overflowX: "auto", marginTop: 6, border: "1px solid #f1f5f9", borderRadius: 8 }}><table style={{ width: "100%", fontSize: 13 }}>
                 <thead><tr><th style={{ textAlign: "left", width: 66 }}>№</th><th style={{ textAlign: "left", width: 84 }}>{t("Дата","Дата")}</th><th style={{ textAlign: "left" }}>{t("Сделка","Угода")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th>{can("product.cost.view") && <th style={{ textAlign: "right", color: "#9a3412" }}>{t("Закупка","Закупка")}</th>}<th style={{ textAlign: "center" }}>{t("Стадия","Стадія")}</th>{can("deal.delete") && <th style={{ width: 30 }}></th>}</tr></thead>
                 <tbody>
-                  {c.deals.map((d) => (
+                  {c.deals.slice(dealsPage * dealsPer, dealsPage * dealsPer + dealsPer).map((d) => (
                     <tr key={d.id} onClick={() => nav(`/deals/${d.id}`)} style={{ cursor: "pointer", borderTop: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "6px 0", color: "#64748b", fontSize: 12, whiteSpace: "nowrap" }}>#{d.id}</td><td style={{ padding: "6px 0", color: "#475569", fontSize: 12, whiteSpace: "nowrap" }} title={t("Дата создания сделки — по ней считается период","Дата створення сделки — по ній рахується період")}>{d.created_at ? new Date(d.created_at).toLocaleDateString("ru-RU") : "—"}</td><td style={{ padding: "6px 0", color: "#1d4ed8" }}>{d.title}</td>
                       <td style={{ textAlign: "right" }}>{money(d.amount)}</td>
@@ -241,7 +253,13 @@ export default function ClientCard() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
+              {c.deals.length > dealsPer && (<div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6, marginTop: 8, fontSize: 12 }}>
+                <button className="btn btn-light" style={{ height: 26, padding: "0 8px" }} disabled={dealsPage <= 0} onClick={() => setDealsPage(dealsPage - 1)}>←</button>
+                <span>{t("стр.","стор.")} <b>{dealsPage + 1}</b> / {Math.max(1, Math.ceil(c.deals.length / dealsPer))}</span>
+                <button className="btn btn-light" style={{ height: 26, padding: "0 8px" }} disabled={(dealsPage + 1) * dealsPer >= c.deals.length} onClick={() => setDealsPage(dealsPage + 1)}>→</button>
+              </div>)}
+              </>
             )}
           </div>
           <ClientDebtsBlock contactId={c.id} />
@@ -373,7 +391,7 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
   const [selOps, setSelOps] = useState<Record<number, boolean>>({});
   const [txCardId, setTxCardId] = useState<number | null>(null);
   const [createOp, setCreateOp] = useState<null | "in" | "out">(null);
-  const [opsLimit, setOpsLimit] = useState(50);
+  const [opsLimit, setOpsLimit] = useState(5);
   const [opsPage, setOpsPage] = useState(0);
   const [opsCp, setOpsCp] = useState("");      // фільтр: кому / від кого
   const [opsObj, setOpsObj] = useState("");    // фільтр: клієнт-обʼєкт
@@ -549,7 +567,7 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6, fontSize: 12 }}>
             <span className="muted">{t("Показывать:", "Показувати:")}</span>
             <select value={opsLimit} onChange={(e) => { setOpsLimit(Number(e.target.value)); setOpsPage(0); }} style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 12 }}>
-              {[15, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}
+              {[5, 10, 25, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
             <input value={opsCp} onChange={(e) => { setOpsCp(e.target.value); setOpsPage(0); }} placeholder={t("🔎 Кому/от кого", "🔎 Кому/від кого")} style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 12, padding: "0 8px", width: 140 }} />
             <input value={opsObj} onChange={(e) => { setOpsObj(e.target.value); setOpsPage(0); }} placeholder={t("🔎 Клиент (объект)", "🔎 Клієнт (обʼєкт)")} style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 12, padding: "0 8px", width: 150 }} />
