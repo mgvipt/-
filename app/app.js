@@ -17,6 +17,7 @@
       goals: ["Понимать себя"],
       intimacy: { date: isoToday(), value: "yellow" },
       diary: {},                  // { "YYYY-MM-DD": { tags:[...], mood:"ok" } }
+      course: [],                 // id пройденных уроков
       tab: "today"
     };
   }
@@ -96,6 +97,30 @@
     yellow: { em: "🟡", title: "«Может быть»",   text: "Тёплое внимание — да, инициатива — мягко и с вопросом. Она решает." },
     red:    { em: "🔴", title: "«Не сегодня»",   text: "Сегодня — забота без близости. Поддержи, обними, будь рядом." }
   };
+
+  /* ---------- мини-курс для партнёра ---------- */
+  var COURSE = [
+    { id: "cycle", title: "Как устроен цикл за 2 минуты", mins: 2, body: [
+      "Женский цикл — это не «просто месячные раз в месяц», а плавная смена четырёх фаз, каждая со своим уровнем гормонов, энергии и настроения.",
+      "🌑 Менструальная (начало) — низкая энергия, нужен отдых. 🌱 Фолликулярная — силы и настроение растут. ☀️ Овуляция — пик энергии и влечения. 🌘 Лютеиновая — постепенный спад, ближе к концу возможен ПМС.",
+      "Главная мысль: её состояние закономерно меняется в течение месяца — это биология, а не «характер» и не что-то, что ты сделал не так." ] },
+    { id: "pms", title: "Что такое ПМС и как быть рядом", mins: 3, body: [
+      "ПМС — набор симптомов в последние дни перед месячными: перепады настроения, тревожность, раздражительность, усталость, тяга к еде, чувствительность груди. Это реакция на падение гормонов, а не каприз.",
+      "Что помогает: спокойствие и терпение, помощь по быту, меньше споров по мелочам, тёплое внимание. Иногда лучшее — просто быть рядом и не «чинить».",
+      "Чего избегать: фраз «ты просто на нервах / это из-за месячных?», обесценивания, давления. Если симптомы очень тяжёлые — мягко поддержи идею показаться врачу." ] },
+    { id: "energy", title: "Энергия по фазам: когда что планировать", mins: 2, body: [
+      "Подстраивая планы под фазу, ты снимаешь с неё нагрузку и показываешь заботу.",
+      "Фолликулярная и овуляция — больше сил: хорошее время для активностей, свиданий, важных разговоров и совместных дел.",
+      "Менструальная и конец лютеиновой — энергии меньше: возьми на себя логистику и быт, предложи спокойный вечер, не настаивай на насыщенной программе." ] },
+    { id: "intimacy", title: "Близость и согласие", mins: 2, body: [
+      "Влечение естественно меняется по циклу и очень индивидуально — «нормы» не существует. Часто выше около овуляции, ниже — в ПМС и менструацию.",
+      "В приложении есть «светофор близости»: она сама ставит 🟢 / 🟡 / 🔴, а ты видишь только сигнал — без дат и симптомов. Это про согласие и уважение, а не про «доступ».",
+      "Золотое правило: спрашивать, а не предполагать. Тёплое внимание уместно всегда; инициатива — мягко и с вниманием к её ответу." ] },
+    { id: "words", title: "Слова, которые поддерживают", mins: 2, body: [
+      "Иногда важнее не «решить проблему», а дать почувствовать, что её слышат.",
+      "Вместо «успокойся» — «я рядом, чем помочь?». Вместо «это из-за гормонов» — «вижу, что тебе тяжело сегодня». Вместо «ну потерпи» — «давай я возьму это на себя».",
+      "Маленькие жесты: тепло, вода, любимая еда, взять быт на себя, обнять без повода. Спроси прямо: «тебе сейчас нужна поддержка или просто побыть в тишине?»" ] }
+  ];
 
   /* ---------- assistant: on-device knowledge base (offline, private) ----------
      Матчинг по числу совпавших ключей: чем специфичнее вопрос, тем точнее ответ. */
@@ -238,8 +263,43 @@
       '<div class="card signal-card"><div class="signal-badge">' + sig.em + '</div><div><h3 style="margin-bottom:2px">' + name + ' отметила: ' + sig.title + '</h3><p>' + sig.text + '</p></div></div>' +
       card("🎯 Как поддержать сегодня", p.partner, "insight") +
       '<div class="card"><div class="do-dont"><div class="col"><h5 style="color:var(--good)">Помогает</h5><ul><li>Спросить, а не предполагать</li><li>Забота и внимание</li><li>Помощь по быту</li></ul></div><div class="col"><h5 style="color:var(--warn)">Осторожно</h5><ul><li>Не давить и не обесценивать</li><li>Контрацепция — общая тема</li></ul></div></div></div>' +
-      '<div class="card"><h3>🎓 Мини-курс: гормональная грамотность</h3><p>Урок 2 из 5 — «Что такое ПМС и как быть рядом».</p><div class="bar-track" style="margin:8px 0"><div class="bar-fill" style="width:40%"></div></div></div>' +
+      courseCard() +
       '<p class="caption">Партнёр видит только то, чем она решила поделиться.</p>';
+  }
+
+  function courseCard() {
+    var done = state.course.length, total = COURSE.length, pct = Math.round(done / total * 100);
+    var nextIdx = COURSE.findIndex(function (l) { return state.course.indexOf(l.id) === -1; });
+    var label = done === 0 ? "Начать курс" : (nextIdx === -1 ? "Пройти заново" : "Продолжить курс");
+    var line = done >= total ? "Курс пройден 🎉" : (nextIdx >= 0 ? "Следующий: «" + COURSE[nextIdx].title + "»" : "");
+    return '<div class="card"><h3>🎓 Мини-курс: гормональная грамотность</h3>' +
+      '<p>Пройдено ' + done + ' из ' + total + '. ' + line + '</p>' +
+      '<div class="bar-track" style="margin:8px 0"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+      '<button class="btn ghost sm" data-act="course-list">' + label + '</button></div>';
+  }
+
+  function screenCourseList() {
+    var items = COURSE.map(function (l, i) {
+      var done = state.course.indexOf(l.id) !== -1;
+      return '<div class="phase-item" data-lesson="' + i + '" style="cursor:pointer">' +
+        '<div class="phase-emoji-box" style="background:var(--brand-soft);color:var(--brand)">' + (done ? "✓" : (i + 1)) + '</div>' +
+        '<div><h4>' + esc(l.title) + '</h4><span class="days">' + l.mins + ' мин' + (done ? ' · пройдено' : '') + '</span></div></div>';
+    }).join("");
+    var done = state.course.length;
+    return '<div class="head"><div><div class="date"><button class="set" data-act="course-back" style="padding:0">← Назад</button></div><h1>Мини-курс</h1></div></div>' +
+      '<p class="section-label">Гормональная грамотность · для партнёра · пройдено ' + done + '/' + COURSE.length + '</p>' +
+      items +
+      '<p class="caption">Короткие уроки, чтобы лучше понимать и поддерживать. Прогресс сохраняется на устройстве.</p>';
+  }
+
+  function screenCourseLesson(i) {
+    var l = COURSE[i], done = state.course.indexOf(l.id) !== -1;
+    var isLast = i === COURSE.length - 1;
+    var paras = l.body.map(function (t) { return '<p style="margin:0 0 12px;font-size:14px;color:var(--ink)">' + t + '</p>'; }).join("");
+    return '<div class="head"><div><div class="date"><button class="set" data-act="course-list" style="padding:0">← К урокам</button></div><h1 style="font-size:20px">Урок ' + (i + 1) + ' из ' + COURSE.length + '</h1></div></div>' +
+      '<h3 style="font-family:var(--serif);font-size:19px;margin:2px 0 14px">' + esc(l.title) + '</h3>' +
+      paras +
+      '<button class="btn" data-act="course-done" data-idx="' + i + '">' + (done ? (isLast ? "Готово" : "Дальше →") : (isLast ? "Отметить пройденным ✓" : "Пройдено, дальше →")) + '</button>';
   }
 
   function screenSettings() {
@@ -299,15 +359,17 @@
   }
 
   /* ---------- main render ---------- */
-  var settingsOpen = false;
+  var settingsOpen = false, courseView = null; // null | "list" | lessonIndex
   function render() {
     if (!state.onboarded) { renderOnboarding(); return; }
-    var body;
+    var body, overlay = settingsOpen || courseView !== null;
     if (settingsOpen) body = screenSettings();
-    else if (state.role === "partner") body = { partner: screenPartner, phases: screenPhases, ai: screenAssistant }[state.tab] ? { partner: screenPartner, phases: screenPhases, ai: screenAssistant }[state.tab]() : screenPartner();
+    else if (courseView === "list") body = screenCourseList();
+    else if (typeof courseView === "number") body = screenCourseLesson(courseView);
+    else if (state.role === "partner") body = ({ partner: screenPartner, phases: screenPhases, ai: screenAssistant }[state.tab] || screenPartner)();
     else body = ({ today: screenToday, diary: screenDiary, ai: screenAssistant, phases: screenPhases, partner: screenPartner }[state.tab] || screenToday)();
-    app.innerHTML = '<div class="view" id="view">' + body + '</div>' + (settingsOpen ? "" : tabbar());
-    var v = document.getElementById("view"); if (v && state.tab === "ai") { var c = document.getElementById("chat"); if (c) c.scrollTop = c.scrollHeight; }
+    app.innerHTML = '<div class="view" id="view">' + body + '</div>' + (overlay ? "" : tabbar());
+    var v = document.getElementById("view"); if (v && !overlay && state.tab === "ai") { var c = document.getElementById("chat"); if (c) c.scrollTop = c.scrollHeight; }
   }
   function tabbar() {
     var tabs = state.role === "partner"
@@ -325,10 +387,11 @@
 
   /* ---------- events ---------- */
   app.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-tab],[data-act],[data-v],[data-mood],[data-tag],[data-ask],[data-role],[data-goal],[data-step]");
+    var t = e.target.closest("[data-tab],[data-act],[data-v],[data-mood],[data-tag],[data-ask],[data-role],[data-goal],[data-step],[data-lesson]");
     if (!t) return;
 
-    if (t.dataset.tab) { state.tab = t.dataset.tab; settingsOpen = false; save(); render(); return; }
+    if (t.dataset.lesson) { courseView = +t.dataset.lesson; render(); return; }
+    if (t.dataset.tab) { state.tab = t.dataset.tab; settingsOpen = false; courseView = null; save(); render(); return; }
     if (t.dataset.role) { obRole = t.dataset.role; renderOnboarding(); return; }
     if (t.dataset.goal) {
       var g = t.dataset.goal, i = state.goals.indexOf(g);
@@ -343,6 +406,9 @@
 
     var a = t.dataset.act;
     if (a === "settings") { settingsOpen = true; render(); }
+    else if (a === "course-list") { settingsOpen = false; courseView = "list"; render(); }
+    else if (a === "course-back") { courseView = null; render(); }
+    else if (a === "course-done") { courseDone(+t.dataset.idx); }
     else if (a === "ob-next") { obNext(); }
     else if (a === "ob-finish") { obFinish(); }
     else if (a === "save-today" || a === "save-diary") { flash(t, "Сохранено ✓"); save(); }
@@ -387,6 +453,14 @@
     var arr = state.diary[today].tags, i = arr.indexOf(tag);
     if (i === -1) arr.push(tag); else arr.splice(i, 1);
     save();
+  }
+
+  function courseDone(i) {
+    var id = COURSE[i].id;
+    if (state.course.indexOf(id) === -1) state.course.push(id);
+    save();
+    courseView = (i < COURSE.length - 1) ? i + 1 : "list";
+    render();
   }
 
   function ask(q) { chatLog.push({ who: "user", text: q }); chatLog.push({ who: "bot", text: assistantAnswer(q) }); render(); }
