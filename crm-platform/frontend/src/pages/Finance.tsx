@@ -3418,8 +3418,13 @@ function IncomingDocsTab() {
         <div key={r.id} className="panel" style={{ margin: "0 0 8px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 240, cursor: "pointer" }} onClick={() => setMsgDoc(r.id)} title={t("Открыть письмо", "Відкрити лист")}>
             {r.doc_type === "np_act" ? (
-              <><b>{r.invoice_number}</b> <span className="muted">{t("от", "від")} {r.invoice_date}</span><br />
-                <span style={{ fontSize: 13 }}>{Number(r.amount || 0).toLocaleString()} ₴ · {r.shipments_count} {t("отправлений", "відправлень")}{r.vat ? ` · ${t("НДС", "ПДВ")} ${r.vat}` : ""}</span></>
+              <><b>{r.invoice_number || r.subject || t("Акт Новой Почты", "Акт Нової Пошти")}</b>{r.invoice_date ? <span className="muted"> {t("от", "від")} {r.invoice_date}</span> : null}<br />
+                {r.np_no_spec ? (
+                  <span style={{ fontSize: 12.5, color: "#b45309" }}>{t("Без спецификации — вероятно дубль уже проведённого акта. Обычно можно «Відхилити».", "Без специфікації — ймовірно дубль уже проведеного акта. Зазвичай можна «Відхилити».")}</span>
+                ) : (
+                  <span style={{ fontSize: 13 }}>{Number(r.amount || 0).toLocaleString()} ₴ · {r.shipments_count} {t("отправлений", "відправлень")}{r.vat ? ` · ${t("НДС", "ПДВ")} ${r.vat}` : ""}</span>
+                )}
+                <br /><span className="muted" style={{ fontSize: 12 }}>{r.sender}{(r.files || []).length ? " · " + (r.files || []).join(", ") : ""}</span></>
             ) : (
               <><b>{(r.subject || t("Накладная", "Накладна"))}{r.invoice_number ? ` №${r.invoice_number}` : ""}</b>
                 {r.invoice_date ? <span className="muted"> {t("от", "від")} {r.invoice_date}</span> : null}

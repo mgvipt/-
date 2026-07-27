@@ -369,6 +369,7 @@ class IncomingDocListView(APIView):
                 "id": d.id, "doc_type": d.doc_type, "status": d.status,
                 "sender": d.sender, "subject": d.subject,
                 "invoice_number": p.get("invoice_number"), "invoice_date": p.get("invoice_date"),
+                "np_no_spec": bool(p.get("np_no_spec")),
                 "amount": p.get("amount") or p.get("total"), "vat": p.get("vat"),
                 "lines_count": len(p.get("lines") or []),
                 "shipments_count": len(p.get("shipments") or []),

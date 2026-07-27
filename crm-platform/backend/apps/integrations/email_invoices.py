@@ -172,13 +172,19 @@ def poll(limit=60, backfill=False, log=lambda m: None):
                     np_created += 1
             elif is_np:
                 # Лист від Нової Пошти БЕЗ специфікації (окремий «Акт»/«Рахунок» до вже обробленого
-                # акта) — це НЕ постачальник. Кладемо в НП-розділ чернеткою, щоб не плутати з
-                # накладними постачальників. Дубль уже обробленого акта Олег просто відхилить.
+                # акта) — це НЕ постачальник. Кладемо в НП-розділ чернеткою. № акта і дату тягнемо
+                # з теми/імені файлу, щоб картка була зрозуміла, а не порожня.
+                import re as _rnp
+                _npt = (subj or "") + " " + " ".join(nn for nn, _ in atts)
+                _mno = _rnp.search(r"НП[-\s]?\d{6,}", _npt)
+                _mdt = _rnp.search(r"\d{2}\.\d{2}\.\d{4}", _npt)
                 IncomingDoc.objects.create(
                     mailbox=user, message_uid=str(u), sender=frm[:200], subject=subj[:300],
                     doc_type="np_act", status="draft",
                     parsed={"files": [n for n, _ in atts], "email_date": date_hdr,
-                            "email_text": body, "np_no_spec": True},
+                            "email_text": body, "np_no_spec": True,
+                            "invoice_number": (_mno.group(0).replace(" ", "") if _mno else None),
+                            "invoice_date": (_mdt.group(0) if _mdt else None)},
                     attachments_b64=b64)
                 created += 1
                 np_created += 1
