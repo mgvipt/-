@@ -170,6 +170,18 @@ def poll(limit=60, backfill=False, log=lambda m: None):
                         attachments_b64=b64)
                     created += 1
                     np_created += 1
+            elif is_np:
+                # Лист від Нової Пошти БЕЗ специфікації (окремий «Акт»/«Рахунок» до вже обробленого
+                # акта) — це НЕ постачальник. Кладемо в НП-розділ чернеткою, щоб не плутати з
+                # накладними постачальників. Дубль уже обробленого акта Олег просто відхилить.
+                IncomingDoc.objects.create(
+                    mailbox=user, message_uid=str(u), sender=frm[:200], subject=subj[:300],
+                    doc_type="np_act", status="draft",
+                    parsed={"files": [n for n, _ in atts], "email_date": date_hdr,
+                            "email_text": body, "np_no_spec": True},
+                    attachments_b64=b64)
+                created += 1
+                np_created += 1
             elif atts:
                 from .supplier_act import parse_korzh
                 xls = next((pp for nn, pp in atts if nn.lower().endswith((".xls", ".xlsx"))), None)
