@@ -106,9 +106,9 @@ class ContactViewSet(viewsets.ModelViewSet):
         recv_sale = (recv_sale or 0) + (recv_internal or 0)
         # ── ПРИБУТОК ПО КЛІЄНТУ: виручка − собівартість складу − закупки/послуги ──
         # РЕСПЕКТИТЬ ПЕРІОД (op_from/op_to): якщо задано — рахуємо ТІЛЬКИ за період (дохід/розхід по даті
-        # транзакції, сделки по closed_at). Дає бачити фінанси «з моменту як почали в CRM», не мішаючи
-        # старі легасі-сделки з Бітрікса (їх товари в собівартості, а виручка в Б24 → ложний мінус).
-        # Пусто → за весь час (як було). closed_at=NULL при заданому періоді → сделка не рахується.
+        # транзакції, сделки по created_at — це РЕАЛЬНА дата сделки, яку видно в списку; closed_at часто
+        # оптова дата імпорту з Б24). Дає бачити фінанси «з моменту як почали в CRM», не мішаючи легасі.
+        # Пусто → за весь час (як було). Дата в колонці «Дата» списку сделок = той самий created_at.
         from decimal import Decimal as _Dp
         _qf = _Tx.objects.filter(_match)
         if _ofrom:
@@ -122,9 +122,9 @@ class ContactViewSet(viewsets.ModelViewSet):
         _planned_srv = _Dp("0")   # планова закупка послуг/робіт (мастеру) — щоб ловити переплату
         _dq = _Deal.objects.filter(contact=c, stage__is_won=True)
         if _ofrom:
-            _dq = _dq.filter(closed_at__date__gte=_ofrom)
+            _dq = _dq.filter(created_at__date__gte=_ofrom)
         if _oto:
-            _dq = _dq.filter(closed_at__date__lte=_oto)
+            _dq = _dq.filter(created_at__date__lte=_oto)
         for _dl in _dq.prefetch_related("items", "items__product"):
             for _it in _dl.items.all():
                 _cu = _it.cost if (_it.cost or 0) > 0 else (getattr(_it.product, "cost", 0) or 0)
