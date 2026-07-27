@@ -67,7 +67,7 @@ class ContactViewSet(viewsets.ModelViewSet):
         _nm = (" ".join(filter(None, [c.first_name or "", c.last_name or ""])).strip() or (c.nickname or "")).strip()
         # операції: привʼязані до контакту АБО (легасі) де контрагент точно = імʼя клієнта
         _byname = None
-        _match = _Qc(contact=c)
+        _match = _Qc(contact=c) | _Qc(deal__contact=c)
         if _nm:
             _byname = _Qc(counterparty__iexact=_nm) | _Qc(counterparty__istartswith=_nm + "/") | _Qc(counterparty__istartswith=_nm + " ") | _Qc(counterparty__istartswith=_nm + ".")
             _match = _match | _byname  # всі платежі цьому контрагенту, навіть привʼязані до обʼєкта (обʼєкт видно окремим стовпцем)

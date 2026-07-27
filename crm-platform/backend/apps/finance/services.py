@@ -50,7 +50,8 @@ def record_income(amount, *, deal=None, account=None, payment=None, category="П
     return Transaction.objects.create(
         direction="in", amount=amount, amount_uah=amount, account=account or default_account(),
         category=cat, deal=deal, payment=payment, op_time=_tz.localtime().time(),
-        channel=ch[:24], counterparty=counterparty, fin_direction=fdir)
+        channel=ch[:24], counterparty=counterparty, fin_direction=fdir,
+        contact=(getattr(deal, "contact", None) if deal is not None else None))
 
 
 def record_expense(amount, *, deal=None, account=None, category="Собівартість"):
@@ -63,7 +64,8 @@ def record_expense(amount, *, deal=None, account=None, category="Собівар�
     return Transaction.objects.create(
         direction="out", amount=amount, amount_uah=amount, account=account or default_account(),
         category=_category(category, "out"), deal=deal, counterparty=counterparty,
-        op_time=_tz.localtime().time())
+        op_time=_tz.localtime().time(),
+        contact=(getattr(deal, "contact", None) if deal is not None else None))
 
 
 # ── Финмодель: P&L (ATM) + точка безубыточности ──────────────────────────
