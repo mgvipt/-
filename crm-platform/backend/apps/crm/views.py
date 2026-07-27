@@ -87,20 +87,12 @@ class ContactViewSet(viewsets.ModelViewSet):
             qs = qs.filter(date__lte=_oto)
         inc = qs.filter(direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0
         exp = qs.filter(direction="out").aggregate(s=_Sum("amount_uah"))["s"] or 0
-        # аванс = ВІЛЬНІ гроші клієнта = скільки він заплатив МІНУС сума його угод (won) − вже використані аванси.
-        # Тобто клієнт оплатив і сделки, і матеріали; аванс показує, скільки грошей ще не «перекрито» угодами.
-        from apps.crm.models import Deal as _Deal_adv
+        # аванс = ВІЛЬНІ гроші клієнта = Дохід − Розхід − вже списано з авансу на оплати сделок.
+        # ⚠️ ТА САМА формула, що й перевірка при «Прийняти оплату → З авансу клієнта» (accept_payment, _avail),
+        # щоб плитка «Аванс» і перевірка ЗАВЖДИ збігались і аванс НЕ йшов у мінус через неоплачені won-угоди.
         from decimal import Decimal as _Dadv
         _adv_used = Payment.objects.filter(deal__contact=c, provider="advance", is_paid=True).aggregate(s=_Sum("amount"))["s"] or 0
-        _deals_sum = _Deal_adv.objects.filter(contact=c, stage__is_won=True).aggregate(s=_Sum("amount"))["s"] or 0
-        # Аванс = вільні гроші клієнта = Дохід − сделки − що клієнт має за транзит-матеріали.
-        #   Транзит-чекбокс у Витраті створює ДЕБІТОРКУ клієнта (заряд з націнкою) + кредиторку магазину.
-        #   Вычитаем: (а) дебіторки клієнта (заряд) + (б) кредиторки-матеріали БЕЗ парної дебіторки (стара запись).
-        _cli_q = _Qc(contact=c) | (_byname if _byname is not None else _Qc(pk__in=[]))
-        _recv_mat = _PP.objects.filter(kind="receivable", is_internal=False, is_loan=False).filter(_cli_q).aggregate(s=_Sum("amount"))["s"] or 0
-        _paired = set(_PP.objects.filter(kind="receivable", source_planned__isnull=False).values_list("source_planned_id", flat=True))
-        _cred_mat = _PP.objects.filter(kind="payable", is_internal=False).filter(_cli_q).exclude(id__in=_paired).aggregate(s=_Sum("amount"))["s"] or 0
-        adv = _Dadv(str(inc or 0)) - _Dadv(str(_deals_sum or 0)) - _Dadv(str(_recv_mat or 0)) - _Dadv(str(_cred_mat or 0)) - _Dadv(str(_adv_used or 0))
+        adv = _Dadv(str(inc or 0)) - _Dadv(str(exp or 0)) - _Dadv(str(_adv_used or 0))
         _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[])))
         from django.db.models import F as _F
         debt = _ppq.filter(kind="payable").aggregate(s=_Sum(_F("amount") - _F("paid_amount")))["s"] or 0
