@@ -153,7 +153,7 @@ class StockDocumentSerializer(serializers.ModelSerializer):
         model = StockDocument
         fields = ["id", "kind", "kind_display", "number", "warehouse", "comment",
                   "deal", "deal_title", "total", "created_at", "items", "posted", "close_stage",
-                  "supplier", "supplier_name", "supplier_invoice", "doc_date"]
+                  "supplier", "supplier_name", "supplier_invoice", "source_invoice_doc", "doc_date"]
         read_only_fields = ["created_at"]
 
     def validate(self, attrs):

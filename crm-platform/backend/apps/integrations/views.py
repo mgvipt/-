@@ -519,6 +519,7 @@ def _confirm_supplier(d, request):
     doc = StockDocument.objects.create(
         kind="in", warehouse=wh, number=("Постач. %s" % (inv or ""))[:40], supplier=contact,
         supplier_invoice=(inv or "")[:80], doc_date=(dd or _tz.localdate()),
+        source_invoice_doc=d.id,
         author=(request.user if request.user.is_authenticated else None),
         comment=("Прихід від %s, накладна %s" % ((sup.get("name") or "постачальник"), inv or "?"))[:255])
     total = 0.0

@@ -226,6 +226,8 @@ class StockDocument(models.Model):
     supplier = models.ForeignKey("crm.Contact", null=True, blank=True, on_delete=models.SET_NULL,
                                  related_name="supplied_documents", help_text="Постачальник (контрагент)")
     supplier_invoice = models.CharField("№ накладної постачальника", max_length=80, blank=True, default="")
+    source_invoice_doc = models.IntegerField("ID вхідної накладної-джерела", null=True, blank=True,
+                                             help_text="IncomingDoc, з якого створено прихід — щоб відкрити оригінал накладної")
     doc_date = models.DateField("Дата документа", null=True, blank=True)
 
     class Meta:
