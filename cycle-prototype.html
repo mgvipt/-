@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#9b3f63" />
+<title>Цикл вдвоём — прототип</title>
+<style>
+  :root {
+    /* neutrals — warm, rose-biased, not pure grey */
+    --bg: #f6f0ef;
+    --surface: #ffffff;
+    --surface-2: #faf5f4;
+    --ink: #2a1f26;
+    --ink-soft: #6d5c65;
+    --line: #ecdfdf;
+    /* brand + phase palette */
+    --brand: #9b3f63;
+    --brand-soft: #f3e3ea;
+    --p-menstrual: #b03a5b;
+    --p-follicular: #5b9e7a;
+    --p-ovulation: #e0915a;
+    --p-luteal: #8b7bb0;
+    --good: #4f9d75;
+    --warn: #cf8b3e;
+    --radius: 20px;
+    --shadow: 0 18px 50px -20px rgba(58,25,40,.35);
+    --serif: ui-serif, Georgia, "Times New Roman", serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171215;
+      --surface: #221a20;
+      --surface-2: #1c151b;
+      --ink: #f4eaee;
+      --ink-soft: #b49dab;
+      --line: #382a34;
+      --brand: #d98cae;
+      --brand-soft: #33222c;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f0ef; --surface: #fff; --surface-2: #faf5f4; --ink: #2a1f26;
+    --ink-soft: #6d5c65; --line: #ecdfdf; --brand: #9b3f63; --brand-soft: #f3e3ea;
+  }
+  :root[data-theme="dark"] {
+    --bg: #171215; --surface: #221a20; --surface-2: #1c151b; --ink: #f4eaee;
+    --ink-soft: #b49dab; --line: #382a34; --brand: #d98cae; --brand-soft: #33222c;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1100px; margin: 0 auto; padding: 32px 20px 64px;
+  }
+  header.top { text-align: center; margin-bottom: 28px; }
+  .kicker {
+    font-family: var(--sans); font-size: 12px; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--brand); font-weight: 600;
+  }
+  header.top h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(28px, 5vw, 42px);
+    margin: 8px 0 6px; letter-spacing: -.01em; text-wrap: balance;
+  }
+  header.top p { color: var(--ink-soft); margin: 0; max-width: 52ch; margin-inline: auto; }
+
+  /* surface switcher */
+  .switch {
+    display: inline-flex; gap: 4px; background: var(--surface); border: 1px solid var(--line);
+    padding: 5px; border-radius: 999px; margin: 22px auto 0; box-shadow: var(--shadow);
+  }
+  .switch button {
+    border: 0; background: transparent; color: var(--ink-soft); cursor: pointer;
+    font-family: var(--sans); font-size: 14px; font-weight: 600; padding: 9px 18px;
+    border-radius: 999px; transition: .2s;
+  }
+  .switch button[aria-selected="true"] { background: var(--brand); color: #fff; }
+
+  .stage { margin-top: 34px; }
+  .surface-view { display: none; }
+  .surface-view.active { display: block; }
+
+  /* ---------- phone ---------- */
+  .phones { display: flex; gap: 30px; justify-content: center; flex-wrap: wrap; align-items: flex-start; }
+  .phone {
+    width: 340px; max-width: 100%; background: var(--surface); border-radius: 40px;
+    border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden;
+    display: flex; flex-direction: column; position: relative;
+  }
+  .phone .notch {
+    height: 30px; display: flex; align-items: center; justify-content: center;
+  }
+  .phone .notch::after {
+    content: ""; width: 110px; height: 7px; border-radius: 999px; background: var(--line);
+  }
+  .screen { padding: 6px 20px 0; min-height: 560px; }
+  .screen-head { display: flex; align-items: baseline; justify-content: space-between; margin: 4px 0 14px; }
+  .screen-head .date { font-size: 12px; color: var(--ink-soft); }
+  .screen-head h2 { font-family: var(--serif); font-size: 22px; margin: 0; font-weight: 600; }
+
+  /* cycle ring */
+  .ring-wrap { display: flex; justify-content: center; margin: 8px 0 18px; }
+  .ring { position: relative; width: 210px; height: 210px; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring .center {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+  }
+  .ring .center .day { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft); }
+  .ring .center .phase-name { font-family: var(--serif); font-size: 24px; font-weight: 600; margin: 2px 0; }
+  .ring .center .phase-emoji { font-size: 26px; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
+    padding: 5px 11px; border-radius: 999px; background: var(--brand-soft); color: var(--brand);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+  .card {
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 14px 16px; margin-bottom: 12px;
+  }
+  .card h3 { margin: 0 0 5px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .card p { margin: 0; font-size: 13.5px; color: var(--ink-soft); }
+  .card .lead { color: var(--ink); }
+
+  .mood-row { display: flex; gap: 8px; margin: 4px 0 14px; }
+  .mood {
+    flex: 1; text-align: center; padding: 10px 0; border-radius: 14px; border: 1px solid var(--line);
+    background: var(--surface); cursor: pointer; font-size: 20px; transition: .15s;
+  }
+  .mood:hover { border-color: var(--brand); transform: translateY(-2px); }
+
+  .btn {
+    display: block; width: 100%; text-align: center; border: 0; cursor: pointer;
+    background: var(--brand); color: #fff; font-family: var(--sans); font-weight: 600;
+    font-size: 14px; padding: 13px; border-radius: 14px; margin-top: 4px;
+  }
+  .btn.ghost { background: transparent; color: var(--brand); border: 1px solid var(--line); }
+
+  /* bottom nav */
+  .tabbar {
+    display: flex; border-top: 1px solid var(--line); background: var(--surface);
+    padding: 8px 6px 14px; margin-top: 10px;
+  }
+  .tab {
+    flex: 1; background: transparent; border: 0; cursor: pointer; color: var(--ink-soft);
+    font-family: var(--sans); font-size: 10.5px; font-weight: 600; display: flex;
+    flex-direction: column; align-items: center; gap: 4px; padding: 4px 0; letter-spacing: .01em;
+  }
+  .tab svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+  .tab[aria-selected="true"] { color: var(--brand); }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* phase list */
+  .phase-item { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .phase-item:last-child { border-bottom: 0; }
+  .phase-emoji-box {
+    width: 44px; height: 44px; border-radius: 13px; display: flex; align-items: center;
+    justify-content: center; font-size: 22px; flex: none;
+  }
+  .phase-item h4 { margin: 0 0 2px; font-size: 14.5px; }
+  .phase-item .days { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; }
+  .phase-item p { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+
+  .caption { font-size: 11px; color: var(--ink-soft); text-align: center; margin: 14px 4px 4px; line-height: 1.45; }
+
+  .phone-label { text-align: center; font-size: 12px; color: var(--ink-soft); margin-top: 12px; font-weight: 600; letter-spacing: .04em; }
+
+  /* partner block */
+  .support-hero {
+    border-radius: var(--radius); padding: 18px; color: #fff; margin-bottom: 14px;
+    background: linear-gradient(135deg, #8b7bb0, #6d5c9a);
+  }
+  .support-hero .who { font-size: 12px; opacity: .85; }
+  .support-hero .big { font-family: var(--serif); font-size: 19px; margin: 6px 0 10px; line-height: 1.35; }
+  .support-hero .tag { font-size: 12px; background: rgba(255,255,255,.2); padding: 4px 10px; border-radius: 999px; }
+  .do-dont { display: flex; gap: 10px; }
+  .do-dont .col { flex: 1; }
+  .do-dont h5 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  .do-dont ul { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--ink-soft); }
+  .do-dont li { margin-bottom: 4px; }
+
+  /* ---------- B2B dashboard ---------- */
+  .dash {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 24px;
+    box-shadow: var(--shadow); max-width: 860px; margin: 0 auto; overflow: hidden;
+  }
+  .dash-head { padding: 22px 26px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+  .dash-head h2 { font-family: var(--serif); margin: 0; font-size: 22px; }
+  .dash-head .company { font-size: 12.5px; color: var(--ink-soft); }
+  .privacy-banner {
+    display: flex; gap: 10px; align-items: center; background: var(--brand-soft); color: var(--brand);
+    font-size: 12.5px; font-weight: 600; padding: 10px 26px;
+  }
+  .dash-body { padding: 22px 26px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .kpi { background: var(--surface-2); border: 1px solid var(--line); border-radius: 16px; padding: 15px; }
+  .kpi .n { font-family: var(--serif); font-size: 27px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .kpi .l { font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; }
+  .kpi .trend { font-size: 11px; font-weight: 600; margin-top: 6px; }
+  .kpi .up { color: var(--good); }
+
+  .dash-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; margin-top: 20px; }
+  @media (max-width: 720px) { .dash-grid { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(2,1fr);} }
+  .panel { background: var(--surface-2); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; }
+  .panel h3 { margin: 0 0 14px; font-size: 14px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; font-size: 12.5px; }
+  .bar-row .name { width: 130px; color: var(--ink-soft); flex: none; }
+  .bar-track { flex: 1; height: 9px; background: var(--line); border-radius: 999px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 999px; background: var(--brand); }
+  .bar-row .val { width: 34px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  .spark { display: flex; align-items: flex-end; gap: 6px; height: 90px; margin-top: 6px; }
+  .spark .b { flex: 1; background: linear-gradient(180deg, var(--brand), var(--brand-soft)); border-radius: 6px 6px 0 0; min-height: 6px; }
+
+  .locked {
+    margin-top: 18px; border: 1px dashed var(--line); border-radius: 16px; padding: 16px 18px;
+    display: flex; gap: 12px; align-items: center; color: var(--ink-soft); font-size: 12.5px;
+  }
+  .locked .lock { font-size: 20px; }
+
+  .foot { text-align: center; color: var(--ink-soft); font-size: 12px; margin-top: 34px; }
+  a.doclink { color: var(--brand); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="kicker">Интерактивный прототип · черновик</div>
+    <h1>Цикл вдвоём</h1>
+    <p>Приложение о женском цикле — для женщины, её партнёра и, отдельным слоем, для компаний. Кликайте по вкладкам внутри телефона и переключайте поверхности ниже.</p>
+    <div class="switch" role="tablist" aria-label="Поверхности">
+      <button role="tab" aria-selected="true" data-surface="app">Приложение</button>
+      <button role="tab" aria-selected="false" data-surface="biz">Панель для бизнеса</button>
+    </div>
+  </header>
+
+  <div class="stage">
+    <!-- ============ APP SURFACE ============ -->
+    <section class="surface-view active" id="surface-app">
+      <div class="phones">
+        <!-- Woman's phone -->
+        <div>
+          <div class="phone">
+            <div class="notch"></div>
+
+            <!-- TODAY -->
+            <div class="tab-panel active" data-panel="today">
+              <div class="screen">
+                <div class="screen-head">
+                  <div><div class="date">Понедельник, 27 июля</div><h2>Сегодня</h2></div>
+                  <span class="pill"><span class="dot" style="background:var(--p-ovulation)"></span>День 14</span>
+                </div>
+                <div class="ring-wrap">
+                  <div class="ring">
+                    <svg width="210" height="210" viewBox="0 0 210 210">
+                      <circle cx="105" cy="105" r="92" fill="none" stroke="var(--line)" stroke-width="15"/>
+                      <!-- 4 phase arcs on a 28-day circumference -->
+                      <circle cx="105" cy="105" r="92" fill="none" stroke="var(--p-menstrual)" stroke-width="15" stroke-dasharray="103 475" stroke-dashoffset="0" stroke-linecap="round"/>
+                      <circle cx="105" cy="105" r="92" fill="none" stroke="var(--p-follicular)" stroke-width="15" stroke-dasharray="165 413" stroke-dashoffset="-107" stroke-linecap="round"/>
+                      <circle cx="105" cy="105" r="92" fill="none" stroke="var(--p-ovulation)" stroke-width="15" stroke-dasharray="41 537" stroke-dashoffset="-276" stroke-linecap="round"/>
+                      <circle cx="105" cy="105" r="92" fill="none" stroke="var(--p-luteal)" stroke-width="15" stroke-dasharray="252 326" stroke-dashoffset="-321" stroke-linecap="round"/>
+                    </svg>
+                    <div class="center">
+                      <div class="phase-emoji">☀️</div>
+                      <div class="phase-name">Овуляция</div>
+                      <div class="day">пик энергии</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="card">
+                  <h3>💛 Как ты можешь себя чувствовать</h3>
+                  <p class="lead">Обычно это пик энергии, уверенности и влечения. Хорошее время для важного и для близости — если она в планах.</p>
+                </div>
+                <div class="card">
+                  <h3>🔒 Фертильное окно</h3>
+                  <p>Самые фертильные дни. Если беременность не в планах — контрацепция. Не медицинская рекомендация.</p>
+                </div>
+                <p style="font-size:12.5px;color:var(--ink-soft);margin:6px 2px 8px;font-weight:600;">Как ты себя чувствуешь?</p>
+                <div class="mood-row">
+                  <button class="mood" title="Отлично">😄</button>
+                  <button class="mood" title="Спокойно">🙂</button>
+                  <button class="mood" title="Устала">😔</button>
+                  <button class="mood" title="Раздражена">😤</button>
+                  <button class="mood" title="Боль">🤕</button>
+                </div>
+                <button class="btn">Поделиться самочувствием с партнёром</button>
+                <p class="caption">Ты сама решаешь, что видит партнёр. Данные приватны и не передаются рекламодателям.</p>
+              </div>
+            </div>
+
+            <!-- PHASES -->
+            <div class="tab-panel" data-panel="phases">
+              <div class="screen">
+                <div class="screen-head"><div><div class="date">Твой цикл</div><h2>Фазы</h2></div></div>
+                <div class="phase-item">
+                  <div class="phase-emoji-box" style="background:#f6e0e6;color:var(--p-menstrual)">🌑</div>
+                  <div><h4>Менструальная</h4><span class="days">дни 1–5 · низкая энергия</span>
+                  <p>Отдых и тепло. Партнёру — забота, меньше нагрузки, эмпатия. Близость — по желанию, спросить.</p></div>
+                </div>
+                <div class="phase-item">
+                  <div class="phase-emoji-box" style="background:#dcefe4;color:var(--p-follicular)">🌱</div>
+                  <div><h4>Фолликулярная</h4><span class="days">дни 6–13 · энергия растёт</span>
+                  <p>Ясная голова, общительность. Партнёру — планы, свидания, поддержка идей. Влечение растёт.</p></div>
+                </div>
+                <div class="phase-item">
+                  <div class="phase-emoji-box" style="background:#f7e6d5;color:var(--p-ovulation)">☀️</div>
+                  <div><h4>Овуляция</h4><span class="days">≈день 14 · пик</span>
+                  <p>Пик энергии и либидо, фертильное окно. Партнёру — романтика, внимание, общая ответственность за контрацепцию.</p></div>
+                </div>
+                <div class="phase-item">
+                  <div class="phase-emoji-box" style="background:#e7e1f0;color:var(--p-luteal)">🌘</div>
+                  <div><h4>Лютеиновая</h4><span class="days">дни 15–28 · спад, возможен ПМС</span>
+                  <p>Чувствительность, тяга к еде. Партнёру — терпение, помощь по быту, меньше споров, больше принятия.</p></div>
+                </div>
+                <p class="caption">Ориентир для среднего цикла ~28 дней. Каждая женщина индивидуальна.</p>
+              </div>
+            </div>
+
+            <!-- PARTNER -->
+            <div class="tab-panel" data-panel="partner">
+              <div class="screen">
+                <div class="screen-head"><div><div class="date">Режим поддержки</div><h2>Для партнёра</h2></div></div>
+                <div class="support-hero">
+                  <div class="who">Аня сейчас в фазе</div>
+                  <div class="big">☀️ Овуляция — пик энергии и хорошего настроения</div>
+                  <span class="tag">Подсказка дня</span>
+                </div>
+                <div class="card">
+                  <h3>🎯 Главное сегодня</h3>
+                  <p class="lead">Отличный день для внимания и романтики — комплимент, совместные планы, инициатива. Энергии много у вас обоих.</p>
+                </div>
+                <div class="card">
+                  <div class="do-dont">
+                    <div class="col"><h5 style="color:var(--good)">Помогает</h5>
+                      <ul><li>Внимание и комплименты</li><li>Совместные активности</li><li>Инициировать близость мягко</li></ul></div>
+                    <div class="col"><h5 style="color:var(--warn)">Осторожно</h5>
+                      <ul><li>Не воспринимать как должное</li><li>Контрацепция — общая тема</li></ul></div>
+                  </div>
+                </div>
+                <button class="btn ghost">Открыть карточки «как себя вести»</button>
+                <p class="caption">Ты видишь только то, чем Аня решила поделиться.</p>
+              </div>
+            </div>
+
+            <!-- tabbar -->
+            <div class="tabbar" role="tablist" aria-label="Навигация">
+              <button class="tab" role="tab" aria-selected="true" data-tab="today">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Сегодня</button>
+              <button class="tab" role="tab" aria-selected="false" data-tab="phases">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18"/></svg>Фазы</button>
+              <button class="tab" role="tab" aria-selected="false" data-tab="partner">
+                <svg viewBox="0 0 24 24"><path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 11c0 5.5-7 10-7 10z"/></svg>Партнёр</button>
+            </div>
+          </div>
+          <div class="phone-label">Экран женщины · владелец данных</div>
+        </div>
+      </div>
+      <p class="caption" style="max-width:60ch;margin:22px auto 0;">Прототип демонстрирует логику и тон, а не финальный визуал. Правки по фазам, текстам и приватности вносим на этом этапе.</p>
+    </section>
+
+    <!-- ============ BUSINESS SURFACE ============ -->
+    <section class="surface-view" id="surface-biz">
+      <div class="dash">
+        <div class="dash-head">
+          <div><h2>Панель заботы о команде</h2><div class="company">ООО «Пример» · план: 120 мест</div></div>
+          <span class="pill"><span class="dot" style="background:var(--good)"></span>Обезличенные данные</span>
+        </div>
+        <div class="privacy-banner">
+          🔒 Компания видит только агрегированную статистику. Персональные циклы, симптомы и даты недоступны. Метрики показываются только для групп ≥ 5 человек.
+        </div>
+        <div class="dash-body">
+          <div class="kpis">
+            <div class="kpi"><div class="n">74</div><div class="l">Активировали из 120 мест</div><div class="trend up">↑ 12 за месяц</div></div>
+            <div class="kpi"><div class="n">62%</div><div class="l">Вовлечённость (WAU)</div><div class="trend up">↑ 5 п.п.</div></div>
+            <div class="kpi"><div class="n">4.8</div><div class="l">Оценка бенефита</div><div class="trend up">из 5</div></div>
+            <div class="kpi"><div class="n">1.9k</div><div class="l">Просмотров обучения</div><div class="trend up">↑ 320</div></div>
+          </div>
+          <div class="dash-grid">
+            <div class="panel">
+              <h3>Популярные обучающие темы</h3>
+              <div class="bar-row"><span class="name">Фазы и энергия</span><div class="bar-track"><div class="bar-fill" style="width:88%"></div></div><span class="val">88</span></div>
+              <div class="bar-row"><span class="name">Поддержка партнёра</span><div class="bar-track"><div class="bar-fill" style="width:71%"></div></div><span class="val">71</span></div>
+              <div class="bar-row"><span class="name">ПМС и самочувствие</span><div class="bar-track"><div class="bar-fill" style="width:64%"></div></div><span class="val">64</span></div>
+              <div class="bar-row"><span class="name">Сон и восстановление</span><div class="bar-track"><div class="bar-fill" style="width:49%"></div></div><span class="val">49</span></div>
+              <div class="bar-row"><span class="name">Питание по фазам</span><div class="bar-track"><div class="bar-fill" style="width:37%"></div></div><span class="val">37</span></div>
+            </div>
+            <div class="panel">
+              <h3>Активации по неделям</h3>
+              <div class="spark">
+                <div class="b" style="height:32%"></div><div class="b" style="height:45%"></div>
+                <div class="b" style="height:41%"></div><div class="b" style="height:58%"></div>
+                <div class="b" style="height:66%"></div><div class="b" style="height:72%"></div>
+                <div class="b" style="height:80%"></div><div class="b" style="height:92%"></div>
+              </div>
+              <div class="locked">
+                <span class="lock">🔒</span>
+                <span>Разбивка по отделам скрыта: группа «Финансы» меньше 5 человек — данные не показываем, чтобы никого нельзя было вычислить.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="caption" style="max-width:60ch;margin:22px auto 0;">Так работодатель получает пользу от бенефита, не нарушая приватность сотрудниц — юридически безопасная модель.</p>
+    </section>
+  </div>
+
+  <p class="foot">Прототип для обсуждения · «Цикл вдвоём» · подробности — в концепт-документе</p>
+</div>
+
+<script>
+  // surface switch
+  const surfaceBtns = document.querySelectorAll('.switch button');
+  surfaceBtns.forEach(b => b.addEventListener('click', () => {
+    surfaceBtns.forEach(x => x.setAttribute('aria-selected', 'false'));
+    b.setAttribute('aria-selected', 'true');
+    document.querySelectorAll('.surface-view').forEach(s => s.classList.remove('active'));
+    document.getElementById('surface-' + b.dataset.surface).classList.add('active');
+  }));
+
+  // bottom tabs
+  const tabs = document.querySelectorAll('.tab');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.setAttribute('aria-selected', 'false'));
+    t.setAttribute('aria-selected', 'true');
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector('.tab-panel[data-panel="' + t.dataset.tab + '"]').classList.add('active');
+  }));
+
+  // mood select feedback
+  document.querySelectorAll('.mood').forEach(m => m.addEventListener('click', () => {
+    document.querySelectorAll('.mood').forEach(x => x.style.borderColor = 'var(--line)');
+    m.style.borderColor = 'var(--brand)';
+  }));
+</script>
+</body>
+</html>
