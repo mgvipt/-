@@ -87,12 +87,14 @@ class ContactViewSet(viewsets.ModelViewSet):
             qs = qs.filter(date__lte=_oto)
         inc = qs.filter(direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0
         exp = qs.filter(direction="out").aggregate(s=_Sum("amount_uah"))["s"] or 0
-        # аванс = ВІЛЬНІ гроші клієнта = Дохід − Розхід − вже списано з авансу на оплати сделок.
-        # ⚠️ ТА САМА формула, що й перевірка при «Прийняти оплату → З авансу клієнта» (accept_payment, _avail),
-        # щоб плитка «Аванс» і перевірка ЗАВЖДИ збігались і аванс НЕ йшов у мінус через неоплачені won-угоди.
+        # ВІЛЬНИЙ аванс = Дохід − Розхід − ВСІ оплати сделок клієнта (будь-який спосіб).
+        # ⚠️ ТА САМА формула, що й перевірка при «Прийняти оплату → З авансу клієнта» (accept_payment, _avail).
+        # Логіка: звичайна оплата (готівка/LiqPay/термінал) створює І дохід, І платіж → у авансі вони гасяться
+        #   взаємно (нетто 0). Оплата «з авансу» доходу НЕ створює, лише платіж → зменшує вільний аванс.
+        #   Тому віднімаємо ВСІ оплачені платежі — інакше оплачені налом сделки роздувають «аванс».
         from decimal import Decimal as _Dadv
-        _adv_used = Payment.objects.filter(deal__contact=c, provider="advance", is_paid=True).aggregate(s=_Sum("amount"))["s"] or 0
-        adv = _Dadv(str(inc or 0)) - _Dadv(str(exp or 0)) - _Dadv(str(_adv_used or 0))
+        _pay_all = Payment.objects.filter(deal__contact=c, is_paid=True).aggregate(s=_Sum("amount"))["s"] or 0
+        adv = _Dadv(str(inc or 0)) - _Dadv(str(exp or 0)) - _Dadv(str(_pay_all or 0))
         _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[])))
         from django.db.models import F as _F
         debt = _ppq.filter(kind="payable").aggregate(s=_Sum(_F("amount") - _F("paid_amount")))["s"] or 0
@@ -1239,7 +1241,9 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 _m = _m | _AdvQ(counterparty__iexact=_nm) | _AdvQ(counterparty__istartswith=_nm + "/") | _AdvQ(counterparty__istartswith=_nm + " ") | _AdvQ(counterparty__istartswith=_nm + ".")
             _inc = _AdvTx.objects.filter(_m, direction="in").aggregate(s=_AdvS("amount_uah"))["s"] or 0
             _exp = _AdvTx.objects.filter(_m, direction="out").aggregate(s=_AdvS("amount_uah"))["s"] or 0
-            _used = Payment.objects.filter(deal__contact=_cc, provider="advance", is_paid=True).aggregate(s=_AdvS("amount"))["s"] or 0
+            # ВСІ оплачені платежі сделок клієнта (не тільки advance): нал/LiqPay створюють дохід+платіж
+            # (нетто 0 у авансі), advance — лише платіж (−аванс). Так «доступний аванс» = реально вільні гроші.
+            _used = Payment.objects.filter(deal__contact=_cc, is_paid=True).aggregate(s=_AdvS("amount"))["s"] or 0
             _avail = Decimal(str(_inc)) - Decimal(str(_exp)) - Decimal(str(_used))
             if amount > _avail + Decimal("0.01"):
                 return Response({"detail": "Недостатньо авансу клієнта. Доступно: %.2f грн." % float(_avail)}, status=status.HTTP_400_BAD_REQUEST)
