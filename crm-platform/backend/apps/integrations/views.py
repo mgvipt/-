@@ -667,6 +667,14 @@ class IncomingDocUploadView(APIView):
             act = parse_korzh(raw)
         except Exception as e:  # noqa
             return Response({"detail": "Не вдалося розібрати файл: %s" % e}, status=400)
+        if not act.get("lines"):   # парсер Корженевського не зміг → універсальний фолбек (Ковчег/КОРСИКА тощо)
+            try:
+                from .supplier_act import parse_generic_invoice
+                _ag = parse_generic_invoice(raw, name)
+                if _ag.get("lines"):
+                    act = _ag
+            except Exception:
+                pass
         inv = act.get("invoice_number")
         _sup = act.get("supplier") or {}
         _is_np = ("нова пошта" in (str(_sup.get("name") or "")).lower()) or (str(_sup.get("ipn") or "") == "31316718")

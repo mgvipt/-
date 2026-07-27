@@ -178,7 +178,7 @@ def create_kreditorka_from_act(act, user=None):
     amount = act.get("amount")
     if not inv or not amount:
         return {"error": "no_invoice_or_amount"}
-    existing = PlannedPayment.objects.filter(kind="payable", comment__icontains=inv).first()
+    existing = PlannedPayment.objects.filter(kind="payable", comment__icontains=inv).exclude(status__in=["canceled", "rejected"]).first()
     if existing:
         return {"already": True, "payable_id": existing.id, "invoice_number": inv}
     fund = FinModelArticle.objects.filter(name="Логістика / доставка", active=True).first()

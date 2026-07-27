@@ -138,3 +138,87 @@ if __name__ == "__main__":
     import json
     data = open(sys.argv[1], "rb").read()
     print(json.dumps(parse_korzh(data), ensure_ascii=False, indent=1))
+
+
+def parse_generic_invoice(raw, name=""):
+    """Універсальний парсер рахунку-фактури постачальника (.xls/.xlsx) — коли специфічний
+    парсер конкретного постачальника не спрацював. Шукає рядок-заголовок таблиці
+    (Товар/Кількість/Ціна/Сума), знімає позиції до підсумку. Виправляє cp1251 у старих .xls."""
+    import io as _io, re as _re
+    rows = []
+    low = (name or "").lower()
+    try:
+        if low.endswith(".xlsx"):
+            import openpyxl
+            wb = openpyxl.load_workbook(_io.BytesIO(raw), data_only=True)
+            ws = wb[wb.sheetnames[0]]
+            for r in ws.iter_rows(values_only=True):
+                rows.append(list(r))
+        else:
+            import xlrd
+            wb = xlrd.open_workbook(file_contents=raw, encoding_override="cp1251")
+            sh = wb.sheet_by_index(0)
+            for ri in range(sh.nrows):
+                rows.append([sh.cell_value(ri, ci) for ci in range(sh.ncols)])
+    except Exception:
+        return {"lines": [], "invoice_number": None, "invoice_date": None, "total": None, "supplier": {}}
+
+    def _s(x):
+        return str(x).strip() if x is not None else ""
+
+    def _num(x):
+        t = _s(x).replace("\xa0", "").replace(" ", "").replace(",", ".")
+        t = _re.sub(r"[^0-9.\-]", "", t)
+        try:
+            return float(t) if t not in ("", "-", ".") else None
+        except Exception:
+            return None
+
+    hdr = None
+    col = {}
+    for i, r in enumerate(rows):
+        j = " ".join(_s(c).lower() for c in r)
+        if ("товар" in j or "наймен" in j or "номенклат" in j) and ("кільк" in j or "к-сть" in j or "колич" in j) and ("сума" in j or "сумма" in j):
+            for ci, c in enumerate(r):
+                t = _s(c).lower()
+                if ("товар" in t or "наймен" in t or "номенклат" in t) and "name" not in col:
+                    col["name"] = ci
+                elif ("кільк" in t or "к-сть" in t or "колич" in t):
+                    col["qty"] = ci
+                elif ("ціна" in t or "цена" in t) and "price" not in col:
+                    col["price"] = ci
+                elif ("сума" in t or "сумма" in t) and "sum" not in col:
+                    col["sum"] = ci
+            hdr = i
+            break
+    if hdr is None or "name" not in col:
+        return {"lines": [], "invoice_number": None, "invoice_date": None, "total": None, "supplier": {}}
+
+    lines = []
+    total = None
+    for r in rows[hdr + 1:]:
+        nm = _s(r[col["name"]]) if col["name"] < len(r) else ""
+        j = " ".join(_s(c).lower() for c in r)
+        if any(k in j for k in ("разом", "всього", "итого", "загалом")):
+            for c in r:
+                v = _num(c)
+                if v and (total is None or v > total):
+                    total = v
+            continue
+        if not nm:
+            continue
+        qty = _num(r[col["qty"]]) if col.get("qty") is not None and col["qty"] < len(r) else None
+        price = _num(r[col["price"]]) if col.get("price") is not None and col["price"] < len(r) else None
+        ssum = _num(r[col["sum"]]) if col.get("sum") is not None and col["sum"] < len(r) else None
+        if qty is None and ssum is None:
+            continue
+        lines.append({"their_name": nm[:200], "qty": qty or 0, "price": price or 0, "sum": ssum})
+
+    alltext = "\n".join(" ".join(_s(c) for c in r) for r in rows)
+    mi = _re.search(r"[Рр]ахунок[-\s]*фактура\s*[№N]?\s*([^\s,;]+)", alltext)
+    inv = mi.group(1).strip() if mi else None
+    md = _re.search(r"\d{2}\.\d{2}\.\d{4}", alltext)
+    dt = md.group(0) if md else None
+    if total is None and lines:
+        total = round(sum((l["sum"] or 0) for l in lines), 2)
+    return {"lines": lines, "invoice_number": inv, "invoice_date": dt, "total": total, "supplier": {}}

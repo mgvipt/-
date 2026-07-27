@@ -189,12 +189,17 @@ def poll(limit=60, backfill=False, log=lambda m: None):
                 created += 1
                 np_created += 1
             elif atts:
-                from .supplier_act import parse_korzh
+                from .supplier_act import parse_korzh, parse_generic_invoice
                 xls = next((pp for nn, pp in atts if nn.lower().endswith((".xls", ".xlsx"))), None)
+                _xn = next((nn for nn, pp in atts if pp is xls), "") if xls else ""
                 sp = {"files": [n for n, _ in atts], "email_date": date_hdr, "email_text": body}
                 if xls:
                     try:
                         sa = parse_korzh(xls)
+                        if not sa.get("lines"):   # парсер конкретного постачальника не зміг → універсальний фолбек
+                            _sg = parse_generic_invoice(xls, _xn)
+                            if _sg.get("lines"):
+                                sa = _sg
                         if sa.get("invoice_number") and IncomingDoc.objects.filter(doc_type="supplier", parsed__invoice_number=sa["invoice_number"]).exists():
                             continue
                         sp.update({"invoice_number": sa.get("invoice_number"), "invoice_date": sa.get("invoice_date"),
