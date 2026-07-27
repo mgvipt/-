@@ -1,5 +1,5 @@
-/* Service worker — офлайн-кэш оболочки приложения. */
-var CACHE = "cycle-vdvoem-v1";
+/* Service worker — network-first, чтобы обновления всегда доходили; кэш как офлайн-резерв. */
+var CACHE = "cycle-vdvoem-v2";
 var ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", function (e) {
@@ -13,12 +13,16 @@ self.addEventListener("activate", function (e) {
 self.addEventListener("fetch", function (e) {
   if (e.request.method !== "GET") return;
   e.respondWith(
-    caches.match(e.request).then(function (hit) {
-      return hit || fetch(e.request).then(function (res) {
-        var copy = res.clone();
-        caches.open(CACHE).then(function (c) { c.put(e.request, copy); }).catch(function () {});
-        return res;
-      }).catch(function () { return caches.match("./index.html"); });
+    fetch(e.request).then(function (res) {
+      var copy = res.clone();
+      caches.open(CACHE).then(function (c) { c.put(e.request, copy); }).catch(function () {});
+      return res;
+    }).catch(function () {
+      return caches.match(e.request).then(function (hit) {
+        if (hit) return hit;
+        if (e.request.mode === "navigate") return caches.match("./index.html");
+        return Response.error();
+      });
     })
   );
 });
