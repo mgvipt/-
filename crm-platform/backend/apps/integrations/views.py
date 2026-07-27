@@ -668,6 +668,25 @@ class IncomingDocUploadView(APIView):
         except Exception as e:  # noqa
             return Response({"detail": "Не вдалося розібрати файл: %s" % e}, status=400)
         inv = act.get("invoice_number")
+        _sup = act.get("supplier") or {}
+        _is_np = ("нова пошта" in (str(_sup.get("name") or "")).lower()) or (str(_sup.get("ipn") or "") == "31316718")
+        if _is_np:
+            # Нова Пошта — служба доставки, НЕ постачальник товарів. Кладемо у НП-розділ (без приходу/товарів).
+            import re as _rnpu, base64 as _b64u, hashlib as _hu
+            _m = _rnpu.search(r"НП[-\s]?\d{6,}", name or "")
+            _md = _rnpu.search(r"\d{2}\.\d{2}\.\d{4}", name or "")
+            _uid = "UP-" + _hu.md5(raw).hexdigest()[:16]
+            d = IncomingDoc.objects.create(
+                mailbox="manual", message_uid=_uid,
+                sender=(request.data.get("sender") or "").strip() or ("Ручне завантаження · %s" % name)[:200],
+                subject=("Рахунок НП %s" % (inv or name))[:300],
+                doc_type="np_act", status="draft",
+                parsed={"invoice_number": (inv or (_m.group(0).replace(" ", "") if _m else None)),
+                        "invoice_date": (act.get("invoice_date") or (_md.group(0) if _md else None)),
+                        "supplier": _sup, "amount": act.get("total"),
+                        "files": [name], "manual": True, "np_no_spec": True},
+                attachments_b64=[{"name": name, "b64": _b64u.b64encode(raw).decode()}])
+            return Response({"ok": True, "id": d.id, "np": True, "invoice_number": d.parsed.get("invoice_number")})
         # дедуп: якщо накладна з цим номером вже є (чернетка/проведена) — не плодимо
         if inv:
             ex = IncomingDoc.objects.filter(doc_type="supplier", parsed__invoice_number=inv).first()
