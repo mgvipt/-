@@ -2295,7 +2295,7 @@ function LinkPaymentModal({ row, onClose, onDone }: { row: any; onClose: () => v
       alert(t("Платёж привязан ✓", "Платіж привʼязано ✓") + `\n` +
         t("зачтено", "зараховано") + `: ${money(Number(r.linked_amount))}` +
         (r.status === "paid" ? "\n" + t("долг закрыт полностью", "борг закрито повністю")
-          : "\n" + t("остаток", "залишок") + `: ${money(Number(r.remaining))}`));
+          : "\n" + t("остаток", "залишок") + `: ${money2(Number(r.remaining))}`));
       onDone();
     } catch (e: any) { alert(e?.response?.data?.detail || t("Ошибка", "Помилка")); } finally { setBusy(false); }
   };
@@ -2410,9 +2410,9 @@ function Debts() {
           <div key={r.id} onClick={() => setCard(r)} style={{ borderTop: "1px solid #f1f5f9", padding: "11px 2px", cursor: "pointer" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
               <span onClick={(e) => e.stopPropagation()} style={{ fontWeight: 600, fontSize: 14 }}><CpText name={r.counterparty} contact={(r as any).contact} cpMap={cpMap} nav={nav} /></span>
-              <span style={{ fontWeight: 800, color, fontSize: 15, whiteSpace: "nowrap" }}>{money(Number(r.amount))}</span>
+              <span style={{ fontWeight: 800, color, fontSize: 15, whiteSpace: "nowrap" }}>{money2(Number(r.amount))}</span>
             </div>
-            <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{r.due_date}{r.category_name ? " · " + r.category_name : ""}{Number(r.paid_amount) > 0 ? " · " + t("залишок", "залишок") + " " + money(Number(r.remaining)) : ""}</div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{r.due_date}{r.category_name ? " · " + r.category_name : ""}{Number(r.paid_amount) > 0 ? " · " + t("залишок", "залишок") + " " + money2(Number(r.remaining)) : ""}</div>
             {st === "paid" && r.paid_date && <div style={{ fontSize: 11.5, color: "#16a34a", marginTop: 2 }}>✓ {r.paid_date}{r.paid_account_name ? ` · ${r.paid_account_name}` : ""}</div>}
             {r.source_doc_id && <div onClick={(e) => { e.stopPropagation(); openDoc(r.source_doc_id); }} style={{ fontSize: 12.5, color: "#2563eb", marginTop: 3 }}><Icon n="📄" size={13} /> {t("Открыть накладную", "Відкрити накладну")}</div>}
             {st === "planned" && <div style={{ display: "flex", gap: 6, marginTop: 9 }} onClick={(e) => e.stopPropagation()}>
@@ -2443,7 +2443,7 @@ function Debts() {
           <tbody>{list.map((r) => (
             <tr key={r.id} onClick={() => setCard(r)} style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer" }} title={t("Открыть карточку", "Відкрити картку")}>
               <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>{r.due_date}</td>
-              <td style={{ padding: "6px 4px", fontWeight: 700, color, whiteSpace: "nowrap" }}>{money(Number(r.amount))}{Number(r.paid_amount) > 0 && <div style={{ fontWeight: 400, fontSize: 11, color: "#64748b" }}>{t("залишок", "залишок")} {money(Number(r.remaining))}</div>}{st === "paid" && r.paid_date && <div style={{ fontWeight: 400, fontSize: 11, color: "#16a34a" }}>✓ {r.paid_date}{r.paid_account_name ? ` · ${r.paid_account_name}` : ""}</div>}</td>
+              <td style={{ padding: "6px 4px", fontWeight: 700, color, whiteSpace: "nowrap" }}>{money2(Number(r.amount))}{Number(r.paid_amount) > 0 && <div style={{ fontWeight: 400, fontSize: 11, color: "#64748b" }}>{t("залишок", "залишок")} {money2(Number(r.remaining))}</div>}{st === "paid" && r.paid_date && <div style={{ fontWeight: 400, fontSize: 11, color: "#16a34a" }}>✓ {r.paid_date}{r.paid_account_name ? ` · ${r.paid_account_name}` : ""}</div>}</td>
               <td style={{ padding: "6px 4px" }} onClick={(e) => e.stopPropagation()}><CpText name={r.counterparty} contact={(r as any).contact} cpMap={cpMap} nav={nav} /></td>
               <td style={{ padding: "6px 4px" }}>{r.category_name || "—"}</td>
               <td style={{ padding: "6px 4px" }}>{r.fin_direction_name || "—"}</td>
@@ -2544,7 +2544,7 @@ function Debts() {
                       <td style={{ padding: "6px 4px" }}>{r.contact ? <a onClick={(e) => { e.stopPropagation(); nav("/clients/" + r.contact); }} style={{ color: "#0e7490", fontWeight: 600, cursor: "pointer", textDecoration: "none" }}>{r.contact_name}</a> : r.contact_name}</td>
                       <td style={{ padding: "6px 4px", color: "#94a3b8", textAlign: "center" }}>→</td>
                       <td style={{ padding: "6px 4px" }}>{r.counterparty_contact ? <a onClick={(e) => { e.stopPropagation(); nav("/clients/" + r.counterparty_contact); }} style={{ color: "#0e7490", fontWeight: 600, cursor: "pointer", textDecoration: "none" }}>{r.counterparty}</a> : r.counterparty}</td>
-                      <td style={{ padding: "6px 4px", fontWeight: 700, textAlign: "right", color: "#C67D5F", whiteSpace: "nowrap" }}>{money(Number(r.amount))}</td>
+                      <td style={{ padding: "6px 4px", fontWeight: 700, textAlign: "right", color: "#C67D5F", whiteSpace: "nowrap" }}>{money2(Number(r.amount))}</td>
                       <td style={{ padding: "6px 4px" }}>{r.category_name || "—"}</td>
                     </tr>
                   ))}</tbody>
