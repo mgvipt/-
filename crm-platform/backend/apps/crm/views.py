@@ -865,6 +865,46 @@ def _is_pay_stage(name):
     return any(k in low for k in _PAY_STAGE_KEYS)
 
 
+def _is_credit_stage(name):
+    """Стадія товарного кредиту (відвантаження в борг) у будь-якому написанні."""
+    return "кредит" in (name or "").lower()
+
+
+def _ensure_credit_debt(deal, actor="Автоматизація", days=14):
+    """Коли сделка входить у стадію товарного кредиту БУДЬ-ЯКИМ способом (перетягли в канбані/вручну),
+    авто-створити дебіторку (нам винні) на залишок суми, якщо її ще немає. Ідемпотентно —
+    дублює логіку @action credit_sale, щоб стадія завжди означала реальний борг клієнта."""
+    try:
+        from apps.finance.models import PlannedPayment as _PPc, Category as _FCatc
+        from datetime import date as _dc, timedelta as _tdc
+        from decimal import Decimal as _Dc
+        if _PPc.objects.filter(deal=deal, kind="receivable", status="planned").exists():
+            return None  # борг уже є — не дублюємо
+        _paid = sum((pp.amount for pp in deal.payments.filter(is_paid=True)), _Dc("0"))
+        _amount = (deal.amount or _Dc("0")) - _paid
+        if _amount <= 0:
+            return None
+        c = deal.contact
+        cp = ""
+        if c is not None:
+            cp = (" ".join(filter(None, [c.first_name, c.last_name])).strip() or (c.nickname or ""))[:160]
+        cat = _FCatc.objects.filter(name="САЛОН(Оффлайн)", direction="in").first()
+        pp = _PPc.objects.create(
+            kind="receivable", amount=_amount, due_date=_dc.today() + _tdc(days=days),
+            counterparty=cp, deal=deal, contact=c, category=cat, channel="Салон",
+            fin_direction=(cat.fin_direction if cat and cat.fin_direction_id else None),
+            comment="Товарний кредит зі сделки #%s (авто при вході в стадію)" % deal.id)
+        try:
+            from .models import log_activity
+            log_activity("deal", deal.id, "Товарний кредит (авто)",
+                         "Дебіторка %s грн створена при переході у стадію кредиту" % _amount, None, actor)
+        except Exception:
+            pass
+        return pp
+    except Exception:
+        return None
+
+
 def _advance_deal_stage(deal, target_order, reason, actor="Автоматизація", create_wh=True):
     """Рух сделки на стадію за order (тільки вперед). Лог + stage_changed_at."""
     if not deal.stage_id or not deal.funnel_id:
@@ -958,6 +998,12 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             if deal.stage_id and deal.stage_id != old_stage_id and _is_pay_stage(deal.stage.name):
                 from apps.warehouse.services import create_warehouse_job
                 create_warehouse_job(deal)
+        except Exception:
+            pass
+        # менеджер ВРУЧНУ (перетяг у канбані/картка) пересунув у стадію товарного кредиту → авто-дебіторка
+        try:
+            if deal.stage_id and deal.stage_id != old_stage_id and _is_credit_stage(deal.stage.name):
+                _ensure_credit_debt(deal, actor=(self.request.user.get_full_name() or self.request.user.username))
         except Exception:
             pass
     view_all_method = "can_see_all_deals"
