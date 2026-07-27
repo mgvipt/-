@@ -104,15 +104,28 @@ class ContactViewSet(viewsets.ModelViewSet):
         # внутрішній борг між підрозділами: якщо цей контакт — КРЕДИТОР (counterparty_contact), йому винні
         recv_internal = _PP.objects.filter(status="planned", is_internal=True, counterparty_contact=c, kind="payable").aggregate(s=_Sum("amount"))["s"] or 0
         recv_sale = (recv_sale or 0) + (recv_internal or 0)
-        # ── ПРИБУТОК ПО КЛІЄНТУ (загальний, без фільтра): виручка − собівартість складу − закупки/послуги ──
+        # ── ПРИБУТОК ПО КЛІЄНТУ: виручка − собівартість складу − закупки/послуги ──
+        # РЕСПЕКТИТЬ ПЕРІОД (op_from/op_to): якщо задано — рахуємо ТІЛЬКИ за період (дохід/розхід по даті
+        # транзакції, сделки по closed_at). Дає бачити фінанси «з моменту як почали в CRM», не мішаючи
+        # старі легасі-сделки з Бітрікса (їх товари в собівартості, а виручка в Б24 → ложний мінус).
+        # Пусто → за весь час (як було). closed_at=NULL при заданому періоді → сделка не рахується.
         from decimal import Decimal as _Dp
         _qf = _Tx.objects.filter(_match)
-        _rev = _qf.filter(direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0     # виручка (усі надходження від клієнта)
-        _cext = _qf.filter(direction="out").aggregate(s=_Sum("amount_uah"))["s"] or 0   # закупки під замовлення + послуги/майстри (журнал)
+        if _ofrom:
+            _qf = _qf.filter(date__gte=_ofrom)
+        if _oto:
+            _qf = _qf.filter(date__lte=_oto)
+        _rev = _qf.filter(direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0     # виручка (надходження від клієнта за період)
+        _cext = _qf.filter(direction="out").aggregate(s=_Sum("amount_uah"))["s"] or 0   # закупки під замовлення + послуги/майстри (журнал, за період)
         from apps.crm.models import Deal as _Deal
         _cogs = _Dp("0")          # собівартість складських товарів у виграних угодах клієнта
         _planned_srv = _Dp("0")   # планова закупка послуг/робіт (мастеру) — щоб ловити переплату
-        for _dl in _Deal.objects.filter(contact=c, stage__is_won=True).prefetch_related("items", "items__product"):
+        _dq = _Deal.objects.filter(contact=c, stage__is_won=True)
+        if _ofrom:
+            _dq = _dq.filter(closed_at__date__gte=_ofrom)
+        if _oto:
+            _dq = _dq.filter(closed_at__date__lte=_oto)
+        for _dl in _dq.prefetch_related("items", "items__product"):
             for _it in _dl.items.all():
                 _cu = _it.cost if (_it.cost or 0) > 0 else (getattr(_it.product, "cost", 0) or 0)
                 try:
