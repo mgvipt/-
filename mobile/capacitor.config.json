@@ -1,0 +1,8 @@
+{
+  "appId": "app.cyclevdvoem",
+  "appName": "Цикл вдвоём",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}

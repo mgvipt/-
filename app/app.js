@@ -322,7 +322,7 @@
       '<button class="btn" data-act="save-settings">Сохранить</button>' +
       '<div class="card insight" style="margin-top:12px"><h3>🔒 Приватность</h3><p>Данные хранятся только на этом устройстве. Без сервера и рекламы.</p></div>' +
       '<button class="btn danger" data-act="wipe">Удалить все мои данные</button>' +
-      '<p class="caption">Версия 2.2 · MVP-демо. Прогнозы — ориентир, не медицинская рекомендация.</p>';
+      '<p class="caption">Версия 2.3 · MVP-демо. Прогнозы — ориентир, не медицинская рекомендация.</p>';
   }
 
   function screenCourseList() {
@@ -468,10 +468,6 @@
 
   /* ---------- boot ---------- */
   render();
-  /* Тестовый режим: не используем сервис-воркер, чтобы всегда была свежая версия.
-     Заодно снимаем любой «застрявший» старый воркер и чистим его кэш. */
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); }).catch(function () {});
-  }
-  if (window.caches && caches.keys) { caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); }).catch(function () {}); }
+  /* PWA: регистрируем сервис-воркер для установки и офлайн-работы. */
+  if ("serviceWorker" in navigator) window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
 })();
