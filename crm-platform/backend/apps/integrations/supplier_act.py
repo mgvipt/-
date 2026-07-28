@@ -221,4 +221,32 @@ def parse_generic_invoice(raw, name=""):
     dt = md.group(0) if md else None
     if total is None and lines:
         total = round(sum((l["sum"] or 0) for l in lines), 2)
-    return {"lines": lines, "invoice_number": inv, "invoice_date": dt, "total": total, "supplier": {}}
+    # реквізити ПОСТАЧАЛЬНИКА (продавця): від рядка "Постачальник" до "Одержувач/Покупець"
+    _sup = {"name": None, "iban": None, "edrpou": None, "ipn": None}
+    _ps = _pe = None
+    for _i, _r in enumerate(rows):
+        _jl = " ".join(_s(c) for c in _r).lower()
+        if _ps is None and "постачальник" in _jl:
+            _ps = _i
+        elif _ps is not None and _pe is None and ("одержувач" in _jl or "покупець" in _jl or "платник" in _jl):
+            _pe = _i
+    _blk = "\n".join(" ".join(_s(c) for c in _r) for _r in rows[(_ps or 0):(_pe if _pe is not None else (hdr if hdr is not None else len(rows)))])
+    _mi = _re.search(r"UA\d{27}", _blk.replace(" ", ""))
+    if _mi:
+        _sup["iban"] = _mi.group(0)
+    _me = _re.search(r"ЄДРПОУ[:\s]*([0-9]{6,10})", _blk)
+    if _me:
+        _sup["edrpou"] = _me.group(1)
+    _mp = _re.search(r"[ІИ]ПН[:\s]*([0-9]{8,12})", _blk)
+    if _mp:
+        _sup["ipn"] = _mp.group(1)
+    if _ps is not None:
+        for _r in rows[_ps:_ps + 2]:
+            for _c in _r:
+                _t = _s(_c)
+                if _t and "постачальник" not in _t.lower() and len(_t) > 3:
+                    _sup["name"] = _t[:160]
+                    break
+            if _sup["name"]:
+                break
+    return {"lines": lines, "invoice_number": inv, "invoice_date": dt, "total": total, "supplier": _sup}

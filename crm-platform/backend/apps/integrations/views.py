@@ -511,6 +511,19 @@ def _confirm_supplier(d, request):
     if not contact:
         return Response({"detail": "Не вдалося визначити постачальника. Оберіть існуючого або створіть нового у вікні проведення.",
                          "need_supplier": True, "sender": skey}, status=400)
+    # авто-реквізити постачальника з файлу → картка контрагента (щоб IBAN підтягувався для оплати з ФОП)
+    try:
+        _si = (sup.get("iban") or "").strip()
+        _se = (sup.get("edrpou") or sup.get("ipn") or "").strip()
+        _ch = []
+        if _si and not (contact.iban or "").strip():
+            contact.iban = _si[:64]; _ch.append("iban")
+        if _se and not (contact.edrpou or "").strip():
+            contact.edrpou = _se[:20]; _ch.append("edrpou")
+        if _ch:
+            contact.save(update_fields=_ch)
+    except Exception:
+        pass
     dd = None
     if p.get("invoice_date"):
         try:

@@ -17,7 +17,7 @@ interface ZamerProject { project_uuid: string; title: string; payload: any; upda
 interface Contact {
   id: number; first_name: string; last_name: string; middle_name?: string; display_name: string; phone: string; email: string; social_link: string; messengers?: string[];
   source: string; address: string; comment: string; loyalty_tag: string; birthday: string | null;
-  kinds?: string[]; gender?: string; monitor_docs?: boolean; doc_email?: string;
+  kinds?: string[]; gender?: string; monitor_docs?: boolean; doc_email?: string; iban?: string; edrpou?: string;
   channels: string[]; owner?: number | null; owner_name?: string; deals: Deal[]; total_spent: number;
   zamer_projects?: ZamerProject[];
 }
@@ -130,6 +130,8 @@ export default function ClientCard() {
             <SocialLink link={c.social_link} />
             {Array.isArray(c.messengers) && c.messengers.filter((m) => m && m !== c.social_link).map((m, i) => <SocialLink key={i} link={m} />)}
             {fld(t("Адрес / город","Адреса / місто"), "address", t("Куда доставлять","Куди доставляти"))}
+            {fld("IBAN / рахунок", "iban", t("Для оплаты поставщику «з ФОП» — подтягивается из накладной","Для оплати постачальнику «з ФОП» — підтягується з накладної"))}
+            {fld(t("ЕДРПОУ / ИНН поставщика","ЄДРПОУ / ІПН постачальника"), "edrpou")}
             <div style={{ marginBottom: 10 }}>
               <div className="label">{t("Лояльность","Лояльність")}</div>
               <select defaultValue={c.loyalty_tag} onChange={(e) => save({ loyalty_tag: e.target.value })}
