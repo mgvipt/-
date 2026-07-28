@@ -1538,7 +1538,7 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         if pay_amt <= 0 or pay_amt > remaining:
             pay_amt = remaining
         import re as _redst
-        _minv = _redst.search(r"накладн\w*\s+№?\s*(\S+)\s+від\s+(\S+)", pp.comment or "", _redst.I)
+        _minv = _redst.search(r"(?:накладн\w*|акт|рахун\w*)\s+№?\s*(\S+)\s+від\s+(\S+)", pp.comment or "", _redst.I)
         if _minv:
             dest = "Оплата рахунку №%s від %s" % (_minv.group(1), _minv.group(2))
         else:
