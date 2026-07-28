@@ -704,10 +704,8 @@ class IncomingDocUploadView(APIView):
             # ── ДЕДУП: акт НП вже є як кредиторка/проведений документ? Не дублюємо ──
             if _numdig:
                 from apps.finance.models import PlannedPayment as _PPnp
-                _exp = _PPnp.objects.filter(kind="payable", comment__icontains=_numdig).first()
-                _confd = (IncomingDoc.objects.filter(doc_type="np_act", status="confirmed", subject__icontains=_numdig).exists()
-                          or IncomingDoc.objects.filter(doc_type="np_act", status="confirmed", parsed__invoice_number__icontains=_numdig).exists())
-                if _exp or _confd:
+                _exp = _PPnp.objects.filter(kind="payable", comment__icontains=_numdig).exclude(status__in=["canceled", "rejected"]).first()
+                if _exp:
                     return Response({"ok": True, "duplicate": True,
                                      "detail": ("Рахунок Нової Пошти НП-%s вже в системі%s. Вантажити не треба — акти НП надходять поштою автоматично. Оплати кредиторку у розділі Дт/Кт."
                                                 % (_numdig, (" — кредиторка №%s на %s ₴" % (_exp.id, _exp.amount)) if _exp else ""))})
