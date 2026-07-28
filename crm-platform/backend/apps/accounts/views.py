@@ -1,11 +1,19 @@
 from rest_framework import viewsets, status
+from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from django.contrib.auth import authenticate
+from django.db import IntegrityError, transaction
+from django.db.models import Q
 
 from .models import User, Role, Department, Invite, PERMISSION_CHOICES
-from .serializers import UserSerializer, RoleSerializer, MeSerializer, DepartmentSerializer, InviteSerializer
+from .serializers import (
+    ClientRegistrationSerializer, DepartmentSerializer, InviteSerializer,
+    MeSerializer, RoleSerializer, UserSerializer, normalize_client_phone,
+)
 from apps.common.permissions import HasPermCode
 
 
@@ -30,9 +38,10 @@ def _rr_reassign(qs, field, pool):
 
 
 class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.select_related("role", "department").order_by("username")
+    queryset = User.objects.select_related("role", "department", "portal_contact").order_by("username")
     serializer_class = UserSerializer
     permission_classes = [HasPermCode]
+    required_perm = "roles.manage"
 
     def get_queryset(self):
         """Фільтр за статусом занятості: ?status=active|inactive|dismissed|all.
@@ -42,6 +51,14 @@ class UserViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         if self.action != "list":
             return qs
+        account_kind = (self.request.query_params.get("account_kind") or "staff").strip().lower()
+        if account_kind == User.AccountKind.CLIENT:
+            qs = qs.filter(account_kind=User.AccountKind.CLIENT)
+        else:
+            # Existing employee screens keep their previous behaviour and do
+            # not mix public client registrations into staff lists.
+            qs = qs.filter(account_kind=User.AccountKind.STAFF)
+
         st = (self.request.query_params.get("status") or "").strip().lower()
         if st in ("active", "inactive", "dismissed"):
             return qs.filter(employment_status=st)
@@ -81,6 +98,54 @@ class UserViewSet(viewsets.ModelViewSet):
         for k, v in data.items():
             setattr(u, k, v)
         u.save(update_fields=list(data.keys()))
+        return Response(UserSerializer(u, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
+    def promote(self, request, pk=None):
+        """Admin-only transition from an ordinary client to a staff account."""
+        unexpected = sorted(set((request.data or {}).keys()) - {"role", "department"})
+        if unexpected:
+            return Response({"detail": "Недопустимые поля", "fields": unexpected},
+                            status=status.HTTP_400_BAD_REQUEST)
+        u = self.get_object()
+        if u.account_kind != User.AccountKind.CLIENT:
+            return Response({"detail": "Этот аккаунт уже является сотрудником"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        role = None
+        department = None
+        role_id = request.data.get("role")
+        department_id = request.data.get("department")
+        if role_id not in (None, ""):
+            try:
+                role = Role.objects.get(pk=int(role_id))
+            except (Role.DoesNotExist, TypeError, ValueError):
+                return Response({"detail": "Роль не найдена"}, status=status.HTTP_400_BAD_REQUEST)
+        if department_id not in (None, ""):
+            try:
+                department = Department.objects.get(pk=int(department_id))
+            except (Department.DoesNotExist, TypeError, ValueError):
+                return Response({"detail": "Отдел не найден"}, status=status.HTTP_400_BAD_REQUEST)
+
+        u.account_kind = User.AccountKind.STAFF
+        u.role = role
+        u.department = department
+        # Public registration cannot populate these fields. Clearing them here
+        # also prevents any stale/manual hidden grant from becoming active at
+        # the moment of promotion.
+        u.extra_permissions = []
+        u.denied_permissions = []
+        u.extra_open_lines = []
+        u.stage_view_all = []
+        u.stage_lock = []
+        u.is_superuser = False
+        u.is_staff = False
+        u.save(update_fields=[
+            "account_kind", "role", "department", "extra_permissions",
+            "denied_permissions", "extra_open_lines", "stage_view_all",
+            "stage_lock", "is_superuser", "is_staff",
+        ])
+        u.extra_funnels.clear()
         return Response(UserSerializer(u, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
@@ -158,9 +223,6 @@ class UserViewSet(viewsets.ModelViewSet):
             pass
         return Response({"ok": True, "is_sales": is_sales, "moved": {k: v for k, v in moved.items() if v},
                          "to": targets})
-    required_perm = "roles.manage"
-
-
 class MeView(APIView):
     """Текущий пользователь + его права (для фронта: какие пункты меню показывать)."""
     def get(self, request):
@@ -236,9 +298,121 @@ class AcceptInviteView(APIView):
             i += 1; un = "%s%d" % (base_un, i)
         u = User.objects.create_user(username=un, email=inv.email, password=pwd,
                                      first_name=inv.first_name, last_name=inv.last_name,
-                                     department=inv.department, role=inv.role)
+                                     department=inv.department, role=inv.role,
+                                     account_kind=User.AccountKind.STAFF)
         inv.status = "accepted"; inv.save(update_fields=["status"])
         return Response({"ok": True, "username": u.username}, status=status.HTTP_201_CREATED)
+
+
+class ClientRegistrationThrottle(AnonRateThrottle):
+    rate = "5/hour"
+
+
+class ClientLoginThrottle(AnonRateThrottle):
+    rate = "30/hour"
+
+
+class FlexibleAuthTokenView(APIView):
+    """Issue the usual token for username, or a client's exact phone/email."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ClientLoginThrottle]
+    invalid_credentials = {"non_field_errors": ["Unable to log in with provided credentials."]}
+
+    def post(self, request):
+        identifier = str(request.data.get("username") or request.data.get("login") or "").strip()
+        password = request.data.get("password")
+        if not identifier or not isinstance(password, str) or not password:
+            return Response(self.invalid_credentials, status=status.HTTP_400_BAD_REQUEST)
+
+        # Preserve the existing username contract first. Django performs a
+        # dummy password hash for an unknown username, reducing account probes.
+        user = authenticate(request=request, username=identifier, password=password)
+        if user is None:
+            phone = normalize_client_phone(identifier)
+            lookup = Q(email__iexact=identifier)
+            if phone:
+                lookup |= Q(phone=phone)
+            # Phone/email fallback is intentionally client-only and succeeds
+            # only for one exact account. Staff keep username login unchanged.
+            matches = list(User.objects.filter(
+                lookup, account_kind=User.AccountKind.CLIENT,
+            ).only("id", "username")[:2])
+            if len(matches) == 1:
+                user = authenticate(
+                    request=request,
+                    username=matches[0].username,
+                    password=password,
+                )
+
+        if user is None or not user.is_active:
+            return Response(self.invalid_credentials, status=status.HTTP_400_BAD_REQUEST)
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response({"token": token.key})
+
+
+class ClientRegisterView(APIView):
+    """Public account registration; privilege fields are rejected by serializer."""
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ClientRegistrationThrottle]
+
+    def post(self, request):
+        serializer = ClientRegistrationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        name_parts = data["name"].split(" ", 1)
+        first_name = name_parts[0][:150]
+        last_name = name_parts[1][:150] if len(name_parts) > 1 else ""
+
+        try:
+            with transaction.atomic():
+                # Repeat uniqueness checks inside the transaction. Contact is
+                # always new: matching an existing CRM contact by phone alone
+                # would allow account takeover.
+                if User.objects.select_for_update().filter(phone=data["phone"]).exists():
+                    return Response({"phone": ["Аккаунт с таким телефоном уже существует"]},
+                                    status=status.HTTP_400_BAD_REQUEST)
+                if data.get("email") and User.objects.select_for_update().filter(
+                        email__iexact=data["email"]).exists():
+                    return Response({"email": ["Аккаунт с таким email уже существует"]},
+                                    status=status.HTTP_400_BAD_REQUEST)
+
+                user = User.objects.create_user(
+                    username=data["phone"],
+                    password=data["password"],
+                    first_name=first_name,
+                    last_name=last_name,
+                    phone=data["phone"],
+                    email=data.get("email") or "",
+                    account_kind=User.AccountKind.CLIENT,
+                    role=None,
+                    department=None,
+                    extra_permissions=[],
+                    denied_permissions=[],
+                    is_superuser=False,
+                    is_staff=False,
+                )
+                from apps.crm.models import Contact
+                contact = Contact.objects.create(
+                    first_name=first_name[:120],
+                    last_name=last_name[:120],
+                    phone=data["phone"],
+                    email=data.get("email") or "",
+                    source="app_zamer",
+                    kinds=["client"],
+                    comment="Личный кабинет приложения Wallcov Замер",
+                    portal_user=user,
+                )
+                token = Token.objects.create(user=user)
+        except IntegrityError:
+            return Response({"detail": "Аккаунт с такими данными уже существует"},
+                            status=status.HTTP_409_CONFLICT)
+
+        profile = MeSerializer(user, context={"request": request}).data
+        return Response({"token": token.key, "profile": profile, "contact_id": contact.id},
+                        status=status.HTTP_201_CREATED)
 
 
 class PermissionsCatalogView(APIView):

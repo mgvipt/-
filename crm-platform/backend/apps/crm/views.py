@@ -2086,7 +2086,7 @@ def _month_range(period):
 class StaffAnalyticsView(APIView):
     """Аналітика по співробітниках за місяць: посещаемость (табель+зміни) + активність.
     GET /api/staff/analytics/?period=YYYY-MM[&dept=ID][&status=active|inactive|dismissed|all]
-    Повертає рядки по кожному співробітнику + зведення по відділах."""
+    Повертає рядки по кожному співробітнику та зведення по відділах."""
     def get(self, request):
         if not _staff_can_view(request.user):
             return Response({"detail": "Немає доступу"}, status=status.HTTP_403_FORBIDDEN)
@@ -2103,7 +2103,9 @@ class StaffAnalyticsView(APIView):
         dt_from = timezone.make_aware(datetime.combine(d_from, time.min), tz)
         dt_to = timezone.make_aware(datetime.combine(d_to, time.max), tz)
 
-        qs = User.objects.filter(is_superuser=False).select_related("department", "role")
+        qs = User.objects.filter(
+            is_superuser=False, account_kind=User.AccountKind.STAFF,
+        ).select_related("department", "role")
         st = (request.GET.get("status") or "").strip().lower()
         if st in ("active", "inactive", "dismissed"):
             qs = qs.filter(employment_status=st)
@@ -2190,7 +2192,9 @@ class StaffActivityView(APIView):
         uid = request.GET.get("user")
         if not uid:
             return Response({"detail": "Вкажіть user"}, status=status.HTTP_400_BAD_REQUEST)
-        u = User.objects.filter(id=uid).select_related("department", "role").first()
+        u = User.objects.filter(
+            id=uid, account_kind=User.AccountKind.STAFF,
+        ).select_related("department", "role").first()
         if not u:
             return Response({"detail": "Немає такого"}, status=status.HTTP_404_NOT_FOUND)
 

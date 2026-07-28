@@ -88,10 +88,11 @@ else:
 
 AUTH_USER_MODEL = "accounts.User"
 
+# Global auth enforces the client/internal API boundary before view permissions.
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.TokenAuthentication",
+        "apps.common.authentication.ClientScopedSessionAuthentication",
+        "apps.common.authentication.ClientScopedTokenAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_FILTER_BACKENDS": [

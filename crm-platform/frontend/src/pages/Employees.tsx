@@ -5,10 +5,11 @@ import { useLang } from "../i18n";
 import { Icon } from "../Icon";
 
 interface Dept { id: number; name: string; parent: number | null; permissions: string[]; color: string; pos_x: number; pos_y: number; members_count: number; eff_permissions: string[]; idle_timeout_min?: number; }
-interface Emp { id: number; username: string; full_name: string; email: string; role: number | null; role_name: string; department: number | null; department_name: string; extra_permissions: string[]; denied_permissions: string[]; is_active: boolean; employment_status?: string; dismissed_at?: string | null; date_joined?: string; photo?: string; position?: string; birthday?: string | null; about?: string; interests?: string; telegram?: string; phone?: string; on_shift?: boolean; shift_paused?: boolean; }
+interface Emp { id: number; username: string; full_name: string; email: string; role: number | null; role_name: string; department: number | null; department_name: string; extra_permissions: string[]; denied_permissions: string[]; is_active: boolean; account_kind?: "client" | "staff"; employment_status?: string; dismissed_at?: string | null; date_joined?: string; photo?: string; position?: string; birthday?: string | null; about?: string; interests?: string; telegram?: string; phone?: string; on_shift?: boolean; shift_paused?: boolean; }
 interface Invite { id: number; email: string; department_name: string; status: string; link: string; }
 interface Perm { code: string; label: string; }
 interface Role { id: number; name: string; }
+interface RepairStageReview { id: number; project_uuid: string; project_title: string; contact_id: number | null; contact_name: string; requested_by_id: number | null; requested_by_name: string; stage_id: string; title: string; status: string; note: string; created_at: string; }
 
 const NODE_W = 210;
 
@@ -36,9 +37,24 @@ class ErrBoundary extends Component<{ children: any }, { err: boolean }> {
 
 export default function Employees() {
   const { t } = useLang();
-  const [tab, setTab] = useState<"map" | "list" | "activity" | "invites" | "perms">(() => (localStorage.getItem("emp_tab") as any) || "map");
+  const [tab, setTab] = useState<"map" | "list" | "registrations" | "activity" | "invites" | "perms">(() => (localStorage.getItem("emp_tab") as any) || "map");
   const [listStatus, setListStatus] = useState<"active" | "inactive" | "dismissed" | "all">("active");
   const [listEmps, setListEmps] = useState<Emp[]>([]);
+  const [registrations, setRegistrations] = useState<Emp[]>([]);
+  const [registrationsTotal, setRegistrationsTotal] = useState(0);
+  const [registrationsLoading, setRegistrationsLoading] = useState(false);
+  const [registrationsError, setRegistrationsError] = useState("");
+  const [rolesLoadError, setRolesLoadError] = useState("");
+  const [departmentsLoadError, setDepartmentsLoadError] = useState("");
+  const [promotingId, setPromotingId] = useState<number | null>(null);
+  const [promotionChoices, setPromotionChoices] = useState<Record<number, { role: string; department: string }>>({});
+  const [promotionErrors, setPromotionErrors] = useState<Record<number, string>>({});
+  const [repairReviews, setRepairReviews] = useState<RepairStageReview[]>([]);
+  const [repairReviewsLoading, setRepairReviewsLoading] = useState(false);
+  const [repairReviewsError, setRepairReviewsError] = useState("");
+  const [repairReviewNotes, setRepairReviewNotes] = useState<Record<number, string>>({});
+  const [repairReviewErrors, setRepairReviewErrors] = useState<Record<number, string>>({});
+  const [repairReviewingId, setRepairReviewingId] = useState<number | null>(null);
   const [cardEmp, setCardEmp] = useState<Emp | null>(null);   // відкрита картка співробітника
   const [me, setMe] = useState<any>(null);
   useEffect(() => { try { localStorage.setItem("emp_tab", tab); } catch (e) { /* noop */ } }, [tab]);
@@ -51,24 +67,129 @@ export default function Employees() {
   const [funnels, setFunnels] = useState<any[]>([]);
   const [msg, setMsg] = useState("");
   const [linkFrom, setLinkFrom] = useState<number | null>(null); // режим звʼязування: дочірній відділ чекає батька
+  const canManageRoles = !!(me?.is_superuser || me?.permissions?.includes("roles.manage"));
 
   function load() {
-    api.get<any>("/api/departments/").then((d) => setDepts(((d.results || d) as Dept[]).map((x) => ({ ...x, permissions: x.permissions || [] })))).catch(() => {});
-    api.get<any>("/api/users/?page_size=500").then((d) => setEmps(((d.results || d) as Emp[]).filter((u) => u.is_active))).catch(() => {});
+    setDepartmentsLoadError("");
+    api.get<any>("/api/departments/?page_size=500")
+      .then((d) => setDepts(((d.results || d) as Dept[]).map((x) => ({ ...x, permissions: x.permissions || [] }))))
+      .catch(() => setDepartmentsLoadError(t("Не удалось загрузить список отделов. Обновите страницу или проверьте доступ администратора.", "Не вдалося завантажити список відділів. Оновіть сторінку або перевірте доступ адміністратора.")));
+    api.get<any>("/api/users/?account_kind=staff&page_size=500").then((d) => setEmps(((d.results || d) as Emp[]).filter((u) => u.is_active && u.account_kind !== "client"))).catch(() => {});
     api.get<any>("/api/invites/").then((d) => setInvites(d.results || d)).catch(() => {});
     api.get<any>("/api/permissions/").then((dd) => { setPerms(dd.flat || dd); setPermGroups(dd.groups || []); }).catch(() => {});
-    api.get<any>("/api/roles/").then((d) => setRoles(d.results || d)).catch(() => {});
+    setRolesLoadError("");
+    api.get<any>("/api/roles/?page_size=500")
+      .then((d) => setRoles(d.results || d))
+      .catch(() => setRolesLoadError(t("Не удалось загрузить список ролей. Обновите страницу или проверьте доступ администратора.", "Не вдалося завантажити список ролей. Оновіть сторінку або перевірте доступ адміністратора.")));
     api.get<any>("/api/funnels/").then((d) => setFunnels(d.results || d)).catch(() => {});
     api.get<any>("/api/me/").then(setMe).catch(() => {});
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadRegistrations(); }, []);
   // список сотрудников для вкладки «Список» — с фильтром по статусу занятости
   function loadList() {
-    api.get<any>(`/api/users/?status=${listStatus}&page_size=500`).then((d) => setListEmps((d.results || d) as Emp[])).catch(() => {});
+    api.get<any>(`/api/users/?account_kind=staff&status=${listStatus}&page_size=500`).then((d) => setListEmps(((d.results || d) as Emp[]).filter((u) => u.account_kind !== "client"))).catch(() => {});
   }
   useEffect(() => { if (tab === "list") loadList(); /* eslint-disable-next-line */ }, [tab, listStatus]);
+  useEffect(() => { if (tab === "registrations" && canManageRoles) loadRepairReviews(); /* eslint-disable-next-line */ }, [tab, canManageRoles]);
   function flash(m: string) { setMsg(m); setTimeout(() => setMsg(""), 2200); }
   const byDept = (id: number | null) => emps.filter((e) => e.department === id);
+
+  function loadRepairReviews() {
+    setRepairReviewsLoading(true); setRepairReviewsError("");
+    api.get<any>("/api/zamer/reviews/?status=pending")
+      .then((d) => setRepairReviews((d.results || d) as RepairStageReview[]))
+      .catch((err: any) => {
+        setRepairReviews([]);
+        setRepairReviewsError(err?.response?.data?.detail || t("Не удалось загрузить проверки этапов ремонта. Обновите страницу или проверьте право управления ролями.", "Не вдалося завантажити перевірки етапів ремонту. Оновіть сторінку або перевірте право керування ролями."));
+      })
+      .finally(() => setRepairReviewsLoading(false));
+  }
+
+  function setRepairReviewNote(reviewId: number, value: string) {
+    setRepairReviewNotes((prev) => ({ ...prev, [reviewId]: value }));
+    setRepairReviewErrors((prev) => { const next = { ...prev }; delete next[reviewId]; return next; });
+  }
+
+  async function decideRepairReview(review: RepairStageReview, status: "accepted" | "rework") {
+    const note = (repairReviewNotes[review.id] || "").trim();
+    if (status === "rework" && !note) {
+      setRepairReviewErrors((prev) => ({ ...prev, [review.id]: t("Укажите, что клиенту нужно исправить", "Вкажіть, що клієнту потрібно виправити") }));
+      return;
+    }
+    if (status === "accepted" && !confirm(t(
+      `Принять этап «${review.title || review.stage_id}» по проекту «${review.project_title || review.project_uuid}»?`,
+      `Прийняти етап «${review.title || review.stage_id}» за проєктом «${review.project_title || review.project_uuid}»?`))) return;
+    setRepairReviewingId(review.id);
+    setRepairReviewErrors((prev) => { const next = { ...prev }; delete next[review.id]; return next; });
+    try {
+      await api.patch(`/api/zamer/reviews/${review.id}/`, status === "rework" ? { status, note } : { status });
+      setRepairReviews((rows) => rows.filter((row) => row.id !== review.id));
+      setRepairReviewNotes((prev) => { const next = { ...prev }; delete next[review.id]; return next; });
+      setRepairReviewErrors((prev) => { const next = { ...prev }; delete next[review.id]; return next; });
+      flash(status === "accepted" ? t("Этап принят", "Етап прийнято") : t("Этап возвращён на доработку", "Етап повернуто на доопрацювання"));
+    } catch (err: any) {
+      setRepairReviewErrors((prev) => ({ ...prev, [review.id]: err?.response?.data?.detail || t("Не удалось сохранить решение", "Не вдалося зберегти рішення") }));
+    } finally {
+      setRepairReviewingId(null);
+    }
+  }
+
+  function loadRegistrations() {
+    setRegistrationsLoading(true); setRegistrationsError("");
+    api.get<any>("/api/users/?account_kind=client&page_size=500")
+      .then((d) => {
+        const rows = ((d.results || d) as Emp[]).filter((u) => u.account_kind !== "staff");
+        setRegistrations(rows);
+        setRegistrationsTotal(typeof d?.count === "number" ? d.count : rows.length);
+      })
+      .catch((err: any) => {
+        setRegistrations([]);
+        setRegistrationsTotal(0);
+        setRegistrationsError(err?.response?.data?.detail || t("Не удалось загрузить очередь регистраций. Обновите страницу или проверьте доступ администратора.", "Не вдалося завантажити чергу реєстрацій. Оновіть сторінку або перевірте доступ адміністратора."));
+      })
+      .finally(() => setRegistrationsLoading(false));
+  }
+
+  function setPromotionChoice(userId: number, field: "role" | "department", value: string) {
+    setRegistrationsError("");
+    setPromotionErrors((prev) => { const next = { ...prev }; delete next[userId]; return next; });
+    setPromotionChoices((prev) => ({
+      ...prev,
+      [userId]: { role: prev[userId]?.role || "", department: prev[userId]?.department || "", [field]: value },
+    }));
+  }
+
+  async function promoteRegistration(e: Emp) {
+    const choice = promotionChoices[e.id] || { role: "", department: "" };
+    if (!choice.role || !choice.department) {
+      setPromotionErrors((prev) => ({ ...prev, [e.id]: t("Сначала явно выберите роль и отдел", "Спочатку явно оберіть роль і відділ") }));
+      return;
+    }
+    const roleId = choice.role === "none" ? null : Number(choice.role);
+    const departmentId = choice.department === "none" ? null : Number(choice.department);
+    const roleName = roleId == null ? t("без роли", "без ролі") : (roles.find((r) => r.id === roleId)?.name || "—");
+    const departmentName = departmentId == null ? t("без отдела", "без відділу") : (depts.find((d) => d.id === departmentId)?.name || "—");
+    const displayName = e.full_name || e.username || e.email || `#${e.id}`;
+    if (!confirm(t(
+      `Назначить «${displayName}» сотрудником?\n\nРоль: ${roleName}\nОтдел: ${departmentName}\n\nПосле подтверждения пользователь появится в структуре сотрудников.`,
+      `Призначити «${displayName}» співробітником?\n\nРоль: ${roleName}\nВідділ: ${departmentName}\n\nПісля підтвердження користувач зʼявиться у структурі співробітників.`))) return;
+    setPromotingId(e.id); setRegistrationsError("");
+    setPromotionErrors((prev) => { const next = { ...prev }; delete next[e.id]; return next; });
+    try {
+      await api.post(`/api/users/${e.id}/promote/`, { role: roleId, department: departmentId });
+      setRegistrations((xs) => xs.filter((x) => x.id !== e.id));
+      setRegistrationsTotal((n) => Math.max(0, n - 1));
+      setPromotionChoices((prev) => { const next = { ...prev }; delete next[e.id]; return next; });
+      setPromotionErrors((prev) => { const next = { ...prev }; delete next[e.id]; return next; });
+      setRegistrationsError("");
+      flash(t("Пользователь назначен сотрудником", "Користувача призначено співробітником"));
+      load(); loadRegistrations();
+    } catch (err: any) {
+      setPromotionErrors((prev) => ({ ...prev, [e.id]: err?.response?.data?.detail || t("Не удалось назначить сотрудником", "Не вдалося призначити співробітником") }));
+    } finally {
+      setPromotingId(null);
+    }
+  }
 
   async function addDept() { const name = prompt(t("Название отдела", "Назва відділу")); if (!name) return; await api.post("/api/departments/", { name, pos_x: 360, pos_y: 240, color: "#64748b", permissions: [] }); load(); }
   async function renameDept(d: Dept) { const name = prompt(t("Новое название", "Нова назва"), d.name); if (!name) return; await api.patch(`/api/departments/${d.id}/`, { name }); load(); }
@@ -128,6 +249,7 @@ export default function Employees() {
   const TABS: [typeof tab, string, string, string][] = [
     ["map", "🗺", "Структура компании", "Структура компанії"],
     ["list", "👥", "Сотрудники", "Співробітники"],
+    ["registrations", "🆕", "Регистрации", "Реєстрації"],
     ["activity", "📊", "Активность", "Активність"],
     ["invites", "✉️", "Приглашения", "Запрошення"],
     ["perms", "🛡", "Права", "Права"],
@@ -143,7 +265,7 @@ export default function Employees() {
     <ErrBoundary>
       <div className="scroll pad fade">
         <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-          {TABS.map(([k, ic, ru, uk]) => <button key={k} className={"btn" + (tab === k ? " btn-primary" : "")} onClick={() => setTab(k)}><Icon n={ic} size={15} /> {t(ru, uk)}</button>)}
+          {TABS.map(([k, ic, ru, uk]) => <button key={k} className={"btn" + (tab === k ? " btn-primary" : "")} onClick={() => { setTab(k); if (k === "registrations" && tab !== "registrations") loadRegistrations(); }}><Icon n={ic} size={15} /> {t(ru, uk)}{k === "registrations" && registrationsTotal > 0 ? ` · ${registrationsTotal}` : ""}</button>)}
           {msg && <span style={{ marginLeft: "auto", color: "#16a34a", fontSize: 13, alignSelf: "center" }}>{msg}</span>}
         </div>
 
@@ -256,6 +378,149 @@ export default function Employees() {
                 </tr>;
               })}</tbody>
             </table></div>
+          </div>
+        )}
+        {tab === "registrations" && (
+          <div>
+            {canManageRoles && (
+              <div style={{ background: "#fff", border: "1px solid #dbe7df", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 220 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>{t("Проверки этапов ремонта", "Перевірки етапів ремонту")}{repairReviews.length > 0 ? ` · ${repairReviews.length}` : ""}</div>
+                    <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>{t("Заявки клиентов, которым нужно решение ответственного сотрудника.", "Заявки клієнтів, яким потрібне рішення відповідального співробітника.")}</div>
+                  </div>
+                  <button className="btn" disabled={repairReviewsLoading} onClick={loadRepairReviews} style={{ fontSize: 12 }}>
+                    {repairReviewsLoading ? t("Обновляю…", "Оновлюю…") : t("Обновить", "Оновити")}
+                  </button>
+                </div>
+
+                {repairReviewsError && <div style={{ color: "#dc2626", fontSize: 12.5, marginBottom: 10 }}>{repairReviewsError}</div>}
+                {repairReviewsLoading && repairReviews.length === 0 && <div className="muted" style={{ fontSize: 12.5 }}>{t("Загрузка проверок…", "Завантаження перевірок…")}</div>}
+                {!repairReviewsLoading && !repairReviewsError && repairReviews.length === 0 && (
+                  <div style={{ background: "#f8faf9", borderRadius: 9, padding: "10px 12px", fontSize: 12.5, color: "#64748b" }}>{t("Заявок на проверку сейчас нет.", "Заявок на перевірку зараз немає.")}</div>
+                )}
+                {repairReviews.length > 0 && (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {repairReviews.map((review) => {
+                      const clientName = review.contact_name || review.requested_by_name || (review.contact_id ? `#${review.contact_id}` : "—");
+                      const projectName = review.project_title || review.project_uuid || "—";
+                      const stageName = review.title || review.stage_id || "—";
+                      const createdAt = review.created_at ? new Date(review.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+                      const actionError = repairReviewErrors[review.id];
+                      return <div key={review.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, background: "#fbfcfb" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "8px 14px", marginBottom: 10 }}>
+                          <div><div className="muted" style={{ fontSize: 11 }}>{t("Клиент", "Клієнт")}</div><div style={{ fontSize: 13, fontWeight: 600 }}>{clientName}</div></div>
+                          <div><div className="muted" style={{ fontSize: 11 }}>{t("Проект", "Проєкт")}</div><div style={{ fontSize: 13, fontWeight: 600 }}>{projectName}</div></div>
+                          <div><div className="muted" style={{ fontSize: 11 }}>{t("Этап", "Етап")}</div><div style={{ fontSize: 13, fontWeight: 600 }}>{stageName}</div>{review.stage_id && review.stage_id !== stageName && <div className="muted" style={{ fontSize: 10.5 }}>{review.stage_id}</div>}</div>
+                          <div><div className="muted" style={{ fontSize: 11 }}>{t("Дата заявки", "Дата заявки")}</div><div style={{ fontSize: 13 }}>{createdAt}</div></div>
+                        </div>
+                        <div style={{ background: "#fff", border: "1px solid #edf0ee", borderRadius: 8, padding: "7px 9px", marginBottom: 9 }}>
+                          <div className="muted" style={{ fontSize: 11, marginBottom: 2 }}>{t("Комментарий к заявке", "Коментар до заявки")}</div>
+                          <div style={{ fontSize: 12.5, whiteSpace: "pre-wrap" }}>{review.note || t("Без комментария", "Без коментаря")}</div>
+                        </div>
+                        <textarea
+                          aria-label={t(`Комментарий для доработки этапа ${stageName}`, `Коментар для доопрацювання етапу ${stageName}`)}
+                          value={repairReviewNotes[review.id] || ""}
+                          onChange={(ev) => setRepairReviewNote(review.id, ev.target.value)}
+                          placeholder={t("Что именно нужно исправить (обязательно для доработки)", "Що саме потрібно виправити (обовʼязково для доопрацювання)")}
+                          rows={2}
+                          style={{ width: "100%", resize: "vertical", padding: "7px 9px", borderRadius: 8, border: "1px solid #dbe3df", fontFamily: "inherit", fontSize: 12.5, marginBottom: 8 }}
+                        />
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <button className="btn btn-green" disabled={repairReviewingId === review.id} onClick={() => decideRepairReview(review, "accepted")} style={{ fontSize: 12 }}>
+                            {repairReviewingId === review.id ? t("Сохраняю…", "Зберігаю…") : t("Принять этап", "Прийняти етап")}
+                          </button>
+                          <button className="btn" disabled={repairReviewingId === review.id} onClick={() => decideRepairReview(review, "rework")} style={{ fontSize: 12, color: "#a16207", borderColor: "#fde68a", background: "#fefce8" }}>
+                            {t("Вернуть на доработку", "Повернути на доопрацювання")}
+                          </button>
+                          {actionError && <span style={{ color: "#dc2626", fontSize: 11.5 }}>{actionError}</span>}
+                        </div>
+                      </div>;
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ background: "#faf8f5", border: "1px solid #ece7df", borderRadius: 12, padding: "12px 16px", marginBottom: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{t("Новые обычные пользователи", "Нові звичайні користувачі")}</div>
+              <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+                {t(
+                  "После регистрации человек остаётся обычным клиентом и не видит рабочие данные CRM. Только администратор может выбрать роль и отдел и назначить его сотрудником.",
+                  "Після реєстрації людина залишається звичайним клієнтом і не бачить робочі дані CRM. Тільки адміністратор може обрати роль і відділ та призначити її співробітником.")}
+              </div>
+            </div>
+
+            {registrationsLoading && <div className="pad muted">{t("Загрузка регистраций…", "Завантаження реєстрацій…")}</div>}
+            {registrationsError && <div style={{ color: "#dc2626", fontSize: 12.5, marginBottom: 10 }}>{registrationsError}</div>}
+            {rolesLoadError && <div style={{ color: "#dc2626", fontSize: 12.5, marginBottom: 8 }}>{rolesLoadError}</div>}
+            {departmentsLoadError && <div style={{ color: "#dc2626", fontSize: 12.5, marginBottom: 8 }}>{departmentsLoadError}</div>}
+            {!registrationsLoading && registrationsTotal > registrations.length && (
+              <div style={{ color: "#a16207", background: "#fefce8", border: "1px solid #fde68a", borderRadius: 8, padding: "7px 10px", fontSize: 12.5, marginBottom: 10 }}>
+                {t(`Показаны первые ${registrations.length} из ${registrationsTotal} регистраций.`, `Показані перші ${registrations.length} із ${registrationsTotal} реєстрацій.`)}
+              </div>
+            )}
+            {!registrationsLoading && registrations.length === 0 && registrationsTotal === 0 && !registrationsError && (
+              <div style={{ background: "#fff", border: "1px solid #ece7df", borderRadius: 12, padding: 20 }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>{t("Новых регистраций нет", "Нових реєстрацій немає")}</div>
+                <div className="muted" style={{ fontSize: 12.5 }}>{t("Обычные пользователи появятся здесь после регистрации.", "Звичайні користувачі зʼявляться тут після реєстрації.")}</div>
+              </div>
+            )}
+            {!registrationsLoading && registrations.length > 0 && (
+              <div className="tablewrap" style={{ maxHeight: "calc(100vh - 310px)", overflowY: "auto" }}><table>
+                <thead><tr>
+                  <th>{t("Пользователь", "Користувач")}</th>
+                  <th>{t("Телефон / email", "Телефон / email")}</th>
+                  <th>{t("Дата регистрации", "Дата реєстрації")}</th>
+                  <th>{t("Роль", "Роль")}</th>
+                  <th>{t("Отдел", "Відділ")}</th>
+                  <th>{t("Действие", "Дія")}</th>
+                </tr></thead>
+                <tbody>{registrations.map((e) => {
+                  const choice = promotionChoices[e.id] || { role: "", department: "" };
+                  const displayName = e.full_name || e.username || e.email || `#${e.id}`;
+                  const joined = e.date_joined ? new Date(e.date_joined).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
+                  const ready = !!choice.role && !!choice.department;
+                  const promotionError = promotionErrors[e.id];
+                  return <tr key={e.id}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                        <PhotoAvatar photo={e.photo} name={displayName} size={32} />
+                        <div>
+                          <div style={{ fontWeight: 600 }}>{displayName}</div>
+                          {e.username && e.username !== displayName && <div className="muted" style={{ fontSize: 11.5 }}>@{e.username}</div>}
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ fontSize: 12.5 }}>
+                      <div>{e.phone || "—"}</div>
+                      {e.email && <div className="muted" style={{ marginTop: 2 }}>{e.email}</div>}
+                    </td>
+                    <td className="muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{joined}</td>
+                    <td>
+                      <select aria-label={t(`Роль для ${displayName}`, `Роль для ${displayName}`)} value={choice.role} onChange={(ev) => setPromotionChoice(e.id, "role", ev.target.value)} style={{ minWidth: 150, padding: "6px 8px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12.5 }}>
+                        <option value="">{t("Выберите роль", "Оберіть роль")}</option>
+                        <option value="none">{t("Без роли", "Без ролі")}</option>
+                        {roles.map((r) => <option key={r.id} value={String(r.id)}>{r.name}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <select aria-label={t(`Отдел для ${displayName}`, `Відділ для ${displayName}`)} value={choice.department} onChange={(ev) => setPromotionChoice(e.id, "department", ev.target.value)} style={{ minWidth: 150, padding: "6px 8px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12.5 }}>
+                        <option value="">{t("Выберите отдел", "Оберіть відділ")}</option>
+                        <option value="none">{t("Без отдела", "Без відділу")}</option>
+                        {depts.map((d) => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <button className="btn btn-primary" disabled={!ready || promotingId === e.id} onClick={() => promoteRegistration(e)} style={{ fontSize: 12, padding: "6px 10px" }}>
+                        {promotingId === e.id ? t("Назначаю…", "Призначаю…") : t("Назначить сотрудником", "Призначити співробітником")}
+                      </button>
+                      {promotionError && <div style={{ color: "#dc2626", fontSize: 11.5, marginTop: 5, maxWidth: 220, whiteSpace: "normal" }}>{promotionError}</div>}
+                    </td>
+                  </tr>;
+                })}</tbody>
+              </table></div>
+            )}
           </div>
         )}
         {tab === "activity" && <ActivityTab depts={depts} t={t} statusChip={statusChip} openCard={(e: any) => setCardEmp(e)} />}

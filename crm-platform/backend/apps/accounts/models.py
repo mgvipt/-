@@ -215,6 +215,19 @@ class Role(models.Model):
 
 
 class User(AbstractUser):
+    class AccountKind(models.TextChoices):
+        CLIENT = "client", "Клієнт"
+        STAFF = "staff", "Співробітник"
+
+    # Backward compatible default: every account created by the existing CRM
+    # staff/admin flows remains staff. The public registration endpoint always
+    # overrides this with CLIENT and never accepts this field from the caller.
+    account_kind = models.CharField(
+        max_length=12,
+        choices=AccountKind.choices,
+        default=AccountKind.STAFF,
+        db_index=True,
+    )
     role = models.ForeignKey(Role, null=True, blank=True, on_delete=models.SET_NULL, related_name="users")
     department = models.ForeignKey(
         Department, null=True, blank=True, on_delete=models.SET_NULL, related_name="members"
@@ -269,6 +282,11 @@ class User(AbstractUser):
 
     # ── РЕЗОЛЮЦИЯ ПРАВ: отдел ∪ роль ∪ индивидуальные − запрещённые ──
     def effective_permissions(self) -> set:
+        # A public client account never inherits internal CRM permissions,
+        # even if an administrator accidentally assigns it a role before the
+        # explicit promotion action changes account_kind to STAFF.
+        if self.account_kind == self.AccountKind.CLIENT:
+            return set()
         if self.is_superuser:
             return {c for c, _ in PERMISSION_CHOICES}
         codes = set()
@@ -282,6 +300,8 @@ class User(AbstractUser):
 
     # --- помощники прав (сигнатуры НЕ менялись — весь RBAC работает) ---
     def has_perm_code(self, code: str) -> bool:
+        if self.account_kind == self.AccountKind.CLIENT:
+            return False
         if self.is_superuser:
             return True
         return code in self.effective_permissions()
