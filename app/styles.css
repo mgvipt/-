@@ -229,3 +229,6 @@ button { font-family: inherit; }
 
 /* support banner on today */
 .support-nudge { display: flex; align-items: center; gap: 10px; background: color-mix(in srgb, var(--stop) 8%, var(--surface-2)); border: 1px solid color-mix(in srgb, var(--stop) 22%, var(--line)); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink); }
+
+/* v2.4: AI settings select */
+.field select { width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 11px 13px; font-size: 14px; font-family: var(--sans); color: var(--ink); appearance: none; -webkit-appearance: none; }

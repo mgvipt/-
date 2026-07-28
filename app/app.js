@@ -5,6 +5,15 @@
   var app = document.getElementById("app");
   var VOICE = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 
+  /* Системный промпт для «умного» ИИ-режима (настоящая LLM). */
+  var SYSTEM_PROMPT = [
+    "Ты — тёплый, чуткий помощник в приложении о женском цикле «Цикл вдвоём». Ты поддерживаешь и женщину, и её партнёра. Ты не врач и не бот, выдающий справку, а понимающий собеседник: сначала слышишь человека, потом помогаешь.",
+    "Приоритет — поддержка, потом информация. Дай почувствовать, что человека понимают и он не один.",
+    "Ценности: каждая женщина индивидуальна, универсальной «нормы» нет; понимать, а не предполагать (если она говорит, что ей больно или не хочется — верь сразу); любовь ≠ секс, забота не «предоплата» за близость; согласие и никакого давления; в менструацию секса и инициативы нет, если она сама не предложила; разрушай миф про «пик желания в овуляцию» — часто наоборот, бывает боль; её тело — её.",
+    "Тон: тепло, простыми словами, 2–5 предложений, без списков-чеклистов, без канцелярита, без «как ИИ», без обесценивания. Сначала эмпатия, потом по делу. Отвечай на языке пользователя (по умолчанию русский).",
+    "Безопасность: не ставь диагнозы; при тревожных признаках мягко советуй врача; календарный расчёт — не контрацепция. КРИЗИС: если звучит безнадёжность, «жизнь бессмысленна», «я никому не нужна» или мысли о самоповреждении — отнесись максимально серьёзно и тепло, скажи, что она важна и не одна, мягко предложи связаться с близким и линией психологической помощи, при угрозе жизни — 112. Никогда не отмахивайся."
+  ].join("\n\n");
+
   /* ---------- state ---------- */
   function defaultState() {
     return {
@@ -12,7 +21,9 @@
       lastPeriod: isoToday(), cycleLength: 28, periodLength: 5,
       goals: ["Понимать себя"],
       intimacy: { date: isoToday(), value: "yellow" },
-      diary: {}, course: [], lastMood: null, tab: "today"
+      diary: {}, course: [], lastMood: null,
+      ai: { provider: "claude", key: "", model: "claude-sonnet-5" },
+      tab: "today"
     };
   }
   function load() { try { var s = JSON.parse(localStorage.getItem(KEY)); if (s && typeof s === "object") return Object.assign(defaultState(), s); } catch (e) {} return defaultState(); }
@@ -210,11 +221,13 @@
   function screenAssistant() {
     var msgs = chatLog.map(function (m) { return '<div class="msg ' + m.who + '">' + esc(m.text) + '</div>'; }).join("");
     var sug = ["Почему я устаю перед месячными?", "Когда фертильные дни?", "Что есть для железа?"].map(function (q) { return '<button data-ask="' + esc(q) + '">' + esc(q) + '</button>'; }).join("");
-    return head("Ассистент") +
+    var smart = !!(state.ai && state.ai.key);
+    var badge = '<div style="margin-bottom:10px"><span class="pill" data-nav="settings" style="cursor:pointer">' + (smart ? "🟢 Умный ИИ включён" : "⚪ Офлайн-режим · включить умный ИИ →") + '</span></div>';
+    return head("Ассистент") + badge +
       '<div class="chat" id="chat">' + msgs + '</div>' +
       '<div class="suggest">' + sug + '</div>' +
       '<div class="chat-input">' + micBtn("chat-input") + '<input id="chat-input" type="text" placeholder="Напиши или скажи…" aria-label="Вопрос" /><button class="send" data-act="send" title="Отправить">↑</button></div>' +
-      '<p class="caption">Образовательная информация, не заменяет врача. Ответы формируются на устройстве.</p>';
+      '<p class="caption">' + (smart ? "Умный режим: ответы формирует нейросеть по твоему ключу. Не заменяет врача." : "Офлайн-режим на устройстве. Не заменяет врача. Умный ИИ включается в Настройках.") + '</p>';
   }
 
   function screenPartner() {
@@ -319,10 +332,16 @@
       '<div class="field"><label>Начало последней менструации</label><input type="date" id="s-last" value="' + state.lastPeriod + '" /></div>' +
       '<div class="field"><label>Длина цикла: <span id="s-lenv">' + state.cycleLength + '</span> дн.</label><div class="stepper"><button data-step="len:-1">−</button><span class="val" id="s-len">' + state.cycleLength + '</span><button data-step="len:1">+</button></div></div>' +
       '<div class="field"><label>Длительность менструации: <span id="s-perv">' + state.periodLength + '</span> дн.</label><div class="stepper"><button data-step="per:-1">−</button><span class="val" id="s-per">' + state.periodLength + '</span><button data-step="per:1">+</button></div></div>' +
+      '<p class="section-label" style="margin-top:10px">🤖 Умный ИИ-ассистент (по желанию)</p>' +
+      '<div class="field"><label>Провайдер</label><select id="s-ai-provider"><option value="claude"' + (state.ai.provider === "claude" ? " selected" : "") + '>Claude (Anthropic)</option><option value="openai"' + (state.ai.provider === "openai" ? " selected" : "") + '>OpenAI</option></select></div>' +
+      '<div class="field"><label>API-ключ (хранится только на устройстве)</label><input type="password" id="s-ai-key" value="' + esc(state.ai.key || "") + '" placeholder="sk-..." autocomplete="off" /></div>' +
+      '<div class="field"><label>Модель</label><input type="text" id="s-ai-model" value="' + esc(state.ai.model || "") + '" placeholder="claude-sonnet-5" /></div>' +
+      '<p class="caption" style="text-align:left;margin:0 2px 10px">Claude: claude-sonnet-5 · claude-opus-5 · claude-haiku-4-5. OpenAI: gpt-4o-mini · gpt-4o.</p>' +
       '<button class="btn" data-act="save-settings">Сохранить</button>' +
-      '<div class="card insight" style="margin-top:12px"><h3>🔒 Приватность</h3><p>Данные хранятся только на этом устройстве. Без сервера и рекламы.</p></div>' +
+      '<div class="card insight" style="margin-top:12px"><h3>Как работает умный режим</h3><p>С ключом ассистент отвечает по-настоящему (нейросеть). Ключ хранится только на этом устройстве, но текст вопросов уходит провайдеру ИИ — это отход от «только на устройстве», включай по желанию. Без ключа работает офлайн-режим.</p></div>' +
+      '<div class="card insight"><h3>🔒 Приватность</h3><p>Данные цикла хранятся только на этом устройстве. Без сервера и рекламы.</p></div>' +
       '<button class="btn danger" data-act="wipe">Удалить все мои данные</button>' +
-      '<p class="caption">Версия 2.3 · MVP-демо. Прогнозы — ориентир, не медицинская рекомендация.</p>';
+      '<p class="caption">Версия 2.4 · MVP-демо. Прогнозы — ориентир, не медицинская рекомендация.</p>';
   }
 
   function screenCourseList() {
@@ -445,10 +464,77 @@
 
   function courseDone(i) { var id = COURSE[i].id; if (state.course.indexOf(id) === -1) state.course.push(id); save(); overlay = (i < COURSE.length - 1) ? "lesson:" + (i + 1) : "course"; render(); }
 
-  function ask(q) { chatLog.push({ who: "user", text: q }); chatLog.push({ who: "bot", text: assistantAnswer(q) }); render(); }
+  function ask(q) {
+    chatLog.push({ who: "user", text: q });
+    var ai = state.ai || {};
+    if (ai.key) {
+      var ph = { who: "bot", text: "…", pending: true };
+      chatLog.push(ph); render();
+      callLLM().then(function (ans) { ph.text = ans; ph.pending = false; render(); })
+               .catch(function (e) { ph.text = "Не получилось связаться с ИИ (" + (e && e.message ? e.message : "ошибка") + "). Проверь ключ в Настройках. Пока отвечу коротко: " + assistantAnswer(q); ph.pending = false; render(); });
+    } else {
+      chatLog.push({ who: "bot", text: assistantAnswer(q) }); render();
+    }
+  }
   function sendChat() { var el = byId("chat-input"); if (!el) return; var v = el.value.trim(); if (!v) return; el.value = ""; ask(v); }
 
-  function saveSettings(btn) { var n = byId("s-name"), l = byId("s-last"); if (n) state.partnerName = n.value.trim() || "Партнёр"; if (l && l.value) state.lastPeriod = l.value; save(); flash(btn, "Сохранено ✓"); setTimeout(function () { navGo("__back"); }, 700); }
+  function llmMessages() {
+    return chatLog.filter(function (m) { return !m.pending; }).slice(1)
+      .map(function (m) { return { role: m.who === "user" ? "user" : "assistant", content: m.text }; });
+  }
+  function llmContext() {
+    var ci = cycleInfo();
+    return "Контекст: пользователь — " + (state.role === "partner" ? "партнёр" : "женщина") +
+      ". Фаза цикла сейчас: " + PHASES[ci.phase].name + ", день " + ci.day + " из " + ci.len + "." +
+      ((state.lastMood) ? " Отмеченное настроение: " + state.lastMood + "." : "");
+  }
+  function callLLM() {
+    var ai = state.ai, msgs = llmMessages();
+    while (msgs.length && msgs[0].role !== "user") msgs.shift();
+    return (ai.provider === "openai") ? callOpenAI(msgs) : callAnthropic(msgs);
+  }
+  function callAnthropic(msgs) {
+    return fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": state.ai.key,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: state.ai.model || "claude-sonnet-5",
+        max_tokens: 700,
+        system: SYSTEM_PROMPT + "\n\n" + llmContext(),
+        messages: msgs
+      })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d && d.error) throw new Error(d.error.message || d.error.type || "API error");
+      var block = d && d.content && d.content.find ? d.content.find(function (b) { return b.type === "text"; }) : (d.content && d.content[0]);
+      return (block && block.text) || "…";
+    });
+  }
+  function callOpenAI(msgs) {
+    var m = [{ role: "system", content: SYSTEM_PROMPT + "\n\n" + llmContext() }].concat(msgs);
+    return fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json", "authorization": "Bearer " + state.ai.key },
+      body: JSON.stringify({ model: state.ai.model || "gpt-4o-mini", max_tokens: 700, messages: m })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d && d.error) throw new Error(d.error.message || "API error");
+      return (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || "…";
+    });
+  }
+
+  function saveSettings(btn) {
+    var n = byId("s-name"), l = byId("s-last"); if (n) state.partnerName = n.value.trim() || "Партнёр"; if (l && l.value) state.lastPeriod = l.value;
+    if (!state.ai) state.ai = {};
+    var p = byId("s-ai-provider"), k = byId("s-ai-key"), md = byId("s-ai-model");
+    if (p) state.ai.provider = p.value;
+    if (k) state.ai.key = k.value.trim();
+    if (md) state.ai.model = md.value.trim() || (state.ai.provider === "openai" ? "gpt-4o-mini" : "claude-sonnet-5");
+    save(); flash(btn, "Сохранено ✓"); setTimeout(function () { navGo("__back"); }, 700);
+  }
   function wipe() { if (!confirm("Удалить все данные с этого устройства? Необратимо.")) return; try { localStorage.removeItem(KEY); } catch (e) {} state = defaultState(); overlay = null; navStack = []; obStep = 1; obRole = "woman"; chatLog = chatLog.slice(0, 1); render(); }
   function flash(btn, text) { var o = btn.textContent; btn.textContent = text; btn.disabled = true; setTimeout(function () { btn.textContent = o; btn.disabled = false; }, 1000); }
 
