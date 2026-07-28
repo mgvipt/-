@@ -29,6 +29,14 @@ class Contact(models.Model):
     nickname = models.CharField(max_length=150, blank=True, default="", help_text="Нік / імʼя з месенджера (оригінал)")
     phone = models.CharField(max_length=32, blank=True, db_index=True)
     email = models.EmailField(blank=True)
+    portal_user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="portal_contact",
+        help_text="Личный клиентский аккаунт приложения; не назначается по совпадению телефона",
+    )
     company = models.ForeignKey(Company, null=True, blank=True, on_delete=models.SET_NULL, related_name="contacts")
     channels = models.JSONField(default=list, blank=True, help_text="['instagram','viber',...]")
     loyalty_tag = models.CharField(max_length=24, blank=True, default="", help_text="Новый/Активный/VIP/Спящий")
@@ -454,6 +462,7 @@ class ZamerProject(models.Model):
     title = models.CharField(max_length=255, blank=True, default="")
     payload = models.JSONField(default=dict)
     revision = models.PositiveBigIntegerField(default=1)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -465,6 +474,50 @@ class ZamerProject(models.Model):
 
     def __str__(self):
         return f"ZamerProject {self.project_uuid} ({self.device_uuid[:8]})"
+
+
+class ZamerStageReview(models.Model):
+    """Specialist review requested by a client for one project stage."""
+
+    STATUS = [
+        ("pending", "Очікує перевірки"),
+        ("accepted", "Прийнято"),
+        ("rework", "Потрібно виправити"),
+    ]
+    project = models.ForeignKey(
+        ZamerProject, on_delete=models.CASCADE, related_name="stage_reviews",
+    )
+    contact = models.ForeignKey(
+        Contact, on_delete=models.PROTECT, related_name="zamer_stage_reviews",
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="requested_zamer_stage_reviews",
+    )
+    stage_id = models.CharField(max_length=80)
+    title = models.CharField(max_length=255)
+    status = models.CharField(max_length=16, choices=STATUS, default="pending", db_index=True)
+    note = models.TextField(blank=True, default="")
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="reviewed_zamer_stages",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "stage_id"],
+                condition=models.Q(status="pending"),
+                name="uniq_pending_project_stage_review",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["status", "created_at"], name="zamer_review_queue_idx"),
+        ]
 
 
 def default_calc_settings():

@@ -1,7 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from rest_framework.authtoken.views import obtain_auth_token
 
 from apps.crm import views as crm_views
 from apps.accounts import views as acc_views
@@ -15,8 +14,9 @@ from apps.finance import views as fin_views
 from apps.integrations import views as intg_views
 from apps.crm.duplicates import DuplicatesView
 from apps.crm.zamer import (
-    CalcSettingsView, ClientRegisterZamerView, EstimateView, PricelistView,
-    ZamerProjectsView, ZamerView,
+    CalcSettingsView, ClientRegisterZamerView, ClientSelfEstimateView,
+    EstimateView, PricelistView, ZamerProjectsView, ZamerStageReviewView,
+    ZamerView,
 )
 from apps.gamification import views as gam_views
 from apps.telephony import views as tel_views
@@ -60,13 +60,17 @@ urlpatterns = [
     path("api/", include(router.urls)),
     path("api/zamer/", ZamerView.as_view()),  # приёмник замера из iOS-приложения
     path("api/zamer/register/", ClientRegisterZamerView.as_view()),  # клиент из приложения -> лид
+    path("api/zamer/reviews/", ZamerStageReviewView.as_view()),  # клиентские заявки на проверку
+    path("api/zamer/reviews/<int:pk>/", ZamerStageReviewView.as_view()),
+    path("api/zamer/self-estimate/", ClientSelfEstimateView.as_view()),
     path("api/pricelist/", PricelistView.as_view()),  # прайс эффектов/материалов/инструментов для приложения
     path("api/zamer/projects/", ZamerProjectsView.as_view()),  # устойчивые проекты замера
     path("api/calc-settings/", CalcSettingsView.as_view()),  # административные условия калькулятора
     path("api/estimates/", EstimateView.as_view()),  # сметы из замеров с CRM-scope
     path("api/estimates/<int:pk>/", EstimateView.as_view()),
+    path("api/auth/register/", acc_views.ClientRegisterView.as_view()),
     path("api/auth/", include("rest_framework.urls")),
-    path("api/auth/token/", obtain_auth_token),  # POST username/password -> {token}
+    path("api/auth/token/", acc_views.FlexibleAuthTokenView.as_view()),
     path("api/me/", acc_views.MeView.as_view()),
     path("api/search/", crm_views.GlobalSearchView.as_view()),
     path("api/changelog/", crm_views.ChangeLogView.as_view()),

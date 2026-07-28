@@ -17,10 +17,12 @@ from rest_framework import status
 
 from apps.crm.models import (
     CalcSettings, Contact, Deal, Estimate, Funnel, Stage, ZamerProject,
-    default_calc_settings, log_activity,
+    ZamerStageReview, default_calc_settings, log_activity,
 )
 from django.db import transaction
 from django.db.models import Q
+from django.core.exceptions import ObjectDoesNotExist
+import json
 import math
 
 LABEL = "Замер стен (LiDAR)"
@@ -65,6 +67,73 @@ def visible_deals(user):
 
 def has_code(user, code):
     return bool(user.is_superuser or user.has_perm_code(code))
+
+
+def is_client_account(user):
+    return getattr(user, "account_kind", "staff") == "client"
+
+
+def portal_contact_for(user):
+    try:
+        return user.portal_contact
+    except (AttributeError, ObjectDoesNotExist):
+        return None
+
+
+def can_use_zamer_projects(user):
+    return bool(user and (is_client_account(user) or has_code(user, "zamer.access")))
+
+
+def lock_account_row(user):
+    """Serialize project create/delete operations even before a project row exists."""
+    user._meta.model.objects.select_for_update().filter(pk=user.pk).exists()
+
+
+def bounded_json_error(value, *, max_bytes, max_depth=12, max_collection=5000,
+                       max_string=1_000_000, minimum_number=-1_000_000_000,
+                       maximum_number=1_000_000_000):
+    """Return a validation message for hostile/oversized JSON, otherwise None."""
+    try:
+        encoded = json.dumps(
+            value, ensure_ascii=False, separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError, OverflowError):
+        return "Данные содержат неподдерживаемые значения"
+    if len(encoded) > max_bytes:
+        return "Данные слишком большие"
+
+    def walk(node, depth):
+        if depth > max_depth:
+            return "Превышена допустимая вложенность данных"
+        if node is None or isinstance(node, bool):
+            return None
+        if isinstance(node, (int, float)):
+            if not math.isfinite(float(node)) or not minimum_number <= node <= maximum_number:
+                return "Числовое значение вне допустимого диапазона"
+            return None
+        if isinstance(node, str):
+            return None if len(node) <= max_string else "Строковое значение слишком длинное"
+        if isinstance(node, list):
+            if len(node) > max_collection:
+                return "Слишком много элементов"
+            for item in node:
+                error = walk(item, depth + 1)
+                if error:
+                    return error
+            return None
+        if isinstance(node, dict):
+            if len(node) > max_collection:
+                return "Слишком много полей"
+            for key, item in node.items():
+                if not isinstance(key, str) or len(key) > 128:
+                    return "Некорректное имя поля"
+                error = walk(item, depth + 1)
+                if error:
+                    return error
+            return None
+        return "Данные содержат неподдерживаемые значения"
+
+    return walk(value, 0)
 
 
 def can_edit_deal(user, deal):
@@ -160,6 +229,7 @@ class ZamerView(APIView):
         if len(device_uuid) > 64 or len(provided_project_uuid) > 64:
             return Response({"error": "Некорректный идентификатор проекта"},
                             status=status.HTTP_400_BAD_REQUEST)
+        lock_account_row(u)
         project_uuid = provided_project_uuid
         project = None
         if project_uuid:
@@ -167,6 +237,12 @@ class ZamerView(APIView):
             if project_error:
                 return Response({"error": project_error}, status=status.HTTP_409_CONFLICT)
             if project is not None:
+                project = ZamerProject.objects.select_for_update().get(pk=project.pk)
+                if project.deleted_at is not None:
+                    return Response({
+                        "error": "project_deleted",
+                        "revision": int(project.revision or 0),
+                    }, status=status.HTTP_410_GONE)
                 payload = project.payload if isinstance(project.payload, dict) else {}
                 payload_contact_id = payload.get("clientId") or payload.get("client_id")
                 if project.contact_id not in (None, contact.id):
@@ -319,6 +395,13 @@ class ZamerView(APIView):
             if project_error:
                 return Response({"error": project_error}, status=status.HTTP_409_CONFLICT)
         if project is not None:
+            project = ZamerProject.objects.select_for_update().get(pk=project.pk)
+            if project.deleted_at is not None:
+                transaction.set_rollback(True)
+                return Response({
+                    "error": "project_deleted",
+                    "revision": int(project.revision or 0),
+                }, status=status.HTTP_410_GONE)
             if project.contact_id not in (None, contact.id):
                 return Response({"error": "Проект уже привязан к другому клиенту"},
                                 status=status.HTTP_409_CONFLICT)
@@ -480,10 +563,44 @@ class ClientRegisterZamerView(APIView):
         data = request.data or {}
         name = (data.get("name") or "").strip()
         phone = "".join(ch for ch in (data.get("phone") or "") if ch.isdigit() or ch == "+")
-        if len(phone.replace("+", "")) < 7:
-            return Response({"error": "Укажите телефон"}, status=status.HTTP_400_BAD_REQUEST)
-        if not name:
-            name = "Клиент из приложения"
+        client_contact = None
+        client_project = None
+        client_stage_id = ""
+        user = getattr(request, "user", None)
+        if user is not None and getattr(user, "is_authenticated", False) and is_client_account(user):
+            client_contact = portal_contact_for(user)
+            if client_contact is None:
+                return Response({"error": "Клиентский профиль не связан с контактом"},
+                                status=status.HTTP_409_CONFLICT)
+            raw_project_uuid = data.get("project_uuid")
+            if raw_project_uuid not in (None, ""):
+                if not isinstance(raw_project_uuid, str) or len(raw_project_uuid.strip()) > 64:
+                    return Response({"error": "Некорректный project_uuid"},
+                                    status=status.HTTP_400_BAD_REQUEST)
+                client_project = ZamerProject.objects.filter(
+                    user=user, contact=client_contact,
+                    project_uuid=raw_project_uuid.strip(),
+                    deleted_at__isnull=True,
+                ).first()
+                if client_project is None:
+                    return Response({"error": "Проект не принадлежит клиентскому кабинету"},
+                                    status=status.HTTP_400_BAD_REQUEST)
+            raw_stage_id = data.get("stage_id")
+            if raw_stage_id not in (None, ""):
+                if (not isinstance(raw_stage_id, str) or len(raw_stage_id.strip()) > 80
+                        or any(ord(ch) < 32 for ch in raw_stage_id)):
+                    return Response({"error": "Некорректный stage_id"},
+                                    status=status.HTTP_400_BAD_REQUEST)
+                client_stage_id = raw_stage_id.strip()
+            # Authenticated clients can only submit to their own portal Contact;
+            # caller-supplied identity fields are intentionally ignored.
+            name = str(client_contact)
+            phone = client_contact.phone
+        else:
+            if len(phone.replace("+", "")) < 7:
+                return Response({"error": "Укажите телефон"}, status=status.HTTP_400_BAD_REQUEST)
+            if not name:
+                name = "Клиент из приложения"
 
         def num(key):
             try:
@@ -492,15 +609,17 @@ class ClientRegisterZamerView(APIView):
                 return 0.0
         net = num("net_m2"); reserve = num("net_with_reserve_m2")
 
-        # --- контакт (дедуп по телефону) ---
-        contact = Contact.objects.filter(phone=phone).first()
-        if not contact:
-            contact = Contact.objects.create(
-                first_name=name[:120], phone=phone,
-                source="app_zamer",
-                address=(data.get("city") or "")[:255],
-                comment="Пришёл из приложения «Wallcov Замер»",
-            )
+        # --- контакт (дедуп по телефону только для старого анонимного потока) ---
+        contact = client_contact
+        if contact is None:
+            contact = Contact.objects.filter(phone=phone).first()
+            if not contact:
+                contact = Contact.objects.create(
+                    first_name=name[:120], phone=phone,
+                    source="app_zamer",
+                    address=(data.get("city") or "")[:255],
+                    comment="Пришёл из приложения «Wallcov Замер»",
+                )
 
         # --- замер: короткая строка + разбивка по стенам ---
         short = f"чисто {net} м² · с запасом +10% {reserve} м²"
@@ -519,6 +638,10 @@ class ClientRegisterZamerView(APIView):
             {"label": "Длина по полу", "value": f"{num('perimeter_m')} м"},
             {"label": "Пол", "value": f"{num('floor_m2')} м²"},
         ]
+        if client_project is not None:
+            card.append({"label": "Проект приложения", "value": client_project.project_uuid})
+        if client_stage_id:
+            card.append({"label": "Этап клиента", "value": client_stage_id})
 
         # --- дедуп лида: свежий лид (10 мин) по этому контакту — обновить, иначе создать ---
         recent = (Lead.objects.filter(contact=contact,
@@ -540,8 +663,15 @@ class ClientRegisterZamerView(APIView):
                 contact=contact, funnel=funnel, stage=stage,
                 source="other", card_fields=card,
             )
-            log_activity("lead", lead.id, "Замер стен (LiDAR)",
-                         detail=f"{short}. {detail}", actor="Приложение (клиент)")
+
+        activity_parts = [short, detail]
+        if client_project is not None:
+            activity_parts.append(f"project_uuid={client_project.project_uuid}")
+        if client_stage_id:
+            activity_parts.append(f"stage_id={client_stage_id}")
+        log_activity("lead", lead.id, "Замер стен (LiDAR)",
+                     detail=". ".join(part for part in activity_parts if part),
+                     actor="Приложение (клиент)")
 
         return Response({"ok": True, "lead_id": lead.id})
 
@@ -600,33 +730,57 @@ class ZamerProjectsView(APIView):
 
     def get(self, request):
         user = self._user(request)
-        if not user or not has_code(user, "zamer.access"):
+        if not can_use_zamer_projects(user):
             return Response({"detail": "Нет доступа к проектам замера"},
                             status=status.HTTP_403_FORBIDDEN)
         rows = ZamerProject.objects.filter(user=user)
         client_id = request.query_params.get("client_id")
-        if client_id:
+        if is_client_account(user) and (
+                client_id not in (None, "") or request.query_params.get("deal_id") not in (None, "")):
+            return Response({"detail": "Клиентский аккаунт не может выбирать client_id или deal_id"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if client_id and not is_client_account(user):
             try:
                 rows = rows.filter(contact_id=int(client_id))
             except (TypeError, ValueError):
                 return Response({"detail": "Некорректный client_id"},
                                 status=status.HTTP_400_BAD_REQUEST)
-        return Response([{
-            "project_uuid": p.project_uuid,
-            "title": p.title,
-            "payload": p.payload,
-            "client_id": p.contact_id,
-            "deal_id": p.deal_id,
-            "revision": p.revision,
-            "updated_at": p.updated_at.isoformat(),
-        } for p in rows])
+        result = []
+        for project in rows:
+            if project.deleted_at is not None:
+                result.append({
+                    "project_uuid": project.project_uuid,
+                    "deleted": True,
+                    "revision": project.revision,
+                    "updated_at": project.updated_at.isoformat(),
+                })
+                continue
+            result.append({
+                "project_uuid": project.project_uuid,
+                "title": project.title,
+                "payload": project.payload,
+                "client_id": project.contact_id,
+                "deal_id": project.deal_id,
+                "deleted": False,
+                "revision": project.revision,
+                "updated_at": project.updated_at.isoformat(),
+            })
+        return Response(result)
 
+    @transaction.atomic
     def post(self, request):
+        try:
+            content_length = int(request.META.get("CONTENT_LENGTH") or 0)
+        except (TypeError, ValueError):
+            content_length = 0
+        if content_length > 5_000_000:
+            return Response({"error": "Проект слишком большой"},
+                            status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
         d = request.data or {}
         dev = (d.get("device_uuid") or "").strip()
         pu = (d.get("project_uuid") or "").strip()
         user = self._user(request)
-        if not user or not has_code(user, "zamer.access"):
+        if not can_use_zamer_projects(user):
             return Response({"detail": "Нет доступа к проектам замера"},
                             status=status.HTTP_403_FORBIDDEN)
         if not dev or not pu:
@@ -635,41 +789,125 @@ class ZamerProjectsView(APIView):
         if len(dev) > 64 or len(pu) > 64:
             return Response({"error": "Некорректный идентификатор проекта"},
                             status=status.HTTP_400_BAD_REQUEST)
-        payload = d.get("payload") if isinstance(d.get("payload"), dict) else {}
-        contact_id = payload.get("clientId") or d.get("client_id")
-        contact = None
-        if contact_id:
-            try:
-                contact = visible_contacts(user).get(pk=int(contact_id))
-            except (Contact.DoesNotExist, ValueError, TypeError):
-                return Response({"error": "Клиент недоступен этому сотруднику"},
-                                status=status.HTTP_404_NOT_FOUND)
+        lock_account_row(user)
         obj, project_error = account_project(user, dev, pu)
         if project_error:
             return Response({"error": project_error}, status=status.HTTP_409_CONFLICT)
+        if obj is not None:
+            # Serialize competing upserts before comparing revisions. The
+            # conflict response is returned before any model field is changed.
+            obj = ZamerProject.objects.select_for_update().get(pk=obj.pk)
+            if obj.deleted_at is not None:
+                return Response({
+                    "error": "project_deleted",
+                    "revision": int(obj.revision or 0),
+                }, status=status.HTTP_410_GONE)
+        payload = d.get("payload") if isinstance(d.get("payload"), dict) else {}
+        payload_error = bounded_json_error(payload, max_bytes=4_000_000)
+        if payload_error:
+            return Response({"error": payload_error}, status=status.HTTP_400_BAD_REQUEST)
+        client_account = is_client_account(user)
+        if client_account:
+            contact = portal_contact_for(user)
+            if contact is None:
+                return Response({"error": "Клиентский профиль не связан с контактом"},
+                                status=status.HTTP_409_CONFLICT)
+            supplied_deals = {
+                "client_id": d.get("client_id"),
+                "deal_id": d.get("deal_id"),
+                "payload.dealId": payload.get("dealId"),
+                "payload.deal_id": payload.get("deal_id"),
+            }
+            supplied_deals = {k: v for k, v in supplied_deals.items() if v not in (None, "")}
+            if supplied_deals:
+                return Response({
+                    "error": "Клиентский аккаунт не может выбирать клиента или сделку",
+                    "fields": sorted(supplied_deals),
+                }, status=status.HTTP_400_BAD_REQUEST)
+            for field in ("clientId", "client_id"):
+                supplied_contact = payload.get(field)
+                if supplied_contact in (None, ""):
+                    continue
+                try:
+                    is_own_contact = int(supplied_contact) == contact.id
+                except (TypeError, ValueError):
+                    is_own_contact = False
+                if not is_own_contact:
+                    return Response({
+                        "error": "Проект содержит другого клиента",
+                        "field": f"payload.{field}",
+                    }, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            contact_id = payload.get("clientId") or d.get("client_id")
+            contact = None
+            if contact_id:
+                try:
+                    contact = visible_contacts(user).get(pk=int(contact_id))
+                except (Contact.DoesNotExist, ValueError, TypeError):
+                    return Response({"error": "Клиент недоступен этому сотруднику"},
+                                    status=status.HTTP_404_NOT_FOUND)
+        base_revision_supplied = "base_revision" in d
+        base_revision = None
+        if base_revision_supplied:
+            raw_base_revision = d.get("base_revision")
+            if isinstance(raw_base_revision, int) and not isinstance(raw_base_revision, bool):
+                base_revision = raw_base_revision
+            elif (isinstance(raw_base_revision, str)
+                  and raw_base_revision.strip().isdigit()):
+                base_revision = int(raw_base_revision.strip())
+            if base_revision is not None and base_revision < 0:
+                base_revision = None
+        if obj is not None:
+            current_revision = int(obj.revision or 0)
+            raw_revision_protocol = d.get("revision_protocol")
+            revision_protocol_one = (
+                isinstance(raw_revision_protocol, int)
+                and not isinstance(raw_revision_protocol, bool)
+                and raw_revision_protocol == 1
+            ) or (
+                isinstance(raw_revision_protocol, str)
+                and raw_revision_protocol.strip() == "1"
+            )
+            strict_revision = client_account or revision_protocol_one
+            revision_conflict = (
+                (strict_revision and (
+                    not base_revision_supplied or base_revision != current_revision
+                ))
+                or (not strict_revision and base_revision_supplied
+                    and base_revision != current_revision)
+            )
+            if revision_conflict:
+                return Response({
+                    "error": "project_revision_conflict",
+                    "revision": current_revision,
+                }, status=status.HTTP_409_CONFLICT)
         if obj is None:
             obj = ZamerProject(user=user, device_uuid=dev, project_uuid=pu, revision=0)
+        elif client_account and (obj.contact_id not in (None, contact.id) or obj.deal_id is not None):
+            return Response({"error": "Проект уже связан с внутренними данными CRM"},
+                            status=status.HTTP_409_CONFLICT)
         elif obj.contact_id and contact is not None and obj.contact_id != contact.id:
             return Response({"error": "Проект уже привязан к другому клиенту"},
                             status=status.HTTP_409_CONFLICT)
         elif contact is None:
             contact = obj.contact
 
-        deal = obj.deal
-        deal_id = payload.get("dealId") or d.get("deal_id")
-        if deal_id:
-            try:
-                candidate = visible_deals(user).get(pk=int(deal_id))
-            except (Deal.DoesNotExist, ValueError, TypeError):
-                return Response({"error": "Сделка недоступна этому сотруднику"},
-                                status=status.HTTP_404_NOT_FOUND)
-            if contact is not None and candidate.contact_id != contact.id:
-                return Response({"error": "Сделка принадлежит другому клиенту"},
-                                status=status.HTTP_409_CONFLICT)
-            if deal is not None and deal.id != candidate.id:
-                return Response({"error": "Проект уже привязан к другой сделке"},
-                                status=status.HTTP_409_CONFLICT)
-            deal = candidate
+        deal = None if client_account else obj.deal
+        if not client_account:
+            deal_id = payload.get("dealId") or d.get("deal_id")
+            if deal_id:
+                try:
+                    candidate = visible_deals(user).get(pk=int(deal_id))
+                except (Deal.DoesNotExist, ValueError, TypeError):
+                    return Response({"error": "Сделка недоступна этому сотруднику"},
+                                    status=status.HTTP_404_NOT_FOUND)
+                if contact is not None and candidate.contact_id != contact.id:
+                    return Response({"error": "Сделка принадлежит другому клиенту"},
+                                    status=status.HTTP_409_CONFLICT)
+                if deal is not None and deal.id != candidate.id:
+                    return Response({"error": "Проект уже привязан к другой сделке"},
+                                    status=status.HTTP_409_CONFLICT)
+                deal = candidate
         is_new_project = obj.pk is None
         obj.user = user
         obj.device_uuid = dev
@@ -681,17 +919,71 @@ class ZamerProjectsView(APIView):
         obj.save()
         return Response({"ok": True, "project_uuid": obj.project_uuid, "revision": obj.revision})
 
+    @transaction.atomic
     def delete(self, request):
-        pu = (request.query_params.get("project_uuid") or "").strip()
+        data = request.data if isinstance(request.data, dict) else {}
+        raw_project_uuid = request.query_params.get("project_uuid", data.get("project_uuid"))
+        raw_device_uuid = request.query_params.get("device_uuid", data.get("device_uuid"))
+        pu = raw_project_uuid.strip() if isinstance(raw_project_uuid, str) else ""
+        dev = raw_device_uuid.strip() if isinstance(raw_device_uuid, str) else ""
         user = self._user(request)
-        if not user or not has_code(user, "zamer.access"):
+        if not can_use_zamer_projects(user):
             return Response({"detail": "Нет доступа к проектам замера"},
                             status=status.HTTP_403_FORBIDDEN)
         if not pu:
             return Response({"error": "project_uuid обязателен"},
                             status=status.HTTP_400_BAD_REQUEST)
-        deleted, _ = ZamerProject.objects.filter(user=user, project_uuid=pu).delete()
-        return Response({"ok": True, "deleted": deleted})
+        if len(pu) > 64 or len(dev) > 64:
+            return Response({"error": "Некорректный идентификатор проекта"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        lock_account_row(user)
+        if dev:
+            project, project_error = account_project(user, dev, pu)
+            if project_error:
+                return Response({"error": project_error}, status=status.HTTP_409_CONFLICT)
+        else:
+            project = ZamerProject.objects.filter(user=user, project_uuid=pu).first()
+        if project is not None:
+            project = ZamerProject.objects.select_for_update().get(pk=project.pk)
+        elif not dev:
+            return Response({"error": "device_uuid обязателен для нового удаления"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        else:
+            project, created = ZamerProject.objects.get_or_create(
+                device_uuid=dev,
+                project_uuid=pu,
+                defaults={
+                    "user": user,
+                    "contact": portal_contact_for(user) if is_client_account(user) else None,
+                    "title": "",
+                    "payload": {},
+                    "revision": 1,
+                    "deleted_at": timezone.now(),
+                },
+            )
+            if not created and project.user_id not in (None, user.id):
+                return Response({"error": "Проект принадлежит другому аккаунту"},
+                                status=status.HTTP_409_CONFLICT)
+            if not created:
+                project = ZamerProject.objects.select_for_update().get(pk=project.pk)
+
+        if project.deleted_at is None:
+            project.user = user
+            project.payload = {}
+            project.title = ""
+            project.deal = None
+            project.deleted_at = timezone.now()
+            project.revision = int(project.revision or 0) + 1
+            project.save(update_fields=[
+                "user", "payload", "title", "deal", "deleted_at", "revision", "updated_at",
+            ])
+        return Response({
+            "ok": True,
+            "deleted": True,
+            "project_uuid": project.project_uuid,
+            "revision": project.revision,
+        })
 
 
 class CalcSettingsView(APIView):
@@ -770,6 +1062,316 @@ class CalcSettingsView(APIView):
         obj.save()
         return Response({"values": values, "can_manage": True,
                          "updated_at": obj.updated_at.isoformat()})
+
+
+class ClientSelfEstimateView(APIView):
+    """Upsert a client's draft estimate without exposing CRM calculator APIs."""
+
+    permission_classes = [IsAuthenticated]
+    TOP_LEVEL_FIELDS = {"project_uuid", "name", "lines", "totals"}
+    LINE_FIELDS = {"title", "role", "quantity", "unit", "cost"}
+    TOTAL_FIELDS = {"area_m2", "subtotal", "discount", "total"}
+    MAX_LINES = 300
+    MAX_NUMBER = 1_000_000_000
+
+    @classmethod
+    def _number(cls, value):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        number = float(value)
+        if not math.isfinite(number) or not 0 <= number <= cls.MAX_NUMBER:
+            return None
+        return number
+
+    @transaction.atomic
+    def post(self, request):
+        if not is_client_account(request.user):
+            return Response({"detail": "Расчёт доступен только клиентскому кабинету"},
+                            status=status.HTTP_403_FORBIDDEN)
+        try:
+            content_length = int(request.META.get("CONTENT_LENGTH") or 0)
+        except (TypeError, ValueError):
+            content_length = 0
+        if content_length > 1_500_000:
+            return Response({"detail": "Расчёт слишком большой"},
+                            status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+
+        data = request.data or {}
+        if not isinstance(data, dict):
+            return Response({"detail": "Ожидается объект расчёта"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        unexpected = sorted(set(data.keys()) - self.TOP_LEVEL_FIELDS)
+        if unexpected:
+            return Response({"detail": "Недопустимые поля", "fields": unexpected},
+                            status=status.HTTP_400_BAD_REQUEST)
+        project_uuid = str(data.get("project_uuid") or "").strip()
+        if not project_uuid or len(project_uuid) > 64:
+            return Response({"detail": "Некорректный project_uuid"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        contact = portal_contact_for(request.user)
+        if contact is None:
+            return Response({"detail": "Клиентский профиль не связан с контактом"},
+                            status=status.HTTP_409_CONFLICT)
+        project = ZamerProject.objects.select_for_update().filter(
+            user=request.user,
+            contact=contact,
+            deal__isnull=True,
+            project_uuid=project_uuid,
+            deleted_at__isnull=True,
+        ).first()
+        if project is None:
+            return Response({"detail": "Проект не найден"}, status=status.HTTP_404_NOT_FOUND)
+        payload_error = bounded_json_error(project.payload, max_bytes=4_000_000)
+        if payload_error:
+            return Response({"detail": payload_error}, status=status.HTTP_400_BAD_REQUEST)
+
+        lines = data.get("lines")
+        if not isinstance(lines, list) or len(lines) > self.MAX_LINES:
+            return Response({"detail": f"lines должен содержать не более {self.MAX_LINES} позиций"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        clean_lines = []
+        for index, line in enumerate(lines, 1):
+            if not isinstance(line, dict) or set(line.keys()) != self.LINE_FIELDS:
+                return Response({"detail": f"Некорректные поля позиции {index}"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            title = line.get("title")
+            role = line.get("role")
+            unit = line.get("unit")
+            quantity = self._number(line.get("quantity"))
+            cost = self._number(line.get("cost"))
+            if (not isinstance(title, str) or not title.strip() or len(title.strip()) > 255
+                    or not isinstance(role, str) or len(role) > 64
+                    or not isinstance(unit, str) or len(unit) > 32
+                    or quantity is None or cost is None):
+                return Response({"detail": f"Некорректные данные позиции {index}"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            clean_lines.append({
+                "title": title.strip(), "role": role.strip(),
+                "quantity": quantity, "unit": unit.strip(), "cost": cost,
+            })
+
+        totals = data.get("totals")
+        if not isinstance(totals, dict) or "total" not in totals:
+            return Response({"detail": "Укажите totals.total"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        unexpected_totals = sorted(set(totals.keys()) - self.TOTAL_FIELDS)
+        if unexpected_totals:
+            return Response({"detail": "Недопустимые итоги", "fields": unexpected_totals},
+                            status=status.HTTP_400_BAD_REQUEST)
+        clean_totals = {}
+        for key, value in totals.items():
+            number = self._number(value)
+            if number is None:
+                return Response({"detail": f"Некорректное значение totals.{key}"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            clean_totals[key] = number
+
+        name = data.get("name")
+        if name is not None and (not isinstance(name, str) or len(name.strip()) > 255):
+            return Response({"detail": "Некорректное название сметы"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        estimate_name = (name or f"Смета — {project.title or project.project_uuid}").strip()[:255]
+        if not estimate_name:
+            estimate_name = "Смета клиента"
+
+        row = Estimate.objects.select_for_update().filter(
+            project=project, deal__isnull=True, owner=request.user,
+        ).order_by("-updated_at", "-id").first()
+        created = row is None
+        if created:
+            row = Estimate(
+                project=project, deal=None, owner=request.user, contact=contact,
+                version=1,
+            )
+        else:
+            row.version = int(row.version or 0) + 1
+        row.name = estimate_name
+        row.contact = contact
+        row.deal = None
+        row.owner = request.user
+        row.measurement_snapshot = project.payload
+        row.lines = clean_lines
+        row.totals = clean_totals
+        row.status = "draft"
+        row.save()
+        return Response({
+            "id": row.id,
+            "version": row.version,
+            "status": row.status,
+            "project_uuid": project.project_uuid,
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class ZamerStageReviewView(APIView):
+    """Client review requests and the roles.manage specialist queue."""
+
+    permission_classes = [IsAuthenticated]
+    CLIENT_FIELDS = {"project_uuid", "stage_id", "title"}
+    DECISION_FIELDS = {"status", "note"}
+
+    @staticmethod
+    def _is_manager(user):
+        return has_code(user, "roles.manage")
+
+    @staticmethod
+    def _serialize(row):
+        requester = row.requested_by
+        reviewer = row.reviewed_by
+        return {
+            "id": row.id,
+            "project_uuid": row.project.project_uuid,
+            "project_title": row.project.title,
+            "contact_id": row.contact_id,
+            "contact_name": str(row.contact),
+            "requested_by_id": row.requested_by_id,
+            "requested_by_name": requester.get_full_name() or requester.username,
+            "stage_id": row.stage_id,
+            "title": row.title,
+            "status": row.status,
+            "note": row.note,
+            "reviewed_by_id": row.reviewed_by_id,
+            "reviewed_by_name": (
+                reviewer.get_full_name() or reviewer.username if reviewer else ""
+            ),
+            "created_at": row.created_at.isoformat(),
+            "updated_at": row.updated_at.isoformat(),
+            "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
+        }
+
+    def get(self, request, pk=None):
+        client_account = is_client_account(request.user)
+        if client_account:
+            contact = portal_contact_for(request.user)
+            if contact is None:
+                return Response({"detail": "Клиентский профиль не связан с контактом"},
+                                status=status.HTTP_409_CONFLICT)
+            qs = ZamerStageReview.objects.filter(
+                requested_by=request.user, contact=contact, project__user=request.user,
+                project__deleted_at__isnull=True,
+            )
+        elif self._is_manager(request.user):
+            qs = ZamerStageReview.objects.filter(project__deleted_at__isnull=True)
+        else:
+            return Response({"detail": "Нет доступа к проверкам этапов"},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        requested_status = (request.query_params.get("status") or "").strip().lower()
+        if not requested_status and not client_account:
+            requested_status = "pending"
+        if requested_status:
+            if requested_status not in dict(ZamerStageReview.STATUS):
+                return Response({"detail": "Некорректный status"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            qs = qs.filter(status=requested_status)
+        if "project_uuid" in request.query_params:
+            project_uuid = request.query_params.get("project_uuid")
+            if (not isinstance(project_uuid, str) or not project_uuid.strip()
+                    or len(project_uuid.strip()) > 64
+                    or any(ord(ch) < 32 for ch in project_uuid)):
+                return Response({"detail": "Некорректный project_uuid"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            qs = qs.filter(project__project_uuid=project_uuid.strip())
+        if pk is not None:
+            qs = qs.filter(pk=pk)
+        rows = qs.select_related(
+            "project", "contact", "requested_by", "reviewed_by",
+        ).order_by("-created_at", "-id")[:500]
+        return Response([self._serialize(row) for row in rows])
+
+    @transaction.atomic
+    def post(self, request, pk=None):
+        if pk is not None:
+            return self._decide(request, pk)
+        if not is_client_account(request.user):
+            return Response({"detail": "Заявку создаёт клиентский кабинет"},
+                            status=status.HTTP_403_FORBIDDEN)
+        data = request.data or {}
+        if not isinstance(data, dict) or set(data.keys()) != self.CLIENT_FIELDS:
+            return Response({"detail": "Укажите только project_uuid, stage_id и title"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        project_uuid = data.get("project_uuid")
+        stage_id = data.get("stage_id")
+        title = data.get("title")
+        if (not isinstance(project_uuid, str) or not project_uuid.strip()
+                or len(project_uuid.strip()) > 64):
+            return Response({"detail": "Некорректный project_uuid"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if (not isinstance(stage_id, str) or not stage_id.strip() or len(stage_id.strip()) > 80
+                or any(ord(ch) < 32 for ch in stage_id)):
+            return Response({"detail": "Некорректный stage_id"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if (not isinstance(title, str) or not title.strip() or len(title.strip()) > 255
+                or any(ord(ch) < 32 for ch in title)):
+            return Response({"detail": "Некорректное название этапа"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        contact = portal_contact_for(request.user)
+        if contact is None:
+            return Response({"detail": "Клиентский профиль не связан с контактом"},
+                            status=status.HTTP_409_CONFLICT)
+        project = ZamerProject.objects.select_for_update().filter(
+            user=request.user, contact=contact, project_uuid=project_uuid.strip(),
+            deleted_at__isnull=True,
+        ).first()
+        if project is None:
+            return Response({"detail": "Проект не найден"}, status=status.HTTP_404_NOT_FOUND)
+
+        row = ZamerStageReview.objects.filter(
+            project=project, stage_id=stage_id.strip(), status="pending",
+        ).first()
+        created = row is None
+        if created:
+            row = ZamerStageReview(
+                project=project, contact=contact, requested_by=request.user,
+                stage_id=stage_id.strip(), status="pending",
+            )
+        row.title = title.strip()
+        row.contact = contact
+        row.requested_by = request.user
+        row.save()
+        row = ZamerStageReview.objects.select_related(
+            "project", "contact", "requested_by", "reviewed_by",
+        ).get(pk=row.pk)
+        return Response(self._serialize(row),
+                        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+    def patch(self, request, pk=None):
+        if pk is None:
+            return Response({"detail": "Не указана заявка"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        return self._decide(request, pk)
+
+    @transaction.atomic
+    def _decide(self, request, pk):
+        if is_client_account(request.user) or not self._is_manager(request.user):
+            return Response({"detail": "Решение принимает только ответственный сотрудник"},
+                            status=status.HTTP_403_FORBIDDEN)
+        data = request.data or {}
+        if not isinstance(data, dict) or not set(data.keys()).issubset(self.DECISION_FIELDS):
+            return Response({"detail": "Допустимы только status и note"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        decision = data.get("status")
+        if decision not in ("accepted", "rework"):
+            return Response({"detail": "status должен быть accepted или rework"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        note = data.get("note", "")
+        if not isinstance(note, str) or len(note) > 2000:
+            return Response({"detail": "Некорректный комментарий"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        row = ZamerStageReview.objects.select_for_update().select_related(
+            "project", "contact", "requested_by", "reviewed_by",
+        ).filter(pk=pk, project__deleted_at__isnull=True).first()
+        if row is None:
+            return Response({"detail": "Заявка не найдена"}, status=status.HTTP_404_NOT_FOUND)
+        from django.utils import timezone
+        row.status = decision
+        row.note = note.strip()
+        row.reviewed_by = request.user
+        row.reviewed_at = timezone.now()
+        row.save(update_fields=[
+            "status", "note", "reviewed_by", "reviewed_at", "updated_at",
+        ])
+        return Response(self._serialize(row))
 
 
 class EstimateView(APIView):
