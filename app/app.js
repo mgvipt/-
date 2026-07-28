@@ -22,13 +22,69 @@
       goals: ["Понимать себя"],
       intimacy: { date: isoToday(), value: "yellow" },
       diary: {}, course: [], lastMood: null,
-      ai: { provider: "claude", key: "", model: "claude-sonnet-5" },
+      ai: { mode: "server", server: "", token: "", userId: "", status: null, payProvider: "yookassa",
+            provider: "claude", key: "", model: "claude-sonnet-5" },
       tab: "today"
     };
   }
   function load() { try { var s = JSON.parse(localStorage.getItem(KEY)); if (s && typeof s === "object") return Object.assign(defaultState(), s); } catch (e) {} return defaultState(); }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
   var state = load();
+
+  /* ---------- server (monetized proxy: подписка + кредиты) ---------- */
+  // Владелец: впиши сюда адрес своего сервера (VPS), напр. "https://api.tvoydomen.ru".
+  // Тогда у клиентов по умолчанию включён умный ИИ через твой сервер с лимитами и оплатой.
+  var API_BASE = "";
+  function apiBase() { return ((state.ai && state.ai.server) || API_BASE || "").replace(/\/+$/, ""); }
+  function serverOn() { return !!(state.ai && state.ai.mode === "server" && apiBase()); }
+  function byokOn() { return !!(state.ai && state.ai.mode === "byok" && state.ai.key); }
+  function smartOn() { return serverOn() || byokOn(); }
+  function authHdr() { return { "content-type": "application/json", "authorization": "Bearer " + state.ai.token }; }
+
+  function ensureAccount() {
+    if (!serverOn()) return Promise.reject(new Error("сервер не настроен"));
+    if (state.ai.token) return Promise.resolve();
+    return fetch(apiBase() + "/v1/account/init", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (!d.token) throw new Error("не удалось создать аккаунт"); state.ai.token = d.token; state.ai.userId = d.userId; save(); });
+  }
+  function serverChat() {
+    var msgs = llmMessages(); while (msgs.length && msgs[0].role !== "user") msgs.shift();
+    var ci = cycleInfo();
+    var ctx = { role: state.role, phaseName: PHASES[ci.phase].name, day: ci.day, len: ci.len, mood: state.lastMood || "" };
+    return fetch(apiBase() + "/v1/chat", { method: "POST", headers: authHdr(), body: JSON.stringify({ messages: msgs, ctx: ctx }) })
+      .then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); })
+      .then(function (o) {
+        if (o.s === 402) { var e = new Error("quota"); e.quota = true; e.status = o.d.status; throw e; }
+        if (o.s === 401) { state.ai.token = ""; save(); throw new Error("нужно переподключиться"); }
+        if (o.d.error) throw new Error(o.d.message || o.d.error);
+        return { text: o.d.text, status: o.d.status };
+      });
+  }
+  function refreshMe() {
+    if (!serverOn() || !state.ai.token) return Promise.resolve(null);
+    return fetch(apiBase() + "/v1/me", { headers: { "authorization": "Bearer " + state.ai.token } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d && !d.error) { state.ai.status = d; save(); } return d; })
+      .catch(function () { return null; });
+  }
+  function startCheckout(product, packId) {
+    if (!serverOn()) { alert("Сначала укажи адрес сервера в Настройках."); return; }
+    var provider = state.ai.payProvider || "yookassa";
+    ensureAccount()
+      .then(function () { return fetch(apiBase() + "/v1/billing/checkout", { method: "POST", headers: authHdr(), body: JSON.stringify({ product: product, packId: packId, provider: provider }) }); })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d.url) { location.href = d.url; } else { alert("Не удалось создать оплату: " + (d.message || d.error || "ошибка")); } })
+      .catch(function (e) { alert("Ошибка оплаты: " + (e && e.message ? e.message : "")); });
+  }
+  function serverRemaining(st) {
+    if (!st) return null;
+    var n = 0;
+    if (st.sub && st.sub.active) n += Math.max(0, (st.sub.remaining != null ? st.sub.remaining : st.sub.cap - st.sub.used));
+    n += (st.credits || 0);
+    if (st.free) n += (st.free.remaining || 0);
+    return n;
+  }
 
   /* ---------- dates ---------- */
   function isoToday() { return new Date().toISOString().slice(0, 10); }
@@ -221,13 +277,25 @@
   function screenAssistant() {
     var msgs = chatLog.map(function (m) { return '<div class="msg ' + m.who + '">' + esc(m.text) + '</div>'; }).join("");
     var sug = ["Почему я устаю перед месячными?", "Когда фертильные дни?", "Что есть для железа?"].map(function (q) { return '<button data-ask="' + esc(q) + '">' + esc(q) + '</button>'; }).join("");
-    var smart = !!(state.ai && state.ai.key);
-    var badge = '<div style="margin-bottom:10px"><span class="pill" data-nav="settings" style="cursor:pointer">' + (smart ? "🟢 Умный ИИ включён" : "⚪ Офлайн-режим · включить умный ИИ →") + '</span></div>';
-    return head("Ассистент") + badge +
+    var quotaOut = chatLog.some(function (m) { return m.quota; });
+    var badge, cap;
+    if (serverOn()) {
+      var st = state.ai.status, left = st ? serverRemaining(st) : null;
+      if (quotaOut) { badge = '<span class="pill" data-nav="paywall" style="cursor:pointer;background:#fdecec;color:#b3261e">🔴 Лимит исчерпан · тарифы →</span>'; }
+      else { badge = '<span class="pill" data-nav="paywall" style="cursor:pointer">🟢 Умный ИИ' + (left != null ? " · осталось " + left : "") + ' →</span>'; }
+      cap = "Умный режим: ответы формирует нейросеть. Лимит и оплата — на вкладке «Тарифы». Не заменяет врача.";
+    } else if (byokOn()) {
+      badge = '<span class="pill" data-nav="settings" style="cursor:pointer">🟢 Умный ИИ (свой ключ) →</span>';
+      cap = "Умный режим на твоём ключе. Не заменяет врача.";
+    } else {
+      badge = '<span class="pill" data-nav="settings" style="cursor:pointer">⚪ Офлайн-режим · включить умный ИИ →</span>';
+      cap = "Офлайн-режим на устройстве. Не заменяет врача. Умный ИИ включается в Настройках.";
+    }
+    return head("Ассистент") + '<div style="margin-bottom:10px">' + badge + '</div>' +
       '<div class="chat" id="chat">' + msgs + '</div>' +
       '<div class="suggest">' + sug + '</div>' +
       '<div class="chat-input">' + micBtn("chat-input") + '<input id="chat-input" type="text" placeholder="Напиши или скажи…" aria-label="Вопрос" /><button class="send" data-act="send" title="Отправить">↑</button></div>' +
-      '<p class="caption">' + (smart ? "Умный режим: ответы формирует нейросеть по твоему ключу. Не заменяет врача." : "Офлайн-режим на устройстве. Не заменяет врача. Умный ИИ включается в Настройках.") + '</p>';
+      '<p class="caption">' + cap + '</p>';
   }
 
   function screenPartner() {
@@ -332,16 +400,71 @@
       '<div class="field"><label>Начало последней менструации</label><input type="date" id="s-last" value="' + state.lastPeriod + '" /></div>' +
       '<div class="field"><label>Длина цикла: <span id="s-lenv">' + state.cycleLength + '</span> дн.</label><div class="stepper"><button data-step="len:-1">−</button><span class="val" id="s-len">' + state.cycleLength + '</span><button data-step="len:1">+</button></div></div>' +
       '<div class="field"><label>Длительность менструации: <span id="s-perv">' + state.periodLength + '</span> дн.</label><div class="stepper"><button data-step="per:-1">−</button><span class="val" id="s-per">' + state.periodLength + '</span><button data-step="per:1">+</button></div></div>' +
-      '<p class="section-label" style="margin-top:10px">🤖 Умный ИИ-ассистент (по желанию)</p>' +
-      '<div class="field"><label>Провайдер</label><select id="s-ai-provider"><option value="claude"' + (state.ai.provider === "claude" ? " selected" : "") + '>Claude (Anthropic)</option><option value="openai"' + (state.ai.provider === "openai" ? " selected" : "") + '>OpenAI</option></select></div>' +
+      '<p class="section-label" style="margin-top:10px">🤖 Умный ИИ-ассистент</p>' +
+      '<div class="field"><label>Режим</label><select id="s-ai-mode">' +
+        '<option value="server"' + (state.ai.mode === "server" ? " selected" : "") + '>Через сервис (подписка/кредиты)</option>' +
+        '<option value="byok"' + (state.ai.mode === "byok" ? " selected" : "") + '>Свой ключ (для разработчика)</option>' +
+        '<option value="off"' + (state.ai.mode === "off" ? " selected" : "") + '>Выключить (офлайн)</option>' +
+      '</select></div>' +
+      '<div class="field"><label>Адрес сервера' + (API_BASE ? " (по умолчанию задан)" : "") + '</label><input type="text" id="s-ai-server" value="' + esc(state.ai.server || "") + '" placeholder="' + (API_BASE || "https://api.твойдомен.ru") + '" autocomplete="off" /></div>' +
+      (serverOn() ? '<button class="btn ghost" data-nav="paywall" style="margin-bottom:10px">💳 Тарифы и оплата</button>' : "") +
+      '<details style="margin:0 2px 10px"><summary class="caption" style="cursor:pointer">Свой ключ (расширенный режим)</summary>' +
+      '<div class="field" style="margin-top:8px"><label>Провайдер</label><select id="s-ai-provider"><option value="claude"' + (state.ai.provider === "claude" ? " selected" : "") + '>Claude (Anthropic)</option><option value="openai"' + (state.ai.provider === "openai" ? " selected" : "") + '>OpenAI</option></select></div>' +
       '<div class="field"><label>API-ключ (хранится только на устройстве)</label><input type="password" id="s-ai-key" value="' + esc(state.ai.key || "") + '" placeholder="sk-..." autocomplete="off" /></div>' +
       '<div class="field"><label>Модель</label><input type="text" id="s-ai-model" value="' + esc(state.ai.model || "") + '" placeholder="claude-sonnet-5" /></div>' +
-      '<p class="caption" style="text-align:left;margin:0 2px 10px">Claude: claude-sonnet-5 · claude-opus-5 · claude-haiku-4-5. OpenAI: gpt-4o-mini · gpt-4o.</p>' +
+      '<p class="caption" style="text-align:left;margin:0">Claude: claude-sonnet-5 · claude-opus-5 · claude-haiku-4-5. OpenAI: gpt-4o-mini · gpt-4o.</p></details>' +
       '<button class="btn" data-act="save-settings">Сохранить</button>' +
-      '<div class="card insight" style="margin-top:12px"><h3>Как работает умный режим</h3><p>С ключом ассистент отвечает по-настоящему (нейросеть). Ключ хранится только на этом устройстве, но текст вопросов уходит провайдеру ИИ — это отход от «только на устройстве», включай по желанию. Без ключа работает офлайн-режим.</p></div>' +
+      '<div class="card insight" style="margin-top:12px"><h3>Как работает умный режим</h3><p><b>Через сервис</b> — умный ИИ работает по подписке или пакетам сообщений, оплата в приложении. <b>Свой ключ</b> — для разработчика: ответы идут напрямую в нейросеть по твоему ключу. Текст вопросов уходит на сервер ИИ — включай по желанию. Без обоих — офлайн-режим на устройстве.</p></div>' +
       '<div class="card insight"><h3>🔒 Приватность</h3><p>Данные цикла хранятся только на этом устройстве. Без сервера и рекламы.</p></div>' +
       '<button class="btn danger" data-act="wipe">Удалить все мои данные</button>' +
-      '<p class="caption">Версия 2.4 · MVP-демо. Прогнозы — ориентир, не медицинская рекомендация.</p>';
+      '<p class="caption">Версия 2.5 · MVP-демо. Прогнозы — ориентир, не медицинская рекомендация.</p>';
+  }
+
+  function screenPaywall() {
+    if (!serverOn()) {
+      return head("Тарифы", "back") +
+        '<div class="card insight"><h3>Умный ИИ через сервис не подключён</h3><p>Оплата и лимиты работают, когда указан адрес сервера. Открой Настройки → «Умный ИИ» и выбери режим «Через сервис».</p></div>' +
+        '<button class="btn" data-nav="settings">Открыть настройки</button>';
+    }
+    var cur = "cur", pay = state.ai.payProvider || "yookassa";
+    var provSel = '<div class="field"><label>Способ оплаты</label><select id="pay-prov">' +
+      ['yookassa|ЮKassa (карты РФ, СБП)', 'stripe|Банковская карта (мир)', 'telegram|Telegram'].map(function (o) {
+        var p = o.split("|"); return '<option value="' + p[0] + '"' + (pay === p[0] ? " selected" : "") + '>' + p[1] + '</option>';
+      }).join("") + '</select></div>';
+
+    function money(v, c) { return v + " " + (c === "RUB" || !c ? "₽" : c); }
+    var body = head("Тарифы", "back");
+    var st = state.ai.status;
+    if (st) {
+      cur = st.currency || (st.plan && st.plan.currency) || "RUB";
+      var subLine = (st.sub && st.sub.active)
+        ? ("✅ Подписка активна: осталось " + (st.sub.remaining != null ? st.sub.remaining : (st.sub.cap - st.sub.used)) + " из " + st.sub.cap + " сообщений.")
+        : "Подписка не активна.";
+      var freeLine = st.free ? ("Бесплатно сегодня: " + st.free.remaining + " из " + st.free.limit + ".") : "";
+      body += '<div class="card insight"><h3>Твой доступ</h3><p>' + subLine + '<br>💳 Кредиты (сообщения): <b>' + (st.credits || 0) + '</b>.' + (freeLine ? "<br>" + freeLine : "") + '</p></div>';
+    } else {
+      body += '<div class="card"><p class="caption" style="text-align:left">Загружаю статус…</p></div>';
+    }
+    body += provSel;
+
+    var plan = st && st.plan;
+    if (plan) {
+      body += '<div class="phase-item"><div class="phase-emoji-box" style="background:var(--brand-soft);color:var(--brand)">★</div>' +
+        '<div style="flex:1"><h4>Подписка · ' + money(plan.price, plan.currency || cur) + '</h4>' +
+        '<span class="days">' + plan.cap + ' сообщений на ' + plan.days + ' дн.</span></div>' +
+        '<button class="btn" style="width:auto;padding:8px 14px" data-act="buy-sub">Оформить</button></div>';
+    }
+    var packs = st && st.packs;
+    if (packs && packs.length) {
+      body += '<p class="section-label" style="margin-top:12px">Пакеты сообщений (не сгорают)</p>';
+      body += packs.map(function (p) {
+        return '<div class="phase-item"><div class="phase-emoji-box" style="background:var(--brand-soft);color:var(--brand)">💬</div>' +
+          '<div style="flex:1"><h4>' + p.credits + ' сообщений</h4><span class="days">' + money(p.price, cur) + '</span></div>' +
+          '<button class="btn" style="width:auto;padding:8px 14px" data-act="buy-pack" data-pack="' + esc(p.id) + '">Купить</button></div>';
+      }).join("");
+    }
+    body += '<p class="caption">Оплата откроется в защищённом окне провайдера. После оплаты вернись в приложение — доступ обновится.</p>';
+    return body;
   }
 
   function screenCourseList() {
@@ -382,6 +505,7 @@
   function navGo(r) {
     if (r === "__back") { overlay = navStack.length ? navStack.pop() : null; return render(); }
     navStack.push(overlay); overlay = r; render();
+    if (r === "paywall" && serverOn()) { ensureAccount().then(refreshMe).then(function (d) { if (d && overlay === "paywall") render(); }).catch(function () {}); }
   }
   var chatLog = [{ who: "bot", text: "Привет! Спроси про самочувствие, цикл или питание 💛" }];
   var affIdx = 0;
@@ -397,6 +521,7 @@
     if (r === "movies") return screenMovies();
     if (r === "crisis") return screenCrisis();
     if (r === "course") return screenCourseList();
+    if (r === "paywall") return screenPaywall();
     if (r.indexOf("med:") === 0) return screenMed(r.slice(4));
     if (r.indexOf("lesson:") === 0) return screenLesson(+r.slice(7));
     return screenToday();
@@ -443,7 +568,12 @@
     else if (a === "course-done") courseDone(+t.dataset.idx);
     else if (a === "send") sendChat();
     else if (a === "save-settings") saveSettings(t);
+    else if (a === "buy-sub") startCheckout("sub", null);
+    else if (a === "buy-pack") startCheckout("credits", t.dataset.pack);
     else if (a === "wipe") wipe();
+  });
+  app.addEventListener("change", function (e) {
+    if (e.target.id === "pay-prov") { if (!state.ai) state.ai = {}; state.ai.payProvider = e.target.value; save(); }
   });
   app.addEventListener("keydown", function (e) { if (e.key === "Enter" && e.target.id === "chat-input") { e.preventDefault(); sendChat(); } });
 
@@ -466,15 +596,29 @@
 
   function ask(q) {
     chatLog.push({ who: "user", text: q });
-    var ai = state.ai || {};
-    if (ai.key) {
-      var ph = { who: "bot", text: "…", pending: true };
-      chatLog.push(ph); render();
+    if (serverOn()) {
+      var phs = { who: "bot", text: "…", pending: true }; chatLog.push(phs); render();
+      ensureAccount().then(serverChat).then(function (r) {
+        phs.text = r.text; phs.pending = false; if (r.status) state.ai.status = r.status; save(); render();
+      }).catch(function (e) {
+        phs.pending = false;
+        if (e && e.quota) {
+          if (e.status) state.ai.status = e.status; save();
+          phs.text = "Лимит умного ИИ исчерпан. Оформи подписку или купи сообщения на вкладке «Тарифы» ниже — а пока отвечу из офлайн-базы:\n\n" + assistantAnswer(q);
+          phs.quota = true; render();
+        } else {
+          phs.text = "Сервер недоступен (" + (e && e.message ? e.message : "ошибка") + "). Отвечу из офлайн-базы:\n\n" + assistantAnswer(q); render();
+        }
+      });
+      return;
+    }
+    if (byokOn()) {
+      var ph = { who: "bot", text: "…", pending: true }; chatLog.push(ph); render();
       callLLM().then(function (ans) { ph.text = ans; ph.pending = false; render(); })
                .catch(function (e) { ph.text = "Не получилось связаться с ИИ (" + (e && e.message ? e.message : "ошибка") + "). Проверь ключ в Настройках. Пока отвечу коротко: " + assistantAnswer(q); ph.pending = false; render(); });
-    } else {
-      chatLog.push({ who: "bot", text: assistantAnswer(q) }); render();
+      return;
     }
+    chatLog.push({ who: "bot", text: assistantAnswer(q) }); render();
   }
   function sendChat() { var el = byId("chat-input"); if (!el) return; var v = el.value.trim(); if (!v) return; el.value = ""; ask(v); }
 
@@ -529,6 +673,9 @@
   function saveSettings(btn) {
     var n = byId("s-name"), l = byId("s-last"); if (n) state.partnerName = n.value.trim() || "Партнёр"; if (l && l.value) state.lastPeriod = l.value;
     if (!state.ai) state.ai = {};
+    var mode = byId("s-ai-mode"), srv = byId("s-ai-server");
+    if (mode) state.ai.mode = mode.value;
+    if (srv) state.ai.server = srv.value.trim().replace(/\/+$/, "");
     var p = byId("s-ai-provider"), k = byId("s-ai-key"), md = byId("s-ai-model");
     if (p) state.ai.provider = p.value;
     if (k) state.ai.key = k.value.trim();
