@@ -690,13 +690,30 @@ class IncomingDocUploadView(APIView):
                 pass
         inv = act.get("invoice_number")
         _sup = act.get("supplier") or {}
-        _is_np = ("нова пошта" in (str(_sup.get("name") or "")).lower()) or (str(_sup.get("ipn") or "") == "31316718")
+        _nml = (name or "").lower()
+        _is_np = ("нова пошта" in (str(_sup.get("name") or "")).lower()) or (str(_sup.get("ipn") or "") == "31316718") or ("нова пошта" in _nml) or ("нп-" in _nml) or ("акту" in _nml and "нп" in _nml)
         if _is_np:
             # Нова Пошта — служба доставки, НЕ постачальник товарів. Кладемо у НП-розділ (без приходу/товарів).
             import re as _rnpu, base64 as _b64u, hashlib as _hu
             _m = _rnpu.search(r"НП[-\s]?\d{6,}", name or "")
             _md = _rnpu.search(r"\d{2}\.\d{2}\.\d{4}", name or "")
             _uid = "UP-" + _hu.md5(raw).hexdigest()[:16]
+            # номер акта (тільки цифри) для дедупу
+            _numm = _rnpu.search(r"\d{6,}", (inv or "") + " " + (name or ""))
+            _numdig = _numm.group(0) if _numm else None
+            # ── ДЕДУП: акт НП вже є як кредиторка/проведений документ? Не дублюємо ──
+            if _numdig:
+                from apps.finance.models import PlannedPayment as _PPnp
+                _exp = _PPnp.objects.filter(kind="payable", comment__icontains=_numdig).first()
+                _confd = (IncomingDoc.objects.filter(doc_type="np_act", status="confirmed", subject__icontains=_numdig).exists()
+                          or IncomingDoc.objects.filter(doc_type="np_act", status="confirmed", parsed__invoice_number__icontains=_numdig).exists())
+                if _exp or _confd:
+                    return Response({"ok": True, "duplicate": True,
+                                     "detail": ("Рахунок Нової Пошти НП-%s вже в системі%s. Вантажити не треба — акти НП надходять поштою автоматично. Оплати кредиторку у розділі Дт/Кт."
+                                                % (_numdig, (" — кредиторка №%s на %s ₴" % (_exp.id, _exp.amount)) if _exp else ""))})
+            # уникнути колізії при повторному завантаженні того самого файлу
+            if IncomingDoc.objects.filter(message_uid=_uid).exists():
+                return Response({"ok": True, "duplicate": True, "detail": "Цей файл уже завантажували раніше."})
             d = IncomingDoc.objects.create(
                 mailbox="manual", message_uid=_uid,
                 sender=(request.data.get("sender") or "").strip() or ("Ручне завантаження · %s" % name)[:200],
