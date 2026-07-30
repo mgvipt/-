@@ -1071,8 +1071,26 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         return DealSerializer
 
     def _recalc_amount(self, deal):
+        old_amount = deal.amount
         deal.amount = sum((i.total for i in deal.items.all()), Decimal("0"))
         deal.save(update_fields=["amount"])
+        # Fix 2026-07-30 (інцидент 65946): якщо після рекалку сплачене вже покриває
+        # нову суму сделки, а стадія ще pre-payment — запустити _advance_after_payment.
+        # LiqPayCallbackView робить це тільки в момент callback, а не при кожному
+        # редагуванні позицій. Без цього рекалк «вниз» лишає стадію застряглою.
+        try:
+            if deal.amount and deal.amount > 0:
+                _paid_sum = sum((p.amount for p in Payment.objects.filter(deal=deal, is_paid=True)), Decimal("0"))
+                if _paid_sum >= deal.amount:
+                    _stage_name_lc = (deal.stage.name if deal.stage_id else "").lower()
+                    # рухаємо тільки з pre-payment стадій (щоб не тригерити на won/lost/склад)
+                    if any(m in _stage_name_lc for m in ("домовились", "розрахунок", "данні для", "квалі")):
+                        _advance_after_payment(deal,
+                            "recalc: сплачене (%s) покриває суму сделки (%s→%s)" % (_paid_sum, old_amount, deal.amount),
+                            actor="Автоматизація (recalc)", create_wh=True)
+        except Exception:
+            pass
+
 
     @action(detail=True, methods=["post"])
     def add_item(self, request, pk=None):
