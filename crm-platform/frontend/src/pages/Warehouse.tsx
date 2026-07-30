@@ -95,7 +95,7 @@ export default function Warehouse() {
   const [view, setView] = useState<"goods" | "realiz" | "receipt" | "inv" | "stat">(() => (localStorage.getItem("whacc_tab") as any) || "goods");
   useEffect(() => { try { localStorage.setItem("whacc_tab", view); } catch (e) { /* noop */ } }, [view]);
   // авто-загрузка списка документов при входе на вкладку (в т.ч. после перезагрузки / создания прихода)
-  useEffect(() => { if (view === "receipt") openReceiptList(); else if (view === "realiz") openRealizList(); /* eslint-disable-next-line */ }, [view]);
+  useEffect(() => { if (view === "receipt") openReceiptList(); else if (view === "realiz") openRealizList(); else if (view === "inv") openInventory(); /* eslint-disable-next-line */ }, [view]);
   const [realizDocs, setRealizDocs] = useState<any[]>([]);
   const [realizBusy, setRealizBusy] = useState(false);
   const [realizSel, setRealizSel] = useState<any>(null);
