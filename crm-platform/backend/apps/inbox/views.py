@@ -846,14 +846,18 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                 "грамотно, тепло, живо і переконливо, ТІЄЮ Ж МОВОЮ що й чернетка. "
                 "Збережи всі факти, цифри, ціни й домовленості з чернетки — нічого не додавай і не вигадуй. "
                 "Зроби текст людяним і таким, що наближає клієнта до наступного кроку.")
+        # style (стабільний, ~2285 tokens) виносимо в system з cache=True (5-min TTL).
+        # task + dialog + draft залишаються user-prompt (variable — не кешується).
         prompt = (
-            style + "\n\n" + task + "\n\n"
+            task + "\n\n"
             "Переписка з клієнтом (для тону, мови та контексту):\n" + (dialog or "(переписки ще немає)") + "\n\n"
             "ЧЕРНЕТКА менеджера:\n" + draft + "\n\n"
             'Поверни СТРОГО JSON без пояснень: {"text": "готове повідомлення клієнту тією потрібною мовою"}')
         from apps.crm.ai import claude_json
         try:
-            r = claude_json(prompt, model="claude-sonnet-4-6", max_tokens=1000, source="Помічник у чаті")
+            r = claude_json(prompt, model="claude-sonnet-4-6", max_tokens=1000,
+                            source="Помічник у чаті",
+                            system=style, cache=True)
             txt = (r.get("text") or r.get("suggestion") or "").strip()
             return Response({"text": txt})
         except Exception as e:
