@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#9b3f63" />
+<title>Цикл вдвоём — прототип</title>
+<style>
+  :root {
+    --bg: #f6f0ef;
+    --surface: #ffffff;
+    --surface-2: #faf5f4;
+    --ink: #2a1f26;
+    --ink-soft: #6d5c65;
+    --line: #ecdfdf;
+    --brand: #9b3f63;
+    --brand-soft: #f3e3ea;
+    --p-menstrual: #b03a5b;
+    --p-follicular: #5b9e7a;
+    --p-ovulation: #e0915a;
+    --p-luteal: #8b7bb0;
+    --good: #4f9d75;
+    --warn: #cf8b3e;
+    --stop: #c65454;
+    --radius: 20px;
+    --shadow: 0 18px 50px -20px rgba(58,25,40,.35);
+    --serif: ui-serif, Georgia, "Times New Roman", serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171215; --surface: #221a20; --surface-2: #1c151b; --ink: #f4eaee;
+      --ink-soft: #b49dab; --line: #382a34; --brand: #d98cae; --brand-soft: #33222c;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f0ef; --surface: #fff; --surface-2: #faf5f4; --ink: #2a1f26;
+    --ink-soft: #6d5c65; --line: #ecdfdf; --brand: #9b3f63; --brand-soft: #f3e3ea;
+  }
+  :root[data-theme="dark"] {
+    --bg: #171215; --surface: #221a20; --surface-2: #1c151b; --ink: #f4eaee;
+    --ink-soft: #b49dab; --line: #382a34; --brand: #d98cae; --brand-soft: #33222c;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 20px 64px; }
+  header.top { text-align: center; margin-bottom: 22px; }
+  .kicker { font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--brand); font-weight: 600; }
+  header.top h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(26px, 5vw, 40px); margin: 8px 0 6px; letter-spacing: -.01em; text-wrap: balance; }
+  header.top p { color: var(--ink-soft); margin: 0 auto; max-width: 52ch; }
+  .switch { display: inline-flex; gap: 4px; background: var(--surface); border: 1px solid var(--line); padding: 5px; border-radius: 999px; margin: 20px auto 0; box-shadow: var(--shadow); }
+  .switch button { border: 0; background: transparent; color: var(--ink-soft); cursor: pointer; font-size: 14px; font-weight: 600; padding: 9px 18px; border-radius: 999px; transition: .2s; }
+  .switch button[aria-selected="true"] { background: var(--brand); color: #fff; }
+
+  .stage { margin-top: 30px; }
+  .surface-view { display: none; }
+  .surface-view.active { display: block; }
+  .phones { display: flex; gap: 30px; justify-content: center; flex-wrap: wrap; align-items: flex-start; }
+
+  .phone { width: 360px; max-width: 100%; background: var(--surface); border-radius: 42px; border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; position: relative; }
+  .notch { height: 30px; display: flex; align-items: center; justify-content: center; flex: none; }
+  .notch::after { content: ""; width: 110px; height: 7px; border-radius: 999px; background: var(--line); }
+  .screen { padding: 6px 20px 0; }
+  .app-body { min-height: 588px; display: flex; flex-direction: column; }
+  .screen-head { display: flex; align-items: baseline; justify-content: space-between; margin: 4px 0 14px; }
+  .screen-head .date { font-size: 12px; color: var(--ink-soft); }
+  .screen-head h2 { font-family: var(--serif); font-size: 22px; margin: 0; font-weight: 600; }
+  .scroll { overflow-y: auto; flex: 1; }
+
+  .ring-wrap { display: flex; justify-content: center; margin: 6px 0 16px; }
+  .ring { position: relative; width: 200px; height: 200px; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .ring .center .day { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft); }
+  .ring .center .phase-name { font-family: var(--serif); font-size: 23px; font-weight: 600; margin: 2px 0; }
+  .ring .center .phase-emoji { font-size: 24px; }
+
+  .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+  .card { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
+  .card h3 { margin: 0 0 5px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .card p { margin: 0; font-size: 13.5px; color: var(--ink-soft); }
+  .card .lead { color: var(--ink); }
+  .section-label { font-size: 12.5px; color: var(--ink-soft); margin: 6px 2px 8px; font-weight: 600; }
+
+  .mood-row, .seg { display: flex; gap: 8px; margin: 4px 0 14px; }
+  .mood { flex: 1; text-align: center; padding: 10px 0; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-size: 20px; transition: .15s; }
+  .mood:hover { border-color: var(--brand); transform: translateY(-2px); }
+  .mood.sel { border-color: var(--brand); background: var(--brand-soft); }
+
+  /* intimacy traffic light */
+  .seg button { flex: 1; border: 1px solid var(--line); background: var(--surface); border-radius: 14px; padding: 11px 6px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--ink); display: flex; flex-direction: column; align-items: center; gap: 5px; transition: .15s; }
+  .seg button .lt { font-size: 18px; }
+  .seg button[aria-pressed="true"] { border-width: 2px; transform: translateY(-1px); }
+  .seg button[data-v="green"][aria-pressed="true"] { border-color: var(--good); background: color-mix(in srgb, var(--good) 12%, var(--surface)); }
+  .seg button[data-v="yellow"][aria-pressed="true"] { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--surface)); }
+  .seg button[data-v="red"][aria-pressed="true"] { border-color: var(--stop); background: color-mix(in srgb, var(--stop) 12%, var(--surface)); }
+
+  .btn { display: block; width: 100%; text-align: center; border: 0; cursor: pointer; background: var(--brand); color: #fff; font-family: var(--sans); font-weight: 600; font-size: 14px; padding: 13px; border-radius: 14px; margin-top: 4px; }
+  .btn.ghost { background: transparent; color: var(--brand); border: 1px solid var(--line); }
+  .btn.sm { padding: 10px; font-size: 13px; }
+
+  .tabbar { display: flex; border-top: 1px solid var(--line); background: var(--surface); padding: 8px 4px 14px; flex: none; }
+  .tab { flex: 1; background: transparent; border: 0; cursor: pointer; color: var(--ink-soft); font-size: 10px; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0; }
+  .tab svg { width: 21px; height: 21px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+  .tab[aria-selected="true"] { color: var(--brand); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .phase-item { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .phase-item:last-child { border-bottom: 0; }
+  .phase-emoji-box { width: 44px; height: 44px; border-radius: 13px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex: none; }
+  .phase-item h4 { margin: 0 0 2px; font-size: 14.5px; }
+  .phase-item .days { font-size: 11.5px; color: var(--ink-soft); font-weight: 600; }
+  .phase-item p { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+  .caption { font-size: 11px; color: var(--ink-soft); text-align: center; margin: 12px 4px 14px; line-height: 1.45; }
+  .phone-label { text-align: center; font-size: 12px; color: var(--ink-soft); margin-top: 12px; font-weight: 600; letter-spacing: .04em; }
+
+  /* partner */
+  .support-hero { border-radius: var(--radius); padding: 18px; color: #fff; margin-bottom: 14px; background: linear-gradient(135deg, #8b7bb0, #6d5c9a); }
+  .support-hero .who { font-size: 12px; opacity: .85; }
+  .support-hero .big { font-family: var(--serif); font-size: 19px; margin: 6px 0 10px; line-height: 1.35; }
+  .support-hero .tag { font-size: 12px; background: rgba(255,255,255,.2); padding: 4px 10px; border-radius: 999px; }
+  .do-dont { display: flex; gap: 10px; }
+  .do-dont .col { flex: 1; }
+  .do-dont h5 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  .do-dont ul { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--ink-soft); }
+  .do-dont li { margin-bottom: 4px; }
+  .signal-card { display: flex; align-items: center; gap: 12px; }
+  .signal-badge { width: 46px; height: 46px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px; flex: none; background: var(--surface); border: 1px solid var(--line); }
+
+  /* chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .chip { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 8px 13px; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: .15s; }
+  .chip.sel { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); }
+
+  /* onboarding */
+  .ob { position: absolute; inset: 0; background: var(--surface); z-index: 5; display: flex; flex-direction: column; padding: 30px 22px 22px; }
+  .ob.hidden { display: none; }
+  .ob .brand { text-align: center; margin-bottom: 6px; }
+  .ob .brand .k { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--brand); font-weight: 600; }
+  .ob .brand h2 { font-family: var(--serif); font-size: 26px; margin: 4px 0 0; }
+  .ob .dots { display: flex; gap: 6px; justify-content: center; margin: 14px 0 18px; }
+  .ob .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+  .ob .dots i.on { background: var(--brand); width: 20px; border-radius: 999px; }
+  .ob-step { display: none; flex: 1; flex-direction: column; }
+  .ob-step.active { display: flex; }
+  .ob-step h3 { font-family: var(--serif); font-size: 20px; margin: 0 0 4px; text-wrap: balance; }
+  .ob-step .sub { color: var(--ink-soft); font-size: 13px; margin: 0 0 16px; }
+  .choice { display: flex; flex-direction: column; gap: 12px; }
+  .choice-card { display: flex; align-items: center; gap: 14px; border: 1px solid var(--line); background: var(--surface-2); border-radius: 16px; padding: 16px; cursor: pointer; transition: .15s; text-align: left; width: 100%; }
+  .choice-card:hover { border-color: var(--brand); }
+  .choice-card.sel { border-color: var(--brand); background: var(--brand-soft); }
+  .choice-card .em { font-size: 28px; }
+  .choice-card .t { font-weight: 600; font-size: 15px; }
+  .choice-card .d { font-size: 12px; color: var(--ink-soft); }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); margin-bottom: 6px; }
+  .field input[type="date"], .field .stepper { width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 11px 13px; font-family: var(--sans); font-size: 14px; color: var(--ink); }
+  .stepper { display: flex; align-items: center; justify-content: space-between; }
+  .stepper button { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); font-size: 17px; cursor: pointer; color: var(--ink); }
+  .stepper .val { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .ob-foot { margin-top: auto; padding-top: 12px; }
+  .ob-skip { text-align: center; background: none; border: 0; color: var(--ink-soft); font-size: 12.5px; cursor: pointer; width: 100%; margin-top: 8px; }
+
+  /* diary trends */
+  .log-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .log-cell { border: 1px solid var(--line); background: var(--surface); border-radius: 14px; padding: 10px 12px; cursor: pointer; display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 600; transition: .15s; }
+  .log-cell .em { font-size: 17px; }
+  .log-cell.sel { border-color: var(--brand); background: var(--brand-soft); }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 12px; }
+  .bar-row .name { width: 92px; color: var(--ink-soft); flex: none; }
+  .bar-track { flex: 1; height: 9px; background: var(--line); border-radius: 999px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 999px; }
+  .insight { border-left: 3px solid var(--brand); }
+  .redflag { border: 1px solid color-mix(in srgb, var(--stop) 30%, var(--line)); background: color-mix(in srgb, var(--stop) 6%, var(--surface-2)); }
+
+  /* AI chat */
+  .chat { display: flex; flex-direction: column; gap: 10px; padding: 4px 0 8px; }
+  .msg { max-width: 82%; padding: 10px 13px; border-radius: 16px; font-size: 13px; line-height: 1.45; }
+  .msg.bot { align-self: flex-start; background: var(--surface-2); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+  .msg.user { align-self: flex-end; background: var(--brand); color: #fff; border-bottom-right-radius: 5px; }
+  .suggest { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }
+  .suggest button { text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 10px 13px; font-size: 12.5px; cursor: pointer; color: var(--ink); font-weight: 500; }
+  .suggest button:hover { border-color: var(--brand); }
+  .chat-input { display: flex; gap: 8px; align-items: center; border-top: 1px solid var(--line); padding: 10px 0 2px; margin-top: 6px; }
+  .chat-input input { flex: 1; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 10px 14px; font-size: 13px; font-family: var(--sans); color: var(--ink); }
+  .chat-input .send { width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--brand); color: #fff; font-size: 16px; cursor: pointer; flex: none; }
+
+  /* course progress */
+  .course-bar { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; margin: 8px 0; }
+  .course-bar > i { display: block; height: 100%; background: var(--brand); border-radius: 999px; }
+
+  /* business dashboard */
+  .dash { background: var(--surface); border: 1px solid var(--line); border-radius: 24px; box-shadow: var(--shadow); max-width: 860px; margin: 0 auto; overflow: hidden; }
+  .dash-head { padding: 22px 26px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+  .dash-head h2 { font-family: var(--serif); margin: 0; font-size: 22px; }
+  .dash-head .company { font-size: 12.5px; color: var(--ink-soft); }
+  .privacy-banner { display: flex; gap: 10px; align-items: center; background: var(--brand-soft); color: var(--brand); font-size: 12.5px; font-weight: 600; padding: 10px 26px; }
+  .dash-body { padding: 22px 26px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .kpi { background: var(--surface-2); border: 1px solid var(--line); border-radius: 16px; padding: 15px; }
+  .kpi .n { font-family: var(--serif); font-size: 27px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .kpi .l { font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; }
+  .kpi .trend { font-size: 11px; font-weight: 600; margin-top: 6px; color: var(--good); }
+  .dash-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; margin-top: 20px; }
+  .panel { background: var(--surface-2); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; }
+  .panel h3 { margin: 0 0 14px; font-size: 14px; }
+  .panel .bar-row .name { width: 130px; }
+  .panel .bar-fill { background: var(--brand); }
+  .panel .bar-row .val { width: 34px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 12.5px; }
+  .spark { display: flex; align-items: flex-end; gap: 6px; height: 90px; margin-top: 6px; }
+  .spark .b { flex: 1; background: linear-gradient(180deg, var(--brand), var(--brand-soft)); border-radius: 6px 6px 0 0; min-height: 6px; }
+  .locked { margin-top: 18px; border: 1px dashed var(--line); border-radius: 16px; padding: 16px 18px; display: flex; gap: 12px; align-items: center; color: var(--ink-soft); font-size: 12.5px; }
+  .locked .lock { font-size: 20px; }
+  .foot { text-align: center; color: var(--ink-soft); font-size: 12px; margin-top: 34px; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  /* ======== MOBILE: full-screen, no phone frame ======== */
+  @media (max-width: 600px) {
+    .wrap { padding: 0; }
+    header.top { display: none; }
+    .stage { margin-top: 0; }
+    .phones { gap: 0; }
+    .phone { width: 100%; max-width: 100%; border: 0; border-radius: 0; box-shadow: none; min-height: 100vh; min-height: 100dvh; }
+    .notch { display: none; }
+    .app-body { min-height: calc(100vh - 0px); min-height: 100dvh; }
+    .phone-label { display: none; }
+    .mobile-switch { display: flex; }
+    .surface-view .caption.deskonly { display: none; }
+    /* keep dashboard readable */
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .dash-grid { grid-template-columns: 1fr; }
+    .dash, .dash-head, .privacy-banner, .dash-body { border-radius: 0; }
+    .dash { border-left: 0; border-right: 0; }
+  }
+  @media (min-width: 601px) { .mobile-switch { display: none; } }
+  .mobile-switch { gap: 4px; background: var(--surface); border-bottom: 1px solid var(--line); padding: 8px; justify-content: center; }
+  .mobile-switch button { flex: 1; max-width: 200px; border: 1px solid var(--line); background: transparent; color: var(--ink-soft); font-weight: 600; font-size: 13px; padding: 9px; border-radius: 10px; cursor: pointer; }
+  .mobile-switch button[aria-selected="true"] { background: var(--brand); color: #fff; border-color: var(--brand); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="kicker">Интерактивный прототип · черновик</div>
+    <h1>Цикл вдвоём</h1>
+    <p>Приложение о женском цикле — для женщины, партнёра и, отдельным слоем, для бизнеса. На телефоне открывается на весь экран, на десктопе — в рамке. Кликайте по вкладкам и переключателю.</p>
+    <div class="switch" role="tablist" aria-label="Поверхности">
+      <button role="tab" aria-selected="true" data-surface="app">Приложение</button>
+      <button role="tab" aria-selected="false" data-surface="biz">Панель для бизнеса</button>
+    </div>
+  </header>
+
+  <!-- mobile-only surface switch -->
+  <div class="mobile-switch" role="tablist" aria-label="Поверхности (моб.)">
+    <button role="tab" aria-selected="true" data-surface="app">Приложение</button>
+    <button role="tab" aria-selected="false" data-surface="biz">Для бизнеса</button>
+  </div>
+
+  <div class="stage">
+    <!-- ============ APP ============ -->
+    <section class="surface-view active" id="surface-app">
+      <div class="phones">
+        <div>
+          <div class="phone">
+            <div class="notch"></div>
+
+            <!-- ONBOARDING -->
+            <div class="ob" id="onboarding">
+              <div class="brand"><div class="k">Добро пожаловать</div><h2>Цикл вдвоём</h2></div>
+              <div class="dots"><i class="on" data-d="1"></i><i data-d="2"></i><i data-d="3"></i></div>
+
+              <div class="ob-step active" data-step="1">
+                <h3>Кто вы?</h3>
+                <p class="sub">От этого зависит, как будет выглядеть приложение.</p>
+                <div class="choice">
+                  <button class="choice-card sel" data-role="woman"><span class="em">👩</span><span><span class="t">Я веду свой цикл</span><br><span class="d">Трекер, самочувствие, приватность</span></span></button>
+                  <button class="choice-card" data-role="partner"><span class="em">🧑</span><span><span class="t">Я поддерживаю партнёршу</span><br><span class="d">Подсказки, как быть рядом</span></span></button>
+                </div>
+                <div class="ob-foot"><button class="btn" data-next="2">Продолжить</button></div>
+              </div>
+
+              <div class="ob-step" data-step="2">
+                <h3>Пара деталей о цикле</h3>
+                <p class="sub">Нужно только для прогноза. Данные приватны.</p>
+                <div class="field">
+                  <label>Начало последней менструации</label>
+                  <input type="date" value="2026-07-14" />
+                </div>
+                <div class="field">
+                  <label>Средняя длина цикла (дней)</label>
+                  <div class="stepper"><button data-len="-1">−</button><span class="val" id="cyclen">28</span><button data-len="1">+</button></div>
+                </div>
+                <div class="ob-foot"><button class="btn" data-next="3">Продолжить</button></div>
+              </div>
+
+              <div class="ob-step" data-step="3">
+                <h3>Ваши цели</h3>
+                <p class="sub">Можно выбрать несколько — подстроим контент.</p>
+                <div class="chips">
+                  <button class="chip sel">Понимать себя</button>
+                  <button class="chip">Поддержать партнёршу</button>
+                  <button class="chip">Планирую беременность</button>
+                  <button class="chip">Избегаю беременности</button>
+                  <button class="chip">Следить за симптомами</button>
+                </div>
+                <div class="ob-foot">
+                  <button class="btn" id="ob-finish">Открыть приложение</button>
+                  <button class="ob-skip" id="ob-skip">Пропустить онбординг</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="app-body">
+              <!-- TODAY -->
+              <div class="tab-panel active" data-panel="today">
+                <div class="screen scroll">
+                  <div class="screen-head">
+                    <div><div class="date">Понедельник, 27 июля</div><h2>Сегодня</h2></div>
+                    <span class="pill"><span class="dot" style="background:var(--p-ovulation)"></span>День 14</span>
+                  </div>
+                  <div class="ring-wrap">
+                    <div class="ring">
+                      <svg width="200" height="200" viewBox="0 0 200 200">
+                        <circle cx="100" cy="100" r="86" fill="none" stroke="var(--line)" stroke-width="15"/>
+                        <circle cx="100" cy="100" r="86" fill="none" stroke="var(--p-menstrual)" stroke-width="15" stroke-dasharray="96 445" stroke-linecap="round"/>
+                        <circle cx="100" cy="100" r="86" fill="none" stroke="var(--p-follicular)" stroke-width="15" stroke-dasharray="154 387" stroke-dashoffset="-100" stroke-linecap="round"/>
+                        <circle cx="100" cy="100" r="86" fill="none" stroke="var(--p-ovulation)" stroke-width="15" stroke-dasharray="38 503" stroke-dashoffset="-258" stroke-linecap="round"/>
+                        <circle cx="100" cy="100" r="86" fill="none" stroke="var(--p-luteal)" stroke-width="15" stroke-dasharray="235 306" stroke-dashoffset="-300" stroke-linecap="round"/>
+                      </svg>
+                      <div class="center"><div class="phase-emoji">☀️</div><div class="phase-name">Овуляция</div><div class="day">пик энергии</div></div>
+                    </div>
+                  </div>
+                  <div class="card"><h3>💛 Как ты можешь себя чувствовать</h3><p class="lead">Обычно это пик энергии, уверенности и влечения. Хорошее время для важного и для близости — если она в планах.</p></div>
+                  <div class="card"><h3>🔒 Фертильное окно</h3><p>Самые фертильные дни. Если беременность не в планах — контрацепция. Не медицинская рекомендация.</p></div>
+
+                  <p class="section-label">Близость сегодня — решаешь только ты</p>
+                  <div class="seg" id="intimacy">
+                    <button data-v="green" aria-pressed="false"><span class="lt">🟢</span>Открыта</button>
+                    <button data-v="yellow" aria-pressed="true"><span class="lt">🟡</span>Может быть</button>
+                    <button data-v="red" aria-pressed="false"><span class="lt">🔴</span>Не сегодня</button>
+                  </div>
+                  <p class="caption" style="text-align:left;margin:0 2px 14px">Партнёр увидит только выбранный сигнал — не даты и не симптомы. Можно изменить в любой момент.</p>
+
+                  <p class="section-label">Как ты себя чувствуешь?</p>
+                  <div class="mood-row">
+                    <button class="mood" title="Отлично">😄</button><button class="mood sel" title="Спокойно">🙂</button>
+                    <button class="mood" title="Устала">😔</button><button class="mood" title="Раздражена">😤</button><button class="mood" title="Боль">🤕</button>
+                  </div>
+                  <button class="btn">Поделиться самочувствием с партнёром</button>
+                  <p class="caption">Данные приватны и не передаются рекламодателям.</p>
+                </div>
+              </div>
+
+              <!-- DIARY -->
+              <div class="tab-panel" data-panel="diary">
+                <div class="screen scroll">
+                  <div class="screen-head"><div><div class="date">27 июля · день 14</div><h2>Дневник</h2></div></div>
+                  <p class="section-label">Отметь, что сегодня</p>
+                  <div class="log-grid">
+                    <div class="log-cell"><span class="em">🩸</span>Выделения</div>
+                    <div class="log-cell sel"><span class="em">⚡</span>Энергия</div>
+                    <div class="log-cell"><span class="em">😴</span>Сон</div>
+                    <div class="log-cell"><span class="em">🤕</span>Боль</div>
+                    <div class="log-cell sel"><span class="em">❤️</span>Либидо</div>
+                    <div class="log-cell"><span class="em">🍫</span>Аппетит</div>
+                  </div>
+                  <button class="btn sm">Сохранить запись</button>
+
+                  <p class="section-label" style="margin-top:18px">Твои тренды</p>
+                  <div class="card">
+                    <h3>Энергия по фазам</h3>
+                    <div class="bar-row"><span class="name">Менструация</span><div class="bar-track"><div class="bar-fill" style="width:35%;background:var(--p-menstrual)"></div></div></div>
+                    <div class="bar-row"><span class="name">Фолликул.</span><div class="bar-track"><div class="bar-fill" style="width:80%;background:var(--p-follicular)"></div></div></div>
+                    <div class="bar-row"><span class="name">Овуляция</span><div class="bar-track"><div class="bar-fill" style="width:95%;background:var(--p-ovulation)"></div></div></div>
+                    <div class="bar-row"><span class="name">Лютеин.</span><div class="bar-track"><div class="bar-fill" style="width:50%;background:var(--p-luteal)"></div></div></div>
+                  </div>
+                  <div class="card insight"><h3>🔎 Инсайт</h3><p>За последние 3 цикла в лютеиновой фазе у тебя обычно хуже сон 😴 — планируй отдых заранее.</p></div>
+                  <div class="card redflag"><h3>🩺 Забота о здоровье</h3><p>Если цикл сильно нерегулярный или боль слишком сильная — возможно, стоит показаться врачу.</p><button class="btn ghost sm" style="margin-top:10px">Сформировать выписку для врача (PDF)</button></div>
+                  <p class="caption">Ориентир, не диагноз. Каждая женщина индивидуальна.</p>
+                </div>
+              </div>
+
+              <!-- ASSISTANT -->
+              <div class="tab-panel" data-panel="ai">
+                <div class="screen scroll">
+                  <div class="screen-head"><div><div class="date">На связи 24/7</div><h2>Ассистент</h2></div></div>
+                  <div class="chat" id="chat">
+                    <div class="msg bot">Привет! Я помогу разобраться в твоём цикле и самочувствии. Спроси что угодно 💛</div>
+                  </div>
+                  <div class="suggest" id="suggest">
+                    <button data-q="Почему я устаю перед месячными?">Почему я устаю перед месячными?</button>
+                    <button data-q="Когда самые фертильные дни?">Когда самые фертильные дни?</button>
+                    <button data-q="Что такое лютеиновая фаза?">Что такое лютеиновая фаза?</button>
+                  </div>
+                  <div class="chat-input">
+                    <input type="text" placeholder="Напиши вопрос…" aria-label="Вопрос ассистенту" />
+                    <button class="send" title="Отправить">↑</button>
+                  </div>
+                  <p class="caption">Информация образовательная и не заменяет консультацию врача.</p>
+                </div>
+              </div>
+
+              <!-- PHASES -->
+              <div class="tab-panel" data-panel="phases">
+                <div class="screen scroll">
+                  <div class="screen-head"><div><div class="date">Твой цикл</div><h2>Фазы</h2></div></div>
+                  <div class="phase-item"><div class="phase-emoji-box" style="background:#f6e0e6;color:var(--p-menstrual)">🌑</div><div><h4>Менструальная</h4><span class="days">дни 1–5 · низкая энергия</span><p>Отдых и тепло. Партнёру — забота, меньше нагрузки, эмпатия. Близость — по желанию, спросить.</p></div></div>
+                  <div class="phase-item"><div class="phase-emoji-box" style="background:#dcefe4;color:var(--p-follicular)">🌱</div><div><h4>Фолликулярная</h4><span class="days">дни 6–13 · энергия растёт</span><p>Ясная голова, общительность. Партнёру — планы, свидания, поддержка идей. Влечение растёт.</p></div></div>
+                  <div class="phase-item"><div class="phase-emoji-box" style="background:#f7e6d5;color:var(--p-ovulation)">☀️</div><div><h4>Овуляция</h4><span class="days">≈день 14 · пик</span><p>Пик энергии и либидо, фертильное окно. Партнёру — романтика, внимание, общая ответственность за контрацепцию.</p></div></div>
+                  <div class="phase-item"><div class="phase-emoji-box" style="background:#e7e1f0;color:var(--p-luteal)">🌘</div><div><h4>Лютеиновая</h4><span class="days">дни 15–28 · спад, возможен ПМС</span><p>Чувствительность, тяга к еде. Партнёру — терпение, помощь по быту, меньше споров.</p></div></div>
+                  <p class="caption">Ориентир для среднего цикла ~28 дней.</p>
+                </div>
+              </div>
+
+              <!-- PARTNER -->
+              <div class="tab-panel" data-panel="partner">
+                <div class="screen scroll">
+                  <div class="screen-head"><div><div class="date">Режим поддержки</div><h2>Для партнёра</h2></div></div>
+                  <div class="support-hero"><div class="who">Аня сейчас в фазе</div><div class="big">☀️ Овуляция — пик энергии и хорошего настроения</div><span class="tag">Подсказка дня</span></div>
+                  <div class="card signal-card">
+                    <div class="signal-badge" id="partner-signal">🟡</div>
+                    <div><h3 style="margin-bottom:2px" id="partner-signal-title">Аня отметила: «Может быть»</h3><p id="partner-signal-text">Тёплое внимание — да, инициатива — мягко и с вопросом. Она решает.</p></div>
+                  </div>
+                  <div class="card"><h3>🎯 Главное сегодня</h3><p class="lead">Отличный день для внимания и романтики — комплимент, совместные планы. Энергии много у вас обоих.</p></div>
+                  <div class="card"><div class="do-dont">
+                    <div class="col"><h5 style="color:var(--good)">Помогает</h5><ul><li>Внимание и комплименты</li><li>Совместные активности</li><li>Спросить, а не предполагать</li></ul></div>
+                    <div class="col"><h5 style="color:var(--warn)">Осторожно</h5><ul><li>Не воспринимать как должное</li><li>Контрацепция — общая тема</li></ul></div>
+                  </div></div>
+                  <div class="card"><h3>🎓 Мини-курс: гормональная грамотность</h3><p>Урок 2 из 5 — «Что такое ПМС и как быть рядом».</p><div class="course-bar"><i style="width:40%"></i></div><button class="btn ghost sm">Продолжить курс</button></div>
+                  <p class="caption">Ты видишь только то, чем Аня решила поделиться.</p>
+                </div>
+              </div>
+
+              <!-- tabbar -->
+              <div class="tabbar" role="tablist" aria-label="Навигация">
+                <button class="tab" role="tab" aria-selected="true" data-tab="today"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Сегодня</button>
+                <button class="tab" role="tab" aria-selected="false" data-tab="diary"><svg viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>Дневник</button>
+                <button class="tab" role="tab" aria-selected="false" data-tab="ai"><svg viewBox="0 0 24 24"><path d="M5 5h14v10H9l-4 4z"/><path d="M9 10h.01M12 10h.01M15 10h.01"/></svg>Ассистент</button>
+                <button class="tab" role="tab" aria-selected="false" data-tab="phases"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18"/></svg>Фазы</button>
+                <button class="tab" role="tab" aria-selected="false" data-tab="partner"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 11c0 5.5-7 10-7 10z"/></svg>Партнёр</button>
+              </div>
+            </div>
+          </div>
+          <div class="phone-label">Экран женщины · владелец данных</div>
+        </div>
+      </div>
+      <p class="caption deskonly" style="max-width:60ch;margin:22px auto 0;">Прототип демонстрирует логику и тон. Онбординг, светофор близости, дневник, ассистент — кликабельны. Правки вносим на этом этапе.</p>
+    </section>
+
+    <!-- ============ BUSINESS ============ -->
+    <section class="surface-view" id="surface-biz">
+      <div class="dash">
+        <div class="dash-head"><div><h2>Панель заботы о команде</h2><div class="company">ООО «Пример» · план: 120 мест</div></div><span class="pill"><span class="dot" style="background:var(--good)"></span>Обезличенные данные</span></div>
+        <div class="privacy-banner">🔒 Компания видит только агрегированную статистику. Персональные циклы, симптомы и даты недоступны. Метрики — только для групп ≥ 5 человек.</div>
+        <div class="dash-body">
+          <div class="kpis">
+            <div class="kpi"><div class="n">74</div><div class="l">Активировали из 120 мест</div><div class="trend">↑ 12 за месяц</div></div>
+            <div class="kpi"><div class="n">62%</div><div class="l">Вовлечённость (WAU)</div><div class="trend">↑ 5 п.п.</div></div>
+            <div class="kpi"><div class="n">4.8</div><div class="l">Оценка бенефита</div><div class="trend">из 5</div></div>
+            <div class="kpi"><div class="n">1.9k</div><div class="l">Просмотров обучения</div><div class="trend">↑ 320</div></div>
+          </div>
+          <div class="dash-grid">
+            <div class="panel">
+              <h3>Популярные обучающие темы</h3>
+              <div class="bar-row"><span class="name">Фазы и энергия</span><div class="bar-track"><div class="bar-fill" style="width:88%"></div></div><span class="val">88</span></div>
+              <div class="bar-row"><span class="name">Поддержка партнёра</span><div class="bar-track"><div class="bar-fill" style="width:71%"></div></div><span class="val">71</span></div>
+              <div class="bar-row"><span class="name">ПМС и самочувствие</span><div class="bar-track"><div class="bar-fill" style="width:64%"></div></div><span class="val">64</span></div>
+              <div class="bar-row"><span class="name">Сон и восстановление</span><div class="bar-track"><div class="bar-fill" style="width:49%"></div></div><span class="val">49</span></div>
+              <div class="bar-row"><span class="name">Питание по фазам</span><div class="bar-track"><div class="bar-fill" style="width:37%"></div></div><span class="val">37</span></div>
+            </div>
+            <div class="panel">
+              <h3>Активации по неделям</h3>
+              <div class="spark"><div class="b" style="height:32%"></div><div class="b" style="height:45%"></div><div class="b" style="height:41%"></div><div class="b" style="height:58%"></div><div class="b" style="height:66%"></div><div class="b" style="height:72%"></div><div class="b" style="height:80%"></div><div class="b" style="height:92%"></div></div>
+              <div class="locked"><span class="lock">🔒</span><span>Разбивка по отделам скрыта: группа «Финансы» меньше 5 человек — не показываем, чтобы никого нельзя было вычислить.</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="caption deskonly" style="max-width:60ch;margin:22px auto 0;">Работодатель получает пользу от бенефита, не нарушая приватность сотрудниц — юридически безопасная модель.</p>
+    </section>
+  </div>
+
+  <p class="foot">Прототип для обсуждения · «Цикл вдвоём»</p>
+</div>
+
+<script>
+  // surface switch (both desktop and mobile switchers)
+  function setSurface(name) {
+    document.querySelectorAll('.switch button, .mobile-switch button').forEach(x => x.setAttribute('aria-selected', x.dataset.surface === name ? 'true' : 'false'));
+    document.querySelectorAll('.surface-view').forEach(s => s.classList.remove('active'));
+    document.getElementById('surface-' + name).classList.add('active');
+  }
+  document.querySelectorAll('.switch button, .mobile-switch button').forEach(b => b.addEventListener('click', () => setSurface(b.dataset.surface)));
+
+  // bottom tabs
+  const tabs = document.querySelectorAll('.tab');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.setAttribute('aria-selected', 'false'));
+    t.setAttribute('aria-selected', 'true');
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector('.tab-panel[data-panel="' + t.dataset.tab + '"]').classList.add('active');
+  }));
+
+  // ===== onboarding =====
+  const ob = document.getElementById('onboarding');
+  function goStep(n) {
+    document.querySelectorAll('.ob-step').forEach(s => s.classList.toggle('active', s.dataset.step === String(n)));
+    document.querySelectorAll('.ob .dots i').forEach(i => i.classList.toggle('on', +i.dataset.d <= n));
+  }
+  document.querySelectorAll('[data-next]').forEach(b => b.addEventListener('click', () => goStep(+b.dataset.next)));
+  document.querySelectorAll('.choice-card').forEach(c => c.addEventListener('click', () => {
+    document.querySelectorAll('.choice-card').forEach(x => x.classList.remove('sel'));
+    c.classList.add('sel');
+  }));
+  let len = 28;
+  document.querySelectorAll('[data-len]').forEach(b => b.addEventListener('click', () => {
+    len = Math.min(40, Math.max(21, len + (+b.dataset.len)));
+    document.getElementById('cyclen').textContent = len;
+  }));
+  document.querySelectorAll('.ob .chip').forEach(c => c.addEventListener('click', () => c.classList.toggle('sel')));
+  function closeOb() { ob.classList.add('hidden'); }
+  document.getElementById('ob-finish').addEventListener('click', closeOb);
+  document.getElementById('ob-skip').addEventListener('click', closeOb);
+
+  // ===== intimacy traffic light -> partner view =====
+  const signalMap = {
+    green:  { em: '🟢', title: 'Аня отметила: «Открыта»',    text: 'Взаимная инициатива приветствуется. Тепло и внимание — самое то.' },
+    yellow: { em: '🟡', title: 'Аня отметила: «Может быть»',  text: 'Тёплое внимание — да, инициатива — мягко и с вопросом. Она решает.' },
+    red:    { em: '🔴', title: 'Аня отметила: «Не сегодня»',  text: 'Сегодня — забота без близости. Поддержи, обними, будь рядом.' }
+  };
+  document.querySelectorAll('#intimacy button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#intimacy button').forEach(x => x.setAttribute('aria-pressed', 'false'));
+    b.setAttribute('aria-pressed', 'true');
+    const s = signalMap[b.dataset.v];
+    document.getElementById('partner-signal').textContent = s.em;
+    document.getElementById('partner-signal-title').textContent = s.title;
+    document.getElementById('partner-signal-text').textContent = s.text;
+  }));
+
+  // mood + diary log toggles
+  document.querySelectorAll('.mood').forEach(m => m.addEventListener('click', () => {
+    document.querySelectorAll('.mood').forEach(x => x.classList.remove('sel')); m.classList.add('sel');
+  }));
+  document.querySelectorAll('.log-cell').forEach(c => c.addEventListener('click', () => c.classList.toggle('sel')));
+
+  // ===== AI assistant mock =====
+  const answers = {
+    'Почему я устаю перед месячными?': 'Перед месячными (лютеиновая фаза) падает уровень эстрогена и прогестерона — отсюда усталость, тяга к сладкому и хуже сон. Это нормально. Помогают отдых, вода, магний и мягкая активность. Если усталость сильная — обсуди с врачом.',
+    'Когда самые фертильные дни?': 'Наиболее фертильны ~5 дней до овуляции и день овуляции (у тебя это примерно день 14). Если беременность не в планах — в это окно нужна контрацепция. Это ориентир, не средство контрацепции.',
+    'Что такое лютеиновая фаза?': 'Это вторая половина цикла — после овуляции и до следующей менструации (примерно дни 15–28). Энергия постепенно снижается, ближе к концу возможен ПМС: чувствительность, тяга к еде, раздражительность.'
+  };
+  const chat = document.getElementById('chat');
+  function ask(q) {
+    const u = document.createElement('div'); u.className = 'msg user'; u.textContent = q; chat.appendChild(u);
+    const b = document.createElement('div'); b.className = 'msg bot'; b.textContent = answers[q] || 'Хороший вопрос! В полной версии я отвечу подробно, опираясь на твои данные и проверенные источники. (демо-ответ)'; chat.appendChild(b);
+    chat.scrollTop = chat.scrollHeight;
+  }
+  document.querySelectorAll('#suggest button').forEach(s => s.addEventListener('click', () => ask(s.dataset.q)));
+  const chatInput = document.querySelector('.chat-input input');
+  const sendBtn = document.querySelector('.chat-input .send');
+  function submitChat() { const v = chatInput.value.trim(); if (!v) return; ask(v); chatInput.value = ''; }
+  sendBtn.addEventListener('click', submitChat);
+  chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitChat(); });
+</script>
+</body>
+</html>
