@@ -252,6 +252,15 @@ export default function Warehouse() {
   const [sheet, setSheet] = useState<SheetRow[]>([]);
   const [pFrom, setPFrom] = useState(monthStart());
   const [pTo, setPTo] = useState(today());
+  // инвентаризация: собственный список (независимо от вкладки «Товары») — весь склад с фильтром и пагинацией
+  const [invMode, setInvMode] = useState<"all" | "folder">("all"); // все товары / по папке
+  const [invCat, setInvCat] = useState<number | null>(null);        // выбранная папка (при invMode="folder")
+  const [invPage, setInvPage] = useState(1);
+  const [invPageSize, setInvPageSize] = useState(50);
+  const [invCount, setInvCount] = useState(0);
+  const [invLoading, setInvLoading] = useState(false);
+  const [invPrinting, setInvPrinting] = useState(false);
+  const invTotalPages = Math.max(1, Math.ceil(invCount / invPageSize));
 
   /* ─── [3] ЗАГРУЗКА ───────────────────────────────────────────────────── */
   const [params] = useSearchParams();
@@ -347,27 +356,75 @@ export default function Warehouse() {
     await api.del(`/api/products/${card.id}/shop-images/${id}/`); await refreshCard();
   }
 
-  async function loadSheet(from: string, to: string) {
-    const ids = products.map((p) => p.id).join(",");
-    if (!ids) { setSheet([]); return; }
-    const q = new URLSearchParams({ ids, from, to });
-    const d = await api.get<{ rows: SheetRow[] }>(`/api/warehouse/inventory-sheet/?${q.toString()}`);
-    setSheet(d.rows);
-    const init: Record<number, string> = {};
-    d.rows.forEach((r) => { init[r.id] = String(r.book); });
-    setFacts(init);
+  // строит параметры запроса ведомости из переданных опций или текущего состояния инвентаризации
+  function invParams(from: string, to: string, o?: { page?: number; pageSize?: number; cat?: number | null; mode?: "all" | "folder"; all?: boolean }) {
+    const mode = o?.mode ?? invMode;
+    const c = o?.cat !== undefined ? o.cat : invCat;
+    const q = new URLSearchParams({ from, to });
+    if (o?.all) { q.set("all", "1"); }
+    else { q.set("page", String(o?.page ?? invPage)); q.set("page_size", String(o?.pageSize ?? invPageSize)); }
+    if (mode === "folder" && c) q.set("category", String(c));
+    return q;
+  }
+  // грузит одну страницу ведомости; факт, уже введённый пользователем, НЕ затирает
+  async function loadSheet(from: string, to: string, o?: { page?: number; pageSize?: number; cat?: number | null; mode?: "all" | "folder" }) {
+    setInvLoading(true);
+    try {
+      const q = invParams(from, to, o);
+      const d = await api.get<{ rows: SheetRow[]; count: number }>(`/api/warehouse/inventory-sheet/?${q.toString()}`);
+      setSheet(d.rows);
+      setInvCount(d.count ?? d.rows.length);
+      setFacts((prev) => { const next = { ...prev }; d.rows.forEach((r) => { if (next[r.id] === undefined) next[r.id] = String(r.book); }); return next; });
+    } catch { setSheet([]); }
+    setInvLoading(false);
   }
   async function openInventory() {
     setInvMsg("");
-    await loadSheet(pFrom, pTo);
+    setInvPage(1);
+    await loadSheet(pFrom, pTo, { page: 1 });
   }
   async function conductInventory() {
+    // проводим по строкам текущей страницы (то, что видно и загружено)
     const items = sheet
       .filter((r) => facts[r.id] !== undefined && Number(facts[r.id]) !== Number(r.book))
       .map((r) => ({ product: r.id, quantity: Number(facts[r.id]), price: 0 }));
-    if (!items.length) { setInvMsg(t("Нет расхождений факта с учётом — нечего проводить.","Немає розбіжностей факту з обліком — нічого проводити.")); return; }
+    if (!items.length) { setInvMsg(t("Нет расхождений факта с учётом на этой странице — нечего проводить.","Немає розбіжностей факту з обліком на цій сторінці — нічого проводити.")); return; }
     await api.post("/api/stock-documents/", { kind: "inv", warehouse: whs[0]?.id, comment: `Інвентаризація ${pFrom}…${pTo}`, items });
-    loadProducts(); loadSheet(pFrom, pTo); setInvMsg(t("✓ Инвентаризация проведена","✓ Інвентаризацію проведено"));
+    loadProducts(); loadSheet(pFrom, pTo); setInvMsg(t(`✓ Проведено позиций: ${items.length}`,`✓ Проведено позицій: ${items.length}`));
+  }
+  // печать всей ведомости (все страницы по текущему фильтру) с пустой колонкой «Факт» для отметок на физскладе
+  async function printInventory() {
+    setInvPrinting(true);
+    try {
+      const q = invParams(pFrom, pTo, { all: true });
+      const d = await api.get<{ rows: SheetRow[]; count: number }>(`/api/warehouse/inventory-sheet/?${q.toString()}`);
+      const rows = d.rows || [];
+      const scope = invMode === "folder" && invCat
+        ? (cats.find((c) => c.id === invCat)?.name || t("папка","папка"))
+        : t("все товары","всі товари");
+      const esc = (s: any) => String(s ?? "").replace(/[&<>]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m] as string));
+      const body = rows.map((r, i) => `<tr><td class="n">${i + 1}</td><td>${esc(r.name)}</td><td class="c">${esc(r.unit)}</td><td class="r">${r.book.toLocaleString("ru")}</td><td class="fact"></td><td class="note"></td></tr>`).join("");
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>${t("Инвентаризация","Інвентаризація")} ${pFrom}—${pTo}</title>
+<style>
+  *{box-sizing:border-box} body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:18px}
+  h1{font-size:17px;margin:0 0 2px} .sub{font-size:12px;color:#555;margin:0 0 12px}
+  table{width:100%;border-collapse:collapse;font-size:12px} th,td{border:1px solid #333;padding:5px 7px;text-align:left}
+  th{background:#eee} td.n,th.n{width:34px;text-align:center} td.c,th.c{text-align:center;width:52px}
+  td.r,th.r{text-align:right;width:90px} td.fact,th.fact{width:110px} td.note,th.note{width:150px}
+  td.fact{height:26px} tr{break-inside:avoid}
+  .sign{margin-top:26px;font-size:12px;display:flex;gap:60px}
+  @media print{body{margin:8mm} @page{margin:8mm}}
+</style></head><body onload="window.print()">
+  <h1>${t("Инвентаризационная ведомость","Інвентаризаційна відомість")}</h1>
+  <p class="sub">${t("Период","Період")}: ${pFrom} — ${pTo} · ${t("Отображение","Відображення")}: ${esc(scope)} · ${t("Позиций","Позицій")}: ${rows.length} · ${t("Дата печати","Дата друку")}: ${today()}</p>
+  <table><thead><tr><th class="n">№</th><th>${t("Товар","Товар")}</th><th class="c">${t("Ед.","Од.")}</th><th class="r">${t("Учёт","Облік")}</th><th class="fact">${t("Факт (вписать)","Факт (вписати)")}</th><th class="note">${t("Примечание","Примітка")}</th></tr></thead><tbody>${body}</tbody></table>
+  <div class="sign"><div>${t("Провёл(а): _______________","Провів(ла): _______________")}</div><div>${t("Подпись: _______________","Підпис: _______________")}</div></div>
+</body></html>`;
+      const w = window.open("", "_blank");
+      if (!w) { setInvMsg(t("Разрешите всплывающие окна для печати.","Дозвольте спливаючі вікна для друку.")); return; }
+      w.document.write(html); w.document.close();
+    } catch { setInvMsg(t("Не удалось сформировать печать.","Не вдалося сформувати друк.")); }
+    setInvPrinting(false);
   }
 
   const tree = useMemo(() => {
@@ -907,12 +964,29 @@ export default function Warehouse() {
       {/* ─── [9] ИНВЕНТАРИЗАЦИЯ ───────────────────────────────────────────── */}
       {view === "inv" && (
         <div style={{ background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", padding: 22, maxHeight: "calc(100vh - 170px)", display: "flex", flexDirection: "column" }}>
-            <h3 style={{ marginTop: 0 }}>{t("Инвентаризационная ведомость","Інвентаризаційна відомість")} {cat ? t("· выбранная категория","· обрана категорія") : t("· все товары","· всі товари")}</h3>
+            <h3 style={{ marginTop: 0 }}>{t("Инвентаризационная ведомость","Інвентаризаційна відомість")} · {invMode === "folder" && invCat ? (cats.find((c) => c.id === invCat)?.name || t("папка","папка")) : t("все товары","всі товари")} <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>({invCount})</span></h3>
+            {/* Отображение: все товары / по папке + печать */}
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+              <span className="muted" style={{ fontSize: 12 }}>{t("Отображение","Відображення")}:</span>
+              <button className={"btn " + (invMode === "all" ? "btn-primary" : "btn-light")} style={{ padding: "4px 12px" }} onClick={() => { setInvMode("all"); setInvPage(1); loadSheet(pFrom, pTo, { mode: "all", page: 1 }); }}>{t("Все товары","Всі товари")}</button>
+              <button className={"btn " + (invMode === "folder" ? "btn-primary" : "btn-light")} style={{ padding: "4px 12px" }} onClick={() => { setInvMode("folder"); setInvPage(1); loadSheet(pFrom, pTo, { mode: "folder", page: 1 }); }}>{t("По папке","За папкою")}</button>
+              {invMode === "folder" && (
+                <select value={invCat ?? ""} onChange={(e) => { const v = e.target.value ? Number(e.target.value) : null; setInvCat(v); setInvPage(1); loadSheet(pFrom, pTo, { mode: "folder", cat: v, page: 1 }); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px", maxWidth: 340 }}>
+                  <option value="">{t("— выберите папку —","— оберіть папку —")}</option>
+                  {tree.roots.map((r) => [
+                    <option key={"r" + r.id} value={r.id}>{r.name}</option>,
+                    ...tree.childrenOf(r.id).map((ch) => <option key={"c" + ch.id} value={ch.id}>{"    — " + ch.name}</option>),
+                  ])}
+                </select>
+              )}
+              <span style={{ flex: 1 }} />
+              <button className="btn btn-light" style={{ padding: "4px 12px" }} disabled={invPrinting} onClick={printInventory} title={t("Печать ведомости с пустой колонкой Факт для отметок на складе","Друк відомості з порожньою колонкою Факт для відміток на складі")}><Icon n="🖨" size={14} /> {invPrinting ? t("Готовим…","Готуємо…") : t("Печать","Друк")}</button>
+            </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
               <span className="muted" style={{ fontSize: 12 }}>{t("Период","Період")}:</span>
-              <input type="date" value={pFrom} onChange={(e) => { setPFrom(e.target.value); loadSheet(e.target.value, pTo); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
+              <input type="date" value={pFrom} onChange={(e) => { setPFrom(e.target.value); setInvPage(1); loadSheet(e.target.value, pTo, { page: 1 }); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
               <span className="muted">—</span>
-              <input type="date" value={pTo} onChange={(e) => { setPTo(e.target.value); loadSheet(pFrom, e.target.value); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
+              <input type="date" value={pTo} onChange={(e) => { setPTo(e.target.value); setInvPage(1); loadSheet(pFrom, e.target.value, { page: 1 }); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
               <span className="muted" style={{ fontSize: 12 }}>{t("Начальный + Поступление − Продано = Конечный учётный. Расхождение = Факт − учётный.","Початковий + Надходження − Продано = Кінцевий обліковий. Розбіжність = Факт − обліковий.")}</span>
             </div>
             <div style={{ overflowY: "auto", flex: 1 }}>
@@ -934,11 +1008,22 @@ export default function Warehouse() {
                       </tr>
                     );
                   })}
-                  {sheet.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 12 }}>{t("Загрузка ведомости…","Завантаження відомості…")}</td></tr>}
+                  {sheet.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 12 }}>{invLoading ? t("Загрузка ведомости…","Завантаження відомості…") : t("Нет товаров по этому фильтру.","Немає товарів за цим фільтром.")}</td></tr>}
                 </tbody>
               </table>
             </div>
             {invMsg && <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>{invMsg}</div>}
+            {/* Пагинация ведомости */}
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: "1px solid #f1f5f9" }}>
+              <span className="muted" style={{ fontSize: 12 }}>{t("Строк на странице","Рядків на сторінці")}:</span>
+              {PAGE_SIZES.map((sz) => (
+                <button key={sz} onClick={() => { setInvPageSize(sz); setInvPage(1); loadSheet(pFrom, pTo, { pageSize: sz, page: 1 }); }} style={{ fontSize: 13, padding: "4px 11px", borderRadius: 7, cursor: "pointer", border: "1px solid " + (invPageSize === sz ? "var(--brand)" : "#cbd5e1"), background: invPageSize === sz ? "var(--brand)" : "#fff", color: invPageSize === sz ? "#fff" : "#475569" }}>{sz}</button>
+              ))}
+              <span style={{ flex: 1 }} />
+              <button className="btn btn-light" disabled={invPage <= 1 || invLoading} onClick={() => { const pg = Math.max(1, invPage - 1); setInvPage(pg); loadSheet(pFrom, pTo, { page: pg }); }}>{t("← Назад","← Назад")}</button>
+              <span style={{ fontSize: 13 }}>{t("Стр.","Стор.")} <b>{invPage}</b> {t("из","з")} <b>{invTotalPages}</b></span>
+              <button className="btn btn-light" disabled={invPage >= invTotalPages || invLoading} onClick={() => { const pg = Math.min(invTotalPages, invPage + 1); setInvPage(pg); loadSheet(pFrom, pTo, { page: pg }); }}>{t("Вперёд →","Вперед →")}</button>
+            </div>
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setView("goods")}>{t("← К товарам","← До товарів")}</button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={conductInventory}>{t("Провести инвентаризацию","Провести інвентаризацію")}</button>

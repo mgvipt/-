@@ -686,17 +686,37 @@ class InventoryAnalyticsView(APIView):
 
 
 class InventorySheetView(APIView):
-    """Инвентаризационная ведомость за период:
-    Початковий залишок (до from) + Надходження − Продано(витрата) = Кінцевий обліковий.
+    """Инвентаризационная ведомость за период.
+
+    Режимы:
+      • ?ids=1,2,3 — по конкретному списку id (обратная совместимость).
+      • без ids — весь склад с фильтром и пагинацией:
+          ?category=<id>          — папка и все её подпапки (пусто = все товары)
+          ?search=<txt>           — поиск по названию / артикулу
+          ?page=<n>&page_size=<n> — пагинация (по умолч. 1 / 50)
+          ?all=1                  — все строки без пагинации (для печати)
+
+    Початковий залишок (до from) + Надходження − Продано = Кінцевий обліковий.
     Факт вносится вручную на фронте, Розбіжність = Факт − Кінцевий.
-    Параметры: ?ids=1,2,3 &from=YYYY-MM-DD &to=YYYY-MM-DD (по умолч. текущий месяц)."""
+    Параметры дат: ?from=YYYY-MM-DD &to=YYYY-MM-DD (по умолч. текущий месяц)."""
+
+    @staticmethod
+    def _descendant_category_ids(root_id):
+        """id папки + все вложенные подпапки (рекурсивно)."""
+        pairs = list(ProductCategory.objects.values_list("id", "parent_id"))
+        children = {}
+        for cid, pid in pairs:
+            children.setdefault(pid, []).append(cid)
+        result, stack = [], [root_id]
+        while stack:
+            cur = stack.pop()
+            result.append(cur)
+            stack.extend(children.get(cur, []))
+        return result
 
     def get(self, request):
         from datetime import date
         from django.utils import timezone
-        ids = [int(x) for x in request.GET.get("ids", "").split(",") if x.strip().isdigit()]
-        if not ids:
-            return Response({"from": "", "to": "", "rows": []})
         now = timezone.now()
         d_from = request.GET.get("from") or now.replace(day=1).date().isoformat()
         d_to = request.GET.get("to") or now.date().isoformat()
@@ -704,7 +724,49 @@ class InventorySheetView(APIView):
             df = date.fromisoformat(d_from)
             dt = date.fromisoformat(d_to)
         except (ValueError, TypeError):
-            return Response({"detail": "Невірний формат дати", "from": d_from, "to": d_to, "rows": []}, status=400)
+            return Response({"detail": "Невірний формат дати", "from": d_from, "to": d_to,
+                             "rows": [], "count": 0, "page": 1, "page_size": 50}, status=400)
+
+        raw_ids = [int(x) for x in request.GET.get("ids", "").split(",") if x.strip().isdigit()]
+        page, page_size = 1, 50
+
+        if raw_ids:
+            # Старый режим: строго по переданным id, в их исходном порядке.
+            order = {pid: i for i, pid in enumerate(raw_ids)}
+            products = sorted(Product.objects.filter(id__in=raw_ids),
+                              key=lambda p: order.get(p.id, 9999))
+            count = len(products)
+        else:
+            # Новый режим: весь склад (только физические товары) с фильтром + пагинация.
+            qs = Product.objects.filter(is_active=True, track_stock=True)
+            cat_id = request.GET.get("category")
+            if cat_id and str(cat_id).isdigit():
+                qs = qs.filter(category_id__in=self._descendant_category_ids(int(cat_id)))
+            search = (request.GET.get("search") or "").strip()
+            if search:
+                qs = qs.filter(Q(name__icontains=search) | Q(sku__icontains=search))
+            qs = qs.order_by("name", "id")
+            count = qs.count()
+            if request.GET.get("all") in ("1", "true", "yes"):
+                products = list(qs)
+                page, page_size = 1, count or 1
+            else:
+                try:
+                    page = max(1, int(request.GET.get("page", 1)))
+                except (ValueError, TypeError):
+                    page = 1
+                try:
+                    page_size = min(1000, max(1, int(request.GET.get("page_size", 50))))
+                except (ValueError, TypeError):
+                    page_size = 50
+                start = (page - 1) * page_size
+                products = list(qs[start:start + page_size])
+
+        ids = [p.id for p in products]
+        if not ids:
+            return Response({"from": d_from, "to": d_to, "rows": [],
+                             "count": count, "page": page, "page_size": page_size})
+
         agg = (StockMovement.objects.filter(product_id__in=ids, document__posted=True).values("product_id").annotate(
             opening=Coalesce(Sum("quantity", filter=Q(document__created_at__date__lt=df)), Decimal("0")),
             received=Coalesce(Sum("quantity", filter=Q(quantity__gt=0,
@@ -713,9 +775,8 @@ class InventorySheetView(APIView):
                 document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
         ))
         by_id = {a["product_id"]: a for a in agg}
-        order = {pid: i for i, pid in enumerate(ids)}
         rows = []
-        for p in Product.objects.filter(id__in=ids):
+        for p in products:
             a = by_id.get(p.id, {})
             opening = a.get("opening") or Decimal("0")
             received = a.get("received") or Decimal("0")
@@ -724,5 +785,5 @@ class InventorySheetView(APIView):
             rows.append({"id": p.id, "name": p.name, "unit": p.unit,
                          "opening": float(opening), "received": float(received),
                          "sold": float(sold), "book": float(book)})
-        rows.sort(key=lambda x: order.get(x["id"], 9999))
-        return Response({"from": d_from, "to": d_to, "rows": rows})
+        return Response({"from": d_from, "to": d_to, "rows": rows,
+                         "count": count, "page": page, "page_size": page_size})
