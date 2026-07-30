@@ -1,5 +1,5 @@
 /* Service worker — network-first, чтобы обновления всегда доходили; кэш как офлайн-резерв. */
-var CACHE = "cycle-vdvoem-v4";
+var CACHE = "cycle-vdvoem-v5";
 var ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", function (e) {
