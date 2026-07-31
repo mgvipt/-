@@ -685,7 +685,7 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
         if images:
             from apps.crm.ai import claude_vision
             imgs = []
-            for u_img in images[:8]:
+            for u_img in images[:24]:
                 sv = str(u_img)
                 if sv.startswith("data:") and "," in sv:
                     head, b64 = sv.split(",", 1)
@@ -701,13 +701,18 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
                       "Витягни КОЖЕН рядок, де у колонці «Факт» є рукописне число. Поверни артикул (якщо видно), "
                       "назву товару та число «Факт» (може бути дробовим, кг). Рядки без рукописного факту — пропусти. "
                       "Відповідь — СТРОГО JSON-масив: [{\"sku\": \"...\", \"name\": \"...\", \"fact\": <число>}]. Без пояснень і тексту поза JSON.")
-            try:
-                data = claude_vision(imgs, "Розпізнай відомість і поверни JSON-масив рядків з рукописним фактом.",
-                                     system=system, source="inv_photo")
-            except Exception as e:
-                return Response({"detail": "ІІ не зміг обробити фото: %s" % str(e)[:150]}, status=502)
-            if isinstance(data, dict):
-                data = data.get("rows") or data.get("items") or []
+            data = []
+            for _bi in range(0, len(imgs), 5):      # батчі по 5 фото — щоб не впертись у ліміт токенів відповіді
+                batch = imgs[_bi:_bi + 5]
+                try:
+                    part = claude_vision(batch, "Розпізнай відомість і поверни JSON-масив рядків з рукописним фактом.",
+                                         system=system, source="inv_photo")
+                except Exception as e:
+                    return Response({"detail": "ІІ не зміг обробити фото: %s" % str(e)[:150]}, status=502)
+                if isinstance(part, dict):
+                    part = part.get("rows") or part.get("items") or []
+                if isinstance(part, list):
+                    data.extend(part)
             for it in (data or []):
                 try:
                     entries.append({"sku": str(it.get("sku") or "").strip(),
