@@ -1,9 +1,22 @@
-"""Незалежна інтеграція з ChatPlace через MCP-протокол (https://mcp.chatplace.io/mcp).
+"""Незалежна інтеграція з ChatPlace через MCP-протокол (https://mcp.chatplace.io/).
 БЕЗ Бітрикса. Тягне живі IG-чати (Direct) у inbox CRM і вміє відповідати.
 Ключ у .env: CHATPLACE_API_KEY (cpk_...)."""
 import os, json, datetime, urllib.request
 
-MCP_URL = os.environ.get("CHATPLACE_MCP_URL", "https://mcp.chatplace.io/mcp")
+MCP_URL = os.environ.get("CHATPLACE_MCP_URL", "https://mcp.chatplace.io/")
+# 2026-07-31: ChatPlace flip-flop між /mcp і / (обидва можуть 404). Тримаємо ОБИДВА
+# і при 404 з активного — перемикаємось на альтернативний.
+def _mcp_url_alternates():
+    from urllib.parse import urlparse, urlunparse
+    p = urlparse(MCP_URL)
+    paths = ("/", "/mcp")
+    primary = p.path.rstrip("/") + "/" if p.path.rstrip("/") == "" else p.path
+    if primary not in paths:
+        primary = "/"
+    order = [primary] + [x for x in paths if x != primary]
+    return [urlunparse(p._replace(path=pth)) for pth in order]
+_MCP_ALT = _mcp_url_alternates()
+_WORKING_URL = [_MCP_ALT[0]]  # список щоб мутувати всередині _mcp
 API_KEY = (os.environ.get("CHATPLACE_API_KEY", "") or "").strip()
 
 # сторони повідомлення, які вважаємо ВИХІДНИМИ (ми/AI/оператор). Решта = вхідне (клієнт).
@@ -67,7 +80,7 @@ def _mcp(name, arguments=None):
     last = None
     for _i in range(4):
         try:
-            req = urllib.request.Request(MCP_URL, data=body, headers=headers)
+            req = urllib.request.Request(_WORKING_URL[0], data=body, headers=headers)
             with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310
                 resp = json.load(r)
             if resp.get("error"):
@@ -91,6 +104,25 @@ def _mcp(name, arguments=None):
                 raise RuntimeError("ChatPlace обмежив запити (забагато звернень). Автовідновлення за ~%d хв." % (int(secs) // 60 + 1))
             if e.code in (500, 502, 503, 504) and _i < 3:
                 _t.sleep(0.6 * (2 ** _i)); continue
+            # 2026-07-31 flip-flop: 404 → спробуй альтернативний endpoint і закріпи його
+            if e.code == 404:
+                other = next((u for u in _MCP_ALT if u != _WORKING_URL[0]), None)
+                if other:
+                    try:
+                        req2 = urllib.request.Request(other, data=body, headers=headers)
+                        with urllib.request.urlopen(req2, timeout=30) as r2:
+                            resp2 = json.load(r2)
+                        _WORKING_URL[0] = other  # switch and remember
+                        if resp2.get("error"):
+                            raise RuntimeError(f"ChatPlace MCP error: {resp2['error']}")
+                        content2 = (resp2.get("result") or {}).get("content") or []
+                        text2 = content2[0].get("text") if content2 else "null"
+                        try:
+                            return json.loads(text2)
+                        except (ValueError, TypeError):
+                            return text2
+                    except Exception:
+                        pass
             raise
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
             last = e
