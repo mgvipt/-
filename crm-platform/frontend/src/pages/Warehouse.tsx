@@ -1285,7 +1285,7 @@ export default function Warehouse() {
                       {canVoidInv && invHistSel.posted !== false && <button className="btn btn-light" style={{ padding: "3px 11px" }} onClick={() => setInvVoidDoc(invHistSel)}>{t("Отменить (сторно)","Скасувати (сторно)")}</button>}
                     </div>
                     <table style={{ width: "100%", fontSize: 13 }}>
-                      <thead><tr>{[t("Товар","Товар"), t("Расхождение","Розбіжність"), t("Себест.","Собівар."), t("Сумма","Сума")].map((h) => <th key={h} style={{ textAlign: "left", boxShadow: "inset 0 -1px 0 #e2e8f0" }}>{h}</th>)}</tr></thead>
+                      <thead><tr>{[t("Товар","Товар"), t("Расхождение","Розбіжність"), ...(showCost ? [t("Себест.","Собівар."), t("Сумма","Сума")] : [])].map((h) => <th key={h} style={{ textAlign: "left", boxShadow: "inset 0 -1px 0 #e2e8f0" }}>{h}</th>)}</tr></thead>
                       <tbody>
                         {(invHistSel.items || []).map((it: any) => {
                           const q = Number(it.quantity); const pr = Number(it.price);
@@ -1293,12 +1293,12 @@ export default function Warehouse() {
                             <tr key={it.id}>
                               <td>{it.product_name}</td>
                               <td style={{ color: q < 0 ? "#dc2626" : q > 0 ? "#16a34a" : "#94a3b8", fontWeight: 600 }}>{q > 0 ? "+" : ""}{q}</td>
-                              <td className="muted">{pr ? pr.toLocaleString("ru") : "—"}</td>
-                              <td>{pr ? (Math.round(q * pr * 100) / 100).toLocaleString("ru") + " ₴" : "—"}</td>
+                              {showCost && <><td className="muted">{pr ? pr.toLocaleString("ru") : "—"}</td>
+                              <td>{pr ? (Math.round(q * pr * 100) / 100).toLocaleString("ru") + " ₴" : "—"}</td></>}
                             </tr>
                           );
                         })}
-                        {(invHistSel.items || []).length === 0 && <tr><td colSpan={4} className="muted" style={{ padding: 10 }}>{t("Расхождений не было — остатки совпали.","Розбіжностей не було — залишки збіглися.")}</td></tr>}
+                        {(invHistSel.items || []).length === 0 && <tr><td colSpan={showCost ? 4 : 2} className="muted" style={{ padding: 10 }}>{t("Расхождений не было — остатки совпали.","Розбіжностей не було — залишки збіглися.")}</td></tr>}
                       </tbody>
                     </table>
                   </div>
