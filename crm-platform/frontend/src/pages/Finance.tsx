@@ -2216,6 +2216,7 @@ function RefDirections() {
 function RefCounterparties() {
   const { t } = useLang();
   const [items, setItems] = useState<any[]>([]);
+  const [q, setQ] = useState("");
   const nav = useNav();
   const load = () => api.get<any>("/api/finance/counterparties/").then(setItems).catch(() => setItems([]));
   useEffect(() => { load(); }, []);
@@ -2233,15 +2234,16 @@ function RefCounterparties() {
   return (
     <div className="panel" style={{ margin: 0 }}>
       <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("Контрагенты сведены из операций. 🔗 = связан с клиентом CRM (клик откроет).","Контрагенти зведені з операцій. 🔗 = звʼязаний із клієнтом CRM (клік відкриє).")}</div>
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("🔎 Поиск контрагента…","🔎 Пошук контрагента…")} style={{ width: "100%", maxWidth: 380, height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", marginBottom: 10, fontSize: 13, boxSizing: "border-box" }} />
       <table style={{ width: "100%", fontSize: 13 }}>
         <thead><tr><th style={{ textAlign: "left", ...tdS }}>{t("Контрагент","Контрагент")}</th><th style={{ textAlign: "center" }}>{t("Операций","Операцій")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "center" }}>{t("Клиент CRM","Клієнт CRM")}</th></tr></thead>
-        <tbody>{items.slice(0, 300).map((c, i) => (
+        <tbody>{(q.trim() ? items.filter((c) => (c.name || "").toLowerCase().includes(q.trim().toLowerCase())) : items).slice(0, 300).map((c, i) => (
           <tr key={i}><td style={tdS}>{c.name} <span style={{ cursor: "pointer", marginLeft: 4 }} title={t("Переименовать во всех операциях","Перейменувати у всіх операціях")} onClick={() => renameCp(c)}><Icon n="✏️" size={13} /></span></td><td style={{ ...tdS, textAlign: "center" }}>{c.count}</td>
             <td style={{ ...tdS, textAlign: "right" }}>{money(c.total)}</td>
             <td style={{ ...tdS, textAlign: "center", whiteSpace: "nowrap" }}>{c.contact_id ? <span style={{ color: "#1d4ed8", cursor: "pointer" }} onClick={() => nav(`/clients?contact=${c.contact_id}`)}><Icon n="🔗" size={13} /> {t("открыть","відкрити")}</span> : <span className="muted">—</span>} <span style={{ color: "#ef4444", cursor: "pointer", marginLeft: 8 }} title={t("Убрать из всех операций","Прибрати з усіх операцій")} onClick={() => delCp(c)}>✕</span></td></tr>
         ))}</tbody>
       </table>
-      {items.length > 300 && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t("Показано первые 300 из","Показано перші 300 із")} {items.length}.</div>}
+      {(() => { const _f = q.trim() ? items.filter((c) => (c.name || "").toLowerCase().includes(q.trim().toLowerCase())) : items; return <>{q.trim() && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t("Найдено","Знайдено")}: {_f.length}</div>}{_f.length > 300 && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t("Показано первые 300 из","Показано перші 300 із")} {_f.length}.</div>}</>; })()}
     </div>
   );
 }
