@@ -1817,8 +1817,11 @@ function DirModal({ dir, onClose, onSaved }: { dir: any; onClose: () => void; on
 
 function DirectionJournal({ directionId, from, to }: { directionId: number; from: string; to: string }) {
   const { t } = useLang();
+  const nav = useNav();
   const [tx, setTx] = useState<any[] | null>(null);
-  useEffect(() => { setTx(null); api.get<any>(`/api/transactions/?fin_direction=${directionId}&from=${from}&to=${to}&page_size=1000`).then((d) => setTx(d.results || d)).catch(() => setTx([])); }, [directionId, from, to]);
+  const [editTx, setEditTx] = useState<number | null>(null);
+  const load = () => { setTx(null); api.get<any>(`/api/transactions/?fin_direction=${directionId}&from=${from}&to=${to}&page_size=1000`).then((d) => setTx(d.results || d)).catch(() => setTx([])); };
+  useEffect(() => { load(); }, [directionId, from, to]);
   if (!tx) return <div className="spin" style={{ padding: 12 }}>{t("Журнал…","Журнал…")}</div>;
   const inc = tx.filter((t) => t.direction === "in").reduce((a, t) => a + Number(t.amount), 0);
   const exp = tx.filter((t) => t.direction === "out").reduce((a, t) => a + Number(t.amount), 0);
@@ -1858,7 +1861,7 @@ function DirectionJournal({ directionId, from, to }: { directionId: number; from
           <thead><tr><th style={{ textAlign: "left", padding: "4px 8px" }}>{t("Дата","Дата")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "left" }}>{t("Фонд","Фонд")}</th><th style={{ textAlign: "center" }}>{t("Канал","Канал")}</th><th style={{ textAlign: "left" }}>{t("Комментарий","Коментар")}</th></tr></thead>
           <tbody>
             {tx.map((r) => (
-              <tr key={r.id} style={{ borderTop: "1px solid #eef2f7" }}>
+              <tr key={r.id} onClick={() => setEditTx(r.id)} title={t("Открыть операцию","Відкрити операцію")} style={{ borderTop: "1px solid #eef2f7", cursor: "pointer" }}>
                 <td className="muted" style={{ padding: "4px 8px" }}>{new Date(r.date || r.created_at).toLocaleDateString("ru")}</td>
                 <td style={{ textAlign: "right", fontWeight: 600, color: r.direction === "in" ? "#16a34a" : "#dc2626" }}>{r.direction === "in" ? "+" : "−"}{Number(r.amount).toLocaleString("ru")} ₴</td>
                 <td>{r.fin_article_name || <span className="muted">—</span>}</td>
@@ -1869,6 +1872,7 @@ function DirectionJournal({ directionId, from, to }: { directionId: number; from
           </tbody>
         </table>
       )}
+      {editTx && <TxCardModal txId={editTx} nav={(pth: string) => nav(pth)} onClose={() => setEditTx(null)} onSaved={() => { setEditTx(null); load(); }} />}
     </div>
   );
 }
