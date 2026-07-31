@@ -765,7 +765,56 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
                     continue
                 entries.append({"sku": key, "name": nm or key, "fact": fact})
 
-        # ── МАТЧ entries → preview ──
+        # ── МАТЧ entries → preview (розумне зіставлення: артикул точно/нормалізовано + назва точно/нечітко) ──
+        import re as _re
+        from difflib import SequenceMatcher as _SM
+
+        def _norm(x):
+            return _re.sub(r'[\s"«»\'`´\-_.,;:()/\\]+', '', str(x or '').lower())
+
+        _active = list(Product.objects.filter(is_active=True).only("id", "sku", "name", "unit"))
+        _by_sku = {}
+        _by_sku_n = {}
+        _by_name_n = {}
+        _norm_names = []  # (product, norm_name) — для нечіткого пошуку
+        for pr in _active:
+            if pr.sku:
+                _by_sku.setdefault(pr.sku, pr)
+                _by_sku_n.setdefault(_norm(pr.sku), pr)
+            nn = _norm(pr.name)
+            if nn:
+                _by_name_n.setdefault(nn, pr)
+                _norm_names.append((pr, nn))
+
+        def _match(sku, nm):
+            if sku:
+                if sku in _by_sku:
+                    return _by_sku[sku]
+                ns = _norm(sku)
+                if ns:
+                    if ns in _by_sku_n:
+                        return _by_sku_n[ns]
+                    if ns in _by_name_n:
+                        return _by_name_n[ns]
+            if nm:
+                nn = _norm(nm)
+                if not nn:
+                    return None
+                if nn in _by_name_n:
+                    return _by_name_n[nn]
+                sm = _SM(); sm.set_seq2(nn)
+                best = None; best_r = 0.0
+                for (pr, pnn) in _norm_names:
+                    sm.set_seq1(pnn)
+                    if sm.real_quick_ratio() < 0.86 or sm.quick_ratio() < 0.86:
+                        continue
+                    r = sm.ratio()
+                    if r > best_r:
+                        best_r = r; best = pr
+                if best is not None and best_r >= 0.86:
+                    return best
+            return None
+
         preview = []
         not_found = []
         seen = set()
@@ -778,13 +827,7 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
             sku = e.get("sku") or ""
             nm = e.get("name") or ""
             fact = e["fact"]
-            p = None
-            if sku:
-                p = Product.objects.filter(sku=sku).first()
-            if not p and nm:
-                p = Product.objects.filter(name__iexact=nm).first()
-            if not p and sku:
-                p = Product.objects.filter(name__iexact=sku).first()
+            p = _match(sku, nm)
             if not p:
                 not_found.append({"key": (sku or nm or "?")[:60], "reason": "товар не знайдено"})
                 continue
@@ -797,7 +840,6 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
         changed = sum(1 for x in preview if x["delta"] != 0)
         return Response({"matched": len(preview), "changed": changed, "not_found": not_found,
                          "preview": preview, "committed": False})
-
 
 class InventoryAnalyticsView(APIView):
     """Аналитика по складу: стоимость запасов (по закупке/рознице), по категориям, дефицит."""
