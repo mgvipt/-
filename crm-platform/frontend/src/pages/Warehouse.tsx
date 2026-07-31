@@ -261,6 +261,15 @@ export default function Warehouse() {
   const [invLoading, setInvLoading] = useState(false);
   const [invPrinting, setInvPrinting] = useState(false);
   const invTotalPages = Math.max(1, Math.ceil(invCount / invPageSize));
+  // инвентаризация: экран (ведомость / история проведённых) + список истории
+  const [invScreen, setInvScreen] = useState<"sheet" | "history">("sheet");
+  const [invHistDocs, setInvHistDocs] = useState<any[]>([]);
+  const [invHistBusy, setInvHistBusy] = useState(false);
+  const [invHistSel, setInvHistSel] = useState<any>(null);
+  const [invHistPage, setInvHistPage] = useState(1);
+  const [invHistCount, setInvHistCount] = useState(0);
+  const invHistPageSize = 20;
+  const invHistTotalPages = Math.max(1, Math.ceil(invHistCount / invHistPageSize));
 
   /* ─── [3] ЗАГРУЗКА ───────────────────────────────────────────────────── */
   const [params] = useSearchParams();
@@ -388,9 +397,35 @@ export default function Warehouse() {
     const items = sheet
       .filter((r) => facts[r.id] !== undefined && Number(facts[r.id]) !== Number(r.book))
       .map((r) => ({ product: r.id, quantity: Number(facts[r.id]), price: 0 }));
-    if (!items.length) { setInvMsg(t("Нет расхождений факта с учётом на этой странице — нечего проводить.","Немає розбіжностей факту з обліком на цій сторінці — нічого проводити.")); return; }
-    await api.post("/api/stock-documents/", { kind: "inv", warehouse: whs[0]?.id, comment: `Інвентаризація ${pFrom}…${pTo}`, items });
-    loadProducts(); loadSheet(pFrom, pTo); setInvMsg(t(`✓ Проведено позиций: ${items.length}`,`✓ Проведено позицій: ${items.length}`));
+    if (!items.length) {
+      setInvMsg(t("Расхождений нет: впишите фактический остаток в колонку «Факт» у нужных товаров, потом жмите «Провести».","Розбіжностей немає: впишіть фактичний залишок у колонку «Факт» у потрібних товарів, потім тисніть «Провести»."));
+      alert(t("Нечего проводить: не вписан ни один фактический остаток, отличный от учётного. Впишите число в колонку «Факт» и повторите.","Нема чого проводити: не вписано жодного фактичного залишку, відмінного від облікового. Впишіть число в колонку «Факт» і повторіть."));
+      return;
+    }
+    if (!confirm(t(`Скорректировать остатки по ${items.length} позициям? Недостача/излишек будут проведены и попадут в историю.`,`Скоригувати залишки по ${items.length} позиціях? Нестача/надлишок будуть проведені та потраплять в історію.`))) return;
+    setInvMsg(t("Проводим…","Проводимо…"));
+    try {
+      await api.post("/api/stock-documents/", { kind: "inv", warehouse: whs[0]?.id, comment: `Інвентаризація ${pFrom}…${pTo}`, items });
+      loadProducts(); loadSheet(pFrom, pTo); loadInvHistory(1);
+      setInvMsg(t(`✓ Инвентаризация проведена. Скорректировано позиций: ${items.length}. Запись добавлена в «Историю».`,`✓ Інвентаризацію проведено. Скориговано позицій: ${items.length}. Запис додано в «Історію».`));
+      alert(t(`✓ Готово. Скорректировано позиций: ${items.length}. Смотрите вкладку «История».`,`✓ Готово. Скориговано позицій: ${items.length}. Дивіться вкладку «Історія».`));
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || "";
+      setInvMsg(t("Не удалось провести инвентаризацию. ","Не вдалося провести інвентаризацію. ") + msg);
+      alert(t("Не удалось провести инвентаризацию. ","Не вдалося провести інвентаризацію. ") + msg);
+    }
+  }
+  // история проведённых инвентаризаций (документы kind=inv)
+  async function loadInvHistory(pg?: number) {
+    setInvHistBusy(true);
+    const page = pg ?? invHistPage;
+    setInvHistPage(page);
+    try {
+      const r: any = await api.get(`/api/stock-documents/?kind=inv&page=${page}&page_size=${invHistPageSize}`);
+      setInvHistDocs(Array.isArray(r) ? r : (r.results || []));
+      setInvHistCount(r.count ?? (r.results || r).length);
+    } catch { setInvHistDocs([]); }
+    setInvHistBusy(false);
   }
   // печать всей ведомости (все страницы по текущему фильтру) с пустой колонкой «Факт» для отметок на физскладе
   async function printInventory() {
@@ -964,6 +999,12 @@ export default function Warehouse() {
       {/* ─── [9] ИНВЕНТАРИЗАЦИЯ ───────────────────────────────────────────── */}
       {view === "inv" && (
         <div style={{ background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", padding: 22, maxHeight: "calc(100vh - 170px)", display: "flex", flexDirection: "column" }}>
+            {/* Ведомость / История проведённых инвентаризаций */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, borderBottom: "1px solid #f1f5f9", paddingBottom: 8 }}>
+              <button className={"btn " + (invScreen === "sheet" ? "btn-primary" : "btn-light")} onClick={() => setInvScreen("sheet")}>{t("Ведомость","Відомість")}</button>
+              <button className={"btn " + (invScreen === "history" ? "btn-primary" : "btn-light")} onClick={() => { setInvScreen("history"); setInvHistSel(null); loadInvHistory(1); }}>{t("История","Історія")}{invHistCount ? " (" + invHistCount + ")" : ""}</button>
+            </div>
+            {invScreen === "sheet" && (<>
             <h3 style={{ marginTop: 0 }}>{t("Инвентаризационная ведомость","Інвентаризаційна відомість")} · {invMode === "folder" && invCat ? (cats.find((c) => c.id === invCat)?.name || t("папка","папка")) : t("все товары","всі товари")} <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>({invCount})</span></h3>
             {/* Отображение: все товары / по папке + печать */}
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
@@ -1028,6 +1069,63 @@ export default function Warehouse() {
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setView("goods")}>{t("← К товарам","← До товарів")}</button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={conductInventory}>{t("Провести инвентаризацию","Провести інвентаризацію")}</button>
             </div>
+            </>)}
+            {invScreen === "history" && (
+              <div style={{ overflowY: "auto", flex: 1 }}>
+                {!invHistSel && (<>
+                  {invHistBusy && <div className="muted" style={{ fontSize: 13, padding: 8 }}>{t("Загрузка…","Завантаження…")}</div>}
+                  {!invHistBusy && invHistDocs.length === 0 && <div className="muted" style={{ fontSize: 13, padding: 8 }}>{t("Инвентаризаций ещё не проводили.","Інвентаризацій ще не проводили.")}</div>}
+                  {invHistDocs.map((d) => {
+                    const items = d.items || [];
+                    const short = items.filter((it: any) => Number(it.quantity) < 0).length;
+                    const over = items.filter((it: any) => Number(it.quantity) > 0).length;
+                    return (
+                      <div key={d.id} onClick={() => setInvHistSel(d)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 8px", borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}>
+                        <div style={{ minWidth: 92, fontWeight: 600 }}>{(d.created_at || "").slice(0, 10)}</div>
+                        <div style={{ flex: 1 }}>{d.comment || t("Инвентаризация","Інвентаризація")}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>{t("позиций","позицій")}: <b>{items.length}</b></div>
+                        {short > 0 && <span style={{ color: "#dc2626", fontSize: 12 }} title={t("недостача","нестача")}>−{short}</span>}
+                        {over > 0 && <span style={{ color: "#16a34a", fontSize: 12 }} title={t("излишек","надлишок")}>+{over}</span>}
+                        <span className="muted">→</span>
+                      </div>
+                    );
+                  })}
+                  {invHistCount > invHistPageSize && (
+                    <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10 }}>
+                      <button className="btn btn-light" disabled={invHistPage <= 1 || invHistBusy} onClick={() => loadInvHistory(invHistPage - 1)}>{t("← Назад","← Назад")}</button>
+                      <span style={{ fontSize: 13 }}>{t("Стр.","Стор.")} <b>{invHistPage}</b> {t("из","з")} <b>{invHistTotalPages}</b></span>
+                      <button className="btn btn-light" disabled={invHistPage >= invHistTotalPages || invHistBusy} onClick={() => loadInvHistory(invHistPage + 1)}>{t("Вперёд →","Вперед →")}</button>
+                    </div>
+                  )}
+                </>)}
+                {invHistSel && (
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                      <button className="btn btn-light" onClick={() => setInvHistSel(null)}>{t("← К списку","← До списку")}</button>
+                      <b>{(invHistSel.created_at || "").slice(0, 10)}</b>
+                      <span className="muted" style={{ fontSize: 13 }}>{invHistSel.comment}</span>
+                    </div>
+                    <table style={{ width: "100%", fontSize: 13 }}>
+                      <thead><tr>{[t("Товар","Товар"), t("Расхождение","Розбіжність"), t("Себест.","Собівар."), t("Сумма","Сума")].map((h) => <th key={h} style={{ textAlign: "left", boxShadow: "inset 0 -1px 0 #e2e8f0" }}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {(invHistSel.items || []).map((it: any) => {
+                          const q = Number(it.quantity); const pr = Number(it.price);
+                          return (
+                            <tr key={it.id}>
+                              <td>{it.product_name}</td>
+                              <td style={{ color: q < 0 ? "#dc2626" : q > 0 ? "#16a34a" : "#94a3b8", fontWeight: 600 }}>{q > 0 ? "+" : ""}{q}</td>
+                              <td className="muted">{pr ? pr.toLocaleString("ru") : "—"}</td>
+                              <td>{pr ? (Math.round(q * pr * 100) / 100).toLocaleString("ru") + " ₴" : "—"}</td>
+                            </tr>
+                          );
+                        })}
+                        {(invHistSel.items || []).length === 0 && <tr><td colSpan={4} className="muted" style={{ padding: 10 }}>{t("Расхождений не было — остатки совпали.","Розбіжностей не було — залишки збіглися.")}</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
       )}
       {receiptFor && <ReceiptModal productId={receiptFor.productId} productName={receiptFor.productName} onClose={() => setReceiptFor(null)} onSaved={() => { loadProducts(); openReceiptList(); if (card) api.get<Movement[]>(`/api/products/${card.id}/movements/`).then(setMovements).catch(() => {}); }} />}
