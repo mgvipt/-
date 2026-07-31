@@ -50,3 +50,37 @@ def claude_json(prompt, model="claude-sonnet-4-6", max_tokens=700, system=None, 
         except Exception:
             pass
     return {"context": "", "suggestion": text}
+
+
+def claude_vision(images, prompt, model="claude-sonnet-4-6", max_tokens=8000, system=None, source="vision"):
+    """Виклик Claude із зображеннями (vision). images — список (media_type, base64_data).
+    Повертає розпарсений JSON (масив або обʼєкт) або None."""
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        raise RuntimeError("ANTHROPIC_API_KEY не налаштовано на сервері")
+    content = []
+    for img in images:
+        if isinstance(img, (list, tuple)):
+            mt, data = img[0], img[1]
+        else:
+            mt, data = "image/jpeg", img
+        content.append({"type": "image", "source": {"type": "base64", "media_type": mt, "data": data}})
+    content.append({"type": "text", "text": prompt})
+    payload = {"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": content}]}
+    if system:
+        payload["system"] = system
+    body = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages", data=body,
+        headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
+    with urllib.request.urlopen(req, timeout=180) as r:
+        resp = json.load(r)
+    _log_usage(source, model, resp.get("usage") or {})
+    text = resp["content"][0]["text"]
+    m = re.search(r"\[.*\]|\{.*\}", text, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:
+            pass
+    return None

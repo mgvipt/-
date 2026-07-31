@@ -49,7 +49,7 @@ interface Category { id: number; name: string; parent: number | null; order: num
 interface WH { id: number; name: string; is_default: boolean; }
 interface Movement { id: number; kind: string; kind_display: string; quantity: number; price: number; warehouse: string; date: string; number: string | number; }
 
-interface SheetRow { id: number; name: string; unit: string; opening: number; received: number; sold: number; book: number; }
+interface SheetRow { id: number; name: string; sku?: string; unit: string; opening: number; received: number; sold: number; book: number; }
 const PAGE_SIZES = [5, 20, 50, 100, 500];
 const SHOP_CATEGORY_SUGGESTIONS = [
   "Декоративные покрытия",
@@ -270,7 +270,9 @@ export default function Warehouse() {
   const [invImportXlsx, setInvImportXlsx] = useState<string>(""); // base64 .xlsx
   const [invImportFileName, setInvImportFileName] = useState("");
   const [invImportBusy, setInvImportBusy] = useState(false);
-  const [invImportRes, setInvImportRes] = useState<any>(null); // результат превью
+  const [invImportRes, setInvImportRes] = useState<any>(null); // результат превью (matched/not_found)
+  const [invImportImages, setInvImportImages] = useState<string[]>([]); // ужатые фото (data URL)
+  const [invImportRows, setInvImportRows] = useState<any[]>([]); // РЕДАКТИРУЕМЫЕ строки превью {id,sku,name,unit,book,fact}
   const invTotalPages = Math.max(1, Math.ceil(invCount / invPageSize));
   // инвентаризация: экран (ведомость / история проведённых) + список истории
   const [invScreen, setInvScreen] = useState<"sheet" | "history">("sheet");
@@ -473,13 +475,13 @@ export default function Warehouse() {
         ? (invCat === -1 ? t("без категории","без категорії") : (cats.find((c) => c.id === invCat)?.name || t("папка","папка")))
         : t("все товары","всі товари");
       const esc = (s: any) => String(s ?? "").replace(/[&<>]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m] as string));
-      const body = rows.map((r, i) => `<tr><td class="n">${i + 1}</td><td>${esc(r.name)}</td><td class="c">${esc(r.unit)}</td><td class="r">${r.book.toLocaleString("ru")}</td><td class="fact"></td><td class="note"></td></tr>`).join("");
+      const body = rows.map((r, i) => `<tr><td class="n">${i + 1}</td><td class="sku">${esc(r.sku || "")}</td><td>${esc(r.name)}</td><td class="c">${esc(r.unit)}</td><td class="r">${r.book.toLocaleString("ru")}</td><td class="fact"></td><td class="note"></td></tr>`).join("");
       const html = `<!doctype html><html><head><meta charset="utf-8"><title>${t("Инвентаризация","Інвентаризація")} ${pFrom}—${pTo}</title>
 <style>
   *{box-sizing:border-box} body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:18px}
   h1{font-size:17px;margin:0 0 2px} .sub{font-size:12px;color:#555;margin:0 0 12px}
   table{width:100%;border-collapse:collapse;font-size:12px} th,td{border:1px solid #333;padding:5px 7px;text-align:left}
-  th{background:#eee} td.n,th.n{width:34px;text-align:center} td.c,th.c{text-align:center;width:52px}
+  th{background:#eee} td.n,th.n{width:34px;text-align:center} td.c,th.c{text-align:center;width:52px} td.sku,th.sku{width:96px;font-size:11px;color:#333}
   td.r,th.r{text-align:right;width:90px} td.fact,th.fact{width:110px} td.note,th.note{width:150px}
   td.fact{height:26px} tr{break-inside:avoid}
   .sign{margin-top:26px;font-size:12px;display:flex;gap:60px}
@@ -487,7 +489,7 @@ export default function Warehouse() {
 </style></head><body onload="window.print()">
   <h1>${t("Инвентаризационная ведомость","Інвентаризаційна відомість")}</h1>
   <p class="sub">${t("Период","Період")}: ${pFrom} — ${pTo} · ${t("Отображение","Відображення")}: ${esc(scope)} · ${t("Позиций","Позицій")}: ${rows.length} · ${t("Дата печати","Дата друку")}: ${today()}</p>
-  <table><thead><tr><th class="n">№</th><th>${t("Товар","Товар")}</th><th class="c">${t("Ед.","Од.")}</th><th class="r">${t("Учёт","Облік")}</th><th class="fact">${t("Факт (вписать)","Факт (вписати)")}</th><th class="note">${t("Примечание","Примітка")}</th></tr></thead><tbody>${body}</tbody></table>
+  <table><thead><tr><th class="n">№</th><th class="sku">${t("Артикул","Артикул")}</th><th>${t("Товар","Товар")}</th><th class="c">${t("Ед.","Од.")}</th><th class="r">${t("Учёт","Облік")}</th><th class="fact">${t("Факт (вписать)","Факт (вписати)")}</th><th class="note">${t("Примечание","Примітка")}</th></tr></thead><tbody>${body}</tbody></table>
   <div class="sign"><div>${t("Провёл(а): _______________","Провів(ла): _______________")}</div><div>${t("Подпись: _______________","Підпис: _______________")}</div></div>
 </body></html>`;
       const w = window.open("", "_blank");
@@ -497,41 +499,87 @@ export default function Warehouse() {
     setInvPrinting(false);
   }
 
-  // ── импорт инвентаризации из файла ──
-  function openInvImport() { setInvImportOpen(true); setInvImportText(""); setInvImportXlsx(""); setInvImportFileName(""); setInvImportRes(null); }
+  // ── импорт инвентаризации: файл / вставка / ФОТО (ИИ) → редактируемое превью ──
+  function openInvImport() { setInvImportOpen(true); setInvImportText(""); setInvImportXlsx(""); setInvImportFileName(""); setInvImportRes(null); setInvImportImages([]); setInvImportRows([]); }
+  // ужать фото в JPEG (макс. 1550px, q0.8) — чтобы пролезло и лучше распозналось
+  function downscaleImage(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const rd = new FileReader();
+      rd.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 1550; let { width: w, height: h } = img;
+          if (w > MAX || h > MAX) { const k = Math.min(MAX / w, MAX / h); w = Math.round(w * k); h = Math.round(h * k); }
+          const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+          const cx = cv.getContext("2d"); if (!cx) { reject(new Error("no ctx")); return; }
+          cx.drawImage(img, 0, 0, w, h);
+          resolve(cv.toDataURL("image/jpeg", 0.8));
+        };
+        img.onerror = reject; img.src = String(rd.result || "");
+      };
+      rd.onerror = reject; rd.readAsDataURL(file);
+    });
+  }
+  async function addInvImportPhotos(files?: FileList | null) {
+    if (!files || !files.length) return;
+    setInvImportRes(null);
+    const arr: string[] = [];
+    for (const f of Array.from(files).slice(0, 8)) { try { arr.push(await downscaleImage(f)); } catch { /* skip */ } }
+    setInvImportImages((prev) => [...prev, ...arr].slice(0, 8));
+    setInvImportText(""); setInvImportXlsx(""); setInvImportFileName("");
+  }
   function onInvImportFile(f?: File) {
     if (!f) return;
-    setInvImportFileName(f.name); setInvImportRes(null);
+    setInvImportFileName(f.name); setInvImportRes(null); setInvImportImages([]);
     if (/\.(xlsx|xlsm)$/i.test(f.name)) {
       const rd = new FileReader();
       rd.onload = () => { setInvImportXlsx(String(rd.result || "")); setInvImportText(""); };
-      rd.readAsDataURL(f); // data:...;base64,XXXX
+      rd.readAsDataURL(f);
     } else {
       const rd = new FileReader();
       rd.onload = () => { setInvImportText(String(rd.result || "")); setInvImportXlsx(""); };
       rd.readAsText(f);
     }
   }
-  async function runInvImport(commit: boolean) {
+  // распознать/проверить источник → заполнить редактируемое превью
+  async function invImportPreview() {
     setInvImportBusy(true);
     try {
-      const body: any = { commit, comment: `Інвентаризація (імпорт) ${pFrom}…${pTo}`, doc_date: pTo, warehouse: whs[0]?.id };
-      if (invImportXlsx) body.xlsx_b64 = invImportXlsx; else body.data = invImportText;
+      const body: any = { commit: false };
+      if (invImportImages.length) body.images = invImportImages;
+      else if (invImportXlsx) body.xlsx_b64 = invImportXlsx;
+      else body.data = invImportText;
       const r: any = await api.post("/api/stock-documents/import-inventory/", body);
-      if (commit && r?.committed) {
-        setInvImportOpen(false); setInvImportRes(null);
-        loadProducts(); loadInvHistory(1);
-        setInvScreen("history"); setInvHistSel(null);
-        setInvMsg(t(`✓ Импорт проведён. Скорректировано позиций: ${r.changed}. Смотрите «Историю».`,`✓ Імпорт проведено. Скориговано позицій: ${r.changed}. Дивіться «Історію».`));
-      } else {
-        setInvImportRes(r);
-      }
+      setInvImportRes(r);
+      setInvImportRows((r.preview || []).map((x: any) => ({ ...x })));
     } catch (e: any) {
       const msg = e?.response?.data?.detail || e?.message || "";
-      setInvImportRes({ error: (t("Не удалось обработать файл. ","Не вдалося обробити файл. ") + msg) });
+      setInvImportRes({ error: (t("Не удалось обработать. ","Не вдалося обробити. ") + msg) });
+      setInvImportRows([]);
     }
     setInvImportBusy(false);
   }
+  // провести по отредактированным строкам
+  async function invImportCommit() {
+    const items = invImportRows
+      .filter((r) => r.fact !== "" && r.fact !== null && r.fact !== undefined && Number(r.fact) !== Number(r.book))
+      .map((r) => ({ product: r.id, fact: Number(r.fact) }));
+    if (!items.length) { setInvImportRes((p: any) => ({ ...(p || {}), error: t("Нет расхождений для проведения.","Немає розбіжностей для проведення.") })); return; }
+    setInvImportBusy(true);
+    try {
+      const r: any = await api.post("/api/stock-documents/import-inventory/", { commit: true, items, comment: `Інвентаризація (імпорт) ${pFrom}…${pTo}`, doc_date: pTo, warehouse: whs[0]?.id });
+      if (r?.committed) {
+        setInvImportOpen(false);
+        loadProducts(); loadInvHistory(1); setInvScreen("history"); setInvHistSel(null);
+        setInvMsg(t(`✓ Импорт проведён. Скорректировано позиций: ${r.changed}. Смотрите «Историю».`,`✓ Імпорт проведено. Скориговано позицій: ${r.changed}. Дивіться «Історію».`));
+      }
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || "";
+      setInvImportRes((p: any) => ({ ...(p || {}), error: (t("Не удалось провести. ","Не вдалося провести. ") + msg) }));
+    }
+    setInvImportBusy(false);
+  }
+  const invImportChanged = invImportRows.filter((r) => r.fact !== "" && r.fact !== null && r.fact !== undefined && Number(r.fact) !== Number(r.book)).length;
 
   const tree = useMemo(() => {
     const roots = cats.filter((c) => !c.parent).sort((a, b) => a.name.localeCompare(b.name));
@@ -1257,55 +1305,91 @@ export default function Warehouse() {
           </div>
         </div>
       )}
-      {/* Импорт инвентаризации из файла */}
+      {/* Импорт инвентаризации: фото (ИИ) / файл / вставка → редактируемое превью */}
       {invImportOpen && (
         <div onClick={() => !invImportBusy && setInvImportOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 720, maxWidth: "94vw", maxHeight: "88vh", display: "flex", flexDirection: "column" }}>
-            <h3 style={{ marginTop: 0 }}>{t("Импорт инвентаризации из файла","Імпорт інвентаризації з файлу")}</h3>
-            <div className="muted" style={{ fontSize: 13, marginBottom: 10 }}>{t("Файл Excel (.xlsx) или CSV, колонки: Артикул, Факт (можно 3-ю «Название» — для проверки). Матч по артикулу, если пусто — по точному названию.","Файл Excel (.xlsx) або CSV, колонки: Артикул, Факт (можна 3-тю «Назва» — для перевірки). Матч по артикулу, якщо пусто — по точній назві.")}</div>
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 820, maxWidth: "95vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+            <h3 style={{ marginTop: 0 }}>{t("Импорт инвентаризации","Імпорт інвентаризації")}</h3>
+            <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>{t("Загрузите ФОТО распечатанных листов (ИИ распознает рукописный «Факт») или файл Excel/CSV (колонки Артикул, Факт). Дальше проверите и поправите позиции — и проведёте.","Завантажте ФОТО роздрукованих листів (ІІ розпізнає рукописний «Факт») або файл Excel/CSV (колонки Артикул, Факт). Далі перевірите й поправите позиції — і проведете.")}</div>
+
+            {/* Источник: фото */}
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
               <label className="btn btn-light" style={{ cursor: "pointer" }}>
-                <Icon n="📎" size={14} /> {t("Выбрать файл","Обрати файл")}
-                <input type="file" accept=".xlsx,.xlsm,.csv,.tsv,.txt" style={{ display: "none" }} onChange={(e) => onInvImportFile(e.target.files?.[0])} />
+                <Icon n="📷" size={14} /> {t("Добавить фото листов","Додати фото листів")}
+                <input type="file" accept="image/*" multiple capture="environment" style={{ display: "none" }} onChange={(e) => addInvImportPhotos(e.target.files)} />
               </label>
-              {invImportFileName && <span className="muted" style={{ fontSize: 13 }}>{invImportFileName}</span>}
+              {invImportImages.map((src, i) => (
+                <span key={i} style={{ position: "relative", display: "inline-block" }}>
+                  <img src={src} alt="" style={{ height: 46, borderRadius: 6, border: "1px solid #e2e8f0" }} />
+                  <button onClick={() => setInvImportImages((p) => p.filter((_, j) => j !== i))} title={t("Убрать","Прибрати")}
+                    style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: 9, border: "none", background: "#dc2626", color: "#fff", fontSize: 11, cursor: "pointer", lineHeight: "18px", padding: 0 }}>×</button>
+                </span>
+              ))}
             </div>
-            {!invImportXlsx && (
-              <textarea value={invImportText} onChange={(e) => { setInvImportText(e.target.value); setInvImportRes(null); }} placeholder={t("…или вставьте сюда: Артикул;Факт (по строке на товар)","…або вставте сюди: Артикул;Факт (по рядку на товар)")}
-                style={{ width: "100%", height: 90, border: "1px solid #cbd5e1", borderRadius: 8, padding: 8, fontSize: 13, fontFamily: "monospace", marginBottom: 10 }} />
+
+            {/* Источник: файл / вставка (если фото не выбраны) */}
+            {invImportImages.length === 0 && (
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                <span className="muted" style={{ fontSize: 12 }}>{t("или","або")}</span>
+                <label className="btn btn-light" style={{ cursor: "pointer" }}>
+                  <Icon n="📎" size={14} /> {t("Файл Excel/CSV","Файл Excel/CSV")}
+                  <input type="file" accept=".xlsx,.xlsm,.csv,.tsv,.txt" style={{ display: "none" }} onChange={(e) => onInvImportFile(e.target.files?.[0])} />
+                </label>
+                {invImportFileName && <span className="muted" style={{ fontSize: 13 }}>{invImportFileName}</span>}
+                {!invImportXlsx && !invImportFileName && (
+                  <input value={invImportText} onChange={(e) => { setInvImportText(e.target.value); setInvImportRes(null); }} placeholder={t("или вставьте: Артикул;Факт","або вставте: Артикул;Факт")}
+                    style={{ flex: 1, minWidth: 200, height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13, fontFamily: "monospace" }} />
+                )}
+              </div>
             )}
+
             {invImportRes && invImportRes.error && <div style={{ fontSize: 13, color: "#991b1b", background: "#fee2e2", borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>{invImportRes.error}</div>}
-            {invImportRes && !invImportRes.error && (
+
+            {/* Редактируемое превью */}
+            {invImportRows.length > 0 && (
               <div style={{ marginBottom: 10, overflowY: "auto", flex: 1, border: "1px solid #f1f5f9", borderRadius: 8 }}>
-                <div style={{ position: "sticky", top: 0, background: "#f8fafc", padding: "8px 10px", fontSize: 13, borderBottom: "1px solid #e2e8f0" }}>
-                  {t("Найдено товаров","Знайдено товарів")}: <b>{invImportRes.matched}</b> · {t("с расхождением","з розбіжністю")}: <b style={{ color: "#b45309" }}>{invImportRes.changed}</b>
-                  {(invImportRes.not_found || []).length > 0 && <> · {t("не найдено","не знайдено")}: <b style={{ color: "#dc2626" }}>{invImportRes.not_found.length}</b></>}
+                <div style={{ position: "sticky", top: 0, background: "#f8fafc", padding: "8px 10px", fontSize: 13, borderBottom: "1px solid #e2e8f0", zIndex: 1 }}>
+                  {t("Позиций","Позицій")}: <b>{invImportRows.length}</b> · {t("с расхождением","з розбіжністю")}: <b style={{ color: "#b45309" }}>{invImportChanged}</b>
+                  {invImportRes && (invImportRes.not_found || []).length > 0 && <> · {t("не найдено","не знайдено")}: <b style={{ color: "#dc2626" }}>{invImportRes.not_found.length}</b></>}
+                  <span className="muted"> · {t("можно поправить «Факт» или убрать строку","можна поправити «Факт» або прибрати рядок")}</span>
                 </div>
                 <table style={{ width: "100%", fontSize: 12 }}>
-                  <thead><tr>{[t("Артикул","Артикул"), t("Товар","Товар"), t("Учёт","Облік"), t("Факт","Факт"), t("Разница","Різниця")].map((h) => <th key={h} style={{ textAlign: "left", padding: "5px 8px", position: "sticky", top: 33, background: "#fff", boxShadow: "inset 0 -1px 0 #e2e8f0" }}>{h}</th>)}</tr></thead>
+                  <thead><tr>{[t("Артикул","Артикул"), t("Товар","Товар"), t("Учёт","Облік"), t("Факт","Факт"), t("Разница","Різниця"), ""].map((h, i) => <th key={i} style={{ textAlign: "left", padding: "5px 8px", position: "sticky", top: 34, background: "#fff", boxShadow: "inset 0 -1px 0 #e2e8f0" }}>{h}</th>)}</tr></thead>
                   <tbody>
-                    {(invImportRes.preview || []).map((r: any) => (
-                      <tr key={r.id} style={{ background: r.delta !== 0 ? "#fffbeb" : "transparent" }}>
-                        <td style={{ padding: "5px 8px" }} className="muted">{r.sku || "—"}</td>
-                        <td style={{ padding: "5px 8px" }}>{r.name}</td>
-                        <td style={{ padding: "5px 8px" }}>{r.book}</td>
-                        <td style={{ padding: "5px 8px", fontWeight: 600 }}>{r.fact}</td>
-                        <td style={{ padding: "5px 8px", fontWeight: 600, color: r.delta < 0 ? "#dc2626" : r.delta > 0 ? "#16a34a" : "#94a3b8" }}>{r.delta > 0 ? "+" : ""}{r.delta}</td>
-                      </tr>
-                    ))}
+                    {invImportRows.map((r, i) => {
+                      const delta = (r.fact === "" || r.fact === null || r.fact === undefined) ? 0 : Number(r.fact) - Number(r.book);
+                      return (
+                        <tr key={r.id} style={{ background: delta !== 0 ? "#fffbeb" : "transparent" }}>
+                          <td style={{ padding: "4px 8px" }} className="muted">{r.sku || "—"}</td>
+                          <td style={{ padding: "4px 8px" }}>{r.name} <span className="muted">{r.unit}</span></td>
+                          <td style={{ padding: "4px 8px" }}>{r.book}</td>
+                          <td style={{ padding: "4px 8px" }}>
+                            <input type="number" value={r.fact} onChange={(e) => setInvImportRows((rows) => rows.map((x, j) => j === i ? { ...x, fact: e.target.value } : x))}
+                              style={{ width: 76, height: 26, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
+                          </td>
+                          <td style={{ padding: "4px 8px", fontWeight: 600, color: delta < 0 ? "#dc2626" : delta > 0 ? "#16a34a" : "#94a3b8" }}>{delta > 0 ? "+" : ""}{Math.round(delta * 100) / 100 || 0}</td>
+                          <td style={{ padding: "4px 8px" }}><button onClick={() => setInvImportRows((rows) => rows.filter((_, j) => j !== i))} title={t("Убрать","Прибрати")} style={{ border: "none", background: "transparent", color: "#94a3b8", cursor: "pointer", fontSize: 15 }}>×</button></td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-                {(invImportRes.not_found || []).length > 0 && (
+                {invImportRes && (invImportRes.not_found || []).length > 0 && (
                   <div style={{ padding: "8px 10px", fontSize: 12, color: "#991b1b", borderTop: "1px solid #f1f5f9" }}>
-                    {t("Не найдены (проверь артикул/название)","Не знайдені (перевір артикул/назву)")}: {invImportRes.not_found.slice(0, 30).map((x: any) => x.key).join(", ")}{invImportRes.not_found.length > 30 ? "…" : ""}
+                    {t("Не найдены (проверь артикул/название в файле)","Не знайдені (перевір артикул/назву у файлі)")}: {invImportRes.not_found.slice(0, 30).map((x: any) => x.key).join(", ")}{invImportRes.not_found.length > 30 ? "…" : ""}
                   </div>
                 )}
               </div>
             )}
+
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-light" style={{ flex: 1 }} disabled={invImportBusy} onClick={() => setInvImportOpen(false)}>{t("Отмена","Скасувати")}</button>
-              <button className="btn btn-light" style={{ flex: 1 }} disabled={invImportBusy || (!invImportText.trim() && !invImportXlsx)} onClick={() => runInvImport(false)}>{invImportBusy ? t("Проверяем…","Перевіряємо…") : t("Проверить","Перевірити")}</button>
-              <button className="btn btn-primary" style={{ flex: 1 }} disabled={invImportBusy || !invImportRes || invImportRes.error || !(invImportRes.changed > 0)} onClick={() => runInvImport(true)}>{invImportBusy ? t("Проводим…","Проводимо…") : t(`Провести${invImportRes && invImportRes.changed ? " (" + invImportRes.changed + ")" : ""}`,`Провести${invImportRes && invImportRes.changed ? " (" + invImportRes.changed + ")" : ""}`)}</button>
+              <button className="btn btn-light" style={{ flex: 1 }} disabled={invImportBusy || (invImportImages.length === 0 && !invImportText.trim() && !invImportXlsx)} onClick={invImportPreview}>
+                {invImportBusy ? t("Обработка…","Обробка…") : (invImportImages.length ? t("Распознать фото (ИИ)","Розпізнати фото (ІІ)") : t("Проверить","Перевірити"))}
+              </button>
+              <button className="btn btn-primary" style={{ flex: 1 }} disabled={invImportBusy || invImportChanged === 0} onClick={invImportCommit}>
+                {invImportBusy ? t("Проводим…","Проводимо…") : t(`Провести${invImportChanged ? " (" + invImportChanged + ")" : ""}`,`Провести${invImportChanged ? " (" + invImportChanged + ")" : ""}`)}
+              </button>
             </div>
           </div>
         </div>

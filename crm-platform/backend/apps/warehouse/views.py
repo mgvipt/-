@@ -635,84 +635,31 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="import-inventory")
     def import_inventory(self, request):
-        """Імпорт інвентаризації файлом. Колонки: Артикул + Факт (опц. Назва — ігнорується при матчі).
-        Матч по SKU (точно) → назві (iexact). commit=false → прев'ю (нічого не пише);
-        commit=true → створює документ інвентаризації (kind=inv) по рядках, де факт != обліковому залишку.
-        Вхід: data (текст CSV/TSV) або xlsx_b64 (base64 .xlsx). Право — warehouse.tab.inventory."""
+        """Імпорт інвентаризації: файл (xlsx/csv), вставлений текст АБО фото (ІІ розпізнає рукописний факт).
+        Прев'ю: commit=false + джерело (data / xlsx_b64 / images) → {matched, changed, not_found, preview}.
+        Провести: commit=true + items=[{product, fact}] (відредагований список) → документ інвентаризації.
+        Право — warehouse.tab.inventory."""
         u = request.user
         if not (u.is_superuser or u.has_perm_code("warehouse.tab.inventory")):
             return Response({"detail": "Немає права на інвентаризацію."}, status=status.HTTP_403_FORBIDDEN)
-        import csv
-        import io as _io
-        import base64
-        raw = request.data.get("data") or ""
-        xlsx_b64 = request.data.get("xlsx_b64") or ""
-        rows = []
-        if xlsx_b64:
-            try:
-                blob = base64.b64decode(str(xlsx_b64).split(",")[-1])
-                import openpyxl
-                wb = openpyxl.load_workbook(_io.BytesIO(blob), read_only=True, data_only=True)
-                ws = wb.active
-                for r in ws.iter_rows(values_only=True):
-                    rows.append(["" if c is None else str(c) for c in r])
-            except Exception:
-                return Response({"detail": "Не вдалося прочитати Excel-файл. Перевірте, що це .xlsx."}, status=400)
-        elif str(raw).strip():
-            delim = ";" if raw.count(";") >= raw.count(",") else ","
-            if raw.count("\t") >= raw.count(delim):
-                delim = "\t"
-            rows = [list(r) for r in csv.reader(_io.StringIO(raw), delimiter=delim)]
-        else:
-            return Response({"detail": "Порожній файл"}, status=400)
-
-        start = 0
-        if rows:
-            hdr = [str(c).strip().lower() for c in rows[0]]
-            if any(h in ("артикул", "sku", "назва", "название", "товар", "факт", "fact", "кількість", "количество", "qty") for h in hdr):
-                start = 1
-
-        def _num(x):
-            try:
-                return float(str(x).replace(" ", "").replace(" ", "").replace(",", "."))
-            except (TypeError, ValueError):
-                return None
-
-        preview = []
-        not_found = []
-        items = []  # (product, fact)
-        seen = set()
-        for i in range(start, len(rows)):
-            r = rows[i]
-            if not any((str(c) or "").strip() for c in r):
-                continue
-            key = str(r[0]).strip() if len(r) > 0 else ""
-            fact = _num(r[1]) if len(r) > 1 else None
-            if not key or fact is None:
-                if key or (len(r) > 1 and str(r[1]).strip()):
-                    not_found.append({"key": (key or "?")[:60], "reason": "нема артикула/факту"})
-                continue
-            p = Product.objects.filter(sku=key).first() or Product.objects.filter(name__iexact=key).first()
-            if not p:
-                not_found.append({"key": key[:60], "reason": "товар не знайдено"})
-                continue
-            if p.id in seen:
-                continue
-            seen.add(p.id)
-            book = float(p.stock())
-            delta = round(fact - book, 2)
-            preview.append({"id": p.id, "sku": p.sku, "name": p.name, "unit": p.unit,
-                            "book": round(book, 2), "fact": round(fact, 2), "delta": delta})
-            if delta != 0:
-                items.append((p, fact))
 
         commit = bool(request.data.get("commit"))
-        res = {"matched": len(preview), "changed": len(items), "not_found": not_found,
-               "preview": preview, "committed": False}
-        if commit and items:
+
+        # ── ПРОВЕСТИ за відредагованим списком позицій ──
+        if commit and request.data.get("items"):
             from datetime import date as _date
-            dd = request.data.get("doc_date")
-            doc_date = None
+            pairs = []
+            for it in (request.data.get("items") or []):
+                try:
+                    pid = int(it.get("product")); fact = float(it.get("fact"))
+                except (TypeError, ValueError, AttributeError):
+                    continue
+                p = Product.objects.filter(id=pid).first()
+                if p:
+                    pairs.append((p, fact))
+            if not pairs:
+                return Response({"detail": "Немає позицій для проведення."}, status=400)
+            dd = request.data.get("doc_date"); doc_date = None
             if dd:
                 try:
                     doc_date = _date.fromisoformat(str(dd)[:10])
@@ -720,16 +667,131 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
                     doc_date = None
             wh = Warehouse.objects.filter(id=request.data.get("warehouse")).first() or Warehouse.objects.first()
             doc = StockDocument.objects.create(warehouse=wh, kind="inv", doc_date=doc_date,
-                                               comment=(request.data.get("comment") or "Інвентаризація (імпорт файлом)"))
-            for (p, fact) in items:
+                                               comment=(request.data.get("comment") or "Інвентаризація (імпорт)"))
+            n = 0
+            for (p, fact) in pairs:
                 qty = fact - float(p.stock())
                 if qty != 0:
-                    StockMovement.objects.create(document=doc, product=p, quantity=qty, price=(p.cost or 0))
+                    StockMovement.objects.create(document=doc, product=p, quantity=qty, price=(p.cost or 0)); n += 1
             from .services import _on_posted
             _on_posted(doc)
-            res["committed"] = True
-            res["doc_id"] = doc.id
-        return Response(res)
+            return Response({"committed": True, "doc_id": doc.id, "changed": n})
+
+        # ── ПРЕВ'Ю: зібрати entries [{sku, name, fact}] з джерела ──
+        entries = []
+        images = request.data.get("images") or []
+        xlsx_b64 = request.data.get("xlsx_b64") or ""
+        raw = request.data.get("data") or ""
+        if images:
+            from apps.crm.ai import claude_vision
+            imgs = []
+            for u_img in images[:8]:
+                sv = str(u_img)
+                if sv.startswith("data:") and "," in sv:
+                    head, b64 = sv.split(",", 1)
+                    mt = head[5:].split(";")[0] or "image/jpeg"
+                else:
+                    mt, b64 = "image/jpeg", sv
+                if b64:
+                    imgs.append((mt, b64))
+            if not imgs:
+                return Response({"detail": "Порожні зображення."}, status=400)
+            system = ("Ти розпізнаєш РУКОПИСНІ інвентаризаційні відомості складу. На фото таблиця з колонками: "
+                      "№, Артикул (може бути), Товар (назва), Од., Облік, Факт (вписаний ВІД РУКИ), Примітка. "
+                      "Витягни КОЖЕН рядок, де у колонці «Факт» є рукописне число. Поверни артикул (якщо видно), "
+                      "назву товару та число «Факт» (може бути дробовим, кг). Рядки без рукописного факту — пропусти. "
+                      "Відповідь — СТРОГО JSON-масив: [{\"sku\": \"...\", \"name\": \"...\", \"fact\": <число>}]. Без пояснень і тексту поза JSON.")
+            try:
+                data = claude_vision(imgs, "Розпізнай відомість і поверни JSON-масив рядків з рукописним фактом.",
+                                     system=system, source="inv_photo")
+            except Exception as e:
+                return Response({"detail": "ІІ не зміг обробити фото: %s" % str(e)[:150]}, status=502)
+            if isinstance(data, dict):
+                data = data.get("rows") or data.get("items") or []
+            for it in (data or []):
+                try:
+                    entries.append({"sku": str(it.get("sku") or "").strip(),
+                                    "name": str(it.get("name") or "").strip(),
+                                    "fact": float(it.get("fact"))})
+                except (TypeError, ValueError, AttributeError):
+                    continue
+        else:
+            import csv
+            import io as _io
+            import base64
+            rows = []
+            if xlsx_b64:
+                try:
+                    blob = base64.b64decode(str(xlsx_b64).split(",")[-1])
+                    import openpyxl
+                    wb = openpyxl.load_workbook(_io.BytesIO(blob), read_only=True, data_only=True)
+                    for r in wb.active.iter_rows(values_only=True):
+                        rows.append(["" if c is None else str(c) for c in r])
+                except Exception:
+                    return Response({"detail": "Не вдалося прочитати Excel-файл. Перевірте, що це .xlsx."}, status=400)
+            elif str(raw).strip():
+                delim = ";" if raw.count(";") >= raw.count(",") else ","
+                if raw.count("\t") >= raw.count(delim):
+                    delim = "\t"
+                rows = [list(r) for r in csv.reader(_io.StringIO(raw), delimiter=delim)]
+            else:
+                return Response({"detail": "Порожній файл або джерело не вказано"}, status=400)
+            start = 0
+            if rows:
+                hdr = [str(c).strip().lower() for c in rows[0]]
+                if any(h in ("артикул", "sku", "назва", "название", "товар", "факт", "fact", "кількість", "количество", "qty") for h in hdr):
+                    start = 1
+
+            def _num(x):
+                try:
+                    return float(str(x).replace(" ", "").replace(" ", "").replace(",", "."))
+                except (TypeError, ValueError):
+                    return None
+            for i in range(start, len(rows)):
+                r = rows[i]
+                if not any((str(c) or "").strip() for c in r):
+                    continue
+                key = str(r[0]).strip() if len(r) > 0 else ""
+                fact = _num(r[1]) if len(r) > 1 else None
+                nm = str(r[2]).strip() if len(r) > 2 else ""
+                if not key or fact is None:
+                    if key or (len(r) > 1 and str(r[1]).strip()):
+                        entries.append({"sku": "", "name": "", "fact": None, "_bad": key or "?"})
+                    continue
+                entries.append({"sku": key, "name": nm or key, "fact": fact})
+
+        # ── МАТЧ entries → preview ──
+        preview = []
+        not_found = []
+        seen = set()
+        for e in entries:
+            if e.get("fact") is None:
+                bad = e.get("_bad")
+                if bad:
+                    not_found.append({"key": str(bad)[:60], "reason": "нема артикула/факту"})
+                continue
+            sku = e.get("sku") or ""
+            nm = e.get("name") or ""
+            fact = e["fact"]
+            p = None
+            if sku:
+                p = Product.objects.filter(sku=sku).first()
+            if not p and nm:
+                p = Product.objects.filter(name__iexact=nm).first()
+            if not p and sku:
+                p = Product.objects.filter(name__iexact=sku).first()
+            if not p:
+                not_found.append({"key": (sku or nm or "?")[:60], "reason": "товар не знайдено"})
+                continue
+            if p.id in seen:
+                continue
+            seen.add(p.id)
+            book = float(p.stock())
+            preview.append({"id": p.id, "sku": p.sku, "name": p.name, "unit": p.unit,
+                            "book": round(book, 2), "fact": round(fact, 2), "delta": round(fact - book, 2)})
+        changed = sum(1 for x in preview if x["delta"] != 0)
+        return Response({"matched": len(preview), "changed": changed, "not_found": not_found,
+                         "preview": preview, "committed": False})
 
 
 class InventoryAnalyticsView(APIView):
@@ -922,7 +984,7 @@ class InventorySheetView(APIView):
             received = a.get("received") or Decimal("0")
             sold = abs(a.get("sold_neg") or Decimal("0"))
             book = opening + received - sold
-            rows.append({"id": p.id, "name": p.name, "unit": p.unit,
+            rows.append({"id": p.id, "name": p.name, "sku": p.sku, "unit": p.unit,
                          "opening": float(opening), "received": float(received),
                          "sold": float(sold), "book": float(book)})
         return Response({"from": d_from, "to": d_to, "rows": rows,

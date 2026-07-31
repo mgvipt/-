@@ -59,6 +59,10 @@ MIDDLEWARE = [
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 
+# Ліміт розміру POST (base64-фото інвентаризації тощо) — інакше Django ріже великі тіла на 2.5MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 30 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 30 * 1024 * 1024
+
 TEMPLATES = [{
     "BACKEND": "django.template.backends.django.DjangoTemplates",
     "DIRS": [],
