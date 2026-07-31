@@ -934,6 +934,33 @@ def _merge_quick_note(amount, dte, cp, osnd, account, reftag, op_t, batch):
     return False
 
 
+def _match_contact_by_name(cp):
+    """Матч банківського контрагента (напр. \"ДОБРОВОЛЬСЬКА НАТАЛІЯ ОЛЕК\") до Contact
+    незалежно від регістру/порядку слів: ПРІЗВИЩЕ точний токен + ІМʼЯ по префіксу (4 літери).
+    Повертає ЄДИНИЙ збіг або None (при неоднозначності — None, щоб не привʼязати не до того)."""
+    import re as _re
+    from apps.crm.models import Contact as _C
+    from django.db.models import Q as _Q
+    _s = _re.sub(r"[^а-яіїєґА-ЯІЇЄҐ\x27 ]", " ", (cp or "")).lower()
+    toks = [t for t in _s.split() if len(t) >= 3]
+    if len(toks) < 2:
+        return None
+    q = _Q()
+    for t in toks:
+        q |= _Q(last_name__iexact=t)
+    matches = []
+    for c in _C.objects.filter(q)[:40]:
+        ln = (c.last_name or "").lower().strip()
+        fn = (c.first_name or "").lower().strip()
+        if not ln or ln not in toks or not fn:
+            continue
+        fn4 = fn[:4]
+        if any(t != ln and (t.startswith(fn4) or fn4.startswith(t[:4])) for t in toks):
+            matches.append(c.id)
+    matches = list(dict.fromkeys(matches))
+    return _C.objects.get(id=matches[0]) if len(matches) == 1 else None
+
+
 def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
     """Тягне виписку ПриватБанк AutoClient → журнал за період. Ідемпотентно (PB#REF).
     Правила розноски + авто-комісія LiqPay. Повертає (created, skipped, err, batch)."""
@@ -1211,13 +1238,40 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
             created += 1
             continue
         _rr = apply_bank_rules(direction, osnd, cp, account.name if account else "")
-        Transaction.objects.create(
+        _txg = Transaction.objects.create(
             direction=direction, amount=amt, amount_uah=amt, account=account,
             transfer_account=transfer_dest if direction == "transfer" else None,
             date=dte, op_time=op_t, counterparty=_rr["counterparty"], channel=_rr["channel"],
             category=_rr["category"], fin_direction=_rr["fin_direction"], fin_article=_rr["fin_article"],
             import_batch=batch, comment=(reftag + " · " + osnd + ((" · ЄДРПОУ %s" % _crf) if (_crf and direction == "out" and "ЄДРПОУ" not in osnd and "ІПН" not in osnd) else ""))[:255])
         created += 1
+        # ── МАТЧ ПО ІМЕНІ (без номера сделки у призначенні): банк-дохід → контакт → сделка ──
+        if direction == "in" and cp and not _txg.contact_id:
+            try:
+                _mc = _match_contact_by_name(cp)
+                if _mc is not None:
+                    _txg.contact = _mc
+                    _flds = ["contact"]
+                    from apps.crm.models import Deal as _D2, Payment as _P2
+                    from apps.crm.views import sync_deal_payment_from_tx as _syncp
+                    from django.db.models import Sum as _Sm2
+                    _cands = []
+                    for _dd in _D2.objects.filter(contact=_mc, stage__isnull=False).exclude(stage__is_lost=True).select_related("stage"):
+                        if _dd.stage and getattr(_dd.stage, "is_won", False):
+                            continue
+                        _pd = _P2.objects.filter(deal=_dd, is_paid=True).aggregate(s=_Sm2("amount"))["s"] or 0
+                        if float(_pd) != 0:
+                            continue
+                        if _dd.amount and abs(float(_dd.amount) - float(amt)) <= float(_dd.amount) * 0.03:
+                            _cands.append(_dd)
+                    if len(_cands) == 1:
+                        _txg.deal = _cands[0]; _flds.append("deal")
+                        _txg.save(update_fields=_flds)
+                        _syncp(_txg)
+                    else:
+                        _txg.save(update_fields=_flds)
+            except Exception:
+                pass
     # зберегти мапу IBAN→рахунок (нові рахунки, авто-матчі)
     try:
         from apps.integrations.models import IntegrationSettings
@@ -2585,10 +2639,9 @@ class WorkTimeView(APIView):
     permission_classes = [_IsAuth]
 
     def _idle_timeout(self, user):
-        """Хвилин простою до авто-паузи для відділу співробітника. 0 = контроль вимкнено."""
-        dep = getattr(user, "department", None)
+        """Хвилин простою до авто-паузи: особистий поріг співробітника або відділу. 0 = вимкнено."""
         try:
-            return int(dep.idle_timeout_min) if dep else 15
+            return int(user.effective_idle_timeout())
         except Exception:
             return 15
 
