@@ -2414,6 +2414,33 @@ class TaskViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+    @action(detail=False, methods=["get"])
+    def user_counts(self, request):
+        """Кількість задач на СЬОГОДНІ по кожному активному співробітнику + загальна.
+        Формат: {"users": [{"id": N, "today": M, "all": K}], "total": {"today": M, "all": K}}"""
+        from django.utils import timezone as _tz
+        from django.db.models import Count, Q
+        from apps.accounts.models import User as _U
+        now = _tz.now()
+        end_today = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        active_tasks_q = Q(tasks__status__in=["proposed", "open", "in_progress"])
+        today_q = active_tasks_q & Q(tasks__due_at__lte=end_today)
+        users_qs = _U.objects.filter(is_active=True, account_kind=_U.AccountKind.STAFF)\
+            .annotate(cnt_today=Count("tasks", filter=today_q, distinct=True))\
+            .annotate(cnt_all=Count("tasks", filter=active_tasks_q, distinct=True))\
+            .order_by("-cnt_today", "first_name", "last_name")
+        users = [{
+            "id": u.id,
+            "full_name": ((u.first_name or "") + " " + (u.last_name or "")).strip() or u.username,
+            "today": int(u.cnt_today or 0),
+            "all": int(u.cnt_all or 0),
+        } for u in users_qs]
+        # total (всі задачі не привʼязані до конкретного assignee — теж треба)
+        from apps.crm.models import Task as _T
+        total_today = _T.objects.filter(status__in=["proposed","open","in_progress"], due_at__lte=end_today).count()
+        total_all = _T.objects.filter(status__in=["proposed","open","in_progress"]).count()
+        return Response({"users": users, "total": {"today": total_today, "all": total_all}})
+
     def get_queryset(self):
         qs = super().get_queryset()
         u = self.request.user

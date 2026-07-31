@@ -245,13 +245,24 @@ export default function Layout() {
     let alive = true;
     const load = async () => {
       try {
-        const r: any = await api.get("/api/tasks/kanban/?mine=1");
+        const sel = (() => { try { return localStorage.getItem("tasks_view_selected") || "mine"; } catch { return "mine"; } })();
+        let url = "/api/tasks/kanban/";
+        if (sel === "mine") url += "?mine=1";
+        else if (sel.startsWith("u:")) url += "?assignee=" + sel.slice(2);
+        const r: any = await api.get(url);
         if (alive) setTasksToday((r?.counts?.today) || 0);
       } catch { /* noop */ }
     };
     load();
     const id = setInterval(load, 60000);
-    return () => { alive = false; clearInterval(id); };
+    const onChanged = () => load();
+    window.addEventListener("tasks-view-changed", onChanged);
+    window.addEventListener("storage", onChanged);  // якщо змінили в іншій вкладці
+    return () => {
+      alive = false; clearInterval(id);
+      window.removeEventListener("tasks-view-changed", onChanged);
+      window.removeEventListener("storage", onChanged);
+    };
   }, []);
   const [navOpen, setNavOpen] = useState(false);
   const [mobMenu, setMobMenu] = useState(false);
