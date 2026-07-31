@@ -248,7 +248,10 @@ export default function Warehouse() {
     } catch { alert(t("Не удалось сохранить","Не вдалося зберегти")); }
   }
   // инвентаризация
-  const [facts, setFacts] = useState<Record<number, string>>({});
+  // введённые вручную «Факт» — с автосохранением в браузере (не теряются при перезагрузке)
+  const INV_FACTS_KEY = "whacc_inv_facts";
+  const [facts, setFacts] = useState<Record<number, string>>(() => { try { return JSON.parse(localStorage.getItem(INV_FACTS_KEY) || "{}"); } catch { return {}; } });
+  useEffect(() => { try { localStorage.setItem(INV_FACTS_KEY, JSON.stringify(facts)); } catch (e) { /* noop */ } }, [facts]);
   const [invMsg, setInvMsg] = useState("");
   const [sheet, setSheet] = useState<SheetRow[]>([]);
   const [pFrom, setPFrom] = useState(monthStart());
@@ -401,7 +404,7 @@ export default function Warehouse() {
       const d = await api.get<{ rows: SheetRow[]; count: number }>(`/api/warehouse/inventory-sheet/?${q.toString()}`);
       setSheet(d.rows);
       setInvCount(d.count ?? d.rows.length);
-      setFacts((prev) => { const next = { ...prev }; d.rows.forEach((r) => { if (next[r.id] === undefined) next[r.id] = String(r.book); }); return next; });
+      // facts НЕ заполняем значением book — храним только введённое пользователем (для автосохранения); в таблице пустое показывается как book
     } catch { setSheet([]); }
     setInvLoading(false);
   }
@@ -439,6 +442,9 @@ export default function Warehouse() {
     try {
       await api.post("/api/stock-documents/", { kind: "inv", warehouse: whs[0]?.id, comment: `Інвентаризація ${pFrom}…${pTo}`, doc_date: pTo, items });
       setInvConfirm(null);
+      // проведённые товары убираем из сохранённых введённых (остальные страницы — сохраняются)
+      const doneIds = new Set(items.map((it) => it.product));
+      setFacts((prev) => { const next: Record<number, string> = { ...prev }; doneIds.forEach((id) => { delete next[id as number]; }); return next; });
       loadProducts(); loadSheet(pFrom, pTo); loadInvHistory(1);
       setInvMsg(t(`✓ Инвентаризация проведена. Скорректировано позиций: ${items.length}. Запись добавлена в «Историю».`,`✓ Інвентаризацію проведено. Скориговано позицій: ${items.length}. Запис додано в «Історію».`));
     } catch (e: any) {
@@ -1182,6 +1188,13 @@ export default function Warehouse() {
               <input type="date" value={pTo} onChange={(e) => { setPTo(e.target.value); setInvPage(1); loadSheet(pFrom, e.target.value, { page: 1 }); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
               <span className="muted" style={{ fontSize: 12 }}>{t("Начальный + Поступление − Продано = Конечный учётный. Расхождение = Факт − учётный.","Початковий + Надходження − Продано = Кінцевий обліковий. Розбіжність = Факт − обліковий.")}</span>
             </div>
+            {Object.keys(facts).length > 0 && (
+              <div style={{ fontSize: 12, marginBottom: 8, padding: "6px 10px", borderRadius: 7, background: "#ecfeff", color: "#155e75", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <Icon n="💾" size={13} /> {t("Введено значений","Введено значень")}: <b>{Object.keys(facts).length}</b> — {t("сохраняются автоматически, не потеряются при перезагрузке.","зберігаються автоматично, не втратяться при перезавантаженні.")}
+                <span style={{ flex: 1 }} />
+                <button className="btn btn-light" style={{ padding: "2px 9px", fontSize: 12 }} onClick={() => { if (confirm(t("Очистить все введённые значения «Факт»?","Очистити всі введені значення «Факт»?"))) { setFacts({}); } }}>{t("Очистить введённое","Очистити введене")}</button>
+              </div>
+            )}
             <div style={{ overflowY: "auto", flex: 1 }}>
               <table style={{ width: "100%", fontSize: 13 }}>
                 <thead><tr>{[t("Товар","Товар"), t("Ед.","Од."), t("Начальный","Початковий"), t("Поступ.","Надходж."), t("Продано","Продано"), t("Конечный (учёт)","Кінцевий (облік)"), t("Факт","Факт"), t("Расхождение","Розбіжність")].map((h) => <th key={h} style={{ position: "sticky", top: 0, background: "#fff", zIndex: 2, boxShadow: "inset 0 -1px 0 #e2e8f0", textAlign: "left" }}>{h}</th>)}</tr></thead>
