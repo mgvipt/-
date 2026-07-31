@@ -1725,7 +1725,7 @@ function Directions() {
       <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}><Icon n="👆" size={13} /> {t("Нажми на направление — ниже откроется его журнал операций за период.","Натисни на напрямок — нижче відкриється його журнал операцій за період.")}</div>
       <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
       <table style={{ width: "100%", marginTop: 4, fontSize: 13, minWidth: isMobile ? 720 : undefined }}>
-        <thead><tr><th></th><th>{t("Направление","Напрямок")}</th><th>{t("План доход","План дохід")}</th><th>{t("План расходы","План витрати")}</th><th>{t("План прибыль","План прибуток")}</th><th>{t("Рентаб.","Рентаб.")}</th><th>{t("Факт доход","Факт дохід")}</th><th>{t("Факт прибыль","Факт прибуток")}</th><th></th></tr></thead>
+        <thead><tr><th></th><th>{t("Направление","Напрямок")}</th><th>{t("План доход","План дохід")}</th><th>{t("План расходы","План витрати")}</th><th>{t("План прибыль","План прибуток")}</th><th>{t("Рентаб.","Рентаб.")}</th><th>{t("Факт доход","Факт дохід")}</th><th>{t("Факт расходы","Факт витрати")}</th><th>{t("Факт прибыль","Факт прибуток")}</th><th></th></tr></thead>
         <tbody>
           {d.rows.map((r: any) => {
             const pr = r.plan_income ? Math.round(r.plan_profit / r.plan_income * 100) : 0;
@@ -1740,6 +1740,7 @@ function Directions() {
                   <td style={{ textAlign: "right", fontWeight: 600, color: r.plan_profit >= 0 ? "#16a34a" : "#dc2626" }}>{money(r.plan_profit)}</td>
                   <td style={{ textAlign: "right", color: pr >= 0 ? "#16a34a" : "#dc2626" }}>{pr}%</td>
                   <td style={{ textAlign: "right" }} className="muted">{money(r.income)}</td>
+                  <td style={{ textAlign: "right", color: "#dc2626" }}>{money(r.expense)}</td>
                   <td style={{ textAlign: "right", color: r.profit >= 0 ? "#16a34a" : "#dc2626" }}>{money(r.profit)}</td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
                     <span title={t("Редактировать направление","Редагувати напрямок")} style={{ cursor: "pointer", marginRight: 10 }} onClick={() => setEdit({ id: r.id, name: r.name, plan_income: r.plan_income, plan_expense: r.plan_expense })}><Icon n="✏️" size={14} /></span>
@@ -1747,7 +1748,7 @@ function Directions() {
                   </td>
                 </tr>
                 {isOpen && (
-                  <tr><td colSpan={9} style={{ padding: 0, background: "#f8fafc" }}><DirectionJournal directionId={r.id} from={from} to={to} /></td></tr>
+                  <tr><td colSpan={10} style={{ padding: 0, background: "#f8fafc" }}><DirectionJournal directionId={r.id} from={from} to={to} /></td></tr>
                 )}
               </Fragment>
             );
@@ -1759,6 +1760,7 @@ function Directions() {
             <td style={{ textAlign: "right", color: (tot.plan_income - tot.plan_expense) >= 0 ? "#16a34a" : "#dc2626" }}>{money(tot.plan_income - tot.plan_expense)}</td>
             <td></td>
             <td style={{ textAlign: "right" }} className="muted">{money(tot.income)}</td>
+            <td style={{ textAlign: "right", color: "#dc2626" }}>{money(tot.expense)}</td>
             <td style={{ textAlign: "right" }}>{money(tot.profit)}</td>
             <td></td>
           </tr>
@@ -1811,7 +1813,7 @@ function DirModal({ dir, onClose, onSaved }: { dir: any; onClose: () => void; on
 function DirectionJournal({ directionId, from, to }: { directionId: number; from: string; to: string }) {
   const { t } = useLang();
   const [tx, setTx] = useState<any[] | null>(null);
-  useEffect(() => { setTx(null); api.get<any>(`/api/transactions/?fin_direction=${directionId}&from=${from}&to=${to}&page_size=200`).then((d) => setTx(d.results || d)); }, [directionId, from, to]);
+  useEffect(() => { setTx(null); api.get<any>(`/api/transactions/?fin_direction=${directionId}&from=${from}&to=${to}&page_size=1000`).then((d) => setTx(d.results || d)).catch(() => setTx([])); }, [directionId, from, to]);
   if (!tx) return <div className="spin" style={{ padding: 12 }}>{t("Журнал…","Журнал…")}</div>;
   const inc = tx.filter((t) => t.direction === "in").reduce((a, t) => a + Number(t.amount), 0);
   const exp = tx.filter((t) => t.direction === "out").reduce((a, t) => a + Number(t.amount), 0);
