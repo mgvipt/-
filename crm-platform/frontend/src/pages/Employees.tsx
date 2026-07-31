@@ -646,6 +646,11 @@ function ActivityTab({ depts, t, statusChip, openCard }: any) {
   const [selData, setSelData] = useState<any>(null);
   const [denied, setDenied] = useState(false);
   const [showIdleCfg, setShowIdleCfg] = useState(false);
+  const [idleEmps, setIdleEmps] = useState<any[]>([]);   // сотрудники для персональной настройки простоя
+  useEffect(() => {
+    if (showIdleCfg && idleEmps.length === 0)
+      api.get<any>("/api/users/?status=active&page_size=500").then((d) => setIdleEmps((d.results || d) as any[])).catch(() => {});
+  }, [showIdleCfg]);
 
   useEffect(() => {
     setLoading(true); setDenied(false);
@@ -700,6 +705,26 @@ function ActivityTab({ depts, t, statusChip, openCard }: any) {
                 <span className="muted" style={{ fontSize: 12 }}>{t("мин", "хв")}</span>
               </label>
             ))}
+          </div>
+
+          {/* ── персонально по менеджеру (важнее настройки отдела) ── */}
+          <div style={{ fontSize: 13, fontWeight: 600, margin: "16px 0 4px", borderTop: "1px solid #ece7df", paddingTop: 12 }}>{t("Персонально по сотруднику", "Персонально по співробітнику")}</div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Пусто = как в отделе. Число = свой порог (0 = выключить для этого человека). Личная настройка важнее отдела.", "Порожньо = як у відділі. Число = свій поріг (0 = вимкнути для цієї людини). Особиста настройка важливіша за відділ.")}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {idleEmps.map((e: any) => (
+              <label key={e.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "5px 10px" }}>
+                <span>{e.full_name} <span className="muted" style={{ fontSize: 11 }}>· {e.department_name || "—"}</span></span>
+                <input type="number" min={0} max={480} defaultValue={e.idle_timeout_min ?? ""} placeholder={t("отдел", "відділ")}
+                  onBlur={(ev) => {
+                    const raw = ev.target.value.trim();
+                    const val = raw === "" ? null : Math.max(0, Math.min(480, Number(raw) || 0));
+                    api.patch(`/api/users/${e.id}/`, { idle_timeout_min: val }).then(() => { e.idle_timeout_min = val; }).catch(() => {});
+                  }}
+                  style={{ width: 60, padding: "3px 6px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 12.5, textAlign: "right" }} />
+                <span className="muted" style={{ fontSize: 11.5 }}>{t("мин", "хв")}</span>
+              </label>
+            ))}
+            {idleEmps.length === 0 && <span className="muted" style={{ fontSize: 12 }}>{t("Загрузка…", "Завантаження…")}</span>}
           </div>
         </div>
       )}

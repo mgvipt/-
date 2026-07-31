@@ -246,6 +246,9 @@ class User(AbstractUser):
         max_length=12, choices=EMPLOYMENT_STATUS, default="active", db_index=True,
         help_text="Активний / Неактивний / Звільнений. Керує доступом (is_active) і фільтрами аналітики.")
     dismissed_at = models.DateField(null=True, blank=True, help_text="Дата звільнення (для розрахунку скільки пропрацював)")
+    # Персональний поріг простою (хв до авто-паузи). None = брати з відділу; 0 = вимкнено особисто.
+    idle_timeout_min = models.IntegerField(null=True, blank=True,
+        help_text="Особистий поріг простою (хв). Порожньо = як у відділі; 0 = вимкнути для цього співробітника.")
     # ── Картка співробітника (особисті дані, заповнює сам або керівник) ──
     photo = models.TextField(blank=True, default="", help_text="Фото/лого — data URL (стиснене до 256px у браузері)")
     position = models.CharField(max_length=120, blank=True, default="", help_text="Посада (вільний текст, напр. «Старший менеджер»)")
@@ -280,6 +283,17 @@ class User(AbstractUser):
         else:
             self.dismissed_at = None
         self.save(update_fields=["employment_status", "is_active", "dismissed_at", "is_superuser"])
+
+    def effective_idle_timeout(self):
+        """Скільки хв простою до авто-паузи. Особисте значення важливіше за відділ:
+        персональне задано → воно; порожнє → з відділу; немає відділу → 15. 0 = вимкнено."""
+        if self.idle_timeout_min is not None:
+            return int(self.idle_timeout_min)
+        dep = self.department
+        try:
+            return int(dep.idle_timeout_min) if dep else 15
+        except Exception:
+            return 15
 
     # ── РЕЗОЛЮЦИЯ ПРАВ: отдел ∪ роль ∪ индивидуальные − запрещённые ──
     def effective_permissions(self) -> set:

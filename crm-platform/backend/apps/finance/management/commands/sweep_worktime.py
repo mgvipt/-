@@ -34,9 +34,8 @@ class Command(BaseCommand):
             has_hb = ws.last_seen_at is not None   # чи шле фронт heartbeat (нова версія)
             last = ws.last_seen_at or ws.started_at
             gap_min = (now - last).total_seconds() / 60
-            dep = getattr(ws.user, "department", None)
             try:
-                idle_to = int(dep.idle_timeout_min) if dep else 15
+                idle_to = int(ws.user.effective_idle_timeout())  # особистий поріг або відділу
             except Exception:
                 idle_to = 15
             name = ws.user.get_full_name() or ws.user.username

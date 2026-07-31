@@ -97,6 +97,7 @@ class UserSerializer(serializers.ModelSerializer):
     effective_permissions = serializers.SerializerMethodField()
     on_shift = serializers.SerializerMethodField()      # зараз на робочому дні (зелений бейдж)
     shift_paused = serializers.SerializerMethodField()  # на зміні, але на паузі/обіді
+    effective_idle_timeout = serializers.SerializerMethodField()  # фактичний поріг (особ. або відділ)
 
     class Meta:
         model = User
@@ -105,6 +106,7 @@ class UserSerializer(serializers.ModelSerializer):
                   "extra_permissions", "denied_permissions", "effective_permissions", "stage_view_all", "stage_lock", "theme", "is_active",
                   "employment_status", "dismissed_at", "date_joined",
                   "photo", "position", "birthday", "about", "interests", "telegram",
+                  "idle_timeout_min", "effective_idle_timeout",
                   "on_shift", "shift_paused",
                   "extra_funnels", "extra_open_lines",
                   "fin_accounts", "fin_cats_in", "fin_cats_out", "fin_dirs", "fin_counterparties"]
@@ -115,6 +117,9 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_effective_permissions(self, obj):
         return list(obj.effective_permissions())
+
+    def get_effective_idle_timeout(self, obj):
+        return obj.effective_idle_timeout()
 
     # ── «на зміні зараз»: множини id беруться ОДНИМ запитом у context (без N+1) ──
     def _shift_sets(self):
