@@ -71,19 +71,19 @@ const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pa
 
 export default function Finance() {
   const { t } = useLang();
-  const [tab, setTab] = useState<"dash" | "journal" | "triage" | "pnl" | "be" | "dir" | "breakdown" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model" | "incoming">(() => ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash"));
+  const [tab, setTab] = useState<"dash" | "journal" | "triage" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model" | "incoming">(() => ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash"));
   useEffect(() => { try { localStorage.setItem("fin_tab", tab); } catch (e) { /* noop */ } }, [tab]);
   const [quickOpen, setQuickOpen] = useState(false);
   const isMobile = useIsMobile();
   const { can: canF } = useAuth();
   const tabAllowed = (k: string) => k === "dash" ? true : (canF("finance.tab." + k) || canF("roles.manage"));
   useEffect(() => { if (!tabAllowed(tab)) setTab("dash"); /* eslint-disable-next-line */ }, [tab]);
-  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["breakdown", <><Icon n="🔀" size={15} /> {t("Разрезы","Розрізи")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["incoming", <><Icon n="📥" size={15} /> {t("Вх. накладные","Вхідні накладні")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
+  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["incoming", <><Icon n="📥" size={15} /> {t("Вх. накладные","Вхідні накладні")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
   const tabMap: any = Object.fromEntries(tabs);
   const GROUPS: [string, string[], string][] = [
     [t("Обзор", "Огляд"), ["dash"], "💰"],
     [t("Операции", "Операції"), ["journal", "triage", "debts", "incoming"], "🧾"],
-    [t("Аналитика", "Аналітика"), ["pnl", "be", "grow", "dir", "breakdown"], "📊"],
+    [t("Аналитика", "Аналітика"), ["pnl", "be", "grow", "dir"], "📊"],
     [t("Планы", "Плани"), ["plan", "mplan", "salary", "time"], "💼"],
     [t("Справочники", "Довідники"), ["ref", "model"], "📚"],
   ];
@@ -111,7 +111,6 @@ export default function Finance() {
       {tab === "pnl" && <PnL />}
       {tab === "be" && <Breakeven />}
       {tab === "dir" && <Directions />}
-      {tab === "breakdown" && <BreakdownTab />}
       {tab === "plan" && <Planning />}
       {tab === "debts" && <Debts />}
       {tab === "incoming" && <IncomingDocsTab />}
@@ -1704,6 +1703,7 @@ function Directions() {
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(today());
   const [d, setD] = useState<any>(null);
+  const [dview, setDview] = useState("dirs");
   const { t } = useLang();
   const isMobile = useIsMobile();
   const [openId, setOpenId] = useState<number | null>(null);
@@ -1714,15 +1714,18 @@ function Directions() {
     if (!confirm(t("Удалить направление","Видалити напрямок") + ` «${name}»? ` + t("Операции останутся, но потеряют привязку к направлению.","Операції залишаться, але втратять привʼязку до напрямку."))) return;
     await api.del(`/api/fin-directions/${id}/`); reload();
   }
-  if (!d) return <div className="spin">{t("Загрузка…","Завантаження…")}</div>;
-  const tot = d.total;
+  const tot = (d && d.total) || {};
   return (
     <div className="panel" style={{ margin: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <b style={{ fontSize: 14, flex: 1 }}>{t("Направления бизнеса · доходы / расходы / прибыль (план из Finmap, факт из CRM)","Напрямки бізнесу · доходи / витрати / прибуток (план із Finmap, факт із CRM)")}</b>
-        <button className="btn btn-primary" style={{ fontSize: 13 }} title={t("Добавить новое направление (проект). Появится в журнале, планировании и аналитике.","Додати новий напрямок (проект). Зʼявиться у журналі, плануванні й аналітиці.")} onClick={() => setEdit({ name: "", plan_income: 0, plan_expense: 0 })}>+ {t("Направление","Напрямок")}</button>
+        {dview === "dirs" && <button className="btn btn-primary" style={{ fontSize: 13 }} title={t("Добавить новое направление (проект). Появится в журнале, планировании и аналитике.","Додати новий напрямок (проект). Зʼявиться у журналі, плануванні й аналітиці.")} onClick={() => setEdit({ name: "", plan_income: 0, plan_expense: 0 })}>+ {t("Направление","Напрямок")}</button>}
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0 2px" }}>
+        {([["dirs", t("Направления","Напрямки")], ["category", t("По категориям","По категоріях")], ["counterparty", t("По контрагентам","По контрагентах")], ["month", t("По месяцам","По місяцях")], ["matrix", t("Матрица","Матриця")]] as [string,string][]).map(([k, lbl]) => <button key={k} className={"btn" + (dview === k ? " btn-primary" : " btn-light")} style={{ fontSize: 12.5 }} onClick={() => setDview(k)}>{lbl}</button>)}
       </div>
       <Period from={from} to={to} set={(f, tt) => { setFrom(f); setTo(tt); }} />
+      {dview !== "dirs" ? <BreakdownView by={dview} from={from} to={to} /> : !d ? <div className="spin">{t("Загрузка…","Завантаження…")}</div> : (<>
       <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}><Icon n="👆" size={13} /> {t("Нажми на направление — ниже откроется его журнал операций за период.","Натисни на напрямок — нижче відкриється його журнал операцій за період.")}</div>
       <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
       <table style={{ width: "100%", marginTop: 4, fontSize: 13, minWidth: isMobile ? 720 : undefined }}>
@@ -1769,6 +1772,7 @@ function Directions() {
       </table>
       </div>
       <div className="muted" style={{ fontSize: 12, marginTop: 8 }}><Icon n="📋" size={13} /> {t("Направления перенесены из Finmap (Проекты). «План» — ориентир из Finmap. «Факт» считается из транзакций CRM, привязанных к направлению. Изменения тут синхронизируются в журнале, планировании и аналитике.","Напрямки перенесені з Finmap (Проекти). «План» — орієнтир із Finmap. «Факт» рахується з транзакцій CRM, привʼязаних до напрямку. Зміни тут синхронізуються у журналі, плануванні та аналітиці.")}</div>
+      </>)}
       {edit && <DirModal dir={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload(); }} />}
     </div>
   );
@@ -1869,24 +1873,16 @@ function DirectionJournal({ directionId, from, to }: { directionId: number; from
   );
 }
 
-function BreakdownTab() {
+function BreakdownView({ by, from, to }: { by: string; from: string; to: string }) {
   const { t } = useLang();
-  const [by, setBy] = useState("category");
-  const [from, setFrom] = useState(monthStart());
-  const [to, setTo] = useState(today());
   const [d, setD] = useState<any>(null);
   useEffect(() => { setD(null); api.get<any>(`/api/finance/breakdown/?by=${by}&from=${from}&to=${to}`).then(setD).catch(() => setD({ rows: [] })); }, [by, from, to]);
-  const subs: [string, string][] = [["category", t("По категориям", "По категоріях")], ["counterparty", t("По контрагентам", "По контрагентах")], ["month", t("По месяцам", "По місяцях")], ["matrix", t("Матрица (напрямок × месяц)", "Матриця (напрямок × місяць)")]];
   const totInc = (d?.rows || []).reduce((a: number, x: any) => a + Number(x.income || 0), 0);
   const totExp = (d?.rows || []).reduce((a: number, x: any) => a + Number(x.expense || 0), 0);
+  if (!d) return <div className="spin" style={{ marginTop: 10 }}>{t("Загрузка…", "Завантаження…")}</div>;
   return (
-    <div className="panel" style={{ margin: 0 }}>
-      <b style={{ fontSize: 14 }}>{t("Аналитика · разрезы (доход / расход / прибыль за период)", "Аналітика · розрізи (дохід / розхід / прибуток за період)")}</b>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "10px 0 4px" }}>
-        {subs.map(([k, lbl]) => <button key={k} className={"btn" + (by === k ? " btn-primary" : " btn-light")} style={{ fontSize: 12.5 }} onClick={() => setBy(k)}>{lbl}</button>)}
-      </div>
-      <Period from={from} to={to} set={(f, tt) => { setFrom(f); setTo(tt); }} />
-      {!d ? <div className="spin" style={{ marginTop: 10 }}>{t("Загрузка…", "Завантаження…")}</div> : by === "matrix" ? (
+    <div style={{ marginTop: 8 }}>
+      {by === "matrix" ? (
         <div style={{ overflowX: "auto", marginTop: 8 }}>
           <table style={{ width: "100%", fontSize: 12.5, minWidth: 120 + (d.months || []).length * 90 }}>
             <thead><tr><th style={{ textAlign: "left" }}>{t("Направление", "Напрямок")}</th>{(d.months || []).map((m: string) => <th key={m} style={{ textAlign: "right" }}>{m}</th>)}<th style={{ textAlign: "right" }}>{t("Всего", "Разом")}</th></tr></thead>
