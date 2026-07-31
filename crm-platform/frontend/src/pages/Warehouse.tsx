@@ -260,6 +260,8 @@ export default function Warehouse() {
   const [invCount, setInvCount] = useState(0);
   const [invLoading, setInvLoading] = useState(false);
   const [invPrinting, setInvPrinting] = useState(false);
+  const [invBusy, setInvBusy] = useState(false);
+  const [invConfirm, setInvConfirm] = useState<null | { items: { product: number; name: string; unit: string; book: number; fact: number; delta: number; quantity: number; price: number }[] }>(null);
   const invTotalPages = Math.max(1, Math.ceil(invCount / invPageSize));
   // инвентаризация: экран (ведомость / история проведённых) + список истории
   const [invScreen, setInvScreen] = useState<"sheet" | "history">("sheet");
@@ -392,28 +394,36 @@ export default function Warehouse() {
     setInvPage(1);
     await loadSheet(pFrom, pTo, { page: 1 });
   }
-  async function conductInventory() {
-    // проводим по строкам текущей страницы (то, что видно и загружено)
+  // шаг 1: собрать расхождения текущей страницы и открыть встроенное окно подтверждения (без браузерного confirm)
+  function conductInventory() {
     const items = sheet
       .filter((r) => facts[r.id] !== undefined && Number(facts[r.id]) !== Number(r.book))
-      .map((r) => ({ product: r.id, quantity: Number(facts[r.id]), price: 0 }));
+      .map((r) => {
+        const q = Number(facts[r.id]);
+        return { product: r.id, name: r.name, unit: r.unit, book: Number(r.book), fact: q, delta: q - Number(r.book), quantity: q, price: 0 };
+      });
     if (!items.length) {
-      setInvMsg(t("Расхождений нет: впишите фактический остаток в колонку «Факт» у нужных товаров, потом жмите «Провести».","Розбіжностей немає: впишіть фактичний залишок у колонку «Факт» у потрібних товарів, потім тисніть «Провести»."));
-      alert(t("Нечего проводить: не вписан ни один фактический остаток, отличный от учётного. Впишите число в колонку «Факт» и повторите.","Нема чого проводити: не вписано жодного фактичного залишку, відмінного від облікового. Впишіть число в колонку «Факт» і повторіть."));
+      setInvMsg(t("⚠ Расхождений нет: впишите фактический остаток в колонку «Факт» у нужных товаров, потом жмите «Провести».","⚠ Розбіжностей немає: впишіть фактичний залишок у колонку «Факт» у потрібних товарів, потім тисніть «Провести»."));
       return;
     }
-    if (!confirm(t(`Скорректировать остатки по ${items.length} позициям? Недостача/излишек будут проведены и попадут в историю.`,`Скоригувати залишки по ${items.length} позиціях? Нестача/надлишок будуть проведені та потраплять в історію.`))) return;
-    setInvMsg(t("Проводим…","Проводимо…"));
+    setInvConfirm({ items });
+  }
+  // шаг 2: подтверждено во встроенном окне — проводим
+  async function doConduct() {
+    const items = (invConfirm?.items || []).map((r) => ({ product: r.product, quantity: r.quantity, price: 0 }));
+    if (!items.length) { setInvConfirm(null); return; }
+    setInvBusy(true);
     try {
       await api.post("/api/stock-documents/", { kind: "inv", warehouse: whs[0]?.id, comment: `Інвентаризація ${pFrom}…${pTo}`, items });
+      setInvConfirm(null);
       loadProducts(); loadSheet(pFrom, pTo); loadInvHistory(1);
       setInvMsg(t(`✓ Инвентаризация проведена. Скорректировано позиций: ${items.length}. Запись добавлена в «Историю».`,`✓ Інвентаризацію проведено. Скориговано позицій: ${items.length}. Запис додано в «Історію».`));
-      alert(t(`✓ Готово. Скорректировано позиций: ${items.length}. Смотрите вкладку «История».`,`✓ Готово. Скориговано позицій: ${items.length}. Дивіться вкладку «Історія».`));
     } catch (e: any) {
       const msg = e?.response?.data?.detail || e?.message || "";
-      setInvMsg(t("Не удалось провести инвентаризацию. ","Не вдалося провести інвентаризацію. ") + msg);
-      alert(t("Не удалось провести инвентаризацию. ","Не вдалося провести інвентаризацію. ") + msg);
+      setInvConfirm(null);
+      setInvMsg(t("✗ Не удалось провести инвентаризацию. ","✗ Не вдалося провести інвентаризацію. ") + msg);
     }
+    setInvBusy(false);
   }
   // история проведённых инвентаризаций (документы kind=inv)
   async function loadInvHistory(pg?: number) {
@@ -1053,7 +1063,12 @@ export default function Warehouse() {
                 </tbody>
               </table>
             </div>
-            {invMsg && <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>{invMsg}</div>}
+            {invMsg && (() => {
+              const ok = invMsg.startsWith("✓"); const bad = invMsg.startsWith("✗"); const warn = invMsg.startsWith("⚠");
+              const bg = ok ? "#dcfce7" : bad ? "#fee2e2" : warn ? "#fef9c3" : "#f1f5f9";
+              const col = ok ? "#166534" : bad ? "#991b1b" : warn ? "#854d0e" : "#475569";
+              return <div style={{ fontSize: 13, marginTop: 10, padding: "8px 12px", borderRadius: 8, background: bg, color: col, display: "flex", alignItems: "center", gap: 8 }}>{invMsg}<span style={{ flex: 1 }} /><button onClick={() => setInvMsg("")} style={{ border: "none", background: "transparent", color: col, cursor: "pointer", fontSize: 16, lineHeight: 1 }}>×</button></div>;
+            })()}
             {/* Пагинация ведомости */}
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: "1px solid #f1f5f9" }}>
               <span className="muted" style={{ fontSize: 12 }}>{t("Строк на странице","Рядків на сторінці")}:</span>
@@ -1127,6 +1142,34 @@ export default function Warehouse() {
               </div>
             )}
           </div>
+      )}
+      {/* Встроенное окно подтверждения проведения инвентаризации (вместо браузерного alert/confirm) */}
+      {invConfirm && (
+        <div onClick={() => !invBusy && setInvConfirm(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 560, maxWidth: "92vw", maxHeight: "84vh", display: "flex", flexDirection: "column" }}>
+            <h3 style={{ marginTop: 0 }}>{t("Провести инвентаризацию?","Провести інвентаризацію?")}</h3>
+            <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>{t("Остатки этих товаров будут скорректированы по факту. Недостача — в минус, излишек — в плюс. Запись попадёт в «Историю».","Залишки цих товарів будуть скориговані за фактом. Нестача — у мінус, надлишок — у плюс. Запис потрапить в «Історію».")}</div>
+            <div style={{ overflowY: "auto", flex: 1, marginBottom: 14, border: "1px solid #f1f5f9", borderRadius: 8 }}>
+              <table style={{ width: "100%", fontSize: 13 }}>
+                <thead><tr>{[t("Товар","Товар"), t("Было (учёт)","Було (облік)"), t("Стало (факт)","Стало (факт)"), t("Разница","Різниця")].map((h) => <th key={h} style={{ position: "sticky", top: 0, background: "#f8fafc", textAlign: "left", padding: "6px 8px", boxShadow: "inset 0 -1px 0 #e2e8f0" }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {invConfirm.items.map((r) => (
+                    <tr key={r.product}>
+                      <td style={{ padding: "6px 8px" }}>{r.name} <span className="muted">{r.unit}</span></td>
+                      <td style={{ padding: "6px 8px" }}>{r.book.toLocaleString("ru")}</td>
+                      <td style={{ padding: "6px 8px", fontWeight: 600 }}>{r.fact.toLocaleString("ru")}</td>
+                      <td style={{ padding: "6px 8px", fontWeight: 600, color: r.delta < 0 ? "#dc2626" : r.delta > 0 ? "#16a34a" : "#94a3b8" }}>{r.delta > 0 ? "+" : ""}{Math.round(r.delta * 100) / 100}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-light" style={{ flex: 1 }} disabled={invBusy} onClick={() => setInvConfirm(null)}>{t("Отмена","Скасувати")}</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} disabled={invBusy} onClick={doConduct}>{invBusy ? t("Проводим…","Проводимо…") : t(`Провести (${invConfirm.items.length})`,`Провести (${invConfirm.items.length})`)}</button>
+            </div>
+          </div>
+        </div>
       )}
       {receiptFor && <ReceiptModal productId={receiptFor.productId} productName={receiptFor.productName} onClose={() => setReceiptFor(null)} onSaved={() => { loadProducts(); openReceiptList(); if (card) api.get<Movement[]>(`/api/products/${card.id}/movements/`).then(setMovements).catch(() => {}); }} />}
     </div>
