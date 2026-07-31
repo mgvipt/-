@@ -811,6 +811,7 @@ function Journal() {
   const [bulkVal, setBulkVal] = useState<any>("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const selCount = Object.values(selTx).filter(Boolean).length;
+  const selSum = (tx || []).filter((r: any) => selTx[r.id]).reduce((sm: number, r: any) => sm + (r.direction === "out" ? -1 : 1) * Number(r.amount_uah ?? r.amount ?? 0), 0);
   async function applyBulk() {
     const ids = Object.entries(selTx).filter(([, v]) => v).map(([k]) => Number(k));
     if (!ids.length || bulkBusy) return;
@@ -840,6 +841,7 @@ function Journal() {
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, background: "#26201B", color: "#fff", padding: "10px 18px", zIndex: 60, boxShadow: "0 -8px 30px rgba(0,0,0,.3)" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <b>{t("Выбрано","Вибрано")}: {selCount}</b>
+        <b style={{ color: selSum >= 0 ? "#4ade80" : "#fca5a5", whiteSpace: "nowrap" }}>{t("Сумма","Сума")}: {money2(selSum)}</b>
         <select value={bulkField} onChange={(e) => { setBulkField(e.target.value); setBulkVal(""); }} style={{ padding: "7px 10px", borderRadius: 8, border: "none", fontSize: 13 }}>
           <option value="category">{t("Категория","Категорія")}</option>
           <option value="counterparty">{t("Контрагент","Контрагент")}</option>
