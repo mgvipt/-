@@ -780,7 +780,9 @@ class InventorySheetView(APIView):
             # Новый режим: весь склад (только физические товары) с фильтром + пагинация.
             qs = Product.objects.filter(is_active=True, track_stock=True)
             cat_id = request.GET.get("category")
-            if cat_id and str(cat_id).isdigit():
+            if cat_id == "none":            # «Без категорії» — товари в корені, не привʼязані до папки
+                qs = qs.filter(category__isnull=True)
+            elif cat_id and str(cat_id).isdigit():
                 qs = qs.filter(category_id__in=self._descendant_category_ids(int(cat_id)))
             search = (request.GET.get("search") or "").strip()
             if search:

@@ -376,7 +376,7 @@ export default function Warehouse() {
     const q = new URLSearchParams({ from, to });
     if (o?.all) { q.set("all", "1"); }
     else { q.set("page", String(o?.page ?? invPage)); q.set("page_size", String(o?.pageSize ?? invPageSize)); }
-    if (mode === "folder" && c) q.set("category", String(c));
+    if (mode === "folder") { if (c === -1) q.set("category", "none"); else if (c && c > 0) q.set("category", String(c)); }
     return q;
   }
   // грузит одну страницу ведомости; факт, уже введённый пользователем, НЕ затирает
@@ -463,7 +463,7 @@ export default function Warehouse() {
       const d = await api.get<{ rows: SheetRow[]; count: number }>(`/api/warehouse/inventory-sheet/?${q.toString()}`);
       const rows = d.rows || [];
       const scope = invMode === "folder" && invCat
-        ? (cats.find((c) => c.id === invCat)?.name || t("папка","папка"))
+        ? (invCat === -1 ? t("без категории","без категорії") : (cats.find((c) => c.id === invCat)?.name || t("папка","папка")))
         : t("все товары","всі товари");
       const esc = (s: any) => String(s ?? "").replace(/[&<>]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m] as string));
       const body = rows.map((r, i) => `<tr><td class="n">${i + 1}</td><td>${esc(r.name)}</td><td class="c">${esc(r.unit)}</td><td class="r">${r.book.toLocaleString("ru")}</td><td class="fact"></td><td class="note"></td></tr>`).join("");
@@ -1033,15 +1033,16 @@ export default function Warehouse() {
               <button className={"btn " + (invScreen === "history" ? "btn-primary" : "btn-light")} onClick={() => { setInvScreen("history"); setInvHistSel(null); loadInvHistory(1); }}>{t("История","Історія")}{invHistCount ? " (" + invHistCount + ")" : ""}</button>
             </div>
             {invScreen === "sheet" && (<>
-            <h3 style={{ marginTop: 0 }}>{t("Инвентаризационная ведомость","Інвентаризаційна відомість")} · {invMode === "folder" && invCat ? (cats.find((c) => c.id === invCat)?.name || t("папка","папка")) : t("все товары","всі товари")} <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>({invCount})</span></h3>
+            <h3 style={{ marginTop: 0 }}>{t("Инвентаризационная ведомость","Інвентаризаційна відомість")} · {invMode === "folder" && invCat ? (invCat === -1 ? t("без категории","без категорії") : (cats.find((c) => c.id === invCat)?.name || t("папка","папка"))) : t("все товары","всі товари")} <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>({invCount})</span></h3>
             {/* Отображение: все товары / по папке + печать */}
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
               <span className="muted" style={{ fontSize: 12 }}>{t("Отображение","Відображення")}:</span>
               <button className={"btn " + (invMode === "all" ? "btn-primary" : "btn-light")} style={{ padding: "4px 12px" }} onClick={() => { setInvMode("all"); setInvPage(1); loadSheet(pFrom, pTo, { mode: "all", page: 1 }); }}>{t("Все товары","Всі товари")}</button>
               <button className={"btn " + (invMode === "folder" ? "btn-primary" : "btn-light")} style={{ padding: "4px 12px" }} onClick={() => { setInvMode("folder"); setInvPage(1); loadSheet(pFrom, pTo, { mode: "folder", page: 1 }); }}>{t("По папке","За папкою")}</button>
               {invMode === "folder" && (
-                <select value={invCat ?? ""} onChange={(e) => { const v = e.target.value ? Number(e.target.value) : null; setInvCat(v); setInvPage(1); loadSheet(pFrom, pTo, { mode: "folder", cat: v, page: 1 }); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px", maxWidth: 340 }}>
+                <select value={invCat === -1 ? "none" : (invCat ?? "")} onChange={(e) => { const raw = e.target.value; const v = raw === "none" ? -1 : (raw ? Number(raw) : null); setInvCat(v); setInvPage(1); loadSheet(pFrom, pTo, { mode: "folder", cat: v, page: 1 }); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px", maxWidth: 340 }}>
                   <option value="">{t("— выберите папку —","— оберіть папку —")}</option>
+                  <option value="none">{t("Без категории (корень)","Без категорії (корінь)")}</option>
                   {tree.roots.map((r) => [
                     <option key={"r" + r.id} value={r.id}>{r.name}</option>,
                     ...tree.childrenOf(r.id).map((ch) => <option key={"c" + ch.id} value={ch.id}>{"    — " + ch.name}</option>),
