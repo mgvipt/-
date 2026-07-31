@@ -661,8 +661,10 @@ function ActivityTab({ depts, t, statusChip, openCard }: any) {
   }
   const fmtDt = (s: string) => s ? new Date(s).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
   const fmtT = (s: string) => s ? new Date(s).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }) : "—";
+  const fmtTs = (s: string) => s ? new Date(s).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
   const fmtD = (s: string) => s ? new Date(s).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" }) : "—";
-  const fmtDur = (sec: number) => { const m = Math.round((sec || 0) / 60); return m < 60 ? `${m} ${t("мин", "хв")}` : `${Math.floor(m / 60)} ${t("ч", "год")} ${m % 60} ${t("мин", "хв")}`; };
+  const fmtDur = (sec: number) => { const x = Math.round(sec || 0); if (x < 60) return `${x} ${t("сек", "сек")}`; const m = Math.round(x / 60); return m < 60 ? `${m} ${t("мин", "хв")}` : `${Math.floor(m / 60)} ${t("ч", "год")} ${m % 60} ${t("мин", "хв")}`; };
+  const pauseDur = (a: string, b: string) => (a && b) ? Math.max(0, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 1000)) : null;
 
   if (denied) return <div className="pad muted">{t("Нет доступа к аналитике по сотрудникам (нужны права ЗП/KPI или управление сотрудниками).", "Немає доступу до аналітики по співробітниках (потрібні права ЗП/KPI або керування співробітниками).")}</div>;
 
@@ -796,8 +798,8 @@ function ActivityTab({ depts, t, statusChip, openCard }: any) {
                       <td style={{ textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{s.ended_at ? fmtT(s.ended_at) : <span style={{ color: "#16a34a" }}>{t("в работе", "в роботі")}</span>}</td>
                       <td style={{ textAlign: "center", fontSize: 11.5 }}>
                         {ps.length === 0 ? <span className="muted">—</span> : ps.map((p: any, j: number) => (
-                          <span key={j} style={{ display: "inline-block", background: p.reason === "idle" ? "#fef2f2" : "#fef9c3", color: p.reason === "idle" ? "#dc2626" : "#a16207", borderRadius: 6, padding: "1px 6px", margin: 2, whiteSpace: "nowrap" }} title={p.reason === "idle" ? t("Авто-пауза (простой)", "Авто-пауза (простій)") : t("Ручная пауза", "Ручна пауза")}>
-                            {fmtT(p.start)}–{p.end ? fmtT(p.end) : "…"}
+                          <span key={j} style={{ display: "inline-block", background: p.reason === "idle" ? "#fef2f2" : "#fef9c3", color: p.reason === "idle" ? "#dc2626" : "#a16207", borderRadius: 6, padding: "1px 6px", margin: 2, whiteSpace: "nowrap" }} title={(p.reason === "idle" ? t("Авто-пауза (простой)", "Авто-пауза (простій)") : t("Ручная пауза", "Ручна пауза")) + (pauseDur(p.start, p.end) !== null ? ` · ${fmtDur(pauseDur(p.start, p.end) as number)}` : "")}>
+                            {fmtTs(p.start)}–{p.end ? fmtTs(p.end) : "…"}{pauseDur(p.start, p.end) !== null ? <span style={{ opacity: .7 }}> ({fmtDur(pauseDur(p.start, p.end) as number)})</span> : null}
                           </span>
                         ))}
                       </td>

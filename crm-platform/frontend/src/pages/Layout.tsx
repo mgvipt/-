@@ -159,37 +159,20 @@ function WorkTimer() {
     };
   }, [backModal]);
 
-  // heartbeat + детектор простою (тільки коли відділ має idle_timeout_min > 0)
+  // ПРИСУТНІСТЬ = вкладка CRM ВІДКРИТА (visible). Поки CRM видно — шлемо «пульс»,
+  // і сервер (sweep_worktime) НЕ ставить паузу. Пішов з вкладки CRM (згорнув/перемкнувся
+  // в інший застосунок чи вкладку) — пульс зупиняється, і сервер сам поставить авто-паузу
+  // за порогом відділу. Так читання чату / розмова по телефону з відкритим CRM НЕ рахується
+  // простоєм (раніше детект по миші/клавіатурі ставив хибні паузи присутнім менеджерам).
   useEffect(() => {
-    const timeout = st?.idle_timeout_min || 0;
     if (!st?.active) return;
-    const hb = setInterval(() => { if (stRef.current?.active && !stRef.current?.on_pause) api.post("/api/worktime/", { action: "heartbeat" }).catch(() => {}); }, HEARTBEAT_MS);
-    let chk: any = null;
-    if (timeout > 0) {
-      const warn = warnSecFor(timeout);            // тривалість попередження (сек)
-      const triggerMs = (timeout * 60 - warn) * 1000;  // коли показати «Ви на місці?»
-      chk = setInterval(() => {
-        const s = stRef.current;
-        if (!s?.active || s?.on_pause) { if (idleWarnRef.current) { idleWarnRef.current = false; setIdleWarn(false); } return; }
-        // враховуємо активність у БУДЬ-ЯКІЙ вкладці/вікні CRM
-        const idleMs = Date.now() - sharedLastAct();
-        if (idleMs >= triggerMs && !idleWarnRef.current) {
-          idleWarnRef.current = true; setCountdown(warn); setIdleWarn(true);
-        }
-      }, 2000);
-    }
-    return () => { clearInterval(hb); if (chk) clearInterval(chk); };
-  }, [st?.active, st?.idle_timeout_min]);
-
-  // відлік у модалці «Ви на місці?» → авто-пауза при 0
-  useEffect(() => {
-    if (!idleWarn) return;
-    // якщо тим часом була активність (у цій чи іншій вкладці) — знімаємо попередження
-    if (Date.now() - sharedLastAct() < 3000) { idleWarnRef.current = false; setIdleWarn(false); return; }
-    if (countdown <= 0) { idleWarnRef.current = false; setIdleWarn(false); act("pause", "idle"); return; }
-    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [idleWarn, countdown]);
+    const beat = () => { if (stRef.current?.active && !stRef.current?.on_pause && document.visibilityState === "visible") api.post("/api/worktime/", { action: "heartbeat" }).catch(() => {}); };
+    beat();                                   // одразу відмітити присутність
+    const hb = setInterval(beat, HEARTBEAT_MS);
+    const onVis = () => { if (document.visibilityState === "visible") { beat(); load(); } };  // повернувся на вкладку → пульс + оновити стан (побачити авто-паузу)
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(hb); document.removeEventListener("visibilitychange", onVis); };
+  }, [st?.active]);
 
   const hhmmss = (n: number) => [Math.floor(n / 3600), Math.floor((n % 3600) / 60), n % 60].map((x) => String(x).padStart(2, "0")).join(":");
   if (!st) return null;
@@ -201,18 +184,6 @@ function WorkTimer() {
         <button className="btn btn-light" style={{ height: 28, padding: "0 8px", fontSize: 12 }} onClick={() => act("pause")} title="Обід/пауза">{st.on_pause ? "▶ Продовжити" : <><Icon n="☕" size={14} /> Обід</>}</button>
         <button className="btn btn-light" style={{ height: 28, padding: "0 8px", fontSize: 12, color: "#dc2626" }} onClick={() => act("stop")} title="Завершити робочий день">⏹ Завершити</button>
       </div>
-
-      {/* «Ви на місці?» — за 60 сек до авто-паузи */}
-      {idleWarn && !st.on_pause && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "#fff", borderRadius: 16, padding: 28, maxWidth: 380, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
-            <div style={{ fontSize: 44 }}>👀</div>
-            <div style={{ fontSize: 19, fontWeight: 700, margin: "8px 0" }}>Ви на місці?</div>
-            <div className="muted" style={{ fontSize: 14, marginBottom: 6 }}>Підтвердіть, що ви на робочому місці.</div>
-            <button className="btn btn-primary" style={{ height: 40, padding: "0 22px", fontSize: 15, marginTop: 8 }} onClick={() => { lastAct.current = Date.now(); idleWarnRef.current = false; setIdleWarn(false); api.post("/api/worktime/", { action: "heartbeat" }).catch(() => {}); }}>✅ Так, я працюю</button>
-          </div>
-        </div>
-      )}
 
       {/* «З поверненням» — обов'язково зняти авто-паузу */}
       {backModal && st.on_pause && (
