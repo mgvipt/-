@@ -83,7 +83,7 @@ export default function Finance() {
   const GROUPS: [string, string[], string][] = [
     [t("Обзор", "Огляд"), ["dash"], "💰"],
     [t("Операции", "Операції"), ["journal", "triage", "debts", "incoming"], "🧾"],
-    [t("Аналитика", "Аналітика"), ["pnl", "be", "grow", "dir"], "📊"],
+    [t("Аналитика", "Аналітика"), ["pnl", "be", "grow", "dir", "breakdown"], "📊"],
     [t("Планы", "Плани"), ["plan", "mplan", "salary", "time"], "💼"],
     [t("Справочники", "Довідники"), ["ref", "model"], "📚"],
   ];
