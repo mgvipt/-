@@ -682,6 +682,19 @@ class InventoryAnalyticsView(APIView):
         _loss_inv = float(sum(abs(m.quantity) * (m.price or 0) for m in _SM2.objects.filter(
             document__kind="inv", document__posted=True, quantity__lt=0,
             document__created_at__gte=_tz.now() - _td(days=90))))
+        # інвентаризація за 90 днів: надлишки (+) і нестачі (-) окремо + останні документи (тільки проведені; сторно НЕ рахується)
+        _inv_since = _tz.now() - _td(days=90)
+        _inv_surplus = float(sum(m.quantity * (m.price or 0) for m in _SM2.objects.filter(
+            document__kind="inv", document__posted=True, quantity__gt=0, document__created_at__gte=_inv_since)))
+        _inv_surplus_cnt = _SM2.objects.filter(document__kind="inv", document__posted=True, quantity__gt=0, document__created_at__gte=_inv_since).count()
+        _inv_shortage_cnt = _SM2.objects.filter(document__kind="inv", document__posted=True, quantity__lt=0, document__created_at__gte=_inv_since).count()
+        _inv_docs = []
+        for _d in StockDocument.objects.filter(kind="inv", posted=True, created_at__gte=_inv_since).prefetch_related("items").order_by("-created_at")[:12]:
+            _sur = sum(float(m.quantity) * float(m.price or 0) for m in _d.items.all() if m.quantity > 0)
+            _sho = sum(abs(float(m.quantity)) * float(m.price or 0) for m in _d.items.all() if m.quantity < 0)
+            _dt = _d.doc_date or (_d.created_at.date() if _d.created_at else None)
+            _inv_docs.append({"id": _d.id, "date": _dt.isoformat() if _dt else "", "comment": _d.comment,
+                              "positions": _d.items.count(), "surplus": round(_sur), "shortage": round(_sho)})
         _frozen_total = round(sum(r["frozen"] for r in _rows))
         _frozen_top = sorted(_rows, key=lambda r: -r["frozen"])[:20]
         _dead = [r for r in _rows if r["dead"]]
@@ -705,6 +718,10 @@ class InventoryAnalyticsView(APIView):
             "dead_days": _dead_days,
             "losses_writeoff_90d": round(_loss_wo) if _cc else None,
             "losses_inv_90d": round(_loss_inv) if _cc else None,
+            "inv_surplus_90d": round(_inv_surplus) if _cc else None,
+            "inv_surplus_cnt": _inv_surplus_cnt,
+            "inv_shortage_cnt": _inv_shortage_cnt,
+            "inv_docs_90d": (_inv_docs if _cc else []),
         })
 
 

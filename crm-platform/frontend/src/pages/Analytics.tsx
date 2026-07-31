@@ -24,6 +24,8 @@ interface InvData {
   frozen_total?: number; frozen_top?: { name: string; sku: string; qty: number; unit: string; frozen: number }[];
   dead_count?: number; dead_total?: number; dead_top?: { name: string; sku: string; qty: number; unit: string; frozen: number }[]; dead_days?: number;
   losses_writeoff_90d?: number; losses_inv_90d?: number;
+  inv_surplus_90d?: number; inv_surplus_cnt?: number; inv_shortage_cnt?: number;
+  inv_docs_90d?: { id: number; date: string; comment: string; positions: number; surplus: number; shortage: number }[];
 }
 const fmt = (n: number) => Math.round(n || 0).toLocaleString("ru");
 
@@ -195,6 +197,47 @@ export function StockTab() {
           <div className="muted" style={{ fontSize: 12, margin: "2px 0 0" }}>
             {t("Брак/псування","Брак/псування")}: <b>{fmt(d.losses_writeoff_90d || 0)} ₴</b> · {t("Недостачи по инвентаризации","Нестачі по інвентаризації")}: <b>{fmt(d.losses_inv_90d || 0)} ₴</b> — {t("по закупочной. Это НЕ движение денег (деньги ушли при закупке), но эти потери уменьшают твою прибыль.","по закупівельній. Це НЕ рух грошей (гроші пішли при закупівлі), але ці втрати зменшують твій прибуток.")}
           </div>
+        </div>
+      )}
+
+      {showCost && ((d.inv_surplus_90d || 0) > 0 || (d.losses_inv_90d || 0) > 0 || (d.inv_docs_90d || []).length > 0) && (
+        <div className="panel" style={{ margin: "14px 0 0", borderLeft: "4px solid #3b82f6" }}>
+          <b style={{ fontSize: 14 }}>📋 {t("Инвентаризация за 90 дней","Інвентаризація за 90 днів")}</b>
+          <div style={{ display: "flex", gap: 22, flexWrap: "wrap", margin: "10px 0 4px" }}>
+            <div>
+              <div className="muted" style={{ fontSize: 12 }}>{t("Излишки (оприходовано)","Надлишки (оприбутковано)")}</div>
+              <b style={{ fontSize: 15, color: "#16a34a" }}>+{fmt(d.inv_surplus_90d || 0)} ₴</b> <span className="muted" style={{ fontSize: 12 }}>({d.inv_surplus_cnt || 0} {t("поз.","поз.")})</span>
+            </div>
+            <div>
+              <div className="muted" style={{ fontSize: 12 }}>{t("Недостачи (списано)","Нестачі (списано)")}</div>
+              <b style={{ fontSize: 15, color: "#dc2626" }}>−{fmt(d.losses_inv_90d || 0)} ₴</b> <span className="muted" style={{ fontSize: 12 }}>({d.inv_shortage_cnt || 0} {t("поз.","поз.")})</span>
+            </div>
+            <div>
+              <div className="muted" style={{ fontSize: 12 }}>{t("Итог (излишки − недостачи)","Підсумок (надлишки − нестачі)")}</div>
+              {(() => { const net = (d.inv_surplus_90d || 0) - (d.losses_inv_90d || 0); return <b style={{ fontSize: 15, color: net < 0 ? "#dc2626" : net > 0 ? "#16a34a" : "#475569" }}>{net > 0 ? "+" : ""}{fmt(net)} ₴</b>; })()}
+            </div>
+          </div>
+          {(d.inv_docs_90d || []).length > 0 && (
+            <table style={{ width: "100%", fontSize: 12, marginTop: 8 }}>
+              <thead><tr>
+                <th style={{ textAlign: "left" }}>{t("Дата","Дата")}</th>
+                <th style={{ textAlign: "left" }}>{t("Инвентаризация","Інвентаризація")}</th>
+                <th style={{ textAlign: "center" }}>{t("Позиций","Позицій")}</th>
+                <th style={{ textAlign: "right" }}>{t("Излишки","Надлишки")}</th>
+                <th style={{ textAlign: "right" }}>{t("Недостачи","Нестачі")}</th>
+              </tr></thead>
+              <tbody>{(d.inv_docs_90d || []).map((x) => (
+                <tr key={x.id}>
+                  <td>{x.date}</td>
+                  <td>{x.comment}</td>
+                  <td style={{ textAlign: "center" }}>{x.positions}</td>
+                  <td style={{ textAlign: "right", color: "#16a34a" }}>{x.surplus ? "+" + fmt(x.surplus) + " ₴" : "—"}</td>
+                  <td style={{ textAlign: "right", color: "#dc2626" }}>{x.shortage ? "−" + fmt(x.shortage) + " ₴" : "—"}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          )}
+          <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{t("По закупочной себестоимости. Отменённые (сторно) не учитываются.","За закупівельною собівартістю. Скасовані (сторно) не враховуються.")}</div>
         </div>
       )}
       {showCost && d.frozen_top && d.frozen_top.length > 0 && (
