@@ -1,5 +1,5 @@
 from decimal import Decimal
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -541,6 +541,29 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
         doc = self.get_object()
         changed = unpost_document(doc)
         return Response({"ok": True, "changed": changed, "posted": doc.posted})
+
+    @action(detail=True, methods=["post"], url_path="void")
+    def void_doc(self, request, pk=None):
+        """Сторно інвентаризації (kind=inv): залишок відкочується, документ ЛИШАЄТЬСЯ в історії як «скасовано».
+        Право — warehouse.inventory.void (окремий відповідальний), не звичайний менеджер."""
+        u = request.user
+        doc = self.get_object()
+        if doc.kind != "inv":
+            return Response({"detail": "Сторно доступне лише для інвентаризації."}, status=status.HTTP_400_BAD_REQUEST)
+        if not (u.is_superuser or u.has_perm_code("warehouse.inventory.void")):
+            return Response({"detail": "Немає права скасовувати інвентаризацію."}, status=status.HTTP_403_FORBIDDEN)
+        from .services import unpost_document
+        changed = unpost_document(doc)
+        return Response({"ok": True, "changed": changed, "posted": doc.posted})
+
+    def destroy(self, request, *args, **kwargs):
+        """Інвентаризацію НЕ видаляємо фізично (аудит-слід) — тільки сторно через /void/.
+        Інші типи документів — стандартна поведінка ModelViewSet."""
+        doc = self.get_object()
+        if doc.kind == "inv":
+            return Response({"detail": "Інвентаризацію не можна видаляти. Скористайтесь «Скасувати» (сторно) — запис лишиться в історії."},
+                            status=status.HTTP_405_METHOD_NOT_ALLOWED)
+        return super().destroy(request, *args, **kwargs)
 
     @action(detail=False, methods=["post"], url_path="import-receipt")
     def import_receipt(self, request):

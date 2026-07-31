@@ -85,6 +85,7 @@ export default function Warehouse() {
   const canTabReal = can("warehouse.tab.realizations");
   const canTabRec = can("warehouse.tab.receipts");
   const canTabInv = can("warehouse.tab.inventory");
+  const canVoidInv = can("warehouse.inventory.void"); // право на сторно (отмену) инвентаризации
   const canTabStat = can("analytics.warehouse");
   // якщо збережена вкладка стала недоступною (зняли право) — повертаємось до товарів
   useEffect(() => {
@@ -262,6 +263,7 @@ export default function Warehouse() {
   const [invPrinting, setInvPrinting] = useState(false);
   const [invBusy, setInvBusy] = useState(false);
   const [invConfirm, setInvConfirm] = useState<null | { items: { product: number; name: string; unit: string; book: number; fact: number; delta: number; quantity: number; price: number }[] }>(null);
+  const [invVoidDoc, setInvVoidDoc] = useState<any>(null); // документ инвентаризации на подтверждение сторно
   const invTotalPages = Math.max(1, Math.ceil(invCount / invPageSize));
   // инвентаризация: экран (ведомость / история проведённых) + список истории
   const [invScreen, setInvScreen] = useState<"sheet" | "history">("sheet");
@@ -414,7 +416,7 @@ export default function Warehouse() {
     if (!items.length) { setInvConfirm(null); return; }
     setInvBusy(true);
     try {
-      await api.post("/api/stock-documents/", { kind: "inv", warehouse: whs[0]?.id, comment: `Інвентаризація ${pFrom}…${pTo}`, items });
+      await api.post("/api/stock-documents/", { kind: "inv", warehouse: whs[0]?.id, comment: `Інвентаризація ${pFrom}…${pTo}`, doc_date: pTo, items });
       setInvConfirm(null);
       loadProducts(); loadSheet(pFrom, pTo); loadInvHistory(1);
       setInvMsg(t(`✓ Инвентаризация проведена. Скорректировано позиций: ${items.length}. Запись добавлена в «Историю».`,`✓ Інвентаризацію проведено. Скориговано позицій: ${items.length}. Запис додано в «Історію».`));
@@ -436,6 +438,22 @@ export default function Warehouse() {
       setInvHistCount(r.count ?? (r.results || r).length);
     } catch { setInvHistDocs([]); }
     setInvHistBusy(false);
+  }
+  // сторно инвентаризации (отмена проведения) — остаток откатывается, запись остаётся в истории
+  async function doVoid() {
+    if (!invVoidDoc) return;
+    setInvBusy(true);
+    try {
+      await api.post(`/api/stock-documents/${invVoidDoc.id}/void/`, {});
+      setInvVoidDoc(null);
+      loadProducts(); loadInvHistory(invHistPage); setInvHistSel(null);
+      if (invScreen === "sheet") loadSheet(pFrom, pTo);
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || "";
+      setInvVoidDoc(null);
+      setInvMsg(t("✗ Не удалось отменить инвентаризацию. ","✗ Не вдалося скасувати інвентаризацію. ") + msg);
+    }
+    setInvBusy(false);
   }
   // печать всей ведомости (все страницы по текущему фильтру) с пустой колонкой «Факт» для отметок на физскладе
   async function printInventory() {
@@ -1094,13 +1112,18 @@ export default function Warehouse() {
                     const items = d.items || [];
                     const short = items.filter((it: any) => Number(it.quantity) < 0).length;
                     const over = items.filter((it: any) => Number(it.quantity) > 0).length;
+                    const cancelled = d.posted === false;
                     return (
-                      <div key={d.id} onClick={() => setInvHistSel(d)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 8px", borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}>
-                        <div style={{ minWidth: 92, fontWeight: 600 }}>{(d.created_at || "").slice(0, 10)}</div>
-                        <div style={{ flex: 1 }}>{d.comment || t("Инвентаризация","Інвентаризація")}</div>
+                      <div key={d.id} onClick={() => setInvHistSel(d)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 8px", borderBottom: "1px solid #f1f5f9", cursor: "pointer", opacity: cancelled ? 0.6 : 1 }}>
+                        <div style={{ minWidth: 92, fontWeight: 600 }}>{(d.doc_date || d.created_at || "").slice(0, 10)}</div>
+                        <div style={{ flex: 1, textDecoration: cancelled ? "line-through" : "none" }}>{d.comment || t("Инвентаризация","Інвентаризація")}</div>
+                        {cancelled
+                          ? <span style={{ fontSize: 11, background: "#f1f5f9", color: "#64748b", borderRadius: 5, padding: "2px 7px" }}>{t("Отменено","Скасовано")}</span>
+                          : <span style={{ fontSize: 11, background: "#dcfce7", color: "#166534", borderRadius: 5, padding: "2px 7px" }}>{t("Проведено","Проведено")}</span>}
                         <div className="muted" style={{ fontSize: 12 }}>{t("позиций","позицій")}: <b>{items.length}</b></div>
                         {short > 0 && <span style={{ color: "#dc2626", fontSize: 12 }} title={t("недостача","нестача")}>−{short}</span>}
                         {over > 0 && <span style={{ color: "#16a34a", fontSize: 12 }} title={t("излишек","надлишок")}>+{over}</span>}
+                        {canVoidInv && !cancelled && <button className="btn btn-light" style={{ padding: "2px 9px", fontSize: 12 }} onClick={(e) => { e.stopPropagation(); setInvVoidDoc(d); }}>{t("Отменить","Скасувати")}</button>}
                         <span className="muted">→</span>
                       </div>
                     );
@@ -1117,8 +1140,12 @@ export default function Warehouse() {
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
                       <button className="btn btn-light" onClick={() => setInvHistSel(null)}>{t("← К списку","← До списку")}</button>
-                      <b>{(invHistSel.created_at || "").slice(0, 10)}</b>
-                      <span className="muted" style={{ fontSize: 13 }}>{invHistSel.comment}</span>
+                      <b>{(invHistSel.doc_date || invHistSel.created_at || "").slice(0, 10)}</b>
+                      {invHistSel.posted === false
+                        ? <span style={{ fontSize: 11, background: "#f1f5f9", color: "#64748b", borderRadius: 5, padding: "2px 7px" }}>{t("Отменено","Скасовано")}</span>
+                        : <span style={{ fontSize: 11, background: "#dcfce7", color: "#166534", borderRadius: 5, padding: "2px 7px" }}>{t("Проведено","Проведено")}</span>}
+                      <span className="muted" style={{ fontSize: 13, flex: 1 }}>{invHistSel.comment}</span>
+                      {canVoidInv && invHistSel.posted !== false && <button className="btn btn-light" style={{ padding: "3px 11px" }} onClick={() => setInvVoidDoc(invHistSel)}>{t("Отменить (сторно)","Скасувати (сторно)")}</button>}
                     </div>
                     <table style={{ width: "100%", fontSize: 13 }}>
                       <thead><tr>{[t("Товар","Товар"), t("Расхождение","Розбіжність"), t("Себест.","Собівар."), t("Сумма","Сума")].map((h) => <th key={h} style={{ textAlign: "left", boxShadow: "inset 0 -1px 0 #e2e8f0" }}>{h}</th>)}</tr></thead>
@@ -1167,6 +1194,20 @@ export default function Warehouse() {
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-light" style={{ flex: 1 }} disabled={invBusy} onClick={() => setInvConfirm(null)}>{t("Отмена","Скасувати")}</button>
               <button className="btn btn-primary" style={{ flex: 1 }} disabled={invBusy} onClick={doConduct}>{invBusy ? t("Проводим…","Проводимо…") : t(`Провести (${invConfirm.items.length})`,`Провести (${invConfirm.items.length})`)}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Встроенное окно подтверждения СТОРНО (отмены) инвентаризации */}
+      {invVoidDoc && (
+        <div onClick={() => !invBusy && setInvVoidDoc(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 460, maxWidth: "92vw" }}>
+            <h3 style={{ marginTop: 0 }}>{t("Отменить инвентаризацию?","Скасувати інвентаризацію?")}</h3>
+            <div style={{ fontSize: 13, marginBottom: 8 }}>{(invVoidDoc.doc_date || invVoidDoc.created_at || "").slice(0, 10)} · {invVoidDoc.comment}</div>
+            <div className="muted" style={{ fontSize: 13, marginBottom: 16 }}>{t("Остатки вернутся к состоянию до этой инвентаризации. Запись НЕ удаляется — останется в истории с пометкой «отменено».","Залишки повернуться до стану до цієї інвентаризації. Запис НЕ видаляється — лишиться в історії з поміткою «скасовано».")}</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-light" style={{ flex: 1 }} disabled={invBusy} onClick={() => setInvVoidDoc(null)}>{t("Нет","Ні")}</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} disabled={invBusy} onClick={doVoid}>{invBusy ? t("Отменяем…","Скасовуємо…") : t("Да, отменить","Так, скасувати")}</button>
             </div>
           </div>
         </div>
