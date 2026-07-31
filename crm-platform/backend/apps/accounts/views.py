@@ -70,9 +70,27 @@ class UserViewSet(viewsets.ModelViewSet):
     # поля картки, які можна редагувати (решта — тільки через адмінку/права)
     PROFILE_FIELDS = ["photo", "position", "birthday", "about", "interests", "telegram", "phone"]
 
+    @action(detail=False, methods=["get"], permission_classes=[__import__("rest_framework.permissions", fromlist=["IsAuthenticated"]).IsAuthenticated])
+    def staff_brief(self, request):
+        """Легкий список активних співробітників для селекторів (без прав roles.manage).
+        Повертає id, full_name, department_name, role_name."""
+        qs = User.objects.select_related("role", "department").filter(is_active=True, account_kind=User.AccountKind.STAFF).order_by("first_name", "last_name", "username")
+        data = [{
+            "id": u.id,
+            "full_name": ((u.first_name or "") + " " + (u.last_name or "")).strip() or u.username,
+            "department_name": u.department.name if u.department_id else "",
+            "role_name": u.role.name if u.role_id else "",
+        } for u in qs]
+        from rest_framework.response import Response
+        return Response(data)
+
     def get_permissions(self):
         # свою картку співробітник редагує сам — без права roles.manage
         if getattr(self, "action", None) == "profile":
+            from rest_framework.permissions import IsAuthenticated
+            return [IsAuthenticated()]
+        # legkij список для селекторів (напр. модалка задачі) — усі authenticated
+        if getattr(self, "action", None) == "staff_brief":
             from rest_framework.permissions import IsAuthenticated
             return [IsAuthenticated()]
         return super().get_permissions()

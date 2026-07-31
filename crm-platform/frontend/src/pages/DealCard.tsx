@@ -27,6 +27,7 @@ import { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
+import { TaskQuickModal } from "../TaskQuickModal";
 import { api, Funnel, Paginated } from "../api";
 import OwnerSelect from "../OwnerSelect";
 import { Avatar, SOURCES } from "../ui";
@@ -208,6 +209,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const loc = useLocation();
   const [showReceipt, setShowReceipt] = useState(false);
   const { can } = useAuth();
+  const [taskOpen, setTaskOpen] = useState(false);
   const [gearOpen, setGearOpen] = useState(false);
   const gItem: any = { display: "flex", alignItems: "center", gap: 8, padding: "9px 13px", fontSize: 13.5, cursor: "pointer", borderBottom: "1px solid #f6f8fb" };
   const [deal, setDeal] = useState<Deal | null>(null);
@@ -673,11 +675,14 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         <button className="btn" style={{ padding: "0 10px" }} title={t("Печать бланка выкраски","Друк бланка викраски")} onClick={() => setVkOpen(true)}><Icon n="palette" size={16} /></button>
         <div style={{ width: 1, height: 24, background: "#cbd5e1", margin: "0 6px" }} />
         <button className="btn" onClick={issueCheckbox}><Icon n="🧾" size={15} /> {t("Checkbox","Checkbox")}</button>
+        <button className="btn" onClick={() => setTaskOpen(true)} title={t("Поставить задачу по сделке","Поставити задачу по угоді")}><Icon n="check" size={15} /> {t("Задача","+ Задача")}</button>
         {deal.contact_id && (
           <div id={`deal-reply-channel-${deal.id}`} data-testid="deal-reply-channel-target"
             style={{ marginLeft: "auto", minWidth: 260, maxWidth: 380, flex: "0 1 380px" }} />
         )}
       </div>
+
+      {taskOpen && <TaskQuickModal prefill={{ deal: deal.id, deal_title: deal.title, contact: deal.contact_id }} onClose={() => setTaskOpen(false)} onSaved={() => setTaskOpen(false)} />}
 
       {(tab === "smeta" && can("deal.smeta.tab")) ? (
         <DealEstimatePanel dealId={deal.id} />

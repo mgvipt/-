@@ -10,6 +10,7 @@ import { EmojiButton } from "../ChatCompose";
 import { AiComposeAssist } from "../AiComposeAssist";
 import { linkify, dayLabel, metaWindow, SNDR_MAP } from "../chatUtils";
 import { Icon } from "../Icon";
+import { TaskQuickModal } from "../TaskQuickModal";
 import { msgSoundOn, setMsgSoundOn, teamSoundOn, setTeamSoundOn } from "../sounds";
 
 
@@ -40,6 +41,7 @@ export default function Inbox() {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [internalNote, setInternalNote] = useState(false);
+  const [taskOpen, setTaskOpen] = useState(false);
   const [composerH, setComposerH] = useState<number | null>(null);
   const [pending, setPending] = useState<any[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -408,13 +410,16 @@ export default function Inbox() {
               <SourceChip source={active.channel_kind} />
               {(() => { const w = metaWindow(active, msgs); return w ? <span title={w.closed ? t("Окно Instagram (24ч) закрыто — клиент может НЕ получить обычное сообщение","Вікно Instagram (24г) закрите — клієнт може НЕ отримати звичайне повідомлення") : t("Окно открыто — клиент получит сообщение","Вікно відкрите — клієнт отримає повідомлення")} style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap", color: w.closed ? "#b91c1c" : "#15803d", background: w.closed ? "#fee2e2" : "#dcfce7" }}>{w.closed ? "\ud83d\udd34 " + t("Окно закрыто","Вікно закрите") + " · " + w.hrs + t("ч","г") : "\ud83d\udfe2 " + t("Окно 24ч","Вікно 24 год")}</span> : null; })()}
               <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                <button className="btn" style={{ padding: compact ? "0 9px" : undefined, background: "#fef3c7", color: "#92400e" }} title={t("Поставить задачу по клиенту","Поставити задачу по клієнту")} onClick={() => setTaskOpen(true)}><Icon n="check" size={15} />{!compact && <> {t("Задача","Задача")}</>}</button>
                 <button className="btn btn-green" style={{ padding: compact ? "0 9px" : undefined }} title={t("Позвонить","Подзвонити")}><Icon n="phone" size={15} />{!compact && <> {t("Позвонить","Подзвонити")}</>}</button>
                 <button className="btn" style={{ background: "#f1f5f9", fontWeight: 700, lineHeight: 1, padding: "0 11px" }} onClick={() => setMenu((m) => !m)} title={t("Ещё","Ще")}><Icon n="more" size={16} /></button>
               </div>
             </div>
+            {taskOpen && active && <TaskQuickModal prefill={{ conversation: active.id, contact: active.contact, contact_name: active.contact_name || active.title, conversation_title: active.title }} onClose={() => setTaskOpen(false)} onSaved={() => setTaskOpen(false)} />}
             {menu && (<>
               <div onClick={() => setMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
               <div style={{ position: "fixed", top: 104, right: 360, width: 260, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 14px 36px rgba(0,0,0,.18)", zIndex: 41, overflow: "hidden" }}>
+                <div onClick={() => { setMenu(false); setTaskOpen(true); }} style={mItem}><Icon n="check" size={15} /> {t("+ Задача","+ Задача")}</div>
                 <div onClick={takeConv} style={mItem}><Icon n="pin" size={15} /> {t("Закрепить за мной","Закріпити за мною")}</div>
                 <div onClick={() => { setMenu(false); setPicker("transfer"); }} style={mItem}><Icon n="forward" size={15} /> {t("Переадресовать","Переадресувати")}</div>
                 <div onClick={() => { setMenu(false); setPicker("add"); }} style={mItem}><Icon n="user-plus" size={15} /> {t("Добавить менеджера","Додати менеджера")}</div>
