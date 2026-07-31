@@ -18,7 +18,7 @@ services:
       sh -c "python manage.py migrate &&
              python manage.py collectstatic --noinput &&
              python manage.py seed_demo &&
-             gunicorn config.wsgi:application -b 0.0.0.0:8000 -w 3 --timeout 60"
+             gunicorn config.wsgi:application -b 0.0.0.0:8000 -w 3 --timeout 300"
     environment: &crm-environment
       DEBUG: "0"
       SECRET_KEY: ${SECRET_KEY}
