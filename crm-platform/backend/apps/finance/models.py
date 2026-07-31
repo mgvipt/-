@@ -182,6 +182,8 @@ class FinDirection(models.Model):
     plan_expense = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="План витрат")
     sort_order = models.PositiveIntegerField(default=0)
     active = models.BooleanField(default=True)
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="children",
+                               help_text="Батьківський напрямок (для піднапрямків)")
     internal_contact = models.ForeignKey("crm.Contact", null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
                                          help_text="Внутрішній контрагент цього підрозділу (створюється авто при взаєморозрахунках між підрозділами)")
 

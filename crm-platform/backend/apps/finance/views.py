@@ -2124,22 +2124,43 @@ class DirectionsReportView(APIView):
 
     def get(self, request):
         d_from, d_to = _period(request)
-        rows = []
-        for dr in FinDirection.objects.filter(active=True):
+        dirs = list(FinDirection.objects.filter(active=True))
+        own = {}
+        for dr in dirs:
             inc, exp = _direction_sums(dr, d_from, d_to)
-            profit = inc - exp
-            rows.append({
-                "id": dr.id, "name": dr.name,
-                "income": round(inc), "expense": round(exp), "profit": round(profit),
-                "profitability": round(profit / inc * 100, 1) if inc else 0,
-                "plan_income": float(dr.plan_income), "plan_expense": float(dr.plan_expense),
-                "plan_profit": float(dr.plan_income - dr.plan_expense),
-            })
+            own[dr.id] = (inc, exp)
+        by_parent = {}
+        for dr in dirs:
+            by_parent.setdefault(dr.parent_id, []).append(dr)
+
+        def _pr(inc, exp):
+            return round((inc - exp) / inc * 100, 1) if inc else 0
+
+        rows = []
+        for dr in by_parent.get(None, []):
+            kids = by_parent.get(dr.id, [])
+            children = []
+            ci = ce = 0.0
+            for k in kids:
+                ki, ke = own[k.id]
+                ci += ki; ce += ke
+                children.append({"id": k.id, "name": k.name, "income": round(ki), "expense": round(ke),
+                                 "profit": round(ki - ke), "profitability": _pr(ki, ke),
+                                 "plan_income": float(k.plan_income), "plan_expense": float(k.plan_expense),
+                                 "plan_profit": float(k.plan_income - k.plan_expense)})
+            oi, oe = own[dr.id]
+            ri, re = oi + ci, oe + ce
+            rows.append({"id": dr.id, "name": dr.name,
+                         "income": round(ri), "expense": round(re), "profit": round(ri - re),
+                         "own_income": round(oi), "own_expense": round(oe), "profitability": _pr(ri, re),
+                         "plan_income": float(dr.plan_income), "plan_expense": float(dr.plan_expense),
+                         "plan_profit": float(dr.plan_income - dr.plan_expense),
+                         "children": children})
         total = {
-            "income": sum(r["income"] for r in rows), "expense": sum(r["expense"] for r in rows),
-            "profit": sum(r["profit"] for r in rows),
-            "plan_income": sum(r["plan_income"] for r in rows),
-            "plan_expense": sum(r["plan_expense"] for r in rows),
+            "income": sum(x["income"] for x in rows), "expense": sum(x["expense"] for x in rows),
+            "profit": sum(x["profit"] for x in rows),
+            "plan_income": sum(x["plan_income"] for x in rows),
+            "plan_expense": sum(x["plan_expense"] for x in rows),
         }
         return Response({"from": d_from.isoformat(), "to": d_to.isoformat(), "rows": rows, "total": total})
 

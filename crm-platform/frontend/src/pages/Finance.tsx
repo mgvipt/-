@@ -1707,6 +1707,7 @@ function Directions() {
   const { t } = useLang();
   const isMobile = useIsMobile();
   const [openId, setOpenId] = useState<number | null>(null);
+  const [openChild, setOpenChild] = useState<number | null>(null);
   const [edit, setEdit] = useState<any>(null); // напрямок для додавання/редагування або null
   const reload = () => { setD(null); api.get<any>(`/api/finance/directions/?from=${from}&to=${to}`).then(setD); };
   useEffect(() => { reload(); }, [from, to]);
@@ -1738,7 +1739,7 @@ function Directions() {
               <Fragment key={r.id}>
                 <tr onClick={() => setOpenId(isOpen ? null : r.id)} style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer", background: isOpen ? "#eff6ff" : undefined }}>
                   <td style={{ width: 22, color: "#2563eb", textAlign: "center" }}>{isOpen ? "▼" : "▶"}</td>
-                  <td style={{ fontWeight: 500 }}>{r.name}</td>
+                  <td style={{ fontWeight: 500 }}>{r.name}{(r.children || []).length ? <span className="muted" style={{ fontSize: 11, marginLeft: 6 }}>· {r.children.length} {t("подн.","піднапр.")}</span> : ""}</td>
                   <td style={{ textAlign: "right" }}>{money(r.plan_income)}</td>
                   <td style={{ textAlign: "right" }}>{money(r.plan_expense)}</td>
                   <td style={{ textAlign: "right", fontWeight: 600, color: r.plan_profit >= 0 ? "#16a34a" : "#dc2626" }}>{money(r.plan_profit)}</td>
@@ -1751,9 +1752,26 @@ function Directions() {
                     <span title={t("Удалить направление","Видалити напрямок")} style={{ cursor: "pointer", color: "#ef4444" }} onClick={() => delDir(r.id, r.name)}>✕</span>
                   </td>
                 </tr>
-                {isOpen && (
+                {isOpen && (<>
+                  {(r.children || []).map((ch: any) => { const chOpen = openChild === ch.id; const cpr = ch.plan_income ? Math.round(ch.plan_profit / ch.plan_income * 100) : 0; return (
+                    <Fragment key={"c" + ch.id}>
+                      <tr onClick={() => setOpenChild(chOpen ? null : ch.id)} style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer", background: chOpen ? "#eef2ff" : "#f8fafc" }}>
+                        <td style={{ width: 22, color: "#7c3aed", textAlign: "center" }}>{chOpen ? "▼" : "▶"}</td>
+                        <td style={{ paddingLeft: 20, color: "#475569" }}>↳ {ch.name}</td>
+                        <td style={{ textAlign: "right" }}>{money(ch.plan_income)}</td>
+                        <td style={{ textAlign: "right" }}>{money(ch.plan_expense)}</td>
+                        <td style={{ textAlign: "right", color: ch.plan_profit >= 0 ? "#16a34a" : "#dc2626" }}>{money(ch.plan_profit)}</td>
+                        <td style={{ textAlign: "right", color: cpr >= 0 ? "#16a34a" : "#dc2626" }}>{cpr}%</td>
+                        <td style={{ textAlign: "right" }} className="muted">{money(ch.income)}</td>
+                        <td style={{ textAlign: "right", color: "#dc2626" }}>{money(ch.expense)}</td>
+                        <td style={{ textAlign: "right", color: ch.profit >= 0 ? "#16a34a" : "#dc2626" }}>{money(ch.profit)}</td>
+                        <td></td>
+                      </tr>
+                      {chOpen && <tr><td colSpan={10} style={{ padding: 0, background: "#f8fafc" }}><DirectionJournal directionId={ch.id} from={from} to={to} /></td></tr>}
+                    </Fragment>); })}
+                  {(r.children || []).length > 0 && <tr><td colSpan={10} style={{ padding: "6px 12px", background: "#f8fafc", fontSize: 11.5, color: "#64748b" }}>{t("↓ Операции самого направления (без поднаправлений):","↓ Операції самого напрямку (без піднапрямків):")}</td></tr>}
                   <tr><td colSpan={10} style={{ padding: 0, background: "#f8fafc" }}><DirectionJournal directionId={r.id} from={from} to={to} /></td></tr>
-                )}
+                </>)}
               </Fragment>
             );
           })}
@@ -1783,11 +1801,14 @@ function DirModal({ dir, onClose, onSaved }: { dir: any; onClose: () => void; on
   const [name, setName] = useState(dir.name || "");
   const [inc, setInc] = useState(String(dir.plan_income || 0));
   const [exp, setExp] = useState(String(dir.plan_expense || 0));
+  const [parent, setParent] = useState<number>(dir.parent || 0);
+  const [alldirs, setAlldirs] = useState<any[]>([]);
+  useEffect(() => { api.get<any>("/api/fin-directions/?page_size=200").then((d) => setAlldirs((d.results || d).filter((x: any) => x.id !== dir.id))).catch(() => {}); }, []);
   const [busy, setBusy] = useState(false);
   async function save() {
     if (!name.trim()) return;
     setBusy(true);
-    const body = { name: name.trim(), plan_income: Number(inc) || 0, plan_expense: Number(exp) || 0 };
+    const body: any = { name: name.trim(), plan_income: Number(inc) || 0, plan_expense: Number(exp) || 0, parent: parent || null };
     try {
       if (dir.id) await api.patch(`/api/fin-directions/${dir.id}/`, body);
       else await api.post("/api/fin-directions/", { ...body, active: true });
@@ -1806,6 +1827,11 @@ function DirModal({ dir, onClose, onSaved }: { dir: any; onClose: () => void; on
         <input type="number" value={inc} onChange={(e) => setInc(e.target.value)} style={inp} />
         <label className="label">{t("План расходов (₴/мес)","План витрат (₴/міс)")}</label>
         <input type="number" value={exp} onChange={(e) => setExp(e.target.value)} style={inp} />
+        <label className="label">{t("Родительское направление (если это поднаправление)","Батьківський напрямок (якщо це піднапрямок)")}</label>
+        <select value={parent} onChange={(e) => setParent(Number(e.target.value))} style={inp as any}>
+          <option value={0}>{t("— нет (самостоятельное) —","— немає (самостійний) —")}</option>
+          {alldirs.map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}
+        </select>
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           <button className="btn btn-light" style={{ flex: 1 }} onClick={onClose}>{t("Отмена","Скасувати")}</button>
           <button className="btn btn-primary" style={{ flex: 1 }} onClick={save} disabled={busy || !name.trim()}>{busy ? "…" : t("Сохранить","Зберегти")}</button>

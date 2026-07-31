@@ -142,9 +142,10 @@ class FinModelArticleSerializer(serializers.ModelSerializer):
 
 
 class FinDirectionSerializer(serializers.ModelSerializer):
+    parent_name = serializers.CharField(source="parent.name", read_only=True, default=None)
     class Meta:
         model = FinDirection
-        fields = ["id", "name", "plan_income", "plan_expense", "sort_order", "active"]
+        fields = ["id", "name", "plan_income", "plan_expense", "sort_order", "active", "parent", "parent_name"]
 
 
 class FundAllocationSerializer(serializers.ModelSerializer):
