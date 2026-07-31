@@ -99,6 +99,16 @@ export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal:
     <div style="margin-top:14px;font-size:12px">
       ${uahWords(total)}<br/>У т.ч. ПДВ: Нуль гривень 00 копійок
     </div>
+    <div style="margin-top:16px;border:2px solid #C67D5F;border-radius:10px;padding:12px 14px;background:#fdf3ee">
+      <div style="font-weight:bold;font-size:14px;color:#8a4b32;margin-bottom:7px">💳 Призначення платежу — впишіть ТОЧНО цей текст при оплаті на IBAN:</div>
+      <div style="font-size:15px;font-weight:bold;background:#fff;border:1.5px dashed #C67D5F;border-radius:8px;padding:9px 12px;letter-spacing:0.2px">
+        Оплата за декоративні матеріали згідно накладної №${deal.id}, без ПДВ
+      </div>
+      <div style="font-size:11px;color:#555;margin-top:9px;line-height:1.6">
+        <b style="color:#b45309">Чому це важливо:</b> без правильного призначення банк не розуміє, за що платіж — ми не бачимо, від кого й за яке замовлення надійшли гроші, і відправлення затримується.<br/>
+        Коли призначення вказано правильно — ваша оплата зʼявляється в нас <b>одразу</b>, і ми відразу починаємо готувати замовлення. Номер накладної <b>№${deal.id}</b> — це ключ, за яким ми знаходимо саме вашу оплату.
+      </div>
+    </div>
   </div>`;
 
   async function saveHist() {
