@@ -255,6 +255,7 @@ export default function Warehouse() {
   const [pTo, setPTo] = useState(today());
   // инвентаризация: собственный список (независимо от вкладки «Товары») — весь склад с фильтром и пагинацией
   const [invMode, setInvMode] = useState<"all" | "folder">("all"); // все товары / по папке
+  const [invSearch, setInvSearch] = useState(""); // поиск по товару в ведомости
   const [invCat, setInvCat] = useState<number | null>(null);        // выбранная папка (при invMode="folder")
   const [invPage, setInvPage] = useState(1);
   const [invPageSize, setInvPageSize] = useState(50);
@@ -381,17 +382,19 @@ export default function Warehouse() {
   }
 
   // строит параметры запроса ведомости из переданных опций или текущего состояния инвентаризации
-  function invParams(from: string, to: string, o?: { page?: number; pageSize?: number; cat?: number | null; mode?: "all" | "folder"; all?: boolean }) {
+  function invParams(from: string, to: string, o?: { page?: number; pageSize?: number; cat?: number | null; mode?: "all" | "folder"; all?: boolean; search?: string }) {
     const mode = o?.mode ?? invMode;
     const c = o?.cat !== undefined ? o.cat : invCat;
+    const sr = o?.search !== undefined ? o.search : invSearch;
     const q = new URLSearchParams({ from, to });
     if (o?.all) { q.set("all", "1"); }
     else { q.set("page", String(o?.page ?? invPage)); q.set("page_size", String(o?.pageSize ?? invPageSize)); }
     if (mode === "folder") { if (c === -1) q.set("category", "none"); else if (c && c > 0) q.set("category", String(c)); }
+    if (sr && sr.trim()) q.set("search", sr.trim());
     return q;
   }
   // грузит одну страницу ведомости; факт, уже введённый пользователем, НЕ затирает
-  async function loadSheet(from: string, to: string, o?: { page?: number; pageSize?: number; cat?: number | null; mode?: "all" | "folder" }) {
+  async function loadSheet(from: string, to: string, o?: { page?: number; pageSize?: number; cat?: number | null; mode?: "all" | "folder"; search?: string }) {
     setInvLoading(true);
     try {
       const q = invParams(from, to, o);
@@ -402,6 +405,13 @@ export default function Warehouse() {
     } catch { setSheet([]); }
     setInvLoading(false);
   }
+  // поиск по товару в ведомости — с задержкой (debounce)
+  useEffect(() => {
+    if (view !== "inv" || invScreen !== "sheet") return;
+    const tmr = setTimeout(() => { setInvPage(1); loadSheet(pFrom, pTo, { page: 1 }); }, 350);
+    return () => clearTimeout(tmr);
+    // eslint-disable-next-line
+  }, [invSearch]);
   async function openInventory() {
     setInvMsg("");
     setInvPage(1);
@@ -1156,6 +1166,11 @@ export default function Warehouse() {
                   ])}
                 </select>
               )}
+              <span style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                <input value={invSearch} onChange={(e) => setInvSearch(e.target.value)} placeholder={t("Поиск по товару / артикулу…","Пошук по товару / артикулу…")}
+                  style={{ height: 30, width: 240, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 26px 0 10px", fontSize: 13 }} />
+                {invSearch && <button onClick={() => setInvSearch("")} title={t("Очистить","Очистити")} style={{ position: "absolute", right: 6, border: "none", background: "transparent", color: "#94a3b8", cursor: "pointer", fontSize: 15, lineHeight: 1 }}>×</button>}
+              </span>
               <span style={{ flex: 1 }} />
               <button className="btn btn-light" style={{ padding: "4px 12px" }} disabled={invPrinting} onClick={printInventory} title={t("Печать ведомости с пустой колонкой Факт для отметок на складе","Друк відомості з порожньою колонкою Факт для відміток на складі")}><Icon n="🖨" size={14} /> {invPrinting ? t("Готовим…","Готуємо…") : t("Печать","Друк")}</button>
               <button className="btn btn-light" style={{ padding: "4px 12px" }} onClick={openInvImport} title={t("Загрузить факт из файла Excel/CSV (артикул + факт) — без ручного ввода","Завантажити факт з файлу Excel/CSV (артикул + факт) — без ручного вводу")}><Icon n="📥" size={14} /> {t("Импорт из файла","Імпорт з файлу")}</button>
