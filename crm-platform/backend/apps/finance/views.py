@@ -789,7 +789,21 @@ class TransactionViewSet(viewsets.ModelViewSet):
             qs = qs.filter(_Qacc(account_id__in=allowed) | _Qacc(transfer_account_id__in=allowed))
         p = self.request.query_params
         if p.get("contact"):
-            qs = qs.filter(contact_id=p["contact"])
+            from django.db.models import Q as _Qct
+            from apps.crm.models import Contact as _Cct
+            _cf = _Qct(contact_id=p["contact"])
+            _cc = _Cct.objects.filter(id=p["contact"]).first()
+            if _cc:
+                _fn = (_cc.first_name or "").strip(); _ln = (_cc.last_name or "").strip(); _nk = (_cc.nickname or "").strip()
+                if len(_fn) >= 3 and len(_ln) >= 3:
+                    _cf |= (_Qct(counterparty__icontains=_fn) & _Qct(counterparty__icontains=_ln))
+                elif len(_fn) >= 4:
+                    _cf |= _Qct(counterparty__icontains=_fn)
+                elif len(_ln) >= 4:
+                    _cf |= _Qct(counterparty__icontains=_ln)
+                if _nk and len(_nk) >= 4:
+                    _cf |= _Qct(counterparty__icontains=_nk)
+            qs = qs.filter(_cf)
         if p.get("from"):
             qs = qs.filter(date__gte=p["from"])
         if p.get("to"):
