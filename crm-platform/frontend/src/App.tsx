@@ -8,6 +8,7 @@ import LeadCard from "./pages/LeadCard";
 import DealCard from "./pages/DealCard";
 import Roles from "./pages/Roles";
 import Inbox from "./pages/Inbox";
+import Tasks from "./pages/Tasks";
 import Duplicates from "./pages/Duplicates";
 import Razvitok from "./pages/Razvitok";
 import ContactCenter from "./pages/ContactCenter";
@@ -44,6 +45,7 @@ function Shell() {
           <Route path="/roles" element={<Roles />} />
           <Route path="/employees" element={<Employees />} />
           <Route path="/inbox" element={<Inbox />} />
+          <Route path="/tasks" element={<Tasks />} />
           <Route path="/contact-center" element={<ContactCenter />} />
           <Route path="/phone" element={<Phone />} />
           <Route path="/warehouse" element={<Warehouse />} />

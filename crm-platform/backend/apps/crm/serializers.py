@@ -243,14 +243,59 @@ class GlobalRuleSerializer(serializers.ModelSerializer):
 class TaskSerializer(serializers.ModelSerializer):
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    priority_display = serializers.CharField(source="get_priority_display", read_only=True)
     department_name = serializers.CharField(source="department.name", read_only=True, default="")
     assignee_name = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+    contact_name = serializers.SerializerMethodField()
+    conversation_title = serializers.CharField(source="conversation.title", read_only=True, default="")
+    deal_title = serializers.CharField(source="deal.title", read_only=True, default="")
+    lead_title = serializers.CharField(source="lead.title", read_only=True, default="")
+    bucket = serializers.SerializerMethodField()
+
+    def _uname(self, u):
+        return (u.get_full_name() or u.username) if u else ""
 
     def get_assignee_name(self, obj):
-        return (obj.assignee.get_full_name() or obj.assignee.username) if obj.assignee else ""
+        return self._uname(obj.assignee)
+
+    def get_created_by_name(self, obj):
+        return self._uname(obj.created_by)
+
+    def get_contact_name(self, obj):
+        if not obj.contact_id:
+            return ""
+        c = obj.contact
+        return (" ".join(x for x in (c.first_name, c.last_name) if x) or c.phone or c.email or "")[:80]
+
+    def get_bucket(self, obj):
+        """Канбан-колонка: today | week | later | done"""
+        from django.utils import timezone as _tz
+        if obj.status in ("done", "canceled"):
+            return "done"
+        if not obj.due_at:
+            return "later"
+        now = _tz.now()
+        end_today = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        # межа тижня = 6 днів вперед (сьогодні + 6 = 7 днів вікна)
+        from datetime import timedelta
+        end_week = end_today + timedelta(days=6)
+        if obj.due_at <= end_today:
+            return "today"
+        if obj.due_at <= end_week:
+            return "week"
+        return "later"
 
     class Meta:
         model = Task
-        fields = ["id", "kind", "kind_display", "title", "body", "deal", "lead", "department",
-                  "department_name", "assignee", "assignee_name", "status", "status_display",
-                  "due_at", "created_by_agent", "created_at"]
+        fields = ["id", "kind", "kind_display", "title", "body",
+                  "priority", "priority_display",
+                  "deal", "deal_title", "lead", "lead_title",
+                  "contact", "contact_name",
+                  "conversation", "conversation_title",
+                  "department", "department_name",
+                  "assignee", "assignee_name",
+                  "created_by", "created_by_name",
+                  "status", "status_display",
+                  "due_at", "created_by_agent", "created_at", "bucket"]
+        read_only_fields = ["created_by", "created_at", "created_by_agent"]

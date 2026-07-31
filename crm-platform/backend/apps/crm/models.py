@@ -331,15 +331,20 @@ class Task(models.Model):
              ("followup", "Дожим"), ("other", "Інше")]
     STATUS = [("proposed", "Запропоновано"), ("open", "Відкрита"), ("in_progress", "В роботі"),
               ("done", "Виконана"), ("canceled", "Скасована")]
+    PRIORITIES = [("low", "Низький"), ("normal", "Звичайний"), ("high", "Високий")]
     kind = models.CharField(max_length=16, choices=KINDS, default="other")
     title = models.CharField(max_length=255)
     body = models.TextField(blank=True)
+    priority = models.CharField(max_length=8, choices=PRIORITIES, default="normal", db_index=True)
     deal = models.ForeignKey("Deal", null=True, blank=True, on_delete=models.CASCADE, related_name="tasks")
     lead = models.ForeignKey("Lead", null=True, blank=True, on_delete=models.CASCADE, related_name="tasks")
+    contact = models.ForeignKey("Contact", null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks")
+    conversation = models.ForeignKey("inbox.Conversation", null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks")
     department = models.ForeignKey("accounts.Department", null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks")
     assignee = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks_created")
     status = models.CharField(max_length=14, choices=STATUS, default="open", db_index=True)
-    due_at = models.DateTimeField(null=True, blank=True)
+    due_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_by_agent = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 

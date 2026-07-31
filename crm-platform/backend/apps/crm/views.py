@@ -2405,18 +2405,58 @@ class GlobalRuleViewSet(viewsets.ModelViewSet):
 
 
 class TaskViewSet(viewsets.ModelViewSet):
-    queryset = Task.objects.select_related("department", "assignee", "deal", "lead").all()
+    queryset = Task.objects.select_related("department", "assignee", "created_by",
+                                            "deal", "lead", "contact", "conversation").all()
     serializer_class = __import__("apps.crm.serializers", fromlist=["TaskSerializer"]).TaskSerializer
-    filterset_fields = ["kind", "status", "department", "assignee", "deal", "lead"]
+    filterset_fields = ["kind", "status", "priority", "department", "assignee",
+                        "deal", "lead", "contact", "conversation"]
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
 
     def get_queryset(self):
         qs = super().get_queryset()
         u = self.request.user
-        see_all = u.is_superuser or u.can_see_all_deals()
-        if not see_all or self.request.query_params.get("mine") == "1":
+        # ФІЛЬТР: mine=1 → тільки мої (assignee=я АБО created_by=я). Дефолт — усі видимі.
+        if self.request.query_params.get("mine") == "1":
             from django.db.models import Q
-            qs = qs.filter(Q(assignee=u) | Q(department_id=getattr(u, "department_id", None)))
+            qs = qs.filter(Q(assignee=u) | Q(created_by=u))
+        else:
+            # звичайний користувач без «бачити все» — тільки свій відділ + свої створені
+            see_all = u.is_superuser or (hasattr(u, "can_see_all_deals") and u.can_see_all_deals())
+            if not see_all:
+                from django.db.models import Q
+                qs = qs.filter(Q(assignee=u) | Q(created_by=u)
+                               | Q(department_id=getattr(u, "department_id", None)))
+        # bucket filter: today | week | later | done (обчислюється в БД)
+        bucket = self.request.query_params.get("bucket")
+        if bucket:
+            from django.utils import timezone as _tz
+            from datetime import timedelta as _td
+            from django.db.models import Q
+            now = _tz.now()
+            end_today = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+            end_week = end_today + _td(days=6)
+            if bucket == "done":
+                qs = qs.filter(Q(status__in=["done", "canceled"]))
+            elif bucket == "today":
+                qs = qs.exclude(status__in=["done", "canceled"]).filter(due_at__lte=end_today)
+            elif bucket == "week":
+                qs = qs.exclude(status__in=["done", "canceled"]).filter(due_at__gt=end_today, due_at__lte=end_week)
+            elif bucket == "later":
+                qs = qs.exclude(status__in=["done", "canceled"]).filter(Q(due_at__gt=end_week) | Q(due_at__isnull=True))
         return qs
+
+    @action(detail=False, methods=["get"])
+    def kanban(self, request):
+        """Групує задачі по колонкам: today / week / later / done. Права/фільтр як get_queryset."""
+        qs = self.get_queryset()
+        s = self.get_serializer(qs, many=True)
+        groups = {"today": [], "week": [], "later": [], "done": []}
+        for item in s.data:
+            groups.setdefault(item.get("bucket", "later"), []).append(item)
+        counts = {k: len(v) for k, v in groups.items()}
+        return Response({"groups": groups, "counts": counts})
 
     @action(detail=True, methods=["post"])
     def accept(self, request, pk=None):
@@ -2429,6 +2469,14 @@ class TaskViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def done(self, request, pk=None):
         t = self.get_object(); t.status = "done"; t.save(update_fields=["status"])
+        return Response(self.get_serializer(t).data)
+
+    @action(detail=True, methods=["post"])
+    def reopen(self, request, pk=None):
+        t = self.get_object()
+        if t.status in ("done", "canceled"):
+            t.status = "in_progress" if t.assignee_id else "open"
+            t.save(update_fields=["status"])
         return Response(self.get_serializer(t).data)
 
 
