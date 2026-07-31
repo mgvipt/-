@@ -240,6 +240,19 @@ export default function Layout() {
   const title = _cur ? t(_cur[1], _cur[2]) : "CRM";
   const fullName = me ? `${me.first_name} ${me.last_name}`.trim() || me.username : "";
 
+  const [tasksToday, setTasksToday] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const r: any = await api.get("/api/tasks/kanban/?mine=1");
+        if (alive) setTasksToday((r?.counts?.today) || 0);
+      } catch { /* noop */ }
+    };
+    load();
+    const id = setInterval(load, 60000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
   const [navOpen, setNavOpen] = useState(false);
   const [mobMenu, setMobMenu] = useState(false);
   const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth <= 768);
@@ -258,7 +271,11 @@ export default function Layout() {
         <nav className="nav">
           {items.map(([path, ru, uk, icon]) => (
             <NavLink key={path} to={path} className="nav-item" onClick={() => setNavOpen(false)}>
-              <span style={{ width: 18, textAlign: "center", display: "inline-flex", justifyContent: "center" }}><Icon n={icon as string} size={17} /></span><span>{t(ru, uk)}</span>
+              <span style={{ width: 18, textAlign: "center", display: "inline-flex", justifyContent: "center" }}><Icon n={icon as string} size={17} /></span>
+              <span style={{ flex: 1 }}>{t(ru, uk)}</span>
+              {path === "/tasks" && tasksToday > 0 && (
+                <span style={{ marginLeft: "auto", background: "#dc2626", color: "#fff", borderRadius: 10, padding: "1px 7px", fontSize: 11, fontWeight: 700, minWidth: 18, textAlign: "center", boxShadow: "0 0 0 2px rgba(220,38,38,.18)" }}>{tasksToday}</span>
+              )}
             </NavLink>
           ))}
         </nav>
