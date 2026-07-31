@@ -57,7 +57,8 @@ const LS_KEY = "tasks_view_selected";  // localStorage: "mine" | "all" | "u:<id>
 
 export default function Tasks() {
   const { t } = useLang();
-  const { me } = useAuth();
+  const { me, can } = useAuth();
+  const canViewOthers = !!(me?.is_superuser || can("task.view.others") || can("roles.manage"));
   // Selected view — persist
   const [selected, setSelectedState] = useState<string>(() => {
     try { return localStorage.getItem(LS_KEY) || "mine"; } catch { return "mine"; }
@@ -68,6 +69,14 @@ export default function Tasks() {
     // Синхронізуємо з Layout badge через custom event
     try { window.dispatchEvent(new CustomEvent("tasks-view-changed", { detail: v })); } catch { /* noop */ }
   };
+
+  // Якщо у юзера немає прав на чужі задачі, а localStorage має "all" або "u:X" — скинути на "mine"
+  useEffect(() => {
+    if (!canViewOthers && (selected === "all" || selected.startsWith("u:"))) {
+      setSelected("mine");
+    }
+    // eslint-disable-next-line
+  }, [canViewOthers]);
 
   const [data, setData] = useState<Kanban | null>(null);
   const [ucounts, setUCounts] = useState<UserCounts | null>(null);
@@ -160,9 +169,9 @@ export default function Tasks() {
           {t("Показать задачи:", "Показати задачі:")}
         </span>
         <Tab id="mine" label={t("Мои", "Мої")} count={mineCount} />
-        <Tab id="all" label={t("Все", "Всі")} count={allCount} />
-        <div style={{ width: 1, height: 22, background: "#cbd5e1", margin: "0 4px" }} />
-        {otherUsers.map((u) => (
+        {canViewOthers && <Tab id="all" label={t("Все", "Всі")} count={allCount} />}
+        {canViewOthers && <div style={{ width: 1, height: 22, background: "#cbd5e1", margin: "0 4px" }} />}
+        {canViewOthers && otherUsers.map((u) => (
           <Tab key={u.id} id={`u:${u.id}`} label={u.full_name} count={u.today} subtle />
         ))}
       </div>

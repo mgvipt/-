@@ -2417,7 +2417,11 @@ class TaskViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def user_counts(self, request):
         """Кількість задач на СЬОГОДНІ по кожному активному співробітнику + загальна.
-        Формат: {"users": [{"id": N, "today": M, "all": K}], "total": {"today": M, "all": K}}"""
+        Формат: {"users": [{"id": N, "today": M, "all": K}], "total": {"today": M, "all": K}}
+        Без права task.view.others — повертає ТІЛЬКИ поточного юзера."""
+        u = request.user
+        can_view_others = u.is_superuser or (hasattr(u, "has_perm_code") and (
+            u.has_perm_code("task.view.others") or u.has_perm_code("roles.manage")))
         from django.utils import timezone as _tz
         from django.db.models import Count, Q
         from apps.accounts.models import User as _U
@@ -2425,7 +2429,10 @@ class TaskViewSet(viewsets.ModelViewSet):
         end_today = now.replace(hour=23, minute=59, second=59, microsecond=999999)
         active_tasks_q = Q(tasks__status__in=["proposed", "open", "in_progress"])
         today_q = active_tasks_q & Q(tasks__due_at__lte=end_today)
-        users_qs = _U.objects.filter(is_active=True, account_kind=_U.AccountKind.STAFF)\
+        base_users_q = _U.objects.filter(is_active=True, account_kind=_U.AccountKind.STAFF)
+        if not can_view_others:
+            base_users_q = base_users_q.filter(id=u.id)
+        users_qs = base_users_q\
             .annotate(cnt_today=Count("tasks", filter=today_q, distinct=True))\
             .annotate(cnt_all=Count("tasks", filter=active_tasks_q, distinct=True))\
             .order_by("-cnt_today", "first_name", "last_name")
@@ -2437,24 +2444,34 @@ class TaskViewSet(viewsets.ModelViewSet):
         } for u in users_qs]
         # total (всі задачі не привʼязані до конкретного assignee — теж треба)
         from apps.crm.models import Task as _T
-        total_today = _T.objects.filter(status__in=["proposed","open","in_progress"], due_at__lte=end_today).count()
-        total_all = _T.objects.filter(status__in=["proposed","open","in_progress"]).count()
+        if can_view_others:
+            total_today = _T.objects.filter(status__in=["proposed","open","in_progress"], due_at__lte=end_today).count()
+            total_all = _T.objects.filter(status__in=["proposed","open","in_progress"]).count()
+        else:
+            # без прав: total = свої дані
+            total_today = _T.objects.filter(status__in=["proposed","open","in_progress"], due_at__lte=end_today, assignee=u).count()
+            total_all = _T.objects.filter(status__in=["proposed","open","in_progress"], assignee=u).count()
         return Response({"users": users, "total": {"today": total_today, "all": total_all}})
 
     def get_queryset(self):
         qs = super().get_queryset()
         u = self.request.user
-        # ФІЛЬТР: mine=1 → тільки мої (assignee=я АБО created_by=я). Дефолт — усі видимі.
+        # НОВЕ (31.07): task.view.others — дозвіл дивитись задачі інших юзерів
+        # Superuser та roles.manage — завжди можуть.
+        can_view_others = u.is_superuser or (hasattr(u, "has_perm_code") and (
+            u.has_perm_code("task.view.others") or u.has_perm_code("roles.manage")))
+        assignee_q = self.request.query_params.get("assignee")
+        # Якщо просять конкретного assignee, а це НЕ ти сам → потрібне право
+        if assignee_q and str(assignee_q) != str(u.id) and not can_view_others:
+            return qs.none()
+        # ФІЛЬТР: mine=1 → тільки мої (assignee=я АБО created_by=я). Дефолт — усі видимі (тільки з правом).
         if self.request.query_params.get("mine") == "1":
             from django.db.models import Q
             qs = qs.filter(Q(assignee=u) | Q(created_by=u))
-        else:
-            # звичайний користувач без «бачити все» — тільки свій відділ + свої створені
-            see_all = u.is_superuser or (hasattr(u, "can_see_all_deals") and u.can_see_all_deals())
-            if not see_all:
-                from django.db.models import Q
-                qs = qs.filter(Q(assignee=u) | Q(created_by=u)
-                               | Q(department_id=getattr(u, "department_id", None)))
+        elif not can_view_others:
+            # Без прав + без mine=1 → примусово тільки свої
+            from django.db.models import Q
+            qs = qs.filter(Q(assignee=u) | Q(created_by=u))
         # bucket filter: today | week | later | done (обчислюється в БД)
         bucket = self.request.query_params.get("bucket")
         if bucket:

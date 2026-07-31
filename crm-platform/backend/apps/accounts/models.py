@@ -120,6 +120,15 @@ PERMISSION_GROUPS = [
     ]),
 ]
 
+# ── Задачі (додано 2026-07-31) ──
+PERMISSION_GROUPS.append((
+    "Задачі",
+    [
+        ("task.view.others", "Бачити задачі інших співробітників",
+         "Без цього права видно ТІЛЬКИ свої задачі (кнопки-фільтри «Всі», «Кирил», «Ілона» тощо приховуються). Дають керівникам."),
+    ],
+))
+
 PERMISSION_CHOICES = [(c, l) for _g, _it in PERMISSION_GROUPS for c, l, _h in _it]
 LEGACY_PERMISSIONS = ["lead.view.own", "deal.view.own", "conversation.view.own"]
 
