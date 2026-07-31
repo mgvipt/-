@@ -71,14 +71,14 @@ const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pa
 
 export default function Finance() {
   const { t } = useLang();
-  const [tab, setTab] = useState<"dash" | "journal" | "triage" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model" | "incoming">(() => ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash"));
+  const [tab, setTab] = useState<"dash" | "journal" | "triage" | "pnl" | "be" | "dir" | "breakdown" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model" | "incoming">(() => ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash"));
   useEffect(() => { try { localStorage.setItem("fin_tab", tab); } catch (e) { /* noop */ } }, [tab]);
   const [quickOpen, setQuickOpen] = useState(false);
   const isMobile = useIsMobile();
   const { can: canF } = useAuth();
   const tabAllowed = (k: string) => k === "dash" ? true : (canF("finance.tab." + k) || canF("roles.manage"));
   useEffect(() => { if (!tabAllowed(tab)) setTab("dash"); /* eslint-disable-next-line */ }, [tab]);
-  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["incoming", <><Icon n="📥" size={15} /> {t("Вх. накладные","Вхідні накладні")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
+  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["breakdown", <><Icon n="🔀" size={15} /> {t("Разрезы","Розрізи")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["incoming", <><Icon n="📥" size={15} /> {t("Вх. накладные","Вхідні накладні")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
   const tabMap: any = Object.fromEntries(tabs);
   const GROUPS: [string, string[], string][] = [
     [t("Обзор", "Огляд"), ["dash"], "💰"],
@@ -111,6 +111,7 @@ export default function Finance() {
       {tab === "pnl" && <PnL />}
       {tab === "be" && <Breakeven />}
       {tab === "dir" && <Directions />}
+      {tab === "breakdown" && <BreakdownTab />}
       {tab === "plan" && <Planning />}
       {tab === "debts" && <Debts />}
       {tab === "incoming" && <IncomingDocsTab />}
@@ -1864,6 +1865,74 @@ function DirectionJournal({ directionId, from, to }: { directionId: number; from
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+function BreakdownTab() {
+  const { t } = useLang();
+  const [by, setBy] = useState("category");
+  const [from, setFrom] = useState(monthStart());
+  const [to, setTo] = useState(today());
+  const [d, setD] = useState<any>(null);
+  useEffect(() => { setD(null); api.get<any>(`/api/finance/breakdown/?by=${by}&from=${from}&to=${to}`).then(setD).catch(() => setD({ rows: [] })); }, [by, from, to]);
+  const subs: [string, string][] = [["category", t("По категориям", "По категоріях")], ["counterparty", t("По контрагентам", "По контрагентах")], ["month", t("По месяцам", "По місяцях")], ["matrix", t("Матрица (напрямок × месяц)", "Матриця (напрямок × місяць)")]];
+  const totInc = (d?.rows || []).reduce((a: number, x: any) => a + Number(x.income || 0), 0);
+  const totExp = (d?.rows || []).reduce((a: number, x: any) => a + Number(x.expense || 0), 0);
+  return (
+    <div className="panel" style={{ margin: 0 }}>
+      <b style={{ fontSize: 14 }}>{t("Аналитика · разрезы (доход / расход / прибыль за период)", "Аналітика · розрізи (дохід / розхід / прибуток за період)")}</b>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "10px 0 4px" }}>
+        {subs.map(([k, lbl]) => <button key={k} className={"btn" + (by === k ? " btn-primary" : " btn-light")} style={{ fontSize: 12.5 }} onClick={() => setBy(k)}>{lbl}</button>)}
+      </div>
+      <Period from={from} to={to} set={(f, tt) => { setFrom(f); setTo(tt); }} />
+      {!d ? <div className="spin" style={{ marginTop: 10 }}>{t("Загрузка…", "Завантаження…")}</div> : by === "matrix" ? (
+        <div style={{ overflowX: "auto", marginTop: 8 }}>
+          <table style={{ width: "100%", fontSize: 12.5, minWidth: 120 + (d.months || []).length * 90 }}>
+            <thead><tr><th style={{ textAlign: "left" }}>{t("Направление", "Напрямок")}</th>{(d.months || []).map((m: string) => <th key={m} style={{ textAlign: "right" }}>{m}</th>)}<th style={{ textAlign: "right" }}>{t("Всего", "Разом")}</th></tr></thead>
+            <tbody>
+              {(d.rows || []).map((row: any, i: number) => (
+                <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td style={{ fontWeight: 500 }}>{row.name}</td>
+                  {(d.months || []).map((m: string) => { const v = row.cells[m] || 0; return <td key={m} style={{ textAlign: "right", color: v > 0 ? "#16a34a" : v < 0 ? "#dc2626" : "#94a3b8" }}>{v ? money2(v) : "—"}</td>; })}
+                  <td style={{ textAlign: "right", fontWeight: 700, color: row.total >= 0 ? "#16a34a" : "#dc2626" }}>{money2(row.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto", marginTop: 8 }}>
+          <table style={{ width: "100%", fontSize: 13, minWidth: 560 }}>
+            <thead><tr>
+              <th style={{ textAlign: "left" }}>{by === "counterparty" ? t("Контрагент", "Контрагент") : by === "month" ? t("Месяц", "Місяць") : t("Категория", "Категорія")}</th>
+              <th style={{ textAlign: "right", color: "#16a34a" }}>{t("Доход", "Дохід")}</th>
+              <th style={{ textAlign: "right", color: "#dc2626" }}>{t("Расход", "Розхід")}</th>
+              <th style={{ textAlign: "right" }}>{t("Прибыль", "Прибуток")}</th>
+              {(by === "category" || by === "counterparty") && <th style={{ textAlign: "right" }}>{t("Опер.", "Опер.")}</th>}
+            </tr></thead>
+            <tbody>
+              {(d.rows || []).map((row: any, i: number) => (
+                <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td style={{ fontWeight: 500 }}>{row.name}</td>
+                  <td style={{ textAlign: "right", color: "#16a34a" }}>{row.income ? money2(row.income) : "—"}</td>
+                  <td style={{ textAlign: "right", color: "#dc2626" }}>{row.expense ? money2(row.expense) : "—"}</td>
+                  <td style={{ textAlign: "right", fontWeight: 600, color: row.profit >= 0 ? "#16a34a" : "#dc2626" }}>{money2(row.profit)}</td>
+                  {(by === "category" || by === "counterparty") && <td style={{ textAlign: "right" }} className="muted">{row.count}</td>}
+                </tr>
+              ))}
+              <tr style={{ borderTop: "2px solid #e2e8f0", fontWeight: 700 }}>
+                <td>{t("ВСЕГО", "РАЗОМ")}</td>
+                <td style={{ textAlign: "right", color: "#16a34a" }}>{money2(totInc)}</td>
+                <td style={{ textAlign: "right", color: "#dc2626" }}>{money2(totExp)}</td>
+                <td style={{ textAlign: "right", color: (totInc - totExp) >= 0 ? "#16a34a" : "#dc2626" }}>{money2(totInc - totExp)}</td>
+                {(by === "category" || by === "counterparty") && <td></td>}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>{t("Переводы между счетами исключены. Прибыль = доход − расход за период. Матрица: направление × месяц, чистыми (доход − расход).", "Перекази між рахунками виключені. Прибуток = дохід − розхід за період. Матриця: напрямок × місяць, чистими (дохід − розхід).")}</div>
     </div>
   );
 }

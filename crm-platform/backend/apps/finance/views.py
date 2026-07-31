@@ -2144,6 +2144,78 @@ class DirectionsReportView(APIView):
         return Response({"from": d_from.isoformat(), "to": d_to.isoformat(), "rows": rows, "total": total})
 
 
+class AnalyticsBreakdownView(APIView):
+    """Розрізи аналітики: /api/finance/breakdown/?by=category|counterparty|month|matrix&from&to.
+    Повертає дохід/розхід/прибуток по обраному розрізу за період (перекази виключені)."""
+    permission_classes = [FinancePerm]
+
+    def get(self, request):
+        from django.db.models import Count as _Count, Q as _Qb
+        from django.db.models.functions import TruncMonth as _TruncMonth
+        d_from, d_to = _period(request)
+        by = (request.query_params.get("by") or "category").strip()
+        qs = Transaction.objects.filter(date__gte=d_from, date__lte=d_to).exclude(direction="transfer")
+        allowed = request.user.allowed_fin("fin_accounts")
+        if allowed is not None:
+            qs = qs.filter(_Qb(account_id__in=allowed) | _Qb(transfer_account_id__in=allowed))
+
+        def _fin(rows):
+            for r in rows:
+                r["profit"] = round(r.get("income", 0) - r.get("expense", 0))
+                r["income"] = round(r.get("income", 0)); r["expense"] = round(r.get("expense", 0))
+            rows.sort(key=lambda x: -(abs(x["income"]) + abs(x["expense"])))
+            return rows
+
+        if by == "counterparty":
+            acc = {}
+            for t in qs.values("counterparty", "direction").annotate(s=Sum("amount_uah"), c=_Count("id")):
+                nm = (t["counterparty"] or "(без контрагента)")[:80]
+                r = acc.setdefault(nm, {"name": nm, "income": 0.0, "expense": 0.0, "count": 0})
+                if t["direction"] == "in": r["income"] += float(t["s"] or 0)
+                else: r["expense"] += float(t["s"] or 0)
+                r["count"] += t["c"]
+            return Response({"by": by, "rows": _fin(list(acc.values())), "from": d_from.isoformat(), "to": d_to.isoformat()})
+
+        if by == "month":
+            acc = {}
+            for t in qs.annotate(m=_TruncMonth("date")).values("m", "direction").annotate(s=Sum("amount_uah")):
+                mk = t["m"].isoformat()[:7] if t["m"] else "?"
+                r = acc.setdefault(mk, {"name": mk, "income": 0.0, "expense": 0.0})
+                if t["direction"] == "in": r["income"] += float(t["s"] or 0)
+                else: r["expense"] += float(t["s"] or 0)
+            rows = list(acc.values())
+            for r in rows:
+                r["profit"] = round(r["income"] - r["expense"]); r["income"] = round(r["income"]); r["expense"] = round(r["expense"])
+            rows.sort(key=lambda x: x["name"])
+            return Response({"by": by, "rows": rows, "from": d_from.isoformat(), "to": d_to.isoformat()})
+
+        if by == "matrix":
+            months = []
+            acc = {}
+            for t in qs.annotate(m=_TruncMonth("date")).values("fin_direction__name", "m", "direction").annotate(s=Sum("amount_uah")):
+                dn = t["fin_direction__name"] or "(без напрямку)"
+                mk = t["m"].isoformat()[:7] if t["m"] else "?"
+                if mk not in months: months.append(mk)
+                cell = acc.setdefault(dn, {}).setdefault(mk, 0.0)
+                acc[dn][mk] = cell + (float(t["s"] or 0) if t["direction"] == "in" else -float(t["s"] or 0))
+            months.sort()
+            rows = []
+            for dn, cells in acc.items():
+                row = {"name": dn, "cells": {mk: round(cells.get(mk, 0)) for mk in months}, "total": round(sum(cells.values()))}
+                rows.append(row)
+            rows.sort(key=lambda x: -x["total"])
+            return Response({"by": by, "months": months, "rows": rows, "from": d_from.isoformat(), "to": d_to.isoformat()})
+
+        acc = {}
+        for t in qs.values("category__name", "direction").annotate(s=Sum("amount_uah"), c=_Count("id")):
+            nm = t["category__name"] or "(без категорії)"
+            r = acc.setdefault(nm, {"name": nm, "income": 0.0, "expense": 0.0, "count": 0})
+            if t["direction"] == "in": r["income"] += float(t["s"] or 0)
+            else: r["expense"] += float(t["s"] or 0)
+            r["count"] += t["c"]
+        return Response({"by": "category", "rows": _fin(list(acc.values())), "from": d_from.isoformat(), "to": d_to.isoformat()})
+
+
 class ChannelSpendSerializer_(__import__("rest_framework").serializers.ModelSerializer):
     class Meta:
         model = ChannelSpend
