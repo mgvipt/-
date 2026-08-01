@@ -2336,7 +2336,7 @@ function DebtCard({ row, cats, dirs, arts, accs2, t, onClose, onSaved }: any) {
           <Fld><div style={lab}>{t("Категория", "Категорія")}</div>
             <select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} style={{ ...inp, width: "100%" }}>
               <option value="">—</option>
-              {cats.filter((c: any) => c.direction === (f.kind === "payable" ? "out" : "in")).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {cats.filter((c: any) => c.direction === (f.kind === "payable" ? "out" : "in")).map((c: any) => <option key={c.id} value={c.id}>{c.parent ? "└ " : ""}{c.name}</option>)}
             </select></Fld>
           <Fld><div style={lab}>{t("Счёт оплаты", "Рахунок оплати")}</div>
             <select value={f.account} onChange={(e) => setF({ ...f, account: e.target.value })} style={{ ...inp, width: "100%" }}>
@@ -2614,7 +2614,7 @@ function Debts() {
         </select>
         <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px", fontSize: 13, maxWidth: 220 }}>
           <option value="">{t("Все категории", "Всі категорії")}</option>
-          {cats.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}
+          {cats.map((c: any) => <option key={c.id} value={c.name}>{c.parent ? "└ " : ""}{c.name}</option>)}
         </select>
         {(dirFilter || catFilter) && <button className="btn btn-light" onClick={() => { setDirFilter(""); setCatFilter(""); }} title={t("Сбросить фильтры", "Скинути фільтри")}>✕ {t("фильтры", "фільтри")}</button>}
       </div>
@@ -3417,7 +3417,7 @@ export function CatPick({ value, direction, cats, onPick }: { value: string; dir
       <input value={q}
         onChange={(e) => { setQ(e.target.value); setOpenL(true); }}
         onFocus={() => setOpenL(true)}
-        onBlur={() => setTimeout(() => setOpenL(false), 180)}
+        onBlur={() => setTimeout(() => { setOpenL(false); const _typed = q.trim(); if (_typed && _typed !== value) { const _hit = mine.find((c: any) => c.name.toLowerCase() === _typed.toLowerCase()); if (_hit) { onPick(_hit.name); setQ(_hit.name); } else { setQ(value || ""); } } }, 180)}
         placeholder={t("Выбери из списка или начни вводить…","Обери зі списку або почни вводити…")}
         style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: value ? "0 26px 0 10px" : "0 10px", fontSize: 13, background: value ? "#f0fdf4" : "#fff", marginBottom: 0 }} />
       {value ? <span onMouseDown={(e) => { e.preventDefault(); onPick(""); setQ(""); }} title={t("Очистить","Очистити")}

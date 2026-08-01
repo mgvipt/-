@@ -243,7 +243,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
                 <label className="label">{t("Фонд (статья)", "Фонд (стаття)")}</label>
                 <select value={f.fin_article} onChange={(e) => setF({ ...f, fin_article: Number(e.target.value) })} style={inp}>
                   <option value={0}>{t("— без фонда —", "— без фонду —")}</option>
-                  {arts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  {([["revenue_fund", "Фонди виручки (ФВ)"], ["variable", "Фонди маржі — змінні"], ["fixed", "Фонди маржі — постійні"], ["skd", "Скоригований дохід (СКД)"], ["payment_fee", "Комісії за оплату"], ["upr_cat2", "УПР обовʼязкові"], ["upr_cat3", "УПР відмовні"]] as [string, string][]).map(([gk, gl]) => { const gr = arts.filter((a: any) => a.category === gk && !a.parent); return gr.length ? <optgroup key={gk} label={gl}>{gr.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}</optgroup> : null; })}
                 </select>
 
                 <label className="label">{t("Направление", "Напрямок")}</label>
