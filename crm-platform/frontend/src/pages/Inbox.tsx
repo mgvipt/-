@@ -203,7 +203,7 @@ export default function Inbox() {
     setSending(true); setErr("");
     try {
       for (const att of pending) {
-        const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send_media/`, { content_b64: att.dataURL, filename: att.name, kind: att.kind });
+        const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send_media/`, { content_b64: att.dataURL, filename: att.name, kind: att.kind, internal: internalNote });
         setMsgs((ms) => [...ms, m]);
       }
       setPending([]);
