@@ -2227,14 +2227,39 @@ class AnalyticsBreakdownView(APIView):
             rows.sort(key=lambda x: -x["total"])
             return Response({"by": by, "months": months, "rows": rows, "from": d_from.isoformat(), "to": d_to.isoformat()})
 
-        acc = {}
-        for t in qs.values("category__name", "direction").annotate(s=Sum("amount_uah"), c=_Count("id")):
-            nm = t["category__name"] or "(без категорії)"
-            r = acc.setdefault(nm, {"name": nm, "income": 0.0, "expense": 0.0, "count": 0})
-            if t["direction"] == "in": r["income"] += float(t["s"] or 0)
-            else: r["expense"] += float(t["s"] or 0)
-            r["count"] += t["c"]
-        return Response({"by": "category", "rows": _fin(list(acc.values())), "from": d_from.isoformat(), "to": d_to.isoformat()})
+        # ─ ІЄРАРХІЯ КАТЕГОРІЙ (дзеркально Довідникам): батько → діти з відступом ─
+        from apps.finance.models import Category as _Cat
+        agg = {}
+        for t in qs.values("category_id", "direction").annotate(s=Sum("amount_uah"), c=_Count("id")):
+            cid = t["category_id"]
+            a = agg.setdefault(cid, {"income": 0.0, "expense": 0.0, "count": 0})
+            if t["direction"] == "in": a["income"] += float(t["s"] or 0)
+            else: a["expense"] += float(t["s"] or 0)
+            a["count"] += t["c"]
+        cats = {c.id: c for c in _Cat.objects.all()}
+        show = set(cid for cid in agg.keys() if cid)
+        for cid in list(show):
+            pp = cats[cid].parent_id if cid in cats else None
+            while pp and pp not in show:
+                show.add(pp); pp = cats[pp].parent_id if pp in cats else None
+        kids = {}
+        for cid in show:
+            pid = cats[cid].parent_id if cid in cats else None
+            kids.setdefault(pid, []).append(cid)
+        ordered = []
+        def _walk(pid, depth):
+            for cid in sorted(kids.get(pid, []), key=lambda x: (cats[x].name or "").lower() if x in cats else ""):
+                a = agg.get(cid, {"income": 0, "expense": 0, "count": 0})
+                ordered.append({"name": (cats[cid].name if cid in cats else "?"), "depth": depth,
+                                "income": round(a["income"]), "expense": round(a["expense"]),
+                                "profit": round(a["income"] - a["expense"]), "count": a["count"]})
+                _walk(cid, depth + 1)
+        _walk(None, 0)
+        if None in agg:
+            a = agg[None]
+            ordered.append({"name": "(без категорії)", "depth": 0, "income": round(a["income"]),
+                            "expense": round(a["expense"]), "profit": round(a["income"] - a["expense"]), "count": a["count"]})
+        return Response({"by": "category", "rows": ordered, "from": d_from.isoformat(), "to": d_to.isoformat()})
 
 
 class ChannelSpendSerializer_(__import__("rest_framework").serializers.ModelSerializer):

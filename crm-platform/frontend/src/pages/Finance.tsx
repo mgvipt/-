@@ -1919,7 +1919,7 @@ function BreakdownView({ by, from, to }: { by: string; from: string; to: string 
             <tbody>
               {(d.rows || []).map((row: any, i: number) => (
                 <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
-                  <td style={{ fontWeight: 500 }}>{row.name}</td>
+                  <td style={{ fontWeight: (row.depth ? 400 : 500), paddingLeft: 8 + (row.depth || 0) * 20 }}>{(row.depth || 0) > 0 ? "↳ " : ""}{row.name}</td>
                   {(d.months || []).map((m: string) => { const v = row.cells[m] || 0; return <td key={m} style={{ textAlign: "right", color: v > 0 ? "#16a34a" : v < 0 ? "#dc2626" : "#94a3b8" }}>{v ? money2(v) : "—"}</td>; })}
                   <td style={{ textAlign: "right", fontWeight: 700, color: row.total >= 0 ? "#16a34a" : "#dc2626" }}>{money2(row.total)}</td>
                 </tr>
@@ -1940,7 +1940,7 @@ function BreakdownView({ by, from, to }: { by: string; from: string; to: string 
             <tbody>
               {(d.rows || []).map((row: any, i: number) => (
                 <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
-                  <td style={{ fontWeight: 500 }}>{row.name}</td>
+                  <td style={{ fontWeight: (row.depth ? 400 : 500), paddingLeft: 8 + (row.depth || 0) * 20 }}>{(row.depth || 0) > 0 ? "↳ " : ""}{row.name}</td>
                   <td style={{ textAlign: "right", color: "#16a34a" }}>{row.income ? money2(row.income) : "—"}</td>
                   <td style={{ textAlign: "right", color: "#dc2626" }}>{row.expense ? money2(row.expense) : "—"}</td>
                   <td style={{ textAlign: "right", fontWeight: 600, color: row.profit >= 0 ? "#16a34a" : "#dc2626" }}>{money2(row.profit)}</td>
