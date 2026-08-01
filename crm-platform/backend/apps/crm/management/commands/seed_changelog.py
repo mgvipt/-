@@ -108,10 +108,16 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         added = 0
         for d, title, body in ENTRIES:
-            obj, created = ChangeLogEntry.objects.get_or_create(d=d, title=title, defaults={"body": body})
+            sec = "💰" in title[:2] and "Финансы" or ("🧹" in title[:2] and "Клиенты" or "")
+            obj, created = ChangeLogEntry.objects.get_or_create(d=d, title=title, defaults={"body": body, "section": sec})
             if created:
                 added += 1
-            elif obj.body != body:
-                obj.body = body
-                obj.save(update_fields=["body"])
+            else:
+                fields = []
+                if obj.body != body:
+                    obj.body = body; fields.append("body")
+                if sec and obj.section != sec:
+                    obj.section = sec; fields.append("section")
+                if fields:
+                    obj.save(update_fields=fields)
         self.stdout.write("changelog: додано %d, всього %d" % (added, ChangeLogEntry.objects.count()))
