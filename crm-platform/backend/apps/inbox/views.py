@@ -873,6 +873,20 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         kind = request.data.get("kind") or "document"
         if not b64:
             return Response({"detail": "Немає файлу"}, status=status.HTTP_400_BAD_REQUEST)
+        if request.data.get("internal"):
+            # ВНУТРІШНЯ нотатка з файлом: зберігаємо і показуємо в CRM, клієнту НЕ надсилаємо
+            from .models import SharedLink
+            import secrets, mimetypes
+            content = base64.b64decode(b64.split(",")[-1])
+            tok = secrets.token_urlsafe(16)
+            ct = mimetypes.guess_type(filename)[0] or ("image/jpeg" if kind in ("photo", "image") else "application/octet-stream")
+            SharedLink.objects.create(token=tok, filename=filename[:255], content_type=ct, data=content)
+            url = request.build_absolute_uri("/api/f/%s/" % tok)
+            u = request.user
+            note = Message.objects.create(conversation=conv, direction="out", internal=True, text="",
+                                          attachments=[{"type": kind, "url": url, "name": filename}],
+                                          sender=u, sender_name=(u.get_full_name() or u.username))
+            return Response(MessageSerializer(note).data, status=status.HTTP_201_CREATED)
         try:
             content = base64.b64decode(b64.split(",")[-1])
             msg_id = get_adapter(conv.channel).send_media(conv.external_chat_id, content, filename, kind)

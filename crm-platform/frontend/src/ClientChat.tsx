@@ -24,6 +24,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [internal, setInternal] = useState(false);
+  const [pending, setPending] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [ai, setAi] = useState<{ context?: string; points?: string[]; suggestion?: string } | null>(null);
   const [aiLoad, setAiLoad] = useState(false);
@@ -111,11 +112,18 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   useEffect(() => { const el = endRef.current?.parentElement as HTMLElement | undefined; if (el) el.scrollTop = el.scrollHeight; }, [msgs]);
 
   async function send() {
-    if (!conv || !text.trim()) return;
+    if (!conv || (!text.trim() && pending.length === 0)) return;
     setBusy(true); setErr("");
     try {
-      const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send/`, { text, internal });
-      setMsgs((p) => [...p, m]); setText("");
+      for (const att of pending) {
+        const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send_media/`, { content_b64: att.dataURL, filename: att.name, kind: att.kind, internal });
+        setMsgs((p) => [...p, m]);
+      }
+      setPending([]);
+      if (text.trim()) {
+        const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send/`, { text, internal });
+        setMsgs((p) => [...p, m]); setText("");
+      }
     } catch (e: any) { setErr(e?.response?.data?.detail || "Не вдалося надіслати — чат має бути відкритий оператором"); }
     setBusy(false);
   }
@@ -136,23 +144,16 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   // ── Надіслати фото/відео клієнту ──
   function onPasteFile(e: any) {
     const items = e.clipboardData?.items || [];
-    for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.type && it.type.startsWith("image")) { const f = it.getAsFile(); if (f) { e.preventDefault(); uploadFile(f); return; } } }
+    for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.type && it.type.startsWith("image")) { const f = it.getAsFile(); if (f) { e.preventDefault(); stageFile(f); return; } } }
   }
-  async function uploadFile(f: File | null | undefined) {
-    if (!f || !conv) return;
+  function stageFile(f: File | null | undefined) {
+    if (!f) return;
     const kind = f.type.startsWith("video") ? "video" : f.type.startsWith("image") ? "photo" : "document";
-    setBusy(true); setErr("");
     const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send_media/`, { content_b64: reader.result, filename: f.name, kind });
-        setMsgs((p) => [...p, m]);
-      } catch (e: any) { setErr(e?.response?.data?.detail || "Не вдалося надіслати файл (цей канал може не підтримувати медіа)"); }
-      setBusy(false);
-    };
+    reader.onload = () => setPending((p) => [...p, { dataURL: reader.result as string, name: f.name, kind }]);
     reader.readAsDataURL(f);
   }
-  async function sendFile(e: any) { await uploadFile(e.target.files?.[0]); e.target.value = ""; }
+  async function sendFile(e: any) { stageFile(e.target.files?.[0]); e.target.value = ""; }
   async function analyze() {
     if (!conv) return;
     setAiLoad(true); setErr("");
@@ -306,6 +307,15 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
 
       {(() => { const w = metaWindow(conv, msgs); return w && w.closed ? <div style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11.5, fontWeight: 600, padding: "6px 10px", borderRadius: 6, marginTop: 8, lineHeight: 1.35 }}>⚠️ Вікно Instagram закрите (минуло {w.hrs}г). Повідомлення може НЕ дійти — дочекайся відповіді клієнта.</div> : null; })()}
       {/* ПОЛЕ ВІДПОВІДІ — теж регульоване */}
+      {pending.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+        {pending.map((att: any, i: number) => (
+          <div key={i} style={{ position: "relative", border: internal ? "1.5px dashed #d4a017" : "1px solid #e2e8f0", borderRadius: 8, background: internal ? "#fffbeb" : "#f8fafc", padding: att.kind === "photo" ? 0 : "8px 12px", display: "flex", alignItems: "center", gap: 6 }}>
+            {att.kind === "photo" ? <img src={att.dataURL} alt="" style={{ height: 54, maxWidth: 90, borderRadius: 8, objectFit: "cover", display: "block" }} /> : <span style={{ fontSize: 12, color: "#475569", display: "inline-flex", alignItems: "center", gap: 5 }}><Icon n="paperclip" size={15} /> {String(att.name).slice(0, 24)}</span>}
+            <button type="button" onClick={() => setPending((p: any[]) => p.filter((_: any, j: number) => j !== i))} title="Прибрати" style={{ position: "absolute", top: -7, right: -7, width: 18, height: 18, borderRadius: "50%", background: "#dc2626", color: "#fff", border: "none", cursor: "pointer", fontSize: 11, lineHeight: "16px", padding: 0 }}>✕</button>
+          </div>
+        ))}
+      </div>}
+      {internal && pending.length > 0 && <div style={{ fontSize: 11, color: "#92400e", marginTop: 4 }}><Icon n="📝" size={12} /> Файл піде у ВНУТРІШНЮ нотатку — клієнт НЕ побачить</div>}
       <textarea value={text} onChange={(e) => setText(e.target.value)} onPaste={onPasteFile} placeholder={internal ? "Внутрішня нотатка — клієнт НЕ побачить…  (вставити фото — Ctrl+V)" : "Відповідь клієнту…  (вставити фото — Ctrl+V)"} rows={3}
         style={{ width: "100%", fontSize: 13, padding: 9, borderRadius: 10, border: internal ? "1.5px dashed #d4a017" : "1px solid #e2e8f0", background: internal ? "#fffbeb" : "#fff", marginTop: 8, boxSizing: "border-box", resize: "vertical", minHeight: 56, flexShrink: 0 }} />
       <input ref={fileRef} type="file" hidden onChange={sendFile} />
@@ -315,7 +325,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
         <button className="btn" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title="Надіслати фото / відео" onClick={() => fileRef.current?.click()} disabled={busy}><Icon n="paperclip" size={17} /></button>
         <AiComposeAssist draft={text} convId={conv.id} onApply={setText} compact />
         <button className="btn" style={{ flex: "1 1 150px", minWidth: 0, background: "#fef3c7", color: "#92400e", fontSize: "clamp(10px, 3cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "6px 6px", minHeight: 34 }} onClick={analyze} disabled={aiLoad} title="AI-РОП підказати відповідь">{aiLoad ? "AI аналізує…" : <><Icon n="🧠" size={13} /> AI-РОП підказати відповідь</>}</button>
-        <button className="btn btn-primary" style={{ flex: "1 1 120px", minWidth: 0, fontSize: "clamp(10px, 3cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "6px 6px", minHeight: 34, background: internal ? "#d4a017" : undefined }} onClick={send} disabled={busy || !text.trim()}>{busy ? "…" : (internal ? <><Icon n="📝" size={13} /> Нотатка</> : "Надіслати")}</button>
+        <button className="btn btn-primary" style={{ flex: "1 1 120px", minWidth: 0, fontSize: "clamp(10px, 3cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "6px 6px", minHeight: 34, background: internal ? "#d4a017" : undefined }} onClick={send} disabled={busy || (!text.trim() && pending.length === 0)}>{busy ? "…" : (internal ? <><Icon n="📝" size={13} /> Нотатка</> : "Надіслати")}</button>
       </div>
     </div>
   );
