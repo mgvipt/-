@@ -68,6 +68,7 @@ class FinModelArticleViewSet(viewsets.ModelViewSet):
     serializer_class = FinModelArticleSerializer
 
     def perform_update(self, serializer):
+        _fin_guard(self.request, "finance.model.edit", "Фінмодель: лише перегляд (нема права редагувати)")
         obj = serializer.save()
         if obj.code == "bundle_assembly":
             # ставка збірки набору змінилась → перерахувати собівартість усіх наборів
@@ -788,11 +789,16 @@ class TransactionViewSet(viewsets.ModelViewSet):
             from django.db.models import Q as _Qacc
             qs = qs.filter(_Qacc(account_id__in=allowed) | _Qacc(transfer_account_id__in=allowed))
         p = self.request.query_params
-        if p.get("contact"):
+        _cid_p = None
+        try:
+            _cid_p = int(p["contact"]) if p.get("contact") else None
+        except (ValueError, TypeError):
+            _cid_p = None
+        if _cid_p:
             from django.db.models import Q as _Qct
             from apps.crm.models import Contact as _Cct
-            _cf = _Qct(contact_id=p["contact"])
-            _cc = _Cct.objects.filter(id=p["contact"]).first()
+            _cf = _Qct(contact_id=_cid_p)
+            _cc = _Cct.objects.filter(id=_cid_p).first()
             if _cc:
                 _fn = (_cc.first_name or "").strip(); _ln = (_cc.last_name or "").strip(); _nk = (_cc.nickname or "").strip()
                 if len(_fn) >= 3 and len(_ln) >= 3:
@@ -2247,8 +2253,14 @@ class AnalyticsBreakdownView(APIView):
             pid = cats[cid].parent_id if cid in cats else None
             kids.setdefault(pid, []).append(cid)
         ordered = []
+        _seen = set()
         def _walk(pid, depth):
+            if depth > 8:
+                return
             for cid in sorted(kids.get(pid, []), key=lambda x: (cats[x].name or "").lower() if x in cats else ""):
+                if cid in _seen:
+                    continue
+                _seen.add(cid)
                 a = agg.get(cid, {"income": 0, "expense": 0, "count": 0})
                 ordered.append({"name": (cats[cid].name if cid in cats else "?"), "depth": depth,
                                 "income": round(a["income"]), "expense": round(a["expense"]),

@@ -811,7 +811,7 @@ function Journal() {
   const [bulkVal, setBulkVal] = useState<any>("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const selCount = Object.values(selTx).filter(Boolean).length;
-  const selSum = (tx || []).filter((r: any) => selTx[r.id]).reduce((sm: number, r: any) => sm + (r.direction === "out" ? -1 : 1) * Number(r.amount_uah ?? r.amount ?? 0), 0);
+  const selSum = (tx || []).filter((r: any) => selTx[r.id] && r.direction !== "transfer").reduce((sm: number, r: any) => sm + (r.direction === "out" ? -1 : 1) * Number(r.amount_uah ?? r.amount ?? 0), 0);
   async function applyBulk() {
     const ids = Object.entries(selTx).filter(([, v]) => v).map(([k]) => Number(k));
     if (!ids.length || bulkBusy) return;
