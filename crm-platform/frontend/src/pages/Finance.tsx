@@ -1748,8 +1748,10 @@ function Directions() {
                   <td style={{ textAlign: "right", color: "#dc2626" }}>{money(r.expense)}</td>
                   <td style={{ textAlign: "right", color: r.profit >= 0 ? "#16a34a" : "#dc2626" }}>{money(r.profit)}</td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
+                    {!r.no_direction && <>
                     <span title={t("Редактировать направление","Редагувати напрямок")} style={{ cursor: "pointer", marginRight: 10 }} onClick={() => setEdit({ id: r.id, name: r.name, plan_income: r.plan_income, plan_expense: r.plan_expense })}><Icon n="✏️" size={14} /></span>
                     <span title={t("Удалить направление","Видалити напрямок")} style={{ cursor: "pointer", color: "#ef4444" }} onClick={() => delDir(r.id, r.name)}>✕</span>
+                    </>}
                   </td>
                 </tr>
                 {isOpen && (<>
@@ -1770,7 +1772,7 @@ function Directions() {
                       {chOpen && <tr><td colSpan={10} style={{ padding: 0, background: "#f8fafc" }}><DirectionJournal directionId={ch.id} from={from} to={to} /></td></tr>}
                     </Fragment>); })}
                   {(r.children || []).length > 0 && <tr><td colSpan={10} style={{ padding: "6px 12px", background: "#f8fafc", fontSize: 11.5, color: "#64748b" }}>{t("↓ Операции самого направления (без поднаправлений):","↓ Операції самого напрямку (без піднапрямків):")}</td></tr>}
-                  <tr><td colSpan={10} style={{ padding: 0, background: "#f8fafc" }}><DirectionJournal directionId={r.id} from={from} to={to} /></td></tr>
+                  <tr><td colSpan={10} style={{ padding: 0, background: "#f8fafc" }}><DirectionJournal directionId={r.id} from={from} to={to} noDir={r.no_direction} /></td></tr>
                 </>)}
               </Fragment>
             );
@@ -1841,13 +1843,13 @@ function DirModal({ dir, onClose, onSaved }: { dir: any; onClose: () => void; on
   );
 }
 
-function DirectionJournal({ directionId, from, to }: { directionId: number; from: string; to: string }) {
+function DirectionJournal({ directionId, from, to, noDir }: { directionId: number; from: string; to: string; noDir?: boolean }) {
   const { t } = useLang();
   const nav = useNav();
   const [tx, setTx] = useState<any[] | null>(null);
   const [editTx, setEditTx] = useState<number | null>(null);
-  const load = () => { setTx(null); api.get<any>(`/api/transactions/?fin_direction=${directionId}&from=${from}&to=${to}&page_size=1000`).then((d) => setTx(d.results || d)).catch(() => setTx([])); };
-  useEffect(() => { load(); }, [directionId, from, to]);
+  const load = () => { setTx(null); api.get<any>(`/api/transactions/?${noDir ? "no_direction=1" : "fin_direction=" + directionId}&from=${from}&to=${to}&page_size=1000`).then((d) => setTx(d.results || d)).catch(() => setTx([])); };
+  useEffect(() => { load(); }, [directionId, from, to, noDir]);
   if (!tx) return <div className="spin" style={{ padding: 12 }}>{t("Журнал…","Журнал…")}</div>;
   const inc = tx.filter((t) => t.direction === "in").reduce((a, t) => a + Number(t.amount), 0);
   const exp = tx.filter((t) => t.direction === "out").reduce((a, t) => a + Number(t.amount), 0);

@@ -812,6 +812,8 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 if _nk and len(_nk) >= 4:
                     _cf |= _Qct(counterparty__icontains=_nk)
             qs = qs.filter(_cf)
+        if p.get("no_direction"):
+            qs = qs.filter(fin_direction__isnull=True, splits__isnull=True).exclude(direction="transfer")
         if p.get("from"):
             qs = qs.filter(date__gte=p["from"])
         if p.get("to"):
@@ -2166,6 +2168,16 @@ class DirectionsReportView(APIView):
                          "plan_income": float(dr.plan_income), "plan_expense": float(dr.plan_expense),
                          "plan_profit": float(dr.plan_income - dr.plan_expense),
                          "children": children})
+        # ── (Без напрямку): доходи/витрати без fin_direction — щоб факт сходився з P&L ──
+        _nodir = Transaction.objects.filter(fin_direction__isnull=True, splits__isnull=True,
+                                            date__gte=d_from, date__lte=d_to).exclude(direction="transfer")
+        _ndi = float(_nodir.filter(direction="in").aggregate(s=Sum("amount_uah"))["s"] or 0)
+        _nde = float(_nodir.filter(direction="out").aggregate(s=Sum("amount_uah"))["s"] or 0)
+        if round(_ndi) or round(_nde):
+            rows.append({"id": 0, "name": "(Без напрямку)", "no_direction": True,
+                         "income": round(_ndi), "expense": round(_nde), "profit": round(_ndi - _nde),
+                         "own_income": round(_ndi), "own_expense": round(_nde), "profitability": 0,
+                         "plan_income": 0, "plan_expense": 0, "plan_profit": 0, "children": []})
         total = {
             "income": sum(x["income"] for x in rows), "expense": sum(x["expense"] for x in rows),
             "profit": sum(x["profit"] for x in rows),
