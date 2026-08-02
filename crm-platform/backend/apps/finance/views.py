@@ -4,6 +4,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.http import HttpResponse
+from django.db import transaction
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
@@ -252,6 +253,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 pass
 
     @action(detail=False, methods=["post"], url_path="bulk-edit")
+    @transaction.atomic
     def bulk_edit(self, request):
         """Масова зміна поля у вибраних операціях: {ids: [...], set: {поле: значення}}."""
         _fin_guard(request, "finance.tx.edit", "Нема права редагувати операції")
@@ -1129,6 +1131,8 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                 _singles = [w for w in waiting if float(amt) <= float(w.amount) <= float(amt) * 1.08]
                 if len(_singles) == 1:
                     waiting = _singles
+                elif len(_singles) >= 2:
+                    waiting = []  # неоднозначно: кілька наложок під суму виплати — не вгадуємо, лишаємо менеджеру
                 rest = float(amt) * 1.05  # запас на комісію НоваПей
                 matched = []
                 for w in waiting:

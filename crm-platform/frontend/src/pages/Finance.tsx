@@ -2498,7 +2498,7 @@ function Debts() {
     const list = sortRows(rows.filter((r) => r.kind === kind && !r.is_internal
       && (!cpFilter || String(r.counterparty || "").toLowerCase().includes(cpFilter.toLowerCase()))
       && (!dirFilter || r.fin_direction_name === dirFilter)
-      && (!catFilter || r.category_name === catFilter)));
+      && (!catFilter || String(r.category || "") === catFilter)));
     const total = list.reduce((sm, r) => sm + Number(r.amount || 0), 0);
     if (isMobile) return (
       <div className="panel" style={{ margin: "0 0 12px" }}>
@@ -2614,7 +2614,7 @@ function Debts() {
         </select>
         <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px", fontSize: 13, maxWidth: 220 }}>
           <option value="">{t("Все категории", "Всі категорії")}</option>
-          {cats.map((c: any) => <option key={c.id} value={c.name}>{c.parent ? "└ " : ""}{c.name}</option>)}
+          {cats.map((c: any) => <option key={c.id} value={String(c.id)}>{c.parent ? "└ " : ""}{c.name}</option>)}
         </select>
         {(dirFilter || catFilter) && <button className="btn btn-light" onClick={() => { setDirFilter(""); setCatFilter(""); }} title={t("Сбросить фильтры", "Скинути фільтри")}>✕ {t("фильтры", "фільтри")}</button>}
       </div>
