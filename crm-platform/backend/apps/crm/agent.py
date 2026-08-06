@@ -58,6 +58,7 @@ def _call(system, user_text, model, max_tokens=1200):
     use_cache = AgentConfig.get().cache_enabled
     sys_block = [{"type": "text", "text": system}]
     tools = [dict(t) for t in TOOLS]
+    tools = [t for t in tools if t.get("name") != "create_task"]  # OLEG 2026-08-06: агент тимчасово НЕ ставить задачі (дожим/менеджер/тонування). Складські ставляться окремо (стадія «Оплату отримано»), ручні — менеджерами.
     if use_cache:
         sys_block[0]["cache_control"] = {"type": "ephemeral"}  # кешуємо системний промпт (правила+товари)
         if tools:

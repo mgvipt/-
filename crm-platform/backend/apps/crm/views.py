@@ -2489,12 +2489,19 @@ class TaskViewSet(viewsets.ModelViewSet):
                 qs = qs.exclude(status__in=["done", "canceled"]).filter(due_at__gt=end_today, due_at__lte=end_week)
             elif bucket == "later":
                 qs = qs.exclude(status__in=["done", "canceled"]).filter(Q(due_at__gt=end_week) | Q(due_at__isnull=True))
+        # ФІЛЬТР по даті виконання (due_at): ?due_from=YYYY-MM-DD & ?due_to=YYYY-MM-DD
+        df = self.request.query_params.get("due_from")
+        dto = self.request.query_params.get("due_to")
+        if df:
+            qs = qs.filter(due_at__date__gte=df)
+        if dto:
+            qs = qs.filter(due_at__date__lte=dto)
         return qs
 
     @action(detail=False, methods=["get"])
     def kanban(self, request):
         """Групує задачі по колонкам: today / week / later / done. Права/фільтр як get_queryset."""
-        qs = self.get_queryset()
+        qs = self.filter_queryset(self.get_queryset())  # OLEG 2026-08-06: щоб фільтри (тип/статус/пріоритет/виконавець) працювали і на дошці
         s = self.get_serializer(qs, many=True)
         groups = {"today": [], "week": [], "later": [], "done": []}
         for item in s.data:

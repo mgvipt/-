@@ -23,7 +23,7 @@
     # WebRTC веб-телефон: WebSocket до Asterisk (через форвардер на телефонному сервері)
     handle /pbx-ws* {
         rewrite * /ws
-        reverse_proxy wallcov-webrtc:8188
+        reverse_proxy 46.225.71.162:9188
     }
 
     # всё остальное -> собранный SPA (React), с фолбэком на index.html
