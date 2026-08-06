@@ -1865,6 +1865,15 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         except Exception as e:
             return Response({"detail": "NP відправник: %s" % e}, status=status.HTTP_502_BAD_GATEWAY)
         cod = float(p.get("cod_amount") or 0)
+        # запобіжник: наложка / передоплата-НП без «Контроль оплати», але є залишок —
+        # авто-підставляємо залишок (щоб не втратити гроші, якщо менеджер забув)
+        if cod <= 0:
+            _pt = (deal.pay_type or "").lower()
+            if _pt == "prepay_np" or any(x in _pt for x in ["наклад", "cod", "післяпл", "послеопл", "np_cod"]):
+                _paid = float(sum(pp.amount for pp in deal.payments.all() if pp.is_paid))
+                _rem = round(float(deal.amount or 0) - _paid)
+                if _rem > 0:
+                    cod = _rem
         props = {
             "PayerType": p.get("payer") or "Recipient",
             "PaymentMethod": p.get("payment_method") or "Cash",

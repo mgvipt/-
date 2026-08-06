@@ -414,7 +414,7 @@ function TaskCard({ t, jobId, onBack }: any) {
 
       {j.channel !== "offline" && (
       <Step n="3" title={t("Новая Почта — заполни все данные", "Нова Пошта — заповни всі дані")} done={npDone} locked={!packDone} hint={t("Сначала упакуй посылку", "Спочатку спакуй посилку")}>
-        {deal ? <NPDelivery deal={deal} flash={flash} defaultWeight={j.weight_kg} onReload={() => { loadDeal(j.deal_id); load(); }} /> : <div className="muted">…</div>}
+        {deal ? <NPDelivery deal={deal} flash={flash} defaultWeight={j.weight_kg} codReadOnly onReload={() => { loadDeal(j.deal_id); load(); }} /> : <div className="muted">…</div>}
       </Step>)}
       {j.channel === "offline" && (
       <div className="panel" style={{ borderLeft: "4px solid #16a34a", opacity: 0.85 }}><div className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 24, height: 24, borderRadius: "50%", fontSize: 13, fontWeight: 700, color: "#fff", background: "#16a34a", padding: "0 4px" }}>✓</span> {t("Салон — самовывоз, Нова Пошта не нужна", "Салон — самовивіз, Нова Пошта не потрібна")}</div></div>)}

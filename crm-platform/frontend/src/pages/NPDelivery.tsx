@@ -67,7 +67,7 @@ function Grid({ children }: any) {
   return <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 460 }}>{children}</div>;
 }
 
-export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWeight }: any) {
+export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWeight, codReadOnly }: any) {
   const { t } = useLang();
   const D = deal.np_data && Object.keys(deal.np_data).length ? deal.np_data : {};
   const [snd, setSnd] = useState<any>(D.sender || { pickup: "warehouse", city: "", city_ref: "", wh: "", wh_ref: "", street: "", house: "", flat: "" });
@@ -82,7 +82,12 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
   const [pack, setPack] = useState<any>(D.pack || { ref: "", saturday: false, return_docs: false });
   const [note, setNote] = useState(D.note || "");
   const [items, setItems] = useState(D.cargo_details || (deal.items || []).map((i: any) => `${i.product_name || i.product} · ${i.quantity} шт`).join("\n"));
-  const [bw, setBw] = useState<any>(D.backward || { on: false, amount: "" });
+  const _payType = String((deal as any).pay_type || "").toLowerCase();
+  const _remain = Math.max(0, Math.round((Number(deal.amount) || 0) - (Number((deal as any).paid) || 0)));
+  const _wantsCod = _payType === "prepay_np" || /наклад|cod|післяпл|послеопл|післяоплат|np_cod/.test(_payType);
+  // Авто «Контроль оплати»: якщо тип оплати = наложка/передоплата-НП і є залишок —
+  // одразу вмикаємо і підставляємо залишок (щоб менеджер не забув). Склад це не знімає.
+  const [bw, setBw] = useState<any>(D.backward || ((_wantsCod && _remain > 0) ? { on: true, amount: String(_remain) } : { on: false, amount: "" }));
   const [date, setDate] = useState((deal as any).np_delivery_date || "");
   const [timeInterval, setTimeInterval] = useState(D.time_interval || "");
   const [packlist, setPacklist] = useState<any[]>([]);
@@ -292,8 +297,8 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
 
       {/* ── Контроль оплати ── */}
       <div style={{ ...zone("#fefce8", "#fde68a"), padding: 12 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600 }}><input type="checkbox" checked={!!bw.on} disabled={readOnly} onChange={(e) => setBw({ ...bw, on: e.target.checked })} style={{ width: 16, height: 16 }} /> 💰 {t("Контроль оплаты", "Контроль оплати")} — {t("НП удержит сумму при получении и переведёт нам", "НП утримає суму при отриманні і переведе нам")}</label>
-        {bw.on && <div style={{ marginTop: 8, maxWidth: 260 }}><label style={lbl}>{t("Сумма контроля, ₴", "Сума контролю, ₴")}</label><input type="number" value={bw.amount} disabled={readOnly} onChange={(e) => setBw({ ...bw, amount: e.target.value })} style={inp} placeholder={par.declared} /></div>}
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600 }}><input type="checkbox" checked={!!bw.on} disabled={readOnly || codReadOnly} onChange={(e) => setBw({ ...bw, on: e.target.checked })} style={{ width: 16, height: 16 }} /> 💰 {t("Контроль оплаты", "Контроль оплати")} — {t("НП удержит сумму при получении и переведёт нам", "НП утримає суму при отриманні і переведе нам")}{codReadOnly ? <span style={{ fontWeight: 500, color: "#92400e", fontSize: 11.5 }}> · 🔒 {t("только менеджер", "тільки менеджер")}</span> : null}</label>
+        {bw.on && <div style={{ marginTop: 8, maxWidth: 260 }}><label style={lbl}>{t("Сумма контроля, ₴", "Сума контролю, ₴")}</label><input type="number" value={bw.amount} disabled={readOnly || codReadOnly} onChange={(e) => setBw({ ...bw, amount: e.target.value })} style={inp} placeholder={par.declared} /></div>}
       </div>
 
       {/* ── Дата + ціна ── */}
