@@ -1061,7 +1061,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         self.check_object_permissions(self.request, obj)
         return obj
     filterset_fields = ["funnel", "stage", "source", "owner", "contact"]
-    search_fields = ["title", "contact__phone", "contact__first_name", "contact__last_name"]
+    search_fields = ["title", "contact__phone", "contact__first_name", "contact__last_name", "checkbox_relation_id", "ttn"]
     ordering_fields = ["amount", "created_at", "updated_at", "closed_at"]
 
     def get_serializer_class(self):

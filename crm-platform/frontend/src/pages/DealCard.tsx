@@ -882,6 +882,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <div className="label">{t("Доставка и документы","Доставка і документи")}</div>
             <div className="row"><span className="muted">{t("Накладная Нова Пошта (ТТН)","Накладна Нова Пошта (ТТН)")}</span><b>{deal.ttn || t("ще не створено","ще не створено")}</b></div>
             <div className="row"><span className="muted">{t("Фискальный чек","Фіскальний чек")}</span>{(deal as any).checkbox_url ? <a href={(deal as any).checkbox_url} target="_blank" rel="noreferrer" style={{ fontWeight: 700, color: "#16a34a" }}><Icon n="🧾" size={14} /> {t("відкрити чек","відкрити чек")}</a> : <b>{hasCheck ? deal.checkbox_status : t("ще не створено","ще не створено")}</b>}</div>
+            {(deal as any).checkbox_relation_id && <div className="row"><span className="muted">{t("№ заказа Checkbox","№ замовлення Checkbox")}</span><b style={{ userSelect: "all", fontSize: 13 }} title={t("По этому номеру можно найти сделку в поиске","За цим номером можна знайти угоду в пошуку")}>{(deal as any).checkbox_relation_id}</b></div>}
             <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
               <span style={chip(hasCheck)}>{t("Фискальный чек","Фіскальний чек")} {hasCheck ? "✓" : t("ще нема","ще нема")}</span>
               <span style={chip(!!deal.ttn)}>{t("Накладна НП","Накладна НП")} {deal.ttn ? "✓" : t("ще нема","ще нема")}</span>

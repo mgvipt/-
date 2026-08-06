@@ -134,7 +134,7 @@ class DealSerializer(serializers.ModelSerializer):
     class Meta:
         model = Deal
         fields = ["id", "title", "contact", "contact_name", "contact_social_link", "contact_phone", "funnel", "funnel_name", "stage",
-                  "source", "amount", "discount_pct", "pay_type", "ttn", "checkbox_status",
+                  "source", "amount", "discount_pct", "pay_type", "ttn", "checkbox_status", "checkbox_url", "checkbox_relation_id",
                   "qualification", "card_fields", "owner", "owner_name", "closed_at", "is_seen",
                   "created_at", "updated_at"]
 
