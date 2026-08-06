@@ -2489,6 +2489,12 @@ class TaskViewSet(viewsets.ModelViewSet):
                 qs = qs.exclude(status__in=["done", "canceled"]).filter(due_at__gt=end_today, due_at__lte=end_week)
             elif bucket == "later":
                 qs = qs.exclude(status__in=["done", "canceled"]).filter(Q(due_at__gt=end_week) | Q(due_at__isnull=True))
+        # ФІЛЬТР групою статусів: ?status_group=active|closed (актуальні/закриті)
+        sg = self.request.query_params.get("status_group")
+        if sg == "active":
+            qs = qs.exclude(status__in=["done", "canceled", "cancelled"])
+        elif sg == "closed":
+            qs = qs.filter(status__in=["done", "canceled", "cancelled"])
         # ФІЛЬТР по даті виконання (due_at): ?due_from=YYYY-MM-DD & ?due_to=YYYY-MM-DD
         df = self.request.query_params.get("due_from")
         dto = self.request.query_params.get("due_to")

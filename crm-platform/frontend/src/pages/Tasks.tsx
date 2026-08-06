@@ -1,4 +1,4 @@
-/* Модуль «Задачі» v4 — дошка АБО список + панель фільтрів (тип/статус/пріоритет/дата) + таби співробітників. */
+/* Модуль «Задачі» v5 — дошка/список + ЄДИНЕ вікно фільтрів (кнопка → попап) + чіпи вибраних фільтрів з ✕. */
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
@@ -37,28 +37,32 @@ const COL = {
 };
 
 const PRIO_LBL: Record<string, [string, string]> = {
-  high: ["🔴", "#dc2626"],
-  normal: ["", "#64748b"],
-  low: ["⬇️", "#94a3b8"],
+  high: ["🔴", "#dc2626"], normal: ["", "#64748b"], low: ["⬇️", "#94a3b8"],
 };
 
-// Опції фільтрів (значення = як у БД)
 const KIND_OPTS: [string, string][] = [
   ["warehouse", "Склад"], ["tinting", "Тонування"], ["manager", "Менеджер"],
   ["followup", "Дожим"], ["other", "Інше"],
 ];
+// Статус: зручні пресети + конкретні
 const STATUS_OPTS: [string, string][] = [
+  ["active", "Активні (не закриті)"], ["closed", "Закриті (готово/скасовані)"], ["all", "Всі статуси"],
   ["open", "Відкрита"], ["in_progress", "В роботі"], ["proposed", "Запропоновано"],
   ["done", "Виконана"], ["canceled", "Скасована"],
 ];
+const STATUS_LBL: Record<string, string> = Object.fromEntries(STATUS_OPTS);
 const PRIO_OPTS: [string, string][] = [
   ["high", "🔴 Високий"], ["normal", "Звичайний"], ["low", "⬇️ Низький"],
 ];
+const PRIO_SHORT: Record<string, string> = { high: "🔴 Високий", normal: "Звичайний", low: "⬇️ Низький" };
+const KIND_LBL: Record<string, string> = Object.fromEntries(KIND_OPTS);
 
 const STATUS_COLOR: Record<string, string> = {
   open: "#2563eb", in_progress: "#d97706", proposed: "#7c3aed",
   done: "#16a34a", canceled: "#94a3b8", cancelled: "#94a3b8",
 };
+// статуси, що вважаються «закритими» (впливає на колонку «Готово» на дошці)
+const CLOSED_SET = new Set(["closed", "all", "done", "canceled"]);
 
 const fmtDue = (iso: string | null) => {
   if (!iso) return "—";
@@ -71,9 +75,11 @@ const fmtDue = (iso: string | null) => {
   if (day.getTime() === tomorrow.getTime()) return `Завтра ${hm}`;
   return d.toLocaleDateString("uk", { day: "2-digit", month: "short" }) + " " + hm;
 };
+const fmtDate = (s: string) => { const [y, m, d] = s.split("-"); return `${d}.${m}`; };
 
-const LS_KEY = "tasks_view_selected";      // localStorage: "mine" | "all" | "u:<id>"
-const LS_MODE = "tasks_view_mode";          // localStorage: "board" | "list"
+const LS_KEY = "tasks_view_selected";
+const LS_MODE = "tasks_view_mode";
+const LS_STATUS = "tasks_filter_status";
 const PAGE_SIZE = 100;
 
 export default function Tasks() {
@@ -81,7 +87,7 @@ export default function Tasks() {
   const { me, can } = useAuth();
   const canViewOthers = !!(me?.is_superuser || can("task.view.others") || can("roles.manage"));
 
-  // Кого показувати (таби)
+  // Кого показувати (тепер у вікні фільтрів, не в шапці)
   const [selected, setSelectedState] = useState<string>(() => {
     try { return localStorage.getItem(LS_KEY) || "mine"; } catch { return "mine"; }
   });
@@ -91,7 +97,6 @@ export default function Tasks() {
     try { window.dispatchEvent(new CustomEvent("tasks-view-changed", { detail: v })); } catch { /* noop */ }
   };
 
-  // Режим відображення: дошка / список
   const [mode, setModeState] = useState<"board" | "list">(() => {
     try { return (localStorage.getItem(LS_MODE) as "board" | "list") || "board"; } catch { return "board"; }
   });
@@ -101,13 +106,17 @@ export default function Tasks() {
   };
 
   // Фільтри
+  const [fStatus, setFStatus] = useState<string>(() => {
+    try { return localStorage.getItem(LS_STATUS) || "active"; } catch { return "active"; }
+  });
+  const setStatus = (v: string) => { setFStatus(v); try { localStorage.setItem(LS_STATUS, v); } catch { /* noop */ } };
   const [fKind, setFKind] = useState("");
-  const [fStatus, setFStatus] = useState("");
   const [fPrio, setFPrio] = useState("");
   const [fFrom, setFFrom] = useState("");
   const [fTo, setFTo] = useState("");
-  const resetFilters = () => { setFKind(""); setFStatus(""); setFPrio(""); setFFrom(""); setFTo(""); setPage(1); };
-  const hasFilters = !!(fKind || fStatus || fPrio || fFrom || fTo);
+  const [panelOpen, setPanelOpen] = useState(false);
+
+  const resetAll = () => { setSelected("mine"); setStatus("active"); setFKind(""); setFPrio(""); setFFrom(""); setFTo(""); setPage(1); };
 
   useEffect(() => {
     if (!canViewOthers && (selected === "all" || selected.startsWith("u:"))) setSelected("mine");
@@ -122,13 +131,15 @@ export default function Tasks() {
   const [creating, setCreating] = useState(false);
   const [editTask, setEditTask] = useState<Task | null>(null);
 
-  // Спільні параметри (кого показувати + фільтри)
   const baseParams = () => {
     const p = new URLSearchParams();
     if (selected === "mine") p.set("mine", "1");
     else if (selected.startsWith("u:")) p.set("assignee", selected.slice(2));
+    // статус
+    if (fStatus === "active") p.set("status_group", "active");
+    else if (fStatus === "closed") p.set("status_group", "closed");
+    else if (fStatus && fStatus !== "all") p.set("status", fStatus);
     if (fKind) p.set("kind", fKind);
-    if (fStatus) p.set("status", fStatus);
     if (fPrio) p.set("priority", fPrio);
     if (fFrom) p.set("due_from", fFrom);
     if (fTo) p.set("due_to", fTo);
@@ -140,14 +151,11 @@ export default function Tasks() {
     try {
       const uc = api.get<UserCounts>(`/api/tasks/user_counts/`);
       if (mode === "board") {
-        const p = baseParams();
-        const k = await api.get<Kanban>(`/api/tasks/kanban/?${p.toString()}`);
+        const k = await api.get<Kanban>(`/api/tasks/kanban/?${baseParams().toString()}`);
         setData(k); setList(null);
       } else {
         const p = baseParams();
-        p.set("page", String(page));
-        p.set("page_size", String(PAGE_SIZE));
-        p.set("ordering", "-created_at");
+        p.set("page", String(page)); p.set("page_size", String(PAGE_SIZE)); p.set("ordering", "-created_at");
         const l = await api.get<Paged>(`/api/tasks/?${p.toString()}`);
         setList(l); setData(null);
       }
@@ -155,10 +163,9 @@ export default function Tasks() {
     } finally { setLoading(false); }
   };
   // eslint-disable-next-line
-  useEffect(() => { load(); }, [selected, mode, page, fKind, fStatus, fPrio, fFrom, fTo]);
-  // Скидаємо сторінку при зміні набору
+  useEffect(() => { load(); }, [selected, mode, page, fStatus, fKind, fPrio, fFrom, fTo]);
   // eslint-disable-next-line
-  useEffect(() => { setPage(1); }, [selected, mode, fKind, fStatus, fPrio, fFrom, fTo]);
+  useEffect(() => { setPage(1); }, [selected, mode, fStatus, fKind, fPrio, fFrom, fTo]);
 
   const moveTo = async (task: Task, bucket: "today" | "week" | "later" | "done") => {
     if (bucket === "done") await api.post(`/api/tasks/${task.id}/done/`);
@@ -175,30 +182,29 @@ export default function Tasks() {
     load();
   };
 
-  const mineCount = ucounts?.users.find((u) => u.id === me?.id)?.today ?? 0;
-  const allCount = ucounts?.total.today ?? 0;
-  const otherUsers = (ucounts?.users || []).filter((u) => u.id !== me?.id);
+  const usersList = ucounts?.users || [];
+  const userName = (id: string) => usersList.find((u) => `u:${u.id}` === id)?.full_name || "Співробітник";
 
-  const Tab = ({ id, label, count, subtle }: { id: string; label: string; count: number; subtle?: boolean }) => {
-    const active = selected === id;
-    return (
-      <button onClick={() => setSelected(id)} className={"btn " + (active ? "btn-primary" : "btn-light")}
-        style={{ fontSize: 13, padding: "7px 12px", display: "flex", alignItems: "center", gap: 6,
-          borderRadius: 20, fontWeight: active ? 700 : 500, whiteSpace: "nowrap", opacity: subtle && !count ? 0.55 : 1 }}>
-        <span>{label}</span>
-        {count > 0 && (
-          <span style={{ background: active ? "rgba(255,255,255,.28)" : "#dc2626", color: "#fff",
-            borderRadius: 10, padding: "0 7px", fontSize: 11, fontWeight: 700, minWidth: 18, textAlign: "center" }}>{count}</span>
-        )}
-      </button>
-    );
-  };
+  // Чіпи активних фільтрів (кратко видно що вибрано; ✕ прибирає фільтр)
+  type Chip = { key: string; label: string; clear: () => void };
+  const chips: Chip[] = [];
+  if (selected === "mine") chips.push({ key: "emp", label: t("Мои", "Мої"), clear: () => canViewOthers ? setSelected("all") : undefined as any });
+  else if (selected.startsWith("u:")) chips.push({ key: "emp", label: userName(selected), clear: () => setSelected("all") });
+  // (selected === "all" → чіпа немає, це найширше)
+  if (fStatus && fStatus !== "all") chips.push({ key: "status", label: STATUS_LBL[fStatus] || fStatus, clear: () => setStatus("all") });
+  if (fKind) chips.push({ key: "kind", label: KIND_LBL[fKind], clear: () => setFKind("") });
+  if (fPrio) chips.push({ key: "prio", label: PRIO_SHORT[fPrio], clear: () => setFPrio("") });
+  if (fFrom) chips.push({ key: "from", label: t("с ", "з ") + fmtDate(fFrom), clear: () => setFFrom("") });
+  if (fTo) chips.push({ key: "to", label: t("по ", "по ") + fmtDate(fTo), clear: () => setFTo("") });
 
   const selStyle: React.CSSProperties = {
-    fontSize: 13, padding: "6px 10px", borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", color: "#0f172a",
+    fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", color: "#0f172a", width: "100%",
   };
+  const fieldLbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 4, display: "block" };
 
   const totalPages = list ? Math.max(1, Math.ceil(list.count / PAGE_SIZE)) : 1;
+  const showDone = CLOSED_SET.has(fStatus);           // чи показувати колонку «Готово» на дошці
+  const boardCols = (showDone ? (["today", "week", "later", "done"] as const) : (["today", "week", "later"] as const));
 
   return (
     <div className="scroll pad fade" style={{ width: "100%" }}>
@@ -206,15 +212,12 @@ export default function Tasks() {
         <h2 style={{ margin: 0, fontSize: 22, display: "flex", alignItems: "center", gap: 8 }}>
           <Icon n="check" size={20} /> {t("Задачи", "Задачі")}
         </h2>
-        {/* Перемикач Дошка / Список */}
         <div style={{ display: "flex", gap: 2, background: "#e2e8f0", borderRadius: 10, padding: 3 }}>
           {([["board", t("Доска", "Дошка")], ["list", t("Список", "Список")]] as const).map(([m, lbl]) => (
-            <button key={m} onClick={() => setMode(m as "board" | "list")}
-              className="btn" style={{ fontSize: 13, padding: "6px 14px", borderRadius: 8, fontWeight: 700,
+            <button key={m} onClick={() => setMode(m as "board" | "list")} className="btn"
+              style={{ fontSize: 13, padding: "6px 14px", borderRadius: 8, fontWeight: 700,
                 background: mode === m ? "#fff" : "transparent", color: mode === m ? "#0f172a" : "#64748b",
-                boxShadow: mode === m ? "0 1px 2px rgba(0,0,0,.1)" : "none" }}>
-              {lbl}
-            </button>
+                boxShadow: mode === m ? "0 1px 2px rgba(0,0,0,.1)" : "none" }}>{lbl}</button>
           ))}
         </div>
         <div style={{ flex: 1 }} />
@@ -223,44 +226,108 @@ export default function Tasks() {
         </button>
       </div>
 
-      {/* Таби: чиї задачі показувати */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, padding: "10px 12px",
-        background: "linear-gradient(90deg,#f8fafc,#eef2ff)", borderRadius: 10, border: "1px solid #e2e8f0", alignItems: "center" }}>
-        <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600, marginRight: 4 }}>
-          {t("Показать задачи:", "Показати задачі:")}
-        </span>
-        <Tab id="mine" label={t("Мои", "Мої")} count={mineCount} />
-        {canViewOthers && <Tab id="all" label={t("Все", "Всі")} count={allCount} />}
-        {canViewOthers && <div style={{ width: 1, height: 22, background: "#cbd5e1", margin: "0 4px" }} />}
-        {canViewOthers && otherUsers.map((u) => (
-          <Tab key={u.id} id={`u:${u.id}`} label={u.full_name} count={u.today} subtle />
-        ))}
-      </div>
-
-      {/* Панель фільтрів */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16, padding: "10px 12px",
-        background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0", alignItems: "center" }}>
-        <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>{t("Фильтры:", "Фільтри:")}</span>
-        <select style={selStyle} value={fKind} onChange={(e) => setFKind(e.target.value)}>
-          <option value="">{t("Все типы", "Всі типи")}</option>
-          {KIND_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <select style={selStyle} value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
-          <option value="">{t("Все статусы", "Всі статуси")}</option>
-          {STATUS_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <select style={selStyle} value={fPrio} onChange={(e) => setFPrio(e.target.value)}>
-          <option value="">{t("Любой приоритет", "Будь-який пріоритет")}</option>
-          {PRIO_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <span style={{ fontSize: 12, color: "#64748b" }}>{t("Срок:", "Термін:")}</span>
-        <input type="date" style={selStyle} value={fFrom} onChange={(e) => setFFrom(e.target.value)} title={t("Срок с", "Термін з")} />
-        <span style={{ color: "#94a3b8" }}>—</span>
-        <input type="date" style={selStyle} value={fTo} onChange={(e) => setFTo(e.target.value)} title={t("Срок по", "Термін по")} />
-        {hasFilters && (
-          <button className="btn btn-light" style={{ fontSize: 12, padding: "6px 12px" }} onClick={resetFilters}>
-            ✕ {t("Сбросить", "Скинути")}
+      {/* ЄДИНА ЯЧЕЙКА ФІЛЬТРІВ: кнопка + чіпи вибраного */}
+      <div style={{ position: "relative", marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", padding: "8px 10px",
+          background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0" }}>
+          <button className="btn" onClick={() => setPanelOpen((v) => !v)}
+            style={{ fontSize: 13, fontWeight: 700, padding: "7px 14px", borderRadius: 8, display: "flex", alignItems: "center", gap: 7,
+              background: panelOpen ? "#2563eb" : "#fff", color: panelOpen ? "#fff" : "#0f172a", border: "1px solid #cbd5e1" }}>
+            <Icon n="filter" size={15} /> {t("Фильтры", "Фільтри")}
+            {chips.length > 0 && (
+              <span style={{ background: panelOpen ? "rgba(255,255,255,.3)" : "#2563eb", color: "#fff",
+                borderRadius: 10, padding: "0 7px", fontSize: 11, fontWeight: 700 }}>{chips.length}</span>
+            )}
           </button>
+
+          {/* Чіпи */}
+          {chips.map((c) => (
+            <span key={c.key} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600,
+              background: "#e0edff", color: "#1e40af", borderRadius: 16, padding: "5px 6px 5px 12px" }}>
+              {c.label}
+              <button onClick={c.clear} title={t("Убрать", "Прибрати")}
+                style={{ border: "none", background: "#c7ddff", color: "#1e40af", borderRadius: "50%", width: 18, height: 18,
+                  cursor: "pointer", fontSize: 12, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>×</button>
+            </span>
+          ))}
+          {chips.length === 0 && (
+            <span style={{ fontSize: 12, color: "#94a3b8" }}>{t("Фильтры не выбраны", "Фільтри не вибрані")}</span>
+          )}
+          {chips.length > 0 && (
+            <button className="btn btn-light" style={{ fontSize: 12, padding: "5px 10px", marginLeft: "auto" }} onClick={resetAll}>
+              {t("Сбросить все", "Скинути все")}
+            </button>
+          )}
+        </div>
+
+        {/* ПОПАП вікно фільтрів */}
+        {panelOpen && (
+          <>
+            <div onClick={() => setPanelOpen(false)}
+              style={{ position: "fixed", inset: 0, zIndex: 40, background: "transparent" }} />
+            <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 41, width: 320, maxWidth: "92vw",
+              background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, boxShadow: "0 12px 32px rgba(0,0,0,.16)", padding: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+                <span style={{ fontWeight: 800, fontSize: 15 }}>{t("Фильтры задач", "Фільтри задач")}</span>
+                <div style={{ flex: 1 }} />
+                <button className="btn btn-light" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => setPanelOpen(false)}>{t("Готово", "Готово")}</button>
+              </div>
+
+              {/* Співробітник */}
+              {canViewOthers && (
+                <div style={{ marginBottom: 12 }}>
+                  <label style={fieldLbl}>{t("Сотрудник", "Співробітник")}</label>
+                  <select style={selStyle} value={selected} onChange={(e) => setSelected(e.target.value)}>
+                    <option value="mine">{t("Мои задачи", "Мої задачі")}</option>
+                    <option value="all">{t("Все сотрудники", "Всі співробітники")}</option>
+                    {usersList.map((u) => (
+                      <option key={u.id} value={`u:${u.id}`}>{u.full_name}{u.all ? ` (${u.all})` : ""}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={fieldLbl}>{t("Статус", "Статус")}</label>
+                <select style={selStyle} value={fStatus} onChange={(e) => setStatus(e.target.value)}>
+                  {STATUS_OPTS.map(([v, l], i) => (
+                    <option key={v} value={v} style={i === 3 ? { borderTop: "1px solid #eee" } : undefined}>{l}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={fieldLbl}>{t("Тип", "Тип")}</label>
+                <select style={selStyle} value={fKind} onChange={(e) => setFKind(e.target.value)}>
+                  <option value="">{t("Все типы", "Всі типи")}</option>
+                  {KIND_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={fieldLbl}>{t("Приоритет", "Пріоритет")}</label>
+                <select style={selStyle} value={fPrio} onChange={(e) => setFPrio(e.target.value)}>
+                  <option value="">{t("Любой", "Будь-який")}</option>
+                  {PRIO_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 8 }}>
+                <label style={fieldLbl}>{t("Срок (от / до)", "Термін (з / по)")}</label>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input type="date" style={{ ...selStyle, width: "auto", flex: 1 }} value={fFrom} onChange={(e) => setFFrom(e.target.value)} />
+                  <span style={{ color: "#94a3b8" }}>—</span>
+                  <input type="date" style={{ ...selStyle, width: "auto", flex: 1 }} value={fTo} onChange={(e) => setFTo(e.target.value)} />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                <button className="btn btn-light" style={{ fontSize: 12, padding: "6px 12px" }} onClick={resetAll}>
+                  {t("Сбросить все", "Скинути все")}
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
 
@@ -268,8 +335,8 @@ export default function Tasks() {
 
       {/* ДОШКА */}
       {!loading && mode === "board" && data && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, alignItems: "flex-start" }}>
-          {(["today", "week", "later", "done"] as const).map((k) => {
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${boardCols.length}, 1fr)`, gap: 12, alignItems: "flex-start" }}>
+          {boardCols.map((k) => {
             const col = COL[k];
             const items = data.groups[k] || [];
             return (
@@ -315,7 +382,6 @@ export default function Tasks() {
               </tbody>
             </table>
           </div>
-          {/* Пагінація */}
           {totalPages > 1 && (
             <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center", marginTop: 14 }}>
               <button className="btn btn-light" disabled={page <= 1} style={{ fontSize: 13, padding: "6px 12px", opacity: page <= 1 ? 0.5 : 1 }}
@@ -351,9 +417,7 @@ function Card({ task, onClick, onMove }: { task: Task; onClick: () => void; onMo
       </div>
       {to && text && (
         <div style={{ marginTop: 6 }}>
-          <Link to={to} onClick={(e) => e.stopPropagation()} style={{ fontSize: 11, color: "#2563eb", textDecoration: "none" }}>
-            → {text.slice(0, 50)}
-          </Link>
+          <Link to={to} onClick={(e) => e.stopPropagation()} style={{ fontSize: 11, color: "#2563eb", textDecoration: "none" }}>→ {text.slice(0, 50)}</Link>
         </div>
       )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, fontSize: 11, color: "#64748b" }}>
@@ -381,9 +445,7 @@ function Row({ task, onClick, onDone }: { task: Task; onClick: () => void; onDon
       <td style={{ padding: "8px 10px" }}>
         <div style={{ fontWeight: 600, lineHeight: 1.3 }}>{task.title}</div>
         {to && text && (
-          <Link to={to} onClick={(e) => e.stopPropagation()} style={{ fontSize: 11, color: "#2563eb", textDecoration: "none" }}>
-            → {text.slice(0, 60)}
-          </Link>
+          <Link to={to} onClick={(e) => e.stopPropagation()} style={{ fontSize: 11, color: "#2563eb", textDecoration: "none" }}>→ {text.slice(0, 60)}</Link>
         )}
       </td>
       <td style={{ padding: "8px 10px", color: "#475569" }}>{task.kind_display}</td>
