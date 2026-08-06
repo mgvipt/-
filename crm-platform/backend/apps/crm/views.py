@@ -714,7 +714,7 @@ def make_offer(deal, items_spec, user=None, send_pay=True):
     return {"ok": True, "added": added, "missing": missing, "amount": str(total), "sent_quote": sent_q, "sent_pay": sent_p, "url": url}
 
 
-def _issue_checkbox_for_deal(deal, user=None):
+def _issue_checkbox_for_deal(deal, user=None, notify=True):
     """Авто-чек Checkbox для найстаршого оплаченого платежу БЕЗ чека.
     Податковий ланцюг: аванс → (дод. аванс) → фінал (sell) через pre_payment_relation_id.
     Аванс якщо накопичена оплата < суми товарів; фінал коли закриває суму (з ТТН для НП).
@@ -784,7 +784,7 @@ def _issue_checkbox_for_deal(deal, user=None):
         deal.checkbox_relation_id = r["relation_id"]
     deal.save(update_fields=["checkbox_status", "checkbox_url", "checkbox_receipt_id", "checkbox_relation_id"])
     sent = False
-    if deal.contact_id and r["url"]:
+    if notify and deal.contact_id and r["url"]:
         from apps.inbox.models import Conversation
         from apps.inbox.services import send_message
         conv = Conversation.objects.filter(contact_id=deal.contact_id, status="open").order_by("-last_message_at").first()

@@ -133,23 +133,35 @@ class Command(BaseCommand):
                         if _advance_deal_stage(d, target.order, "НП: %s" % npstatus):
                             moved += 1
                 if received:
-                    _record_cod_payment(d)  # наложка: гроші отримано разом з посилкою
+                    _record_cod_payment(d, cod_hint=row.get("AfterpaymentOnGoodsCost"))  # наложка: сума з НП
                 _maybe_send(d, row, ctr)
             except Exception as e:
                 self.stderr.write(str(e)[:120])
         self.stdout.write("np sync: moved=%d sent=%d" % (moved, ctr["sent"]))
 
 
-def _record_cod_payment(deal):
+def _record_cod_payment(deal, cod_hint=None):
     """Клієнт отримав посилку з наложкою → Payment(np_cod) + дохід у фінанси.
     Ідемпотентно: один np_cod-платіж на угоду (external_id=ТТН)."""
     from decimal import Decimal
     from apps.crm.models import Payment
     try:
         cod = Decimal(str((deal.np_data or {}).get("cod_amount") or 0))
-        # ⛔ БЕЗ fallback: наложка існує ЛИШЕ якщо її явно вказали при створенні ТТН
-        # (cod_amount у np_data). Інакше поллер фабрикував np_cod-платіж і РЕАЛЬНИЙ
-        # фіскальний чек для угод, де клієнт платив іншим способом (подвійний чек у ДПС).
+        # fallback на backward.amount ЛИШЕ якщо backward.on=True (надійна ознака наложки:
+        # TTN створений з післяплатою). Деякі TTN мають суму тільки у backward.amount.
+        if cod <= 0:
+            _bw = (deal.np_data or {}).get("backward") or {}
+            if _bw.get("on") and _bw.get("amount"):
+                try:
+                    cod = Decimal(str(_bw.get("amount") or 0))
+                except Exception:
+                    cod = Decimal("0")
+        if cod <= 0 and cod_hint:
+            # НП підтверджує післяплату (AfterpaymentOnGoodsCost) — надійна ознака реальної наложки
+            try:
+                cod = Decimal(str(cod_hint or 0))
+            except Exception:
+                cod = Decimal("0")
         if cod <= 0:
             return
         if Payment.objects.filter(deal=deal, provider="np_cod").exists():
