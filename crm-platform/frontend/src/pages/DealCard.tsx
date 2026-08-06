@@ -557,6 +557,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     try { await api.post("/api/contacts/" + (deal as any).contact_id + "/reset/", {}); flash(t("Клиент сброшен — зайдёт как новый","Клієнта скинуто — зайде як новий")); nav(-1); }
     catch (e: any) { flash(e?.response?.data?.detail || t("Нет прав","Немає прав")); }
   }
+  async function dozakazDeal() {
+    try { const r = await api.post<any>(`/api/deals/${id}/dozakaz/`, {}); flash(t("Создан дозаказ (одна посылка)","Створено дозамовлення (одна посилка)")); nav("/deals/" + r.id); }
+    catch { flash(t("Ошибка создания дозаказа","Помилка створення дозамовлення")); }
+  }
   async function dupDeal() {
     try { const r = await api.post<any>("/api/deals/", { title: (deal?.title || "") + t(" (копия)"," (копія)"), contact: (deal as any)?.contact_id || null, funnel: (deal as any)?.funnel, stage: (deal as any)?.stage, amount: deal?.amount }); flash(t("Создана копия","Створено копію")); nav("/deals/" + r.id); }
     catch (e: any) { flash(e?.response?.data?.detail || t("Не удалось дублировать","Не вдалося дублювати")); }
@@ -652,6 +656,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
               <div onClick={() => { setGearOpen(false); navigator.clipboard?.writeText(window.location.origin + "/deals/" + deal.id); flash(t("Ссылка скопирована", "Посилання скопійовано")); }} style={gItem}><Icon n="🔗" size={15} /> {t("Копировать ссылку", "Копіювати посилання")}</div>
               {deal.contact_id ? <div onClick={() => { setGearOpen(false); nav("/clients/" + deal.contact_id); }} style={gItem}><Icon n="👤" size={15} /> {t("Карточка клиента", "Картка клієнта")}</div> : null}
               <div onClick={() => { setGearOpen(false); dupDeal(); }} style={gItem}><Icon n="📄" size={15} /> {t("Дублировать сделку", "Дублювати угоду")}</div>
+              <div onClick={() => { setGearOpen(false); dozakazDeal(); }} style={gItem}><Icon n="➕" size={15} /> {t("Дозаказ (одна посылка)", "Дозамовлення (одна посилка)")}</div>
               {(can("roles.manage") && deal.contact_id) ? <div onClick={() => { setGearOpen(false); resetClient(); }} style={{ ...gItem, color: "#b45309" }}><Icon n="trash" size={15} /> {t("Сбросить клиента (тест)","Скинути клієнта (тест)")}</div> : null}
               {can("deal.delete") ? <div onClick={() => { setGearOpen(false); delDeal(); }} style={{ ...gItem, color: "#dc2626", borderTop: "1px solid #f1f5f9", borderBottom: "none" }}><Icon n="trash" size={15} /> {t("Удалить сделку", "Видалити угоду")}</div> : null}
             </div>

@@ -119,6 +119,7 @@ class LeadSerializer(serializers.ModelSerializer):
 
 
 class DealSerializer(serializers.ModelSerializer):
+    parent_deal_title = serializers.CharField(source="parent_deal.title", read_only=True, default=None)
     funnel_name = serializers.SerializerMethodField()
     contact_social_link = serializers.CharField(source="contact.social_link", read_only=True, default="")
     contact_phone = serializers.CharField(source="contact.phone", read_only=True, default="")
@@ -134,7 +135,7 @@ class DealSerializer(serializers.ModelSerializer):
     class Meta:
         model = Deal
         fields = ["id", "title", "contact", "contact_name", "contact_social_link", "contact_phone", "funnel", "funnel_name", "stage",
-                  "source", "amount", "discount_pct", "pay_type", "ttn", "checkbox_status", "checkbox_url", "checkbox_relation_id",
+                  "source", "amount", "discount_pct", "pay_type", "ttn", "checkbox_status", "checkbox_url", "checkbox_relation_id", "parent_deal", "parent_deal_title",
                   "qualification", "card_fields", "owner", "owner_name", "closed_at", "is_seen",
                   "created_at", "updated_at"]
 

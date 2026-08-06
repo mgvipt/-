@@ -152,6 +152,8 @@ class Deal(TimestampedOwned):
     source = models.CharField(max_length=24, choices=Lead.SOURCES, default="other")
     discount_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     pay_type = models.CharField(max_length=40, blank=True, default="", help_text="Полная/Предоплата 50%/Послеоплата НП")
+    parent_deal = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name="children", help_text="Батьківська сделка (дозамовлення — їде однією посилкою)")
     ttn = models.CharField("ТТН Нова Пошта", max_length=40, blank=True, default="")
     checkbox_status = models.CharField(max_length=16, blank=True, default="none", help_text="none/аванс/финальный")
     checkbox_url = models.TextField(blank=True, default="", help_text="Фіскальна ссылка на чек")
