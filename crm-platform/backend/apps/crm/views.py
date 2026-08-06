@@ -2502,6 +2502,25 @@ class TaskViewSet(viewsets.ModelViewSet):
             qs = qs.filter(due_at__date__gte=df)
         if dto:
             qs = qs.filter(due_at__date__lte=dto)
+        # --- МНОЖИННІ фільтри (comma-separated): ?assignees= ?statuses= ?kinds= ?priorities= ---
+        def _multi(name):
+            raw = self.request.query_params.get(name)
+            return [x for x in raw.split(",") if x] if raw else []
+        assignees = _multi("assignees")
+        if assignees and can_view_others:
+            qs = qs.filter(assignee_id__in=assignees)
+        kinds = _multi("kinds")
+        if kinds:
+            qs = qs.filter(kind__in=kinds)
+        prios = _multi("priorities")
+        if prios:
+            qs = qs.filter(priority__in=prios)
+        statuses = _multi("statuses")
+        if statuses:
+            ss = list(statuses)
+            if "canceled" in ss and "cancelled" not in ss:
+                ss.append("cancelled")  # у БД трапляється написання з двома l
+            qs = qs.filter(status__in=ss)
         return qs
 
     @action(detail=False, methods=["get"])

@@ -1,4 +1,4 @@
-/* Модуль «Задачі» v5 — дошка/список + ЄДИНЕ вікно фільтрів (кнопка → попап) + чіпи вибраних фільтрів з ✕. */
+/* Модуль «Задачі» v6 — дошка/список + вікно фільтрів з МНОЖИННИМ вибором (чекбокси) + чіпи вибраного з ✕. */
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
@@ -44,25 +44,24 @@ const KIND_OPTS: [string, string][] = [
   ["warehouse", "Склад"], ["tinting", "Тонування"], ["manager", "Менеджер"],
   ["followup", "Дожим"], ["other", "Інше"],
 ];
-// Статус: зручні пресети + конкретні
 const STATUS_OPTS: [string, string][] = [
-  ["active", "Активні (не закриті)"], ["closed", "Закриті (готово/скасовані)"], ["all", "Всі статуси"],
   ["open", "Відкрита"], ["in_progress", "В роботі"], ["proposed", "Запропоновано"],
   ["done", "Виконана"], ["canceled", "Скасована"],
 ];
-const STATUS_LBL: Record<string, string> = Object.fromEntries(STATUS_OPTS);
 const PRIO_OPTS: [string, string][] = [
   ["high", "🔴 Високий"], ["normal", "Звичайний"], ["low", "⬇️ Низький"],
 ];
-const PRIO_SHORT: Record<string, string> = { high: "🔴 Високий", normal: "Звичайний", low: "⬇️ Низький" };
 const KIND_LBL: Record<string, string> = Object.fromEntries(KIND_OPTS);
+const STATUS_LBL: Record<string, string> = Object.fromEntries(STATUS_OPTS);
+const PRIO_LBL2: Record<string, string> = Object.fromEntries(PRIO_OPTS);
 
 const STATUS_COLOR: Record<string, string> = {
   open: "#2563eb", in_progress: "#d97706", proposed: "#7c3aed",
   done: "#16a34a", canceled: "#94a3b8", cancelled: "#94a3b8",
 };
-// статуси, що вважаються «закритими» (впливає на колонку «Готово» на дошці)
-const CLOSED_SET = new Set(["closed", "all", "done", "canceled"]);
+const ACTIVE_ST = ["open", "in_progress", "proposed"];
+const CLOSED_ST = ["done", "canceled"];
+const eqSet = (a: string[], b: string[]) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
 
 const fmtDue = (iso: string | null) => {
   if (!iso) return "—";
@@ -75,53 +74,59 @@ const fmtDue = (iso: string | null) => {
   if (day.getTime() === tomorrow.getTime()) return `Завтра ${hm}`;
   return d.toLocaleDateString("uk", { day: "2-digit", month: "short" }) + " " + hm;
 };
-const fmtDate = (s: string) => { const [y, m, d] = s.split("-"); return `${d}.${m}`; };
+const fmtDate = (s: string) => { const [, m, d] = s.split("-"); return `${d}.${m}`; };
 
-const LS_KEY = "tasks_view_selected";
 const LS_MODE = "tasks_view_mode";
-const LS_STATUS = "tasks_filter_status";
+const LS_EMP = "tasks_f_emp";
+const LS_ST = "tasks_f_status";
+const LS_KIND = "tasks_f_kind";
+const LS_PRIO = "tasks_f_prio";
 const PAGE_SIZE = 100;
+
+const readLS = (k: string, def: string[]): string[] => {
+  try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; }
+};
+const saveLS = (k: string, v: string[]) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* noop */ } };
 
 export default function Tasks() {
   const { t } = useLang();
   const { me, can } = useAuth();
   const canViewOthers = !!(me?.is_superuser || can("task.view.others") || can("roles.manage"));
 
-  // Кого показувати (тепер у вікні фільтрів, не в шапці)
-  const [selected, setSelectedState] = useState<string>(() => {
-    try { return localStorage.getItem(LS_KEY) || "mine"; } catch { return "mine"; }
-  });
-  const setSelected = (v: string) => {
-    setSelectedState(v);
-    try { localStorage.setItem(LS_KEY, v); } catch { /* noop */ }
-    try { window.dispatchEvent(new CustomEvent("tasks-view-changed", { detail: v })); } catch { /* noop */ }
-  };
-
   const [mode, setModeState] = useState<"board" | "list">(() => {
     try { return (localStorage.getItem(LS_MODE) as "board" | "list") || "board"; } catch { return "board"; }
   });
-  const setMode = (m: "board" | "list") => {
-    setModeState(m);
-    try { localStorage.setItem(LS_MODE, m); } catch { /* noop */ }
-  };
+  const setMode = (m: "board" | "list") => { setModeState(m); try { localStorage.setItem(LS_MODE, m); } catch { /* noop */ } };
 
-  // Фільтри
-  const [fStatus, setFStatus] = useState<string>(() => {
-    try { return localStorage.getItem(LS_STATUS) || "active"; } catch { return "active"; }
-  });
-  const setStatus = (v: string) => { setFStatus(v); try { localStorage.setItem(LS_STATUS, v); } catch { /* noop */ } };
-  const [fKind, setFKind] = useState("");
-  const [fPrio, setFPrio] = useState("");
+  // Множинні фільтри (масиви значень)
+  const [selEmp, setSelEmpState] = useState<string[]>(() => readLS(LS_EMP, me ? [String(me.id)] : []));
+  const [selSt, setSelStState] = useState<string[]>(() => readLS(LS_ST, ACTIVE_ST));
+  const [selKind, setSelKindState] = useState<string[]>(() => readLS(LS_KIND, []));
+  const [selPrio, setSelPrioState] = useState<string[]>(() => readLS(LS_PRIO, []));
   const [fFrom, setFFrom] = useState("");
   const [fTo, setFTo] = useState("");
   const [panelOpen, setPanelOpen] = useState(false);
 
-  const resetAll = () => { setSelected("mine"); setStatus("active"); setFKind(""); setFPrio(""); setFFrom(""); setFTo(""); setPage(1); };
+  const setSelEmp = (v: string[]) => { setSelEmpState(v); saveLS(LS_EMP, v); syncBadge(v); };
+  const setSelSt = (v: string[]) => { setSelStState(v); saveLS(LS_ST, v); };
+  const setSelKind = (v: string[]) => { setSelKindState(v); saveLS(LS_KIND, v); };
+  const setSelPrio = (v: string[]) => { setSelPrioState(v); saveLS(LS_PRIO, v); };
 
-  useEffect(() => {
-    if (!canViewOthers && (selected === "all" || selected.startsWith("u:"))) setSelected("mine");
-    // eslint-disable-next-line
-  }, [canViewOthers]);
+  // Сумісність з бейджем у меню (Layout слухає tasks-view-changed)
+  const syncBadge = (emp: string[]) => {
+    let detail = "all";
+    if (me && eqSet(emp, [String(me.id)])) detail = "mine";
+    else if (emp.length === 1) detail = "u:" + emp[0];
+    try { window.dispatchEvent(new CustomEvent("tasks-view-changed", { detail })); } catch { /* noop */ }
+  };
+
+  const toggle = (arr: string[], v: string, setter: (x: string[]) => void) =>
+    setter(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+
+  const resetAll = () => {
+    setSelEmp(me ? [String(me.id)] : []); setSelSt(ACTIVE_ST); setSelKind([]); setSelPrio([]);
+    setFFrom(""); setFTo(""); setPage(1);
+  };
 
   const [data, setData] = useState<Kanban | null>(null);
   const [list, setList] = useState<Paged | null>(null);
@@ -133,14 +138,13 @@ export default function Tasks() {
 
   const baseParams = () => {
     const p = new URLSearchParams();
-    if (selected === "mine") p.set("mine", "1");
-    else if (selected.startsWith("u:")) p.set("assignee", selected.slice(2));
-    // статус
-    if (fStatus === "active") p.set("status_group", "active");
-    else if (fStatus === "closed") p.set("status_group", "closed");
-    else if (fStatus && fStatus !== "all") p.set("status", fStatus);
-    if (fKind) p.set("kind", fKind);
-    if (fPrio) p.set("priority", fPrio);
+    // сотрудники (тільки для тих, хто бачить чужі; порожньо = всі)
+    if (canViewOthers && selEmp.length > 0) p.set("assignees", selEmp.join(","));
+    else if (!canViewOthers) p.set("mine", "1");
+    // статуси (порожньо або всі 5 = без фільтра)
+    if (selSt.length > 0 && selSt.length < STATUS_OPTS.length) p.set("statuses", selSt.join(","));
+    if (selKind.length > 0) p.set("kinds", selKind.join(","));
+    if (selPrio.length > 0) p.set("priorities", selPrio.join(","));
     if (fFrom) p.set("due_from", fFrom);
     if (fTo) p.set("due_to", fTo);
     return p;
@@ -163,9 +167,9 @@ export default function Tasks() {
     } finally { setLoading(false); }
   };
   // eslint-disable-next-line
-  useEffect(() => { load(); }, [selected, mode, page, fStatus, fKind, fPrio, fFrom, fTo]);
+  useEffect(() => { load(); }, [mode, page, selEmp, selSt, selKind, selPrio, fFrom, fTo]);
   // eslint-disable-next-line
-  useEffect(() => { setPage(1); }, [selected, mode, fStatus, fKind, fPrio, fFrom, fTo]);
+  useEffect(() => { setPage(1); }, [mode, selEmp, selSt, selKind, selPrio, fFrom, fTo]);
 
   const moveTo = async (task: Task, bucket: "today" | "week" | "later" | "done") => {
     if (bucket === "done") await api.post(`/api/tasks/${task.id}/done/`);
@@ -183,27 +187,50 @@ export default function Tasks() {
   };
 
   const usersList = ucounts?.users || [];
-  const userName = (id: string) => usersList.find((u) => `u:${u.id}` === id)?.full_name || "Співробітник";
+  const userName = (id: string) => (String(me?.id) === id ? t("Я", "Я") : usersList.find((u) => String(u.id) === id)?.full_name || `#${id}`);
 
-  // Чіпи активних фільтрів (кратко видно що вибрано; ✕ прибирає фільтр)
+  // ── ЧІПИ активних фільтрів ──
   type Chip = { key: string; label: string; clear: () => void };
   const chips: Chip[] = [];
-  if (selected === "mine") chips.push({ key: "emp", label: t("Мои", "Мої"), clear: () => canViewOthers ? setSelected("all") : undefined as any });
-  else if (selected.startsWith("u:")) chips.push({ key: "emp", label: userName(selected), clear: () => setSelected("all") });
-  // (selected === "all" → чіпа немає, це найширше)
-  if (fStatus && fStatus !== "all") chips.push({ key: "status", label: STATUS_LBL[fStatus] || fStatus, clear: () => setStatus("all") });
-  if (fKind) chips.push({ key: "kind", label: KIND_LBL[fKind], clear: () => setFKind("") });
-  if (fPrio) chips.push({ key: "prio", label: PRIO_SHORT[fPrio], clear: () => setFPrio("") });
+  // сотрудники (не показуємо, якщо порожньо = всі)
+  if (canViewOthers && selEmp.length > 0) {
+    selEmp.forEach((id) => chips.push({ key: "emp:" + id, label: userName(id), clear: () => setSelEmp(selEmp.filter((x) => x !== id)) }));
+  }
+  // статуси: пресети або окремі
+  if (selSt.length > 0 && selSt.length < STATUS_OPTS.length) {
+    if (eqSet(selSt, ACTIVE_ST)) chips.push({ key: "st", label: t("Активные", "Активні"), clear: () => setSelSt([]) });
+    else if (eqSet(selSt, CLOSED_ST)) chips.push({ key: "st", label: t("Закрытые", "Закриті"), clear: () => setSelSt([]) });
+    else selSt.forEach((s) => chips.push({ key: "st:" + s, label: STATUS_LBL[s] || s, clear: () => setSelSt(selSt.filter((x) => x !== s)) }));
+  }
+  selKind.forEach((k) => chips.push({ key: "k:" + k, label: KIND_LBL[k], clear: () => setSelKind(selKind.filter((x) => x !== k)) }));
+  selPrio.forEach((pr) => chips.push({ key: "p:" + pr, label: PRIO_LBL2[pr], clear: () => setSelPrio(selPrio.filter((x) => x !== pr)) }));
   if (fFrom) chips.push({ key: "from", label: t("с ", "з ") + fmtDate(fFrom), clear: () => setFFrom("") });
   if (fTo) chips.push({ key: "to", label: t("по ", "по ") + fmtDate(fTo), clear: () => setFTo("") });
 
-  const selStyle: React.CSSProperties = {
-    fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", color: "#0f172a", width: "100%",
-  };
-  const fieldLbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 4, display: "block" };
+  const fieldLbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 6, display: "block" };
+  const dateInput: React.CSSProperties = { fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", color: "#0f172a", flex: 1, width: "auto" };
+  const quickBtn = (active: boolean): React.CSSProperties => ({
+    fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 14, cursor: "pointer",
+    border: "1px solid " + (active ? "#2563eb" : "#cbd5e1"), background: active ? "#2563eb" : "#fff", color: active ? "#fff" : "#475569",
+  });
+
+  // одна «пігулка»-чекбокс
+  const pill = (checked: boolean, label: string, onClick: () => void, key: string) => (
+    <button key={key} onClick={onClick} type="button" style={{
+      display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
+      padding: "6px 11px", borderRadius: 16, margin: "0 6px 6px 0",
+      border: "1px solid " + (checked ? "#2563eb" : "#cbd5e1"), background: checked ? "#e0edff" : "#fff", color: checked ? "#1e40af" : "#475569",
+    }}>
+      <span style={{ width: 14, height: 14, borderRadius: 4, border: "1.5px solid " + (checked ? "#2563eb" : "#94a3b8"),
+        background: checked ? "#2563eb" : "#fff", color: "#fff", fontSize: 11, lineHeight: "12px", textAlign: "center", display: "inline-block" }}>
+        {checked ? "✓" : ""}
+      </span>
+      {label}
+    </button>
+  );
 
   const totalPages = list ? Math.max(1, Math.ceil(list.count / PAGE_SIZE)) : 1;
-  const showDone = CLOSED_SET.has(fStatus);           // чи показувати колонку «Готово» на дошці
+  const showDone = selSt.length === 0 || selSt.some((s) => CLOSED_ST.includes(s)) || selSt.length === STATUS_OPTS.length;
   const boardCols = (showDone ? (["today", "week", "later", "done"] as const) : (["today", "week", "later"] as const));
 
   return (
@@ -226,7 +253,7 @@ export default function Tasks() {
         </button>
       </div>
 
-      {/* ЄДИНА ЯЧЕЙКА ФІЛЬТРІВ: кнопка + чіпи вибраного */}
+      {/* ЯЧЕЙКА ФІЛЬТРІВ: кнопка + чіпи */}
       <div style={{ position: "relative", marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", padding: "8px 10px",
           background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0" }}>
@@ -240,7 +267,6 @@ export default function Tasks() {
             )}
           </button>
 
-          {/* Чіпи */}
           {chips.map((c) => (
             <span key={c.key} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600,
               background: "#e0edff", color: "#1e40af", borderRadius: 16, padding: "5px 6px 5px 12px" }}>
@@ -250,9 +276,7 @@ export default function Tasks() {
                   cursor: "pointer", fontSize: 12, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>×</button>
             </span>
           ))}
-          {chips.length === 0 && (
-            <span style={{ fontSize: 12, color: "#94a3b8" }}>{t("Фильтры не выбраны", "Фільтри не вибрані")}</span>
-          )}
+          {chips.length === 0 && <span style={{ fontSize: 12, color: "#94a3b8" }}>{t("Фильтры не выбраны", "Фільтри не вибрані")}</span>}
           {chips.length > 0 && (
             <button className="btn btn-light" style={{ fontSize: 12, padding: "5px 10px", marginLeft: "auto" }} onClick={resetAll}>
               {t("Сбросить все", "Скинути все")}
@@ -260,71 +284,71 @@ export default function Tasks() {
           )}
         </div>
 
-        {/* ПОПАП вікно фільтрів */}
+        {/* ПОПАП */}
         {panelOpen && (
           <>
-            <div onClick={() => setPanelOpen(false)}
-              style={{ position: "fixed", inset: 0, zIndex: 40, background: "transparent" }} />
-            <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 41, width: 320, maxWidth: "92vw",
-              background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, boxShadow: "0 12px 32px rgba(0,0,0,.16)", padding: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+            <div onClick={() => setPanelOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40, background: "transparent" }} />
+            <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 41, width: 380, maxWidth: "94vw",
+              maxHeight: "72vh", overflowY: "auto", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12,
+              boxShadow: "0 12px 32px rgba(0,0,0,.16)", padding: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
                 <span style={{ fontWeight: 800, fontSize: 15 }}>{t("Фильтры задач", "Фільтри задач")}</span>
+                <span style={{ fontSize: 12, color: "#94a3b8", marginLeft: 8 }}>{t("(можно несколько)", "(можна кілька)")}</span>
                 <div style={{ flex: 1 }} />
                 <button className="btn btn-light" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => setPanelOpen(false)}>{t("Готово", "Готово")}</button>
               </div>
 
-              {/* Співробітник */}
+              {/* Співробітники */}
               {canViewOthers && (
-                <div style={{ marginBottom: 12 }}>
-                  <label style={fieldLbl}>{t("Сотрудник", "Співробітник")}</label>
-                  <select style={selStyle} value={selected} onChange={(e) => setSelected(e.target.value)}>
-                    <option value="mine">{t("Мои задачи", "Мої задачі")}</option>
-                    <option value="all">{t("Все сотрудники", "Всі співробітники")}</option>
-                    {usersList.map((u) => (
-                      <option key={u.id} value={`u:${u.id}`}>{u.full_name}{u.all ? ` (${u.all})` : ""}</option>
-                    ))}
-                  </select>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={fieldLbl}>{t("Сотрудники", "Співробітники")}</label>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                    <span style={quickBtn(!!(me && eqSet(selEmp, [String(me.id)])))} onClick={() => setSelEmp(me ? [String(me.id)] : [])}>{t("Только мои", "Тільки мої")}</span>
+                    <span style={quickBtn(selEmp.length === 0)} onClick={() => setSelEmp([])}>{t("Все", "Всі")}</span>
+                  </div>
+                  <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #eef2f7", borderRadius: 8, padding: 8 }}>
+                    {usersList.map((u) => pill(selEmp.includes(String(u.id)), u.full_name + (u.all ? ` (${u.all})` : ""),
+                      () => toggle(selEmp, String(u.id), setSelEmp), "u" + u.id))}
+                    {!usersList.length && <span className="muted" style={{ fontSize: 12 }}>—</span>}
+                  </div>
                 </div>
               )}
 
-              <div style={{ marginBottom: 12 }}>
+              {/* Статус */}
+              <div style={{ marginBottom: 14 }}>
                 <label style={fieldLbl}>{t("Статус", "Статус")}</label>
-                <select style={selStyle} value={fStatus} onChange={(e) => setStatus(e.target.value)}>
-                  {STATUS_OPTS.map(([v, l], i) => (
-                    <option key={v} value={v} style={i === 3 ? { borderTop: "1px solid #eee" } : undefined}>{l}</option>
-                  ))}
-                </select>
+                <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+                  <span style={quickBtn(eqSet(selSt, ACTIVE_ST))} onClick={() => setSelSt(ACTIVE_ST)}>{t("Активные", "Активні")}</span>
+                  <span style={quickBtn(eqSet(selSt, CLOSED_ST))} onClick={() => setSelSt(CLOSED_ST)}>{t("Закрытые", "Закриті")}</span>
+                  <span style={quickBtn(selSt.length === 0 || selSt.length === STATUS_OPTS.length)} onClick={() => setSelSt([])}>{t("Все", "Всі")}</span>
+                </div>
+                <div>{STATUS_OPTS.map(([v, l]) => pill(selSt.includes(v), l, () => toggle(selSt, v, setSelSt), "s" + v))}</div>
               </div>
 
-              <div style={{ marginBottom: 12 }}>
+              {/* Тип */}
+              <div style={{ marginBottom: 14 }}>
                 <label style={fieldLbl}>{t("Тип", "Тип")}</label>
-                <select style={selStyle} value={fKind} onChange={(e) => setFKind(e.target.value)}>
-                  <option value="">{t("Все типы", "Всі типи")}</option>
-                  {KIND_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
+                <div>{KIND_OPTS.map(([v, l]) => pill(selKind.includes(v), l, () => toggle(selKind, v, setSelKind), "k" + v))}</div>
               </div>
 
-              <div style={{ marginBottom: 12 }}>
+              {/* Пріоритет */}
+              <div style={{ marginBottom: 14 }}>
                 <label style={fieldLbl}>{t("Приоритет", "Пріоритет")}</label>
-                <select style={selStyle} value={fPrio} onChange={(e) => setFPrio(e.target.value)}>
-                  <option value="">{t("Любой", "Будь-який")}</option>
-                  {PRIO_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
+                <div>{PRIO_OPTS.map(([v, l]) => pill(selPrio.includes(v), l, () => toggle(selPrio, v, setSelPrio), "p" + v))}</div>
               </div>
 
+              {/* Термін */}
               <div style={{ marginBottom: 8 }}>
                 <label style={fieldLbl}>{t("Срок (от / до)", "Термін (з / по)")}</label>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input type="date" style={{ ...selStyle, width: "auto", flex: 1 }} value={fFrom} onChange={(e) => setFFrom(e.target.value)} />
+                  <input type="date" style={dateInput} value={fFrom} onChange={(e) => setFFrom(e.target.value)} />
                   <span style={{ color: "#94a3b8" }}>—</span>
-                  <input type="date" style={{ ...selStyle, width: "auto", flex: 1 }} value={fTo} onChange={(e) => setFTo(e.target.value)} />
+                  <input type="date" style={dateInput} value={fTo} onChange={(e) => setFTo(e.target.value)} />
                 </div>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-                <button className="btn btn-light" style={{ fontSize: 12, padding: "6px 12px" }} onClick={resetAll}>
-                  {t("Сбросить все", "Скинути все")}
-                </button>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                <button className="btn btn-light" style={{ fontSize: 12, padding: "6px 12px" }} onClick={resetAll}>{t("Сбросить все", "Скинути все")}</button>
               </div>
             </div>
           </>
@@ -358,9 +382,7 @@ export default function Tasks() {
       {/* СПИСОК */}
       {!loading && mode === "list" && list && (
         <div>
-          <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>
-            {t("Всего задач:", "Всього задач:")} <b>{list.count}</b>
-          </div>
+          <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>{t("Всего задач:", "Всього задач:")} <b>{list.count}</b></div>
           <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 10 }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 760 }}>
               <thead>
@@ -376,9 +398,7 @@ export default function Tasks() {
               </thead>
               <tbody>
                 {list.results.map((task) => <Row key={task.id} task={task} onClick={() => setEditTask(task)} onDone={() => moveTo(task, "done")} />)}
-                {!list.results.length && (
-                  <tr><td colSpan={7} className="muted" style={{ padding: 30, textAlign: "center" }}>—</td></tr>
-                )}
+                {!list.results.length && <tr><td colSpan={7} className="muted" style={{ padding: 30, textAlign: "center" }}>—</td></tr>}
               </tbody>
             </table>
           </div>
