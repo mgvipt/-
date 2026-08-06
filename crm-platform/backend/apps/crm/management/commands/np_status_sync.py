@@ -177,7 +177,9 @@ def _record_cod_payment(deal, cod_hint=None):
         # (relation до авансового чека, у фіналі — ТТН; регламент післяплати)
         try:
             from apps.crm.views import _issue_checkbox_for_deal
-            _issue_checkbox_for_deal(deal, user=None, notify=False)
+            # РЕАЛЬНА оплата наложки (НП StatusCode=9) → чек СТВОРЮЄТЬСЯ і ВІДПРАВЛЯЄТЬСЯ клієнту.
+            # notify=False лишається ТІЛЬКИ для ручного дозакриття старих хвостів.
+            _issue_checkbox_for_deal(deal, user=None)
         except Exception:
             pass
     except Exception:
