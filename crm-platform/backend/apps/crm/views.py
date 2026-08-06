@@ -1106,6 +1106,12 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         deal = self.get_object()
         g = self._guard(deal)
         if g: return g
+        # ЗАБОРОНА додавати товари, якщо по сделці ВЖЕ є оплата (щоб не було пере-
+        # рахунків після оплати → «авансів» у Checkbox). Для дозамовлення — НОВА сделка.
+        from apps.crm.models import Payment as _PayChk
+        if _PayChk.objects.filter(deal=deal, is_paid=True).exists():
+            return Response({"detail": "У сделці вже є оплата — додавати товари не можна. Для дозамовлення створіть НОВУ сделку (кнопка «Дозамовлення»)."},
+                            status=status.HTTP_400_BAD_REQUEST)
         # своя позиція НЕ з номенклатури (без складського обліку) — окреме право
         if str(request.data.get("custom_name") or "").strip():
             u = request.user

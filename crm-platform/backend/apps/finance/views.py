@@ -1285,10 +1285,13 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                     for _dd in _D2.objects.filter(contact=_mc, stage__isnull=False).exclude(stage__is_lost=True).select_related("stage"):
                         if _dd.stage and getattr(_dd.stage, "is_won", False):
                             continue
-                        _pd = _P2.objects.filter(deal=_dd, is_paid=True).aggregate(s=_Sm2("amount"))["s"] or 0
-                        if float(_pd) != 0:
+                        _pd = float(_P2.objects.filter(deal=_dd, is_paid=True).aggregate(s=_Sm2("amount"))["s"] or 0)
+                        if not _dd.amount:
                             continue
-                        if _dd.amount and abs(float(_dd.amount) - float(amt)) <= float(_dd.amount) * 0.03:
+                        _rem = float(_dd.amount) - _pd
+                        _tol = max(float(_dd.amount) * 0.03, 2)
+                        # платіж ≈ повній сумі (ще без оплати) АБО ≈ залишку (доплата до частково оплаченої)
+                        if abs(float(_dd.amount) - float(amt)) <= _tol or (_rem > 0 and abs(_rem - float(amt)) <= _tol):
                             _cands.append(_dd)
                     if len(_cands) == 1:
                         _txg.deal = _cands[0]; _flds.append("deal")
