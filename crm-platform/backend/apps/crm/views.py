@@ -2282,6 +2282,7 @@ class GlobalSearchView(APIView):
         if not (u.is_superuser or u.can_see_all_deals()):
             deals = deals.filter(owner=u)
         dq = (_Q(title__icontains=q) | _Q(b24_id__icontains=q) | _Q(ttn__icontains=q)
+              | _Q(checkbox_relation_id__icontains=q)
               | _Q(contact__first_name__icontains=q) | _Q(contact__last_name__icontains=q)
               | _Q(contact__phone__icontains=q))
         if digit:

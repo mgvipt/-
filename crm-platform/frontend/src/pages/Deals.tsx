@@ -86,7 +86,7 @@ function SmartFilter({ funnel, users, onQuery }: { funnel: Funnel; users: { id: 
   const inp = { height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13, width: "100%" } as any;
 
   return (
-    <div ref={boxRef} style={{ position: "relative", flex: "1 1 300px", maxWidth: 560, zIndex: 200 }}>
+    <div ref={boxRef} style={{ position: "relative", flex: "1 1 300px", maxWidth: 560, zIndex: 9000 }}>
       <input value={text}
         onChange={(e) => { setText(e.target.value); build(e.target.value, selStages); }}
         onFocus={() => setOpen(true)}
