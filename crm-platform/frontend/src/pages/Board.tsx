@@ -51,7 +51,11 @@ export default function Board({ endpoint, funnel, query, visibleStages }: { endp
     if (!card || card.stage === stageId) return;
     setCards((cs) => cs.map((c) => (c.id === id ? { ...c, stage: stageId } : c))); // оптимистично
     try { await api.patch(`${endpoint}${id}/`, { stage: stageId }); }
-    catch { load(); } // откат при ошибке
+    catch (e: any) {
+      if (e?.data?.confirm_unpaid && confirm(e.data.warn || "Угода оплачена не повністю. Точно перенести на цю стадію?")) {
+        try { await api.patch(`${endpoint}${id}/`, { stage: stageId, confirm_unpaid: 1 }); } catch { load(); }
+      } else { load(); }
+    } // підтвердження/відкат
   }
 
   if (loading) return <div className="spin">{t("Загрузка…","Завантаження…")}</div>;

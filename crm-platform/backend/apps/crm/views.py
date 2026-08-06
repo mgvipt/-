@@ -1000,6 +1000,18 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             if not (u.is_superuser or u.has_perm_code("deal.stage.move") or u.has_perm_code("deal.stage.move.all") or u.has_perm_code("roles.manage")):
                 from rest_framework.exceptions import PermissionDenied
                 raise PermissionDenied("Стадію рухає автоматика (оплата/склад/ТТН). Право «Пересувати сделки вручну» видає керівник у Ролях.")
+            # ── ПОПЕРЕДЖЕННЯ: ручний перенос НЕОПЛАЧЕНОЇ сделки на «Оплату отримано» ──
+            if _is_pay_stage(getattr(new_stage, "name", "") or "") and str(self.request.data.get("confirm_unpaid") or "") not in ("1", "true", "True"):
+                from apps.crm.models import Payment as _PayW
+                from django.db.models import Sum as _SumW
+                _dw = serializer.instance
+                _paid = float(_PayW.objects.filter(deal=_dw, is_paid=True).aggregate(s=_SumW("amount"))["s"] or 0)
+                _amt = float(_dw.amount or 0)
+                _ptw = (_dw.pay_type or "").lower()
+                _prepay = any(x in _ptw for x in ["передопл", "предопл", "prepay", "50%", "бронь", "післяпл", "послеопл", "наклад", "np", "cod"])
+                if _amt > 0 and (_paid + 0.5) < _amt and not _prepay:
+                    from rest_framework.exceptions import ValidationError
+                    raise ValidationError({"confirm_unpaid": True, "warn": "Сделка оплачена НЕ повністю: %s з %s грн (тип оплати: %s). Компанія може втратити гроші — товар поїде без повної оплати. Точно перенести?" % (round(_paid), round(_amt), (_dw.pay_type or "не вказано"))})
         super().perform_update(serializer)
         deal = serializer.instance
         # менеджер ВРУЧНУ пересунув сделку на «Оплату отримано» → задача складу (ідемпотентно)

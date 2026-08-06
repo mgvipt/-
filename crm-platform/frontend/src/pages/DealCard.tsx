@@ -329,7 +329,16 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
   }
 
-  async function setStage(stageId: number) { await patch({ stage: stageId }); }
+  async function setStage(stageId: number) {
+    try { await api.patch(`/api/deals/${id}/`, { stage: stageId }); load(); }
+    catch (e: any) {
+      if (e?.data?.confirm_unpaid) {
+        if (confirm(e.data.warn || t("Сделка оплачена не полностью. Точно перенести?","Угода оплачена не повністю. Точно перенести?"))) {
+          try { await api.patch(`/api/deals/${id}/`, { stage: stageId, confirm_unpaid: 1 }); load(); } catch { flash(t("Ошибка переноса","Помилка перенесення")); }
+        }
+      } else { flash(t("Нет прав на перенос стадии","Немає прав на перенос стадії")); }
+    }
+  }
   async function changeFunnel(fid: number) {
     if (!deal || fid === deal.funnel) return;
     const nf = allFunnels.find((f: any) => f.id === fid);
