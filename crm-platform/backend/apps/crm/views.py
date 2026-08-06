@@ -754,7 +754,11 @@ def _issue_checkbox_for_deal(deal, user=None, notify=True):
     pay_label = {"liqpay": "Інтернет еквайринг", "terminal": "Картка", "card": "Картка",
                  "np_cod": "Накладений платіж Нова Пошта", "reqs": "Оплата за реквізитами"}.get(pay.provider)
     relation = deal.checkbox_relation_id or None
-    closes = cum_kop >= goods_total
+    _pt = (deal.pay_type or "").lower()
+    _prepay_type = any(x in _pt for x in ["передопл", "предопл", "prepay", "50%", "бронь", "аванс", "післяпл", "послеопл", "наклад", "np", "cod"])
+    # чек орієнтується на ТИП оплати (обраний менеджером), а не лише на суму:
+    # «Повна»/не вказано → фінальний sell; «Передоплата/Бронь/Наложка» → аванс поки не покрито
+    closes = (cum_kop >= goods_total) or (not _prepay_type and cum_kop > 0)
     ext = "WCCRM-%s-P%s" % (deal.id, pay.id)
     client_name = getattr(deal.contact, "name", None) if deal.contact_id else None
     ttn = (deal.ttn or None) if closes else None
