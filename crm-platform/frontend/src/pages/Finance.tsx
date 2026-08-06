@@ -71,17 +71,17 @@ const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pa
 
 export default function Finance() {
   const { t } = useLang();
-  const [tab, setTab] = useState<"dash" | "journal" | "triage" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model" | "incoming">(() => ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash"));
+  const [tab, setTab] = useState<"dash" | "cashflow" | "journal" | "triage" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model" | "incoming">(() => ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash"));
   useEffect(() => { try { localStorage.setItem("fin_tab", tab); } catch (e) { /* noop */ } }, [tab]);
   const [quickOpen, setQuickOpen] = useState(false);
   const isMobile = useIsMobile();
   const { can: canF } = useAuth();
   const tabAllowed = (k: string) => k === "dash" ? true : (canF("finance.tab." + k) || canF("roles.manage"));
   useEffect(() => { if (!tabAllowed(tab)) setTab("dash"); /* eslint-disable-next-line */ }, [tab]);
-  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["incoming", <><Icon n="📥" size={15} /> {t("Вх. накладные","Вхідні накладні")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
+  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["cashflow", <><Icon n="💵" size={15} /> {t("Деньги","Гроші")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["incoming", <><Icon n="📥" size={15} /> {t("Вх. накладные","Вхідні накладні")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
   const tabMap: any = Object.fromEntries(tabs);
   const GROUPS: [string, string[], string][] = [
-    [t("Обзор", "Огляд"), ["dash"], "💰"],
+    [t("Обзор", "Огляд"), ["dash", "cashflow"], "💰"],
     [t("Операции", "Операції"), ["journal", "triage", "debts", "incoming"], "🧾"],
     [t("Аналитика", "Аналітика"), ["pnl", "be", "grow", "dir"], "📊"],
     [t("Планы", "Плани"), ["plan", "mplan", "salary", "time"], "💼"],
@@ -106,6 +106,7 @@ export default function Finance() {
         </div>
       )}
       {tab === "dash" && <Dashboard />}
+      {tab === "cashflow" && <CashFlow />}
       {tab === "journal" && <Journal />}
       {tab === "triage" && <TriageTab />}
       {tab === "pnl" && <PnL />}
@@ -1933,7 +1934,7 @@ function BreakdownView({ by, from, to }: { by: string; from: string; to: string 
         <div style={{ overflowX: "auto", marginTop: 8 }}>
           <table style={{ width: "100%", fontSize: 13, minWidth: 560 }}>
             <thead><tr>
-              <th style={{ textAlign: "left" }}>{by === "counterparty" ? t("Контрагент", "Контрагент") : by === "month" ? t("Месяц", "Місяць") : t("Категория", "Категорія")}</th>
+              <th style={{ textAlign: "left" }}>{by === "counterparty" ? t("Контрагент", "Контрагент") : by === "direction" ? t("Направление", "Напрямок") : by === "month" ? t("Месяц", "Місяць") : t("Категория", "Категорія")}</th>
               <th style={{ textAlign: "right", color: "#16a34a" }}>{t("Доход", "Дохід")}</th>
               <th style={{ textAlign: "right", color: "#dc2626" }}>{t("Расход", "Розхід")}</th>
               <th style={{ textAlign: "right" }}>{t("Прибыль", "Прибуток")}</th>
@@ -1966,6 +1967,151 @@ function BreakdownView({ by, from, to }: { by: string; from: string; to: string 
 }
 
 /* ─── ВКЛАДКА: ТАБЕЛЬ РОБОЧОГО ЧАСУ (як Бітрикс timeman) ────────────────── */
+/* ─── ВКЛАДКА: 💵 ДЕНЬГИ (Cash flow, як Finmap) ─────────────────────────── */
+const CF_PAL = ["#16a34a", "#6366f1", "#f59e0b", "#0ea5e9", "#ec4899", "#8b5cf6", "#14b8a6", "#f97316", "#84cc16", "#64748b"];
+
+function CashJournal({ from, to }: { from: string; to: string }) {
+  const { t } = useLang();
+  const nav = useNav();
+  const [tx, setTx] = useState<any[] | null>(null);
+  const [editTx, setEditTx] = useState<number | null>(null);
+  const load = () => { setTx(null); api.get<any>(`/api/transactions/?from=${from}&to=${to}&page_size=300`).then((d) => setTx(d.results || d)).catch(() => setTx([])); };
+  useEffect(() => { load(); }, [from, to]);
+  if (!tx) return <div className="spin" style={{ padding: 12 }}>{t("Журнал…", "Журнал…")}</div>;
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", fontSize: 12.5, minWidth: 620 }}>
+        <thead><tr className="muted" style={{ fontSize: 11, textAlign: "left" }}>
+          <th style={{ padding: "4px 8px" }}>{t("Дата", "Дата")}</th>
+          <th style={{ textAlign: "right" }}>{t("Сумма", "Сума")}</th>
+          <th style={{ padding: "4px 8px" }}>{t("Контрагент", "Контрагент")}</th>
+          <th style={{ padding: "4px 8px" }}>{t("Категория", "Категорія")}</th>
+          <th style={{ padding: "4px 8px" }}>{t("Направление", "Напрямок")}</th>
+        </tr></thead>
+        <tbody>
+          {tx.map((r: any) => (
+            <tr key={r.id} onClick={() => setEditTx(r.id)} title={t("Открыть операцию", "Відкрити операцію")} style={{ borderTop: "1px solid #eef2f7", cursor: "pointer" }}>
+              <td className="muted" style={{ padding: "4px 8px", whiteSpace: "nowrap" }}>{new Date(r.date || r.created_at).toLocaleDateString("ru")}</td>
+              <td style={{ textAlign: "right", fontWeight: 600, whiteSpace: "nowrap", color: r.direction === "in" ? "#16a34a" : r.direction === "out" ? "#dc2626" : "#64748b" }}>{r.direction === "in" ? "+" : r.direction === "out" ? "−" : "↔"}{money2(Math.abs(Number(r.amount_uah || r.amount)))}</td>
+              <td style={{ padding: "4px 8px" }}>{r.counterparty || "—"}</td>
+              <td style={{ padding: "4px 8px" }}>{r.category_name || "—"}</td>
+              <td style={{ padding: "4px 8px" }}>{(r as any).fin_direction_name || "—"}</td>
+            </tr>
+          ))}
+          {tx.length === 0 && <tr><td colSpan={5} className="muted" style={{ padding: 12, textAlign: "center" }}>{t("Нет операций за период", "Немає операцій за період")}</td></tr>}
+        </tbody>
+      </table>
+      {editTx && <TxCardModal txId={editTx} nav={(pth: string) => nav(pth)} onClose={() => setEditTx(null)} onSaved={() => { setEditTx(null); load(); }} />}
+    </div>
+  );
+}
+
+function CashFlow() {
+  const { t } = useLang();
+  const [from, setFrom] = useState(monthStart());
+  const [to, setTo] = useState(today());
+  const [grp, setGrp] = useState<"category" | "counterparty" | "direction">("category");
+  const [gran, setGran] = useState<"month" | "quarter">("month");
+  const [view, setView] = useState<"chart" | "list">("chart");
+  const [months, setMonths] = useState<any[] | null>(null);
+  const [grpData, setGrpData] = useState<any[] | null>(null);
+
+  useEffect(() => { setMonths(null); api.get<any>(`/api/finance/breakdown/?by=month&from=${from}&to=${to}`).then((d) => setMonths(d.rows || [])).catch(() => setMonths([])); }, [from, to]);
+  useEffect(() => { setGrpData(null); api.get<any>(`/api/finance/breakdown/?by=${grp}&from=${from}&to=${to}`).then((d) => setGrpData(d.rows || [])).catch(() => setGrpData([])); }, [grp, from, to]);
+
+  const src = (months || []).slice().sort((a: any, b: any) => (a.name > b.name ? 1 : -1));
+  let buckets: any[] = [];
+  if (gran === "month") {
+    buckets = src.map((r: any) => ({ label: r.name.slice(5) + "." + r.name.slice(2, 4), income: r.income, expense: r.expense, net: r.income - r.expense }));
+  } else {
+    const q: Record<string, any> = {};
+    for (const r of src) { const y = r.name.slice(0, 4); const m = parseInt(r.name.slice(5, 7), 10) || 1; const qi = Math.floor((m - 1) / 3) + 1; const key = y + "-" + qi; const b = q[key] || (q[key] = { label: "Q" + qi + " '" + y.slice(2), income: 0, expense: 0 }); b.income += r.income; b.expense += r.expense; }
+    buckets = Object.keys(q).sort().map((k) => ({ ...q[k], net: q[k].income - q[k].expense }));
+  }
+  const totIn = buckets.reduce((a, b) => a + b.income, 0);
+  const totExp = buckets.reduce((a, b) => a + b.expense, 0);
+  const CH = 200;
+  const mx = Math.max(1, ...buckets.map((b) => Math.max(b.income, b.expense)));
+  const grpLbl = grp === "category" ? t("категориям", "категоріями") : grp === "counterparty" ? t("контрагентам", "контрагентами") : t("проектам", "проєктами");
+  const gd = (grpData || []);
+  const gInMax = Math.max(1, ...gd.map((x: any) => x.income || 0));
+  const gExMax = Math.max(1, ...gd.map((x: any) => x.expense || 0));
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+        <Period from={from} to={to} set={(f, tt) => { setFrom(f); setTo(tt); }} />
+        <div style={{ display: "flex", gap: 4 }}>
+          {([["category", t("Категории", "Категорії")], ["counterparty", t("Контрагенты", "Контрагенти")], ["direction", t("Проекты", "Проєкти")]] as [any, string][]).map(([k, l]) => <button key={k} className={"btn" + (grp === k ? " btn-primary" : " btn-light")} style={{ fontSize: 12.5 }} onClick={() => setGrp(k)}>{l}</button>)}
+        </div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {([["month", t("Месяцы", "Місяці")], ["quarter", t("Кварталы", "Квартали")]] as [any, string][]).map(([k, l]) => <button key={k} className={"btn" + (gran === k ? " btn-primary" : " btn-light")} style={{ fontSize: 12.5 }} onClick={() => setGran(k)}>{l}</button>)}
+        </div>
+        <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
+          {([["chart", "📊 " + t("Графики", "Графіки")], ["list", "📋 " + t("Список", "Список")]] as [any, string][]).map(([k, l]) => <button key={k} className={"btn" + (view === k ? " btn-primary" : " btn-light")} style={{ fontSize: 12.5 }} onClick={() => setView(k)}>{l}</button>)}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <div className="panel" style={{ flex: 1, minWidth: 150, margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{t("Поступления", "Надходження")}</div><div style={{ fontSize: 22, fontWeight: 800, color: "#16a34a" }}>{money(totIn)}</div></div>
+        <div className="panel" style={{ flex: 1, minWidth: 150, margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{t("Списания", "Списання")}</div><div style={{ fontSize: 22, fontWeight: 800, color: "#334155" }}>{money(totExp)}</div></div>
+        <div className="panel" style={{ flex: 1, minWidth: 150, margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{t("Сальдо", "Сальдо")}</div><div style={{ fontSize: 22, fontWeight: 800, color: (totIn - totExp) >= 0 ? "#16a34a" : "#dc2626" }}>{money(totIn - totExp)}</div></div>
+      </div>
+
+      {view === "chart" ? (<>
+        <div className="panel" style={{ margin: "0 0 12px" }}>
+          <b style={{ fontSize: 14 }}>{t("Движение денег", "Рух грошей")} · {gran === "month" ? t("по месяцам", "по місяцях") : t("по кварталам", "по кварталах")}</b>
+          {!months ? <div className="spin" style={{ marginTop: 10 }}>{t("Загрузка…", "Завантаження…")}</div> : buckets.length === 0 ? <div className="muted" style={{ marginTop: 10 }}>{t("Нет данных за период", "Немає даних за період")}</div> : (
+            <div style={{ display: "flex", gap: 8, height: CH, alignItems: "flex-end", marginTop: 12 }}>
+              {buckets.map((x, i) => (
+                <div key={i} title={`${x.label}\n+${money(x.income)} / −${money(x.expense)} = ${money(x.net)}`} style={{ flex: 1, minWidth: 8, position: "relative", height: CH }}>
+                  <div style={{ position: "absolute", left: "6%", width: "42%", bottom: 0, height: Math.max((x.income / mx) * (CH - 20), x.income > 0 ? 2 : 0), background: "#22c55e", borderRadius: "4px 4px 0 0" }} />
+                  <div style={{ position: "absolute", right: "6%", width: "42%", bottom: 0, height: Math.max((x.expense / mx) * (CH - 20), x.expense > 0 ? 2 : 0), background: "#334155", borderRadius: "4px 4px 0 0" }} />
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            {buckets.map((x, i) => <div key={i} className="muted" style={{ flex: 1, fontSize: 10, textAlign: "center" }}>{x.label}</div>)}
+          </div>
+          <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>🟩 {t("поступления", "надходження")} · ⬛ {t("списания", "списання")}</div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div className="panel" style={{ margin: 0 }}>
+            <b style={{ fontSize: 13 }}>{t("Поступления по", "Надходження по")} {grpLbl}</b>
+            {!grpData ? <div className="spin" style={{ marginTop: 8 }}>…</div> : gd.filter((x: any) => x.income > 0).slice(0, 12).map((e: any, i: number) => (
+              <div key={i} style={{ margin: "8px 0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, gap: 8 }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name}</span><b style={{ color: "#16a34a", whiteSpace: "nowrap" }}>{money(e.income)}</b></div>
+                <div style={{ height: 7, background: "#f1f5f9", borderRadius: 4, marginTop: 3 }}><div style={{ width: `${e.income / gInMax * 100}%`, height: "100%", background: CF_PAL[i % CF_PAL.length], borderRadius: 4 }} /></div>
+              </div>
+            ))}
+            {grpData && gd.filter((x: any) => x.income > 0).length === 0 && <div className="muted" style={{ fontSize: 13, marginTop: 8 }}>{t("Нет поступлений", "Немає надходжень")}</div>}
+          </div>
+          <div className="panel" style={{ margin: 0 }}>
+            <b style={{ fontSize: 13 }}>{t("Списания по", "Списання по")} {grpLbl}</b>
+            {!grpData ? <div className="spin" style={{ marginTop: 8 }}>…</div> : gd.filter((x: any) => x.expense > 0).slice(0, 12).map((e: any, i: number) => (
+              <div key={i} style={{ margin: "8px 0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, gap: 8 }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name}</span><b style={{ color: "#dc2626", whiteSpace: "nowrap" }}>{money(e.expense)}</b></div>
+                <div style={{ height: 7, background: "#f1f5f9", borderRadius: 4, marginTop: 3 }}><div style={{ width: `${e.expense / gExMax * 100}%`, height: "100%", background: "#334155", borderRadius: 4 }} /></div>
+              </div>
+            ))}
+            {grpData && gd.filter((x: any) => x.expense > 0).length === 0 && <div className="muted" style={{ fontSize: 13, marginTop: 8 }}>{t("Нет списаний", "Немає списань")}</div>}
+          </div>
+        </div>
+      </>) : (
+        <BreakdownView by={grp} from={from} to={to} />
+      )}
+
+      <div className="panel" style={{ margin: "12px 0 0" }}>
+        <b style={{ fontSize: 14 }}>🧾 {t("Журнал операций за период", "Журнал операцій за період")}</b>
+        <div className="muted" style={{ fontSize: 11.5, marginBottom: 6 }}>{t("Клик по строке — открыть операцию", "Клік по рядку — відкрити операцію")}</div>
+        <CashJournal from={from} to={to} />
+      </div>
+    </div>
+  );
+}
+
 const WD_STATUS: Record<string, { label: string; short: string; color: string }> = {
   worked: { label: "Робочий день", short: "Р", color: "#16a34a" },
   overtime: { label: "Перевиконання (вихід у вихідний)", short: "+", color: "#7c3aed" },

@@ -2209,6 +2209,16 @@ class AnalyticsBreakdownView(APIView):
             rows.sort(key=lambda x: -(abs(x["income"]) + abs(x["expense"])))
             return rows
 
+        if by == "direction":
+            acc = {}
+            for t in qs.values("fin_direction__name", "direction").annotate(s=Sum("amount_uah"), c=_Count("id")):
+                nm = t["fin_direction__name"] or "(без напрямку)"
+                r = acc.setdefault(nm, {"name": nm, "income": 0.0, "expense": 0.0, "count": 0})
+                if t["direction"] == "in": r["income"] += float(t["s"] or 0)
+                else: r["expense"] += float(t["s"] or 0)
+                r["count"] += t["c"]
+            return Response({"by": by, "rows": _fin(list(acc.values())), "from": d_from.isoformat(), "to": d_to.isoformat()})
+
         if by == "counterparty":
             acc = {}
             for t in qs.values("counterparty", "direction").annotate(s=Sum("amount_uah"), c=_Count("id")):
