@@ -136,6 +136,7 @@ urlpatterns = [
     path("api/worktime/", fin_views.WorkTimeView.as_view()),
     path("api/attachments/<int:pk>/file/", fin_views.AttachmentFileView.as_view()),
     path("api/finance/salary/", fin_views.SalaryView.as_view()),
+    path("api/finance/salary/deals/", fin_views.ManagerDealsView.as_view()),
     path("api/analytics/", crm_views.AnalyticsView.as_view()),
     path("api/analytics/inventory/", wh_views.InventoryAnalyticsView.as_view()),
     path("api/warehouse/inventory-sheet/", wh_views.InventorySheetView.as_view()),

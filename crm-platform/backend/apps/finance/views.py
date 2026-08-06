@@ -2433,6 +2433,50 @@ def _sales_team():
     return User.objects.filter(id__in=ids) if ids else User.objects.filter(is_active=True)[:10]
 
 
+class ManagerDealsView(APIView):
+    """Деталізація виручки менеджера: по яких сделках рахувались оплати за місяць.
+    GET /api/finance/salary/deals/?user=ID&period=YYYY-MM (та сама логіка що у compute_manager_salary)."""
+    permission_classes = [FinancePerm]
+
+    def get(self, request):
+        from django.contrib.auth import get_user_model
+        uid = request.query_params.get("user")
+        period = request.query_params.get("period") or date.today().strftime("%Y-%m")
+        u = get_user_model().objects.filter(id=uid).first()
+        if not u:
+            return Response({"rows": [], "total": 0, "deals": 0, "count": 0})
+        me = request.user
+        same_dept = getattr(u, "department_id", None) and u.department_id == getattr(me, "department_id", None)
+        if str(u.id) != str(me.id) and not (me.is_superuser or me.has_perm_code("roles.manage") or same_dept):
+            return Response({"detail": "Немає доступу до деталізації цього співробітника."}, status=403)
+        y, mo = int(period[:4]), int(period[5:7])
+        inc = (Transaction.objects.filter(direction="in", deal__owner=u, date__year=y, date__month=mo)
+               .select_related("deal", "deal__contact"))
+        by_deal = {}
+        for t in inc:
+            did = t.deal_id
+            rw = by_deal.get(did)
+            if not rw:
+                d = t.deal
+                cli = ""
+                if d and d.contact_id:
+                    c = d.contact
+                    cli = (" ".join(filter(None, [c.first_name or "", c.last_name or ""])).strip() or (c.nickname or "") or "")[:80]
+                rw = by_deal[did] = {"deal_id": did, "title": ((d.title if d else "") or ("#%s" % did))[:80],
+                                     "client": cli, "amount": 0.0, "count": 0, "last_date": None}
+            rw["amount"] += float(t.amount_uah or 0)
+            rw["count"] += 1
+            ds = t.date.isoformat() if t.date else None
+            if ds and (rw["last_date"] is None or ds > rw["last_date"]):
+                rw["last_date"] = ds
+        rows = sorted(by_deal.values(), key=lambda x: -x["amount"])
+        for rw in rows:
+            rw["amount"] = round(rw["amount"])
+        return Response({"user_id": u.id, "user_name": u.get_full_name() or u.username, "period": period,
+                         "rows": rows, "total": round(sum(rw["amount"] for rw in rows)),
+                         "deals": len(rows), "count": sum(rw["count"] for rw in rows)})
+
+
 class SalaryView(APIView):
     """ЗП/KPI менеджерів за місяць (стратегія РОП+психолог). /api/finance/salary/?period=YYYY-MM[&user=ID]"""
     permission_classes = [FinancePerm]

@@ -3101,10 +3101,53 @@ function AutoModal({ period, accounts, dirs, onClose, onSaved }: any) {
 }
 
 /* ─── ВКЛАДКА: ЗП / KPI МЕНЕДЖЕРІВ (стратегія РОП+психолог) ──────────────── */
+/* ─── МОДАЛКА: деталізація оплат менеджера (по яких сделках) ─────────────── */
+function ManagerDealsModal({ user, period, onClose }: { user: any; period: string; onClose: () => void }) {
+  const { t } = useLang();
+  const nav = useNavigate();
+  const [d, setD] = useState<any>(null);
+  useEffect(() => { setD(null); api.get<any>(`/api/finance/salary/deals/?user=${user.id}&period=${period}`).then(setD).catch(() => setD({ rows: [], total: 0, deals: 0, count: 0 })); }, [user.id, period]);
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 16, overflow: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} className="panel" style={{ maxWidth: 720, width: "100%", margin: "40px 0", maxHeight: "85vh", overflow: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <b style={{ fontSize: 16, flex: 1 }}>{user.name} · {t("оплаты за", "оплати за")} {period}</b>
+          <button className="btn btn-light" onClick={onClose}>✕</button>
+        </div>
+        {!d ? <div className="spin">{t("Загрузка…", "Завантаження…")}</div> : (<>
+          <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>{t("Поступило денег", "Надійшло грошей")}: <b style={{ color: "#16a34a" }}>{money(d.total)}</b> · {d.deals} {t("сделок", "угод")} · {d.count} {t("операций", "операцій")}. {t("Клик по сделке — открыть карточку.", "Клік по угоді — відкрити картку.")}</div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", fontSize: 13, minWidth: 480 }}>
+              <thead><tr className="muted" style={{ fontSize: 11, textAlign: "left" }}>
+                <th style={{ padding: "4px 8px" }}>{t("Сделка", "Угода")}</th>
+                <th style={{ padding: "4px 8px" }}>{t("Клиент", "Клієнт")}</th>
+                <th style={{ textAlign: "right", padding: "4px 8px" }}>{t("Поступило", "Надійшло")}</th>
+                <th style={{ textAlign: "right", padding: "4px 8px" }}>{t("Дата", "Дата")}</th>
+              </tr></thead>
+              <tbody>
+                {(d.rows || []).map((row: any) => (
+                  <tr key={row.deal_id} onClick={() => nav(`/deals/${row.deal_id}`)} style={{ borderTop: "1px solid #eef2f7", cursor: "pointer" }} title={t("Открыть сделку", "Відкрити угоду")}>
+                    <td style={{ padding: "5px 8px", color: "#2563eb", fontWeight: 600 }}>#{row.deal_id}{row.title && row.title !== ("#" + row.deal_id) ? " · " + row.title : ""}{row.count > 1 ? <span className="muted" style={{ fontWeight: 400 }}> ({row.count})</span> : ""}</td>
+                    <td style={{ padding: "5px 8px" }}>{row.client || "—"}</td>
+                    <td style={{ textAlign: "right", padding: "5px 8px", fontWeight: 700, color: "#16a34a" }}>{money(row.amount)}</td>
+                    <td className="muted" style={{ textAlign: "right", padding: "5px 8px", whiteSpace: "nowrap" }}>{row.last_date ? new Date(row.last_date).toLocaleDateString("ru") : "—"}</td>
+                  </tr>
+                ))}
+                {(d.rows || []).length === 0 && <tr><td colSpan={4} className="muted" style={{ padding: 14, textAlign: "center" }}>{t("Нет оплат за этот месяц", "Немає оплат за цей місяць")}</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
 function Salary() {
   const { t } = useLang();
   const [period, setPeriod] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; });
   const [data, setData] = useState<any>(null);
+  const [selDeals, setSelDeals] = useState<any>(null);
   useEffect(() => { setData(null); api.get<any>(`/api/finance/salary/?period=${period}`).then(setData); }, [period]);
   if (!data) return <div className="spin">{t("Считаем ЗП…","Рахуємо ЗП…")}</div>;
   const c = data.company;
@@ -3129,7 +3172,7 @@ function Salary() {
             </div>
             <div style={{ margin: "8px 0" }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-                <span className="muted">{t("План","План")} {r.plan_target ? money(r.plan_target) : t("не установлено","не встановлено")} · {r.deals} {t("сделок","угод")} · {t("чек","чек")} {money(r.avg_check)}</span>
+                <span className="muted">{t("План","План")} {r.plan_target ? money(r.plan_target) : t("не установлено","не встановлено")} · <span onClick={() => setSelDeals({ id: r.user_id, name: r.user_name })} style={{ color: "#2563eb", cursor: "pointer", textDecoration: "underline", fontWeight: 600 }} title={t("Показать по каким сделкам считались оплаты","Показати по яких угодах рахувались оплати")}>{r.deals} {t("сделок","угод")}</span> · {t("чек","чек")} {money(r.avg_check)}</span>
                 <b style={{ color: pct >= 100 ? "#16a34a" : pct >= 70 ? "#d97706" : "#dc2626" }}>{r.plan_pct != null ? r.plan_pct + "%" : "—"}</b>
               </div>
               <div style={{ height: 10, background: "#e2e8f0", borderRadius: 6, overflow: "hidden", marginTop: 4 }}>
@@ -3156,6 +3199,7 @@ function Salary() {
       <div className="panel" style={{ margin: "12px 0 0", background: "#f8fafc" }}>
         <div className="muted" style={{ fontSize: 12 }}><Icon n="🎯" size={13} /> {t("Покрытие цели компании","Покриття цілі компанії")}: {t("ТБ","ТБ")} <b>{money(c.breakeven)}</b> · {t("цель","ціль")} ×1.3 <b>{money(c.target)}</b> · {t("сумма планов","сума планів")} <b>{money(c.sum_plans)}</b> · {t("покрытие","покриття")} <b style={{ color: c.coverage_pct >= 100 ? "#16a34a" : "#dc2626" }}>{c.coverage_pct}%</b></div>
       </div>
+    {selDeals && <ManagerDealsModal user={selDeals} period={period} onClose={() => setSelDeals(null)} />}
     </>
   );
 }
