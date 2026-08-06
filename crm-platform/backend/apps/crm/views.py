@@ -1114,16 +1114,40 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
 
 
     @action(detail=True, methods=["post"])
+    def dozakaz(self, request, pk=None):
+        """Дозамовлення: нова сделка того самого клієнта, звʼязана з цією (їде однією посилкою)."""
+        deal = self.get_object()
+        first = deal.funnel.stages.order_by("order").first()
+        nd = Deal.objects.create(
+            title="Дозамовлення до #%s" % deal.id, contact=deal.contact, funnel=deal.funnel,
+            stage=first, owner=(request.user if request.user.is_authenticated else deal.owner),
+            source=deal.source, parent_deal=deal)
+        from .models import log_activity
+        log_activity("deal", deal.id, "Дозамовлення", "Створено звʼязану сделку #%s (одна посилка)" % nd.id, request.user, "")
+        return Response({"id": nd.id})
+
+    def _fiscal_lock(self, deal):
+        """Замок складу сделки після фіскалізації: якщо є чек Checkbox
+        (аванс/фінал) або оплата — суму товарів міняти не можна, інакше
+        авансовий чек розійдеться з фіналом. Для збільшення — Дозамовлення."""
+        from apps.crm.models import Payment as _PayChk
+        locked = (bool(getattr(deal, "checkbox_receipt_id", "") or "")
+                  or bool(getattr(deal, "checkbox_relation_id", "") or "")
+                  or _PayChk.objects.filter(deal=deal, is_paid=True).exists())
+        if locked:
+            return Response({"detail": "По сделці вже є чек/оплата — змінювати товари не можна (сума зафіксована для фіскального чека). Для дозамовлення створіть НОВУ сделку (кнопка «Дозамовлення»)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        return None
+
+    @action(detail=True, methods=["post"])
     def add_item(self, request, pk=None):
         deal = self.get_object()
         g = self._guard(deal)
         if g: return g
         # ЗАБОРОНА додавати товари, якщо по сделці ВЖЕ є оплата (щоб не було пере-
         # рахунків після оплати → «авансів» у Checkbox). Для дозамовлення — НОВА сделка.
-        from apps.crm.models import Payment as _PayChk
-        if _PayChk.objects.filter(deal=deal, is_paid=True).exists():
-            return Response({"detail": "У сделці вже є оплата — додавати товари не можна. Для дозамовлення створіть НОВУ сделку (кнопка «Дозамовлення»)."},
-                            status=status.HTTP_400_BAD_REQUEST)
+        g2 = self._fiscal_lock(deal)
+        if g2: return g2
         # своя позиція НЕ з номенклатури (без складського обліку) — окреме право
         if str(request.data.get("custom_name") or "").strip():
             u = request.user
@@ -1230,6 +1254,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         deal = self.get_object()
         g = self._guard(deal)
         if g: return g
+        g2 = self._fiscal_lock(deal)
+        if g2: return g2
         DealItem.objects.filter(deal=deal, pk=request.data.get("item")).delete()
         self._recalc_amount(deal)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
@@ -1240,6 +1266,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         deal = self.get_object()
         g = self._guard(deal)
         if g: return g
+        g2 = self._fiscal_lock(deal)
+        if g2: return g2
         it = DealItem.objects.filter(deal=deal, pk=request.data.get("item")).first()
         if not it:
             return Response({"detail": "Позицію не знайдено"}, status=status.HTTP_404_NOT_FOUND)

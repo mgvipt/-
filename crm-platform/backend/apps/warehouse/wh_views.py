@@ -147,6 +147,9 @@ def shipments_history(request):
         qs = qs.filter(created_at__date__gte=frm)
     if to:
         qs = qs.filter(created_at__date__lte=to)
+    emp = (request.GET.get("employee") or "").strip()
+    if emp.isdigit():
+        qs = qs.filter(assignee_id=int(emp))
     q = (request.GET.get("q") or "").strip()
     if q:
         cond = (_Qh(deal__contact__first_name__icontains=q) | _Qh(deal__contact__last_name__icontains=q)

@@ -877,7 +877,6 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             )}
           </div>
           <SalesAnalystPanel kind="deals" id={id!} onInsert={(txt) => setDraft(txt)} />
-          <ShipmentBlock dealId={Number(id)} />
           <ActivityLog kind="deal" id={deal.id} />
 
           {/* 10.3 Скидка (инлайн-edit) + авто-рекомендация для VIP */}
@@ -927,6 +926,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
               <RefPhotos dealId={deal.id} initial={(deal as any).ref_photos} />
               <KpHistory history={(deal as any).kp_history} deal={deal} />
               <CardFields leadId={deal.id} initial={deal.card_fields} endpoint="/api/deals/" />
+              <ShipmentBlock dealId={Number(id)} />
 
             </>
           ) : (
@@ -1314,11 +1314,23 @@ function ShipmentBlock({ dealId }: { dealId: number }) {
   const [j, setJ] = useState<any>(null);
   const [loaded, setLoaded] = useState(false);
   const [zoom, setZoom] = useState<string | null>(null);
-  useEffect(() => { api.get<any>(`/api/warehouse/deal/${dealId}/shipment/`).then((d) => { setJ(d.job); setLoaded(true); }).catch(() => setLoaded(true)); }, [dealId]);
+  const [imgs, setImgs] = useState<Record<number, string>>({});
+  useEffect(() => {
+    let alive = true;
+    api.get<any>(`/api/warehouse/deal/${dealId}/shipment/`).then((d) => {
+      if (!alive) return;
+      setJ(d.job); setLoaded(true);
+      ((d.job && d.job.photos) || []).forEach((p: any) => {
+        api.blobUrl(p.url).then((u: string) => { if (alive) setImgs((m) => ({ ...m, [p.id]: u })); }).catch(() => {});
+      });
+    }).catch(() => setLoaded(true));
+    return () => { alive = false; };
+  }, [dealId]);
   if (!loaded || !j) return null;
   const ST: any = { queued: ["В очереди", "#64748b"], taken: ["Взято", "#0ea5e9"], tinting: ["Тонируется", "#a855f7"], packing: ["Упаковка", "#f59e0b"], awaiting_photos: ["Нужны фото", "#f59e0b"], shipped: ["Отгружено", "#16a34a"], partial: ["Частично", "#f59e0b"], cancelled: ["Отменено", "#dc2626"] };
   const st = ST[j.status] || [j.status, "#64748b"];
-  const fmt = (s: string | null) => (s ? new Date(s).toLocaleString("ru", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—");
+  const fmt = (v: string | null) => (v ? new Date(v).toLocaleString("ru", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—");
+  const kindLbl = (k: string) => (k === "buckets" ? t("ведёрки", "відерця") : k === "parcel" ? t("коробка", "коробка") : k);
   return (
     <div className="panel" style={{ margin: "12px 0 0" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -1332,13 +1344,18 @@ function ShipmentBlock({ dealId }: { dealId: number }) {
         {(j.np_ttn || j.ttn) ? <div>{t("ТТН", "ТТН")}: {j.np_ttn || j.ttn}</div> : null}
       </div>
       {(j.photos || []).length > 0 ? (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
           {(j.photos || []).map((p: any) => (
-            <img key={p.id} src={p.url} alt={p.kind} onClick={() => setZoom(p.url)} title={p.kind} style={{ width: 76, height: 76, objectFit: "cover", borderRadius: 8, cursor: "pointer", border: "1px solid #e2e8f0" }} />
+            <div key={p.id} style={{ textAlign: "center" }}>
+              {imgs[p.id]
+                ? <img src={imgs[p.id]} alt={kindLbl(p.kind)} onClick={() => setZoom(imgs[p.id])} title={t("Открыть в масштабе", "Відкрити у масштабі")} style={{ width: 82, height: 82, objectFit: "cover", borderRadius: 8, cursor: "zoom-in", border: "1px solid #e2e8f0", display: "block" }} />
+                : <div style={{ width: 82, height: 82, borderRadius: 8, background: "#f1f5f9", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#94a3b8" }}>…</div>}
+              <div className="muted" style={{ fontSize: 10, marginTop: 2 }}>{kindLbl(p.kind)}</div>
+            </div>
           ))}
         </div>
       ) : <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t("Фото ещё нет", "Фото ще немає")}</div>}
-      {zoom && <div onClick={() => setZoom(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.82)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}><img src={zoom} alt="" style={{ maxWidth: "92%", maxHeight: "92%", borderRadius: 8 }} /></div>}
+      {zoom && <div onClick={() => setZoom(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.82)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={zoom} alt="" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "94vw", maxHeight: "94vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 10px 60px rgba(0,0,0,.6)" }} /></div>}
     </div>
   );
 }

@@ -19,18 +19,18 @@ const ST: any = { queued: ["#eff6ff", "#1d4ed8", "У черзі"], taken: ["#fff
 
 export default function WarehouseWork() {
   const { t } = useLang();
-  const [view, setView] = useState<"queue" | "mine" | "kanban" | "shift" | "salary" | "control" | "dashboard" | "history">(() => (localStorage.getItem("wh_view") as any) || "shift");
+  const [view, setView] = useState<"queue" | "mine" | "kanban" | "shift" | "salary" | "control" | "dashboard">(() => (localStorage.getItem("wh_view") as any) || "shift");
   useEffect(() => { try { localStorage.setItem("wh_view", view); } catch (e) { /* noop */ } }, [view]);
   const [sp] = useSearchParams();
   const [job, setJob] = useState<number | null>(null);
   useEffect(() => {
     const tb = sp.get("tab");
-    if (tb && ["queue", "mine", "kanban", "shift", "salary", "control", "dashboard", "history"].includes(tb)) { setView(tb as any); setJob(null); }
+    if (tb && ["queue", "mine", "kanban", "shift", "salary", "control", "dashboard"].includes(tb)) { setView(tb as any); setJob(null); }
   }, [sp]);
   if (job) return <TaskCard t={t} jobId={job} onBack={() => setJob(null)} />;
   const { can } = useAuth();
   const mgr = can("warehouse.view.all") || can("roles.manage");
-  const TABS: any[] = [["shift", "🏠", "Смена", "Зміна"], ["queue", "📋", "Общий список", "Загальний список"], ["kanban", "🗂", "Мои задачи", "Мої задачі"], ["salary", "💰", "Зарплата", "ЗП"]].concat(mgr ? [["history", "🔎", "История", "Історія"], ["control", "🛡", "Контроль", "Контроль"], ["dashboard", "📊", "Дашборд", "Дашборд"]] : []);
+  const TABS: any[] = [["shift", "🏠", "Смена", "Зміна"], ["queue", "📋", "Общий список", "Загальний список"], ["kanban", "🗂", "Мои задачи", "Мої задачі"], ["salary", "💰", "Зарплата", "ЗП"]].concat(mgr ? [["control", "🛡", "Контроль", "Контроль"], ["dashboard", "📊", "Дашборд", "Дашборд"]] : []);
   return (
     <div className="scroll pad fade" style={{ width: "100%" }}>
       <h2 style={{ margin: "0 0 12px", fontSize: 22, display: "flex", alignItems: "center", gap: 8 }}><Icon n="truck" size={20} /> {t("Отгрузка", "Відвантаження")}</h2>
@@ -46,7 +46,6 @@ export default function WarehouseWork() {
       {view === "salary" && <SalaryView t={t} />}
       {view === "control" && <ControlView t={t} />}
       {view === "dashboard" && <DashboardView t={t} />}
-      {view === "history" && <HistoryView t={t} onOpen={setJob} />}
     </div>
   );
 }
@@ -148,12 +147,7 @@ function QueueView({ t, onOpen, mgr }: any) {
             </select>} />)}
         </div>
       )}
-      {mgr && d.all_shipped_7d && d.all_shipped_7d.length > 0 && (
-        <details style={{ marginBottom: 14 }}>
-          <summary style={{ cursor: "pointer", fontSize: 13.5, fontWeight: 700 }}>✅ {t("Отгружено за 7 дней (все сотрудники)","Відвантажено за 7 днів (усі співробітники)")} — {d.all_shipped_7d.length}</summary>
-          {d.all_shipped_7d.map((j: any) => <JobCard key={"s" + j.id} j={j} t={t} onClick={() => onOpen(j.id)} action={<span />} />)}
-        </details>
-      )}
+      {mgr && <ShippedFilter staff={staff} onOpen={onOpen} t={t} />}
       {(d.queue || []).length === 0 && <div className="note">{t("Очередь пуста — все задачи разобраны 👍", "Черга порожня — всі задачі розібрані 👍")}</div>}
       {sal.length > 0 && <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: "10px 12px", marginBottom: 12 }}><div className="label" style={{ margin: "0 0 8px", color: C.terra }}>🔥 {t("Покрытия для стен — приоритет", "Покриття для стін — пріоритет")} <span className="muted" style={{ fontWeight: 400 }}>· {sal.length}</span></div><div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{sal.map(row)}</div></div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{rest.map(row)}</div>
@@ -479,53 +473,38 @@ function SalaryView({ t }: any) {
   );
 }
 
-function HistoryView({ t, onOpen }: any) {
+function ShippedFilter({ staff, onOpen, t }: any) {
   const [rows, setRows] = useState<any[] | null>(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [emp, setEmp] = useState("");
   const [q, setQ] = useState("");
+  const [opened, setOpened] = useState(false);
   const load = () => {
     setRows(null);
     const p = new URLSearchParams();
     if (from) p.set("from", from);
     if (to) p.set("to", to);
+    if (emp) p.set("employee", emp);
     if (q.trim()) p.set("q", q.trim());
     api.get<any>(`/api/warehouse/shipments/?${p.toString()}`).then((d) => setRows(d.rows || [])).catch(() => setRows([]));
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
-  const ST: any = { queued: "В очереди", taken: "Взято", tinting: "Тонируется", packing: "Упаковка", awaiting_photos: "Нужны фото", shipped: "Отгружено", partial: "Частично", cancelled: "Отменено" };
+  useEffect(() => { if (opened && rows === null) load(); /* eslint-disable-next-line */ }, [opened]);
   return (
-    <div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder={t("🔎 № сделки / клиент / ТТН", "🔎 № угоди / клієнт / ТТН")} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13, minWidth: 220, flex: 1 }} />
-        <span className="muted" style={{ fontSize: 12 }}>{t("Период", "Період")}:</span>
-        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }} />
+    <details style={{ marginBottom: 14 }} onToggle={(e: any) => setOpened(e.currentTarget.open)}>
+      <summary style={{ cursor: "pointer", fontSize: 13.5, fontWeight: 700 }}>🔎 {t("Отгрузки — поиск и период", "Відвантаження — пошук і період")}</summary>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "10px 0" }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder={t("🔎 № сделки / клиент", "🔎 № угоди / клієнт")} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13, flex: 1, minWidth: 150 }} />
+        <select value={emp} onChange={(e) => setEmp(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 12.5 }}><option value="">{t("Все сотрудники", "Усі співробітники")}</option>{(staff || []).map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
+        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 6px", fontSize: 12 }} />
         <span className="muted">—</span>
-        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }} />
-        <button className="btn btn-primary" onClick={load}>{t("Показать", "Показати")}</button>
+        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 6px", fontSize: 12 }} />
+        <button className="btn btn-primary" style={{ height: 32, fontSize: 13 }} onClick={load}>{t("Показать", "Показати")}</button>
       </div>
-      {!rows ? <div className="spin">{t("Загрузка…", "Завантаження…")}</div> : rows.length === 0 ? <div className="muted" style={{ padding: 12 }}>{t("Ничего не найдено", "Нічого не знайдено")}</div> : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", fontSize: 13, minWidth: 640 }}>
-            <thead><tr className="muted" style={{ textAlign: "left", fontSize: 11 }}>
-              <th style={{ padding: "4px 8px" }}>{t("Сделка", "Угода")}</th><th>{t("Клиент", "Клієнт")}</th><th>{t("Статус", "Статус")}</th><th>{t("Складовщик", "Складовщик")}</th><th>{t("Отгружено", "Відвантажено")}</th><th>{t("Фото", "Фото")}</th>
-            </tr></thead>
-            <tbody>
-              {rows.map((j: any) => (
-                <tr key={j.id} onClick={() => onOpen(j.id)} style={{ borderTop: "1px solid #eef2f7", cursor: "pointer" }} title={t("Открыть задачу", "Відкрити задачу")}>
-                  <td style={{ padding: "5px 8px", color: "#2563eb", fontWeight: 600 }}>#{j.deal_id}</td>
-                  <td style={{ padding: "5px 8px" }}>{j.client || "—"}</td>
-                  <td style={{ padding: "5px 8px" }}>{ST[j.status] || j.status}</td>
-                  <td style={{ padding: "5px 8px" }}>{j.assignee_name || "—"}</td>
-                  <td className="muted" style={{ padding: "5px 8px", whiteSpace: "nowrap" }}>{j.shipped_at ? new Date(j.shipped_at).toLocaleDateString("ru") : "—"}</td>
-                  <td style={{ padding: "5px 8px" }}>{j.photos_n || 0} 📷</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {rows === null ? <div className="muted" style={{ fontSize: 12.5 }}>{t("Загрузка…", "Завантаження…")}</div> : rows.length === 0 ? <div className="muted" style={{ fontSize: 12.5 }}>{t("Ничего не найдено", "Нічого не знайдено")}</div> : (
+        <><div className="muted" style={{ fontSize: 11.5, marginBottom: 6 }}>{t("Найдено", "Знайдено")}: {rows.length}</div><div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{rows.map((j: any) => <JobCard key={"h" + j.id} j={j} t={t} onClick={() => onOpen(j.id)} action={<span />} />)}</div></>
       )}
-    </div>
+    </details>
   );
 }
 
