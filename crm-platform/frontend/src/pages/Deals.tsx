@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { api, Funnel } from "../api";
 import Board from "./Board";
@@ -25,10 +26,11 @@ function SmartFilter({ funnel, users, onQuery }: { funnel: Funnel; users: { id: 
   const [dFrom, setDFrom] = useState("");
   const [dTo, setDTo] = useState("");
   const boxRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
 
   // клік поза панеллю — закрити
   useEffect(() => {
-    const h = (e: MouseEvent) => { if (boxRef.current && !boxRef.current.contains(e.target as any)) setOpen(false); };
+    const h = (e: MouseEvent) => { const tt = e.target as any; if (boxRef.current && !boxRef.current.contains(tt) && (!popRef.current || !popRef.current.contains(tt))) setOpen(false); };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
@@ -84,6 +86,7 @@ function SmartFilter({ funnel, users, onQuery }: { funnel: Funnel; users: { id: 
   }
   const active = !!(cli || dealId || owner || selStages.length || datePreset);
   const inp = { height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13, width: "100%" } as any;
+  const _pr = boxRef.current?.getBoundingClientRect();
 
   return (
     <div ref={boxRef} style={{ position: "relative", flex: "1 1 300px", maxWidth: 560, zIndex: 9000 }}>
@@ -93,8 +96,8 @@ function SmartFilter({ funnel, users, onQuery }: { funnel: Funnel; users: { id: 
         placeholder={t("🔍 Поиск сделки по названию… (клик — все фильтры)","🔍 Пошук угоди за назвою… (клік — усі фільтри)")}
         style={{ ...inp, borderColor: active ? "var(--brand)" : "#cbd5e1", borderWidth: active ? 2 : 1 }} />
       {active && <span onClick={reset} title={t("Сбросить фильтры","Скинути фільтри")} style={{ position: "absolute", right: 10, top: 8, cursor: "pointer", color: "#dc2626", fontWeight: 700 }}>✕</span>}
-      {open && (
-        <div style={{ position: "absolute", top: 40, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, boxShadow: "0 16px 40px rgba(15,23,42,.18)", padding: 14, zIndex: 1000 }}>
+      {open && createPortal((
+        <div ref={popRef} style={{ position: "fixed", top: (_pr ? _pr.bottom + 6 : 90), left: (_pr ? _pr.left : 16), width: (_pr ? _pr.width : 540), maxWidth: 560, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, boxShadow: "0 16px 40px rgba(15,23,42,.22)", padding: 14, zIndex: 99999 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             {/* клієнт за іменем */}
             <div style={{ position: "relative" }}>
@@ -187,7 +190,7 @@ function SmartFilter({ funnel, users, onQuery }: { funnel: Funnel; users: { id: 
             <button className="btn btn-primary" onClick={apply}>{t("Применить","Застосувати")}</button>
           </div>
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }
