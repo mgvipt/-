@@ -19,18 +19,18 @@ const ST: any = { queued: ["#eff6ff", "#1d4ed8", "У черзі"], taken: ["#fff
 
 export default function WarehouseWork() {
   const { t } = useLang();
-  const [view, setView] = useState<"queue" | "mine" | "kanban" | "shift" | "salary" | "control" | "dashboard">(() => (localStorage.getItem("wh_view") as any) || "shift");
+  const [view, setView] = useState<"queue" | "mine" | "kanban" | "shift" | "salary" | "control" | "dashboard" | "history">(() => (localStorage.getItem("wh_view") as any) || "shift");
   useEffect(() => { try { localStorage.setItem("wh_view", view); } catch (e) { /* noop */ } }, [view]);
   const [sp] = useSearchParams();
   const [job, setJob] = useState<number | null>(null);
   useEffect(() => {
     const tb = sp.get("tab");
-    if (tb && ["queue", "mine", "kanban", "shift", "salary", "control", "dashboard"].includes(tb)) { setView(tb as any); setJob(null); }
+    if (tb && ["queue", "mine", "kanban", "shift", "salary", "control", "dashboard", "history"].includes(tb)) { setView(tb as any); setJob(null); }
   }, [sp]);
   if (job) return <TaskCard t={t} jobId={job} onBack={() => setJob(null)} />;
   const { can } = useAuth();
   const mgr = can("warehouse.view.all") || can("roles.manage");
-  const TABS: any[] = [["shift", "🏠", "Смена", "Зміна"], ["queue", "📋", "Общий список", "Загальний список"], ["kanban", "🗂", "Мои задачи", "Мої задачі"], ["salary", "💰", "Зарплата", "ЗП"]].concat(mgr ? [["control", "🛡", "Контроль", "Контроль"], ["dashboard", "📊", "Дашборд", "Дашборд"]] : []);
+  const TABS: any[] = [["shift", "🏠", "Смена", "Зміна"], ["queue", "📋", "Общий список", "Загальний список"], ["kanban", "🗂", "Мои задачи", "Мої задачі"], ["salary", "💰", "Зарплата", "ЗП"]].concat(mgr ? [["history", "🔎", "История", "Історія"], ["control", "🛡", "Контроль", "Контроль"], ["dashboard", "📊", "Дашборд", "Дашборд"]] : []);
   return (
     <div className="scroll pad fade" style={{ width: "100%" }}>
       <h2 style={{ margin: "0 0 12px", fontSize: 22, display: "flex", alignItems: "center", gap: 8 }}><Icon n="truck" size={20} /> {t("Отгрузка", "Відвантаження")}</h2>
@@ -46,6 +46,7 @@ export default function WarehouseWork() {
       {view === "salary" && <SalaryView t={t} />}
       {view === "control" && <ControlView t={t} />}
       {view === "dashboard" && <DashboardView t={t} />}
+      {view === "history" && <HistoryView t={t} onOpen={setJob} />}
     </div>
   );
 }
@@ -474,6 +475,56 @@ function SalaryView({ t }: any) {
         <div className="panel" style={{ flex: 1, textAlign: "center", margin: 0 }}><div style={{ fontSize: 24, fontWeight: 800 }}>{d.tintings}</div><div className="muted" style={{ fontSize: 11 }}>{t("тонировок", "тонувань")}</div></div>
       </div>
       <div className="muted" style={{ fontSize: 11, textAlign: "center", marginTop: 8 }}>{t("Ставки управляются в финмодели", "Ставки керуються у фінмоделі")}</div>
+    </div>
+  );
+}
+
+function HistoryView({ t, onOpen }: any) {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [q, setQ] = useState("");
+  const load = () => {
+    setRows(null);
+    const p = new URLSearchParams();
+    if (from) p.set("from", from);
+    if (to) p.set("to", to);
+    if (q.trim()) p.set("q", q.trim());
+    api.get<any>(`/api/warehouse/shipments/?${p.toString()}`).then((d) => setRows(d.rows || [])).catch(() => setRows([]));
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  const ST: any = { queued: "В очереди", taken: "Взято", tinting: "Тонируется", packing: "Упаковка", awaiting_photos: "Нужны фото", shipped: "Отгружено", partial: "Частично", cancelled: "Отменено" };
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder={t("🔎 № сделки / клиент / ТТН", "🔎 № угоди / клієнт / ТТН")} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13, minWidth: 220, flex: 1 }} />
+        <span className="muted" style={{ fontSize: 12 }}>{t("Период", "Період")}:</span>
+        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }} />
+        <span className="muted">—</span>
+        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }} />
+        <button className="btn btn-primary" onClick={load}>{t("Показать", "Показати")}</button>
+      </div>
+      {!rows ? <div className="spin">{t("Загрузка…", "Завантаження…")}</div> : rows.length === 0 ? <div className="muted" style={{ padding: 12 }}>{t("Ничего не найдено", "Нічого не знайдено")}</div> : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", fontSize: 13, minWidth: 640 }}>
+            <thead><tr className="muted" style={{ textAlign: "left", fontSize: 11 }}>
+              <th style={{ padding: "4px 8px" }}>{t("Сделка", "Угода")}</th><th>{t("Клиент", "Клієнт")}</th><th>{t("Статус", "Статус")}</th><th>{t("Складовщик", "Складовщик")}</th><th>{t("Отгружено", "Відвантажено")}</th><th>{t("Фото", "Фото")}</th>
+            </tr></thead>
+            <tbody>
+              {rows.map((j: any) => (
+                <tr key={j.id} onClick={() => onOpen(j.id)} style={{ borderTop: "1px solid #eef2f7", cursor: "pointer" }} title={t("Открыть задачу", "Відкрити задачу")}>
+                  <td style={{ padding: "5px 8px", color: "#2563eb", fontWeight: 600 }}>#{j.deal_id}</td>
+                  <td style={{ padding: "5px 8px" }}>{j.client || "—"}</td>
+                  <td style={{ padding: "5px 8px" }}>{ST[j.status] || j.status}</td>
+                  <td style={{ padding: "5px 8px" }}>{j.assignee_name || "—"}</td>
+                  <td className="muted" style={{ padding: "5px 8px", whiteSpace: "nowrap" }}>{j.shipped_at ? new Date(j.shipped_at).toLocaleDateString("ru") : "—"}</td>
+                  <td style={{ padding: "5px 8px" }}>{j.photos_n || 0} 📷</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

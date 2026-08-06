@@ -149,6 +149,8 @@ urlpatterns = [
     path("api/warehouse/jobs/<int:pk>/packing/", whv.packing),
     path("api/warehouse/jobs/<int:pk>/photo/", whv.photo),
     path("api/warehouse/jobs/<int:pk>/ship/", whv.ship),
+    path("api/warehouse/deal/<int:deal_id>/shipment/", whv.deal_shipment),
+    path("api/warehouse/shipments/", whv.shipments_history),
     path("api/warehouse/my-salary/", whv.my_salary),
     path("api/warehouse/my-shift/", whv.my_shift),
     path("api/warehouse/day/start/", whv.day_start),

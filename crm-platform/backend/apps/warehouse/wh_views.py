@@ -117,6 +117,54 @@ def job_detail(request, pk):
     return Response(_job_dict(job, full=True))
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def deal_shipment(request, deal_id):
+    """Задача відвантаження по сделці (read-only): статус, фото складовщика, дати."""
+    job = (WarehouseJob.objects.filter(deal_id=deal_id)
+           .select_related("deal", "deal__contact", "deal__stage", "assignee").order_by("-created_at").first())
+    if not job:
+        return Response({"job": None})
+    d = _job_dict(job, full=True)
+    d["taken_at"] = job.taken_at.isoformat() if job.taken_at else None
+    d["shipped_at"] = job.shipped_at.isoformat() if job.shipped_at else None
+    d["shipped_weight_kg"] = str(job.shipped_weight_kg or 0)
+    return Response({"job": d})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def shipments_history(request):
+    """Історія відвантажень з фільтром за період + пошук по № сделки / клієнту."""
+    from django.db.models import Q as _Qh
+    u = request.user
+    if not (u.is_superuser or (hasattr(u, "has_perm_code") and (u.has_perm_code("warehouse.view.all") or u.has_perm_code("roles.manage") or u.has_perm_code("warehouse.view")))):
+        return Response({"detail": "Немає доступу"}, status=403)
+    qs = WarehouseJob.objects.select_related("deal", "deal__contact", "deal__stage", "assignee")
+    frm = (request.GET.get("from") or "").strip()
+    to = (request.GET.get("to") or "").strip()
+    if frm:
+        qs = qs.filter(created_at__date__gte=frm)
+    if to:
+        qs = qs.filter(created_at__date__lte=to)
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        cond = (_Qh(deal__contact__first_name__icontains=q) | _Qh(deal__contact__last_name__icontains=q)
+                | _Qh(deal__title__icontains=q) | _Qh(np_ttn__icontains=q))
+        _num = q.replace("#", "").strip()
+        if _num.isdigit():
+            cond |= _Qh(deal_id=int(_num))
+        qs = qs.filter(cond)
+    qs = qs.order_by("-created_at")[:200]
+    rows = []
+    for j in qs:
+        d = _job_dict(j)
+        d["taken_at"] = j.taken_at.isoformat() if j.taken_at else None
+        d["shipped_at"] = j.shipped_at.isoformat() if j.shipped_at else None
+        rows.append(d)
+    return Response({"rows": rows, "count": len(rows)})
+
+
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def reassign(request, pk):

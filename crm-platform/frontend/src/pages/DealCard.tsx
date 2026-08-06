@@ -877,6 +877,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             )}
           </div>
           <SalesAnalystPanel kind="deals" id={id!} onInsert={(txt) => setDraft(txt)} />
+          <ShipmentBlock dealId={Number(id)} />
           <ActivityLog kind="deal" id={deal.id} />
 
           {/* 10.3 Скидка (инлайн-edit) + авто-рекомендация для VIP */}
@@ -1308,6 +1309,40 @@ function Inline({ value, fmt, onSave }: { value: number; fmt: (v: number) => str
 
 
 /* ─── WALLCOV CASHFLOW — перенесено з віджета finmap-bridge (5 вкладок) ───── */
+function ShipmentBlock({ dealId }: { dealId: number }) {
+  const { t } = useLang();
+  const [j, setJ] = useState<any>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [zoom, setZoom] = useState<string | null>(null);
+  useEffect(() => { api.get<any>(`/api/warehouse/deal/${dealId}/shipment/`).then((d) => { setJ(d.job); setLoaded(true); }).catch(() => setLoaded(true)); }, [dealId]);
+  if (!loaded || !j) return null;
+  const ST: any = { queued: ["В очереди", "#64748b"], taken: ["Взято", "#0ea5e9"], tinting: ["Тонируется", "#a855f7"], packing: ["Упаковка", "#f59e0b"], awaiting_photos: ["Нужны фото", "#f59e0b"], shipped: ["Отгружено", "#16a34a"], partial: ["Частично", "#f59e0b"], cancelled: ["Отменено", "#dc2626"] };
+  const st = ST[j.status] || [j.status, "#64748b"];
+  const fmt = (s: string | null) => (s ? new Date(s).toLocaleString("ru", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—");
+  return (
+    <div className="panel" style={{ margin: "12px 0 0" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <b style={{ fontSize: 14 }}>📦 {t("Отгрузка (склад)", "Відвантаження (склад)")}</b>
+        <span style={{ background: st[1], color: "#fff", padding: "2px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700 }}>{st[0]}</span>
+        <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>{t("только просмотр", "лише перегляд")}</span>
+      </div>
+      <div style={{ fontSize: 12.5, color: "#475569", display: "grid", gap: 3 }}>
+        <div>{t("Складовщик", "Складовщик")}: <b>{j.assignee_name || "—"}</b></div>
+        <div>{t("Взято", "Взято")}: {fmt(j.taken_at)} · {t("Отгружено", "Відвантажено")}: {fmt(j.shipped_at)}</div>
+        {(j.np_ttn || j.ttn) ? <div>{t("ТТН", "ТТН")}: {j.np_ttn || j.ttn}</div> : null}
+      </div>
+      {(j.photos || []).length > 0 ? (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+          {(j.photos || []).map((p: any) => (
+            <img key={p.id} src={p.url} alt={p.kind} onClick={() => setZoom(p.url)} title={p.kind} style={{ width: 76, height: 76, objectFit: "cover", borderRadius: 8, cursor: "pointer", border: "1px solid #e2e8f0" }} />
+          ))}
+        </div>
+      ) : <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t("Фото ещё нет", "Фото ще немає")}</div>}
+      {zoom && <div onClick={() => setZoom(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.82)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}><img src={zoom} alt="" style={{ maxWidth: "92%", maxHeight: "92%", borderRadius: 8 }} /></div>}
+    </div>
+  );
+}
+
 function CashflowTab({ deal, remaining, onPay, createTTN, issueCheckbox }: any) {
   const { t } = useLang();
   const f = (v: number) => new Intl.NumberFormat("uk").format(Math.round(v || 0));
