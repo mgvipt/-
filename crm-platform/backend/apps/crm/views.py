@@ -580,9 +580,14 @@ def _short_code():
 
 def paylink_redirect(request, code):
     from .models import PayLink
+    from django.http import HttpResponse
     pl = PayLink.objects.filter(code=code).first()
     if not pl:
         return HttpResponseNotFound("Посилання не знайдено або застаріло")
+    # ФІКСОВАНА СУМА: якщо для сделки є НОВІШЕ посилання (суму оновили) — старе блокуємо,
+    # щоб клієнт не оплатив стару/меншу суму. Працює лише найновіше посилання сделки.
+    if pl.deal_id and PayLink.objects.filter(deal_id=pl.deal_id, id__gt=pl.id).exists():
+        return HttpResponse("<div style='font-family:system-ui,sans-serif;max-width:460px;margin:64px auto;text-align:center;color:#334155'><h2 style='color:#dc2626'>Посилання застаріло</h2><p>Сума замовлення оновилась. Будь ласка, попросіть менеджера надіслати актуальне посилання на оплату.</p></div>", content_type="text/html; charset=utf-8")
     PayLink.objects.filter(id=pl.id).update(clicks=pl.clicks + 1)
     return HttpResponseRedirect(pl.target)
 
