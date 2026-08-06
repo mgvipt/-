@@ -685,10 +685,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         <button className={"btn" + (tab === "items" ? " btn-primary" : "")} onClick={() => setTab("items")}><Icon n="📦" size={15} /> {t("Товары","Товари")} ({deal.items.length})</button>
         <button className={"btn" + (tab === "np" ? " btn-primary" : "")} onClick={() => setTab("np")}><Icon n="🚚" size={15} /> {t("Новая почта","Нова Пошта")}</button>
         {can("deal.smeta.tab") && <button className={"btn" + (tab === "smeta" ? " btn-primary" : "")} onClick={() => setTab("smeta")}><Icon n="📐" size={15} /> {t("Смета","Кошторис")}</button>}
+        <button className="btn" onClick={dozakazDeal} title={t("Связанная сделка (одна посылка)","Звʼязана сделка (одна посилка)")} style={{ background: "#ecfeff", color: "#0e7490", fontWeight: 600 }}><Icon n="➕" size={15} /> {t("Дозаказ","Дозамовлення")}</button>
         <button className="btn" style={{ padding: "0 10px" }} title={t("Накладная / КП (документ)","Накладна / КП (документ)")} onClick={() => setDocOpen(true)}><Icon n="file" size={16} /></button>
         <button className="btn" style={{ padding: "0 10px" }} title={t("Печать бланка выкраски","Друк бланка викраски")} onClick={() => setVkOpen(true)}><Icon n="palette" size={16} /></button>
         <div style={{ width: 1, height: 24, background: "#cbd5e1", margin: "0 6px" }} />
-        <button className="btn" onClick={issueCheckbox}><Icon n="🧾" size={15} /> {t("Checkbox","Checkbox")}</button>
         <button className="btn" onClick={() => setTaskOpen(true)} title={t("Поставить задачу по сделке","Поставити задачу по угоді")}><Icon n="check" size={15} /> {t("Задача","+ Задача")}</button>
         {deal.contact_id && (
           <div id={`deal-reply-channel-${deal.id}`} data-testid="deal-reply-channel-target"
