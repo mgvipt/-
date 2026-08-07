@@ -373,6 +373,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     try { setDeal(await api.post<Deal>(`/api/deals/${id}/refresh_costs/`, {})); flash(t("✓ Себестоимость обновлена из номенклатуры","✓ Собівартість оновлено з номенклатури")); }
     catch { alert(t("Не удалось обновить (проверьте права на редактирование сделки)","Не вдалося оновити (перевірте права на редагування угоди)")); }
   }
+  // подтянуть свежую РОЗНИЧНУЮ цену из номенклатуры — сумма сделки пересчитается (только неоплаченные)
+  async function refreshPrices() {
+    if (!confirm(t("Подтянуть свежие розничные цены из номенклатуры во все товары? Сумма сделки пересчитается. Только для неоплаченных сделок.","Підтягнути свіжі роздрібні ціни з номенклатури в усі товари? Сума сделки перерахується. Лише для неоплачених."))) return;
+    try { setDeal(await api.post<Deal>(`/api/deals/${id}/refresh_prices/`, {})); flash(t("✓ Цены обновлены из номенклатуры","✓ Ціни оновлено з номенклатури")); }
+    catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось (сделка оплачена или нет прав)","Не вдалося (сделка оплачена або немає прав)")); }
+  }
   useEffect(() => {
     if (!psearch.trim() || psel) { setPresults([]); return; }
     const t = setTimeout(() => api.get<Paginated<Product>>(`/api/products/?search=${encodeURIComponent(psearch)}&page_size=12`).then((d) => setPresults(d.results)).catch(() => setPresults([])), 250);
@@ -952,6 +958,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   {can("deal.items.custom") || can("roles.manage") ? <button className="btn" onClick={() => setCiOpen((v) => !v)} title={t("Добавить позицию НЕ из номенклатуры — без складского учёта и списания","Додати позицію НЕ з номенклатури — без складського обліку і списання")} style={{ whiteSpace: "nowrap" }}>{ciOpen ? "✕" : "➕"} {t("Своя","Своя")}</button> : null}
                   {can("warehouse.tab.receipts") && <button className="btn" onClick={() => setShowReceipt(true)} title={t("Оприходовать товар (дроп/закупка у поставщика) — приход на склад с выбором поставщика","Оприбуткувати товар (дроп/закупка у постачальника) — прихід на склад з вибором постачальника")} style={{ whiteSpace: "nowrap" }}><Icon n="📥" size={14} /> {t("Приход","Прихід")}</button>}
                   {can("product.cost.view") && deal.items && deal.items.length > 0 && <button className="btn" onClick={refreshCosts} title={t("Подтянуть свежую закупку из номенклатуры во все товары (маржа обновится; сумма клиента и чек не меняются)","Підтягнути свіжу закупівлю з номенклатури в усі товари (маржа оновиться; сума клієнта і чек не змінюються)")} style={{ whiteSpace: "nowrap" }}><Icon n="🔄" size={14} /> {t("Обновить закупку","Оновити закупівлю")}</button>}
+                  {(Number(deal.paid) || 0) <= 0 && deal.items && deal.items.length > 0 && <button className="btn" onClick={refreshPrices} title={t("Подтянуть свежие розничные цены из номенклатуры во все товары (сумма сделки пересчитается). Только для неоплаченных.","Підтягнути свіжі роздрібні ціни з номенклатури в усі товари (сума сделки перерахується). Лише для неоплачених.")} style={{ whiteSpace: "nowrap" }}><Icon n="🏷️" size={14} /> {t("Обновить цены","Оновити ціни")}</button>}
                 </div>
                 {presults.length > 0 && (
                   <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 260, overflowY: "auto" }}>

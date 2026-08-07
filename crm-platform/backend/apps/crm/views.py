@@ -1328,6 +1328,31 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
+    def refresh_prices(self, request, pk=None):
+        """Оновити РОЗДРІБНУ ціну позицій зі свіжих даних номенклатури (+ собівартість).
+        Змінює суму клієнта → лише для НЕОПЛАЧЕНИХ сделок (після оплати/чека — фіскальний замок)."""
+        deal = self.get_object()
+        g = self._guard(deal)
+        if g:
+            return g
+        g2 = self._fiscal_lock(deal)
+        if g2:
+            return g2
+        n = 0
+        for it in deal.items.filter(product__isnull=False).select_related("product"):
+            np = it.product.price or Decimal("0")
+            changed = False
+            if np > 0 and it.price != np:
+                it.price = np; changed = True
+            nc = _deal_item_cost(it.product, it.price, it.quantity)
+            if it.cost != nc:
+                it.cost = nc; changed = True
+            if changed:
+                it.save(update_fields=["price", "cost"]); n += 1
+        self._recalc_amount(deal)
+        return Response(DealDetailSerializer(deal, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
     def credit_sale(self, request, pk=None):
         """Товарний кредит (воронка салону): відвантажуємо БЕЗ грошей →
         дебіторка на клієнта зі сделки + (опційно) задача складу + стадія «Выдано в товарный кредит».
