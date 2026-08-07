@@ -140,6 +140,15 @@ export default function Warehouse() {
     try { await api.post(`/api/stock-documents/${rid}/unpost/`, {}); await realizRefresh(); loadProducts(); }
     catch { alert(t("Нет доступа (нужно «Редактировать склад» или «Финмодель»)","Немає доступу (потрібне «Редагувати склад» або «Фінмодель»)")); }
   }
+  // приходы: провести / отменить проведение (тот же движок post/unpost)
+  async function receiptToggle(rid: number, post: boolean) {
+    if (!post && !confirm(t("Отменить приход? Поступивший товар будет снят с остатка склада.","Скасувати прихід? Товар, що надійшов, буде знято із залишку складу."))) return;
+    try {
+      await api.post(`/api/stock-documents/${rid}/${post ? "post" : "unpost"}/`, {});
+      try { const fresh: any = await api.get(`/api/stock-documents/${rid}/`); setReceiptSel(fresh); } catch { /* */ }
+      openReceiptList(); loadProducts();
+    } catch { alert(t("Нет доступа (нужно «Редактировать склад» или «Финмодель»)","Немає доступу (потрібне «Редагувати склад» або «Фінмодель»)")); }
+  }
   const [form, setForm] = useState({ product: 0, quantity: 1, price: 0 });
   const [loading, setLoading] = useState(false);
   const [ordering, setOrdering] = useState("");
@@ -784,6 +793,13 @@ export default function Warehouse() {
               </div>
               <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 13, fontWeight: 700, background: receiptSel.posted ? "#dcfce7" : "#fef3c7", color: receiptSel.posted ? "#166534" : "#92400e" }}>{receiptSel.posted ? t("Проведён","Проведено") : t("Черновик","Чернетка")}</span>
             </div>
+            {canRealize && (
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                {receiptSel.posted
+                  ? <button className="btn btn-light" style={{ padding: "4px 12px" }} onClick={() => receiptToggle(receiptSel.id, false)} title={t("Снять проведение — товар уйдёт с остатка (для исправления ошибочного прихода)","Зняти проведення — товар піде із залишку (для виправлення помилкового приходу)")}>{t("Отменить приход","Скасувати прихід")}</button>
+                  : <button className="btn btn-primary" style={{ padding: "4px 12px" }} onClick={() => receiptToggle(receiptSel.id, true)} title={t("Провести приход — товар встанет на остаток","Провести прихід — товар стане на залишок")}>{t("Провести приход","Провести прихід")}</button>}
+              </div>
+            )}
             <table style={{ width: "100%", marginTop: 14 }}>
               <thead><tr><th>{t("Товар","Товар")}</th><th style={{ textAlign: "right" }}>{t("Кол-во","К-сть")}</th><th style={{ textAlign: "right" }}>{t("Цена","Ціна")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th></tr></thead>
               <tbody>{(receiptSel.items || []).map((it: any) => (
