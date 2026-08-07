@@ -82,6 +82,7 @@ function JobCard({ j, t, onClick, action }: any) {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <b style={{ fontSize: 15 }}>#{j.deal_id} · {j.client}</b>
             <span style={{ fontSize: 10.5, fontWeight: 700, background: bg, color: fg, borderRadius: 20, padding: "2px 9px" }}>{lbl}</span>
+            {(j.is_dozakaz || (j.parcel_orders && j.parcel_orders.length > 0)) && <span title={t("Едет одной посылкой","Їде однією посилкою")} style={{ fontSize: 10, fontWeight: 700, background: "#ecfeff", color: "#0e7490", borderRadius: 20, padding: "2px 8px" }}>📦 {t("одна посылка","одна посилка")}</span>}
           </div>
           <div className="muted" style={{ fontSize: 12.5, marginTop: 3, display: "flex", gap: 10, flexWrap: "wrap" }}>
             <span>📍 {j.city || "—"}</span>
@@ -169,6 +170,12 @@ function JobPreview({ jobId, t, onClose, onTake }: any) {
             <button className="btn btn-light" onClick={onClose} style={{ padding: "4px 11px" }}>✕</button>
           </div>
           <div className="muted" style={{ fontSize: 12.5, margin: "4px 0 12px" }}>📍 {j.city || "—"} · {j.kind_type === "test" ? "🧪 " + t("тест-набор", "тест-набір") : "📦 " + t("основной", "основний")}{j.channel === "offline" ? " · 🏪 " + t("салон", "салон") : ""}</div>
+          {(j.is_dozakaz || (j.parcel_orders && j.parcel_orders.length > 0)) && (
+            <div style={{ background: "#ecfeff", border: "1px solid #a5f3fc", borderRadius: 10, padding: "8px 11px", marginBottom: 12, fontSize: 12.5, color: "#0e7490" }}>
+              📦 <b>{t("Одна посылка.","Одна посилка.")}</b> {j.is_dozakaz ? t("Это дозаказ — упаковать вместе с основной сделкой.","Це дозамовлення — пакувати разом з основною сделкою.") : t("К этой сделке едут дозаказы — упаковать в одну коробку.","До цієї сделки їдуть дозамовлення — пакувати в одну коробку.")}
+              {j.parcel_orders && j.parcel_orders.length > 0 ? <> {t("Вместе:","Разом:")} {j.parcel_orders.map((p: any) => "#" + p.id).join(", ")}.</> : null}{" "}{t("ТТН создаёт менеджер на сделке","ТТН створює менеджер на сделці")} #{j.parcel_main}.
+            </div>
+          )}
           <div className="label">📦 {t("Товары в сделке", "Товари в угоді")}</div>
           {(j.items || []).length ? (j.items || []).map((it: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "5px 0", borderBottom: "1px solid #f6f8fb" }}>• {it.name} <b>× {it.qty}</b> {it.weight_kg && it.weight_kg !== "0" && it.weight_kg !== "0.000" ? <span className="muted">· {it.weight_kg} кг</span> : null}</div>) : <div className="muted" style={{ fontSize: 12 }}>—</div>}
           {(j.kits || []).length > 0 && <><div className="label" style={{ marginTop: 14 }}>🎨 {t("Наборы / тонировка", "Набори / тонування")} ({(j.kits || []).length})</div>

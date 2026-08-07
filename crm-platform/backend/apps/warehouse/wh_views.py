@@ -73,6 +73,18 @@ def _job_dict(job, full=False):
         d["np_name"] = ((deal.np_data or {}).get("recipient") or {}).get("name") or ""
     except Exception:
         d["np_name"] = ""
+    # «Одна посилка»: звʼязані дозамовлення/родитель без ТТН — щоб склад пакував разом і робив ОДНУ ТТН
+    try:
+        from apps.crm.models import Deal as _Dl
+        _root = deal.parent_deal or deal
+        _gids = set([_root.id]) | set(_root.children.values_list("id", flat=True))
+        _gids.discard(deal.id)
+        d["parcel_orders"] = [{"id": gd.id, "title": gd.title, "is_dozakaz": bool(gd.parent_deal_id)}
+                              for gd in _Dl.objects.filter(id__in=_gids) if not gd.ttn]
+        d["parcel_main"] = _root.id
+        d["is_dozakaz"] = bool(deal.parent_deal_id)
+    except Exception:
+        d["parcel_orders"] = []; d["parcel_main"] = deal.id; d["is_dozakaz"] = False
     if full:
         d["items"] = [{"name": (it.product.name if it.product_id else ((it.custom_name or "Позиція") + " · не зі складу")), "qty": str(it.quantity),
                        "weight_kg": str((it.product.weight_kg or 0) if it.product_id else 0)} for it in deal.items.all()]
