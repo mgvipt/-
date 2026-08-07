@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, Paginated } from "../api";
 import { SourceChip } from "../ui";
 import { useLang } from "../i18n";
+import { useAuth } from "../auth";
 
 interface Contact {
   id: number; display_name: string; phone: string; email: string; channels: string[];
@@ -140,6 +141,11 @@ function AddSupplier({ onClose, onSaved }: { onClose: () => void; onSaved: (id: 
 export default function Clients() {
   const { t } = useLang();
   const nav = useNavigate();
+  // ── ПРАВА НА ВКЛАДКИ: показуємо лише дозволені сегменти (список приходить з /api/me/) ──
+  const { me } = useAuth();
+  const _ak = me?.allowed_contact_kinds;                 // null/undefined = усі (суперадмін)
+  const visibleKinds = _ak == null ? KINDS : KINDS.filter(([k]) => _ak.includes(k));
+  const canSupplierTab = _ak == null || _ak.includes("supplier");
   const [rows, setRows] = useState<Contact[]>([]);
   const [count, setCount] = useState(0);
   const [q, setQ] = useState("");
@@ -176,7 +182,7 @@ export default function Clients() {
           style={{ padding: "6px 13px", borderRadius: 999, fontSize: 13, cursor: "pointer", fontWeight: kind === "" ? 700 : 500,
                    border: "1px solid " + (kind === "" ? "#0f172a" : "#e2e8f0"), background: kind === "" ? "#0f172a" : "#fff",
                    color: kind === "" ? "#fff" : "#64748b" }}>{t("Все","Всі")}</button>
-        {KINDS.map(([k, lbl, bg, fg]) => {
+        {visibleKinds.map(([k, lbl, bg, fg]) => {
           const on = kind === k;
           return (
             <button key={k} onClick={() => setKind(on ? "" : k)}
@@ -187,10 +193,10 @@ export default function Clients() {
           );
         })}
         <div className="spacer" style={{ flex: 1 }} />
-        <button className="btn btn-primary" onClick={() => setAddSup(true)}
+        {canSupplierTab && <button className="btn btn-primary" onClick={() => setAddSup(true)}
           title={t("Добавить поставщика и сразу включить мониторинг накладных","Додати постачальника і одразу увімкнути моніторинг накладних")}>
           + {t("Поставщик","Постачальник")}
-        </button>
+        </button>}
       </div>
       {addSup && <AddSupplier onClose={() => setAddSup(false)} onSaved={(id: number) => { setAddSup(false); nav(`/clients/${id}`); }} />}
 

@@ -90,7 +90,7 @@ export async function login(username: string, password: string): Promise<string>
 // ---- типы ----
 export interface Me {
   id: number; username: string; first_name: string; last_name: string;
-  is_superuser: boolean; permissions: string[];
+  is_superuser: boolean; permissions: string[]; allowed_contact_kinds?: string[] | null;
   permission_catalog: { code: string; label: string }[];
   theme: { bg?: string; accent?: string };
 }

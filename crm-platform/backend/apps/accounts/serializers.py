@@ -147,12 +147,17 @@ class MeSerializer(UserSerializer):
     permissions = serializers.SerializerMethodField()
     permission_catalog = serializers.SerializerMethodField()
     contact_id = serializers.SerializerMethodField()
+    allowed_contact_kinds = serializers.SerializerMethodField()
 
     class Meta(UserSerializer.Meta):
-        fields = UserSerializer.Meta.fields + ["permissions", "permission_catalog", "is_superuser", "contact_id"]
+        fields = UserSerializer.Meta.fields + ["permissions", "permission_catalog", "is_superuser", "contact_id", "allowed_contact_kinds"]
 
     def get_permissions(self, obj):
         return list(obj.effective_permissions())
+
+    def get_allowed_contact_kinds(self, obj):
+        v = obj.allowed_contact_kinds()
+        return None if v is None else sorted(v)
 
     def get_permission_catalog(self, obj):
         return [{"code": c, "label": l} for c, l in PERMISSION_CHOICES]
