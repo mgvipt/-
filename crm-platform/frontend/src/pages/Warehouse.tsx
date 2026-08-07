@@ -850,10 +850,12 @@ export default function Warehouse() {
             {receiptBusy ? <div className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</div> :
              receiptDocs.length === 0 ? <div className="muted" style={{ padding: 16 }}>{t("Пока нет приходов.","Поки немає приходів.")}</div> :
             <table style={{ width: "100%" }}>
-              <thead><tr><th>№</th><th>{t("Дата","Дата")}</th><th>{t("Комментарий","Коментар")}</th><th style={{ textAlign: "right" }}>{t("Позиций","Позицій")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "center" }}>{t("Статус","Статус")}</th></tr></thead>
+              <thead><tr><th>№</th><th>{t("Поставщик","Постачальник")}</th><th>{t("Дата накладной","Дата накладної")}</th><th>{t("Дата проведения","Дата проведення")}</th><th>{t("Комментарий","Коментар")}</th><th style={{ textAlign: "right" }}>{t("Позиций","Позицій")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "center" }}>{t("Статус","Статус")}</th></tr></thead>
               <tbody>{receiptDocs.map((d: any) => (
                 <tr key={d.id} onClick={() => setReceiptSel(d)} style={{ cursor: "pointer" }} title={t("Открыть документ","Відкрити документ")}>
                   <td><b>{d.number || ("#" + d.id)}</b></td>
+                  <td className="muted">{d.supplier_name || "—"}</td>
+                  <td className="muted">{(d.doc_date || "").slice(0, 10) || "—"}</td>
                   <td className="muted">{(d.created_at || "").slice(0, 10)}</td>
                   <td className="muted">{d.comment || "—"}</td>
                   <td style={{ textAlign: "right" }}>{(d.items || []).length}</td>
