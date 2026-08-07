@@ -1301,6 +1301,33 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
+    def refresh_costs(self, request, pk=None):
+        """Оновити ЗАКУПІВЕЛЬНУ (собівартість) позицій зі свіжих даних номенклатури + маржу.
+        НЕ чіпає ціну/кількість/суму клієнта і фіскальний чек (лише внутрішня собівартість).
+        Також синхронізує собівартість у документі реалізації (складський COGS)."""
+        deal = self.get_object()
+        g = self._guard(deal)
+        if g:
+            return g
+        n = 0
+        for it in deal.items.filter(product__isnull=False).select_related("product"):
+            new_cost = _deal_item_cost(it.product, it.price, it.quantity)
+            if it.cost != new_cost:
+                it.cost = new_cost
+                it.save(update_fields=["cost"])
+                n += 1
+        # синхронізувати собівартість у реалізації (out-документ) по поточній закупці товару
+        from apps.warehouse.models import StockDocument as _SD
+        for doc in _SD.objects.filter(kind="out", deal=deal):
+            for m in doc.items.select_related("product"):
+                if m.product_id:
+                    nc = m.product.cost or Decimal("0")
+                    if m.price != nc:
+                        m.price = nc
+                        m.save(update_fields=["price"])
+        return Response(DealDetailSerializer(deal, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
     def credit_sale(self, request, pk=None):
         """Товарний кредит (воронка салону): відвантажуємо БЕЗ грошей →
         дебіторка на клієнта зі сделки + (опційно) задача складу + стадія «Выдано в товарный кредит».

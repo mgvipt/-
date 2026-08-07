@@ -367,6 +367,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     setDeal(await api.post<Deal>(`/api/deals/${id}/add_item/`, { product: p.id, quantity: addQty, reserved: addReserve }));
     setPsel(null); setPsearch(""); setPresults([]); setAddQty(1); setAddReserve(false);
   }
+  // подтянуть свежую закупку (себестоимость) из номенклатуры — маржа обновится, сумма клиента и чек НЕ меняются
+  async function refreshCosts() {
+    if (!confirm(t("Обновить закупочную (себестоимость) всех товаров из номенклатуры? Сумма клиента и чек не изменятся, поменяется только себестоимость и маржа.","Оновити закупівельну (собівартість) усіх товарів з номенклатури? Сума клієнта і чек не зміняться, зміниться лише собівартість і маржа."))) return;
+    try { setDeal(await api.post<Deal>(`/api/deals/${id}/refresh_costs/`, {})); flash(t("✓ Себестоимость обновлена из номенклатуры","✓ Собівартість оновлено з номенклатури")); }
+    catch { alert(t("Не удалось обновить (проверьте права на редактирование сделки)","Не вдалося оновити (перевірте права на редагування угоди)")); }
+  }
   useEffect(() => {
     if (!psearch.trim() || psel) { setPresults([]); return; }
     const t = setTimeout(() => api.get<Paginated<Product>>(`/api/products/?search=${encodeURIComponent(psearch)}&page_size=12`).then((d) => setPresults(d.results)).catch(() => setPresults([])), 250);
@@ -945,6 +951,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   <button className="btn" onClick={() => setShowList((s) => !s)} title={t("Показать весь список товаров (двойной клик — добавить)","Показати весь список товарів (подвійний клік — додати)")}>{showList ? <>{t("✕ Список","✕ Список")}</> : <><Icon n="📋" size={14} /> {t("Список","Список")}</>}</button>
                   {can("deal.items.custom") || can("roles.manage") ? <button className="btn" onClick={() => setCiOpen((v) => !v)} title={t("Добавить позицию НЕ из номенклатуры — без складского учёта и списания","Додати позицію НЕ з номенклатури — без складського обліку і списання")} style={{ whiteSpace: "nowrap" }}>{ciOpen ? "✕" : "➕"} {t("Своя","Своя")}</button> : null}
                   {can("warehouse.tab.receipts") && <button className="btn" onClick={() => setShowReceipt(true)} title={t("Оприходовать товар (дроп/закупка у поставщика) — приход на склад с выбором поставщика","Оприбуткувати товар (дроп/закупка у постачальника) — прихід на склад з вибором постачальника")} style={{ whiteSpace: "nowrap" }}><Icon n="📥" size={14} /> {t("Приход","Прихід")}</button>}
+                  {can("product.cost.view") && deal.items && deal.items.length > 0 && <button className="btn" onClick={refreshCosts} title={t("Подтянуть свежую закупку из номенклатуры во все товары (маржа обновится; сумма клиента и чек не меняются)","Підтягнути свіжу закупівлю з номенклатури в усі товари (маржа оновиться; сума клієнта і чек не змінюються)")} style={{ whiteSpace: "nowrap" }}><Icon n="🔄" size={14} /> {t("Обновить закупку","Оновити закупівлю")}</button>}
                 </div>
                 {presults.length > 0 && (
                   <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 260, overflowY: "auto" }}>
