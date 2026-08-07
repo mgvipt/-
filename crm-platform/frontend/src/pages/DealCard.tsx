@@ -424,6 +424,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     try { const r: any = await api.post(`/api/deals/${id}/unship/`, {}); setDeal(r.deal); flash(t("✓ Реализация отменена — товар вернулся на склад","✓ Реалізацію скасовано — товар повернувся на склад")); }
     catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось отменить реализацию (нужны права склада/бухгалтера)","Не вдалося скасувати реалізацію (потрібні права складу/бухгалтера)")); }
   }
+  // провести реализацию заново по ТЕКУЩИМ позициям (после отмены/правки) — списание по актуальным кол-ву/цене
+  async function reship() {
+    if (!confirm(t("Провести реализацию по текущим позициям сделки? Товар спишется со склада по актуальному количеству и себестоимости.","Провести реалізацію по поточних позиціях сделки? Товар спишеться зі складу по актуальній кількості і собівартості."))) return;
+    try { const r: any = await api.post(`/api/deals/${id}/reship/`, {}); setDeal(r.deal); flash(t(`✓ Реализация проведена. Списано по закупке на ${r.cogs} ₴`,`✓ Реалізацію проведено. Списано по закупці на ${r.cogs} ₴`)); }
+    catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось провести реализацию (нужны права склада/бухгалтера)","Не вдалося провести реалізацію (потрібні права складу/бухгалтера)")); }
+  }
 
   const salonFunnel = (((deal as any)?.funnel_name || "") as string).toLowerCase().includes("покры") || (((deal as any)?.funnel_name || "") as string).toLowerCase().includes("покрит");
   const inpV: any = { width: "100%", height: 36, marginBottom: 10, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", fontSize: 13 };
@@ -1089,6 +1095,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <b>{(deal as any).realization.number} · {((deal as any).realization.created_at || "").slice(0, 10)} · {(deal as any).realization.posted ? t("проведён","проведено") : t("черновик","чернетка")}</b>
                           {(deal as any).realization.posted && (can("warehouse.edit") || can("finance.manage")) && <button className="btn btn-light" style={{ padding: "2px 8px", fontSize: 11 }} onClick={unship} title={t("Отменить реализацию — товар вернётся на склад (чтобы исправить сделку/приход)","Скасувати реалізацію — товар повернеться на склад (щоб виправити сделку/прихід)")}>{t("Отменить","Скасувати")}</button>}
+                          {!(deal as any).realization.posted && (can("warehouse.edit") || can("finance.manage")) && <button className="btn btn-primary" style={{ padding: "2px 8px", fontSize: 11 }} onClick={reship} title={t("Провести реализацию по текущим позициям — товар спишется со склада","Провести реалізацію по поточних позиціях — товар спишеться зі складу")}>{t("Провести","Провести")}</button>}
                         </span>
                       </div>
                     )}

@@ -2125,6 +2125,27 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         unpost_document(doc)  # товар повертається на склад (posted=False)
         return Response({"ok": True, "deal": DealDetailSerializer(deal, context={"request": request}).data})
 
+    @action(detail=True, methods=["post"])
+    def reship(self, request, pk=None):
+        """Повторно провести реалізацію по ПОТОЧНИХ позиціях (після відміни/правки).
+        Прибирає старий видатковий документ (чернетку або проведений) і створює заново —
+        списання йде по актуальних кол-ву/собівартості. Право — склад/бухгалтер."""
+        from apps.warehouse.models import StockDocument
+        from apps.warehouse.services import realize_deal, unpost_document
+        deal = self.get_object()
+        g = self._guard(deal, fulfill=True)
+        if g:
+            return g
+        if not deal.items.filter(product__isnull=False).exists():
+            return Response({"detail": "В сделці немає складських товарів для реалізації."}, status=status.HTTP_400_BAD_REQUEST)
+        for doc in StockDocument.objects.filter(kind="out", deal=deal):
+            if doc.posted:
+                unpost_document(doc)  # повернути товар, щоб не було подвійного списання
+            doc.delete()  # чернетка/рухи прибираються, далі створюємо заново
+        doc, cogs, created = realize_deal(deal, request.user)
+        return Response({"ok": True, "cogs": float(cogs),
+                         "deal": DealDetailSerializer(deal, context={"request": request}).data})
+
 
 class PaymentViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Payment.objects.select_related("deal")
