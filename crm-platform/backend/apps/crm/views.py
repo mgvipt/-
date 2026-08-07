@@ -1133,7 +1133,12 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     def _fiscal_lock(self, deal):
         """Замок складу сделки після фіскалізації: якщо є чек Checkbox
         (аванс/фінал) або оплата — суму товарів міняти не можна, інакше
-        авансовий чек розійдеться з фіналом. Для збільшення — Дозамовлення."""
+        авансовий чек розійдеться з фіналом. Для збільшення — Дозамовлення.
+        ВИНЯТОК: відповідальний (адмін / бухгалтер з правом payment.process)
+        може виправити навіть оплачену сделку — бере відповідальність на себе."""
+        _u = getattr(self, "request", None) and self.request.user
+        if _u is not None and (_u.is_superuser or _u.has_perm_code("payment.process")):
+            return None
         from apps.crm.models import Payment as _PayChk
         locked = (bool(getattr(deal, "checkbox_receipt_id", "") or "")
                   or bool(getattr(deal, "checkbox_relation_id", "") or "")
