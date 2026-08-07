@@ -463,7 +463,9 @@ class ActivityLogMixin:
                     pass
             if self.log_kind == "deal" and obj.stage and "ттн створена" in (obj.stage.name or "").lower():
                 try:
-                    obj.items.update(reserved=True)  # ТТН створена → товари в РЕЗЕРВ (списання буде на Успішній)
+                    obj.items.update(reserved=True)  # ТТН створена → резерв
+                    from apps.warehouse.services import realize_deal
+                    realize_deal(obj, request.user)  # ТТН створена → списання зі складу (ідемпотентно; на Успішній повторно не спише)
                 except Exception:
                     pass
             if self.log_kind == "deal":
@@ -955,6 +957,8 @@ def _advance_deal_stage(deal, target_order, reason, actor="Автоматиза�
     if "ттн створена" in (target.name or "").lower():
         try:
             deal.items.update(reserved=True)  # авто-резерв на ТТН створена
+            from apps.warehouse.services import realize_deal
+            realize_deal(deal, None)  # ТТН створена → списання зі складу (ідемпотентно)
         except Exception:
             pass
         try:

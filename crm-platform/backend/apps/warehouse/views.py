@@ -841,6 +841,50 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
         return Response({"matched": len(preview), "changed": changed, "not_found": not_found,
                          "preview": preview, "committed": False})
 
+class ProductShipmentsView(APIView):
+    """Відвантаження (реалізації) конкретного товару за період — щоб з рядка тижневої ведомості
+    перейти у сделки, які «поїхали» з цим товаром. Право warehouse.tab.inventory."""
+    permission_classes = [HasPermCode]
+    required_perm = "warehouse.tab.inventory"
+
+    def get(self, request):
+        from datetime import date
+        from django.utils import timezone
+        pid = request.GET.get("product")
+        if not (pid and str(pid).isdigit()):
+            return Response({"rows": [], "count": 0})
+        now = timezone.now()
+        d_from = request.GET.get("from") or now.replace(day=1).date().isoformat()
+        d_to = request.GET.get("to") or now.date().isoformat()
+        try:
+            df = date.fromisoformat(d_from)
+            dt = date.fromisoformat(d_to)
+        except (ValueError, TypeError):
+            return Response({"rows": [], "count": 0}, status=400)
+        movs = (StockMovement.objects.filter(
+            product_id=int(pid), quantity__lt=0, document__posted=True, document__kind="out",
+            document__created_at__date__gte=df, document__created_at__date__lte=dt)
+            .select_related("document", "document__deal", "document__deal__contact")
+            .order_by("-document__created_at"))
+        rows = []
+        for m in movs:
+            d = m.document
+            deal = d.deal
+            cname = ""
+            if deal and deal.contact_id:
+                c = deal.contact
+                cname = str(c) or ("%s %s" % (c.first_name or "", c.last_name or "")).strip()
+            rows.append({
+                "doc_id": d.id, "number": d.number,
+                "deal": deal.id if deal else None,
+                "deal_title": (getattr(deal, "title", "") if deal else "") or d.comment or "",
+                "contact": cname,
+                "qty": float(-m.quantity),
+                "date": d.created_at.date().isoformat() if d.created_at else "",
+            })
+        return Response({"rows": rows, "count": len(rows)})
+
+
 class InventoryAnalyticsView(APIView):
     """Аналитика по складу: стоимость запасов (по закупке/рознице), по категориям, дефицит."""
     permission_classes = [HasPermCode]
@@ -991,6 +1035,13 @@ class InventorySheetView(APIView):
                 qs = qs.filter(category__isnull=True)
             elif cat_id and str(cat_id).isdigit():
                 qs = qs.filter(category_id__in=self._descendant_category_ids(int(cat_id)))
+            if request.GET.get("moved") in ("1", "true", "yes"):
+                # тільки товари, що ПРОДАВАЛИСЬ/відвантажувались за період (рух зі знаком мінус) — тижнева перевірка
+                _moved_ids = (StockMovement.objects.filter(
+                    document__posted=True, quantity__lt=0,
+                    document__created_at__date__gte=df, document__created_at__date__lte=dt)
+                    .values_list("product_id", flat=True).distinct())
+                qs = qs.filter(id__in=list(_moved_ids))
             search = (request.GET.get("search") or "").strip()
             if search:
                 qs = qs.filter(Q(name__icontains=search) | Q(sku__icontains=search))

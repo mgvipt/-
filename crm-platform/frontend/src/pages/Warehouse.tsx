@@ -18,7 +18,7 @@
  *    [10] СУБ-КОМПОНЕНТ: EditCost
  * ========================================================================== */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { StockTab } from "./Analytics";
 import { api, Paginated } from "../api";
 import { useLang } from "../i18n";
@@ -64,11 +64,13 @@ const parseCategoryPath = (value: string) => value.split(/\s*(?:→|>|\/)\s*/).m
 const pad = (n: number) => String(n).padStart(2, "0");
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`; };
+const weekStart = () => { const d = new Date(); const back = (d.getDay() + 1) % 7; d.setDate(d.getDate() - back); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }; // последняя суббота (период недели сб→пт)
 
 export default function Warehouse() {
   /* ─── [2] STATE ──────────────────────────────────────────────────────── */
   const { t } = useLang();
   const { can } = useAuth();
+  const nav = useNavigate();
   const showCost = can("product.cost.view");
   const canEdit = can("warehouse.edit");
   const [cats, setCats] = useState<Category[]>([]);
@@ -257,8 +259,9 @@ export default function Warehouse() {
   const [pFrom, setPFrom] = useState(monthStart());
   const [pTo, setPTo] = useState(today());
   // инвентаризация: собственный список (независимо от вкладки «Товары») — весь склад с фильтром и пагинацией
-  const [invMode, setInvMode] = useState<"all" | "folder">("all"); // все товары / по папке
+  const [invMode, setInvMode] = useState<"all" | "folder" | "moved">("all"); // все товары / по папке / продано за период
   const [invSearch, setInvSearch] = useState(""); // поиск по товару в ведомости
+  const [invDeals, setInvDeals] = useState<null | { productId: number; productName: string; busy: boolean; rows: any[] }>(null); // сделки-отгрузки товара за период
   const [invCat, setInvCat] = useState<number | null>(null);        // выбранная папка (при invMode="folder")
   const [invPage, setInvPage] = useState(1);
   const [invPageSize, setInvPageSize] = useState(50);
@@ -385,7 +388,7 @@ export default function Warehouse() {
   }
 
   // строит параметры запроса ведомости из переданных опций или текущего состояния инвентаризации
-  function invParams(from: string, to: string, o?: { page?: number; pageSize?: number; cat?: number | null; mode?: "all" | "folder"; all?: boolean; search?: string }) {
+  function invParams(from: string, to: string, o?: { page?: number; pageSize?: number; cat?: number | null; mode?: "all" | "folder" | "moved"; all?: boolean; search?: string }) {
     const mode = o?.mode ?? invMode;
     const c = o?.cat !== undefined ? o.cat : invCat;
     const sr = o?.search !== undefined ? o.search : invSearch;
@@ -393,11 +396,12 @@ export default function Warehouse() {
     if (o?.all) { q.set("all", "1"); }
     else { q.set("page", String(o?.page ?? invPage)); q.set("page_size", String(o?.pageSize ?? invPageSize)); }
     if (mode === "folder") { if (c === -1) q.set("category", "none"); else if (c && c > 0) q.set("category", String(c)); }
+    if (mode === "moved") q.set("moved", "1");
     if (sr && sr.trim()) q.set("search", sr.trim());
     return q;
   }
   // грузит одну страницу ведомости; факт, уже введённый пользователем, НЕ затирает
-  async function loadSheet(from: string, to: string, o?: { page?: number; pageSize?: number; cat?: number | null; mode?: "all" | "folder"; search?: string }) {
+  async function loadSheet(from: string, to: string, o?: { page?: number; pageSize?: number; cat?: number | null; mode?: "all" | "folder" | "moved"; search?: string }) {
     setInvLoading(true);
     try {
       const q = invParams(from, to, o);
@@ -415,6 +419,15 @@ export default function Warehouse() {
     return () => clearTimeout(tmr);
     // eslint-disable-next-line
   }, [invSearch]);
+  // сделки (реализации), которые «поехали» с этим товаром за период — для перехода из ведомости
+  async function openInvDeals(productId: number, productName: string) {
+    setInvDeals({ productId, productName, busy: true, rows: [] });
+    try {
+      const q = new URLSearchParams({ product: String(productId), from: pFrom, to: pTo });
+      const r: any = await api.get(`/api/warehouse/product-shipments/?${q.toString()}`);
+      setInvDeals({ productId, productName, busy: false, rows: r.rows || [] });
+    } catch { setInvDeals({ productId, productName, busy: false, rows: [] }); }
+  }
   async function openInventory() {
     setInvMsg("");
     setInvPage(1);
@@ -1156,12 +1169,13 @@ export default function Warehouse() {
               <button className={"btn " + (invScreen === "history" ? "btn-primary" : "btn-light")} onClick={() => { setInvScreen("history"); setInvHistSel(null); loadInvHistory(1); }}>{t("История","Історія")}{invHistCount ? " (" + invHistCount + ")" : ""}</button>
             </div>
             {invScreen === "sheet" && (<>
-            <h3 style={{ marginTop: 0 }}>{t("Инвентаризационная ведомость","Інвентаризаційна відомість")} · {invMode === "folder" && invCat ? (invCat === -1 ? t("без категории","без категорії") : (cats.find((c) => c.id === invCat)?.name || t("папка","папка"))) : t("все товары","всі товари")} <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>({invCount})</span></h3>
+            <h3 style={{ marginTop: 0 }}>{t("Инвентаризационная ведомость","Інвентаризаційна відомість")} · {invMode === "moved" ? t("продано за период","продано за період") : (invMode === "folder" && invCat ? (invCat === -1 ? t("без категории","без категорії") : (cats.find((c) => c.id === invCat)?.name || t("папка","папка"))) : t("все товары","всі товари"))} <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>({invCount})</span></h3>
             {/* Отображение: все товары / по папке + печать */}
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
               <span className="muted" style={{ fontSize: 12 }}>{t("Отображение","Відображення")}:</span>
               <button className={"btn " + (invMode === "all" ? "btn-primary" : "btn-light")} style={{ padding: "4px 12px" }} onClick={() => { setInvMode("all"); setInvPage(1); loadSheet(pFrom, pTo, { mode: "all", page: 1 }); }}>{t("Все товары","Всі товари")}</button>
               <button className={"btn " + (invMode === "folder" ? "btn-primary" : "btn-light")} style={{ padding: "4px 12px" }} onClick={() => { setInvMode("folder"); setInvPage(1); loadSheet(pFrom, pTo, { mode: "folder", page: 1 }); }}>{t("По папке","За папкою")}</button>
+              <button className={"btn " + (invMode === "moved" ? "btn-primary" : "btn-light")} style={{ padding: "4px 12px" }} title={t("Только то, что продавалось/отгружалось за выбранный период — быстрая недельная проверка недостач","Тільки те, що продавалось/відвантажувалось за обраний період — швидка тижнева перевірка нестач")} onClick={() => { setInvMode("moved"); setInvPage(1); const wf = weekStart(); const wt = today(); setPFrom(wf); setPTo(wt); loadSheet(wf, wt, { mode: "moved", page: 1 }); }}>{t("Продано за период","Продано за період")}</button>
               {invMode === "folder" && (
                 <select value={invCat === -1 ? "none" : (invCat ?? "")} onChange={(e) => { const raw = e.target.value; const v = raw === "none" ? -1 : (raw ? Number(raw) : null); setInvCat(v); setInvPage(1); loadSheet(pFrom, pTo, { mode: "folder", cat: v, page: 1 }); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px", maxWidth: 340 }}>
                   <option value="">{t("— выберите папку —","— оберіть папку —")}</option>
@@ -1186,6 +1200,7 @@ export default function Warehouse() {
               <input type="date" value={pFrom} onChange={(e) => { setPFrom(e.target.value); setInvPage(1); loadSheet(e.target.value, pTo, { page: 1 }); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
               <span className="muted">—</span>
               <input type="date" value={pTo} onChange={(e) => { setPTo(e.target.value); setInvPage(1); loadSheet(pFrom, e.target.value, { page: 1 }); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
+              <button className="btn btn-light" style={{ padding: "3px 10px", fontSize: 12 }} title={t("Поставить период = эта неделя (с понедельника)","Поставити період = цей тиждень (з понеділка)")} onClick={() => { const wf = weekStart(); const wt = today(); setPFrom(wf); setPTo(wt); setInvPage(1); loadSheet(wf, wt, { page: 1 }); }}>{t("Эта неделя","Цей тиждень")}</button>
               <span className="muted" style={{ fontSize: 12 }}>{t("Начальный + Поступление − Продано = Конечный учётный. Расхождение = Факт − учётный.","Початковий + Надходження − Продано = Кінцевий обліковий. Розбіжність = Факт − обліковий.")}</span>
             </div>
             {Object.keys(facts).length > 0 && (
@@ -1207,7 +1222,7 @@ export default function Warehouse() {
                         <td>{r.name}</td><td className="muted">{r.unit}</td>
                         <td>{r.opening.toLocaleString("ru")}</td>
                         <td style={{ color: r.received ? "#16a34a" : "#94a3b8" }}>{r.received ? "+" + r.received.toLocaleString("ru") : "—"}</td>
-                        <td style={{ color: r.sold ? "#dc2626" : "#94a3b8" }}>{r.sold ? "−" + r.sold.toLocaleString("ru") : "—"}</td>
+                        <td style={{ color: r.sold ? "#dc2626" : "#94a3b8" }}>{r.sold ? <a onClick={() => openInvDeals(r.id, r.name)} style={{ cursor: "pointer", color: "#fff", background: "#dc2626", fontWeight: 600, borderRadius: 6, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }} title={t("Клик — сделки, которые уехали с этим товаром за период","Клік — сделки, які поїхали з цим товаром за період")}>−{r.sold.toLocaleString("ru")} <span style={{ fontSize: 11 }}>↗ {t("сделки","сделки")}</span></a> : "—"}</td>
                         <td style={{ fontWeight: 600 }}>{r.book.toLocaleString("ru")}</td>
                         <td><input type="number" value={fact} onChange={(e) => setFacts({ ...facts, [r.id]: e.target.value })} style={{ width: 74, height: 28, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
                         <td style={{ color: delta < 0 ? "#dc2626" : delta > 0 ? "#16a34a" : "#94a3b8", fontWeight: 600 }}>{delta > 0 ? "+" : ""}{Math.round(delta * 100) / 100 || 0}</td>
@@ -1452,6 +1467,32 @@ export default function Warehouse() {
               <button className="btn btn-primary" style={{ flex: 1 }} disabled={invImportBusy || invImportChanged === 0} onClick={invImportCommit}>
                 {invImportBusy ? t("Проводим…","Проводимо…") : t(`Провести${invImportChanged ? " (" + invImportChanged + ")" : ""}`,`Провести${invImportChanged ? " (" + invImportChanged + ")" : ""}`)}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Сделки, которые уехали с товаром за период — кликабельны, переход в сделку */}
+      {invDeals && (
+        <div onClick={() => setInvDeals(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 640, maxWidth: "94vw", maxHeight: "84vh", display: "flex", flexDirection: "column" }}>
+            <h3 style={{ marginTop: 0 }}>{t("Сделки с товаром за период","Сделки з товаром за період")}</h3>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{invDeals.productName}</div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{t("Период","Період")}: {pFrom} — {pTo}</div>
+            <div style={{ overflowY: "auto", flex: 1, border: "1px solid #f1f5f9", borderRadius: 8 }}>
+              {invDeals.busy && <div className="muted" style={{ padding: 12, fontSize: 13 }}>{t("Загрузка…","Завантаження…")}</div>}
+              {!invDeals.busy && invDeals.rows.length === 0 && <div className="muted" style={{ padding: 12, fontSize: 13 }}>{t("Отгрузок этого товара за период нет.","Відвантажень цього товару за період немає.")}</div>}
+              {!invDeals.busy && invDeals.rows.map((x: any, i: number) => (
+                <div key={i} onClick={() => { if (x.deal) { setInvDeals(null); nav(`/deals/${x.deal}`); } }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderBottom: "1px solid #f1f5f9", cursor: x.deal ? "pointer" : "default" }}>
+                  <span style={{ minWidth: 78, fontSize: 12 }} className="muted">{x.date}</span>
+                  <span style={{ flex: 1, color: x.deal ? "#1d4ed8" : "#334155", fontWeight: 600 }}>{x.deal ? "№" + x.deal + " · " : ""}{x.deal_title || t("без сделки","без сделки")}</span>
+                  {x.contact && <span className="muted" style={{ fontSize: 12 }}>{x.contact}</span>}
+                  <span style={{ fontSize: 12, color: "#dc2626", fontWeight: 600 }}>−{Number(x.qty).toLocaleString("ru")}</span>
+                  {x.deal && <span className="muted">→</span>}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", marginTop: 12 }}>
+              <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setInvDeals(null)}>{t("Закрыть","Закрити")}</button>
             </div>
           </div>
         </div>
