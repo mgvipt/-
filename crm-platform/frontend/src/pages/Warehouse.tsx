@@ -260,9 +260,25 @@ export default function Warehouse() {
   }
   // инвентаризация
   // введённые вручную «Факт» — с автосохранением в браузере (не теряются при перезагрузке)
-  const INV_FACTS_KEY = "whacc_inv_facts";
-  const [facts, setFacts] = useState<Record<number, string>>(() => { try { return JSON.parse(localStorage.getItem(INV_FACTS_KEY) || "{}"); } catch { return {}; } });
-  useEffect(() => { try { localStorage.setItem(INV_FACTS_KEY, JSON.stringify(facts)); } catch (e) { /* noop */ } }, [facts]);
+  // ОБЩИЙ черновик «Факт» на СЕРВЕРЕ (чтобы все видели одно, не в браузере). Синхронизируется периодически.
+  const [facts, setFacts] = useState<Record<number, string>>({});
+  const factEditedAt = useRef<Record<number, number>>({}); // когда локально правили строку (чтобы poll не затирал активный ввод)
+  async function loadDraft() {
+    try { const r: any = await api.get("/api/warehouse/inventory-draft/"); const srv = r.facts || {};
+      setFacts((prev) => { const next = { ...prev }; const now = Date.now();
+        Object.keys(srv).forEach((k) => { const id = Number(k); if ((now - (factEditedAt.current[id] || 0)) > 4000) next[id] = String(srv[k]); });
+        // убрать локальные, которых больше нет на сервере (кто-то очистил/провёл) — если не редактируем прямо сейчас
+        Object.keys(next).forEach((k) => { const id = Number(k); if (srv[k] === undefined && (now - (factEditedAt.current[id] || 0)) > 4000) delete next[id]; });
+        return next; });
+    } catch { /* */ }
+  }
+  // сохранить одно значение на сервер (с задержкой на ввод)
+  const draftTimers = useRef<Record<number, any>>({});
+  function saveDraftFact(pid: number, value: string) {
+    factEditedAt.current[pid] = Date.now();
+    if (draftTimers.current[pid]) clearTimeout(draftTimers.current[pid]);
+    draftTimers.current[pid] = setTimeout(() => { api.post("/api/warehouse/inventory-draft/", { product: pid, value }).catch(() => {}); }, 500);
+  }
   const [invMsg, setInvMsg] = useState("");
   const [sheet, setSheet] = useState<SheetRow[]>([]);
   const [pFrom, setPFrom] = useState(monthStart());
@@ -294,6 +310,14 @@ export default function Warehouse() {
   const invTotalPages = Math.max(1, Math.ceil(invCount / invPageSize));
   // инвентаризация: экран (ведомость / история проведённых) + список истории
   const [invScreen, setInvScreen] = useState<"sheet" | "history">("sheet");
+  // при входе в ведомость — подтянуть общий черновик; обновлять каждые 8с (видеть ввод коллег)
+  useEffect(() => {
+    if (view !== "inv" || invScreen !== "sheet") return;
+    loadDraft();
+    const iv = setInterval(loadDraft, 8000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line
+  }, [view, invScreen]);
   const [invHistDocs, setInvHistDocs] = useState<any[]>([]);
   const [invHistBusy, setInvHistBusy] = useState(false);
   const [invHistSel, setInvHistSel] = useState<any>(null);
@@ -467,6 +491,7 @@ export default function Warehouse() {
       // проведённые товары убираем из сохранённых введённых (остальные страницы — сохраняются)
       const doneIds = new Set(items.map((it) => it.product));
       setFacts((prev) => { const next: Record<number, string> = { ...prev }; doneIds.forEach((id) => { delete next[id as number]; }); return next; });
+      api.post("/api/warehouse/inventory-draft/", { clear_products: Array.from(doneIds) }).catch(() => {}); // убрать проведённые из общего черновика
       loadProducts(); loadSheet(pFrom, pTo); loadInvHistory(1);
       setInvMsg(t(`✓ Инвентаризация проведена. Скорректировано позиций: ${items.length}. Запись добавлена в «Историю».`,`✓ Інвентаризацію проведено. Скориговано позицій: ${items.length}. Запис додано в «Історію».`));
     } catch (e: any) {
@@ -1208,6 +1233,7 @@ export default function Warehouse() {
                 {invSearch && <button onClick={() => setInvSearch("")} title={t("Очистить","Очистити")} style={{ position: "absolute", right: 6, border: "none", background: "transparent", color: "#94a3b8", cursor: "pointer", fontSize: 15, lineHeight: 1 }}>×</button>}
               </span>
               <span style={{ flex: 1 }} />
+              <button className="btn btn-light" style={{ padding: "4px 12px" }} disabled={invLoading} onClick={() => loadSheet(pFrom, pTo, { page: invPage })} title={t("Перечитать актуальные остатки и продажи (введённый «Факт» сохранится) — на случай, если во время инвентаризации прошли новые продажи","Перечитати актуальні залишки і продажі (введений «Факт» збережеться) — якщо під час інвентаризації пройшли нові продажі")}><Icon n="🔄" size={14} /> {invLoading ? t("Обновляем…","Оновлюємо…") : t("Обновить","Оновити")}</button>
               <button className="btn btn-light" style={{ padding: "4px 12px" }} disabled={invPrinting} onClick={printInventory} title={t("Печать ведомости с пустой колонкой Факт для отметок на складе","Друк відомості з порожньою колонкою Факт для відміток на складі")}><Icon n="🖨" size={14} /> {invPrinting ? t("Готовим…","Готуємо…") : t("Печать","Друк")}</button>
               <button className="btn btn-light" style={{ padding: "4px 12px" }} onClick={openInvImport} title={t("Загрузить факт из файла Excel/CSV (артикул + факт) — без ручного ввода","Завантажити факт з файлу Excel/CSV (артикул + факт) — без ручного вводу")}><Icon n="📥" size={14} /> {t("Импорт из файла","Імпорт з файлу")}</button>
             </div>
@@ -1221,9 +1247,9 @@ export default function Warehouse() {
             </div>
             {Object.keys(facts).length > 0 && (
               <div style={{ fontSize: 12, marginBottom: 8, padding: "6px 10px", borderRadius: 7, background: "#ecfeff", color: "#155e75", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <Icon n="💾" size={13} /> {t("Введено значений","Введено значень")}: <b>{Object.keys(facts).length}</b> — {t("сохраняются автоматически, не потеряются при перезагрузке.","зберігаються автоматично, не втратяться при перезавантаженні.")}
+                <Icon n="💾" size={13} /> {t("Введено значений","Введено значень")}: <b>{Object.keys(facts).length}</b> — {t("общий черновик: видят все, обновляется каждые 8 сек. Не потеряется при перезагрузке.","спільна чернетка: бачать усі, оновлюється кожні 8 сек. Не втратиться при перезавантаженні.")}
                 <span style={{ flex: 1 }} />
-                <button className="btn btn-light" style={{ padding: "2px 9px", fontSize: 12 }} onClick={() => { if (confirm(t("Очистить все введённые значения «Факт»?","Очистити всі введені значення «Факт»?"))) { setFacts({}); } }}>{t("Очистить введённое","Очистити введене")}</button>
+                <button className="btn btn-light" style={{ padding: "2px 9px", fontSize: 12 }} onClick={() => { if (confirm(t("Очистить все введённые значения «Факт» (у всех)?","Очистити всі введені значення «Факт» (у всіх)?"))) { setFacts({}); factEditedAt.current = {}; api.post("/api/warehouse/inventory-draft/", { clear_all: true }).catch(() => {}); } }}>{t("Очистить введённое","Очистити введене")}</button>
               </div>
             )}
             <div style={{ overflowY: "auto", flex: 1 }}>
@@ -1240,7 +1266,7 @@ export default function Warehouse() {
                         <td style={{ color: r.received ? "#16a34a" : "#94a3b8" }}>{r.received ? "+" + r.received.toLocaleString("ru") : "—"}</td>
                         <td style={{ color: r.sold ? "#dc2626" : "#94a3b8" }}>{r.sold ? <a onClick={() => openInvDeals(r.id, r.name)} style={{ cursor: "pointer", color: "#fff", background: "#dc2626", fontWeight: 600, borderRadius: 6, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }} title={t("Клик — сделки, которые уехали с этим товаром за период","Клік — сделки, які поїхали з цим товаром за період")}>−{r.sold.toLocaleString("ru")} <span style={{ fontSize: 11 }}>↗ {t("сделки","сделки")}</span></a> : "—"}</td>
                         <td style={{ fontWeight: 600 }}>{r.book.toLocaleString("ru")}</td>
-                        <td><input type="number" value={fact} onChange={(e) => setFacts({ ...facts, [r.id]: e.target.value })} style={{ width: 74, height: 28, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
+                        <td><input type="number" value={fact} onChange={(e) => { setFacts({ ...facts, [r.id]: e.target.value }); saveDraftFact(r.id, e.target.value); }} style={{ width: 74, height: 28, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
                         <td style={{ color: delta < 0 ? "#dc2626" : delta > 0 ? "#16a34a" : "#94a3b8", fontWeight: 600 }}>{delta > 0 ? "+" : ""}{Math.round(delta * 100) / 100 || 0}</td>
                       </tr>
                     );

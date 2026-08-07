@@ -369,3 +369,12 @@ class InitiativeIdea(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class InventoryFactDraft(models.Model):
+    """Спільний чернетковий «Факт» інвентаризації (щоб Олег і кладовщик бачили ОДНЕ, а не
+    локально в браузері). Один запис на товар — останнє введене значення."""
+    product = models.OneToOneField(Product, on_delete=models.CASCADE, related_name="inv_fact_draft")
+    quantity = models.DecimalField(max_digits=12, decimal_places=2)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    updated_at = models.DateTimeField(auto_now=True)

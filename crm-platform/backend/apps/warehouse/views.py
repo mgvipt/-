@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from django.db.models import Sum, Q
 from django.db.models.functions import Coalesce
 from apps.common.permissions import HasPermCode
-from .models import Warehouse, Product, ProductCategory, ProductImage, StockDocument, StockMovement
+from .models import Warehouse, Product, ProductCategory, ProductImage, StockDocument, StockMovement, InventoryFactDraft
 from .serializers import WarehouseSerializer, ProductSerializer, StockDocumentSerializer, ProductCategorySerializer
 
 
@@ -974,6 +974,43 @@ class InventoryAnalyticsView(APIView):
             "inv_shortage_cnt": _inv_shortage_cnt,
             "inv_docs_90d": (_inv_docs if _cc else []),
         })
+
+
+class InventoryDraftView(APIView):
+    """Спільний чернетковий «Факт» інвентаризації — щоб Олег і кладовщик бачили ОДНЕ.
+    GET → {facts: {product_id: value}}.
+    POST: {product, value} — зберегти/оновити позицію (порожнє value → видалити);
+          {clear_products: [ids]} — прибрати після проведення; {clear_all: true} — очистити все.
+    Право — warehouse.tab.inventory."""
+    permission_classes = [HasPermCode]
+    required_perm = "warehouse.tab.inventory"
+
+    def get(self, request):
+        facts = {str(d.product_id): str(d.quantity) for d in InventoryFactDraft.objects.all()}
+        return Response({"facts": facts, "count": len(facts)})
+
+    def post(self, request):
+        if request.data.get("clear_all"):
+            InventoryFactDraft.objects.all().delete()
+            return Response({"ok": True, "cleared": "all"})
+        cp = request.data.get("clear_products")
+        if cp:
+            ids = [int(x) for x in cp if str(x).isdigit()]
+            InventoryFactDraft.objects.filter(product_id__in=ids).delete()
+            return Response({"ok": True, "cleared": len(ids)})
+        pid = request.data.get("product")
+        if not (pid and str(pid).isdigit()):
+            return Response({"detail": "product обов'язковий"}, status=400)
+        val = request.data.get("value")
+        if val in (None, ""):
+            InventoryFactDraft.objects.filter(product_id=int(pid)).delete()
+            return Response({"ok": True, "deleted": True})
+        try:
+            q = Decimal(str(val))
+        except (TypeError, ValueError):
+            return Response({"detail": "value має бути числом"}, status=400)
+        InventoryFactDraft.objects.update_or_create(product_id=int(pid), defaults={"quantity": q, "updated_by": request.user})
+        return Response({"ok": True})
 
 
 class InventorySheetView(APIView):
