@@ -970,8 +970,8 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 <button className="btn" onClick={() => setDocOpen(true)} title={t("Сформировать документ КП","Сформувати документ КП")}><Icon n="📄" size={14} /> {t("Документ","Документ")}</button>
               </div>
               <div className="prod-search" style={{ position: "relative", margin: "8px 0 12px" }}>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <input value={psearch} onChange={(e) => { setPsearch(e.target.value); setPsel(null); }} placeholder={t("🔍 Поиск товара из номенклатуры по названию…","🔍 Пошук товару з номенклатури за назвою…")} style={{ flex: 1, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px" }} />
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                  <input value={psearch} onChange={(e) => { setPsearch(e.target.value); setPsel(null); }} placeholder={t("🔍 Поиск товара из номенклатуры по названию…","🔍 Пошук товару з номенклатури за назвою…")} style={{ flex: "1 1 200px", minWidth: 0, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px" }} />
                   <input type="number" value={addQty} min={1} onChange={(e) => setAddQty(Number(e.target.value))} title={t("Количество","Кількість")} style={{ width: 56, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px" }} />
                   <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, whiteSpace: "nowrap" }} title={t("Зарезервировать товар под сделку","Зарезервувати товар під угоду")}><input type="checkbox" checked={addReserve} onChange={(e) => setAddReserve(e.target.checked)} />{t("Резерв","Резерв")}</label>
                   <button className="btn btn-primary" onClick={() => addItem()} disabled={!psel}>{t("Добавить","Додати")}</button>
