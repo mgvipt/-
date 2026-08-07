@@ -1129,13 +1129,29 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                 from apps.crm.models import Payment as _PayNP, log_activity as _laNP
                 waiting = list(_PayNP.objects.filter(provider="np_cod", is_paid=False)
                                .order_by("created_at"))
-                # спершу ТОЧНИЙ поодинокий матч: виплата = одна наложка мінус комісія (до 8%)
-                _singles = [w for w in waiting if float(amt) <= float(w.amount) <= float(amt) * 1.08]
-                if len(_singles) == 1:
-                    waiting = _singles
-                elif len(_singles) >= 2:
-                    waiting = []  # неоднозначно: кілька наложок під суму виплати — не вгадуємо, лишаємо менеджеру
-                rest = float(amt) * 1.05  # запас на комісію НоваПей
+                # 0) ГРУПА однієї ТТН (дозамовлення їдуть однією посилкою, наложка спільна):
+                #    external_id np_cod-платежа = ТТН. Якщо сума кількох наложок однієї ТТН ≈ виплаті —
+                #    закриваємо саме ЦЮ групу (кожна сделка отримує свою частину точно).
+                _grp = None
+                _byttn = {}
+                for w in waiting:
+                    if w.external_id:
+                        _byttn.setdefault(w.external_id, []).append(w)
+                for _ws in _byttn.values():
+                    if len(_ws) >= 2:
+                        _sg = sum(float(x.amount) for x in _ws)
+                        if float(amt) <= _sg <= float(amt) * 1.08:
+                            _grp = _ws; break
+                if _grp:
+                    waiting = _grp
+                else:
+                    # ТОЧНИЙ поодинокий матч: виплата = одна наложка мінус комісія (до 8%)
+                    _singles = [w for w in waiting if float(amt) <= float(w.amount) <= float(amt) * 1.08]
+                    if len(_singles) == 1:
+                        waiting = _singles
+                    elif len(_singles) >= 2:
+                        waiting = []  # неоднозначно: кілька наложок під суму виплати — не вгадуємо, лишаємо менеджеру
+                rest = float(amt) * (1.1 if _grp else 1.05)  # запас на комісію НоваПей
                 matched = []
                 for w in waiting:
                     if float(w.amount) <= rest:
