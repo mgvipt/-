@@ -492,7 +492,8 @@ class ProductViewSet(viewsets.ModelViewSet):
             "kind_display": m.document.get_kind_display(),
             "quantity": float(m.quantity), "price": float(m.price),
             "warehouse": m.document.warehouse.name,
-            "date": m.document.created_at,
+            "date": (m.document.doc_date.isoformat() if m.document.doc_date else m.document.created_at),
+            "posted_at": m.document.created_at,
             "number": m.document.number or m.document_id,
         } for m in mv])
 
@@ -564,6 +565,49 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Інвентаризацію не можна видаляти. Скористайтесь «Скасувати» (сторно) — запис лишиться в історії."},
                             status=status.HTTP_405_METHOD_NOT_ALLOWED)
         return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"], url_path="edit-receipt")
+    def edit_receipt(self, request, pk=None):
+        """Редагувати ЧЕРНЕТКУ приходу (posted=False): постачальник, №, дата, коментар, позиції.
+        Проведений прихід редагувати НЕ можна — спершу «Скасувати прихід». Право warehouse.tab.receipts."""
+        u = request.user
+        doc = self.get_object()
+        if doc.kind != "in":
+            return Response({"detail": "Тільки прихід."}, status=status.HTTP_400_BAD_REQUEST)
+        if doc.posted:
+            return Response({"detail": "Спершу скасуйте прихід, потім редагуйте."}, status=status.HTTP_400_BAD_REQUEST)
+        if not (u.is_superuser or u.has_perm_code("warehouse.tab.receipts")):
+            return Response({"detail": "Немає права на прихід."}, status=status.HTTP_403_FORBIDDEN)
+        if "supplier" in request.data:
+            doc.supplier_id = request.data.get("supplier") or None
+        if "supplier_invoice" in request.data:
+            doc.supplier_invoice = str(request.data.get("supplier_invoice") or "")[:80]
+        if "comment" in request.data:
+            doc.comment = str(request.data.get("comment") or "")[:255]
+        dd = request.data.get("doc_date")
+        if dd is not None:
+            from datetime import date as _date
+            try:
+                doc.doc_date = _date.fromisoformat(str(dd)[:10]) if dd else None
+            except (ValueError, TypeError):
+                pass
+        doc.save()
+        items = request.data.get("items")
+        if items is not None:
+            doc.items.all().delete()
+            for it in items:
+                pid = it.get("product")
+                if not pid:
+                    continue
+                try:
+                    qty = Decimal(str(it.get("quantity", 0) or 0))
+                    price = Decimal(str(it.get("price", 0) or 0))
+                except (TypeError, ValueError):
+                    continue
+                if qty <= 0:
+                    continue
+                StockMovement.objects.create(document=doc, product_id=int(pid), quantity=qty, price=price)
+        return Response(StockDocumentSerializer(doc, context={"request": request}).data)
 
     @action(detail=False, methods=["post"], url_path="import-receipt")
     def import_receipt(self, request):

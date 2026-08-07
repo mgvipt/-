@@ -6,8 +6,8 @@ import { useLang } from "./i18n";
 
 interface Row { product: number; product_name: string; qty: string; price: string; retail: string; q: string; res: any[]; open: boolean; }
 
-export default function ReceiptModal({ productId, productName, dealId, onClose, onSaved }: {
-  productId?: number; productName?: string; dealId?: number; onClose: () => void; onSaved?: () => void;
+export default function ReceiptModal({ productId, productName, dealId, editDoc, onClose, onSaved }: {
+  productId?: number; productName?: string; dealId?: number; editDoc?: any; onClose: () => void; onSaved?: () => void;
 }) {
   const { t } = useLang();
   const [wh, setWh] = useState<number>(0);
@@ -24,6 +24,19 @@ export default function ReceiptModal({ productId, productName, dealId, onClose, 
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
 
   useEffect(() => { api.get<any>("/api/warehouses/").then((d) => { const arr = d.results || d || []; if (arr[0]) setWh(arr[0].id); }).catch(() => {}); }, []);
+
+  // режим РЕДАКТИРОВАНИЯ черновика прихода — предзаполнить форму
+  useEffect(() => {
+    if (!editDoc) return;
+    if (editDoc.warehouse) setWh(editDoc.warehouse);
+    setRows((editDoc.items || []).map((it: any) => ({ product: it.product, product_name: it.product_name || "", qty: String(Math.abs(Number(it.quantity))), price: String(it.price), retail: "", q: "", res: [], open: false })));
+    if (editDoc.supplier) setSup({ id: editDoc.supplier, name: editDoc.supplier_name || "" });
+    setInvoice(editDoc.supplier_invoice || "");
+    setDt((editDoc.doc_date || (editDoc.created_at || "").slice(0, 10)) || new Date().toISOString().slice(0, 10));
+    setComment(editDoc.comment || "");
+    setPaid(true);
+    // eslint-disable-next-line
+  }, [editDoc]);
 
   // пошук постачальника (контрагенти)
   useEffect(() => {
@@ -54,6 +67,14 @@ export default function ReceiptModal({ productId, productName, dealId, onClose, 
     if (!wh) { setErr(t("Нет склада", "Немає складу")); return; }
     setBusy(true); setErr("");
     try {
+      if (editDoc) {
+        // редактирование черновика прихода — обновляем позиции/поставщика/дату (остаётся черновиком, проводится отдельно)
+        await api.post(`/api/stock-documents/${editDoc.id}/edit-receipt/`, {
+          supplier: sup.id || null, supplier_invoice: invoice, doc_date: dt || null, comment, items,
+        });
+        for (const r of rows) { const rp = Number(String(r.retail).replace(",", ".")) || 0; if (r.product && rp > 0) { await api.patch(`/api/products/${r.product}/`, { price: rp }).catch(() => {}); } }
+        onSaved && onSaved(); onClose(); return;
+      }
       await api.post("/api/stock-documents/", {
         kind: "in", warehouse: wh, comment,
         supplier: sup.id || null, supplier_invoice: invoice, doc_date: dt || null,

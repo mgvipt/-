@@ -47,7 +47,7 @@ interface Product {
 }
 interface Category { id: number; name: string; parent: number | null; order: number; products_count: number; }
 interface WH { id: number; name: string; is_default: boolean; }
-interface Movement { id: number; kind: string; kind_display: string; quantity: number; price: number; warehouse: string; date: string; number: string | number; }
+interface Movement { id: number; kind: string; kind_display: string; quantity: number; price: number; warehouse: string; date: string; posted_at?: string; number: string | number; }
 
 interface SheetRow { id: number; name: string; sku?: string; unit: string; opening: number; received: number; sold: number; book: number; }
 const PAGE_SIZES = [5, 20, 50, 100, 500];
@@ -82,7 +82,7 @@ export default function Warehouse() {
   const [pageSize, setPageSize] = useState(50);
   const [whs, setWhs] = useState<WH[]>([]);
   const [modal, setModal] = useState<null | "in" | "out">(null);
-  const [receiptFor, setReceiptFor] = useState<{ productId?: number; productName?: string } | null>(null);
+  const [receiptFor, setReceiptFor] = useState<{ productId?: number; productName?: string; editDoc?: any } | null>(null);
   const canRealize = can("warehouse.edit") || can("finance.manage");
   const canTabReal = can("warehouse.tab.realizations");
   const canTabRec = can("warehouse.tab.receipts");
@@ -327,7 +327,7 @@ export default function Warehouse() {
   const invHistTotalPages = Math.max(1, Math.ceil(invHistCount / invHistPageSize));
 
   /* ─── [3] ЗАГРУЗКА ───────────────────────────────────────────────────── */
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   useEffect(() => {
     const pid = params.get("product");
     if (pid) { api.get<Product>(`/api/products/${pid}/`).then((p) => openCard(p)).catch(() => {}); }
@@ -338,6 +338,7 @@ export default function Warehouse() {
         else { setView("receipt"); setReceiptSel(doc); openReceiptList(); }
       }).catch(() => {});
     }
+    if (pid || did) { const np = new URLSearchParams(params); np.delete("product"); np.delete("doc"); setParams(np, { replace: true }); }
     // eslint-disable-next-line
   }, []);
   useEffect(() => {
@@ -822,7 +823,10 @@ export default function Warehouse() {
               <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                 {receiptSel.posted
                   ? <button className="btn btn-light" style={{ padding: "4px 12px" }} onClick={() => receiptToggle(receiptSel.id, false)} title={t("Снять проведение — товар уйдёт с остатка (для исправления ошибочного прихода)","Зняти проведення — товар піде із залишку (для виправлення помилкового приходу)")}>{t("Отменить приход","Скасувати прихід")}</button>
-                  : <button className="btn btn-primary" style={{ padding: "4px 12px" }} onClick={() => receiptToggle(receiptSel.id, true)} title={t("Провести приход — товар встанет на остаток","Провести прихід — товар стане на залишок")}>{t("Провести приход","Провести прихід")}</button>}
+                  : <>
+                      <button className="btn btn-light" style={{ padding: "4px 12px" }} onClick={() => setReceiptFor({ editDoc: receiptSel })} title={t("Изменить позиции, поставщика, дату (пока не проведено)","Змінити позиції, постачальника, дату (поки не проведено)")}><Icon n="✏" size={13} /> {t("Редактировать","Редагувати")}</button>
+                      <button className="btn btn-primary" style={{ padding: "4px 12px" }} onClick={() => receiptToggle(receiptSel.id, true)} title={t("Провести приход — товар встанет на остаток","Провести прихід — товар стане на залишок")}>{t("Провести приход","Провести прихід")}</button>
+                    </>}
               </div>
             )}
             <table style={{ width: "100%", marginTop: 14 }}>
@@ -1191,7 +1195,7 @@ export default function Warehouse() {
               <table style={{ width: "100%", fontSize: 13 }}>
                 <thead><tr><th>{t("Дата","Дата")}</th><th>{t("Тип","Тип")}</th><th>{t("Кол-во","К-сть")}</th><th>{t("Цена","Ціна")}</th></tr></thead>
                 <tbody>{movements.map((m) => (
-                  <tr key={m.id}><td className="muted">{new Date(m.date).toLocaleDateString("ru")}</td><td>{m.kind_display}</td>
+                  <tr key={m.id}><td className="muted" title={m.posted_at ? t("Проведено","Проведено") + ": " + new Date(m.posted_at).toLocaleDateString("ru") : ""}>{new Date(m.date).toLocaleDateString("ru")}</td><td>{m.kind_display}</td>
                     <td style={{ color: m.quantity < 0 ? "#dc2626" : "#16a34a", fontWeight: 600 }}>{m.quantity > 0 ? "+" : ""}{m.quantity}</td>
                     <td>{m.price ? m.price.toLocaleString("ru") + " ₴" : "—"}</td></tr>
                 ))}</tbody>
@@ -1539,7 +1543,7 @@ export default function Warehouse() {
           </div>
         </div>
       )}
-      {receiptFor && <ReceiptModal productId={receiptFor.productId} productName={receiptFor.productName} onClose={() => setReceiptFor(null)} onSaved={() => { loadProducts(); openReceiptList(); if (card) api.get<Movement[]>(`/api/products/${card.id}/movements/`).then(setMovements).catch(() => {}); }} />}
+      {receiptFor && <ReceiptModal productId={receiptFor.productId} productName={receiptFor.productName} editDoc={receiptFor.editDoc} onClose={() => setReceiptFor(null)} onSaved={async () => { loadProducts(); openReceiptList(); if (receiptFor.editDoc) { try { const fresh: any = await api.get(`/api/stock-documents/${receiptFor.editDoc.id}/`); setReceiptSel(fresh); } catch { /* */ } } if (card) api.get<Movement[]>(`/api/products/${card.id}/movements/`).then(setMovements).catch(() => {}); }} />}
     </div>
   );
 }
