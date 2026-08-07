@@ -130,10 +130,11 @@ class ProductSerializer(serializers.ModelSerializer):
 
 class MovementSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source="product.name", read_only=True)
+    retail_price = serializers.DecimalField(source="product.price", max_digits=14, decimal_places=2, read_only=True, default=None)
 
     class Meta:
         model = StockMovement
-        fields = ["id", "product", "product_name", "quantity", "price"]
+        fields = ["id", "product", "product_name", "quantity", "price", "retail_price"]
 
 
 class StockDocumentSerializer(serializers.ModelSerializer):

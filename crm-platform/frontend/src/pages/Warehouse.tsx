@@ -830,9 +830,9 @@ export default function Warehouse() {
               </div>
             )}
             <table style={{ width: "100%", marginTop: 14 }}>
-              <thead><tr><th>{t("Товар","Товар")}</th><th style={{ textAlign: "right" }}>{t("Кол-во","К-сть")}</th><th style={{ textAlign: "right" }}>{t("Цена","Ціна")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th></tr></thead>
+              <thead><tr><th>{t("Товар","Товар")}</th><th style={{ textAlign: "right" }}>{t("Кол-во","К-сть")}</th><th style={{ textAlign: "right" }}>{t("Закупка/ед","Закупівля/од")}</th><th style={{ textAlign: "right" }}>{t("Розничная","Роздрібна")}</th><th style={{ textAlign: "right" }}>{t("Сумма закупки","Сума закупівлі")}</th></tr></thead>
               <tbody>{(receiptSel.items || []).map((it: any) => (
-                <tr key={it.id}><td>{it.product_name}</td><td style={{ textAlign: "right" }}>{Math.abs(Number(it.quantity))}</td><td style={{ textAlign: "right" }}>{Number(it.price).toLocaleString("uk-UA")} ₴</td><td style={{ textAlign: "right" }}>{(Math.abs(Number(it.quantity)) * Number(it.price)).toLocaleString("uk-UA")} ₴</td></tr>
+                <tr key={it.id}><td>{it.product_name}</td><td style={{ textAlign: "right" }}>{Math.abs(Number(it.quantity))}</td><td style={{ textAlign: "right" }}>{Number(it.price).toLocaleString("uk-UA")} ₴</td><td style={{ textAlign: "right" }}>{it.retail_price != null ? Number(it.retail_price).toLocaleString("uk-UA") + " ₴" : "—"}</td><td style={{ textAlign: "right" }}>{(Math.abs(Number(it.quantity)) * Number(it.price)).toLocaleString("uk-UA")} ₴</td></tr>
               ))}</tbody>
             </table>
           </>
