@@ -159,6 +159,7 @@ class DealDetailSerializer(DealSerializer):
     conversation_id = serializers.SerializerMethodField()
     pay_method = serializers.SerializerMethodField()
     realization = serializers.SerializerMethodField()
+    linked_orders = serializers.SerializerMethodField()
 
     def get_realization(self, obj):
         """Документ реалізації (списання товару) по угоді — для блоку проведення/скасування у картці."""
@@ -189,8 +190,26 @@ class DealDetailSerializer(DealSerializer):
         fields = DealSerializer.Meta.fields + [
             "items", "payments", "paid", "margin", "bonus",
             "days_in_stage", "contact_loyalty", "contact_id", "conversation_id", "b24_id", "pay_method",
-            "np_data", "np_delivery_date", "ref_photos", "kp_history", "realization",
+            "np_data", "np_delivery_date", "ref_photos", "kp_history", "realization", "linked_orders",
         ]
+
+    def get_linked_orders(self, obj):
+        """Дозамовлення (одна посилка): родитель + дети без ТТН, кроме себя."""
+        from apps.crm.models import Deal
+        root = obj.parent_deal or obj
+        ids = set([root.id]) | set(root.children.values_list("id", flat=True))
+        ids.discard(obj.id)
+        if not ids:
+            return []
+        res = []
+        for d in Deal.objects.filter(id__in=ids).prefetch_related("payments", "items"):
+            if d.ttn:
+                continue
+            paid = float(sum(p.amount for p in d.payments.all() if p.is_paid))
+            res.append({"id": d.id, "title": d.title, "amount": float(d.amount or 0),
+                        "paid": paid, "remaining": max(0.0, float(d.amount or 0) - paid),
+                        "items_n": d.items.count()})
+        return res
 
     def get_paid(self, obj):
         return float(sum(p.amount for p in obj.payments.all() if p.is_paid))

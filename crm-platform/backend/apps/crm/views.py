@@ -1915,11 +1915,43 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         doc = (r.get("data") or [{}])[0]
         ttn = doc.get("IntDocNumber") or doc.get("Number") or ""
         deal.ttn = ttn
-        _nd = dict(deal.np_data or {}); _nd["ttn_ref"] = doc.get("Ref") or ""
-        if cod > 0:
-            _nd["cod_amount"] = cod  # наложка: поллер НП створить Payment при отриманні
+        _ref = doc.get("Ref") or ""
+        # «Одна посилка»: на фізичній ТТН наложка = combined (cod з фронта),
+        # але np_data.cod_amount КОЖНОЇ сделки = ЇЇ власний залишок — щоб поллер
+        # не задвоїв чек (кожна сделка бʼє свій чек за свої товари).
+        def _own_rem(dd):
+            _pd = float(sum(pp.amount for pp in dd.payments.all() if pp.is_paid))
+            return round(float(dd.amount or 0) - _pd)
+        _nd = dict(deal.np_data or {}); _nd["ttn_ref"] = _ref
+        _or = _own_rem(deal)
+        if cod > 0 and _or > 0:
+            _nd["cod_amount"] = float(_or)  # наложка: поллер НП створить Payment при отриманні
         deal.np_data = _nd
         deal.save(update_fields=["ttn", "np_data"])
+        # дозамовлення їдуть ЦІЄЮ Ж посилкою: та сама ТТН, свій залишок, своя стадія/чек
+        for _cid in (request.data.get("include_deals") or []):
+            try:
+                _cd = Deal.objects.filter(id=int(_cid), contact=deal.contact).first()
+            except (ValueError, TypeError):
+                _cd = None
+            if not _cd or _cd.id == deal.id or _cd.ttn:
+                continue
+            _cd.ttn = ttn
+            _cnd = dict(_cd.np_data or {}); _cnd["ttn_ref"] = _ref
+            _cr = _own_rem(_cd)
+            if _cr > 0:
+                _cnd["cod_amount"] = float(_cr)
+            _cd.np_data = _cnd
+            _cd.save(update_fields=["ttn", "np_data"])
+            try:
+                _cd.items.update(reserved=True)
+                _tc2 = _cd.funnel.stages.filter(name__icontains="ТТН створена").order_by("order").first() if _cd.funnel_id else None
+                if _tc2:
+                    _advance_deal_stage(_cd, _tc2.order, "ТТН створено (одна посилка з #%s)" % deal.id)
+                _issue_checkbox_for_deal(_cd, user=request.user)
+            except Exception:
+                pass
+            log_activity("deal", _cd.id, "ТТН Нова Пошта", "Одна посилка з #%s: %s" % (deal.id, ttn), request.user, "НП")
         try:  # авто-рух на «НП_ТТН створена» (синхронно зі складом)
             _tc = deal.funnel.stages.filter(name__icontains="ТТН створена").order_by("order").first() if deal.funnel_id else None
             if _tc:

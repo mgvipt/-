@@ -87,7 +87,17 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
   const _wantsCod = _payType === "prepay_np" || /наклад|cod|післяпл|послеопл|післяоплат|np_cod/.test(_payType);
   // Авто «Контроль оплати»: якщо тип оплати = наложка/передоплата-НП і є залишок —
   // одразу вмикаємо і підставляємо залишок (щоб менеджер не забув). Склад це не знімає.
-  const [bw, setBw] = useState<any>(D.backward || ((_wantsCod && _remain > 0) ? { on: true, amount: String(_remain) } : { on: false, amount: "" }));
+  const _linked = ((deal as any).linked_orders) || [];
+  const _linkedAll = _linked.reduce((s: number, x: any) => s + (Number(x.remaining) || 0), 0);
+  const _codDefault = _remain + _linkedAll;
+  const [incl, setIncl] = useState<number[]>(_linked.map((x: any) => x.id));
+  const [bw, setBw] = useState<any>(D.backward || (((_wantsCod || _linked.length) && _codDefault > 0) ? { on: true, amount: String(_codDefault) } : { on: false, amount: "" }));
+  const toggleIncl = (lid: number) => setIncl((cur) => {
+    const next = cur.includes(lid) ? cur.filter((x) => x !== lid) : [...cur, lid];
+    const sum = _linked.filter((x: any) => next.includes(x.id)).reduce((a: number, x: any) => a + (Number(x.remaining) || 0), 0);
+    setBw((b: any) => ({ ...b, on: (_remain + sum) > 0 ? true : b.on, amount: String(_remain + sum) }));
+    return next;
+  });
   const [date, setDate] = useState((deal as any).np_delivery_date || "");
   const [timeInterval, setTimeInterval] = useState(D.time_interval || "");
   const [packlist, setPacklist] = useState<any[]>([]);
@@ -134,7 +144,7 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
       weight: String(chargeW || totW || 1), seats: String(seats.length), cost: par.declared, service_type: rec.service,
       cargo_type: cargo, description: par.descr, cargo_details: items, additional: note, pack_ref: pack.ref, time_interval: timeInterval,
       saturday: pack.saturday, return_docs: pack.return_docs, payer: par.payer, payment_method: par.method,
-      cod_amount: bw.on ? (bw.amount || par.declared) : 0, delivery_date: date,
+      cod_amount: bw.on ? (bw.amount || par.declared) : 0, include_deals: incl, delivery_date: date,
     }).then((r) => { flash && flash(t(`✓ ТТН ${r.ttn} создана`, `✓ ТТН ${r.ttn} створена`)); onReload && onReload(); })
       .catch((e: any) => flash && flash(t("Ошибка НП: ", "Помилка НП: ") + (e?.response?.data?.detail || ""))).finally(() => setBusy(""));
   };
@@ -295,6 +305,19 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
         </Grid>
       </div>
 
+      {_linked.length > 0 && (
+        <div style={{ ...zone("#ecfeff", "#a5f3fc"), padding: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>📦 {t("Одна посылка — довложить дозаказы", "Одна посилка — докласти дозамовлення")}</div>
+          <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>{t("Поедут этой же ТТН. Контроль оплаты учтёт их остаток.", "Поїдуть цією ж ТТН. Контроль оплати врахує їх залишок.")}</div>
+          {_linked.map((x: any) => (
+            <label key={x.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, padding: "3px 0" }}>
+              <input type="checkbox" checked={incl.includes(x.id)} disabled={readOnly || codReadOnly} onChange={() => toggleIncl(x.id)} style={{ width: 15, height: 15 }} />
+              <span>#{x.id} · {x.title || t("Дозаказ", "Дозамовлення")}</span>
+              <span className="muted" style={{ marginLeft: "auto" }}>{x.remaining > 0 ? "+" + Math.round(x.remaining) + " ₴ " + t("наложка", "наложка") : t("оплачено", "оплачено")}</span>
+            </label>
+          ))}
+        </div>
+      )}
       {/* ── Контроль оплати ── */}
       <div style={{ ...zone("#fefce8", "#fde68a"), padding: 12 }}>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600 }}><input type="checkbox" checked={!!bw.on} disabled={readOnly || codReadOnly} onChange={(e) => setBw({ ...bw, on: e.target.checked })} style={{ width: 16, height: 16 }} /> 💰 {t("Контроль оплаты", "Контроль оплати")} — {t("НП удержит сумму при получении и переведёт нам", "НП утримає суму при отриманні і переведе нам")}{codReadOnly ? <span style={{ fontWeight: 500, color: "#92400e", fontSize: 11.5 }}> · 🔒 {t("только менеджер", "тільки менеджер")}</span> : null}</label>
