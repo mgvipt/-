@@ -85,6 +85,15 @@ def _job_dict(job, full=False):
         d["is_dozakaz"] = bool(deal.parent_deal_id)
     except Exception:
         d["parcel_orders"] = []; d["parcel_main"] = deal.id; d["is_dozakaz"] = False
+    # підзадачі: дозамовлення цієї посилки (показуємо всередині основної задачі)
+    try:
+        _subs = WarehouseJob.objects.filter(deal__parent_deal_id=deal.id).exclude(status="cancelled").select_related("deal")
+        d["subtasks"] = [{"job_id": sj.id, "deal_id": sj.deal_id, "title": sj.deal.title, "status": sj.status,
+                          "kits_n": len((sj.deal.qualification or {}).get("kits", []) or []),
+                          "items": [{"name": (it.product.name if it.product_id else (it.custom_name or "Позиція")), "qty": str(it.quantity)} for it in sj.deal.items.all()]}
+                         for sj in _subs]
+    except Exception:
+        d["subtasks"] = []
     if full:
         d["items"] = [{"name": (it.product.name if it.product_id else ((it.custom_name or "Позиція") + " · не зі складу")), "qty": str(it.quantity),
                        "weight_kg": str((it.product.weight_kg or 0) if it.product_id else 0)} for it in deal.items.all()]
@@ -96,6 +105,14 @@ def _job_dict(job, full=False):
     return d
 
 
+def _is_nested(job):
+    """Дозамовлення, що їде посилкою основної (у якої є активна задача) — ховаємо з черги, показуємо підзадачею."""
+    pid = job.deal.parent_deal_id if job.deal_id else None
+    if not pid:
+        return False
+    return WarehouseJob.objects.filter(deal_id=pid).exclude(status__in=["shipped", "cancelled"]).exists()
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def queue(request):
@@ -105,7 +122,7 @@ def queue(request):
             .exclude(status__in=["shipped", "cancelled"]).select_related("deal", "deal__contact", "deal__stage")[:50])
     shipped = (WarehouseJob.objects.filter(assignee=request.user, status="shipped")
                .select_related("deal", "deal__contact", "deal__stage").order_by("-shipped_at")[:30])
-    out = {"queue": [_job_dict(j) for j in jobs], "mine": [_job_dict(j) for j in mine], "shipped": [_job_dict(j) for j in shipped]}
+    out = {"queue": [_job_dict(j) for j in jobs if not _is_nested(j)], "mine": [_job_dict(j) for j in mine if not _is_nested(j)], "shipped": [_job_dict(j) for j in shipped]}
     u = request.user
     if u.is_superuser or (hasattr(u, "has_perm_code") and (u.has_perm_code("warehouse.view.all") or u.has_perm_code("roles.manage"))):
         # керівник/адмін: УСІ активні задачі всіх співробітників (хто що робить зараз)
@@ -115,7 +132,7 @@ def queue(request):
         from datetime import timedelta as _td
         recent = (WarehouseJob.objects.filter(status="shipped", shipped_at__gte=_tz.now() - _td(days=7))
                   .select_related("deal", "deal__contact", "deal__stage", "assignee").order_by("-shipped_at")[:40])
-        out["all_active"] = [_job_dict(j) for j in act]
+        out["all_active"] = [_job_dict(j) for j in act if not _is_nested(j)]
         out["all_shipped_7d"] = [_job_dict(j) for j in recent]
     return Response(out)
 
@@ -226,6 +243,16 @@ def reassign(request, pk):
         if job.task_id:
             job.task.assignee = job.assignee
             job.task.save(update_fields=["assignee"])
+        # каскад на дозамовлення цієї посилки (той самий виконавець / у чергу)
+        for _sub in WarehouseJob.objects.filter(deal__parent_deal_id=job.deal_id).exclude(status__in=["shipped", "cancelled"]):
+            _sub.assignee = job.assignee
+            if job.assignee_id is None:
+                _sub.status = "queued"
+            elif _sub.status == "queued":
+                _sub.status = "taken"; _sub.taken_at = _sub.taken_at or timezone.now()
+            _sub.save()
+            if _sub.task_id:
+                _sub.task.assignee = job.assignee; _sub.task.save(update_fields=["assignee"])
         try:
             from apps.crm.models import log_activity
             log_activity("deal", job.deal_id, "Склад: зміна виконавця", "%s → %s" % (old_name, new_name), u)
@@ -248,6 +275,13 @@ def take(request, pk):
         if job.task_id:
             job.task.status = "in_progress"; job.task.assignee = request.user
             job.task.save(update_fields=["status", "assignee"])
+        # каскад: дозамовлення цієї посилки бере той самий складовщик (одна коробка)
+        for _sub in WarehouseJob.objects.filter(deal__parent_deal_id=job.deal_id).exclude(status__in=["shipped", "cancelled"]):
+            if not _sub.assignee_id:
+                _sub.assignee = request.user; _sub.status = "taken"; _sub.taken_at = timezone.now()
+                _sub.save(update_fields=["assignee", "status", "taken_at"])
+                if _sub.task_id:
+                    _sub.task.status = "in_progress"; _sub.task.assignee = request.user; _sub.task.save(update_fields=["status", "assignee"])
         # склад узяв замовлення в роботу → сделка йде у «Відвантаження» (за НАЗВОЮ стадії).
         # «Заброньовано» ставиться лише оплатою з типом «Бронь», склад його НЕ ставить.
         try:
@@ -350,10 +384,16 @@ def ship(request, pk):
         job.status = "awaiting_photos"; job.save(update_fields=["status"])
         return Response({"detail": "Потрібні 2 фото: відерця + посилка"}, status=400)
     _finalize(job, request.user)
+    # каскад: дозамовлення цієї посилки — та сама коробка → списання без подвійної упаковки/фото
+    for _sub in WarehouseJob.objects.filter(deal__parent_deal_id=job.deal_id).exclude(status__in=["shipped", "cancelled"]):
+        try:
+            _finalize(_sub, request.user, pay_packing=False)
+        except Exception:
+            pass
     return Response(_job_dict(job, full=True))
 
 
-def _finalize(job, user):
+def _finalize(job, user, pay_packing=True):
     today = timezone.now().date(); deal = job.deal
     weight = _deal_weight(deal); job.shipped_weight_kg = weight
     kits = (deal.qualification or {}).get("kits", []) or []
@@ -361,7 +401,7 @@ def _finalize(job, user):
     job.tintings_count = tinted
     amount = deal.amount or Decimal("0")
     job.tintings_base = (amount * Decimal(tinted) / Decimal(total_kits)) if total_kits else Decimal("0")
-    tiers = _packing_tiers(weight) if job.packed else {"T5": 0, "T10": 0, "T20": 0}
+    tiers = _packing_tiers(weight) if (job.packed and pay_packing) else {"T5": 0, "T10": 0, "T20": 0}
     job.pack_le5_count = tiers["T5"]; job.pack_le10_count = tiers["T10"]; job.pack_le20_count = tiers["T20"]
     r_kg = _rate("WH_RATE_KG", 1.5); r5 = _rate("WH_PACK_5", 8); r10 = _rate("WH_PACK_10", 13)
     r20 = _rate("WH_PACK_20", 20); rtint = _rate("WH_TINT_PCT", 20) / Decimal("100")

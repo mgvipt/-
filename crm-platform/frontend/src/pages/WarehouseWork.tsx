@@ -173,11 +173,18 @@ function JobPreview({ jobId, t, onClose, onTake }: any) {
           {(j.is_dozakaz || (j.parcel_orders && j.parcel_orders.length > 0)) && (
             <div style={{ background: "#ecfeff", border: "1px solid #a5f3fc", borderRadius: 10, padding: "8px 11px", marginBottom: 12, fontSize: 12.5, color: "#0e7490" }}>
               📦 <b>{t("Одна посылка.","Одна посилка.")}</b> {j.is_dozakaz ? t("Это дозаказ — упаковать вместе с основной сделкой.","Це дозамовлення — пакувати разом з основною сделкою.") : t("К этой сделке едут дозаказы — упаковать в одну коробку.","До цієї сделки їдуть дозамовлення — пакувати в одну коробку.")}
-              {j.parcel_orders && j.parcel_orders.length > 0 ? <> {t("Вместе:","Разом:")} {j.parcel_orders.map((p: any) => "#" + p.id).join(", ")}.</> : null}{" "}{t("ТТН создаёт менеджер на сделке","ТТН створює менеджер на сделці")} #{j.parcel_main}.
+              {j.parcel_orders && j.parcel_orders.length > 0 ? <> {t("Вместе:","Разом:")} {j.parcel_orders.map((p: any) => "#" + p.id).join(", ")}.</> : null}{" "}{j.is_dozakaz ? <>{t("ТТН — на основной","ТТН — на основній")} #{j.parcel_main}.</> : <>{t("Склад создаёт ОДНУ ТТН здесь (внизу, «Нова Пошта»).","Склад створює ОДНУ ТТН тут (внизу, «Нова Пошта»).")}</>}
             </div>
           )}
           <div className="label">📦 {t("Товары в сделке", "Товари в угоді")}</div>
           {(j.items || []).length ? (j.items || []).map((it: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "5px 0", borderBottom: "1px solid #f6f8fb" }}>• {it.name} <b>× {it.qty}</b> {it.weight_kg && it.weight_kg !== "0" && it.weight_kg !== "0.000" ? <span className="muted">· {it.weight_kg} кг</span> : null}</div>) : <div className="muted" style={{ fontSize: 12 }}>—</div>}
+          {(j.subtasks || []).length > 0 && (j.subtasks).map((s: any) => (
+            <div key={"sub" + s.job_id} style={{ marginTop: 10, background: "#f0fdff", border: "1px solid #cffafe", borderRadius: 10, padding: "8px 11px" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0e7490" }}>↳ 📦 {t("Дозаказ", "Дозамовлення")} #{s.deal_id}{s.title ? " · " + s.title : ""}</div>
+              {(s.items || []).map((it: any, i: number) => <div key={i} style={{ fontSize: 13, padding: "3px 0", color: "#334155" }}>• {it.name} <b>× {it.qty}</b></div>)}
+              {s.kits_n > 0 ? <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>🎨 {t("наборов", "наборів")}: {s.kits_n}</div> : null}
+            </div>
+          ))}
           {(j.kits || []).length > 0 && <><div className="label" style={{ marginTop: 14 }}>🎨 {t("Наборы / тонировка", "Набори / тонування")} ({(j.kits || []).length})</div>
             {(j.kits || []).map((k: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "4px 0" }}>• <b>{k.material || "—"}</b> <span className="muted">{k.color}</span>{k.tint ? " · 🎨 " + t("тонировать", "тонувати") : ""}{k.board ? " · " + t("с дощечкой", "з дощечкою") : ""}</div>)}</>}
           <div className="label" style={{ marginTop: 14 }}>📋 {t("Выявление потребности", "Виявлення потреби")}</div>
