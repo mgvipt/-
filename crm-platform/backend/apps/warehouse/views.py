@@ -557,6 +557,36 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
         changed = unpost_document(doc)
         return Response({"ok": True, "changed": changed, "posted": doc.posted})
 
+    @action(detail=True, methods=["get"], url_path="inv-detail")
+    def inv_detail(self, request, pk=None):
+        """Деталь інвентаризації з фактом і обліковим («було/стало»).
+        Розбіжність = рух документа (quantity). Факт (стало) = поточний залишок − рухи ПІСЛЯ
+        цього документа. Було (обліковий) = Факт − Розбіжність. Працює і для старих записів."""
+        from django.db.models import Sum
+        from decimal import Decimal
+        doc = self.get_object()
+        rows = []
+        for m in doc.items.select_related("product"):
+            p = m.product
+            rozb = m.quantity or Decimal("0")
+            if p is None:
+                rows.append({"id": m.id, "product_name": m.product_name or "—",
+                             "quantity": float(rozb), "price": float(m.price or 0),
+                             "before": None, "fact": None})
+                continue
+            after = (StockMovement.objects.filter(
+                product=p, document__posted=True,
+                document__created_at__gt=doc.created_at).aggregate(s=Sum("quantity"))["s"]) or Decimal("0")
+            cur = p.stock()
+            # якщо документ скасовано (сторно) — його розбіжність вже не в поточному залишку,
+            # тому повертаємо факт як залишок після сторно + розбіжність (best-effort)
+            fact = (cur - after) if doc.posted else (cur - after + rozb)
+            before = fact - rozb
+            rows.append({"id": m.id, "product_name": p.name,
+                         "quantity": float(rozb), "price": float(m.price or 0),
+                         "before": float(before), "fact": float(fact)})
+        return Response({"id": doc.id, "posted": doc.posted, "items": rows})
+
     def destroy(self, request, *args, **kwargs):
         """Інвентаризацію НЕ видаляємо фізично (аудит-слід) — тільки сторно через /void/.
         Інші типи документів — стандартна поведінка ModelViewSet."""

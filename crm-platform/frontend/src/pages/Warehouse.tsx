@@ -1356,7 +1356,7 @@ export default function Warehouse() {
                     const over = items.filter((it: any) => Number(it.quantity) > 0).length;
                     const cancelled = d.posted === false;
                     return (
-                      <div key={d.id} onClick={() => setInvHistSel(d)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 8px", borderBottom: "1px solid #f1f5f9", cursor: "pointer", opacity: cancelled ? 0.6 : 1 }}>
+                      <div key={d.id} onClick={async () => { setInvHistSel(d); try { const det: any = await api.get(`/api/stock-documents/${d.id}/inv-detail/`); setInvHistSel((cur: any) => (cur && cur.id === d.id ? { ...cur, items: det.items } : cur)); } catch { /* показываем как есть */ } }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 8px", borderBottom: "1px solid #f1f5f9", cursor: "pointer", opacity: cancelled ? 0.6 : 1 }}>
                         <div style={{ minWidth: 92, fontWeight: 600 }}>{(d.doc_date || d.created_at || "").slice(0, 10)}</div>
                         <div style={{ flex: 1, textDecoration: cancelled ? "line-through" : "none" }}>{d.comment || t("Инвентаризация","Інвентаризація")}</div>
                         {cancelled
@@ -1390,20 +1390,23 @@ export default function Warehouse() {
                       {canVoidInv && invHistSel.posted !== false && <button className="btn btn-light" style={{ padding: "3px 11px" }} onClick={() => setInvVoidDoc(invHistSel)}>{t("Отменить (сторно)","Скасувати (сторно)")}</button>}
                     </div>
                     <table style={{ width: "100%", fontSize: 13 }}>
-                      <thead><tr>{[t("Товар","Товар"), t("Расхождение","Розбіжність"), ...(showCost ? [t("Себест.","Собівар."), t("Сумма","Сума")] : [])].map((h) => <th key={h} style={{ textAlign: "left", boxShadow: "inset 0 -1px 0 #e2e8f0" }}>{h}</th>)}</tr></thead>
+                      <thead><tr>{[t("Товар","Товар"), t("Было (учёт)","Було (облік)"), t("Факт","Факт"), t("Расхождение","Розбіжність"), ...(showCost ? [t("Себест.","Собівар."), t("Сумма","Сума")] : [])].map((h, hi) => <th key={h} style={{ textAlign: hi === 0 ? "left" : "right", boxShadow: "inset 0 -1px 0 #e2e8f0" }}>{h}</th>)}</tr></thead>
                       <tbody>
                         {(invHistSel.items || []).map((it: any) => {
                           const q = Number(it.quantity); const pr = Number(it.price);
+                          const bf = it.before != null ? Number(it.before) : null; const fc = it.fact != null ? Number(it.fact) : null;
                           return (
                             <tr key={it.id}>
                               <td>{it.product_name}</td>
-                              <td style={{ color: q < 0 ? "#dc2626" : q > 0 ? "#16a34a" : "#94a3b8", fontWeight: 600 }}>{q > 0 ? "+" : ""}{q}</td>
-                              {showCost && <><td className="muted">{pr ? pr.toLocaleString("ru") : "—"}</td>
-                              <td>{pr ? (Math.round(q * pr * 100) / 100).toLocaleString("ru") + " ₴" : "—"}</td></>}
+                              <td className="muted" style={{ textAlign: "right" }}>{bf != null ? bf.toLocaleString("ru") : "—"}</td>
+                              <td style={{ textAlign: "right", fontWeight: 600 }}>{fc != null ? fc.toLocaleString("ru") : "—"}</td>
+                              <td style={{ textAlign: "right", color: q < 0 ? "#dc2626" : q > 0 ? "#16a34a" : "#94a3b8", fontWeight: 600 }}>{q > 0 ? "+" : ""}{q}</td>
+                              {showCost && <><td className="muted" style={{ textAlign: "right" }}>{pr ? pr.toLocaleString("ru") : "—"}</td>
+                              <td style={{ textAlign: "right" }}>{pr ? (Math.round(q * pr * 100) / 100).toLocaleString("ru") + " ₴" : "—"}</td></>}
                             </tr>
                           );
                         })}
-                        {(invHistSel.items || []).length === 0 && <tr><td colSpan={showCost ? 4 : 2} className="muted" style={{ padding: 10 }}>{t("Расхождений не было — остатки совпали.","Розбіжностей не було — залишки збіглися.")}</td></tr>}
+                        {(invHistSel.items || []).length === 0 && <tr><td colSpan={showCost ? 6 : 4} className="muted" style={{ padding: 10 }}>{t("Расхождений не было — остатки совпали.","Розбіжностей не було — залишки збіглися.")}</td></tr>}
                       </tbody>
                     </table>
                   </div>
