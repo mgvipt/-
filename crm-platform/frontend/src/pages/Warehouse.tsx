@@ -105,6 +105,10 @@ export default function Warehouse() {
   const [receiptDocs, setReceiptDocs] = useState<any[]>([]);
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [receiptSel, setReceiptSel] = useState<any>(null);
+  // ширина колонок списка приходов — сохраняется в браузере (перетягивание границы)
+  const [recColW, setRecColW] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem("wh_receipt_colw") || "{}"); } catch { return {}; }
+  });
   const [docPage, setDocPage] = useState({ realiz: 1, receipt: 1 });
   const [docPS, setDocPS] = useState({ realiz: 25, receipt: 25 });
   const [docCount, setDocCount] = useState({ realiz: 0, receipt: 0 });
@@ -118,6 +122,28 @@ export default function Warehouse() {
   }
   function docTitle(d: any) {
     return (d.number || ("РН-" + d.id)) + " · " + (d.deal_title || (d.deal ? t("угода","угода") + " #" + d.deal : t("ручное","ручне"))) + " · " + (d.created_at || "").slice(0, 10);
+  }
+  // колонки списка приходов + перетягивание ширины (сохраняется в localStorage)
+  const REC_COLS: { key: string; label: string; w: number; align?: "right" | "center" }[] = [
+    { key: "num", label: "№", w: 100 },
+    { key: "supplier", label: t("Поставщик", "Постачальник"), w: 220 },
+    { key: "docdate", label: t("Дата накладной", "Дата накладної"), w: 120 },
+    { key: "posted", label: t("Дата проведения", "Дата проведення"), w: 120 },
+    { key: "comment", label: t("Комментарий", "Коментар"), w: 300 },
+    { key: "positions", label: t("Позиций", "Позицій"), w: 90, align: "right" },
+    { key: "sum", label: t("Сумма", "Сума"), w: 110, align: "right" },
+    { key: "status", label: t("Статус", "Статус"), w: 110, align: "center" },
+  ];
+  function recW(key: string) { return recColW[key] || (REC_COLS.find((c) => c.key === key)?.w || 120); }
+  function startRecResize(key: string, e: React.MouseEvent) {
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX; const startW = recW(key); let latest = startW;
+    function onMove(ev: MouseEvent) { latest = Math.max(50, startW + (ev.clientX - startX)); setRecColW((p) => ({ ...p, [key]: latest })); }
+    function onUp() {
+      document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp);
+      setRecColW((p) => { const next = { ...p, [key]: latest }; try { localStorage.setItem("wh_receipt_colw", JSON.stringify(next)); } catch { /* */ } return next; });
+    }
+    document.addEventListener("mousemove", onMove); document.addEventListener("mouseup", onUp);
   }
   async function openRealizList(pg?: number, ps?: number) {
     setRealizBusy(true);
@@ -849,21 +875,37 @@ export default function Warehouse() {
             <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Все поступления товара на склад по датам. Кликните на строку — откроется документ с позициями.","Усі надходження товару на склад по датах. Клікніть на рядок — відкриється документ з позиціями.")}</div>
             {receiptBusy ? <div className="muted" style={{ padding: 16 }}>{t("Загрузка…","Завантаження…")}</div> :
              receiptDocs.length === 0 ? <div className="muted" style={{ padding: 16 }}>{t("Пока нет приходов.","Поки немає приходів.")}</div> :
-            <table style={{ width: "100%" }}>
-              <thead><tr><th>№</th><th>{t("Поставщик","Постачальник")}</th><th>{t("Дата накладной","Дата накладної")}</th><th>{t("Дата проведения","Дата проведення")}</th><th>{t("Комментарий","Коментар")}</th><th style={{ textAlign: "right" }}>{t("Позиций","Позицій")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th><th style={{ textAlign: "center" }}>{t("Статус","Статус")}</th></tr></thead>
-              <tbody>{receiptDocs.map((d: any) => (
-                <tr key={d.id} onClick={() => setReceiptSel(d)} style={{ cursor: "pointer" }} title={t("Открыть документ","Відкрити документ")}>
-                  <td><b>{d.number || ("#" + d.id)}</b></td>
-                  <td className="muted">{d.supplier_name || "—"}</td>
-                  <td className="muted">{(d.doc_date || "").slice(0, 10) || "—"}</td>
-                  <td className="muted">{(d.created_at || "").slice(0, 10)}</td>
-                  <td className="muted">{d.comment || "—"}</td>
-                  <td style={{ textAlign: "right" }}>{(d.items || []).length}</td>
-                  <td style={{ textAlign: "right" }}>{Number(d.total || 0).toLocaleString("uk-UA")} ₴</td>
-                  <td style={{ textAlign: "center" }}><span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: d.posted ? "#dcfce7" : "#fef3c7", color: d.posted ? "#166534" : "#92400e" }}>{d.posted ? t("Проведён","Проведено") : t("Черновик","Чернетка")}</span></td>
-                </tr>
-              ))}</tbody>
-            </table>}
+            <div style={{ overflowX: "auto" }}>
+            <table style={{ tableLayout: "fixed", width: REC_COLS.reduce((s, c) => s + recW(c.key), 0), borderCollapse: "collapse" }}>
+              <colgroup>{REC_COLS.map((c) => <col key={c.key} style={{ width: recW(c.key) }} />)}</colgroup>
+              <thead><tr>{REC_COLS.map((c) => (
+                <th key={c.key} style={{ position: "relative", textAlign: c.align || "left", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", paddingRight: 10 }}>
+                  {c.label}
+                  <span onMouseDown={(e) => startRecResize(c.key, e)} title={t("Потяните, чтобы изменить ширину","Потягніть, щоб змінити ширину")} style={{ position: "absolute", top: 0, right: 0, width: 7, height: "100%", cursor: "col-resize", userSelect: "none" }} />
+                </th>
+              ))}</tr></thead>
+              <tbody>{receiptDocs.map((d: any) => {
+                const cell: Record<string, any> = {
+                  num: <b>{d.number || ("#" + d.id)}</b>,
+                  supplier: d.supplier_name || "—",
+                  docdate: (d.doc_date || "").slice(0, 10) || "—",
+                  posted: (d.created_at || "").slice(0, 10),
+                  comment: d.comment || "—",
+                  positions: (d.items || []).length,
+                  sum: Number(d.total || 0).toLocaleString("uk-UA") + " ₴",
+                  status: <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: d.posted ? "#dcfce7" : "#fef3c7", color: d.posted ? "#166534" : "#92400e" }}>{d.posted ? t("Проведён","Проведено") : t("Черновик","Чернетка")}</span>,
+                };
+                const ttl: Record<string, string> = { supplier: d.supplier_name || "", comment: d.comment || "" };
+                return (
+                  <tr key={d.id} onClick={() => setReceiptSel(d)} style={{ cursor: "pointer" }} title={t("Открыть документ","Відкрити документ")}>
+                    {REC_COLS.map((c) => (
+                      <td key={c.key} className={c.key === "num" || c.key === "status" ? undefined : "muted"} title={ttl[c.key] || undefined} style={{ textAlign: c.align || "left", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{cell[c.key]}</td>
+                    ))}
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+            </div>}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
               <span className="muted" style={{ fontSize: 12 }}>{t("Строк","Рядків")}:</span>
               {[25, 50, 100].map((n) => <button key={n} className={"btn" + (docPS.receipt === n ? " btn-primary" : " btn-light")} style={{ padding: "2px 10px", fontSize: 12 }} onClick={() => { setDocPS((x) => ({ ...x, receipt: n })); setDocPage((x) => ({ ...x, receipt: 1 })); openReceiptList(1, n); }}>{n}</button>)}
