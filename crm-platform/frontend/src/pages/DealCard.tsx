@@ -364,8 +364,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   async function addItem(prod?: Product) {
     const p = prod && (prod as any).id ? prod : psel;   // двойной клик передаёт товар напрямую, иначе берём выбранный
     if (!p) return;
-    setDeal(await api.post<Deal>(`/api/deals/${id}/add_item/`, { product: p.id, quantity: addQty, reserved: addReserve }));
-    setPsel(null); setPsearch(""); setPresults([]); setAddQty(1); setAddReserve(false);
+    try {
+      setDeal(await api.post<Deal>(`/api/deals/${id}/add_item/`, { product: p.id, quantity: addQty, reserved: addReserve }));
+      setPsel(null); setPsearch(""); setPresults([]); setAddQty(1); setAddReserve(false);
+    } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось добавить товар","Не вдалося додати товар")); }
   }
   // подтянуть свежую закупку (себестоимость) из номенклатуры — маржа обновится, сумма клиента и чек НЕ меняются
   async function refreshCosts() {
@@ -391,14 +393,18 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     return () => clearTimeout(t);
   }, [epq, editProdItem]);
   async function reselectItemProduct(itemId: number, prodId: number) {
-    setDeal(await api.post<Deal>(`/api/deals/${id}/update_item/`, { item: itemId, product: prodId }));
-    setEditProdItem(0); setEpq(""); setEpr([]);
+    try {
+      setDeal(await api.post<Deal>(`/api/deals/${id}/update_item/`, { item: itemId, product: prodId }));
+      setEditProdItem(0); setEpq(""); setEpr([]);
+    } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось изменить товар","Не вдалося змінити товар")); }
   }
   async function toggleReserve(it: any) {
-    setDeal(await api.post<Deal>(`/api/deals/${id}/set_reserve/`, { item: it.id, reserved: !it.reserved }));
+    try { setDeal(await api.post<Deal>(`/api/deals/${id}/set_reserve/`, { item: it.id, reserved: !it.reserved })); }
+    catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось изменить резерв","Не вдалося змінити резерв")); }
   }
   async function updateItem(itemId: number, body: any) {
-    setDeal(await api.post<Deal>(`/api/deals/${id}/update_item/`, { item: itemId, ...body }));
+    try { setDeal(await api.post<Deal>(`/api/deals/${id}/update_item/`, { item: itemId, ...body })); }
+    catch (e: any) { alert(e?.response?.data?.detail || t("Изменение заблокировано (проверьте: сделка оплачена / есть чек / нет прав)","Зміну заблоковано (перевірте: сделка оплачена / є чек / немає прав)")); }
   }
   async function addCustomItem() {
     if (!ci.name.trim() || Number(ci.qty) <= 0 || Number(ci.price) < 0) { flash(t("Впиши название, количество и цену","Впиши назву, кількість і ціну")); return; }
@@ -408,7 +414,16 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       flash(t("✓ Позиция добавлена (без складского учёта)","✓ Позицію додано (без складського обліку)"));
     } catch (e: any) { flash(e?.response?.data?.detail || t("Не удалось добавить","Не вдалося додати")); }
   }
-  async function removeItem(item: number) { setDeal(await api.post<Deal>(`/api/deals/${id}/remove_item/`, { item })); }
+  async function removeItem(item: number) {
+    try { setDeal(await api.post<Deal>(`/api/deals/${id}/remove_item/`, { item })); }
+    catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось удалить (сделка оплачена / есть чек / нет прав)","Не вдалося видалити (сделка оплачена / є чек / немає прав)")); }
+  }
+  // отменить реализацию (отгрузку) — товар вернётся на склад, дальше можно править приход/сделку
+  async function unship() {
+    if (!confirm(t("Отменить реализацию? Товар вернётся на склад (в количестве позиций сделки). Дальше сможете исправить приход и, если сделка не оплачена, позиции.","Скасувати реалізацію? Товар повернеться на склад (у кількості позицій сделки). Далі зможете виправити прихід і, якщо сделка не оплачена, позиції."))) return;
+    try { const r: any = await api.post(`/api/deals/${id}/unship/`, {}); setDeal(r.deal); flash(t("✓ Реализация отменена — товар вернулся на склад","✓ Реалізацію скасовано — товар повернувся на склад")); }
+    catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось отменить реализацию (нужны права склада/бухгалтера)","Не вдалося скасувати реалізацію (потрібні права складу/бухгалтера)")); }
+  }
 
   const salonFunnel = (((deal as any)?.funnel_name || "") as string).toLowerCase().includes("покры") || (((deal as any)?.funnel_name || "") as string).toLowerCase().includes("покрит");
   const inpV: any = { width: "100%", height: 36, marginBottom: 10, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", fontSize: 13 };
@@ -1071,7 +1086,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                     {(deal as any).realization && (
                       <div style={{ ...rowTot, fontSize: 12.5, marginTop: 6, color: (deal as any).realization.posted ? "#166534" : "#92400e" }}>
                         <span className="muted">{t("Реализация","Реалізація")} 📤</span>
-                        <b>{(deal as any).realization.number} · {((deal as any).realization.created_at || "").slice(0, 10)} · {(deal as any).realization.posted ? t("проведён","проведено") : t("черновик","чернетка")}</b>
+                        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <b>{(deal as any).realization.number} · {((deal as any).realization.created_at || "").slice(0, 10)} · {(deal as any).realization.posted ? t("проведён","проведено") : t("черновик","чернетка")}</b>
+                          {(deal as any).realization.posted && (can("warehouse.edit") || can("finance.manage")) && <button className="btn btn-light" style={{ padding: "2px 8px", fontSize: 11 }} onClick={unship} title={t("Отменить реализацию — товар вернётся на склад (чтобы исправить сделку/приход)","Скасувати реалізацію — товар повернеться на склад (щоб виправити сделку/прихід)")}>{t("Отменить","Скасувати")}</button>}
+                        </span>
                       </div>
                     )}
                   </div>

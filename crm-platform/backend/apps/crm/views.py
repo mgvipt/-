@@ -2103,6 +2103,23 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         return Response({"ok": True, "cogs": float(cogs),
                          "deal": DealDetailSerializer(deal, context={"request": request}).data})
 
+    @action(detail=True, methods=["post"])
+    def unship(self, request, pk=None):
+        """Скасувати реалізацію (відвантаження) — товар ПОВЕРТАЄТЬСЯ на склад.
+        Потрібно щоб виправити помилкову сделку: далі можна редагувати прихід і позиції.
+        Право — склад (warehouse.edit) або бухгалтер."""
+        from apps.warehouse.models import StockDocument
+        from apps.warehouse.services import unpost_document
+        deal = self.get_object()
+        g = self._guard(deal, fulfill=True)
+        if g:
+            return g
+        doc = StockDocument.objects.filter(kind="out", deal=deal, posted=True).first()
+        if not doc:
+            return Response({"detail": "По сделці немає проведеної реалізації."}, status=status.HTTP_400_BAD_REQUEST)
+        unpost_document(doc)  # товар повертається на склад (posted=False)
+        return Response({"ok": True, "deal": DealDetailSerializer(deal, context={"request": request}).data})
+
 
 class PaymentViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Payment.objects.select_related("deal")
