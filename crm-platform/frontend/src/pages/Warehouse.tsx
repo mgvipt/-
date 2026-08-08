@@ -1389,8 +1389,9 @@ export default function Warehouse() {
                       <span className="muted" style={{ fontSize: 13, flex: 1 }}>{invHistSel.comment}</span>
                       {canVoidInv && invHistSel.posted !== false && <button className="btn btn-light" style={{ padding: "3px 11px" }} onClick={() => setInvVoidDoc(invHistSel)}>{t("Отменить (сторно)","Скасувати (сторно)")}</button>}
                     </div>
+                    <div style={{ maxHeight: "calc(100vh - 230px)", overflow: "auto" }}>
                     <table style={{ width: "100%", fontSize: 13 }}>
-                      <thead><tr>{[t("Товар","Товар"), t("Было (учёт)","Було (облік)"), t("Факт","Факт"), t("Расхождение","Розбіжність"), ...(showCost ? [t("Себест.","Собівар."), t("Сумма","Сума")] : [])].map((h, hi) => <th key={h} style={{ textAlign: hi === 0 ? "left" : "right", boxShadow: "inset 0 -1px 0 #e2e8f0" }}>{h}</th>)}</tr></thead>
+                      <thead><tr>{[t("Товар","Товар"), t("Было (учёт)","Було (облік)"), t("Факт","Факт"), t("Расхождение","Розбіжність"), ...(showCost ? [t("Себест.","Собівар."), t("Сумма","Сума")] : [])].map((h, hi) => <th key={h} style={{ textAlign: hi === 0 ? "left" : "right", position: "sticky", top: 0, background: "var(--card-bg, #fff)", zIndex: 2, boxShadow: "inset 0 -1px 0 #e2e8f0" }}>{h}</th>)}</tr></thead>
                       <tbody>
                         {(invHistSel.items || []).map((it: any) => {
                           const q = Number(it.quantity); const pr = Number(it.price);
@@ -1409,6 +1410,7 @@ export default function Warehouse() {
                         {(invHistSel.items || []).length === 0 && <tr><td colSpan={showCost ? 6 : 4} className="muted" style={{ padding: 10 }}>{t("Расхождений не было — остатки совпали.","Розбіжностей не було — залишки збіглися.")}</td></tr>}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 )}
               </div>
