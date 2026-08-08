@@ -1149,7 +1149,7 @@ class InventorySheetView(APIView):
             if request.GET.get("moved") in ("1", "true", "yes"):
                 # тільки товари, що ПРОДАВАЛИСЬ/відвантажувались за період (рух зі знаком мінус) — тижнева перевірка
                 _moved_ids = (StockMovement.objects.filter(
-                    document__posted=True, quantity__lt=0,
+                    document__posted=True, document__kind="out", quantity__lt=0,
                     document__created_at__date__gte=df, document__created_at__date__lte=dt)
                     .values_list("product_id", flat=True).distinct())
                 qs = qs.filter(id__in=list(_moved_ids))
@@ -1180,9 +1180,11 @@ class InventorySheetView(APIView):
 
         agg = (StockMovement.objects.filter(product_id__in=ids, document__posted=True).values("product_id").annotate(
             opening=Coalesce(Sum("quantity", filter=Q(document__created_at__date__lt=df)), Decimal("0")),
-            received=Coalesce(Sum("quantity", filter=Q(quantity__gt=0,
+            received=Coalesce(Sum("quantity", filter=Q(document__kind="in", quantity__gt=0,
                 document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
-            sold_neg=Coalesce(Sum("quantity", filter=Q(quantity__lt=0,
+            sold_neg=Coalesce(Sum("quantity", filter=Q(document__kind="out", quantity__lt=0,
+                document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
+            inv_net=Coalesce(Sum("quantity", filter=Q(document__kind="inv",
                 document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
         ))
         by_id = {a["product_id"]: a for a in agg}
@@ -1192,7 +1194,8 @@ class InventorySheetView(APIView):
             opening = a.get("opening") or Decimal("0")
             received = a.get("received") or Decimal("0")
             sold = abs(a.get("sold_neg") or Decimal("0"))
-            book = opening + received - sold
+            inv_net = a.get("inv_net") or Decimal("0")
+            book = opening + received - sold + inv_net
             rows.append({"id": p.id, "name": p.name, "sku": p.sku, "unit": p.unit,
                          "opening": float(opening), "received": float(received),
                          "sold": float(sold), "book": float(book)})
