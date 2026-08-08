@@ -13,6 +13,28 @@ class ChannelSerializer(serializers.ModelSerializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     attachments = serializers.SerializerMethodField()
+    sender_display = serializers.SerializerMethodField()
+
+    def get_sender_display(self, obj):
+        """Людяне імʼя автора вихідного повідомлення.
+        - CRM-користувач (sender_id) → його повне імʼя;
+        - ChatPlace 'operator'/'manager'/'admin' → 'Менеджер · ChatPlace' (ChatPlace НЕ передає імʼя людини);
+        - 'ai_assistant'/'bot' → ШІ; вхідні → порожньо (клієнт показується окремо)."""
+        sn = (obj.sender_name or "").strip()
+        if sn == "ai_assistant":
+            return "Юля (AI)"
+        if sn == "bot":
+            return "Бот"
+        if sn.lower() in ("operator", "manager", "admin", "system", "out"):
+            # ChatPlace-«operator» не несе імʼя людини; якщо є CRM-користувач — показати його
+            if obj.sender_id and obj.sender:
+                return obj.sender.get_full_name() or obj.sender.username
+            return "Менеджер · ChatPlace"
+        if sn:
+            return sn  # реальне збережене імʼя (Кирилл Оксаненко / Илона тощо)
+        if obj.sender_id and obj.sender:
+            return obj.sender.get_full_name() or obj.sender.username
+        return ""
 
     def get_attachments(self, obj):
         from apps.inbox.views import _tg_sig
@@ -27,7 +49,7 @@ class MessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Message
         fields = ["id", "conversation", "direction", "text", "internal", "attachments",
-                  "sender_name", "created_at", "status"]
+                  "sender_name", "sender_display", "created_at", "status"]
         read_only_fields = ["direction", "sender_name", "created_at"]
 
 

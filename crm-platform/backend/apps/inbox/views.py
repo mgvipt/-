@@ -317,6 +317,18 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             from datetime import timedelta as _tdr
             recent_q = Q(messages__sender=user, messages__created_at__gte=_tzr.now() - _tdr(minutes=_RECENT_REPLY_MIN))
             qs = qs.filter(Q(assigned_to__isnull=True) | Q(assigned_to=user) | Q(participants=user) | recent_q)
+            # ПІД-ФІЛЬТР черги (серед призначених у роботу): «потрібна відповідь» / «чекаємо клієнта».
+            # Реальний фільтр на бекенді → сьогодні завжди зверху, лічильники правильні (не по підвантаженому).
+            if scope in ("need", "waiting"):
+                from django.db.models import OuterRef as _OR, Subquery as _SQ
+                _last_dir = Message.objects.filter(conversation=_OR("pk")).order_by("-id").values("direction")[:1]
+                qs = qs.annotate(_ld=_SQ(_last_dir)).filter(assigned_to__isnull=False)
+                if scope == "need":
+                    # останнє повідомлення від клієнта АБО вручну позначено неотвеченим
+                    qs = qs.filter(Q(_ld="in") | Q(unread__gt=0))
+                else:
+                    # ми відповіли останніми і нічого не висить → чекаємо відповідь клієнта
+                    qs = qs.filter(_ld="out").exclude(unread__gt=0)
         # У СПИСКУ показуємо лише ВІДКРИТІ чати. Закритий зникає; коли клієнт напише —
         # ingest створює новий open-діалог і він знову зʼявиться (у непризначених).
         if self.action == "list" and not self.request.query_params.get("status"):

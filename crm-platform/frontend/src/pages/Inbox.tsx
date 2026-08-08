@@ -83,7 +83,7 @@ export default function Inbox() {
 
   function listQuery() {
     const sp = new URLSearchParams({ page_size: "50" });
-    const beScope = (scope === "need" || scope === "waiting") ? "all" : scope;
+    const beScope = scope; // need/waiting = справжній фільтр на бекенді
     if (beScope && beScope !== "all") sp.set("scope", beScope);
     if (chFilter) sp.set("channel", chFilter);
     if (period && period !== "all") sp.set("period", period);
@@ -373,9 +373,11 @@ export default function Inbox() {
             );
             // 3 категорії: Непризначені (вільний пул, видно всім з доступом до каналу)
             // + Потрібна відповідь / В роботі (тільки призначені = свої)
-            const unassigned = convs.filter((c) => !c.assigned_to);
-            const need = convs.filter((c) => c.assigned_to && (c as any).needs_reply);
-            const work = convs.filter((c) => c.assigned_to && !(c as any).needs_reply);
+            const _ts = (c: any) => new Date(c.last_message_at || 0).getTime();
+            const byDate = (a: any, b: any) => _ts(b) - _ts(a); // новіші (сьогодні) зверху
+            const unassigned = convs.filter((c) => !c.assigned_to).sort(byDate);
+            const need = convs.filter((c) => c.assigned_to && (c as any).needs_reply).sort(byDate);
+            const work = convs.filter((c) => c.assigned_to && !(c as any).needs_reply).sort(byDate);
             const hdr = (icon: string, label: string, color: string) => <div style={{ padding: "8px 12px 4px", fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: .3, display: "flex", alignItems: "center", gap: 5 }}><Icon n={icon} size={12} /> {label}</div>;
             const withDays = (list: Conversation[]) => {
               const dk = (c: any) => c.last_message_at ? new Date(c.last_message_at).toDateString() : "\u2014";
@@ -389,7 +391,7 @@ export default function Inbox() {
               {scope !== "need" && scope !== "waiting" && withDays(unassigned)}
               {scope !== "waiting" && need.length > 0 && hdr("circle", t(`Нужен ответ (${need.length})`,`Потрібна відповідь (${need.length})`), "#dc2626")}
               {scope !== "waiting" && withDays(need)}
-              {scope !== "need" && work.length > 0 && hdr("check", t(`В работе (${work.length})`,`В роботі (${work.length})`), "#16a34a")}
+              {scope !== "need" && work.length > 0 && hdr("check", t(`Ждём клиента (${work.length})`,`Чекаємо клієнта (${work.length})`), "#16a34a")}
               {scope !== "need" && withDays(work)}
             </>);
           })()}
@@ -455,7 +457,7 @@ export default function Inbox() {
                     border: (m as any).internal ? "1px dashed #d4a017" : (m.direction === "out" ? "1.5px solid #2563eb" : "1px solid #e8edf3"),
                     boxShadow: "0 1px 2px rgba(0,0,0,.05)" }}>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: .2, marginBottom: 4, paddingBottom: 3, borderBottom: (m as any).internal ? "1px solid rgba(212,160,23,.3)" : (m.direction === "out" ? "1px solid rgba(37,99,235,.25)" : "1px solid rgba(0,0,0,.08)"), color: (m as any).internal ? "#92400e" : (m.direction === "out" ? "#2563eb" : "var(--brand)") }}>
-                    {(m as any).internal ? "📝 " + ((SNDR_MAP[m.sender_name] || m.sender_name) || t("Менеджер","Менеджер")) + " · " + t("только команда","тільки команда") : ((SNDR_MAP[m.sender_name] || m.sender_name) || (m.direction === "out" ? t("Менеджер","Менеджер") : (active?.title || t("Клиент","Клієнт"))))}
+                    {(m as any).internal ? "📝 " + ((m as any).sender_display || SNDR_MAP[m.sender_name] || m.sender_name || t("Менеджер","Менеджер")) + " · " + t("только команда","тільки команда") : ((m as any).sender_display || SNDR_MAP[m.sender_name] || m.sender_name || (m.direction === "out" ? t("Менеджер","Менеджер") : (active?.title || t("Клиент","Клієнт"))))}
                   </div>
                   <span onClick={() => { if (m.direction === "in") setMsgMenu(msgMenu === m.id ? null : m.id); }}
                     style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", cursor: m.direction === "in" ? "pointer" : "default" }}>{linkify(m.text, m.direction === "out")}</span>

@@ -266,7 +266,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
             )}
             <div style={{ alignSelf: m.direction === "in" ? "flex-start" : "flex-end", maxWidth: "82%" }}>
               <div style={{ fontSize: 10.5, color: "#94a3b8", marginBottom: 2, textAlign: m.direction === "in" ? "left" : "right" }}>
-                {m.direction === "in" ? "Клієнт" : (m.sender_name === "ai_assistant" ? "Юля (AI)" : (m.sender_name || "Менеджер"))}
+                {m.direction === "in" ? "Клієнт" : ((m as any).sender_display || (m.sender_name === "ai_assistant" ? "Юля (AI)" : (m.sender_name || "Менеджер")))}
               </div>
               <div style={{ background: (m as any).internal ? "#fef9c3" : (m.direction === "in" ? "#ffffff" : "#dbeafe"), padding: "7px 11px", borderRadius: 12, fontSize: 13, whiteSpace: "pre-wrap", border: (m as any).internal ? "1px dashed #d4a017" : (m.direction === "in" ? "1px solid #eef2f7" : "none") }}>
                 {(m as any).internal && <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", marginBottom: 2 }}><Icon n="📝" size={12} /> Нотатка (тільки команда)</div>}
