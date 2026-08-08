@@ -43,6 +43,7 @@ class ConversationSerializer(serializers.ModelSerializer):
     deal_id = serializers.SerializerMethodField()
     participant_names = serializers.SerializerMethodField()
     manager_replied = serializers.SerializerMethodField()
+    pending_in = serializers.SerializerMethodField()
 
     def get_contact_name(self, obj):
         return str(obj.contact) if obj.contact else (obj.title or "")
@@ -74,7 +75,7 @@ class ConversationSerializer(serializers.ModelSerializer):
         model = Conversation
         fields = ["id", "channel", "channel_kind", "channel_name", "contact",
                   "contact_name", "title", "status", "assigned_to", "assigned_to_name",
-                  "unread", "last_message_at", "last_text", "needs_reply", "ai_answered", "manager_replied", "participants", "participant_names", "priority", "priority_reason", "deal_stage", "deal_id"]
+                  "unread", "last_message_at", "last_text", "needs_reply", "ai_answered", "manager_replied", "pending_in", "participants", "participant_names", "priority", "priority_reason", "deal_stage", "deal_id"]
 
     def get_last_text(self, obj):
         m = obj.messages.last()
@@ -91,10 +92,17 @@ class ConversationSerializer(serializers.ModelSerializer):
                     and (m.sender_name or "") in ("ai_assistant", "bot"))
 
     def get_manager_replied(self, obj):
-        """Чи відповів клієнту РЕАЛЬНИЙ менеджер (ЛЮДИНА). ChatPlace-оператор
-        (sender_name='operator' або імʼя) — людина, навіть без CRM-користувача.
-        ШІ/бот/системні (ai_assistant/bot/system/порожнє без користувача) — НЕ людина."""
+        """Чи відповіла клієнту ЛЮДИНА: CRM-користувач АБО ChatPlace operator/manager/admin.
+        Будь-який ШІ (ai_assistant/bot/system/AI-персони/порожнє) — НЕ людина → червоний."""
         from django.db.models import Q
-        auto = ("ai_assistant", "bot", "system", "")
-        return obj.messages.filter(direction="out", internal=False).exclude(
-            Q(sender__isnull=True) & Q(sender_name__in=auto)).exists()
+        human_sides = ("operator", "manager", "admin")
+        return obj.messages.filter(direction="out", internal=False).filter(
+            Q(sender__isnull=False) | Q(sender_name__in=human_sides)).exists()
+
+    def get_pending_in(self, obj):
+        """Скільки повідомлень клієнта без відповіді (після останнього нашого вихідного)."""
+        last_out = obj.messages.filter(direction="out").order_by("-id").values_list("id", flat=True).first()
+        q = obj.messages.filter(direction="in")
+        if last_out:
+            q = q.filter(id__gt=last_out)
+        return q.count()

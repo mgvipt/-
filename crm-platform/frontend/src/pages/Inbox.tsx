@@ -21,7 +21,7 @@ export default function Inbox() {
   const { t } = useLang();
   const [params] = useSearchParams();
   const nav = useNavigate();
-  const [scope, setScope] = useState<"mine" | "all" | "unassigned" | "clients">("all");
+  const [scope, setScope] = useState<"mine" | "all" | "unassigned" | "clients" | "need" | "waiting">("all");
   const [tab, setTab] = useState<"chats" | "notif" | "team">("chats");
   const [sndCli, setSndCli] = useState(msgSoundOn());
   const [sndTeam, setSndTeam] = useState(teamSoundOn());
@@ -83,7 +83,8 @@ export default function Inbox() {
 
   function listQuery() {
     const sp = new URLSearchParams({ page_size: "50" });
-    if (scope && scope !== "all") sp.set("scope", scope);
+    const beScope = (scope === "need" || scope === "waiting") ? "all" : scope;
+    if (beScope && beScope !== "all") sp.set("scope", beScope);
     if (chFilter) sp.set("channel", chFilter);
     if (period && period !== "all") sp.set("period", period);
     if (prio) sp.set("priority", prio);
@@ -306,7 +307,7 @@ export default function Inbox() {
         {filtersOpen && (
           <div style={{ borderBottom: "1px solid #f1f5f9" }}>
             <div style={{ display: "flex", gap: 6, padding: "8px 12px 4px", flexWrap: "wrap" }}>
-              {(([["mine", t("Мои","Мої")], ["clients", t("Клиенты","Клієнти")]].concat(can("conversation.view.all") ? [["all", t("Все","Всі")], ["unassigned", t("Не назначены","Не призначені")]] : [])) as [string, string][]).map(([k, label]) => (
+              {(([["mine", t("Мои","Мої")], ["clients", t("Клиенты","Клієнти")], ["need", t("Нужен ответ","Потрібна відповідь")], ["waiting", t("Ждём клиента","Чекаємо клієнта")]].concat(can("conversation.view.all") ? [["all", t("Все","Всі")], ["unassigned", t("Не назначены","Не призначені")]] : [])) as [string, string][]).map(([k, label]) => (
                 <button key={k} onClick={() => setScope(k as any)} title={t("Раздел диалогов","Розділ діалогів")}
                   style={{ fontSize: 12, padding: "4px 10px", borderRadius: 14, cursor: "pointer", border: "1px solid " + (scope === k ? "var(--brand)" : "#e2e8f0"), background: scope === k ? "var(--brand)" : "#fff", color: scope === k ? "#fff" : "#475569" }}>{label}</button>
               ))}
@@ -365,9 +366,9 @@ export default function Inbox() {
                     {(c as any).priority && PRIO[(c as any).priority] && <span title={(c as any).priority_reason || PRIO[(c as any).priority].label} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 9.5, fontWeight: 700, color: PRIO[(c as any).priority].color, background: PRIO[(c as any).priority].bg, borderRadius: 20, padding: "1px 6px 1px 5px", whiteSpace: "nowrap" }}><Icon n={PRIO[(c as any).priority].icon} size={10} /> {PRIO[(c as any).priority].label}</span>}
                   </FitChips>
                 </div>
-                {!(c as any).manager_replied && <span title={t("Менеджер не ответил — чат не взят в работу", "Менеджер не відповів — чат не взято в роботу")} style={{ width: 11, height: 11, borderRadius: "50%", background: "#ef4444", alignSelf: "center", flexShrink: 0, boxShadow: "0 0 0 2px #fee2e2" }} />}
+                {(() => { const cnt = (((c as any).pending_in as number) || 0) || (c.unread || 0); const show = cnt > 0 || !(c as any).manager_replied; return show ? (<span title={cnt > 0 ? t("Сообщений клиента без ответа", "Повідомлень клієнта без відповіді") : t("Менеджер не ответил — чат не взят в работу", "Менеджер не відповів — чат не взято в роботу")} style={{ minWidth: 16, height: 16, borderRadius: 9, padding: "0 4px", background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", alignSelf: "center", flexShrink: 0, boxShadow: "0 0 0 2px #fee2e2" }}>{cnt > 0 ? cnt : ""}</span>) : null; })()}
                 {(c as any).ai_answered && <span title={t("Ответил ИИ-агент, менеджер не смотрел", "Відповів ШІ-агент, менеджер не дивився")} style={{ fontSize: 12, alignSelf: "center" }}>🤖</span>}
-                {c.unread > 0 && <span title={t("Сообщений клиента без ответа менеджера", "Повідомлень клієнта без відповіді менеджера")} style={{ minWidth: 17, height: 17, borderRadius: 9, padding: "0 4px", background: "#ef4444", color: "#fff", fontSize: 10.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", alignSelf: "center" }}>{c.unread}</span>}
+                
               </div>
             );
             // 3 категорії: Непризначені (вільний пул, видно всім з доступом до каналу)
@@ -384,12 +385,12 @@ export default function Inbox() {
               return out;
             };
             return (<>
-              {unassigned.length > 0 && hdr("bell", t(`Не назначены — свободные (${unassigned.length})`,`Непризначені — вільні (${unassigned.length})`), "#7c3aed")}
-              {withDays(unassigned)}
-              {need.length > 0 && hdr("circle", t(`Нужен ответ (${need.length})`,`Потрібна відповідь (${need.length})`), "#dc2626")}
-              {withDays(need)}
-              {work.length > 0 && hdr("check", t(`В работе (${work.length})`,`В роботі (${work.length})`), "#16a34a")}
-              {withDays(work)}
+              {scope !== "need" && scope !== "waiting" && unassigned.length > 0 && hdr("bell", t(`Не назначены — свободные (${unassigned.length})`,`Непризначені — вільні (${unassigned.length})`), "#7c3aed")}
+              {scope !== "need" && scope !== "waiting" && withDays(unassigned)}
+              {scope !== "waiting" && need.length > 0 && hdr("circle", t(`Нужен ответ (${need.length})`,`Потрібна відповідь (${need.length})`), "#dc2626")}
+              {scope !== "waiting" && withDays(need)}
+              {scope !== "need" && work.length > 0 && hdr("check", t(`В работе (${work.length})`,`В роботі (${work.length})`), "#16a34a")}
+              {scope !== "need" && withDays(work)}
             </>);
           })()}
           {nextUrl && <div onClick={() => loadMore()} style={{ padding: "10px 12px", textAlign: "center", fontSize: 12, color: "var(--brand)", cursor: "pointer", borderTop: "1px solid #f1f5f9" }}>{t("Загрузить ещё ↓","Завантажити ще ↓")}</div>}
