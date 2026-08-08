@@ -182,6 +182,8 @@ export default function Inbox() {
     const m = await api.get<ChatMessage[]>(`/api/conversations/${c.id}/messages/?seen=1`);
     setMsgs(m);
     setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, unread: 0 } : x)));
+    // актуалізувати стан діалогу (хто вже взяв у роботу) — список міг бути застарілим
+    try { const fresh = await api.get<Conversation>(`/api/conversations/${c.id}/`); setActive((cur) => (cur && cur.id === fresh.id ? { ...cur, ...fresh } : cur)); setConvs((cs) => cs.map((x) => (x.id === fresh.id ? { ...x, ...fresh } : x))); } catch { /* ignore */ }
   }
 
   async function goToCard() {
@@ -256,7 +258,15 @@ export default function Inbox() {
   const mItem: any = { padding: "10px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f8fafc" };
   async function takeConv() {
     if (!active) return;
-    try { const c = await api.post<Conversation>(`/api/conversations/${active.id}/take/`, {}); setActive(c); setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, ...c } : x))); } catch { setErr(t("Не удалось","Не вдалося")); }
+    try { const c = await api.post<Conversation>(`/api/conversations/${active.id}/take/`, {}); setActive(c); setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, ...c } : x))); }
+    catch (e: any) {
+      if (e?.status === 409) {
+        alert(e?.data?.detail || t("Диалог уже взят другим менеджером","Діалог уже взяв інший менеджер"));
+        // підтягнути актуальний стан (хто взяв) — щоб зникла кнопка й оновився список
+        try { const fresh = await api.get<Conversation>(`/api/conversations/${active.id}/`); setActive(fresh); setConvs((cs) => cs.map((x) => (x.id === fresh.id ? { ...x, ...fresh } : x))); } catch { /* ignore */ }
+        refreshList();
+      } else { setErr(t("Не удалось","Не вдалося")); }
+    }
     setMenu(false);
   }
   async function closeConv() {
@@ -424,7 +434,9 @@ export default function Inbox() {
               <div onClick={() => setMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
               <div style={{ position: "fixed", top: 104, right: 360, width: 260, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 14px 36px rgba(0,0,0,.18)", zIndex: 41, overflow: "hidden" }}>
                 <div onClick={() => { setMenu(false); setTaskOpen(true); }} style={mItem}><Icon n="check" size={15} /> {t("+ Задача","+ Задача")}</div>
-                <div onClick={takeConv} style={mItem}><Icon n="pin" size={15} /> {t("Закрепить за мной","Закріпити за мною")}</div>
+                {(active.assigned_to && active.assigned_to !== (me as any)?.id && !can("conversation.view.all"))
+                  ? <div style={{ ...mItem, color: "#b45309", cursor: "default", background: "#fffbeb" }}><Icon n="pin" size={15} /> {t("Взято","Взято")}: {active.assigned_to_name}</div>
+                  : <div onClick={takeConv} style={mItem}><Icon n="pin" size={15} /> {t("Закрепить за мной","Закріпити за мною")}</div>}
                 <div onClick={() => { setMenu(false); setPicker("transfer"); }} style={mItem}><Icon n="forward" size={15} /> {t("Переадресовать","Переадресувати")}</div>
                 <div onClick={() => { setMenu(false); setPicker("add"); }} style={mItem}><Icon n="user-plus" size={15} /> {t("Добавить менеджера","Додати менеджера")}</div>
                 <div onClick={() => { setMenu(false); markUnreadFrom(active.id); }} style={mItem}><Icon n="eye" size={15} /> {t("Пометить неотвеченным","Позначити неотвеченим")}</div>

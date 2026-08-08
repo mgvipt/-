@@ -397,7 +397,18 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         одразу бачить сделку, контакт і діалог у розділі «Мої». Виграні/програні сделки
         НЕ перепризначаємо (щоб не зламати нарахування ЗП та історію власника)."""
         conv = self.get_object()
-        conv.assigned_to = request.user
+        u = request.user
+        # ── ЗАМОК ЧЕРГИ ── діалог уже взяв ІНШИЙ менеджер → перехопити НЕ можна,
+        # навіть якщо сторінка не оновилась і чат ще видно як «вільний».
+        # Перепризначити може лише керівник (через «Переадресувати»).
+        is_boss = u.can_see_all_conversations() or u.has_perm_code("roles.manage")
+        if conv.assigned_to_id and conv.assigned_to_id != u.id and not is_boss:
+            _who = (conv.assigned_to.get_full_name() or conv.assigned_to.username) if conv.assigned_to else "інший менеджер"
+            return Response(
+                {"detail": "Діалог уже взяв у роботу %s. Перехопити не можна — зверніться до керівника." % _who,
+                 "assigned_to": conv.assigned_to_id, "assigned_to_name": _who},
+                status=status.HTTP_409_CONFLICT)
+        conv.assigned_to = u
         conv.save(update_fields=["assigned_to"])
         if conv.contact_id:
             from apps.crm.models import Deal, Lead, Contact
