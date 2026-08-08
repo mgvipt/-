@@ -82,8 +82,9 @@ class ConversationSerializer(serializers.ModelSerializer):
         return m.text if m else ""
 
     def get_needs_reply(self, obj):
+        # останнє вхідне АБО вручну позначено неотвеченим (unread>0) → потрібна відповідь
         m = obj.messages.last()
-        return bool(m and m.direction == "in")
+        return bool((m and m.direction == "in") or (obj.unread or 0) > 0)
 
     def get_ai_answered(self, obj):
         """Останнє повідомлення — від ШІ-агента (Юля/бот) = «відповів агент»."""

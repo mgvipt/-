@@ -159,10 +159,10 @@ export default function Inbox() {
   useEffect(() => { activeRef.current = active; }, [active]);
   useEffect(() => { const f = () => api.get<any>("/api/inbox/ping/").then((d) => setNotifN(d.unread || 0)).catch(() => {}); f(); const tm = setInterval(f, 15000); return () => clearInterval(tm); }, []);
   const [msgMenu, setMsgMenu] = useState<number | null>(null); // id повідомлення з відкритим меню
-  async function markUnreadFrom(convId: number, msgId: number) {
+  async function markUnreadFrom(convId: number, msgId?: number) {
     try {
-      const r: any = await api.post(`/api/conversations/${convId}/mark-unread/`, { from_message: msgId });
-      setConvs((cs) => cs.map((x) => (x.id === convId ? { ...x, unread: r.unread } : x)));
+      const r: any = await api.post(`/api/conversations/${convId}/mark-unread/`, msgId ? { from_message: msgId } : {});
+      setConvs((cs) => cs.map((x) => (x.id === convId ? ({ ...x, unread: r.unread, needs_reply: true } as any) : x)));
       setMsgMenu(null);
     } catch { alert("Не вдалося"); }
   }
@@ -425,6 +425,7 @@ export default function Inbox() {
                 <div onClick={takeConv} style={mItem}><Icon n="pin" size={15} /> {t("Закрепить за мной","Закріпити за мною")}</div>
                 <div onClick={() => { setMenu(false); setPicker("transfer"); }} style={mItem}><Icon n="forward" size={15} /> {t("Переадресовать","Переадресувати")}</div>
                 <div onClick={() => { setMenu(false); setPicker("add"); }} style={mItem}><Icon n="user-plus" size={15} /> {t("Добавить менеджера","Додати менеджера")}</div>
+                <div onClick={() => { setMenu(false); markUnreadFrom(active.id); }} style={mItem}><Icon n="eye" size={15} /> {t("Пометить неотвеченным","Позначити неотвеченим")}</div>
                 {active.contact && <div onClick={goToContact} style={mItem}><Icon n="user" size={15} /> {t("Перейти в контакт","Перейти в контакт")}</div>}
                 <div onClick={() => { setMenu(false); goToCard(); }} style={mItem}><Icon n="handshake" size={15} /> {((active as any).deal_id || active.contact) ? t("Перейти в сделку","Перейти в угоду") : t("Создать сделку из чата","Створити угоду з чату")}</div>
                 <div onClick={closeConv} style={{ ...mItem, color: "#dc2626", borderTop: "1px solid #f1f5f9", fontWeight: 600 }}><Icon n="check" size={15} /> {t("Завершить диалог","Завершити діалог")}</div>
