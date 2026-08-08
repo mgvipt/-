@@ -1335,8 +1335,12 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def refresh_prices(self, request, pk=None):
         """Оновити РОЗДРІБНУ ціну позицій зі свіжих даних номенклатури (+ собівартість).
-        Змінює суму клієнта → лише для НЕОПЛАЧЕНИХ сделок (після оплати/чека — фіскальний замок)."""
+        Змінює суму клієнта → лише для НЕОПЛАЧЕНИХ сделок (після оплати/чека — фіскальний замок).
+        Право: власник або відповідальний (deal.price.refresh)."""
         deal = self.get_object()
+        _u = request.user
+        if not (_u.is_superuser or (hasattr(_u, "has_perm_code") and _u.has_perm_code("deal.price.refresh"))):
+            return Response({"detail": "Немає права «Оновлення роздрібних цін з номенклатури» — видається у Ролях/Правах."}, status=status.HTTP_403_FORBIDDEN)
         g = self._guard(deal)
         if g:
             return g
