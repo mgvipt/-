@@ -177,6 +177,12 @@ def sync_one_chat(conv, per_chat=40):
                     pass
         else:
             _had_out[0] = True
+    if new:
+        # СИНК ОДНОГО ЧАТУ теж мусить рухати чат угору списку (сортування за last_message_at)
+        _lm = conv.messages.order_by("-created_at").values_list("created_at", flat=True).first()
+        if _lm and (conv.last_message_at is None or _lm > conv.last_message_at):
+            conv.last_message_at = _lm
+            conv.save(update_fields=["last_message_at"])
     if conv.contact_id:
         try:
             from apps.crm.automation import on_incoming, on_outgoing
