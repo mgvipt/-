@@ -365,6 +365,7 @@ export default function Inbox() {
                     {(c as any).priority && PRIO[(c as any).priority] && <span title={(c as any).priority_reason || PRIO[(c as any).priority].label} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 9.5, fontWeight: 700, color: PRIO[(c as any).priority].color, background: PRIO[(c as any).priority].bg, borderRadius: 20, padding: "1px 6px 1px 5px", whiteSpace: "nowrap" }}><Icon n={PRIO[(c as any).priority].icon} size={10} /> {PRIO[(c as any).priority].label}</span>}
                   </FitChips>
                 </div>
+                {!(c as any).manager_replied && <span title={t("Менеджер не ответил — чат не взят в работу", "Менеджер не відповів — чат не взято в роботу")} style={{ width: 11, height: 11, borderRadius: "50%", background: "#ef4444", alignSelf: "center", flexShrink: 0, boxShadow: "0 0 0 2px #fee2e2" }} />}
                 {(c as any).ai_answered && <span title={t("Ответил ИИ-агент, менеджер не смотрел", "Відповів ШІ-агент, менеджер не дивився")} style={{ fontSize: 12, alignSelf: "center" }}>🤖</span>}
                 {c.unread > 0 && <span title={t("Сообщений клиента без ответа менеджера", "Повідомлень клієнта без відповіді менеджера")} style={{ minWidth: 17, height: 17, borderRadius: 9, padding: "0 4px", background: "#ef4444", color: "#fff", fontSize: 10.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", alignSelf: "center" }}>{c.unread}</span>}
               </div>

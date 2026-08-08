@@ -42,6 +42,7 @@ class ConversationSerializer(serializers.ModelSerializer):
     deal_stage = serializers.SerializerMethodField()
     deal_id = serializers.SerializerMethodField()
     participant_names = serializers.SerializerMethodField()
+    manager_replied = serializers.SerializerMethodField()
 
     def get_contact_name(self, obj):
         return str(obj.contact) if obj.contact else (obj.title or "")
@@ -73,7 +74,7 @@ class ConversationSerializer(serializers.ModelSerializer):
         model = Conversation
         fields = ["id", "channel", "channel_kind", "channel_name", "contact",
                   "contact_name", "title", "status", "assigned_to", "assigned_to_name",
-                  "unread", "last_message_at", "last_text", "needs_reply", "ai_answered", "participants", "participant_names", "priority", "priority_reason", "deal_stage", "deal_id"]
+                  "unread", "last_message_at", "last_text", "needs_reply", "ai_answered", "manager_replied", "participants", "participant_names", "priority", "priority_reason", "deal_stage", "deal_id"]
 
     def get_last_text(self, obj):
         m = obj.messages.last()
@@ -84,6 +85,16 @@ class ConversationSerializer(serializers.ModelSerializer):
         return bool(m and m.direction == "in")
 
     def get_ai_answered(self, obj):
-        """Останнє повідомлення — вихідне БЕЗ співробітника (ШІ/Юля) = «відповів агент»."""
+        """Останнє повідомлення — від ШІ-агента (Юля/бот) = «відповів агент»."""
         m = obj.messages.last()
-        return bool(m and m.direction == "out" and m.sender_id is None and not m.internal)
+        return bool(m and m.direction == "out" and m.sender_id is None and not m.internal
+                    and (m.sender_name or "") in ("ai_assistant", "bot"))
+
+    def get_manager_replied(self, obj):
+        """Чи відповів клієнту РЕАЛЬНИЙ менеджер (ЛЮДИНА). ChatPlace-оператор
+        (sender_name='operator' або імʼя) — людина, навіть без CRM-користувача.
+        ШІ/бот/системні (ai_assistant/bot/system/порожнє без користувача) — НЕ людина."""
+        from django.db.models import Q
+        auto = ("ai_assistant", "bot", "system", "")
+        return obj.messages.filter(direction="out", internal=False).exclude(
+            Q(sender__isnull=True) & Q(sender_name__in=auto)).exists()
