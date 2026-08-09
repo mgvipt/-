@@ -66,6 +66,7 @@ class ConversationSerializer(serializers.ModelSerializer):
     participant_names = serializers.SerializerMethodField()
     manager_replied = serializers.SerializerMethodField()
     pending_in = serializers.SerializerMethodField()
+    unhandled_in = serializers.SerializerMethodField()
     has_in = serializers.SerializerMethodField()
 
     def get_contact_name(self, obj):
@@ -98,7 +99,7 @@ class ConversationSerializer(serializers.ModelSerializer):
         model = Conversation
         fields = ["id", "channel", "channel_kind", "channel_name", "contact",
                   "contact_name", "title", "status", "assigned_to", "assigned_to_name",
-                  "unread", "last_message_at", "last_text", "needs_reply", "ai_answered", "manager_replied", "pending_in", "has_in", "participants", "participant_names", "priority", "priority_reason", "deal_stage", "deal_id"]
+                  "unread", "last_message_at", "last_text", "needs_reply", "ai_answered", "manager_replied", "pending_in", "unhandled_in", "has_in", "participants", "participant_names", "priority", "priority_reason", "deal_stage", "deal_id"]
 
     def get_last_text(self, obj):
         m = obj.messages.last()
@@ -129,6 +130,20 @@ class ConversationSerializer(serializers.ModelSerializer):
         q = obj.messages.filter(direction="in")
         if last_out:
             q = q.filter(id__gt=last_out)
+        return q.count()
+
+    def get_unhandled_in(self, obj):
+        """Скільки повідомлень КЛІЄНТА без відповіді ЖИВОГО менеджера (після останньої
+        відповіді людини; ШІ/бот НЕ рахуються за відповідь). Це число в червоному кружку:
+        якщо людина ще не відповіла — це всі листи клієнта; кружок ніколи не порожній.
+        Немає жодного вхідного → 0 → кружка немає (порожній чат не світиться)."""
+        from django.db.models import Q as _Q
+        human = _Q(sender__isnull=False) | _Q(sender_name__in=("operator", "manager", "admin"))
+        last_human = (obj.messages.filter(direction="out", internal=False)
+                      .filter(human).order_by("-id").values_list("id", flat=True).first())
+        q = obj.messages.filter(direction="in")
+        if last_human:
+            q = q.filter(id__gt=last_human)
         return q.count()
 
     def get_has_in(self, obj):
