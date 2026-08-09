@@ -38,6 +38,24 @@ class RealizationManage(BasePermission):
         return bool(u.is_superuser or u.has_perm_code("warehouse.edit") or u.has_perm_code("finance.manage"))
 
 
+class StockDocWrite(BasePermission):
+    """Запис складських документів. Загалом — warehouse.edit. ВИНЯТОК: проведення
+    ІНВЕНТАРИЗАЦІЇ (create kind=inv) доступне за warehouse.tab.inventory — щоб комірник
+    міг звіряти залишки без повного доступу до редагування приходів/реалізацій."""
+    def has_permission(self, request, view):
+        u = getattr(request, "user", None)
+        if not (u and u.is_authenticated):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        if u.is_superuser:
+            return True
+        if (request.method == "POST" and getattr(view, "action", None) == "create"
+                and request.data.get("kind") == "inv"):
+            return bool(u.has_perm_code("warehouse.tab.inventory"))
+        return bool(u.has_perm_code("warehouse.edit"))
+
+
 class WarehouseViewSet(viewsets.ModelViewSet):
     permission_classes = [WarehouseWrite]
     queryset = Warehouse.objects.all()
@@ -499,7 +517,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
 
 class StockDocumentViewSet(viewsets.ModelViewSet):
-    permission_classes = [WarehouseWrite]
+    permission_classes = [StockDocWrite]
     queryset = StockDocument.objects.prefetch_related("items").select_related("warehouse", "deal")
     serializer_class = StockDocumentSerializer
     filterset_fields = ["kind", "warehouse", "deal", "posted"]
