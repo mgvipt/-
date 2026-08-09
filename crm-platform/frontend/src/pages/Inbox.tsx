@@ -38,6 +38,7 @@ export default function Inbox() {
     thinking: { icon: "clock", color: "#64748b", bg: "#f1f5f9", label: t("Думает","Думає") },
   };
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
+  const [siblings, setSiblings] = useState<Conversation[]>([]); // інші діалоги того ж клієнта (інші канали)
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [internalNote, setInternalNote] = useState(false);
@@ -185,6 +186,15 @@ export default function Inbox() {
     // актуалізувати стан діалогу (хто вже взяв у роботу) — список міг бути застарілим
     try { const fresh = await api.get<Conversation>(`/api/conversations/${c.id}/`); setActive((cur) => (cur && cur.id === fresh.id ? { ...cur, ...fresh } : cur)); setConvs((cs) => cs.map((x) => (x.id === fresh.id ? { ...x, ...fresh } : x))); } catch { /* ignore */ }
   }
+
+  // інші діалоги того ж клієнта (веб-чат / Telegram / Instagram …) — щоб бачити, що клієнт писав в іншому каналі
+  useEffect(() => {
+    const cid = active?.contact;
+    if (!cid) { setSiblings([]); return; }
+    api.get<Conversation[]>(`/api/conversations/by_contact/?contact=${cid}`)
+      .then((rows) => setSiblings((rows || []).filter((r) => r.id !== active?.id)))
+      .catch(() => setSiblings([]));
+  }, [active?.id, active?.contact]);
 
   async function goToCard() {
     if (!active) return;
@@ -457,6 +467,19 @@ export default function Inbox() {
                 {emps.length === 0 && <div className="muted" style={{ padding: 12, fontSize: 12 }}>{t("Нет сотрудников","Немає співробітників")}</div>}
               </div>
             </>)}
+            {siblings.length > 0 && (
+              <div style={{ padding: "6px 12px", borderBottom: "1px solid #eef2f7", background: "#fbfdff", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>💬 {t("Клиент писал ещё:", "Клієнт писав ще:")}</span>
+                {siblings.map((sib) => (
+                  <button key={sib.id} onClick={() => openConv(sib)} title={sib.last_text || ""}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, padding: "3px 9px", borderRadius: 14, border: "1px solid #dbeafe", background: "#fff", cursor: "pointer", maxWidth: 240 }}>
+                    <SourceChip source={sib.channel_kind} />
+                    <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#475569" }}>{sib.channel_name}</span>
+                    {(sib as any).unhandled_in > 0 && <span style={{ minWidth: 15, height: 15, borderRadius: 8, background: "#ef4444", color: "#fff", fontSize: 9.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px", flexShrink: 0 }}>{(sib as any).unhandled_in}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
             <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
               {msgs.map((m, i) => (
                 <Fragment key={m.id}>
