@@ -17,7 +17,7 @@ type St = "off" | "connecting" | "ready" | "incoming" | "calling" | "incall" | "
 export default function WebPhone() {
   const { t } = useLang();
   const [st, setSt] = useState<St>("off");
-  const [enabled, setEnabled] = useState(false);   // телефония доступна (конфиг получен) — виджет не прячем при кратких разрег.
+  const [enabled, setEnabled] = useState(() => localStorage.getItem("crm_phone_enabled") === "1");   // телефония доступна — показываем СРАЗУ (запомнили с прошлой загрузки), не ждём конфиг → нет мигания
   const [everReady, setEverReady] = useState(false);  // хоч раз зареєструвались → панель набору тримаємо стабільно
   const [peer, setPeer] = useState("");
   const [msg, setMsg] = useState("");
@@ -74,7 +74,9 @@ export default function WebPhone() {
           try { cfg = await api.get<any>("/api/telephony/webrtc-config/"); if (cfg?.enabled) break; } catch { /* retry */ }
           await sleep(1000);
         }
-        if (cancelled || !cfg?.enabled) return;
+        if (cancelled) return;
+        if (!cfg?.enabled) { localStorage.setItem("crm_phone_enabled", "0"); setEnabled(false); return; }
+        localStorage.setItem("crm_phone_enabled", "1");   // запомнили → при след. загрузке виджет виден сразу
         setEnabled(true);   // телефония настроена → виджет показываем постоянно
         const JsSIP = window.JsSIP;
         const socket = new JsSIP.WebSocketInterface(cfg.ws);
@@ -224,7 +226,7 @@ export default function WebPhone() {
         {(st === "calling" || st === "incall") && (
           <button className="btn" style={{ width: "100%", background: "#fee2e2", color: "#b91c1c" }} onClick={hangup}><Icon n="📵" size={15} /> {t("Завершить","Завершити")}</button>
         )}
-        {everReady && !busy && (
+        {enabled && !busy && (
           <div style={{ marginTop: 8 }}>
             <div className="muted" style={{ fontSize: 11, marginBottom: 3 }}>{t("Звонить с линии:","Дзвонити з лінії:")}</div>
             <select value={line} onChange={(e) => pickLine(e.target.value)}
@@ -243,7 +245,7 @@ export default function WebPhone() {
           <div style={{ display: "flex", gap: 6 }}>
             <input value={dialN} onChange={(e) => setDialN(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doDial(dialN)}
               placeholder="0XX XXX XX XX" style={{ flex: 1, minWidth: 0, width: 0, height: 32, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13 }} />
-            <button className="btn btn-green" style={{ flexShrink: 0 }} onClick={() => doDial(dialN)} disabled={!dialN.trim()}><Icon n="📞" size={16} /></button>
+            <button className="btn btn-green" style={{ flexShrink: 0 }} onClick={() => doDial(dialN)} disabled={!dialN.trim() || st !== "ready"} title={st !== "ready" ? t("Подключение…","Підключення…") : ""}><Icon n="📞" size={16} /></button>
           </div>
           {recent.length > 0 && (
             <div style={{ marginTop: 8 }}>
