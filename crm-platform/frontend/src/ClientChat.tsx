@@ -38,6 +38,9 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   const [firstText, setFirstText] = useState("");
   const [starting, setStarting] = useState(false);
   const [allConvs, setAllConvs] = useState<Conversation[]>([]);
+  const [peekConv, setPeekConv] = useState<Conversation | null>(null); // друге вікно — інший чат клієнта
+  const [peekMsgs, setPeekMsgs] = useState<ChatMessage[]>([]);
+  const [peekOpen, setPeekOpen] = useState(true);
   const [cinfo, setCinfo] = useState<any>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -90,6 +93,13 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
     if (!c || c.id === conv?.id) return;
     setConv(c); setMsgs([]); setAi(null); setErr("");
     await Promise.all([loadMsgs(c.id), loadReplyChannels(c.id)]);
+  }
+
+  // друге вікно (peek) — показати ІНШИЙ канал клієнта поруч, згортається/розгортається
+  async function openPeek(c: Conversation) {
+    if (peekConv?.id === c.id) { setPeekOpen((o) => !o); return; }
+    setPeekConv(c); setPeekOpen(true); setPeekMsgs([]);
+    try { const m = await api.get<ChatMessage[]>(`/api/conversations/${c.id}/messages/`); setPeekMsgs(m); } catch { /* ignore */ }
   }
   async function loadContactInfo() {
     if (!contact) { setCinfo(null); return; }
@@ -175,12 +185,16 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
       )}
       {allConvs.length > 0 && (
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-          {allConvs.map((c) => { const meta = CH_META[(c as any).channel_kind] || { i: "💬", l: (c as any).channel_name || "Чат" }; const on = conv?.id === c.id; return (
-            <button key={c.id} type="button" onClick={() => switchConv(c)} title={"Відкрити чат: " + ((c as any).channel_name || meta.l)}
-              style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, cursor: "pointer", whiteSpace: "nowrap",
-                border: "1px solid " + (on ? "#7c3aed" : "#e2e8f0"), background: on ? "#f5f3ff" : "#fff", color: on ? "#6d28d9" : "#475569", opacity: (c as any).status === "open" ? 1 : 0.62 }}>
-              <span>{meta.i}</span> {meta.l}
-            </button>
+          {allConvs.map((c) => { const meta = CH_META[(c as any).channel_kind] || { i: "💬", l: (c as any).channel_name || "Чат" }; const on = conv?.id === c.id; const isPeek = peekConv?.id === c.id; return (
+            <span key={c.id} style={{ display: "inline-flex", alignItems: "center", borderRadius: 20, overflow: "hidden", whiteSpace: "nowrap",
+                border: "1px solid " + (on ? "#7c3aed" : isPeek ? "#0ea5e9" : "#e2e8f0"), background: on ? "#f5f3ff" : isPeek ? "#f0f9ff" : "#fff", opacity: (c as any).status === "open" ? 1 : 0.62 }}>
+              <button type="button" onClick={() => switchConv(c)} title={"Відкрити чат: " + ((c as any).channel_name || meta.l)}
+                style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, padding: "3px 9px", border: "none", background: "transparent", cursor: "pointer", color: on ? "#6d28d9" : "#475569" }}>
+                <span>{meta.i}</span> {meta.l}
+              </button>
+              {!on && <button type="button" onClick={() => openPeek(c)} title="Показати другим вікном поруч"
+                style={{ border: "none", borderLeft: "1px solid #e2e8f0", background: isPeek ? "#bae6fd" : "transparent", cursor: "pointer", color: "#0369a1", fontSize: 12, padding: "3px 7px", lineHeight: 1 }}>⧉</button>}
+            </span>
           ); })}
         </div>
       )}
@@ -285,6 +299,40 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
         ))}
         <div ref={endRef} />
       </div>
+
+      {/* ── ДРУГЕ ВІКНО (peek) — інший чат клієнта, згортається коли заважає ── */}
+      {peekConv && (
+        <div style={{ marginTop: 8, border: "1px solid #bae6fd", borderRadius: 10, overflow: "hidden", flexShrink: 0 }}>
+          <div onClick={() => setPeekOpen((o) => !o)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", background: "#e0f2fe", cursor: "pointer" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#075985", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {(CH_META[(peekConv as any).channel_kind] || { i: "💬" }).i} {(peekConv as any).channel_name} — другий чат
+            </span>
+            <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 11, color: "#0369a1", fontWeight: 600 }}>{peekOpen ? "Згорнути ▲" : "Розгорнути ▼"}</span>
+              <span onClick={(e) => { e.stopPropagation(); setPeekConv(null); }} title="Закрити друге вікно" style={{ color: "#0369a1", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>✕</span>
+            </span>
+          </div>
+          {peekOpen && (
+            <div style={{ height: 220, minHeight: 120, maxHeight: "60vh", resize: "vertical", overflow: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc" }}>
+              {peekMsgs.length === 0 && <div className="muted" style={{ fontSize: 13 }}>Повідомлень поки немає</div>}
+              {peekMsgs.map((m) => (
+                <div key={m.id} style={{ alignSelf: m.direction === "in" ? "flex-start" : "flex-end", maxWidth: "85%" }}>
+                  <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2, textAlign: m.direction === "in" ? "left" : "right" }}>
+                    {m.direction === "in" ? "Клієнт" : ((m as any).sender_display || (m.sender_name === "ai_assistant" ? "Юля (AI)" : (m.sender_name || "Менеджер")))}
+                  </div>
+                  <div style={{ background: (m as any).internal ? "#fef9c3" : (m.direction === "in" ? "#fff" : "#dbeafe"), padding: "6px 10px", borderRadius: 10, fontSize: 12.5, whiteSpace: "pre-wrap", border: m.direction === "in" ? "1px solid #eef2f7" : "none" }}>
+                    <span style={{ wordBreak: "break-word" }}>{linkify(m.text, m.direction !== "in")}</span>
+                    {(m as any).attachments?.map((a: any, j: number) => (
+                      (a.url && a.type === "photo") ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 4 }}><img src={a.url} alt="" style={{ maxWidth: 160, borderRadius: 6, display: "block" }} /></a>
+                      : a.url ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 4, fontSize: 12, color: "#2563eb", fontWeight: 600 }}>файл</a> : null
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* AI-РОП — тези + рекомендована відповідь */}
       {ai && (
