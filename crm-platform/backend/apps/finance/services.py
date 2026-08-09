@@ -309,6 +309,24 @@ def compute_manager_salary(user, period):
     bonus_kpi = kpi_hits * premium * mult
 
     total = part_base + part_revenue + part_margin + bonus_kpi + overtime_bonus
+    # ЗНИЖКИ менеджера за період (несогласовані знижки) — ТІЛЬКИ показуємо, ЗП НЕ зачіпаємо (рішення Олега).
+    # Знижка по сделці = повна ціна (Σ price×qty) − фактична сума сделки.
+    _disc_total = 0.0
+    _disc_list = []
+    _dids = list(_inc.values_list("deal_id", flat=True).distinct())
+    if _dids:
+        for _d in Deal.objects.filter(id__in=_dids).prefetch_related("items"):
+            _full = 0.0
+            for _i in _d.items.all():
+                try:
+                    _full += float(_i.price or 0) * float(_i.quantity or 0)
+                except Exception:
+                    pass
+            _ds = _full - float(_d.amount or 0)
+            if _ds > 0.5:
+                _disc_total += _ds
+                _disc_list.append({"deal": _d.id, "title": (_d.title or ("#%s" % _d.id))[:60], "discount": round(_ds)})
+    _disc_list.sort(key=lambda x: -x["discount"])
     return {
         "user_id": user.id, "user_name": user.get_full_name() or user.username, "period": period,
         "revenue": round(rev), "deals": deals, "avg_check": round(avg_check),
@@ -318,6 +336,7 @@ def compute_manager_salary(user, period):
         "worked_days": worked, "norm_days": norm, "overtime_days": overtime_days, "overtime_bonus": round(overtime_bonus),
         "kpi": kpi, "kpi_hits": kpi_hits, "kpi_premium": premium, "bonus_kpi": round(bonus_kpi),
         "total": round(total),
+        "discount_total": round(_disc_total), "discount_deals": len(_disc_list), "discount_list": _disc_list[:50],
         "min_revenue": round(float(plan.min_revenue)) if plan else None,
         "ambition_revenue": round(float(plan.ambition_revenue)) if plan else None,
     }

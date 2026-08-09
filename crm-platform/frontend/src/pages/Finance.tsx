@@ -3148,6 +3148,8 @@ function Salary() {
   const [period, setPeriod] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; });
   const [data, setData] = useState<any>(null);
   const [selDeals, setSelDeals] = useState<any>(null);
+  const [selDisc, setSelDisc] = useState<any>(null);
+  const nav = useNav();
   useEffect(() => { setData(null); api.get<any>(`/api/finance/salary/?period=${period}`).then(setData); }, [period]);
   if (!data) return <div className="spin">{t("Считаем ЗП…","Рахуємо ЗП…")}</div>;
   const c = data.company;
@@ -3184,6 +3186,7 @@ function Salary() {
               <span title={t("% с оборота","% з обороту")}>+ {t("оборот","оборот")} {money(r.part_revenue)}</span>
               <span title={t("% с маржи (плавающий","% з маржі (плаваючий") + ` ${r.margin_kpi_pct}%)`}>+ {t("маржа","маржа")} {money(r.part_margin)}</span>
               <span title={`${r.kpi_hits} KPI × ${money(r.kpi_premium)} × ` + t("множитель","множник") + ` ${r.tier_mult}`} style={{ color: "#7c3aed" }}>+ KPI {money(r.bonus_kpi)}</span>
+              {Number(r.discount_total) > 0 && <span onClick={() => setSelDisc(r)} style={{ color: "#c2410c", cursor: "pointer", fontWeight: 700, background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 8, padding: "1px 8px" }} title={t("Скидки, которые дал менеджер сам (несогласованные) — нажми, чтобы увидеть по каким сделкам","Знижки, які дав менеджер сам (несогласовані) — натисни, щоб побачити по яких сделках")}>🏷️ {t("скидки","знижки")} −{money(r.discount_total)} ({r.discount_deals})</span>}
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {r.kpi.map((k: any, i: number) => (
@@ -3200,6 +3203,23 @@ function Salary() {
         <div className="muted" style={{ fontSize: 12 }}><Icon n="🎯" size={13} /> {t("Покрытие цели компании","Покриття цілі компанії")}: {t("ТБ","ТБ")} <b>{money(c.breakeven)}</b> · {t("цель","ціль")} ×1.3 <b>{money(c.target)}</b> · {t("сумма планов","сума планів")} <b>{money(c.sum_plans)}</b> · {t("покрытие","покриття")} <b style={{ color: c.coverage_pct >= 100 ? "#16a34a" : "#dc2626" }}>{c.coverage_pct}%</b></div>
       </div>
     {selDeals && <ManagerDealsModal user={selDeals} period={period} onClose={() => setSelDeals(null)} />}
+    {selDisc && (
+      <div onClick={() => setSelDisc(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div onClick={(e) => e.stopPropagation()} className="panel" style={{ maxWidth: 480, width: "100%", maxHeight: "82vh", overflowY: "auto", margin: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <b style={{ fontSize: 15 }}>🏷️ {t("Скидки менеджера","Знижки менеджера")}: {selDisc.user_name}</b>
+            <button className="btn btn-light" onClick={() => setSelDisc(null)} style={{ padding: "4px 11px" }}>✕</button>
+          </div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Всего скидок за период","Всього знижок за період")}: <b style={{ color: "#c2410c" }}>−{money(selDisc.discount_total)}</b> {t("по","по")} {selDisc.discount_deals} {t("сделкам","сделках")}. {t("Это скидки, которые уменьшили сумму сделки (несогласованные — на контроль).","Це знижки, які зменшили суму сделки (несогласовані — на контроль).")}</div>
+          {(selDisc.discount_list || []).map((x: any) => (
+            <div key={x.deal} onClick={() => nav(`/deals/${x.deal}`)} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderTop: "1px solid #f1f5f9", cursor: "pointer" }}>
+              <span style={{ color: "#1d4ed8" }}>#{x.deal} · {x.title}</span>
+              <b style={{ color: "#c2410c" }}>−{money(x.discount)}</b>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
     </>
   );
 }
