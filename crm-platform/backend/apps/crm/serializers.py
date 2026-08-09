@@ -84,8 +84,11 @@ class ContactDetailSerializer(ContactSerializer):
         return out
 
     def get_total_spent(self, obj):
-        from django.db.models import Sum
-        return float(obj.deals.filter(stage__is_won=True).aggregate(s=Sum("amount"))["s"] or 0)
+        # «Купив у магазині» = сума сделок, які РЕАЛЬНО куплені: виграні АБО оплачені
+        from django.db.models import Sum, Q
+        from .models import Deal
+        _ids = list(obj.deals.filter(Q(stage__is_won=True) | Q(payments__is_paid=True)).values_list("id", flat=True).distinct())
+        return float(Deal.objects.filter(id__in=_ids).aggregate(s=Sum("amount"))["s"] or 0)
 
 
 class StageSerializer(serializers.ModelSerializer):

@@ -120,12 +120,16 @@ class ContactViewSet(viewsets.ModelViewSet):
         from apps.crm.models import Deal as _Deal
         _cogs = _Dp("0")          # собівартість складських товарів у виграних угодах клієнта
         _planned_srv = _Dp("0")   # планова закупка послуг/робіт (мастеру) — щоб ловити переплату
-        _dq = _Deal.objects.filter(contact=c, stage__is_won=True)
+        from django.db.models import Q as _Qd2
+        _dq = _Deal.objects.filter(contact=c).filter(_Qd2(stage__is_won=True) | _Qd2(payments__is_paid=True)).distinct()
         if _ofrom:
             _dq = _dq.filter(created_at__date__gte=_ofrom)
         if _oto:
             _dq = _dq.filter(created_at__date__lte=_oto)
+        _disc_total = _Dp("0")
+        _disc_list = []
         for _dl in _dq.prefetch_related("items", "items__product"):
+            _full_line = _Dp("0")
             for _it in _dl.items.all():
                 _cu = _it.cost if (_it.cost or 0) > 0 else (getattr(_it.product, "cost", 0) or 0)
                 try:
@@ -134,14 +138,26 @@ class ContactViewSet(viewsets.ModelViewSet):
                         _planned_srv += _line   # послуга/робота (track_stock=False) — плановая закупка мастеру
                     else:
                         _cogs += _line          # склад (track_stock=True) — себестоимость склада
+                    _full_line += _Dp(str(_it.price or 0)) * _Dp(str(_it.quantity or 0))
                 except Exception:
                     pass
+            try:
+                _dsc = _full_line - _Dp(str(_dl.amount or 0))
+                if _dsc > 0:
+                    _disc_total += _dsc
+                    _disc_list.append({"deal": _dl.id, "title": _dl.title, "discount": float(_dsc), "amount": float(_dl.amount or 0)})
+            except Exception:
+                pass
         # факт: реально выплачено по журналу НЕ на материалы (категории материалов исключаем) = выплаты мастерам/услуги
         _MAT_KW = ("матер", "закуп", "постач", "товар", "оприбут")
-        _actual_srv = _Dp("0")
+        _COMM_KW = ("комис", "коміс", "процент", "відсот", "liqpay", "еквайр", "эквайр")
+        _actual_srv = _Dp("0")   # реальні виплати послуг/майстрам (без матеріалів і без банк-комісій)
+        _commissions = _Dp("0")  # банк-комісії / еквайринг — НЕ майстри
         for _t in _qf.filter(direction="out").select_related("category"):
             _cn2 = ((_t.category.name if _t.category_id else "") or "").lower()
-            if not any(_k in _cn2 for _k in _MAT_KW):
+            if any(_k in _cn2 for _k in _COMM_KW):
+                _commissions += _Dp(str(_t.amount_uah or 0))
+            elif not any(_k in _cn2 for _k in _MAT_KW):
                 _actual_srv += _Dp(str(_t.amount_uah or 0))
         _profit = float(_rev or 0) - float(_cext or 0) - float(_cogs)
         # пагінація історії: скільки рядків показувати і з якого зсуву (для >500 — перемикання сторінок)
@@ -177,12 +193,22 @@ class ContactViewSet(viewsets.ModelViewSet):
                        "due_date": p.due_date.isoformat() if p.due_date else None,
                        "deal": p.deal_id, "deal_title": (p.deal.title if p.deal_id else ""),
                        "comment": (p.comment or "")[:70]} for p in _all_pp]
-        return Response({"income": inc, "expense": exp, "advance": adv, "debt": debt,
-                         "receivable": (recv_sale or 0) + (recv_loan or 0), "receivable_sale": recv_sale, "receivable_loan": recv_loan,
-                         "count": qs.count(), "ops": ops, "debts_list": debts_list,
-                         "revenue": float(_rev or 0), "cost_ext": float(_cext or 0), "cogs": float(_cogs), "profit": _profit,
-                         "planned_srv": float(_planned_srv), "actual_srv": float(_actual_srv),
-                         "is_supplier": ("supplier" in (getattr(c, "kinds", None) or []))})
+        _uu = request.user
+        _full = bool(_uu.is_superuser or (hasattr(_uu, "has_perm_code") and _uu.has_perm_code("client.finance.full")))
+        _resp = {"income": inc, "advance": adv, "debt": debt,
+                 "receivable": (recv_sale or 0) + (recv_loan or 0), "receivable_sale": recv_sale, "receivable_loan": recv_loan,
+                 "count": qs.count(), "ops": ops, "debts_list": debts_list,
+                 "commissions": float(_commissions), "can_full": _full,
+                 "is_supplier": ("supplier" in (getattr(c, "kinds", None) or []))}
+        if _full:
+            # майстри показуємо ЛИШЕ якщо в сделках реально є послуги (planned_srv>0) — інакше блоку немає
+            _resp.update({"expense": exp, "revenue": float(_rev or 0), "cost_ext": float(_cext or 0),
+                          "cogs": float(_cogs), "profit": _profit,
+                          "margin_pct": (round(_profit / float(_rev) * 100, 1) if _rev else 0),
+                          "planned_srv": float(_planned_srv), "actual_srv": float(_actual_srv) if _planned_srv > 0 else 0.0,
+                          "has_services": bool(_planned_srv > 0),
+                          "discount_total": float(_disc_total), "discount_list": _disc_list})
+        return Response(_resp)
     search_fields = ["first_name", "last_name", "phone", "email", "edrpou", "nickname"]
     filterset_fields = ["loyalty_tag", "source", "owner"]
     ordering_fields = ["created_at", "first_name", "last_touch_at"]

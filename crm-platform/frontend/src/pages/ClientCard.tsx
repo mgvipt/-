@@ -243,13 +243,13 @@ export default function ClientCard() {
             )}
             {c.deals.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Сделок ещё нет.","Угод ще немає.")}</div> : (
               <><div style={{ maxHeight: 360, overflowY: "auto", overflowX: "auto", marginTop: 6, border: "1px solid #f1f5f9", borderRadius: 8 }}><table style={{ width: "100%", fontSize: 13 }}>
-                <thead><tr><th style={{ textAlign: "left", width: 66 }}>№</th><th style={{ textAlign: "left", width: 84 }}>{t("Дата","Дата")}</th><th style={{ textAlign: "left" }}>{t("Сделка","Угода")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th>{can("product.cost.view") && <th style={{ textAlign: "right", color: "#9a3412" }}>{t("Закупка","Закупка")}</th>}<th style={{ textAlign: "center" }}>{t("Стадия","Стадія")}</th>{can("deal.delete") && <th style={{ width: 30 }}></th>}</tr></thead>
+                <thead><tr><th style={{ textAlign: "left", width: 66 }}>№</th><th style={{ textAlign: "left", width: 84 }}>{t("Дата","Дата")}</th><th style={{ textAlign: "left" }}>{t("Сделка","Угода")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th>{can("client.finance.full") && <><th style={{ textAlign: "right", color: "#9a3412" }}>{t("Закупка","Закупка")}</th><th style={{ textAlign: "right", color: "#16a34a" }}>{t("Маржа","Маржа")}</th></>}<th style={{ textAlign: "center" }}>{t("Стадия","Стадія")}</th>{can("deal.delete") && <th style={{ width: 30 }}></th>}</tr></thead>
                 <tbody>
                   {c.deals.slice(dealsPage * dealsPer, dealsPage * dealsPer + dealsPer).map((d) => (
                     <tr key={d.id} onClick={() => nav(`/deals/${d.id}`)} style={{ cursor: "pointer", borderTop: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "6px 0", color: "#64748b", fontSize: 12, whiteSpace: "nowrap" }}>#{d.id}</td><td style={{ padding: "6px 0", color: "#475569", fontSize: 12, whiteSpace: "nowrap" }} title={t("Дата создания сделки — по ней считается период","Дата створення сделки — по ній рахується період")}>{d.created_at ? new Date(d.created_at).toLocaleDateString("ru-RU") : "—"}</td><td style={{ padding: "6px 0", color: "#1d4ed8" }}>{d.title}</td>
                       <td style={{ textAlign: "right" }}>{money(d.amount)}</td>
-                      {can("product.cost.view") && <td style={{ textAlign: "right", color: "#9a3412" }} title={t("Себестоимость сделки (закупка товаров)","Собівартість сделки (закупка товарів)")}>{Number((d as any).cost) > 0 ? money((d as any).cost) : "—"}</td>}
+                      {can("client.finance.full") && <><td style={{ textAlign: "right", color: "#9a3412" }} title={t("Себестоимость сделки (закупка товаров)","Собівартість сделки (закупка товарів)")}>{Number((d as any).cost) > 0 ? money((d as any).cost) : "—"}</td><td style={{ textAlign: "right", color: "#16a34a", fontWeight: 600 }} title={t("Маржа = сумма − закупка","Маржа = сума − закупка")}>{Number((d as any).cost) > 0 ? money(Number(d.amount) - Number((d as any).cost)) : "—"}</td></>}
                       <td style={{ textAlign: "center" }}><span className="chip" style={{ background: d.is_won ? "#dcfce7" : "#f1f5f9", color: d.is_won ? "#166534" : "#475569" }}>{d.stage || "—"}</span></td>
                       {can("deal.delete") && <td style={{ textAlign: "center", width: 30 }} onClick={(e) => { e.stopPropagation(); delDeal(d.id); }}><span title={t("Удалить сделку","Видалити угоду")} style={{ cursor: "pointer", color: "#dc2626", fontSize: 14 }}>🗑</span></td>}
                     </tr>
@@ -390,6 +390,8 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
   const navFB = useNavigate();
   const { can } = useAuth();
   const canDelTx = can("finance.tx.edit") || can("roles.manage");
+  const [discOpen, setDiscOpen] = useState(false);
+  const navD = useNavigate();
   const [selOps, setSelOps] = useState<Record<number, boolean>>({});
   const [txCardId, setTxCardId] = useState<number | null>(null);
   const [createOp, setCreateOp] = useState<null | "in" | "out">(null);
@@ -475,7 +477,7 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         {(d.is_supplier
           ? [[t("Заплатили всего","Заплатили всього"), Number(d.expense || 0), "#dc2626", "#fef2f2"], [t("Ещё должны (кредиторка)","Ще винні (кредиторка)"), d.debt, "#b45309", "#fffbeb"], [t("Накладных","Накладних"), (d.debts_list || []).filter((x: any) => x.kind === "payable").length, "#0f172a", "#f1f5f9"]]
-          : [[t("Доход","Дохід"), d.income, "#16a34a", "#f0fdf4"], [t("Расход (журнал+склад)","Витрата (журнал+склад)"), Number(d.expense || 0) + Number(d.cogs || 0), "#dc2626", "#fef2f2"], (Number(d.advance) < 0 ? [t("Недоплата по сделкам","Недоплата по угодах"), Math.abs(Number(d.advance)), "#dc2626", "#fef2f2"] : [t("Аванс (свободные деньги клиента)","Аванс (вільні гроші клієнта)"), d.advance, "#2563eb", "#eff6ff"]), [t("Кредиторка (мы должны)","Кредиторка (ми винні)"), d.debt, "#b45309", "#fffbeb"], [t("Дебиторка (нам должны)","Дебіторка (нам винні)"), d.receivable, "#0e7490", "#ecfeff"]]
+          : [[t("Доход","Дохід"), d.income, "#16a34a", "#f0fdf4"], (d.can_full ? [t("Расход (журнал+склад)","Витрата (журнал+склад)"), Number(d.expense || 0) + Number(d.cogs || 0), "#dc2626", "#fef2f2"] : [t("Комиссии банка","Комісії банку"), Number(d.commissions || 0), "#dc2626", "#fef2f2"]), (Number(d.advance) < 0 ? [t("Недоплата по сделкам","Недоплата по угодах"), Math.abs(Number(d.advance)), "#dc2626", "#fef2f2"] : [t("Аванс (свободные деньги клиента)","Аванс (вільні гроші клієнта)"), d.advance, "#2563eb", "#eff6ff"]), [t("Кредиторка (мы должны)","Кредиторка (ми винні)"), d.debt, "#b45309", "#fffbeb"], [t("Дебиторка (нам должны)","Дебіторка (нам винні)"), d.receivable, "#0e7490", "#ecfeff"]]
         ).map(([l, v, cl, bg]: any, i) => (
           <div key={i} style={{ flex: 1, minWidth: 110, background: bg, borderRadius: 10, padding: "8px 10px" }}>
             <div className="muted" style={{ fontSize: 10.5 }}>{l}</div>
@@ -483,7 +485,7 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
           </div>
         ))}
       </div>
-      {!d.is_supplier && can("product.cost.view") && (Number(d.revenue) > 0 || Number(d.cost_ext) > 0 || Number(d.cogs) > 0) && (
+      {!d.is_supplier && d.can_full && (Number(d.revenue) > 0 || Number(d.cost_ext) > 0 || Number(d.cogs) > 0) && (
         <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 10, background: (Number(d.profit) >= 0 ? "#f0fdf4" : "#fef2f2"), border: "1px solid " + (Number(d.profit) >= 0 ? "#bbf7d0" : "#fecaca") }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
             <div className="muted" style={{ fontSize: 11.5 }}>
@@ -496,12 +498,34 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
             </div>
           </div>
           <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>{t("Складские товары — из сделок (себестоимость авто при отгрузке), закупки под заказ — из журнала. Без двойного счёта. Прибыль и себестоимость считаются за выбранный период (фильтр «Период» ниже) — задай дату начала работы, чтобы не мешались старые сделки из Битрикса.","Складські товари — зі сделок (собівартість авто при відвантаженні), закупки під замовлення — з журналу. Без подвійного рахунку. Прибуток і собівартість рахуються за вибраний період (фільтр «Період» нижче) — задай дату початку роботи, щоб не мішались старі сделки з Бітрікса.")}</div>
-          {Number(d.actual_srv || 0) > Number(d.planned_srv || 0) + 1 && (
+          {d.has_services && Number(d.actual_srv || 0) > Number(d.planned_srv || 0) + 1 && (
             <div style={{ marginTop: 8, padding: "7px 10px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 12, color: "#b91c1c", fontWeight: 600 }}>
               ⚠️ {t("Мастерам выплачено больше плана на","Майстрам виплачено більше плану на")} {money0(Number(d.actual_srv) - Number(d.planned_srv))} ₴
               <span style={{ fontWeight: 400, color: "#7f1d1d" }}> · {t("план по услугам","план по послугах")} {money0(Number(d.planned_srv))}, {t("факт (журнал, без материалов)","факт (журнал, без матеріалів)")} {money0(Number(d.actual_srv))}</span>
             </div>
           )}
+        </div>
+      )}
+      {d.can_full && Number(d.discount_total || 0) > 0 && (
+        <div onClick={() => setDiscOpen(true)} style={{ marginBottom: 10, padding: "9px 12px", borderRadius: 10, background: "#fff7ed", border: "1px solid #fed7aa", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }} title={t("Нажми — список сделок со скидками","Натисни — список сделок зі знижками")}>
+          <span style={{ fontSize: 12.5, color: "#9a3412" }}>🏷️ {t("Скидки по сделкам (влияют на маржу)","Знижки по сделках (впливають на маржу)")} <span className="muted">({(d.discount_list || []).length})</span></span>
+          <b style={{ color: "#c2410c", fontSize: 15 }}>−{money0(Number(d.discount_total))}</b>
+        </div>
+      )}
+      {discOpen && (
+        <div onClick={() => setDiscOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} className="panel" style={{ maxWidth: 460, width: "100%", maxHeight: "80vh", overflowY: "auto", margin: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <b style={{ fontSize: 15 }}>🏷️ {t("Сделки со скидками","Сделки зі знижками")}</b>
+              <button className="btn btn-light" onClick={() => setDiscOpen(false)} style={{ padding: "4px 11px" }}>✕</button>
+            </div>
+            {(d.discount_list || []).map((x: any) => (
+              <div key={x.deal} onClick={() => navD(`/deals/${x.deal}`)} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderTop: "1px solid #f1f5f9", cursor: "pointer" }}>
+                <span style={{ color: "#1d4ed8" }}>#{x.deal} · {x.title}</span>
+                <span><span className="muted" style={{ fontSize: 12 }}>{money0(x.amount)} · </span><b style={{ color: "#c2410c" }}>−{money0(x.discount)}</b></span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
