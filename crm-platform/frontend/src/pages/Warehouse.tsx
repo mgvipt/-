@@ -25,6 +25,7 @@ import { useLang } from "../i18n";
 import { useAuth } from "../auth";
 import { Icon } from "../Icon";
 import ReceiptModal from "../ReceiptModal";
+import DupsPanel from "./DupsPanel";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 interface Product {
@@ -95,7 +96,7 @@ export default function Warehouse() {
         (view === "inv" && !canTabInv) || (view === "stat" && !canTabStat)) setView("goods");
     // eslint-disable-next-line
   }, [canTabReal, canTabRec, canTabInv, canTabStat]);
-  const [view, setView] = useState<"goods" | "realiz" | "receipt" | "inv" | "stat">(() => (localStorage.getItem("whacc_tab") as any) || "goods");
+  const [view, setView] = useState<"goods" | "realiz" | "receipt" | "inv" | "stat" | "dups">(() => (localStorage.getItem("whacc_tab") as any) || "goods");
   useEffect(() => { try { localStorage.setItem("whacc_tab", view); } catch (e) { /* noop */ } }, [view]);
   // авто-загрузка списка документов при входе на вкладку (в т.ч. после перезагрузки / создания прихода)
   useEffect(() => { if (view === "receipt") openReceiptList(); else if (view === "realiz") openRealizList(); else if (view === "inv") openInventory(); /* eslint-disable-next-line */ }, [view]);
@@ -756,6 +757,7 @@ export default function Warehouse() {
         {canTabRec && <button className={"btn" + (view === "receipt" ? " btn-primary" : " btn-light")} onClick={() => { setView("receipt"); setReceiptSel(null); openReceiptList(); }}><Icon n="📥" size={15} /> {t("Приходные накладные","Прибуткові накладні")}</button>}
         {canTabInv && <button className={"btn" + (view === "inv" ? " btn-primary" : " btn-light")} onClick={() => { setView("inv"); openInventory(); }}><Icon n="📋" size={15} /> {t("Инвентаризация","Інвентаризація")}</button>}
         {canTabStat && <button className={"btn" + (view === "stat" ? " btn-primary" : " btn-light")} onClick={() => setView("stat")}><Icon n="📊" size={15} /> {t("Аналитика","Аналітика")}</button>}
+        {canEdit && <button className={"btn" + (view === "dups" ? " btn-primary" : " btn-light")} onClick={() => setView("dups")}><Icon n="📦" size={15} /> {t("Дубли товаров","Дублі товарів")}</button>}
       </div>
 
       {view === "realiz" ? (
@@ -1250,6 +1252,7 @@ export default function Warehouse() {
       )}
 
       {/* ─── [9] ИНВЕНТАРИЗАЦИЯ ───────────────────────────────────────────── */}
+      {view === "dups" && <DupsPanel />}
       {view === "inv" && (
         <div style={{ background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", padding: 22, maxHeight: "calc(100vh - 170px)", display: "flex", flexDirection: "column" }}>
             {/* Ведомость / История проведённых инвентаризаций */}

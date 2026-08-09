@@ -361,6 +361,107 @@ class ProductViewSet(viewsets.ModelViewSet):
         n = Product.objects.filter(id__in=ids).update(unit=unit)
         return Response({"ok": True, "updated": n, "unit": unit})
 
+    @action(detail=False, methods=["get"], url_path="duplicates")
+    def duplicates(self, request):
+        """Знаходить схожі карточки товарів (дублі) серед АКТИВНИХ.
+        Групування: блок за першими 8 нормалізованими символами → нечітке злиття
+        (SequenceMatcher>=0.80 або спільний довгий префікс). По кожному товару —
+        залишок / продано / приход / к-сть позицій у сделках / остання активність."""
+        import re as _re
+        from difflib import SequenceMatcher as _SM
+        from collections import defaultdict as _dd
+        from django.db.models import Sum as _S, Q as _Q, Count as _C, Max as _M
+
+        def _norm(x):
+            return _re.sub(r"[^a-z0-9а-яіїєґ]+", "", (x or "").lower())
+
+        prods = list(Product.objects.filter(is_active=True).values("id", "sku", "name", "unit"))
+        for p in prods:
+            p["_n"] = _norm(p["name"])
+        # ТІЛЬКИ ТОЧНІ дублі: однакова назва після нормалізації (прибрано пунктуацію/регістр).
+        # Нечіткий пошук НЕ використовуємо — він плутає дублі з розмірними варіантами
+        # («Шліф стрічка №40» vs «№240», «Шпатель 300» vs «400мм» відрізняються 1 символом,
+        # як і справжній дубль). Для таких — РУЧНА склейка (менеджер обирає сам).
+        grp = _dd(list)
+        for p in prods:
+            if p["_n"]:
+                grp[p["_n"]].append(p)
+        groups = [g for g in grp.values() if len(g) > 1]
+
+        ids = [p["id"] for g in groups for p in g]
+        stats = {}
+        for a in (StockMovement.objects.filter(product_id__in=ids, document__posted=True)
+                  .values("product_id").annotate(bal=_S("quantity"),
+                    sold=_S("quantity", filter=_Q(document__kind="out")),
+                    recv=_S("quantity", filter=_Q(document__kind="in")),
+                    last=_M("document__created_at"))):
+            stats[a["product_id"]] = a
+        from apps.crm.models import DealItem as _DI
+        di = dict(_DI.objects.filter(product_id__in=ids).values("product_id")
+                  .annotate(c=_C("id")).values_list("product_id", "c"))
+        out = []
+        for g in groups:
+            rows = []
+            for p in g:
+                st = stats.get(p["id"], {})
+                rows.append({"id": p["id"], "sku": p["sku"] or "", "name": p["name"], "unit": p["unit"],
+                             "balance": float(st.get("bal") or 0),
+                             "sold": float(abs(st.get("sold") or 0)),
+                             "received": float(st.get("recv") or 0),
+                             "deal_items": di.get(p["id"], 0),
+                             "last": st.get("last").isoformat() if st.get("last") else None})
+            # рекомендований keeper: є артикул → більше позицій у сделках → більше приходу
+            rows.sort(key=lambda r: (bool(r["sku"]), r["deal_items"], r["received"]), reverse=True)
+            out.append({"suggest_keeper": rows[0]["id"], "products": rows})
+        out.sort(key=lambda x: -len(x["products"]))
+        return Response({"groups": out, "count": len(out)})
+
+    @action(detail=False, methods=["post"], url_path="merge")
+    def merge(self, request):
+        """Склеїти дублі товарів в одну карточку (keeper). Право warehouse.edit/власник.
+        Переносить позиції сделок + рухи складу + мапінг постачальника на keeper,
+        дублі деактивує. Пише лог для відкату у /root/product_merge_*.json."""
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("warehouse.edit")):
+            return Response({"detail": "Потрібне право «Редагувати склад»"}, status=403)
+        try:
+            keeper = int(request.data.get("keeper"))
+            dups = [int(x) for x in (request.data.get("dups") or []) if int(x) != keeper]
+        except (TypeError, ValueError):
+            return Response({"detail": "Невірні id"}, status=400)
+        if not keeper or not dups:
+            return Response({"detail": "Вкажіть головну карточку та дублі"}, status=400)
+        if not Product.objects.filter(id=keeper).exists():
+            return Response({"detail": "Головна карточка не знайдена"}, status=404)
+        import json as _json, datetime as _dt
+        from django.db import transaction as _tx
+        from apps.crm.models import DealItem as _DI
+        try:
+            from apps.integrations.models import SupplierProductMap as _SPM
+        except Exception:
+            _SPM = None
+        rev = {"keeper": keeper, "by": u.username, "ts": _dt.datetime.now().isoformat(), "moves": {}}
+        for pid in dups:
+            rev["moves"][pid] = {
+                "DealItem": list(_DI.objects.filter(product_id=pid).values_list("id", flat=True)),
+                "StockMovement": list(StockMovement.objects.filter(product_id=pid).values_list("id", flat=True))}
+        _lp = "/root/product_merge_%s.json" % _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        try:
+            open(_lp, "w").write(_json.dumps(rev, ensure_ascii=False))
+        except Exception:
+            _lp = None
+        with _tx.atomic():
+            InventoryFactDraft.objects.filter(product_id__in=dups).delete()
+            di = _DI.objects.filter(product_id__in=dups).update(product_id=keeper)
+            sm = StockMovement.objects.filter(product_id__in=dups).update(product_id=keeper)
+            ProductImage.objects.filter(product_id__in=dups).delete()
+            spm = _SPM.objects.filter(product_id__in=dups).update(product_id=keeper) if _SPM else 0
+            Product.objects.filter(id__in=dups).update(is_active=False, track_stock=False)
+        bal = StockMovement.objects.filter(product_id=keeper, document__posted=True).aggregate(s=Sum("quantity"))["s"] or 0
+        return Response({"ok": True, "keeper": keeper, "moved_deal_items": di, "moved_movements": sm,
+                         "moved_supplier_map": spm, "deactivated": len(dups),
+                         "keeper_balance": float(bal), "log": _lp})
+
     @action(detail=True, methods=["get", "post"])
     def components(self, request, pk=None):
         """Склад набору. GET → список компонентів + скільки наборів можна зібрати.
