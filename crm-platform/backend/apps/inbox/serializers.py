@@ -64,10 +64,7 @@ class ConversationSerializer(serializers.ModelSerializer):
     deal_stage = serializers.SerializerMethodField()
     deal_id = serializers.SerializerMethodField()
     participant_names = serializers.SerializerMethodField()
-    manager_replied = serializers.SerializerMethodField()
-    pending_in = serializers.SerializerMethodField()
     unhandled_in = serializers.SerializerMethodField()
-    has_in = serializers.SerializerMethodField()
 
     def get_contact_name(self, obj):
         return str(obj.contact) if obj.contact else (obj.title or "")
@@ -75,9 +72,15 @@ class ConversationSerializer(serializers.ModelSerializer):
     def get_participant_names(self, obj):
         return [(u.get_full_name() or u.username) for u in obj.participants.all()]
 
+    def _cm(self, obj):
+        return (self.context.get("conv_meta") or {}).get(obj.id)
+
     def _deal(self, obj):
         if not obj.contact_id:
             return None
+        cm = self._cm(obj)
+        if cm is not None and "deal" in cm:
+            return cm.get("deal")
         if not hasattr(obj, "_cached_deal"):
             obj._cached_deal = obj.contact.deals.select_related("stage").order_by("-updated_at").first()
         return obj._cached_deal
@@ -99,44 +102,39 @@ class ConversationSerializer(serializers.ModelSerializer):
         model = Conversation
         fields = ["id", "channel", "channel_kind", "channel_name", "contact",
                   "contact_name", "title", "status", "assigned_to", "assigned_to_name",
-                  "unread", "last_message_at", "last_text", "needs_reply", "ai_answered", "manager_replied", "pending_in", "unhandled_in", "has_in", "participants", "participant_names", "priority", "priority_reason", "deal_stage", "deal_id"]
+                  "unread", "last_message_at", "last_text", "needs_reply", "ai_answered", "unhandled_in", "participants", "participant_names", "priority", "priority_reason", "deal_stage", "deal_id"]
+
+    def _last(self, obj):
+        """Останнє повідомлення (з пакетного meta або 1 запит fallback)."""
+        cm = self._cm(obj)
+        if cm is not None:
+            return cm.get("last")
+        m = obj.messages.last()
+        if not m:
+            return None
+        return {"direction": m.direction, "sender_id": m.sender_id,
+                "sender_name": m.sender_name, "internal": m.internal, "text": m.text}
 
     def get_last_text(self, obj):
-        m = obj.messages.last()
-        return m.text if m else ""
+        m = self._last(obj)
+        return (m or {}).get("text") or ""
 
     def get_needs_reply(self, obj):
-        # останнє вхідне АБО вручну позначено неотвеченим (unread>0) → потрібна відповідь
-        m = obj.messages.last()
-        return bool((m and m.direction == "in") or (obj.unread or 0) > 0)
+        # останнє вхідне АБО вручну позначено неотвеченим (unread>0)
+        m = self._last(obj)
+        return bool((m and m.get("direction") == "in") or (obj.unread or 0) > 0)
 
     def get_ai_answered(self, obj):
-        """Останнє повідомлення — від ШІ-агента (Юля/бот) = «відповів агент»."""
-        m = obj.messages.last()
-        return bool(m and m.direction == "out" and m.sender_id is None and not m.internal
-                    and (m.sender_name or "") in ("ai_assistant", "bot"))
-
-    def get_manager_replied(self, obj):
-        """Чи відповіла клієнту ЛЮДИНА: CRM-користувач АБО ChatPlace operator/manager/admin.
-        Будь-який ШІ (ai_assistant/bot/system/AI-персони/порожнє) — НЕ людина → червоний."""
-        from django.db.models import Q
-        human_sides = ("operator", "manager", "admin")
-        return obj.messages.filter(direction="out", internal=False).filter(
-            Q(sender__isnull=False) | Q(sender_name__in=human_sides)).exists()
-
-    def get_pending_in(self, obj):
-        """Скільки повідомлень клієнта без відповіді (після останнього нашого вихідного)."""
-        last_out = obj.messages.filter(direction="out").order_by("-id").values_list("id", flat=True).first()
-        q = obj.messages.filter(direction="in")
-        if last_out:
-            q = q.filter(id__gt=last_out)
-        return q.count()
+        """Останнє повідомлення — від ШІ-агента (Юля/бот)."""
+        m = self._last(obj)
+        return bool(m and m.get("direction") == "out" and m.get("sender_id") is None
+                    and not m.get("internal") and (m.get("sender_name") or "") in ("ai_assistant", "bot"))
 
     def get_unhandled_in(self, obj):
-        """Скільки повідомлень КЛІЄНТА без відповіді ЖИВОГО менеджера (після останньої
-        відповіді людини; ШІ/бот НЕ рахуються за відповідь). Це число в червоному кружку:
-        якщо людина ще не відповіла — це всі листи клієнта; кружок ніколи не порожній.
-        Немає жодного вхідного → 0 → кружка немає (порожній чат не світиться)."""
+        """Повідомлень клієнта без відповіді ЖИВОГО менеджера (число в червоному кружку)."""
+        cm = self._cm(obj)
+        if cm is not None:
+            return cm.get("unhandled_in", 0)
         from django.db.models import Q as _Q
         human = _Q(sender__isnull=False) | _Q(sender_name__in=("operator", "manager", "admin"))
         last_human = (obj.messages.filter(direction="out", internal=False)
@@ -145,7 +143,3 @@ class ConversationSerializer(serializers.ModelSerializer):
         if last_human:
             q = q.filter(id__gt=last_human)
         return q.count()
-
-    def get_has_in(self, obj):
-        """Чи писав клієнт хоч раз (є вхідне). Порожній чат (0 повідомлень) → False → без червоного."""
-        return obj.messages.filter(direction="in").exists()

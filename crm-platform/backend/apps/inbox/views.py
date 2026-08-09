@@ -359,6 +359,54 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.exclude(status="closed")
         return qs.distinct()
 
+    # ── ПАКЕТНІ метадані для списку (усуває N+1: було ~10 запитів/чат) ──
+    def _prefetch_conv_meta(self, objs):
+        from django.db.models import OuterRef, Subquery, Count, Q, F
+        ids = [o.id for o in objs]
+        if not ids:
+            self._conv_meta = {}
+            return
+        # останнє повідомлення на кожен чат (DISTINCT ON) — 1 запит
+        last = {}
+        for m in (Message.objects.filter(conversation_id__in=ids)
+                  .order_by("conversation_id", "-id").distinct("conversation_id")
+                  .values("conversation_id", "direction", "sender_id", "sender_name", "internal", "text")):
+            last[m["conversation_id"]] = {"direction": m["direction"], "sender_id": m["sender_id"],
+                "sender_name": m["sender_name"], "internal": m["internal"], "text": m["text"]}
+        # unhandled_in: вхідні після останнього ЛЮДСЬКОГО вихідного — 1 запит на всю сторінку
+        human = Q(sender__isnull=False) | Q(sender_name__in=("operator", "manager", "admin"))
+        lh = (Message.objects.filter(conversation=OuterRef("conversation"), direction="out", internal=False)
+              .filter(human).order_by("-id").values("id")[:1])
+        unh = {}
+        for r in (Message.objects.filter(conversation_id__in=ids, direction="in")
+                  .annotate(_lh=Subquery(lh)).filter(Q(_lh__isnull=True) | Q(id__gt=F("_lh")))
+                  .values("conversation_id").annotate(c=Count("id"))):
+            unh[r["conversation_id"]] = r["c"]
+        # остання сделка на кожен контакт (DISTINCT ON) — 1 запит
+        deals = {}
+        cids = [o.contact_id for o in objs if o.contact_id]
+        if cids:
+            from apps.crm.models import Deal
+            for d in (Deal.objects.filter(contact_id__in=cids).select_related("stage")
+                      .order_by("contact_id", "-updated_at").distinct("contact_id")):
+                deals[d.contact_id] = d
+        self._conv_meta = {o.id: {"last": last.get(o.id), "unhandled_in": unh.get(o.id, 0),
+                                  "deal": deals.get(o.contact_id)} for o in objs}
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        if getattr(self, "_conv_meta", None) is not None:
+            ctx["conv_meta"] = self._conv_meta
+        return ctx
+
+    def list(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(qs)
+        objs = page if page is not None else list(qs)
+        self._prefetch_conv_meta(objs)
+        ser = self.get_serializer(objs, many=True)
+        return self.get_paginated_response(ser.data) if page is not None else Response(ser.data)
+
     @action(detail=False, methods=["post"])
     def bulk_close(self, request):
         """Масово завершити вибрані діалоги (тільки ті, що видно користувачу)."""
@@ -512,10 +560,11 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                   WarehouseJob.objects.filter(deal__contact_id=cid, assignee=u).exists())
             if not ok:
                 return Response([])
-        qs = (Conversation.objects.filter(contact_id=cid)
+        objs = list(Conversation.objects.filter(contact_id=cid)
               .select_related("channel", "contact", "assigned_to").prefetch_related("participants")
               .order_by("-last_message_at"))
-        return Response(ConversationSerializer(qs, many=True, context={"request": request}).data)
+        self._prefetch_conv_meta(objs)
+        return Response(ConversationSerializer(objs, many=True, context=self.get_serializer_context()).data)
 
     def _allowed_reply_channels(self, request, conv):
         """Лінії, якими цьому контакту реально можна відповісти."""
