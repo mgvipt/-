@@ -2515,6 +2515,11 @@ class SalaryView(APIView):
                 return Response({"detail": "Немає доступу до ЗП цього співробітника."}, status=403)
             return Response(compute_manager_salary(u, period))
         team = _sales_team()
+        # БЕЗПЕКА: рядовий співробітник (без roles.manage/superuser) бачить ЛИШЕ СВОЮ ЗП,
+        # не всю команду і не загальний ФОТ (закрито витік через списочний ендпоінт).
+        _me = request.user
+        if not (_me.is_superuser or (hasattr(_me, "has_perm_code") and _me.has_perm_code("roles.manage"))):
+            team = team.filter(id=_me.id)
         st = (request.query_params.get("status") or "").strip().lower()
         if st in ("active", "inactive", "dismissed"):
             team = team.filter(employment_status=st)
