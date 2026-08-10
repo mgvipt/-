@@ -16,6 +16,22 @@ const CH_META: Record<string, { i: string; l: string }> = {
   facebook: { i: "📘", l: "Facebook" }, echat: { i: "🟣", l: "Viber" }, viber: { i: "🟣", l: "Viber" },
   echat_whatsapp: { i: "🟢", l: "WhatsApp" }, whatsapp: { i: "🟢", l: "WhatsApp" }, web: { i: "🌐", l: "Web" }, tiktok: { i: "🎵", l: "TikTok" },
 };
+// Зрозуміла назва каналу: бот / номер e-chat / месенджер (Олег: щоб було видно що є що).
+const chLabel = (kind: string, name?: string): string => {
+  const num = (String(name || "").match(/\d{7,}/) || [""])[0];
+  const tail = num ? " · " + num : "";
+  switch (kind) {
+    case "telegram": return "Telegram-бот";
+    case "echat_telegram": return "Telegram" + tail;
+    case "echat": case "viber": return "Viber" + tail;
+    case "echat_whatsapp": case "whatsapp": return "WhatsApp" + tail;
+    case "instagram": return "Instagram";
+    case "facebook": return "Facebook";
+    case "web": return "Веб-чат";
+    case "tiktok": return "TikTok";
+    default: return name || "Чат";
+  }
+};
 type ReplyChannel = { channel_id: number; channel_kind: string; channel_name: string; number?: string; conversation_id?: number | null; selected?: boolean };
 type StartConversationResult = { conversation: Conversation; message: ChatMessage };
 
@@ -185,17 +201,34 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
       )}
       {allConvs.length > 0 && (
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-          {allConvs.map((c) => { const meta = CH_META[(c as any).channel_kind] || { i: "💬", l: (c as any).channel_name || "Чат" }; const on = conv?.id === c.id; const isPeek = peekConv?.id === c.id; return (
-            <span key={c.id} style={{ display: "inline-flex", alignItems: "center", borderRadius: 20, overflow: "hidden", whiteSpace: "nowrap",
-                border: "1px solid " + (on ? "#7c3aed" : isPeek ? "#0ea5e9" : "#e2e8f0"), background: on ? "#f5f3ff" : isPeek ? "#f0f9ff" : "#fff", opacity: (c as any).status === "open" ? 1 : 0.62 }}>
-              <button type="button" onClick={() => switchConv(c)} title={"Відкрити чат: " + ((c as any).channel_name || meta.l)}
-                style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, padding: "3px 9px", border: "none", background: "transparent", cursor: "pointer", color: on ? "#6d28d9" : "#475569" }}>
-                <span>{meta.i}</span> {meta.l}
-              </button>
-              {!on && <button type="button" onClick={() => openPeek(c)} title="Показати другим вікном поруч"
-                style={{ border: "none", borderLeft: "1px solid #e2e8f0", background: isPeek ? "#bae6fd" : "transparent", cursor: "pointer", color: "#0369a1", fontSize: 12, padding: "3px 7px", lineHeight: 1 }}>⧉</button>}
-            </span>
-          ); })}
+          {(() => {
+            // ГРУПУЄМО діалоги по каналу: 8 однакових «Telegram» → 1 чип з лічильником (Олег: не займати пів-екрану)
+            const groups: { cid: number; kind: string; name: string; convs: any[] }[] = [];
+            const idx: Record<number, number> = {};
+            allConvs.forEach((c: any) => { const k = c.channel; if (idx[k] == null) { idx[k] = groups.length; groups.push({ cid: k, kind: c.channel_kind, name: c.channel_name, convs: [c] }); } else groups[idx[k]].convs.push(c); });
+            return groups.map((g) => {
+              const meta = CH_META[g.kind] || { i: "💬", l: g.name || "Чат" };
+              const primary = g.convs.find((x) => x.status === "open") || g.convs[0];
+              const anyOpen = g.convs.some((x) => x.status === "open");
+              const on = (conv as any)?.channel === g.cid;
+              const isPeek = (peekConv as any)?.channel === g.cid;
+              const cnt = g.convs.length;
+              return (
+                <span key={g.cid} style={{ display: "inline-flex", alignItems: "center", borderRadius: 20, overflow: "hidden", whiteSpace: "nowrap",
+                    border: "1px solid " + (on ? "#7c3aed" : isPeek ? "#0ea5e9" : "#e2e8f0"), background: on ? "#f5f3ff" : isPeek ? "#f0f9ff" : "#fff", opacity: anyOpen ? 1 : 0.6 }}>
+                  <button type="button" onClick={() => switchConv(primary)}
+                    title={g.name + (cnt > 1 ? ` · ${cnt} діалогів` : "") + (anyOpen ? " · активний" : " · закритий")}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, padding: "3px 9px", border: "none", background: "transparent", cursor: "pointer", color: on ? "#6d28d9" : "#475569" }}>
+                    <span style={{ width: 7, height: 7, borderRadius: 7, background: anyOpen ? "#16a34a" : "#cbd5e1", flexShrink: 0 }} />
+                    <span>{meta.i}</span> {chLabel(g.kind, g.name)}
+                    {cnt > 1 && <span style={{ background: "#e2e8f0", color: "#475569", borderRadius: 10, fontSize: 9.5, fontWeight: 700, padding: "0 5px", marginLeft: 1 }}>{cnt}</span>}
+                  </button>
+                  {!on && <button type="button" onClick={() => openPeek(primary)} title="Показати другим вікном поруч"
+                    style={{ border: "none", borderLeft: "1px solid #e2e8f0", background: isPeek ? "#bae6fd" : "transparent", cursor: "pointer", color: "#0369a1", fontSize: 12, padding: "3px 7px", lineHeight: 1 }}>⧉</button>}
+                </span>
+              );
+            });
+          })()}
         </div>
       )}
     </div>
