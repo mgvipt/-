@@ -63,6 +63,8 @@ class Product(models.Model):
     unit = models.CharField("Ед. изм.", max_length=16, default="шт")
     price = models.DecimalField("Цена продажи", max_digits=12, decimal_places=2, default=0)
     cost = models.DecimalField("Себестоимость", max_digits=12, decimal_places=2, default=0)
+    pack_factor = models.DecimalField("Коеф. закупівлі→одиниця", max_digits=12, decimal_places=4, default=1,
+                                      help_text="Скільки одиниць номенклатури (кг/л/шт) в 1 закупівельній одиниці (відро/мішок). 1 = однакові")
     cost_pct = models.DecimalField("Себестоимость, % от цены", max_digits=5, decimal_places=2, default=0,
         help_text="Для услуг/работ, где мастеру платим долю: себестоимость = цена × этот %. 0 = использовать фиксированную Себестоимость. Пример: монтаж, мастер получает 80% → впиши 80.")
     min_price = models.DecimalField("Минимальная цена за позицию", max_digits=12, decimal_places=2, default=0,
