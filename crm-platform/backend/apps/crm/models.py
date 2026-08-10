@@ -67,6 +67,8 @@ class Contact(models.Model):
                                     help_text="[{label,value}] — кілька пошт з власними назвами полів")
     phones_extra = models.JSONField("Додаткові телефони", default=list, blank=True,
                                     help_text="[{label,value}] — кілька телефонів з назвами")
+    links_extra = models.JSONField("Додаткові посилання на акаунти", default=list, blank=True,
+                                   help_text="[{label,value}] — кілька посилань на акаунти/месенджери з назвами")
     accounts = models.JSONField("Рахунки (постачальник)", default=list, blank=True,
                                 help_text="[{label,iban,active}] — активний рахунок = на який оплачуємо через ФОП")
     monitor_emails = models.JSONField("Пошти для моніторингу", default=list, blank=True,

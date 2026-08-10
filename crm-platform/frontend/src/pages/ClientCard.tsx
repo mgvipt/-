@@ -18,7 +18,7 @@ interface Contact {
   id: number; first_name: string; last_name: string; middle_name?: string; display_name: string; phone: string; email: string; social_link: string; messengers?: string[];
   source: string; address: string; comment: string; loyalty_tag: string; birthday: string | null;
   kinds?: string[]; gender?: string; monitor_docs?: boolean; doc_email?: string; iban?: string; edrpou?: string; payment_purpose?: string;
-  emails_extra?: any[]; phones_extra?: any[]; accounts?: any[]; monitor_emails?: string[];
+  emails_extra?: any[]; phones_extra?: any[]; links_extra?: any[]; accounts?: any[]; monitor_emails?: string[];
   channels: string[]; owner?: number | null; owner_name?: string; deals: Deal[]; total_spent: number;
   zamer_projects?: ZamerProject[];
 }
@@ -198,6 +198,7 @@ export default function ClientCard() {
             {fld(t("Ссылка на аккаунт (мессенджер)","Посилання на акаунт (месенджер)"), "social_link", "t.me / instagram.com…")}
             <SocialLink link={c.social_link} />
             {Array.isArray(c.messengers) && c.messengers.filter((m) => m && m !== c.social_link).map((m, i) => <SocialLink key={i} link={m} />)}
+            <LabeledList title={t("Ещё ссылки на аккаунты (с названиями)","Ще посилання на акаунти (з назвами)")} items={c.links_extra} onChange={(v) => save({ links_extra: v })} ph="instagram.com / t.me / viber…" />
             {fld(t("Адрес / город","Адреса / місто"), "address", t("Куда доставлять","Куди доставляти"))}
             {fld("IBAN / рахунок", "iban", t("Для оплаты поставщику «з ФОП» — подтягивается из накладной","Для оплати постачальнику «з ФОП» — підтягується з накладної"))}
             {fld(t("ЕДРПОУ / ИНН поставщика","ЄДРПОУ / ІПН постачальника"), "edrpou")}
