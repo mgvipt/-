@@ -2438,7 +2438,20 @@ class FundsView(APIView):
             _allowed = None
         if _allowed is not None:
             accounts_qs = accounts_qs.filter(id__in=_allowed)
-        accounts = [{"id": ac.id, "name": ac.name, "in_planning": ac.in_planning, "balance": round(float(ac.balance()), 2)} for ac in accounts_qs]
+        # баланси рахунків ОДНИМ махом (2 запити замість 4×N) — щоб сторінка планування не гальмувала
+        from django.db.models import Case, When, Value, DecimalField as _DF
+        from django.db.models.functions import Coalesce as _Coal
+        _DFo = _DF(max_digits=16, decimal_places=2)
+        _bal = {}
+        for _rb in Transaction.objects.values("account_id").annotate(
+                _i=Sum(Case(When(direction="in", then="amount"), default=Value(0), output_field=_DFo)),
+                _e=Sum(Case(When(direction="out", then="amount"), default=Value(0), output_field=_DFo)),
+                _t=Sum(Case(When(direction="transfer", then="amount"), default=Value(0), output_field=_DFo))):
+            if _rb["account_id"] is not None:
+                _bal[_rb["account_id"]] = float(_rb["_i"] or 0) - float(_rb["_e"] or 0) - float(_rb["_t"] or 0)
+        for _rt in Transaction.objects.filter(transfer_account__isnull=False).values("transfer_account").annotate(_ti=Sum(_Coal("transfer_amount", "amount"))):
+            _bal[_rt["transfer_account"]] = _bal.get(_rt["transfer_account"], 0.0) + float(_rt["_ti"] or 0)
+        accounts = [{"id": ac.id, "name": ac.name, "in_planning": ac.in_planning, "balance": round(_bal.get(ac.id, 0.0), 2)} for ac in accounts_qs]
         tot_al = sum(alloc.values()); tot_sp = sum(spent.values())
         return Response({"period": period, "groups": groups, "accounts": accounts,
                          "totals": {"allocated": round(tot_al), "spent": round(tot_sp), "balance": round(tot_al - tot_sp)}})

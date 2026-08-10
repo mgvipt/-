@@ -2823,7 +2823,7 @@ function Planning() {
   const [spend, setSpend] = useState<any>(null); // фонд, з якого робимо витрата
   const [debts, setDebts] = useState<any>({ pay: 0, rec: 0, payN: 0, recN: 0 });
   const load = () => api.get<any>(`/api/finance/funds/?period=${period}`).then(setData);
-  useEffect(() => { load(); }, [period]);
+  useEffect(() => { setData(null); load(); }, [period]);
   useEffect(() => { const iv = setInterval(() => { api.get<any>(`/api/finance/funds/?period=${period}`).then((d) => setData((prev: any) => JSON.stringify(prev) === JSON.stringify(d) ? prev : d)).catch(() => {}); }, 10000); return () => clearInterval(iv); }, [period]);
   useEffect(() => {
     api.get<any>("/api/planned-payments/?status=planned&page_size=500").then((d) => {
