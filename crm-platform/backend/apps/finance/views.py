@@ -1676,12 +1676,18 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
             pay_amt = remaining
         import re as _redst
         _minv = _redst.search(r"(?:накладн\w*|акт|рахун\w*)\s+№?\s*(\S+)\s+від\s+(\S+)", pp.comment or "", _redst.I)
-        if _minv:
-            dest = "Оплата рахунку №%s від %s" % (_minv.group(1), _minv.group(2))
+        _mnum = None if _minv else _redst.search(r"(?:рахун\w*|накладн\w*|№)\s*№?\s*(\S+)", pp.comment or "", _redst.I)
+        _inv_s = _minv.group(1) if _minv else (_mnum.group(1) if _mnum else "")
+        _date_s = _minv.group(2) if _minv else ""
+        _tmpl = ((getattr(pp.contact, "payment_purpose", "") or "").strip()) if pp.contact_id else ""
+        if _tmpl:
+            dest = (_tmpl.replace("{номер}", _inv_s).replace("{дата}", _date_s)
+                         .replace("{number}", _inv_s).replace("{date}", _date_s)).strip()
+        elif _minv:
+            dest = "Оплата рахунку №%s від %s" % (_inv_s, _date_s)
         else:
-            _mnum = _redst.search(r"(?:рахун\w*|накладн\w*|№)\s*№?\s*(\S+)", pp.comment or "", _redst.I)
-            dest = ("Оплата рахунку №%s" % _mnum.group(1)) if _mnum else "Оплата рахунку постачальника"
-        dest = dest[:120]
+            dest = ("Оплата рахунку №%s" % _inv_s) if _inv_s else "Оплата рахунку постачальника"
+        dest = (dest or "Оплата рахунку постачальника")[:120]
         docnum = _tz.now().strftime("%m%d%H%M%S")  # ТІЛЬКИ цифри — Приват вимагає числовий номер документа
         payload = {
             "document_number": docnum,

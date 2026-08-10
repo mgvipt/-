@@ -17,7 +17,7 @@ interface ZamerProject { project_uuid: string; title: string; payload: any; upda
 interface Contact {
   id: number; first_name: string; last_name: string; middle_name?: string; display_name: string; phone: string; email: string; social_link: string; messengers?: string[];
   source: string; address: string; comment: string; loyalty_tag: string; birthday: string | null;
-  kinds?: string[]; gender?: string; monitor_docs?: boolean; doc_email?: string; iban?: string; edrpou?: string;
+  kinds?: string[]; gender?: string; monitor_docs?: boolean; doc_email?: string; iban?: string; edrpou?: string; payment_purpose?: string;
   channels: string[]; owner?: number | null; owner_name?: string; deals: Deal[]; total_spent: number;
   zamer_projects?: ZamerProject[];
 }
@@ -189,6 +189,15 @@ export default function ClientCard() {
                   {t("Его накладные и счета сами попадут в Финансы → «Вх. накладные», кредиторка создастся автоматически.","Його накладні та рахунки самі потраплять у Фінанси → «Вх. накладні», кредиторка створиться автоматично.")}
                 </div>
                 {fld(t("Почта для накладных (если другая)","Пошта для накладних (якщо інша)"), "doc_email", t("Если пусто — берём основной Email","Якщо порожньо — беремо основний Email"))}
+                <div style={{ marginTop: 6 }}>
+                  <div className="label">{t("Назначение платежа (для ФОП)","Призначення платежу (для ФОП)")}</div>
+                  <input defaultValue={c.payment_purpose || ""} onBlur={(e) => save({ payment_purpose: e.target.value })}
+                    placeholder={t("напр. Оплата за будматеріали, рахунок №{номер} від {дата}","напр. Оплата за будматеріали, рахунок №{номер} від {дата}")}
+                    style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
+                  <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>
+                    {t("Своё назначение для этого поставщика — подставится в платёжку Приват24 при оплате через ФОП. {номер} и {дата} заменятся из счёта. Пусто — «Оплата рахунку №… від …».","Своє призначення для цього постачальника — підставиться у платіжку Приват24 при оплаті через ФОП. {номер} і {дата} заміняться з рахунку. Порожньо — «Оплата рахунку №… від …».")}
+                  </div>
+                </div>
               </div>
             )}
             <div>

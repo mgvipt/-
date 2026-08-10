@@ -60,6 +60,9 @@ class Contact(models.Model):
     default_purchase_category = models.PositiveIntegerField(
         "Категорія закупівлі за замовчуванням", null=True, blank=True,
         help_text="finance.Category — підставляється при проведенні накладної цього постачальника (фонд/напрямок тягнуться з категорії)")
+    payment_purpose = models.CharField(
+        "Призначення платежу (шаблон)", max_length=200, blank=True, default="",
+        help_text="Своє призначення для оплати цьому постачальнику через ФОП. Плейсхолдери {номер} і {дата} підставляться з рахунку. Порожньо = «Оплата рахунку №… від …»")
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="contacts_owned", help_text="Ответственный менеджер клиента")
