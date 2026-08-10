@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { useLang } from "./i18n";
 
+const UNITS = ["шт", "кг", "г", "л", "мл", "м", "см", "м²", "м³", "пог.м", "рулон", "упаковка", "комплект", "набір", "пара", "відро", "банка", "пляшечка", "туба", "мішок", "пачка", "лист", "день", "година", "послуга"];
 interface Row { product: number; product_name: string; qty: string; price: string; retail: string; factor: string; unit: string; q: string; res: any[]; open: boolean; }
 
 export default function ReceiptModal({ productId, productName, dealId, editDoc, onClose, onSaved }: {
@@ -188,8 +189,11 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
               )}
             </div>
             <input value={r.qty} onChange={(e) => setRow(i, { qty: e.target.value })} type="number" title={t("Количество (в закупочных единицах)","Кількість (у закупівельних одиницях)")} placeholder={t("к-во","к-сть")} style={{ ...inp, width: "100%", textAlign: "center", padding: "0 4px" }} />
-            <span title={(Number(r.factor) || 1) !== 1 ? (t("на склад","на склад") + ": " + ((Number(r.qty) || 0) * (Number(r.factor) || 1)).toLocaleString() + " " + (r.unit || "")) : ""} style={{ textAlign: "center", fontSize: 11.5, color: "#475569", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.unit || "—"}</span>
-            <input value={r.factor ?? "1"} onChange={(e) => setRow(i, { factor: e.target.value })} type="number" title={t("Коэффициент: сколько единиц номенклатуры в 1 закупочной (ведро)","Коеф: скільки одиниць номенклатури в 1 закупівельній (відро)")} placeholder={t("коэф","коеф")} style={{ ...inp, width: "100%", textAlign: "center", padding: "0 4px", borderColor: (Number(r.factor) || 1) !== 1 ? "#93c5fd" : "#cbd5e1" }} />
+            <select value={r.unit || ""} onChange={(e) => { const u = e.target.value; setRow(i, { unit: u }); if (r.product) api.patch(`/api/products/${r.product}/`, { unit: u }).catch(() => {}); }} title={t("Единица измерения — клик меняет список; сохраняется в номенклатуру (везде)","Одиниця виміру — клік відкриває список; зберігається в номенклатуру (всюди)")} style={{ border: "none", background: "transparent", fontSize: 12, color: "#0f172a", fontWeight: 600, textAlign: "center", textAlignLast: "center" as any, cursor: "pointer", width: "100%", appearance: "none" as any, padding: 0 }}><option value="">—</option>{UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</select>
+            <div style={{ minWidth: 0 }}>
+              <input value={r.factor ?? "1"} onChange={(e) => setRow(i, { factor: e.target.value })} type="number" title={t("Коэффициент: сколько единиц номенклатуры в 1 закупочной (ведро)","Коеф: скільки одиниць номенклатури в 1 закупівельній (відро)")} placeholder={t("коэф","коеф")} style={{ ...inp, width: "100%", textAlign: "center", padding: "0 4px", borderColor: (Number(r.factor) || 1) !== 1 ? "#93c5fd" : "#cbd5e1" }} />
+              {(Number(r.factor) || 1) !== 1 && <div style={{ fontSize: 10, textAlign: "center", lineHeight: 1, marginTop: 1, color: "#2563eb", fontWeight: 700, whiteSpace: "nowrap" }}>= {((Number(r.qty) || 0) * (Number(r.factor) || 1)).toLocaleString()} {r.unit || t("ед","од")}</div>}
+            </div>
             <div style={{ minWidth: 0 }}>
               <input value={r.price} onChange={(e) => setRow(i, { price: e.target.value })} type="number" title={t("Закупочная цена за 1 закупочную единицу (ведро)","Закупівельна ціна за 1 закупівельну одиницю (відро)")} placeholder={t("закуп","закуп")} style={{ ...inp, width: "100%", padding: "0 6px" }} />
               {(Number(r.factor) || 1) !== 1 && <div className="muted" style={{ fontSize: 9.5, textAlign: "center", lineHeight: 1, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>= {((Number(String(r.price).replace(",", ".")) || 0) / (Number(r.factor) || 1)).toLocaleString("ru", { maximumFractionDigits: 2 })}/{r.unit || t("ед","од")}</div>}
