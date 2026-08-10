@@ -1118,20 +1118,13 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
         if direction == "in" and ("нова пошта" in (cp or "").lower() or "новапошта" in (cp or "").lower()
                                   or "новапей" in (cp or "").lower() or "novapay" in (cp or "").lower()):
             cat_np = Category.objects.filter(name="Онлайн (Instagram/TikTok/сайт)", direction="in").first()
-            tx_np = Transaction.objects.create(
-                direction="in", amount=amt, amount_uah=amt, account=account,
-                category=cat_np, date=dte, op_time=op_t, counterparty=(cp or "НоваПей")[:160], rate=1,
-                import_batch=batch, comment=(reftag + " · " + osnd)[:255])
-            created += 1
-            # гроші дійшли → закрити очікування по наложках: старіші виплати покривають
-            # раніше отримані посилки (виплата йде пачкою, тому список, а не одна сделка)
+            # Виплата НоваПей = пачка наложок. Спершу знаходимо ЯКІ наложки вона покриває,
+            # потім пишемо ДОХІД ПО КОЖНІЙ сделці (номінал) + КОМІСІЮ НоваПей витратою на сделку.
+            # Так маржа кожної сделки чесна (комісія враховується), а рахунок сходиться:
+            # Σномінал(дохід) − Σкомісія = виплата(нетто).
             try:
                 from apps.crm.models import Payment as _PayNP, log_activity as _laNP
-                waiting = list(_PayNP.objects.filter(provider="np_cod", is_paid=False)
-                               .order_by("created_at"))
-                # 0) ГРУПА однієї ТТН (дозамовлення їдуть однією посилкою, наложка спільна):
-                #    external_id np_cod-платежа = ТТН. Якщо сума кількох наложок однієї ТТН ≈ виплаті —
-                #    закриваємо саме ЦЮ групу (кожна сделка отримує свою частину точно).
+                waiting = list(_PayNP.objects.filter(provider="np_cod", is_paid=False).order_by("created_at"))
                 _grp = None
                 _byttn = {}
                 for w in waiting:
@@ -1140,18 +1133,17 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                 for _ws in _byttn.values():
                     if len(_ws) >= 2:
                         _sg = sum(float(x.amount) for x in _ws)
-                        if float(amt) <= _sg <= float(amt) * 1.08:
+                        if float(amt) <= _sg <= float(amt) * 1.12:
                             _grp = _ws; break
                 if _grp:
                     waiting = _grp
                 else:
-                    # ТОЧНИЙ поодинокий матч: виплата = одна наложка мінус комісія (до 8%)
-                    _singles = [w for w in waiting if float(amt) <= float(w.amount) <= float(amt) * 1.08]
+                    _singles = [w for w in waiting if float(amt) <= float(w.amount) <= float(amt) * 1.12]
                     if len(_singles) == 1:
                         waiting = _singles
                     elif len(_singles) >= 2:
-                        waiting = []  # неоднозначно: кілька наложок під суму виплати — не вгадуємо, лишаємо менеджеру
-                rest = float(amt) * (1.1 if _grp else 1.05)  # запас на комісію НоваПей
+                        waiting = []
+                rest = float(amt) * 1.12  # запас на комісію НоваПей
                 matched = []
                 for w in waiting:
                     if float(w.amount) <= rest:
@@ -1162,22 +1154,56 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                         _laNP("deal", w.deal_id, "Наложка виплачена",
                               "Виплата НоваПей надійшла на рахунок банку — %s грн зараховано як оплату" % w.amount,
                               None, "Банк")
-                # привʼязка доходу до сделки: рівно ОДНА наложка у виплаті → сделка/клієнт/канал;
-                # кілька — перелічуємо сделки в коменті (одна банківська сума на кілька посилок)
-                if len(matched) == 1 and matched[0].deal_id:
-                    _dnp = matched[0].deal
-                    tx_np.deal = _dnp
-                    if _dnp.contact_id:
-                        tx_np.contact = _dnp.contact
-                        tx_np.counterparty = ((" ".join(filter(None, [_dnp.contact.first_name or "", _dnp.contact.last_name or ""])).strip()
-                                               or (_dnp.contact.nickname or "")) or tx_np.counterparty)[:160]
-                    tx_np.channel = (_dnp.source or "")[:24] or tx_np.channel
-                    tx_np.comment = (tx_np.comment[:200] + " · наложка по сделці #%s" % _dnp.id)[:255]
-                    tx_np.save(update_fields=["deal", "contact", "counterparty", "channel", "comment"])
-                elif len(matched) > 1:
-                    _ids = ", ".join("#%s" % w.deal_id for w in matched if w.deal_id)
-                    tx_np.comment = (tx_np.comment[:180] + " · наложки по сделках: " + _ids)[:255]
-                    tx_np.save(update_fields=["comment"])
+                sum_nom = sum(float(w.amount or 0) for w in matched)
+                if matched and (float(amt) * 0.85 <= sum_nom <= float(amt) * 1.15):
+                    # ЧИСТИЙ випадок: виплата пояснюється саме цими наложками → дохід + комісія ПО КОЖНІЙ сделці
+                    _comm_total = max(0.0, sum_nom - float(amt))
+                    for w in matched:
+                        _dnp = w.deal
+                        _cli = ""
+                        if _dnp and _dnp.contact_id:
+                            _cli = (" ".join(filter(None, [_dnp.contact.first_name or "", _dnp.contact.last_name or ""])).strip()
+                                    or (_dnp.contact.nickname or "")) or ""
+                        Transaction.objects.create(
+                            direction="in", amount=w.amount, amount_uah=w.amount, account=account,
+                            category=cat_np, date=dte, op_time=op_t, rate=1, import_batch=batch,
+                            deal=_dnp, contact=(_dnp.contact if (_dnp and _dnp.contact_id) else None),
+                            channel=((_dnp.source or "")[:24] if _dnp else ""),
+                            counterparty=(_cli or cp or "НоваПей")[:160],
+                            comment=(reftag + " · наложка по сделці #%s" % (w.deal_id or "?"))[:255])
+                        created += 1
+                        # комісія НоваПей по цій сделці (пропорційно номіналу) → впливає на маржу
+                        if _comm_total > 0.5 and sum_nom > 0:
+                            _cw = round(_comm_total * float(w.amount) / sum_nom, 2)
+                            if _cw > 0.01:
+                                Transaction.objects.create(
+                                    direction="out", amount=_cw, amount_uah=_cw, account=account,
+                                    category=_fee_category(), date=dte, op_time=op_t, rate=1, import_batch=batch,
+                                    deal=_dnp, contact=(_dnp.contact if (_dnp and _dnp.contact_id) else None),
+                                    counterparty="Нова Пошта",
+                                    comment=(reftag + " · комісія НоваПей по сделці #%s" % (w.deal_id or "?"))[:255])
+                                created += 1
+                else:
+                    # НЕ пояснюється (непроведені наложки / неоднозначно) → як раніше: один сумарний дохід
+                    tx_np = Transaction.objects.create(
+                        direction="in", amount=amt, amount_uah=amt, account=account,
+                        category=cat_np, date=dte, op_time=op_t, counterparty=(cp or "НоваПей")[:160], rate=1,
+                        import_batch=batch, comment=(reftag + " · " + osnd)[:255])
+                    created += 1
+                    if len(matched) == 1 and matched[0].deal_id:
+                        _dnp = matched[0].deal
+                        tx_np.deal = _dnp
+                        if _dnp.contact_id:
+                            tx_np.contact = _dnp.contact
+                            tx_np.counterparty = ((" ".join(filter(None, [_dnp.contact.first_name or "", _dnp.contact.last_name or ""])).strip()
+                                                   or (_dnp.contact.nickname or "")) or tx_np.counterparty)[:160]
+                        tx_np.channel = (_dnp.source or "")[:24] or tx_np.channel
+                        tx_np.comment = (tx_np.comment[:200] + " · наложка по сделці #%s" % _dnp.id)[:255]
+                        tx_np.save(update_fields=["deal", "contact", "counterparty", "channel", "comment"])
+                    elif len(matched) > 1:
+                        _ids = ", ".join("#%s" % w.deal_id for w in matched if w.deal_id)
+                        tx_np.comment = (tx_np.comment[:180] + " · наложки по сделках: " + _ids)[:255]
+                        tx_np.save(update_fields=["comment"])
             except Exception:
                 pass
             continue
@@ -2482,7 +2508,8 @@ class ManagerDealsView(APIView):
                     c = d.contact
                     cli = (" ".join(filter(None, [c.first_name or "", c.last_name or ""])).strip() or (c.nickname or "") or "")[:80]
                 rw = by_deal[did] = {"deal_id": did, "title": ((d.title if d else "") or ("#%s" % did))[:80],
-                                     "client": cli, "amount": 0.0, "count": 0, "last_date": None}
+                                     "client": cli, "amount": 0.0, "count": 0, "last_date": None,
+                                     "funnel": ((d.funnel.name if (d and getattr(d, "funnel_id", None)) else "") or "Без воронки")}
             rw["amount"] += float(t.amount_uah or 0)
             rw["count"] += 1
             ds = t.date.isoformat() if t.date else None
@@ -2491,9 +2518,16 @@ class ManagerDealsView(APIView):
         rows = sorted(by_deal.values(), key=lambda x: -x["amount"])
         for rw in rows:
             rw["amount"] = round(rw["amount"])
+        # зведення по воронках: скільки грошей привів менеджер у кожній воронці
+        _bf = {}
+        for rw in rows:
+            _fn = rw.get("funnel") or "Без воронки"
+            _b = _bf.setdefault(_fn, {"funnel": _fn, "amount": 0, "deals": 0})
+            _b["amount"] += rw["amount"]; _b["deals"] += 1
+        by_funnel = sorted(_bf.values(), key=lambda x: -x["amount"])
         return Response({"user_id": u.id, "user_name": u.get_full_name() or u.username, "period": period,
                          "rows": rows, "total": round(sum(rw["amount"] for rw in rows)),
-                         "deals": len(rows), "count": sum(rw["count"] for rw in rows)})
+                         "deals": len(rows), "count": sum(rw["count"] for rw in rows), "by_funnel": by_funnel})
 
 
 class SalaryView(APIView):

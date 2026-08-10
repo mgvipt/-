@@ -120,8 +120,11 @@ class ContactViewSet(viewsets.ModelViewSet):
         from apps.crm.models import Deal as _Deal
         _cogs = _Dp("0")          # собівартість складських товарів у виграних угодах клієнта
         _planned_srv = _Dp("0")   # планова закупка послуг/робіт (мастеру) — щоб ловити переплату
-        from django.db.models import Q as _Qd2
-        _dq = _Deal.objects.filter(contact=c).filter(_Qd2(stage__is_won=True) | _Qd2(payments__is_paid=True)).distinct()
+        # СОБІВАРТІСТЬ рахуємо ТІЛЬКИ по сделках, у яких Є ДОХІД у журналі CRM за період —
+        # інакше легасі-сделки (гроші пройшли в Бітриксі, доходу в CRM немає) дають
+        # ложний мінус: собівар рахується, а виручки немає. Так cost іде в парі з revenue.
+        _rev_deal_ids = set(_qf.filter(direction="in").exclude(deal_id=None).values_list("deal_id", flat=True))
+        _dq = _Deal.objects.filter(id__in=_rev_deal_ids)
         if _ofrom:
             _dq = _dq.filter(created_at__date__gte=_ofrom)
         if _oto:
