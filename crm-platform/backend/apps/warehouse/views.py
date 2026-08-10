@@ -1129,11 +1129,14 @@ class InventoryAnalyticsView(APIView):
                 val_cost += vc
                 val_retail += vr
                 cn = p.category.name if p.category else "Без категорії"
-                c = by_cat.setdefault(cn, {"items": 0, "qty": 0.0, "cost": 0.0, "retail": 0.0})
+                c = by_cat.setdefault(cn, {"items": 0, "qty": 0.0, "cost": 0.0, "retail": 0.0, "prods": []})
                 c["items"] += 1
                 c["qty"] += float(s)
                 c["cost"] += float(vc)
                 c["retail"] += float(vr)
+                c["prods"].append({"id": p.id, "name": p.name, "sku": p.sku, "unit": p.unit,
+                                   "qty": round(float(s), 2), "cost": round(float(vc), 2),
+                                   "retail": round(float(vr), 2), "price": round(float(price), 2)})
                 _rows.append({"id": p.id, "name": p.name, "sku": p.sku, "unit": p.unit,
                               "qty": round(float(s), 2), "frozen": round(float(vc), 2), "dead": p.id not in _recent})
             else:
@@ -1173,7 +1176,11 @@ class InventoryAnalyticsView(APIView):
             "value_retail": round(float(val_retail)),
             "potential_margin": round(float(val_retail - val_cost)) if _cc else None,
             "by_category": [{"name": k, "items": v["items"], "qty": round(v["qty"], 1),
-                             "cost": round(v["cost"]) if _cc else None, "retail": round(v["retail"])}
+                             "cost": round(v["cost"]) if _cc else None, "retail": round(v["retail"]),
+                             "prods": [{"id": pr["id"], "name": pr["name"], "sku": pr["sku"], "unit": pr["unit"],
+                                        "qty": pr["qty"], "price": pr["price"], "retail": pr["retail"],
+                                        "cost": (pr["cost"] if _cc else None)}
+                                       for pr in sorted(v["prods"], key=lambda x: -x["retail"])]}
                             for k, v in cats],
             "frozen_total": _frozen_total if _cc else None,
             "frozen_top": (_frozen_top if _cc else []),

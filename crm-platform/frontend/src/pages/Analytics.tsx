@@ -4,7 +4,7 @@
  *  запасов по закупке/рознице, потенц. маржа, по категориям).
  *  Документация: docs/CODEMAP.md разд.3.
  * ========================================================================== */
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { api } from "../api";
 import { useLang } from "../i18n";
 import { useAuth } from "../auth";
@@ -20,7 +20,7 @@ interface SalesData {
 interface InvData {
   total_items: number; in_stock: number; out_stock: number; total_qty: number;
   value_cost: number; value_retail: number; potential_margin: number;
-  by_category: { name: string; items: number; qty: number; cost: number; retail: number }[];
+  by_category: { name: string; items: number; qty: number; cost: number; retail: number; prods?: { id: number; name: string; sku: string; unit: string; qty: number; price: number; retail: number; cost: number | null }[] }[];
   frozen_total?: number; frozen_top?: { name: string; sku: string; qty: number; unit: string; frozen: number }[];
   dead_count?: number; dead_total?: number; dead_top?: { name: string; sku: string; qty: number; unit: string; frozen: number }[]; dead_days?: number;
   losses_writeoff_90d?: number; losses_inv_90d?: number;
@@ -166,6 +166,7 @@ export function StockTab() {
   const { can } = useAuth();
   const showCost = can("product.cost.view");
   const [d, setD] = useState<InvData | null>(null);
+  const [openCat, setOpenCat] = useState<number | null>(null);
   useEffect(() => { api.get<InvData>("/api/analytics/inventory/").then(setD); }, []);
   if (!d) return <div className="spin">{t("Загрузка склада…","Завантаження складу…")}</div>;
   const allCards: [string, string, boolean][] = [
@@ -186,7 +187,21 @@ export function StockTab() {
         <table style={{ marginTop: 8 }}>
           <thead><tr><th>{t("Категория","Категорія")}</th><th>{t("Позиций","Позицій")}</th><th>{t("Кол-во","К-сть")}</th>{showCost && <th>{t("По закупке","По закупці")}</th>}<th>{t("По рознице","По роздрібу")}</th></tr></thead>
           <tbody>{d.by_category.map((c, i) => (
-            <tr key={i}><td>{c.name}</td><td>{c.items}</td><td>{c.qty.toLocaleString("ru")}</td>{showCost && <td>{fmt(c.cost)} ₴</td>}<td><b>{fmt(c.retail)} ₴</b></td></tr>
+            <Fragment key={i}>
+              <tr onClick={() => setOpenCat(openCat === i ? null : i)} style={{ cursor: "pointer" }} title={t("Нажми — показать товары в категории","Натисни — показати товари в категорії")}>
+                <td><span style={{ color: "#94a3b8", marginRight: 5 }}>{openCat === i ? "▾" : "▸"}</span>{c.name}</td>
+                <td>{c.items}</td><td>{c.qty.toLocaleString("ru")}</td>{showCost && <td>{fmt(c.cost)} ₴</td>}<td><b>{fmt(c.retail)} ₴</b></td>
+              </tr>
+              {openCat === i && (c.prods || []).map((pr) => (
+                <tr key={"p" + pr.id} style={{ background: "#f8fafc" }}>
+                  <td style={{ paddingLeft: 24, fontSize: 12.5 }}>{pr.name}{pr.sku ? <span className="muted"> · {pr.sku}</span> : null}</td>
+                  <td></td>
+                  <td style={{ fontSize: 12.5 }}>{Number(pr.qty).toLocaleString("ru")} {pr.unit || ""}</td>
+                  {showCost && <td style={{ fontSize: 12.5, color: "#9a3412" }}>{fmt(pr.cost ?? 0)} ₴</td>}
+                  <td style={{ fontSize: 12.5 }}><b>{fmt(pr.retail)} ₴</b> <span className="muted" style={{ fontSize: 11 }}>({fmt(pr.price)}/{pr.unit || t("ед","од")})</span></td>
+                </tr>
+              ))}
+            </Fragment>
           ))}</tbody>
         </table>
       </div>
