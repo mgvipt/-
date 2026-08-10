@@ -105,7 +105,7 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 20, width: 780, maxWidth: "96vw", maxHeight: "92vh", overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 20, width: "min(1060px, 97vw)", maxHeight: "92vh", overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
           <h3 style={{ margin: 0, flex: 1 }}>📥 {t("Приход товара (оприходование)", "Прихід товару (оприбуткування)")}</h3>
           <button onClick={onClose} style={{ border: "none", background: "transparent", fontSize: 22, cursor: "pointer", color: "#94a3b8" }}>×</button>
@@ -156,10 +156,19 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
         </div>
 
         {/* Позиції */}
-        <label style={lbl}>{t("Позиции: товар · кол-во · закупка · розница", "Позиції: товар · к-сть · закупка · роздріб")}</label>
+        <label style={lbl}>{t("Позиции","Позиції")}</label>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 54px 54px 58px 84px 72px 22px", gap: 8, alignItems: "center", padding: "0 2px 4px", fontSize: 10, color: "#94a3b8", fontWeight: 700, letterSpacing: .2 }}>
+          <span>{t("ТОВАР","ТОВАР")}</span>
+          <span style={{ textAlign: "center" }}>{t("К-ВО","К-СТЬ")}</span>
+          <span style={{ textAlign: "center" }} title={t("Коэффициент: кг/л в 1 закупочной единице","Коеф: кг/л у 1 закупівельній одиниці")}>{t("КОЭФ","КОЕФ")}</span>
+          <span style={{ textAlign: "center" }}>{t("→ склад","→ склад")}</span>
+          <span style={{ textAlign: "center" }}>{t("ЗАКУПКА","ЗАКУПКА")}</span>
+          <span style={{ textAlign: "center" }}>{t("РОЗН.","РОЗН.")}</span>
+          <span></span>
+        </div>
         {rows.map((r, i) => (
-          <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "flex-start" }}>
-            <div style={{ flex: 1, position: "relative" }}>
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 54px 54px 58px 84px 72px 22px", gap: 8, alignItems: "center", marginBottom: 6 }}>
+            <div style={{ position: "relative", minWidth: 0 }}>
               {r.product ? (
                 <div style={{ ...inp, display: "flex", alignItems: "center", background: "#eff6ff" }}><span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12.5 }}>{r.product_name}</span><span onClick={() => setRow(i, { product: 0, product_name: "", q: "" })} style={{ cursor: "pointer", color: "#94a3b8" }}>✕</span></div>
               ) : (
@@ -173,12 +182,12 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
                 </div>
               )}
             </div>
-            <input value={r.qty} onChange={(e) => setRow(i, { qty: e.target.value })} type="number" title={t("Количество", "Кількість")} placeholder={t("к-во", "к-сть")} style={{ ...inp, width: 46 }} />
-            <input value={r.factor ?? "1"} onChange={(e) => setRow(i, { factor: e.target.value })} type="number" title={t("Коэффициент: сколько кг/л в 1 закупочной единице (ведро)","Коеф: скільки кг/л у 1 закупівельній одиниці (відро)")} placeholder={t("коэф","коеф")} style={{ ...inp, width: 46, borderColor: (Number(r.factor) || 1) !== 1 ? "#93c5fd" : "#cbd5e1" }} />
-            <span className="muted" style={{ fontSize: 10, alignSelf: "center", minWidth: 56, lineHeight: 1.1 }}>{(Number(r.factor) || 1) !== 1 ? ("→ " + ((Number(r.qty) || 0) * (Number(r.factor) || 1)).toLocaleString() + " " + (r.unit || "")) : (r.unit || "")}</span>
-            <input value={r.price} onChange={(e) => setRow(i, { price: e.target.value })} type="number" title={t("Закупочная цена за единицу", "Закупівельна ціна за одиницю")} placeholder={t("закуп", "закуп")} style={{ ...inp, width: 66 }} />
-            <input value={r.retail} onChange={(e) => setRow(i, { retail: e.target.value })} type="number" title={t("Розничная (продажная) цена — обновит цену товара", "Роздрібна (продажна) ціна — оновить ціну товару")} placeholder={t("розн.", "розн.")} style={{ ...inp, width: 66, borderColor: "#a7f3d0" }} />
-            {rows.length > 1 && <span onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} style={{ cursor: "pointer", color: "#ef4444", padding: "8px 2px" }}>✕</span>}
+            <input value={r.qty} onChange={(e) => setRow(i, { qty: e.target.value })} type="number" title={t("Количество", "Кількість")} placeholder={t("к-во", "к-сть")} style={{ ...inp, width: "100%", textAlign: "center", padding: "0 4px" }} />
+            <input value={r.factor ?? "1"} onChange={(e) => setRow(i, { factor: e.target.value })} type="number" title={t("Коэффициент: сколько кг/л в 1 закупочной единице (ведро)","Коеф: скільки кг/л у 1 закупівельній одиниці (відро)")} placeholder={t("коэф","коеф")} style={{ ...inp, width: "100%", textAlign: "center", padding: "0 4px", borderColor: (Number(r.factor) || 1) !== 1 ? "#93c5fd" : "#cbd5e1" }} />
+            <span className="muted" style={{ fontSize: 10, textAlign: "center", lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(Number(r.factor) || 1) !== 1 ? (((Number(r.qty) || 0) * (Number(r.factor) || 1)).toLocaleString() + " " + (r.unit || "")) : (r.unit || "—")}</span>
+            <input value={r.price} onChange={(e) => setRow(i, { price: e.target.value })} type="number" title={t("Закупочная цена за единицу", "Закупівельна ціна за одиницю")} placeholder={t("закуп", "закуп")} style={{ ...inp, width: "100%", padding: "0 6px" }} />
+            <input value={r.retail} onChange={(e) => setRow(i, { retail: e.target.value })} type="number" title={t("Розничная (продажная) цена — обновит цену товара", "Роздрібна (продажна) ціна — оновить ціну товару")} placeholder={t("розн.", "розн.")} style={{ ...inp, width: "100%", padding: "0 6px", borderColor: "#a7f3d0" }} />
+            <span onClick={() => rows.length > 1 && setRows((rs) => rs.filter((_, j) => j !== i))} style={{ cursor: rows.length > 1 ? "pointer" : "default", color: rows.length > 1 ? "#ef4444" : "transparent", textAlign: "center", fontSize: 15 }}>✕</span>
           </div>
         ))}
         <span onClick={() => setRows((rs) => [...rs, { product: 0, product_name: "", qty: "1", price: "", retail: "", factor: "1", unit: "", q: "", res: [], open: false }])} style={{ cursor: "pointer", color: "#2563eb", fontSize: 13, fontWeight: 600 }}>+ {t("ещё позиция", "ще позиція")}</span>
