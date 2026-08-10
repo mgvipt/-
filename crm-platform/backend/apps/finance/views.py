@@ -1649,7 +1649,9 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         # реквізити отримувача
         iban = nceo = None
         if pp.contact_id:
-            iban = (getattr(pp.contact, "iban", "") or "").strip() or None
+            _accs = getattr(pp.contact, "accounts", None) or []
+            _act = next((a for a in _accs if a.get("active") and (a.get("iban") or "").strip()), None)
+            iban = (((_act.get("iban") or "").strip() if _act else "") or (getattr(pp.contact, "iban", "") or "").strip()) or None
             nceo = (getattr(pp.contact, "edrpou", "") or "").strip() or None
         text = pp.comment or ""
         if not iban:

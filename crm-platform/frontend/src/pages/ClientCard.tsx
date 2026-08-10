@@ -18,6 +18,7 @@ interface Contact {
   id: number; first_name: string; last_name: string; middle_name?: string; display_name: string; phone: string; email: string; social_link: string; messengers?: string[];
   source: string; address: string; comment: string; loyalty_tag: string; birthday: string | null;
   kinds?: string[]; gender?: string; monitor_docs?: boolean; doc_email?: string; iban?: string; edrpou?: string; payment_purpose?: string;
+  emails_extra?: any[]; phones_extra?: any[]; accounts?: any[]; monitor_emails?: string[];
   channels: string[]; owner?: number | null; owner_name?: string; deals: Deal[]; total_spent: number;
   zamer_projects?: ZamerProject[];
 }
@@ -27,6 +28,72 @@ const KINDS: [string, string][] = [
   ["client", "Клієнт"], ["supplier", "Постачальник"], ["master", "Майстер"],
   ["staff", "Співробітник"], ["partner", "Партнер / Дизайнер"],
 ];
+
+// Список полів {label,value} з власними назвами (email/телефони)
+function LabeledList({ title, items, onChange, ph }: { title: string; items: any; onChange: (v: any[]) => void; ph: string }) {
+  const { t } = useLang();
+  const rows: any[] = Array.isArray(items) ? items : [];
+  const S: any = { height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", fontSize: 12.5 };
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div className="label">{title}</div>
+      <div key={"L" + rows.length}>
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+            <input defaultValue={r.label || ""} placeholder={t("название","назва")} onBlur={(e) => onChange(rows.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} style={{ ...S, width: 110 }} />
+            <input defaultValue={r.value || ""} placeholder={ph} onBlur={(e) => onChange(rows.map((x, j) => j === i ? { ...x, value: e.target.value } : x))} style={{ ...S, flex: 1 }} />
+            <button onClick={() => onChange(rows.filter((_, j) => j !== i))} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#dc2626", fontSize: 16 }}>×</button>
+          </div>
+        ))}
+      </div>
+      <button className="btn btn-light" style={{ height: 28, fontSize: 12 }} onClick={() => onChange([...rows, { label: "", value: "" }])}>+ {t("Добавить","Додати")}</button>
+    </div>
+  );
+}
+
+// Список простих значень (пошти для моніторингу)
+function SimpleList({ title, items, onChange, ph }: { title: string; items: any; onChange: (v: string[]) => void; ph: string }) {
+  const { t } = useLang();
+  const rows: string[] = Array.isArray(items) ? items : [];
+  const S: any = { flex: 1, height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px", fontSize: 12.5 };
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div className="label">{title}</div>
+      <div key={"S" + rows.length}>
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+            <input defaultValue={r || ""} placeholder={ph} onBlur={(e) => onChange(rows.map((x, j) => j === i ? e.target.value : x))} style={S} />
+            <button onClick={() => onChange(rows.filter((_, j) => j !== i))} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#dc2626", fontSize: 16 }}>×</button>
+          </div>
+        ))}
+      </div>
+      <button className="btn btn-light" style={{ height: 28, fontSize: 12 }} onClick={() => onChange([...rows, ""])}>+ {t("Добавить почту","Додати пошту")}</button>
+    </div>
+  );
+}
+
+// Рахунки постачальника з активним (на який оплачуємо через ФОП)
+function AccountsList({ items, onChange }: { items: any; onChange: (v: any[]) => void }) {
+  const { t } = useLang();
+  const rows: any[] = Array.isArray(items) ? items : [];
+  const S: any = { height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px", fontSize: 12.5 };
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div className="label">{t("Счета (активный = на который оплачиваем)","Рахунки (активний = на який оплачуємо)")}</div>
+      <div key={"A" + rows.length}>
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: "flex", gap: 6, marginBottom: 4, alignItems: "center", background: r.active ? "#f0fdf4" : "transparent", borderRadius: 7, padding: r.active ? "2px 4px" : 0 }}>
+            <input type="radio" checked={!!r.active} onChange={() => onChange(rows.map((x, j) => ({ ...x, active: j === i })))} title={t("Активный счёт","Активний рахунок")} />
+            <input defaultValue={r.label || ""} placeholder={t("название","назва")} onBlur={(e) => onChange(rows.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} style={{ ...S, width: 88 }} />
+            <input defaultValue={r.iban || ""} placeholder="UA…" onBlur={(e) => onChange(rows.map((x, j) => j === i ? { ...x, iban: e.target.value.replace(/\s/g, "") } : x))} style={{ ...S, flex: 1 }} />
+            <button onClick={() => onChange(rows.filter((_, j) => j !== i))} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#dc2626", fontSize: 16 }}>×</button>
+          </div>
+        ))}
+      </div>
+      <button className="btn btn-light" style={{ height: 28, fontSize: 12 }} onClick={() => onChange([...rows, { label: "", iban: "", active: rows.length === 0 }])}>+ {t("Добавить счёт","Додати рахунок")}</button>
+    </div>
+  );
+}
 
 export default function ClientCard() {
   const { id } = useParams();
@@ -125,7 +192,9 @@ export default function ClientCard() {
               <div style={{ flex: 1 }}>{fld(t("Отчество","По батькові"), "middle_name", t("По отчеству точно определяется пол (Олександрович / Олександрівна)","За по батькові точно визначається стать (Олександрович / Олександрівна)"))}</div>
             </div>
             {fld(t("Телефон","Телефон"), "phone", t("Основной контактный номер","Основний контактний номер"))}
+            <LabeledList title={t("Ещё телефоны (с названиями)","Ще телефони (з назвами)")} items={c.phones_extra} onChange={(v) => save({ phones_extra: v })} ph={t("телефон","телефон")} />
             {fld(t("Email","Email"), "email")}
+            <LabeledList title={t("Ещё email (с названиями)","Ще email (з назвами)")} items={c.emails_extra} onChange={(v) => save({ emails_extra: v })} ph="email" />
             {fld(t("Ссылка на аккаунт (мессенджер)","Посилання на акаунт (месенджер)"), "social_link", "t.me / instagram.com…")}
             <SocialLink link={c.social_link} />
             {Array.isArray(c.messengers) && c.messengers.filter((m) => m && m !== c.social_link).map((m, i) => <SocialLink key={i} link={m} />)}
@@ -189,6 +258,8 @@ export default function ClientCard() {
                   {t("Его накладные и счета сами попадут в Финансы → «Вх. накладные», кредиторка создастся автоматически.","Його накладні та рахунки самі потраплять у Фінанси → «Вх. накладні», кредиторка створиться автоматично.")}
                 </div>
                 {fld(t("Почта для накладных (если другая)","Пошта для накладних (якщо інша)"), "doc_email", t("Если пусто — берём основной Email","Якщо порожньо — беремо основний Email"))}
+                <SimpleList title={t("Ещё почты для мониторинга (если шлёт с других)","Ще пошти для моніторингу (якщо шле з інших)")} items={c.monitor_emails} onChange={(v) => save({ monitor_emails: v })} ph={t("email отправителя","email відправника")} />
+                <AccountsList items={c.accounts} onChange={(v) => save({ accounts: v })} />
                 <div style={{ marginTop: 6 }}>
                   <div className="label">{t("Назначение платежа (для ФОП)","Призначення платежу (для ФОП)")}</div>
                   <input defaultValue={c.payment_purpose || ""} onBlur={(e) => save({ payment_purpose: e.target.value })}

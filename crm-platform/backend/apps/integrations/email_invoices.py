@@ -70,11 +70,13 @@ def _contact_senders():
     except Exception:
         return []
     out = []
-    for c in Contact.objects.filter(monitor_docs=True).only("id", "email", "doc_email"):
-        e = ((c.doc_email or "").strip() or (c.email or "").strip()).lower()
-        if e and "@" in e:
-            out.append(e)
-    return out
+    for c in Contact.objects.filter(monitor_docs=True):
+        cands = [c.doc_email, c.email] + list(getattr(c, "monitor_emails", None) or [])
+        for _e in cands:
+            _e = (_e or "").strip().lower()
+            if _e and "@" in _e:
+                out.append(_e)
+    return list(dict.fromkeys(out))
 
 
 def _load():

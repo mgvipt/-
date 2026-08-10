@@ -63,6 +63,14 @@ class Contact(models.Model):
     payment_purpose = models.CharField(
         "Призначення платежу (шаблон)", max_length=200, blank=True, default="",
         help_text="Своє призначення для оплати цьому постачальнику через ФОП. Плейсхолдери {номер} і {дата} підставляться з рахунку. Порожньо = «Оплата рахунку №… від …»")
+    emails_extra = models.JSONField("Додаткові email", default=list, blank=True,
+                                    help_text="[{label,value}] — кілька пошт з власними назвами полів")
+    phones_extra = models.JSONField("Додаткові телефони", default=list, blank=True,
+                                    help_text="[{label,value}] — кілька телефонів з назвами")
+    accounts = models.JSONField("Рахунки (постачальник)", default=list, blank=True,
+                                help_text="[{label,iban,active}] — активний рахунок = на який оплачуємо через ФОП")
+    monitor_emails = models.JSONField("Пошти для моніторингу", default=list, blank=True,
+                                      help_text="[email] — додаткові адреси, з яких приходять накладні цього постачальника")
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="contacts_owned", help_text="Ответственный менеджер клиента")
