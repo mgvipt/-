@@ -45,6 +45,11 @@ class TelegramWebhookView(APIView):
             bchats[str((bm.get("chat") or {}).get("id"))] = bm.get("business_connection_id")
             channel.config = cfg
             channel.save(update_fields=["config"])
+            # Wallcov: Telegram-DM ідуть через e-chat Telegram (окремий канал). Бот НЕ інгестить
+            # бізнес-повідомлення особистого номера — інакше дублі й неправильний напрям
+            # (той самий акаунт слухають і бот-Business, і e-chat). Вмикнути назад: config ingest_business=True.
+            if not cfg.get("ingest_business", False):
+                return Response({"ok": True})
         inc = get_adapter(channel).parse_webhook(data)
         if inc:
             ingest(channel, inc)
