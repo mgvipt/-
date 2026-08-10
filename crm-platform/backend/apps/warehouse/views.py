@@ -361,6 +361,27 @@ class ProductViewSet(viewsets.ModelViewSet):
         n = Product.objects.filter(id__in=ids).update(unit=unit)
         return Response({"ok": True, "updated": n, "unit": unit})
 
+    @action(detail=False, methods=["post"], url_path="bulk-set")
+    def bulk_set(self, request):
+        """Масово змінити прапорці товарів. Право warehouse.edit.
+        Тіло: {ids: [...], is_active?: bool, track_stock?: bool}.
+        Передаємо лише те, що треба змінити."""
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("warehouse.edit")):
+            return Response({"detail": "Потрібне право «Редагувати склад»"}, status=403)
+        ids = request.data.get("ids") or []
+        if not ids:
+            return Response({"detail": "Вкажіть товари"}, status=400)
+        fields = {}
+        if "is_active" in request.data:
+            fields["is_active"] = bool(request.data.get("is_active"))
+        if "track_stock" in request.data:
+            fields["track_stock"] = bool(request.data.get("track_stock"))
+        if not fields:
+            return Response({"detail": "Нічого змінювати"}, status=400)
+        n = Product.objects.filter(id__in=ids).update(**fields)
+        return Response({"ok": True, "updated": n, "fields": fields})
+
     @action(detail=False, methods=["get"], url_path="duplicates")
     def duplicates(self, request):
         """Знаходить схожі карточки товарів (дублі) серед АКТИВНИХ.

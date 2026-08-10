@@ -221,6 +221,19 @@ export default function Warehouse() {
       setSelIds(new Set()); setBulkUnit(""); loadProducts();
     } catch { alert(t("Не удалось (нужно право «Редактировать склад»)","Не вдалося (потрібне право «Редагувати склад»)")); }
   }
+  async function applyBulkSet(patch: { is_active?: boolean; track_stock?: boolean }) {
+    if (selIds.size === 0) return;
+    const label = "is_active" in patch
+      ? (patch.is_active ? t("сделать активными","зробити активними") : t("сделать неактивными","зробити неактивними"))
+      : (patch.track_stock ? t("включить количественный учёт","увімкнути кількісний облік") : t("выключить количественный учёт","вимкнути кількісний облік"));
+    if (!confirm(t("Товаров","Товарів") + `: ${selIds.size}
+` + label + "?")) return;
+    try {
+      const r: any = await api.post("/api/products/bulk-set/", { ids: Array.from(selIds), ...patch });
+      alert(t("Обновлено товаров","Оновлено товарів") + `: ${r.updated}`);
+      setSelIds(new Set()); loadProducts();
+    } catch { alert(t("Не удалось (нужно право «Редактировать склад»)","Не вдалося (потрібне право «Редагувати склад»)")); }
+  }
   async function delCategory(c: Category, e: React.MouseEvent) {
     e.stopPropagation();
     try {
@@ -971,6 +984,13 @@ export default function Warehouse() {
               {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
             <button className="btn btn-primary" disabled={!bulkUnit} onClick={applyBulkUnit} style={{ padding: "4px 14px" }}>{t("Применить","Застосувати")}</button>
+            <span style={{ width: 1, alignSelf: "stretch", background: "#bfdbfe" }} />
+            <span className="muted" style={{ fontSize: 13 }}>{t("Активность","Активність")}:</span>
+            <button className="btn btn-light" onClick={() => applyBulkSet({ is_active: true })} style={{ padding: "4px 10px" }} title={t("Показывать товары в списках и продажах","Показувати товари в списках і продажах")}>✓ {t("Активные","Активні")}</button>
+            <button className="btn btn-light" onClick={() => applyBulkSet({ is_active: false })} style={{ padding: "4px 10px" }} title={t("Скрыть из списков и продаж (не удаляет)","Сховати зі списків і продажів (не видаляє)")}>✕ {t("Неактивные","Неактивні")}</button>
+            <span className="muted" style={{ fontSize: 13 }}>{t("Учёт склада","Облік складу")}:</span>
+            <button className="btn btn-light" onClick={() => applyBulkSet({ track_stock: true })} style={{ padding: "4px 10px" }} title={t("Считать остаток и списывать со склада (товары)","Рахувати залишок і списувати зі складу (товари)")}>📦 {t("Считать","Рахувати")}</button>
+            <button className="btn btn-light" onClick={() => applyBulkSet({ track_stock: false })} style={{ padding: "4px 10px" }} title={t("Не считать остаток — для услуг/работ","Не рахувати залишок — для послуг/робіт")}>∅ {t("Не считать","Не рахувати")}</button>
             <button className="btn btn-light" onClick={() => setSelIds(new Set())} style={{ padding: "4px 10px" }}>{t("Снять выбор","Зняти вибір")}</button>
           </div>
         )}
