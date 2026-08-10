@@ -57,10 +57,16 @@ class ProductSerializer(serializers.ModelSerializer):
         } for im in obj.images.all()]
 
     def get_shop_validation_errors(self, obj):
+        from rest_framework import serializers as _s
+        if isinstance(self.parent, _s.ListSerializer):
+            return []
         from .shop_sync import catalog_validation_errors
         return catalog_validation_errors(obj) if obj.shop_managed or obj.category_id == 59 else []
 
     def get_shop_group_variants(self, obj):
+        from rest_framework import serializers as _s
+        if isinstance(self.parent, _s.ListSerializer):
+            return []
         if not obj.shop_group_key:
             return []
         return list(Product.objects.filter(shop_group_key=obj.shop_group_key).order_by("shop_variant_order", "id").values(
@@ -69,6 +75,9 @@ class ProductSerializer(serializers.ModelSerializer):
         ))
 
     def get_shop_sync_history(self, obj):
+        from rest_framework import serializers as _s
+        if isinstance(self.parent, _s.ListSerializer):
+            return []
         return list(obj.shop_sync_events.order_by("-created_at")[:8].values(
             "event_uuid", "action", "status", "attempts", "last_error", "created_at", "processed_at"
         ))
