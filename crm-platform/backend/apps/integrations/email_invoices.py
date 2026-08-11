@@ -192,27 +192,49 @@ def poll(limit=60, backfill=False, log=lambda m: None):
                 np_created += 1
             elif atts:
                 from .supplier_act import parse_korzh, parse_generic_invoice
-                xls = next((pp for nn, pp in atts if nn.lower().endswith((".xls", ".xlsx"))), None)
-                _xn = next((nn for nn, pp in atts if pp is xls), "") if xls else ""
-                sp = {"files": [n for n, _ in atts], "email_date": date_hdr, "email_text": body}
-                if xls:
-                    try:
-                        sa = parse_korzh(xls)
-                        if not sa.get("lines"):   # парсер конкретного постачальника не зміг → універсальний фолбек
-                            _sg = parse_generic_invoice(xls, _xn)
-                            if _sg.get("lines"):
-                                sa = _sg
-                        if sa.get("invoice_number") and IncomingDoc.objects.filter(doc_type="supplier", parsed__invoice_number=sa["invoice_number"]).exists():
-                            continue
-                        sp.update({"invoice_number": sa.get("invoice_number"), "invoice_date": sa.get("invoice_date"),
-                                   "supplier": sa.get("supplier"), "lines": sa.get("lines"), "amount": sa.get("total")})
-                    except Exception as e:  # noqa
-                        log("supplier parse fail uid=%s: %s" % (u, e))
-                IncomingDoc.objects.create(
-                    mailbox=user, message_uid=str(u), sender=frm[:200], subject=subj[:300],
-                    doc_type="supplier", status="draft", parsed=sp, attachments_b64=b64)
-                created += 1
-                sup_created += 1
+                # КОЖНА накладна (xls) у листі = ОКРЕМА чернетка → окремий прихід.
+                # (Раніше брали лише перший xls → якщо у листі 2 накладні, друга губилась.)
+                xls_atts = [(nn, pp) for nn, pp in atts if nn.lower().endswith((".xls", ".xlsx"))]
+                non_xls = [(nn, pp) for nn, pp in atts if not nn.lower().endswith((".xls", ".xlsx"))]
+                if not xls_atts:
+                    # немає xls — одна чернетка з усіма вкладеннями (як було)
+                    IncomingDoc.objects.create(
+                        mailbox=user, message_uid=str(u), sender=frm[:200], subject=subj[:300],
+                        doc_type="supplier", status="draft",
+                        parsed={"files": [n for n, _ in atts], "email_date": date_hdr, "email_text": body},
+                        attachments_b64=b64)
+                    created += 1
+                    sup_created += 1
+                else:
+                    _total = len(xls_atts)
+                    for _i, (xn, xls) in enumerate(xls_atts):
+                        _uid = str(u) if _i == 0 else "%s#%d" % (u, _i + 1)  # unique (mailbox,message_uid)
+                        sp = {"files": [xn], "email_date": date_hdr, "email_text": body}
+                        if _total > 1:
+                            sp["invoice_part"] = "%d/%d" % (_i + 1, _total)  # № накладної в листі
+                        try:
+                            sa = parse_korzh(xls)
+                            if not sa.get("lines"):   # парсер постачальника не зміг → універсальний фолбек
+                                _sg = parse_generic_invoice(xls, xn)
+                                if _sg.get("lines"):
+                                    sa = _sg
+                            from django.db.models import Q as _Qd
+                            if sa.get("invoice_number") and IncomingDoc.objects.filter(doc_type="supplier", parsed__invoice_number=sa["invoice_number"]).exclude(_Qd(message_uid=str(u)) | _Qd(message_uid__startswith="%s#" % u)).exists():
+                                continue  # така накладна вже є з ІНШОГО листа (повторна відправка). У межах ОДНОГО листа 2 файли з тим самим № — це 2 окремі накладні, створюємо обидві
+                            sp.update({"invoice_number": sa.get("invoice_number"), "invoice_date": sa.get("invoice_date"),
+                                       "supplier": sa.get("supplier"), "lines": sa.get("lines"), "amount": sa.get("total")})
+                        except Exception as e:  # noqa
+                            log("supplier parse fail uid=%s (%s): %s" % (u, xn, e))
+                        # вкладення: свій xls; супровідні (рахунок/pdf) кладемо до першої накладної
+                        _b64 = [{"name": xn, "b64": base64.b64encode(xls).decode()}]
+                        if _i == 0:
+                            _b64 += [{"name": n, "b64": base64.b64encode(p).decode()} for n, p in non_xls][:3]
+                        _subj = subj[:290] + ((" (%d/%d)" % (_i + 1, _total)) if _total > 1 else "")
+                        IncomingDoc.objects.create(
+                            mailbox=user, message_uid=_uid, sender=frm[:200], subject=_subj[:300],
+                            doc_type="supplier", status="draft", parsed=sp, attachments_b64=_b64)
+                        created += 1
+                        sup_created += 1
         if uids:
             last_uid[snd or "*"] = max(uids)
 
