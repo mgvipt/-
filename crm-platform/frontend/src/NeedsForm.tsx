@@ -1,6 +1,7 @@
 /* Виявлення потреби — ПОКРОКОВИЙ степер (7 кроків + блок «Заперечення»), ТЗ мультиагентів 01.07.
  * Поля → qualification (JSON) через PATCH endpoint+leadId. Спільний для ліда і сделки. */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { api } from "./api";
 import { useLang } from "./i18n";
 import { Icon } from "./Icon";
@@ -26,6 +27,43 @@ const NP_DEPT = ["Вантажне (зі страховкою)", "Звичайн
 const OBJECTION = ["Немає", "Дорого", "Мовчання/Ігнор", "Вже купив деінде", "Незручне НП", "Конкурент", "Не актуально/сплутаний чат"];
 
 const inp: React.CSSProperties = { width: "100%", fontSize: 13, padding: "7px 9px", borderRadius: 8, border: "1px solid #e2e8f0", boxSizing: "border-box", background: "#fff" };
+
+// Кастомний випадаючий список (DOM, а не нативний <select>). Причина: нативний список
+// малюється на рівні ОС і НЕ потрапляє у демонстрацію екрана (Meet/Zoom). Цей — через
+// портал з fixed-позицією: видно у трансляції і не обрізається панеллю.
+function DomSelect({ value, options, onChange, wrapStyle, placeholder = "—" }: { value: string; options: string[]; onChange: (v: string) => void; wrapStyle?: React.CSSProperties; placeholder?: string }) {
+  const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  function toggle() { if (!open && btnRef.current) setRect(btnRef.current.getBoundingClientRect()); setOpen((o) => !o); }
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true); window.addEventListener("resize", close);
+    return () => { window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
+  }, [open]);
+  const row = (sel: boolean): React.CSSProperties => ({ padding: "8px 11px", fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", background: sel ? "#eff6ff" : "#fff", color: sel ? "#1d4ed8" : "#0f172a", fontWeight: sel ? 600 : 400 });
+  return (
+    <div style={{ position: "relative", width: "100%", ...wrapStyle }}>
+      <button type="button" ref={btnRef} onClick={toggle} style={{ ...inp, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: value ? "#0f172a" : "#94a3b8" }}>{value || placeholder}</span>
+        <span style={{ color: "#94a3b8", fontSize: 10, flexShrink: 0 }}>▾</span>
+      </button>
+      {open && rect && createPortal(
+        <>
+          <div onMouseDown={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 3000 }} />
+          <div style={{ position: "fixed", top: rect.bottom + 3, left: rect.left, width: rect.width, zIndex: 3001, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 14px 36px rgba(0,0,0,.2)", maxHeight: 300, overflowY: "auto" }}>
+            <div onClick={() => { onChange(""); setOpen(false); }} style={{ ...row(false), color: "#94a3b8" }}>{placeholder}</div>
+            {options.map((o) => (
+              <div key={o} onClick={() => { onChange(o); setOpen(false); }} style={row(o === value)}
+                onMouseEnter={(e) => { if (o !== value) e.currentTarget.style.background = "#f1f5f9"; }}
+                onMouseLeave={(e) => { if (o !== value) e.currentTarget.style.background = "#fff"; }}>{o}</div>
+            ))}
+          </div>
+        </>, document.body)}
+    </div>
+  );
+}
 
 // [тип, ключ, лейбл, опції?]  типи: sel | num | txt | chk | kits
 const STEPS: any[] = [
@@ -85,7 +123,7 @@ function NeedsForm({ leadId, initial, endpoint = "/api/leads/" }: { leadId: numb
         <div style={{ fontSize: 11.5, color: "#64748b", marginBottom: 4, fontWeight: 600 }}>{t("Тест-наборы (для склада)", "Тест-набори (для складу)")}</div>
         {kits.map((kit: any, i: number) => (
           <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center", flexWrap: "wrap" }}>
-            <select value={kit.material || ""} onChange={(e) => setKit(i, "material", e.target.value)} style={{ ...inp, flex: "2 1 120px", width: "auto" }}><option value="">{t("материал…", "матеріал…")}</option>{mats.map((m) => <option key={m} value={m}>{m}</option>)}</select>
+            <DomSelect value={kit.material || ""} options={mats} onChange={(v) => setKit(i, "material", v)} wrapStyle={{ flex: "2 1 120px" }} placeholder={t("материал…", "матеріал…")} />
             <input value={kit.color || ""} placeholder={t("цвет", "колір")} onChange={(e) => setKit(i, "color", e.target.value)} style={{ ...inp, flex: "1 1 80px", width: "auto" }} />
             <label style={{ fontSize: 11, display: "flex", gap: 3, alignItems: "center" }}><input type="checkbox" checked={!!kit.board} onChange={(e) => setKit(i, "board", e.target.checked)} />{t("дощечка", "дощечка")}</label>
             <label style={{ fontSize: 11, display: "flex", gap: 3, alignItems: "center" }}><input type="checkbox" checked={!!kit.tint} onChange={(e) => setKit(i, "tint", e.target.checked)} />{t("тон.", "тон.")}</label>
@@ -105,7 +143,7 @@ function NeedsForm({ leadId, initial, endpoint = "/api/leads/" }: { leadId: numb
       <div key={k} style={{ marginBottom: 10 }}>
         <div style={{ fontSize: 11.5, color: "#64748b", marginBottom: 4, fontWeight: 600 }}>{label}</div>
         {type === "sel"
-          ? <select value={q[k] || ""} onChange={(e) => set(k, e.target.value)} style={inp}><option value="">—</option>{(opts || mats).map((o: string) => <option key={o} value={o}>{o}</option>)}</select>
+          ? <DomSelect value={q[k] || ""} options={opts || mats} onChange={(v) => set(k, v)} />
           : <input value={q[k] || ""} type={type === "num" ? "number" : "text"} onChange={(e) => set(k, e.target.value)} style={inp} />}
       </div>
     );
@@ -156,7 +194,7 @@ function NeedsForm({ leadId, initial, endpoint = "/api/leads/" }: { leadId: numb
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
           <div style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 11.5, color: "#64748b", marginBottom: 4, fontWeight: 600 }}>{t("Тип возражения", "Тип заперечення")}</div>
-            <select value={q.objection_type || ""} onChange={(e) => set("objection_type", e.target.value)} style={inp}><option value="">—</option>{OBJECTION.map((o) => <option key={o} value={o}>{o}</option>)}</select>
+            <DomSelect value={q.objection_type || ""} options={OBJECTION} onChange={(v) => set("objection_type", v)} />
           </div>
           <div style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 11.5, color: "#64748b", marginBottom: 4, fontWeight: 600 }}>{t("Дата фоллоу-апа", "Дата фоллоу-апу")}</div>
