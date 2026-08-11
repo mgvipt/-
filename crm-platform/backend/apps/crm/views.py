@@ -277,10 +277,10 @@ class ContactViewSet(viewsets.ModelViewSet):
         obj = serializer.save()
         # зміна імені контакту → оновити назву у НЕПОГАШЕНИХ боргах/кредиторках,
         # щоб у картці й у платежі (Приват) було актуальне ім'я
-        if ("first_name" in self.request.data or "last_name" in self.request.data):
+        if ("first_name" in self.request.data or "last_name" in self.request.data or "middle_name" in self.request.data):
             from apps.finance.models import PlannedPayment as _PPn
-            _nm = ((obj.first_name or "") + " " + (obj.last_name or "")).strip()
-            if _nm:
+            _nm = str(obj).strip()
+            if _nm and not _nm.startswith("Контакт #"):
                 _PPn.objects.filter(contact=obj).exclude(status="canceled").update(counterparty=_nm)
 
 

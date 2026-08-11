@@ -86,7 +86,15 @@ class Contact(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.first_name} {self.last_name}".strip() or self.phone or f"Контакт #{self.pk}"
+        _fn = (self.first_name or "").strip()
+        _ln = (self.last_name or "").strip()
+        _mn = (self.middle_name or "").strip()
+        # постачальники (ФОП/юр.особи) — формальний порядок: Прізвище Ім'я По батькові
+        if "supplier" in (self.kinds or []):
+            _full = " ".join(x for x in (_ln, _fn, _mn) if x)
+            if _full:
+                return _full
+        return f"{_fn} {_ln}".strip() or self.phone or f"Контакт #{self.pk}"
 
 
 class Funnel(models.Model):
