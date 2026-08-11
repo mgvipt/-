@@ -56,6 +56,14 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
     if (!q.trim()) { setRow(i, { res: [] }); return; }
     api.get<any>(`/api/products/?search=${encodeURIComponent(q)}&page_size=8`).then((d) => setRow(i, { res: (d.results || d) as any[] })).catch(() => setRow(i, { res: [] }));
   }
+  // создать карточку товара прямо из формы прихода, если нужного нет
+  async function createProdRow(i: number, q: string) {
+    const nm = (q || "").trim(); if (!nm) return;
+    try {
+      const p: any = await api.post<any>("/api/products/", { name: nm, unit: "шт", price: 0, cost: 0, is_active: true, track_stock: true });
+      setRow(i, { product: p.id, product_name: p.name, unit: p.unit || "шт", open: false, res: [], q: p.name });
+    } catch { setErr(t("Не удалось создать товар (нужно право «Редактировать склад»)", "Не вдалося створити товар (потрібне право «Редагувати склад»)")); }
+  }
   const total = rows.reduce((s, r) => s + (Number(r.qty) || 0) * (Number(String(r.price).replace(",", ".")) || 0), 0);
 
   async function createSupplier() {
@@ -180,11 +188,14 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
               ) : (
                 <input value={r.q} onChange={(e) => searchProd(i, e.target.value)} onFocus={() => setRow(i, { open: true })} onBlur={() => setTimeout(() => setRow(i, { open: false }), 180)} placeholder={t("товар по названию/артикулу…", "товар за назвою/артикулом…")} style={inp} />
               )}
-              {r.open && !r.product && r.res.length > 0 && (
+              {r.open && !r.product && (r.res.length > 0 || r.q.trim()) && (
                 <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 200, overflowY: "auto" }}>
                   {r.res.map((p) => (
                     <div key={p.id} onMouseDown={() => setRow(i, { product: p.id, product_name: p.name, price: r.price || String(p.cost || ""), retail: r.retail || String(p.price || ""), factor: (p.pack_factor && Number(p.pack_factor) !== 1) ? String(p.pack_factor) : (r.factor || "1"), unit: p.unit || "", open: false })} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 12.5 }}>{p.name}{p.sku ? <span className="muted"> · {p.sku}</span> : null}</div>
                   ))}
+                  {r.q.trim() && (
+                    <div onMouseDown={() => createProdRow(i, r.q)} style={{ padding: "8px 10px", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#2563eb", background: "#f8fafc", borderTop: r.res.length ? "1px solid #e2e8f0" : "none" }} title={t("Создать карточку товара с этим названием","Створити картку товару з цією назвою")}>＋ {t("Создать товар","Створити товар")} «{r.q.trim()}»</div>
+                  )}
                 </div>
               )}
             </div>
