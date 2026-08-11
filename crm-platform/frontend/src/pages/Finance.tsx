@@ -3930,8 +3930,24 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
   // пошта відправника — з неї створюємо нового постачальника
   const senderMail = ((det?.sender || "").match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [""])[0];
   const setLine = (i: number, patch: any) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
-  const addLine = () => setLines((ls) => [...ls, { their_name: "", qty: 1, price: 0, sum: 0, factor: 1, product_id: null, product_name: "" }]);
+  const addLine = () => setLines((ls) => [...ls, { their_name: "", qty: 1, price: 0, sum: 0, factor: 1, product_id: null, product_name: "", retail: "" }]);
   const delLine = (i: number) => setLines((ls) => ls.filter((_, j) => j !== i));
+  // подтянуть розничную цену из номенклатуры для строк, уже сопоставленных с товаром (из правил), где розница пуста
+  useEffect(() => {
+    if (!prods.length || !lines.length) return;
+    setLines((ls) => {
+      let changed = false;
+      const next = ls.map((l) => {
+        if (l.product_id && (l.retail === undefined || l.retail === "" || l.retail === null)) {
+          const p = prods.find((x) => x.id === l.product_id);
+          if (p && Number(p.price) > 0) { changed = true; return { ...l, retail: String(p.price) }; }
+        }
+        return l;
+      });
+      return changed ? next : ls;
+    });
+    // eslint-disable-next-line
+  }, [prods, lines.length]);
   const post = async () => {
     if (lines.some((l) => !l.product_id) && !confirm(t("Не все строки сопоставлены — провести только сопоставленные?", "Не всі рядки зіставлені — провести лише зіставлені?"))) return;
     setBusy(true);
@@ -3942,6 +3958,8 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
       if (payMode === "paid" && txId) { body.pay_mode = "paid"; body.tx_id = txId; }
       if (catId) body.category_id = catId;
       const r: any = await api.post(`/api/integrations/incoming-docs/${docId}/action/`, body);
+      // сохранить розничную цену в карточки товаров, где она вписана/изменена
+      for (const l of lines) { const rp = Number(String(l.retail ?? "").replace(",", ".")); if (l.product_id && rp > 0) { await api.patch(`/api/products/${l.product_id}/`, { price: rp }).catch(() => {}); } }
       alert(t("Приход проведён ✓", "Прихід проведено ✓") + `\n` +
         t("поставщик", "постачальник") + `: ${r.supplier}\n` +
         t("позиций", "позицій") + `: ${r.positions}, ` + t("правил", "правил") + `: ${r.rules_saved}\n` +
@@ -4057,7 +4075,7 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
         <datalist id="wh-prods">{prods.map((p) => <option key={p.id} value={p.name} />)}</datalist>
         <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
           <thead><tr style={{ textAlign: "left", borderBottom: "1px solid #e2e8f0" }}>
-            <th style={{ padding: 4 }}>{t("Его товар", "Його товар")}</th><th>{t("Наш товар (склад)", "Наш товар (склад)")}</th><th style={{ width: 52 }} title={t("Кол-во в единицах поставщика (напр. вёдра)", "К-сть в одиницях постачальника (напр. відра)")}>{t("К-во", "К-сть")}</th><th style={{ width: 66 }} title={t("Сколько наших единиц (кг) в 1 единице поставщика (ведро). 1 = одинаковые", "Скільки наших одиниць (кг) в 1 одиниці постачальника (відро). 1 = однакові")}>{t("Коэф →скл", "Коеф →скл")}</th><th style={{ width: 80 }} title={t("Итоговая сумма строки со скидкой", "Підсумкова сума рядка зі знижкою")}>{t("Сумма", "Сума")}</th><th style={{ width: 30 }}></th></tr></thead>
+            <th style={{ padding: 4 }}>{t("Его товар", "Його товар")}</th><th>{t("Наш товар (склад)", "Наш товар (склад)")}</th><th style={{ width: 52 }} title={t("Кол-во в единицах поставщика (напр. вёдра)", "К-сть в одиницях постачальника (напр. відра)")}>{t("К-во", "К-сть")}</th><th style={{ width: 66 }} title={t("Сколько наших единиц (кг) в 1 единице поставщика (ведро). 1 = одинаковые", "Скільки наших одиниць (кг) в 1 одиниці постачальника (відро). 1 = однакові")}>{t("Коэф →скл", "Коеф →скл")}</th><th style={{ width: 80 }} title={t("Итоговая сумма строки со скидкой", "Підсумкова сума рядка зі знижкою")}>{t("Сумма", "Сума")}</th><th style={{ width: 78 }} title={t("Розничная цена за единицу — из номенклатуры (если есть), можно изменить; сохранится в карточку", "Роздрібна ціна за одиницю — з номенклатури (якщо є), можна змінити; збережеться в картку")}>{t("Розница", "Роздрібна")}</th><th style={{ width: 30 }}></th></tr></thead>
           <tbody>
             {!lines.length && (
               <tr><td colSpan={6} className="muted" style={{ padding: "10px 4px", fontSize: 12.5 }}>
@@ -4067,10 +4085,11 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
             {lines.map((l, i) => (
               <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
                 <td style={{ padding: "6px 4px" }}><input value={l.their_name || ""} onChange={(e) => setLine(i, { their_name: e.target.value })} placeholder={t("наименование", "найменування")} style={{ width: "100%", height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px" }} /></td>
-                <td><ProductPicker value={l.product_name || ""} productId={l.product_id || null} prods={prods} onPick={(p, name) => setLine(i, { product_name: name, product_id: p ? p.id : null })} />{(Number(l.factor) || 1) !== 1 && (() => { const q = Number(l.qty) || 0; const f = Number(l.factor) || 1; const tot = (l.sum != null && l.sum !== "") ? Number(l.sum) : q * (Number(l.price) || 0); const sq = q * f; const cost = sq ? tot / sq : 0; return <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>→ {sq.toLocaleString()} {t("ед.", "од.")} · {cost.toLocaleString(undefined, { maximumFractionDigits: 2 })} ₴/{t("ед.", "од.")}</div>; })()}</td>
+                <td><ProductPicker value={l.product_name || ""} productId={l.product_id || null} prods={prods} onPick={(p, name) => setLine(i, { product_name: name, product_id: p ? p.id : null, retail: (p && Number(p.price) > 0) ? String(p.price) : (l.retail ?? "") })} />{(Number(l.factor) || 1) !== 1 && (() => { const q = Number(l.qty) || 0; const f = Number(l.factor) || 1; const tot = (l.sum != null && l.sum !== "") ? Number(l.sum) : q * (Number(l.price) || 0); const sq = q * f; const cost = sq ? tot / sq : 0; return <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>→ {sq.toLocaleString()} {t("ед.", "од.")} · {cost.toLocaleString(undefined, { maximumFractionDigits: 2 })} ₴/{t("ед.", "од.")}</div>; })()}</td>
                 <td><input type="number" value={l.qty} onChange={(e) => setLine(i, { qty: parseFloat(e.target.value) })} style={{ width: 48, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 5px" }} /></td>
                 <td><input type="number" value={l.factor ?? 1} onChange={(e) => setLine(i, { factor: parseFloat(e.target.value) || 1 })} style={{ width: 60, height: 30, border: "1px solid " + ((Number(l.factor) || 1) !== 1 ? "#93c5fd" : "#cbd5e1"), borderRadius: 6, padding: "0 5px" }} /></td>
                 <td><input type="number" value={l.sum ?? ""} placeholder={String(Math.round((Number(l.qty) || 0) * (Number(l.price) || 0)))} onChange={(e) => setLine(i, { sum: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ width: 76, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
+                <td><input type="number" value={l.retail ?? ""} onChange={(e) => setLine(i, { retail: e.target.value })} placeholder={t("розн.", "розн.")} title={t("Розничная цена за единицу — сохранится в карточку товара", "Роздрібна ціна за одиницю — збережеться в картку товару")} style={{ width: 72, height: 30, border: "1px solid #a7f3d0", borderRadius: 6, padding: "0 6px" }} /></td>
                 <td style={{ textAlign: "center" }}><button onClick={() => delLine(i)} title={t("Удалить строку", "Видалити рядок")} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#dc2626", fontSize: 16 }}>×</button></td>
               </tr>
             ))}
