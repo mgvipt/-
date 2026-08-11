@@ -273,6 +273,16 @@ class ContactViewSet(viewsets.ModelViewSet):
         contact.delete()
         return Response({"ok": True, "deleted": cnt, "contact": cid})
 
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        # зміна імені контакту → оновити назву у НЕПОГАШЕНИХ боргах/кредиторках,
+        # щоб у картці й у платежі (Приват) було актуальне ім'я
+        if ("first_name" in self.request.data or "last_name" in self.request.data):
+            from apps.finance.models import PlannedPayment as _PPn
+            _nm = ((obj.first_name or "") + " " + (obj.last_name or "")).strip()
+            if _nm:
+                _PPn.objects.filter(contact=obj).exclude(status="canceled").update(counterparty=_nm)
+
 
 class CompanyViewSet(viewsets.ModelViewSet):
     queryset = Company.objects.all()
