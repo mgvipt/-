@@ -203,6 +203,17 @@ export default function ClientCard() {
             {fld("IBAN / рахунок", "iban", t("Основной счёт. Можно добавить несколько ниже и выбрать активный","Основний рахунок. Можна додати кілька нижче і обрати активний"))}
             {fld(t("ЕДРПОУ / ИНН поставщика","ЄДРПОУ / ІПН постачальника"), "edrpou")}
             {(c.kinds || []).includes("supplier") && <AccountsList items={c.accounts} onChange={(v) => save({ accounts: v })} />}
+            {(c.kinds || []).includes("supplier") && (
+              <div style={{ marginTop: 6, marginBottom: 10 }}>
+                <div className="label">{t("Назначение платежа (для ФОП)","Призначення платежу (для ФОП)")}</div>
+                <input defaultValue={c.payment_purpose || ""} onBlur={(e) => save({ payment_purpose: e.target.value })}
+                  placeholder={t("напр. Оплата за будматеріали, рахунок №{номер} від {дата}","напр. Оплата за будматеріали, рахунок №{номер} від {дата}")}
+                  style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
+                <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>
+                  {t("Своё назначение для этого поставщика — подставится в платёжку Приват24. Переменные: {номер} = номер счёта/накладной, {дата} = дата. Пусто — «Оплата рахунку №… від …». Без переменных — фиксированный текст.","Своє призначення для цього постачальника — підставиться у платіжку Приват24. Змінні: {номер} = номер рахунку/накладної, {дата} = дата. Порожньо — «Оплата рахунку №… від …». Без змінних — фіксований текст.")}
+                </div>
+              </div>
+            )}
             <div style={{ marginBottom: 10 }}>
               <div className="label">{t("Лояльность","Лояльність")}</div>
               <select defaultValue={c.loyalty_tag} onChange={(e) => save({ loyalty_tag: e.target.value })}
@@ -261,15 +272,6 @@ export default function ClientCard() {
                 </div>
                 {fld(t("Почта для накладных (если другая)","Пошта для накладних (якщо інша)"), "doc_email", t("Если пусто — берём основной Email","Якщо порожньо — беремо основний Email"))}
                 <SimpleList title={t("Ещё почты для мониторинга (если шлёт с других)","Ще пошти для моніторингу (якщо шле з інших)")} items={c.monitor_emails} onChange={(v) => save({ monitor_emails: v })} ph={t("email отправителя","email відправника")} />
-                <div style={{ marginTop: 6 }}>
-                  <div className="label">{t("Назначение платежа (для ФОП)","Призначення платежу (для ФОП)")}</div>
-                  <input defaultValue={c.payment_purpose || ""} onBlur={(e) => save({ payment_purpose: e.target.value })}
-                    placeholder={t("напр. Оплата за будматеріали, рахунок №{номер} від {дата}","напр. Оплата за будматеріали, рахунок №{номер} від {дата}")}
-                    style={{ width: "100%", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
-                  <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>
-                    {t("Своё назначение для этого поставщика — подставится в платёжку Приват24 при оплате через ФОП. {номер} и {дата} заменятся из счёта. Пусто — «Оплата рахунку №… від …».","Своє призначення для цього постачальника — підставиться у платіжку Приват24 при оплаті через ФОП. {номер} і {дата} заміняться з рахунку. Порожньо — «Оплата рахунку №… від …».")}
-                  </div>
-                </div>
               </div>
             )}
             <div>
