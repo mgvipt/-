@@ -465,6 +465,13 @@ class ChangeLogEntry(models.Model):
                                help_text="Блок-розділ для групування: Фінанси / Склад / Клієнти / Загальне")
     title = models.CharField(max_length=200)
     body = models.TextField(blank=True, default="")
+    # ── двомовність (uk/ru) + машинний ключ категорії (щоб не дублювались Фінанси/Финансы) ──
+    section_key = models.CharField(max_length=24, blank=True, default="", db_index=True,
+                                   help_text="Ключ категорії: finance/warehouse/clients/sales/delivery/shop/telephony/general")
+    title_uk = models.CharField(max_length=200, blank=True, default="")
+    title_ru = models.CharField(max_length=200, blank=True, default="")
+    body_uk = models.TextField(blank=True, default="")
+    body_ru = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

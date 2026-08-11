@@ -3098,15 +3098,42 @@ class ContactFormConfigView(APIView):
         return self._build(request, cfg)
 
 
+_SECTION_KEY_MAP = {
+    "финансы": "finance", "фінанси": "finance",
+    "склад": "warehouse",
+    "клиенты": "clients", "клієнти": "clients", "клиенти": "clients",
+    "продажи": "sales", "продажі": "sales",
+    "интернет-магазин": "shop", "інтернет-магазин": "shop", "магазин": "shop",
+    "доставка нп": "delivery", "доставка": "delivery",
+    "телефония": "telephony", "телефонія": "telephony",
+    "общее": "general", "загальне": "general",
+}
+
+
+def _section_to_key(section):
+    """Вільний текст категорії → машинний ключ (щоб Фінанси/Финансы не дублювались)."""
+    return _SECTION_KEY_MAP.get((section or "").strip().lower(), "general")
+
+
 class ChangeLogView(APIView):
-    """Історія змін CRM (сторінка «Що нового»).
+    """Історія змін CRM (сторінка «Що нового»). Двомовність uk/ru + ключ категорії.
     GET — будь-який залогінений читає; POST — лише суперюзер додає запис."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         from .models import ChangeLogEntry
         rows = ChangeLogEntry.objects.all()[:500]
-        return Response([{"id": e.id, "date": e.d.isoformat(), "section": e.section, "title": e.title, "body": e.body} for e in rows])
+        out = []
+        for e in rows:
+            key = e.section_key or _section_to_key(e.section)
+            out.append({
+                "id": e.id, "date": e.d.isoformat(), "section_key": key,
+                "section": e.section,  # legacy
+                "title_uk": e.title_uk or e.title, "title_ru": e.title_ru or e.title,
+                "body_uk": e.body_uk or e.body, "body_ru": e.body_ru or e.body,
+                "title": e.title, "body": e.body,  # legacy
+            })
+        return Response(out)
 
     def post(self, request):
         if not request.user.is_superuser:
@@ -3114,7 +3141,14 @@ class ChangeLogView(APIView):
         from django.utils import timezone
         from .models import ChangeLogEntry
         d = request.data
-        e = ChangeLogEntry.objects.create(d=(d.get("date") or timezone.now().date()),
-                                          section=(d.get("section") or "")[:48],
-                                          title=(d.get("title") or "")[:200], body=(d.get("body") or ""))
+        title_uk = (d.get("title_uk") or d.get("title") or "")[:200]
+        title_ru = (d.get("title_ru") or d.get("title") or "")[:200]
+        body_uk = d.get("body_uk") or d.get("body") or ""
+        body_ru = d.get("body_ru") or d.get("body") or ""
+        key = (d.get("section_key") or _section_to_key(d.get("section")))[:24]
+        e = ChangeLogEntry.objects.create(
+            d=(d.get("date") or timezone.now().date()),
+            section=(d.get("section") or "")[:48], section_key=key,
+            title=(title_uk or title_ru)[:200], body=(body_uk or body_ru),
+            title_uk=title_uk, title_ru=title_ru, body_uk=body_uk, body_ru=body_ru)
         return Response({"id": e.id}, status=status.HTTP_201_CREATED)
