@@ -3,7 +3,8 @@
  * клієнта) варіант. НІЧОГО не надсилає — менеджер вставляє варіант у поле і сам
  * тисне «Надіслати». Використовується у всіх місцях чату (Inbox, картка клієнта,
  * старт діалогу). */
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { api } from "./api";
 import { Icon } from "./Icon";
 
@@ -23,6 +24,15 @@ export function AiComposeAssist({ draft, convId, contactId, onApply, compact = f
   const [loading, setLoading] = useState<"" | Mode>("");
   const [result, setResult] = useState("");
   const [err, setErr] = useState("");
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const upd = () => { if (btnRef.current) setRect(btnRef.current.getBoundingClientRect()); };
+    upd();
+    window.addEventListener("scroll", upd, true); window.addEventListener("resize", upd);
+    return () => { window.removeEventListener("scroll", upd, true); window.removeEventListener("resize", upd); };
+  }, [open]);
 
   async function run(mode: Mode) {
     if (!draft.trim()) { setErr(tr("Сначала напишите черновик сообщения", "Спочатку напишіть чернетку повідомлення")); setOpen(true); return; }
@@ -42,15 +52,20 @@ export function AiComposeAssist({ draft, convId, contactId, onApply, compact = f
 
   return (
     <div style={{ position: "relative", flex: "0 0 auto" }}>
-      <button className="btn" type="button" title={tr("Помощник: улучшить или перевести черновик перед отправкой", "Помічник: покращити або перекласти чернетку перед відправкою")}
+      <button ref={btnRef} className="btn" type="button" title={tr("Помощник: улучшить или перевести черновик перед отправкой", "Помічник: покращити або перекласти чернетку перед відправкою")}
         style={{ background: "#ede9fe", color: "#6d28d9", fontWeight: 600, height: compact ? 38 : undefined, whiteSpace: "nowrap" }}
         onClick={() => (open ? setOpen(false) : run("improve"))}>
         <Icon n="✨" size={16} />{!compact && <> {tr("Помощник", "Помічник")}</>}
       </button>
-      {open && (
+      {open && rect && createPortal(
         <>
-          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 59 }} />
-          <div style={{ position: "absolute", [up ? "bottom" : "top"]: 46, right: 0, zIndex: 60, width: 330, maxWidth: "86vw", background: "#fff", border: "1px solid #ddd6fe", borderRadius: 12, boxShadow: "0 12px 32px rgba(76,29,149,.20)", padding: 12 }}>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 4000 }} />
+          <div style={(() => {
+            const w = Math.min(330, window.innerWidth * 0.86);
+            const left = Math.max(8, Math.min(rect.right - w, window.innerWidth - w - 8));
+            const base: React.CSSProperties = { position: "fixed", left, width: w, zIndex: 4001, maxHeight: "72vh", overflowY: "auto", background: "#fff", border: "1px solid #ddd6fe", borderRadius: 12, boxShadow: "0 16px 40px rgba(76,29,149,.28)", padding: 12 };
+            return up ? { ...base, bottom: window.innerHeight - rect.top + 6 } : { ...base, top: rect.bottom + 6 };
+          })()}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 9 }}>
               <Icon n="✨" size={15} />
               <b style={{ fontSize: 13, color: "#5b21b6" }}>{tr("Помощник сообщения", "Помічник повідомлення")}</b>
@@ -73,8 +88,7 @@ export function AiComposeAssist({ draft, convId, contactId, onApply, compact = f
               </>
             )}
           </div>
-        </>
-      )}
+        </>, document.body)}
     </div>
   );
 }
