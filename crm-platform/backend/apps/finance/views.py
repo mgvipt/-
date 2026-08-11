@@ -1660,7 +1660,14 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         if not nceo:
             m = _re2.search(r"(?:ЄДРПОУ|ІПН)\s*(\d{8,12})", text)
             nceo = m.group(1) if m else None
-        name = (pp.counterparty or (pp.contact.first_name if pp.contact_id else "") or "").strip()
+        # ім'я отримувача — з АКТУАЛЬНОЇ картки контакту (формальний порядок для постачальника),
+        # інакше збережений у борзі counterparty (щоб не було застарілого імені у платежі)
+        _cname = ""
+        if pp.contact_id:
+            _cs = str(pp.contact).strip()
+            if _cs and not _cs.startswith("Контакт #"):
+                _cname = _cs
+        name = (_cname or pp.counterparty or "").strip()
         if not iban:
             return Response({"detail": "Немає IBAN отримувача — впиши реквізити у картці контрагента"}, status=400)
         cfg = IntegrationSettings.objects.filter(provider="privatbank").first()
