@@ -319,10 +319,40 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
         </div>
       )}
       {/* ── Контроль оплати ── */}
-      <div style={{ ...zone("#fefce8", "#fde68a"), padding: 12 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600 }}><input type="checkbox" checked={!!bw.on} disabled={readOnly || codReadOnly} onChange={(e) => setBw({ ...bw, on: e.target.checked })} style={{ width: 16, height: 16 }} /> 💰 {t("Контроль оплаты", "Контроль оплати")} — {t("НП удержит сумму при получении и переведёт нам", "НП утримає суму при отриманні і переведе нам")}{codReadOnly ? <span style={{ fontWeight: 500, color: "#92400e", fontSize: 11.5 }}> · 🔒 {t("только менеджер", "тільки менеджер")}</span> : null}</label>
-        {bw.on && <div style={{ marginTop: 8, maxWidth: 260 }}><label style={lbl}>{t("Сумма контроля, ₴", "Сума контролю, ₴")}</label><input type="number" value={bw.amount} disabled={readOnly || codReadOnly} onChange={(e) => setBw({ ...bw, amount: e.target.value })} style={inp} placeholder={par.declared} /></div>}
-      </div>
+      {(() => {
+        // Fix 2026-08-11: якщо ВСЕ оплачено (основна + вибрані linked) — блокуємо checkbox
+        // щоб менеджер випадково не поставив наложку на повністю оплачену сделку.
+        const _selectedLinked = _linked.filter((x: any) => incl.includes(x.id));
+        const _totalRemain = _remain + _selectedLinked.reduce((a: number, x: any) => a + (Number(x.remaining) || 0), 0);
+        const _allPaid = _totalRemain <= 0;
+        return (
+          <div style={{ ...zone(_allPaid ? "#f0fdf4" : "#fefce8", _allPaid ? "#86efac" : "#fde68a"), padding: 12 }}>
+            {_allPaid ? (
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#166534" }}>
+                ✅ {t("Все оплачено — контроль оплаты не нужен", "Все оплачено — контроль оплати не потрібен")}
+                <div style={{ fontSize: 11.5, color: "#475569", fontWeight: 400, marginTop: 4 }}>
+                  {t("Клиент уже полностью рассчитался. НП без наложки.", "Клієнт уже повністю розрахувався. НП без наложки.")}
+                </div>
+              </div>
+            ) : (
+              <>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600 }}>
+                  <input type="checkbox" checked={!!bw.on} disabled={readOnly || codReadOnly} onChange={(e) => setBw({ ...bw, on: e.target.checked })} style={{ width: 16, height: 16 }} />
+                  💰 {t("Контроль оплаты", "Контроль оплати")} — {t("НП удержит сумму при получении и переведёт нам", "НП утримає суму при отриманні і переведе нам")}
+                  {codReadOnly ? <span style={{ fontWeight: 500, color: "#92400e", fontSize: 11.5 }}> · 🔒 {t("только менеджер", "тільки менеджер")}</span> : null}
+                </label>
+                {bw.on && (
+                  <div style={{ marginTop: 8, maxWidth: 260 }}>
+                    <label style={lbl}>{t("Сумма контроля, ₴", "Сума контролю, ₴")}</label>
+                    <input type="number" value={bw.amount} disabled={readOnly || codReadOnly} onChange={(e) => setBw({ ...bw, amount: e.target.value })} style={inp} placeholder={par.declared} />
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{t("Не может быть больше", "Не може бути більше")} {_totalRemain} ₴</div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Дата + ціна ── */}
       <Grid>

@@ -1982,6 +1982,22 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 _rem = round(float(deal.amount or 0) - _paid)
                 if _rem > 0:
                     cod = _rem
+        # Fix 2026-08-11: guard проти наложки коли ВСЕ оплачено (основна + linked)
+        # інцидент 66108/66114: обидві оплачені LiqPay, але менеджер поставив cod=381 → ТТН з наложкою на оплачену посилку
+        if cod > 0:
+            _own_paid = float(sum(pp.amount for pp in deal.payments.all() if pp.is_paid))
+            _own_rem_g = round(float(deal.amount or 0) - _own_paid)
+            _linked_rem_g = 0
+            for _cid in (request.data.get("include_deals") or []):
+                _ld = Deal.objects.filter(pk=_cid).first()
+                if _ld:
+                    _lp = float(sum(pp.amount for pp in _ld.payments.all() if pp.is_paid))
+                    _linked_rem_g += max(0, round(float(_ld.amount or 0) - _lp))
+            if (_own_rem_g + _linked_rem_g) <= 0:
+                return Response({
+                    "detail": "Наложку не можна ставити — усі сделки (%s%s) повністю оплачені (залишок 0). Зніміть галочку «Контроль оплати» або зверніться до керівника." % (
+                        deal.id, (" + " + ", ".join(str(x) for x in (request.data.get("include_deals") or []))) if request.data.get("include_deals") else "")
+                }, status=status.HTTP_400_BAD_REQUEST)
         props = {
             "PayerType": p.get("payer") or "Recipient",
             "PaymentMethod": p.get("payment_method") or "Cash",
