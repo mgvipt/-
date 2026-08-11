@@ -242,6 +242,11 @@ class StockDocument(models.Model):
     def total(self):
         return sum(i.quantity * i.price for i in self.items.all())
 
+    @property
+    def total_retail(self):
+        # сума за роздрібними цінами з номенклатури (для приходу — щоб бачити майбутню виручку)
+        return sum(abs(i.quantity) * (i.product.price or 0) for i in self.items.all() if i.product_id)
+
 
 class StockMovement(models.Model):
     """Строка документа = движение товара. Приход +qty, расход -qty."""

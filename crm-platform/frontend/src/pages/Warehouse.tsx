@@ -132,7 +132,8 @@ export default function Warehouse() {
     { key: "posted", label: t("Дата проведения", "Дата проведення"), w: 120 },
     { key: "comment", label: t("Комментарий", "Коментар"), w: 300 },
     { key: "positions", label: t("Позиций", "Позицій"), w: 90, align: "right" },
-    { key: "sum", label: t("Сумма", "Сума"), w: 110, align: "right" },
+    { key: "sum", label: t("Сумма закупки", "Сума закупівлі"), w: 120, align: "right" },
+    { key: "retail", label: t("Розничная сумма", "Роздрібна сума"), w: 120, align: "right" },
     { key: "status", label: t("Статус", "Статус"), w: 110, align: "center" },
   ];
   function recW(key: string) { return recColW[key] || (REC_COLS.find((c) => c.key === key)?.w || 120); }
@@ -908,6 +909,7 @@ export default function Warehouse() {
                   comment: d.comment || "—",
                   positions: (d.items || []).length,
                   sum: Number(d.total || 0).toLocaleString("uk-UA") + " ₴",
+                  retail: Number(d.total_retail || 0).toLocaleString("uk-UA") + " ₴",
                   status: <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: d.posted ? "#dcfce7" : "#fef3c7", color: d.posted ? "#166534" : "#92400e" }}>{d.posted ? t("Проведён","Проведено") : t("Черновик","Чернетка")}</span>,
                 };
                 const ttl: Record<string, string> = { supplier: d.supplier_name || "", comment: d.comment || "" };

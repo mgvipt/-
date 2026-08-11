@@ -640,7 +640,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
 class StockDocumentViewSet(viewsets.ModelViewSet):
     permission_classes = [StockDocWrite]
-    queryset = StockDocument.objects.prefetch_related("items").select_related("warehouse", "deal")
+    queryset = StockDocument.objects.prefetch_related("items", "items__product").select_related("warehouse", "deal", "supplier").order_by("-created_at")
     serializer_class = StockDocumentSerializer
     filterset_fields = ["kind", "warehouse", "deal", "posted"]
 

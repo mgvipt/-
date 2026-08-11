@@ -149,6 +149,7 @@ class MovementSerializer(serializers.ModelSerializer):
 class StockDocumentSerializer(serializers.ModelSerializer):
     items = MovementSerializer(many=True)
     total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    total_retail = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
     deal_title = serializers.CharField(source="deal.title", read_only=True, default=None)
     supplier_name = serializers.SerializerMethodField()
@@ -162,7 +163,7 @@ class StockDocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockDocument
         fields = ["id", "kind", "kind_display", "number", "warehouse", "comment",
-                  "deal", "deal_title", "total", "created_at", "items", "posted", "close_stage",
+                  "deal", "deal_title", "total", "total_retail", "created_at", "items", "posted", "close_stage",
                   "supplier", "supplier_name", "supplier_invoice", "source_invoice_doc", "doc_date"]
         read_only_fields = ["created_at"]
 
