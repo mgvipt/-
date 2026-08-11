@@ -2019,21 +2019,27 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 _rem = round(float(deal.amount or 0) - _paid)
                 if _rem > 0:
                     cod = _rem
-        # Fix 2026-08-11: guard проти наложки коли ВСЕ оплачено (основна + linked)
-        # інцидент 66108/66114: обидві оплачені LiqPay, але менеджер поставив cod=381 → ТТН з наложкою на оплачену посилку
+        # Fix 2026-08-11: guard проти наложки коли ВСЕ оплачено (основна + ВСІ дочки посилки).
+        # Дочки: явні include_deals з frontend + автоматичні children без ttn (правило Олега).
         if cod > 0:
             _own_paid = float(sum(pp.amount for pp in deal.payments.all() if pp.is_paid))
             _own_rem_g = round(float(deal.amount or 0) - _own_paid)
+            _all_child_ids = set(int(x) for x in (request.data.get("include_deals") or []) if str(x).isdigit())
+            try:
+                for _ch in Deal.objects.filter(parent_deal_id=deal.id, ttn=""):
+                    _all_child_ids.add(_ch.id)
+            except Exception:
+                pass
             _linked_rem_g = 0
-            for _cid in (request.data.get("include_deals") or []):
+            for _cid in _all_child_ids:
                 _ld = Deal.objects.filter(pk=_cid).first()
                 if _ld:
                     _lp = float(sum(pp.amount for pp in _ld.payments.all() if pp.is_paid))
                     _linked_rem_g += max(0, round(float(_ld.amount or 0) - _lp))
             if (_own_rem_g + _linked_rem_g) <= 0:
                 return Response({
-                    "detail": "Наложку не можна ставити — усі сделки (%s%s) повністю оплачені (залишок 0). Зніміть галочку «Контроль оплати» або зверніться до керівника." % (
-                        deal.id, (" + " + ", ".join(str(x) for x in (request.data.get("include_deals") or []))) if request.data.get("include_deals") else "")
+                    "detail": "Наложку не можна ставити — усі сделки (%s%s) повністю оплачені (залишок 0). Зніміть галочку «Контроль оплати»." % (
+                        deal.id, (" + " + ", ".join(str(x) for x in sorted(_all_child_ids))) if _all_child_ids else "")
                 }, status=status.HTTP_400_BAD_REQUEST)
         props = {
             "PayerType": p.get("payer") or "Recipient",
@@ -2090,7 +2096,15 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         deal.np_data = _nd
         deal.save(update_fields=["ttn", "np_data"])
         # дозамовлення їдуть ЦІЄЮ Ж посилкою: та сама ТТН, свій залишок, своя стадія/чек
-        for _cid in (request.data.get("include_deals") or []):
+        # Fix 2026-08-11: АВТО-включення linked children без ttn (навіть якщо frontend не поставив галочку).
+        # Правило: дочка (parent_deal=deal) без ttn — завжди їде під актуальною ТТН основної.
+        _include_ids = set(int(x) for x in (request.data.get("include_deals") or []) if str(x).isdigit())
+        try:
+            for _ch in Deal.objects.filter(parent_deal_id=deal.id, ttn=""):
+                _include_ids.add(_ch.id)
+        except Exception:
+            pass
+        for _cid in _include_ids:
             try:
                 _cd = Deal.objects.filter(id=int(_cid), contact=deal.contact).first()
             except (ValueError, TypeError):
