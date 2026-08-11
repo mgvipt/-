@@ -1838,7 +1838,28 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         deal.ttn = ""
         _nd = dict(deal.np_data or {}); _nd.pop("ttn_ref", None); deal.np_data = _nd
         deal.save(update_fields=["ttn", "np_data"])
-        log_activity("deal", deal.id, "ТТН перестворення", "Видалено %s%s" % (old, (" · НП: " + warn) if warn else " (НП видалено)"), request.user, "НП")
+        # Fix 2026-08-11: cascade — знімаємо ttn у linked дочірніх з ТИМ САМИМ ttn
+        # (щоб при перестворенні нової ТТН на основній їх знову можна було включити в одну посилку)
+        _cascade_n = 0
+        try:
+            for _child in Deal.objects.filter(parent_deal_id=deal.id):
+                if not _child.ttn:
+                    continue
+                if _child.ttn != old and (((_child.np_data or {}).get("ttn_ref") or "") != (ref or "")):
+                    continue  # дочка з ІНШОЮ ТТН — не чіпаємо
+                _child.ttn = ""
+                _cnd = dict(_child.np_data or {}); _cnd.pop("ttn_ref", None); _child.np_data = _cnd
+                _upd = ["ttn", "np_data"]
+                # відкат стадії дочки на "Оплату отримано" (з "НП_ТТН створена")
+                _back = _child.funnel.stages.filter(name__icontains="плату отрим").order_by("order").first() if _child.funnel_id else None
+                if _back and _child.stage_id != _back.id:
+                    _child.stage = _back; _upd.append("stage")
+                _child.save(update_fields=_upd)
+                log_activity("deal", _child.id, "ТТН перестворення (cascade)", "Знято ttn %s разом з основною #%s" % (old, deal.id), request.user, "НП")
+                _cascade_n += 1
+        except Exception:
+            pass
+        log_activity("deal", deal.id, "ТТН перестворення", "Видалено %s%s%s" % (old, (" · linked cascade: %d" % _cascade_n) if _cascade_n else "", (" · НП: " + warn) if warn else " (НП видалено)"), request.user, "НП")
         return Response({"ok": True, "deleted": old, "np_warning": warn})
 
     @action(detail=True, methods=["post"])
@@ -1869,7 +1890,23 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         if back:
             deal.stage = back; upd.append("stage")
         deal.save(update_fields=upd)
-        log_activity("deal", deal.id, "Скасування замовлення", "ТТН %s видалено · ПОТРІБЕН ПОВЕРНЕННЯ КОШТІВ клієнту (вручну)%s" % (old, (" · НП: " + warn) if warn else ""), request.user, "НП")
+        # Fix 2026-08-11: cascade — при СКАСУВАННІ основної теж скасовуємо linked дочок з ТИМ САМИМ ttn
+        _cascade_n = 0
+        try:
+            for _child in Deal.objects.filter(parent_deal_id=deal.id):
+                if _child.ttn and (_child.ttn == old or ((_child.np_data or {}).get("ttn_ref") or "") == (ref or "")):
+                    _child.ttn = ""
+                    _cnd = dict(_child.np_data or {}); _cnd.pop("ttn_ref", None); _cnd["cancelled"] = True; _child.np_data = _cnd
+                    _upd = ["ttn", "np_data"]
+                    _lost = _child.funnel.stages.filter(is_lost=True).order_by("order").first() if _child.funnel_id else None
+                    if _lost and _child.stage_id != _lost.id:
+                        _child.stage = _lost; _upd.append("stage")
+                    _child.save(update_fields=_upd)
+                    log_activity("deal", _child.id, "Скасування замовлення (cascade)", "Скасовано разом з основною #%s (ттн %s)" % (deal.id, old), request.user, "НП")
+                    _cascade_n += 1
+        except Exception:
+            pass
+        log_activity("deal", deal.id, "Скасування замовлення", "ТТН %s видалено%s · ПОТРІБЕН ПОВЕРНЕННЯ КОШТІВ клієнту (вручну)%s" % (old, (" · linked cascade: %d" % _cascade_n) if _cascade_n else "", (" · НП: " + warn) if warn else ""), request.user, "НП")
         return Response({"ok": True, "deleted": old, "np_warning": warn, "refund_manual": True})
 
     @action(detail=True, methods=["post"])
