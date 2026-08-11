@@ -3774,7 +3774,19 @@ function ProductPicker({ value, productId, prods, onPick }:
   const [q, setQ] = useState(value || "");
   const [open, setOpen] = useState(false);
   const [hi, setHi] = useState(0);
+  const [creating, setCreating] = useState(false);
   useEffect(() => { setQ(value || ""); }, [value]);
+  // создать карточку товара прямо из накладной, если нужного нет в номенклатуре
+  async function createProd() {
+    const nm = q.trim();
+    if (!nm || creating) return;
+    setCreating(true);
+    try {
+      const p: any = await api.post("/api/products/", { name: nm, unit: "шт", price: 0, cost: 0, is_active: true, track_stock: true });
+      onPick(p, p.name); setQ(p.name); setOpen(false);
+    } catch { alert(t("Не удалось создать товар (нужно право «Редактировать склад»)", "Не вдалося створити товар (потрібне право «Редагувати склад»)")); }
+    setCreating(false);
+  }
   const ql = q.trim().toLowerCase();
   const words = ql.split(/\s+/).filter(Boolean);
   const matches = (words.length
@@ -3808,6 +3820,13 @@ function ProductPicker({ value, productId, prods, onPick }:
               {p.name}{(p.stock !== undefined && p.stock !== null) ? <span className="muted" style={{ fontSize: 11 }}>  · {t("ост.", "зал.")} {p.stock}</span> : null}
             </div>
           ))}
+          {q.trim() && (
+            <div onMouseDown={(e) => { e.preventDefault(); createProd(); }}
+              style={{ padding: "8px 10px", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#2563eb", background: "#f8fafc", borderTop: "1px solid #e2e8f0" }}
+              title={t("Создать карточку товара с этим названием и выбрать её", "Створити картку товару з цією назвою і обрати її")}>
+              {creating ? t("Создаю…", "Створюю…") : "＋ " + t("Создать товар", "Створити товар") + " «" + q.trim() + "»"}
+            </div>
+          )}
         </div>
       )}
     </div>
