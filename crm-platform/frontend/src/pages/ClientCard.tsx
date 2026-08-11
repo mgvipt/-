@@ -200,8 +200,9 @@ export default function ClientCard() {
             {Array.isArray(c.messengers) && c.messengers.filter((m) => m && m !== c.social_link).map((m, i) => <SocialLink key={i} link={m} />)}
             <LabeledList title={t("Ещё ссылки на аккаунты (с названиями)","Ще посилання на акаунти (з назвами)")} items={c.links_extra} onChange={(v) => save({ links_extra: v })} ph="instagram.com / t.me / viber…" />
             {fld(t("Адрес / город","Адреса / місто"), "address", t("Куда доставлять","Куди доставляти"))}
-            {fld("IBAN / рахунок", "iban", t("Для оплаты поставщику «з ФОП» — подтягивается из накладной","Для оплати постачальнику «з ФОП» — підтягується з накладної"))}
+            {fld("IBAN / рахунок", "iban", t("Основной счёт. Можно добавить несколько ниже и выбрать активный","Основний рахунок. Можна додати кілька нижче і обрати активний"))}
             {fld(t("ЕДРПОУ / ИНН поставщика","ЄДРПОУ / ІПН постачальника"), "edrpou")}
+            {(c.kinds || []).includes("supplier") && <AccountsList items={c.accounts} onChange={(v) => save({ accounts: v })} />}
             <div style={{ marginBottom: 10 }}>
               <div className="label">{t("Лояльность","Лояльність")}</div>
               <select defaultValue={c.loyalty_tag} onChange={(e) => save({ loyalty_tag: e.target.value })}
@@ -260,7 +261,6 @@ export default function ClientCard() {
                 </div>
                 {fld(t("Почта для накладных (если другая)","Пошта для накладних (якщо інша)"), "doc_email", t("Если пусто — берём основной Email","Якщо порожньо — беремо основний Email"))}
                 <SimpleList title={t("Ещё почты для мониторинга (если шлёт с других)","Ще пошти для моніторингу (якщо шле з інших)")} items={c.monitor_emails} onChange={(v) => save({ monitor_emails: v })} ph={t("email отправителя","email відправника")} />
-                <AccountsList items={c.accounts} onChange={(v) => save({ accounts: v })} />
                 <div style={{ marginTop: 6 }}>
                   <div className="label">{t("Назначение платежа (для ФОП)","Призначення платежу (для ФОП)")}</div>
                   <input defaultValue={c.payment_purpose || ""} onBlur={(e) => save({ payment_purpose: e.target.value })}
