@@ -4159,17 +4159,18 @@ function PayFopModal({ r, onClose, onDone }: { r: any; onClose: () => void; onDo
   const [err, setErr] = useState<string>("");
   const [accs, setAccs] = useState<any[]>([]);
   const [payer, setPayer] = useState<string>("");
+  const [recip, setRecip] = useState<string>("");
   useEffect(() => {
     api.get<any>("/api/planned-payments/fop-accounts/").then((d: any) => { setAccs(d.accounts || []); setPayer(d.default || ""); }).catch(() => {});
     api.post<any>(`/api/planned-payments/${r.id}/pay-with-fop/`, {}).then((d: any) => {
       if (d.detail) { setErr(d.detail); return; }
-      setDry(d); setAmount(String(d.would_send?.payment_amount || ""));
+      setDry(d); setAmount(String(d.would_send?.payment_amount || "")); setRecip(d.would_send?.recipient_account || "");
     }).catch((e: any) => setErr(e?.response?.data?.detail || t("Не удалось подготовить платёж", "Не вдалося підготувати платіж")));
   }, [r.id]);
   const send = async () => {
     setBusy(true); setErr("");
     try {
-      const res: any = await api.post(`/api/planned-payments/${r.id}/pay-with-fop/`, { confirm: 1, amount, payer_account: payer });
+      const res: any = await api.post(`/api/planned-payments/${r.id}/pay-with-fop/`, { confirm: 1, amount, payer_account: payer, recipient_iban: recip });
       if (res.detail) { setErr(res.detail); setBusy(false); return; }
       setResult(res); onDone();
     } catch (e: any) { setErr(e?.response?.data?.detail || t("Ошибка", "Помилка")); } finally { setBusy(false); }
@@ -4190,7 +4191,12 @@ function PayFopModal({ r, onClose, onDone }: { r: any; onClose: () => void; onDo
             {dry.already_created && <div style={{ background: "#fffbeb", color: "#b45309", borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 12 }}><Icon n="⚠️" size={13} /> {t("По этому долгу платёж уже создавался. Проверь в Приват24, чтобы не оплатить дважды.", "За цим боргом платіж вже створювався. Перевір у Приват24, щоб не сплатити двічі.")}</div>}
             <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px", fontSize: 13.5, lineHeight: 1.7, marginBottom: 14 }}>
               <div><span style={{ color: "#64748b" }}>{t("Получатель", "Отримувач")}:</span> <b>{w.payment_naming}</b></div>
-              <div><span style={{ color: "#64748b" }}>{t("Счёт", "Рахунок")}:</span> {w.recipient_account}</div>
+              <div><span style={{ color: "#64748b" }}>{t("Счёт", "Рахунок")}:</span>{" "}
+                {(dry.recipient_accounts && dry.recipient_accounts.length > 1)
+                  ? <select value={recip} onChange={(e) => setRecip(e.target.value)} style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px", fontSize: 12.5, maxWidth: "100%" }} title={t("Выбери счёт получателя", "Обери рахунок отримувача")}>
+                      {dry.recipient_accounts.map((a: any) => <option key={a.iban} value={a.iban}>{a.label ? a.label + " · " : ""}{a.iban}</option>)}
+                    </select>
+                  : (recip || w.recipient_account)}</div>
               <div><span style={{ color: "#64748b" }}>ЄДРПОУ/ІПН:</span> {w.recipient_nceo}</div>
               <div style={{ whiteSpace: "normal" }}><span style={{ color: "#64748b" }}>{t("Назначение", "Призначення")}:</span> {w.payment_destination}</div>
             </div>

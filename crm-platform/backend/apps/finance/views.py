@@ -1648,10 +1648,18 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Вже оплачено"}, status=400)
         # реквізити отримувача
         iban = nceo = None
+        _recip_accs = []
         if pp.contact_id:
             _accs = getattr(pp.contact, "accounts", None) or []
+            for _a in _accs:
+                _ib = (_a.get("iban") or "").strip()
+                if _ib:
+                    _recip_accs.append({"iban": _ib, "label": (_a.get("label") or "").strip()})
+            _main = (getattr(pp.contact, "iban", "") or "").strip()
+            if _main and not any(x["iban"] == _main for x in _recip_accs):
+                _recip_accs.append({"iban": _main, "label": "основний"})
             _act = next((a for a in _accs if a.get("active") and (a.get("iban") or "").strip()), None)
-            iban = (((_act.get("iban") or "").strip() if _act else "") or (getattr(pp.contact, "iban", "") or "").strip()) or None
+            iban = (((_act.get("iban") or "").strip() if _act else "") or _main) or None
             nceo = (getattr(pp.contact, "edrpou", "") or "").strip() or None
         text = pp.comment or ""
         if not iban:
@@ -1660,6 +1668,9 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         if not nceo:
             m = _re2.search(r"(?:ЄДРПОУ|ІПН)\s*(\d{8,12})", text)
             nceo = m.group(1) if m else None
+        _ov = (request.data.get("recipient_iban") or "").strip().replace(" ", "")
+        if _ov:
+            iban = _ov
         # ім'я отримувача — з АКТУАЛЬНОЇ картки контакту (формальний порядок для постачальника),
         # інакше збережений у борзі counterparty (щоб не було застарілого імені у платежі)
         _cname = ""
@@ -1721,6 +1732,7 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         confirm = str(request.data.get("confirm") or "").lower() in ("1", "true", "yes", "on")
         if not confirm or not token or not payer:
             return Response({"dry_run": True, "would_send": payload, "ready": bool(token and payer),
+                             "recipient_accounts": _recip_accs,
                              "already_created": already,
                              "note": "Для відправки — confirm=1. Створиться ЧЕРНЕТКА у Приват24 — підпиши її КЕП (SmartID), тоді гроші підуть."})
         # LIVE — створити чернетку платежу (Олег ініціює кнопкою)
