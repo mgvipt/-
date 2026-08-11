@@ -393,11 +393,12 @@ export default function Inbox() {
             );
             // 3 категорії: Непризначені (вільний пул, видно всім з доступом до каналу)
             // + Потрібна відповідь / В роботі (тільки призначені = свої)
-            const _ts = (c: any) => new Date(c.last_message_at || 0).getTime();
-            const byDate = (a: any, b: any) => _ts(b) - _ts(a); // новіші (сьогодні) зверху
-            const unassigned = convs.filter((c) => !c.assigned_to).sort(byDate);
-            const need = convs.filter((c) => c.assigned_to && (c as any).needs_reply).sort(byDate);
-            const work = convs.filter((c) => c.assigned_to && !(c as any).needs_reply).sort(byDate);
+            // БЕЗ пересортування на рендер: порядок приходить із сервера (-last_message_at,
+            // сьогодні зверху) і тримається refreshList «на місці». Інакше при відповіді час
+            // чату оновлюється → чат стрибав наверх і менеджер губив вибраний діалог.
+            const unassigned = convs.filter((c) => !c.assigned_to);
+            const need = convs.filter((c) => c.assigned_to && (c as any).needs_reply);
+            const work = convs.filter((c) => c.assigned_to && !(c as any).needs_reply);
             const hdr = (icon: string, label: string, color: string) => <div style={{ padding: "8px 12px 4px", fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: .3, display: "flex", alignItems: "center", gap: 5 }}><Icon n={icon} size={12} /> {label}</div>;
             const withDays = (list: Conversation[]) => {
               const dk = (c: any) => c.last_message_at ? new Date(c.last_message_at).toDateString() : "\u2014";
