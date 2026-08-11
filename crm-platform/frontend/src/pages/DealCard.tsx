@@ -984,8 +984,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 {presults.length > 0 && (
                   <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 260, overflowY: "auto" }}>
                     {presults.map((p) => (
-                      <div key={p.id} onClick={() => { setPsel(p); setPsearch(p.name); setPresults([]); }} onDoubleClick={() => addItem(p)} title={t("Клик — выбрать, двойной клик — сразу добавить","Клік — обрати, подвійний клік — одразу додати")} style={{ padding: "8px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
-                        <b>{p.name}</b> <span className="muted">· {fmt(Number(p.price))} ₴ · {t("ост.","зал.")} {(p as any).stock}</span>
+                      <div key={p.id} onClick={() => { setPsel(p); setPsearch(p.name); setPresults([]); }} onDoubleClick={() => addItem(p)} title={t("Клик — выбрать, двойной клик — сразу добавить","Клік — обрати, подвійний клік — одразу додати")} style={{ padding: "8px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13, display: "flex", alignItems: "flex-start", gap: 8 }}>
+                        <b style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{p.name}</b>
+                        <span style={{ width: 78, textAlign: "right", flexShrink: 0, fontWeight: 600, whiteSpace: "nowrap" }}>{fmt(Number(p.price))} ₴</span>
+                        <span style={{ width: 86, textAlign: "right", flexShrink: 0, whiteSpace: "nowrap", fontSize: 12.5, color: Number((p as any).stock) < 0 ? "#dc2626" : Number((p as any).stock) > 0 ? "#16a34a" : "#94a3b8" }}>{t("ост.","зал.")} {(p as any).stock}</span>
                       </div>
                     ))}
                   </div>
@@ -1006,9 +1008,11 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   {products.filter((p) => !psearch.trim() || p.name.toLowerCase().includes(psearch.toLowerCase())).map((p) => {
                     const added = deal.items.some((it: any) => it.product === p.id);
                     return (
-                      <div key={p.id} onDoubleClick={() => addItem(p)} title={t("Двойной клик — добавить","Подвійний клік — додати")} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13, display: "flex", justifyContent: "space-between", gap: 8 }}>
-                        <span><b>{p.name}</b> <span className="muted">· {fmt(Number(p.price))} ₴ · {t("ост.","зал.")} {(p as any).stock}</span></span>
-                        {added && <span style={{ color: "#16a34a", whiteSpace: "nowrap" }}>✓ {t("в сделке","в угоді")}</span>}
+                      <div key={p.id} onDoubleClick={() => addItem(p)} title={t("Двойной клик — добавить","Подвійний клік — додати")} style={{ padding: "7px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13, display: "flex", alignItems: "flex-start", gap: 8 }}>
+                        <b style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{p.name}</b>
+                        <span style={{ width: 78, textAlign: "right", flexShrink: 0, fontWeight: 600, whiteSpace: "nowrap" }}>{fmt(Number(p.price))} ₴</span>
+                        <span style={{ width: 86, textAlign: "right", flexShrink: 0, whiteSpace: "nowrap", fontSize: 12.5, color: Number((p as any).stock) < 0 ? "#dc2626" : Number((p as any).stock) > 0 ? "#16a34a" : "#94a3b8" }}>{t("ост.","зал.")} {(p as any).stock}</span>
+                        {added ? <span style={{ color: "#16a34a", whiteSpace: "nowrap", flexShrink: 0, fontSize: 12 }}>✓</span> : null}
                       </div>
                     );
                   })}
