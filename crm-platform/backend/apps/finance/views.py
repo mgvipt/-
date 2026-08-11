@@ -1690,6 +1690,16 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         else:
             dest = ("Оплата рахунку №%s" % _inv_s) if _inv_s else "Оплата рахунку постачальника"
         dest = (dest or "Оплата рахунку постачальника")[:120]
+        # Приват приймає обмежений набір символів: прибираємо «№» та російські літери,
+        # яких немає в українській (інакше API: "Incorrect symbols (including russian symbol)")
+        def _pv_clean(_s):
+            _s = (_s or "").replace("№", "N ").replace("«", "").replace("»", "").replace("\"", "")
+            for _a, _b in (("Э", "Е"), ("э", "е"), ("Ы", "И"), ("ы", "и"), ("Ё", "Е"), ("ё", "е"), ("Ъ", ""), ("ъ", ""), ("Щ", "Щ")):
+                _s = _s.replace(_a, _b)
+            _s = _redst.sub(r"\s+", " ", _s).strip()
+            return _s
+        dest = _pv_clean(dest)[:120]
+        name = _pv_clean(name)
         docnum = _tz.now().strftime("%m%d%H%M%S")  # ТІЛЬКИ цифри — Приват вимагає числовий номер документа
         payload = {
             "document_number": docnum,
