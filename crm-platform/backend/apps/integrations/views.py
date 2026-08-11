@@ -481,9 +481,12 @@ def _confirm_supplier(d, request):
     m = _re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", d.sender or "")
     skey = (m.group(0).lower() if m else (d.sender or "").lower())
     inv = p.get("invoice_number")
-    if inv and StockDocument.objects.filter(kind="in", supplier_invoice=inv).exists():
+    # ідемпотентність ПО ЦЬОМУ документу (а не по номеру накладної глобально):
+    # одна накладна постачальника може прийти в 2 листах з тим самим №, але різними товарами —
+    # не блокуємо другий, лише захищаємо від повторного проведення того самого документа.
+    if StockDocument.objects.filter(kind="in", source_invoice_doc=d.id).exists():
         d.status = "confirmed"; d.save(update_fields=["status"])
-        return Response({"ok": True, "already": True, "detail": "Прихід за цією накладною вже є"})
+        return Response({"ok": True, "already": True, "detail": "Цей документ вже проведено"})
     wh = Warehouse.objects.filter(id=1).first() or Warehouse.objects.first()
     sup = p.get("supplier") or {}
     # ── ПОСТАЧАЛЬНИК ──
