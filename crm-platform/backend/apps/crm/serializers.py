@@ -103,7 +103,7 @@ class FunnelSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Funnel
-        fields = ["id", "name", "is_lead_funnel", "order", "stages"]
+        fields = ["id", "name", "is_lead_funnel", "is_archive", "order", "stages"]
 
 
 class LeadSerializer(serializers.ModelSerializer):

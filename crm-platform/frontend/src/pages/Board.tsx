@@ -30,11 +30,13 @@ export default function Board({ endpoint, funnel, query, visibleStages }: { endp
   const [chatBadges, setChatBadges] = useState<any>({});
   async function load() {
     setLoading(true);
+    // архивная воронка: НЕ грузим авто (только по поиску) — чтобы тысячи сделок не тормозили CRM
+    if ((funnel as any).is_archive && !(query && query.trim())) { setCards([]); setLoading(false); return; }
     // грузим ВСЕ страницы воронки (max_page_size=500) — иначе сделки за пределом лимита пропадают с доски
     let all: Card[] = [];
     let page = 1;
     while (page <= 40) {
-      const data = await api.get<Paginated<Card>>(`${endpoint}?funnel=${funnel.id}&page_size=500&page=${page}${isLead ? "" : "&exclude_closed=1"}${query || ""}`);
+      const data = await api.get<Paginated<Card>>(`${endpoint}?funnel=${funnel.id}&page_size=500&page=${page}${(isLead || (funnel as any).is_archive) ? "" : "&exclude_closed=1"}${query || ""}`);
       all = all.concat(data.results || []);
       if (!(data as any).next || !(data.results || []).length) break;
       page++;
@@ -72,6 +74,12 @@ export default function Board({ endpoint, funnel, query, visibleStages }: { endp
   }
 
   if (loading) return <div className="spin">{t("Загрузка…","Завантаження…")}</div>;
+  if ((funnel as any).is_archive && !(query && query.trim())) return (
+    <div className="panel" style={{ margin: 0, padding: "22px 18px", textAlign: "center", color: "#475569" }}>
+      📦 <b>{t("Архивная воронка","Архівна воронка")}</b><br/>
+      <span style={{ fontSize: 13 }}>{t("Сделки сохранены в истории клиентов и не грузятся на доску, чтобы не тормозить CRM. Найдите нужную сделку через 🔍 поиск сверху (ищет и открытые, и закрытые).","Угоди збережені в історії клієнтів і не вантажаться на дошку, щоб не гальмувати CRM. Знайдіть потрібну угоду через 🔍 пошук зверху (шукає і відкриті, і закриті).")}</span>
+    </div>
+  );
 
   return (
     <div className="board fade">

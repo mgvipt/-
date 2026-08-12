@@ -95,7 +95,7 @@ export interface Me {
   theme: { bg?: string; accent?: string };
 }
 export interface Stage { id: number; name: string; color: string; order: number; is_won: boolean; is_lost: boolean; }
-export interface Funnel { id: number; name: string; is_lead_funnel: boolean; order: number; stages: Stage[]; }
+export interface Funnel { id: number; name: string; is_lead_funnel: boolean; is_archive?: boolean; order: number; stages: Stage[]; }
 export interface Card {
   id: number; title: string; amount: string; source: string;
   stage: number; funnel: number; owner: number | null; owner_name?: string;

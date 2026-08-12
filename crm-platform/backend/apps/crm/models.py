@@ -101,6 +101,7 @@ class Funnel(models.Model):
     """Воронка продаж (напр. «21 Основний продукт», «22 Тестовий набір»)."""
     name = models.CharField(max_length=160)
     is_lead_funnel = models.BooleanField(default=False, help_text="True = воронка лидов")
+    is_archive = models.BooleanField(default=False, help_text="Архівна воронка — сделки для історії, НЕ вантажаться на дошку авто (тільки пошук)")
     order = models.PositiveIntegerField(default=0)
 
     class Meta:
