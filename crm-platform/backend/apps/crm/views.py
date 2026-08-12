@@ -235,7 +235,7 @@ class ContactViewSet(viewsets.ModelViewSet):
         from django.db.models import Q as _Qk
         _ak = user.allowed_contact_kinds() if hasattr(user, "allowed_contact_kinds") else None
         if _ak is not None:
-            _cond = _Qk(kinds=[])          # контрагенти без типу видні всім (ще не розмічені)
+            _cond = _Qk(kinds=[]) | _Qk(owner=user)   # без типу — видно всім; + ВЛАСНИК завжди бачить СВОЇ контакти (навіть поза дозволеним типом)
             for _k in _ak:
                 _cond |= _Qk(kinds__contains=[_k])
             qs = qs.filter(_cond)
