@@ -22,12 +22,12 @@ YULIA_IG_BOT_ID = "647e28e9-73fd-4f06-81cc-5970409a7381"
 YULIA_TT_BOT_ID = "4aab5db8-4efa-46aa-a0bf-56fc20610b35"
 SALES_DEPARTMENT_NAME_ICONTAINS = "Продаж"
 
-# Ключі які перемикаємо (Юля повністю on/off). Story-налаштування ChatPlace
-# не приймає через ai_agent_update_settings (окремі endpoints) — залишаємо як є.
+# Ключ який перемикаємо (правило Олега 12.08 v3):
+# ТІЛЬКИ answerOnMessageEnabled — відповіді в Direct.
+# Коментарі та "продовжити діалог з коментатора у Direct" ЗАВЖДИ УВІМКНЕНІ
+# (Юля відповідає на коменти під постом і пише коментатору незалежно від зміни).
 _TOGGLE_KEYS = [
-    "answerOnMessageEnabled",       # відповіді в Direct
-    "answerOnCommentEnabled",       # відповіді на коменти
-    "engageCommentUserEnabled",     # залучення коментатора в Direct
+    "answerOnMessageEnabled",       # відповіді в Direct (тільки це вмикається/вимикається)
 ]
 
 
