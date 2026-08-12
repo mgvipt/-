@@ -3055,30 +3055,30 @@ class WorkTimeView(APIView):
             ws.ended_at = now; ws.save()
             _yulia_hook_after_shift_action(request.user, action)
             return Response({"active": False, "worked_seconds": ws.worked_seconds()})
-        # Fix 2026-08-12: після start/pause/stop — перевіряємо чи треба перемкнути Юлю
         if action in ("start", "pause"):
             _yulia_hook_after_shift_action(request.user, action)
         return Response(self._payload(ws, request.user))
 
 
 def _yulia_hook_after_shift_action(user, action):
-    """Викликається з WorkTimeView після start/pause/stop. Toggle Юля-ChatPlace якщо треба."""
+    import logging as _lg
+    _log = _lg.getLogger("yulia_hook")
     try:
-        # тільки для sales-менеджерів (щоб не смикати систему при кожній зміні складу/бухгалтерії)
         dept_name = ""
         if getattr(user, "department_id", None):
             dept_name = (user.department.name if user.department else "")
-        if "Продаж" not in dept_name:
+        _log.warning("[HOOK] user=%s action=%s dept=%r" % (getattr(user, "username", "?"), action, dept_name))
+        if "продаж" not in dept_name.lower():
             return
         from apps.inbox.yulia_toggle import apply_yulia_shift_toggle
-        apply_yulia_shift_toggle()
+        r = apply_yulia_shift_toggle()
+        _log.warning("[HOOK] toggle result: %r" % (r,))
     except Exception as _e:
-        import logging as _lg
-        _lg.getLogger(__name__).warning(f"yulia_hook fail on {action}: {_e}")
+        import traceback
+        _log.warning("[HOOK] EXCEPTION %s: %s | %s" % (action, _e, traceback.format_exc()[:400]))
 
 
 class YuliaStatusView(APIView):
-    """GET /api/yulia/status/ — стан Юлі-ChatPlace + список активних sales-менеджерів (для бейджа в шапці)."""
     from rest_framework.permissions import IsAuthenticated as _IsAuth
     permission_classes = [_IsAuth]
     def get(self, request):
