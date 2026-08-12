@@ -30,14 +30,27 @@ export default function Board({ endpoint, funnel, query, visibleStages }: { endp
   const [chatBadges, setChatBadges] = useState<any>({});
   async function load() {
     setLoading(true);
-    const data = await api.get<Paginated<Card>>(`${endpoint}?funnel=${funnel.id}&page_size=200${query || ""}`);
-    setCards(data.results);
+    // грузим ВСЕ страницы воронки (max_page_size=500) — иначе сделки за пределом лимита пропадают с доски
+    let all: Card[] = [];
+    let page = 1;
+    while (page <= 40) {
+      const data = await api.get<Paginated<Card>>(`${endpoint}?funnel=${funnel.id}&page_size=500&page=${page}${isLead ? "" : "&exclude_closed=1"}${query || ""}`);
+      all = all.concat(data.results || []);
+      if (!(data as any).next || !(data.results || []).length) break;
+      page++;
+    }
+    setCards(all);
     setLoading(false);
-    if (!isLead && data.results.length) {
-      try {
-        const b = await api.get<any>(`/api/inbox/deal-badges/?ids=${data.results.map((c: any) => c.id).join(",")}`);
-        setChatBadges(b);
-      } catch { /* мовчки */ }
+    if (!isLead && all.length) {
+      // бейджи чата чанками по 200 (иначе URL со всеми id слишком длинный)
+      const badges: any = {};
+      for (let i = 0; i < all.length; i += 200) {
+        try {
+          const b = await api.get<any>(`/api/inbox/deal-badges/?ids=${all.slice(i, i + 200).map((c: any) => c.id).join(",")}`);
+          Object.assign(badges, b);
+        } catch { /* мовчки */ }
+      }
+      setChatBadges(badges);
     }
   }
   useEffect(() => { load(); }, [endpoint, funnel.id, query]);

@@ -1096,6 +1096,10 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 qs = qs.filter(id=int(p["deal_id"]))
             except ValueError:
                 pass
+        if p.get("exclude_closed"):
+            # канбан: тільки активний конвеєр (без виграних/програних) — інакше воронки
+            # з тисячами закритих сделок не влазять у ліміт і активні сделки зникають з дошки
+            qs = qs.exclude(stage__is_won=True).exclude(stage__is_lost=True)
         return qs
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
