@@ -240,6 +240,19 @@ export default function Layout() {
   const title = _cur ? t(_cur[1], _cur[2]) : "CRM";
   const fullName = me ? `${me.first_name} ${me.last_name}`.trim() || me.username : "";
 
+  const [yuliaBadge, setYuliaBadge] = useState<{silence_enabled: boolean; active_count: number} | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const r: any = await api.get("/api/yulia/status/");
+        if (alive) setYuliaBadge({silence_enabled: !!r?.silence_enabled, active_count: Number(r?.active_count || 0)});
+      } catch { /* noop */ }
+    };
+    load();
+    const id = setInterval(load, 30000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
   const [tasksToday, setTasksToday] = useState(0);
   useEffect(() => {
     let alive = true;
@@ -304,6 +317,22 @@ export default function Layout() {
         <header className="topbar">
           <button className="burger" onClick={() => setNavOpen((v) => !v)} aria-label="Меню">☰</button>
           {!isMobile && <h1>{title}</h1>}
+          {yuliaBadge && (
+            <div title={yuliaBadge.silence_enabled
+              ? `Юля чекає менеджера. На зміні: ${yuliaBadge.active_count}`
+              : "Юля веде діалоги сама (усі менеджери продажу на паузі)"}
+              style={{
+                marginLeft: 12, display: "flex", alignItems: "center", gap: 6,
+                padding: "4px 10px", borderRadius: 20,
+                background: yuliaBadge.silence_enabled ? "#dcfce7" : "#dbeafe",
+                color: yuliaBadge.silence_enabled ? "#166534" : "#1e40af",
+                fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
+              }}>
+              🤖 {yuliaBadge.silence_enabled
+                ? `Юля: чекає (${yuliaBadge.active_count})`
+                : "Юля: веде сама"}
+            </div>
+          )}
           <div className="topbar-motto" onMouseEnter={() => setMotto(true)} onMouseLeave={() => setMotto(false)} onClick={() => setMotto((v) => !v)}
             style={{ position: "relative", marginLeft: isMobile ? 8 : 16, display: "flex", alignItems: "center", gap: 7, cursor: "help" }}>
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--brand)", flexShrink: 0 }} />
