@@ -134,8 +134,22 @@ def _mcp(name, arguments=None):
 
 
 def send(chat_id, text):
-    """Відповісти клієнту в IG Direct через ChatPlace (чат має бути open/оператор)."""
+    """Відповісти клієнту в IG Direct через ChatPlace.
+    Fix 2026-08-12: спочатку chats_open (перевести чат у операторський режим —
+    ставить паузу для AI-агента ChatPlace, silenceAfterHumanReply починає діяти).
+    Це саме те що чекає Олег: коли менеджер пише — Юля має замовкнути."""
+    try:
+        _mcp("chats_open", {"chatId": chat_id})
+    except Exception as e:
+        # не блокуємо надсилання: якщо open фейлить — все одно шлемо (може вже open)
+        import logging as _lg
+        _lg.getLogger(__name__).warning(f"chats_open failed for {chat_id}: {e}")
     return _mcp("chats_send_message", {"chatId": chat_id, "text": text})
+
+
+def close_chat(chat_id):
+    """Повернути чат AI-агенту (Юлі) — використовувати коли менеджер завершив діалог."""
+    return _mcp("chats_close", {"chatId": chat_id})
 
 
 def sync_one_chat(conv, per_chat=40):
