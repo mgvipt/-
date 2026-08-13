@@ -259,11 +259,20 @@ export default function Layout() {
     const load = async () => {
       try {
         const sel = (() => { try { return localStorage.getItem("tasks_view_selected") || "mine"; } catch { return "mine"; } })();
-        let url = "/api/tasks/kanban/";
-        if (sel === "mine") url += "?mine=1";
-        else if (sel.startsWith("u:")) url += "?assignee=" + sel.slice(2);
-        const r: any = await api.get(url);
-        if (alive) setTasksToday((r?.counts?.today) || 0);
+        // ЛЕГКО: user_counts отдаёт ТОЛЬКО числа. Раньше кружок тянул /api/tasks/kanban/ целиком (все активные задачи со связями) каждые 60с × каждая вкладка — главная нагрузка (аудит 12.08, docs/АУДИТ-И-КООРДИНАЦИЯ.md).
+        const r: any = await api.get("/api/tasks/user_counts/");
+        let today = 0;
+        if (sel.startsWith("u:")) {
+          const uid = Number(sel.slice(2));
+          const row = (r?.users || []).find((x: any) => x.id === uid);
+          today = row ? (row.today || 0) : 0;
+        } else if (sel === "mine" && me) {
+          const row = (r?.users || []).find((x: any) => x.id === me.id);
+          today = row ? (row.today || 0) : ((r?.total?.today) || 0);
+        } else {
+          today = (r?.total?.today) || 0;
+        }
+        if (alive) setTasksToday(today);
       } catch { /* noop */ }
     };
     load();
