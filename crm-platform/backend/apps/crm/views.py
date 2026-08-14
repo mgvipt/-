@@ -1168,13 +1168,20 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
     def dozakaz(self, request, pk=None):
         """Дозамовлення: нова сделка того самого клієнта, звʼязана з цією (їде однією посилкою)."""
         deal = self.get_object()
-        first = deal.funnel.stages.order_by("order").first()
+        # дозамовлення завжди чіпляємо до КОРЕНЕВОЇ сделки (не до іншого дозамовлення),
+        # щоб уся група їхала однією ТТН основної і не було вкладених ланцюгів.
+        root = deal
+        _guard = 0
+        while root.parent_deal_id and _guard < 10:
+            root = root.parent_deal
+            _guard += 1
+        first = root.funnel.stages.order_by("order").first()
         nd = Deal.objects.create(
-            title="Дозамовлення до #%s" % deal.id, contact=deal.contact, funnel=deal.funnel,
-            stage=first, owner=(request.user if request.user.is_authenticated else deal.owner),
-            source=deal.source, parent_deal=deal)
+            title="Дозамовлення до #%s" % root.id, contact=root.contact, funnel=root.funnel,
+            stage=first, owner=(request.user if request.user.is_authenticated else root.owner),
+            source=root.source, parent_deal=root)
         from .models import log_activity
-        log_activity("deal", deal.id, "Дозамовлення", "Створено звʼязану сделку #%s (одна посилка)" % nd.id, request.user, "")
+        log_activity("deal", root.id, "Дозамовлення", "Створено звʼязану сделку #%s (одна посилка)" % nd.id, request.user, "")
         return Response({"id": nd.id})
 
     def _fiscal_lock(self, deal):
