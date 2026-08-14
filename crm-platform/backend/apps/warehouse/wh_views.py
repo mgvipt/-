@@ -98,7 +98,7 @@ def _job_dict(job, full=False):
         d["items"] = [{"name": (it.product.name if it.product_id else ((it.custom_name or "Позиція") + " · не зі складу")), "qty": str(it.quantity),
                        "weight_kg": str((it.product.weight_kg or 0) if it.product_id else 0)} for it in deal.items.all()]
         d["weight_kg"] = str(_deal_weight(deal))
-        d["photos"] = [{"id": p.id, "kind": p.kind, "url": "/api/warehouse/jobs/%d/photo/?kind=%s" % (job.id, p.kind)} for p in job.photos.all()]
+        d["photos"] = [{"id": p.id, "kind": p.kind, "url": "/api/warehouse/jobs/%d/photo/?id=%d" % (job.id, p.id)} for p in job.photos.all()]
         d["needs"] = {k: v for k, v in (deal.qualification or {}).items() if k != "kits" and not str(k).startswith("_")}
         d["ref_photos"] = deal.ref_photos or []
         d["phone"] = ((deal.contact.phone if deal.contact_id else "") or "")
@@ -347,8 +347,12 @@ def photo(request, pk):
         job = WarehouseJob.objects.filter(pk=pk).first()
         if not job:
             return Response({"detail": "no job"}, status=404)
-        kind = request.GET.get("kind") or "buckets"
-        p = job.photos.filter(kind=kind).order_by("-id").first()
+        pid = request.GET.get("id")
+        if pid:
+            p = job.photos.filter(id=pid).first()  # конкретне фото за id (щоб різні фото не показувались однаково)
+        else:
+            kind = request.GET.get("kind") or "buckets"
+            p = job.photos.filter(kind=kind).order_by("-id").first()
         if not p or not p.image:
             return Response({"detail": "no photo"}, status=404)
         from django.http import HttpResponse
