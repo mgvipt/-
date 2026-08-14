@@ -240,13 +240,13 @@ export default function Layout() {
   const title = _cur ? t(_cur[1], _cur[2]) : "CRM";
   const fullName = me ? `${me.first_name} ${me.last_name}`.trim() || me.username : "";
 
-  const [yuliaBadge, setYuliaBadge] = useState<{agent_on: boolean; active_count: number} | null>(null);
+  const [yuliaBadge, setYuliaBadge] = useState<{silence_on: boolean; active_count: number} | null>(null);
   useEffect(() => {
     let alive = true;
     const load = async () => {
       try {
         const r: any = await api.get("/api/yulia/status/");
-        if (alive) setYuliaBadge({agent_on: !!r?.agent_on, active_count: Number(r?.active_count || 0)});
+        if (alive) setYuliaBadge({silence_on: !!r?.silence_on, active_count: Number(r?.active_count || 0)});
       } catch { /* noop */ }
     };
     load();
@@ -327,17 +327,17 @@ export default function Layout() {
           <button className="burger" onClick={() => setNavOpen((v) => !v)} aria-label="Меню">☰</button>
           {!isMobile && <h1>{title}</h1>}
           {yuliaBadge && (
-            <div title={yuliaBadge.agent_on
-              ? "Юля УВІМКНЕНА — сама відповідає в Direct, коментах, сторис (усі менеджери на паузі)"
-              : `Юля ВИМКНЕНА — на зміні: ${yuliaBadge.active_count} менеджер(ів). Менеджер веде сам.`}
+            <div title={yuliaBadge.silence_on
+              ? `Юля в тихому режимі — на зміні ${yuliaBadge.active_count} менеджер(ів). Відповідає в Direct ЗАВЖДИ, але тільки на нетронуті чати через 10 год. Менеджери ведуть самі.`
+              : "Юля відповідає всім — усі менеджери на паузі / день закрито. Веде клієнтів у Direct сама, без 10-год паузи."}
               style={{
                 marginLeft: 12, display: "flex", alignItems: "center", gap: 6,
                 padding: "4px 10px", borderRadius: 20,
-                background: yuliaBadge.agent_on ? "#dcfce7" : "#fee2e2",
-                color: yuliaBadge.agent_on ? "#166534" : "#991b1b",
+                background: yuliaBadge.silence_on ? "#dbeafe" : "#dcfce7",
+                color: yuliaBadge.silence_on ? "#1e40af" : "#166534",
                 fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
               }}>
-              🤖 Юля: {yuliaBadge.agent_on ? "увімкнена" : `вимкнена (${yuliaBadge.active_count})`}
+              🤖 Юля: {yuliaBadge.silence_on ? `тихий режим (${yuliaBadge.active_count})` : "відповідає всім"}
             </div>
           )}
           <div className="topbar-motto" onMouseEnter={() => setMotto(true)} onMouseLeave={() => setMotto(false)} onClick={() => setMotto((v) => !v)}
