@@ -2670,7 +2670,10 @@ def sync_deal_payment_from_tx(tx):
         amount = tx.amount_uah or tx.amount or _D("0")
         if amount is None or amount <= 0:
             return
-        pay = Payment.objects.create(deal=deal, provider="cash", amount=amount, is_paid=True)
+        # спосіб оплати за ТИПОМ рахунку: bank(ФОП)→реквізити, cash→готівка, acquiring→LiqPay
+        _akind = (getattr(tx.account, "kind", "") if getattr(tx, "account_id", None) else "") or "bank"
+        _prov = {"cash": "cash", "acquiring": "liqpay", "bank": "reqs"}.get(_akind, "reqs")
+        pay = Payment.objects.create(deal=deal, provider=_prov, amount=amount, is_paid=True)
         tx.payment = pay
         tx.save(update_fields=["payment"])
         paid = sum((p.amount for p in Payment.objects.filter(deal=deal, is_paid=True)), _D("0"))
