@@ -2675,7 +2675,7 @@ def sync_deal_payment_from_tx(tx):
         tx.save(update_fields=["payment"])
         paid = sum((p.amount for p in Payment.objects.filter(deal=deal, is_paid=True)), _D("0"))
         if deal.amount and paid >= deal.amount:
-            _advance_after_payment(deal, "оплата отримана повністю (журнал/картка клієнта)", create_wh=False)
+            _advance_after_payment(deal, "оплата отримана повністю (журнал/картка клієнта)", create_wh=True)  # повна оплата → створити задачу складу (як кнопка «Прийняти оплату»)
         elif paid > 0:
             _advance_deal_stage(deal, 2, "часткова оплата (журнал/картка клієнта)", create_wh=False)
     except Exception:
