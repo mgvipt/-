@@ -101,8 +101,13 @@ class Command(BaseCommand):
     help = "Синхронізувати статуси НП у стадії + авто-повідомлення клієнту"
 
     def handle(self, *args, **opts):
-        deals = (Deal.objects.exclude(ttn="").exclude(ttn__isnull=True).filter(closed_at__isnull=True)
-                 .exclude(stage__is_won=True).exclude(stage__is_lost=True).select_related("stage", "funnel")[:120])
+        # «закритість» визначаємо ТІЛЬКИ за стадією (is_won/is_lost). closed_at НЕ фільтруємо:
+        # у частини сделок він проставлений артефактом імпорту з Бітрикса, хоча угода відкрита (напр. #65145).
+        # Сортуємо за stage_changed_at (найдовше застряглі — першими), ліміт піднято зі 120 (було замало на 213).
+        from django.db.models import F
+        deals = (Deal.objects.exclude(ttn="").exclude(ttn__isnull=True)
+                 .exclude(stage__is_won=True).exclude(stage__is_lost=True).select_related("stage", "funnel")
+                 .order_by(F("stage_changed_at").asc(nulls_first=True))[:400])
         moved = 0
         ctr = {"sent": 0}
         for d in deals:
