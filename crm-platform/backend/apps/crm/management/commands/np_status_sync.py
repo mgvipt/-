@@ -142,7 +142,29 @@ class Command(BaseCommand):
                 _maybe_send(d, row, ctr)
             except Exception as e:
                 self.stderr.write(str(e)[:120])
-        self.stdout.write("np sync: moved=%d sent=%d" % (moved, ctr["sent"]))
+        # ── АВТО-«Успішна»: доставлені («Отримано») + гроші РЕАЛЬНО на рахунку → успішна угода ──
+        # Передоплата: is_paid=True одразу на отриманні. Наложка: чекаємо, поки виплата НоваПей
+        # матчиться у банк-виписці (Payment.is_paid стає True). Толеранс 5₴ на округлення суми НП.
+        from decimal import Decimal as _Dec
+        _TOL = _Dec("5")
+        won_auto = 0
+        recv = (Deal.objects.filter(stage__is_won=False, stage__is_lost=False,
+                                    stage__name__icontains="отримано")
+                .exclude(stage__name__icontains="оплат").select_related("stage", "funnel"))
+        for d in recv:
+            try:
+                if not d.amount or d.amount <= 0:
+                    continue
+                paid = sum((pp.amount for pp in d.payments.filter(is_paid=True)), _Dec("0"))
+                if paid <= 0 or paid < (d.amount - _TOL):
+                    continue  # немає грошей взагалі / наложка ще не надійшла — чекаємо (не закривати копійчані)
+                won = _find_stage(d.funnel_id, "успішн")
+                if won and won.order > d.stage.order:
+                    if _advance_deal_stage(d, won.order, "авто: доставлено + гроші отримано → успішна"):
+                        won_auto += 1
+            except Exception as e:
+                self.stderr.write(str(e)[:120])
+        self.stdout.write("np sync: moved=%d sent=%d won_auto=%d" % (moved, ctr["sent"], won_auto))
 
 
 def _record_cod_payment(deal, cod_hint=None):
