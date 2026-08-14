@@ -1743,7 +1743,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                     pass
                 if sent and kind == "requisites":
                     # окремими повідомленнями — щоб клієнт скопіював одним тапом
-                    for extra in (iban, "Оплата згідно накладної №%s" % deal.id):
+                    for extra in (iban, "Оплата згідно замовлення №%s" % deal.id):  # призначення = як у головному повідомленні
                         try:
                             send_message(conv, extra, user=request.user)
                         except Exception:
