@@ -1249,6 +1249,34 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                 found.append(num)
             if len(found) == 1:
                 did_r = found[0]
+        # ФОЛБЕК (оплата за реквізитами — номера сделки у призначенні немає):
+        # шукаємо за ТЕЛЕФОНОМ або ПРІЗВИЩЕМ клієнта + ТОЧНОЮ сумою + ЄДИНА відкрита неоплачена угода.
+        if not did_r and direction == "in":
+            from apps.crm.models import Deal as _DFb
+            from django.utils import timezone as _tzf
+            from datetime import timedelta as _tdf
+            _cmd = _re.sub(r"\D", "", osnd or "")
+            _cml = (osnd or "").lower()
+            _hits = set()
+            for _dd in _DFb.objects.filter(stage__is_won=False, stage__is_lost=False,
+                                           amount__gte=float(amt) - 5, amount__lte=float(amt) + 5).select_related("contact", "stage"):
+                if _dd.created_at < _tzf.now() - _tdf(days=180):
+                    continue
+                _ct = _dd.contact
+                if not _ct:
+                    continue
+                _paid = sum((pp.amount for pp in _dd.payments.filter(is_paid=True)), 0) or 0
+                try:
+                    if float(_paid) >= float(_dd.amount) - 5:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                _tail = _re.sub(r"\D", "", _ct.phone or "")[-9:]
+                _ln = (_ct.last_name or "").strip()
+                if (_tail and len(_tail) == 9 and _tail in _cmd) or (_ln and len(_ln) > 2 and _ln.lower() in _cml):
+                    _hits.add(_dd.id)
+            if len(_hits) == 1:
+                did_r = _hits.pop()
         if did_r and direction == "in":
             from apps.crm.models import Deal as _Deal, Payment as _Pay, log_activity as _la
             _d = _Deal.objects.filter(id=did_r).first()
