@@ -1695,7 +1695,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                     "ІПН/ЄДРПОУ: %s\n"
                     "Сума: %s грн\n\n"
                     "⚠️ Призначення платежу — впишіть ТОЧНО цей текст (без нього ми не побачимо вашу оплату):\n"
-                    "Оплата за декоративні матеріали згідно накладної №%s, без ПДВ\n\n"
+                    "Оплата згідно накладної №%s\n\n"
                     "Після надходження грошей оплата зафіксується автоматично, і ми одразу готуємо замовлення 😊") % (payee, iban, ipn, amount, deal.id)
         else:
             pub = getattr(_s, "LIQPAY_PUBLIC_KEY", ""); prv = getattr(_s, "LIQPAY_PRIVATE_KEY", "")
@@ -1731,7 +1731,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                     pass
                 if sent and kind == "requisites":
                     # окремими повідомленнями — щоб клієнт скопіював одним тапом
-                    for extra in (iban, "Оплата за декоративні матеріали згідно накладної №%s, без ПДВ" % deal.id):
+                    for extra in (iban, "Оплата згідно накладної №%s" % deal.id):
                         try:
                             send_message(conv, extra, user=request.user)
                         except Exception:

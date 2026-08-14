@@ -1325,6 +1325,27 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
             category=_rr["category"], fin_direction=_rr["fin_direction"], fin_article=_rr["fin_article"],
             import_batch=batch, comment=(reftag + " · " + osnd + ((" · ЄДРПОУ %s" % _crf) if (_crf and direction == "out" and "ЄДРПОУ" not in osnd and "ІПН" not in osnd) else ""))[:255])
         created += 1
+        # ── МАТЧ ПО НОМЕРУ НАКЛАДНОЇ (найточніший): №{id} у призначенні → deal.id ──
+        # Fix 14.08: клієнт указав "Оплата згідно накладної №N" — прямо береw сделку N.
+        if direction == "in" and not _txg.deal_id:
+            try:
+                _mnkl = _re.search(r"(?:накладн\w*|рахун\w*|замовл\w*|№)\s*№?\s*(\d{4,})", osnd or "", _re.I)
+                if _mnkl:
+                    _did = int(_mnkl.group(1))
+                    from apps.crm.models import Deal as _D_by_num
+                    from apps.crm.views import sync_deal_payment_from_tx as _syncp_num
+                    _dn = _D_by_num.objects.filter(id=_did).first()
+                    if _dn:
+                        _txg.deal = _dn
+                        _flds_n = ["deal"]
+                        # якщо контакт ще не привʼязано — беремо контакт зі сделки
+                        if not _txg.contact_id and _dn.contact_id:
+                            _txg.contact_id = _dn.contact_id
+                            _flds_n.append("contact")
+                        _txg.save(update_fields=_flds_n)
+                        _syncp_num(_txg)
+            except Exception:
+                pass
         # ── МАТЧ ПО ІМЕНІ (без номера сделки у призначенні): банк-дохід → контакт → сделка ──
         if direction == "in" and cp and not _txg.contact_id:
             try:
