@@ -139,13 +139,15 @@ function QueueView({ t, onOpen, mgr }: any) {
         <div style={{ marginBottom: 14 }}>
           <b style={{ fontSize: 14 }}>🛡 {t("В работе у сотрудников (руководитель видит всё)","У роботі у співробітників (керівник бачить все)")}</b>
           {d.all_active.map((j: any) => <JobCard key={"a" + j.id} j={j} t={t} onClick={() => onOpen(j.id)} action={
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <button className="btn" title={t("Удалить неактуальную задачу","Видалити неактуальну задачу")} onClick={(e) => { e.stopPropagation(); cancel(j.id); }} style={{ height: 36, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca" }}><Icon n="trash" size={15} /></button>
             <select value="" onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = Number(e.target.value); if (!isNaN(v) && e.target.value !== "") reassign(j.id, v); }}
               title={t("Передать задачу другому сотруднику","Передати задачу іншому співробітнику")}
               style={{ height: 36, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 12, maxWidth: 150 }}>
               <option value="">👤 {t("Передать…","Передати…")}</option>
               <option value="0">↩ {t("В очередь (снять)","У чергу (зняти)")}</option>
               {staff.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>} />)}
+            </select></div>} />)}
         </div>
       )}
       {mgr && <ShippedFilter staff={staff} onOpen={onOpen} t={t} />}
