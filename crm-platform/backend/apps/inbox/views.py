@@ -284,7 +284,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Conversation.objects.select_related("channel", "contact", "assigned_to").prefetch_related("participants")
     serializer_class = ConversationSerializer
     filterset_fields = ["channel", "status", "assigned_to", "contact"]
-    search_fields = ["title", "contact__first_name", "contact__last_name", "contact__phone", "contact__social_link"]
+    search_fields = []  # poshuk robymo vruchnu v get_queryset (imya/nik/telefon/posylannya, po VSIH dostupnyh chatah)
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -309,7 +309,27 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         # зникає зі списку (його все одно можна відкрити через картку ліда/сделки = retrieve,
         # і «Закріпити» за собою — тоді він стане видимий у того, хто останнім узяв).
         scope = self.request.query_params.get("scope")
-        if scope == "mine":
+        # POSHUK: po imeni / niku / telefonu / posylannyu - po VSIH dostupnyh chatah
+        # (ne obmezhuyuchys vkladkoyu "Moyi" i vklyuchno iz zakrytymy).
+        _search = (self.request.query_params.get("search") or "").strip()
+        _searching = bool(_search)
+        if _searching:
+            import re as _re2
+            sq = (Q(title__icontains=_search) | Q(contact__first_name__icontains=_search)
+                  | Q(contact__last_name__icontains=_search) | Q(contact__nickname__icontains=_search)
+                  | Q(contact__social_link__icontains=_search) | Q(contact__phone__icontains=_search))
+            _dig = _re2.sub(r"\D", "", _search)
+            if len(_dig) >= 5:
+                _vars = {_dig, _dig.lstrip("0"), "380" + _dig.lstrip("0")}
+                if _dig.startswith("38"):
+                    _vars.add("0" + _dig[2:])
+                for _v in _vars:
+                    if _v:
+                        sq |= Q(contact__phone__icontains=_v)
+            qs = qs.filter(sq).distinct()
+        if _searching:
+            pass  # poshuk - bez obmezhennya potochnoyu vkladkoyu
+        elif scope == "mine":
             qs = qs.filter(Q(assigned_to=user) | Q(participants=user))
         elif scope == "unassigned":
             qs = qs.filter(assigned_to__isnull=True)
@@ -336,7 +356,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                     qs = qs.filter(_ld="out").exclude(unread__gt=0)
         # У СПИСКУ показуємо лише ВІДКРИТІ чати. Закритий зникає; коли клієнт напише —
         # ingest створює новий open-діалог і він знову зʼявиться (у непризначених).
-        if self.action == "list" and not self.request.query_params.get("status"):
+        if self.action == "list" and not self.request.query_params.get("status") and not _searching:
             qs = qs.filter(status="open")
         pr = self.request.query_params.get("priority")
         if pr:
