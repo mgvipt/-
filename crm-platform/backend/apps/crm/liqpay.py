@@ -40,3 +40,16 @@ def build_checkout_url(public_key, private_key, amount, order_id, description, s
     data = encode_data(payload)
     sig = sign(data, private_key)
     return "%s?data=%s&signature=%s" % (CHECKOUT_URL, quote(data, safe=""), quote(sig, safe=""))
+
+
+def amount_from_url(url):
+    """Сума з готового checkout-посилання. None — якщо прочитати не вдалось."""
+    import re
+    from urllib.parse import unquote
+    m = re.search(r"data=([^&]+)", url or "")
+    if not m:
+        return None
+    try:
+        return float(decode_data(unquote(m.group(1))).get("amount"))
+    except Exception:
+        return None

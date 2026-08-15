@@ -629,9 +629,17 @@ def paylink_redirect(request, code):
     pl = PayLink.objects.filter(code=code).first()
     if not pl:
         return HttpResponseNotFound("Посилання не знайдено або застаріло")
-    # ФІКСОВАНА СУМА: якщо для сделки є НОВІШЕ посилання (суму оновили) — старе блокуємо,
-    # щоб клієнт не оплатив стару/меншу суму. Працює лише найновіше посилання сделки.
-    if pl.deal_id and PayLink.objects.filter(deal_id=pl.deal_id, id__gt=pl.id).exists():
+    # ФІКСОВАНА СУМА: платити можна лише за НАЙНОВІШИМ посиланням сделки.
+    # АЛЕ: якщо сума у старому посиланні ТА САМА (менеджер просто продублював лист) —
+    # мовчки ведемо клієнта на найновіше, а не показуємо «застаріло».
+    # Стіну лишаємо тільки коли сума справді змінилась.
+    newest = PayLink.objects.filter(deal_id=pl.deal_id).order_by("-id").first() if pl.deal_id else None
+    if newest and newest.id != pl.id:
+        from .liqpay import amount_from_url
+        old_amt, new_amt = amount_from_url(pl.target), amount_from_url(newest.target)
+        if old_amt is not None and new_amt is not None and abs(old_amt - new_amt) < 0.01:
+            PayLink.objects.filter(id=pl.id).update(clicks=pl.clicks + 1)
+            return HttpResponseRedirect(newest.target)
         return HttpResponse("<div style='font-family:system-ui,sans-serif;max-width:460px;margin:64px auto;text-align:center;color:#334155'><h2 style='color:#dc2626'>Посилання застаріло</h2><p>Сума замовлення оновилась. Будь ласка, попросіть менеджера надіслати актуальне посилання на оплату.</p></div>", content_type="text/html; charset=utf-8")
     PayLink.objects.filter(id=pl.id).update(clicks=pl.clicks + 1)
     return HttpResponseRedirect(pl.target)
@@ -745,12 +753,15 @@ def make_offer(deal, items_spec, user=None, send_pay=True):
         pub = getattr(_s, "LIQPAY_PUBLIC_KEY", "")
         prv = getattr(_s, "LIQPAY_PRIVATE_KEY", "")
         if pub and prv:
-            order_id = "WCCRM-%s-%s" % (deal.id, str(deal.id * 7919 + int(total))[-6:])
             base = "https://crm.wallcovdec.com.ua"
-            full = build_checkout_url(pub, prv, total, order_id, "Wallcov #%s" % deal.id, server_url=base + "/api/crm/liqpay/callback/", result_url=base, paytypes="card,apay,gpay,privat24")
+            # УНІКАЛЬНИЙ order_id: прив'язаний до коду посилання. Стара формула
+            # (сделка+сума) давала ОДНАКОВИЙ номер при повторному надсиланні тієї ж суми,
+            # і LiqPay вважав це дублем уже створеного замовлення.
             code = _short_code()
             while PayLink.objects.filter(code=code).exists():
                 code = _short_code()
+            order_id = "WCCRM-%s-%s" % (deal.id, code)
+            full = build_checkout_url(pub, prv, total, order_id, "Wallcov #%s" % deal.id, server_url=base + "/api/crm/liqpay/callback/", result_url=base, paytypes="card,apay,gpay,privat24")
             PayLink.objects.create(code=code, deal=deal, target=full)
             url = "%s/p/%s/" % (base, code)
             paytext = "\U0001f4b3 \u041e\u043f\u043b\u0430\u0442\u0438\u0442\u0438 \u043e\u043d\u043b\u0430\u0439\u043d \U0001f449 %s\n\u0421\u0443\u043c\u0430: %s \u0433\u0440\u043d" % (url, _g(total))
@@ -1689,7 +1700,6 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             return Response({"detail": "Сума посилання має бути більше 0."}, status=status.HTTP_400_BAD_REQUEST)
         if deal.amount and amount > deal.amount:  # #9 не більше вартості замовлення (передоплата — можна менше)
             amount = deal.amount
-        order_id = "WCCRM-%s-%s" % (deal.id, str(deal.id * 7919 + int(amount))[-6:])
         base = "https://crm.wallcovdec.com.ua"
         url = ""
         if kind == "requisites":
@@ -1716,13 +1726,15 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             # обмежуємо способи: звичайний LiqPay = тільки картка/Apple/Google/Приват24;
             # розстрочка/частинами — ТІЛЬКИ коли менеджер обрав "Розстрочка" у CRM
             paytypes = "paypart,moment_part,card" if kind == "installment" else "card,apay,gpay,privat24"
-            full_url = build_checkout_url(pub, prv, amount, order_id, "Замовлення Wallcov #%s" % deal.id,
-                                          server_url=base + "/api/crm/liqpay/callback/", result_url=base, paytypes=paytypes)
             # коротке посилання щоб не слати потвору
             from .models import PayLink
             code = _short_code()
             while PayLink.objects.filter(code=code).exists():
                 code = _short_code()
+            # УНІКАЛЬНИЙ order_id на КОЖНЕ посилання (див. коментар у make_offer)
+            order_id = "WCCRM-%s-%s" % (deal.id, code)
+            full_url = build_checkout_url(pub, prv, amount, order_id, "Замовлення Wallcov #%s" % deal.id,
+                                          server_url=base + "/api/crm/liqpay/callback/", result_url=base, paytypes=paytypes)
             PayLink.objects.create(code=code, deal=deal, target=full_url)
             url = "%s/p/%s/" % (base, code)
             # шаблонне повідомлення (БЕЗ Claude — економія токенів; текст стабільний)

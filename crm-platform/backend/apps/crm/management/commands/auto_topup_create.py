@@ -179,8 +179,12 @@ class Command(BaseCommand):
         if not (pub and prv):
             return None
 
-        order_id = "WCCRM-%s-%s" % (deal.id, str(deal.id * 7919 + int(amount))[-6:])
         base = "https://crm.wallcovdec.com.ua"
+        # коротке посилання + УНІКАЛЬНИЙ order_id (див. коментар у apps/crm/views.py make_offer)
+        code = _short_code()
+        while PayLink.objects.filter(code=code).exists():
+            code = _short_code()
+        order_id = "WCCRM-%s-%s" % (deal.id, code)
         full_url = build_checkout_url(
             pub, prv, amount, order_id,
             "Замовлення Wallcov #%s" % deal.id,
@@ -188,10 +192,6 @@ class Command(BaseCommand):
             result_url=base,
             paytypes="card,apay,gpay,privat24",
         )
-        # коротке посилання
-        code = _short_code()
-        while PayLink.objects.filter(code=code).exists():
-            code = _short_code()
         PayLink.objects.create(code=code, deal=deal, target=full_url)
         return "%s/p/%s/" % (base, code)
 
