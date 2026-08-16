@@ -843,23 +843,37 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=["post"])
     def ai_reply(self, request, pk=None):
-        """AI-РОП: аналіз діалогу + підказка відповіді клієнту (Claude)."""
+        """AI-РОП: аналіз діалогу + підказка відповіді клієнту.
+
+        2026-08-16: підключено СПРАВЖНІЙ промпт ІІ-РОПа (apps/crm/coach_prompt.py) —
+        той, що з 10-річним досвідом продажів декору і всіма правилами Олега:
+        максимальна знижка 10%, пороги безкоштовної доставки (7000 тонкошарові /
+        20000 фактурні), заборона прайс-дампу, SLA 10 хв на цінове питання.
+        Раніше тут був загальний промпт на три рядки, а справжній ІІ-РОП жив на
+        Hetzner і слав підказки в Telegram-тред, якого не існує з 30.06 —
+        44 967 підказок згоріли даремно, менеджери їх ніколи не бачили.
+        Працює ТІЛЬКИ на вимогу, кнопкою — жодних фонових витрат."""
+        from apps.crm.ai import claude_json
+        from apps.crm.coach_prompt import COACH_SYSTEM
+
         conv = self.get_object()
         msgs = list(conv.messages.order_by("id").values("direction", "text"))[-30:]
         dialog = "\n".join(
             ("Клієнт: " if m["direction"] == "in" else "Менеджер/AI: ") + (m["text"] or "")
             for m in msgs if m.get("text"))
         prompt = (
-            "Ти — досвідчений РОП (керівник відділу продажів) компанії Wallcov "
-            "(декоративні покриття та фарби для стін). Проаналізуй переписку і допоможи менеджеру закрити продаж. "
-            "Переписка з клієнтом:\n" + (dialog or "(переписки ще немає)") + "\n\n"
+            "Клієнт: %s\nКанал: %s\n\nПереписка:\n%s\n\n"
             "Поверни СТРОГО JSON без пояснень: "
             '{"context": "1 коротке речення-підсумок", '
-            '"points": ["3-6 коротких тез: на якому етапі клієнт, що хоче, площа/матеріал/бюджет якщо згадані, заперечення, наступний крок"], '
-            '"suggestion": "готова відповідь клієнту ТІЄЮ Ж мовою, що й він — ввічливо, по суті, з наступним кроком до продажу"}')
-        from apps.crm.ai import claude_json
+            '"points": ["3-6 коротких тез: на якому етапі клієнт, що хоче, площа/матеріал/бюджет якщо згадані, '
+            'заперечення, ПОМИЛКИ наших відповідей якщо є, наступний крок"], '
+            '"suggestion": "готова відповідь клієнту ТІЄЮ Ж мовою, що й він — по суті, з наступним кроком до продажу"}'
+        ) % (str(conv.contact) if conv.contact_id else "невідомий",
+             conv.channel.name if conv.channel_id else "-",
+             dialog or "(переписки ще немає)")
         try:
-            return Response(claude_json(prompt, max_tokens=1000, source="Подсказка ответа клиенту"))
+            return Response(claude_json(prompt, max_tokens=1200, system=COACH_SYSTEM,
+                                        cache=True, source="AI-РОП підказка в чаті"))
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 
