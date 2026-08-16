@@ -64,65 +64,84 @@ class Command(BaseCommand):
         self.stdout.write(json.dumps(kw, ensure_ascii=False, default=str))
         sys.exit(0)
 
+    def _ig_matches(self, contact, clean):
+        """СТРОГА звірка IG: нік або хвіст посилання мають збігатися ПОВНІСТЮ.
+        Часткові збіги заборонені — «ira» не повинна ловити «kira_deco»."""
+        target = (clean or "").lstrip("@").strip().lower()
+        if not target:
+            return False
+        if ((contact.nickname or "").lstrip("@").strip().lower()) == target:
+            return True
+        link = (contact.social_link or "").strip().lower().rstrip("/")
+        if link:
+            tail = link.rsplit("/", 1)[-1].split("?")[0].lstrip("@")
+            if tail == target:
+                return True
+        return False
+
     def _find_contact(self, ig_username=None, client_name=None):
-        """Знайти клієнта за IG username АБО за іменем.
-        Порядок:
-          1. Contact.social_link містить ig_username
-          2. Contact.nickname == ig_username
-          3. Contact.first_name + last_name містить client_name (fuzzy)
-        Повертає першого знайденого повторника (має ≥1 сделку не з ліда).
+        """Знайти клієнта за IG username АБО за ПОВНИМ іменем (імʼя + прізвище).
+
+        ⚠️ БЕЗПЕКА (2026-08-15). Одразу після цього коду створюється сделка
+        і посилання LiqPay, тому помилка тут = рахунок ЧУЖІЙ людині.
+        Тому діють два жорсткі правила:
+          1. Жодних часткових збігів по людях. Раніше запасний пошук робив
+             OR по кожному слову через icontains — тобто «Ольга Петренко»
+             ловила БУДЬ-ЯКУ Ольгу. З 234 повторників 187 (80%) мають
+             НЕунікальне імʼя: 15 «Тетяна», 14 «Ольга», 14 «Ірина».
+          2. Жодного «беремо першого». Якщо підходить більше одного — вертаємо
+             None і віддаємо діалог менеджеру. Краще не створити нічого,
+             ніж виставити рахунок не тому.
+        Причина відмови кладеться у self.match_reason.
         """
+        self.match_reason = ""
         qs = Contact.objects.all()
         candidates = []
 
         if ig_username:
             clean = ig_username.lstrip("@").strip()
-            candidates = list(
+            rough = list(
                 qs.filter(
-                    Q(social_link__icontains=clean)
-                    | Q(nickname__iexact=clean)
-                    | Q(nickname__icontains=clean)
-                ).order_by("-created_at")[:10]
+                    Q(social_link__icontains=clean) | Q(nickname__icontains=clean)
+                ).order_by("-created_at")[:50]
             )
+            # широко знайшли — далі лишаємо ТІЛЬКИ точні збіги
+            candidates = [c for c in rough if self._ig_matches(c, clean)]
 
         if not candidates and client_name:
-            name = client_name.strip()
-            parts = [p for p in re.split(r"\s+", name) if len(p) >= 2]
-            # Пошук зі spec-порядком: exact both names > startswith both > icontains
+            parts = [p for p in re.split(r"\s+", client_name.strip()) if len(p) >= 2]
+            # Потрібні ОБИДВА слова: імʼя + прізвище. Одного слова замало.
             if len(parts) >= 2:
-                # Спочатку — точний матч обох імен (у будь-якому порядку)
                 p1, p2 = parts[0], parts[1]
                 exact_q = (
                     (Q(first_name__iexact=p1) & Q(last_name__iexact=p2))
                     | (Q(first_name__iexact=p2) & Q(last_name__iexact=p1))
                 )
                 candidates = list(qs.filter(exact_q).order_by("-created_at")[:10])
-                # Якщо exact не знайшов — startswith обох
                 if not candidates:
                     starts_q = (
                         (Q(first_name__istartswith=p1) & Q(last_name__istartswith=p2))
                         | (Q(first_name__istartswith=p2) & Q(last_name__istartswith=p1))
                     )
                     candidates = list(qs.filter(starts_q).order_by("-created_at")[:10])
-            # Fallback — fuzzy icontains
-            if not candidates:
-                q = Q()
-                for p in parts:
-                    q |= Q(first_name__icontains=p) | Q(last_name__icontains=p) | Q(nickname__icontains=p)
-                if q:
-                    candidates = list(qs.filter(q).order_by("-created_at")[:10])
+            # fuzzy-fallback по одному слову ПРИБРАНО навмисно — див. правило 1.
 
-        # Фільтруємо — тільки повторники (мають хоч 1 won-сделку в основній воронці)
-        for c in candidates:
-            if Deal.objects.filter(
-                contact=c, funnel_id=FUNNEL_MAIN_ID, stage__is_won=True
-            ).exists():
-                return c
+        # Пріоритет: повторник основної воронки. Але якщо таких кілька — відмова.
+        won = [c for c in candidates
+               if Deal.objects.filter(contact=c, funnel_id=FUNNEL_MAIN_ID, stage__is_won=True).exists()]
+        if len(won) > 1:
+            self.match_reason = "ambiguous:%d" % len(won)
+            return None
+        if len(won) == 1:
+            return won[0]
 
-        # Якщо won-сделок нема, повертаємо перший з ≥1 будь-якою сделкою (окрім лідів)
-        for c in candidates:
-            if Deal.objects.filter(contact=c).exclude(funnel__is_lead_funnel=True).exists():
-                return c
+        other = [c for c in candidates
+                 if Deal.objects.filter(contact=c).exclude(funnel__is_lead_funnel=True).exists()]
+        if len(other) > 1:
+            self.match_reason = "ambiguous:%d" % len(other)
+            return None
+        if len(other) == 1:
+            return other[0]
 
         return None
 
@@ -211,9 +230,14 @@ class Command(BaseCommand):
             client_name=data.get("client_name"),
         )
         if not contact:
+            amb = getattr(self, "match_reason", "").startswith("ambiguous")
             self._reply(
-                ok=False, error="contact_not_found",
-                hint="Це не повторник — передавай менеджеру, він створить сделку вручну",
+                ok=False,
+                error="contact_ambiguous" if amb else "contact_not_found",
+                hint=("Під цей запит підходить КІЛЬКА різних людей — не вгадуємо. "
+                      "Передавай менеджеру, хай уточнить і створить сделку вручну"
+                      if amb else
+                      "Це не повторник — передавай менеджеру, він створить сделку вручну"),
                 query={"ig": data.get("ig_username"), "name": data.get("client_name")},
             )
 
