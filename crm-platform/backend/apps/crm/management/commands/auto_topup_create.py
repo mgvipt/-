@@ -6,6 +6,7 @@
 
 Приклад використання:
     docker exec -i crm-platform-web-1 python manage.py auto_topup_create --json '{
+        "chat_id": "1234567890",
         "ig_username": "wallov.hr",
         "client_name": "Степура Ольга",
         "material_query": "мокрий шовк",
@@ -64,6 +65,47 @@ class Command(BaseCommand):
         self.stdout.write(json.dumps(kw, ensure_ascii=False, default=str))
         sys.exit(0)
 
+    def _contact_by_chat(self, chat_id):
+        """НАЙНАДІЙНІШИЙ спосіб: номер переписки → діалог → клієнт.
+        Жодних здогадок: усі IG-діалоги мають і номер, і привʼязаного клієнта."""
+        from apps.inbox.models import Conversation
+        cid = str(chat_id or "").strip()
+        if not cid:
+            return None
+        convs = list(
+            Conversation.objects.filter(external_chat_id=cid, contact__isnull=False)
+            .select_related("contact").order_by("-last_message_at")[:20]
+        )
+        contacts, seen = [], set()
+        for v in convs:
+            if v.contact_id not in seen:
+                seen.add(v.contact_id)
+                contacts.append(v.contact)
+        if not contacts:
+            return None
+        if len(contacts) == 1:
+            return contacts[0]
+        # 14 номерів із 3 639 ведуть на ДВІ картки — це дублі ОДНІЄЇ людини,
+        # а не різні люди. Беремо картку з покупками, інакше — найсвіжішу.
+        for c in contacts:
+            if Deal.objects.filter(contact=c, funnel_id=FUNNEL_MAIN_ID,
+                                   stage__is_won=True).exists():
+                return c
+        return contacts[0]
+
+    def _most_recent_talker(self, contacts):
+        """Тайбрейк для тезок: хто з кандидатів спілкується з нами ОСТАННІМ.
+        Це не здогадка — діалог і є той контекст, у якому оформлюється замовлення."""
+        from apps.inbox.models import Conversation
+        best, best_ts = None, None
+        for c in contacts:
+            ts = (Conversation.objects.filter(contact=c)
+                  .order_by("-last_message_at")
+                  .values_list("last_message_at", flat=True).first())
+            if ts and (best_ts is None or ts > best_ts):
+                best, best_ts = c, ts
+        return best
+
     def _ig_matches(self, contact, clean):
         """СТРОГА звірка IG: нік або хвіст посилання мають збігатися ПОВНІСТЮ.
         Часткові збіги заборонені — «ira» не повинна ловити «kira_deco»."""
@@ -79,8 +121,8 @@ class Command(BaseCommand):
                 return True
         return False
 
-    def _find_contact(self, ig_username=None, client_name=None):
-        """Знайти клієнта за IG username АБО за ПОВНИМ іменем (імʼя + прізвище).
+    def _find_contact(self, ig_username=None, client_name=None, chat_id=None):
+        """Знайти клієнта: НОМЕР ПЕРЕПИСКИ → IG username → повне імʼя.
 
         ⚠️ БЕЗПЕКА (2026-08-15). Одразу після цього коду створюється сделка
         і посилання LiqPay, тому помилка тут = рахунок ЧУЖІЙ людині.
@@ -95,6 +137,14 @@ class Command(BaseCommand):
         Причина відмови кладеться у self.match_reason.
         """
         self.match_reason = ""
+
+        # 0. Номер переписки — точний і безпомилковий шлях. Автоматика тут
+        #    ніколи не зупиняється, бо діалог завжди привʼязаний до клієнта.
+        by_chat = self._contact_by_chat(chat_id)
+        if by_chat:
+            self.match_reason = "by_chat"
+            return by_chat
+
         qs = Contact.objects.all()
         candidates = []
 
@@ -129,19 +179,27 @@ class Command(BaseCommand):
         # Пріоритет: повторник основної воронки. Але якщо таких кілька — відмова.
         won = [c for c in candidates
                if Deal.objects.filter(contact=c, funnel_id=FUNNEL_MAIN_ID, stage__is_won=True).exists()]
-        if len(won) > 1:
-            self.match_reason = "ambiguous:%d" % len(won)
-            return None
         if len(won) == 1:
             return won[0]
+        if len(won) > 1:
+            pick = self._most_recent_talker(won)
+            if pick:
+                self.match_reason = "tiebreak_by_dialog"
+                return pick
+            self.match_reason = "ambiguous:%d" % len(won)
+            return None
 
         other = [c for c in candidates
                  if Deal.objects.filter(contact=c).exclude(funnel__is_lead_funnel=True).exists()]
-        if len(other) > 1:
-            self.match_reason = "ambiguous:%d" % len(other)
-            return None
         if len(other) == 1:
             return other[0]
+        if len(other) > 1:
+            pick = self._most_recent_talker(other)
+            if pick:
+                self.match_reason = "tiebreak_by_dialog"
+                return pick
+            self.match_reason = "ambiguous:%d" % len(other)
+            return None
 
         return None
 
@@ -228,6 +286,7 @@ class Command(BaseCommand):
         contact = self._find_contact(
             ig_username=data.get("ig_username"),
             client_name=data.get("client_name"),
+            chat_id=data.get("chat_id"),
         )
         if not contact:
             amb = getattr(self, "match_reason", "").startswith("ambiguous")
