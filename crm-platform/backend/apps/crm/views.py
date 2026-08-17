@@ -93,8 +93,18 @@ class ContactViewSet(viewsets.ModelViewSet):
         #   взаємно (нетто 0). Оплата «з авансу» доходу НЕ створює, лише платіж → зменшує вільний аванс.
         #   Тому віднімаємо ВСІ оплачені платежі — інакше оплачені налом сделки роздувають «аванс».
         from decimal import Decimal as _Dadv
-        _pay_all = Payment.objects.filter(deal__contact=c, is_paid=True).aggregate(s=_Sum("amount"))["s"] or 0
-        adv = _Dadv(str(inc or 0)) - _Dadv(str(exp or 0)) - _Dadv(str(_pay_all or 0))
+        # ВІЛЬНИЙ аванс: віднімаємо не Σ УСІХ оплат, а Σ по кожній сделці min(оплата, сума сделки).
+        # Переплата (оплата ПОНАД суму сделки) НЕ гаситься → лишається вільним авансом клієнта —
+        # напр. клієнт заплатив за #66251 більше, а різниця має покрити досил-сделку #66264.
+        from apps.crm.models import Deal as _DealAdv
+        _pay_consumed = _Dadv("0")
+        for _dpa in _DealAdv.objects.filter(contact=c).annotate(_paidv=_Sum("payments__amount", filter=_Qc(payments__is_paid=True))):
+            _pv = _Dadv(str(_dpa._paidv or 0))
+            if _pv <= 0:
+                continue
+            _av = _Dadv(str(_dpa.amount or 0))
+            _pay_consumed += _pv if _pv < _av else _av   # min(оплата, сума сделки)
+        adv = _Dadv(str(inc or 0)) - _Dadv(str(exp or 0)) - _pay_consumed
         _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[])))
         from django.db.models import F as _F
         debt = _ppq.filter(kind="payable").aggregate(s=_Sum(_F("amount") - _F("paid_amount")))["s"] or 0
@@ -1505,8 +1515,16 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             _exp = _AdvTx.objects.filter(_m, direction="out").aggregate(s=_AdvS("amount_uah"))["s"] or 0
             # ВСІ оплачені платежі сделок клієнта (не тільки advance): нал/LiqPay створюють дохід+платіж
             # (нетто 0 у авансі), advance — лише платіж (−аванс). Так «доступний аванс» = реально вільні гроші.
-            _used = Payment.objects.filter(deal__contact=_cc, is_paid=True).aggregate(s=_AdvS("amount"))["s"] or 0
-            _avail = Decimal(str(_inc)) - Decimal(str(_exp)) - Decimal(str(_used))
+            # Σ по кожній сделці min(оплата, сума) — переплата лишається ДОСТУПНИМ авансом (та сама логіка, що у finance())
+            from apps.crm.models import Deal as _DealAv
+            _used = Decimal("0")
+            for _dav in _DealAv.objects.filter(contact=_cc).annotate(_pv2=_AdvS("payments__amount", filter=_AdvQ(payments__is_paid=True))):
+                _p2 = Decimal(str(_dav._pv2 or 0))
+                if _p2 <= 0:
+                    continue
+                _a2 = Decimal(str(_dav.amount or 0))
+                _used += _p2 if _p2 < _a2 else _a2   # min(оплата, сума сделки)
+            _avail = Decimal(str(_inc)) - Decimal(str(_exp)) - _used
             if amount > _avail + Decimal("0.01"):
                 return Response({"detail": "Недостатньо авансу клієнта. Доступно: %.2f грн." % float(_avail)}, status=status.HTTP_400_BAD_REQUEST)
         # ── РОЗПОДІЛ ПЛАТЕЖУ: частина на сделку, частина закриває дебіторки клієнта (транзит-матеріали БудМаркет тощо) ──
