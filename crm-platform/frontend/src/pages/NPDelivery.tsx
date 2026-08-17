@@ -120,6 +120,7 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
 
   const collect = () => ({ sender: snd, recipient: rec, parcel: par, cargo_type: cargo, seats, pack, note, cargo_details: items, backward: bw, time_interval: timeInterval });
 
+  const [ttnErr, setTtnErr] = useState("");
   const save = (silent?: boolean) => {
     setBusy("save");
     return api.post(`/api/deals/${deal.id}/np_save/`, { np_data: collect(), delivery_date: date || null })
@@ -134,8 +135,9 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
     api.post<any>(`/api/deals/${deal.id}/np_estimate/`, { props }).then(setPrice).catch(() => flash && flash(t("Не удалось оценить", "Не вдалося оцінити"))).finally(() => setBusy(""));
   };
   const createTTN = () => {
-    if (!rec.name || !rec.phone || !rec.city_name || (rec.service !== "WarehouseDoors" && !rec.wh_number)) { flash && flash(t("Заполни: имя, телефон, город, отделение", "Заповни: імʼя, телефон, місто, відділення")); return; }
-    if (rec.service === "WarehouseDoors" && (!rec.street || !rec.house)) { flash && flash(t("Адресная доставка: заполни улицу и дом", "Адресна доставка: заповни вулицю і будинок")); return; }
+    setTtnErr("");
+    if (!rec.name || !rec.phone || !rec.city_name || (rec.service !== "WarehouseDoors" && !rec.wh_number)) { const m = t("Заполни: имя, телефон, город, отделение (город и отделение — ВЫБРАТЬ из подсказки)", "Заповни: імʼя, телефон, місто, відділення (місто й відділення — ОБРАТИ зі списку-підказки)"); setTtnErr(m); flash && flash(m); return; }
+    if (rec.service === "WarehouseDoors" && (!rec.street || !rec.house)) { const m = t("Адресная доставка: заполни улицу и дом", "Адресна доставка: заповни вулицю і будинок"); setTtnErr(m); flash && flash(m); return; }
     setBusy("ttn");
     save(true);
     api.post<any>(`/api/deals/${deal.id}/create_ttn/`, {
@@ -146,7 +148,11 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
       saturday: pack.saturday, return_docs: pack.return_docs, payer: par.payer, payment_method: par.method,
       cod_amount: bw.on ? (bw.amount || par.declared) : 0, include_deals: incl, delivery_date: date,
     }).then((r) => { flash && flash(t(`✓ ТТН ${r.ttn} создана`, `✓ ТТН ${r.ttn} створена`)); onReload && onReload(); })
-      .catch((e: any) => flash && flash(t("Ошибка НП: ", "Помилка НП: ") + (e?.response?.data?.detail || ""))).finally(() => setBusy(""));
+      .catch((e: any) => {
+        const d = e?.response?.data?.detail; const st = e?.response?.status;
+        const msg = d || (st ? t(`Сервер вернул ошибку ${st}. Попробуй ещё раз или позови разработчика.`, `Сервер повернув помилку ${st}. Спробуй ще раз або поклич розробника.`) : t("Нет связи с сервером/Новой Почтой. Проверь интернет и повтори.", "Немає звʼязку з сервером/Новою Поштою. Перевір інтернет і повтори."));
+        setTtnErr(msg); flash && flash(t("Ошибка НП: ", "Помилка НП: ") + msg);
+      }).finally(() => setBusy(""));
   };
 
   const printTTN = async (fmt: string) => {
@@ -362,6 +368,10 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
         </div>
       </Grid>
 
+      {!readOnly && ttnErr && <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 10, background: "#fef2f2", color: "#991b1b", border: "1px solid #fecaca", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "flex-start", gap: 8 }}>
+        <span>⛔</span><span style={{ flex: 1 }}>{t("ТТН не создана: ", "ТТН не створено: ")}{ttnErr}</span>
+        <span style={{ cursor: "pointer", opacity: .7 }} onClick={() => setTtnErr("")}>✕</span>
+      </div>}
       {!readOnly && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
         <button className="btn btn-light" onClick={estimate} disabled={!!busy || !rec.city_ref}>{busy === "est" ? "…" : "🧮 " + t("Оценить стоимость", "Оцінити вартість")}</button>
         <div style={{ flex: 1 }} />
