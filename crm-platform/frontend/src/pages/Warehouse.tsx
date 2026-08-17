@@ -103,6 +103,10 @@ export default function Warehouse() {
   const [realizDocs, setRealizDocs] = useState<any[]>([]);
   const [realizBusy, setRealizBusy] = useState(false);
   const [realizSel, setRealizSel] = useState<any>(null);
+  const [realizEdit, setRealizEdit] = useState<any[] | null>(null);  // null = не редагуємо; масив рядків = редагуємо чернетку реалізації
+  const [realizAddQ, setRealizAddQ] = useState("");
+  const [realizAddOpts, setRealizAddOpts] = useState<any[]>([]);
+  const [realizEditBusy, setRealizEditBusy] = useState(false);
   const [receiptDocs, setReceiptDocs] = useState<any[]>([]);
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [receiptSel, setReceiptSel] = useState<any>(null);
@@ -168,6 +172,45 @@ export default function Warehouse() {
     try { await api.post(`/api/stock-documents/${rid}/unpost/`, {}); await realizRefresh(); loadProducts(); }
     catch { alert(t("Нет доступа (нужно «Редактировать склад» или «Финмодель»)","Немає доступу (потрібне «Редагувати склад» або «Фінмодель»)")); }
   }
+  // редагування ЧЕРНЕТКИ реалізації (кейс: склад щось не доклав → досилаємо новою угодою; тут прибираємо позицію, щоб не було подвійного списання)
+  function startRealizEdit() {
+    if (!realizSel) return;
+    setRealizEdit((realizSel.items || []).map((it: any) => ({
+      product: it.product, product_name: it.product_name,
+      quantity: Math.abs(Number(it.quantity)), price: Number(it.price),
+    })));
+    setRealizAddQ(""); setRealizAddOpts([]);
+  }
+  async function searchRealizAdd(q: string) {
+    setRealizAddQ(q);
+    if (!q.trim()) { setRealizAddOpts([]); return; }
+    try { const rr: any = await api.get(`/api/products/?search=${encodeURIComponent(q.trim())}&page_size=8&is_active=true`);
+      setRealizAddOpts((rr.results || []).filter((x: any) => x.track_stock !== false)); }
+    catch { setRealizAddOpts([]); }
+  }
+  function addRealizRow(pr: any) {
+    setRealizEdit((rows) => {
+      const cur = rows || [];
+      if (cur.some((x) => x.product === pr.id)) return cur;  // вже є
+      return [...cur, { product: pr.id, product_name: pr.name, quantity: 1, price: Number(pr.cost || 0) }];
+    });
+    setRealizAddQ(""); setRealizAddOpts([]);
+  }
+  async function saveRealizEdit() {
+    if (!realizSel || realizEdit == null) return;
+    const items = realizEdit
+      .filter((x) => x.product && Number(x.quantity) > 0)
+      .map((x) => ({ product: x.product, quantity: Number(x.quantity), price: Number(x.price) || 0 }));
+    setRealizEditBusy(true);
+    try {
+      const upd: any = await api.post(`/api/stock-documents/${realizSel.id}/edit-realization/`, { items });
+      setRealizSel(upd); setRealizEdit(null); openRealizList(); loadProducts();
+    } catch (e: any) {
+      alert(t("Не удалось сохранить: ","Не вдалося зберегти: ") + (e?.data?.detail || e?.message || t("ошибка","помилка")));
+    }
+    setRealizEditBusy(false);
+  }
+  useEffect(() => { setRealizEdit(null); setRealizAddOpts([]); setRealizAddQ(""); /* eslint-disable-next-line */ }, [realizSel?.id]);
   // приходы: провести / отменить проведение (тот же движок post/unpost)
   async function receiptToggle(rid: number, post: boolean) {
     if (!post && !confirm(t("Отменить приход? Поступивший товар будет снят с остатка склада.","Скасувати прихід? Товар, що надійшов, буде знято із залишку складу."))) return;
@@ -778,7 +821,7 @@ export default function Warehouse() {
       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16 }}>
         {realizSel ? (
           <>
-            <button className="btn btn-light" onClick={() => setRealizSel(null)}>← {t("К списку реализаций","До списку реалізацій")}</button>
+            <button className="btn btn-light" onClick={() => { setRealizSel(null); setRealizEdit(null); }}>← {t("К списку реализаций","До списку реалізацій")}</button>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
               <div>
                 <h3 style={{ margin: "0 0 4px" }}>{t("Реализация","Реалізація")} {docTitle(realizSel)} <button className="btn btn-light" style={{ padding: "2px 8px" }} title={t("Скопировать ссылку","Скопіювати посилання")} onClick={() => { navigator.clipboard?.writeText(window.location.origin + "/warehouse?doc=" + realizSel.id); alert(t("Ссылка скопирована ✓","Посилання скопійовано ✓")); }}>🔗</button></h3>
@@ -786,17 +829,62 @@ export default function Warehouse() {
               </div>
               <div style={{ textAlign: "right" }}>
                 <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 13, fontWeight: 700, background: realizSel.posted ? "#dcfce7" : "#fef3c7", color: realizSel.posted ? "#166534" : "#92400e" }}>{realizSel.posted ? t("Проведён","Проведено") : t("Черновик","Чернетка")}</span>
-                {canRealize && <div style={{ marginTop: 8 }}>{realizSel.posted
+                {canRealize && <div style={{ marginTop: 8, display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>{realizSel.posted
                   ? <button className="btn btn-light" onClick={() => realizUnpost(realizSel.id)}>{t("Отменить проведение","Скасувати проведення")}</button>
-                  : <button className="btn btn-primary" onClick={() => realizPost(realizSel.id)}>{t("Провести","Провести")}</button>}</div>}
+                  : <>
+                      {realizEdit == null && <button className="btn btn-light" onClick={startRealizEdit} title={t("Изменить позиции: кол-во, убрать или добавить товар. Нужно, если со склада что-то не доложили и досылаете новой сделкой — уберите позицию, чтобы не было двойного списания","Змінити позиції: к-сть, прибрати або додати товар. Потрібно, якщо зі складу щось не доклали і досилаєте новою угодою — приберіть позицію, щоб не було подвійного списання")}>✏ {t("Редактировать","Редагувати")}</button>}
+                      <button className="btn btn-primary" onClick={() => realizPost(realizSel.id)}>{t("Провести","Провести")}</button>
+                    </>}</div>}
               </div>
             </div>
-            <table style={{ width: "100%", marginTop: 14 }}>
-              <thead><tr><th>{t("Товар","Товар")}</th><th style={{ textAlign: "right" }}>{t("Кол-во","К-сть")}</th><th style={{ textAlign: "right" }}>{t("Себестоимость","Собівартість")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th></tr></thead>
-              <tbody>{(realizSel.items || []).map((it: any) => (
-                <tr key={it.id}><td>{it.product_name}</td><td style={{ textAlign: "right" }}>{Math.abs(Number(it.quantity))}</td><td style={{ textAlign: "right" }}>{Number(it.price).toLocaleString("uk-UA")} ₴</td><td style={{ textAlign: "right" }}>{(Math.abs(Number(it.quantity)) * Number(it.price)).toLocaleString("uk-UA")} ₴</td></tr>
-              ))}</tbody>
-            </table>
+            {realizEdit != null ? (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, color: "#92400e", marginBottom: 10 }}>
+                  ✏ {t("Режим редактирования черновика. Меняйте кол-во, убирайте лишние позиции (✕) или добавьте товар. После сохранения нажмите «Провести» — спишется исправленный набор.","Режим редагування чернетки. Міняйте к-сть, прибирайте зайві позиції (✕) або додайте товар. Після збереження натисніть «Провести» — спишеться виправлений набір.")}
+                </div>
+                <table style={{ width: "100%" }}>
+                  <thead><tr><th>{t("Товар","Товар")}</th><th style={{ textAlign: "right", width: 110 }}>{t("Кол-во","К-сть")}</th><th style={{ textAlign: "right", width: 140 }}>{t("Себестоимость","Собівартість")}</th><th style={{ textAlign: "right", width: 120 }}>{t("Сумма","Сума")}</th><th style={{ width: 44 }}></th></tr></thead>
+                  <tbody>{realizEdit.map((row, i) => (
+                    <tr key={i}>
+                      <td>{row.product_name}</td>
+                      <td style={{ textAlign: "right" }}><input type="number" min={0} step="0.01" value={row.quantity} onChange={(e) => setRealizEdit((rows) => (rows || []).map((x, j) => j === i ? { ...x, quantity: e.target.value } : x))} style={{ width: 92, textAlign: "right", height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
+                      <td style={{ textAlign: "right" }}><input type="number" min={0} step="0.01" value={row.price} onChange={(e) => setRealizEdit((rows) => (rows || []).map((x, j) => j === i ? { ...x, price: e.target.value } : x))} style={{ width: 110, textAlign: "right", height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /> ₴</td>
+                      <td style={{ textAlign: "right" }}>{(Math.abs(Number(row.quantity) || 0) * (Number(row.price) || 0)).toLocaleString("uk-UA")} ₴</td>
+                      <td style={{ textAlign: "center" }}><button className="btn btn-light" style={{ padding: "2px 8px", color: "#dc2626" }} title={t("Убрать позицию","Прибрати позицію")} onClick={() => setRealizEdit((rows) => (rows || []).filter((_, j) => j !== i))}>✕</button></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+                <div style={{ marginTop: 10, position: "relative", maxWidth: 440 }}>
+                  <input value={realizAddQ} onChange={(e) => searchRealizAdd(e.target.value)} placeholder={t("+ Добавить товар (поиск по названию/артикулу)","+ Додати товар (пошук за назвою/артикулом)")} style={{ width: "100%", height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
+                  {realizAddOpts.length > 0 && (
+                    <div style={{ position: "absolute", zIndex: 20, top: 34, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 6px 18px rgba(0,0,0,.12)", maxHeight: 240, overflowY: "auto" }}>
+                      {realizAddOpts.map((pr) => (
+                        <div key={pr.id} onClick={() => addRealizRow(pr)} style={{ padding: "8px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
+                          <b style={{ flex: 1, minWidth: 0 }}>{pr.name}</b>
+                          <span className="muted" style={{ whiteSpace: "nowrap", fontSize: 12 }}>{t("ост.","зал.")} {(pr as any).stock ?? "—"} · {Number(pr.cost || 0).toLocaleString("uk-UA")} ₴</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                  <button className="btn btn-primary" disabled={realizEditBusy} onClick={saveRealizEdit}>{realizEditBusy ? t("Сохранение…","Збереження…") : t("Сохранить","Зберегти")}</button>
+                  <button className="btn btn-light" disabled={realizEditBusy} onClick={() => setRealizEdit(null)}>{t("Отмена","Скасувати")}</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {realizSel.posted && canRealize && (
+                  <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>{t("Чтобы изменить позиции — сначала «Отменить проведение» (товар вернётся на склад), затем появится «Редактировать».","Щоб змінити позиції — спершу «Скасувати проведення» (товар повернеться на склад), потім зʼявиться «Редагувати».")}</div>
+                )}
+                <table style={{ width: "100%", marginTop: 14 }}>
+                  <thead><tr><th>{t("Товар","Товар")}</th><th style={{ textAlign: "right" }}>{t("Кол-во","К-сть")}</th><th style={{ textAlign: "right" }}>{t("Себестоимость","Собівартість")}</th><th style={{ textAlign: "right" }}>{t("Сумма","Сума")}</th></tr></thead>
+                  <tbody>{(realizSel.items || []).map((it: any) => (
+                    <tr key={it.id}><td>{it.product_name}</td><td style={{ textAlign: "right" }}>{Math.abs(Number(it.quantity))}</td><td style={{ textAlign: "right" }}>{Number(it.price).toLocaleString("uk-UA")} ₴</td><td style={{ textAlign: "right" }}>{(Math.abs(Number(it.quantity)) * Number(it.price)).toLocaleString("uk-UA")} ₴</td></tr>
+                  ))}</tbody>
+                </table>
+              </>
+            )}
           </>
         ) : (
           <>

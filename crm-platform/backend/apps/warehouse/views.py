@@ -779,6 +779,40 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
                 StockMovement.objects.create(document=doc, product_id=int(pid), quantity=qty, price=price)
         return Response(StockDocumentSerializer(doc, context={"request": request}).data)
 
+    @action(detail=True, methods=["post"], url_path="edit-realization", permission_classes=[RealizationManage])
+    def edit_realization(self, request, pk=None):
+        """Редагувати ЧЕРНЕТКУ реалізації (posted=False): позиції (товар/к-сть/собівартість).
+        Проведену реалізацію редагувати НЕ можна — спершу «Скасувати проведення» (товар повернеться
+        на склад), потім правити. Кейс Олега: склад щось не доклав і досилає новою угодою —
+        тут прибираємо/зменшуємо позицію, щоб не було ПОДВІЙНОГО списання (стара реалізація урізана,
+        нова угода спише коректно). Ціну клієнту й саму угоду це НЕ чіпає — лише фізичне списання.
+        Право — як на проведення (RealizationManage: warehouse.edit або фінмодель)."""
+        doc = self.get_object()
+        if doc.kind != "out":
+            return Response({"detail": "Тільки реалізація."}, status=status.HTTP_400_BAD_REQUEST)
+        if doc.posted:
+            return Response({"detail": "Спершу скасуйте проведення, потім редагуйте."}, status=status.HTTP_400_BAD_REQUEST)
+        items = request.data.get("items")
+        if items is not None:
+            doc.items.all().delete()
+            for it in items:
+                pid = it.get("product")
+                if not pid:
+                    continue
+                try:
+                    qty = Decimal(str(it.get("quantity", 0) or 0))
+                    price = Decimal(str(it.get("price", 0) or 0))
+                except (TypeError, ValueError):
+                    continue
+                if qty <= 0:
+                    continue
+                # реалізація = рух ЗІ складу → кількість завжди відʼємна
+                StockMovement.objects.create(document=doc, product_id=int(pid), quantity=-abs(qty), price=price)
+        if "comment" in request.data:
+            doc.comment = str(request.data.get("comment") or "")[:255]
+            doc.save(update_fields=["comment"])
+        return Response(StockDocumentSerializer(doc, context={"request": request}).data)
+
     @action(detail=False, methods=["post"], url_path="import-receipt")
     def import_receipt(self, request):
         """Прихід файлом: CSV (Артикул;Кількість;Ціна) → знайти товар по артикулу/назві → прихід одним документом.
