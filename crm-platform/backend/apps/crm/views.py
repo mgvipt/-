@@ -104,7 +104,7 @@ class ContactViewSet(viewsets.ModelViewSet):
                 continue
             _av = _Dadv(str(_dpa.amount or 0))
             _pay_consumed += _pv if _pv < _av else _av   # min(оплата, сума сделки)
-        adv = _Dadv(str(inc or 0)) - _Dadv(str(exp or 0)) - _pay_consumed
+        adv = _Dadv(str(inc or 0)) - _pay_consumed   # АВАНС = деньги КЛИЕНТА (Заплатил − Купил); НАШИ затраты exp сюда НЕ входят (это маржа, не деньги клиента)
         _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[])))
         from django.db.models import F as _F
         debt = _ppq.filter(kind="payable").aggregate(s=_Sum(_F("amount") - _F("paid_amount")))["s"] or 0
@@ -1524,7 +1524,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                     continue
                 _a2 = Decimal(str(_dav.amount or 0))
                 _used += _p2 if _p2 < _a2 else _a2   # min(оплата, сума сделки)
-            _avail = Decimal(str(_inc)) - Decimal(str(_exp)) - _used
+            _avail = Decimal(str(_inc)) - _used   # деньги клиента = доход − Σmin(оплата,сумма); НАШИ затраты (exp) НЕ вычитаем
             if amount > _avail + Decimal("0.01"):
                 return Response({"detail": "Недостатньо авансу клієнта. Доступно: %.2f грн." % float(_avail)}, status=status.HTTP_400_BAD_REQUEST)
         # ── РОЗПОДІЛ ПЛАТЕЖУ: частина на сделку, частина закриває дебіторки клієнта (транзит-матеріали БудМаркет тощо) ──
