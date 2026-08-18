@@ -14,6 +14,18 @@ def liqpay_account():
     return a
 
 
+def novapay_account():
+    """Рахунок «НоваПей (накладені)»: дохід наложок (номінал) → сюди; комісія — звідси;
+    виплата банку = переказ НоваПей → ФОП. Баланс ≈ наложки «в дорозі»."""
+    a = Account.objects.filter(name__icontains="новапей").first()
+    if a is None:
+        a = Account.objects.create(name="НоваПей (накладені)", kind="bank")
+    if not a.is_active:
+        a.is_active = True
+        a.save(update_fields=["is_active"])
+    return a
+
+
 def default_account():
     return (Account.objects.filter(is_active=True).first()
             or Account.objects.create(name="Каса", kind="cash"))

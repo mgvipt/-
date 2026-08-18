@@ -1118,46 +1118,54 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
         if direction == "in" and ("нова пошта" in (cp or "").lower() or "новапошта" in (cp or "").lower()
                                   or "новапей" in (cp or "").lower() or "novapay" in (cp or "").lower()):
             cat_np = Category.objects.filter(name="Онлайн (Instagram/TikTok/сайт)", direction="in").first()
-            # Виплата НоваПей = пачка наложок. Спершу знаходимо ЯКІ наложки вона покриває,
-            # потім пишемо ДОХІД ПО КОЖНІЙ сделці (номінал) + КОМІСІЮ НоваПей витратою на сделку.
-            # Так маржа кожної сделки чесна (комісія враховується), а рахунок сходиться:
-            # Σномінал(дохід) − Σкомісія = виплата(нетто).
+            # МЕХАНІКА ОЛЕГА (2026-08-18): виплата НоваПей = ОДНА сума за КІЛЬКА наложок.
+            # До надходження грошей журнал не чіпаємо (чек Checkbox — лише «очікування» з ТТН).
+            # Прийшли гроші → підбираємо ТОЧНИЙ набір непроведених наложок:
+            # Σ(номінал − 1,3% комісії) = сума виплати (допуск ±1 грн). Підібрали →
+            # дохід ПО КОЖНІЙ сделці (номінал) на рахунок «НоваПей (накладені)» +
+            # комісія звідти ж + ПЕРЕКАЗ «НоваПей → банк» на нетто = рядок виписки.
+            # Рахунок НоваПей виходить у нуль — один в один контур LiqPay.
+            # НЕ підібрали → сума лишається доходом на банку БЕЗ сделки з поміткою
+            # «розділити вручну». Нічого не вгадуємо і наложки paid НЕ позначаємо —
+            # саме вгадування у липні поклало реєстр 14 522,71 цілком на одну сделку.
             try:
                 from apps.crm.models import Payment as _PayNP, log_activity as _laNP
-                waiting = list(_PayNP.objects.filter(provider="np_cod", is_paid=False).order_by("created_at"))
-                _grp = None
-                _byttn = {}
-                for w in waiting:
-                    if w.external_id:
-                        _byttn.setdefault(w.external_id, []).append(w)
-                for _ws in _byttn.values():
-                    if len(_ws) >= 2:
-                        _sg = sum(float(x.amount) for x in _ws)
-                        if float(amt) <= _sg <= float(amt) * 1.12:
-                            _grp = _ws; break
-                if _grp:
-                    waiting = _grp
-                else:
-                    _singles = [w for w in waiting if float(amt) <= float(w.amount) <= float(amt) * 1.12]
-                    if len(_singles) == 1:
-                        waiting = _singles
-                    elif len(_singles) >= 2:
-                        waiting = []
-                # ВІДБІР (без позначки paid — щоб НЕ втратити дохід при збої): тісний буфер проти over-match
-                rest = float(amt) * 1.08  # запас на комісію НоваПей
-                matched = []
-                for w in waiting:
-                    if float(w.amount) <= rest:
-                        rest -= float(w.amount)
-                        matched.append(w)
-                sum_nom = sum(float(w.amount or 0) for w in matched)
-                from django.db import transaction as _atx
-                # профільна категорія комісії НоваПей (id=69) якщо є, інакше загальна комісія банку
+                from .services import novapay_account as _npacc
+                from datetime import timedelta as _tdnp
+
+                def _np_pick_set(target, cands, fee=0.013, tol=1.0, max_n=6):
+                    """Точний підбір набору наложок під суму виплати (перебір комбінацій).
+                    target — нетто з банку; cands — [(id, Decimal номінал)]. Повертає list ids або None."""
+                    import itertools
+                    net = [(cid, round(float(a) - float(a) * fee, 2)) for cid, a in cands]
+                    n = len(net)
+                    if n == 0:
+                        return None
+                    best = None
+                    for r in range(1, min(max_n, n) + 1):
+                        for combo in itertools.combinations(net, r):
+                            s = round(sum(x[1] for x in combo), 2)
+                            d = abs(s - float(target))
+                            if d <= tol * max(1, r):  # допуск ±1 грн на кожну наложку (округлення)
+                                if best is None or d < best[0]:
+                                    best = (d, [x[0] for x in combo])
+                        if best is not None:
+                            break  # менший набір завжди кращий за більший з тим самим допуском
+                    return best[1] if best else None
+
+                _win = dte - _tdnp(days=45)
+                waiting = list(_PayNP.objects.filter(
+                    provider="np_cod", is_paid=False,
+                    created_at__date__gte=_win, created_at__date__lte=dte,
+                ).select_related("deal", "deal__contact").order_by("created_at"))
+                _ids = _np_pick_set(amt, [(w.id, w.amount) for w in waiting])
+                matched = [w for w in waiting if _ids and w.id in _ids]
                 _npfee = Category.objects.filter(name__icontains="новапей", direction="out").first() or _fee_category()
-                if matched and (float(amt) * 0.90 <= sum_nom <= float(amt) * 1.10):
-                    # ЧИСТИЙ випадок: виплата пояснюється саме цими наложками → дохід + комісія ПО КОЖНІЙ сделці.
-                    # ATOMIC: або все (дохід+комісія+paid), або нічого — щоб не лишити paid без доходу.
-                    _comm_total = max(0.0, sum_nom - float(amt))
+                from django.db import transaction as _atx
+                if matched:
+                    _acc_np = _npacc()
+                    sum_nom = sum(float(w.amount or 0) for w in matched)
+                    _comm_total = round(max(0.0, sum_nom - float(amt)), 2)
                     with _atx.atomic():
                         for w in matched:
                             _dnp = w.deal
@@ -1165,57 +1173,47 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                             if _dnp and _dnp.contact_id:
                                 _cli = (" ".join(filter(None, [_dnp.contact.first_name or "", _dnp.contact.last_name or ""])).strip()
                                         or (_dnp.contact.nickname or "")) or ""
+                            # дохід НОМІНАЛОМ на тех-рахунок НоваПей (не на банк)
                             Transaction.objects.create(
-                                direction="in", amount=w.amount, amount_uah=w.amount, account=account,
+                                direction="in", amount=w.amount, amount_uah=w.amount, account=_acc_np,
                                 category=cat_np, date=dte, op_time=op_t, rate=1, import_batch=batch,
                                 deal=_dnp, contact=(_dnp.contact if (_dnp and _dnp.contact_id) else None),
                                 channel=((_dnp.source or "")[:24] if _dnp else ""),
                                 counterparty=(_cli or cp or "НоваПей")[:160],
-                                comment=(reftag + " · наложка по сделці #%s" % (w.deal_id or "?"))[:255])
+                                comment=(reftag + " · наложка по сделці #%s (ТТН %s)" % (w.deal_id or "?", (w.external_id or "")[:18]))[:255])
                             created += 1
-                            if _comm_total > 0.5 and sum_nom > 0:
+                            # комісія НоваПей пропорційно, з рахунку НоваПей — маржа сделки чесна
+                            if _comm_total > 0.009 and sum_nom > 0:
                                 _cw = round(_comm_total * float(w.amount) / sum_nom, 2)
                                 if _cw > 0.01:
                                     Transaction.objects.create(
-                                        direction="out", amount=_cw, amount_uah=_cw, account=account,
+                                        direction="out", amount=_cw, amount_uah=_cw, account=_acc_np,
                                         category=_npfee, date=dte, op_time=op_t, rate=1, import_batch=batch,
                                         deal=_dnp, contact=(_dnp.contact if (_dnp and _dnp.contact_id) else None),
-                                        counterparty="Нова Пошта",
+                                        counterparty="НоваПей",
                                         comment=(reftag + " · комісія НоваПей по сделці #%s" % (w.deal_id or "?"))[:255])
                                     created += 1
-                            w.is_paid = True  # позначаємо ПІСЛЯ створення доходу
+                            w.is_paid = True  # ПІСЛЯ створення доходу
                             w.save(update_fields=["is_paid"])
                             _laNP("deal", w.deal_id, "Наложка виплачена",
-                                  "Виплата НоваПей надійшла на рахунок банку — %s грн зараховано як оплату" % w.amount,
+                                  "Виплата НоваПей надійшла — %s грн зараховано (нетто у складі виплати %s)" % (w.amount, amt),
                                   None, "Банк")
-                else:
-                    # НЕ пояснюється (непроведені наложки / неоднозначно) → один сумарний дохід
-                    with _atx.atomic():
-                        tx_np = Transaction.objects.create(
-                            direction="in", amount=amt, amount_uah=amt, account=account,
-                            category=cat_np, date=dte, op_time=op_t, counterparty=(cp or "НоваПей")[:160], rate=1,
-                            import_batch=batch, comment=(reftag + " · " + osnd)[:255])
+                        # рядок виписки = ПЕРЕКАЗ «НоваПей → банк» на нетто
+                        Transaction.objects.create(
+                            direction="transfer", amount=amt, amount_uah=amt,
+                            account=_acc_np, transfer_account=account, date=dte, op_time=op_t,
+                            rate=1, import_batch=batch, counterparty="НоваПей",
+                            comment=(reftag + " · виплата наложок: " + ", ".join("#%s" % w.deal_id for w in matched if w.deal_id))[:255])
                         created += 1
-                        if len(matched) == 1 and matched[0].deal_id:
-                            _dnp = matched[0].deal
-                            tx_np.deal = _dnp
-                            if _dnp.contact_id:
-                                tx_np.contact = _dnp.contact
-                                tx_np.counterparty = ((" ".join(filter(None, [_dnp.contact.first_name or "", _dnp.contact.last_name or ""])).strip()
-                                                       or (_dnp.contact.nickname or "")) or tx_np.counterparty)[:160]
-                            tx_np.channel = (_dnp.source or "")[:24] or tx_np.channel
-                            tx_np.comment = (tx_np.comment[:200] + " · наложка по сделці #%s" % _dnp.id)[:255]
-                            tx_np.save(update_fields=["deal", "contact", "counterparty", "channel", "comment"])
-                        elif len(matched) > 1:
-                            _ids = ", ".join("#%s" % w.deal_id for w in matched if w.deal_id)
-                            tx_np.comment = (tx_np.comment[:180] + " · наложки по сделках: " + _ids)[:255]
-                            tx_np.save(update_fields=["comment"])
-                        for w in matched:
-                            w.is_paid = True
-                            w.save(update_fields=["is_paid"])
-                            _laNP("deal", w.deal_id, "Наложка виплачена",
-                                  "Виплата НоваПей надійшла на рахунок банку — %s грн зараховано як оплату" % w.amount,
-                                  None, "Банк")
+                else:
+                    # набір не підібрався → дохід на БАНК без сделки, розбирає бухгалтер.
+                    # Наложки paid НЕ позначаємо — вони чекають свою виплату.
+                    Transaction.objects.create(
+                        direction="in", amount=amt, amount_uah=amt, account=account,
+                        category=cat_np, date=dte, op_time=op_t, counterparty=(cp or "НоваПей")[:160], rate=1,
+                        import_batch=batch,
+                        comment=(reftag + " · НоваПей: НЕ РОЗІБРАНО — розділити по сделках вручну · " + osnd)[:220])
+                    created += 1
             except Exception:
                 pass
             continue
