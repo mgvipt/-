@@ -64,11 +64,14 @@ class ContactViewSet(viewsets.ModelViewSet):
         from apps.finance.models import PlannedPayment as _PP
         from django.db.models import Q as _Qc
         c = self.get_object()
-        _nm = (" ".join(filter(None, [c.first_name or "", c.last_name or ""])).strip() or (c.nickname or "")).strip()
-        # операції: привʼязані до контакту АБО (легасі) де контрагент точно = імʼя клієнта
+        _first_nm = (c.first_name or "").strip(); _last_nm = (c.last_name or "").strip()
+        _nm = (_first_nm + " " + _last_nm).strip()
+        # операції: привʼязані до контакту АБО (легасі) де контрагент = ПОВНЕ «Імʼя Прізвище».
+        # ⚠️ byname ТІЛЬКИ по повному імені+прізвищу (обидва непусті) — інакше одиночне «Оксана»
+        # без прізвища хапає платежі ВСІХ тезок і роздуває дохід (аудит 18.08).
         _byname = None
         _match = _Qc(contact=c) | _Qc(deal__contact=c)
-        if _nm:
+        if _first_nm and _last_nm:
             _byname = _Qc(counterparty__iexact=_nm) | _Qc(counterparty__istartswith=_nm + "/") | _Qc(counterparty__istartswith=_nm + " ") | _Qc(counterparty__istartswith=_nm + ".")
             _match = _match | _byname  # всі платежі цьому контрагенту, навіть привʼязані до обʼєкта (обʼєкт видно окремим стовпцем)
         qs = _Tx.objects.filter(_match)
@@ -1507,9 +1510,10 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 return Response({"detail": "У сделки нет клиента — из аванса платить не с кого."}, status=status.HTTP_400_BAD_REQUEST)
             from apps.finance.models import Transaction as _AdvTx
             from django.db.models import Sum as _AdvS, Q as _AdvQ
-            _nm = (" ".join(filter(None, [_cc.first_name or "", _cc.last_name or ""])).strip() or (_cc.nickname or "")).strip()
+            _fnm = (_cc.first_name or "").strip(); _lnm = (_cc.last_name or "").strip()
+            _nm = (_fnm + " " + _lnm).strip()
             _m = _AdvQ(contact=_cc)
-            if _nm:
+            if _fnm and _lnm:   # byname тільки по повному «Імʼя Прізвище» (аудит 18.08)
                 _m = _m | _AdvQ(counterparty__iexact=_nm) | _AdvQ(counterparty__istartswith=_nm + "/") | _AdvQ(counterparty__istartswith=_nm + " ") | _AdvQ(counterparty__istartswith=_nm + ".")
             _inc = _AdvTx.objects.filter(_m, direction="in").aggregate(s=_AdvS("amount_uah"))["s"] or 0
             _exp = _AdvTx.objects.filter(_m, direction="out").aggregate(s=_AdvS("amount_uah"))["s"] or 0
