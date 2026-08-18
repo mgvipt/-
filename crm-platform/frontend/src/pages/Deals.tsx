@@ -23,6 +23,7 @@ function SmartFilter({ funnel, users, onQuery }: { funnel: Funnel; users: { id: 
   const [selStages, setSelStages] = useState<number[]>([]);
   const [owner, setOwner] = useState("");
   const [datePreset, setDatePreset] = useState("");
+  const [closedMode, setClosedMode] = useState("recent");  // recent=активные+успешные за 30дн (дефолт) | hide=только активные | all=все закрытые (за период дат)
   const [dFrom, setDFrom] = useState("");
   const [dTo, setDTo] = useState("");
   const boxRef = useRef<HTMLDivElement>(null);
@@ -64,8 +65,9 @@ function SmartFilter({ funnel, users, onQuery }: { funnel: Funnel; users: { id: 
   }
 
   function build(txt: string, stages: number[], extra?: any) {
-    const e = { cli, dealId, owner, datePreset, dFrom, dTo, ...(extra || {}) };
+    const e = { cli, dealId, owner, datePreset, dFrom, dTo, closedMode, ...(extra || {}) };
     let q = "";
+    if (e.closedMode && e.closedMode !== "recent") q += `&closed=${e.closedMode}`;  // recent = дефолт доски, не шлём (иначе шлём hide/all)
     if (txt.trim()) q += `&search=${encodeURIComponent(txt.trim())}`;
     if (e.cli) q += `&contact=${e.cli.id}`;
     if (e.dealId.trim()) q += `&deal_id=${encodeURIComponent(e.dealId.trim().replace("#", ""))}`;
@@ -81,10 +83,10 @@ function SmartFilter({ funnel, users, onQuery }: { funnel: Funnel; users: { id: 
 
   function apply() { build(text, selStages); setOpen(false); }
   function reset() {
-    setText(""); setCli(null); setCliQ(""); setPhoneQ(""); setDealId(""); setSelStages([]); setOwner(""); setDatePreset(""); setDFrom(""); setDTo("");
+    setText(""); setCli(null); setCliQ(""); setPhoneQ(""); setDealId(""); setSelStages([]); setOwner(""); setDatePreset(""); setDFrom(""); setDTo(""); setClosedMode("recent");
     onQuery("", []);
   }
-  const active = !!(cli || dealId || owner || selStages.length || datePreset);
+  const active = !!(cli || dealId || owner || selStages.length || datePreset || (closedMode && closedMode !== "recent"));
   const inp = { height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13, width: "100%" } as any;
   const _pr = boxRef.current?.getBoundingClientRect();
 
@@ -163,6 +165,16 @@ function SmartFilter({ funnel, users, onQuery }: { funnel: Funnel; users: { id: 
                 );
               })}
             </div>
+          </div>
+          {/* закрытые/успешные сделки */}
+          <div style={{ marginTop: 10 }}>
+            <label className="muted" style={{ fontSize: 11 }}>{t("Закрытые сделки (успешные/отменённые)","Закриті угоди (успішні/скасовані)")}</label>
+            <select value={closedMode} onChange={(ev) => { setClosedMode(ev.target.value); build(text, selStages, { closedMode: ev.target.value }); }} style={{ ...inp, width: "100%" }}>
+              <option value="recent">{t("Активные + успешные за 30 дней (по умолчанию)","Активні + успішні за 30 днів (за замовч.)")}</option>
+              <option value="hide">{t("Только активные (спрятать закрытые)","Тільки активні (сховати закриті)")}</option>
+              <option value="all">{t("Показать ВСЕ закрытые (за выбранный период даты)","Показати ВСІ закриті (за обраний період дати)")}</option>
+            </select>
+            {closedMode === "all" && <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>{t("Совет: выберите ниже «Дата создания» → период, чтобы не грузить все за всё время","Порада: оберіть нижче «Дата створення» → період, щоб не вантажити все за весь час")}</div>}
           </div>
           {/* дата */}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginTop: 10, flexWrap: "wrap" }}>

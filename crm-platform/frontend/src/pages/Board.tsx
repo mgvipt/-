@@ -28,7 +28,6 @@ export default function Board({ endpoint, funnel, query, visibleStages }: { endp
   const isLead = endpoint.includes("leads");
 
   const [chatBadges, setChatBadges] = useState<any>({});
-  const [showClosed, setShowClosed] = useState(false);  // по умолч. активные; вкл → показать успішні/скасовані
   async function load() {
     setLoading(true);
     // архивная воронка: НЕ грузим авто (только по поиску) — чтобы тысячи сделок не тормозили CRM
@@ -37,7 +36,7 @@ export default function Board({ endpoint, funnel, query, visibleStages }: { endp
     let all: Card[] = [];
     let page = 1;
     while (page <= 40) {
-      const data = await api.get<Paginated<Card>>(`${endpoint}?funnel=${funnel.id}&page_size=500&page=${page}${(isLead || (funnel as any).is_archive || showClosed) ? "" : "&exclude_closed=1"}${query || ""}`);
+      const data = await api.get<Paginated<Card>>(`${endpoint}?funnel=${funnel.id}&page_size=500&page=${page}${(isLead || (funnel as any).is_archive) ? "" : ((query && query.includes("closed=")) ? "" : "&closed=recent")}${query || ""}`);
       all = all.concat(data.results || []);
       if (!(data as any).next || !(data.results || []).length) break;
       page++;
@@ -56,7 +55,7 @@ export default function Board({ endpoint, funnel, query, visibleStages }: { endp
       setChatBadges(badges);
     }
   }
-  useEffect(() => { load(); }, [endpoint, funnel.id, query, showClosed]);
+  useEffect(() => { load(); }, [endpoint, funnel.id, query]);
 
   async function onDrop(stageId: number) {
     const id = dragId.current;
@@ -84,14 +83,6 @@ export default function Board({ endpoint, funnel, query, visibleStages }: { endp
 
   return (
     <div className="board fade">
-      {!isLead && !(funnel as any).is_archive && (
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, color: showClosed ? "#166534" : "#475569", cursor: "pointer", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "5px 11px" }} title={t("Показать/скрыть успешные и отменённые сделки на доске","Показати/сховати успішні та скасовані угоди на дошці")}>
-            <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} />
-            {t("Показывать закрытые (успешные/отменённые)","Показувати закриті (успішні/скасовані)")}
-          </label>
-        </div>
-      )}
       <div className="cols">
         {funnel.stages.filter((st) => !visibleStages || visibleStages.length === 0 || visibleStages.includes(st.id)).map((st) => {
           const colCards = cards.filter((c) => c.stage === st.id);

@@ -1120,10 +1120,19 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 qs = qs.filter(id=int(p["deal_id"]))
             except ValueError:
                 pass
-        if p.get("exclude_closed"):
-            # канбан: тільки активний конвеєр (без виграних/програних) — інакше воронки
-            # з тисячами закритих сделок не влазять у ліміт і активні сделки зникають з дошки
+        # закриті угоди (виграні/програні) на дошці:
+        #   hide / exclude_closed=1 → тільки активний конвеєр (без closed);
+        #   recent (дефолт дошки) → активні + закриті за останні 30 днів (по closed_at) — щоб недавні успішні бачити завжди;
+        #   all/порожньо → усе (список/експорт; фільтр дат created_from/to нижче, якщо заданий).
+        _closed = (p.get("closed") or "").strip()
+        if p.get("exclude_closed") or _closed == "hide":
             qs = qs.exclude(stage__is_won=True).exclude(stage__is_lost=True)
+        elif _closed == "recent":
+            from django.utils import timezone as _tzq
+            from datetime import timedelta as _tdq
+            from django.db.models import Q as _Qq
+            _cut = _tzq.now() - _tdq(days=30)
+            qs = qs.filter(_Qq(stage__is_won=False, stage__is_lost=False) | _Qq(closed_at__gte=_cut))
         return qs
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
