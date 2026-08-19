@@ -588,19 +588,41 @@ function FinBlock({ contactId, cname, deals }: { contactId: number; cname?: stri
           </div>
         ))}
       </div>
-      {!d.is_supplier && d.can_full && (Number(d.revenue) > 0 || Number(d.cost_ext) > 0 || Number(d.cogs) > 0) && (
-        <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 10, background: (Number(d.profit) >= 0 ? "#f0fdf4" : "#fef2f2"), border: "1px solid " + (Number(d.profit) >= 0 ? "#bbf7d0" : "#fecaca") }}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-            <div className="muted" style={{ fontSize: 11.5 }}>
-              {t("Выручка","Виручка")}: <b style={{ color: "#0f172a" }}>{money0(Number(d.revenue || 0))}</b>
-              <span style={{ margin: "0 5px" }}>−</span>{t("Себест. склада","Собівар. складу")}: <b style={{ color: "#b45309" }}>{money0(Number(d.cogs || 0))}</b>
-              <span style={{ margin: "0 5px" }}>−</span>{t("Закупки/услуги","Закупки/послуги")}: <b style={{ color: "#dc2626" }}>{money0(Number(d.cost_ext || 0))}</b>
+      {!d.is_supplier && d.can_full && (Number(d.retail?.total || 0) > 0 || Number(d.revenue) > 0 || Number(d.cost_ext) > 0 || Number(d.cogs) > 0) && (
+        <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 10, background: (Number(d.retail?.margin ?? d.profit) >= 0 ? "#f0fdf4" : "#fef2f2"), border: "1px solid " + (Number(d.retail?.margin ?? d.profit) >= 0 ? "#bbf7d0" : "#fecaca") }}>
+          {/* ── ТРОЙКА (Олег, 19.08): Продано (роздріб) − Закупка = Маржа. Товари: склад-знімок.
+              Послуги: ФАКТ виплат майстрам заміщує план (не сумується — захист від подвійного рахунку). ── */}
+          {Number(d.retail?.total || 0) > 0 && (
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+              <div style={{ fontSize: 12.5 }}>
+                {t("Продано (розница)","Продано (роздріб)")}: <b style={{ color: "#0f172a", fontSize: 14 }}>{money0(Number(d.retail.total))}</b>
+                <span className="muted" style={{ fontSize: 10.5, marginLeft: 5 }}>({t("товары","товари")} {money0(Number(d.retail.goods))} + {t("услуги","послуги")} {money0(Number(d.retail.services))})</span>
+                <span style={{ margin: "0 6px" }}>−</span>
+                {t("Закупка","Закупка")}: <b style={{ color: "#b45309", fontSize: 14 }}>{money0(Number(d.retail.cogs_total))}</b>
+                <span className="muted" style={{ fontSize: 10.5, marginLeft: 5 }}>({t("склад","склад")} {money0(Number(d.retail.cogs_goods))} + {t("мастера","майстри")} {money0(Number(d.retail.srv_used))} {d.retail.srv_is_fact ? t("факт","факт") : t("план","план")})</span>
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: (Number(d.retail.margin) >= 0 ? "#16a34a" : "#dc2626") }}>
+                {t("Маржа","Маржа")}: {money0(Number(d.retail.margin))}{Number(d.retail.total) > 0 ? <span style={{ fontSize: 12.5, fontWeight: 700, marginLeft: 8, color: "#64748b" }}>· {Math.round(Number(d.retail.margin) / Number(d.retail.total) * 100)}%</span> : null}
+              </div>
             </div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: (Number(d.profit) >= 0 ? "#16a34a" : "#dc2626") }}>
-              {t("Прибыль","Прибуток")}: {money0(Number(d.profit || 0))}{Number(d.revenue) > 0 ? <span style={{ fontSize: 12.5, fontWeight: 700, marginLeft: 8, color: "#64748b" }}>· {t("маржа","маржа")} {Math.round(Number(d.profit || 0) / Number(d.revenue) * 100)}%</span> : null}
+          )}
+          {Number(d.retail?.no_cost_retail || 0) > 0 && (
+            <div style={{ marginBottom: 6, padding: "6px 10px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 11.5, color: "#b91c1c", fontWeight: 600 }}>
+              ⚠️ {t("Продано без закупочной цены:","Продано без закупівельної ціни:")} {money0(Number(d.retail.no_cost_retail))} ₴ — {t("маржа по этим строкам завышена. Задай закупку в позициях.","маржа по цих рядках завищена. Задай закупку в позиціях.")}
             </div>
+          )}
+          {Number(d.retail?.deals_no_items || 0) > 0 && (
+            <div className="muted" style={{ marginBottom: 6, fontSize: 10.5 }}>
+              {t("Вне маржи: старые сделки без детализации (без позиций) на","Поза маржею: старі сделки без деталізації (без позицій) на")} {money0(Number(d.retail.deals_no_items))} ₴
+            </div>
+          )}
+          <div className="muted" style={{ fontSize: 11, display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: 6 }}>
+            {t("Деньги (журнал):","Гроші (журнал):")} {t("пришло","надійшло")} <b style={{ color: "#0f172a" }}>{money0(Number(d.revenue || 0))}</b>
+            <span>−</span>{t("себест. склада","собівар. складу")} <b style={{ color: "#b45309" }}>{money0(Number(d.cogs || 0))}</b>
+            <span>−</span>{t("закупки/услуги","закупки/послуги")} <b style={{ color: "#dc2626" }}>{money0(Number(d.cost_ext || 0))}</b>
+            <span>=</span><b style={{ color: (Number(d.profit) >= 0 ? "#16a34a" : "#dc2626") }}>{money0(Number(d.profit || 0))}</b>
           </div>
-          <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>{t("Складские товары — из сделок (себестоимость авто при отгрузке), закупки под заказ — из журнала. Без двойного счёта. Прибыль и себестоимость считаются за выбранный период (фильтр «Период» ниже) — задай дату начала работы, чтобы не мешались старые сделки из Битрикса.","Складські товари — зі сделок (собівартість авто при відвантаженні), закупки під замовлення — з журналу. Без подвійного рахунку. Прибуток і собівартість рахуються за вибраний період (фільтр «Період» нижче) — задай дату початку роботи, щоб не мішались старі сделки з Бітрікса.")}</div>
+          <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>{t("Маржа — по позициям сделок (что продали). Деньги — по журналу (что пришло/ушло). Оба уважают фильтр «Период» ниже — задай дату начала работы, чтобы не мешались старые сделки из Битрикса.","Маржа — по позиціях сделок (що продали). Гроші — по журналу (що надійшло/пішло). Обидва поважають фільтр «Період» нижче — задай дату початку роботи, щоб не мішались старі сделки з Бітрікса.")}</div>
           {d.has_services && Number(d.actual_srv || 0) > Number(d.planned_srv || 0) + 1 && (
             <div style={{ marginTop: 8, padding: "7px 10px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 12, color: "#b91c1c", fontWeight: 600 }}>
               ⚠️ {t("Мастерам выплачено больше плана на","Майстрам виплачено більше плану на")} {money0(Number(d.actual_srv) - Number(d.planned_srv))} ₴

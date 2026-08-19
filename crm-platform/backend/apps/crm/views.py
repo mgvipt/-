@@ -145,6 +145,11 @@ class ContactViewSet(viewsets.ModelViewSet):
         from apps.crm.models import Deal as _Deal
         _cogs = _Dp("0")          # собівартість складських товарів у виграних угодах клієнта
         _planned_srv = _Dp("0")   # планова закупка послуг/робіт (мастеру) — щоб ловити переплату
+        # ── РОЗДРІБ для тройки «Продано / Закупка / Маржа» (Олег, 19.08) ──
+        _retail_goods = _Dp("0")   # продано ТОВАРІВ по роздрібних цінах (позиції track_stock=True)
+        _retail_srv = _Dp("0")     # продано ПОСЛУГ/робіт по роздрібу (track_stock=False)
+        _no_cost_retail = _Dp("0") # рядки з ціною > 0 і закупкою 0 — маржа по них «100%», підсвічуємо
+        _deals_no_items = _Dp("0") # сделки-обгортки БЕЗ позицій (легасі) — поза розрахунком маржі
         # СОБІВАРТІСТЬ: по PAID|WON сделках ЛИШЕ якщо у клієнта Є ДОХІД у періоді.
         # Немає доходу (чисте легасі-Б24, гроші в Бітриксі) → cost НЕ рахуємо (немає ложного мінуса).
         # Є дохід → рахуємо по всіх куплених сделках (навіть якщо банк-дохід не привʼязаний
@@ -162,15 +167,25 @@ class ContactViewSet(viewsets.ModelViewSet):
         _disc_list = []
         for _dl in _dq.prefetch_related("items", "items__product"):
             _full_line = _Dp("0")
-            for _it in _dl.items.all():
+            _items_list = list(_dl.items.all())
+            if not _items_list:
+                # сделка без позицій (стара «обгортка»: «оплата за виконані роботи» тощо) —
+                # у роздріб/маржу НЕ входить, показуємо окремою сірою позначкою
+                _deals_no_items += _Dp(str(_dl.amount or 0))
+            for _it in _items_list:
                 _cu = _it.cost if (_it.cost or 0) > 0 else (getattr(_it.product, "cost", 0) or 0)
                 try:
                     _line = _Dp(str(_it.quantity or 0)) * _Dp(str(_cu or 0))
+                    _lr = _Dp(str(_it.price or 0)) * _Dp(str(_it.quantity or 0))  # роздріб рядка
                     if not getattr(_it.product, "track_stock", False):
                         _planned_srv += _line   # послуга/робота (track_stock=False) — плановая закупка мастеру
+                        _retail_srv += _lr
                     else:
                         _cogs += _line          # склад (track_stock=True) — себестоимость склада
-                    _full_line += _Dp(str(_it.price or 0)) * _Dp(str(_it.quantity or 0))
+                        _retail_goods += _lr
+                    if _lr > 0 and _Dp(str(_cu or 0)) <= 0:
+                        _no_cost_retail += _lr  # продано без закупки — маржа по рядку фіктивні «100%»
+                    _full_line += _lr
                 except Exception:
                     pass
             try:
@@ -240,6 +255,23 @@ class ContactViewSet(viewsets.ModelViewSet):
                           "planned_srv": float(_planned_srv), "actual_srv": float(_actual_srv) if _planned_srv > 0 else 0.0,
                           "has_services": bool(_planned_srv > 0),
                           "discount_total": float(_disc_total), "discount_list": _disc_list})
+            # ── тройка «Продано (роздріб) / Закупка / Маржа» ──
+            # Закупка послуг: ФАКТ виплат майстрам (журнал, без матеріалів/комісій) ЗАМІЩУЄ
+            # план з позицій — НЕ сумуємо (захист від подвійного рахунку, аудит 18.08).
+            _srv_used = _actual_srv if _actual_srv > 0 else _planned_srv
+            _retail_total = _retail_goods + _retail_srv
+            _cogs_total = _cogs + _srv_used
+            _resp["retail"] = {
+                "goods": float(_retail_goods), "services": float(_retail_srv),
+                "total": float(_retail_total),
+                "cogs_goods": float(_cogs),
+                "srv_fact": float(_actual_srv), "srv_plan": float(_planned_srv),
+                "srv_used": float(_srv_used), "srv_is_fact": bool(_actual_srv > 0),
+                "cogs_total": float(_cogs_total),
+                "margin": float(_retail_total - _cogs_total),
+                "no_cost_retail": float(_no_cost_retail),
+                "deals_no_items": float(_deals_no_items),
+            }
         return Response(_resp)
     search_fields = ["first_name", "last_name", "phone", "email", "edrpou", "nickname"]
     filterset_fields = ["loyalty_tag", "source", "owner"]
