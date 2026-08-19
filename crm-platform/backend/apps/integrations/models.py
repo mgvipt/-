@@ -72,3 +72,34 @@ class SupplierProductMap(models.Model):
 
     def __str__(self):
         return "%s → #%s" % (self.their_name[:40], self.product_id)
+
+
+import re as _re_asm
+
+
+def assembly_signature(names):
+    """Підпис набору компонентів: нормалізовані назви, відсортовані.
+    Однаковий набір компонентів (незалежно від порядку/регістру) → однаковий підпис."""
+    def _norm(x):
+        return _re_asm.sub(r"[^0-9a-zа-яіїєґ]+", "", (x or "").lower())[:14]
+    parts = sorted(p for p in (_norm(x) for x in (names or [])) if p)
+    return "|".join(parts)[:240]
+
+
+class AssemblyRecipe(models.Model):
+    """Рецепт зборки: набір компонентів однієї накладної → одна позиція номенклатури.
+    Напр.: силікон + контейнер + 2× крихта = «Крихта декоративна» (N відер).
+    Запамʼятовується при проведенні, наступного разу CRM сама пропонує зібрати."""
+    supplier_key = models.CharField(max_length=120, db_index=True, default="", blank=True)
+    signature = models.CharField(max_length=240, db_index=True)
+    target_product = models.ForeignKey("warehouse.Product", on_delete=models.CASCADE,
+                                       related_name="assembly_recipes")
+    default_qty = models.DecimalField(max_digits=12, decimal_places=3, default=1)
+    components = models.JSONField(default=list, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["supplier_key", "signature"])]
+
+    def __str__(self):
+        return "%s → #%s x%s" % (self.signature[:40], self.target_product_id, self.default_qty)

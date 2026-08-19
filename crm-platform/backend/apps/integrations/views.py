@@ -406,10 +406,22 @@ class IncomingDocDetailView(APIView):
                               "product_name": (rule.product.name if rule else ""),
                               "factor": (float(rule.qty_factor) if (rule and rule.qty_factor) else 1),
                               "unit": (getattr(rule.product, "unit", "") if rule else "")})
+            # рецепт зборки: якщо цей набір компонентів вже зводили в 1 позицію — підказати
+            from .models import AssemblyRecipe, assembly_signature
+            _sig = assembly_signature([r["their_name"] for r in lrows])
+            _rec = None
+            if _sig:
+                _rec = (AssemblyRecipe.objects.filter(supplier_key=skey, signature=_sig).select_related("target_product").first()
+                        or AssemblyRecipe.objects.filter(signature=_sig).select_related("target_product").first())
+            _sugg = None
+            if _rec and _rec.target_product_id:
+                _sugg = {"target_product_id": _rec.target_product_id, "target_name": _rec.target_product.name,
+                         "default_qty": float(_rec.default_qty)}
             return Response({"id": d.id, "doc_type": "supplier", "status": d.status, "sender": d.sender,
                              "subject": d.subject, "invoice_number": p.get("invoice_number"),
                              "invoice_date": p.get("invoice_date"), "supplier": p.get("supplier"),
-                             "amount": p.get("amount"), "lines": lrows, "files": files, "email_text": body})
+                             "amount": p.get("amount"), "lines": lrows, "files": files, "email_text": body,
+                             "suggested_assembly": _sugg})
         rows = []
         for s in (p.get("shipments") or []):
             deal = Deal.objects.filter(ttn=s.get("ttn")).first() if s.get("ttn") else None
@@ -559,7 +571,7 @@ def _confirm_supplier(d, request):
         total += line_total
         positions += 1
         tn = (ln.get("their_name") or "").strip()
-        if tn:
+        if tn and not request.data.get("combine"):
             from decimal import Decimal as _Df
             SupplierProductMap.objects.update_or_create(supplier_key=skey, their_name=tn,
                                                         defaults={"product": prod, "qty_factor": _Df(str(factor))})
@@ -623,6 +635,22 @@ def _confirm_supplier(d, request):
             if contact and contact.default_purchase_category != _cat.id:
                 contact.default_purchase_category = _cat.id
                 contact.save(update_fields=["default_purchase_category"])
+
+    # ── РЕЦЕПТ ЗБОРКИ: запамʼятати набір компонентів → одна позиція (для наступних накладних) ──
+    _comb = request.data.get("combine") or {}
+    if _comb and _comb.get("target_product_id") and _comb.get("components"):
+        from .models import AssemblyRecipe, assembly_signature
+        from decimal import Decimal as _Dq
+        _sig2 = assembly_signature(_comb.get("components") or [])
+        if _sig2:
+            try:
+                _q = _Dq(str(_comb.get("qty") or 1))
+            except Exception:
+                _q = _Dq("1")
+            AssemblyRecipe.objects.update_or_create(
+                supplier_key=skey, signature=_sig2,
+                defaults={"target_product_id": _comb.get("target_product_id"),
+                          "default_qty": _q, "components": _comb.get("components") or []})
 
     d.status = "confirmed"
     d.created_payable_id = pp.id

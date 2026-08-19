@@ -3893,6 +3893,10 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
   const [candQ, setCandQ] = useState("");   // пошук платежу
   const [cats, setCats] = useState<any[]>([]);   // категорії закупівлі (out)
   const [catId, setCatId] = useState<number | 0>(0);
+  // зборка кількох рядків сировини в 1 позицію номенклатури (напр. крихта)
+  const [combineOpen, setCombineOpen] = useState(false);
+  const [combineProd, setCombineProd] = useState<any>(null);
+  const [combineQty, setCombineQty] = useState("1");
 
   useEffect(() => {
     api.get<any>(`/api/integrations/incoming-docs/${docId}/`).then((d) => {
@@ -3960,11 +3964,20 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
     });
     // eslint-disable-next-line
   }, [prods, lines.length]);
+  function applyCombine(prod: any, qty: number) {
+    if (!prod || !(qty > 0)) return;
+    const total = lines.reduce((a, l) => { const q = Number(l.qty) || 0; const p = Number(l.price) || 0; const sm = (l.sum != null && String(l.sum) !== "") ? Number(l.sum) : q * p; return a + (Number.isFinite(sm) ? sm : 0); }, 0);
+    const comps = lines.map((l) => (l.their_name || "").trim()).filter((x: string) => x && !x.startsWith("\uD83E\uDDE9"));
+    setLines([{ product_id: prod.id, product_name: prod.name, qty, price: 0, sum: Math.round(total * 100) / 100, factor: 1, retail: "", their_name: "\uD83E\uDDE9 " + t("Собрано из", "Зібрано з") + " " + comps.length + " " + t("позиций", "позицій"), _combine: { target_product_id: prod.id, qty, components: comps } }]);
+    setCombineOpen(false); setCombineProd(null);
+  }
   const post = async () => {
     if (lines.some((l) => !l.product_id) && !confirm(t("Не все строки сопоставлены — провести только сопоставленные?", "Не всі рядки зіставлені — провести лише зіставлені?"))) return;
     setBusy(true);
     try {
       const body: any = { action: "confirm", lines };
+      const _cl = lines.find((l) => l._combine);
+      if (_cl) body.combine = _cl._combine;
       if (supId) body.contact_id = supId;
       if (newSup) body.new_supplier = newSup;
       if (payMode === "paid" && txId) { body.pay_mode = "paid"; body.tx_id = txId; }
@@ -4122,7 +4135,29 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
             </>;
           })()}
         </div>
-        <button className="btn btn-light" style={{ marginTop: 8 }} onClick={addLine}>+ {t("Добавить строку", "Додати рядок")}</button>
+        {det?.suggested_assembly && !lines.some((l) => l._combine) && (
+          <div style={{ marginTop: 8, background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: 8, padding: "8px 12px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 13 }}>{"\uD83E\uDDE9 "}{t("Похоже на", "Схоже на")} «<b>{det.suggested_assembly.target_name}</b>». {t("Свернуть эти строки в 1 позицию?", "Звести ці рядки в 1 позицію?")}</span>
+            <button className="btn btn-primary" style={{ padding: "4px 12px" }} onClick={() => applyCombine({ id: det.suggested_assembly.target_product_id, name: det.suggested_assembly.target_name }, Number(det.suggested_assembly.default_qty) || 1)}>{t("Собрать", "Зібрати")} ({det.suggested_assembly.default_qty})</button>
+          </div>
+        )}
+        {combineOpen && (
+          <div style={{ marginTop: 8, background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{"\uD83E\uDDE9 "}{t("Собрать все строки в одну позицию", "Зібрати всі рядки в одну позицію")}</div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 220 }}><ProductPicker value={combineProd?.name || ""} productId={combineProd?.id || null} prods={prods} onPick={(p, name) => setCombineProd(p ? { id: p.id, name } : null)} /></div>
+              <input type="number" className="num-tight" value={combineQty} onChange={(e) => setCombineQty(e.target.value)} placeholder={t("кол-во", "к-сть")} title={t("Сколько единиц получилось (напр. 3 ведра)", "Скільки одиниць вийшло (напр. 3 відра)")} style={{ width: 90, height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px", fontSize: 13, textAlign: "right" }} />
+              <button className="btn btn-primary" disabled={!combineProd || !(Number(combineQty) > 0)} onClick={() => applyCombine(combineProd, Number(combineQty))} style={{ padding: "4px 14px" }}>{t("Собрать", "Зібрати")}</button>
+              <button className="btn btn-light" onClick={() => setCombineOpen(false)} style={{ padding: "4px 10px" }}>{t("Отмена", "Скасувати")}</button>
+            </div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>{t("Себестоимость = вся сумма накладной ÷ количество. Компоненты по отдельности на склад не приходуются. Набор запомнится — в следующий раз предложу свернуть сам.", "Собівартість = вся сума накладної ÷ кількість. Компоненти окремо на склад не приходуються. Набір запамʼятається — наступного разу запропоную звести сам.")}</div>
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <button className="btn btn-light" onClick={addLine}>+ {t("Добавить строку", "Додати рядок")}</button>
+          {!lines.some((l) => l._combine) && lines.length > 1 && <button className="btn btn-light" onClick={() => { setCombineOpen((v) => !v); }}>{"\uD83E\uDDE9 "}{t("Собрать в 1 позицию", "Зібрати в 1 позицію")}</button>}
+          {lines.some((l) => l._combine) && <span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>{"\uD83E\uDDE9 "}{t("собрано в 1 позицию — переоткрой накладную, чтобы вернуть строки", "зібрано в 1 позицію — перевідкрий накладну, щоб повернути рядки")}</span>}
+        </div>
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           <button className="btn btn-primary" disabled={busy || (payMode === "paid" && !txId)} onClick={post}>
             {busy ? "…" : "✓ " + (payMode === "paid"
