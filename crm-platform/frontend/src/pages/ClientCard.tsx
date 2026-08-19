@@ -434,10 +434,23 @@ function ZamerProjectsBlock({ projects }: { projects: ZamerProject[] }) {
 
 function ClientDebtsBlock({ contactId }: { contactId: number }) {
   const { t } = useLang();
+  const { can } = useAuth();
+  const canPay = can("finance.debts.pay") || can("roles.manage");
   const [rows, setRows] = useState<any[]>([]);
-  useEffect(() => {
-    api.get<any>(`/api/contacts/${contactId}/finance/`).then((d) => setRows(d?.debts_list || [])).catch(() => setRows([]));
-  }, [contactId]);
+  const load = () => api.get<any>(`/api/contacts/${contactId}/finance/`).then((d) => setRows(d?.debts_list || [])).catch(() => setRows([]));
+  useEffect(() => { load(); }, [contactId]);
+  // ДЗЕРКАЛО кнопки «Оплачено» з Фінанси → Дт/Кт: той самий серверний обробник
+  // /api/planned-payments/<id>/mark-paid/ — створює операцію погашення в журналі.
+  async function markPaid(x: any, e: any) {
+    e.stopPropagation();
+    const rem = Number(x.remaining ?? (Number(x.amount) - Number(x.paid_amount || 0)));
+    const inp = prompt(t(`Сумма погашения. Остаток по этому долгу: ${Math.round(rem).toLocaleString("ru")} грн. Можно частично.`, `Сума погашення. Залишок за цим боргом: ${Math.round(rem).toLocaleString("ru")} грн. Можна частково.`), String(rem));
+    if (inp === null) return;
+    const amt = parseFloat(String(inp).replace(",", "."));
+    if (!amt || amt <= 0) return;
+    try { await api.post(`/api/planned-payments/${x.id}/mark-paid/`, { amount: amt }); load(); }
+    catch (err: any) { alert(err?.message || t("Не удалось отметить оплату", "Не вдалося відмітити оплату")); }
+  }
   if (!rows.length) return null;
   return (
     <div className="panel" style={{ marginTop: 12 }}>
@@ -458,6 +471,13 @@ function ClientDebtsBlock({ contactId }: { contactId: number }) {
                   <span style={{ flex: 1, textDecoration: paid ? "line-through" : "none", color: paid ? "#16a34a" : "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.counterparty || t("Без имени","Без імені")}{x.comment ? " · " + x.comment : ""}{x.deal ? " · №" + x.deal : ""}</span>
                   <b style={{ color: cl, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{Math.round(shownAmt).toLocaleString("ru")} ₴</b>
                   <span style={{ fontSize: 10, fontWeight: 700, color: paid ? "#16a34a" : partial ? "#2563eb" : "#c2410c", whiteSpace: "nowrap" }}>{paid ? t("оплачено","оплачено") : partial ? (t("частично · оплачено","частково · оплачено") + " " + Math.round(Number(x.paid_amount)).toLocaleString("ru")) : t("не оплачено","не оплачено")}</span>
+                  {!paid && canPay && (
+                    <button className="btn" onClick={(e) => markPaid(x, e)}
+                      title={t("Отметить оплату — создаст операцию погашения в журнале (как в Финансы → Дт/Кт)","Відмітити оплату — створить операцію погашення в журналі (як у Фінанси → Дт/Кт)")}
+                      style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", height: 22, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#16a34a", flex: "0 0 auto" }}>
+                      ✓ {t("Оплачено","Оплачено")}
+                    </button>
+                  )}
                 </div>
               );
             })}
