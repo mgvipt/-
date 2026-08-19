@@ -286,3 +286,8 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
 
 /* --- Шапка на телефоні: годинник ховаємо (місце для лупи+слогана) --- */
 @media (max-width: 768px) { .topbar .clock { display: none; } }
+
+/* Числовые ячейки таблиц (накладные) — без стрелок спиннера, чтобы число влезало */
+input.num-tight::-webkit-outer-spin-button,
+input.num-tight::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input.num-tight { -moz-appearance: textfield; appearance: textfield; }
