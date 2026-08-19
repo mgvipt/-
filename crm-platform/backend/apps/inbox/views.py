@@ -1055,14 +1055,28 @@ class MetaWebhookView(APIView):
 
     def post(self, request):
         import json as _json
+        import logging as _logging
         from .meta import verify_signature, handle_webhook
         raw = request.body
         if not verify_signature(raw, request.headers.get("X-Hub-Signature-256", "")):
             return _HttpResponse("bad signature", status=403)
         try:
-            handle_webhook(_json.loads(raw or b"{}"))
+            payload = _json.loads(raw or b"{}")
+            created = handle_webhook(payload)
+            if not created:
+                entry_keys = [sorted(entry.keys()) for entry in payload.get("entry", [])[:3]]
+                change_shapes = [{
+                    "field": change.get("field"),
+                    "value_keys": sorted((change.get("value") or {}).keys()),
+                } for entry in payload.get("entry", [])[:3]
+                  for change in (entry.get("changes") or [])[:5]]
+                _logging.getLogger(__name__).debug(
+                    "Meta webhook accepted without inbox records: object=%s entry_keys=%s changes=%s",
+                    payload.get("object"), entry_keys, change_shapes,
+                )
         except Exception:
-            pass  # завжди 200 — щоб Meta не ретраїла нескінченно
+            # Meta все одно отримує 200, але причина більше не губиться безслідно.
+            _logging.getLogger(__name__).exception("Meta webhook ingestion failed")
         return _HttpResponse("EVENT_RECEIVED")
 
 

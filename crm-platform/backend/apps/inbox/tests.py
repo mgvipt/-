@@ -119,6 +119,109 @@ class TelegramIngestTests(TestCase):
         self.assertEqual(conv.messages.filter(direction="out").count(), 1)
 
 
+@patch("apps.inbox.meta.PAGE_TOKEN", "")
+class MetaWebhookIngestTests(TestCase):
+    def setUp(self):
+        self.channel = Channel.objects.create(kind="facebook", name="Meta · facebook",
+                                              config={"meta": True, "platform": "page"})
+        self.payload = {
+            "object": "page",
+            "entry": [{
+                "id": "101010628568079",
+                "standby": [{
+                    "sender": {"id": "test-psid"},
+                    "recipient": {"id": "101010628568079"},
+                    "timestamp": 1787151972000,
+                    "message": {"mid": "meta-test-mid", "text": "ТЕСТ CRM"},
+                }],
+            }],
+        }
+
+    def test_standby_message_creates_facebook_conversation(self):
+        from .meta import handle_webhook
+
+        self.assertEqual(handle_webhook(self.payload), 1)
+        conv = Conversation.objects.get(channel=self.channel, external_chat_id="test-psid")
+        self.assertEqual(conv.unread, 1)
+        self.assertIsNotNone(conv.contact)
+        self.assertEqual(conv.messages.get().direction, "in")
+        self.assertEqual(conv.messages.get().text, "ТЕСТ CRM")
+
+    def test_standby_message_is_idempotent(self):
+        from .meta import handle_webhook
+
+        handle_webhook(self.payload)
+        self.assertEqual(handle_webhook(self.payload), 0)
+        self.assertEqual(Message.objects.filter(conversation__channel=self.channel).count(), 1)
+
+    def test_messaging_message_keeps_canonical_format_working(self):
+        from .meta import handle_webhook
+
+        event = dict(self.payload["entry"][0]["standby"][0])
+        event["sender"] = {"id": "messaging-psid"}
+        event["message"] = {"mid": "messaging-mid", "text": "Звичайне повідомлення"}
+        payload = {"object": "page", "entry": [{"id": "101010628568079", "messaging": [event]}]}
+        self.assertEqual(handle_webhook(payload), 1)
+        self.assertEqual(Conversation.objects.get(external_chat_id="messaging-psid").messages.get().text,
+                         "Звичайне повідомлення")
+
+    def test_messages_change_creates_facebook_conversation(self):
+        from .meta import handle_webhook
+
+        event = dict(self.payload["entry"][0]["standby"][0])
+        event["sender"] = {"id": "changes-psid"}
+        event["message"] = {"mid": "changes-mid", "text": "Повідомлення через changes"}
+        payload = {"object": "page", "entry": [{
+            "id": "101010628568079",
+            "changes": [{"field": "messages", "value": event}],
+        }]}
+        self.assertEqual(handle_webhook(payload), 1)
+        self.assertEqual(Conversation.objects.get(external_chat_id="changes-psid").messages.get().text,
+                         "Повідомлення через changes")
+
+    def test_echo_is_outgoing_and_does_not_increment_unread(self):
+        from .meta import handle_webhook
+
+        event = dict(self.payload["entry"][0]["standby"][0])
+        event["sender"] = {"id": "101010628568079"}
+        event["recipient"] = {"id": "echo-psid"}
+        event["message"] = {"mid": "echo-mid", "text": "Вихідне", "is_echo": True}
+        payload = {"object": "page", "entry": [{"id": "101010628568079", "messaging": [event]}]}
+        self.assertEqual(handle_webhook(payload), 1)
+        conv = Conversation.objects.get(external_chat_id="echo-psid")
+        self.assertEqual(conv.unread, 0)
+        self.assertEqual(conv.messages.get().direction, "out")
+
+    def test_service_event_without_message_is_ignored(self):
+        from .meta import handle_webhook
+
+        payload = {"object": "page", "entry": [{
+            "id": "101010628568079",
+            "messaging": [{"sender": {"id": "service-psid"}, "delivery": {"mids": ["x"]}}],
+        }]}
+        self.assertEqual(handle_webhook(payload), 0)
+        self.assertFalse(Conversation.objects.filter(external_chat_id="service-psid").exists())
+
+    @patch("apps.inbox.meta._graph")
+    def test_profile_name_falls_back_to_page_conversation_participant(self, graph):
+        from .meta import _profile_name
+
+        graph.side_effect = [
+            RuntimeError("direct PSID profile is unavailable"),
+            {"data": [{"participants": {"data": [
+                {"id": "page-id", "name": "Page"},
+                {"id": "normal-user", "name": "Олег Кріжевські"},
+            ]}}]},
+        ]
+        with patch("apps.inbox.meta.PAGE_TOKEN", "token"), \
+                patch("apps.inbox.meta.PAGE_ID", "page-id"):
+            self.assertEqual(_profile_name("normal-user"), "Олег Кріжевські")
+        self.assertEqual(graph.call_args_list[1].args, (
+            "GET", "page-id/conversations",
+            {"user_id": "normal-user", "fields": "participants", "limit": 1},
+        ))
+
+
 class ChannelScopeTests(TestCase):
     def test_conversations_filtered_by_allowed_open_lines(self):
         tg = Channel.objects.create(kind="telegram", name="TG")

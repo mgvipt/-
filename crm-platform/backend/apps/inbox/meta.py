@@ -56,17 +56,37 @@ def _kind(obj):
     return "instagram" if obj == "instagram" else "facebook"
 
 
+def _profile_name(sender_id):
+    """Return a sender name without making it a prerequisite for ingestion."""
+    if not PAGE_TOKEN:
+        return ""
+    try:
+        profile = _graph("GET", str(sender_id), {"fields": "name"})
+        name = str((profile or {}).get("name") or "").strip()
+        if name:
+            return name
+    except Exception:
+        pass
+    # Meta may deny the direct PSID profile edge for a normal Page user while
+    # still exposing that participant through the Page conversation itself.
+    if PAGE_ID:
+        try:
+            result = _graph("GET", f"{PAGE_ID}/conversations", {
+                "user_id": str(sender_id), "fields": "participants", "limit": 1,
+            })
+            for conversation in (result or {}).get("data", []):
+                for participant in (conversation.get("participants") or {}).get("data", []):
+                    if str(participant.get("id")) == str(sender_id):
+                        return str(participant.get("name") or "").strip()
+        except Exception:
+            pass
+    return ""
+
+
 def _new_meta_lead(conv, kind, sender_id):
     """Створити контакт + лід для нового вхідного чату Meta (FB/IG). Джерело = канал."""
     from apps.crm.models import Contact, Lead, Funnel
-    name = ""
-    try:
-        if PAGE_TOKEN:
-            import urllib.request as _u
-            r = json.load(_u.urlopen(f"{GRAPH}/{sender_id}?fields=name&access_token={PAGE_TOKEN}", timeout=10))
-            name = r.get("name", "")
-    except Exception:
-        pass
+    name = _profile_name(sender_id)
     if not conv.contact_id:
         ct = Contact.objects.create(first_name=(name or kind)[:120], comment=f"З {kind} (Meta)")
         conv.contact = ct
@@ -92,8 +112,14 @@ def handle_webhook(payload: dict):
     for entry in payload.get("entry", []):
         kind = _kind(obj)
         ch, _ = Channel.objects.get_or_create(name=f"Meta · {kind}", defaults={"kind": kind, "config": {"meta": True, "platform": obj}})
-        # 1) Direct / Messenger
-        for ev in entry.get("messaging", []):
+        # 1) Direct / Messenger. Conversation Routing може передавати події
+        # застосунку, який не володіє потоком, у верхньорівневому standby.
+        # Новий Page Webhooks UI також загортає messages у changes[].value.
+        changes = list(entry.get("changes") or [])
+        direct_events = (list(entry.get("messaging") or [])
+                         + list(entry.get("standby") or [])
+                         + [(chg.get("value") or {}) for chg in changes if chg.get("field") == "messages"])
+        for ev in direct_events:
             sender = (ev.get("sender") or {}).get("id")
             recipient = (ev.get("recipient") or {}).get("id")
             msg = ev.get("message") or {}
@@ -114,8 +140,9 @@ def handle_webhook(payload: dict):
                 if not url:
                     continue
                 atyp = ((a or {}).get("type") or "").lower()
-                kind = "photo" if atyp in ("image", "photo") else ("video" if atyp == "video" else ("voice" if atyp in ("audio", "voice") else "file"))
-                atts.append({"type": kind, "url": url, "name": ("фото" if kind == "photo" else kind)})
+                attachment_kind = "photo" if atyp in ("image", "photo") else ("video" if atyp == "video" else ("voice" if atyp in ("audio", "voice") else "file"))
+                atts.append({"type": attachment_kind, "url": url,
+                             "name": ("фото" if attachment_kind == "photo" else attachment_kind)})
             Message.objects.create(conversation=conv, direction=("out" if is_echo else "in"),
                                    text=(msg.get("text") or ("📷 Фото" if atts else ""))[:5000],
                                    attachments=atts, external_id=mid)
@@ -125,7 +152,7 @@ def handle_webhook(payload: dict):
             conv.save()
             n_msg += 1
         # 2) Коментарі (changes → field comments/feed)
-        for chg in entry.get("changes", []):
+        for chg in changes:
             field = chg.get("field")
             val = chg.get("value") or {}
             if field not in ("comments", "feed"):
