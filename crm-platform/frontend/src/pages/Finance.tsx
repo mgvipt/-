@@ -3895,7 +3895,19 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
   const [catId, setCatId] = useState<number | 0>(0);
 
   useEffect(() => {
-    api.get<any>(`/api/integrations/incoming-docs/${docId}/`).then((d) => { setDet(d); setLines((d.lines || []).map((l: any) => ({ ...l }))); }).catch(() => {});
+    api.get<any>(`/api/integrations/incoming-docs/${docId}/`).then((d) => {
+      setDet(d);
+      const raw = (d.lines || []).map((l: any) => ({ ...l }));
+      // Строки часто приходят БЕЗ НДС, а шапка — С НДС. Подтягиваем строки до суммы накладной
+      // (умножаем на коэф = шапка ÷ строки), чтобы «Разом» = накладной и себестоимость склада была с НДС.
+      const hdr = Number(d.amount) || 0;
+      const rowsum = raw.reduce((a: number, l: any) => { const q = Number(l.qty) || 0; const p = Number(l.price) || 0; const sm = (l.sum != null && String(l.sum) !== "") ? Number(l.sum) : q * p; return a + (Number.isFinite(sm) ? sm : 0); }, 0);
+      const k = (hdr > 0 && rowsum > 0) ? hdr / rowsum : 1;
+      if (k > 1.005 && k < 1.6) {
+        raw.forEach((l: any) => { const q = Number(l.qty) || 0; const p = Number(l.price) || 0; const sm = (l.sum != null && String(l.sum) !== "") ? Number(l.sum) : q * p; if (Number.isFinite(sm)) l.sum = Math.round(sm * k * 100) / 100; });
+      }
+      setLines(raw);
+    }).catch(() => {});
     (async () => {
       // API обмежує сторінку 500 → тягнемо всі сторінки, поки є next
       try {
@@ -4095,9 +4107,20 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
             ))}
           </tbody>
         </table>
-        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "baseline", gap: 8, marginTop: 8, paddingRight: 34 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "baseline", gap: 8, marginTop: 8, paddingRight: 34, flexWrap: "wrap" }}>
           <span className="muted" style={{ fontSize: 12.5 }}>{t("Итого по накладной", "Разом по накладній")}:</span>
-          <b style={{ fontSize: 15, color: "#0f172a" }}>{lines.reduce((a, l) => { const q = Number(l.qty) || 0; const p = Number(l.price) || 0; const sm = (l.sum != null && String(l.sum) !== "") ? Number(l.sum) : q * p; return a + (Number.isFinite(sm) ? sm : 0); }, 0).toLocaleString("ru", { maximumFractionDigits: 2 })} ₴</b>
+          {(() => {
+            const rowsum = lines.reduce((a, l) => { const q = Number(l.qty) || 0; const p = Number(l.price) || 0; const sm = (l.sum != null && String(l.sum) !== "") ? Number(l.sum) : q * p; return a + (Number.isFinite(sm) ? sm : 0); }, 0);
+            const hdr = Number(det?.amount) || 0;
+            const diff = hdr ? Math.round((hdr - rowsum) * 100) / 100 : 0;
+            const ok = hdr ? Math.abs(diff) <= 1 : true;
+            return <>
+              <b style={{ fontSize: 15, color: ok ? "#0f172a" : "#dc2626" }}>{rowsum.toLocaleString("ru", { maximumFractionDigits: 2 })} ₴</b>
+              {hdr > 0 && (ok
+                ? <span style={{ fontSize: 12, color: "#16a34a" }}>✓ {t("совпадает с накладной", "збігається з накладною")}</span>
+                : <span style={{ fontSize: 12, color: "#dc2626" }}>≠ {t("в накладной", "у накладній")} {hdr.toLocaleString("ru", { maximumFractionDigits: 2 })} ₴ ({t("разница", "різниця")} {diff.toLocaleString("ru", { maximumFractionDigits: 2 })})</span>)}
+            </>;
+          })()}
         </div>
         <button className="btn btn-light" style={{ marginTop: 8 }} onClick={addLine}>+ {t("Добавить строку", "Додати рядок")}</button>
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
