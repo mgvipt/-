@@ -70,9 +70,16 @@ class ContactViewSet(viewsets.ModelViewSet):
         # ⚠️ byname ТІЛЬКИ по повному імені+прізвищу (обидва непусті) — інакше одиночне «Оксана»
         # без прізвища хапає платежі ВСІХ тезок і роздуває дохід (аудит 18.08).
         _byname = None
-        _match = _Qc(contact=c) | _Qc(deal__contact=c)
+        _linked = _Qc(contact=c) | _Qc(deal__contact=c)
+        _match = _linked
         if _first_nm and _last_nm:
+            # ОБИДВІ перестановки повного імені: контакт «Олександр Іваненко», а легасі
+            # ФінМапа пише «Іваненко Олександр» — без цього 5 операцій на 339 784 грн
+            # випали зі списку картки (19.08). Це так само ТОЧНЕ повне імʼя, тезок не чіпає.
+            _nm2 = (_last_nm + " " + _first_nm).strip()
             _byname = _Qc(counterparty__iexact=_nm) | _Qc(counterparty__istartswith=_nm + "/") | _Qc(counterparty__istartswith=_nm + " ") | _Qc(counterparty__istartswith=_nm + ".")
+            if _nm2.lower() != _nm.lower():
+                _byname = _byname | _Qc(counterparty__iexact=_nm2) | _Qc(counterparty__istartswith=_nm2 + "/") | _Qc(counterparty__istartswith=_nm2 + " ") | _Qc(counterparty__istartswith=_nm2 + ".")
             _match = _match | _byname  # всі платежі цьому контрагенту, навіть привʼязані до обʼєкта (обʼєкт видно окремим стовпцем)
         qs = _Tx.objects.filter(_match)
         # фільтри блоку операцій (діють на список + лічильник + плитки Дохід/Витрата/Аванс)
@@ -107,7 +114,12 @@ class ContactViewSet(viewsets.ModelViewSet):
                 continue
             _av = _Dadv(str(_dpa.amount or 0))
             _pay_consumed += _pv if _pv < _av else _av   # min(оплата, сума сделки)
-        adv = _Dadv(str(inc or 0)) - _pay_consumed   # АВАНС = деньги КЛИЕНТА (Заплатил − Купил); НАШИ затраты exp сюда НЕ входят (это маржа, не деньги клиента)
+        # АВАНС — ТІЛЬКИ від операцій з ПРИВʼЯЗКОЮ (contact/deal), byname-легасі НЕ рахуємо:
+        # старий дохід ФінМапа без сделок — це вже відпрацьовані гроші, а не «вільні кошти,
+        # доступні кнопкою "З авансу клієнта"» (фантомний аванс 2,39 млн — аудит 18.08).
+        # У списку операцій і в плитці «Дохід» byname-рядки ЛИШАЮТЬСЯ видимими.
+        inc_linked = qs.filter(_linked, direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0
+        adv = _Dadv(str(inc_linked or 0)) - _pay_consumed   # АВАНС = деньги КЛИЕНТА (Заплатил − Купил); НАШИ затраты exp сюда НЕ входят (это маржа, не деньги клиента)
         _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[])))
         from django.db.models import F as _F
         debt = _ppq.filter(kind="payable").aggregate(s=_Sum(_F("amount") - _F("paid_amount")))["s"] or 0
@@ -1521,9 +1533,10 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             from django.db.models import Sum as _AdvS, Q as _AdvQ
             _fnm = (_cc.first_name or "").strip(); _lnm = (_cc.last_name or "").strip()
             _nm = (_fnm + " " + _lnm).strip()
-            _m = _AdvQ(contact=_cc)
-            if _fnm and _lnm:   # byname тільки по повному «Імʼя Прізвище» (аудит 18.08)
-                _m = _m | _AdvQ(counterparty__iexact=_nm) | _AdvQ(counterparty__istartswith=_nm + "/") | _AdvQ(counterparty__istartswith=_nm + " ") | _AdvQ(counterparty__istartswith=_nm + ".")
+            # ДЗЕРКАЛЬНО до finance(): доступний аванс — ТІЛЬКИ операції з привʼязкою
+            # (contact/deal). byname-легасі ФінМапа не є «вільними грошима» (фантомний
+            # аванс 2,39 млн — аудит 18.08). Формули мусять збігатись з плиткою картки.
+            _m = _AdvQ(contact=_cc) | _AdvQ(deal__contact=_cc)
             _inc = _AdvTx.objects.filter(_m, direction="in").aggregate(s=_AdvS("amount_uah"))["s"] or 0
             _exp = _AdvTx.objects.filter(_m, direction="out").aggregate(s=_AdvS("amount_uah"))["s"] or 0
             # ВСІ оплачені платежі сделок клієнта (не тільки advance): нал/LiqPay створюють дохід+платіж
