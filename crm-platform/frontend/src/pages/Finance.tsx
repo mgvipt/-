@@ -3897,6 +3897,7 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
   const [combineOpen, setCombineOpen] = useState(false);
   const [combineProd, setCombineProd] = useState<any>(null);
   const [combineQty, setCombineQty] = useState("1");
+  const [combineSel, setCombineSel] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     api.get<any>(`/api/integrations/incoming-docs/${docId}/`).then((d) => {
@@ -3964,12 +3965,18 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
     });
     // eslint-disable-next-line
   }, [prods, lines.length]);
-  function applyCombine(prod: any, qty: number) {
+  const lineSum = (l: any) => { const q = Number(l.qty) || 0; const p = Number(l.price) || 0; const sm = (l.sum != null && String(l.sum) !== "") ? Number(l.sum) : q * p; return Number.isFinite(sm) ? sm : 0; };
+  function applyCombine(prod: any, qty: number, idxSet?: Set<number>) {
     if (!prod || !(qty > 0)) return;
-    const total = lines.reduce((a, l) => { const q = Number(l.qty) || 0; const p = Number(l.price) || 0; const sm = (l.sum != null && String(l.sum) !== "") ? Number(l.sum) : q * p; return a + (Number.isFinite(sm) ? sm : 0); }, 0);
-    const comps = lines.map((l) => (l.their_name || "").trim()).filter((x: string) => x && !x.startsWith("\uD83E\uDDE9"));
-    setLines([{ product_id: prod.id, product_name: prod.name, qty, price: 0, sum: Math.round(total * 100) / 100, factor: 1, retail: "", their_name: "\uD83E\uDDE9 " + t("Собрано из", "Зібрано з") + " " + comps.length + " " + t("позиций", "позицій"), _combine: { target_product_id: prod.id, qty, components: comps } }]);
-    setCombineOpen(false); setCombineProd(null);
+    const inSel = (i: number) => !idxSet || idxSet.has(i);
+    const src = lines.filter((_, i) => inSel(i));
+    const kept = lines.filter((_, i) => !inSel(i));
+    if (!src.length) return;
+    const total = src.reduce((a, l) => a + lineSum(l), 0);
+    const comps = src.map((l) => (l.their_name || "").trim()).filter((x: string) => x && !x.startsWith("\uD83E\uDDE9"));
+    const combined = { product_id: prod.id, product_name: prod.name, qty, price: 0, sum: Math.round(total * 100) / 100, factor: 1, retail: "", their_name: "\uD83E\uDDE9 " + t("Собрано из", "Зібрано з") + " " + comps.length + " " + t("позиций", "позицій"), _combine: { target_product_id: prod.id, qty, components: comps } };
+    setLines([...kept, combined]);
+    setCombineOpen(false); setCombineProd(null); setCombineSel(new Set());
   }
   const post = async () => {
     if (lines.some((l) => !l.product_id) && !confirm(t("Не все строки сопоставлены — провести только сопоставленные?", "Не всі рядки зіставлені — провести лише зіставлені?"))) return;
@@ -4110,7 +4117,7 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
             {lines.map((l, i) => (
               <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
                 <td style={{ padding: "6px 4px" }}><input value={l.their_name || ""} onChange={(e) => setLine(i, { their_name: e.target.value })} placeholder={t("наименование", "найменування")} style={{ width: "100%", height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px" }} /></td>
-                <td><ProductPicker value={l.product_name || ""} productId={l.product_id || null} prods={prods} onPick={(p, name) => setLine(i, { product_name: name, product_id: p ? p.id : null, retail: (p && Number(p.price) > 0) ? String(p.price) : (l.retail ?? "") })} />{(Number(l.factor) || 1) !== 1 && (() => { const q = Number(l.qty) || 0; const f = Number(l.factor) || 1; const tot = (l.sum != null && l.sum !== "") ? Number(l.sum) : q * (Number(l.price) || 0); const sq = q * f; const cost = sq ? tot / sq : 0; return <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>→ {sq.toLocaleString()} {t("ед.", "од.")} · {cost.toLocaleString(undefined, { maximumFractionDigits: 2 })} ₴/{t("ед.", "од.")}</div>; })()}</td>
+                <td><ProductPicker value={l.product_name || ""} productId={l.product_id || null} prods={prods} onPick={(p, name) => setLine(i, { product_name: name, product_id: p ? p.id : null, retail: (p && Number(p.price) > 0) ? String(p.price) : (l.retail ?? "") })} />{((Number(l.factor) || 1) !== 1 || l._combine) && (() => { const q = Number(l.qty) || 0; const f = Number(l.factor) || 1; const tot = (l.sum != null && l.sum !== "") ? Number(l.sum) : q * (Number(l.price) || 0); const sq = q * f; const cost = sq ? tot / sq : 0; return <div style={{ fontSize: 11, marginTop: 2, color: l._combine ? "#0369a1" : "#64748b", fontWeight: l._combine ? 700 : 400 }}>{l._combine ? (t("закупка", "закупівля") + ": ") : "→ " + sq.toLocaleString() + " " + t("ед.", "од.") + " · "}{cost.toLocaleString(undefined, { maximumFractionDigits: 2 })} ₴/{t("ед.", "од.")}</div>; })()}</td>
                 <td><input type="number" className="num-tight" value={l.qty} onChange={(e) => setLine(i, { qty: parseFloat(e.target.value) })} style={{ width: 56, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px", fontSize: 12, textAlign: "right" }} /></td>
                 <td><input type="number" className="num-tight" value={l.factor ?? 1} onChange={(e) => setLine(i, { factor: parseFloat(e.target.value) || 1 })} style={{ width: 60, height: 30, border: "1px solid " + ((Number(l.factor) || 1) !== 1 ? "#93c5fd" : "#cbd5e1"), borderRadius: 6, padding: "0 6px", fontSize: 12, textAlign: "right" }} /></td>
                 <td><input type="number" className="num-tight" value={l.sum ?? ""} placeholder={String(Math.round((Number(l.qty) || 0) * (Number(l.price) || 0)))} onChange={(e) => setLine(i, { sum: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ width: 96, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px", fontSize: 12, textAlign: "right" }} /></td>
@@ -4143,19 +4150,37 @@ function SupplierMapModal({ docId, onClose, onDone }: { docId: number; onClose: 
         )}
         {combineOpen && (
           <div style={{ marginTop: 8, background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{"\uD83E\uDDE9 "}{t("Собрать все строки в одну позицию", "Зібрати всі рядки в одну позицію")}</div>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{"\uD83E\uDDE9 "}{t("Отметь строки, которые собрать в одну позицию", "Познач рядки, які зібрати в одну позицію")}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8 }}>
+              {lines.map((l, i) => l._combine ? null : (
+                <label key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, cursor: "pointer", background: combineSel.has(i) ? "#e0f2fe" : "transparent", borderRadius: 6, padding: "3px 6px" }}>
+                  <input type="checkbox" checked={combineSel.has(i)} onChange={() => setCombineSel((prev) => { const nx = new Set(prev); if (nx.has(i)) nx.delete(i); else nx.add(i); return nx; })} />
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.their_name || l.product_name || t("строка", "рядок") + " " + (i + 1)}</span>
+                  <b style={{ fontSize: 12 }}>{lineSum(l).toLocaleString("ru", { maximumFractionDigits: 2 })} ₴</b>
+                </label>
+              ))}
+            </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 220 }}><ProductPicker value={combineProd?.name || ""} productId={combineProd?.id || null} prods={prods} onPick={(p, name) => setCombineProd(p ? { id: p.id, name } : null)} /></div>
               <input type="number" className="num-tight" value={combineQty} onChange={(e) => setCombineQty(e.target.value)} placeholder={t("кол-во", "к-сть")} title={t("Сколько единиц получилось (напр. 3 ведра)", "Скільки одиниць вийшло (напр. 3 відра)")} style={{ width: 90, height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px", fontSize: 13, textAlign: "right" }} />
-              <button className="btn btn-primary" disabled={!combineProd || !(Number(combineQty) > 0)} onClick={() => applyCombine(combineProd, Number(combineQty))} style={{ padding: "4px 14px" }}>{t("Собрать", "Зібрати")}</button>
+              <button className="btn btn-primary" disabled={!combineProd || !(Number(combineQty) > 0) || combineSel.size === 0} onClick={() => applyCombine(combineProd, Number(combineQty), combineSel)} style={{ padding: "4px 14px" }}>{t("Собрать", "Зібрати")}</button>
               <button className="btn btn-light" onClick={() => setCombineOpen(false)} style={{ padding: "4px 10px" }}>{t("Отмена", "Скасувати")}</button>
             </div>
-            <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>{t("Себестоимость = вся сумма накладной ÷ количество. Компоненты по отдельности на склад не приходуются. Набор запомнится — в следующий раз предложу свернуть сам.", "Собівартість = вся сума накладної ÷ кількість. Компоненти окремо на склад не приходуються. Набір запамʼятається — наступного разу запропоную звести сам.")}</div>
+            {(() => {
+              const sel = lines.filter((_, i) => combineSel.has(i));
+              const selTotal = sel.reduce((a, l) => a + lineSum(l), 0);
+              const q = Number(combineQty) || 0;
+              const per = q > 0 ? selTotal / q : 0;
+              return <div style={{ fontSize: 12.5, marginTop: 6, color: "#0369a1", fontWeight: 700 }}>
+                {t("Выбрано", "Обрано")}: {sel.length} · {t("сумма", "сума")} {selTotal.toLocaleString("ru", { maximumFractionDigits: 2 })} ₴{q > 0 ? " → " + t("закупка", "закупівля") + " " + per.toLocaleString("ru", { maximumFractionDigits: 2 }) + " ₴/" + t("ед.", "од.") : ""}
+              </div>;
+            })()}
+            <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>{t("Себестоимость = сумма выбранных строк ÷ количество. Невыбранные строки останутся отдельными позициями на складе. Набор запомнится — в следующий раз предложу свернуть сам.", "Собівартість = сума вибраних рядків ÷ кількість. Невибрані рядки залишаться окремими позиціями на складі. Набір запамʼятається — наступного разу запропоную звести сам.")}</div>
           </div>
         )}
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <button className="btn btn-light" onClick={addLine}>+ {t("Добавить строку", "Додати рядок")}</button>
-          {!lines.some((l) => l._combine) && lines.length > 1 && <button className="btn btn-light" onClick={() => { setCombineOpen((v) => !v); }}>{"\uD83E\uDDE9 "}{t("Собрать в 1 позицию", "Зібрати в 1 позицію")}</button>}
+          {lines.filter((l) => !l._combine).length > 1 && <button className="btn btn-light" onClick={() => { setCombineSel(new Set(lines.map((l, i) => l._combine ? -1 : i).filter((i) => i >= 0))); setCombineOpen((v) => !v); }}>{"\uD83E\uDDE9 "}{t("Собрать в 1 позицию", "Зібрати в 1 позицію")}</button>}
           {lines.some((l) => l._combine) && <span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>{"\uD83E\uDDE9 "}{t("собрано в 1 позицию — переоткрой накладную, чтобы вернуть строки", "зібрано в 1 позицію — перевідкрий накладну, щоб повернути рядки")}</span>}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
