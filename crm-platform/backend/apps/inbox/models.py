@@ -40,6 +40,7 @@ class Conversation(models.Model):
     priority_at = models.DateTimeField(null=True, blank=True)
     priority_seen_count = models.PositiveIntegerField(default=0)
     last_message_at = models.DateTimeField(null=True, blank=True)
+    config = models.JSONField(default=dict, blank=True)  # source_card тощо (Meta комент-чати)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

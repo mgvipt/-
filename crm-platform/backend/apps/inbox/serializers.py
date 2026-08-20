@@ -69,7 +69,8 @@ class ConversationSerializer(serializers.ModelSerializer):
 
     def get_source_card(self, obj):
         """Картка джерела для комент-чатів Meta (публікація/ролик/реклама, на яку відповів клієнт)."""
-        return (obj.config or {}).get("source_card") or None
+        cfg = getattr(obj, "config", None) or {}
+        return cfg.get("source_card") or None
 
     def get_contact_name(self, obj):
         return str(obj.contact) if obj.contact else (obj.title or "")
