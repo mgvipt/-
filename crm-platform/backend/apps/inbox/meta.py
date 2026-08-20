@@ -47,13 +47,54 @@ def send_message(recipient_id: str, text: str, platform: str = "instagram"):
     })
 
 
+def send_attachment(recipient_id: str, url: str, atype: str = "image", platform: str = "instagram"):
+    """Надіслати клієнту медіа (фото/відео/аудіо/файл) НАТИВНО в Direct/Messenger по URL.
+    atype: image|video|audio|file. Клієнт бачить картинку/відео у переписці, а не текстове посилання."""
+    sender = IG_ID if platform == "instagram" and IG_ID else "me"
+    mtype = atype if atype in ("image", "video", "audio", "file") else "file"
+    return _graph("POST", f"{sender}/messages", {
+        "recipient": json.dumps({"id": recipient_id}),
+        "message": json.dumps({"attachment": {"type": mtype, "payload": {"url": url, "is_reusable": False}}}),
+        "messaging_type": "RESPONSE",
+    })
+
+
 def reply_comment(comment_id: str, text: str):
     """Відповісти на коментар IG/FB (публічно)."""
-    return _graph("POST", f"{comment_id}/replies" if False else f"{comment_id}/comments", {"message": text})
+    return _graph("POST", f"{comment_id}/comments", {"message": text})
 
 
 def _kind(obj):
     return "instagram" if obj == "instagram" else "facebook"
+
+
+def _media_card(media_id, kind):
+    """Картка джерела: підтягнути дані публікації/ролика/реклами, на яку відповів клієнт.
+    Повертає dict {media_type, permalink, thumbnail, caption} або порожній dict при помилці/без прав."""
+    if not media_id or not PAGE_TOKEN:
+        return {}
+    try:
+        if kind == "instagram":
+            d = _graph("GET", str(media_id),
+                       {"fields": "media_type,media_url,thumbnail_url,permalink,caption"})
+            return {
+                "media_type": (d.get("media_type") or "").upper(),  # IMAGE/VIDEO/CAROUSEL_ALBUM/REEL
+                "permalink": d.get("permalink") or "",
+                "thumbnail": d.get("thumbnail_url") or d.get("media_url") or "",
+                "caption": (d.get("caption") or "")[:280],
+            }
+        # facebook post
+        d = _graph("GET", str(media_id),
+                   {"fields": "permalink_url,message,full_picture,attachments{media_type}"})
+        att = (((d.get("attachments") or {}).get("data") or [{}])[0]) if d.get("attachments") else {}
+        return {
+            "media_type": (att.get("media_type") or "").upper(),
+            "permalink": d.get("permalink_url") or "",
+            "thumbnail": d.get("full_picture") or "",
+            "caption": (d.get("message") or "")[:280],
+        }
+    except Exception:
+        return {}
 
 
 def _profile_name(sender_id):
@@ -83,13 +124,18 @@ def _profile_name(sender_id):
     return ""
 
 
-def _new_meta_lead(conv, kind, sender_id):
+def _get_or_make_contact(kind, sender_id, name=""):
+    """Знайти/створити контакт для автора Meta (спільно для Direct і коментарів)."""
+    from apps.crm.models import Contact
+    nm = (name or _profile_name(sender_id) or kind)[:120]
+    return Contact.objects.create(first_name=nm, comment=f"З {kind} (Meta)")
+
+
+def _new_meta_lead(conv, kind, sender_id, name=""):
     """Створити контакт + лід для нового вхідного чату Meta (FB/IG). Джерело = канал."""
-    from apps.crm.models import Contact, Lead, Funnel
-    name = _profile_name(sender_id)
+    from apps.crm.models import Lead, Funnel
     if not conv.contact_id:
-        ct = Contact.objects.create(first_name=(name or kind)[:120], comment=f"З {kind} (Meta)")
-        conv.contact = ct
+        conv.contact = _get_or_make_contact(kind, sender_id, name)
         conv.save(update_fields=["contact"])
     try:
         f = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
@@ -102,11 +148,26 @@ def _new_meta_lead(conv, kind, sender_id):
         pass
 
 
+def _story_ref(msg):
+    """Витягнути посилання на історію з Direct-повідомлення (відповідь на історію / згадка в історії).
+    Повертає dict для attachments або None."""
+    reply_to = msg.get("reply_to") or {}
+    story = reply_to.get("story") or {}
+    if story.get("url") or story.get("id"):
+        return {"type": "story_ref", "kind": "reply", "url": story.get("url", ""),
+                "story_id": story.get("id", ""), "name": "Відповідь на історію"}
+    for a in (msg.get("attachments") or []):
+        if ((a or {}).get("type") or "").lower() == "story_mention":
+            url = (((a or {}).get("payload") or {}).get("url") or "")
+            return {"type": "story_ref", "kind": "mention", "url": url, "name": "Згадка в історії"}
+    return None
+
+
 def handle_webhook(payload: dict):
     """Розібрати вебхук Meta → створити/оновити Conversation+Message+Contact у CRM.
-    Підтримує: IG/FB Direct (messaging) + IG/FB коменти (changes)."""
+    Підтримує: IG/FB Direct (messaging, story reply/mention) + IG/FB коменти (changes).
+    Коментарі групуються по «клієнт + публікація» (окремий чат на кожну зв'язку)."""
     from .models import Channel, Conversation, Message
-    from apps.crm.models import Contact
     obj = payload.get("object")
     n_msg = 0
     for entry in payload.get("entry", []):
@@ -126,7 +187,7 @@ def handle_webhook(payload: dict):
             if not sender or not msg:
                 continue
             mid = msg.get("mid", "")
-            is_echo = msg.get("is_echo")  # надіслане нами
+            is_echo = msg.get("is_echo")  # надіслане нами (менеджер АБО ШІ Юля через ChatPlace)
             ext_chat = sender if not is_echo else recipient
             conv, created = Conversation.objects.get_or_create(channel=ch, external_chat_id=str(ext_chat), defaults={"title": kind})
             if created and not is_echo:
@@ -143,6 +204,10 @@ def handle_webhook(payload: dict):
                 attachment_kind = "photo" if atyp in ("image", "photo") else ("video" if atyp == "video" else ("voice" if atyp in ("audio", "voice") else "file"))
                 atts.append({"type": attachment_kind, "url": url,
                              "name": ("фото" if attachment_kind == "photo" else attachment_kind)})
+            # відповідь на історію / згадка в історії — картка історії в повідомленні
+            sref = _story_ref(msg)
+            if sref:
+                atts.append(sref)
             Message.objects.create(conversation=conv, direction=("out" if is_echo else "in"),
                                    text=(msg.get("text") or ("📷 Фото" if atts else ""))[:5000],
                                    attachments=atts, external_id=mid)
@@ -151,7 +216,7 @@ def handle_webhook(payload: dict):
             conv.last_message_at = timezone.now()
             conv.save()
             n_msg += 1
-        # 2) Коментарі (changes → field comments/feed)
+        # 2) Коментарі (changes → field comments/feed): чат = «клієнт + публікація»
         for chg in changes:
             field = chg.get("field")
             val = chg.get("value") or {}
@@ -161,15 +226,41 @@ def handle_webhook(payload: dict):
                 continue
             cid = val.get("comment_id") or val.get("id")
             frm = val.get("from") or {}
+            author_id = str(frm.get("id") or "")
+            author_name = (frm.get("name") or frm.get("username") or "")[:160]
             text = val.get("text") or val.get("message") or ""
             if not cid or not text:
                 continue
-            ext_chat = f"comment:{val.get('post_id') or val.get('media',{}).get('id') or cid}"
-            conv, _ = Conversation.objects.get_or_create(channel=ch, external_chat_id=str(ext_chat), defaults={"title": f"{kind} коментарі"})
+            post_id = str(val.get("post_id") or (val.get("media") or {}).get("id") or cid)
+            parent_id = str((val.get("parent") or {}).get("id") or val.get("parent_id") or "")
+            is_ad = bool(val.get("is_ad") or (val.get("media") or {}).get("ad_id") or val.get("ad_id"))
+            # окремий чат на КОЖНУ зв'язку «автор + публікація»
+            ext_chat = f"comment:{kind}:{post_id}:{author_id or cid}"
+            conv, created = Conversation.objects.get_or_create(
+                channel=ch, external_chat_id=str(ext_chat),
+                defaults={"title": f"{kind} · коментар"})
+            # прив'язати контакт + лід (як для Direct) — щоб коментатор був клієнтом у CRM
+            if created:
+                _new_meta_lead(conv, kind, author_id or cid, author_name)
+                # картка джерела (публікація/ролик/реклама) — зберігаємо ОДИН раз зверху чату
+                card = _media_card((val.get("media") or {}).get("id") or val.get("post_id"), kind)
+                conv.config = {**(conv.config or {}), "source_card": {
+                    "type": "comment",
+                    "platform": kind,
+                    "media_id": post_id,
+                    "media_type": card.get("media_type", "") or ("AD" if is_ad else ""),
+                    "permalink": card.get("permalink", ""),
+                    "thumbnail": card.get("thumbnail", ""),
+                    "caption": card.get("caption", ""),
+                    "is_ad": is_ad,
+                    "parent_id": parent_id,
+                    "ad_id": str(val.get("ad_id") or (val.get("media") or {}).get("ad_id") or ""),
+                }}
+                conv.save(update_fields=["config"])
             if Message.objects.filter(conversation=conv, external_id=str(cid)).exists():
                 continue
             Message.objects.create(conversation=conv, direction="in", text=text[:5000], external_id=str(cid),
-                                   sender_name=(frm.get("name") or frm.get("username") or "")[:160])
+                                   sender_name=author_name)
             conv.unread = (conv.unread or 0) + 1
             from django.utils import timezone
             conv.last_message_at = timezone.now()

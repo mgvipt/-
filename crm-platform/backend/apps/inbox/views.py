@@ -1010,6 +1010,22 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             ct = mimetypes.guess_type(filename)[0] or ("image/jpeg" if kind == "image" else "application/octet-stream")
             SharedLink.objects.create(token=tok, filename=filename[:255], content_type=ct, data=content)
             url = request.build_absolute_uri("/api/f/%s/" % tok)
+            # Meta-канали (FB/IG) приймають медіа по публічному URL → шлемо НАТИВНО картинкою/відео, не текстом
+            if (conv.channel.config or {}).get("meta"):
+                from .meta import send_attachment
+                _plat = "instagram" if "instagram" in (conv.channel.config or {}).get("platform", "instagram") else "facebook"
+                _atype = "image" if kind in ("image", "photo") else ("video" if kind == "video" else ("audio" if kind in ("audio", "voice") else "file"))
+                try:
+                    _r = send_attachment(conv.external_chat_id, url, atype=_atype, platform=_plat)
+                    _m = Message.objects.create(conversation=conv, direction="out", text="",
+                                                attachments=[{"type": kind, "url": url, "name": filename}],
+                                                external_id=str((_r or {}).get("message_id", "")), sender=request.user,
+                                                sender_name=(request.user.get_full_name() or request.user.username))
+                    conv.last_message_at = _m.created_at
+                    conv.save(update_fields=["last_message_at"])
+                    return Response(MessageSerializer(_m).data, status=status.HTTP_201_CREATED)
+                except Exception:
+                    pass  # нативно не вийшло → нижче піде текстове посилання (fallback)
             label = "\U0001F4F7 Фото" if kind == "image" else "\U0001F4CE Файл"
             try:
                 msg = _send_text(conv, "%s — %s\n%s" % (label, filename, url), user=request.user)

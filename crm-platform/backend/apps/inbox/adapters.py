@@ -176,14 +176,29 @@ class MetaAdapter(ChannelAdapter):
     """Instagram/Facebook напряму через Graph API (незалежно від Бітрикса)."""
     kind = "meta"
 
+    def _platform(self) -> str:
+        return "instagram" if "instagram" in (self.config or {}).get("platform", "instagram") else "facebook"
+
     def send(self, external_chat_id: str, text: str) -> str:
         from .meta import send_message, reply_comment
         if str(external_chat_id).startswith("comment:"):
-            r = reply_comment(str(external_chat_id).split(":", 1)[1], text)
+            # Відповідь на коментар — публічно, на ОСТАННІЙ коментар клієнта у цій зв'язці «клієнт+публікація»
+            from .models import Conversation, Message
+            conv = Conversation.objects.filter(channel=self.channel, external_chat_id=external_chat_id).first()
+            last_in = (Message.objects.filter(conversation=conv, direction="in").order_by("-id").first()
+                       if conv else None)
+            comment_id = (last_in.external_id if last_in else "")
+            if not comment_id:
+                return ""
+            r = reply_comment(comment_id, text)
             return str(r.get("id", ""))
-        platform = "instagram" if "instagram" in (self.config or {}).get("platform", "instagram") else "facebook"
-        r = send_message(external_chat_id, text, platform=platform)
+        r = send_message(external_chat_id, text, platform=self._platform())
         return str(r.get("message_id", ""))
+
+    def send_media(self, external_chat_id: str, content: bytes, filename: str, kind: str) -> str:
+        """Meta приймає медіа лише по ПУБЛІЧНОМУ URL, не сирі байти. Тому реальну
+        відправку робить views.send_media (Meta-гілка з публічним посиланням SharedLink)."""
+        raise NotImplementedError
 
 
 class ChatPlaceAdapter(ChannelAdapter):

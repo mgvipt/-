@@ -65,6 +65,11 @@ class ConversationSerializer(serializers.ModelSerializer):
     deal_id = serializers.SerializerMethodField()
     participant_names = serializers.SerializerMethodField()
     unhandled_in = serializers.SerializerMethodField()
+    source_card = serializers.SerializerMethodField()
+
+    def get_source_card(self, obj):
+        """Картка джерела для комент-чатів Meta (публікація/ролик/реклама, на яку відповів клієнт)."""
+        return (obj.config or {}).get("source_card") or None
 
     def get_contact_name(self, obj):
         return str(obj.contact) if obj.contact else (obj.title or "")
@@ -102,7 +107,7 @@ class ConversationSerializer(serializers.ModelSerializer):
         model = Conversation
         fields = ["id", "channel", "channel_kind", "channel_name", "contact",
                   "contact_name", "title", "status", "assigned_to", "assigned_to_name",
-                  "unread", "last_message_at", "last_text", "needs_reply", "ai_answered", "unhandled_in", "participants", "participant_names", "priority", "priority_reason", "deal_stage", "deal_id"]
+                  "unread", "last_message_at", "last_text", "needs_reply", "ai_answered", "unhandled_in", "participants", "participant_names", "priority", "priority_reason", "deal_stage", "deal_id", "source_card"]
 
     def _last(self, obj):
         """Останнє повідомлення (з пакетного meta або 1 запит fallback)."""

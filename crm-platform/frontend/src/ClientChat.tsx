@@ -8,6 +8,7 @@ import { AiComposeAssist } from "./AiComposeAssist";
 import { Icon } from "./Icon";
 import { api, ChatMessage, Conversation, Paginated } from "./api";
 import ChatActions from "./ChatActions";
+import ConversationSourceCard from "./ConversationSourceCard";
 import { dayLabel, timeLabel, isNewDay, linkify, metaWindow } from "./chatUtils";
 
 const tt = (_r: string, ua: string) => ua;  // ClientChat україномовний
@@ -303,6 +304,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
       {clientHead}
       {channelPickerTargetId ? (channelPickerTarget ? createPortal(channelPicker, channelPickerTarget) : null) : channelPicker}
       <ChatActions convId={conv.id} onClosed={() => { setConv(null); setMsgs([]); loadStartChannels(); }} onChanged={(c) => setConv(c)} />
+      <ConversationSourceCard card={(conv as any).source_card} />
       {/* СТРІЧКА — заповнює доступну висоту */}
       <div title="Тягни за правий нижній кут, щоб збільшити вікно чату" style={{ height: 300, minHeight: 150, maxHeight: "72vh", resize: "vertical", overflow: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc", borderRadius: 10, border: "1px solid #eef2f7" }}>
         {msgs.length === 0 && <div className="muted" style={{ fontSize: 13 }}>Повідомлень поки немає</div>}
@@ -322,6 +324,12 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
                   (a.url && a.type === "photo") ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 6 }}><img src={a.url} alt="" style={{ maxWidth: 220, maxHeight: 240, borderRadius: 8, display: "block", objectFit: "cover" }} /></a>
                   : (a.url && a.type === "video") ? <video key={j} src={a.url} controls style={{ maxWidth: 220, borderRadius: 8, marginTop: 6, display: "block" }} />
                   : (a.url && a.type === "voice") ? <audio key={j} src={a.url} controls style={{ marginTop: 6, maxWidth: 220 }} />
+                  : a.type === "story_ref" ? (
+                    <div key={j} style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6, padding: "5px 8px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 11.5, color: "#475569" }}>
+                      {a.url ? <img src={a.url} alt="" style={{ width: 34, height: 34, borderRadius: 5, objectFit: "cover" }} /> : <span style={{ fontSize: 18 }}>📖</span>}
+                      <span style={{ fontWeight: 600 }}>{a.kind === "mention" ? "Згадка в історії" : "Відповідь на історію"}{!a.url ? " · історія вже недоступна" : ""}</span>
+                    </div>
+                  )
                   : a.url ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 12.5, color: "#2563eb", fontWeight: 600 }}><Icon n="paperclip" size={14} /> {a.name || "файл"}</a>
                   : null
                 ))}
