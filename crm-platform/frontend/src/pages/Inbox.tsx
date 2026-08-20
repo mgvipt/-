@@ -11,6 +11,7 @@ import { AiComposeAssist } from "../AiComposeAssist";
 import { linkify, dayLabel, metaWindow, SNDR_MAP } from "../chatUtils";
 import { Icon } from "../Icon";
 import { TaskQuickModal } from "../TaskQuickModal";
+import ConversationSourceCard from "../ConversationSourceCard";
 import { msgSoundOn, setMsgSoundOn, teamSoundOn, setTeamSoundOn } from "../sounds";
 
 
@@ -482,6 +483,7 @@ export default function Inbox() {
               </div>
             )}
             <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+              <ConversationSourceCard card={(active as any)?.source_card} />
               {msgs.map((m, i) => (
                 <Fragment key={m.id}>
                 {(i === 0 || new Date((m as any).created_at).toDateString() !== new Date((msgs[i - 1] as any).created_at).toDateString()) && <div style={{ position: "sticky", top: 2, zIndex: 3, textAlign: "center", margin: "8px 0 6px", pointerEvents: "none" }}><span style={{ fontSize: 11, fontWeight: 700, color: "#475569", background: "#e2e8f0", borderRadius: 20, padding: "3px 13px", boxShadow: "0 1px 4px rgba(0,0,0,.14)" }}>{dayLabel((m as any).created_at, t)}</span></div>}
