@@ -3040,6 +3040,15 @@ class AnthropicCostView(APIView):
         # нижний порог (данные всё равно недавние) и ниже — пагинируем все страницы.
         _floor = (date.today() - timedelta(days=370)).isoformat()
         a_frm = frm if (frm or "") >= _floor else _floor
+        from django.core.cache import cache as _dj_cache
+        from apps.integrations.models import IntegrationSettings as _IS
+        _sub = _IS.objects.filter(provider="ai_subscription").first()
+        _subv = float((_sub.config or {}).get("monthly_usd") or 0) if _sub else 0.0
+        _ckey = "ai_anthropic:%s:%s" % (a_frm, to)
+        _cached = _dj_cache.get(_ckey)
+        if _cached is not None:
+            _r = dict(_cached); _r["subscription_monthly"] = _subv; _r["cached"] = True
+            return Response(_r)
         H = {"x-api-key": admin, "anthropic-version": "2023-06-01"}
         def _get(url):
             req = urllib.request.Request(url, headers=H)
@@ -3080,22 +3089,23 @@ class AnthropicCostView(APIView):
             rows = sorted([{"key": names.get(kid) or (kid[:14] if kid else "—"), "cost": round(v, 2)}
                            for kid, v in agg.items()], key=lambda x: -x["cost"])
             keys_total = round(sum(r["cost"] for r in rows), 2)
-            org_total = None
-            try:
-                cr = _get(_base + "/cost_report?" + _win + "&limit=31")
-                org_total = round(sum(float(rr.get("amount") or 0) for b in (cr.get("data") or [])
-                                      for rr in (b.get("results") or [])), 2)
-            except Exception:
-                pass
-            from apps.integrations.models import IntegrationSettings as _IS
-            _sub = _IS.objects.filter(provider="ai_subscription").first()
-            _subv = float((_sub.config or {}).get("monthly_usd") or 0) if _sub else 0.0
-            return Response({"configured": True, "from": a_frm, "to": to, "rows": rows,
-                             "total": keys_total, "org_total": org_total, "subscription_monthly": _subv})
+            payload = {"configured": True, "from": a_frm, "to": to, "rows": rows,
+                       "total": keys_total, "org_total": None}
+            _dj_cache.set(_ckey, payload, 600)           # 10 хв — щоб не довбати Admin API
+            _dj_cache.set(_ckey + ":last", payload, 86400)  # останній удачний на добу (на випадок 429)
+            _out = dict(payload); _out["subscription_monthly"] = _subv
+            return Response(_out)
         except urllib.error.HTTPError as e:
-            return Response({"configured": True, "error": "Anthropic %s: %s" % (e.code, e.read().decode()[:150])})
+            _last = _dj_cache.get(_ckey + ":last")
+            if _last:
+                _r = dict(_last); _r["subscription_monthly"] = _subv; _r["stale"] = True; return Response(_r)
+            _msg = "Занадто багато запитів до Anthropic — зачекайте хвилину" if e.code == 429 else ("Anthropic %s" % e.code)
+            return Response({"configured": True, "error": _msg, "subscription_monthly": _subv})
         except Exception as e:
-            return Response({"configured": True, "error": str(e)[:200]})
+            _last = _dj_cache.get(_ckey + ":last")
+            if _last:
+                _r = dict(_last); _r["subscription_monthly"] = _subv; _r["stale"] = True; return Response(_r)
+            return Response({"configured": True, "error": str(e)[:200], "subscription_monthly": _subv})
 
 
     def post(self, request):
