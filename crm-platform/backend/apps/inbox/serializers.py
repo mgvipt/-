@@ -73,7 +73,14 @@ class ConversationSerializer(serializers.ModelSerializer):
         return cfg.get("source_card") or None
 
     def get_contact_name(self, obj):
-        return str(obj.contact) if obj.contact else (obj.title or "")
+        if not obj.contact:
+            return obj.title or ""
+        base = str(obj.contact).strip()
+        nick = (getattr(obj.contact, "nickname", "") or "").strip()
+        # «Ім'я Прізвище (@нік)» — і повне ім'я, і нікнейм клієнта у заголовку чату
+        if nick and nick.lower() not in base.lower():
+            return f"{base} (@{nick})" if base else f"@{nick}"
+        return base
 
     def get_participant_names(self, obj):
         return [(u.get_full_name() or u.username) for u in obj.participants.all()]

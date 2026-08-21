@@ -161,18 +161,43 @@ def _profile_name(sender_id):
     return ""
 
 
-def _get_or_make_contact(kind, sender_id, name=""):
-    """Знайти/створити контакт для автора Meta (спільно для Direct і коментарів)."""
+def _ig_get(path, params=None):
+    """GET через graph.instagram.com з IG-токеном (Instagram-вхід)."""
+    url = f"{IG_GRAPH}/{path}?" + urllib.parse.urlencode({**(params or {}), "access_token": IG_TOKEN})
+    with urllib.request.urlopen(urllib.request.Request(url), timeout=15) as r:  # noqa: S310
+        return json.load(r)
+
+
+def _meta_profile(sender_id, kind):
+    """Повертає (повне_ім'я, нік) автора Meta. Instagram → graph.instagram.com (name+username);
+    Facebook → Page (тільки name)."""
+    if kind == "instagram" and IG_TOKEN:
+        try:
+            d = _ig_get(str(sender_id), {"fields": "name,username"})
+            return (str((d or {}).get("name") or "").strip(), str((d or {}).get("username") or "").strip())
+        except Exception:
+            pass
+    return (_profile_name(sender_id), "")
+
+
+def _get_or_make_contact(kind, sender_id, name="", username=""):
+    """Знайти/створити контакт для автора Meta. Тягне ім'я+нік (IG через graph.instagram.com).
+    Заголовок чату = «Ім'я Прізвище (@нік)»."""
     from apps.crm.models import Contact
-    nm = (name or _profile_name(sender_id) or kind)[:120]
-    return Contact.objects.create(first_name=nm, comment=f"З {kind} (Meta)")
+    if not name and not username:
+        name, username = _meta_profile(sender_id, kind)
+    parts = (name or "").split(None, 1)
+    fn = ((parts[0] if parts else "") or username or kind)[:120]
+    ln = (parts[1] if len(parts) > 1 else "")[:120]
+    return Contact.objects.create(first_name=fn, last_name=ln,
+                                  nickname=(username or "")[:150], comment=f"З {kind} (Meta)")
 
 
-def _new_meta_lead(conv, kind, sender_id, name=""):
+def _new_meta_lead(conv, kind, sender_id, name="", username=""):
     """Створити контакт + лід для нового вхідного чату Meta (FB/IG). Джерело = канал."""
     from apps.crm.models import Lead, Funnel
     if not conv.contact_id:
-        conv.contact = _get_or_make_contact(kind, sender_id, name)
+        conv.contact = _get_or_make_contact(kind, sender_id, name, username)
         conv.save(update_fields=["contact"])
     try:
         f = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
@@ -319,7 +344,7 @@ def handle_webhook(payload: dict):
 
             if created:
                 # контакт = КЛІЄНТ (нік лида), НЕ наш акаунт
-                _new_meta_lead(conv, kind, client_key, client_name)
+                _new_meta_lead(conv, kind, client_key, client_name, username=(author_username or client_key))
                 card = _media_card((val.get("media") or {}).get("id") or val.get("post_id"), kind)
                 conv.config = {**(conv.config or {}), "source_card": {
                     "type": "comment",
