@@ -269,15 +269,23 @@ def handle_webhook(payload: dict):
                 sname = author_username or author_name  # у чаті видно НІК КЛІЄНТА, не наш канал
                 client_name = author_username or author_name
 
-            # чат = «клієнт + публікація» (нік лида як ключ) — коментар клієнта і відповідь Юлі разом
+            # чат = «клієнт + публікація». Шукаємо існуючий: (1) по username-ключу; (2) по ніку
+            # контакту під цим постом — легасі-чати створювались по author_id, щоб клієнт не роздвоювався.
             created = False
             if target is None:
                 if not client_key:
                     client_key = (author_id or cid).lower()
                 ext_chat = f"comment:{kind}:{post_id}:{client_key}"
-                target, created = Conversation.objects.get_or_create(
-                    channel=ch, external_chat_id=str(ext_chat),
-                    defaults={"title": f"{kind} · коментар"})
+                target = Conversation.objects.filter(channel=ch, external_chat_id=str(ext_chat)).first()
+                if target is None:
+                    target = (Conversation.objects.filter(channel=ch, external_chat_id__startswith=f"comment:{kind}:{post_id}:")
+                              .filter(contact__first_name__iexact=client_key)
+                              .exclude(external_chat_id__endswith=(IG_ID or "\x00"))
+                              .exclude(external_chat_id__endswith=(PAGE_ID or "\x00")).first())
+                if target is None:
+                    target, created = Conversation.objects.get_or_create(
+                        channel=ch, external_chat_id=str(ext_chat),
+                        defaults={"title": f"{kind} · коментар"})
             conv = target
 
             if created:
