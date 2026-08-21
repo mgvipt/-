@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from django.core.management.base import BaseCommand, CommandError
 from django.utils.dateparse import parse_date
 
-from apps.crm.meta_marketing import MetaGraphError, sync_ads, sync_content
+from apps.crm.meta_marketing import MetaGraphError, sync_account, sync_ads, sync_content
 
 
 class Command(BaseCommand):
@@ -42,6 +42,10 @@ class Command(BaseCommand):
                 except MetaGraphError as exc:
                     failures.append(("ads", exc))
             if not options["ads_only"]:
+                try:
+                    result["account"] = sync_account(since, current_until)
+                except MetaGraphError as exc:
+                    failures.append(("account", exc))
                 try:
                     result["content"] = sync_content(since)
                 except MetaGraphError as exc:

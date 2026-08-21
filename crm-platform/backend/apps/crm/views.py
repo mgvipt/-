@@ -2479,7 +2479,7 @@ class MetaMarketingView(APIView):
         from django.utils import timezone
         from django.utils.dateparse import parse_date
         from .meta_conversions import event_name_for_stage, has_verified_meta_attribution, normalized_meta_attribution
-        from .models import MetaAdDailyStat, MetaContentStat, MetaConversionEvent
+        from .models import MetaAccountDailyStat, MetaAdDailyStat, MetaContentStat, MetaConversionEvent
 
         user = request.user
         see_all_leads = user.is_superuser or user.can_see_all_leads()
@@ -2495,6 +2495,8 @@ class MetaMarketingView(APIView):
             leads_qs = leads_qs.filter(funnel_id__in=allowed)
             deals_qs = deals_qs.filter(funnel_id__in=allowed)
 
+        scoped_leads_qs = leads_qs
+        scoped_deals_qs = deals_qs
         today = timezone.localdate()
         date_from = parse_date(request.GET.get("from") or "") or (today - timedelta(days=29))
         date_to = parse_date(request.GET.get("to") or "") or today
@@ -2516,6 +2518,34 @@ class MetaMarketingView(APIView):
         by_content = defaultdict(lambda: {"content_id": "", "leads": 0, "deals": 0})
         funnel = defaultdict(lambda: {"leads": 0, "deals": 0, "won": 0})
         stages = defaultdict(lambda: {"funnel": "", "stage": "", "meta_event": "", "leads": 0, "deals": 0})
+        all_meta_stages = defaultdict(lambda: {
+            "funnel": "", "stage": "", "meta_event": "", "leads": 0, "deals": 0,
+            "exact_paid_leads": 0, "exact_paid_deals": 0,
+            "organic_leads": 0, "organic_deals": 0,
+            "unassigned_leads": 0, "unassigned_deals": 0,
+        })
+
+        def is_meta_origin(item):
+            return item.source in ("instagram", "facebook") or has_verified_meta_attribution(item)
+
+        def attribution_class(item):
+            if has_verified_meta_attribution(item):
+                return "exact_paid"
+            attr = normalized_meta_attribution(item)
+            if attr.get("source_kind") == "organic":
+                return "organic"
+            return "unassigned"
+
+        def add_all_meta_stage(item, kind):
+            if not is_meta_origin(item):
+                return
+            stage_key = f"{item.funnel_id}:{item.stage_id}"
+            row = all_meta_stages[stage_key]
+            row["funnel"] = item.funnel.name
+            row["stage"] = item.stage.name
+            row["meta_event"] = event_name_for_stage(item.stage) or "—"
+            row[kind] += 1
+            row[f"{attribution_class(item)}_{kind}"] += 1
 
         def add(item, kind):
             attr = normalized_meta_attribution(item)
@@ -2555,6 +2585,10 @@ class MetaMarketingView(APIView):
             add(item, "leads")
         for item in deals:
             add(item, "deals")
+        for item in all_leads:
+            add_all_meta_stage(item, "leads")
+        for item in all_deals:
+            add_all_meta_stage(item, "deals")
 
         # ── Marketing API: платна реклама, окремо від органічного контенту ──
         ad_daily = list(MetaAdDailyStat.objects.filter(
@@ -2566,7 +2600,8 @@ class MetaMarketingView(APIView):
 
         def metric_bucket():
             return {
-                "spend": 0.0, "impressions": 0, "reach": 0, "clicks": 0,
+                "spend": 0.0, "spend_uah": 0.0, "spend_uah_complete": True,
+                "impressions": 0, "reach": 0, "clicks": 0,
                 "outbound_clicks": 0, "messages_started": 0, "meta_leads": 0,
                 "purchases": 0, "video_views": 0, "crm_leads": set(),
                 "crm_deals": set(), "crm_won": set(), "crm_revenue": 0.0,
@@ -2584,6 +2619,10 @@ class MetaMarketingView(APIView):
                 for name in ("spend", "impressions", "reach", "clicks", "outbound_clicks",
                              "messages_started", "meta_leads", "purchases", "video_views"):
                     target[name] += float(getattr(row, name)) if name == "spend" else int(getattr(row, name))
+                if row.spend_uah is None and row.spend:
+                    target["spend_uah_complete"] = False
+                else:
+                    target["spend_uah"] += float(row.spend_uah or 0)
                 # Latest metadata refreshes expiring thumbnails and statuses.
                 target.update({
                     "account_id": row.account_id, "account_name": row.account_name,
@@ -2634,6 +2673,7 @@ class MetaMarketingView(APIView):
                     row[name] = len(row[name])
                 row["name"] = row.get(label_field) or row["id"]
                 row["spend"] = round(row["spend"], 2)
+                row["spend_uah"] = round(row["spend_uah"], 2) if row.pop("spend_uah_complete") else None
                 row["ctr"] = round(row["clicks"] / row["impressions"] * 100, 2) if row["impressions"] else None
                 row["cpm"] = round(row["spend"] / row["impressions"] * 1000, 2) if row["impressions"] else None
                 row["cost_per_message"] = round(row["spend"] / row["messages_started"], 2) if row["messages_started"] else None
@@ -2651,8 +2691,16 @@ class MetaMarketingView(APIView):
             for name in ("spend", "impressions", "reach", "clicks", "outbound_clicks",
                          "messages_started", "meta_leads", "purchases", "video_views"):
                 paid_summary[name] += float(getattr(row, name)) if name == "spend" else int(getattr(row, name))
+            if row.spend_uah is None and row.spend:
+                paid_summary["spend_uah_complete"] = False
+            else:
+                paid_summary["spend_uah"] += float(row.spend_uah or 0)
         paid_summary = {key: value for key, value in paid_summary.items() if not isinstance(value, set)}
         paid_summary["spend"] = round(paid_summary["spend"], 2)
+        paid_summary["spend_uah"] = (
+            round(paid_summary["spend_uah"], 2)
+            if paid_summary.pop("spend_uah_complete") else None
+        )
         paid_summary["ctr"] = round(paid_summary["clicks"] / paid_summary["impressions"] * 100, 2) if paid_summary["impressions"] else None
         paid_summary["cpm"] = round(paid_summary["spend"] / paid_summary["impressions"] * 1000, 2) if paid_summary["impressions"] else None
         paid_summary["cost_per_message"] = round(paid_summary["spend"] / paid_summary["messages_started"], 2) if paid_summary["messages_started"] else None
@@ -2711,6 +2759,233 @@ class MetaMarketingView(APIView):
                 "synced_at": row.synced_at,
             })
 
+        # ── Продажі, повторні покупки, LTV та денна рентабельність ──
+        # Основний продукт і тестовий набір входять повністю. Інші воронки —
+        # тільки коли CRM має перевірений Meta ID, як попросив Олег.
+        def is_core_sales_funnel(deal):
+            name = (deal.funnel.name or "").casefold()
+            return any(token in name for token in (
+                "основний продукт", "основной продукт",
+                "тестовий набір", "тестовый набор",
+            ))
+
+        lifetime_deals = list(
+            scoped_deals_qs.select_related("funnel", "stage", "contact")
+            .prefetch_related("items__product", "payments")
+        )
+        sales_deals = {
+            deal.pk: deal for deal in lifetime_deals
+            if is_core_sales_funnel(deal) or has_verified_meta_attribution(deal)
+        }
+        paid_by_deal = defaultdict(list)
+        for deal in sales_deals.values():
+            for payment in deal.payments.all():
+                if payment.is_paid:
+                    paid_by_deal[deal.pk].append(payment)
+            paid_by_deal[deal.pk].sort(key=lambda payment: (payment.created_at, payment.pk))
+
+        first_paid_at = {
+            deal_id: rows[0].created_at for deal_id, rows in paid_by_deal.items() if rows
+        }
+        repeat_deal = {}
+        seen_contacts = set()
+        for deal_id, paid_at in sorted(first_paid_at.items(), key=lambda row: (row[1], row[0])):
+            contact_id = sales_deals[deal_id].contact_id
+            repeat_deal[deal_id] = bool(contact_id and contact_id in seen_contacts)
+            if contact_id:
+                seen_contacts.add(contact_id)
+
+        def local_day(moment):
+            return timezone.localtime(moment).date() if timezone.is_aware(moment) else moment.date()
+
+        period_payments = []
+        for deal_id, rows in paid_by_deal.items():
+            for payment in rows:
+                if date_from <= local_day(payment.created_at) <= date_to:
+                    period_payments.append(payment)
+
+        deal_cost = {}
+        deal_paid_total = {}
+        for deal_id, deal in sales_deals.items():
+            cost = Decimal("0")
+            for item in deal.items.all():
+                unit_cost = item.cost if (item.cost or 0) > 0 else (getattr(item.product, "cost", 0) or 0)
+                cost += Decimal(str(item.quantity or 0)) * Decimal(str(unit_cost or 0))
+            deal_cost[deal_id] = cost
+            deal_paid_total[deal_id] = sum((payment.amount for payment in paid_by_deal[deal_id]), Decimal("0"))
+
+        def allocated_cost(payment):
+            deal = sales_deals[payment.deal_id]
+            denominator = max(Decimal(str(deal.amount or 0)), deal_paid_total[payment.deal_id])
+            if denominator <= 0:
+                return Decimal("0")
+            return deal_cost[payment.deal_id] * Decimal(str(payment.amount or 0)) / denominator
+
+        period_revenue = sum((payment.amount for payment in period_payments), Decimal("0"))
+        period_cost = sum((allocated_cost(payment) for payment in period_payments), Decimal("0"))
+        period_deal_ids = {payment.deal_id for payment in period_payments}
+        repeat_deal_ids = {deal_id for deal_id in period_deal_ids if repeat_deal.get(deal_id)}
+        repeat_revenue = sum(
+            (payment.amount for payment in period_payments if repeat_deal.get(payment.deal_id)),
+            Decimal("0"),
+        )
+        buyer_contact_ids = {
+            sales_deals[deal_id].contact_id for deal_id in period_deal_ids
+            if sales_deals[deal_id].contact_id
+        }
+        lifetime_revenue_by_contact = defaultdict(Decimal)
+        for deal_id, rows in paid_by_deal.items():
+            contact_id = sales_deals[deal_id].contact_id
+            if contact_id:
+                lifetime_revenue_by_contact[contact_id] += sum(
+                    (payment.amount for payment in rows), Decimal("0")
+                )
+        period_ltv_total = sum(
+            (lifetime_revenue_by_contact[contact_id] for contact_id in buyer_contact_ids),
+            Decimal("0"),
+        )
+        average_ltv = (
+            period_ltv_total / len(buyer_contact_ids) if buyer_contact_ids else Decimal("0")
+        )
+        exact_ad_payments = [
+            payment for payment in period_payments
+            if has_verified_meta_attribution(sales_deals[payment.deal_id])
+        ]
+        exact_ad_revenue = sum((payment.amount for payment in exact_ad_payments), Decimal("0"))
+        exact_ad_cost = sum((allocated_cost(payment) for payment in exact_ad_payments), Decimal("0"))
+
+        days = []
+        cursor = date_from
+        while cursor <= date_to:
+            days.append(cursor)
+            cursor += timedelta(days=1)
+        daily = {
+            day: {
+                "date": day, "followers_total": None, "followers_gained": None,
+                "content_published": 0, "spend": 0.0, "spend_uah": 0.0,
+                "spend_uah_complete": True, "impressions": 0, "clicks": 0,
+                "messages_started": 0, "meta_platform_leads": 0,
+                "crm_meta_leads": 0, "exact_ad_leads": 0,
+                "sales": 0, "repeat_sales": 0, "buyers": set(),
+                "revenue": Decimal("0"), "repeat_revenue": Decimal("0"),
+                "cost": Decimal("0"), "exact_ad_revenue": Decimal("0"),
+            }
+            for day in days
+        }
+        for row in account_daily:
+            target = daily.get(row.date)
+            if not target:
+                continue
+            target["spend"] += float(row.spend or 0)
+            if row.spend_uah is None and row.spend:
+                target["spend_uah_complete"] = False
+            else:
+                target["spend_uah"] += float(row.spend_uah or 0)
+            for field in ("impressions", "clicks", "messages_started", "meta_leads"):
+                target[field if field != "meta_leads" else "meta_platform_leads"] += int(getattr(row, field) or 0)
+        for item in all_leads:
+            day = local_day(item.created_at)
+            if day in daily and is_meta_origin(item):
+                daily[day]["crm_meta_leads"] += 1
+                if has_verified_meta_attribution(item):
+                    daily[day]["exact_ad_leads"] += 1
+        for row in content_qs:
+            day = local_day(row.published_at)
+            if day in daily:
+                daily[day]["content_published"] += 1
+        account_daily_stats = list(MetaAccountDailyStat.objects.filter(
+            date__gte=date_from, date__lte=date_to,
+        ).order_by("date", "id"))
+        for row in account_daily_stats:
+            target = daily.get(row.date)
+            if target:
+                if row.followers_total is not None:
+                    target["followers_total"] = row.followers_total
+                if row.followers_gained is not None:
+                    target["followers_gained"] = row.followers_gained
+
+        payments_by_day_deal = defaultdict(set)
+        for payment in period_payments:
+            day = local_day(payment.created_at)
+            target = daily[day]
+            target["revenue"] += payment.amount
+            target["cost"] += allocated_cost(payment)
+            payments_by_day_deal[day].add(payment.deal_id)
+            contact_id = sales_deals[payment.deal_id].contact_id
+            if contact_id:
+                target["buyers"].add(contact_id)
+            if repeat_deal.get(payment.deal_id):
+                target["repeat_revenue"] += payment.amount
+            if has_verified_meta_attribution(sales_deals[payment.deal_id]):
+                target["exact_ad_revenue"] += payment.amount
+        for day, deal_ids_for_day in payments_by_day_deal.items():
+            daily[day]["sales"] = len(deal_ids_for_day)
+            daily[day]["repeat_sales"] = sum(
+                1 for deal_id in deal_ids_for_day if repeat_deal.get(deal_id)
+            )
+
+        daily_rows = []
+        for day in reversed(days):
+            row = daily[day]
+            spend_uah = row["spend_uah"] if row.pop("spend_uah_complete") else None
+            gross_profit = row["revenue"] - row["cost"]
+            buyer_ltv = sum(
+                (lifetime_revenue_by_contact[contact_id] for contact_id in row["buyers"]),
+                Decimal("0"),
+            )
+            avg_day_ltv = buyer_ltv / len(row["buyers"]) if row["buyers"] else Decimal("0")
+            row["buyers"] = len(row["buyers"])
+            row["spend"] = round(row["spend"], 2)
+            row["spend_uah"] = round(spend_uah, 2) if spend_uah is not None else None
+            row["revenue"] = round(float(row["revenue"]), 2)
+            row["repeat_revenue"] = round(float(row["repeat_revenue"]), 2)
+            row["cost"] = round(float(row["cost"]), 2)
+            row["gross_profit"] = round(float(gross_profit), 2)
+            row["average_ltv"] = round(float(avg_day_ltv), 2)
+            row["exact_ad_revenue"] = round(float(row["exact_ad_revenue"]), 2)
+            row["roas"] = round(row["revenue"] / spend_uah, 2) if spend_uah else None
+            row["romi"] = round((float(gross_profit) - spend_uah) / spend_uah * 100, 1) if spend_uah else None
+            daily_rows.append(row)
+
+        spend_uah = paid_summary.get("spend_uah")
+        gross_profit = period_revenue - period_cost
+        exact_ad_gross_profit = exact_ad_revenue - exact_ad_cost
+        current_account = MetaAccountDailyStat.objects.order_by("-date", "-id").first()
+        first_account = MetaAccountDailyStat.objects.order_by("date", "id").first()
+        profitability = {
+            "scope_funnels": ["21 Основний продукт", "22 Тестовий набір"],
+            "sales": len(period_deal_ids),
+            "buyers": len(buyer_contact_ids),
+            "repeat_sales": len(repeat_deal_ids),
+            "repeat_buyers": len({
+                sales_deals[deal_id].contact_id for deal_id in repeat_deal_ids
+                if sales_deals[deal_id].contact_id
+            }),
+            "revenue": round(float(period_revenue), 2),
+            "repeat_revenue": round(float(repeat_revenue), 2),
+            "cost": round(float(period_cost), 2),
+            "gross_profit": round(float(gross_profit), 2),
+            "average_ltv": round(float(average_ltv), 2),
+            "exact_ad_sales": len({payment.deal_id for payment in exact_ad_payments}),
+            "exact_ad_revenue": round(float(exact_ad_revenue), 2),
+            "exact_ad_gross_profit": round(float(exact_ad_gross_profit), 2),
+            "ad_spend_uah": spend_uah,
+            "blended_roas": round(float(period_revenue) / spend_uah, 2) if spend_uah else None,
+            "exact_ad_roas": round(float(exact_ad_revenue) / spend_uah, 2) if spend_uah else None,
+            "marketing_profit": round(float(gross_profit) - spend_uah, 2) if spend_uah is not None else None,
+            "romi": round((float(gross_profit) - spend_uah) / spend_uah * 100, 1) if spend_uah else None,
+        }
+        followers = {
+            "username": current_account.username if current_account else "",
+            "current_total": current_account.followers_total if current_account else None,
+            "snapshot_date": current_account.date if current_account else None,
+            "history_started": first_account.date if first_account else None,
+            "period_gained": sum(
+                row.followers_gained for row in account_daily_stats
+                if row.followers_gained is not None
+            ),
+        }
+
         event_qs = MetaConversionEvent.objects.filter(
             created_at__date__gte=date_from, created_at__date__lte=date_to,
         )
@@ -2719,12 +2994,22 @@ class MetaMarketingView(APIView):
         outbox = {row["status"]: row["n"] for row in event_qs.values("status").annotate(n=Count("id"))}
 
         recent = []
-        combined = [(x.created_at, "lead", x) for x in leads] + [(x.created_at, "deal", x) for x in deals]
+        combined = (
+            [(x.created_at, "lead", x) for x in all_leads if is_meta_origin(x)]
+            + [(x.created_at, "deal", x) for x in all_deals if is_meta_origin(x)]
+        )
         for _, object_type, item in sorted(combined, key=lambda row: row[0], reverse=True)[:30]:
             attr = normalized_meta_attribution(item)
+            identifier = (
+                attr.get("ad_id") or attr.get("campaign_id") or attr.get("lead_form_id")
+                or attr.get("content_id") or ""
+            )
             recent.append({
                 "object_type": object_type, "id": item.pk, "title": item.title,
-                "platform": attr.get("platform", ""), "source_kind": attr.get("source_kind", ""),
+                "platform": attr.get("platform") or item.source or "",
+                "source_kind": attr.get("source_kind", ""),
+                "attribution_status": attribution_class(item),
+                "meta_identifier": identifier,
                 "campaign_id": attr.get("campaign_id", ""), "ad_id": attr.get("ad_id", ""),
                 "funnel": item.funnel.name, "stage": item.stage.name,
                 "created_at": item.created_at,
@@ -2733,6 +3018,9 @@ class MetaMarketingView(APIView):
         won_deals = [item for item in deals if item.stage and item.stage.is_won]
         latest_ads_sync = MetaAdDailyStat.objects.aggregate(value=Max("synced_at"))["value"]
         latest_content_sync = MetaContentStat.objects.aggregate(value=Max("synced_at"))["value"]
+        latest_account_sync = MetaAccountDailyStat.objects.aggregate(value=Max("synced_at"))["value"]
+        meta_origin_leads = [item for item in all_leads if is_meta_origin(item)]
+        meta_origin_deals = [item for item in all_deals if is_meta_origin(item)]
         return Response({
             "period": {"from": date_from, "to": date_to},
             "integration": {
@@ -2743,6 +3031,7 @@ class MetaMarketingView(APIView):
                 "content_sync_configured": bool(latest_content_sync),
                 "latest_ads_sync": latest_ads_sync,
                 "latest_content_sync": latest_content_sync,
+                "latest_account_sync": latest_account_sync,
                 "available_from": "2026-06-16",
             },
             "summary": {
@@ -2752,6 +3041,9 @@ class MetaMarketingView(APIView):
                 "paid_revenue": float(payments.aggregate(s=Sum("amount"))["s"] or 0),
                 "manual_or_organic_leads": len(all_leads) - len(leads),
                 "manual_or_organic_deals": len(all_deals) - len(deals),
+                "meta_origin_leads": len(meta_origin_leads),
+                "meta_origin_deals": len(meta_origin_deals),
+                "meta_unassigned_leads": sum(1 for item in meta_origin_leads if attribution_class(item) == "unassigned"),
             },
             "by_platform": [{"platform": key, **value} for key, value in sorted(by_platform.items())],
             "by_source_kind": [{"source_kind": key, **value} for key, value in sorted(by_source.items())],
@@ -2768,6 +3060,10 @@ class MetaMarketingView(APIView):
             "organic": {"content": organic_content},
             "funnels": [{"funnel": key, **value} for key, value in sorted(funnel.items())],
             "stages": sorted(stages.values(), key=lambda x: (x["funnel"], x["stage"])),
+            "all_meta_stages": sorted(all_meta_stages.values(), key=lambda x: (x["funnel"], x["stage"])),
+            "followers": followers,
+            "profitability": profitability,
+            "daily": daily_rows,
             "outbox": outbox,
             "recent": recent,
             "unavailable_until_insights_sync": [] if latest_ads_sync else [

@@ -3,7 +3,7 @@ import { api } from "../api";
 import { useLang } from "../i18n";
 
 const CONNECTED_FROM = "2026-06-16";
-const TAB_KEYS = ["overview", "ads", "creatives", "content", "funnel", "forms", "sources"] as const;
+const TAB_KEYS = ["overview", "profitability", "ads", "creatives", "content", "funnel", "forms", "sources"] as const;
 type Tab = typeof TAB_KEYS[number];
 type AdLevel = "campaigns" | "adsets" | "ads";
 
@@ -45,6 +45,7 @@ export default function MetaMarketing() {
 
   const tabs: { key: Tab; ru: string; ua: string }[] = [
     { key: "overview", ru: "Обзор", ua: "Огляд" },
+    { key: "profitability", ru: "Продажи и рентабельность", ua: "Продажі та рентабельність" },
     { key: "ads", ru: "Реклама", ua: "Реклама" },
     { key: "creatives", ru: "Креативы", ua: "Креативи" },
     { key: "content", ru: "Органика · SMM", ua: "Органіка · SMM" },
@@ -57,6 +58,9 @@ export default function MetaMarketing() {
   const paidSummary = paid.summary || {};
   const integration = data?.integration || {};
   const organic = data?.organic?.content || [];
+  const profitability = data?.profitability || {};
+  const followers = data?.followers || {};
+  const daily = data?.daily || [];
 
   const card = (label: string, value: ReactNode, color = "#0f172a", hint?: string) => (
     <div className="panel" style={{ padding: 15, minWidth: 165, flex: "1 1 165px" }}>
@@ -91,6 +95,24 @@ export default function MetaMarketing() {
     platformLabel(r), moneyUsd(r.spend), count(r.impressions), count(r.clicks), optional(r.ctr, "%"),
     count(r.messages_started), count(r.meta_leads), count(r.crm_leads), r.cost_per_message == null ? "—" : moneyUsd(r.cost_per_message),
   ]);
+  const dailyRows = daily.map((r: any) => [
+    new Date(`${r.date}T12:00:00`).toLocaleDateString("ru-RU"),
+    optional(r.followers_total, "", t("снимок ещё не сохранён", "знімок ще не збережено")),
+    r.followers_gained == null ? "—" : `${r.followers_gained > 0 ? "+" : ""}${count(r.followers_gained)}`,
+    count(r.content_published), moneyUsd(r.spend), r.spend_uah == null ? "—" : moneyUah(r.spend_uah),
+    count(r.messages_started), count(r.crm_meta_leads), count(r.exact_ad_leads),
+    count(r.sales), count(r.repeat_sales), moneyUah(r.revenue), moneyUah(r.repeat_revenue),
+    moneyUah(r.average_ltv), moneyUah(r.gross_profit), r.roas == null ? "—" : `${r.roas}×`,
+    r.romi == null ? "—" : `${r.romi}%`,
+  ]);
+  const dailyTable = table([
+    t("Дата", "Дата"), t("Подписчики всего", "Підписники всього"), t("Новые подписчики", "Нові підписники"),
+    t("Контент", "Контент"), t("Реклама, $", "Реклама, $"), t("Реклама, ₴", "Реклама, ₴"),
+    t("Диалоги Meta", "Діалоги Meta"), t("Лиды CRM из Meta", "Ліди CRM з Meta"),
+    t("Точный ID рекламы", "Точний ID реклами"), t("Продажи", "Продажі"),
+    t("Повторные", "Повторні"), t("Выручка", "Виручка"), t("Повторная выручка", "Повторна виручка"),
+    "LTV", t("Валовая прибыль", "Валовий прибуток"), "ROAS", "ROMI",
+  ], dailyRows, t("За период данных нет", "За період даних немає"), 1900);
 
   return <div style={{ height: "100%", overflowY: "auto", padding: 16, boxSizing: "border-box" }}>
     <div style={{ maxWidth: 1440 }}>
@@ -102,8 +124,10 @@ export default function MetaMarketing() {
           </div>
         </div>
         <div style={{ flex: 1 }} />
+        <button className="btn btn-light" onClick={() => setLastDays(1)}>{t("Сегодня", "Сьогодні")}</button>
         <button className="btn btn-light" onClick={() => setLastDays(7)}>7 {t("дней", "днів")}</button>
         <button className="btn btn-light" onClick={() => setLastDays(30)}>30 {t("дней", "днів")}</button>
+        <button className="btn btn-light" onClick={() => setLastDays(90)}>90 {t("дней", "днів")}</button>
         <button className="btn btn-light" onClick={() => { setFrom(CONNECTED_FROM); setTo(iso(today)); }}>{t("С подключения CRM", "З підключення CRM")}</button>
         <label style={dateLabel}>{t("с", "з")} <input type="date" value={from} min={CONNECTED_FROM} onChange={(e) => setFrom(e.target.value)} style={dateInput} /></label>
         <label style={dateLabel}>{t("по", "по")} <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={dateInput} /></label>
@@ -116,6 +140,15 @@ export default function MetaMarketing() {
       {loading && !data ? <div className="muted" style={{ padding: 30 }}>Загрузка…</div> : data && <>
         {tab === "overview" && <>
           {syncWarning}
+          <SectionTitle title={t("Instagram аккаунт", "Instagram акаунт")} note={t("Баланс подписчиков сохраняется ежедневно; прирост Meta отдаёт по дням", "Баланс підписників зберігається щодня; приріст Meta віддає по днях")} />
+          <div style={cardsRow}>
+            {card(t("Подписчиков сейчас", "Підписників зараз"), optional(followers.current_total, "", t("ожидает синхронизации", "очікує синхронізації")), "#c026d3", followers.username ? `@${followers.username}` : undefined)}
+            {card(t("Новых за период", "Нових за період"), followers.period_gained == null ? "—" : count(followers.period_gained), "#db2777")}
+            {card(t("Публикаций за период", "Публікацій за період"), count(daily.reduce((sum: number, r: any) => sum + Number(r.content_published || 0), 0)), "#7c3aed")}
+            {card(t("Все лиды CRM из Meta", "Усі ліди CRM з Meta"), count(summary.meta_origin_leads), "#0284c7")}
+            {card(t("С точным ID рекламы", "З точним ID реклами"), count(summary.attributed_leads), "#2563eb")}
+            {card(t("Источник объявления не определён", "Джерело оголошення не визначене"), count(summary.meta_unassigned_leads), "#d97706")}
+          </div>
           <SectionTitle title={t("Платная реклама Meta", "Платна реклама Meta")} note={t("Данные Ads Manager за выбранный период", "Дані Ads Manager за вибраний період")} />
           <div style={cardsRow}>
             {card(t("Расход", "Витрати"), moneyUsd(paidSummary.spend), "#dc2626")}
@@ -139,6 +172,44 @@ export default function MetaMarketing() {
               "Meta рахує події за власним вікном атрибуції. CRM показує лише реальні картки з доведеною рекламною прив'язкою. Історичні ліди без ID оголошення не приписуються рекламі заднім числом."
             )}
           </div>
+          <SectionTitle title={t("Продажи и окупаемость", "Продажі та окупність")} note={t("21 Основний продукт, 22 Тестовий набір; другие воронки только с точным ID рекламы", "21 Основний продукт, 22 Тестовий набір; інші воронки лише з точним ID реклами")} />
+          <div style={cardsRow}>
+            {card(t("Продажи", "Продажі"), count(profitability.sales), "#16a34a")}
+            {card(t("Выручка", "Виручка"), moneyUah(profitability.revenue), "#047857")}
+            {card(t("Повторные продажи", "Повторні продажі"), count(profitability.repeat_sales), "#0891b2")}
+            {card(t("Повторная выручка", "Повторна виручка"), moneyUah(profitability.repeat_revenue), "#0e7490")}
+            {card(t("Средний LTV", "Середній LTV"), moneyUah(profitability.average_ltv), "#7c3aed")}
+            {card("ROMI", profitability.romi == null ? "—" : `${profitability.romi}%`, Number(profitability.romi) >= 0 ? "#15803d" : "#dc2626")}
+          </div>
+          <SectionTitle title={t("Общая статистика по дням", "Загальна статистика за днями")} note={t("Реклама, лиды, продажи, повторные покупки, LTV и прибыль в одной таблице", "Реклама, ліди, продажі, повторні покупки, LTV і прибуток в одній таблиці")} />
+          {dailyTable}
+        </>}
+
+        {tab === "profitability" && <>
+          <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
+            <b>{t("Что входит в расчёт:", "Що входить у розрахунок:")}</b> {t(
+              "Все оплаченные продажи из воронок «21 Основний продукт» и «22 Тестовий набір». Из остальных воронок — только продажи с подтверждённым ID Meta. Выручка считается по фактически оплаченным платежам, себестоимость — по товарам сделки, рекламный расход переводится в гривну по официальному курсу НБУ за каждый день.",
+              "Усі оплачені продажі з воронок «21 Основний продукт» і «22 Тестовий набір». З інших воронок — лише продажі з підтвердженим ID Meta. Виручка рахується за фактично сплаченими платежами, собівартість — за товарами угоди, рекламні витрати переводяться у гривню за офіційним курсом НБУ за кожен день."
+            )}
+          </div>
+          <div style={cardsRow}>
+            {card(t("Продажи", "Продажі"), count(profitability.sales), "#16a34a")}
+            {card(t("Покупатели", "Покупці"), count(profitability.buyers), "#0f766e")}
+            {card(t("Повторные продажи", "Повторні продажі"), count(profitability.repeat_sales), "#0891b2")}
+            {card(t("Повторные клиенты", "Повторні клієнти"), count(profitability.repeat_buyers), "#0891b2")}
+            {card(t("Выручка", "Виручка"), moneyUah(profitability.revenue), "#047857")}
+            {card(t("Повторная выручка", "Повторна виручка"), moneyUah(profitability.repeat_revenue), "#0e7490")}
+            {card(t("Средний LTV", "Середній LTV"), moneyUah(profitability.average_ltv), "#7c3aed")}
+            {card(t("Себестоимость", "Собівартість"), moneyUah(profitability.cost), "#b45309")}
+            {card(t("Валовая прибыль", "Валовий прибуток"), moneyUah(profitability.gross_profit), "#15803d")}
+            {card(t("Реклама по курсу НБУ", "Реклама за курсом НБУ"), profitability.ad_spend_uah == null ? "—" : moneyUah(profitability.ad_spend_uah), "#dc2626")}
+            {card(t("Прибыль после рекламы", "Прибуток після реклами"), profitability.marketing_profit == null ? "—" : moneyUah(profitability.marketing_profit), Number(profitability.marketing_profit) >= 0 ? "#15803d" : "#dc2626")}
+            {card(t("Общий ROAS", "Загальний ROAS"), profitability.blended_roas == null ? "—" : `${profitability.blended_roas}×`, "#2563eb")}
+            {card(t("ROAS с точным ID", "ROAS з точним ID"), profitability.exact_ad_roas == null ? "—" : `${profitability.exact_ad_roas}×`, "#7c3aed", t("Консервативный показатель: только доказанная связь с объявлением", "Консервативний показник: лише доведений зв'язок з оголошенням"))}
+            {card("ROMI", profitability.romi == null ? "—" : `${profitability.romi}%`, Number(profitability.romi) >= 0 ? "#15803d" : "#dc2626")}
+          </div>
+          <SectionTitle title={t("Рентабельность по дням", "Рентабельність за днями")} note={t("Меняйте период сверху: день, неделя, месяц, 90 дней или произвольный диапазон", "Змінюйте період зверху: день, тиждень, місяць, 90 днів або довільний діапазон")} />
+          {dailyTable}
         </>}
 
         {tab === "ads" && <>
@@ -181,10 +252,22 @@ export default function MetaMarketing() {
           </div>
         </>}
 
-        {tab === "funnel" && table([
-          t("Воронка CRM", "Воронка CRM"), t("Стадия CRM", "Стадія CRM"), t("Событие Meta", "Подія Meta"), t("Лиды", "Ліди"), t("Сделки", "Угоди")],
-          (data.stages || []).map((r: any) => [r.funnel, r.stage, r.meta_event, r.leads, r.deals]),
-          t("Нет рекламных карточек на стадиях", "Немає рекламних карток на стадіях"))}
+        {tab === "funnel" && <>
+          <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
+            {t("Первая таблица показывает все реальные обращения Instagram и Facebook в CRM. «Точный ID рекламы» означает, что Meta передала идентификатор объявления/кампании/формы. «Не определено» — обращение пришло из Meta, но конкретное объявление технически не было передано.", "Перша таблиця показує всі реальні звернення Instagram і Facebook у CRM. «Точний ID реклами» означає, що Meta передала ідентифікатор оголошення/кампанії/форми. «Не визначено» — звернення прийшло з Meta, але конкретне оголошення технічно не було передано.")}
+          </div>
+          <SectionTitle title={t("Все обращения Meta в CRM", "Усі звернення Meta в CRM")} note={t("Не пропускает лиды без рекламного ID", "Не пропускає ліди без рекламного ID")} />
+          {table([
+            t("Воронка CRM", "Воронка CRM"), t("Стадия CRM", "Стадія CRM"), t("Лиды", "Ліди"), t("Сделки", "Угоди"),
+            t("Точный ID рекламы", "Точний ID реклами"), t("Органика", "Органіка"), t("Источник не определён", "Джерело не визначене")],
+            (data.all_meta_stages || []).map((r: any) => [r.funnel, r.stage, r.leads, r.deals, r.exact_paid_leads, r.organic_leads, r.unassigned_leads]),
+            t("Обращений Meta за период нет", "Звернень Meta за період немає"), 1050)}
+          <SectionTitle title={t("Только подтверждённая реклама", "Лише підтверджена реклама")} note={t("Консервативная воронка для точной атрибуции", "Консервативна воронка для точної атрибуції")} />
+          {table([
+            t("Воронка CRM", "Воронка CRM"), t("Стадия CRM", "Стадія CRM"), t("Событие Meta", "Подія Meta"), t("Лиды", "Ліди"), t("Сделки", "Угоди")],
+            (data.stages || []).map((r: any) => [r.funnel, r.stage, r.meta_event, r.leads, r.deals]),
+            t("Нет карточек с точным рекламным ID", "Немає карток із точним рекламним ID"))}
+        </>}
 
         {tab === "forms" && table([
           t("Тип", "Тип"), t("Лиды", "Ліди"), t("Сделки", "Угоди"), t("Назначение", "Призначення")],
@@ -192,19 +275,34 @@ export default function MetaMarketing() {
           t("За период лид-формы не зафиксированы", "За період лід-форми не зафіксовані"))}
 
         {tab === "sources" && <>
-          <div className="note" style={{ marginBottom: 12 }}>{t("Здесь показаны только источники, которые CRM смогла доказать по ID Meta. Органические диалоги остаются в разделе «Органика · SMM».", "Тут показані лише джерела, які CRM змогла довести за ID Meta. Органічні діалоги залишаються в розділі «Органіка · SMM».")}</div>
+          <div className="note" style={{ marginBottom: 12 }}>{t("Метка «Реклама подтверждена» ставится только когда в карточке есть стабильный ID объявления, кампании или лид-формы Meta. Если обращение пришло из Instagram/Facebook, но Meta не передала ID, CRM показывает «Источник объявления не определён» и не приписывает его конкретной рекламе.", "Позначка «Реклама підтверджена» ставиться лише коли в картці є стабільний ID оголошення, кампанії або лід-форми Meta. Якщо звернення прийшло з Instagram/Facebook, але Meta не передала ID, CRM показує «Джерело оголошення не визначене» і не приписує його конкретній рекламі.")}</div>
           {table([t("Платформа", "Платформа"), t("Лиды", "Ліди"), t("Сделки", "Угоди"), t("Успешные", "Успішні"), t("Выручка", "Виручка")],
             (data.by_platform || []).map((r: any) => [r.platform, r.leads, r.deals, r.won, moneyUah(r.revenue)]),
             t("Подтверждённых рекламных источников нет", "Підтверджених рекламних джерел немає"))}
+          <SectionTitle title={t("Последние обращения Meta", "Останні звернення Meta")} note={t("По каждой карточке видно наличие рекламного идентификатора", "Для кожної картки видно наявність рекламного ідентифікатора")} />
+          {table([
+            t("Карточка", "Картка"), t("Платформа", "Платформа"), t("Атрибуция", "Атрибуція"),
+            t("ID Meta", "ID Meta"), t("Воронка", "Воронка"), t("Стадия", "Стадія"), t("Создана", "Створена")],
+            (data.recent || []).map((r: any) => [
+              <div><b>{r.object_type === "lead" ? t("Лид", "Лід") : t("Сделка", "Угода")} #{r.id}</b><div className="muted" style={{ fontSize: 10 }}>{r.title}</div></div>,
+              r.platform || "—",
+              r.attribution_status === "exact_paid" ? <b style={{ color: "#15803d" }}>{t("Реклама подтверждена", "Реклама підтверджена")}</b>
+                : r.attribution_status === "organic" ? <span style={{ color: "#7c3aed" }}>{t("Органика", "Органіка")}</span>
+                  : <span style={{ color: "#d97706" }}>{t("Источник объявления не определён", "Джерело оголошення не визначене")}</span>,
+              r.meta_identifier || "—", r.funnel, r.stage, dateTime(r.created_at),
+            ]),
+            t("Обращений Meta за период нет", "Звернень Meta за період немає"), 1200)}
         </>}
 
         <div className="panel" style={{ marginTop: 12, padding: 14, display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12, alignItems: "center" }}>
           <b>{t("Состояние:", "Стан:")}</b>
           <span>{integration.insights_sync_configured ? "🟢" : "🟡"} Ads Insights</span>
           <span>{integration.content_sync_configured ? "🟢" : "🟡"} Instagram Content</span>
+          <span>{integration.latest_account_sync ? "🟢" : "🟡"} Instagram Followers</span>
           <span>{integration.capi_enabled ? "🟢" : "⚪"} Conversions API</span>
           <span>{t("реклама обновлена", "реклама оновлена")}: {dateTime(integration.latest_ads_sync)}</span>
           <span>{t("органика обновлена", "органіка оновлена")}: {dateTime(integration.latest_content_sync)}</span>
+          <span>{t("подписчики обновлены", "підписники оновлені")}: {dateTime(integration.latest_account_sync)}</span>
         </div>
       </>}
     </div>

@@ -15,11 +15,12 @@ import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from .models import MetaAdDailyStat, MetaContentStat
+from .models import MetaAccountDailyStat, MetaAdDailyStat, MetaContentStat
 
 
 class MetaGraphError(RuntimeError):
@@ -120,6 +121,28 @@ def _decimal(value):
         return Decimal(str(value or "0"))
     except (InvalidOperation, TypeError, ValueError):
         return Decimal("0")
+
+
+@lru_cache(maxsize=400)
+def _nbu_rate(currency: str, day: date):
+    """Official NBU rate: UAH for one unit of the ad account currency."""
+    currency = str(currency or "USD").upper()
+    if currency == "UAH":
+        return Decimal("1")
+    query = urllib.parse.urlencode({
+        "valcode": currency,
+        "date": day.strftime("%Y%m%d"),
+        "json": "",
+    })
+    url = "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?" + query
+    try:
+        with urllib.request.urlopen(url, timeout=15) as response:
+            rows = json.load(response)
+        if not rows:
+            return None
+        return _decimal(rows[0].get("rate")) or None
+    except (OSError, ValueError, TypeError, urllib.error.URLError):
+        return None
 
 
 def _action_map(rows):
@@ -223,13 +246,17 @@ def _save_ad_insight(row, *, level, account_id, account, campaigns, ads):
     actions = _action_map(row.get("actions"))
     outbound = _action_map(row.get("outbound_clicks"))
     videos = _action_map(row.get("video_play_actions"))
+    insight_date = date.fromisoformat(row["date_start"])
+    spend = _decimal(row.get("spend"))
+    currency = account.get("currency") or "USD"
+    fx_rate = _nbu_rate(currency, insight_date)
     object_id = str(row.get("account_id") or account_id.removeprefix("act_")) if level == "account" else ad_id
     MetaAdDailyStat.objects.update_or_create(
-        date=date.fromisoformat(row["date_start"]), level=level,
+        date=insight_date, level=level,
         account_id=account_id, object_id=object_id,
         defaults={
             "account_name": row.get("account_name") or account.get("name") or "",
-            "currency": account.get("currency") or "USD",
+            "currency": currency,
             "campaign_id": campaign_id,
             "campaign_name": row.get("campaign_name") or campaign.get("name") or "",
             "campaign_objective": campaign.get("objective") or "",
@@ -242,7 +269,9 @@ def _save_ad_insight(row, *, level, account_id, account, campaigns, ads):
             "media_id": str(creative.get("effective_instagram_media_id") or ""),
             "thumbnail_url": creative.get("thumbnail_url") or "",
             "permalink_url": creative.get("instagram_permalink_url") or ad.get("preview_shareable_link") or "",
-            "spend": _decimal(row.get("spend")),
+            "spend": spend,
+            "fx_rate_to_uah": fx_rate,
+            "spend_uah": (spend * fx_rate) if fx_rate is not None else None,
             "impressions": _int(row.get("impressions")),
             "reach": _int(row.get("reach")),
             "clicks": _int(row.get("clicks")),
@@ -352,5 +381,58 @@ def sync_content(since: date):
     return {"media": written}
 
 
+def sync_account(since: date, until: date):
+    """Store current follower balance and Meta's official daily follower metric."""
+    ig_account_id = configured_ig_account()
+    if not ig_account_id:
+        raise MetaGraphError("META_IG_ACCOUNT_ID is not configured")
+    profile = graph_get(ig_account_id, {"fields": "id,username,followers_count"})
+    username = profile.get("username") or ""
+    today = timezone.localdate()
+    MetaAccountDailyStat.objects.update_or_create(
+        date=today,
+        ig_account_id=ig_account_id,
+        defaults={
+            "username": username,
+            "followers_total": _int(profile.get("followers_count")),
+        },
+    )
+    insights_since = max(since, today - timedelta(days=89))
+    payload = graph_get(ig_account_id + "/insights", {
+        "metric": "follower_count",
+        "period": "day",
+        "since": insights_since.isoformat(),
+        "until": until.isoformat(),
+    })
+    written = 1
+    for metric in payload.get("data") or []:
+        if metric.get("name") != "follower_count":
+            continue
+        for point in metric.get("values") or []:
+            raw_end = point.get("end_time") or ""
+            try:
+                day = datetime.fromisoformat(raw_end.replace("Z", "+00:00")).date()
+            except (TypeError, ValueError):
+                continue
+            obj, _ = MetaAccountDailyStat.objects.get_or_create(
+                date=day,
+                ig_account_id=ig_account_id,
+                defaults={"username": username},
+            )
+            obj.username = username
+            obj.followers_gained = int(float(point.get("value"))) if point.get("value") is not None else None
+            obj.save(update_fields=["username", "followers_gained", "synced_at"])
+            written += 1
+    return {
+        "rows": written,
+        "followers_total": _int(profile.get("followers_count")),
+        "username": username,
+    }
+
+
 def sync_all(since: date, until: date):
-    return {"ads": sync_ads(since, until), "content": sync_content(since)}
+    return {
+        "ads": sync_ads(since, until),
+        "content": sync_content(since),
+        "account": sync_account(since, until),
+    }

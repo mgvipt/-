@@ -348,6 +348,8 @@ class MetaAdDailyStat(models.Model):
     thumbnail_url = models.URLField(max_length=1200, blank=True, default="")
     permalink_url = models.URLField(max_length=1200, blank=True, default="")
     spend = models.DecimalField(max_digits=16, decimal_places=4, default=0)
+    fx_rate_to_uah = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
+    spend_uah = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
     impressions = models.PositiveBigIntegerField(default=0)
     reach = models.PositiveBigIntegerField(default=0)
     clicks = models.PositiveBigIntegerField(default=0)
@@ -376,6 +378,37 @@ class MetaAdDailyStat(models.Model):
 
     def __str__(self):
         return f"{self.date} · {self.level} · {self.object_id}"
+
+
+class MetaAccountDailyStat(models.Model):
+    """Щоденний зріз професійного Instagram-акаунта.
+
+    ``followers_total`` — фактичний баланс на момент щоденного sync. Meta не
+    повертає історичний баланс заднім числом, тому старі дні залишаються NULL.
+    ``followers_gained`` — офіційний денний показник account insights.
+    """
+
+    date = models.DateField(db_index=True)
+    ig_account_id = models.CharField(max_length=64, db_index=True)
+    username = models.CharField(max_length=150, blank=True, default="")
+    followers_total = models.PositiveBigIntegerField(null=True, blank=True)
+    followers_gained = models.IntegerField(null=True, blank=True)
+    synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-date", "ig_account_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["date", "ig_account_id"],
+                name="uniq_meta_ig_account_daily",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["ig_account_id", "date"], name="crm_meta_ig_account_day"),
+        ]
+
+    def __str__(self):
+        return f"{self.date} · @{self.username or self.ig_account_id}"
 
 
 class MetaContentStat(models.Model):
