@@ -392,13 +392,13 @@ export default function Inbox() {
                   const cnt = (((c as any).unhandled_in as number) || 0) || (c.unread || 0);
                   const ai = !!(c as any).ai_answered;
                   if (!cnt && !ai) return null;
-                  // 🤖 — база; червоний лічильник неотвечених — ПОВЕРХ нього, справа вгорі
+                  // ІІ-іконка (bot, як у всій CRM) — база; червоний лічильник — маленьким бейджем у куті
                   return (
-                    <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", alignSelf: "center", flexShrink: 0, width: ai ? 22 : undefined, height: 22 }}>
-                      {ai && <span title={t("Ответил ИИ-агент, менеджер не смотрел", "Відповів ШІ-агент, менеджер не дивився")} style={{ fontSize: 15 }}>🤖</span>}
+                    <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", alignSelf: "center", flexShrink: 0, width: ai ? 20 : undefined, height: 20 }}>
+                      {ai && <span title={t("Ответил ИИ-агент, менеджер не смотрел", "Відповів ШІ-агент, менеджер не дивився")} style={{ color: "#7c3aed", display: "inline-flex" }}><Icon n="bot" size={16} /></span>}
                       {cnt > 0 && (
                         <span title={t("Сообщений клиента без ответа менеджера", "Повідомлень клієнта без відповіді менеджера")}
-                          style={{ position: ai ? "absolute" : "static", top: ai ? -5 : undefined, right: ai ? -7 : undefined, minWidth: 16, height: 16, borderRadius: 9, padding: "0 4px", background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 0 0 2px #fff" }}>
+                          style={{ position: ai ? "absolute" : "static", top: ai ? -4 : undefined, right: ai ? -6 : undefined, minWidth: 15, height: 15, borderRadius: 8, padding: "0 3px", background: "#ef4444", color: "#fff", fontSize: 9.5, fontWeight: 700, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 0 0 1.5px #fff" }}>
                           {cnt}
                         </span>
                       )}
