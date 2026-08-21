@@ -1,7 +1,7 @@
 """Незалежна Meta-інтеграція CRM (БЕЗ Бітрикса): Instagram Direct + IG-коменти +
 Facebook Messenger + FB-коменти напряму через Graph API.
 Вмикається коли в .env задані META_PAGE_TOKEN / META_VERIFY_TOKEN / META_APP_SECRET."""
-import os, json, hmac, hashlib, urllib.parse, urllib.request
+import os, json, hmac, hashlib, urllib.parse, urllib.request, re
 
 GRAPH = "https://graph.facebook.com/v21.0"
 PAGE_TOKEN = os.environ.get("META_PAGE_TOKEN", "")
@@ -9,6 +9,14 @@ VERIFY_TOKEN = os.environ.get("META_VERIFY_TOKEN", "wallcov_crm_verify")
 APP_SECRET = os.environ.get("META_APP_SECRET", "")
 IG_ID = os.environ.get("META_IG_ID", "")
 PAGE_ID = os.environ.get("META_PAGE_ID", "")
+# Наші власні ідентифікатори — щоб відрізнити відповідь ШІ Юлі / менеджера (наш акаунт)
+# від повідомлення клієнта у коментарях та Direct.
+_OUR_IDS = {x for x in (IG_ID, PAGE_ID) if x}
+
+
+def _is_us(author_id):
+    """author_id належить нашому бізнес-акаунту (сторінка/IG) → це наша відповідь, не клієнт."""
+    return bool(author_id) and str(author_id) in _OUR_IDS
 
 
 def configured():
@@ -208,9 +216,13 @@ def handle_webhook(payload: dict):
             sref = _story_ref(msg)
             if sref:
                 atts.append(sref)
+            # echo = надіслане з нашого акаунту. Якщо менеджер відповів через CRM — те саме mid
+            # вже записане з sender=менеджер і дедуплікується вище. Значить echo, що дійшло сюди,
+            # надіслала ШІ Юля через ChatPlace → позначаємо «ai_assistant» (щоб менеджер бачив ХТО відповів).
             Message.objects.create(conversation=conv, direction=("out" if is_echo else "in"),
                                    text=(msg.get("text") or ("📷 Фото" if atts else ""))[:5000],
-                                   attachments=atts, external_id=mid)
+                                   attachments=atts, external_id=mid,
+                                   sender_name=("ai_assistant" if is_echo else ""))
             conv.unread = (conv.unread or 0) + (0 if is_echo else 1)
             from django.utils import timezone
             conv.last_message_at = timezone.now()
@@ -227,6 +239,7 @@ def handle_webhook(payload: dict):
             cid = val.get("comment_id") or val.get("id")
             frm = val.get("from") or {}
             author_id = str(frm.get("id") or "")
+            author_username = (frm.get("username") or "").strip()
             author_name = (frm.get("name") or frm.get("username") or "")[:160]
             text = val.get("text") or val.get("message") or ""
             if not cid or not text:
@@ -234,15 +247,42 @@ def handle_webhook(payload: dict):
             post_id = str(val.get("post_id") or (val.get("media") or {}).get("id") or cid)
             parent_id = str((val.get("parent") or {}).get("id") or val.get("parent_id") or "")
             is_ad = bool(val.get("is_ad") or (val.get("media") or {}).get("ad_id") or val.get("ad_id"))
-            # окремий чат на КОЖНУ зв'язку «автор + публікація»
-            ext_chat = f"comment:{kind}:{post_id}:{author_id or cid}"
-            conv, created = Conversation.objects.get_or_create(
-                channel=ch, external_chat_id=str(ext_chat),
-                defaults={"title": f"{kind} · коментар"})
-            # прив'язати контакт + лід (як для Direct) — щоб коментатор був клієнтом у CRM
+
+            # ХТО написав: наш акаунт (відповідь ШІ Юлі) чи клієнт?
+            ours = _is_us(author_id)
+            target = None            # знайдений чат (для нашої відповіді через parent)
+            if ours:
+                # відповідь Юлі — клієнт це @нік на початку тексту («@koa2108 ...»)
+                mm = re.match(r"\s*@([A-Za-z0-9._]+)", text)
+                client_key = (mm.group(1) if mm else "").lower()
+                if not client_key and parent_id:
+                    pm = Message.objects.filter(external_id=parent_id).first()
+                    if pm:
+                        target = pm.conversation
+                direction = "out"
+                sname = "ai_assistant"      # серіалізатор покаже «Юля (AI)»
+                client_name = client_key or author_name
+            else:
+                # коментар клієнта
+                client_key = (author_username or author_id).lower()
+                direction = "in"
+                sname = author_username or author_name  # у чаті видно НІК КЛІЄНТА, не наш канал
+                client_name = author_username or author_name
+
+            # чат = «клієнт + публікація» (нік лида як ключ) — коментар клієнта і відповідь Юлі разом
+            created = False
+            if target is None:
+                if not client_key:
+                    client_key = (author_id or cid).lower()
+                ext_chat = f"comment:{kind}:{post_id}:{client_key}"
+                target, created = Conversation.objects.get_or_create(
+                    channel=ch, external_chat_id=str(ext_chat),
+                    defaults={"title": f"{kind} · коментар"})
+            conv = target
+
             if created:
-                _new_meta_lead(conv, kind, author_id or cid, author_name)
-                # картка джерела (публікація/ролик/реклама) — зберігаємо ОДИН раз зверху чату
+                # контакт = КЛІЄНТ (нік лида), НЕ наш акаунт
+                _new_meta_lead(conv, kind, client_key, client_name)
                 card = _media_card((val.get("media") or {}).get("id") or val.get("post_id"), kind)
                 conv.config = {**(conv.config or {}), "source_card": {
                     "type": "comment",
@@ -259,9 +299,9 @@ def handle_webhook(payload: dict):
                 conv.save(update_fields=["config"])
             if Message.objects.filter(conversation=conv, external_id=str(cid)).exists():
                 continue
-            Message.objects.create(conversation=conv, direction="in", text=text[:5000], external_id=str(cid),
-                                   sender_name=author_name)
-            conv.unread = (conv.unread or 0) + 1
+            Message.objects.create(conversation=conv, direction=direction, text=text[:5000],
+                                   external_id=str(cid), sender_name=sname)
+            conv.unread = (conv.unread or 0) + (0 if ours else 1)  # наша відповідь не додає «непрочитане»
             from django.utils import timezone
             conv.last_message_at = timezone.now()
             conv.save()
