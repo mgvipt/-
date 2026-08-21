@@ -7,6 +7,9 @@ GRAPH = "https://graph.facebook.com/v21.0"
 PAGE_TOKEN = os.environ.get("META_PAGE_TOKEN", "")
 VERIFY_TOKEN = os.environ.get("META_VERIFY_TOKEN", "wallcov_crm_verify")
 APP_SECRET = os.environ.get("META_APP_SECRET", "")
+# Instagram-вхід (IG-личка) йде через ОКРЕМИЙ Instagram-застосунок зі СВОЇМ секретом —
+# його вебхуки підписані іншим ключем, тому перевіряємо підпис проти ОБОХ секретів.
+IG_APP_SECRET = os.environ.get("META_IG_APP_SECRET", "")
 IG_ID = os.environ.get("META_IG_ID", "")
 PAGE_ID = os.environ.get("META_PAGE_ID", "")
 # Наші власні ідентифікатори — щоб відрізнити відповідь ШІ Юлі / менеджера (наш акаунт)
@@ -24,12 +27,17 @@ def configured():
 
 
 def verify_signature(raw_body: bytes, header_sig: str) -> bool:
-    if not APP_SECRET:
-        return True  # якщо секрет не заданий — не перевіряємо (dev)
+    secrets = [s for s in (APP_SECRET, IG_APP_SECRET) if s]
+    if not secrets:
+        return True  # якщо жоден секрет не заданий — не перевіряємо (dev)
     if not header_sig or not header_sig.startswith("sha256="):
         return False
-    mac = hmac.new(APP_SECRET.encode(), raw_body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(mac, header_sig.split("=", 1)[1])
+    got = header_sig.split("=", 1)[1]
+    for sec in secrets:  # підпис від основного АБО Instagram-застосунку
+        mac = hmac.new(sec.encode(), raw_body, hashlib.sha256).hexdigest()
+        if hmac.compare_digest(mac, got):
+            return True
+    return False
 
 
 def _graph(method, path, params=None):
