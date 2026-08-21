@@ -483,13 +483,19 @@ class RingPlanView(APIView):
             return Response({"detail": "forbidden"}, status=status.HTTP_403_FORBIDDEN)
         cfg = CallQueueConfig.get()
         on_shift = _on_shift_ids()
-        plan = []
+        plan, plan_all = [], []
         for m in CallQueueMember.objects.select_related("user").filter(enabled=True):
             if not m.user.extension:
                 continue
+            item = {"ext": m.user.extension, "ring": m.ring_seconds}
+            plan_all.append(item)
             if cfg.on_shift_only and m.user_id not in on_shift:
                 continue
-            plan.append({"ext": m.user.extension, "ring": m.ring_seconds})
+            plan.append(item)
+        # 21.08: страховка «на зміні менше двох → дзвонити ВСІМ увімкненим». Інакше (як 21.08) дзвонила лише
+        # Ілона, бо Кирило не натиснув «почати день», і 5 вхідних поспіль лишились без відповіді.
+        if cfg.on_shift_only and len(plan) < 2:
+            plan = plan_all
         # роздільник сегментів «|» (синхронно з extensions.conf у wallcov-webrtc).
         # ringall: один сегмент «701&PJSIP/702:20» → Dial(PJSIP/701&PJSIP/702,20) — дзвонять УСІ разом.
         if cfg.active and plan:

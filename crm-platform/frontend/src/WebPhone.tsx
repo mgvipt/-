@@ -35,31 +35,14 @@ export default function WebPhone() {
   const sessRef = useRef<any>(null);
   const pcRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const TAB_ID = useRef(Math.random().toString(36).slice(2)).current;
-  const [isLeader, setIsLeader] = useState(false);
-
-  // ── ОДИН активний телефонний таб: реєструється і дзвонить лише лідер (остання активна вкладка) ──
+  // ── 21.08.2026: телефон реєструється у КОЖНІЙ вкладці/на КОЖНОМУ пристрої (без «лідера»).
+  // Раніше реєструвалась лише одна вкладка-«лідер» (localStorage heartbeat 3с/TTL 7с). У ФОНОВИХ вкладках
+  // Chrome пускає таймери раз на хвилину → heartbeat протухав → вкладки щохвилини відбирали телефон одна в
+  // одної (ua.stop() = un-REGISTER) → у момент вхідного реєстрації не було → менеджер не бачив дзвінка
+  // (155 un-REGISTER «due to request» за 12 год у 701). Тепер Asterisk форкає INVITE на всі вкладки/пристрої,
+  // хто зняв — той говорить, іншим прилітає CANCEL. Рінгтон грає лише одна вкладка (замок у IncomingCallPopup).
+  // Деталі: memory incident_webphone_leader_flapping.
   useEffect(() => {
-    const KEY = "wallcov_phone_leader";
-    const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch { return null; } };
-    const claim = () => { localStorage.setItem(KEY, JSON.stringify({ id: TAB_ID, ts: Date.now() })); setIsLeader(true); };
-    const check = () => {
-      const l = read();
-      const fresh = l && (Date.now() - l.ts < 7000);
-      if (!fresh || l.id === TAB_ID) { claim(); return; }   // лідера нема/застарів АБО ми лідер → тримаємо
-      setIsLeader(false);                                    // телефон активний в іншій вкладці
-    };
-    const onFocus = () => claim();                           // стала активною → забираємо телефон собі
-    check();
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) claim(); });
-    const iv = setInterval(check, 3000);
-    return () => { window.removeEventListener("focus", onFocus); clearInterval(iv);
-      const l = read(); if (l && l.id === TAB_ID) localStorage.removeItem(KEY); };
-  }, []);
-
-  useEffect(() => {
-    if (!isLeader) { setEnabled(true); setSt("off"); return; }   // не лідер → JsSIP не піднімаємо (не дзвонить)
     let ua: any, cancelled = false, regTimer: any;
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     (async () => {
@@ -134,7 +117,7 @@ export default function WebPhone() {
     })();
     return () => { cancelled = true; clearTimeout(regTimer); try { window.wallcovDial = undefined; window.wallcovPhoneReconnect = undefined; window.wallcovPhoneReady = false; ua?.stop(); } catch { /* */ } };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLeader]);
+  }, []);
 
   function doDial(number: string) {
     const ua = uaRef.current;
@@ -202,7 +185,7 @@ export default function WebPhone() {
   }, [st, peer]);
 
   const dot = ({ off: "#94a3b8", connecting: "#f59e0b", ready: "#16a34a", incoming: "#16a34a", calling: "#3b82f6", incall: "#3b82f6", error: "#dc2626" } as any)[st];
-  const label = !isLeader ? t("активен в другой вкладке","активний в іншій вкладці") : ({ off: t("выключено","вимкнено"), connecting: t("подключение…","підключення…"), ready: t("готов","готовий"), incoming: t("входящий звонок","вхідний дзвінок"), calling: t("набор…","набір…"), incall: t("разговор","розмова"), error: t("ошибка","помилка") } as any)[st];
+  const label = ({ off: t("выключено","вимкнено"), connecting: t("подключение…","підключення…"), ready: t("готов","готовий"), incoming: t("входящий звонок","вхідний дзвінок"), calling: t("набор…","набір…"), incall: t("разговор","розмова"), error: t("ошибка","помилка") } as any)[st];
   const busy = st === "calling" || st === "incall";   // incoming показує ЦЕНТРАЛЬНЕ вікно, віджет не дублює
 
   if (!enabled) return <audio ref={audioRef} autoPlay playsInline />;

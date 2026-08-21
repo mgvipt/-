@@ -92,10 +92,25 @@ export default function IncomingCallPopup() {
     return () => clearInterval(tm);
   }, [phState]);
 
-  // сигнал дзвінка — ЛИШЕ поки реально дзвонить цей браузер (Web Audio грає і у фоновій вкладці)
+  // сигнал дзвінка — ЛИШЕ поки реально дзвонить цей браузер (Web Audio грає і у фоновій вкладці).
+  // 21.08: телефон тепер зареєстрований у КОЖНІЙ вкладці → дзвонять усі одразу. Щоб рінгтон не наслоювався,
+  // звук грає лише ОДНА вкладка цього браузера: замок у localStorage (власник тримає ключ увесь дзвінок,
+  // TTL 35с > макс. тривалості дозвону 30с — тому фонове «раз на хвилину» Chrome замку не ламає).
+  // Вікно з кнопками Прийняти/Скинути показується в усіх вкладках — замок стосується ТІЛЬКИ звуку.
+  const RING_TAB = useRef(Math.random().toString(36).slice(2)).current;
   useEffect(() => {
-    if (incoming && !hidden) startCallRing(); else stopCallRing();
-    return () => stopCallRing();
+    if (!incoming || hidden) { stopCallRing(); return; }
+    const KEY = "wallcov_ring_owner", TTL = 35000;
+    const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch { return null; } };
+    const cur = read();
+    const mineOrFree = !cur || cur.id === RING_TAB || (Date.now() - (cur.ts || 0)) > TTL;
+    if (!mineOrFree) return;                                   // звук уже грає інша вкладка цього браузера
+    localStorage.setItem(KEY, JSON.stringify({ id: RING_TAB, ts: Date.now() }));
+    startCallRing();
+    return () => {
+      stopCallRing();
+      const l = read(); if (l && l.id === RING_TAB) localStorage.removeItem(KEY);   // звільнити замок для наступного дзвінка
+    };
   }, [incoming, hidden]);
 
   // системне сповіщення коли дзвінок, а вкладка у фоні (менеджер в іншому застосунку / на робочому столі)
