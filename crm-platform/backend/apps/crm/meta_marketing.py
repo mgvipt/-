@@ -97,7 +97,15 @@ def graph_pages(path, params=None, *, max_pages=100):
             with urllib.request.urlopen(next_url, timeout=45) as response:
                 payload = json.load(response)
         except urllib.error.HTTPError as exc:
-            raise MetaGraphError(f"Meta paging HTTP {exc.code}") from exc
+            try:
+                body = json.loads(exc.read().decode("utf-8"))
+                error = body.get("error") or {}
+            except Exception:
+                error = {}
+            raise MetaGraphError(
+                str(error.get("message") or f"Meta paging HTTP {exc.code}")[:500],
+                code=error.get("code"), subcode=error.get("error_subcode"),
+            ) from exc
 
 
 def _int(value):
@@ -180,15 +188,29 @@ def sync_ads(since: date, until: date):
         raise MetaGraphError("META_AD_ACCOUNT_IDS is not configured")
     written = 0
     for account_id in accounts:
-        account = graph_get(account_id, {"fields": "id,name,currency,account_status"})
-        campaigns, ads = _catalog(account_id)
+        account_label = account_id[-4:]
+        try:
+            account = graph_get(account_id, {"fields": "id,name,currency,account_status"})
+            campaigns, ads = _catalog(account_id)
+        except MetaGraphError as exc:
+            raise MetaGraphError(
+                f"Ads catalog account …{account_label}: {exc}",
+                code=exc.code, subcode=exc.subcode,
+            ) from exc
         for level in ("account", "ad"):
             for chunk_since, chunk_until in _date_chunks(since, until):
-                for row in _insight_rows(account_id, level, chunk_since, chunk_until):
-                    written += _save_ad_insight(
-                        row, level=level, account_id=account_id, account=account,
-                        campaigns=campaigns, ads=ads,
-                    )
+                try:
+                    for row in _insight_rows(account_id, level, chunk_since, chunk_until):
+                        written += _save_ad_insight(
+                            row, level=level, account_id=account_id, account=account,
+                            campaigns=campaigns, ads=ads,
+                        )
+                except MetaGraphError as exc:
+                    raise MetaGraphError(
+                        f"Ads insights account …{account_label}, {level}, "
+                        f"{chunk_since}..{chunk_until}: {exc}",
+                        code=exc.code, subcode=exc.subcode,
+                    ) from exc
     return {"accounts": len(accounts), "rows": written}
 
 
@@ -323,7 +345,10 @@ def sync_content(since: date):
             # Expired stories or an unavailable edge must not block feed/reels.
             if edge == "stories" and exc.code in (10, 100, 190):
                 continue
-            raise
+            raise MetaGraphError(
+                f"Instagram organic {edge}: {exc}",
+                code=exc.code, subcode=exc.subcode,
+            ) from exc
     return {"media": written}
 
 
