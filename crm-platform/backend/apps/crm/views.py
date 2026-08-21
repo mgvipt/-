@@ -3013,8 +3013,9 @@ class AiUsageView(APIView):
 
 
 class AnthropicCostView(APIView):
-    """Повний рахунок Anthropic по КОЖНОМУ ключу (усі боти, навіть поза CRM-обліком).
-    Тягне Admin Cost API. Ключ ANTHROPIC_ADMIN_KEY у env. Без ключа → configured:false."""
+    """Реальний розхід Anthropic по КОЖНОМУ ключу (усі боти) — рахуємо з usage_report
+    (надійно, збігається з фактом). cost_report показує ще й Claude Code/підписку (кеш) —
+    його даємо окремо як org_total з поміткою."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -3037,34 +3038,49 @@ class AnthropicCostView(APIView):
         H = {"x-api-key": admin, "anthropic-version": "2023-06-01"}
         def _get(url):
             req = urllib.request.Request(url, headers=H)
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=40) as r:
                 return _j.loads(r.read().decode() or "{}")
+        # ціна за 1 токен: (uncached_in, output, cache_read, cache_write)
+        PRICE = {"opus": (15/1e6, 75/1e6, 1.5/1e6, 18.75/1e6),
+                 "sonnet": (3/1e6, 15/1e6, 0.3/1e6, 3.75/1e6),
+                 "haiku": (0.8/1e6, 4/1e6, 0.08/1e6, 1/1e6)}
+        def tier(m):
+            m = (m or "").lower()
+            return "opus" if "opus" in m else ("sonnet" if "sonnet" in m else "haiku")
+        _base = "https://api.anthropic.com/v1/organizations"
+        _win = "starting_at=%sT00:00:00Z&ending_at=%sT23:59:59Z" % (frm, to)
         try:
             names = {}
             try:
-                ks = _get("https://api.anthropic.com/v1/organizations/api_keys?limit=100")
-                for k in (ks.get("data") or []):
+                for k in (_get(_base + "/api_keys?limit=100").get("data") or []):
                     names[k.get("id")] = k.get("name")
             except Exception:
                 pass
-            url = ("https://api.anthropic.com/v1/organizations/cost_report"
-                   "?starting_at=%sT00:00:00Z&ending_at=%sT23:59:59Z&group_by[]=api_key_id" % (frm, to))
-            cost = _get(url)
+            us = _get(_base + "/usage_report/messages?" + _win + "&group_by[]=api_key_id&group_by[]=model")
             agg = {}
-            for bucket in (cost.get("data") or []):
-                for res in (bucket.get("results") or bucket.get("items") or []):
-                    kid = res.get("api_key_id") or res.get("api_key") or "—"
-                    amt = res.get("amount")
-                    if isinstance(amt, dict):
-                        amt = amt.get("value") or amt.get("amount")
-                    amt = float(amt or res.get("cost") or res.get("cost_usd") or 0)
-                    agg[kid] = agg.get(kid, 0) + amt
+            for b in (us.get("data") or []):
+                for r in (b.get("results") or []):
+                    kid = r.get("api_key_id") or "—"
+                    pin, pout, pcr, pcw = PRICE[tier(r.get("model"))]
+                    c = (int(r.get("uncached_input_tokens") or 0) * pin
+                         + int(r.get("output_tokens") or 0) * pout
+                         + int(r.get("cache_read_input_tokens") or 0) * pcr
+                         + int(r.get("cache_creation_input_tokens") or 0) * pcw)
+                    agg[kid] = agg.get(kid, 0) + c
             rows = sorted([{"key": names.get(kid) or (kid[:14] if kid else "—"), "cost": round(v, 2)}
                            for kid, v in agg.items()], key=lambda x: -x["cost"])
+            keys_total = round(sum(r["cost"] for r in rows), 2)
+            org_total = None
+            try:
+                cr = _get(_base + "/cost_report?" + _win)
+                org_total = round(sum(float(rr.get("amount") or 0) for b in (cr.get("data") or [])
+                                      for rr in (b.get("results") or [])), 2)
+            except Exception:
+                pass
             return Response({"configured": True, "from": frm, "to": to, "rows": rows,
-                             "total": round(sum(r["cost"] for r in rows), 2)})
+                             "total": keys_total, "org_total": org_total})
         except urllib.error.HTTPError as e:
-            return Response({"configured": True, "error": "Anthropic API %s: %s" % (e.code, e.read().decode()[:150])})
+            return Response({"configured": True, "error": "Anthropic %s: %s" % (e.code, e.read().decode()[:150])})
         except Exception as e:
             return Response({"configured": True, "error": str(e)[:200]})
 

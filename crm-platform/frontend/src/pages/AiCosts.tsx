@@ -151,7 +151,13 @@ export default function AiCosts() {
             <div className="label" style={{ marginBottom: 4 }}>{t("Полный счёт Anthropic — ВСЕ боты (по ключам)", "Повний рахунок Anthropic — УСІ боти (по ключах)")}</div>
             <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>{t("Реальные списания из Anthropic по каждому сервису — включая ботов вне CRM (склад, контент, командный центр, реклама).", "Реальні списання з Anthropic по кожному сервісу — включно з ботами поза CRM.")}</div>
             {ac.error ? <div style={{ color: "#dc2626", fontSize: 12 }}>{ac.error}</div> : <>
-              <div style={{ fontSize: 26, fontWeight: 800, color: "#166534", marginBottom: 8 }}>{usd(ac.total)}<span className="muted" style={{ fontSize: 12, fontWeight: 400 }}> {t("всего за период", "всього за період")}</span></div>
+              <div style={{ fontSize: 26, fontWeight: 800, color: "#166534", marginBottom: 8 }}>{usd(ac.total)}<span className="muted" style={{ fontSize: 12, fontWeight: 400 }}> {t("— реальный расход ботов (API-ключи) за период", "— реальний розхід ботів (API-ключі) за період")}</span></div>
+              {ac.org_total != null && ac.org_total > (ac.total || 0) * 1.5 && (
+                <div style={{ fontSize: 12, color: "#9a3412", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 8, padding: "8px 10px", marginBottom: 10, lineHeight: 1.5 }}>
+                  ⚠️ <b>{t("Весь аккаунт Anthropic за период: ", "Весь акаунт Anthropic за період: ")}{usd(ac.org_total)}</b><br />
+                  {t("Сюда входят сессии Claude Code (агенты, закреплённые сессии) и подписка — а не только боты. Если Claude Code у тебя на фикс-подписке (Max/Team) — это НЕ отдельный счёт по токенам. Сверь с реальным инвойсом Anthropic.", "Сюди входять сесії Claude Code (агенти, закріплені сесії) і підписка — а не тільки боти. Якщо Claude Code на фікс-підписці (Max/Team) — це НЕ окремий рахунок по токенах. Звір з реальним інвойсом Anthropic.")}
+                </div>
+              )}
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead><tr><th style={th}>{t("Ключ / сервис", "Ключ / сервіс")}</th><th style={{ ...th, textAlign: "right" }}>{t("Сумма", "Сума")}</th></tr></thead>
                 <tbody>{(ac.rows || []).map((r: any, i: number) => <tr key={i}><td style={td}>{r.key}</td><td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{usd(r.cost)}</td></tr>)}</tbody>
