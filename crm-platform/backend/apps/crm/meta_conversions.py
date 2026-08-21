@@ -268,7 +268,10 @@ def capi_config():
     return {
         "enabled": os.environ.get("META_CAPI_ENABLED", "0") == "1",
         "dataset_id": os.environ.get("META_CAPI_DATASET_ID", "").strip(),
-        "access_token": os.environ.get("META_CAPI_ACCESS_TOKEN", "").strip(),
+        # окремий CAPI-токен НЕ обовʼязковий: якщо не заданий — беремо системний
+        # рекламний токен (System User, ads_management), яким уже ходить синхронізація.
+        "access_token": (os.environ.get("META_CAPI_ACCESS_TOKEN", "").strip()
+                         or os.environ.get("META_MARKETING_ACCESS_TOKEN", "").strip()),
         "graph_version": os.environ.get("META_CAPI_GRAPH_VERSION", "v21.0").strip() or "v21.0",
         "test_event_code": os.environ.get("META_CAPI_TEST_EVENT_CODE", "").strip(),
     }
