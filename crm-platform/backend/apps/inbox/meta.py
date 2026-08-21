@@ -390,6 +390,59 @@ def _apply_ad_attribution(channel, kind, sender_id, ref_obj, ev, msg):
     return True
 
 
+def _handle_leadgen(value):
+    """Заявка з лід-форми Meta (реклама з формою «Отримати пропозицію»).
+    value містить leadgen_id/form_id/ad_id. Тягнемо повні відповіді форми через Graph
+    і створюємо контакт + лід з атрибуцією lead_form. Дедуп по leadgen_id."""
+    from apps.crm.models import Lead, Funnel, Contact
+    leadgen_id = str(value.get("leadgen_id") or value.get("leadgen_id".upper()) or "")
+    if not leadgen_id or not PAGE_TOKEN:
+        return False
+    if Lead.objects.filter(meta_attribution__lead_id=leadgen_id).exists():
+        return False  # вже завели цю заявку
+    try:
+        data = _graph("GET", leadgen_id,
+                      {"fields": "field_data,ad_id,form_id,campaign_id,adset_id,created_time"})
+    except Exception:
+        data = {}
+    fields = {}
+    for f in (data.get("field_data") or []):
+        n = (f.get("name") or "").lower()
+        vals = f.get("values") or []
+        if vals:
+            fields[n] = str(vals[0])
+    full = (fields.get("full_name") or fields.get("name")
+            or (fields.get("first_name", "") + " " + fields.get("last_name", "")).strip())
+    phone = (fields.get("phone_number") or fields.get("phone") or "")[:32]
+    email = (fields.get("email") or "")[:190]
+    attr = {
+        "source_kind": "lead_form", "platform": "facebook", "source_context": "leadgen",
+        "lead_id": leadgen_id,
+        "form_id": str(value.get("form_id") or data.get("form_id") or "")[:180],
+        "ad_id": str(value.get("ad_id") or data.get("ad_id") or "")[:180],
+        "campaign_id": str(value.get("campaign_id") or data.get("campaign_id") or "")[:180],
+        "adset_id": str(value.get("adset_id") or data.get("adset_id") or "")[:180],
+    }
+    parts = (full or "").split(None, 1)
+    ct = None
+    if phone:
+        ct = Contact.objects.filter(phone=phone).first()
+    if not ct and email:
+        ct = Contact.objects.filter(email__iexact=email).first()
+    if not ct:
+        ct = Contact.objects.create(
+            first_name=((parts[0] if parts else "") or "Заявка з форми")[:120],
+            last_name=(parts[1] if len(parts) > 1 else "")[:120],
+            phone=phone, email=email)
+    f = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
+    st = f.stages.order_by("order").first() if f else None
+    if f and st:
+        Lead.objects.create(title=(full or phone or "Лід-форма")[:255],
+                            contact=ct, funnel=f, stage=st, source="facebook", is_seen=False,
+                            meta_attribution=attr)
+    return True
+
+
 def _story_ref(msg):
     """Витягнути посилання на історію з Direct-повідомлення (відповідь на історію / згадка в історії).
     Повертає dict для attachments або None."""
@@ -786,6 +839,13 @@ def handle_webhook(payload: dict):
         for chg in changes:
             field = chg.get("field")
             val = chg.get("value") or {}
+            if field == "leadgen":
+                try:
+                    if _handle_leadgen(val):
+                        n_msg += 1
+                except Exception:
+                    pass
+                continue
             if field not in ("comments", "feed"):
                 continue
             if val.get("item") and val.get("item") != "comment":
