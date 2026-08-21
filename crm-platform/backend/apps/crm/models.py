@@ -319,6 +319,104 @@ class MetaConversionEvent(models.Model):
         return f"{self.event_name} · {self.event_id}"
 
 
+class MetaAdDailyStat(models.Model):
+    """Щоденний read-only зріз Marketing API.
+
+    Рядки рівня account живлять загальні KPI, а рядки рівня ad — ієрархію
+    campaign → adset → ad та креативи. Токени й сирі відповіді Graph API тут
+    ніколи не зберігаються.
+    """
+
+    LEVELS = [("account", "Акаунт"), ("ad", "Оголошення")]
+
+    date = models.DateField(db_index=True)
+    level = models.CharField(max_length=12, choices=LEVELS, db_index=True)
+    object_id = models.CharField(max_length=64, db_index=True)
+    account_id = models.CharField(max_length=64, db_index=True)
+    account_name = models.CharField(max_length=255, blank=True, default="")
+    currency = models.CharField(max_length=8, blank=True, default="USD")
+    campaign_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    campaign_name = models.CharField(max_length=255, blank=True, default="")
+    campaign_objective = models.CharField(max_length=80, blank=True, default="")
+    adset_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    adset_name = models.CharField(max_length=255, blank=True, default="")
+    ad_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    ad_name = models.CharField(max_length=255, blank=True, default="")
+    effective_status = models.CharField(max_length=32, blank=True, default="")
+    creative_id = models.CharField(max_length=64, blank=True, default="")
+    media_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    thumbnail_url = models.URLField(max_length=1200, blank=True, default="")
+    permalink_url = models.URLField(max_length=1200, blank=True, default="")
+    spend = models.DecimalField(max_digits=16, decimal_places=4, default=0)
+    impressions = models.PositiveBigIntegerField(default=0)
+    reach = models.PositiveBigIntegerField(default=0)
+    clicks = models.PositiveBigIntegerField(default=0)
+    outbound_clicks = models.PositiveBigIntegerField(default=0)
+    messages_started = models.PositiveBigIntegerField(default=0)
+    meta_leads = models.PositiveBigIntegerField(default=0)
+    purchases = models.PositiveBigIntegerField(default=0)
+    video_views = models.PositiveBigIntegerField(default=0)
+    actions = models.JSONField(default=dict, blank=True)
+    synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-date", "account_id", "level", "object_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["date", "level", "account_id", "object_id"],
+                name="uniq_meta_ad_daily_object",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["level", "date"], name="crm_meta_ad_level_date"),
+            models.Index(fields=["campaign_id", "date"], name="crm_meta_ad_campaign_date"),
+            models.Index(fields=["adset_id", "date"], name="crm_meta_ad_adset_date"),
+            models.Index(fields=["ad_id", "date"], name="crm_meta_ad_ad_date"),
+        ]
+
+    def __str__(self):
+        return f"{self.date} · {self.level} · {self.object_id}"
+
+
+class MetaContentStat(models.Model):
+    """Поточні lifetime-показники власного Instagram-контенту.
+
+    Органіка зберігається окремо від реклами. Nullable-поля важливі: Meta для
+    окремих типів медіа повертає відсутній показник, і це не дорівнює нулю.
+    """
+
+    ig_account_id = models.CharField(max_length=64, db_index=True)
+    media_id = models.CharField(max_length=64, unique=True, db_index=True)
+    caption = models.TextField(blank=True, default="")
+    media_type = models.CharField(max_length=32, blank=True, default="")
+    media_product_type = models.CharField(max_length=32, blank=True, default="")
+    permalink = models.URLField(max_length=1200, blank=True, default="")
+    thumbnail_url = models.URLField(max_length=1200, blank=True, default="")
+    published_at = models.DateTimeField(db_index=True)
+    like_count = models.PositiveBigIntegerField(default=0)
+    comments_count = models.PositiveBigIntegerField(default=0)
+    reach = models.PositiveBigIntegerField(null=True, blank=True)
+    views = models.PositiveBigIntegerField(null=True, blank=True)
+    saved = models.PositiveBigIntegerField(null=True, blank=True)
+    shares = models.PositiveBigIntegerField(null=True, blank=True)
+    total_interactions = models.PositiveBigIntegerField(null=True, blank=True)
+    follows = models.PositiveBigIntegerField(null=True, blank=True)
+    profile_visits = models.PositiveBigIntegerField(null=True, blank=True)
+    metrics = models.JSONField(default=dict, blank=True)
+    first_synced_at = models.DateTimeField(auto_now_add=True)
+    synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-published_at", "-id"]
+        indexes = [
+            models.Index(fields=["ig_account_id", "published_at"], name="crm_meta_content_pub"),
+            models.Index(fields=["media_product_type", "published_at"], name="crm_meta_content_type"),
+        ]
+
+    def __str__(self):
+        return f"{self.media_product_type or self.media_type} · {self.media_id}"
+
+
 # ============================================================================
 # АУДИТ-ЖУРНАЛ — хто/коли/що змінив (ліди, сделки, фінанси). Незалежний від Бітрикса.
 # ============================================================================

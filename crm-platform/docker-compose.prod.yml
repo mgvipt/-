@@ -47,6 +47,10 @@ services:
       META_CAPI_ACCESS_TOKEN: ${META_CAPI_ACCESS_TOKEN:-}
       META_CAPI_TEST_EVENT_CODE: ${META_CAPI_TEST_EVENT_CODE:-}
       META_CAPI_GRAPH_VERSION: ${META_CAPI_GRAPH_VERSION:-v21.0}
+      META_MARKETING_ACCESS_TOKEN: ${META_MARKETING_ACCESS_TOKEN:-}
+      META_AD_ACCOUNT_IDS: ${META_AD_ACCOUNT_IDS:-}
+      META_IG_ACCOUNT_ID: ${META_IG_ACCOUNT_ID:-}
+      META_MARKETING_GRAPH_VERSION: ${META_MARKETING_GRAPH_VERSION:-v21.0}
       CHATPLACE_API_KEY: ${CHATPLACE_API_KEY}
       CHATPLACE_MCP_URL: ${CHATPLACE_MCP_URL}
       LIQPAY_PUBLIC_KEY: ${LIQPAY_PUBLIC_KEY}
@@ -69,6 +73,15 @@ services:
     volumes:
       - /root/crm-media/warehouse_photos:/app/warehouse_photos
     command: python manage.py process_shop_catalog --watch --interval 30 --reconcile-minutes 15
+    environment: *crm-environment
+    depends_on: [db]
+    restart: unless-stopped
+
+  meta-marketing-sync:
+    build: { context: ./backend }
+    command: >
+      python manage.py meta_marketing_sync --watch --since 2026-06-16
+      --recent-days 7 --interval 21600
     environment: *crm-environment
     depends_on: [db]
     restart: unless-stopped

@@ -2467,11 +2467,7 @@ class AnalyticsView(APIView):
 
 
 class MetaMarketingView(APIView):
-    """Чесна Meta-аналітика: CRM-воронка лише для підтвердженої реклами/lead forms.
-
-    Витрати, покази та охоплення тут навмисно не вигадуються: вони з'являться
-    після окремого sync Marketing/Insights API.
-    """
+    """Meta Ads + органічний Instagram + підтверджені результати CRM."""
     permission_classes = [HasPermCode]
     required_perm = "analytics.view"
 
@@ -2479,10 +2475,11 @@ class MetaMarketingView(APIView):
         import os
         from collections import defaultdict
         from datetime import timedelta
+        from django.db.models import Max
         from django.utils import timezone
         from django.utils.dateparse import parse_date
         from .meta_conversions import event_name_for_stage, has_verified_meta_attribution, normalized_meta_attribution
-        from .models import MetaConversionEvent
+        from .models import MetaAdDailyStat, MetaContentStat, MetaConversionEvent
 
         user = request.user
         see_all_leads = user.is_superuser or user.can_see_all_leads()
@@ -2559,6 +2556,161 @@ class MetaMarketingView(APIView):
         for item in deals:
             add(item, "deals")
 
+        # ── Marketing API: платна реклама, окремо від органічного контенту ──
+        ad_daily = list(MetaAdDailyStat.objects.filter(
+            date__gte=date_from, date__lte=date_to, level="ad",
+        ).order_by("date", "id"))
+        account_daily = list(MetaAdDailyStat.objects.filter(
+            date__gte=date_from, date__lte=date_to, level="account",
+        ).order_by("date", "id"))
+
+        def metric_bucket():
+            return {
+                "spend": 0.0, "impressions": 0, "reach": 0, "clicks": 0,
+                "outbound_clicks": 0, "messages_started": 0, "meta_leads": 0,
+                "purchases": 0, "video_views": 0, "crm_leads": set(),
+                "crm_deals": set(), "crm_won": set(), "crm_revenue": 0.0,
+            }
+
+        def group_ad_rows(field):
+            grouped = {}
+            for row in ad_daily:
+                key = getattr(row, field) or ""
+                if not key:
+                    continue
+                if key not in grouped:
+                    grouped[key] = {"id": key, **metric_bucket()}
+                target = grouped[key]
+                for name in ("spend", "impressions", "reach", "clicks", "outbound_clicks",
+                             "messages_started", "meta_leads", "purchases", "video_views"):
+                    target[name] += float(getattr(row, name)) if name == "spend" else int(getattr(row, name))
+                # Latest metadata refreshes expiring thumbnails and statuses.
+                target.update({
+                    "account_id": row.account_id, "account_name": row.account_name,
+                    "currency": row.currency, "campaign_id": row.campaign_id,
+                    "campaign_name": row.campaign_name, "objective": row.campaign_objective,
+                    "adset_id": row.adset_id, "adset_name": row.adset_name,
+                    "ad_id": row.ad_id, "ad_name": row.ad_name,
+                    "effective_status": row.effective_status,
+                    "thumbnail_url": row.thumbnail_url, "permalink_url": row.permalink_url,
+                    "media_id": row.media_id,
+                })
+            return grouped
+
+        campaign_stats = group_ad_rows("campaign_id")
+        adset_stats = group_ad_rows("adset_id")
+        ad_stats = group_ad_rows("ad_id")
+        ad_hierarchy = {
+            key: (row.get("campaign_id") or "", row.get("adset_id") or "")
+            for key, row in ad_stats.items()
+        }
+
+        def attach_crm(item, kind):
+            attr = normalized_meta_attribution(item)
+            ad_id = attr.get("ad_id") or ""
+            campaign_id = attr.get("campaign_id") or ""
+            adset_id = attr.get("adset_id") or ""
+            inferred = ad_hierarchy.get(ad_id) or ("", "")
+            campaign_id = campaign_id or inferred[0]
+            adset_id = adset_id or inferred[1]
+            for collection, key in ((campaign_stats, campaign_id), (adset_stats, adset_id), (ad_stats, ad_id)):
+                if not key or key not in collection:
+                    continue
+                target = collection[key]
+                target[f"crm_{kind}"].add(item.pk)
+                if kind == "deals" and item.stage and item.stage.is_won:
+                    target["crm_won"].add(item.pk)
+                    target["crm_revenue"] += float(item.amount or 0)
+
+        for item in leads:
+            attach_crm(item, "leads")
+        for item in deals:
+            attach_crm(item, "deals")
+
+        def finish_groups(grouped, label_field):
+            result = []
+            for row in grouped.values():
+                for name in ("crm_leads", "crm_deals", "crm_won"):
+                    row[name] = len(row[name])
+                row["name"] = row.get(label_field) or row["id"]
+                row["spend"] = round(row["spend"], 2)
+                row["ctr"] = round(row["clicks"] / row["impressions"] * 100, 2) if row["impressions"] else None
+                row["cpm"] = round(row["spend"] / row["impressions"] * 1000, 2) if row["impressions"] else None
+                row["cost_per_message"] = round(row["spend"] / row["messages_started"], 2) if row["messages_started"] else None
+                row["cost_per_meta_lead"] = round(row["spend"] / row["meta_leads"], 2) if row["meta_leads"] else None
+                row["cost_per_crm_lead"] = round(row["spend"] / row["crm_leads"], 2) if row["crm_leads"] else None
+                result.append(row)
+            return sorted(result, key=lambda row: (-row["spend"], row["name"]))
+
+        paid_campaigns = finish_groups(campaign_stats, "campaign_name")
+        paid_adsets = finish_groups(adset_stats, "adset_name")
+        paid_ads = finish_groups(ad_stats, "ad_name")
+
+        paid_summary = metric_bucket()
+        for row in account_daily:
+            for name in ("spend", "impressions", "reach", "clicks", "outbound_clicks",
+                         "messages_started", "meta_leads", "purchases", "video_views"):
+                paid_summary[name] += float(getattr(row, name)) if name == "spend" else int(getattr(row, name))
+        paid_summary = {key: value for key, value in paid_summary.items() if not isinstance(value, set)}
+        paid_summary["spend"] = round(paid_summary["spend"], 2)
+        paid_summary["ctr"] = round(paid_summary["clicks"] / paid_summary["impressions"] * 100, 2) if paid_summary["impressions"] else None
+        paid_summary["cpm"] = round(paid_summary["spend"] / paid_summary["impressions"] * 1000, 2) if paid_summary["impressions"] else None
+        paid_summary["cost_per_message"] = round(paid_summary["spend"] / paid_summary["messages_started"], 2) if paid_summary["messages_started"] else None
+        paid_summary["cost_per_meta_lead"] = round(paid_summary["spend"] / paid_summary["meta_leads"], 2) if paid_summary["meta_leads"] else None
+
+        account_map = {}
+        for row in account_daily:
+            account_map[row.account_id] = {"id": row.account_id, "name": row.account_name, "currency": row.currency}
+
+        # ── Органіка: власні публікації/Reels/Stories та їх lifetime metrics ──
+        content_qs = MetaContentStat.objects.filter(
+            published_at__date__gte=date_from, published_at__date__lte=date_to,
+        )
+        content_dialogues = defaultdict(set)
+        try:
+            from apps.inbox.models import Conversation
+            for conv in Conversation.objects.filter(
+                created_at__date__gte=date_from, created_at__date__lte=date_to,
+                channel__kind="instagram",
+            ).exclude(config={}).values("id", "config"):
+                card = (conv.get("config") or {}).get("source_card") or {}
+                media_id = str(card.get("media_id") or card.get("content_id") or "")
+                if media_id and not card.get("is_ad"):
+                    content_dialogues[media_id].add(conv["id"])
+        except Exception:
+            content_dialogues = defaultdict(set)
+
+        content_leads = defaultdict(set)
+        content_deals = defaultdict(set)
+        for item in leads:
+            content_id = normalized_meta_attribution(item).get("content_id") or ""
+            if content_id:
+                content_leads[content_id].add(item.pk)
+        for item in deals:
+            content_id = normalized_meta_attribution(item).get("content_id") or ""
+            if content_id:
+                content_deals[content_id].add(item.pk)
+
+        organic_content = []
+        for row in content_qs.order_by("-published_at"):
+            interactions = row.total_interactions
+            if interactions is None:
+                interactions = row.like_count + row.comments_count + (row.saved or 0) + (row.shares or 0)
+            organic_content.append({
+                "media_id": row.media_id, "caption": row.caption,
+                "media_type": row.media_type, "media_product_type": row.media_product_type,
+                "permalink": row.permalink, "thumbnail_url": row.thumbnail_url,
+                "published_at": row.published_at, "likes": row.like_count,
+                "comments": row.comments_count, "reach": row.reach, "views": row.views,
+                "saved": row.saved, "shares": row.shares, "interactions": interactions,
+                "follows": row.follows, "profile_visits": row.profile_visits,
+                "engagement_rate": round(interactions / row.reach * 100, 2) if row.reach else None,
+                "crm_dialogues": len(content_dialogues[row.media_id]),
+                "crm_leads": len(content_leads[row.media_id]),
+                "crm_deals": len(content_deals[row.media_id]),
+                "synced_at": row.synced_at,
+            })
+
         event_qs = MetaConversionEvent.objects.filter(
             created_at__date__gte=date_from, created_at__date__lte=date_to,
         )
@@ -2579,13 +2731,19 @@ class MetaMarketingView(APIView):
             })
 
         won_deals = [item for item in deals if item.stage and item.stage.is_won]
+        latest_ads_sync = MetaAdDailyStat.objects.aggregate(value=Max("synced_at"))["value"]
+        latest_content_sync = MetaContentStat.objects.aggregate(value=Max("synced_at"))["value"]
         return Response({
             "period": {"from": date_from, "to": date_to},
             "integration": {
                 "capi_enabled": os.environ.get("META_CAPI_ENABLED", "0") == "1",
                 "capi_dataset_configured": bool(os.environ.get("META_CAPI_DATASET_ID", "").strip()),
                 "capi_token_configured": bool(os.environ.get("META_CAPI_ACCESS_TOKEN", "").strip()),
-                "insights_sync_configured": False,
+                "insights_sync_configured": bool(latest_ads_sync),
+                "content_sync_configured": bool(latest_content_sync),
+                "latest_ads_sync": latest_ads_sync,
+                "latest_content_sync": latest_content_sync,
+                "available_from": "2026-06-16",
             },
             "summary": {
                 "attributed_leads": len(leads), "attributed_deals": len(deals),
@@ -2599,13 +2757,21 @@ class MetaMarketingView(APIView):
             "by_source_kind": [{"source_kind": key, **value} for key, value in sorted(by_source.items())],
             "campaigns": sorted(by_campaign.values(), key=lambda x: (-x["won"], -x["deals"], -x["leads"])),
             "content": sorted(by_content.values(), key=lambda x: (-x["deals"], -x["leads"])),
+            "paid": {
+                "summary": paid_summary,
+                "accounts": sorted(account_map.values(), key=lambda row: row["name"]),
+                "campaigns": paid_campaigns,
+                "adsets": paid_adsets,
+                "ads": paid_ads,
+                "reach_note": "sum_of_daily_unique_reach",
+            },
+            "organic": {"content": organic_content},
             "funnels": [{"funnel": key, **value} for key, value in sorted(funnel.items())],
             "stages": sorted(stages.values(), key=lambda x: (x["funnel"], x["stage"])),
             "outbox": outbox,
             "recent": recent,
-            "unavailable_until_insights_sync": [
-                "spend", "impressions", "reach", "frequency", "cpm", "cpc", "ctr",
-                "video_views", "engagement", "followers", "roas",
+            "unavailable_until_insights_sync": [] if latest_ads_sync else [
+                "spend", "impressions", "reach", "cpm", "ctr", "video_views",
             ],
         })
 
