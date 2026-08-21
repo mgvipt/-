@@ -5,7 +5,7 @@ from django.db import IntegrityError, transaction
 from django.test import TransactionTestCase
 from django.utils import timezone
 
-from .meta_marketing import _action_map, _pick
+from .meta_marketing import _action_map, _date_chunks, _pick
 from .models import MetaAdDailyStat, MetaContentStat
 
 
@@ -72,3 +72,10 @@ class MetaMarketingAnalyticsTests(TransactionTestCase):
         self.assertEqual(_pick(actions, ("onsite_conversion.messaging_conversation_started_7d",)), 17)
         self.assertEqual(_pick(actions, ("lead", "leadgen_grouped")), 3)
 
+    def test_long_backfill_is_split_into_small_meta_requests(self):
+        chunks = list(_date_chunks(date(2026, 6, 16), date(2026, 7, 2), days=7))
+        self.assertEqual(chunks, [
+            (date(2026, 6, 16), date(2026, 6, 22)),
+            (date(2026, 6, 23), date(2026, 6, 29)),
+            (date(2026, 6, 30), date(2026, 7, 2)),
+        ])

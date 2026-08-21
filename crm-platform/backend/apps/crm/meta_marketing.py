@@ -13,7 +13,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date, datetime, timezone as dt_timezone
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
 
 from django.utils import timezone
@@ -163,6 +163,15 @@ def _insight_rows(account_id, level, since, until):
     })
 
 
+def _date_chunks(since: date, until: date, days=7):
+    """Small windows avoid Graph error #1 on active ad accounts."""
+    cursor = since
+    while cursor <= until:
+        chunk_until = min(until, cursor + timedelta(days=max(1, days) - 1))
+        yield cursor, chunk_until
+        cursor = chunk_until + timedelta(days=1)
+
+
 def sync_ads(since: date, until: date):
     accounts = configured_ad_accounts()
     if not accounts:
@@ -172,51 +181,59 @@ def sync_ads(since: date, until: date):
         account = graph_get(account_id, {"fields": "id,name,currency,account_status"})
         campaigns, ads = _catalog(account_id)
         for level in ("account", "ad"):
-            for row in _insight_rows(account_id, level, since, until):
-                ad_id = str(row.get("ad_id") or "")
-                campaign_id = str(row.get("campaign_id") or "")
-                ad = ads.get(ad_id) or {}
-                campaign = campaigns.get(campaign_id) or {}
-                creative = ad.get("creative") or {}
-                actions = _action_map(row.get("actions"))
-                outbound = _action_map(row.get("outbound_clicks"))
-                videos = _action_map(row.get("video_play_actions"))
-                object_id = str(row.get("account_id") or account_id.removeprefix("act_")) if level == "account" else ad_id
-                MetaAdDailyStat.objects.update_or_create(
-                    date=date.fromisoformat(row["date_start"]), level=level,
-                    account_id=account_id, object_id=object_id,
-                    defaults={
-                        "account_name": row.get("account_name") or account.get("name") or "",
-                        "currency": account.get("currency") or "USD",
-                        "campaign_id": campaign_id,
-                        "campaign_name": row.get("campaign_name") or campaign.get("name") or "",
-                        "campaign_objective": campaign.get("objective") or "",
-                        "adset_id": str(row.get("adset_id") or ad.get("adset_id") or ""),
-                        "adset_name": row.get("adset_name") or "",
-                        "ad_id": ad_id,
-                        "ad_name": row.get("ad_name") or ad.get("name") or "",
-                        "effective_status": ad.get("effective_status") or campaign.get("effective_status") or "",
-                        "creative_id": str(creative.get("id") or ""),
-                        "media_id": str(creative.get("effective_instagram_media_id") or ""),
-                        "thumbnail_url": creative.get("thumbnail_url") or "",
-                        "permalink_url": creative.get("instagram_permalink_url") or ad.get("preview_shareable_link") or "",
-                        "spend": _decimal(row.get("spend")),
-                        "impressions": _int(row.get("impressions")),
-                        "reach": _int(row.get("reach")),
-                        "clicks": _int(row.get("clicks")),
-                        "outbound_clicks": _pick(outbound, ("outbound_click",)) or sum(outbound.values()),
-                        "messages_started": _pick(actions, (
-                            "onsite_conversion.messaging_conversation_started_7d",
-                            "messaging_conversation_started_7d",
-                        )),
-                        "meta_leads": _pick(actions, ("lead", "onsite_conversion.lead_grouped", "leadgen_grouped")),
-                        "purchases": _pick(actions, ("purchase", "omni_purchase", "offsite_conversion.fb_pixel_purchase")),
-                        "video_views": _pick(videos, ("video_view",)) or sum(videos.values()),
-                        "actions": actions,
-                    },
-                )
-                written += 1
+            for chunk_since, chunk_until in _date_chunks(since, until):
+                for row in _insight_rows(account_id, level, chunk_since, chunk_until):
+                    written += _save_ad_insight(
+                        row, level=level, account_id=account_id, account=account,
+                        campaigns=campaigns, ads=ads,
+                    )
     return {"accounts": len(accounts), "rows": written}
+
+
+def _save_ad_insight(row, *, level, account_id, account, campaigns, ads):
+    ad_id = str(row.get("ad_id") or "")
+    campaign_id = str(row.get("campaign_id") or "")
+    ad = ads.get(ad_id) or {}
+    campaign = campaigns.get(campaign_id) or {}
+    creative = ad.get("creative") or {}
+    actions = _action_map(row.get("actions"))
+    outbound = _action_map(row.get("outbound_clicks"))
+    videos = _action_map(row.get("video_play_actions"))
+    object_id = str(row.get("account_id") or account_id.removeprefix("act_")) if level == "account" else ad_id
+    MetaAdDailyStat.objects.update_or_create(
+        date=date.fromisoformat(row["date_start"]), level=level,
+        account_id=account_id, object_id=object_id,
+        defaults={
+            "account_name": row.get("account_name") or account.get("name") or "",
+            "currency": account.get("currency") or "USD",
+            "campaign_id": campaign_id,
+            "campaign_name": row.get("campaign_name") or campaign.get("name") or "",
+            "campaign_objective": campaign.get("objective") or "",
+            "adset_id": str(row.get("adset_id") or ad.get("adset_id") or ""),
+            "adset_name": row.get("adset_name") or "",
+            "ad_id": ad_id,
+            "ad_name": row.get("ad_name") or ad.get("name") or "",
+            "effective_status": ad.get("effective_status") or campaign.get("effective_status") or "",
+            "creative_id": str(creative.get("id") or ""),
+            "media_id": str(creative.get("effective_instagram_media_id") or ""),
+            "thumbnail_url": creative.get("thumbnail_url") or "",
+            "permalink_url": creative.get("instagram_permalink_url") or ad.get("preview_shareable_link") or "",
+            "spend": _decimal(row.get("spend")),
+            "impressions": _int(row.get("impressions")),
+            "reach": _int(row.get("reach")),
+            "clicks": _int(row.get("clicks")),
+            "outbound_clicks": _pick(outbound, ("outbound_click",)) or sum(outbound.values()),
+            "messages_started": _pick(actions, (
+                "onsite_conversion.messaging_conversation_started_7d",
+                "messaging_conversation_started_7d",
+            )),
+            "meta_leads": _pick(actions, ("lead", "onsite_conversion.lead_grouped", "leadgen_grouped")),
+            "purchases": _pick(actions, ("purchase", "omni_purchase", "offsite_conversion.fb_pixel_purchase")),
+            "video_views": _pick(videos, ("video_view",)) or sum(videos.values()),
+            "actions": actions,
+        },
+    )
+    return 1
 
 
 def _metric_value(media_id, metric):
