@@ -294,6 +294,92 @@ def _story_ref(msg):
     return None
 
 
+def _reply_ref(msg, conv):
+    """Зберегти зрозумілий preview повідомлення, на яке відповів клієнт.
+
+    Meta передає ``reply_to.mid``. Шукаємо ціль ТІЛЬКИ у поточному діалозі,
+    щоб однаковий platform ID з іншого каналу ніколи не підмінив контекст.
+    Preview копіюємо у нове повідомлення: воно залишиться читабельним навіть
+    якщо оригінальне медіа пізніше стане недоступним у Meta.
+    """
+    from .models import Message
+
+    reply_to = msg.get("reply_to") or {}
+    external_id = str(reply_to.get("mid") or reply_to.get("message_id") or "")[:128]
+    if not external_id:
+        return None
+    target = Message.objects.filter(conversation=conv, external_id=external_id).first()
+    if not target:
+        return {"type": "reply_ref", "external_id": external_id, "target_id": None}
+
+    media = next((dict(a) for a in (target.attachments or [])
+                  if (a or {}).get("type") in ("photo", "video", "voice", "file")), None)
+    return {
+        "type": "reply_ref",
+        "external_id": external_id,
+        "target_id": target.id,
+        "direction": target.direction,
+        "sender_name": target.sender_name,
+        "text": (target.text or "")[:500],
+        "attachment": media,
+    }
+
+
+def _store_reaction(channel, event):
+    """Додати/зняти реакцію Meta біля конкретного CRM-повідомлення.
+
+    Повторна доставка webhook ідемпотентна: у одного клієнта може бути лише
+    одна поточна реакція на це повідомлення. Реакція не створює окремий
+    ``Message`` і тому не засмічує діалог.
+    """
+    from django.db import transaction
+    from django.utils import timezone
+    from .models import Conversation, Message
+
+    data = event.get("reaction") or {}
+    sender_id = str((event.get("sender") or {}).get("id") or "")
+    recipient_id = str((event.get("recipient") or {}).get("id") or "")
+    external_id = str(data.get("mid") or "")[:128]
+    action = str(data.get("action") or "").lower()
+    if not sender_id or not external_id or action not in ("react", "unreact"):
+        return False
+
+    ext_chat = recipient_id if _is_us(sender_id) else sender_id
+    with transaction.atomic():
+        conv = (Conversation.objects.select_for_update()
+                .filter(channel=channel, external_chat_id=ext_chat).first())
+        if not conv:
+            return False
+        target = (Message.objects.select_for_update()
+                  .filter(conversation=conv, external_id=external_id).first())
+        if not target:
+            return False
+
+        actor = "business" if _is_us(sender_id) else "customer"
+        old = list(target.attachments or [])
+        updated = [a for a in old if not (
+            (a or {}).get("type") == "message_reaction"
+            and str((a or {}).get("actor_id") or "") == sender_id
+        )]
+        if action == "react":
+            updated.append({
+                "type": "message_reaction",
+                "actor_id": sender_id,
+                "actor": actor,
+                "reaction": str(data.get("reaction") or "other")[:32],
+                "emoji": str(data.get("emoji") or "")[:16],
+            })
+        changed = updated != old
+        if changed:
+            target.attachments = updated
+            target.save(update_fields=["attachments"])
+            if actor == "customer" and action == "react":
+                conv.unread = (conv.unread or 0) + 1
+                conv.last_message_at = timezone.now()
+                conv.save(update_fields=["unread", "last_message_at"])
+        return True
+
+
 def _relink_manager_echo(conv, mid, text, event_timestamp=None):
     """Прив'язати Meta echo до щойно надісланого менеджером повідомлення.
 
@@ -345,10 +431,15 @@ def handle_webhook(payload: dict):
         changes = list(entry.get("changes") or [])
         direct_events = (list(entry.get("messaging") or [])
                          + list(entry.get("standby") or [])
-                         + [(chg.get("value") or {}) for chg in changes if chg.get("field") == "messages"])
+                         + [(chg.get("value") or {}) for chg in changes
+                            if chg.get("field") in ("messages", "message_reactions")])
         for ev in direct_events:
             sender = (ev.get("sender") or {}).get("id")
             recipient = (ev.get("recipient") or {}).get("id")
+            if ev.get("reaction"):
+                if _store_reaction(ch, ev):
+                    n_msg += 1
+                continue
             msg = ev.get("message") or {}
             if not sender or not msg:
                 continue
@@ -382,6 +473,11 @@ def handle_webhook(payload: dict):
             sref = _story_ref(msg)
             if sref:
                 atts.append(sref)
+            # Звичайна відповідь на конкретне фото/текст у Direct.
+            # Story reply обробляється окремою карткою вище.
+            rref = _reply_ref(msg, conv)
+            if rref:
+                atts.insert(0, rref)
             # echo = надіслане з нашого акаунту. Якщо менеджер відповів через CRM — те саме mid
             # вже записане з sender=менеджер і дедуплікується вище. Значить echo, що дійшло сюди,
             # надіслала ШІ Юля через ChatPlace → позначаємо «ai_assistant» (щоб менеджер бачив ХТО відповів).

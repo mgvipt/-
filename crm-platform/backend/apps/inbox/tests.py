@@ -205,6 +205,116 @@ class MetaWebhookIngestTests(TestCase):
         self.assertEqual(handle_webhook(payload), 0)
         self.assertFalse(Conversation.objects.filter(external_chat_id="service-psid").exists())
 
+    def test_reply_to_photo_keeps_original_message_preview(self):
+        from .meta import handle_webhook
+
+        conv = Conversation.objects.create(
+            channel=self.channel, external_chat_id="reply-psid", title="facebook",
+        )
+        original = Message.objects.create(
+            conversation=conv, direction="out", external_id="photo-mid",
+            text="Ось потрібний зразок",
+            attachments=[{"type": "photo", "url": "https://example.com/sample.jpg", "name": "фото"}],
+            sender_name="ai_assistant",
+        )
+        event = {
+            "sender": {"id": "reply-psid"},
+            "recipient": {"id": "101010628568079"},
+            "timestamp": 1787151973000,
+            "message": {
+                "mid": "customer-reply-mid", "text": "Цей варіант подобається",
+                "reply_to": {"mid": "photo-mid"},
+            },
+        }
+        payload = {"object": "page", "entry": [{"messaging": [event]}]}
+
+        self.assertEqual(handle_webhook(payload), 1)
+        reply = conv.messages.get(external_id="customer-reply-mid")
+        ref = next(a for a in reply.attachments if a.get("type") == "reply_ref")
+        self.assertEqual(ref["target_id"], original.id)
+        self.assertEqual(ref["text"], "Ось потрібний зразок")
+        self.assertEqual(ref["attachment"]["type"], "photo")
+        self.assertEqual(ref["attachment"]["url"], "https://example.com/sample.jpg")
+
+    def test_reply_reference_never_crosses_conversations(self):
+        from .meta import handle_webhook
+
+        other = Conversation.objects.create(
+            channel=self.channel, external_chat_id="other-psid", title="facebook",
+        )
+        Message.objects.create(
+            conversation=other, direction="out", external_id="shared-mid", text="Чуже повідомлення",
+        )
+        conv = Conversation.objects.create(
+            channel=self.channel, external_chat_id="safe-psid", title="facebook",
+        )
+        event = {
+            "sender": {"id": "safe-psid"}, "recipient": {"id": "101010628568079"},
+            "message": {"mid": "safe-reply", "text": "Відповідь", "reply_to": {"mid": "shared-mid"}},
+        }
+
+        self.assertEqual(handle_webhook({"object": "page", "entry": [{"messaging": [event]}]}), 1)
+        ref = conv.messages.get().attachments[0]
+        self.assertEqual(ref["type"], "reply_ref")
+        self.assertIsNone(ref["target_id"])
+        self.assertNotIn("Чуже повідомлення", str(ref))
+
+    def test_reaction_is_attached_to_message_and_unreact_removes_it(self):
+        from .meta import handle_webhook
+
+        conv = Conversation.objects.create(
+            channel=self.channel, external_chat_id="react-psid", title="facebook",
+        )
+        target = Message.objects.create(
+            conversation=conv, direction="out", external_id="out-mid", text="Вам подобається?",
+        )
+        event = {
+            "sender": {"id": "react-psid"}, "recipient": {"id": "101010628568079"},
+            "timestamp": 1787151974000,
+            "reaction": {"reaction": "love", "emoji": "❤️", "action": "react", "mid": "out-mid"},
+        }
+        payload = {"object": "page", "entry": [{"messaging": [event]}]}
+
+        self.assertEqual(handle_webhook(payload), 1)
+        target.refresh_from_db(); conv.refresh_from_db()
+        self.assertEqual(target.attachments, [{
+            "type": "message_reaction", "actor_id": "react-psid", "actor": "customer",
+            "reaction": "love", "emoji": "❤️",
+        }])
+        self.assertEqual(conv.unread, 1)
+
+        # Повторна доставка webhook не дублює badge і не збільшує unread.
+        self.assertEqual(handle_webhook(payload), 1)
+        target.refresh_from_db(); conv.refresh_from_db()
+        self.assertEqual(len(target.attachments), 1)
+        self.assertEqual(conv.unread, 1)
+
+        event["reaction"] = {"reaction": "love", "emoji": "❤️", "action": "unreact", "mid": "out-mid"}
+        self.assertEqual(handle_webhook(payload), 1)
+        target.refresh_from_db(); conv.refresh_from_db()
+        self.assertEqual(target.attachments, [])
+        self.assertEqual(conv.unread, 1)
+
+    def test_reaction_change_event_format_is_supported(self):
+        from .meta import handle_webhook
+
+        conv = Conversation.objects.create(
+            channel=self.channel, external_chat_id="change-react-psid", title="facebook",
+        )
+        target = Message.objects.create(
+            conversation=conv, direction="out", external_id="change-out-mid", text="Фото",
+        )
+        event = {
+            "sender": {"id": "change-react-psid"}, "recipient": {"id": "101010628568079"},
+            "reaction": {"reaction": "like", "emoji": "👍", "action": "react", "mid": "change-out-mid"},
+        }
+        payload = {"object": "page", "entry": [{
+            "changes": [{"field": "message_reactions", "value": event}],
+        }]}
+
+        self.assertEqual(handle_webhook(payload), 1)
+        self.assertEqual(target.__class__.objects.get(pk=target.pk).attachments[0]["emoji"], "👍")
+
     @patch("apps.inbox.meta._graph")
     def test_profile_name_falls_back_to_page_conversation_participant(self, graph):
         from .meta import _profile_name

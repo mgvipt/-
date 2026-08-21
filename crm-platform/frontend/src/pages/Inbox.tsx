@@ -12,6 +12,7 @@ import { linkify, dayLabel, metaWindow, SNDR_MAP } from "../chatUtils";
 import { Icon } from "../Icon";
 import { TaskQuickModal } from "../TaskQuickModal";
 import ConversationSourceCard from "../ConversationSourceCard";
+import { ReplyContext, ReactionBadges, isContextAttachment } from "../MessageContext";
 import { msgSoundOn, setMsgSoundOn, teamSoundOn, setTeamSoundOn } from "../sounds";
 
 
@@ -513,7 +514,7 @@ export default function Inbox() {
               {msgs.map((m, i) => (
                 <Fragment key={m.id}>
                 {(i === 0 || new Date((m as any).created_at).toDateString() !== new Date((msgs[i - 1] as any).created_at).toDateString()) && <div style={{ position: "sticky", top: 2, zIndex: 3, textAlign: "center", margin: "8px 0 6px", pointerEvents: "none" }}><span style={{ fontSize: 11, fontWeight: 700, color: "#475569", background: "#e2e8f0", borderRadius: 20, padding: "3px 13px", boxShadow: "0 1px 4px rgba(0,0,0,.14)" }}>{dayLabel((m as any).created_at, t)}</span></div>}
-                <div className={"msg" + (m.direction === "out" ? " msg-out" : " msg-in")} data-internal={(m as any).internal ? "1" : ""}
+                <div id={`inbox-message-${m.id}`} className={"msg" + (m.direction === "out" ? " msg-out" : " msg-in")} data-internal={(m as any).internal ? "1" : ""}
                   style={{ maxWidth: "70%", padding: "9px 11px", borderRadius: 10, fontSize: 13,
                     alignSelf: m.direction === "out" ? "flex-end" : "flex-start",
                     background: (m as any).internal ? "#fef9c3" : "#fff",
@@ -523,6 +524,12 @@ export default function Inbox() {
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: .2, marginBottom: 4, paddingBottom: 3, borderBottom: (m as any).internal ? "1px solid rgba(212,160,23,.3)" : (m.direction === "out" ? "1px solid rgba(37,99,235,.25)" : "1px solid rgba(0,0,0,.08)"), color: (m as any).internal ? "#92400e" : (m.direction === "out" ? "#2563eb" : "var(--brand)") }}>
                     {(m as any).internal ? "📝 " + ((m as any).sender_display || SNDR_MAP[m.sender_name] || m.sender_name || t("Менеджер","Менеджер")) + " · " + t("только команда","тільки команда") : ((m as any).sender_display || SNDR_MAP[m.sender_name] || m.sender_name || (m.direction === "out" ? t("Менеджер","Менеджер") : (active?.title || t("Клиент","Клієнт"))))}
                   </div>
+                  <ReplyContext attachments={m.attachments} idPrefix="inbox-message-" customLabels={{
+                    reply: t("Ответ на", "Відповідь на"), client: t("Клиент", "Клієнт"), manager: t("Менеджер", "Менеджер"),
+                    photo: t("Фото", "Фото"), video: t("Видео", "Відео"), voice: t("Голосовое сообщение", "Голосове повідомлення"),
+                    file: t("Файл", "Файл"), unavailable: t("Исходное сообщение недоступно", "Початкове повідомлення недоступне"),
+                    reaction: t("Реакция клиента", "Реакція клієнта"),
+                  }} />
                   <span onClick={() => { if (m.direction === "in") setMsgMenu(msgMenu === m.id ? null : m.id); }}
                     style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", cursor: m.direction === "in" ? "pointer" : "default" }}>{linkify(m.text, m.direction === "out")}</span>
                   {msgMenu === m.id && m.direction === "in" && active && (
@@ -534,12 +541,14 @@ export default function Inbox() {
                     </div>
                   )}
                   {m.attachments?.map((a: any, i: number) => (
-                    (a.url && a.type === "photo") ? <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 6 }}><img src={a.url} alt="" style={{ maxWidth: 240, maxHeight: 260, borderRadius: 8, display: "block", objectFit: "cover" }} /></a>
+                    isContextAttachment(a) ? null
+                    : (a.url && a.type === "photo") ? <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 6 }}><img src={a.url} alt="" style={{ maxWidth: 240, maxHeight: 260, borderRadius: 8, display: "block", objectFit: "cover" }} /></a>
                     : (a.url && a.type === "video") ? <video key={i} src={a.url} controls style={{ maxWidth: 240, borderRadius: 8, marginTop: 6, display: "block" }} />
                     : (a.url && a.type === "voice") ? <audio key={i} src={a.url} controls style={{ marginTop: 6, maxWidth: 240 }} />
                     : a.url ? <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 12.5, color: "#2563eb", fontWeight: 600 }}><Icon n="paperclip" size={14} /> {a.name || t("файл","файл")}</a>
                     : <div key={i} style={{ fontSize: 11, opacity: .8, marginTop: 4 }}><Icon n="paperclip" size={13} /> {a.type === "voice" ? t(`голосовое ${a.duration ?? ""}с`,`голосове ${a.duration ?? ""}с`) : a.type}</div>
                   ))}
+                  <ReactionBadges attachments={m.attachments} customLabels={{ reaction: t("Реакция клиента", "Реакція клієнта") }} />
                   <div style={{ fontSize: 10, opacity: .55, marginTop: 3, textAlign: m.direction === "out" ? "right" : "left" }}>{(m as any).created_at ? new Date((m as any).created_at).toLocaleTimeString("uk", { hour: "2-digit", minute: "2-digit" }) : ""}</div>
                   {m.direction === "out" && !(m as any).internal && ((m as any).status === "window_risk" || (m as any).status === "failed") && <div style={{ fontSize: 10, fontWeight: 700, marginTop: 1, textAlign: "right", color: (m as any).status === "failed" ? "#b91c1c" : "#b45309" }}>{(m as any).status === "failed" ? "\u2717 " + t("не доставлено","не доставлено") : "⚠️ " + t("мог не дойти (окно закрыто)","міг не дійти (вікно закрите)")}</div>}
                 </div>

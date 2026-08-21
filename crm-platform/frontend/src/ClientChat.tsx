@@ -9,6 +9,7 @@ import { Icon } from "./Icon";
 import { api, ChatMessage, Conversation, Paginated } from "./api";
 import ChatActions from "./ChatActions";
 import ConversationSourceCard from "./ConversationSourceCard";
+import { ReplyContext, ReactionBadges, isContextAttachment } from "./MessageContext";
 import { dayLabel, timeLabel, isNewDay, linkify, metaWindow } from "./chatUtils";
 
 const tt = (_r: string, ua: string) => ua;  // ClientChat україномовний
@@ -313,15 +314,17 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
             {isNewDay((m as any).created_at, (msgs[i - 1] as any)?.created_at) && (
               <div style={{ position: "sticky", top: 2, zIndex: 3, textAlign: "center", margin: "6px 0 4px", pointerEvents: "none" }}><span style={{ fontSize: 11, fontWeight: 700, color: "#475569", background: "#e2e8f0", borderRadius: 20, padding: "3px 13px", boxShadow: "0 1px 4px rgba(0,0,0,.14)" }}>{dayLabel((m as any).created_at, tt)}</span></div>
             )}
-            <div style={{ alignSelf: m.direction === "in" ? "flex-start" : "flex-end", maxWidth: "82%" }}>
+            <div id={`client-message-${m.id}`} style={{ alignSelf: m.direction === "in" ? "flex-start" : "flex-end", maxWidth: "82%" }}>
               <div style={{ fontSize: 10.5, color: "#94a3b8", marginBottom: 2, textAlign: m.direction === "in" ? "left" : "right" }}>
                 {m.direction === "in" ? ((m as any).sender_display || (m as any).sender_name || "Клієнт") : ((m as any).sender_display || (m.sender_name === "ai_assistant" ? "Юля (AI)" : (m.sender_name || "Менеджер")))}
               </div>
               <div style={{ background: (m as any).internal ? "#fef9c3" : (m.direction === "in" ? "#ffffff" : "#dbeafe"), padding: "7px 11px", borderRadius: 12, fontSize: 13, whiteSpace: "pre-wrap", border: (m as any).internal ? "1px dashed #d4a017" : (m.direction === "in" ? "1px solid #eef2f7" : "none") }}>
                 {(m as any).internal && <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", marginBottom: 2 }}><Icon n="📝" size={12} /> Нотатка (тільки команда)</div>}
+                <ReplyContext attachments={(m as any).attachments} idPrefix="client-message-" />
                 <span style={{ wordBreak: "break-word" }}>{linkify(m.text, m.direction !== "in")}</span>
                 {(m as any).attachments?.map((a: any, j: number) => (
-                  (a.url && a.type === "photo") ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 6 }}><img src={a.url} alt="" style={{ maxWidth: 220, maxHeight: 240, borderRadius: 8, display: "block", objectFit: "cover" }} /></a>
+                  isContextAttachment(a) ? null
+                  : (a.url && a.type === "photo") ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 6 }}><img src={a.url} alt="" style={{ maxWidth: 220, maxHeight: 240, borderRadius: 8, display: "block", objectFit: "cover" }} /></a>
                   : (a.url && a.type === "video") ? <video key={j} src={a.url} controls style={{ maxWidth: 220, borderRadius: 8, marginTop: 6, display: "block" }} />
                   : (a.url && a.type === "voice") ? <audio key={j} src={a.url} controls style={{ marginTop: 6, maxWidth: 220 }} />
                   : a.type === "story_ref" ? (
@@ -333,6 +336,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
                   : a.url ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 12.5, color: "#2563eb", fontWeight: 600 }}><Icon n="paperclip" size={14} /> {a.name || "файл"}</a>
                   : null
                 ))}
+                <ReactionBadges attachments={(m as any).attachments} />
               </div>
               <div style={{ fontSize: 9.5, color: "#cbd5e1", marginTop: 2, textAlign: m.direction === "in" ? "left" : "right" }}>{timeLabel((m as any).created_at)}</div>
             </div>
@@ -357,16 +361,19 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
             <div style={{ height: 220, minHeight: 120, maxHeight: "60vh", resize: "vertical", overflow: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "#f8fafc" }}>
               {peekMsgs.length === 0 && <div className="muted" style={{ fontSize: 13 }}>Повідомлень поки немає</div>}
               {peekMsgs.map((m) => (
-                <div key={m.id} style={{ alignSelf: m.direction === "in" ? "flex-start" : "flex-end", maxWidth: "85%" }}>
+                <div key={m.id} id={`client-peek-message-${m.id}`} style={{ alignSelf: m.direction === "in" ? "flex-start" : "flex-end", maxWidth: "85%" }}>
                   <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2, textAlign: m.direction === "in" ? "left" : "right" }}>
                     {m.direction === "in" ? ((m as any).sender_display || (m as any).sender_name || "Клієнт") : ((m as any).sender_display || (m.sender_name === "ai_assistant" ? "Юля (AI)" : (m.sender_name || "Менеджер")))}
                   </div>
                   <div style={{ background: (m as any).internal ? "#fef9c3" : (m.direction === "in" ? "#fff" : "#dbeafe"), padding: "6px 10px", borderRadius: 10, fontSize: 12.5, whiteSpace: "pre-wrap", border: m.direction === "in" ? "1px solid #eef2f7" : "none" }}>
+                    <ReplyContext attachments={(m as any).attachments} idPrefix="client-peek-message-" />
                     <span style={{ wordBreak: "break-word" }}>{linkify(m.text, m.direction !== "in")}</span>
                     {(m as any).attachments?.map((a: any, j: number) => (
-                      (a.url && a.type === "photo") ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 4 }}><img src={a.url} alt="" style={{ maxWidth: 160, borderRadius: 6, display: "block" }} /></a>
+                      isContextAttachment(a) ? null
+                      : (a.url && a.type === "photo") ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 4 }}><img src={a.url} alt="" style={{ maxWidth: 160, borderRadius: 6, display: "block" }} /></a>
                       : a.url ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 4, fontSize: 12, color: "#2563eb", fontWeight: 600 }}>файл</a> : null
                     ))}
+                    <ReactionBadges attachments={(m as any).attachments} />
                   </div>
                 </div>
               ))}
