@@ -1,6 +1,68 @@
-import { Fragment, ReactNode, useEffect, useMemo, useState } from "react";
+import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { useLang } from "../i18n";
+
+// ── Ширина столбцов, что запоминается (перетягивание за правый край шапки) ──
+function useColWidths(storageKey: string, count: number) {
+  const [widths, setWidths] = useState<Record<number, number>>(() => {
+    try { const s = JSON.parse(localStorage.getItem(storageKey) || "{}"); return (s && typeof s === "object") ? s : {}; } catch { return {}; }
+  });
+  const set = (i: number, w: number) => setWidths((cur) => {
+    const next = { ...cur, [i]: Math.max(56, Math.round(w)) };
+    try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* */ }
+    return next;
+  });
+  const reset = () => { try { localStorage.removeItem(storageKey); } catch { /* */ } setWidths({}); };
+  return { widths, set, reset };
+}
+
+// Шапка-ячейка с ручкой изменения ширины у правого края.
+function ResizableTh({ label, width, onResize, thStyle }: { label: ReactNode; width?: number; onResize: (w: number) => void; thStyle: any }) {
+  const ref = useRef<HTMLTableCellElement>(null);
+  const onDown = (e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX; const startW = ref.current ? ref.current.offsetWidth : (width || 120);
+    const move = (ev: MouseEvent) => onResize(startW + (ev.clientX - startX));
+    const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); document.body.style.cursor = ""; document.body.style.userSelect = ""; };
+    window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+    document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none";
+  };
+  return (
+    <th ref={ref} style={{ ...thStyle, width, minWidth: width, position: "relative" }}>
+      {label}
+      <span onMouseDown={onDown} title="Потягніть, щоб змінити ширину"
+        style={{ position: "absolute", top: 0, right: -4, width: 9, height: "100%", cursor: "col-resize", zIndex: 2 }} />
+    </th>
+  );
+}
+
+// Панель пагинации: размер страницы (сохраняется) + перелистывание.
+function Pager({ total, pageSize, page, sizeKey, onSize, onPage, t }: { total: number; pageSize: number; page: number; sizeKey: string; onSize: (n: number) => void; onPage: (p: number) => void; t: (ru: string, ua: string) => string }) {
+  const all = pageSize >= 99999;
+  const pages = all ? 1 : Math.max(1, Math.ceil(total / pageSize));
+  const from = all || total === 0 ? (total ? 1 : 0) : page * pageSize + 1;
+  const to = all ? total : Math.min(total, (page + 1) * pageSize);
+  const btn: any = { minWidth: 30, height: 28, border: "1px solid #cbd5e1", borderRadius: 7, background: "#fff", cursor: "pointer", fontSize: 13 };
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "8px 12px", fontSize: 12.5, color: "#475569" }}>
+      <span>{t("Показывать по", "Показувати по")}:</span>
+      <select value={pageSize} onChange={(e) => { const n = Number(e.target.value); try { localStorage.setItem(sizeKey, String(n)); } catch { /* */ } onSize(n); onPage(0); }}
+        style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 7, fontSize: 12.5, padding: "0 6px" }}>
+        {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+        <option value={99999}>{t("все", "всі")}</option>
+      </select>
+      <span style={{ marginLeft: 4 }}>{from}–{to} {t("из", "з")} {total}</span>
+      <div style={{ flex: 1 }} />
+      {!all && pages > 1 && <>
+        <button style={btn} disabled={page <= 0} onClick={() => onPage(0)}>«</button>
+        <button style={btn} disabled={page <= 0} onClick={() => onPage(page - 1)}>‹</button>
+        <span style={{ minWidth: 78, textAlign: "center" }}>{t("стр.", "стор.")} {page + 1} / {pages}</span>
+        <button style={btn} disabled={page >= pages - 1} onClick={() => onPage(page + 1)}>›</button>
+        <button style={btn} disabled={page >= pages - 1} onClick={() => onPage(pages - 1)}>»</button>
+      </>}
+    </div>
+  );
+}
 
 const CONNECTED_FROM = "2026-06-16";
 const TAB_KEYS = ["overview", "profitability", "ads", "creatives", "content", "funnel", "forms", "sources"] as const;
@@ -98,7 +160,7 @@ export default function MetaMarketing() {
   const dailyTable = <DailySalesTable rows={daily} t={t} />;
 
   return <div style={{ height: "100%", overflowY: "auto", padding: 16, boxSizing: "border-box" }}>
-    <div style={{ maxWidth: 1440 }}>
+    <div style={{ width: "100%" }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 23 }}>📣 {t("Маркетинг · Meta", "Маркетинг · Meta")}</h2>
@@ -306,6 +368,12 @@ function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string)
     t("Выручка", "Виручка"), t("Из неё повторная", "З неї повторна"), "LTV",
     t("Валовая прибыль", "Валовий прибуток"), "ROAS", "ROMI",
   ];
+  const cw = useColWidths("mm_daily_cols", headers.length);
+  const [pageSize, setPageSize] = useState<number>(() => { try { return Number(localStorage.getItem("mm_daily_pagesize") || "30") || 30; } catch { return 30; } });
+  const [page, setPage] = useState(0);
+  const total = rows.length;
+  useEffect(() => { setPage(0); }, [total, pageSize]);
+  const paged = pageSize >= 99999 ? rows : rows.slice(page * pageSize, page * pageSize + pageSize);
   const toggle = (date: string) => setExpanded((current) => {
     const next = new Set(current);
     if (next.has(date)) next.delete(date); else next.add(date);
@@ -319,10 +387,13 @@ function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string)
     count(r.repeat_sales), moneyUah(r.revenue), moneyUah(r.repeat_revenue), moneyUah(r.average_ltv),
     moneyUah(r.gross_profit), r.roas == null ? "—" : `${r.roas}×`, r.romi == null ? "—" : `${r.romi}%`,
   ];
-  return <div className="panel" style={{ padding: 0, overflowX: "auto" }}>
+  return <div className="panel" style={{ padding: 0 }}>
+    <Pager total={total} pageSize={pageSize} page={page} sizeKey="mm_daily_pagesize" onSize={setPageSize} onPage={setPage} t={t} />
+    <div style={{ overflowX: "auto" }}>
     <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1900 }}>
-      <thead><tr>{headers.map((header) => <th key={header} style={th}>{header}</th>)}</tr></thead>
-      <tbody>{rows.length ? rows.map((r: any) => {
+      <colgroup>{headers.map((_, i) => <col key={i} style={cw.widths[i] ? { width: cw.widths[i] } : undefined} />)}</colgroup>
+      <thead><tr>{headers.map((header, i) => <ResizableTh key={header} label={header} width={cw.widths[i]} onResize={(w) => cw.set(i, w)} thStyle={th} />)}</tr></thead>
+      <tbody>{rows.length ? paged.map((r: any) => {
         const isOpen = expanded.has(r.date);
         return <Fragment key={r.date}>
           <tr style={{ background: isOpen ? "#f8fafc" : undefined }}>
@@ -367,6 +438,8 @@ function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string)
         </Fragment>;
       }) : <tr><td colSpan={headers.length} style={{ ...td, color: "#64748b", textAlign: "center", padding: 28 }}>{t("За период данных нет", "За період даних немає")}</td></tr>}</tbody>
     </table>
+    </div>
+    {total > pageSize && pageSize < 99999 && <Pager total={total} pageSize={pageSize} page={page} sizeKey="mm_daily_pagesize" onSize={setPageSize} onPage={setPage} t={t} />}
   </div>;
 }
 
