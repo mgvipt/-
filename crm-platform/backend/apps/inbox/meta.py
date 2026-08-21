@@ -4,6 +4,9 @@ Facebook Messenger + FB-коменти напряму через Graph API.
 import os, json, hmac, hashlib, urllib.parse, urllib.request, re
 
 GRAPH = "https://graph.facebook.com/v21.0"
+# Instagram-вхід (IG-личка) шле/приймає через ОКРЕМИЙ домен + свій токен
+IG_GRAPH = "https://graph.instagram.com/v21.0"
+IG_TOKEN = os.environ.get("META_IG_TOKEN", "")
 PAGE_TOKEN = os.environ.get("META_PAGE_TOKEN", "")
 VERIFY_TOKEN = os.environ.get("META_VERIFY_TOKEN", "wallcov_crm_verify")
 APP_SECRET = os.environ.get("META_APP_SECRET", "")
@@ -53,10 +56,23 @@ def _graph(method, path, params=None):
         return json.load(r)
 
 
+def _ig_post(path, params):
+    """POST через graph.instagram.com з IG-токеном (Instagram-вхід)."""
+    body = urllib.parse.urlencode({**params, "access_token": IG_TOKEN}).encode()
+    req = urllib.request.Request(f"{IG_GRAPH}/{path}", data=body)
+    with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310
+        return json.load(r)
+
+
 def send_message(recipient_id: str, text: str, platform: str = "instagram"):
-    """Відповісти клієнту в Direct/Messenger. recipient_id = PSID/IGSID."""
-    sender = IG_ID if platform == "instagram" and IG_ID else "me"
-    return _graph("POST", f"{sender}/messages", {
+    """Відповісти клієнту в Direct/Messenger. recipient_id = PSID/IGSID.
+    Instagram-личка йде через graph.instagram.com + IG-токен; Facebook — через Page."""
+    if platform == "instagram" and IG_TOKEN:
+        return _ig_post("me/messages", {
+            "recipient": json.dumps({"id": recipient_id}),
+            "message": json.dumps({"text": text}),
+        })
+    return _graph("POST", "me/messages", {
         "recipient": json.dumps({"id": recipient_id}),
         "message": json.dumps({"text": text}),
         "messaging_type": "RESPONSE",
@@ -66,11 +82,16 @@ def send_message(recipient_id: str, text: str, platform: str = "instagram"):
 def send_attachment(recipient_id: str, url: str, atype: str = "image", platform: str = "instagram"):
     """Надіслати клієнту медіа (фото/відео/аудіо/файл) НАТИВНО в Direct/Messenger по URL.
     atype: image|video|audio|file. Клієнт бачить картинку/відео у переписці, а не текстове посилання."""
-    sender = IG_ID if platform == "instagram" and IG_ID else "me"
     mtype = atype if atype in ("image", "video", "audio", "file") else "file"
-    return _graph("POST", f"{sender}/messages", {
+    att_msg = json.dumps({"attachment": {"type": mtype, "payload": {"url": url, "is_reusable": False}}})
+    if platform == "instagram" and IG_TOKEN:
+        return _ig_post("me/messages", {
+            "recipient": json.dumps({"id": recipient_id}),
+            "message": att_msg,
+        })
+    return _graph("POST", "me/messages", {
         "recipient": json.dumps({"id": recipient_id}),
-        "message": json.dumps({"attachment": {"type": mtype, "payload": {"url": url, "is_reusable": False}}}),
+        "message": att_msg,
         "messaging_type": "RESPONSE",
     })
 
