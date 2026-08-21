@@ -294,6 +294,41 @@ def _story_ref(msg):
     return None
 
 
+def _relink_manager_echo(conv, mid, text, event_timestamp=None):
+    """Прив'язати Meta echo до щойно надісланого менеджером повідомлення.
+
+    ChatPlace і Meta використовують різні ID одного відправлення. Об'єднуємо лише
+    рівно один кандидат у тому самому діалозі, з тим самим текстом і в межах 10 с
+    від platform timestamp. Повторні однакові повідомлення не вгадуємо.
+    """
+    from .models import Message
+    from django.utils import timezone
+    from datetime import datetime, timedelta, timezone as dt_timezone
+
+    body = str(text or "")
+    if not mid or not body:
+        return False
+    center = timezone.now()
+    try:
+        if event_timestamp:
+            center = datetime.fromtimestamp(float(event_timestamp) / 1000.0, tz=dt_timezone.utc)
+    except (TypeError, ValueError, OSError):
+        pass
+    candidates = list(
+        Message.objects.filter(
+            conversation=conv, direction="out", internal=False,
+            sender__isnull=False, text=body,
+            created_at__gte=center - timedelta(seconds=10),
+            created_at__lte=center + timedelta(seconds=10),
+        ).order_by("-id")[:2]
+    )
+    if len(candidates) != 1:
+        return False
+    candidates[0].external_id = str(mid)[:128]
+    candidates[0].save(update_fields=["external_id"])
+    return True
+
+
 def handle_webhook(payload: dict):
     """Розібрати вебхук Meta → створити/оновити Conversation+Message+Contact у CRM.
     Підтримує: IG/FB Direct (messaging, story reply/mention) + IG/FB коменти (changes).
@@ -329,6 +364,9 @@ def handle_webhook(payload: dict):
                     # повинно дозаповнити ім'я/прізвище/username, не створюючи нового контакту.
                     _enrich_contact(conv.contact, kind, sender)
             if Message.objects.filter(conversation=conv, external_id=mid).exists():
+                continue
+            if is_echo and _relink_manager_echo(
+                    conv, mid, msg.get("text") or "", ev.get("timestamp")):
                 continue
             # вкладення (фото/відео/аудіо/файл) з Instagram/Messenger-вебхука
             atts = []

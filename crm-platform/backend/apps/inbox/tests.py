@@ -4,6 +4,7 @@ from io import StringIO
 from django.test import TestCase
 from django.core.management import call_command
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.accounts.models import Role
@@ -292,6 +293,118 @@ class MetaWebhookIngestTests(TestCase):
         contact.refresh_from_db()
         self.assertEqual((contact.first_name, contact.last_name), ("Ірина", "Коваль"))
         self.assertEqual(contact.nickname, "iryna.wall")
+
+
+class MetaChatPlaceOutboundTests(TestCase):
+    def setUp(self):
+        self.channel = Channel.objects.create(
+            kind="instagram", name="Meta · instagram",
+            config={"meta": True, "platform": "instagram"},
+        )
+        self.contact = Contact.objects.create(
+            first_name="Повитря", nickname="povitrya_",
+            social_link="https://instagram.com/povitrya_",
+        )
+        self.user = User.objects.create_user("manager", password="x", first_name="Інна")
+
+    @patch("apps.inbox.chatplace.send", return_value={"id": "cp-out-1"})
+    def test_mapped_meta_instagram_direct_sends_via_chatplace(self, cp_send):
+        from .services import send_message
+
+        conv = Conversation.objects.create(
+            channel=self.channel, contact=self.contact, external_chat_id="meta-scoped-id",
+            config={"outbound_chatplace": {
+                "chat_id": "81311531-8f46-424f-a41b-0662a641d64c",
+                "username": "povitrya_", "match": "exact_instagram_username",
+            }},
+        )
+
+        msg = send_message(conv, "Тестова відповідь", user=self.user)
+
+        cp_send.assert_called_once_with("81311531-8f46-424f-a41b-0662a641d64c",
+                                        "Тестова відповідь")
+        self.assertEqual(msg.external_id, "cp-out-1")
+        self.assertEqual(msg.sender, self.user)
+
+    def test_unmapped_meta_instagram_direct_is_blocked_instead_of_guessing(self):
+        from .services import send_message
+
+        conv = Conversation.objects.create(
+            channel=self.channel, contact=self.contact, external_chat_id="meta-scoped-id",
+        )
+        with self.assertRaisesMessage(RuntimeError, "не знайдено точний чат ChatPlace"):
+            send_message(conv, "Не надсилати", user=self.user)
+        self.assertEqual(conv.messages.count(), 0)
+
+    @patch("apps.inbox.adapters.MetaAdapter.send", return_value="comment-reply-id")
+    def test_comment_reply_stays_on_meta_route(self, meta_send):
+        from .services import send_message
+
+        conv = Conversation.objects.create(
+            channel=self.channel, contact=self.contact,
+            external_chat_id="comment:instagram:post:user",
+        )
+        msg = send_message(conv, "Публічна відповідь", user=self.user)
+        meta_send.assert_called_once_with(conv.external_chat_id, "Публічна відповідь")
+        self.assertEqual(msg.external_id, "comment-reply-id")
+
+    def test_meta_echo_relinks_exact_recent_manager_message(self):
+        from .meta import handle_webhook
+
+        conv = Conversation.objects.create(
+            channel=self.channel, contact=self.contact, external_chat_id="client-scoped-id",
+        )
+        own = Message.objects.create(
+            conversation=conv, direction="out", text="Відповідь менеджера",
+            external_id="cp-id", sender=self.user, sender_name="Інна",
+        )
+        payload = {"object": "instagram", "entry": [{"messaging": [{
+            "sender": {"id": "our-instagram"},
+            "recipient": {"id": "client-scoped-id"},
+            "timestamp": int(timezone.now().timestamp() * 1000),
+            "message": {"mid": "meta-echo-id", "text": "Відповідь менеджера", "is_echo": True},
+        }]}]}
+
+        self.assertEqual(handle_webhook(payload), 0)
+        own.refresh_from_db()
+        self.assertEqual(conv.messages.count(), 1)
+        self.assertEqual(own.external_id, "meta-echo-id")
+        self.assertEqual(own.sender, self.user)
+
+    @patch("apps.inbox.management.commands.backfill_meta_chatplace_routes._mcp")
+    def test_route_backfill_requires_exact_username_and_defaults_to_dry_run(self, mcp):
+        conv = Conversation.objects.create(
+            channel=self.channel, contact=self.contact, external_chat_id="client-scoped-id",
+        )
+        mcp.side_effect = [
+            {"items": [{"id": "cp-chat", "clientName": "Повитря", "lastMessageAt": 100}],
+             "hasNextItems": False},
+            {"id": "cp-chat", "clientName": "Повитря", "username": "povitrya_"},
+        ]
+        output = StringIO()
+        call_command("backfill_meta_chatplace_routes", "--conversation-id", str(conv.id),
+                     stdout=output)
+        conv.refresh_from_db()
+        self.assertNotIn("outbound_chatplace", conv.config)
+        self.assertIn("DRY_RUN: checked=1", output.getvalue())
+        self.assertIn("mapped=1", output.getvalue())
+
+    @patch("apps.inbox.management.commands.backfill_meta_chatplace_routes._mcp")
+    def test_route_backfill_apply_saves_exact_chat_uuid(self, mcp):
+        conv = Conversation.objects.create(
+            channel=self.channel, contact=self.contact, external_chat_id="client-scoped-id",
+        )
+        mcp.side_effect = [
+            {"items": [{"id": "cp-chat", "clientName": "Повитря", "lastMessageAt": 100}],
+             "hasNextItems": False},
+            {"id": "cp-chat", "clientName": "Повитря", "username": "povitrya_"},
+        ]
+        call_command("backfill_meta_chatplace_routes", "--apply",
+                     "--conversation-id", str(conv.id), stdout=StringIO())
+        conv.refresh_from_db()
+        self.assertEqual(conv.config["outbound_chatplace"]["chat_id"], "cp-chat")
+        self.assertEqual(conv.config["outbound_chatplace"]["match"],
+                         "exact_instagram_username")
 
 
 class ChannelScopeTests(TestCase):

@@ -160,8 +160,28 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
 
 def send_message(conv: Conversation, text: str, user=None) -> Message:
     """Отправить исходящее сообщение через адаптер канала и записать его."""
-    adapter = get_adapter(conv.channel)
-    ext_id = adapter.send(conv.external_chat_id, text)
+    cfg = conv.config or {}
+    route = cfg.get("outbound_chatplace") or {}
+    is_meta_instagram_direct = bool(
+        conv.channel.kind == "instagram"
+        and (conv.channel.config or {}).get("meta")
+        and not str(conv.external_chat_id or "").startswith("comment:")
+    )
+    if is_meta_instagram_direct:
+        chat_id = str(route.get("chat_id") or "").strip()
+        if not chat_id:
+            raise RuntimeError(
+                "Для цього Instagram-діалогу ще не знайдено точний чат ChatPlace. "
+                "Оновіть прив'язку каналу; напряму через Meta відповідь не надсилається."
+            )
+        # ChatPlace володіє Direct-веткою і Юлею: open ставить AI на паузу,
+        # send доставляє відповідь менеджера в той самий Instagram-чат.
+        from .chatplace import send as chatplace_send
+        result = chatplace_send(chat_id, text)
+        ext_id = str((result or {}).get("id") or "") if isinstance(result, dict) else ""
+    else:
+        adapter = get_adapter(conv.channel)
+        ext_id = adapter.send(conv.external_chat_id, text)
     status = "sent"
     if conv.channel.kind in ("instagram", "facebook"):
         last_in = Message.objects.filter(conversation=conv, direction="in").order_by("-created_at").first()
