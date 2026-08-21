@@ -20,7 +20,20 @@ export function Avatar({ name, cls }: { name: string; cls?: string }) {
   return <span className={"av " + (cls ?? "")} style={{ background: colorFor(name) }}>{initials(name)}</span>;
 }
 
+// Іконки каналів для круглого бейджа (замість повного слова) — єдиний розмір, зліва.
+const CH_ICON: Record<string, string> = {
+  telegram: "✈️", echat_telegram: "✈️", viber: "🟣", echat: "🟣",
+  instagram: "📸", tiktok: "🎵", facebook: "📘", whatsapp: "🟢", echat_whatsapp: "🟢",
+  call: "📞", google_business: "🔍", web: "🌐", other: "💬",
+};
 export function SourceChip({ source }: { source: string }) {
   const [label, color] = SOURCES[source] ?? SOURCES.other;
-  return <span className="chip" style={{ background: color }}>{label}</span>;
+  const icon = CH_ICON[source] ?? CH_ICON.other;
+  return (
+    <span title={label} aria-label={label} style={{
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+      width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
+      background: "#fff", border: `1.5px solid ${color}`, fontSize: 10, lineHeight: 1,
+    }}>{icon}</span>
+  );
 }
