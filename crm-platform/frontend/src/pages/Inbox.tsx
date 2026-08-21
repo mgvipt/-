@@ -522,7 +522,7 @@ export default function Inbox() {
                     border: (m as any).internal ? "1px dashed #d4a017" : (m.direction === "out" ? "1.5px solid #2563eb" : "1px solid #e8edf3"),
                     boxShadow: "0 1px 2px rgba(0,0,0,.05)" }}>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: .2, marginBottom: 4, paddingBottom: 3, borderBottom: (m as any).internal ? "1px solid rgba(212,160,23,.3)" : (m.direction === "out" ? "1px solid rgba(37,99,235,.25)" : "1px solid rgba(0,0,0,.08)"), color: (m as any).internal ? "#92400e" : (m.direction === "out" ? "#2563eb" : "var(--brand)") }}>
-                    {(m as any).internal ? "📝 " + ((m as any).sender_display || SNDR_MAP[m.sender_name] || m.sender_name || t("Менеджер","Менеджер")) + " · " + t("только команда","тільки команда") : ((m as any).sender_display || SNDR_MAP[m.sender_name] || m.sender_name || (m.direction === "out" ? t("Менеджер","Менеджер") : (active?.title || t("Клиент","Клієнт"))))}
+                    {(m as any).internal ? "📝 " + ((m as any).sender_display || SNDR_MAP[m.sender_name] || m.sender_name || t("Менеджер","Менеджер")) + " · " + t("только команда","тільки команда") : ((m as any).sender_display || SNDR_MAP[m.sender_name] || m.sender_name || (m.direction === "out" ? t("Менеджер","Менеджер") : ((active as any)?.contact_name || active?.title || t("Клиент","Клієнт"))))}
                   </div>
                   <ReplyContext attachments={m.attachments} idPrefix="inbox-message-" customLabels={{
                     reply: t("Ответ на", "Відповідь на"), client: t("Клиент", "Клієнт"), manager: t("Менеджер", "Менеджер"),

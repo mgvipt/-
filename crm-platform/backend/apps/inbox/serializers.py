@@ -19,7 +19,9 @@ class MessageSerializer(serializers.ModelSerializer):
         """Людяне імʼя автора вихідного повідомлення.
         - CRM-користувач (sender_id) → його повне імʼя;
         - ChatPlace 'operator'/'manager'/'admin' → 'Менеджер · ChatPlace' (ChatPlace НЕ передає імʼя людини);
-        - 'ai_assistant'/'bot' → ШІ; вхідні → порожньо (клієнт показується окремо)."""
+        - 'ai_assistant'/'bot' → ШІ;
+        - вхідне без імені → імʼя/нік контакта діалогу (клієнт — автор вхідного),
+          а не заглушка каналу «instagram»."""
         sn = (obj.sender_name or "").strip()
         if sn == "ai_assistant":
             return "Юля (AI)"
@@ -34,6 +36,20 @@ class MessageSerializer(serializers.ModelSerializer):
             return sn  # реальне збережене імʼя (Кирилл Оксаненко / Илона тощо)
         if obj.sender_id and obj.sender:
             return obj.sender.get_full_name() or obj.sender.username
+        # вхідне повідомлення без імені автора → показуємо КЛІЄНТА діалогу
+        # (Meta пише вхідні з порожнім sender_name; заголовок діалогу = «instagram»,
+        # тож без цього фронт підставляв слово каналу замість імені людини)
+        if obj.direction == "in":
+            conv = getattr(obj, "conversation", None)
+            ct = getattr(conv, "contact", None) if conv else None
+            if ct:
+                nm = (ct.first_name or "").strip()
+                bad = nm.lower() in ("instagram", "facebook", "tiktok", "telegram", "viber", "whatsapp")
+                if nm and not bad and not nm.isdigit():
+                    return (nm + " " + (ct.last_name or "").strip()).strip()
+                nick = (getattr(ct, "nickname", "") or "").strip()
+                if nick:
+                    return "@" + nick
         return ""
 
     def get_attachments(self, obj):
