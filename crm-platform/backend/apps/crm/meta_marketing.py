@@ -133,7 +133,7 @@ def _pick(actions, keys):
 def _catalog(account_id):
     campaigns = {}
     for row in graph_pages(account_id + "/campaigns", {
-        "fields": "id,name,objective,effective_status", "limit": 500,
+        "fields": "id,name,objective,effective_status", "limit": 100,
     }):
         campaigns[str(row.get("id") or "")] = row
 
@@ -142,7 +142,9 @@ def _catalog(account_id):
         "id,name,campaign_id,adset_id,effective_status,preview_shareable_link,"
         "creative{id,name,thumbnail_url,object_story_id,effective_instagram_media_id,instagram_permalink_url}"
     )
-    for row in graph_pages(account_id + "/ads", {"fields": fields, "limit": 500}):
+    # Meta rejects large pages when creative fields are expanded. Small pages are
+    # slower, but reliable and keep the historical sync read-only/idempotent.
+    for row in graph_pages(account_id + "/ads", {"fields": fields, "limit": 25}):
         ads[str(row.get("id") or "")] = row
     return campaigns, ads
 
