@@ -2474,7 +2474,9 @@ class MetaMarketingView(APIView):
     def get(self, request):
         import os
         from collections import defaultdict
-        from datetime import timedelta
+        from datetime import date as calendar_date, datetime, time, timedelta
+        from types import SimpleNamespace
+        from apps.finance.models import Transaction as FinanceTransaction
         from django.db.models import Max
         from django.utils import timezone
         from django.utils.dateparse import parse_date
@@ -2769,8 +2771,17 @@ class MetaMarketingView(APIView):
                 "тестовий набір", "тестовый набор",
             ))
 
+        def is_main_product_funnel(deal):
+            name = (deal.funnel.name or "").casefold()
+            return any(token in name for token in (
+                "основний продукт", "основной продукт",
+            ))
+
+        def local_day(moment):
+            return timezone.localtime(moment).date() if timezone.is_aware(moment) else moment.date()
+
         lifetime_deals = list(
-            scoped_deals_qs.select_related("funnel", "stage", "contact")
+            scoped_deals_qs.select_related("funnel", "stage", "contact", "owner")
             .prefetch_related("items__product", "payments")
         )
         sales_deals = {
@@ -2782,21 +2793,104 @@ class MetaMarketingView(APIView):
             for payment in deal.payments.all():
                 if payment.is_paid:
                     paid_by_deal[deal.pk].append(payment)
-            paid_by_deal[deal.pk].sort(key=lambda payment: (payment.created_at, payment.pk))
+
+        # До 26.06.2026 робочі оплати вже були у фінансовому журналі CRM,
+        # але ще не створювали записи crm.Payment. Для історичної аналітики
+        # беремо такі надходження з Finance.Transaction. Після появи першого
+        # штатного Payment цей fallback вимикається, щоб не подвоїти виручку.
+        first_native_payment_at = (
+            Payment.objects.filter(is_paid=True)
+            .order_by("created_at")
+            .values_list("created_at", flat=True)
+            .first()
+        )
+        first_native_payment_day = (
+            local_day(first_native_payment_at) if first_native_payment_at else calendar_date.max
+        )
+        won_deals_by_amount = defaultdict(list)
+        for deal in sales_deals.values():
+            if deal.stage_id and deal.stage.is_won:
+                won_deals_by_amount[Decimal(str(deal.amount or 0)).quantize(Decimal("0.01"))].append(deal)
+
+        historical_transactions = (
+            FinanceTransaction.objects.filter(
+                direction="in", payment__isnull=True, date__lt=first_native_payment_day,
+            )
+            .select_related("account", "category")
+            .order_by("date", "op_time", "id")
+        )
+        historical_signatures = set()
+        for transaction_row in historical_transactions:
+            amount = Decimal(str(transaction_row.amount_uah or transaction_row.amount or 0)).quantize(
+                Decimal("0.01")
+            )
+            if amount <= 0:
+                continue
+            deal_id = transaction_row.deal_id if transaction_row.deal_id in sales_deals else None
+            inferred_link = False
+            if not deal_id and not transaction_row.deal_id:
+                candidates = []
+                for candidate in won_deals_by_amount.get(amount, []):
+                    created_day = local_day(candidate.created_at)
+                    closed_day = local_day(candidate.closed_at) if candidate.closed_at else calendar_date.max
+                    if created_day <= transaction_row.date <= closed_day:
+                        candidates.append(candidate)
+                if len(candidates) == 1:
+                    deal_id = candidates[0].pk
+                    inferred_link = True
+            if not deal_id:
+                continue
+            signature = (deal_id, transaction_row.date, amount)
+            if signature in historical_signatures:
+                continue
+            historical_signatures.add(signature)
+            descriptor = " ".join(filter(None, (
+                getattr(transaction_row.account, "name", ""),
+                getattr(transaction_row.category, "name", ""),
+                transaction_row.channel,
+            ))).casefold()
+            if "налож" in descriptor or "нова пошт" in descriptor:
+                provider_label = "Наложенный платеж (история CRM)"
+            elif "нал" in descriptor or "касса" in descriptor:
+                provider_label = "Наличные (история CRM)"
+            elif "онлайн" in descriptor or "фоп онл" in descriptor:
+                provider_label = "Онлайн-оплата (история CRM)"
+            else:
+                provider_label = "Оплата из финансов CRM (история)"
+            paid_at = timezone.make_aware(datetime.combine(
+                transaction_row.date, transaction_row.op_time or time.min,
+            ))
+            paid_by_deal[deal_id].append(SimpleNamespace(
+                pk=-transaction_row.pk,
+                amount=amount,
+                deal_id=deal_id,
+                created_at=paid_at,
+                provider_label=provider_label,
+                source_kind="finance_transaction",
+                inferred_link=inferred_link,
+            ))
+
+        for deal_id in paid_by_deal:
+            paid_by_deal[deal_id].sort(key=lambda payment: (payment.created_at, payment.pk))
 
         first_paid_at = {
             deal_id: rows[0].created_at for deal_id, rows in paid_by_deal.items() if rows
         }
         repeat_deal = {}
-        seen_contacts = set()
+        # Тестовий набір — tripwire глобальної воронки. Перша покупка
+        # основного продукту після тесту не є повторною. Повторною вважаємо
+        # лише наступну оплату основного продукту після вже оплаченої покупки
+        # основного продукту тим самим клієнтом.
+        seen_main_product_contacts = set()
         for deal_id, paid_at in sorted(first_paid_at.items(), key=lambda row: (row[1], row[0])):
-            contact_id = sales_deals[deal_id].contact_id
-            repeat_deal[deal_id] = bool(contact_id and contact_id in seen_contacts)
-            if contact_id:
-                seen_contacts.add(contact_id)
-
-        def local_day(moment):
-            return timezone.localtime(moment).date() if timezone.is_aware(moment) else moment.date()
+            deal = sales_deals[deal_id]
+            contact_id = deal.contact_id
+            is_main_product = is_main_product_funnel(deal)
+            repeat_deal[deal_id] = bool(
+                is_main_product and contact_id and contact_id in seen_main_product_contacts
+            )
+            if is_main_product and contact_id:
+                seen_main_product_contacts.add(contact_id)
 
         period_payments = []
         for deal_id, rows in paid_by_deal.items():
@@ -2905,12 +2999,14 @@ class MetaMarketingView(APIView):
                     target["followers_gained"] = row.followers_gained
 
         payments_by_day_deal = defaultdict(set)
+        payments_by_day = defaultdict(lambda: defaultdict(list))
         for payment in period_payments:
             day = local_day(payment.created_at)
             target = daily[day]
             target["revenue"] += payment.amount
             target["cost"] += allocated_cost(payment)
             payments_by_day_deal[day].add(payment.deal_id)
+            payments_by_day[day][payment.deal_id].append(payment)
             contact_id = sales_deals[payment.deal_id].contact_id
             if contact_id:
                 target["buyers"].add(contact_id)
@@ -2945,6 +3041,45 @@ class MetaMarketingView(APIView):
             row["exact_ad_revenue"] = round(float(row["exact_ad_revenue"]), 2)
             row["roas"] = round(row["revenue"] / spend_uah, 2) if spend_uah else None
             row["romi"] = round((float(gross_profit) - spend_uah) / spend_uah * 100, 1) if spend_uah else None
+            day_deals = {"primary": [], "repeat": []}
+            for deal_id, deal_payments in sorted(
+                payments_by_day.get(day, {}).items(),
+                key=lambda item: (min(payment.created_at for payment in item[1]), item[0]),
+            ):
+                deal = sales_deals[deal_id]
+                paid_today = sum((payment.amount for payment in deal_payments), Decimal("0"))
+                providers = []
+                for payment in deal_payments:
+                    label = getattr(payment, "provider_label", None) or payment.get_provider_display()
+                    if label not in providers:
+                        providers.append(label)
+                owner_name = ""
+                if deal.owner_id:
+                    owner_name = deal.owner.get_full_name() or deal.owner.username
+                detail = {
+                    "deal_id": deal.pk,
+                    "title": deal.title,
+                    "contact_name": str(deal.contact) if deal.contact_id else "",
+                    "funnel": deal.funnel.name,
+                    "stage": deal.stage.name,
+                    "manager": owner_name,
+                    "paid_today": round(float(paid_today), 2),
+                    "deal_amount": round(float(deal.amount or 0), 2),
+                    "total_paid": round(float(deal_paid_total[deal_id]), 2),
+                    "payment_methods": providers,
+                    "payment_count": len(deal_payments),
+                    "paid_at": max(payment.created_at for payment in deal_payments).isoformat(),
+                    "historical_payment": any(
+                        getattr(payment, "source_kind", "") == "finance_transaction"
+                        for payment in deal_payments
+                    ),
+                    "inferred_payment_link": any(
+                        getattr(payment, "inferred_link", False) for payment in deal_payments
+                    ),
+                    "meta_attributed": has_verified_meta_attribution(deal),
+                }
+                day_deals["repeat" if repeat_deal.get(deal_id) else "primary"].append(detail)
+            row["deals"] = day_deals
             daily_rows.append(row)
 
         spend_uah = paid_summary.get("spend_uah")

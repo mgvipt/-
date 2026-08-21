@@ -397,32 +397,37 @@ def sync_account(since: date, until: date):
             "followers_total": _int(profile.get("followers_count")),
         },
     )
-    insights_since = max(since, today - timedelta(days=89))
-    payload = graph_get(ig_account_id + "/insights", {
-        "metric": "follower_count",
-        "period": "day",
-        "since": insights_since.isoformat(),
-        "until": until.isoformat(),
-    })
+    # Meta exposes follower_count only for the last 30 completed days and
+    # rejects both older dates and the current day. The current balance above
+    # is a separate account snapshot stored by CRM.
+    insights_since = max(since, today - timedelta(days=30))
+    insights_until = min(until, today - timedelta(days=1))
     written = 1
-    for metric in payload.get("data") or []:
-        if metric.get("name") != "follower_count":
-            continue
-        for point in metric.get("values") or []:
-            raw_end = point.get("end_time") or ""
-            try:
-                day = datetime.fromisoformat(raw_end.replace("Z", "+00:00")).date()
-            except (TypeError, ValueError):
+    if insights_since <= insights_until:
+        payload = graph_get(ig_account_id + "/insights", {
+            "metric": "follower_count",
+            "period": "day",
+            "since": insights_since.isoformat(),
+            "until": insights_until.isoformat(),
+        })
+        for metric in payload.get("data") or []:
+            if metric.get("name") != "follower_count":
                 continue
-            obj, _ = MetaAccountDailyStat.objects.get_or_create(
-                date=day,
-                ig_account_id=ig_account_id,
-                defaults={"username": username},
-            )
-            obj.username = username
-            obj.followers_gained = int(float(point.get("value"))) if point.get("value") is not None else None
-            obj.save(update_fields=["username", "followers_gained", "synced_at"])
-            written += 1
+            for point in metric.get("values") or []:
+                raw_end = point.get("end_time") or ""
+                try:
+                    day = datetime.fromisoformat(raw_end.replace("Z", "+00:00")).date()
+                except (TypeError, ValueError):
+                    continue
+                obj, _ = MetaAccountDailyStat.objects.get_or_create(
+                    date=day,
+                    ig_account_id=ig_account_id,
+                    defaults={"username": username},
+                )
+                obj.username = username
+                obj.followers_gained = int(float(point.get("value"))) if point.get("value") is not None else None
+                obj.save(update_fields=["username", "followers_gained", "synced_at"])
+                written += 1
     return {
         "rows": written,
         "followers_total": _int(profile.get("followers_count")),

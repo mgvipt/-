@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { Fragment, ReactNode, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { useLang } from "../i18n";
 
@@ -95,24 +95,7 @@ export default function MetaMarketing() {
     platformLabel(r), moneyUsd(r.spend), count(r.impressions), count(r.clicks), optional(r.ctr, "%"),
     count(r.messages_started), count(r.meta_leads), count(r.crm_leads), r.cost_per_message == null ? "—" : moneyUsd(r.cost_per_message),
   ]);
-  const dailyRows = daily.map((r: any) => [
-    new Date(`${r.date}T12:00:00`).toLocaleDateString("ru-RU"),
-    optional(r.followers_total, "", t("снимок ещё не сохранён", "знімок ще не збережено")),
-    r.followers_gained == null ? "—" : `${r.followers_gained > 0 ? "+" : ""}${count(r.followers_gained)}`,
-    count(r.content_published), moneyUsd(r.spend), r.spend_uah == null ? "—" : moneyUah(r.spend_uah),
-    count(r.messages_started), count(r.crm_meta_leads), count(r.exact_ad_leads),
-    count(r.sales), count(r.repeat_sales), moneyUah(r.revenue), moneyUah(r.repeat_revenue),
-    moneyUah(r.average_ltv), moneyUah(r.gross_profit), r.roas == null ? "—" : `${r.roas}×`,
-    r.romi == null ? "—" : `${r.romi}%`,
-  ]);
-  const dailyTable = table([
-    t("Дата", "Дата"), t("Подписчики всего", "Підписники всього"), t("Новые подписчики", "Нові підписники"),
-    t("Контент", "Контент"), t("Реклама, $", "Реклама, $"), t("Реклама, ₴", "Реклама, ₴"),
-    t("Диалоги Meta", "Діалоги Meta"), t("Лиды CRM из Meta", "Ліди CRM з Meta"),
-    t("Точный ID рекламы", "Точний ID реклами"), t("Продажи", "Продажі"),
-    t("Повторные", "Повторні"), t("Выручка", "Виручка"), t("Повторная выручка", "Повторна виручка"),
-    "LTV", t("Валовая прибыль", "Валовий прибуток"), "ROAS", "ROMI",
-  ], dailyRows, t("За период данных нет", "За період даних немає"), 1900);
+  const dailyTable = <DailySalesTable rows={daily} t={t} />;
 
   return <div style={{ height: "100%", overflowY: "auto", padding: 16, boxSizing: "border-box" }}>
     <div style={{ maxWidth: 1440 }}>
@@ -155,7 +138,7 @@ export default function MetaMarketing() {
             {card(t("Показы", "Покази"), count(paidSummary.impressions), "#2563eb")}
             {card(t("Клики", "Кліки"), count(paidSummary.clicks), "#7c3aed")}
             {card("CTR", optional(paidSummary.ctr, "%"), "#7c3aed")}
-            {card(t("Диалоги Meta", "Діалоги Meta"), count(paidSummary.messages_started), "#0f766e", t("Атрибуция платформы, не уникальные лиды CRM", "Атрибуція платформи, не унікальні ліди CRM"))}
+            {card(t("Начатые диалоги по Ads Manager", "Розпочаті діалоги за Ads Manager"), count(paidSummary.messages_started), "#0f766e", t("Это показатель рекламы Meta, а не продажи и не уникальные лиды CRM", "Це показник реклами Meta, а не продажі й не унікальні ліди CRM"))}
             {card(t("Лиды Meta", "Ліди Meta"), count(paidSummary.meta_leads), "#0f766e")}
           </div>
           <SectionTitle title={t("Подтверждённый результат в CRM", "Підтверджений результат у CRM")} note={t("Только карточки с точным ID рекламы; ручные и органические исключены", "Лише картки з точним ID реклами; ручні та органічні виключені")} />
@@ -177,7 +160,7 @@ export default function MetaMarketing() {
             {card(t("Продажи", "Продажі"), count(profitability.sales), "#16a34a")}
             {card(t("Выручка", "Виручка"), moneyUah(profitability.revenue), "#047857")}
             {card(t("Повторные продажи", "Повторні продажі"), count(profitability.repeat_sales), "#0891b2")}
-            {card(t("Повторная выручка", "Повторна виручка"), moneyUah(profitability.repeat_revenue), "#0e7490")}
+            {card(t("Из выручки — повторные", "З виручки — повторні"), moneyUah(profitability.repeat_revenue), "#0e7490")}
             {card(t("Средний LTV", "Середній LTV"), moneyUah(profitability.average_ltv), "#7c3aed")}
             {card("ROMI", profitability.romi == null ? "—" : `${profitability.romi}%`, Number(profitability.romi) >= 0 ? "#15803d" : "#dc2626")}
           </div>
@@ -188,8 +171,8 @@ export default function MetaMarketing() {
         {tab === "profitability" && <>
           <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
             <b>{t("Что входит в расчёт:", "Що входить у розрахунок:")}</b> {t(
-              "Все оплаченные продажи из воронок «21 Основний продукт» и «22 Тестовий набір». Из остальных воронок — только продажи с подтверждённым ID Meta. Выручка считается по фактически оплаченным платежам, себестоимость — по товарам сделки, рекламный расход переводится в гривну по официальному курсу НБУ за каждый день.",
-              "Усі оплачені продажі з воронок «21 Основний продукт» і «22 Тестовий набір». З інших воронок — лише продажі з підтвердженим ID Meta. Виручка рахується за фактично сплаченими платежами, собівартість — за товарами угоди, рекламні витрати переводяться у гривню за офіційним курсом НБУ за кожен день."
+              "Все оплаченные продажи из воронок «21 Основний продукт» и «22 Тестовий набір». Из остальных воронок — только продажи с подтверждённым ID Meta. Выручка считается по фактически оплаченным платежам. Повторная выручка — часть общей выручки, её не нужно прибавлять второй раз. Себестоимость считается по товарам сделки, рекламный расход переводится в гривну по официальному курсу НБУ за каждый день.",
+              "Усі оплачені продажі з воронок «21 Основний продукт» і «22 Тестовий набір». З інших воронок — лише продажі з підтвердженим ID Meta. Виручка рахується за фактично сплаченими платежами. Повторна виручка — частина загальної виручки, її не потрібно додавати вдруге. Собівартість рахується за товарами угоди, рекламні витрати переводяться у гривню за офіційним курсом НБУ за кожен день."
             )}
           </div>
           <div style={cardsRow}>
@@ -198,7 +181,7 @@ export default function MetaMarketing() {
             {card(t("Повторные продажи", "Повторні продажі"), count(profitability.repeat_sales), "#0891b2")}
             {card(t("Повторные клиенты", "Повторні клієнти"), count(profitability.repeat_buyers), "#0891b2")}
             {card(t("Выручка", "Виручка"), moneyUah(profitability.revenue), "#047857")}
-            {card(t("Повторная выручка", "Повторна виручка"), moneyUah(profitability.repeat_revenue), "#0e7490")}
+            {card(t("Из выручки — повторные", "З виручки — повторні"), moneyUah(profitability.repeat_revenue), "#0e7490")}
             {card(t("Средний LTV", "Середній LTV"), moneyUah(profitability.average_ltv), "#7c3aed")}
             {card(t("Себестоимость", "Собівартість"), moneyUah(profitability.cost), "#b45309")}
             {card(t("Валовая прибыль", "Валовий прибуток"), moneyUah(profitability.gross_profit), "#15803d")}
@@ -313,6 +296,112 @@ function SectionTitle({ title, note }: { title: string; note: string }) {
   return <div style={{ margin: "14px 0 8px" }}><b style={{ fontSize: 16 }}>{title}</b><span className="muted" style={{ fontSize: 11, marginLeft: 8 }}>{note}</span></div>;
 }
 
+function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string) => string }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const headers = [
+    t("Дата", "Дата"), t("Подписчики всего", "Підписники всього"), t("Новые подписчики", "Нові підписники"),
+    t("Контент", "Контент"), t("Реклама, $", "Реклама, $"), t("Реклама, ₴", "Реклама, ₴"),
+    t("Начатые диалоги по Ads Manager", "Розпочаті діалоги за Ads Manager"), t("Лиды CRM из Meta", "Ліди CRM з Meta"),
+    t("Точный ID рекламы", "Точний ID реклами"), t("Продажи", "Продажі"), t("Повторные", "Повторні"),
+    t("Выручка", "Виручка"), t("Из неё повторная", "З неї повторна"), "LTV",
+    t("Валовая прибыль", "Валовий прибуток"), "ROAS", "ROMI",
+  ];
+  const toggle = (date: string) => setExpanded((current) => {
+    const next = new Set(current);
+    if (next.has(date)) next.delete(date); else next.add(date);
+    return next;
+  });
+  const values = (r: any): ReactNode[] => [
+    optional(r.followers_total, "", t("снимок ещё не сохранён", "знімок ще не збережено")),
+    r.followers_gained == null ? "—" : `${r.followers_gained > 0 ? "+" : ""}${count(r.followers_gained)}`,
+    count(r.content_published), moneyUsd(r.spend), r.spend_uah == null ? "—" : moneyUah(r.spend_uah),
+    count(r.messages_started), count(r.crm_meta_leads), count(r.exact_ad_leads), count(r.sales),
+    count(r.repeat_sales), moneyUah(r.revenue), moneyUah(r.repeat_revenue), moneyUah(r.average_ltv),
+    moneyUah(r.gross_profit), r.roas == null ? "—" : `${r.roas}×`, r.romi == null ? "—" : `${r.romi}%`,
+  ];
+  return <div className="panel" style={{ padding: 0, overflowX: "auto" }}>
+    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1900 }}>
+      <thead><tr>{headers.map((header) => <th key={header} style={th}>{header}</th>)}</tr></thead>
+      <tbody>{rows.length ? rows.map((r: any) => {
+        const isOpen = expanded.has(r.date);
+        return <Fragment key={r.date}>
+          <tr style={{ background: isOpen ? "#f8fafc" : undefined }}>
+            <td style={td}>
+              <button
+                type="button"
+                aria-expanded={isOpen}
+                aria-label={t(`Показать сделки за ${r.date}`, `Показати угоди за ${r.date}`)}
+                onClick={() => toggle(r.date)}
+                style={dayToggle}
+              >
+                <span style={{ width: 18, color: "#2563eb" }}>{isOpen ? "▾" : "▸"}</span>
+                {new Date(`${r.date}T12:00:00`).toLocaleDateString("ru-RU")}
+              </button>
+            </td>
+            {values(r).map((value, index) => <td key={index} style={td}>{value}</td>)}
+          </tr>
+          {isOpen && <tr>
+            <td colSpan={headers.length} style={{ padding: 0, borderBottom: "1px solid #cbd5e1" }}>
+              <div style={{ padding: "14px 16px 18px", background: "#f8fafc" }}>
+                <div className="muted" style={{ fontSize: 11, marginBottom: 10 }}>
+                  {t(
+                    "Расшифровка ровно этой строки. Повторные сделки уже входят в общие продажи и выручку.",
+                    "Розшифровка саме цього рядка. Повторні угоди вже входять у загальні продажі та виручку.",
+                  )}
+                </div>
+                <DailyDealSection
+                  title={t("Первичные оплаченные сделки", "Первинні оплачені угоди")}
+                  rows={r.deals?.primary || []}
+                  color="#15803d"
+                  t={t}
+                />
+                <DailyDealSection
+                  title={t("Повторные оплаченные сделки", "Повторні оплачені угоди")}
+                  rows={r.deals?.repeat || []}
+                  color="#0e7490"
+                  t={t}
+                />
+              </div>
+            </td>
+          </tr>}
+        </Fragment>;
+      }) : <tr><td colSpan={headers.length} style={{ ...td, color: "#64748b", textAlign: "center", padding: 28 }}>{t("За период данных нет", "За період даних немає")}</td></tr>}</tbody>
+    </table>
+  </div>;
+}
+
+function DailyDealSection({ title, rows, color, t }: { title: string; rows: any[]; color: string; t: (ru: string, ua: string) => string }) {
+  const sectionTotal = rows.reduce((sum, row) => sum + Number(row.paid_today || 0), 0);
+  return <div style={{ marginTop: 10, border: "1px solid #e2e8f0", borderRadius: 10, background: "#fff", overflow: "hidden" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 12px", background: "#f1f5f9", alignItems: "center" }}>
+      <b style={{ color }}>{title}</b>
+      <span style={{ fontWeight: 800, color }}>{count(rows.length)} · {moneyUah(sectionTotal)}</span>
+    </div>
+    {rows.length ? <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", minWidth: 1040, borderCollapse: "collapse" }}>
+        <thead><tr>
+          {[t("Сделка", "Угода"), t("Клиент", "Клієнт"), t("Воронка / стадия", "Воронка / стадія"), t("Менеджер", "Менеджер"), t("Способ оплаты", "Спосіб оплати"), t("Время", "Час"), t("Оплачено в этот день", "Сплачено цього дня"), t("Сумма сделки", "Сума угоди")].map((header) => <th key={header} style={{ ...th, padding: "8px 10px", fontSize: 11 }}>{header}</th>)}
+        </tr></thead>
+        <tbody>{rows.map((deal: any) => <tr key={deal.deal_id}>
+          <td style={dealTd}><a href={`/deals/${deal.deal_id}`} style={{ color: "#2563eb", fontWeight: 750 }}>#{deal.deal_id} · {deal.title || t("Без названия", "Без назви")}</a>{deal.meta_attributed && <div style={{ color: "#7c3aed", fontSize: 10, marginTop: 2 }}>{t("Есть точный ID Meta", "Є точний ID Meta")}</div>}</td>
+          <td style={dealTd}>{deal.contact_name || "—"}</td>
+          <td style={dealTd}><b>{deal.funnel || "—"}</b><div className="muted" style={{ fontSize: 10, marginTop: 2 }}>{deal.stage || "—"}</div></td>
+          <td style={dealTd}>{deal.manager || "—"}</td>
+          <td style={dealTd}>
+            {(deal.payment_methods || []).join(", ") || "—"}
+            {Number(deal.payment_count || 0) > 1 && <div className="muted" style={{ fontSize: 10 }}>{t("платежей", "платежів")}: {deal.payment_count}</div>}
+            {deal.historical_payment && <div style={{ color: "#64748b", fontSize: 10, marginTop: 2 }}>{t("Историческая оплата из финансов CRM", "Історична оплата з фінансів CRM")}</div>}
+            {deal.inferred_payment_link && <div style={{ color: "#b45309", fontSize: 10, marginTop: 2 }}>{t("Связь восстановлена по дате и точной сумме", "Зв'язок відновлено за датою і точною сумою")}</div>}
+          </td>
+          <td style={dealTd}>{dateTime(deal.paid_at).split(", ").pop()}</td>
+          <td style={{ ...dealTd, fontWeight: 850, color }}>{moneyUah(deal.paid_today)}</td>
+          <td style={dealTd}>{moneyUah(deal.deal_amount)}{Number(deal.total_paid || 0) !== Number(deal.paid_today || 0) && <div className="muted" style={{ fontSize: 10 }}>{t("всего оплачено", "усього сплачено")}: {moneyUah(deal.total_paid)}</div>}</td>
+        </tr>)}</tbody>
+      </table>
+    </div> : <div className="muted" style={{ padding: "12px", fontSize: 12 }}>{t("В этот день таких сделок нет", "Цього дня таких угод немає")}</div>}
+  </div>;
+}
+
 function Thumb({ src, alt }: { src?: string; alt: string }) {
   return src ? <img src={src} alt={alt} loading="lazy" style={{ width: 82, height: 82, objectFit: "cover", borderRadius: 10, background: "#e2e8f0", flex: "0 0 82px" }} /> :
     <div style={{ width: 82, height: 82, borderRadius: 10, background: "#e2e8f0", display: "grid", placeItems: "center", fontSize: 28, flex: "0 0 82px" }}>🖼️</div>;
@@ -383,5 +472,7 @@ const cardsRow: any = { display: "flex", gap: 9, flexWrap: "wrap", marginBottom:
 const metricGrid: any = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: 12 };
 const th: any = { textAlign: "left", padding: "10px 12px", fontSize: 12, color: "#64748b", borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap" };
 const td: any = { padding: "10px 12px", fontSize: 13, borderBottom: "1px solid #eef2f7", verticalAlign: "top" };
+const dealTd: any = { padding: "9px 10px", fontSize: 12, borderTop: "1px solid #eef2f7", verticalAlign: "top" };
+const dayToggle: any = { minHeight: 36, padding: "0 8px 0 0", border: 0, background: "transparent", color: "#0f172a", fontWeight: 750, cursor: "pointer", display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", textAlign: "left" };
 const dateLabel: any = { display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#64748b" };
 const dateInput: any = { height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px", background: "#fff" };
