@@ -11,8 +11,8 @@ function iso(d: Date) { return d.toISOString().slice(0, 10); }
 function count(v: any) { return Number(v || 0).toLocaleString("ru-RU"); }
 function moneyUah(v: any) { return `${Number(v || 0).toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₴`; }
 function moneyUsd(v: any) { return `$${Number(v || 0).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
-function optional(v: any, suffix = "") {
-  return v === null || v === undefined ? <span style={{ color: "#94a3b8" }}>нет данных</span> : `${count(v)}${suffix}`;
+function optional(v: any, suffix = "", empty = "нет данных") {
+  return v === null || v === undefined ? <span style={{ color: "#94a3b8" }}>{empty}</span> : `${count(v)}${suffix}`;
 }
 function dateTime(v: any) {
   if (!v) return "—";
@@ -244,6 +244,7 @@ function AdCard({ row, t }: { row: any; t: (ru: string, ua: string) => string })
 
 function ContentCard({ row, t }: { row: any; t: (ru: string, ua: string) => string }) {
   const type = row.media_product_type || row.media_type || "POST";
+  const contentMetric = (value: any) => optional(value, "", t("нет данных", "немає даних"));
   return <div className="panel" style={{ padding: 13 }}>
     <div style={{ display: "flex", gap: 11 }}>
       <Thumb src={row.thumbnail_url} alt={type} />
@@ -254,14 +255,14 @@ function ContentCard({ row, t }: { row: any; t: (ru: string, ua: string) => stri
       </div>
     </div>
     <div style={metricGrid}>
-      <Metric label={t("Охват", "Охоплення")} value={optional(row.reach)} />
-      <Metric label={t("Просмотры", "Перегляди")} value={optional(row.views)} />
+      <Metric label={t("Охват", "Охоплення")} value={contentMetric(row.reach)} />
+      <Metric label={t("Просмотры", "Перегляди")} value={contentMetric(row.views)} />
       <Metric label={t("Лайки", "Вподобання")} value={count(row.likes)} />
       <Metric label={t("Комментарии", "Коментарі")} value={count(row.comments)} />
-      <Metric label={t("Сохранения", "Збереження")} value={optional(row.saved)} />
-      <Metric label={t("Поделились", "Поширення")} value={optional(row.shares)} />
-      <Metric label={t("Подписчики", "Підписники")} value={optional(row.follows)} accent />
-      <Metric label={t("Визиты профиля", "Візити профілю")} value={optional(row.profile_visits)} />
+      <Metric label={t("Сохранения", "Збереження")} value={contentMetric(row.saved)} />
+      <Metric label={t("Поделились", "Поширення")} value={contentMetric(row.shares)} />
+      <Metric label={t("Подписчики", "Підписники")} value={contentMetric(row.follows)} accent />
+      <Metric label={t("Визиты профиля", "Візити профілю")} value={contentMetric(row.profile_visits)} />
       <Metric label={t("Вовлечённость", "Залученість")} value={row.engagement_rate == null ? "—" : `${row.engagement_rate}%`} />
       <Metric label={t("Диалоги CRM", "Діалоги CRM")} value={count(row.crm_dialogues)} />
     </div>
