@@ -30,24 +30,32 @@ class Command(BaseCommand):
             raise CommandError("Choose either --ads-only or --content-only")
 
         while True:
-            try:
-                current_until = date.today() if options["watch"] else until
-                ads_since = since
-                if options["watch"]:
-                    ads_since = max(since, current_until - timedelta(days=max(1, options["recent_days"]) - 1))
-                result = {}
-                if not options["content_only"]:
+            current_until = date.today() if options["watch"] else until
+            ads_since = since
+            if options["watch"]:
+                ads_since = max(since, current_until - timedelta(days=max(1, options["recent_days"]) - 1))
+            result = {}
+            failures = []
+            if not options["content_only"]:
+                try:
                     result["ads"] = sync_ads(ads_since, current_until)
-                if not options["ads_only"]:
+                except MetaGraphError as exc:
+                    failures.append(("ads", exc))
+            if not options["ads_only"]:
+                try:
                     result["content"] = sync_content(since)
+                except MetaGraphError as exc:
+                    failures.append(("content", exc))
+
+            if result:
                 self.stdout.write(self.style.SUCCESS(f"Meta sync OK: {result}"))
-            except MetaGraphError as exc:
+            for section, exc in failures:
                 self.stderr.write(self.style.ERROR(
-                    f"Meta sync failed: code={exc.code or '-'} subcode={exc.subcode or '-'} {exc}"
+                    f"Meta {section} sync failed: code={exc.code or '-'} "
+                    f"subcode={exc.subcode or '-'} {exc}"
                 ))
-                if not options["watch"]:
-                    raise CommandError("Meta sync failed") from exc
+            if failures and not options["watch"]:
+                raise CommandError("Meta sync partially failed") from failures[0][1]
             if not options["watch"]:
                 break
             time.sleep(max(300, options["interval"]))
-
