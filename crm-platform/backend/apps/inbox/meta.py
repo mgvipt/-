@@ -180,25 +180,94 @@ def _meta_profile(sender_id, kind):
     return (_profile_name(sender_id), "")
 
 
+_PLACEHOLDER_NAMES = {"", "instagram", "facebook", "client", "customer", "клиент", "клієнт"}
+
+
+def _clean_username(value):
+    """Повернути справжній username, але не платформний числовий ID/плейсхолдер."""
+    username = str(value or "").strip().lstrip("@").strip()
+    if not username or username.isdigit() or username.lower() in _PLACEHOLDER_NAMES:
+        return ""
+    return username[:150]
+
+
+def _resolve_meta_identity(sender_id, kind, name="", username=""):
+    """Доповнити передані ім'я/username даними профілю Meta, не замінюючи кращі значення."""
+    clean_name = str(name or "").strip()
+    clean_username = _clean_username(username)
+    if sender_id and (not clean_name or not clean_username):
+        fetched_name, fetched_username = _meta_profile(sender_id, kind)
+        clean_name = clean_name or str(fetched_name or "").strip()
+        clean_username = clean_username or _clean_username(fetched_username)
+    return clean_name[:240], clean_username
+
+
+def _contact_identity_changes(contact, kind, name="", username=""):
+    """Порахувати лише безпечні дозаповнення контакту. Реальні дані менеджера не перезаписуємо."""
+    name = str(name or "").strip()
+    username = _clean_username(username)
+    current_name = " ".join(x for x in (
+        str(contact.first_name or "").strip(), str(contact.last_name or "").strip()
+    ) if x)
+    current_nick = _clean_username(getattr(contact, "nickname", ""))
+    placeholder_name = (not current_name or current_name.lower() in _PLACEHOLDER_NAMES
+                        or current_name.isdigit())
+    changes = {}
+    if placeholder_name and (name or username):
+        parts = (name or username).split(None, 1)
+        changes["first_name"] = (parts[0] if parts else username)[:120]
+        changes["last_name"] = (parts[1] if len(parts) > 1 else "")[:120]
+    if username and not current_nick:
+        changes["nickname"] = username
+    channels = list(getattr(contact, "channels", None) or [])
+    if kind and kind not in channels:
+        changes["channels"] = channels + [kind]
+    if kind == "instagram" and username:
+        link = f"https://instagram.com/{username}"
+        if not str(getattr(contact, "social_link", "") or "").strip():
+            changes["social_link"] = link
+        messengers = list(getattr(contact, "messengers", None) or [])
+        if link not in messengers:
+            changes["messengers"] = messengers + [link]
+    return changes
+
+
+def _enrich_contact(contact, kind, sender_id, name="", username=""):
+    """Дозаповнити контакт з Meta. Повертає список реально змінених полів."""
+    name, username = _resolve_meta_identity(sender_id, kind, name, username)
+    changes = _contact_identity_changes(contact, kind, name, username)
+    if changes:
+        for field, value in changes.items():
+            setattr(contact, field, value)
+        contact.save(update_fields=list(changes))
+    return list(changes)
+
+
 def _get_or_make_contact(kind, sender_id, name="", username=""):
     """Знайти/створити контакт для автора Meta. Тягне ім'я+нік (IG через graph.instagram.com).
     Заголовок чату = «Ім'я Прізвище (@нік)»."""
     from apps.crm.models import Contact
-    if not name and not username:
-        name, username = _meta_profile(sender_id, kind)
+    name, username = _resolve_meta_identity(sender_id, kind, name, username)
     parts = (name or "").split(None, 1)
     fn = ((parts[0] if parts else "") or username or kind)[:120]
     ln = (parts[1] if len(parts) > 1 else "")[:120]
-    return Contact.objects.create(first_name=fn, last_name=ln,
-                                  nickname=(username or "")[:150], comment=f"З {kind} (Meta)")
+    link = f"https://instagram.com/{username}" if kind == "instagram" and username else ""
+    return Contact.objects.create(
+        first_name=fn, last_name=ln, nickname=username,
+        channels=[kind] if kind else [], social_link=link,
+        messengers=([link] if link else []), comment=f"З {kind} (Meta)",
+    )
 
 
 def _new_meta_lead(conv, kind, sender_id, name="", username=""):
     """Створити контакт + лід для нового вхідного чату Meta (FB/IG). Джерело = канал."""
     from apps.crm.models import Lead, Funnel
+    name, username = _resolve_meta_identity(sender_id, kind, name, username)
     if not conv.contact_id:
         conv.contact = _get_or_make_contact(kind, sender_id, name, username)
         conv.save(update_fields=["contact"])
+    else:
+        _enrich_contact(conv.contact, kind, sender_id, name, username)
     try:
         f = Funnel.objects.filter(name="Лиды").first() or Funnel.objects.order_by("id").first()
         st = f.stages.order_by("order").first() if f else None
@@ -252,8 +321,13 @@ def handle_webhook(payload: dict):
             is_echo = msg.get("is_echo")  # надіслане нами (менеджер АБО ШІ Юля через ChatPlace)
             ext_chat = str(sender if not is_echo else recipient)[:128]
             conv, created = Conversation.objects.get_or_create(channel=ch, external_chat_id=str(ext_chat), defaults={"title": kind})
-            if created and not is_echo:
-                _new_meta_lead(conv, kind, sender)
+            if not is_echo:
+                if created or not conv.contact_id:
+                    _new_meta_lead(conv, kind, sender)
+                else:
+                    # Старий чат міг створитися до появи профільного lookup. Нове повідомлення
+                    # повинно дозаповнити ім'я/прізвище/username, не створюючи нового контакту.
+                    _enrich_contact(conv.contact, kind, sender)
             if Message.objects.filter(conversation=conv, external_id=mid).exists():
                 continue
             # вкладення (фото/відео/аудіо/файл) з Instagram/Messenger-вебхука
@@ -342,9 +416,14 @@ def handle_webhook(payload: dict):
                         defaults={"title": f"{kind} · коментар"})
             conv = target
 
-            if created:
+            if created or (not ours and not conv.contact_id):
                 # контакт = КЛІЄНТ (нік лида), НЕ наш акаунт
-                _new_meta_lead(conv, kind, client_key, client_name, username=(author_username or client_key))
+                _new_meta_lead(conv, kind, author_id or client_key, client_name,
+                               username=author_username)
+            elif not ours:
+                _enrich_contact(conv.contact, kind, author_id, author_name,
+                                username=author_username)
+            if created:
                 card = _media_card((val.get("media") or {}).get("id") or val.get("post_id"), kind)
                 conv.config = {**(conv.config or {}), "source_card": {
                     "type": "comment",

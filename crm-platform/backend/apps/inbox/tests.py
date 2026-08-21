@@ -1,6 +1,8 @@
 from unittest.mock import patch
 import urllib.error
+from io import StringIO
 from django.test import TestCase
+from django.core.management import call_command
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
@@ -220,6 +222,76 @@ class MetaWebhookIngestTests(TestCase):
             "GET", "page-id/conversations",
             {"user_id": "normal-user", "fields": "participants", "limit": 1},
         ))
+
+    @patch("apps.inbox.meta._meta_profile", return_value=("Марія Іваненко", "maria.wall"))
+    def test_existing_instagram_chat_enriches_placeholder_contact(self, _profile):
+        from .meta import handle_webhook
+
+        channel = Channel.objects.create(kind="instagram", name="Meta · instagram")
+        contact = Contact.objects.create(first_name="Instagram")
+        conv = Conversation.objects.create(
+            channel=channel, contact=contact, external_chat_id="178900001", title="instagram",
+        )
+        payload = {"object": "instagram", "entry": [{"messaging": [{
+            "sender": {"id": "178900001"}, "recipient": {"id": "our-ig"},
+            "message": {"mid": "ig-enrich-1", "text": "Добрий день"},
+        }]}]}
+
+        self.assertEqual(handle_webhook(payload), 1)
+        conv.refresh_from_db(); contact.refresh_from_db()
+        self.assertEqual(conv.contact_id, contact.id)
+        self.assertEqual(Contact.objects.filter(id=contact.id).count(), 1)
+        self.assertEqual(contact.first_name, "Марія")
+        self.assertEqual(contact.last_name, "Іваненко")
+        self.assertEqual(contact.nickname, "maria.wall")
+        self.assertEqual(contact.social_link, "https://instagram.com/maria.wall")
+
+    @patch("apps.inbox.meta._meta_profile", return_value=("Олена", ""))
+    def test_numeric_platform_id_is_not_saved_as_username(self, _profile):
+        from .meta import handle_webhook
+
+        channel = Channel.objects.create(kind="instagram", name="Meta · instagram")
+        payload = {"object": "instagram", "entry": [{"changes": [{
+            "field": "comments", "value": {
+                "id": "comment-1", "text": "Ціна?", "post_id": "post-1",
+                "from": {"id": "178900002"},
+            },
+        }]}]}
+
+        self.assertEqual(handle_webhook(payload), 1)
+        conv = Conversation.objects.get(channel=channel)
+        self.assertEqual(conv.contact.first_name, "Олена")
+        self.assertEqual(conv.contact.nickname, "")
+
+    @patch("apps.inbox.management.commands.backfill_meta_instagram_identities._resolve_meta_identity",
+           return_value=("Ірина Коваль", "iryna.wall"))
+    def test_identity_backfill_defaults_to_dry_run(self, _resolve):
+        channel = Channel.objects.create(kind="instagram", name="Meta · instagram")
+        contact = Contact.objects.create(first_name="Instagram")
+        Conversation.objects.create(channel=channel, contact=contact,
+                                    external_chat_id="178900003", title="instagram")
+        output = StringIO()
+
+        call_command("backfill_meta_instagram_identities", stdout=output)
+
+        contact.refresh_from_db()
+        self.assertEqual(contact.first_name, "Instagram")
+        self.assertIn("DRY_RUN: checked=1", output.getvalue())
+
+    @patch("apps.inbox.management.commands.backfill_meta_instagram_identities._resolve_meta_identity",
+           return_value=("Ірина Коваль", "iryna.wall"))
+    def test_identity_backfill_apply_updates_exact_conversation(self, _resolve):
+        channel = Channel.objects.create(kind="instagram", name="Meta · instagram")
+        contact = Contact.objects.create(first_name="Instagram")
+        conv = Conversation.objects.create(channel=channel, contact=contact,
+                                           external_chat_id="178900004", title="instagram")
+
+        call_command("backfill_meta_instagram_identities", "--apply",
+                     "--conversation-id", str(conv.id), stdout=StringIO())
+
+        contact.refresh_from_db()
+        self.assertEqual((contact.first_name, contact.last_name), ("Ірина", "Коваль"))
+        self.assertEqual(contact.nickname, "iryna.wall")
 
 
 class ChannelScopeTests(TestCase):
