@@ -2990,8 +2990,15 @@ class AiUsageView(APIView):
             from django.utils import timezone
             from datetime import timedelta
             qs = qs.filter(created_at__gte=timezone.now() - timedelta(days=int(dn)))
+        # довільний діапазон дат (?from=YYYY-MM-DD&to=YYYY-MM-DD) — будь-який день / місяці / рік
+        _df = request.query_params.get("from")
+        _dt = request.query_params.get("to")
+        if _df:
+            qs = qs.filter(created_at__date__gte=_df)
+        if _dt:
+            qs = qs.filter(created_at__date__lte=_dt)
         days = list(qs.annotate(d=TruncDate("created_at")).values("d").annotate(
-            cost=Sum("cost_usd"), calls=Count("id")).order_by("-d")[:45])
+            cost=Sum("cost_usd"), calls=Count("id")).order_by("-d")[:400])
         by_src = list(qs.values("source").annotate(cost=Sum("cost_usd"), calls=Count("id"),
             itok=Sum("in_tok"), otok=Sum("out_tok"), note=Max("note")).order_by("-cost"))
         by_model = list(qs.values("model").annotate(cost=Sum("cost_usd"), calls=Count("id")).order_by("-cost"))

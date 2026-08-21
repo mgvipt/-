@@ -42,8 +42,28 @@ const CATALOG: any[] = [
 export default function AiCosts() {
   const { t } = useLang();
   const [d, setD] = useState<any>(null);
-  const [range, setRange] = useState<string>("");
-  useEffect(() => { api.get<any>("/api/ai-usage/" + (range ? "?days=" + range : "")).then(setD).catch(() => {}); }, [range]);
+  const [preset, setPreset] = useState<string>("");        // "", today, yesterday, 7, 30, 90, year, prevyear, day, custom
+  const [dayDate, setDayDate] = useState<string>("");       // конкретний день
+  const [fromDate, setFromDate] = useState<string>("");     // свій діапазон — з
+  const [toDate, setToDate] = useState<string>("");         // свій діапазон — по
+  const isoDay = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  function buildQuery(): string {
+    const today = new Date(); const y = today.getFullYear();
+    const q = (o: Record<string, string>) => "?" + Object.entries(o).map(([k, v]) => k + "=" + v).join("&");
+    switch (preset) {
+      case "today": { const dd = isoDay(today); return q({ from: dd, to: dd }); }
+      case "yesterday": { const yd = new Date(today); yd.setDate(yd.getDate() - 1); const dd = isoDay(yd); return q({ from: dd, to: dd }); }
+      case "7": return q({ days: "7" });
+      case "30": return q({ days: "30" });
+      case "90": return q({ days: "90" });
+      case "year": return q({ from: y + "-01-01", to: isoDay(today) });
+      case "prevyear": return q({ from: (y - 1) + "-01-01", to: (y - 1) + "-12-31" });
+      case "day": return dayDate ? q({ from: dayDate, to: dayDate }) : "";
+      case "custom": { const o: any = {}; if (fromDate) o.from = fromDate; if (toDate) o.to = toDate; return Object.keys(o).length ? q(o) : ""; }
+      default: return "";
+    }
+  }
+  useEffect(() => { api.get<any>("/api/ai-usage/" + buildQuery()).then(setD).catch(() => {}); /* eslint-disable-next-line */ }, [preset, dayDate, fromDate, toDate]);
   const usd = (v: number) => "$" + (Number(v) || 0).toFixed(2);
   const num = (v: number) => (Number(v) || 0).toLocaleString("ru-RU");
   const th: any = { textAlign: "left", padding: "7px 9px", fontSize: 12, color: "#64748b", borderBottom: "2px solid #eef2f7" };
@@ -54,20 +74,35 @@ export default function AiCosts() {
       <div style={{ fontSize: 28, fontWeight: 800, color: color || "#0f172a" }}>{val}</div>
     </div>
   );
-  const RangeBtn = ({ v, label }: any) => (
-    <button onClick={() => setRange(v)} className={"btn" + (range === v ? " btn-primary" : "")} style={{ fontSize: 13 }}>{label}</button>
-  );
+  const selSt: any = { height: 32, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", fontSize: 13, background: "#fff" };
+  const dateSt: any = { height: 32, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 13 };
 
   return (
     <div style={{ height: "100%", overflowY: "auto", boxSizing: "border-box", padding: 16 }}>
       <div style={{ maxWidth: 1060 }}>
         <h2 style={{ fontSize: 22, display: "flex", alignItems: "center", gap: 8, margin: "0 0 10px" }}><Icon n="money" size={20} /> {t("Расходы на искусственный интеллект", "Витрати на штучний інтелект")}</h2>
 
-        <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
           <span className="muted" style={{ fontSize: 12 }}>{t("Период:", "Період:")}</span>
-          <RangeBtn v="" label={t("Весь период", "Весь період")} />
-          <RangeBtn v="30" label={t("30 дней", "30 днів")} />
-          <RangeBtn v="7" label={t("7 дней", "7 днів")} />
+          <select value={preset} onChange={(e) => setPreset(e.target.value)} style={selSt}>
+            <option value="">{t("Весь период", "Весь період")}</option>
+            <option value="today">{t("Сегодня", "Сьогодні")}</option>
+            <option value="yesterday">{t("Вчера", "Вчора")}</option>
+            <option value="7">{t("Последние 7 дней", "Останні 7 днів")}</option>
+            <option value="30">{t("Последние 30 дней", "Останні 30 днів")}</option>
+            <option value="90">{t("Последние 90 дней", "Останні 90 днів")}</option>
+            <option value="year">{t("Этот год", "Цей рік")}</option>
+            <option value="prevyear">{t("Прошлый год", "Минулий рік")}</option>
+            <option value="day">{t("Конкретный день…", "Конкретний день…")}</option>
+            <option value="custom">{t("Свой диапазон (месяцы)…", "Свій діапазон (місяці)…")}</option>
+          </select>
+          {preset === "day" && <input type="date" value={dayDate} onChange={(e) => setDayDate(e.target.value)} style={dateSt} />}
+          {preset === "custom" && <>
+            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={dateSt} title={t("С", "З")} />
+            <span className="muted" style={{ fontSize: 12 }}>—</span>
+            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={dateSt} title={t("По", "По")} />
+          </>}
+          {(preset === "day" && !dayDate) && <span className="muted" style={{ fontSize: 11.5, color: "#d97706" }}>{t("выберите дату", "оберіть дату")}</span>}
         </div>
 
         {!d ? <div className="muted">…</div> : <>
