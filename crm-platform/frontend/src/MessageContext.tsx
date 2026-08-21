@@ -153,11 +153,47 @@ export function MessageStatusLine({ message, time, customLabels }: {
           ? { icon: "⚠", text: l.windowRisk, color: "#b45309" }
           : { icon: "✓", text: l.sent, color: "#64748b" };
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5, marginTop: 3, fontSize: 10, color: meta.color }} title={meta.text}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5, marginTop: 3, fontSize: 10.5, color: meta.color }} title={meta.text}>
       <span style={{ opacity: .72 }}>{time}</span>
       {history && <span title={editedTitle} style={{ fontWeight: 600, cursor: previous ? "help" : "default" }}>· {l.edited}</span>}
-      <span aria-label={meta.text} style={{ fontWeight: 800, letterSpacing: -1 }}>{meta.icon}</span>
+      <span aria-label={meta.text} style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        minWidth: status === "sent" ? 15 : 22, height: 17, padding: "0 3px",
+        borderRadius: 9, fontSize: 11.5, lineHeight: 1, fontWeight: 900,
+        letterSpacing: -1.5,
+        background: status === "read" ? "#dbeafe" : status === "delivered" ? "#f1f5f9" : "transparent",
+        color: meta.color,
+      }}>{meta.icon}</span>
     </div>
+  );
+}
+
+export function messagesHaveSameVisibleState(previous: any[], next: any[]): boolean {
+  if (previous.length !== next.length) return false;
+  return previous.every((message, index) => {
+    const candidate = next[index];
+    return message?.id === candidate?.id
+      && message?.status === candidate?.status
+      && message?.text === candidate?.text
+      && message?.sender_name === candidate?.sender_name
+      && message?.sender_display === candidate?.sender_display
+      && JSON.stringify(message?.attachments || []) === JSON.stringify(candidate?.attachments || []);
+  });
+}
+
+export function CorrectionAction({ message, onStart, label, title }: {
+  message: any;
+  onStart: (message: any) => void;
+  label: string;
+  title: string;
+}) {
+  if (message?.direction !== "out" || message?.internal || !String(message?.text || "").trim()) return null;
+  return (
+    <button type="button" onClick={() => onStart(message)} title={title} style={{
+      border: 0, background: "transparent", color: "#64748b", padding: "1px 4px",
+      marginTop: 1, fontSize: 10.5, cursor: "pointer", textDecoration: "underline",
+      textUnderlineOffset: 2,
+    }}>{label}</button>
   );
 }
 

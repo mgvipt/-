@@ -9,7 +9,7 @@ import { Icon } from "./Icon";
 import { api, ChatMessage, Conversation, Paginated } from "./api";
 import ChatActions from "./ChatActions";
 import ConversationSourceCard from "./ConversationSourceCard";
-import { ReplyContext, ReactionBadges, MessageStatusLine, isContextAttachment } from "./MessageContext";
+import { ReplyContext, ReactionBadges, MessageStatusLine, CorrectionAction, messagesHaveSameVisibleState, isContextAttachment } from "./MessageContext";
 import { dayLabel, timeLabel, isNewDay, linkify, metaWindow } from "./chatUtils";
 
 const tt = (_r: string, ua: string) => ua;  // ClientChat україномовний
@@ -41,6 +41,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   const [conv, setConv] = useState<Conversation | null>(null);
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
+  const [correctionTarget, setCorrectionTarget] = useState<{ id: number; text: string } | null>(null);
   const [internal, setInternal] = useState(false);
   const [pending, setPending] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
@@ -88,7 +89,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   async function loadMsgs(id: number) {
     try {
       const m = await api.get<ChatMessage[]>(`/api/conversations/${id}/messages/${markSeen ? "?seen=1" : ""}`);
-      setMsgs((prev) => (m.length !== prev.length ? m : prev));
+      setMsgs((prev) => (messagesHaveSameVisibleState(prev, m) ? prev : m));
     } catch { /* ignore */ }
   }
   async function loadReplyChannels(id: number) {
@@ -109,7 +110,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   }
   async function switchConv(c: Conversation) {
     if (!c || c.id === conv?.id) return;
-    setConv(c); setMsgs([]); setAi(null); setErr("");
+    setConv(c); setMsgs([]); setAi(null); setErr(""); setCorrectionTarget(null);
     await Promise.all([loadMsgs(c.id), loadReplyChannels(c.id)]);
   }
 
@@ -124,7 +125,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
     try { setCinfo(await api.get<any>(`/api/contacts/${contact}/`)); } catch { setCinfo(null); }
   }
   useEffect(() => {
-    setLoaded(false); setConv(null); setMsgs([]); setFirstText(""); setErr(""); setAllConvs([]); setCinfo(null);
+    setLoaded(false); setConv(null); setMsgs([]); setFirstText(""); setErr(""); setAllConvs([]); setCinfo(null); setCorrectionTarget(null);
     loadConv(); loadContactInfo();
     /* eslint-disable-next-line */
   }, [contact]);
@@ -150,7 +151,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
       setPending([]);
       if (text.trim()) {
         const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send/`, { text, internal });
-        setMsgs((p) => [...p, m]); setText("");
+        setMsgs((p) => [...p, m]); setText(""); setCorrectionTarget(null);
       }
     } catch (e: any) { setErr(e?.response?.data?.detail || "Не вдалося надіслати — чат має бути відкритий оператором"); }
     setBusy(false);
@@ -339,6 +340,10 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
                 <ReactionBadges attachments={(m as any).attachments} />
               </div>
               <MessageStatusLine message={m} time={timeLabel((m as any).created_at)} />
+              <CorrectionAction message={m} label="Виправити" title="Надіслати клієнту нове уточнення, не змінюючи історію" onStart={(message) => {
+                setCorrectionTarget({ id: message.id, text: String(message.text || "") });
+                setText("Уточнення: ");
+              }} />
             </div>
           </Fragment>
         ))}
@@ -412,6 +417,10 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
         ))}
       </div>}
       {internal && pending.length > 0 && <div style={{ fontSize: 11, color: "#92400e", marginTop: 4 }}><Icon n="📝" size={12} /> Файл піде у ВНУТРІШНЮ нотатку — клієнт НЕ побачить</div>}
+      {correctionTarget && <div style={{ marginTop: 8, padding: "7px 10px", borderRadius: 8, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e3a8a", fontSize: 11.5, lineHeight: 1.35, display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <div style={{ minWidth: 0, flex: 1 }}><b>Виправлення до:</b> {correctionTarget.text.slice(0, 120)}{correctionTarget.text.length > 120 ? "…" : ""}<br /><span style={{ color: "#475569" }}>Старе повідомлення залишиться в історії. Клієнту піде нове уточнення.</span></div>
+        <button type="button" onClick={() => setCorrectionTarget(null)} title="Скасувати виправлення" style={{ border: 0, background: "transparent", color: "#64748b", cursor: "pointer", padding: 0, fontWeight: 800 }}>✕</button>
+      </div>}
       <textarea value={text} onChange={(e) => setText(e.target.value)} onPaste={onPasteFile} placeholder={internal ? "Внутрішня нотатка — клієнт НЕ побачить…  (вставити фото — Ctrl+V)" : "Відповідь клієнту…  (вставити фото — Ctrl+V)"} rows={3}
         style={{ width: "100%", fontSize: 13, padding: 9, borderRadius: 10, border: internal ? "1.5px dashed #d4a017" : "1px solid #e2e8f0", background: internal ? "#fffbeb" : "#fff", marginTop: 8, boxSizing: "border-box", resize: "vertical", minHeight: 56, flexShrink: 0 }} />
       <input ref={fileRef} type="file" hidden onChange={sendFile} />

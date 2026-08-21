@@ -264,6 +264,60 @@ class MetaWebhookIngestTests(TestCase):
         self.assertEqual(seen.status, "read")
         self.assertEqual(untouched.status, "sent")
 
+    def test_new_customer_message_marks_previous_outgoing_as_read(self):
+        from .meta import handle_webhook
+
+        channel = Channel.objects.create(kind="instagram", name="Meta · instagram")
+        conv = Conversation.objects.create(
+            channel=channel, external_chat_id="ig-reply-user", title="instagram",
+        )
+        sent = Message.objects.create(
+            conversation=conv, direction="out", external_id="chatplace-mid",
+            text="Який варіант Вам підходить?", status="sent",
+        )
+        delivered = Message.objects.create(
+            conversation=conv, direction="out", external_id="chatplace-mid-2",
+            text="Підкажіть площу", status="delivered",
+        )
+        failed = Message.objects.create(
+            conversation=conv, direction="out", external_id="failed-mid",
+            text="Це повідомлення не дійшло", status="failed",
+        )
+        timestamp = int((timezone.now() + timedelta(seconds=2)).timestamp() * 1000)
+        payload = {"object": "instagram", "entry": [{"messaging": [{
+            "sender": {"id": "ig-reply-user"}, "recipient": {"id": "our-instagram"},
+            "timestamp": timestamp,
+            "message": {"mid": "customer-answer-mid", "text": "18 квадратів"},
+        }]}]}
+
+        self.assertEqual(handle_webhook(payload), 1)
+        sent.refresh_from_db(); delivered.refresh_from_db(); failed.refresh_from_db()
+        self.assertEqual(sent.status, "read")
+        self.assertEqual(delivered.status, "read")
+        self.assertEqual(failed.status, "failed")
+
+    def test_customer_message_does_not_mark_later_outgoing_as_read(self):
+        from .meta import handle_webhook
+
+        channel = Channel.objects.create(kind="instagram", name="Meta · instagram")
+        conv = Conversation.objects.create(
+            channel=channel, external_chat_id="ig-old-event-user", title="instagram",
+        )
+        future = Message.objects.create(
+            conversation=conv, direction="out", external_id="later-mid",
+            text="Нове повідомлення", status="sent",
+        )
+        old_timestamp = int((timezone.now() - timedelta(minutes=10)).timestamp() * 1000)
+        payload = {"object": "instagram", "entry": [{"messaging": [{
+            "sender": {"id": "ig-old-event-user"}, "recipient": {"id": "our-instagram"},
+            "timestamp": old_timestamp,
+            "message": {"mid": "delayed-customer-mid", "text": "Стара відповідь"},
+        }]}]}
+
+        self.assertEqual(handle_webhook(payload), 1)
+        future.refresh_from_db()
+        self.assertEqual(future.status, "sent")
+
     def test_message_edit_updates_existing_message_and_keeps_history(self):
         from .meta import handle_webhook
 
