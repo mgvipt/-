@@ -42,6 +42,7 @@ const CATALOG: any[] = [
 export default function AiCosts() {
   const { t } = useLang();
   const [d, setD] = useState<any>(null);
+  const [ac, setAc] = useState<any>(null);                  // повний рахунок Anthropic по ключах
   const [preset, setPreset] = useState<string>("");        // "", today, yesterday, 7, 30, 90, year, prevyear, day, custom
   const [dayDate, setDayDate] = useState<string>("");       // конкретний день
   const [fromDate, setFromDate] = useState<string>("");     // свій діапазон — з
@@ -63,7 +64,7 @@ export default function AiCosts() {
       default: return "";
     }
   }
-  useEffect(() => { api.get<any>("/api/ai-usage/" + buildQuery()).then(setD).catch(() => {}); /* eslint-disable-next-line */ }, [preset, dayDate, fromDate, toDate]);
+  useEffect(() => { const qq = buildQuery(); api.get<any>("/api/ai-usage/" + qq).then(setD).catch(() => {}); api.get<any>("/api/ai-usage/anthropic/" + qq).then(setAc).catch(() => setAc({ configured: false })); /* eslint-disable-next-line */ }, [preset, dayDate, fromDate, toDate]);
   function exportCsv() {
     if (!d) return;
     const rows: any[] = [["Помічник / функція", "Модель", "Звернень", "Сума USD"]];
@@ -145,8 +146,25 @@ export default function AiCosts() {
           );
         })()}
 
+        {ac && (ac.configured ? (
+          <div className="panel" style={{ marginBottom: 14, border: "2px solid #c7d2fe" }}>
+            <div className="label" style={{ marginBottom: 4 }}>{t("Полный счёт Anthropic — ВСЕ боты (по ключам)", "Повний рахунок Anthropic — УСІ боти (по ключах)")}</div>
+            <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>{t("Реальные списания из Anthropic по каждому сервису — включая ботов вне CRM (склад, контент, командный центр, реклама).", "Реальні списання з Anthropic по кожному сервісу — включно з ботами поза CRM.")}</div>
+            {ac.error ? <div style={{ color: "#dc2626", fontSize: 12 }}>{ac.error}</div> : <>
+              <div style={{ fontSize: 26, fontWeight: 800, color: "#166534", marginBottom: 8 }}>{usd(ac.total)}<span className="muted" style={{ fontSize: 12, fontWeight: 400 }}> {t("всего за период", "всього за період")}</span></div>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr><th style={th}>{t("Ключ / сервис", "Ключ / сервіс")}</th><th style={{ ...th, textAlign: "right" }}>{t("Сумма", "Сума")}</th></tr></thead>
+                <tbody>{(ac.rows || []).map((r: any, i: number) => <tr key={i}><td style={td}>{r.key}</td><td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{usd(r.cost)}</td></tr>)}</tbody>
+              </table>
+            </>}
+          </div>
+        ) : (
+          <div className="note" style={{ marginBottom: 14, background: "#fffbeb", borderColor: "#fde68a", lineHeight: 1.5 }}>
+            ⚠️ <b>{t("Полный счёт (все боты):", "Повний рахунок (усі боти):")}</b> {t("чтобы видеть ВЕСЬ расход (включая склад, контент, командный центр, рекламу — они тратят вне CRM), нужен Admin-ключ Anthropic. Создай его в консоли (Settings → Admin keys) и пришли — подключу за минуту.", "щоб бачити ВЕСЬ розхід (включно зі складом, контентом, командним центром, рекламою — вони витрачають поза CRM), потрібен Admin-ключ Anthropic. Створи в консолі (Settings → Admin keys) і пришли — підключу.")}
+          </div>
+        ))}
         <div className="panel" style={{ marginBottom: 14 }}>
-          <div className="label" style={{ marginBottom: 6 }}>{t("Куда идут деньги — по каждому помощнику", "Куди йдуть гроші — по кожному помічнику")}</div>
+          <div className="label" style={{ marginBottom: 6 }}>{t("Куда идут деньги — по каждому помощнику (внутри CRM)", "Куди йдуть гроші — по кожному помічнику (всередині CRM)")}</div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr><th style={th}>{t("Помощник / функция", "Помічник / функція")}</th><th style={th}>{t("Модель", "Модель")}</th><th style={th}>{t("Обращений", "Звернень")}</th><th style={{ ...th, textAlign: "right" }}>{t("Сумма", "Сума")}</th></tr></thead>
             <tbody>{(d.by_source || []).map((r: any, i: number) => (

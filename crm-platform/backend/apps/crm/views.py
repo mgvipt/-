@@ -3012,6 +3012,63 @@ class AiUsageView(APIView):
                          "est_cost": est_c, "live_cost": live_c})
 
 
+class AnthropicCostView(APIView):
+    """Повний рахунок Anthropic по КОЖНОМУ ключу (усі боти, навіть поза CRM-обліком).
+    Тягне Admin Cost API. Ключ ANTHROPIC_ADMIN_KEY у env. Без ключа → configured:false."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        import os, json as _j, urllib.request, urllib.error
+        from datetime import date, timedelta
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("settings.agent") or u.has_perm_code("roles.manage")):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        admin = os.environ.get("ANTHROPIC_ADMIN_KEY", "").strip()
+        if not admin:
+            return Response({"configured": False})
+        frm = request.query_params.get("from"); to = request.query_params.get("to")
+        dn = request.query_params.get("days")
+        if not frm and dn and dn.isdigit():
+            frm = (date.today() - timedelta(days=int(dn))).isoformat()
+        if not frm:
+            frm = (date.today() - timedelta(days=30)).isoformat()
+        if not to:
+            to = date.today().isoformat()
+        H = {"x-api-key": admin, "anthropic-version": "2023-06-01"}
+        def _get(url):
+            req = urllib.request.Request(url, headers=H)
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return _j.loads(r.read().decode() or "{}")
+        try:
+            names = {}
+            try:
+                ks = _get("https://api.anthropic.com/v1/organizations/api_keys?limit=100")
+                for k in (ks.get("data") or []):
+                    names[k.get("id")] = k.get("name")
+            except Exception:
+                pass
+            url = ("https://api.anthropic.com/v1/organizations/cost_report"
+                   "?starting_at=%sT00:00:00Z&ending_at=%sT23:59:59Z&group_by[]=api_key_id" % (frm, to))
+            cost = _get(url)
+            agg = {}
+            for bucket in (cost.get("data") or []):
+                for res in (bucket.get("results") or bucket.get("items") or []):
+                    kid = res.get("api_key_id") or res.get("api_key") or "—"
+                    amt = res.get("amount")
+                    if isinstance(amt, dict):
+                        amt = amt.get("value") or amt.get("amount")
+                    amt = float(amt or res.get("cost") or res.get("cost_usd") or 0)
+                    agg[kid] = agg.get(kid, 0) + amt
+            rows = sorted([{"key": names.get(kid) or (kid[:14] if kid else "—"), "cost": round(v, 2)}
+                           for kid, v in agg.items()], key=lambda x: -x["cost"])
+            return Response({"configured": True, "from": frm, "to": to, "rows": rows,
+                             "total": round(sum(r["cost"] for r in rows), 2)})
+        except urllib.error.HTTPError as e:
+            return Response({"configured": True, "error": "Anthropic API %s: %s" % (e.code, e.read().decode()[:150])})
+        except Exception as e:
+            return Response({"configured": True, "error": str(e)[:200]})
+
+
 class AgentConfigView(APIView):
     permission_classes = [_manage_or_read("settings.agent")]
 

@@ -77,6 +77,7 @@ urlpatterns = [
     path("api/changelog/", crm_views.ChangeLogView.as_view()),
     path("api/permissions/", acc_views.PermissionsCatalogView.as_view()),
     path("api/ai-usage/", crm_views.AiUsageView.as_view()),
+    path("api/ai-usage/anthropic/", crm_views.AnthropicCostView.as_view()),
     path("api/invite/<str:token>/", acc_views.AcceptInviteView.as_view()),
     path("api/inbox/telegram/webhook/<int:channel_id>/", inbox_views.TelegramWebhookView.as_view()),
     path("api/inbox/viber/webhook/<int:channel_id>/", inbox_views.ViberWebhookView.as_view()),
