@@ -406,6 +406,24 @@ class MetaChatPlaceOutboundTests(TestCase):
         self.assertEqual(conv.config["outbound_chatplace"]["match"],
                          "exact_instagram_username")
 
+    @patch("apps.inbox.management.commands.backfill_meta_chatplace_routes._mcp")
+    def test_route_backfill_keeps_exact_partial_results_when_next_page_fails(self, mcp):
+        conv = Conversation.objects.create(
+            channel=self.channel, contact=self.contact, external_chat_id="client-scoped-id",
+        )
+        mcp.side_effect = [
+            {"items": [{"id": "cp-chat", "clientName": "Повитря", "lastMessageAt": 100}],
+             "hasNextItems": True, "lastItemId": "cp-chat", "lastItemTimestamp": 100},
+            {"id": "cp-chat", "clientName": "Повитря", "username": "povitrya_"},
+            RuntimeError("temporary ChatPlace 500"),
+        ]
+        output = StringIO()
+        call_command("backfill_meta_chatplace_routes", "--apply",
+                     "--conversation-id", str(conv.id), stdout=output)
+        conv.refresh_from_db()
+        self.assertEqual(conv.config["outbound_chatplace"]["chat_id"], "cp-chat")
+        self.assertIn("page_errors=1", output.getvalue())
+
 
 class ChannelScopeTests(TestCase):
     def test_conversations_filtered_by_allowed_open_lines(self):

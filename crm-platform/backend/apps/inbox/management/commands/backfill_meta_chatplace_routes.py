@@ -91,11 +91,18 @@ class Command(BaseCommand):
         cursor_id = None
         cursor_ts = None
         pages = 0
+        page_errors = 0
         while pages < max(1, options["max_pages"]):
             args = {"limit": 100}
             if cursor_id and cursor_ts:
                 args.update({"lastItemId": cursor_id, "lastItemTimestamp": cursor_ts})
-            data = _mcp("chats_list", args)
+            try:
+                data = _mcp("chats_list", args)
+            except Exception:
+                # ChatPlace інколи повертає 5xx на глибокій пагінації. Уже точно
+                # підтверджені сторінки лишаються придатними; нічого не вгадуємо.
+                page_errors += 1
+                break
             items = (data.get("items") or []) if isinstance(data, dict) else (data or [])
             if not items:
                 break
@@ -152,5 +159,5 @@ class Command(BaseCommand):
             f"{mode}: checked={len(conversations)} usernames={len(by_username)} "
             f"mapped={mapped} changed={changed} unresolved={unresolved} "
             f"ambiguous={ambiguous} without_username={without_username} "
-            f"pages={pages} details={len(inspected_details)}"
+            f"pages={pages} details={len(inspected_details)} page_errors={page_errors}"
         )
