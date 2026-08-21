@@ -388,8 +388,23 @@ export default function Inbox() {
                     {(c as any).priority && PRIO[(c as any).priority] && <span title={(c as any).priority_reason || PRIO[(c as any).priority].label} style={{ display: "inline-flex", alignItems: "center", gap: 3, height: 18, fontSize: 10, fontWeight: 700, color: PRIO[(c as any).priority].color, background: PRIO[(c as any).priority].bg, borderRadius: 20, padding: "0 8px", whiteSpace: "nowrap" }}><Icon n={PRIO[(c as any).priority].icon} size={10} /> {PRIO[(c as any).priority].label}</span>}
                   </FitChips>
                 </div>
-                {(() => { const cnt = (((c as any).unhandled_in as number) || 0) || (c.unread || 0); const show = cnt > 0; return show ? (<span title={t("Сообщений клиента без ответа менеджера", "Повідомлень клієнта без відповіді менеджера")} style={{ minWidth: 16, height: 16, borderRadius: 9, padding: "0 4px", background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", alignSelf: "center", flexShrink: 0, boxShadow: "0 0 0 2px #fee2e2" }}>{cnt}</span>) : null; })()}
-                {(c as any).ai_answered && <span title={t("Ответил ИИ-агент, менеджер не смотрел", "Відповів ШІ-агент, менеджер не дивився")} style={{ fontSize: 12, alignSelf: "center" }}>🤖</span>}
+                {(() => {
+                  const cnt = (((c as any).unhandled_in as number) || 0) || (c.unread || 0);
+                  const ai = !!(c as any).ai_answered;
+                  if (!cnt && !ai) return null;
+                  // 🤖 — база; червоний лічильник неотвечених — ПОВЕРХ нього, справа вгорі
+                  return (
+                    <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", alignSelf: "center", flexShrink: 0, width: ai ? 22 : undefined, height: 22 }}>
+                      {ai && <span title={t("Ответил ИИ-агент, менеджер не смотрел", "Відповів ШІ-агент, менеджер не дивився")} style={{ fontSize: 15 }}>🤖</span>}
+                      {cnt > 0 && (
+                        <span title={t("Сообщений клиента без ответа менеджера", "Повідомлень клієнта без відповіді менеджера")}
+                          style={{ position: ai ? "absolute" : "static", top: ai ? -5 : undefined, right: ai ? -7 : undefined, minWidth: 16, height: 16, borderRadius: 9, padding: "0 4px", background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 0 0 2px #fff" }}>
+                          {cnt}
+                        </span>
+                      )}
+                    </span>
+                  );
+                })()}
                 
               </div>
             );
