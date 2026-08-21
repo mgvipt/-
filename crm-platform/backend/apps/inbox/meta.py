@@ -381,11 +381,18 @@ def _store_reaction(channel, event):
 
 
 def _relink_manager_echo(conv, mid, text, event_timestamp=None):
-    """Прив'язати Meta echo до щойно надісланого менеджером повідомлення.
+    """Прив'язати Meta echo до вже записаного НАШОГО вихідного (менеджер/авто/через ChatPlace),
+    щоб не задвоювати повідомлення.
 
-    ChatPlace і Meta використовують різні ID одного відправлення. Об'єднуємо лише
-    рівно один кандидат у тому самому діалозі, з тим самим текстом і в межах 10 с
-    від platform timestamp. Повторні однакові повідомлення не вгадуємо.
+    Наші вихідні Instagram ідуть через ChatPlace і пишуться локально БЕЗ Meta mid
+    (external_id порожній) — а хвилину-другу потому Meta присилає echo того самого
+    тексту з новим mid. Привʼязуємо цей mid до вже наявного вихідного з тим самим
+    текстом у цьому діалозі (найближче за часом, у межах вікна).
+
+    Безпека: беремо ЛИШЕ записи з ПОРОЖНІМ external_id. Записи, що вже мають id
+    (echo Юлі з Meta mid, вже склеєні відправлення) — не чіпаємо, тож чужі однакові
+    тексти не злипаються. Покриває і авто-повідомлення (sender=null: оплата, чек тощо),
+    які раніше не склеювались і завжди двоїлись.
     """
     from .models import Message
     from django.utils import timezone
@@ -400,18 +407,20 @@ def _relink_manager_echo(conv, mid, text, event_timestamp=None):
             center = datetime.fromtimestamp(float(event_timestamp) / 1000.0, tz=dt_timezone.utc)
     except (TypeError, ValueError, OSError):
         pass
-    candidates = list(
-        Message.objects.filter(
-            conversation=conv, direction="out", internal=False,
-            sender__isnull=False, text=body,
-            created_at__gte=center - timedelta(seconds=10),
-            created_at__lte=center + timedelta(seconds=10),
-        ).order_by("-id")[:2]
-    )
-    if len(candidates) != 1:
+    WINDOW = 180  # ланцюг ChatPlace→IG→Meta echo лагає; старі 10 с промахувались
+    cand, best = None, None
+    for m in Message.objects.filter(
+            conversation=conv, direction="out", internal=False, text=body,
+            external_id="",
+            created_at__gte=center - timedelta(seconds=WINDOW),
+            created_at__lte=center + timedelta(seconds=WINDOW)).order_by("id"):
+        d = abs((m.created_at - center).total_seconds())
+        if best is None or d < best:
+            best, cand = d, m
+    if not cand:
         return False
-    candidates[0].external_id = str(mid)[:128]
-    candidates[0].save(update_fields=["external_id"])
+    cand.external_id = str(mid)[:128]
+    cand.save(update_fields=["external_id"])
     return True
 
 
