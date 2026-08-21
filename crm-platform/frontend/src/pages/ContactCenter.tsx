@@ -47,12 +47,23 @@ export default function ContactCenter() {
   const [sel, setSel] = useState<Channel | null>(null);
   const [msg, setMsg] = useState("");
   const [realChans, setRealChans] = useState<any[]>([]);
+  const [ttDirect, setTtDirect] = useState<any>(null);   // статус прямого TikTok (без ChatPlace)
   const { t } = useLang();
 
   function loadReal() { api.get<any>("/api/channels/").then((d) => setRealChans((d.results || d) as any[])).catch(() => {}); }
+  function loadTt() { api.get<any>("/api/inbox/tiktok/status/").then(setTtDirect).catch(() => {}); }
   useEffect(() => {
     api.get<Channel[]>("/api/contact-center/").then((d) => { if (Array.isArray(d) && d.length) setChannels(d); }).catch(() => {});
     loadReal();
+    loadTt();
+    // після повернення з авторизації TikTok (?tiktok=connected|denied|error) — показати результат
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("tiktok")) {
+      const st = q.get("tiktok");
+      setMsg(st === "connected" ? "✓ TikTok підключено напряму" : st === "denied" ? "TikTok: доступ не надано" : ("TikTok: помилка підключення " + (q.get("msg") || "")));
+      setSel({ key: "tiktok", name: "TikTok", sub: "Повідомлення", icon: "tiktok", color: "#111827", status: "connected" });
+      window.history.replaceState({}, "", "/contact-center");
+    }
   }, []);
   async function toggleChannelActive(id: number, active: boolean) {
     try { await api.post(`/api/channels/${id}/set_active/`, { active }); loadReal(); setMsg(active ? t("✓ Канал включён","✓ Канал увімкнено") : t("✓ Канал отключён от CRM","✓ Канал відключено від CRM")); }
@@ -91,7 +102,8 @@ export default function ContactCenter() {
           const _m = CARD_MAP[ch.key] || {};
           const _rc = _m.kind ? realChans.find((c: any) => c.kind === _m.kind) : null;
           const conn = _rc ? !!_rc.is_active : ch.status === "connected";
-          const via = ch.via || (_m.platform ? "e-chat" : "");
+          let via = ch.via || (_m.platform ? "e-chat" : "");
+          if (ch.key === "tiktok" && ttDirect?.connected) via = "TikTok API" + (via ? " + " + via : "");
           return (
           <div key={ch.key} onClick={() => setSel(ch)}
             style={{ position: "relative", background: ch.color, color: "#fff", borderRadius: 14, padding: "18px 16px", minHeight: 120, cursor: "pointer", boxShadow: "0 4px 14px rgba(15,23,42,.12)", transition: "transform .1s" }}
@@ -146,6 +158,12 @@ export default function ContactCenter() {
                 {map.platform && <div className="panel" style={{ marginBottom: 14 }}>
                   <div className="label">{t("Номера e-chat","Номери e-chat")}</div>
                   <EchatBlock t={t} only={map.platform} />
+                </div>}
+
+                {/* TikTok: пряме підключення через TikTok API (без ChatPlace) */}
+                {sel.key === "tiktok" && <div className="panel" style={{ marginBottom: 14, borderLeft: "4px solid #111827" }}>
+                  <div className="label">{t("Прямое подключение TikTok (без ChatPlace)","Пряме підключення TikTok (без ChatPlace)")}</div>
+                  <TiktokDirectBlock t={t} st={ttDirect} reload={() => { loadTt(); loadReal(); }} />
                 </div>}
 
                 {/* Доступ менеджерів (не-e-chat реальні канали) */}
@@ -256,6 +274,49 @@ function EchatBlock({ t, only }: any) {
         {msg && <span style={{ fontSize: 13, color: msg.startsWith("✓") ? "#16a34a" : "#b45309" }}>{msg}</span>}
       </div>
       {lines.length > 0 && <div className="muted" style={{ marginTop: 9, fontSize: 11 }}>{t("Обязательно добавьте webhook каждой линии в соответствующем кабинете E-chat; без этого ответы клиента не поступят в CRM. Кнопка 📋 копирует точный адрес.", "Обовʼязково додайте webhook кожної лінії у відповідному кабінеті E-chat; без цього відповіді клієнта не надійдуть у CRM. Кнопка 📋 копіює точну адресу.")}</div>}
+    </div>
+  );
+}
+
+
+// ─── Блок: пряме підключення TikTok Business Messaging (без ChatPlace) ───────
+// Дані: GET /api/inbox/tiktok/status/ ; POST /api/inbox/tiktok/connect/ → {url} (авторизація в TikTok);
+// POST /api/inbox/tiktok/disconnect/. Бекенд: backend/apps/inbox/tiktok.py
+function TiktokDirectBlock({ t, st, reload }: { t: any; st: any; reload: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  async function connect() {
+    setBusy(true); setErr("");
+    try { const r = await api.post<any>("/api/inbox/tiktok/connect/", {}); window.location.href = r.url; }
+    catch (e: any) { setErr(e?.response?.data?.detail || t("Ошибка","Помилка")); setBusy(false); }
+  }
+  async function disconnect() {
+    if (!confirm(t("Отключить прямой TikTok от CRM?","Відключити прямий TikTok від CRM?"))) return;
+    setBusy(true); setErr("");
+    try { await api.post("/api/inbox/tiktok/disconnect/", {}); reload(); }
+    catch (e: any) { setErr(e?.response?.data?.detail || t("Ошибка","Помилка")); }
+    setBusy(false);
+  }
+  if (!st) return <div className="muted" style={{ fontSize: 12 }}>…</div>;
+  const exp = st.expires_at ? new Date(st.expires_at) : null;
+  return (
+    <div style={{ fontSize: 12.5 }}>
+      {st.connected ? (
+        <div style={{ color: "#16a34a", fontWeight: 600 }}>● {t("Подключено","Підключено")}: @{st.username || st.business_id}{st.display_name ? ` · ${st.display_name}` : ""}</div>
+      ) : (
+        <div style={{ color: "#d97706", fontWeight: 600 }}>○ {t("Не подключено","Не підключено")}</div>
+      )}
+      <div className="muted" style={{ marginTop: 6, lineHeight: 1.45 }}>
+        {t("Сообщения клиентов из TikTok приходят прямо в Чаты CRM, менеджер отвечает отсюда. Ответы Юли (ChatPlace) видны как «Юля (AI)». Ограничения TikTok: клиент пишет первым, ответить можно 48 часов и не более 10 сообщений подряд; фото из CRM в TikTok не отправляются.",
+           "Повідомлення клієнтів з TikTok приходять прямо в Чати CRM, менеджер відповідає звідси. Відповіді Юлі (ChatPlace) видно як «Юля (AI)». Обмеження TikTok: клієнт пише першим, відповісти можна 48 годин і не більше 10 повідомлень поспіль; фото з CRM у TikTok не відправляються.")}
+      </div>
+      {st.connected && exp && <div className="muted" style={{ marginTop: 4 }}>{t("Ключ доступа обновляется автоматически","Ключ доступу оновлюється автоматично")} · {t("действует до","діє до")} {exp.toLocaleString()}{st.webhook_registered === false ? " · ⚠ " + t("вебхук не зарегистрирован","вебхук не зареєстровано") : ""}</div>}
+      {!st.configured && <div style={{ marginTop: 8, color: "#b45309" }}>{t("Ключи приложения TikTok (App ID / Secret) ещё не добавлены на сервер — ждём одобрения TikTok.","Ключі застосунку TikTok (App ID / Secret) ще не додані на сервер — чекаємо схвалення TikTok.")}</div>}
+      {st.can_manage && <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+        <button className="btn btn-primary" disabled={busy || !st.configured} onClick={connect}>{st.connected ? t("Переподключить аккаунт","Перепідключити акаунт") : t("Подключить @dekor_dlia_stin","Підключити @dekor_dlia_stin")}</button>
+        {st.connected && <button className="btn" disabled={busy} style={{ color: "#dc2626" }} onClick={disconnect}>{t("Отключить","Відключити")}</button>}
+      </div>}
+      {err && <div style={{ marginTop: 8, color: "#dc2626" }}>{err}</div>}
     </div>
   );
 }

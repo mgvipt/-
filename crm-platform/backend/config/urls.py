@@ -6,6 +6,7 @@ from apps.crm import views as crm_views
 from apps.accounts import views as acc_views
 from apps.inbox import views as inbox_views
 from apps.inbox.webchat import WebChatView
+from apps.inbox import tiktok as tiktok_views
 from apps.warehouse import views as wh_views
 from apps.warehouse import wh_views as whv
 from apps.warehouse import shop_import_views
@@ -82,6 +83,14 @@ urlpatterns = [
     path("api/inbox/echat/webhook/<int:channel_id>/", inbox_views.EchatWebhookView.as_view()),
     path("api/inbox/echat/setup/", inbox_views.EchatSetupView.as_view()),
     path("api/inbox/meta/webhook/", inbox_views.MetaWebhookView.as_view()),
+    # ── TikTok Direct (без ChatPlace): статус / підключення / callback OAuth / вебхук подій ──
+    path("api/inbox/tiktok/status/", tiktok_views.TiktokStatusView.as_view()),
+    path("api/inbox/tiktok/connect/", tiktok_views.TiktokConnectView.as_view()),
+    path("api/inbox/tiktok/disconnect/", tiktok_views.TiktokDisconnectView.as_view()),
+    path("api/inbox/tiktok/callback/", tiktok_views.TiktokCallbackView.as_view()),
+    path("api/inbox/tiktok/callback", tiktok_views.TiktokCallbackView.as_view()),
+    path("api/inbox/tiktok/webhook/", tiktok_views.TiktokWebhookView.as_view()),
+    path("api/inbox/tiktok/webhook", tiktok_views.TiktokWebhookView.as_view()),
     path("api/duplicates/", DuplicatesView.as_view()),
     path("api/gamification/me/", gam_views.MeView.as_view()),
     path("api/gamification/leaderboard/", gam_views.LeaderboardView.as_view()),
