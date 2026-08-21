@@ -22,6 +22,12 @@ const GUIDE: any = {
   "other": "Технические/неподписанные вызовы. В норме тут должен быть 0. Если здесь появились деньги — значит какая-то новая функция забыла «представиться», её надо подписать (это сигнал разработчику).",
   "Помощник CRM (советы и расчёты)": "Разные функции по кнопке — советник «как увеличить прибыль», расчёт стратегии, рекомендации. Где: в разных местах CRM по кнопкам (финансы, карточки).",
   "Приём фото от клиента в чат": "Когда клиент присылает фото в Instagram/TikTok — оно появляется прямо в чате CRM (картинка, по клику откроется крупно). НЕ тратит токены ИИ: фото просто пересылается ссылкой (использует уже оплаченную обработку Юли в ChatPlace). Сейчас в процессе подключения: ждём одобрения Instagram/Meta (заявка подана) либо настройки пересылки в ChatPlace. Пока подключаем — в чате видна пометка «клиент прислал фото» и ссылка открыть Instagram. Где: чат клиента в «Чати · Відкриті лінії».",
+  "auto_topup_intent": "Авто-докуп (дозаказ). В фоне читает диалог и определяет, хочет ли клиент докупить или дозаказать материал — чтобы вовремя предложить и не потерять продажу. Работает на самой дешёвой модели (Хайку) и проверяет только чаты с новым сообщением. Где: работает сам, в фоне.",
+  "inv_photo": "Распознавание накладной по фото. ИИ смотрит сфотографированную накладную поставщика и превращает её в строки прихода на склад (название, количество, цена) — не нужно вбивать вручную. Где: склад → загрузка входящей накладной фотографией.",
+  "Помічник у чаті": "Помощник в поле ответа (кнопка ✨). Улучшает или переводит ваш черновик сообщения перед отправкой — сам НЕ отправляет, только показывает готовый вариант для вставки. Где: в чате с клиентом, кнопка ✨ рядом с полем ввода.",
+  "AI-РОП підказка в чаті": "Подсказка от ИИ-руководителя продаж прямо в чате: коротко разбирает диалог и предлагает, что и как ответить клиенту. Где: в чате с клиентом, кнопка ИИ-РОП.",
+  "keytest": "Технический тест — проверка, что ИИ вообще отвечает (разовый пинг при настройке). Денег почти не тратит (~$0). Можно не обращать внимания.",
+  "Разметка звонка (кто говорит)": "После звонка ИИ размечает расшифровку разговора — где реплика менеджера, а где клиента — чтобы аналитик правильно оценил звонок. Где: в фоне, при анализе звонков.",
 };
 
 // Повний довідник УСІХ функцій, що звертаються до ШІ (щоб бачити всі, навіть з 0 за сьогодні).
@@ -46,7 +52,8 @@ export default function AiCosts() {
   const [preset, setPreset] = useState<string>("");        // "", today, yesterday, 7, 30, 90, year, prevyear, day, custom
   const [dayDate, setDayDate] = useState<string>("");       // конкретний день
   const [fromDate, setFromDate] = useState<string>("");     // свій діапазон — з
-  const [toDate, setToDate] = useState<string>("");         // свій діапазон — по
+  const [toDate, setToDate] = useState<string>("");
+  const [subInput, setSubInput] = useState<string>("");   // фікс. підписка $/міс (вводить Олег)         // свій діапазон — по
   const isoDay = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
   function buildQuery(): string {
     const today = new Date(); const y = today.getFullYear();
@@ -61,7 +68,7 @@ export default function AiCosts() {
       case "prevyear": return q({ from: (y - 1) + "-01-01", to: (y - 1) + "-12-31" });
       case "day": return dayDate ? q({ from: dayDate, to: dayDate }) : "";
       case "custom": { const o: any = {}; if (fromDate) o.from = fromDate; if (toDate) o.to = toDate; return Object.keys(o).length ? q(o) : ""; }
-      default: return "";
+      default: return q({ from: "2020-01-01", to: isoDay(today) }); // Весь период: широкое окно, чтобы CRM и Anthropic совпадали
     }
   }
   useEffect(() => { const qq = buildQuery(); api.get<any>("/api/ai-usage/" + qq).then(setD).catch(() => {}); api.get<any>("/api/ai-usage/anthropic/" + qq).then(setAc).catch(() => setAc({ configured: false })); /* eslint-disable-next-line */ }, [preset, dayDate, fromDate, toDate]);
@@ -72,6 +79,14 @@ export default function AiCosts() {
     const csv = rows.map((r) => r.map((c: any) => '"' + String(c).replace(/"/g, '""') + '"').join(",")).join("\n");
     const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "ai-vitraty.csv"; a.click();
+  }
+  function saveSub() {
+    const v = parseFloat(subInput.replace(",", ".")) || 0;
+    api.post("/api/ai-usage/anthropic/", { monthly_usd: v }).then(() => {
+      const qq = buildQuery();
+      api.get<any>("/api/ai-usage/anthropic/" + qq).then(setAc).catch(() => {});
+      setSubInput("");
+    }).catch(() => {});
   }
   const usd = (v: number) => "$" + (Number(v) || 0).toFixed(2);
   const num = (v: number) => (Number(v) || 0).toLocaleString("ru-RU");
@@ -150,6 +165,7 @@ export default function AiCosts() {
           <div className="panel" style={{ marginBottom: 14, border: "2px solid #c7d2fe" }}>
             <div className="label" style={{ marginBottom: 4 }}>{t("Полный счёт Anthropic — ВСЕ боты (по ключам)", "Повний рахунок Anthropic — УСІ боти (по ключах)")}</div>
             <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>{t("Реальные списания из Anthropic по каждому сервису — включая ботов вне CRM (склад, контент, командный центр, реклама).", "Реальні списання з Anthropic по кожному сервісу — включно з ботами поза CRM.")}</div>
+            {ac.from && <div className="muted" style={{ fontSize: 11, marginBottom: 8 }}>{t("Данные Anthropic доступны только за недавний период:", "Дані Anthropic доступні лише за недавній період:")} <b>{ac.from} — {ac.to}</b>. {t("Поэтому эта сумма может быть меньше «всего по CRM» — там учтена вся история с 01.07.", "Тому ця сума може бути меншою за «всього по CRM» — там уся історія з 01.07.")}</div>}
             {ac.error ? <div style={{ color: "#dc2626", fontSize: 12 }}>{ac.error}</div> : <>
               <div style={{ fontSize: 26, fontWeight: 800, color: "#166534", marginBottom: 4 }}>{usd(ac.total)}<span className="muted" style={{ fontSize: 12, fontWeight: 400 }}> {t("— реальный расход ботов (API-ключи) за период", "— реальний розхід ботів (API-ключі) за період")}</span></div>
               {(!ac.rows || !ac.rows.length || (ac.total || 0) === 0) && <div className="muted" style={{ fontSize: 11.5, marginBottom: 8, color: "#d97706" }}>{t("За сегодня данные Anthropic ещё не подтянулись (обновляются раз в сутки) — выбери «Вчера» или период пошире.", "За сьогодні дані Anthropic ще не підтяглися (оновлюються раз на добу) — обери «Вчора» або ширший період.")}</div>}
@@ -165,6 +181,32 @@ export default function AiCosts() {
             ⚠️ <b>{t("Полный счёт (все боты):", "Повний рахунок (усі боти):")}</b> {t("чтобы видеть ВЕСЬ расход (включая склад, контент, командный центр, рекламу — они тратят вне CRM), нужен Admin-ключ Anthropic. Создай его в консоли (Settings → Admin keys) и пришли — подключу за минуту.", "щоб бачити ВЕСЬ розхід (включно зі складом, контентом, командним центром, рекламою — вони витрачають поза CRM), потрібен Admin-ключ Anthropic. Створи в консолі (Settings → Admin keys) і пришли — підключу.")}
           </div>
         ))}
+        {ac && ac.configured && (() => {
+          const dd = (d.days || []).map((x: any) => x.d).filter(Boolean).sort();
+          const pDays = dd.length ? (Math.round((new Date(dd[dd.length - 1]).getTime() - new Date(dd[0]).getTime()) / 86400000) + 1) : 1;
+          const subM = Number(ac.subscription_monthly) || 0;
+          const subP = subM * pDays / 30;
+          const botsT = Number(ac.total) || 0;
+          return (
+            <div className="panel" style={{ marginBottom: 14, border: "2px solid #fbcfe8" }}>
+              <div className="label" style={{ marginBottom: 4 }}>{t("Подписка (фикс. плата) + ИТОГО за период", "Підписка (фікс. плата) + РАЗОМ за період")}</div>
+              <div className="muted" style={{ fontSize: 11.5, marginBottom: 8, lineHeight: 1.5 }}>{t("Если у вас фиксированная подписка Anthropic/Claude (например Claude Code Max) — впишите её стоимость за месяц. Система сама пересчитает её на выбранный период (пропорционально числу дней) и добавит к расходу ботов.", "Якщо у вас фіксована підписка — впишіть її вартість за місяць. Система перерахує на обраний період (пропорційно дням) і додасть до розходу ботів.")}</div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+                <span style={{ fontSize: 13 }}>{t("Подписка, $/мес:", "Підписка, $/міс:")}</span>
+                <input value={subInput} onChange={(e) => setSubInput(e.target.value)} placeholder={subM ? String(subM) : "0"} style={{ ...dateSt, width: 110 }} />
+                <button className="btn btn-light" style={{ fontSize: 13 }} onClick={saveSub}>{t("Сохранить", "Зберегти")}</button>
+                {subM > 0 && <span className="muted" style={{ fontSize: 12 }}>{t("сейчас", "зараз")}: <b>{usd(subM)}/{t("мес", "міс")}</b></span>}
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <tbody>
+                  <tr><td style={td}>{t("Реальный расход ботов (API-ключи) за период", "Реальний розхід ботів (API-ключі) за період")}</td><td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{usd(botsT)}</td></tr>
+                  <tr><td style={td}>{t("Подписка за период", "Підписка за період")} <span className="muted" style={{ fontSize: 11 }}>({pDays} {t("дн.", "дн.")}{subM > 0 ? ` = ${usd(subM)}×${pDays}/30` : ""})</span></td><td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{usd(subP)}</td></tr>
+                  <tr><td style={{ ...td, fontWeight: 800 }}>{t("ИТОГО расход на ИИ за период", "РАЗОМ розхід на ШІ за період")}</td><td style={{ ...td, textAlign: "right", fontWeight: 800, color: "#166534", fontSize: 15 }}>{usd(botsT + subP)}</td></tr>
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
         <div className="panel" style={{ marginBottom: 14 }}>
           <div className="label" style={{ marginBottom: 6 }}>{t("Куда идут деньги — по каждому помощнику (внутри CRM)", "Куди йдуть гроші — по кожному помічнику (всередині CRM)")}</div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>

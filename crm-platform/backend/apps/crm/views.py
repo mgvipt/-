@@ -3019,7 +3019,7 @@ class AnthropicCostView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        import os, json as _j, urllib.request, urllib.error
+        import os, json as _j, urllib.request, urllib.error, urllib.parse
         from datetime import date, timedelta
         u = request.user
         if not (u.is_superuser or u.has_perm_code("settings.agent") or u.has_perm_code("roles.manage")):
@@ -3035,6 +3035,11 @@ class AnthropicCostView(APIView):
             frm = (date.today() - timedelta(days=30)).isoformat()
         if not to:
             to = date.today().isoformat()
+        # Anthropic usage_report отдаёт бакеты по возрастанию дат с лимитом на страницу:
+        # окно 2020→сегодня без пагинации возвращало первые пустые дни → $0. Ставим разумный
+        # нижний порог (данные всё равно недавние) и ниже — пагинируем все страницы.
+        _floor = (date.today() - timedelta(days=370)).isoformat()
+        a_frm = frm if (frm or "") >= _floor else _floor
         H = {"x-api-key": admin, "anthropic-version": "2023-06-01"}
         def _get(url):
             req = urllib.request.Request(url, headers=H)
@@ -3048,7 +3053,7 @@ class AnthropicCostView(APIView):
             m = (m or "").lower()
             return "opus" if "opus" in m else ("sonnet" if "sonnet" in m else "haiku")
         _base = "https://api.anthropic.com/v1/organizations"
-        _win = "starting_at=%sT00:00:00Z&ending_at=%sT23:59:59Z" % (frm, to)
+        _win = "starting_at=%sT00:00:00Z&ending_at=%sT23:59:59Z" % (a_frm, to)
         try:
             names = {}
             try:
@@ -3056,33 +3061,56 @@ class AnthropicCostView(APIView):
                     names[k.get("id")] = k.get("name")
             except Exception:
                 pass
-            us = _get(_base + "/usage_report/messages?" + _win + "&group_by[]=api_key_id&group_by[]=model")
-            agg = {}
-            for b in (us.get("data") or []):
-                for r in (b.get("results") or []):
-                    kid = r.get("api_key_id") or "—"
-                    pin, pout, pcr, pcw = PRICE[tier(r.get("model"))]
-                    c = (int(r.get("uncached_input_tokens") or 0) * pin
-                         + int(r.get("output_tokens") or 0) * pout
-                         + int(r.get("cache_read_input_tokens") or 0) * pcr
-                         + int(r.get("cache_creation_input_tokens") or 0) * pcw)
-                    agg[kid] = agg.get(kid, 0) + c
+            _uparams = _win + "&bucket_width=1d&limit=31&group_by[]=api_key_id&group_by[]=model"
+            _url = _base + "/usage_report/messages?" + _uparams
+            agg = {}; _pages = 0
+            while _url and _pages < 40:
+                us = _get(_url); _pages += 1
+                for b in (us.get("data") or []):
+                    for r in (b.get("results") or []):
+                        kid = r.get("api_key_id") or "—"
+                        pin, pout, pcr, pcw = PRICE[tier(r.get("model"))]
+                        c = (int(r.get("uncached_input_tokens") or 0) * pin
+                             + int(r.get("output_tokens") or 0) * pout
+                             + int(r.get("cache_read_input_tokens") or 0) * pcr
+                             + int(r.get("cache_creation_input_tokens") or 0) * pcw)
+                        agg[kid] = agg.get(kid, 0) + c
+                _np = us.get("next_page")
+                _url = (_base + "/usage_report/messages?" + _uparams + "&page=" + urllib.parse.quote(_np)) if (us.get("has_more") and _np) else None
             rows = sorted([{"key": names.get(kid) or (kid[:14] if kid else "—"), "cost": round(v, 2)}
                            for kid, v in agg.items()], key=lambda x: -x["cost"])
             keys_total = round(sum(r["cost"] for r in rows), 2)
             org_total = None
             try:
-                cr = _get(_base + "/cost_report?" + _win)
+                cr = _get(_base + "/cost_report?" + _win + "&limit=31")
                 org_total = round(sum(float(rr.get("amount") or 0) for b in (cr.get("data") or [])
                                       for rr in (b.get("results") or [])), 2)
             except Exception:
                 pass
-            return Response({"configured": True, "from": frm, "to": to, "rows": rows,
-                             "total": keys_total, "org_total": org_total})
+            from apps.integrations.models import IntegrationSettings as _IS
+            _sub = _IS.objects.filter(provider="ai_subscription").first()
+            _subv = float((_sub.config or {}).get("monthly_usd") or 0) if _sub else 0.0
+            return Response({"configured": True, "from": a_frm, "to": to, "rows": rows,
+                             "total": keys_total, "org_total": org_total, "subscription_monthly": _subv})
         except urllib.error.HTTPError as e:
             return Response({"configured": True, "error": "Anthropic %s: %s" % (e.code, e.read().decode()[:150])})
         except Exception as e:
             return Response({"configured": True, "error": str(e)[:200]})
+
+
+    def post(self, request):
+        # set subscription
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("settings.agent") or u.has_perm_code("roles.manage")):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        from apps.integrations.models import IntegrationSettings
+        try:
+            v = float(request.data.get("monthly_usd") or 0)
+        except (TypeError, ValueError):
+            v = 0.0
+        st, _ = IntegrationSettings.objects.get_or_create(provider="ai_subscription", defaults={"config": {}})
+        st.config = {"monthly_usd": v}; st.save(update_fields=["config"])
+        return Response({"ok": True, "monthly_usd": v})
 
 
 class AgentConfigView(APIView):
