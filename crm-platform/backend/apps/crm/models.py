@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 
 
@@ -68,7 +69,7 @@ class Contact(models.Model):
     phones_extra = models.JSONField("Додаткові телефони", default=list, blank=True,
                                     help_text="[{label,value}] — кілька телефонів з назвами")
     links_extra = models.JSONField("Додаткові посилання на акаунти", default=list, blank=True,
-                                   help_text="[{label,value}] — кілька посилань на акаунти/месенджери з назвами")
+                                   help_text="[{label,value}] — кілька посилань")
     accounts = models.JSONField("Рахунки (постачальник)", default=list, blank=True,
                                 help_text="[{label,iban,active}] — активний рахунок = на який оплачуємо через ФОП")
     monitor_emails = models.JSONField("Пошти для моніторингу", default=list, blank=True,
@@ -84,6 +85,7 @@ class Contact(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [GinIndex(fields=["kinds"], name="contact_kinds_gin")]
 
     def __str__(self):
         _fn = (self.first_name or "").strip()
@@ -256,6 +258,57 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"{self.get_provider_display()} {self.amount} (#{self.deal_id})"
+
+
+class MetaConversionEvent(models.Model):
+    """Безпечна черга CRM-подій для Meta Conversions API.
+
+    У payload зберігаються лише нормалізовані хеші контактних даних. Реальна
+    відправка вимкнена за замовчуванням і запускається окремою командою.
+    """
+
+    STATUSES = [
+        ("pending", "Очікує"),
+        ("processing", "Відправляється"),
+        ("sent", "Відправлено"),
+        ("failed", "Помилка"),
+        ("skipped", "Пропущено"),
+    ]
+    SOURCE_TYPES = [
+        ("lead", "Лід"),
+        ("deal", "Сделка"),
+        ("payment", "Оплата"),
+    ]
+
+    event_id = models.CharField(max_length=160, unique=True, db_index=True)
+    event_name = models.CharField(max_length=64, db_index=True)
+    source_type = models.CharField(max_length=16, choices=SOURCE_TYPES, db_index=True)
+    source_id = models.PositiveBigIntegerField(db_index=True)
+    contact = models.ForeignKey(Contact, null=True, blank=True, on_delete=models.SET_NULL,
+                                related_name="meta_conversion_events")
+    lead = models.ForeignKey(Lead, null=True, blank=True, on_delete=models.SET_NULL,
+                             related_name="meta_conversion_events")
+    deal = models.ForeignKey(Deal, null=True, blank=True, on_delete=models.SET_NULL,
+                             related_name="meta_conversion_events")
+    payment = models.ForeignKey(Payment, null=True, blank=True, on_delete=models.SET_NULL,
+                                related_name="meta_conversion_events")
+    stage = models.ForeignKey(Stage, null=True, blank=True, on_delete=models.SET_NULL,
+                              related_name="meta_conversion_events")
+    occurred_at = models.DateTimeField(db_index=True)
+    payload = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=16, choices=STATUSES, default="pending", db_index=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    last_error = models.CharField(max_length=500, blank=True, default="")
+    sent_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        indexes = [models.Index(fields=["status", "created_at"], name="crm_meta_status_created")]
+
+    def __str__(self):
+        return f"{self.event_name} · {self.event_id}"
 
 
 # ============================================================================

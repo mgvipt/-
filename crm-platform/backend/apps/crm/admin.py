@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Company, Contact, Funnel, Stage, Lead, Deal, Payment
+from .models import Company, Contact, Funnel, Stage, Lead, Deal, Payment, MetaConversionEvent
 
 
 class StageInline(admin.TabularInline):
@@ -37,3 +37,24 @@ class ContactAdmin(admin.ModelAdmin):
 
 
 admin.site.register(Payment)
+
+
+@admin.register(MetaConversionEvent)
+class MetaConversionEventAdmin(admin.ModelAdmin):
+    list_display = ("event_name", "source_type", "source_id", "status", "attempts", "occurred_at")
+    list_filter = ("event_name", "source_type", "status")
+    search_fields = ("event_id",)
+    readonly_fields = (
+        "event_id", "event_name", "source_type", "source_id", "contact", "lead", "deal",
+        "payment", "stage", "occurred_at", "payload", "status", "attempts", "last_error",
+        "sent_at", "created_at", "updated_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
