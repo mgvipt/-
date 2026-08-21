@@ -3000,7 +3000,7 @@ class AiUsageView(APIView):
         days = list(qs.annotate(d=TruncDate("created_at")).values("d").annotate(
             cost=Sum("cost_usd"), calls=Count("id")).order_by("-d")[:400])
         by_src = list(qs.values("source").annotate(cost=Sum("cost_usd"), calls=Count("id"),
-            itok=Sum("in_tok"), otok=Sum("out_tok"), note=Max("note")).order_by("-cost"))
+            itok=Sum("in_tok"), otok=Sum("out_tok"), note=Max("note"), model=Max("model")).order_by("-cost"))
         by_model = list(qs.values("model").annotate(cost=Sum("cost_usd"), calls=Count("id")).order_by("-cost"))
         day_src = list(qs.annotate(d=TruncDate("created_at")).values("d", "source").annotate(
             cost=Sum("cost_usd"), calls=Count("id")).order_by("-d", "-cost")[:300])

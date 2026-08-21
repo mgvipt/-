@@ -43,7 +43,7 @@ def analyze_dialog(messages, context="", kind="чат"):
         _am = AgentConfig.get().analyst_model or "claude-sonnet-4-6"
         r = claude_json(prompt, model=_am, max_tokens=1600, source="Оценка качества диалога (коуч)")
     except Exception:
-        r = claude_json(prompt, model="claude-sonnet-4-6", max_tokens=1400)
+        r = claude_json(prompt, model="claude-sonnet-4-6", max_tokens=1400, source="Оценка качества диалога (коуч)")
     if not isinstance(r, dict):
         return {"overall": 0, "scores": {}, "error": "bad response"}
     sc = r.get("scores") or {}
@@ -64,7 +64,7 @@ def label_speakers(transcript):
         "Поверни СТРОГО JSON українською: {\"dialog\": \"МЕНЕДЖЕР: ...\\nКЛІЄНТ: ...\\nМЕНЕДЖЕР: ...\"}\n\n"
         "ТРАНСКРИПТ:\n" + transcript[:6000])
     try:
-        r = claude_json(prompt, model="claude-sonnet-4-6", max_tokens=2200)
+        r = claude_json(prompt, model="claude-sonnet-4-6", max_tokens=2200, source="Разметка звонка (кто говорит)")
         if isinstance(r, dict) and r.get("dialog"):
             return r["dialog"][:20000]
     except Exception:

@@ -64,6 +64,14 @@ export default function AiCosts() {
     }
   }
   useEffect(() => { api.get<any>("/api/ai-usage/" + buildQuery()).then(setD).catch(() => {}); /* eslint-disable-next-line */ }, [preset, dayDate, fromDate, toDate]);
+  function exportCsv() {
+    if (!d) return;
+    const rows: any[] = [["Помічник / функція", "Модель", "Звернень", "Сума USD"]];
+    (d.by_source || []).forEach((r: any) => rows.push([r.source, r.model || "", r.calls, (Number(r.cost) || 0).toFixed(4)]));
+    const csv = rows.map((r) => r.map((c: any) => '"' + String(c).replace(/"/g, '""') + '"').join(",")).join("\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "ai-vitraty.csv"; a.click();
+  }
   const usd = (v: number) => "$" + (Number(v) || 0).toFixed(2);
   const num = (v: number) => (Number(v) || 0).toLocaleString("ru-RU");
   const th: any = { textAlign: "left", padding: "7px 9px", fontSize: 12, color: "#64748b", borderBottom: "2px solid #eef2f7" };
@@ -103,6 +111,8 @@ export default function AiCosts() {
             <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={dateSt} title={t("По", "По")} />
           </>}
           {(preset === "day" && !dayDate) && <span className="muted" style={{ fontSize: 11.5, color: "#d97706" }}>{t("выберите дату", "оберіть дату")}</span>}
+          <div style={{ flex: 1 }} />
+          <button className="btn btn-light" style={{ fontSize: 13 }} onClick={exportCsv}>📥 {t("Экспорт CSV", "Експорт CSV")}</button>
         </div>
 
         {!d ? <div className="muted">…</div> : <>
@@ -116,15 +126,33 @@ export default function AiCosts() {
           <Card label={t("Оценка (прошлое)", "Оцінка (минуле)")} val={usd(d.est_cost)} color="#9a3412" />
           <Card label={t("Точно (с 01.07)", "Точно (з 01.07)")} val={usd(d.live_cost)} color="#1d4ed8" />
           <Card label={t("Обращений к ИИ", "Звернень до ШІ")} val={num(d.total_calls)} />
+          {(d.days || []).length > 0 && <Card label={t("В среднем / день", "В середньому / день")} val={usd((d.total_cost || 0) / (d.days.length || 1))} color="#7c3aed" />}
+          {(d.days || []).length > 1 && <Card label={t("Прогноз на месяц", "Прогноз на місяць")} val={usd((d.total_cost || 0) / (d.days.length || 1) * 30)} color="#be185d" />}
         </div>
+        {(d.days || []).length > 1 && (() => {
+          const days = [...(d.days || [])].reverse();
+          const mx = Math.max(...days.map((x: any) => Number(x.cost) || 0), 0.0001);
+          return (
+            <div className="panel" style={{ marginBottom: 16 }}>
+              <div className="label" style={{ marginBottom: 8 }}>{t("Расход по дням", "Витрати по днях")}</div>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 120, overflowX: "auto" }}>
+                {days.map((x: any, i: number) => (
+                  <div key={i} title={x.d + ": " + usd(x.cost) + " · " + num(x.calls) + (t(" обращений", " звернень"))} style={{ flex: "1 0 6px", minWidth: 6, height: Math.max(2, (Number(x.cost) || 0) / mx * 110), background: "#818cf8", borderRadius: "3px 3px 0 0" }} />
+                ))}
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: "#94a3b8", marginTop: 4 }}><span>{days[0]?.d}</span><span>{days[days.length - 1]?.d}</span></div>
+            </div>
+          );
+        })()}
 
         <div className="panel" style={{ marginBottom: 14 }}>
           <div className="label" style={{ marginBottom: 6 }}>{t("Куда идут деньги — по каждому помощнику", "Куди йдуть гроші — по кожному помічнику")}</div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><th style={th}>{t("Помощник / функция", "Помічник / функція")}</th><th style={th}>{t("Обращений", "Звернень")}</th><th style={{ ...th, textAlign: "right" }}>{t("Сумма", "Сума")}</th></tr></thead>
+            <thead><tr><th style={th}>{t("Помощник / функция", "Помічник / функція")}</th><th style={th}>{t("Модель", "Модель")}</th><th style={th}>{t("Обращений", "Звернень")}</th><th style={{ ...th, textAlign: "right" }}>{t("Сумма", "Сума")}</th></tr></thead>
             <tbody>{(d.by_source || []).map((r: any, i: number) => (
               <tr key={i}>
-                <td style={{ ...td, maxWidth: 620 }}><div style={{ fontWeight: 600 }}>{r.source}</div>{GUIDE[r.source] && <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.45, marginTop: 2 }}>{GUIDE[r.source]}</div>}{r.note && !GUIDE[r.source] && <div className="muted" style={{ fontSize: 11 }}>{r.note}</div>}</td>
+                <td style={{ ...td, maxWidth: 560 }}><div style={{ fontWeight: 600 }}>{r.source}</div>{GUIDE[r.source] && <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.45, marginTop: 2 }}>{GUIDE[r.source]}</div>}{r.note && !GUIDE[r.source] && <div className="muted" style={{ fontSize: 11 }}>{r.note}</div>}</td>
+                <td style={{ ...td, fontSize: 11.5, color: "#64748b", whiteSpace: "nowrap" }}>{MODEL_RU[r.model] || r.model || "—"}</td>
                 <td style={td}>{num(r.calls)}</td>
                 <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{usd(r.cost)}</td>
               </tr>))}</tbody>
