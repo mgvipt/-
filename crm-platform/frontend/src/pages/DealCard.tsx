@@ -776,6 +776,24 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                     {Object.keys(SOURCES).map((k) => <option key={k} value={k}>{(SOURCES as any)[k][0]}</option>)}
                   </select>
                 </div>
+                {(deal as any).meta_ad && (() => {
+                  const ad = (deal as any).meta_ad;
+                  return (
+                    <div style={{ marginTop: 10, background: "linear-gradient(135deg,#fff1e9,#fde7f3)", border: "1px solid #f3c9b4", borderRadius: 10, padding: "10px 12px", display: "flex", gap: 10, alignItems: "center" }}>
+                      {ad.thumb ? (
+                        <img src={ad.thumb} alt="" style={{ width: 42, height: 42, borderRadius: 8, objectFit: "cover", flex: "none" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                      ) : (
+                        <div style={{ width: 42, height: 42, borderRadius: 8, flex: "none", display: "grid", placeItems: "center", background: "linear-gradient(135deg,#F09433,#E1306C 60%,#8134AF)", color: "#fff", fontSize: 18 }}>📣</div>
+                      )}
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: .3, textTransform: "uppercase", color: "#c2694a" }}>{t("Пришёл с рекламы","Прийшов з реклами")}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#231c18", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={ad.title || ad.ad_name || ad.campaign}>{ad.title || ad.ad_name || ad.campaign || t("Реклама Meta","Реклама Meta")}</div>
+                        {(ad.campaign || ad.ad_name) && <div style={{ fontSize: 11, color: "#6b5b52", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={`${ad.campaign} · ${ad.ad_name}`}>{[ad.campaign, ad.ad_name].filter(Boolean).join(" · ")}</div>}
+                      </div>
+                      {ad.permalink && <a href={ad.permalink} target="_blank" rel="noreferrer" className="btn" style={{ flex: "none", fontSize: 11, padding: "4px 8px", background: "#fff", color: "#c2694a", textDecoration: "none" }} title={t("Открыть объявление","Відкрити оголошення")}>{t("Объявление →","Оголошення →")}</a>}
+                    </div>
+                  );
+                })()}
               </>
             ) : cliFieldsOpen ? (
               <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 8 }}>

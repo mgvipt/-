@@ -106,19 +106,52 @@ class FunnelSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "is_lead_funnel", "is_archive", "order", "stages"]
 
 
+def _resolve_meta_ad(attr):
+    """Читабельна картка джерела реклами з meta_attribution ліда/угоди.
+    Резолвить ad_id → назву кампанії/оголошення з уже синхронізованої статистики
+    (MetaAdDailyStat), додає назву та мініатюру креативу з referral. None — якщо це
+    не платний клік (щоб фронт не малював плашку органіці)."""
+    if not isinstance(attr, dict) or attr.get("source_kind") != "paid_ad":
+        return None
+    ad_id = str(attr.get("ad_id") or "")
+    campaign = ad_name = permalink = ""
+    if ad_id:
+        from .models import MetaAdDailyStat
+        row = (MetaAdDailyStat.objects.filter(ad_id=ad_id).exclude(campaign_name="").order_by("-date").first()
+               or MetaAdDailyStat.objects.filter(ad_id=ad_id).order_by("-date").first())
+        if row:
+            campaign = row.campaign_name or ""
+            ad_name = row.ad_name or ""
+            permalink = getattr(row, "permalink_url", "") or ""
+    return {
+        "platform": attr.get("platform", ""),
+        "ad_id": ad_id,
+        "campaign": campaign,
+        "ad_name": ad_name,
+        "title": attr.get("ad_title", ""),
+        "thumb": attr.get("ad_thumb", ""),
+        "ref": attr.get("ad_ref", ""),
+        "permalink": permalink,
+    }
+
+
 class LeadSerializer(serializers.ModelSerializer):
     owner_name = serializers.CharField(source="owner.get_full_name", read_only=True)
     contact_name = serializers.SerializerMethodField()
     contact_social_link = serializers.CharField(source="contact.social_link", read_only=True, default="")
     contact_phone = serializers.CharField(source="contact.phone", read_only=True, default="")
+    meta_ad = serializers.SerializerMethodField()
 
     def get_contact_name(self, obj):
         return str(obj.contact) if obj.contact else ""
 
+    def get_meta_ad(self, obj):
+        return _resolve_meta_ad(obj.meta_attribution)
+
     class Meta:
         model = Lead
         fields = ["id", "title", "contact", "contact_name", "funnel", "stage",
-                  "source", "amount", "is_seen", "qualification", "card_fields", "meta_attribution", "contact_social_link", "contact_phone", "owner", "owner_name",
+                  "source", "amount", "is_seen", "qualification", "card_fields", "meta_attribution", "meta_ad", "contact_social_link", "contact_phone", "owner", "owner_name",
                   "created_at", "updated_at"]
         read_only_fields = ["meta_attribution"]
 
@@ -130,6 +163,7 @@ class DealSerializer(serializers.ModelSerializer):
     contact_phone = serializers.CharField(source="contact.phone", read_only=True, default="")
     owner_name = serializers.CharField(source="owner.get_full_name", read_only=True)
     contact_name = serializers.SerializerMethodField()
+    meta_ad = serializers.SerializerMethodField()
 
     def get_contact_name(self, obj):
         return str(obj.contact) if obj.contact else ""
@@ -137,11 +171,14 @@ class DealSerializer(serializers.ModelSerializer):
     def get_funnel_name(self, obj):
         return obj.funnel.name if obj.funnel_id else ""
 
+    def get_meta_ad(self, obj):
+        return _resolve_meta_ad(obj.meta_attribution)
+
     class Meta:
         model = Deal
         fields = ["id", "title", "contact", "contact_name", "contact_social_link", "contact_phone", "funnel", "funnel_name", "stage",
                   "source", "amount", "discount_pct", "pay_type", "ttn", "checkbox_status", "checkbox_url", "checkbox_relation_id", "parent_deal", "parent_deal_title",
-                  "qualification", "card_fields", "meta_attribution", "owner", "owner_name", "closed_at", "is_seen",
+                  "qualification", "card_fields", "meta_attribution", "meta_ad", "owner", "owner_name", "closed_at", "is_seen",
                   "created_at", "updated_at"]
         read_only_fields = ["meta_attribution"]
 
