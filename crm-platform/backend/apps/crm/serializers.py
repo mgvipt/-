@@ -118,8 +118,9 @@ class LeadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lead
         fields = ["id", "title", "contact", "contact_name", "funnel", "stage",
-                  "source", "amount", "is_seen", "qualification", "card_fields", "contact_social_link", "contact_phone", "owner", "owner_name",
+                  "source", "amount", "is_seen", "qualification", "card_fields", "meta_attribution", "contact_social_link", "contact_phone", "owner", "owner_name",
                   "created_at", "updated_at"]
+        read_only_fields = ["meta_attribution"]
 
 
 class DealSerializer(serializers.ModelSerializer):
@@ -140,8 +141,9 @@ class DealSerializer(serializers.ModelSerializer):
         model = Deal
         fields = ["id", "title", "contact", "contact_name", "contact_social_link", "contact_phone", "funnel", "funnel_name", "stage",
                   "source", "amount", "discount_pct", "pay_type", "ttn", "checkbox_status", "checkbox_url", "checkbox_relation_id", "parent_deal", "parent_deal_title",
-                  "qualification", "card_fields", "owner", "owner_name", "closed_at", "is_seen",
+                  "qualification", "card_fields", "meta_attribution", "owner", "owner_name", "closed_at", "is_seen",
                   "created_at", "updated_at"]
+        read_only_fields = ["meta_attribution"]
 
 
 class PaymentSerializer(serializers.ModelSerializer):

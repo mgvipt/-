@@ -259,7 +259,58 @@ def _get_or_make_contact(kind, sender_id, name="", username=""):
     )
 
 
-def _new_meta_lead(conv, kind, sender_id, name="", username=""):
+def _meta_attribution(kind, *nodes, source_context=""):
+    """Витягнути лише стабільні рекламні ID, не зберігаючи сирий webhook.
+
+    Наявність Instagram/Facebook-джерела сама по собі не є рекламою. Якщо Meta
+    не передала ad/lead-form ID, запис залишається органічним і не потрапляє до
+    Conversions API.
+    """
+    aliases = {
+        "lead_id": ("lead_id", "leadgen_id"),
+        "form_id": ("form_id",),
+        "ad_id": ("ad_id",),
+        "adset_id": ("adset_id", "ad_set_id"),
+        "campaign_id": ("campaign_id",),
+        "referral_id": ("referral_id",),
+        "content_id": ("content_id", "post_id", "media_id"),
+    }
+    found = {}
+
+    def walk(value):
+        if isinstance(value, dict):
+            for out_key, keys in aliases.items():
+                if out_key in found:
+                    continue
+                for key in keys:
+                    candidate = value.get(key)
+                    if isinstance(candidate, (str, int)) and str(candidate).strip():
+                        found[out_key] = str(candidate).strip()[:180]
+                        break
+            for child in value.values():
+                if isinstance(child, (dict, list)):
+                    walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    for node in nodes:
+        walk(node)
+    if found.get("lead_id"):
+        source_kind = "lead_form"
+    elif any(found.get(key) for key in ("ad_id", "campaign_id", "referral_id")):
+        source_kind = "paid_ad"
+    else:
+        source_kind = "organic"
+    return {
+        "source_kind": source_kind,
+        "platform": kind,
+        "source_context": source_context,
+        **found,
+    }
+
+
+def _new_meta_lead(conv, kind, sender_id, name="", username="", attribution=None):
     """Створити контакт + лід для нового вхідного чату Meta (FB/IG). Джерело = канал."""
     from apps.crm.models import Lead, Funnel
     name, username = _resolve_meta_identity(sender_id, kind, name, username)
@@ -274,7 +325,8 @@ def _new_meta_lead(conv, kind, sender_id, name="", username=""):
         if f and st:
             src = "instagram" if kind == "instagram" else "facebook"
             Lead.objects.create(title=(name or str(sender_id))[:255],
-                                contact=conv.contact, funnel=f, stage=st, source=src, is_seen=False)
+                                contact=conv.contact, funnel=f, stage=st, source=src, is_seen=False,
+                                meta_attribution=(attribution or {}))
     except Exception:
         pass
 
@@ -616,7 +668,10 @@ def handle_webhook(payload: dict):
             conv, created = Conversation.objects.get_or_create(channel=ch, external_chat_id=str(ext_chat), defaults={"title": kind})
             if not is_echo:
                 if created or not conv.contact_id:
-                    _new_meta_lead(conv, kind, sender)
+                    _new_meta_lead(
+                        conv, kind, sender,
+                        attribution=_meta_attribution(kind, ev, msg, source_context="direct"),
+                    )
                 else:
                     # Старий чат міг створитися до появи профільного lookup. Нове повідомлення
                     # повинно дозаповнити ім'я/прізвище/username, не створюючи нового контакту.
@@ -722,7 +777,10 @@ def handle_webhook(payload: dict):
             if created or (not ours and not conv.contact_id):
                 # контакт = КЛІЄНТ (нік лида), НЕ наш акаунт
                 _new_meta_lead(conv, kind, author_id or client_key, client_name,
-                               username=author_username)
+                               username=author_username,
+                               attribution=_meta_attribution(
+                                   kind, val, source_context=("comment_ad" if is_ad else "comment"),
+                               ))
             elif not ours:
                 _enrich_contact(conv.contact, kind, author_id, author_name,
                                 username=author_username)

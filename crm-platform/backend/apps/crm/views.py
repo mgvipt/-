@@ -612,7 +612,8 @@ def convert_lead_to_deal(lead, funnel, user, actor):
         deal = Deal.objects.create(
             title=lead.title, contact=contact, funnel=funnel, stage=stage,
             amount=lead.amount, source=lead.source, owner=lead.owner,
-            qualification=lead.qualification, card_fields=lead.card_fields)
+            qualification=lead.qualification, card_fields=lead.card_fields,
+            meta_attribution=lead.meta_attribution)
     log_activity("deal", deal.id, "Створено з ліда (лід видалено)",
                  "Воронка %s · лід #%s · контакт #%s" % (funnel.name, lead.id, contact.id), user, actor)
     # перенести задачі + AI-прогони ліда на сделку (не сиротити при каскаді)
@@ -2462,6 +2463,150 @@ class AnalyticsView(APIView):
                           "deals": m["deals"], "sum": float(m["sum"] or 0)} for m in managers],
             "channels": _channels,
             "funnels": list((Funnel.objects.filter(is_lead_funnel=False) if _af is None else Funnel.objects.filter(is_lead_funnel=False, id__in=_af)).values("id", "name")),
+        })
+
+
+class MetaMarketingView(APIView):
+    """Чесна Meta-аналітика: CRM-воронка лише для підтвердженої реклами/lead forms.
+
+    Витрати, покази та охоплення тут навмисно не вигадуються: вони з'являться
+    після окремого sync Marketing/Insights API.
+    """
+    permission_classes = [HasPermCode]
+    required_perm = "analytics.view"
+
+    def get(self, request):
+        import os
+        from collections import defaultdict
+        from datetime import timedelta
+        from django.utils import timezone
+        from django.utils.dateparse import parse_date
+        from .meta_conversions import event_name_for_stage, has_verified_meta_attribution, normalized_meta_attribution
+        from .models import MetaConversionEvent
+
+        user = request.user
+        see_all_leads = user.is_superuser or user.can_see_all_leads()
+        see_all_deals = user.is_superuser or user.can_see_all_deals()
+        leads_qs = Lead.objects.select_related("funnel", "stage", "owner", "contact")
+        deals_qs = Deal.objects.select_related("funnel", "stage", "owner", "contact")
+        if not see_all_leads:
+            leads_qs = leads_qs.filter(owner=user)
+        if not see_all_deals:
+            deals_qs = deals_qs.filter(owner=user)
+        allowed = user.allowed_funnel_ids()
+        if allowed is not None:
+            leads_qs = leads_qs.filter(funnel_id__in=allowed)
+            deals_qs = deals_qs.filter(funnel_id__in=allowed)
+
+        today = timezone.localdate()
+        date_from = parse_date(request.GET.get("from") or "") or (today - timedelta(days=29))
+        date_to = parse_date(request.GET.get("to") or "") or today
+        if date_from > date_to:
+            date_from, date_to = date_to, date_from
+        leads_qs = leads_qs.filter(created_at__date__gte=date_from, created_at__date__lte=date_to)
+        deals_qs = deals_qs.filter(created_at__date__gte=date_from, created_at__date__lte=date_to)
+
+        all_leads = list(leads_qs)
+        all_deals = list(deals_qs)
+        leads = [item for item in all_leads if has_verified_meta_attribution(item)]
+        deals = [item for item in all_deals if has_verified_meta_attribution(item)]
+        deal_ids = [item.pk for item in deals]
+        payments = Payment.objects.filter(deal_id__in=deal_ids, is_paid=True)
+
+        by_platform = defaultdict(lambda: {"leads": 0, "deals": 0, "won": 0, "revenue": 0.0})
+        by_source = defaultdict(lambda: {"leads": 0, "deals": 0})
+        by_campaign = defaultdict(lambda: {"campaign_id": "", "campaign_name": "", "leads": 0, "deals": 0, "won": 0, "revenue": 0.0})
+        by_content = defaultdict(lambda: {"content_id": "", "leads": 0, "deals": 0})
+        funnel = defaultdict(lambda: {"leads": 0, "deals": 0, "won": 0})
+        stages = defaultdict(lambda: {"funnel": "", "stage": "", "meta_event": "", "leads": 0, "deals": 0})
+
+        def add(item, kind):
+            attr = normalized_meta_attribution(item)
+            platform = attr.get("platform", "unknown")
+            source_kind = attr.get("source_kind", "unknown")
+            by_platform[platform][kind] += 1
+            by_source[source_kind][kind] += 1
+            won = kind == "deals" and bool(item.stage and item.stage.is_won)
+            revenue = float(item.amount or 0) if won else 0.0
+            if won:
+                by_platform[platform]["won"] += 1
+                by_platform[platform]["revenue"] += revenue
+            campaign_id = attr.get("campaign_id") or attr.get("ad_id") or "unknown"
+            campaign = by_campaign[campaign_id]
+            campaign["campaign_id"] = "" if campaign_id == "unknown" else campaign_id
+            campaign["campaign_name"] = attr.get("campaign_name") or attr.get("ad_name") or ""
+            campaign[kind] += 1
+            if won:
+                campaign["won"] += 1
+                campaign["revenue"] += revenue
+            content_id = attr.get("content_id") or "unknown"
+            content = by_content[content_id]
+            content["content_id"] = "" if content_id == "unknown" else content_id
+            content[kind] += 1
+            frow = funnel[item.funnel.name]
+            frow[kind] += 1
+            if won:
+                frow["won"] += 1
+            stage_key = f"{item.funnel_id}:{item.stage_id}"
+            srow = stages[stage_key]
+            srow["funnel"] = item.funnel.name
+            srow["stage"] = item.stage.name
+            srow["meta_event"] = event_name_for_stage(item.stage) or "—"
+            srow[kind] += 1
+
+        for item in leads:
+            add(item, "leads")
+        for item in deals:
+            add(item, "deals")
+
+        event_qs = MetaConversionEvent.objects.filter(
+            created_at__date__gte=date_from, created_at__date__lte=date_to,
+        )
+        if not (see_all_leads and see_all_deals):
+            event_qs = event_qs.filter(contact_id__in={x.contact_id for x in leads + deals if x.contact_id})
+        outbox = {row["status"]: row["n"] for row in event_qs.values("status").annotate(n=Count("id"))}
+
+        recent = []
+        combined = [(x.created_at, "lead", x) for x in leads] + [(x.created_at, "deal", x) for x in deals]
+        for _, object_type, item in sorted(combined, key=lambda row: row[0], reverse=True)[:30]:
+            attr = normalized_meta_attribution(item)
+            recent.append({
+                "object_type": object_type, "id": item.pk, "title": item.title,
+                "platform": attr.get("platform", ""), "source_kind": attr.get("source_kind", ""),
+                "campaign_id": attr.get("campaign_id", ""), "ad_id": attr.get("ad_id", ""),
+                "funnel": item.funnel.name, "stage": item.stage.name,
+                "created_at": item.created_at,
+            })
+
+        won_deals = [item for item in deals if item.stage and item.stage.is_won]
+        return Response({
+            "period": {"from": date_from, "to": date_to},
+            "integration": {
+                "capi_enabled": os.environ.get("META_CAPI_ENABLED", "0") == "1",
+                "capi_dataset_configured": bool(os.environ.get("META_CAPI_DATASET_ID", "").strip()),
+                "capi_token_configured": bool(os.environ.get("META_CAPI_ACCESS_TOKEN", "").strip()),
+                "insights_sync_configured": False,
+            },
+            "summary": {
+                "attributed_leads": len(leads), "attributed_deals": len(deals),
+                "won_deals": len(won_deals),
+                "won_revenue": round(sum(float(x.amount or 0) for x in won_deals), 2),
+                "paid_revenue": float(payments.aggregate(s=Sum("amount"))["s"] or 0),
+                "manual_or_organic_leads": len(all_leads) - len(leads),
+                "manual_or_organic_deals": len(all_deals) - len(deals),
+            },
+            "by_platform": [{"platform": key, **value} for key, value in sorted(by_platform.items())],
+            "by_source_kind": [{"source_kind": key, **value} for key, value in sorted(by_source.items())],
+            "campaigns": sorted(by_campaign.values(), key=lambda x: (-x["won"], -x["deals"], -x["leads"])),
+            "content": sorted(by_content.values(), key=lambda x: (-x["deals"], -x["leads"])),
+            "funnels": [{"funnel": key, **value} for key, value in sorted(funnel.items())],
+            "stages": sorted(stages.values(), key=lambda x: (x["funnel"], x["stage"])),
+            "outbox": outbox,
+            "recent": recent,
+            "unavailable_until_insights_sync": [
+                "spend", "impressions", "reach", "frequency", "cpm", "cpc", "ctr",
+                "video_views", "engagement", "followers", "roas",
+            ],
         })
 
 

@@ -159,6 +159,10 @@ class Lead(TimestampedOwned):
     is_seen = models.BooleanField(default=False, help_text="Снимает бейдж 'НЕПЕРЕГЛЯНУТІ'")
     qualification = models.JSONField(default=dict, blank=True, help_text="Анкета виявлення потреби (тип приміщення, площа, матеріал, бюджет тощо)")
     card_fields = models.JSONField(default=list, blank=True, help_text="Кастомні поля/блоки картки (як у Бітриксі): [{label, value}]")
+    meta_attribution = models.JSONField(
+        default=dict, blank=True,
+        help_text="Перевірена рекламна атрибуція Meta (тип джерела та стабільні ID реклами/форми)",
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -193,6 +197,10 @@ class Deal(TimestampedOwned):
     b24_id = models.CharField(max_length=20, blank=True, default="", db_index=True, help_text="ID угоди в Бітриксі (для токена Cashflow WC-{b24_id})")
     qualification = models.JSONField(default=dict, blank=True, help_text="Анкета виявлення потреби (переноситься з ліда)")
     card_fields = models.JSONField(default=list, blank=True, help_text="Кастомні поля картки [{label, value}]")
+    meta_attribution = models.JSONField(
+        default=dict, blank=True,
+        help_text="Перевірена рекламна атрибуція Meta, перенесена з ліда",
+    )
 
     class Meta:
         ordering = ["-created_at"]

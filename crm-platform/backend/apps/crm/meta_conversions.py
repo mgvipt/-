@@ -72,6 +72,47 @@ ALLOWED_FUNNELS = {
     _key("Лендинг · wallcovdliastin.com.ua"),
 }
 
+# `source=instagram/facebook` не доводить, що клієнт прийшов з реклами: це може
+# бути органічний Direct, коментар або картка, створена менеджером. У Meta
+# відправляємо лише записи з підтвердженим рекламним/lead-form ідентифікатором.
+QUALIFYING_ATTRIBUTION_KINDS = {"paid_ad", "lead_form"}
+ATTRIBUTION_ID_FIELDS = ("lead_id", "ad_id", "campaign_id", "referral_id")
+
+
+def normalized_meta_attribution(entity):
+    raw = getattr(entity, "meta_attribution", None) or {}
+    if not isinstance(raw, dict):
+        return {}
+    allowed = {
+        "source_kind", "platform", "lead_id", "form_id", "ad_id", "adset_id",
+        "campaign_id", "referral_id", "content_id", "source_context",
+        "campaign_name", "adset_name", "ad_name", "form_name",
+    }
+    return {key: str(value).strip() for key, value in raw.items()
+            if key in allowed and value not in (None, "")}
+
+
+def has_verified_meta_attribution(entity):
+    attr = normalized_meta_attribution(entity)
+    if attr.get("source_kind") not in QUALIFYING_ATTRIBUTION_KINDS:
+        return False
+    if attr.get("platform") not in ("facebook", "instagram"):
+        return False
+    return any(attr.get(key) for key in ATTRIBUTION_ID_FIELDS)
+
+
+def event_has_verified_meta_attribution(event):
+    """Повторна перевірка перед send; підтримує snapshot видаленого після конвертації ліда."""
+    source = event.payment.deal if event.payment_id else (event.deal or event.lead)
+    if source is not None:
+        return has_verified_meta_attribution(source)
+    custom = (event.payload or {}).get("custom_data") or {}
+    if custom.get("meta_source_kind") not in QUALIFYING_ATTRIBUTION_KINDS:
+        return False
+    if custom.get("meta_platform") not in ("facebook", "instagram"):
+        return False
+    return any(custom.get(f"meta_{key}") for key in ATTRIBUTION_ID_FIELDS)
+
 
 def event_name_for_stage(stage):
     if not stage or stage.is_lost or getattr(stage.funnel, "is_archive", False):
@@ -136,6 +177,8 @@ def queue_stage_event(entity, *, occurred_at=None):
     """Create one idempotent event per entity/stage. Returns event or None."""
     if not isinstance(entity, (Lead, Deal)) or not entity.pk or not entity.stage_id:
         return None
+    if not has_verified_meta_attribution(entity):
+        return None
     stage = entity.stage
     event_name = event_name_for_stage(stage)
     if not event_name:
@@ -152,6 +195,8 @@ def queue_stage_event(entity, *, occurred_at=None):
         "crm_object_type": source_type,
         "crm_object_id": str(entity.pk),
     }
+    attr = normalized_meta_attribution(entity)
+    custom_data.update({f"meta_{key}": value for key, value in attr.items()})
     payload = _server_event(
         event_id=event_id,
         event_name=event_name,
@@ -179,6 +224,8 @@ def queue_payment_event(payment, *, occurred_at=None):
     if not isinstance(payment, Payment) or not payment.pk or not payment.is_paid:
         return None
     deal = payment.deal
+    if not has_verified_meta_attribution(deal):
+        return None
     event_id = f"crm-payment-{payment.pk}-purchase"
     occurred_at = occurred_at or payment.created_at or timezone.now()
     order_id = payment.external_id or f"crm-payment-{payment.pk}"
@@ -191,6 +238,8 @@ def queue_payment_event(payment, *, occurred_at=None):
         "crm_funnel": deal.funnel.name,
         "crm_stage": deal.stage.name,
     }
+    attr = normalized_meta_attribution(deal)
+    custom_data.update({f"meta_{key}": value for key, value in attr.items()})
     payload = _server_event(
         event_id=event_id,
         event_name="Purchase",
@@ -227,6 +276,8 @@ def capi_config():
 
 def send_event(event, *, test_event_code=""):
     """Send one outbox row. Caller must explicitly enable CAPI and request send."""
+    if not event_has_verified_meta_attribution(event):
+        raise RuntimeError("Meta event is blocked: no verified paid-ad/lead-form attribution")
     config = capi_config()
     if not config["enabled"]:
         raise RuntimeError("META_CAPI_ENABLED=1 is required for sending")
@@ -262,6 +313,11 @@ def process_event(event_id, *, test_event_code=""):
     with transaction.atomic():
         event = MetaConversionEvent.objects.select_for_update().get(pk=event_id)
         if event.status not in ("pending", "failed") or event.attempts >= 5:
+            return event, False
+        if not event_has_verified_meta_attribution(event):
+            event.status = "skipped"
+            event.last_error = "No verified Meta paid-ad/lead-form attribution"
+            event.save(update_fields=["status", "last_error", "updated_at"])
             return event, False
         event.status = "processing"
         event.attempts += 1

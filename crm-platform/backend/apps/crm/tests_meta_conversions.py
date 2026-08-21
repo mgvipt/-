@@ -2,10 +2,12 @@ from io import StringIO
 from unittest.mock import patch
 
 from django.core.management import call_command
+from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase, override_settings
 
 from .meta_conversions import event_name_for_stage, process_event, queue_stage_event
 from .models import Contact, Deal, Funnel, Lead, MetaConversionEvent, Payment, Stage
+from .views import convert_lead_to_deal
 
 
 class MetaConversionMappingTests(TransactionTestCase):
@@ -23,6 +25,9 @@ class MetaConversionMappingTests(TransactionTestCase):
 
     def stage(self, funnel, name, **kwargs):
         return Stage.objects.create(funnel=funnel, name=name, order=funnel.stages.count(), **kwargs)
+
+    def paid_attr(self, **extra):
+        return {"source_kind": "paid_ad", "platform": "instagram", "ad_id": "ad-test-101", **extra}
 
     def test_live_stage_names_map_to_expected_events(self):
         cases = {
@@ -56,7 +61,7 @@ class MetaConversionMappingTests(TransactionTestCase):
         qualified = self.stage(self.lead_funnel, "Кваліфікований")
         lead = Lead.objects.create(
             title="Тестовий лід", contact=self.contact, funnel=self.lead_funnel,
-            stage=first, source="instagram", amount=100,
+            stage=first, source="instagram", amount=100, meta_attribution=self.paid_attr(),
         )
         event = MetaConversionEvent.objects.get(event_name="Lead")
         payload_text = str(event.payload)
@@ -79,7 +84,7 @@ class MetaConversionMappingTests(TransactionTestCase):
         paid_stage = self.stage(self.sales_funnel, "Оплату отримано")
         deal = Deal.objects.create(
             title="Тестова сделка", contact=self.contact, funnel=self.sales_funnel,
-            stage=paid_stage, source="instagram", amount=1500,
+            stage=paid_stage, source="instagram", amount=1500, meta_attribution=self.paid_attr(),
         )
         self.assertFalse(MetaConversionEvent.objects.filter(event_name="Purchase").exists())
 
@@ -98,7 +103,8 @@ class MetaConversionMappingTests(TransactionTestCase):
 
     def test_command_defaults_to_dry_run(self):
         first = self.stage(self.lead_funnel, "Лід отриманий")
-        Lead.objects.create(title="Dry run", funnel=self.lead_funnel, stage=first, contact=self.contact)
+        Lead.objects.create(title="Dry run", funnel=self.lead_funnel, stage=first, contact=self.contact,
+                            meta_attribution=self.paid_attr())
         output = StringIO()
         with patch("apps.crm.meta_conversions.send_event") as send:
             call_command("meta_capi_sync", stdout=output)
@@ -108,7 +114,8 @@ class MetaConversionMappingTests(TransactionTestCase):
     @override_settings()
     def test_sender_is_blocked_while_disabled(self):
         first = self.stage(self.lead_funnel, "Лід отриманий")
-        Lead.objects.create(title="Disabled", funnel=self.lead_funnel, stage=first, contact=self.contact)
+        Lead.objects.create(title="Disabled", funnel=self.lead_funnel, stage=first, contact=self.contact,
+                            meta_attribution=self.paid_attr())
         event = MetaConversionEvent.objects.get(event_name="Lead")
         with patch.dict("os.environ", {"META_CAPI_ENABLED": "0"}, clear=False):
             updated, ok = process_event(event.pk)
@@ -118,10 +125,96 @@ class MetaConversionMappingTests(TransactionTestCase):
 
     def test_explicit_send_marks_event_sent_when_meta_confirms(self):
         first = self.stage(self.lead_funnel, "Лід отриманий")
-        Lead.objects.create(title="Confirmed", funnel=self.lead_funnel, stage=first, contact=self.contact)
+        Lead.objects.create(title="Confirmed", funnel=self.lead_funnel, stage=first, contact=self.contact,
+                            meta_attribution=self.paid_attr())
         event = MetaConversionEvent.objects.get(event_name="Lead")
         with patch("apps.crm.meta_conversions.send_event", return_value={"events_received": 1}):
             updated, ok = process_event(event.pk, test_event_code="TEST123")
         self.assertTrue(ok)
         self.assertEqual(updated.status, "sent")
         self.assertIsNotNone(updated.sent_at)
+
+    def test_manual_and_organic_leads_never_queue_meta_events(self):
+        first = self.stage(self.lead_funnel, "Лід отриманий")
+        Lead.objects.create(title="Ручний", funnel=self.lead_funnel, stage=first,
+                            contact=self.contact, source="other")
+        Lead.objects.create(
+            title="Органічний Instagram", funnel=self.lead_funnel, stage=first,
+            contact=self.contact, source="instagram",
+            meta_attribution={"source_kind": "organic", "platform": "instagram"},
+        )
+        Lead.objects.create(
+            title="Instagram без рекламного ID", funnel=self.lead_funnel, stage=first,
+            contact=self.contact, source="instagram",
+            meta_attribution={"source_kind": "paid_ad", "platform": "instagram"},
+        )
+        self.assertEqual(MetaConversionEvent.objects.count(), 0)
+
+    def test_lead_form_and_paid_ad_queue_with_attribution_ids(self):
+        first = self.stage(self.lead_funnel, "Лід отриманий")
+        paid = Lead.objects.create(
+            title="Реклама", funnel=self.lead_funnel, stage=first, contact=self.contact,
+            source="instagram", meta_attribution=self.paid_attr(campaign_id="camp-1"),
+        )
+        lead_form = Lead.objects.create(
+            title="Lead form", funnel=self.lead_funnel, stage=first, contact=self.contact,
+            source="facebook", meta_attribution={
+                "source_kind": "lead_form", "platform": "facebook",
+                "lead_id": "lead-22", "form_id": "form-7",
+            },
+        )
+        p1 = MetaConversionEvent.objects.get(lead=paid)
+        p2 = MetaConversionEvent.objects.get(lead=lead_form)
+        self.assertEqual(p1.payload["custom_data"]["meta_ad_id"], "ad-test-101")
+        self.assertEqual(p1.payload["custom_data"]["meta_campaign_id"], "camp-1")
+        self.assertEqual(p2.payload["custom_data"]["meta_lead_id"], "lead-22")
+        self.assertEqual(p2.payload["custom_data"]["meta_form_id"], "form-7")
+
+    def test_lead_to_deal_keeps_verified_attribution(self):
+        first = self.stage(self.lead_funnel, "Лід отриманий")
+        sales_first = self.stage(self.sales_funnel, "Лід отриманий")
+        lead = Lead.objects.create(
+            title="Конвертація", funnel=self.lead_funnel, stage=first, contact=self.contact,
+            source="instagram", meta_attribution=self.paid_attr(campaign_id="camp-copy"),
+        )
+        lead_event_id = MetaConversionEvent.objects.get(lead=lead).pk
+        deal = convert_lead_to_deal(lead, self.sales_funnel, None, "test")
+        self.assertEqual(deal.stage_id, sales_first.id)
+        self.assertEqual(deal.meta_attribution["campaign_id"], "camp-copy")
+        orphaned_snapshot = MetaConversionEvent.objects.get(pk=lead_event_id)
+        self.assertIsNone(orphaned_snapshot.lead_id)
+        with patch("apps.crm.meta_conversions.send_event", return_value={"events_received": 1}):
+            _, ok = process_event(orphaned_snapshot.pk)
+        self.assertTrue(ok)
+
+    def test_unattributed_payment_is_not_queued(self):
+        paid_stage = self.stage(self.sales_funnel, "Оплату отримано")
+        deal = Deal.objects.create(
+            title="Органічна угода", contact=self.contact, funnel=self.sales_funnel,
+            stage=paid_stage, source="instagram", amount=900,
+        )
+        Payment.objects.create(deal=deal, provider="bank", amount=900, is_paid=True,
+                               external_id="organic-payment")
+        self.assertFalse(MetaConversionEvent.objects.filter(event_name="Purchase").exists())
+
+    def test_meta_marketing_dashboard_separates_ads_from_manual_cards(self):
+        first = self.stage(self.lead_funnel, "Лід отриманий")
+        Lead.objects.create(
+            title="Ad lead", funnel=self.lead_funnel, stage=first, contact=self.contact,
+            source="instagram", meta_attribution=self.paid_attr(campaign_id="camp-dashboard"),
+        )
+        Lead.objects.create(
+            title="Manual lead", funnel=self.lead_funnel, stage=first,
+            contact=self.contact, source="instagram",
+        )
+        admin = get_user_model().objects.create_superuser(
+            username="meta-dashboard-admin", password="test-pass-123", email="admin@example.com",
+        )
+        self.client.force_login(admin)
+        response = self.client.get("/api/meta-marketing/?from=2020-01-01&to=2030-01-01")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["summary"]["attributed_leads"], 1)
+        self.assertEqual(body["summary"]["manual_or_organic_leads"], 1)
+        self.assertEqual(body["campaigns"][0]["campaign_id"], "camp-dashboard")
+        self.assertFalse(body["integration"]["insights_sync_configured"])
