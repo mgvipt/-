@@ -394,6 +394,34 @@ def _status_rank(status):
     return {"sent": 1, "delivered": 2, "read": 3}.get(str(status or ""), 0)
 
 
+def _mark_previous_outgoing_read(conversation, event_timestamp=None):
+    """A fresh customer message proves that earlier outbound messages were read.
+
+    Instagram can route the Direct conversation through ChatPlace, so the Meta
+    app does not always receive a separate ``messaging_seen`` receipt.  A real
+    incoming message is nevertheless an unambiguous acknowledgement for every
+    successful outbound that existed before it.  Keep failed messages intact
+    and use the provider timestamp to avoid marking a later reply as read when
+    delivery is delayed.
+    """
+    from datetime import timedelta
+    from django.utils import timezone
+    from .models import Message
+
+    observed_at = _event_time(event_timestamp) or timezone.now()
+    # A few seconds absorb clock skew without crossing into a later manager
+    # reply.  ChatPlace-synced messages that arrive much later will be covered
+    # by the next customer message or an exact Meta seen receipt.
+    cutoff = min(timezone.now(), observed_at + timedelta(seconds=5))
+    return Message.objects.filter(
+        conversation=conversation,
+        direction="out",
+        internal=False,
+        created_at__lte=cutoff,
+        status__in=("sent", "delivered", "window_risk"),
+    ).update(status="read")
+
+
 def _store_delivery_status(channel, event):
     """Apply Messenger delivery/read and Instagram seen receipts.
 
@@ -598,6 +626,8 @@ def handle_webhook(payload: dict):
             if is_echo and _relink_manager_echo(
                     conv, mid, msg.get("text") or "", ev.get("timestamp")):
                 continue
+            if not is_echo:
+                _mark_previous_outgoing_read(conv, ev.get("timestamp"))
             # вкладення (фото/відео/аудіо/файл) з Instagram/Messenger-вебхука
             atts = []
             for a in (msg.get("attachments") or []):

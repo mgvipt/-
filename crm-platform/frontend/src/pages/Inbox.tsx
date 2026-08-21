@@ -12,7 +12,7 @@ import { linkify, dayLabel, metaWindow, SNDR_MAP } from "../chatUtils";
 import { Icon } from "../Icon";
 import { TaskQuickModal } from "../TaskQuickModal";
 import ConversationSourceCard from "../ConversationSourceCard";
-import { ReplyContext, ReactionBadges, MessageStatusLine, isContextAttachment } from "../MessageContext";
+import { ReplyContext, ReactionBadges, MessageStatusLine, CorrectionAction, messagesHaveSameVisibleState, isContextAttachment } from "../MessageContext";
 import { msgSoundOn, setMsgSoundOn, teamSoundOn, setTeamSoundOn } from "../sounds";
 
 
@@ -42,6 +42,7 @@ export default function Inbox() {
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [siblings, setSiblings] = useState<Conversation[]>([]); // інші діалоги того ж клієнта (інші канали)
   const [text, setText] = useState("");
+  const [correctionTarget, setCorrectionTarget] = useState<{ id: number; text: string } | null>(null);
   const [sending, setSending] = useState(false);
   const [internalNote, setInternalNote] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
@@ -136,7 +137,7 @@ export default function Inbox() {
     const t = setInterval(async () => {
       try {
         const m = await api.get<ChatMessage[]>(`/api/conversations/${active.id}/messages/?seen=1`);
-        setMsgs((prev) => (m.length !== prev.length ? m : prev));
+        setMsgs((prev) => (messagesHaveSameVisibleState(prev, m) ? prev : m));
       } catch { /* ignore */ }
     }, 6000);
     return () => clearInterval(t);
@@ -182,7 +183,7 @@ export default function Inbox() {
   }
 
   async function openConv(c: Conversation) {
-    setActive(c); setErr(""); setAi(null);
+    setActive(c); setErr(""); setAi(null); setCorrectionTarget(null);
     const m = await api.get<ChatMessage[]>(`/api/conversations/${c.id}/messages/?seen=1`);
     setMsgs(m);
     setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, unread: 0 } : x)));
@@ -225,7 +226,7 @@ export default function Inbox() {
       setPending([]);
       if (text.trim()) {
         const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send/`, { text, internal: internalNote });
-        setMsgs((ms) => [...ms, m]); setText("");
+        setMsgs((ms) => [...ms, m]); setText(""); setCorrectionTarget(null);
       }
     } catch (e: any) {
       setErr(e?.response?.data?.detail || t("Не удалось отправить (проверь токен бота / сеть).","Не вдалося надіслати (перевір токен бота / мережу)."));
@@ -559,6 +560,10 @@ export default function Inbox() {
                       edited: t("изменено", "змінено"), previousVersion: t("Предыдущая версия", "Попередня версія"),
                     }}
                   />
+                  <CorrectionAction message={m} label={t("Исправить", "Виправити")} title={t("Отправить новое уточнение, не меняя историю", "Надіслати нове уточнення, не змінюючи історію")} onStart={(message) => {
+                    setCorrectionTarget({ id: message.id, text: String(message.text || "") });
+                    setText(t("Уточнение: ", "Уточнення: "));
+                  }} />
                 </div>
                 </Fragment>
               ))}
@@ -578,6 +583,10 @@ export default function Inbox() {
                 ))}
               </div>}
               {internalNote && <div style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11.5, fontWeight: 600, padding: "5px 10px", borderRadius: 6, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}><Icon n="eye" size={14} /> {t("Режим заметки — клиент НЕ увидит, видят только менеджеры","Режим нотатки — клієнт НЕ побачить, бачать лише менеджери")}</div>}
+              {correctionTarget && <div style={{ marginBottom: 6, padding: "7px 10px", borderRadius: 8, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e3a8a", fontSize: 11.5, lineHeight: 1.35, display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <div style={{ minWidth: 0, flex: 1 }}><b>{t("Исправление к:", "Виправлення до:")}</b> {correctionTarget.text.slice(0, 120)}{correctionTarget.text.length > 120 ? "…" : ""}<br /><span style={{ color: "#475569" }}>{t("Старое сообщение останется в истории. Клиенту уйдёт новое уточнение.", "Старе повідомлення залишиться в історії. Клієнту піде нове уточнення.")}</span></div>
+                <button type="button" onClick={() => setCorrectionTarget(null)} title={t("Отменить исправление", "Скасувати виправлення")} style={{ border: 0, background: "transparent", color: "#64748b", cursor: "pointer", padding: 0, fontWeight: 800 }}>✕</button>
+              </div>}
               {(() => { const w = metaWindow(active, msgs); return w && w.closed ? <div style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11.5, fontWeight: 600, padding: "6px 10px", borderRadius: 6, marginBottom: 6, lineHeight: 1.35 }}>⚠️ {t("Окно Instagram закрыто (прошло " + w.hrs + "ч). Сообщение может НЕ дойти — дождись ответа клиента или напиши с другого канала.","Вікно Instagram закрите (минуло " + w.hrs + "г). Повідомлення може НЕ дійти — дочекайся відповіді клієнта або напиши з іншого каналу.")}</div> : null; })()}
               <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
               <input ref={fileRef} type="file" hidden onChange={sendFile} />
