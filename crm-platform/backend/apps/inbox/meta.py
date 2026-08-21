@@ -202,9 +202,9 @@ def handle_webhook(payload: dict):
             msg = ev.get("message") or {}
             if not sender or not msg:
                 continue
-            mid = msg.get("mid", "")
+            mid = (msg.get("mid", "") or "")[:128]  # Instagram-вхід дає ДОВГИЙ mid — поле max 128
             is_echo = msg.get("is_echo")  # надіслане нами (менеджер АБО ШІ Юля через ChatPlace)
-            ext_chat = sender if not is_echo else recipient
+            ext_chat = str(sender if not is_echo else recipient)[:128]
             conv, created = Conversation.objects.get_or_create(channel=ch, external_chat_id=str(ext_chat), defaults={"title": kind})
             if created and not is_echo:
                 _new_meta_lead(conv, kind, sender)
@@ -283,7 +283,7 @@ def handle_webhook(payload: dict):
             if target is None:
                 if not client_key:
                     client_key = (author_id or cid).lower()
-                ext_chat = f"comment:{kind}:{post_id}:{client_key}"
+                ext_chat = f"comment:{kind}:{post_id}:{client_key}"[:128]
                 target = Conversation.objects.filter(channel=ch, external_chat_id=str(ext_chat)).first()
                 if target is None:
                     target = (Conversation.objects.filter(channel=ch, external_chat_id__startswith=f"comment:{kind}:{post_id}:")
@@ -313,10 +313,10 @@ def handle_webhook(payload: dict):
                     "ad_id": str(val.get("ad_id") or (val.get("media") or {}).get("ad_id") or ""),
                 }}
                 conv.save(update_fields=["config"])
-            if Message.objects.filter(conversation=conv, external_id=str(cid)).exists():
+            if Message.objects.filter(conversation=conv, external_id=str(cid)[:128]).exists():
                 continue
             Message.objects.create(conversation=conv, direction=direction, text=text[:5000],
-                                   external_id=str(cid), sender_name=sname)
+                                   external_id=str(cid)[:128], sender_name=sname)
             conv.unread = (conv.unread or 0) + (0 if ours else 1)  # наша відповідь не додає «непрочитане»
             from django.utils import timezone
             conv.last_message_at = timezone.now()
