@@ -258,6 +258,15 @@ def sync_chats(max_chats=40, per_chat=40):
         name = raw_name or "Instagram"
         if not cid:
             continue
+        # Instagram тепер веде Meta НАПРЯМУ — з ChatPlace IG-чати більше НЕ тягнемо (щоб не було
+        # дублів). TikTok лишається на ChatPlace (Meta його не вміє). Виняток: якщо цей чат вже
+        # існує як TikTok — лишаємо на ChatPlace навіть коли oembed зараз не підтвердив (не губимо).
+        if not is_tt:
+            _tt_exist = Conversation.objects.filter(channel=tt_ch, external_chat_id=str(cid)).exists() if tt_ch else False
+            if _tt_exist:
+                ch = tt_ch; is_tt = True; platform = "tiktok"
+            else:
+                continue  # новий/IG чат — його веде Meta, пропускаємо
         # шукаємо діалог в ОБОХ ChatPlace-каналах: визначення платформи (oembed) інколи
         # «фліпає» IG<->TikTok і той самий клієнт дублювався у два чати/контакти
         _both = [c for c in (ig_ch, tt_ch) if c is not None]
