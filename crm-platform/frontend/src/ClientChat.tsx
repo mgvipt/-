@@ -9,7 +9,7 @@ import { Icon } from "./Icon";
 import { api, ChatMessage, Conversation, Paginated } from "./api";
 import ChatActions from "./ChatActions";
 import ConversationSourceCard from "./ConversationSourceCard";
-import { ReplyContext, ReactionBadges, isContextAttachment } from "./MessageContext";
+import { ReplyContext, ReactionBadges, MessageStatusLine, isContextAttachment } from "./MessageContext";
 import { dayLabel, timeLabel, isNewDay, linkify, metaWindow } from "./chatUtils";
 
 const tt = (_r: string, ua: string) => ua;  // ClientChat україномовний
@@ -338,7 +338,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
                 ))}
                 <ReactionBadges attachments={(m as any).attachments} />
               </div>
-              <div style={{ fontSize: 9.5, color: "#cbd5e1", marginTop: 2, textAlign: m.direction === "in" ? "left" : "right" }}>{timeLabel((m as any).created_at)}</div>
+              <MessageStatusLine message={m} time={timeLabel((m as any).created_at)} />
             </div>
           </Fragment>
         ))}

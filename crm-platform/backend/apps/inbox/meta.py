@@ -380,6 +380,130 @@ def _store_reaction(channel, event):
         return True
 
 
+def _event_time(value):
+    """Meta timestamp (milliseconds) -> aware datetime, or ``None``."""
+    from datetime import datetime, timezone as dt_timezone
+
+    try:
+        return datetime.fromtimestamp(float(value) / 1000.0, tz=dt_timezone.utc)
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def _status_rank(status):
+    return {"sent": 1, "delivered": 2, "read": 3}.get(str(status or ""), 0)
+
+
+def _store_delivery_status(channel, event):
+    """Apply Messenger delivery/read and Instagram seen receipts.
+
+    Messenger delivery events may contain exact ``mids`` and/or a ``watermark``.
+    Messenger read events use a watermark; Instagram ``messaging_seen`` gives an
+    exact ``read.mid``. Statuses only move forward, so a delayed delivery event
+    never changes an already-read message back to "delivered".
+    """
+    from .models import Conversation, Message
+
+    delivery = event.get("delivery") or {}
+    read = event.get("read") or {}
+    if not delivery and not read:
+        return 0
+
+    sender_id = str((event.get("sender") or {}).get("id") or "")
+    recipient_id = str((event.get("recipient") or {}).get("id") or "")
+    ext_chat = recipient_id if _is_us(sender_id) else sender_id
+    if not ext_chat:
+        return 0
+    conv = Conversation.objects.filter(channel=channel, external_chat_id=ext_chat).first()
+    if not conv:
+        return 0
+
+    target_status = "read" if read else "delivered"
+    data = read or delivery
+    mids = [str(mid)[:128] for mid in (data.get("mids") or []) if mid]
+    if data.get("mid"):
+        mids.append(str(data.get("mid"))[:128])
+
+    qs = Message.objects.filter(conversation=conv, direction="out", internal=False)
+    if mids:
+        from django.db.models import Q
+        exact_ids = set(mids)
+        qs = qs.filter(Q(external_id__in=exact_ids) | Q(meta_external_id__in=exact_ids))
+    else:
+        watermark = _event_time(data.get("watermark") or event.get("timestamp"))
+        if not watermark:
+            return 0
+        qs = qs.filter(created_at__lte=watermark)
+
+    changed = 0
+    for message in qs.only("id", "status"):
+        if _status_rank(target_status) <= _status_rank(message.status):
+            continue
+        message.status = target_status
+        message.save(update_fields=["status"])
+        changed += 1
+    return changed
+
+
+def _store_message_edit(channel, event):
+    """Replace an existing Meta message with the customer's edited text.
+
+    The former versions are kept inside a context attachment. This makes the
+    visible message current while retaining an audit trail and keeps retries
+    idempotent (the same edit is never appended twice).
+    """
+    from django.db import transaction
+    from django.utils import timezone
+    from .models import Conversation, Message
+
+    edit = event.get("message_edit") or event.get("message_edits") or {}
+    mid = str(edit.get("mid") or edit.get("message_id") or "")[:128]
+    new_text = str(edit.get("text") or "")[:5000]
+    sender_id = str((event.get("sender") or {}).get("id") or "")
+    recipient_id = str((event.get("recipient") or {}).get("id") or "")
+    if not mid or not new_text or not sender_id:
+        return False
+
+    ext_chat = recipient_id if _is_us(sender_id) else sender_id
+    edited_at = _event_time(event.get("timestamp")) or timezone.now()
+    num_edit = edit.get("num_edit")
+
+    with transaction.atomic():
+        conv = (Conversation.objects.select_for_update()
+                .filter(channel=channel, external_chat_id=ext_chat).first())
+        if not conv:
+            return False
+        target = (Message.objects.select_for_update()
+                  .filter(conversation=conv, external_id=mid).first())
+        if not target or target.text == new_text:
+            return False
+
+        attachments = list(target.attachments or [])
+        history = next((a for a in attachments
+                        if (a or {}).get("type") == "message_edit_history"), None)
+        if history is None:
+            history = {"type": "message_edit_history", "revisions": []}
+            attachments.append(history)
+        revisions = list(history.get("revisions") or [])
+        revisions.append({
+            "text": (target.text or "")[:5000],
+            "edited_at": edited_at.isoformat(),
+            "num_edit": num_edit,
+        })
+        history["revisions"] = revisions[-20:]
+        history["last_edited_at"] = edited_at.isoformat()
+        history["num_edit"] = num_edit if num_edit is not None else len(revisions)
+
+        target.text = new_text
+        target.attachments = attachments
+        target.save(update_fields=["text", "attachments"])
+        if target.direction == "in":
+            conv.unread = (conv.unread or 0) + 1
+            conv.last_message_at = timezone.now()
+            conv.save(update_fields=["unread", "last_message_at"])
+        return True
+
+
 def _relink_manager_echo(conv, mid, text, event_timestamp=None):
     """Прив'язати Meta echo до вже записаного НАШОГО вихідного (менеджер/авто/через ChatPlace),
     щоб не задвоювати повідомлення.
@@ -389,10 +513,9 @@ def _relink_manager_echo(conv, mid, text, event_timestamp=None):
     тексту з новим mid. Привʼязуємо цей mid до вже наявного вихідного з тим самим
     текстом у цьому діалозі (найближче за часом, у межах вікна).
 
-    Безпека: беремо ЛИШЕ записи з ПОРОЖНІМ external_id. Записи, що вже мають id
-    (echo Юлі з Meta mid, вже склеєні відправлення) — не чіпаємо, тож чужі однакові
-    тексти не злипаються. Покриває і авто-повідомлення (sender=null: оплата, чек тощо),
-    які раніше не склеювались і завжди двоїлись.
+    Безпека: Meta mid зберігаємо окремо від ChatPlace id. Беремо рівно одного
+    кандидата з тим самим текстом у короткому вікні; якщо кандидатів кілька,
+    нічого не склеюємо. Це не дає двом реальним однаковим «Готово» помінятися id.
     """
     from .models import Message
     from django.utils import timezone
@@ -407,20 +530,17 @@ def _relink_manager_echo(conv, mid, text, event_timestamp=None):
             center = datetime.fromtimestamp(float(event_timestamp) / 1000.0, tz=dt_timezone.utc)
     except (TypeError, ValueError, OSError):
         pass
-    WINDOW = 180  # ланцюг ChatPlace→IG→Meta echo лагає; старі 10 с промахувались
-    cand, best = None, None
-    for m in Message.objects.filter(
+    WINDOW = 5
+    candidates = list(Message.objects.filter(
             conversation=conv, direction="out", internal=False, text=body,
-            external_id="",
+            meta_external_id="",
             created_at__gte=center - timedelta(seconds=WINDOW),
-            created_at__lte=center + timedelta(seconds=WINDOW)).order_by("id"):
-        d = abs((m.created_at - center).total_seconds())
-        if best is None or d < best:
-            best, cand = d, m
-    if not cand:
+            created_at__lte=center + timedelta(seconds=WINDOW)).order_by("id")[:2])
+    if len(candidates) != 1:
         return False
-    cand.external_id = str(mid)[:128]
-    cand.save(update_fields=["external_id"])
+    cand = candidates[0]
+    cand.meta_external_id = str(mid)[:128]
+    cand.save(update_fields=["meta_external_id"])
     return True
 
 
@@ -441,10 +561,20 @@ def handle_webhook(payload: dict):
         direct_events = (list(entry.get("messaging") or [])
                          + list(entry.get("standby") or [])
                          + [(chg.get("value") or {}) for chg in changes
-                            if chg.get("field") in ("messages", "message_reactions")])
+                            if chg.get("field") in (
+                                "messages", "message_reactions", "message_deliveries",
+                                "message_reads", "messaging_seen", "message_edit", "message_edits",
+                            )])
         for ev in direct_events:
             sender = (ev.get("sender") or {}).get("id")
             recipient = (ev.get("recipient") or {}).get("id")
+            if ev.get("delivery") or ev.get("read"):
+                n_msg += _store_delivery_status(ch, ev)
+                continue
+            if ev.get("message_edit") or ev.get("message_edits"):
+                if _store_message_edit(ch, ev):
+                    n_msg += 1
+                continue
             if ev.get("reaction"):
                 if _store_reaction(ch, ev):
                     n_msg += 1

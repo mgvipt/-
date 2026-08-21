@@ -1,5 +1,6 @@
 from unittest.mock import patch
 import urllib.error
+from datetime import timedelta
 from io import StringIO
 from django.test import TestCase
 from django.core.management import call_command
@@ -204,6 +205,117 @@ class MetaWebhookIngestTests(TestCase):
         }]}
         self.assertEqual(handle_webhook(payload), 0)
         self.assertFalse(Conversation.objects.filter(external_chat_id="service-psid").exists())
+
+    def test_messenger_delivery_and_read_advance_outgoing_status(self):
+        from .meta import handle_webhook
+
+        watermark = int((timezone.now() + timedelta(seconds=2)).timestamp() * 1000)
+
+        conv = Conversation.objects.create(
+            channel=self.channel, external_chat_id="receipt-psid", title="facebook",
+        )
+        message = Message.objects.create(
+            conversation=conv, direction="out", external_id="receipt-mid",
+            text="Ваше замовлення готове", status="sent",
+        )
+        delivery = {"object": "page", "entry": [{"messaging": [{
+            "sender": {"id": "receipt-psid"}, "recipient": {"id": "101010628568079"},
+            "timestamp": watermark,
+            "delivery": {"mids": ["receipt-mid"], "watermark": watermark},
+        }]}]}
+        read = {"object": "page", "entry": [{"messaging": [{
+            "sender": {"id": "receipt-psid"}, "recipient": {"id": "101010628568079"},
+            "timestamp": watermark, "read": {"watermark": watermark},
+        }]}]}
+
+        self.assertEqual(handle_webhook(delivery), 1)
+        message.refresh_from_db()
+        self.assertEqual(message.status, "delivered")
+        self.assertEqual(handle_webhook(read), 1)
+        message.refresh_from_db()
+        self.assertEqual(message.status, "read")
+        # Delayed delivery webhook must not downgrade an already-read message.
+        self.assertEqual(handle_webhook(delivery), 0)
+        message.refresh_from_db()
+        self.assertEqual(message.status, "read")
+
+    def test_instagram_seen_updates_exact_message_only(self):
+        from .meta import handle_webhook
+
+        channel = Channel.objects.create(kind="instagram", name="Meta · instagram")
+        conv = Conversation.objects.create(
+            channel=channel, external_chat_id="ig-seen-user", title="instagram",
+        )
+        seen = Message.objects.create(
+            conversation=conv, direction="out", external_id="ig-seen-mid",
+            text="Перший варіант", status="delivered",
+        )
+        untouched = Message.objects.create(
+            conversation=conv, direction="out", external_id="ig-other-mid",
+            text="Другий варіант", status="sent",
+        )
+        payload = {"object": "instagram", "entry": [{"messaging": [{
+            "sender": {"id": "ig-seen-user"}, "recipient": {"id": "our-instagram"},
+            "timestamp": 1787151975000, "read": {"mid": "ig-seen-mid"},
+        }]}]}
+
+        self.assertEqual(handle_webhook(payload), 1)
+        seen.refresh_from_db(); untouched.refresh_from_db()
+        self.assertEqual(seen.status, "read")
+        self.assertEqual(untouched.status, "sent")
+
+    def test_message_edit_updates_existing_message_and_keeps_history(self):
+        from .meta import handle_webhook
+
+        conv = Conversation.objects.create(
+            channel=self.channel, external_chat_id="edit-psid", title="facebook",
+        )
+        message = Message.objects.create(
+            conversation=conv, direction="in", external_id="edit-mid",
+            text="Стара версія",
+        )
+        payload = {"object": "page", "entry": [{"messaging": [{
+            "sender": {"id": "edit-psid"}, "recipient": {"id": "101010628568079"},
+            "timestamp": 1787151976000,
+            "message_edit": {"mid": "edit-mid", "text": "Нова версія", "num_edit": 1},
+        }]}]}
+
+        self.assertEqual(handle_webhook(payload), 1)
+        message.refresh_from_db(); conv.refresh_from_db()
+        self.assertEqual(message.text, "Нова версія")
+        history = next(a for a in message.attachments if a["type"] == "message_edit_history")
+        self.assertEqual(history["revisions"][0]["text"], "Стара версія")
+        self.assertEqual(history["num_edit"], 1)
+        self.assertEqual(conv.unread, 1)
+        # Webhook retry is idempotent: no second revision and no extra unread.
+        self.assertEqual(handle_webhook(payload), 0)
+        message.refresh_from_db(); conv.refresh_from_db()
+        history = next(a for a in message.attachments if a["type"] == "message_edit_history")
+        self.assertEqual(len(history["revisions"]), 1)
+        self.assertEqual(conv.unread, 1)
+
+    def test_message_edit_change_wrapper_is_supported(self):
+        from .meta import handle_webhook
+
+        conv = Conversation.objects.create(
+            channel=self.channel, external_chat_id="change-edit-psid", title="facebook",
+        )
+        message = Message.objects.create(
+            conversation=conv, direction="in", external_id="change-edit-mid", text="До",
+        )
+        value = {
+            "sender": {"id": "change-edit-psid"},
+            "recipient": {"id": "101010628568079"},
+            "timestamp": 1787151976000,
+            "message_edit": {"mid": "change-edit-mid", "text": "Після", "num_edit": 1},
+        }
+        payload = {"object": "page", "entry": [{
+            "changes": [{"field": "message_edits", "value": value}],
+        }]}
+
+        self.assertEqual(handle_webhook(payload), 1)
+        message.refresh_from_db()
+        self.assertEqual(message.text, "Після")
 
     def test_reply_to_photo_keeps_original_message_preview(self):
         from .meta import handle_webhook
@@ -478,8 +590,19 @@ class MetaChatPlaceOutboundTests(TestCase):
         self.assertEqual(handle_webhook(payload), 0)
         own.refresh_from_db()
         self.assertEqual(conv.messages.count(), 1)
-        self.assertEqual(own.external_id, "meta-echo-id")
+        self.assertEqual(own.external_id, "cp-id")
+        self.assertEqual(own.meta_external_id, "meta-echo-id")
         self.assertEqual(own.sender, self.user)
+
+        receipt = {"object": "instagram", "entry": [{"messaging": [{
+            "sender": {"id": "client-scoped-id"},
+            "recipient": {"id": "our-instagram"},
+            "timestamp": int(timezone.now().timestamp() * 1000),
+            "read": {"mid": "meta-echo-id"},
+        }]}]}
+        self.assertEqual(handle_webhook(receipt), 1)
+        own.refresh_from_db()
+        self.assertEqual(own.status, "read")
 
     @patch("apps.inbox.management.commands.backfill_meta_chatplace_routes._mcp")
     def test_route_backfill_requires_exact_username_and_defaults_to_dry_run(self, mcp):

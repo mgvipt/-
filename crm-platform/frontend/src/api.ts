@@ -113,5 +113,6 @@ export interface Conversation {
 }
 export interface ChatMessage {
   id: number; conversation: number; direction: "in" | "out";
-  text: string; attachments: any[]; sender_name: string; created_at: string;
+  text: string; attachments: any[]; sender_name: string; sender_display?: string; created_at: string;
+  internal?: boolean; status?: "sent" | "delivered" | "read" | "failed" | "window_risk";
 }

@@ -24,6 +24,26 @@ const UA: Labels = {
 
 export type MessageContextLabels = Partial<Labels>;
 
+type StatusLabels = {
+  sent: string;
+  delivered: string;
+  read: string;
+  failed: string;
+  windowRisk: string;
+  edited: string;
+  previousVersion: string;
+};
+
+const UA_STATUS: StatusLabels = {
+  sent: "Надіслано",
+  delivered: "Доставлено",
+  read: "Прочитано",
+  failed: "Не доставлено",
+  windowRisk: "Міг не дійти (вікно закрите)",
+  edited: "змінено",
+  previousVersion: "Попередня версія",
+};
+
 function labels(custom?: MessageContextLabels): Labels {
   return { ...UA, ...(custom || {}) };
 }
@@ -103,6 +123,46 @@ export function ReactionBadges({ attachments, customLabels }: {
   );
 }
 
+export function MessageStatusLine({ message, time, customLabels }: {
+  message: any;
+  time: string;
+  customLabels?: Partial<StatusLabels>;
+}) {
+  const l = { ...UA_STATUS, ...(customLabels || {}) };
+  const history = (message?.attachments || []).find((a: any) => a?.type === "message_edit_history");
+  const previous = String(history?.revisions?.[history.revisions.length - 1]?.text || "");
+  const editedTitle = previous ? `${l.previousVersion}: ${previous}` : l.edited;
+
+  if (message?.direction !== "out" || message?.internal) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3, opacity: .58, fontSize: 10 }}>
+        <span>{time}</span>
+        {history && <span title={editedTitle} style={{ fontWeight: 600, cursor: previous ? "help" : "default" }}>· {l.edited}</span>}
+      </div>
+    );
+  }
+
+  const status = String(message?.status || "sent");
+  const meta = status === "read"
+    ? { icon: "✓✓", text: l.read, color: "#2563eb" }
+    : status === "delivered"
+      ? { icon: "✓✓", text: l.delivered, color: "#64748b" }
+      : status === "failed"
+        ? { icon: "✕", text: l.failed, color: "#b91c1c" }
+        : status === "window_risk"
+          ? { icon: "⚠", text: l.windowRisk, color: "#b45309" }
+          : { icon: "✓", text: l.sent, color: "#64748b" };
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5, marginTop: 3, fontSize: 10, color: meta.color }} title={meta.text}>
+      <span style={{ opacity: .72 }}>{time}</span>
+      {history && <span title={editedTitle} style={{ fontWeight: 600, cursor: previous ? "help" : "default" }}>· {l.edited}</span>}
+      <span aria-label={meta.text} style={{ fontWeight: 800, letterSpacing: -1 }}>{meta.icon}</span>
+    </div>
+  );
+}
+
 export function isContextAttachment(attachment: any): boolean {
-  return attachment?.type === "reply_ref" || attachment?.type === "message_reaction";
+  return attachment?.type === "reply_ref"
+    || attachment?.type === "message_reaction"
+    || attachment?.type === "message_edit_history";
 }

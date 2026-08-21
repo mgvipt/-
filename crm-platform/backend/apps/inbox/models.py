@@ -52,7 +52,13 @@ class Conversation(models.Model):
 
 class Message(models.Model):
     DIRECTION = [("in", "Входящее"), ("out", "Исходящее")]
-    STATUS = [("sent", "Надіслано"), ("delivered", "Доставлено"), ("failed", "Не доставлено"), ("window_risk", "Вікно закрите — міг не дійти")]
+    STATUS = [
+        ("sent", "Надіслано"),
+        ("delivered", "Доставлено"),
+        ("read", "Прочитано"),
+        ("failed", "Не доставлено"),
+        ("window_risk", "Вікно закрите — міг не дійти"),
+    ]
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
     direction = models.CharField(max_length=3, choices=DIRECTION)
     internal = models.BooleanField(default=False, help_text="Внутрішня нотатка — видно лише менеджерам, клієнту НЕ йде")
@@ -60,6 +66,10 @@ class Message(models.Model):
     # вложения: [{"type":"photo|voice|file","url":..., "size":...}]
     attachments = models.JSONField(default=list, blank=True)
     external_id = models.CharField(max_length=128, blank=True)
+    # Instagram-відповідь менеджера може піти через ChatPlace (external_id =
+    # ChatPlace id), а квитанції delivery/read повертаються з окремим Meta mid.
+    # Зберігаємо обидва значення, не перезаписуючи ідентифікатор провайдера відправки.
+    meta_external_id = models.CharField(max_length=128, blank=True, db_index=True)
     sender_name = models.CharField(max_length=160, blank=True)
     sender = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="sent_messages")

@@ -12,7 +12,7 @@ import { linkify, dayLabel, metaWindow, SNDR_MAP } from "../chatUtils";
 import { Icon } from "../Icon";
 import { TaskQuickModal } from "../TaskQuickModal";
 import ConversationSourceCard from "../ConversationSourceCard";
-import { ReplyContext, ReactionBadges, isContextAttachment } from "../MessageContext";
+import { ReplyContext, ReactionBadges, MessageStatusLine, isContextAttachment } from "../MessageContext";
 import { msgSoundOn, setMsgSoundOn, teamSoundOn, setTeamSoundOn } from "../sounds";
 
 
@@ -549,8 +549,16 @@ export default function Inbox() {
                     : <div key={i} style={{ fontSize: 11, opacity: .8, marginTop: 4 }}><Icon n="paperclip" size={13} /> {a.type === "voice" ? t(`голосовое ${a.duration ?? ""}с`,`голосове ${a.duration ?? ""}с`) : a.type}</div>
                   ))}
                   <ReactionBadges attachments={m.attachments} customLabels={{ reaction: t("Реакция клиента", "Реакція клієнта") }} />
-                  <div style={{ fontSize: 10, opacity: .55, marginTop: 3, textAlign: m.direction === "out" ? "right" : "left" }}>{(m as any).created_at ? new Date((m as any).created_at).toLocaleTimeString("uk", { hour: "2-digit", minute: "2-digit" }) : ""}</div>
-                  {m.direction === "out" && !(m as any).internal && ((m as any).status === "window_risk" || (m as any).status === "failed") && <div style={{ fontSize: 10, fontWeight: 700, marginTop: 1, textAlign: "right", color: (m as any).status === "failed" ? "#b91c1c" : "#b45309" }}>{(m as any).status === "failed" ? "\u2717 " + t("не доставлено","не доставлено") : "⚠️ " + t("мог не дойти (окно закрыто)","міг не дійти (вікно закрите)")}</div>}
+                  <MessageStatusLine
+                    message={m}
+                    time={(m as any).created_at ? new Date((m as any).created_at).toLocaleTimeString("uk", { hour: "2-digit", minute: "2-digit" }) : ""}
+                    customLabels={{
+                      sent: t("Отправлено", "Надіслано"), delivered: t("Доставлено", "Доставлено"),
+                      read: t("Прочитано", "Прочитано"), failed: t("Не доставлено", "Не доставлено"),
+                      windowRisk: t("Мог не дойти (окно закрыто)", "Міг не дійти (вікно закрите)"),
+                      edited: t("изменено", "змінено"), previousVersion: t("Предыдущая версия", "Попередня версія"),
+                    }}
+                  />
                 </div>
                 </Fragment>
               ))}
