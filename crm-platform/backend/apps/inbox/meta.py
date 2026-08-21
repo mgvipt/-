@@ -274,6 +274,11 @@ def _meta_attribution(kind, *nodes, source_context=""):
         "campaign_id": ("campaign_id",),
         "referral_id": ("referral_id",),
         "content_id": ("content_id", "post_id", "media_id"),
+        # людяні дані креативу з referral.ads_context_data — щоб менеджер одразу
+        # бачив, з якого оголошення прийшов клієнт (назва + мініатюра)
+        "ad_ref": ("ref",),
+        "ad_title": ("ad_title",),
+        "ad_thumb": ("photo_url", "video_url"),
     }
     found = {}
 
@@ -329,6 +334,60 @@ def _new_meta_lead(conv, kind, sender_id, name="", username="", attribution=None
                                 meta_attribution=(attribution or {}))
     except Exception:
         pass
+
+
+def _extract_ad_referral(ev, msg):
+    """Знайти обʼєкт переходу з реклами (referral) у Direct-події. Meta присилає його
+    трьома шляхами; беремо перший знайдений:
+      1) message.referral — клієнт написав перше повідомлення після кліку по рекламі;
+      2) top-level referral — повторний вхід по рекламі/лінку у наявну переписку;
+      3) postback.referral — перший тап по кнопці привітання/icebreaker з реклами.
+    Повертає dict referral або {}."""
+    return (
+        (msg or {}).get("referral")
+        or ev.get("referral")
+        or ((ev.get("postback") or {}).get("referral"))
+        or {}
+    )
+
+
+def _apply_ad_attribution(channel, kind, sender_id, ref_obj, ev, msg):
+    """Записати рекламну атрибуцію на лід контакта по НОМЕРУ ПЕРЕПИСКИ (IGSID/PSID).
+
+    Ключ звʼязку — sender_id: він спільний для Meta й ChatPlace, тож навіть лід, який
+     веде ChatPlace-Юля, отримає мітку реклами. Ловимо навіть подію «лише referral»
+    без тексту (клік по рекламі ще без повідомлення). Не перезаписуємо вже підтверджену
+    рекламу.
+    """
+    from apps.crm.models import Lead, Deal
+    from .models import Conversation
+    attr = _meta_attribution(kind, ev or {}, msg or {}, ref_obj or {}, source_context="ad_referral")
+    if attr.get("source_kind") != "paid_ad":
+        return False  # без ad_id/campaign_id це не платний клік — не чіпаємо
+    ext = str(sender_id)[:128]
+    conv = (Conversation.objects.filter(channel=channel, external_chat_id=ext)
+            .select_related("contact").first())
+    if not conv:
+        # діалогу ще нема (referral прилетів першим) — створюємо, щоб не втратити клік
+        conv, _ = Conversation.objects.get_or_create(
+            channel=channel, external_chat_id=ext, defaults={"title": kind})
+    if not conv.contact_id:
+        _new_meta_lead(conv, kind, sender_id, attribution=attr)
+        return True
+    contact = conv.contact
+    lead = Lead.objects.filter(contact=contact).order_by("-id").first()
+    if not lead:
+        _new_meta_lead(conv, kind, sender_id, attribution=attr)
+        return True
+    if (lead.meta_attribution or {}).get("source_kind") != "paid_ad":
+        lead.meta_attribution = attr
+        lead.save(update_fields=["meta_attribution"])
+        # перенести мітку на угоди контакта, у яких її ще немає
+        for d in Deal.objects.filter(contact=contact):
+            if (d.meta_attribution or {}).get("source_kind") != "paid_ad":
+                d.meta_attribution = attr
+                d.save(update_fields=["meta_attribution"])
+    return True
 
 
 def _story_ref(msg):
@@ -660,6 +719,15 @@ def handle_webhook(payload: dict):
                     n_msg += 1
                 continue
             msg = ev.get("message") or {}
+            # Перехід з реклами: ловимо номер оголошення (referral.ad_id) навіть якщо
+            # подія прийшла БЕЗ тексту (клік по рекламі ще без повідомлення). Клеїмо
+            # мітку на лід по номеру переписки — навіть якщо діалог веде ChatPlace-Юля.
+            ref_obj = _extract_ad_referral(ev, msg)
+            if ref_obj and sender and not _is_us(sender):
+                try:
+                    _apply_ad_attribution(ch, kind, sender, ref_obj, ev, msg)
+                except Exception:
+                    pass
             if not sender or not msg:
                 continue
             mid = (msg.get("mid", "") or "")[:128]  # Instagram-вхід дає ДОВГИЙ mid — поле max 128
