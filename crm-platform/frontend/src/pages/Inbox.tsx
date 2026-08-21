@@ -87,7 +87,8 @@ export default function Inbox() {
     const sp = new URLSearchParams({ page_size: "50" });
     const beScope = scope; // need/waiting = справжній фільтр на бекенді
     if (beScope && beScope !== "all") sp.set("scope", beScope);
-    if (chFilter) sp.set("channel", chFilter);
+    if (chFilter.startsWith("meta_")) sp.set("channel_group", chFilter);
+    else if (chFilter) sp.set("channel", chFilter);
     if (period && period !== "all") sp.set("period", period);
     if (prio) sp.set("priority", prio);
     if (search.trim()) sp.set("search", search.trim());
@@ -336,7 +337,16 @@ export default function Inbox() {
             <div style={{ display: "flex", gap: 6, padding: "0 12px 8px", alignItems: "center", flexWrap: "wrap" }}>
               <select value={chFilter} onChange={(e) => setChFilter(e.target.value)} title={t("Фильтр по каналу (Instagram, Telegram…)","Фільтр за каналом (Instagram, Telegram…)")} style={{ flex: 1, minWidth: 86, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
                 <option value="">{t("Все каналы","Всі канали")}</option>
-                {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                <option value="meta_instagram_direct">Meta · Instagram Direct</option>
+                <option value="meta_facebook_direct">Meta · Facebook Messenger</option>
+                <option value="meta_instagram_comments">{t("Meta · Комментарии Instagram","Meta · Коментарі Instagram")}</option>
+                <option value="meta_facebook_comments">{t("Meta · Комментарии Facebook","Meta · Коментарі Facebook")}</option>
+                {channels
+                  .filter((c) => {
+                    const name = c.name.toLowerCase();
+                    return !name.includes("chatplace") && !name.startsWith("meta ·");
+                  })
+                  .map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
               <select value={prio} onChange={(e) => setPrio(e.target.value)} title={t("Фильтр по статусу / приоритету ИИ","Фільтр за статусом / пріоритетом ШІ")} style={{ flex: 1, minWidth: 96, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
                 <option value="">{t("Все статусы","Всі статуси")}</option>
@@ -683,4 +693,3 @@ function NotifFeed({ t, onOpen, nav }: any) {
     </div>
   );
 }
-

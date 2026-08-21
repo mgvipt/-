@@ -292,6 +292,23 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         allowed = user.allowed_channel_ids()
         if allowed is not None:
             qs = qs.filter(channel_id__in=allowed)
+        # Людський фільтр для Meta-ліній. Фізичні ChatPlace-канали лишаються
+        # технічним транспортом Instagram Direct, але менеджеру не треба
+        # знати їхні id або змішувати Direct із публічними коментарями.
+        channel_group = self.request.query_params.get("channel_group")
+        meta_groups = {
+            "meta_instagram_direct": ("instagram", False),
+            "meta_facebook_direct": ("page", False),
+            "meta_instagram_comments": ("instagram", True),
+            "meta_facebook_comments": ("page", True),
+        }
+        if channel_group in meta_groups:
+            platform, comments = meta_groups[channel_group]
+            qs = qs.filter(channel__config__meta=True, channel__config__platform=platform)
+            if comments:
+                qs = qs.filter(external_chat_id__startswith="comment:")
+            else:
+                qs = qs.exclude(external_chat_id__startswith="comment:")
         # RBAC: менеджер без права «все чаты» видит только свои —
         # по ответственному чата ИЛИ по ответственному контакта.
         can_all = user.can_see_all_conversations()

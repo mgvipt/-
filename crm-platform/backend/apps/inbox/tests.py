@@ -438,6 +438,50 @@ class ChannelScopeTests(TestCase):
         self.assertEqual(titles, {"A"})
 
 
+class MetaChannelGroupFilterTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser("meta-filter-owner", password="x")
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+        self.ig_meta = Channel.objects.create(
+            kind="instagram", name="Meta · instagram", config={"meta": True, "platform": "instagram"},
+        )
+        self.fb_meta = Channel.objects.create(
+            kind="facebook", name="Meta · facebook", config={"meta": True, "platform": "page"},
+        )
+        self.ig_chatplace = Channel.objects.create(
+            kind="instagram", name="ChatPlace · Instagram", config={"chatplace": True},
+        )
+        self.expected = {
+            "meta_instagram_direct": Conversation.objects.create(
+                channel=self.ig_meta, external_chat_id="ig-user-1", title="Instagram Direct",
+            ).id,
+            "meta_facebook_direct": Conversation.objects.create(
+                channel=self.fb_meta, external_chat_id="fb-user-1", title="Facebook Messenger",
+            ).id,
+            "meta_instagram_comments": Conversation.objects.create(
+                channel=self.ig_meta, external_chat_id="comment:instagram:post-1:user-1", title="IG comment",
+            ).id,
+            "meta_facebook_comments": Conversation.objects.create(
+                channel=self.fb_meta, external_chat_id="comment:facebook:post-1:user-1", title="FB comment",
+            ).id,
+        }
+        Conversation.objects.create(
+            channel=self.ig_chatplace, external_chat_id="cp-user-1", title="Technical ChatPlace",
+        )
+
+    def test_each_meta_group_returns_only_its_own_conversation(self):
+        # Список у production використовує PostgreSQL DISTINCT ON для пакетних
+        # метаданих; SQLite test runner цього не вміє. Самі фільтри та serializer
+        # перевіряємо через той самий API, вимикаючи лише цей не пов'язаний prefetch.
+        with patch("apps.inbox.views.ConversationViewSet._prefetch_conv_meta", return_value=None):
+            for group, expected_id in self.expected.items():
+                with self.subTest(group=group):
+                    response = self.client.get("/api/conversations/", {"channel_group": group})
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual([row["id"] for row in response.json()["results"]], [expected_id])
+
+
 class OutboundChannelSelectionTests(TestCase):
     def setUp(self):
         self.admin = User.objects.create_superuser("owner", password="x")
