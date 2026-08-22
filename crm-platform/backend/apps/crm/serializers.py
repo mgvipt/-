@@ -141,6 +141,7 @@ class LeadSerializer(serializers.ModelSerializer):
     contact_social_link = serializers.CharField(source="contact.social_link", read_only=True, default="")
     contact_phone = serializers.CharField(source="contact.phone", read_only=True, default="")
     meta_ad = serializers.SerializerMethodField()
+    conversation_id = serializers.SerializerMethodField()
 
     def get_contact_name(self, obj):
         return str(obj.contact) if obj.contact else ""
@@ -148,10 +149,17 @@ class LeadSerializer(serializers.ModelSerializer):
     def get_meta_ad(self, obj):
         return _resolve_meta_ad(obj.meta_attribution)
 
+    def get_conversation_id(self, obj):
+        if not obj.contact_id:
+            return None
+        from apps.inbox.models import Conversation
+        c = Conversation.objects.filter(contact=obj.contact).order_by("-last_message_at").first()
+        return c.id if c else None
+
     class Meta:
         model = Lead
         fields = ["id", "title", "contact", "contact_name", "funnel", "stage",
-                  "source", "amount", "is_seen", "qualification", "card_fields", "meta_attribution", "meta_ad", "contact_social_link", "contact_phone", "owner", "owner_name",
+                  "source", "amount", "is_seen", "qualification", "card_fields", "meta_attribution", "meta_ad", "contact_social_link", "contact_phone", "owner", "owner_name", "conversation_id",
                   "created_at", "updated_at"]
         read_only_fields = ["meta_attribution"]
 

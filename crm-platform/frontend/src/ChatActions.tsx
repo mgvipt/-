@@ -8,12 +8,25 @@ import { Icon } from "./Icon";
 export default function ChatActions({ convId, onClosed, onChanged }: { convId: number; onClosed?: () => void; onChanged?: (c: any) => void }) {
   const [emps, setEmps] = useState<{ id: number; full_name: string }[]>([]);
   const [picker, setPicker] = useState<null | "transfer" | "add">(null);
+  const [note, setNote] = useState<string>("");
   useEffect(() => { api.get<any>("/api/conversations/staff/").then((d) => setEmps(((d.results || d) as any[]).map((u) => ({ id: u.id, full_name: u.full_name || u.username })))).catch(() => {}); }, []);
-  async function take() { try { const c = await api.post<any>(`/api/conversations/${convId}/take/`, {}); onChanged?.(c); } catch { /* ignore */ } }
+  function flashNote(txt: string, ms = 2600) { setNote(txt); window.setTimeout(() => setNote(""), ms); }
+  async function take() {
+    try {
+      const c = await api.post<any>(`/api/conversations/${convId}/take/`, {});
+      onChanged?.(c);
+      flashNote("\uD83D\uDCCC " + ((c as any).assigned_to_name ? `\u0417\u0430\u043A\u0440\u0456\u043F\u043B\u0435\u043D\u043E \u0437\u0430: ${(c as any).assigned_to_name}` : "\u0417\u0430\u043A\u0440\u0456\u043F\u043B\u0435\u043D\u043E \u0437\u0430 \u0432\u0430\u043C\u0438"));
+    } catch (e: any) {
+      const who = e?.data?.detail || e?.response?.data?.detail || "";
+      flashNote("\u26A0 " + (who || "\u041D\u0435 \u0432\u0434\u0430\u043B\u043E\u0441\u044F \u0437\u0430\u043A\u0440\u0456\u043F\u0438\u0442\u0438"), 4200);
+    }
+  }
   async function close() { try { await api.post<any>(`/api/conversations/${convId}/close/`, {}); onClosed?.(); } catch { /* ignore */ } }
   async function pick(uid: number) { try { const c = await api.post<any>(`/api/conversations/${convId}/${picker === "transfer" ? "assign" : "add_member"}/`, { user_id: uid }); onChanged?.(c); } catch { /* ignore */ } setPicker(null); }
   const btn: any = { flex: "1 1 0", minWidth: 0, fontSize: "clamp(8px, 3cqi, 11.5px)", fontWeight: 600, padding: "5px 4px", borderRadius: 7, cursor: "pointer", border: "1px solid #e2e8f0", background: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" };
   return (
+    <>
+    {note && <div style={{ fontSize: 11.5, fontWeight: 700, color: note.charAt(0) === "\u26A0" ? "#b91c1c" : "#0369a1", margin: "0 0 6px" }}>{note}</div>}
     <div style={{ position: "relative", display: "flex", gap: 4, marginBottom: 8, flexWrap: "nowrap" }}>
       <button style={{ ...btn, color: "#0369a1" }} onClick={take} title="Закріпити чат за собою (стати відповідальним)"><Icon n="📌" size={15} /> Закріпити</button>
       <button style={{ ...btn, color: "#c2410c" }} onClick={() => setPicker(picker === "transfer" ? null : "transfer")}>↪ Переадресувати</button>
@@ -28,5 +41,6 @@ export default function ChatActions({ convId, onClosed, onChanged }: { convId: n
         </div>
       </>)}
     </div>
+    </>
   );
 }
