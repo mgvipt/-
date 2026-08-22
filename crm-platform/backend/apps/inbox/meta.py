@@ -849,6 +849,10 @@ def handle_webhook(payload: dict):
                             pass
             if Message.objects.filter(conversation=conv, external_id=mid).exists():
                 continue
+            # Наше вихідне через ПРЯМИЙ Meta вже записане з Meta-mid у meta_external_id
+            # (external_id порожній). Echo того самого mid НЕ має створювати дубль-«ai_assistant».
+            if mid and Message.objects.filter(conversation=conv, meta_external_id=mid).exists():
+                continue
             if is_echo and _relink_manager_echo(
                     conv, mid, msg.get("text") or "", ev.get("timestamp")):
                 continue

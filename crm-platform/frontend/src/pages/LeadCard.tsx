@@ -72,9 +72,12 @@ export default function LeadCard() {
   }
 
   async function openChat() {
+    // Спершу — прямий conversation_id ліда (працює і для закритих діалогів).
+    const cid = (lead as any)?.conversation_id;
+    if (cid) { nav(`/inbox?c=${cid}`); return; }
     if (!lead || !lead.contact) { setMsg(t("У лида нет контакта","У ліда немає контакту")); return; }
     try {
-      const r: any = await api.get<any>(`/api/conversations/?contact=${lead.contact}`);
+      const r: any = await api.get<any>(`/api/conversations/by_contact/?contact=${lead.contact}`);
       const conv = (r.results || r || [])[0];
       if (conv) nav(`/inbox?c=${conv.id}`);
       else setMsg(t("Переписки ещё нет — чат появится после первого сообщения","Переписки ще немає — чат зʼявиться після першого повідомлення"));
