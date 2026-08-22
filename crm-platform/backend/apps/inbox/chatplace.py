@@ -123,6 +123,8 @@ def _mcp(name, arguments=None):
                             return text2
                     except Exception:
                         pass
+            if e.code in (500, 502, 503, 504):
+                raise RuntimeError("ChatPlace тимчасово недоступний (помилка сервера %d). Спробуйте за хвилину або відповідайте через інший канал (напр. Meta · instagram)." % e.code)
             raise
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
             last = e
