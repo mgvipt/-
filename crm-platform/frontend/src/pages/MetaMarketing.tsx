@@ -1,6 +1,25 @@
 import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "../api";
 import { useLang } from "../i18n";
+
+// Явна підказка (тултип), яка показується ОДРАЗУ при наведенні і НЕ обрізається
+// прокруткою таблиці (рендериться в body через портал, слідує за курсором).
+function Tip({ text, children }: { text: string; children: ReactNode }) {
+  const [show, setShow] = useState(false);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  return (
+    <span style={{ cursor: "help" }}
+      onMouseEnter={(e) => { setPos({ x: e.clientX, y: e.clientY }); setShow(true); }}
+      onMouseMove={(e) => setPos({ x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setShow(false)}>
+      {children}
+      {show && createPortal(
+        <div style={{ position: "fixed", left: Math.min(pos.x + 14, window.innerWidth - 300), top: pos.y + 16, zIndex: 99999, background: "#231c18", color: "#fff", padding: "8px 11px", borderRadius: 9, fontSize: 12.5, maxWidth: 280, lineHeight: 1.45, fontWeight: 500, boxShadow: "0 6px 22px rgba(0,0,0,.35)", pointerEvents: "none" }}>{text}</div>,
+        document.body)}
+    </span>
+  );
+}
 
 // ── Ширина столбцов, что запоминается (перетягивание за правый край шапки) ──
 function useColWidths(storageKey: string, count: number) {
@@ -77,7 +96,7 @@ function ResizableTable({ headers, rows, empty, minWidth, storageKey, tips }: { 
           <thead style={{ position: "sticky", top: 0, zIndex: 3 }}><tr>{headers.map((h, i) => (
             <ResizableTh key={h + i} width={cw.widths[i]} onResize={(w) => cw.set(i, w)}
               thStyle={{ ...th, whiteSpace: "normal", wordBreak: "break-word", verticalAlign: "bottom", background: "#eef2f7" }}
-              label={tips && tips[i] ? <span title={tips[i]} style={{ cursor: "help" }}>{h}<span style={{ opacity: .4, marginLeft: 3, fontSize: 10, fontWeight: 400 }}>ⓘ</span></span> : h} />
+              label={tips && tips[i] ? <Tip text={tips[i]}>{h}<span style={{ opacity: .45, marginLeft: 3, fontSize: 10, fontWeight: 400 }}>ⓘ</span></Tip> : h} />
           ))}</tr></thead>
           <tbody>{rows.length ? rows.map((row, i) => <tr key={i}>{row.map((v, j) => <td key={j} style={td}>{v}</td>)}</tr>) :
             <tr><td colSpan={headers.length} style={{ ...td, color: "#64748b", textAlign: "center", padding: 28 }}>{empty}</td></tr>}</tbody>
@@ -424,7 +443,7 @@ function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string)
     <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 240px)" }}>
     <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1400 }}>
       <colgroup>{headers.map((_, i) => <col key={i} style={cw.widths[i] ? { width: cw.widths[i] } : undefined} />)}</colgroup>
-      <thead style={{ position: "sticky", top: 0, zIndex: 3 }}><tr>{headers.map((header, i) => <ResizableTh key={header.s} label={<span title={header.tip} style={{ cursor: "help" }}>{header.s}<span style={{ opacity: .4, marginLeft: 3, fontSize: 10, fontWeight: 400 }}>ⓘ</span></span>} width={cw.widths[i]} onResize={(w) => cw.set(i, w)} thStyle={{ ...th, whiteSpace: "normal", wordBreak: "break-word", verticalAlign: "bottom", background: "#eef2f7" }} />)}</tr></thead>
+      <thead style={{ position: "sticky", top: 0, zIndex: 3 }}><tr>{headers.map((header, i) => <ResizableTh key={header.s} label={<Tip text={header.tip}>{header.s}<span style={{ opacity: .45, marginLeft: 3, fontSize: 10, fontWeight: 400 }}>ⓘ</span></Tip>} width={cw.widths[i]} onResize={(w) => cw.set(i, w)} thStyle={{ ...th, whiteSpace: "normal", wordBreak: "break-word", verticalAlign: "bottom", background: "#eef2f7" }} />)}</tr></thead>
       <tbody>{rows.length ? paged.map((r: any) => {
         const isOpen = expanded.has(r.date);
         return <Fragment key={r.date}>
