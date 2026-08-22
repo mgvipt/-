@@ -64,6 +64,29 @@ function Pager({ total, pageSize, page, sizeKey, onSize, onPage, t }: { total: n
   );
 }
 
+// Універсальна таблиця для великих списків: перетягувані стовпці (память ширини),
+// «прилипла» шапка + прокрутка в блоці фікс.висоти (горизонт.скрол завжди видно).
+// Заголовки переносяться (стовпці можна звузити). Використовується у всіх вкладках.
+function ResizableTable({ headers, rows, empty, minWidth, storageKey, tips }: { headers: string[]; rows: any[][]; empty: string; minWidth: number; storageKey: string; tips?: string[] }) {
+  const cw = useColWidths(storageKey, headers.length);
+  return (
+    <div className="panel" style={{ padding: 0 }}>
+      <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 240px)" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth }}>
+          <colgroup>{headers.map((_, i) => <col key={i} style={cw.widths[i] ? { width: cw.widths[i] } : undefined} />)}</colgroup>
+          <thead style={{ position: "sticky", top: 0, zIndex: 3 }}><tr>{headers.map((h, i) => (
+            <ResizableTh key={h + i} width={cw.widths[i]} onResize={(w) => cw.set(i, w)}
+              thStyle={{ ...th, whiteSpace: "normal", wordBreak: "break-word", verticalAlign: "bottom", background: "#eef2f7" }}
+              label={tips && tips[i] ? <span title={tips[i]} style={{ cursor: "help" }}>{h}<span style={{ opacity: .4, marginLeft: 3, fontSize: 10, fontWeight: 400 }}>ⓘ</span></span> : h} />
+          ))}</tr></thead>
+          <tbody>{rows.length ? rows.map((row, i) => <tr key={i}>{row.map((v, j) => <td key={j} style={td}>{v}</td>)}</tr>) :
+            <tr><td colSpan={headers.length} style={{ ...td, color: "#64748b", textAlign: "center", padding: 28 }}>{empty}</td></tr>}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 const CONNECTED_FROM = "2026-06-16";
 const TAB_KEYS = ["overview", "profitability", "ads", "creatives", "content", "funnel", "forms", "sources"] as const;
 type Tab = typeof TAB_KEYS[number];
@@ -131,14 +154,9 @@ export default function MetaMarketing() {
       {hint && <div className="muted" style={{ fontSize: 10, marginTop: 5, lineHeight: 1.3 }}>{hint}</div>}
     </div>
   );
-  const table = (headers: string[], rows: ReactNode[][], empty: string, minWidth = 760) => (
-    <div className="panel" style={{ padding: 0, overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth }}>
-        <thead><tr>{headers.map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
-        <tbody>{rows.length ? rows.map((row, i) => <tr key={i}>{row.map((v, j) => <td key={j} style={td}>{v}</td>)}</tr>) :
-          <tr><td colSpan={headers.length} style={{ ...td, color: "#64748b", textAlign: "center", padding: 28 }}>{empty}</td></tr>}</tbody>
-      </table>
-    </div>
+  const table = (headers: string[], rows: ReactNode[][], empty: string, minWidth = 760, tips?: string[]) => (
+    <ResizableTable headers={headers} rows={rows} empty={empty} minWidth={minWidth}
+      storageKey={"mm_tbl_" + headers.join("|").slice(0, 60)} tips={tips} />
   );
 
   const syncWarning = !integration.insights_sync_configured ? (
