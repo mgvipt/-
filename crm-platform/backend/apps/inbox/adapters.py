@@ -208,7 +208,13 @@ class ChatPlaceAdapter(ChannelAdapter):
     def send(self, external_chat_id: str, text: str) -> str:
         from .chatplace import send as cp_send
         r = cp_send(external_chat_id, text)
-        return str(r.get("id", "")) if isinstance(r, dict) else ""
+        import logging
+        logging.getLogger(__name__).info("ChatPlace send resp [%s]: %r", external_chat_id, r)
+        if isinstance(r, dict):
+            # ChatPlace може повертати id повідомлення у різних полях залежно від каналу
+            return str(r.get("id") or r.get("messageId") or r.get("message_id")
+                       or (r.get("data") or {}).get("id") or "")
+        return str(r or "")
 
 
 class ViberAdapter(ChannelAdapter):

@@ -797,6 +797,26 @@ def handle_webhook(payload: dict):
                     # Старий чат міг створитися до появи профільного lookup. Нове повідомлення
                     # повинно дозаповнити ім'я/прізвище/username, не створюючи нового контакту.
                     _enrich_contact(conv.contact, kind, sender)
+            else:
+                # Наша відповідь (Юля/менеджер). recipient = клієнт (IGSID/PSID).
+                if not conv.contact_id:
+                    # Діалог почався з НАШОГО повідомлення (Юля дожимає клієнта, який
+                    # писав давно) → контакту ще нема. Створюємо контакт+лід одразу з
+                    # профілем, щоб діалог не лишався безіменним «instagram».
+                    try:
+                        _new_meta_lead(conv, kind, recipient)
+                    except Exception:
+                        pass
+                else:
+                    # Імʼя ще заглушка (при 1-му вхідному Meta не віддала профіль) —
+                    # дотягуємо профіль клієнта.
+                    ct = conv.contact
+                    _fn = (ct.first_name or "").strip()
+                    if (not _fn) or _fn.lower() in ("instagram", "facebook") or _fn.isdigit():
+                        try:
+                            _enrich_contact(ct, kind, recipient)
+                        except Exception:
+                            pass
             if Message.objects.filter(conversation=conv, external_id=mid).exists():
                 continue
             if is_echo and _relink_manager_echo(
