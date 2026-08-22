@@ -232,6 +232,35 @@ def _contact_identity_changes(contact, kind, name="", username=""):
     return changes
 
 
+def _contact_lead_title(contact, fallback=""):
+    """Назва ліда = як у картці клієнта: «Ім'я Прізвище (@нік)». Fallback — IGSID/PSID."""
+    base = str(contact).strip() if contact else ""
+    nick = (getattr(contact, "nickname", "") or "").strip()
+    if base.lower() in ("instagram", "facebook", "tiktok"):
+        base = ""  # заглушка назви каналу — це НЕ ім'я клієнта
+    if nick and nick.lower() not in base.lower():
+        return (f"{base} (@{nick})" if base else f"@{nick}")[:255]
+    return (base or str(fallback))[:255]
+
+
+def _refresh_lead_titles(contact):
+    """Оновити назви лідів контакту, що лишились з голим IGSID/заглушкою «instagram/facebook»,
+    на людяне «Ім'я (@нік)». Не чіпає назви, які менеджер задав вручну."""
+    try:
+        from apps.crm.models import Lead
+        new_title = _contact_lead_title(contact)
+        if not new_title:
+            return
+        for ld in Lead.objects.filter(contact=contact):
+            old = (ld.title or "").strip()
+            placeholder = (not old) or old.isdigit() or old.lower() in ("instagram", "facebook")
+            if placeholder and old != new_title:
+                ld.title = new_title
+                ld.save(update_fields=["title"])
+    except Exception:
+        pass
+
+
 def _enrich_contact(contact, kind, sender_id, name="", username=""):
     """Дозаповнити контакт з Meta. Повертає список реально змінених полів."""
     name, username = _resolve_meta_identity(sender_id, kind, name, username)
@@ -240,6 +269,7 @@ def _enrich_contact(contact, kind, sender_id, name="", username=""):
         for field, value in changes.items():
             setattr(contact, field, value)
         contact.save(update_fields=list(changes))
+        _refresh_lead_titles(contact)   # ім'я підтяглось → оновити й назву ліда
     return list(changes)
 
 
@@ -329,7 +359,7 @@ def _new_meta_lead(conv, kind, sender_id, name="", username="", attribution=None
         st = f.stages.order_by("order").first() if f else None
         if f and st:
             src = "instagram" if kind == "instagram" else "facebook"
-            Lead.objects.create(title=(name or str(sender_id))[:255],
+            Lead.objects.create(title=_contact_lead_title(conv.contact, sender_id),
                                 contact=conv.contact, funnel=f, stage=st, source=src, is_seen=False,
                                 meta_attribution=(attribution or {}))
     except Exception:
