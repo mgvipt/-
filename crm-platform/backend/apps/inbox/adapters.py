@@ -211,10 +211,17 @@ class ChatPlaceAdapter(ChannelAdapter):
         import logging
         logging.getLogger(__name__).info("ChatPlace send resp [%s]: %r", external_chat_id, r)
         if isinstance(r, dict):
-            # ChatPlace може повертати id повідомлення у різних полях залежно від каналу
-            return str(r.get("id") or r.get("messageId") or r.get("message_id")
-                       or (r.get("data") or {}).get("id") or "")
-        return str(r or "")
+            mid = str(r.get("id") or r.get("messageId") or r.get("message_id")
+                      or (r.get("data") or {}).get("id") or "")
+            if mid:
+                return mid
+            # dict без id — ChatPlace не прийняв (напр. канал не доставляє)
+            raise RuntimeError("ChatPlace не прийняв повідомлення: %s" % (str(r.get("error") or r)[:200]))
+        # НЕ-dict відповідь = текст помилки ChatPlace (напр. «Failed to send message»
+        # для TikTok, коли їхня інтеграція не доставляє). НЕ пишемо цей текст як id
+        # (це давало сміттєвий external_id і duplicate key) — кидаємо чесну помилку,
+        # менеджер бачить «не надіслано», а не фейковий «відправлено».
+        raise RuntimeError("ChatPlace не зміг надіслати: %s" % (str(r or "порожня відповідь")[:200]))
 
 
 class ViberAdapter(ChannelAdapter):
