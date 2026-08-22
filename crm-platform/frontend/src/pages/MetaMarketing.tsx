@@ -389,10 +389,12 @@ function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string)
   ];
   return <div className="panel" style={{ padding: 0 }}>
     <Pager total={total} pageSize={pageSize} page={page} sizeKey="mm_daily_pagesize" onSize={setPageSize} onPage={setPage} t={t} />
-    <div style={{ overflowX: "auto" }}>
-    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1900 }}>
+    {/* Прокрутка в межах блока фіксованої висоти: горизонтальний скрол видно ЗАВЖДИ
+        внизу видимої області (а не в самому кінці довгої таблиці), шапка «прилипає». */}
+    <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 240px)" }}>
+    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1400 }}>
       <colgroup>{headers.map((_, i) => <col key={i} style={cw.widths[i] ? { width: cw.widths[i] } : undefined} />)}</colgroup>
-      <thead><tr>{headers.map((header, i) => <ResizableTh key={header} label={header} width={cw.widths[i]} onResize={(w) => cw.set(i, w)} thStyle={th} />)}</tr></thead>
+      <thead style={{ position: "sticky", top: 0, zIndex: 3 }}><tr>{headers.map((header, i) => <ResizableTh key={header} label={header} width={cw.widths[i]} onResize={(w) => cw.set(i, w)} thStyle={{ ...th, whiteSpace: "normal", wordBreak: "break-word", verticalAlign: "bottom", background: "#eef2f7" }} />)}</tr></thead>
       <tbody>{rows.length ? paged.map((r: any) => {
         const isOpen = expanded.has(r.date);
         return <Fragment key={r.date}>
