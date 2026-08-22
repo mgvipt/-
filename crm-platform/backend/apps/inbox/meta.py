@@ -817,6 +817,7 @@ def handle_webhook(payload: dict):
             is_echo = msg.get("is_echo")  # надіслане нами (менеджер АБО ШІ Юля через ChatPlace)
             ext_chat = str(sender if not is_echo else recipient)[:128]
             conv, created = Conversation.objects.get_or_create(channel=ch, external_chat_id=str(ext_chat), defaults={"title": kind})
+            was_closed = (not created) and conv.status == "closed"
             if not is_echo:
                 if created or not conv.contact_id:
                     _new_meta_lead(
@@ -885,6 +886,11 @@ def handle_webhook(payload: dict):
                                    attachments=atts, external_id=mid,
                                    sender_name=("ai_assistant" if is_echo else ""))
             conv.unread = (conv.unread or 0) + (0 if is_echo else 1)
+            if (not is_echo) and was_closed:
+                # клієнт написав у ЗАКРИТИЙ діалог → відкрити у ВІЛЬНИЙ пул (як ChatPlace):
+                # діалог знову видно в «Не призначені», без прив'язки до попереднього менеджера.
+                conv.status = "open"; conv.assigned_to = None
+                was_closed = False
             from django.utils import timezone
             conv.last_message_at = timezone.now()
             conv.save()
