@@ -215,7 +215,15 @@ class ChatPlaceAdapter(ChannelAdapter):
                       or (r.get("data") or {}).get("id") or "")
             if mid:
                 return mid
-            # dict без id — ChatPlace не прийняв (напр. канал не доставляє)
+            # ChatPlace MCP chats_send_message при УСПІХУ повертає {'success': True} БЕЗ
+            # message-id — повідомлення РЕАЛЬНО доставляється в IG (перевірено з Олегом 22.08).
+            # Тому success/ok/status=sent = надіслано; повертаємо "" (порожній external_id
+            # дозволений — unique-constraint має condition ~Q(external_id="")). Раніше це
+            # помилково червонилось банером «ChatPlace не прийняв», хоча лист доходив.
+            if (r.get("success") or r.get("ok")
+                    or str(r.get("status") or "").lower() in ("ok", "success", "sent", "true")):
+                return ""
+            # dict без id і без ознаки успіху — реальна відмова каналу
             raise RuntimeError("ChatPlace не прийняв повідомлення: %s" % (str(r.get("error") or r)[:200]))
         # НЕ-dict відповідь = текст помилки ChatPlace (напр. «Failed to send message»
         # для TikTok, коли їхня інтеграція не доставляє). НЕ пишемо цей текст як id
