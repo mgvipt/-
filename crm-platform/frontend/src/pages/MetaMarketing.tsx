@@ -360,13 +360,25 @@ function SectionTitle({ title, note }: { title: string; note: string }) {
 
 function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string) => string }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Короткий заголовок + пояснення простими словами (тултип при наведенні).
   const headers = [
-    t("Дата", "Дата"), t("Подписчики всего", "Підписники всього"), t("Новые подписчики", "Нові підписники"),
-    t("Контент", "Контент"), t("Реклама, $", "Реклама, $"), t("Реклама, ₴", "Реклама, ₴"),
-    t("Начатые диалоги по Ads Manager", "Розпочаті діалоги за Ads Manager"), t("Лиды CRM из Meta", "Ліди CRM з Meta"),
-    t("Точный ID рекламы", "Точний ID реклами"), t("Продажи", "Продажі"), t("Повторные", "Повторні"),
-    t("Выручка", "Виручка"), t("Из неё повторная", "З неї повторна"), "LTV",
-    t("Валовая прибыль", "Валовий прибуток"), "ROAS", "ROMI",
+    { s: t("Дата", "Дата"), tip: t("День", "День") },
+    { s: t("Подписчики", "Підписники"), tip: t("Сколько подписчиков всего на этот день", "Скільки підписників усього на цей день") },
+    { s: t("Новые", "Нові"), tip: t("Сколько новых подписчиков прибавилось за день", "Скільки нових підписників додалося за день") },
+    { s: t("Контент", "Контент"), tip: t("Сколько публикаций вышло за день", "Скільки публікацій вийшло за день") },
+    { s: t("Реклама $", "Реклама $"), tip: t("Расход на рекламу за день, в долларах", "Витрати на рекламу за день, у доларах") },
+    { s: t("Реклама ₴", "Реклама ₴"), tip: t("Расход на рекламу за день, в гривне (по курсу дня)", "Витрати на рекламу за день, у гривні (за курсом дня)") },
+    { s: t("Диалоги", "Діалоги"), tip: t("Сколько переписок начал клиент с рекламы (по кабинету Meta)", "Скільки переписок почав клієнт з реклами (за кабінетом Meta)") },
+    { s: t("Лиды", "Ліди"), tip: t("Сколько лидов с Meta попало в CRM за день", "Скільки лідів з Meta потрапило в CRM за день") },
+    { s: t("С рекламой", "З рекламою"), tip: t("Лиды с точной меткой объявления — доказанная реклама", "Ліди з точною міткою оголошення — доведена реклама") },
+    { s: t("Продажи", "Продажі"), tip: t("Сколько оплаченных продаж за день", "Скільки оплачених продажів за день") },
+    { s: t("Повторные", "Повторні"), tip: t("Продажи клиентам, которые УЖЕ покупали основной продукт (тест-набор не считается)", "Продажі клієнтам, які ВЖЕ купували основний продукт (тест-набір не рахується)") },
+    { s: t("Выручка", "Виручка"), tip: t("Сумма всех оплат за день", "Сума всіх оплат за день") },
+    { s: t("Из них повторные", "З них повторні"), tip: t("Сколько из выручки — от повторных покупателей", "Скільки з виручки — від повторних покупців") },
+    { s: "LTV", tip: t("Средняя сумма, которую приносит один клиент за всё время", "Середня сума, яку приносить один клієнт за весь час") },
+    { s: t("Прибыль", "Прибуток"), tip: t("Выручка минус себестоимость — валовая прибыль", "Виручка мінус собівартість — валовий прибуток") },
+    { s: "ROAS", tip: t("Сколько гривен вернулось на 1 грн рекламы (по кабинету Meta). Больше 1× — в плюс", "Скільки гривень повернулось на 1 грн реклами (за кабінетом Meta). Більше 1× — у плюс") },
+    { s: "ROMI", tip: t("Окупаемость рекламы по подтверждённым продажам CRM. Больше 100% — в плюс", "Окупність реклами за підтвердженими продажами CRM. Більше 100% — у плюс") },
   ];
   const cw = useColWidths("mm_daily_cols", headers.length);
   const [pageSize, setPageSize] = useState<number>(() => { try { return Number(localStorage.getItem("mm_daily_pagesize") || "30") || 30; } catch { return 30; } });
@@ -394,7 +406,7 @@ function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string)
     <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 240px)" }}>
     <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1400 }}>
       <colgroup>{headers.map((_, i) => <col key={i} style={cw.widths[i] ? { width: cw.widths[i] } : undefined} />)}</colgroup>
-      <thead style={{ position: "sticky", top: 0, zIndex: 3 }}><tr>{headers.map((header, i) => <ResizableTh key={header} label={header} width={cw.widths[i]} onResize={(w) => cw.set(i, w)} thStyle={{ ...th, whiteSpace: "normal", wordBreak: "break-word", verticalAlign: "bottom", background: "#eef2f7" }} />)}</tr></thead>
+      <thead style={{ position: "sticky", top: 0, zIndex: 3 }}><tr>{headers.map((header, i) => <ResizableTh key={header.s} label={<span title={header.tip} style={{ cursor: "help" }}>{header.s}<span style={{ opacity: .4, marginLeft: 3, fontSize: 10, fontWeight: 400 }}>ⓘ</span></span>} width={cw.widths[i]} onResize={(w) => cw.set(i, w)} thStyle={{ ...th, whiteSpace: "normal", wordBreak: "break-word", verticalAlign: "bottom", background: "#eef2f7" }} />)}</tr></thead>
       <tbody>{rows.length ? paged.map((r: any) => {
         const isOpen = expanded.has(r.date);
         return <Fragment key={r.date}>
