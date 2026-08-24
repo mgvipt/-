@@ -812,3 +812,14 @@ class Estimate(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class WeeklyManagerReview(models.Model):
+    """Збережений тижневий вердикт AI-РОП по роботі менеджерів (для керівника)."""
+    created_at = models.DateTimeField(auto_now_add=True)
+    period = models.CharField(max_length=40, blank=True, default="")
+    summary = models.TextField(blank=True, default="")
+    data = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-id"]

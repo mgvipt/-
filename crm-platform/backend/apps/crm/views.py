@@ -4256,3 +4256,86 @@ class ManagerActionsView(APIView):
                     reasons[rz] = reasons.get(rz, 0) + 1
         close_reasons = sorted([{"reason": k, "count": v} for k, v in reasons.items()], key=lambda x: -x["count"])
         return Response({"rows": rows, "reactivations": reactivations, "close_reasons": close_reasons})
+
+
+class WeeklyReviewView(APIView):
+    """Тижневий вердикт AI-РОП по менеджерах — ДЛЯ КЕРІВНИКА. GET=останній, POST=зробити новий.
+    Дешево: агрегуємо ВЖЕ пораховані оцінки діалогів + дії, 1 виклик Haiku з кеш-промптом."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("roles.manage") or u.has_perm_code("analytics.view")):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        from apps.crm.models import WeeklyManagerReview
+        r = WeeklyManagerReview.objects.first()
+        if not r:
+            return Response({"summary": "", "managers": [], "created_at": None})
+        return Response({"summary": r.summary, "managers": (r.data or {}).get("managers", []),
+                         "period": r.period, "created_at": r.created_at.strftime("%Y-%m-%d %H:%M")})
+
+    def post(self, request):
+        import json as _json
+        from datetime import date, timedelta
+        from django.db.models import Count
+        from apps.inbox.models import Message
+        from apps.crm.models import ActivityLog, DialogAnalysis, WeeklyManagerReview
+        from apps.accounts.models import User
+        from apps.crm.ai import claude_json
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("roles.manage")):
+            return Response({"detail": "Немає прав (тільки керівник)"}, status=status.HTTP_403_FORBIDDEN)
+        d_to = date.today(); d_from = d_to - timedelta(days=7)
+
+        def _blank():
+            return {"replies": 0, "followups": 0, "taken": 0, "closed": 0, "scores": [], "why": []}
+        agg = {}
+        for m in (Message.objects.filter(direction="out", internal=False, sender__isnull=False,
+                                         created_at__date__gte=d_from, created_at__date__lte=d_to)
+                  .values("sender", "is_followup").annotate(n=Count("id"))):
+            r = agg.setdefault(m["sender"], _blank())
+            r["followups" if m["is_followup"] else "replies"] += m["n"]
+        for a in (ActivityLog.objects.filter(user__isnull=False,
+                                             action__in=["Взяв чат", "Призначено відповідального", "Завершив чат"],
+                                             created_at__date__gte=d_from, created_at__date__lte=d_to)
+                  .values("user", "action").annotate(n=Count("id"))):
+            r = agg.setdefault(a["user"], _blank())
+            r["closed" if a["action"] == "Завершив чат" else "taken"] += a["n"]
+        for da in (DialogAnalysis.objects.filter(manager__isnull=False, created_at__date__gte=d_from,
+                                                 created_at__date__lte=d_to)
+                   .values("manager", "overall_score", "why_not_selling")[:500]):
+            r = agg.setdefault(da["manager"], _blank())
+            r["scores"].append(da["overall_score"])
+            if da["why_not_selling"] and len(r["why"]) < 3:
+                r["why"].append(str(da["why_not_selling"])[:170])
+        names = {x.id: (x.get_full_name() or x.username) for x in User.objects.filter(id__in=list(agg.keys()))}
+        data_for_ai = []
+        for uid, r in agg.items():
+            if r["replies"] == 0 and r["closed"] == 0:
+                continue
+            avg = round(sum(r["scores"]) / len(r["scores"])) if r["scores"] else None
+            data_for_ai.append({"name": names.get(uid, str(uid)), "replies": r["replies"],
+                                "followups": r["followups"], "taken": r["taken"], "closed": r["closed"],
+                                "avg_dialog_score": avg, "why_not_selling": r["why"]})
+        if not data_for_ai:
+            return Response({"summary": "Немає активності менеджерів за тиждень.", "managers": [],
+                             "period": "%s — %s" % (d_from, d_to), "created_at": None})
+        system = ("Ти AI-РОП — керівник відділу продажів декоративних матеріалів Wallcov. "
+                  "Аналізуй ТИЖНЕВУ роботу менеджерів у чатах. Головне правило: клієнтів втрачають "
+                  "НЕ через рекламу, а через мовчання менеджера, відсутність дожиму і обрив діалогу "
+                  "без наступного кроку. По кожному менеджеру дай короткий вердикт (2-3 речення: що добре / "
+                  "де втрачає ліди / що виправити) і загальний висновок по команді для власника. "
+                  "Пиши ПРОСТОЮ мовою (власник не програміст). Відповідай СУВОРО валідним JSON без коментарів: "
+                  "{\"summary\":\"...\",\"managers\":[{\"name\":\"...\",\"score\":число_0_100,\"verdict\":\"...\"}]}")
+        prompt = "Дані по менеджерах за тиждень %s — %s:\n%s" % (d_from, d_to, _json.dumps(data_for_ai, ensure_ascii=False))
+        try:
+            res = claude_json(prompt, model="claude-haiku-4-5", max_tokens=1600, system=system,
+                              cache=True, source="Разбор недели (AI-РОП)")
+        except Exception as e:
+            return Response({"error": "AI: %s" % str(e)[:180]})
+        managers = res.get("managers") or []
+        summary = res.get("summary") or ""
+        rev = WeeklyManagerReview.objects.create(period="%s — %s" % (d_from, d_to), summary=summary,
+                                                 data={"managers": managers, "raw": data_for_ai})
+        return Response({"summary": summary, "managers": managers, "period": rev.period,
+                         "created_at": rev.created_at.strftime("%Y-%m-%d %H:%M")})
