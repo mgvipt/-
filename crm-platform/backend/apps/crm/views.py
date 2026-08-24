@@ -1825,21 +1825,27 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         if deal.contact_id:
             from apps.inbox.models import Conversation
             from apps.inbox.services import send_message
-            conv = Conversation.objects.filter(contact_id=deal.contact_id, status="open").order_by("-last_message_at").first()
-            if conv:
+            # Активний останній чат: перебираємо ВІДКРИТІ чати клієнта від найсвіжішого,
+            # шлемо у ПЕРШИЙ, який прийме. Якщо канал не прийняв — пробуємо наступний.
+            convs = list(Conversation.objects.filter(contact_id=deal.contact_id, status="open")
+                         .select_related("channel").order_by("-last_message_at"))
+            if not convs:
+                _err = "немає відкритого чату з клієнтом"
+            for conv in convs:
                 try:
-                    send_message(conv, text, user=request.user); sent = True
+                    send_message(conv, text, user=request.user)
+                    sent = True
                 except Exception as _se:
-                    _err = "канал %s не прийняв: %s" % (conv.channel.name, str(_se)[:120])
-                if sent and kind == "requisites":
+                    _err = "канал %s не прийняв: %s" % (conv.channel.name, str(_se)[:110])
+                    continue
+                if kind == "requisites":
                     # окремими повідомленнями — щоб клієнт скопіював одним тапом
-                    for extra in (iban, "Оплата згідно замовлення №%s" % deal.id):  # призначення = як у головному повідомленні
+                    for extra in (iban, "Оплата згідно замовлення №%s" % deal.id):
                         try:
                             send_message(conv, extra, user=request.user)
                         except Exception:
                             pass
-            else:
-                _err = "немає відкритого чату з клієнтом"
+                break
         else:
             _err = "у сделки немає контакту"
         _advance_deal_stage(deal, 2, "надіслано посилання на оплату")  # Домовились про оплату
