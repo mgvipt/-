@@ -2502,7 +2502,7 @@ class AnalyticsView(APIView):
 class MetaMarketingView(APIView):
     """Meta Ads + органічний Instagram + підтверджені результати CRM."""
     permission_classes = [HasPermCode]
-    required_perm = "analytics.view"
+    required_perm = "marketing.view"
 
     def get(self, request):
         import os
