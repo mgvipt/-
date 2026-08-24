@@ -97,81 +97,112 @@ function ChannelsTab() {
 }
 
 /* ─── ВКЛАДКА ПРОДАЖІ ──────────────────────────────────────────────────── */
-/* ─── КОНУС: накопительная воронка «прошло через этап» (ИИ vs менеджер, %) ─── */
-function ConeFunnel() {
-  const { t } = useLang();
-  const [d, setD] = useState<any>(null);
-  const [fid, setFid] = useState("");
-  const [src, setSrc] = useState("all");
-  const [from, setFrom] = useState<string>(() => { const x = new Date(); x.setDate(x.getDate() - 44); return _iso(x); });
-  const [to, setTo] = useState<string>(() => _iso(new Date()));
-  const [err, setErr] = useState(false);
-  useEffect(() => {
-    setErr(false);
-    const q = `?from=${from}&to=${to}&source=${src}` + (fid ? `&funnel=${fid}` : "");
-    api.get<any>("/api/analytics/sales-funnel/" + q).then(setD).catch(() => setErr(true));
-  }, [fid, src, from, to]);
-  if (err) return null;
-  if (!d) return <div className="panel" style={{ margin: 0, marginBottom: 12 }}><div className="muted">{t("Загрузка воронки…", "Завантаження воронки…")}</div></div>;
+/* ─── Конус одной воронки (чистый рендер по данным sales-funnel) ─── */
+function Cone({ d, t }: { d: any; t: any }) {
+  if (!d || !d.stages) return null;
   const base = (d.stages[0]?.through) || d.entered || 1;
   const wOf = (n: number) => Math.max((n / base) * 100, 7);
   const gcols = "minmax(120px,150px) 1fr 96px";
   return (
+    <div>
+      {(d.stages || []).map((st: any, i: number) => {
+        const wTop = i === 0 ? 100 : wOf(d.stages[i - 1].through);
+        const wBot = wOf(st.through);
+        const clip = `polygon(${(50 - wTop / 2).toFixed(1)}% 0, ${(50 + wTop / 2).toFixed(1)}% 0, ${(50 + wBot / 2).toFixed(1)}% 100%, ${(50 - wBot / 2).toFixed(1)}% 100%)`;
+        const drop = i > 0 && st.pct_prev < 55;
+        return (
+          <div key={st.id} style={{ display: "grid", gridTemplateColumns: gcols, gap: 10, alignItems: "center", marginBottom: 4 }}>
+            <div style={{ fontSize: 12, textAlign: "right", color: "#334155", lineHeight: 1.2 }}>{st.name}<div style={{ fontSize: 18, fontWeight: 800, fontFamily: "ui-monospace,monospace" }}>{st.through}</div></div>
+            <div style={{ height: 46, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ position: "absolute", inset: 0, clipPath: clip, background: `linear-gradient(90deg, ${st.color}dd, ${st.color})` }} />
+              <span style={{ position: "relative", color: "#fff", fontSize: 11.5, fontWeight: 600, textShadow: "0 1px 2px rgba(0,0,0,.4)" }}>{st.man > 0 ? `🤖 ${st.ai} · 👤 ${st.man}` : (st.ai > 0 ? `🤖 ${st.ai}` : "")}</span>
+            </div>
+            <div style={{ fontSize: 13, fontFamily: "ui-monospace,monospace", fontWeight: 700, color: drop ? "#b91c1c" : "#475569" }}>{i === 0 ? "100%" : st.pct_prev + "%"}{drop && <span style={{ fontSize: 10, display: "block", fontWeight: 600 }}>⚠ {t("обвал", "обвал")}</span>}</div>
+          </div>
+        );
+      })}
+      <div style={{ display: "grid", gridTemplateColumns: gcols, gap: 10, alignItems: "center", marginTop: 8, paddingTop: 8, borderTop: "1px dashed #e2e8f0" }}>
+        <div style={{ fontSize: 12, textAlign: "right", color: "#b91c1c", lineHeight: 1.2 }}>{t("Потеряно", "Втрачено")}<div style={{ fontSize: 17, fontWeight: 800, fontFamily: "ui-monospace,monospace" }}>{d.lost.count}</div></div>
+        <div style={{ height: 28, borderRadius: 8, background: "#fef2f2", border: "1px solid #fca5a5", display: "flex", alignItems: "center", padding: "0 12px", color: "#b91c1c", fontWeight: 700, fontSize: 12 }}>{t("потеряно от всех зашедших", "втрачено від усіх, що зайшли")}</div>
+        <div style={{ fontSize: 13, fontFamily: "ui-monospace,monospace", fontWeight: 700, color: "#b91c1c" }}>{d.lost.pct}%</div>
+      </div>
+      {d.won.count > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: gcols, gap: 10, alignItems: "center", marginTop: 4 }}>
+          <div style={{ fontSize: 12, textAlign: "right", color: "#166534", lineHeight: 1.2 }}>{t("Продано", "Продано")}<div style={{ fontSize: 17, fontWeight: 800, fontFamily: "ui-monospace,monospace" }}>{d.won.count}</div></div>
+          <div style={{ height: 28, borderRadius: 8, background: "#f0fdf4", border: "1px solid #86efac", display: "flex", alignItems: "center", padding: "0 12px", color: "#166534", fontWeight: 700, fontSize: 12 }}>{t("дошло до оплаты", "дійшло до оплати")}</div>
+          <div style={{ fontSize: 13, fontFamily: "ui-monospace,monospace", fontWeight: 700, color: "#166534" }}>{d.won.pct}%</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── ПУТЬ ПРОДАЖ: Лиды → Тест → Основной (3 воронки + межворонковые %) ─── */
+function SalesJourney() {
+  const { t } = useLang();
+  const [src, setSrc] = useState("all");
+  const [from, setFrom] = useState<string>(() => { const x = new Date(); x.setDate(x.getDate() - 44); return _iso(x); });
+  const [to, setTo] = useState<string>(() => _iso(new Date()));
+  const [jr, setJr] = useState<any>(null);
+  const [cones, setCones] = useState<any>({});
+  const [sources, setSources] = useState<any[]>([]);
+  useEffect(() => {
+    const q = `?from=${from}&to=${to}&source=${src}`;
+    setCones({});
+    api.get<any>("/api/analytics/sales-journey/" + q).then((j) => {
+      setJr(j);
+      const ids: any = j.funnels || {};
+      (["lead", "test", "main"] as const).forEach((k) => {
+        const fn = ids[k];
+        if (fn) api.get<any>(`/api/analytics/sales-funnel/${q}&funnel=${fn.id}`).then((cd) => {
+          setCones((c: any) => ({ ...c, [k]: cd }));
+          if (k === "lead" && cd.sources) setSources(cd.sources);
+        }).catch(() => {});
+      });
+    }).catch(() => setJr({ error: true }));
+  }, [src, from, to]);
+  if (!jr) return <div className="panel" style={{ margin: 0, marginBottom: 12 }}><div className="muted">{t("Загрузка пути продаж…", "Завантаження шляху продажів…")}</div></div>;
+  if (jr.error) return null;
+  const P = jr.pct || {}; const C = jr.counts || {};
+  const blocks: [string, string, string][] = [
+    ["lead", t("Лиды", "Ліди"), "#2E6FB0"],
+    ["test", t("Тест-набор", "Тест-набір"), "#B67A12"],
+    ["main", t("Основной продукт", "Основний продукт"), "#2F8F5B"],
+  ];
+  return (
     <div className="panel" style={{ margin: 0, marginBottom: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-        <b style={{ fontSize: 14 }}>🎯 {t("Воронка: прошло через этап", "Воронка: пройшло через етап")}</b>
-        <select value={fid} onChange={(e) => setFid(e.target.value)} style={_selSt}>
-          {(d.funnels || []).map((f: any) => <option key={f.id} value={f.id}>{f.name}{f.is_lead ? " ★" : ""}</option>)}
-        </select>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+        <b style={{ fontSize: 14 }}>🎯 {t("Путь продаж: Лиды → Тест → Основной", "Шлях продажів: Ліди → Тест → Основний")}</b>
         <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={_dateSt} />
         <span className="muted">—</span>
         <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={_dateSt} />
       </div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-        {(d.sources || []).map((s: any) => (
-          <button key={s.key} onClick={() => setSrc(s.key)}
-            style={{ fontSize: 12, padding: "3px 11px", borderRadius: 20, cursor: "pointer", background: src === s.key ? "#2E6FB0" : "#f1f5f9", color: src === s.key ? "#fff" : "#475569", border: "none", fontWeight: 600 }}>
-            {s.label} <b>{s.n}</b>
-          </button>
-        ))}
-      </div>
-      <div>
-        {(d.stages || []).map((st: any, i: number) => {
-          const wTop = i === 0 ? 100 : wOf(d.stages[i - 1].through);
-          const wBot = wOf(st.through);
-          const clip = `polygon(${(50 - wTop / 2).toFixed(1)}% 0, ${(50 + wTop / 2).toFixed(1)}% 0, ${(50 + wBot / 2).toFixed(1)}% 100%, ${(50 - wBot / 2).toFixed(1)}% 100%)`;
-          const drop = i > 0 && st.pct_prev < 55;
-          return (
-            <div key={st.id} style={{ display: "grid", gridTemplateColumns: gcols, gap: 10, alignItems: "center", marginBottom: 4 }}>
-              <div style={{ fontSize: 12, textAlign: "right", color: "#334155", lineHeight: 1.2 }}>{st.name}<div style={{ fontSize: 18, fontWeight: 800, fontFamily: "ui-monospace,monospace" }}>{st.through}</div></div>
-              <div style={{ height: 46, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <div style={{ position: "absolute", inset: 0, clipPath: clip, background: `linear-gradient(90deg, ${st.color}dd, ${st.color})` }} />
-                <span style={{ position: "relative", color: "#fff", fontSize: 11.5, fontWeight: 600, textShadow: "0 1px 2px rgba(0,0,0,.4)" }}>
-                  {st.man > 0 ? `🤖 ${st.ai} · 👤 ${st.man}` : (st.ai > 0 ? `🤖 ${st.ai}` : "")}
-                </span>
-              </div>
-              <div style={{ fontSize: 13, fontFamily: "ui-monospace,monospace", fontWeight: 700, color: drop ? "#b91c1c" : "#475569" }}>
-                {i === 0 ? "100%" : st.pct_prev + "%"}{drop && <span style={{ fontSize: 10, display: "block", fontWeight: 600 }}>⚠ {t("обвал", "обвал")}</span>}
-              </div>
-            </div>
-          );
-        })}
-        <div style={{ display: "grid", gridTemplateColumns: gcols, gap: 10, alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: "1px dashed #e2e8f0" }}>
-          <div style={{ fontSize: 12, textAlign: "right", color: "#b91c1c", lineHeight: 1.2 }}>{t("Потеряно", "Втрачено")}<div style={{ fontSize: 18, fontWeight: 800, fontFamily: "ui-monospace,monospace" }}>{d.lost.count}</div></div>
-          <div style={{ height: 30, borderRadius: 8, background: "#fef2f2", border: "1px solid #fca5a5", display: "flex", alignItems: "center", padding: "0 12px", color: "#b91c1c", fontWeight: 700, fontSize: 12 }}>{t("потеряно от всех зашедших", "втрачено від усіх, що зайшли")}</div>
-          <div style={{ fontSize: 13, fontFamily: "ui-monospace,monospace", fontWeight: 700, color: "#b91c1c" }}>{d.lost.pct}%</div>
+      {sources.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+          {sources.map((s: any) => (
+            <button key={s.key} onClick={() => setSrc(s.key)} style={{ fontSize: 12, padding: "3px 11px", borderRadius: 20, cursor: "pointer", background: src === s.key ? "#2E6FB0" : "#f1f5f9", color: src === s.key ? "#fff" : "#475569", border: "none", fontWeight: 600 }}>{s.label} <b>{s.n}</b></button>
+          ))}
         </div>
-        {d.won.count > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: gcols, gap: 10, alignItems: "center", marginTop: 4 }}>
-            <div style={{ fontSize: 12, textAlign: "right", color: "#166534", lineHeight: 1.2 }}>{t("Продано", "Продано")}<div style={{ fontSize: 18, fontWeight: 800, fontFamily: "ui-monospace,monospace" }}>{d.won.count}</div></div>
-            <div style={{ height: 30, borderRadius: 8, background: "#f0fdf4", border: "1px solid #86efac", display: "flex", alignItems: "center", padding: "0 12px", color: "#166534", fontWeight: 700, fontSize: 12 }}>{t("дошло до оплаты", "дійшло до оплати")}</div>
-            <div style={{ fontSize: 13, fontFamily: "ui-monospace,monospace", fontWeight: 700, color: "#166534" }}>{d.won.pct}%</div>
-          </div>
-        )}
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 13 }}>
+        <span style={{ padding: "6px 12px", borderRadius: 8, background: "#e2ecf7", color: "#2E6FB0", fontWeight: 700 }}>{t("Лиды", "Ліди")} {C.lead}</span>
+        <span style={{ color: "#64748b", fontWeight: 700 }}>→ <b style={{ color: "#0f172a" }}>{P.lead_to_test}%</b></span>
+        <span style={{ padding: "6px 12px", borderRadius: 8, background: "#f8ecd3", color: "#B67A12", fontWeight: 700 }}>{t("Тест", "Тест")} {C.test}</span>
+        <span style={{ color: "#64748b", fontWeight: 700 }}>→ <b style={{ color: "#0f172a" }}>{P.test_to_main}%</b></span>
+        <span style={{ padding: "6px 12px", borderRadius: 8, background: "#e1f1e8", color: "#2F8F5B", fontWeight: 700 }}>{t("Основной", "Основний")} {C.main}</span>
+        <span style={{ marginLeft: "auto", fontSize: 12.5, color: "#475569" }}>{t("сразу основной", "одразу основний")}: <b>{C.main_direct}</b> · {t("лид→оплата", "лід→оплата")}: <b style={{ color: "#166534" }}>{P.lead_to_sale}%</b></span>
       </div>
-      <div className="muted" style={{ fontSize: 11.5, marginTop: 12, lineHeight: 1.5 }}>
-        {t("«Прошло через этап» — сколько объектов достигли этого статуса ИЛИ любого следующего (накопительно). 🤖 — двигала Юля (ИИ), 👤 — менеджер вручную. % — сколько прошло дальше от предыдущего.", "«Пройшло через етап» — скільки досягли цього статусу АБО будь-якого наступного. 🤖 — Юля (ІІ), 👤 — менеджер вручну. % — скільки пройшло далі.")}
-        {d.manager_moved > 0 && <> · <b>{t("менеджер вручную двигал", "менеджер вручну рухав")}: {d.manager_moved}</b></>}
+      {blocks.map(([k, label, color]) => (
+        <div key={k} style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: color }} />{label}
+            {jr.funnels?.[k]?.name && <span className="muted" style={{ fontWeight: 400, fontSize: 11.5 }}>· {jr.funnels[k].name}</span>}
+          </div>
+          {cones[k] ? <Cone d={cones[k]} t={t} /> : (jr.funnels?.[k] ? <div className="muted" style={{ fontSize: 12 }}>…</div> : <div className="muted" style={{ fontSize: 12 }}>{t("воронка не найдена (проверь названия воронок)", "воронку не знайдено")}</div>)}
+        </div>
+      ))}
+      <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+        {t("«Прошло через этап» — накопительно (достиг статуса ИЛИ любого следующего). 🤖 Юля, 👤 менеджер. Межворонковые % — по клиенту: сколько лидов дошло до теста, сколько с теста купили основной, сколько купили основной сразу (минуя тест).", "«Пройшло через етап» — накопично. 🤖 Юля, 👤 менеджер. Міжворонкові % — по клієнту.")}
       </div>
     </div>
   );
@@ -191,7 +222,7 @@ function SalesTab() {
   ];
   return (
     <>
-      <ConeFunnel />
+      <SalesJourney />
       <div className="toolbar" style={{ borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 12, background: "#fff" }}>
         <span className="muted">{t("Воронка:","Воронка:")}</span>
         <select value={fid} onChange={(e) => setFid(e.target.value)}>

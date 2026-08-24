@@ -2633,6 +2633,106 @@ class SalesFunnelView(APIView):
         })
 
 
+class SalesJourneyView(APIView):
+    """Единый путь: Лиды → Тест-набор → Основной продукт. Определяет 3 воронки
+    (лид = is_lead_funnel; тест/основной — по имени) и считает переходы ПО КОНТАКТУ
+    для когорты лидов за период (+ фильтр источника): лид→тест, тест→основной,
+    лид→сразу основной (минуя тест), лид→оплата."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from datetime import date, timedelta, datetime as _dt
+        from apps.crm.models import Funnel, Lead, Deal
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("analytics.view") or u.has_perm_code("roles.manage")):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        frm = request.query_params.get("from"); to = request.query_params.get("to")
+        try:
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=44))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+        except ValueError:
+            return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
+
+        groups = SalesFunnelView.SRC_GROUPS
+        lead_f = Funnel.objects.filter(is_lead_funnel=True).first()
+        if not lead_f:
+            return Response({"detail": "no lead funnel"}, status=status.HTTP_404_NOT_FOUND)
+
+        _all_f = list(Funnel.objects.filter(is_lead_funnel=False, is_archive=False).order_by("order"))
+        def _pin(param):
+            v = request.query_params.get(param)
+            if v and v.isdigit():
+                return next((fn for fn in _all_f if fn.id == int(v)), None)
+            return None
+        def _find_test():
+            cands = [fn for fn in _all_f if "тест" in (fn.name or "").lower()]
+            for fn in cands:
+                n = (fn.name or "").lower()
+                if "набір" in n or "набор" in n:
+                    return fn
+            for fn in cands:
+                n = (fn.name or "").lower()
+                if "тестов" in n and "техни" not in n:
+                    return fn
+            return None
+        def _find_main():
+            for fn in _all_f:
+                if "основн" in (fn.name or "").lower():
+                    return fn
+            return None
+        test_f = _pin("test_funnel") or _find_test()
+        main_f = _pin("main_funnel") or _find_main()
+
+        def _grp(s):
+            s = s or ""
+            for g, vals in groups.items():
+                if s in vals:
+                    return g
+            return "offline"
+        src = (request.query_params.get("source") or "all").lower()
+        lead_rows = list(Lead.objects.filter(funnel=lead_f, created_at__date__gte=d_from,
+                                             created_at__date__lte=d_to).values_list("contact_id", "source"))
+        if src in groups:
+            allow = groups[src]
+            lead_rows = [(c, s) for (c, s) in lead_rows if (s or "") in allow]
+        elif src == "offline":
+            lead_rows = [(c, s) for (c, s) in lead_rows if _grp(s) == "offline"]
+        else:
+            src = "all"
+        cohort = set(c for (c, s) in lead_rows if c)
+        lead_count = len(cohort)
+
+        def _with_deal(funnel, won_only=False):
+            if not funnel or not cohort:
+                return set()
+            q = Deal.objects.filter(funnel=funnel, contact_id__in=cohort)
+            if won_only:
+                q = q.filter(stage__is_won=True)
+            return set(q.values_list("contact_id", flat=True))
+        test_c = _with_deal(test_f)
+        main_c = _with_deal(main_f)
+        won_c = _with_deal(test_f, True) | _with_deal(main_f, True)
+        main_via_test = main_c & test_c
+        main_direct = main_c - test_c
+
+        def pct(a, b):
+            return round(a * 100.0 / b) if b else 0
+        return Response({
+            "from": d_from.isoformat(), "to": d_to.isoformat(), "source": src,
+            "funnels": {
+                "lead": {"id": lead_f.id, "name": lead_f.name},
+                "test": ({"id": test_f.id, "name": test_f.name} if test_f else None),
+                "main": ({"id": main_f.id, "name": main_f.name} if main_f else None),
+            },
+            "counts": {"lead": lead_count, "test": len(test_c), "main": len(main_c),
+                       "main_via_test": len(main_via_test), "main_direct": len(main_direct), "won": len(won_c)},
+            "pct": {"lead_to_test": pct(len(test_c), lead_count),
+                    "test_to_main": pct(len(main_via_test), len(test_c)),
+                    "lead_to_main_direct": pct(len(main_direct), lead_count),
+                    "lead_to_sale": pct(len(won_c), lead_count)},
+        })
+
+
 class MetaMarketingView(APIView):
     """Meta Ads + органічний Instagram + підтверджені результати CRM."""
     permission_classes = [HasPermCode]
