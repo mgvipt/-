@@ -378,6 +378,12 @@ def sync_chats(max_chats=40, per_chat=40):
             if chad_in:
                 conv.status = "open"; conv.assigned_to = None
                 conv.save(update_fields=["status", "assigned_to"])  # клієнт написав → відкрити у вільний пул
+                try:
+                    from apps.crm.models import log_activity as _la_r
+                    _la_r("contact", conv.contact_id or 0, "Повернувся з ігнору",
+                          "клієнт написав у закритий діалог", None, "Система")
+                except Exception:
+                    pass
                 # Повернення відкриває діалог того самого контакту, але не створює новий лід.
             # інакше лишаємо закритим — у списку не зʼявиться (status-фільтр)
         if conv.contact_id:

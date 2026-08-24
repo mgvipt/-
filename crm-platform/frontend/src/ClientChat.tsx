@@ -43,6 +43,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   const [text, setText] = useState("");
   const [correctionTarget, setCorrectionTarget] = useState<{ id: number; text: string } | null>(null);
   const [internal, setInternal] = useState(false);
+  const [followup, setFollowup] = useState(false);
   const [pending, setPending] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [ai, setAi] = useState<{ context?: string; points?: string[]; suggestion?: string } | null>(null);
@@ -150,8 +151,8 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
       }
       setPending([]);
       if (text.trim()) {
-        const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send/`, { text, internal });
-        setMsgs((p) => [...p, m]); setText(""); setCorrectionTarget(null);
+        const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send/`, { text, internal, followup });
+        setMsgs((p) => [...p, m]); setText(""); setCorrectionTarget(null); setFollowup(false);
       }
     } catch (e: any) { setErr(e?.response?.data?.detail || "Не вдалося надіслати — чат має бути відкритий оператором"); }
     setBusy(false);
@@ -317,7 +318,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
             )}
             <div id={`client-message-${m.id}`} style={{ alignSelf: m.direction === "in" ? "flex-start" : "flex-end", maxWidth: "82%" }}>
               <div style={{ fontSize: 10.5, color: "#94a3b8", marginBottom: 2, textAlign: m.direction === "in" ? "left" : "right" }}>
-                {m.direction === "in" ? ((m as any).sender_display || (m as any).sender_name || "Клієнт") : ((m as any).sender_display || (m.sender_name === "ai_assistant" ? "Юля (AI)" : (m.sender_name || "Менеджер")))}
+                {m.direction === "in" ? ((m as any).sender_display || (m as any).sender_name || "Клієнт") : ((m as any).sender_display || (m.sender_name === "ai_assistant" ? "Юля (AI)" : (m.sender_name || "Менеджер")))}{(m as any).is_followup && <span style={{ color: "#c2410c", fontWeight: 700, marginLeft: 5 }}><Icon n="bell" size={11} /> дожим</span>}
               </div>
               <div style={{ background: (m as any).internal ? "#fef9c3" : (m.direction === "in" ? "#ffffff" : "#dbeafe"), padding: "7px 11px", borderRadius: 12, fontSize: 13, whiteSpace: "pre-wrap", border: (m as any).internal ? "1px dashed #d4a017" : (m.direction === "in" ? "1px solid #eef2f7" : "none") }}>
                 {(m as any).internal && <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", marginBottom: 2 }}><Icon n="📝" size={12} /> Нотатка (тільки команда)</div>}
@@ -368,7 +369,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
               {peekMsgs.map((m) => (
                 <div key={m.id} id={`client-peek-message-${m.id}`} style={{ alignSelf: m.direction === "in" ? "flex-start" : "flex-end", maxWidth: "85%" }}>
                   <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 2, textAlign: m.direction === "in" ? "left" : "right" }}>
-                    {m.direction === "in" ? ((m as any).sender_display || (m as any).sender_name || "Клієнт") : ((m as any).sender_display || (m.sender_name === "ai_assistant" ? "Юля (AI)" : (m.sender_name || "Менеджер")))}
+                    {m.direction === "in" ? ((m as any).sender_display || (m as any).sender_name || "Клієнт") : ((m as any).sender_display || (m.sender_name === "ai_assistant" ? "Юля (AI)" : (m.sender_name || "Менеджер")))}{(m as any).is_followup && <span style={{ color: "#c2410c", fontWeight: 700, marginLeft: 5 }}><Icon n="bell" size={11} /> дожим</span>}
                   </div>
                   <div style={{ background: (m as any).internal ? "#fef9c3" : (m.direction === "in" ? "#fff" : "#dbeafe"), padding: "6px 10px", borderRadius: 10, fontSize: 12.5, whiteSpace: "pre-wrap", border: m.direction === "in" ? "1px solid #eef2f7" : "none" }}>
                     <ReplyContext attachments={(m as any).attachments} idPrefix="client-peek-message-" />
@@ -426,6 +427,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
       <input ref={fileRef} type="file" hidden onChange={sendFile} />
       <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
         <button className="btn" type="button" style={{ background: internal ? "#fde68a" : "#f1f5f9", color: internal ? "#92400e" : "#475569", flex: "0 0 auto", fontWeight: internal ? 700 : 400 }} title="Прихована нотатка для менеджерів (клієнт не побачить)" onClick={() => setInternal((v) => !v)}><Icon n="eye" size={17} /></button>
+        <button className="btn" type="button" style={{ background: followup ? "#fed7aa" : "#f1f5f9", color: followup ? "#c2410c" : "#475569", flex: "0 0 auto", fontWeight: followup ? 700 : 400 }} title="Позначити як дожим — нагадування клієнту, який замовк (для аналітики)" onClick={() => setFollowup((v) => !v)}><Icon n="bell" size={17} /></button>
         <EmojiButton onPick={(e) => setText((t) => t + e)} />
         <button className="btn" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title="Надіслати фото / відео" onClick={() => fileRef.current?.click()} disabled={busy}><Icon n="paperclip" size={17} /></button>
         <AiComposeAssist draft={text} convId={conv.id} onApply={setText} compact />

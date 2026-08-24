@@ -891,6 +891,12 @@ def handle_webhook(payload: dict):
                 # діалог знову видно в «Не призначені», без прив'язки до попереднього менеджера.
                 conv.status = "open"; conv.assigned_to = None
                 was_closed = False
+                try:
+                    from apps.crm.models import log_activity as _la_r
+                    _la_r("contact", conv.contact_id or 0, "Повернувся з ігнору",
+                          "клієнт написав у закритий діалог", None, "Система")
+                except Exception:
+                    pass
             from django.utils import timezone
             conv.last_message_at = timezone.now()
             conv.save()

@@ -524,6 +524,9 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_409_CONFLICT)
         conv.assigned_to = u
         conv.save(update_fields=["assigned_to"])
+        from apps.crm.models import log_activity as _la_take
+        _la_take("contact", conv.contact_id or 0, "Взяв чат", "закріпив діалог за собою",
+                 u, (u.get_full_name() or u.username))
         if conv.contact_id:
             from apps.crm.models import Deal, Lead, Contact
             # Беручи чат — стаємо відповідальним за клієнта і його ВІДКРИТІ сделки/ліди,
@@ -880,6 +883,9 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             msg = send_message(conv, text, user=request.user)
         except Exception as e:  # сеть/токен недоступны
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+        if request.data.get("followup") and msg and not getattr(msg, "is_followup", False):
+            msg.is_followup = True
+            msg.save(update_fields=["is_followup"])
         return Response(MessageSerializer(msg).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])

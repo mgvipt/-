@@ -89,7 +89,6 @@ export default function ManagerAnalytics() {
                   <th style={{ ...th, textAlign: "right" }}>{t("Взял в работу", "Узяв у роботу")}</th>
                   <th style={{ ...th, textAlign: "right" }}>{t("Дожимов", "Дожимів")}</th>
                   <th style={{ ...th, textAlign: "right" }}>{t("Закрыл", "Закрив")}</th>
-                  <th style={{ ...th, textAlign: "right" }}>{t("Вернул из игнора", "Повернув з ігнору")}</th>
                 </tr></thead>
                 <tbody>{(acts.rows || []).map((r: any) => (
                   <tr key={r.user_id}>
@@ -98,10 +97,14 @@ export default function ManagerAnalytics() {
                     <td style={{ ...td, textAlign: "right" }}>{r.taken || 0}</td>
                     <td style={{ ...td, textAlign: "right", color: "#c2410c", fontWeight: 600 }}>{r.followups || 0}</td>
                     <td style={{ ...td, textAlign: "right" }}>{r.closed || 0}</td>
-                    <td style={{ ...td, textAlign: "right", color: "#166534" }}>{r.recovered || 0}</td>
                   </tr>
                 ))}</tbody>
               </table>
+              {typeof acts.reactivations === "number" && acts.reactivations > 0 && (
+                <div style={{ marginTop: 10, fontSize: 12.5, color: "#166534", fontWeight: 600 }}>
+                  <Icon n="refresh" size={13} /> {t("Вернулись из игнора (команда):", "Повернулись з ігнору (команда):")} <b>{acts.reactivations}</b>
+                </div>
+              )}
               {acts.close_reasons && acts.close_reasons.length > 0 && (
                 <div style={{ marginTop: 12 }}>
                   <div className="muted" style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{t("Причины закрытия (почему теряем):", "Причини закриття (чому втрачаємо):")}</div>

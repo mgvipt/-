@@ -62,6 +62,7 @@ class Message(models.Model):
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
     direction = models.CharField(max_length=3, choices=DIRECTION)
     internal = models.BooleanField(default=False, help_text="Внутрішня нотатка — видно лише менеджерам, клієнту НЕ йде")
+    is_followup = models.BooleanField(default=False, help_text="Дожим — повідомлення-нагадування клієнту, який замовк")
     text = models.TextField(blank=True)
     # вложения: [{"type":"photo|voice|file","url":..., "size":...}]
     attachments = models.JSONField(default=list, blank=True)

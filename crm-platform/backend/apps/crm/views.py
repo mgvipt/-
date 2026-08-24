@@ -4189,3 +4189,70 @@ class FunnelDailyView(APIView):
                        for st in stages],
             "days": days,
         })
+
+
+class ManagerActionsView(APIView):
+    """Дії менеджерів у чатах за період: відповіді / узяв у роботу / дожими / закрив.
+    + командні: реактивації (повернення з ігнору) і причини закриття."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from datetime import date, timedelta, datetime as _dt
+        from django.db.models import Count
+        from apps.inbox.models import Message
+        from apps.crm.models import ActivityLog
+        from apps.accounts.models import User
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("analytics.view") or u.has_perm_code("roles.manage")):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        frm = request.query_params.get("from"); to = request.query_params.get("to")
+        try:
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=13))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+        except ValueError:
+            return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
+        agg = {}
+
+        def _row(uid):
+            if not uid:
+                return None
+            return agg.setdefault(uid, {"user_id": uid, "replies": 0, "taken": 0, "followups": 0, "closed": 0})
+
+        msgs = (Message.objects.filter(direction="out", internal=False, sender__isnull=False,
+                                       created_at__date__gte=d_from, created_at__date__lte=d_to)
+                .values("sender", "is_followup").annotate(n=Count("id")))
+        for m in msgs:
+            r = _row(m["sender"])
+            if not r:
+                continue
+            if m["is_followup"]:
+                r["followups"] += m["n"]
+            else:
+                r["replies"] += m["n"]
+        acts = (ActivityLog.objects.filter(user__isnull=False,
+                                           action__in=["Взяв чат", "Призначено відповідального", "Завершив чат"],
+                                           created_at__date__gte=d_from, created_at__date__lte=d_to)
+                .values("user", "action").annotate(n=Count("id")))
+        for a in acts:
+            r = _row(a["user"])
+            if not r:
+                continue
+            if a["action"] == "Завершив чат":
+                r["closed"] += a["n"]
+            else:
+                r["taken"] += a["n"]
+        names = {x.id: (x.get_full_name() or x.username) for x in User.objects.filter(id__in=list(agg.keys()))}
+        rows = sorted(
+            [{**v, "name": names.get(v["user_id"], "#%s" % v["user_id"])} for v in agg.values()],
+            key=lambda r: -(r["replies"] + r["taken"] + r["followups"] + r["closed"]))
+        reactivations = ActivityLog.objects.filter(action="Повернувся з ігнору",
+                                                   created_at__date__gte=d_from, created_at__date__lte=d_to).count()
+        reasons = {}
+        for detail in ActivityLog.objects.filter(action="Завершив чат", created_at__date__gte=d_from,
+                                                  created_at__date__lte=d_to).values_list("detail", flat=True):
+            if detail and "причина:" in detail:
+                rz = detail.split("причина:", 1)[1].strip()
+                if rz and rz != "—":
+                    reasons[rz] = reasons.get(rz, 0) + 1
+        close_reasons = sorted([{"reason": k, "count": v} for k, v in reasons.items()], key=lambda x: -x["count"])
+        return Response({"rows": rows, "reactivations": reactivations, "close_reasons": close_reasons})
