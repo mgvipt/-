@@ -174,16 +174,27 @@ def _resolve_chatplace_chat_id(conv):
                 cand = qs.filter(contact__nickname__iexact=nick).order_by("-last_message_at").first()
         if cand and cand.external_chat_id:
             return str(cand.external_chat_id)
-        # 2) спитати ChatPlace напряму (chats_list) — знайти чат по ніку клієнта
+        # 2) спитати ChatPlace напряму (chats_list) — знайти чат по @ніку АБО по ПОВНОМУ
+        # імені (ChatPlace для IG часто дає clientName=імʼя, а username=None).
         nick = (conv.contact.nickname or "").strip().lower() if conv.contact_id else ""
-        if nick:
+        fullname = str(conv.contact).strip().lower() if conv.contact_id else ""
+        _parts = fullname.split()
+        swapped = " ".join(reversed(_parts)) if len(_parts) == 2 else ""
+        if nick or fullname:
             from .chatplace import _mcp
-            data = _mcp("chats_list", {"limit": 60})
+            data = _mcp("chats_list", {"limit": 200})
             items = data.get("items", []) if isinstance(data, dict) else (data or [])
+            found = set()
             for it in (items or []):
-                un = str(it.get("username") or (it.get("clientName") or "").lstrip("@")).strip().lower()
-                if un and un == nick and it.get("id"):
-                    return str(it.get("id"))
+                cid = it.get("id")
+                if not cid:
+                    continue
+                un = str(it.get("username") or "").strip().lower()
+                cn = str(it.get("clientName") or "").strip().lstrip("@").lower()
+                if (nick and (un == nick or cn == nick)) or (fullname and cn and cn in (fullname, swapped)):
+                    found.add(str(cid))
+            if len(found) == 1:  # тільки при ОДНОЗНАЧНОМУ збігу (без ризику переплутати)
+                return next(iter(found))
         return ""
     except Exception:
         return ""
