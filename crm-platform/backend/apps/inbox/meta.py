@@ -1,7 +1,7 @@
 """Незалежна Meta-інтеграція CRM (БЕЗ Бітрикса): Instagram Direct + IG-коменти +
 Facebook Messenger + FB-коменти напряму через Graph API.
 Вмикається коли в .env задані META_PAGE_TOKEN / META_VERIFY_TOKEN / META_APP_SECRET."""
-import os, json, hmac, hashlib, urllib.parse, urllib.request, re
+import os, json, hmac, hashlib, urllib.parse, urllib.request, urllib.error, re
 
 GRAPH = "https://graph.facebook.com/v21.0"
 # Instagram-вхід (IG-личка) шле/приймає через ОКРЕМИЙ домен + свій токен
@@ -52,16 +52,30 @@ def _graph(method, path, params=None):
     else:
         url += "?" + urllib.parse.urlencode({**(params or {}), "access_token": PAGE_TOKEN})
         req = urllib.request.Request(url)
-    with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310
-        return json.load(r)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        try:
+            _d = e.read().decode()[:300]
+        except Exception:
+            _d = ""
+        raise RuntimeError("Meta %s: %s" % (e.code, _d or "Bad Request"))
 
 
 def _ig_post(path, params):
     """POST через graph.instagram.com з IG-токеном (Instagram-вхід)."""
     body = urllib.parse.urlencode({**params, "access_token": IG_TOKEN}).encode()
     req = urllib.request.Request(f"{IG_GRAPH}/{path}", data=body)
-    with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310
-        return json.load(r)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        try:
+            _d = e.read().decode()[:300]
+        except Exception:
+            _d = ""
+        raise RuntimeError("Meta IG %s: %s" % (e.code, _d or "Bad Request"))
 
 
 def send_message(recipient_id: str, text: str, platform: str = "instagram"):
