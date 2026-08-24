@@ -4339,3 +4339,84 @@ class WeeklyReviewView(APIView):
                                                  data={"managers": managers, "raw": data_for_ai})
         return Response({"summary": summary, "managers": managers, "period": rev.period,
                          "created_at": rev.created_at.strftime("%Y-%m-%d %H:%M")})
+
+
+class ManagerStagesView(APIView):
+    """Матриця «менеджер × статус»: скільки лідів кожен провів У статус (з журналу
+    переходів) + окремий рядок ІІ/автоматика. Дає розклад «хто на яких статусах
+    працював» і % ІІ vs менеджер. Ручний хід = action «Зміна стадії»+user;
+    авто/ІІ = «Авто-стадія» (без user)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from datetime import date, timedelta, datetime as _dt
+        from apps.crm.models import Funnel, ActivityLog
+        from apps.accounts.models import User
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("analytics.view") or u.has_perm_code("roles.manage")):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        frm = request.query_params.get("from"); to = request.query_params.get("to")
+        try:
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=13))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+        except ValueError:
+            return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
+        fid = request.query_params.get("funnel")
+        funnel = (Funnel.objects.filter(id=int(fid)).first() if (fid and fid.isdigit())
+                  else Funnel.objects.filter(is_lead_funnel=True).first())
+        if not funnel:
+            return Response({"detail": "no funnel"}, status=status.HTTP_404_NOT_FOUND)
+        kind = "lead" if funnel.is_lead_funnel else "deal"
+        stages = list(funnel.stages.order_by("order"))
+        by_name = {st.name.strip(): st for st in stages}
+        rows = ActivityLog.objects.filter(
+            kind=kind, action__in=["Зміна стадії", "Авто-стадія"],
+            created_at__date__gte=d_from, created_at__date__lte=d_to,
+        ).values_list("object_id", "detail", "action", "user_id")
+        # who_key -> {stage_id -> set(object_id)}
+        agg = {}
+        names = {}
+        AI_KEY = "__ai__"
+        for oid, detail, action, uid in rows:
+            if "→" not in (detail or ""):
+                continue
+            new_name = detail.split("→", 1)[1].split("(")[0].strip()
+            st = by_name.get(new_name)
+            if not st:
+                continue
+            if action == "Зміна стадії" and uid:
+                wk = "u%s" % uid
+            else:
+                wk = AI_KEY
+            agg.setdefault(wk, {}).setdefault(st.id, set()).add(oid)
+        uids = [int(k[1:]) for k in agg.keys() if k.startswith("u")]
+        for x in User.objects.filter(id__in=uids):
+            names[x.id] = x.get_full_name() or x.username
+        # рядки: менеджери (за активністю) + ІІ
+        out_rows = []
+        for wk, per in agg.items():
+            is_ai = wk == AI_KEY
+            uid = None if is_ai else int(wk[1:])
+            total = sum(len(v) for v in per.values())
+            out_rows.append({
+                "key": wk, "is_ai": is_ai,
+                "name": ("ІІ / автоматика" if is_ai else names.get(uid, "#%s" % uid)),
+                "total": total,
+                "stages": {str(sid): len(v) for sid, v in per.items()},
+            })
+        out_rows.sort(key=lambda r: (r["is_ai"], -r["total"]))
+        # % ІІ по кожному статусу
+        stage_pct = {}
+        for st in stages:
+            ai = len((agg.get(AI_KEY, {}) or {}).get(st.id, set()) or set())
+            man = sum(len((agg.get(k, {}) or {}).get(st.id, set()) or set()) for k in agg if k != AI_KEY)
+            tot = ai + man
+            stage_pct[str(st.id)] = round(ai * 100.0 / tot) if tot else None
+        return Response({
+            "funnel": funnel.name, "funnel_id": funnel.id,
+            "funnels": [{"id": fn.id, "name": fn.name, "is_lead": fn.is_lead_funnel}
+                        for fn in Funnel.objects.filter(is_archive=False).order_by("order")],
+            "stages": [{"id": st.id, "name": st.name, "color": st.color or "#94a3b8",
+                        "is_won": st.is_won, "is_lost": st.is_lost} for st in stages],
+            "rows": out_rows, "ai_pct": stage_pct,
+        })

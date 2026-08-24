@@ -345,7 +345,10 @@ function ManagersTab() {
   const [acts, setActs] = useState<any>(null);
   const [rev, setRev] = useState<any>(null);
   const [revLoad, setRevLoad] = useState(false);
+  const [ms, setMs] = useState<any>(null);
+  const [msFunnel, setMsFunnel] = useState<string>("");
   useEffect(() => { api.get<any>(`/api/analytics/manager-actions/?from=${from}&to=${to}`).then(setActs).catch(() => setActs(null)); }, [from, to]);
+  useEffect(() => { api.get<any>(`/api/analytics/manager-stages/?from=${from}&to=${to}` + (msFunnel ? `&funnel=${msFunnel}` : "")).then(setMs).catch(() => setMs(null)); }, [from, to, msFunnel]);
   useEffect(() => { api.get<any>("/api/analytics/weekly-review/").then(setRev).catch(() => setRev(null)); }, []);
   function runReview() { setRevLoad(true); api.post<any>("/api/analytics/weekly-review/", {}).then((r) => { setRev(r); setRevLoad(false); }).catch(() => setRevLoad(false)); }
   return (
@@ -397,6 +400,38 @@ function ManagersTab() {
         )}
       </div>
 
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+          <div className="label" style={{ margin: 0 }}>{t("По статусам: кто провёл лидов (менеджер vs ИИ)", "По статусах: хто провів лідів (менеджер vs ІІ)")}</div>
+          {ms && <select value={msFunnel} onChange={(e) => setMsFunnel(e.target.value)} style={_selSt}>{(ms.funnels || []).map((f: any) => <option key={f.id} value={f.id}>{f.name}{f.is_lead ? " \u2605" : ""}</option>)}</select>}
+        </div>
+        <div className="muted" style={{ fontSize: 11.5, marginBottom: 10, lineHeight: 1.5 }}>{t("Сколько лидов каждый провёл В статус за период. Строка «ИІ / автоматика» — сколько сделала автоматика/ИИ. Внизу — % работы ИИ по каждому статусу (чтобы видеть, где работает ИИ, а где менеджер).", "Скільки лідів кожен провів У статус. Рядок «ІІ / автоматика» — скільки зробила автоматика. Внизу — % роботи ІІ по кожному статусу.")}</div>
+        {!ms ? <div className="muted">…</div> : (ms.rows || []).length === 0 ? <div className="muted" style={{ fontSize: 12.5 }}>{t("Нет переходов за период", "Немає переходів за період")}</div> : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", minWidth: 640 }}>
+              <thead><tr>
+                <th style={_th}>{t("Менеджер", "Менеджер")}</th>
+                {(ms.stages || []).map((st: any) => <th key={st.id} style={{ ..._th, textAlign: "center" }}><span style={{ display: "inline-block", background: st.color, color: "#fff", borderRadius: 6, padding: "2px 7px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>{st.name}</span></th>)}
+                <th style={{ ..._th, textAlign: "right" }}>{t("Всего", "Всього")}</th>
+              </tr></thead>
+              <tbody>
+                {(ms.rows || []).map((r: any) => (
+                  <tr key={r.key} style={r.is_ai ? { background: "#faf5ff" } : undefined}>
+                    <td style={{ ..._td, fontWeight: r.is_ai ? 800 : 600, color: r.is_ai ? "#7c3aed" : "#0f172a", whiteSpace: "nowrap" }}>{r.name}</td>
+                    {(ms.stages || []).map((st: any) => <td key={st.id} style={{ ..._td, textAlign: "center", color: (r.stages[String(st.id)] ? "#0f172a" : "#cbd5e1") }}>{r.stages[String(st.id)] || "·"}</td>)}
+                    <td style={{ ..._td, textAlign: "right", fontWeight: 700 }}>{r.total || 0}</td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: "2px solid #eef2f7" }}>
+                  <td style={{ ..._td, fontWeight: 700, color: "#7c3aed" }}>{t("% работы ИИ", "% роботи ІІ")}</td>
+                  {(ms.stages || []).map((st: any) => { const p = ms.ai_pct ? ms.ai_pct[String(st.id)] : null; return <td key={st.id} style={{ ..._td, textAlign: "center", color: (p == null ? "#cbd5e1" : (p >= 80 ? "#b91c1c" : "#7c3aed")), fontWeight: 700 }}>{p == null ? "·" : p + "%"}</td>; })}
+                  <td style={_td}></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
       <div className="panel" style={{ marginBottom: 24, border: "2px solid #ddd6fe" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
           <div className="label" style={{ margin: 0 }}>{t("Разбор недели от AI-РОП", "Розбір тижня від AI-РОП")}</div>
