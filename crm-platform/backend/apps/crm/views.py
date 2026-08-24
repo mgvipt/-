@@ -2499,6 +2499,140 @@ class AnalyticsView(APIView):
         })
 
 
+class SalesFunnelView(APIView):
+    """Накопительная воронка «прошло ЧЕРЕЗ этап» (конус): по каждому статусу —
+    сколько объектов достигли его ИЛИ любого следующего прогресс-статуса, с
+    разбивкой ИИ/менеджер (кто завёл в статус) и % конверсии. Источник входа
+    фильтруется (мессенджеры/звонки/офлайн/сайт/все). Работает по воронке лидов
+    или любой воронке сделок. Стадии-исходы (won/lost) вынесены отдельно."""
+    permission_classes = [IsAuthenticated]
+
+    SRC_GROUPS = {
+        "messengers": {"instagram", "telegram", "facebook", "tiktok", "viber", "whatsapp"},
+        "calls": {"call"},
+        "site": {"site"},
+    }
+
+    def _grp(self, s):
+        s = s or ""
+        for g, vals in self.SRC_GROUPS.items():
+            if s in vals:
+                return g
+        return "offline"
+
+    def get(self, request):
+        from datetime import date, timedelta, datetime as _dt
+        from collections import Counter as _C
+        from apps.crm.models import Funnel, ActivityLog, Lead, Deal
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("analytics.view") or u.has_perm_code("roles.manage")):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        frm = request.query_params.get("from"); to = request.query_params.get("to")
+        try:
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=44))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+        except ValueError:
+            return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
+        if (d_to - d_from).days > 400:
+            d_from = d_to - timedelta(days=400)
+
+        fid = request.query_params.get("funnel")
+        funnel = (Funnel.objects.filter(id=int(fid)).first() if (fid and fid.isdigit())
+                  else Funnel.objects.filter(is_lead_funnel=True).first())
+        if not funnel:
+            return Response({"detail": "no funnel"}, status=status.HTTP_404_NOT_FOUND)
+        kind = "lead" if funnel.is_lead_funnel else "deal"
+        Model = Lead if kind == "lead" else Deal
+
+        objs = Model.objects.filter(funnel=funnel, created_at__date__gte=d_from, created_at__date__lte=d_to)
+        base_rows = list(objs.values_list("id", "stage_id", "source"))
+        src_counter = _C()
+        for _id, _st, _s in base_rows:
+            src_counter[self._grp(_s)] += 1
+
+        src = (request.query_params.get("source") or "all").lower()
+        if src in self.SRC_GROUPS:
+            allow = self.SRC_GROUPS[src]
+            rows0 = [(i, st, s) for (i, st, s) in base_rows if (s or "") in allow]
+        elif src == "offline":
+            rows0 = [(i, st, s) for (i, st, s) in base_rows if self._grp(s) == "offline"]
+        else:
+            src = "all"
+            rows0 = base_rows
+        obj_ids = [r[0] for r in rows0]
+        cur_stage = {r[0]: r[1] for r in rows0}
+
+        stages = list(funnel.stages.order_by("order"))
+        progress = [s for s in stages if not s.is_won and not s.is_lost]
+        lost_ids = {s.id for s in stages if s.is_lost}
+        won_ids = {s.id for s in stages if s.is_won}
+        prog_pos = {s.id: i for i, s in enumerate(progress)}
+        by_name = {s.name.strip(): s for s in stages}
+
+        trans = {}
+        into = {i: {"ai": set(), "man": set()} for i in range(len(progress))}
+        if obj_ids:
+            for oid, detail, action, uid in (ActivityLog.objects.filter(
+                    kind=kind, object_id__in=obj_ids,
+                    action__in=["Зміна стадії", "Авто-стадія"]).values_list("object_id", "detail", "action", "user_id")):
+                if "→" not in (detail or ""):
+                    continue
+                nm = detail.split("→", 1)[1].split("(")[0].strip()
+                st = by_name.get(nm)
+                if not st or st.id not in prog_pos:
+                    continue
+                pos = prog_pos[st.id]
+                trans.setdefault(oid, set()).add(pos)
+                if action == "Зміна стадії" and uid:
+                    into[pos]["man"].add(oid)
+                else:
+                    into[pos]["ai"].add(oid)
+
+        def _maxpos(oid):
+            pos = set(trans.get(oid, set()))
+            cs = cur_stage.get(oid)
+            if cs in prog_pos:
+                pos.add(prog_pos[cs])
+            pos.add(0)
+            return max(pos)
+        maxpos = {oid: _maxpos(oid) for oid in obj_ids}
+
+        entered = len(obj_ids)
+        out_stages = []
+        prev = None
+        for i, s in enumerate(progress):
+            through = sum(1 for oid in obj_ids if maxpos[oid] >= i)
+            man_here = len(into[i]["man"])
+            ai_here = len(into[i]["ai"] - into[i]["man"])
+            out_stages.append({
+                "id": s.id, "name": s.name, "color": s.color or "#2E6FB0",
+                "through": through, "ai": ai_here, "man": man_here,
+                "pct_prev": (round(through * 100.0 / prev) if prev else 100),
+                "pct_entered": (round(through * 100.0 / entered) if entered else 0),
+            })
+            prev = through
+
+        lost_cnt = sum(1 for oid in obj_ids if cur_stage.get(oid) in lost_ids)
+        won_cnt = sum(1 for oid in obj_ids if cur_stage.get(oid) in won_ids)
+        man_any = len(set().union(*[into[i]["man"] for i in into])) if into else 0
+
+        src_list = [{"key": "all", "label": "Все", "n": len(base_rows)}]
+        for k, lbl in [("messengers", "Мессенджеры"), ("calls", "Звонки"), ("offline", "Офлайн"), ("site", "Сайт")]:
+            src_list.append({"key": k, "label": lbl, "n": src_counter.get(k, 0)})
+
+        return Response({
+            "funnel": funnel.name, "funnel_id": funnel.id, "kind": kind,
+            "is_lead": funnel.is_lead_funnel,
+            "from": d_from.isoformat(), "to": d_to.isoformat(),
+            "entered": entered, "stages": out_stages,
+            "lost": {"count": lost_cnt, "pct": (round(lost_cnt * 100.0 / entered) if entered else 0)},
+            "won": {"count": won_cnt, "pct": (round(won_cnt * 100.0 / entered) if entered else 0)},
+            "manager_moved": man_any, "source": src, "sources": src_list,
+            "funnels": [{"id": fn.id, "name": fn.name, "is_lead": fn.is_lead_funnel}
+                        for fn in Funnel.objects.filter(is_archive=False).order_by("order")],
+        })
+
+
 class MetaMarketingView(APIView):
     """Meta Ads + органічний Instagram + підтверджені результати CRM."""
     permission_classes = [HasPermCode]

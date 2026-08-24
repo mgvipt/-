@@ -154,6 +154,7 @@ urlpatterns = [
     path("api/analytics/manager-actions/", crm_views.ManagerActionsView.as_view()),
     path("api/analytics/weekly-review/", crm_views.WeeklyReviewView.as_view()),
     path("api/analytics/manager-stages/", crm_views.ManagerStagesView.as_view()),
+    path("api/analytics/sales-funnel/", crm_views.SalesFunnelView.as_view()),
     path("api/meta-marketing/", crm_views.MetaMarketingView.as_view()),
     path("api/analytics/inventory/", wh_views.InventoryAnalyticsView.as_view()),
     path("api/warehouse/inventory-sheet/", wh_views.InventorySheetView.as_view()),
