@@ -393,8 +393,13 @@ def sync_chats(max_chats=40, per_chat=40):
             errors.append(str(cid))
         if was_closed:
             if chad_in:
-                conv.status = "open"; conv.assigned_to = None
-                conv.save(update_fields=["status", "assigned_to"])  # клієнт написав → відкрити у вільний пул
+                # В ПЕРШУ ЧЕРГУ — відповідальному за клієнта менеджеру (contact.owner);
+                # якщо власника нема (вів ІІ / новий) → вільний пул.
+                from apps.crm.models import Contact as _Ct_reopen
+                _own = (_Ct_reopen.objects.filter(id=conv.contact_id).values_list("owner_id", flat=True).first()
+                        if conv.contact_id else None)
+                conv.status = "open"; conv.assigned_to_id = _own
+                conv.save(update_fields=["status", "assigned_to"])  # відповідальному або у вільний пул
                 try:
                     from apps.crm.models import log_activity as _la_r
                     _la_r("contact", conv.contact_id or 0, "Повернувся з ігнору",

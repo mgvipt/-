@@ -887,9 +887,15 @@ def handle_webhook(payload: dict):
                                    sender_name=("ai_assistant" if is_echo else ""))
             conv.unread = (conv.unread or 0) + (0 if is_echo else 1)
             if (not is_echo) and was_closed:
-                # клієнт написав у ЗАКРИТИЙ діалог → відкрити у ВІЛЬНИЙ пул (як ChatPlace):
-                # діалог знову видно в «Не призначені», без прив'язки до попереднього менеджера.
-                conv.status = "open"; conv.assigned_to = None
+                # Клієнт написав у ЗАКРИТИЙ діалог → відкриваємо. В ПЕРШУ ЧЕРГУ віддаємо
+                # відповідальному за клієнта менеджеру (contact.owner) — щоб чат зʼявився
+                # у нього в «Мої», а не в загальному списку. Якщо власника нема (вів ІІ /
+                # новий клієнт) → вільний пул (assigned_to=None).
+                conv.status = "open"
+                from apps.crm.models import Contact as _Ct_reopen
+                _own = (_Ct_reopen.objects.filter(id=conv.contact_id).values_list("owner_id", flat=True).first()
+                        if conv.contact_id else None)
+                conv.assigned_to_id = _own
                 was_closed = False
                 try:
                     from apps.crm.models import log_activity as _la_r
