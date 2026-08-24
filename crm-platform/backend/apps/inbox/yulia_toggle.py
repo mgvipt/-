@@ -24,12 +24,19 @@ SILENCE_MINUTES = 600  # 10 годин — пауза Юлі після відп
 
 
 def _active_sales_managers():
+    """На зміні і НЕ на паузі — ті, хто веде клієнтів: відділ Продаж АБО Керівництво,
+    АБО власник (superuser). Склад/Логістика/Виробництво НЕ рахуються (не відповідають
+    клієнтам). Якщо хтось із них на зміні → Юля в тихому режимі (менеджери ведуть самі)."""
+    from django.db.models import Q
     from apps.finance.models import WorkSession
     qs = WorkSession.objects.filter(
         ended_at__isnull=True,
         paused_at__isnull=True,
         user__is_active=True,
-        user__department__name__icontains=SALES_DEPARTMENT_NAME_ICONTAINS,
+    ).filter(
+        Q(user__department__name__icontains=SALES_DEPARTMENT_NAME_ICONTAINS)
+        | Q(user__department__name__icontains="Керівн")
+        | Q(user__is_superuser=True)
     ).select_related("user")
     return [ws.user for ws in qs]
 
