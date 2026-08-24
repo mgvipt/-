@@ -1821,6 +1821,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                     % (items_txt or "Ваше замовлення"))
             text = "%s\n\n💳 Оплатити онлайн 👉 %s\nСума: %s грн" % (body, url, amount)
         sent = False
+        _err = ""
         if deal.contact_id:
             from apps.inbox.models import Conversation
             from apps.inbox.services import send_message
@@ -1828,8 +1829,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             if conv:
                 try:
                     send_message(conv, text, user=request.user); sent = True
-                except Exception:
-                    pass
+                except Exception as _se:
+                    _err = "канал %s не прийняв: %s" % (conv.channel.name, str(_se)[:120])
                 if sent and kind == "requisites":
                     # окремими повідомленнями — щоб клієнт скопіював одним тапом
                     for extra in (iban, "Оплата згідно замовлення №%s" % deal.id):  # призначення = як у головному повідомленні
@@ -1837,9 +1838,13 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                             send_message(conv, extra, user=request.user)
                         except Exception:
                             pass
+            else:
+                _err = "немає відкритого чату з клієнтом"
+        else:
+            _err = "у сделки немає контакту"
         _advance_deal_stage(deal, 2, "надіслано посилання на оплату")  # Домовились про оплату
         # посилання фіксується в історії — можна скопіювати і переслати вручну (ФБ тощо), навіть якщо чату нема
-        log_activity("deal", deal.id, "Посилання на оплату", "%s · %s грн · %s · %s" % (kind, amount, "надіслано клієнту" if sent else "НЕ надіслано (немає відкритого чату)", url), request.user, "Менеджер")
+        log_activity("deal", deal.id, "Посилання на оплату", "%s · %s грн · %s · %s" % (kind, amount, ("надіслано клієнту" if sent else ("НЕ надіслано — " + (_err or "невідома причина"))), url), request.user, "Менеджер")
         return Response({"ok": True, "sent": sent, "url": url, "text": text})
 
     @action(detail=True, methods=["post"])
