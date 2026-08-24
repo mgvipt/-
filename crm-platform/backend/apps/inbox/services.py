@@ -158,6 +158,25 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
     return msg
 
 
+def _resolve_chatplace_chat_id(conv):
+    """Знайти chat_id ChatPlace для клієнта цього Meta-IG діалогу (той самий контакт
+    або той самий нік у ChatPlace-каналі), щоб маршрутизувати відповідь через ChatPlace.
+    Повертає "" якщо не знайдено."""
+    try:
+        qs = (Conversation.objects.filter(channel__config__chatplace=True)
+              .exclude(external_chat_id__startswith="comment:"))
+        cand = None
+        if conv.contact_id:
+            cand = qs.filter(contact_id=conv.contact_id).order_by("-last_message_at").first()
+        if not cand and conv.contact_id:
+            nick = (conv.contact.nickname or "").strip()
+            if nick:
+                cand = qs.filter(contact__nickname__iexact=nick).order_by("-last_message_at").first()
+        return str(cand.external_chat_id) if (cand and cand.external_chat_id) else ""
+    except Exception:
+        return ""
+
+
 def send_message(conv: Conversation, text: str, user=None) -> Message:
     """Отправить исходящее сообщение через адаптер канала и записать его."""
     cfg = conv.config or {}
@@ -170,15 +189,24 @@ def send_message(conv: Conversation, text: str, user=None) -> Message:
     if is_meta_instagram_direct:
         chat_id = str(route.get("chat_id") or "").strip()
         if not chat_id:
-            raise RuntimeError(
-                "Для цього Instagram-діалогу ще не знайдено точний чат ChatPlace. "
-                "Оновіть прив'язку каналу; напряму через Meta відповідь не надсилається."
-            )
-        # ChatPlace володіє Direct-веткою і Юлею: open ставить AI на паузу,
-        # send доставляє відповідь менеджера в той самий Instagram-чат.
-        from .chatplace import send as chatplace_send
-        result = chatplace_send(chat_id, text)
-        ext_id = str((result or {}).get("id") or "") if isinstance(result, dict) else ""
+            # спробувати знайти чат ChatPlace того ж клієнта і закріпити привʼязку
+            chat_id = _resolve_chatplace_chat_id(conv)
+            if chat_id:
+                _cfg = conv.config or {}
+                _cfg["outbound_chatplace"] = {"chat_id": chat_id, "match": "resolve_on_send"}
+                conv.config = _cfg
+                conv.save(update_fields=["config"])
+        if chat_id:
+            # ChatPlace володіє Direct-веткою і Юлею: open ставить AI на паузу,
+            # send доставляє відповідь менеджера в той самий Instagram-чат.
+            from .chatplace import send as chatplace_send
+            result = chatplace_send(chat_id, text)
+            ext_id = str((result or {}).get("id") or "") if isinstance(result, dict) else ""
+        else:
+            # Немає чату ChatPlace → шлемо НАПРЯМУ через Meta, щоб повідомлення таки пішло
+            # (у межах 24-год вікна). Раніше тут була жорстка відмова — менеджер не міг відповісти.
+            adapter = get_adapter(conv.channel)
+            ext_id = adapter.send(conv.external_chat_id, text)
     else:
         adapter = get_adapter(conv.channel)
         ext_id = adapter.send(conv.external_chat_id, text)
