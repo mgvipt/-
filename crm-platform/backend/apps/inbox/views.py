@@ -505,8 +505,22 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         conv = self.get_object()
         if not (u.can_see_all_conversations() or u.has_perm_code("roles.manage") or conv.assigned_to_id == u.id):
             return Response({"detail": "Нет прав на переброс чата"}, status=status.HTTP_403_FORBIDDEN)
-        conv.assigned_to_id = request.data.get("user_id") or None
+        _uid = request.data.get("user_id") or None
+        conv.assigned_to_id = _uid
         conv.save(update_fields=["assigned_to"])
+        # Ответственный за сделку СЛЕДУЕТ за диалогом: кому переадресовали — тот
+        # становится ответственным за ОТКРЫТЫЕ сделки/лиды (won/lost НЕ трогаем).
+        # Контакт — только если новый (без владельца).
+        if _uid and conv.contact_id:
+            from apps.crm.models import Deal, Lead, Contact, log_activity
+            from apps.accounts.models import User as _U
+            Deal.objects.filter(contact_id=conv.contact_id).exclude(stage__is_won=True).exclude(stage__is_lost=True).update(owner_id=_uid)
+            Lead.objects.filter(contact_id=conv.contact_id).exclude(stage__is_won=True).exclude(stage__is_lost=True).update(owner_id=_uid)
+            Contact.objects.filter(id=conv.contact_id, owner__isnull=True).update(owner_id=_uid)
+            _tg = _U.objects.filter(id=_uid).first()
+            log_activity("contact", conv.contact_id, "Призначено відповідального",
+                         "діалог переадресовано → %s" % ((_tg.get_full_name() or _tg.username) if _tg else _uid),
+                         request.user, (request.user.get_full_name() or request.user.username))
         return Response(ConversationSerializer(conv).data)
 
     @action(detail=True, methods=["post"])
@@ -564,6 +578,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             # писав йому → живий чат важливіший за «заморожене» закріплення: забираємо
             # клієнта+відкриті сделки собі і повідомляємо попереднього відповідального.
             _prev_owner_id = _c.owner_id if _c else None
+            _stale_takeover = False
             if (not _can_take) and _prev_owner_id and _prev_owner_id != request.user.id:
                 from django.utils import timezone as _tz
                 from datetime import timedelta as _td
@@ -574,6 +589,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                     created_at__gte=_cutoff).exists()
                 if not _owner_active:
                     _can_take = True
+                    _stale_takeover = True
                     try:
                         from .models import Notification
                         Notification.objects.create(
@@ -585,9 +601,12 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                     except Exception:
                         pass
             if _can_take:
+                # Взяв чат → відповідальний за ВІДКРИТІ сделки/ліди клієнта (won/lost НЕ чіпаємо).
                 Deal.objects.filter(contact_id=conv.contact_id).exclude(stage__is_won=True).exclude(stage__is_lost=True).update(owner=request.user)
                 Lead.objects.filter(contact_id=conv.contact_id).exclude(stage__is_won=True).exclude(stage__is_lost=True).update(owner=request.user)
-                Contact.objects.filter(id=conv.contact_id).update(owner=request.user)
+                # Контакт переназначаємо ТІЛЬКИ якщо він НОВИЙ (без власника) або стале-перехоплення.
+                if (_c and _c.owner_id is None) or _stale_takeover:
+                    Contact.objects.filter(id=conv.contact_id).update(owner=request.user)
         return Response(ConversationSerializer(conv).data)
 
     @action(detail=True, methods=["post"])

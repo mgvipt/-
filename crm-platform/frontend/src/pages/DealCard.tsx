@@ -966,6 +966,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           <div className="panel">
             <div className="label">{t("Ответственный","Відповідальний")}</div>
             <OwnerSelect ownerId={deal.owner} ownerName={deal.owner_name} onSet={(uid) => patch({ owner: uid })} />
+            {!deal.owner && (deal as any).responsible_display && <div style={{ marginTop: 4, fontSize: 12, color: "#7c3aed", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}><Icon n="bot" size={13} /> {(deal as any).responsible_display}</div>}
           </div>
         </div>
 

@@ -208,7 +208,20 @@ class DealDetailSerializer(DealSerializer):
     contact_loyalty = serializers.SerializerMethodField()
     contact_id = serializers.IntegerField(source="contact.id", read_only=True)
     conversation_id = serializers.SerializerMethodField()
+    responsible_display = serializers.SerializerMethodField()
     pay_method = serializers.SerializerMethodField()
+
+    def get_responsible_display(self, obj):
+        # Ответственный для карточки: имя менеджера, иначе «ІІ (Юля)» если вёл только ИИ.
+        if obj.owner_id:
+            return obj.owner.get_full_name() or obj.owner.username
+        if obj.contact_id:
+            from apps.inbox.models import Conversation, Message
+            if Conversation.objects.filter(contact_id=obj.contact_id, assigned_to__isnull=False).exists():
+                return ""
+            if Message.objects.filter(conversation__contact_id=obj.contact_id, sender_name="ai_assistant").exists():
+                return "ІІ (Юля)"
+        return ""
     realization = serializers.SerializerMethodField()
     linked_orders = serializers.SerializerMethodField()
 
@@ -238,7 +251,7 @@ class DealDetailSerializer(DealSerializer):
         return c.id if c else None
 
     class Meta(DealSerializer.Meta):
-        fields = DealSerializer.Meta.fields + [
+        fields = DealSerializer.Meta.fields + ["responsible_display", 
             "items", "payments", "paid", "margin", "bonus",
             "days_in_stage", "contact_loyalty", "contact_id", "conversation_id", "b24_id", "pay_method",
             "np_data", "np_delivery_date", "ref_photos", "kp_history", "realization", "linked_orders",
