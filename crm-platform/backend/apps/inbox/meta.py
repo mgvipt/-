@@ -893,7 +893,7 @@ def handle_webhook(payload: dict):
                 # новий клієнт) → вільний пул (assigned_to=None).
                 conv.status = "open"
                 from apps.crm.models import Contact as _Ct_reopen
-                _own = (_Ct_reopen.objects.filter(id=conv.contact_id).values_list("owner_id", flat=True).first()
+                _own = (_Ct_reopen.objects.filter(id=conv.contact_id, owner__is_active=True).values_list("owner_id", flat=True).first()
                         if conv.contact_id else None)
                 conv.assigned_to_id = _own
                 was_closed = False
