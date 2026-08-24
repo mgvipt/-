@@ -2733,6 +2733,89 @@ class SalesJourneyView(APIView):
         })
 
 
+class MetaFunnelView(APIView):
+    """Сквозная воронка Меты: Показы → Клики → Начатые диалоги → Рекламные лиды CRM
+    → Тест-набор → Оплата. Показы/клики/диалоги — из MetaAdDailyStat (level account).
+    Лиды — карточки с подтверждённой рекламной атрибуцией (paid_ad). Тест/оплата —
+    по клиентам этих лидов. Показывает, где теряются лиды на каждом этапе."""
+    permission_classes = [HasPermCode]
+    required_perm = "marketing.view"
+
+    def get(self, request):
+        from datetime import date, timedelta, datetime as _dt
+        from django.db.models import Sum
+        from apps.crm.models import Funnel, Lead, Deal, MetaAdDailyStat
+        frm = request.query_params.get("from"); to = request.query_params.get("to")
+        try:
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=29))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+        except ValueError:
+            return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
+
+        acc = MetaAdDailyStat.objects.filter(level="account", date__gte=d_from, date__lte=d_to).aggregate(
+            imp=Sum("impressions"), clk=Sum("clicks"), msg=Sum("messages_started"), spend=Sum("spend_uah"))
+        impressions = int(acc["imp"] or 0)
+        clicks = int(acc["clk"] or 0)
+        msgs = int(acc["msg"] or 0)
+        spend_uah = float(acc["spend"] or 0)
+
+        leads = Lead.objects.filter(created_at__date__gte=d_from, created_at__date__lte=d_to,
+                                    meta_attribution__source_kind="paid_ad")
+        lead_cnt = leads.count()
+        cohort = set(leads.values_list("contact_id", flat=True)); cohort.discard(None)
+
+        _all_f = list(Funnel.objects.filter(is_lead_funnel=False, is_archive=False).order_by("order"))
+        def _find_test():
+            cands = [fn for fn in _all_f if "тест" in (fn.name or "").lower()]
+            for fn in cands:
+                n = (fn.name or "").lower()
+                if "набір" in n or "набор" in n:
+                    return fn
+            return next((fn for fn in cands if "тестов" in (fn.name or "").lower() and "техни" not in (fn.name or "").lower()), None)
+        test_f = _find_test()
+        main_f = next((fn for fn in _all_f if "основн" in (fn.name or "").lower()), None)
+
+        def _cset(funnel, won=False):
+            if not funnel or not cohort:
+                return set()
+            q = Deal.objects.filter(funnel=funnel, contact_id__in=cohort)
+            if won:
+                q = q.filter(stage__is_won=True)
+            return set(q.values_list("contact_id", flat=True))
+        test_c = _cset(test_f)
+        won_c = _cset(test_f, True) | _cset(main_f, True)
+        revenue = float(Deal.objects.filter(contact_id__in=cohort, stage__is_won=True,
+                        funnel__in=[f for f in [test_f, main_f] if f]).aggregate(s=Sum("amount"))["s"] or 0) if cohort else 0.0
+
+        raw = [
+            ("impressions", "Показы", impressions),
+            ("clicks", "Клики", clicks),
+            ("messages", "Начатые диалоги", msgs),
+            ("leads", "Рекламные лиды CRM", lead_cnt),
+            ("test", "Тест-набор", len(test_c)),
+            ("won", "Оплата", len(won_c)),
+        ]
+        top = raw[0][2] or 1
+        stages = []
+        prev = None
+        for key, label, n in raw:
+            stages.append({
+                "key": key, "label": label, "n": n,
+                "pct_prev": (round(n * 100.0 / prev, 1) if prev else 100),
+                "pct_top": (round(n * 100.0 / top, 2) if top else 0),
+            })
+            prev = n
+        return Response({
+            "from": d_from.isoformat(), "to": d_to.isoformat(),
+            "stages": stages, "spend_uah": spend_uah, "revenue": revenue,
+            "roas": (round(revenue / spend_uah, 2) if spend_uah else None),
+            "cost_per_lead": (round(spend_uah / lead_cnt, 2) if lead_cnt else None),
+            "cost_per_sale": (round(spend_uah / len(won_c), 2) if won_c else None),
+            "test_funnel": (test_f.name if test_f else None),
+            "main_funnel": (main_f.name if main_f else None),
+        })
+
+
 class MetaMarketingView(APIView):
     """Meta Ads + органічний Instagram + підтверджені результати CRM."""
     permission_classes = [HasPermCode]

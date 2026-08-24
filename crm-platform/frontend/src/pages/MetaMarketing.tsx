@@ -123,6 +123,43 @@ function dateTime(v: any) {
   return new Date(v).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+/* ─── Сквозная воронка Меты: Показы → Клики → Диалоги → Лиды → Тест → Оплата ─── */
+function MetaConeFunnel({ from, to }: { from: string; to: string }) {
+  const { t } = useLang();
+  const [d, setD] = useState<any>(null);
+  useEffect(() => { api.get<any>(`/api/meta-marketing/funnel/?from=${from}&to=${to}`).then(setD).catch(() => setD(null)); }, [from, to]);
+  if (!d || !d.stages) return null;
+  const COLORS: any = { impressions: "#2563eb", clicks: "#7c3aed", messages: "#0f766e", leads: "#0284c7", test: "#B67A12", won: "#2F8F5B" };
+  const top = d.stages[0]?.n || 1;
+  const logMax = Math.log10(top + 1) || 1;
+  const wOf = (n: number) => Math.max((Math.log10(n + 1) / logMax) * 100, 6);
+  const num = (n: number) => Number(n || 0).toLocaleString("ru-RU");
+  return (
+    <div className="panel" style={{ marginBottom: 16 }}>
+      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🎯 {t("Воронка Меты: от показа до оплаты", "Воронка Мети: від показу до оплати")}</div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>{t("Где теряются лиды на каждом этапе рекламы. «% от преды.» — конверсия шага. Тест/оплата считаются по клиентам рекламных лидов; пока атрибуция молодая, значения могут быть малы.", "Де губляться ліди на кожному етапі. «% від попер.» — конверсія кроку. Тест/оплата — по клієнтах рекламних лідів.")}</div>
+      <div>
+        {d.stages.map((s: any, i: number) => (
+          <div key={s.key} style={{ marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>{i + 1}. {s.label}</span>
+              {i > 0 && <span style={{ fontSize: 12, color: "#64748b" }}><b style={{ color: s.pct_prev < 20 ? "#b91c1c" : "#475569" }}>{s.pct_prev}%</b> {t("от преды.", "від попер.")}</span>}
+            </div>
+            <div style={{ height: 30, width: `${wOf(s.n)}%`, minWidth: 62, background: `linear-gradient(90deg, ${COLORS[s.key]}, ${COLORS[s.key]}bb)`, borderRadius: 6, display: "flex", alignItems: "center", paddingLeft: 10, color: "#fff", fontWeight: 700, fontSize: 13 }}>{num(s.n)}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 12, paddingTop: 12, borderTop: "1px solid #eef2f7", fontSize: 13 }}>
+        <span className="muted">{t("Расход", "Витрати")}: <b style={{ color: "#0f172a" }}>{num(Math.round(d.spend_uah))} ₴</b></span>
+        <span className="muted">{t("Цена лида", "Ціна ліда")}: <b style={{ color: "#0f172a" }}>{d.cost_per_lead != null ? num(Math.round(d.cost_per_lead)) + " ₴" : "—"}</b></span>
+        <span className="muted">{t("Цена продажи", "Ціна продажу")}: <b style={{ color: "#0f172a" }}>{d.cost_per_sale != null ? num(Math.round(d.cost_per_sale)) + " ₴" : "—"}</b></span>
+        <span className="muted">{t("Выручка", "Виручка")}: <b style={{ color: "#166534" }}>{num(Math.round(d.revenue))} ₴</b></span>
+        <span className="muted">ROAS: <b style={{ color: (d.roas || 0) >= 1 ? "#166534" : "#b91c1c" }}>{d.roas != null ? d.roas : "—"}</b></span>
+      </div>
+    </div>
+  );
+}
+
 export default function MetaMarketing() {
   const { t } = useLang();
   const today = useMemo(() => new Date(), []);
@@ -335,6 +372,7 @@ export default function MetaMarketing() {
         </>}
 
         {tab === "funnel" && <>
+          <MetaConeFunnel from={from} to={to} />
           <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
             {t("Первая таблица показывает все реальные обращения Instagram и Facebook в CRM. «Точный ID рекламы» означает, что Meta передала идентификатор объявления/кампании/формы. «Не определено» — обращение пришло из Meta, но конкретное объявление технически не было передано.", "Перша таблиця показує всі реальні звернення Instagram і Facebook у CRM. «Точний ID реклами» означає, що Meta передала ідентифікатор оголошення/кампанії/форми. «Не визначено» — звернення прийшло з Meta, але конкретне оголошення технічно не було передано.")}
           </div>
