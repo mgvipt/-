@@ -247,9 +247,10 @@ class ChannelViewSet(viewsets.ModelViewSet):
         return Response({"channel_id": ch.id, "channel_name": ch.name, "staff": rows})
 
 
-def _close_contact_leads(contact_id):
+def _close_contact_leads(contact_id, reason=""):
     """При завершенні чату — фіналізувати відкриті ліди контакту (в lost),
-    щоб не лишались дублі і аналітика рахувала їх як неконвертовані."""
+    щоб не лишались дублі і аналітика рахувала їх як неконвертовані.
+    reason — причина ігнору/відвалу (для аналітики «чому втрачаємо»)."""
     if not contact_id:
         return
     from apps.crm.models import Lead, Funnel, log_activity
@@ -266,10 +267,13 @@ def _close_contact_leads(contact_id):
         q = dict(ld.qualification or {})
         q["_reached_stage_id"] = ld.stage_id  # знімок стадії відвалу — для перенесення при поверненні
         q["_reached_stage_name"] = old
+        if reason:
+            q["close_reason"] = reason
         ld.qualification = q
         ld.stage = lost
         ld.save(update_fields=["stage", "qualification"])
-        log_activity("lead", ld.id, "Закрито разом з чатом", "%s → %s (зафіксовано для аналітики)" % (old, lost.name), None, "Система")
+        log_activity("lead", ld.id, "Закрито разом з чатом",
+                     "%s → %s · причина: %s" % (old, lost.name, reason or "—"), None, "Система")
 
 
 # Скільки хвилин чат лишається у загальному списку менеджера після того,
@@ -452,11 +456,16 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=["post"])
     def bulk_close(self, request):
         """Масово завершити вибрані діалоги (тільки ті, що видно користувачу)."""
+        from apps.crm.models import log_activity
         ids = request.data.get("ids") or []
+        reason = (request.data.get("reason") or "").strip()[:120]
         rows = list(self.get_queryset().filter(id__in=ids).values("id", "contact_id"))
         Conversation.objects.filter(id__in=[r["id"] for r in rows]).update(status="closed")
+        _who = request.user.get_full_name() or request.user.username
         for r in rows:
-            _close_contact_leads(r["contact_id"])
+            log_activity("contact", r["contact_id"] or 0, "Завершив чат",
+                         ("причина: %s" % reason) if reason else "без причини", request.user, _who)
+            _close_contact_leads(r["contact_id"], reason)
         return Response({"closed": len(rows)})
 
     @action(detail=True, methods=["post"])
@@ -472,11 +481,17 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=["post"])
     def close(self, request, pk=None):
-        """Завершити діалог. Наступний лист клієнта створить НОВИЙ діалог + лід."""
+        """Завершити діалог. Наступний лист клієнта створить НОВИЙ діалог + лід.
+        reason — причина ігнору (для аналітики + лічильника дій менеджера)."""
+        from apps.crm.models import log_activity
         conv = self.get_object()
+        reason = (request.data.get("reason") or "").strip()[:120]
         conv.status = "closed"
         conv.save(update_fields=["status"])
-        _close_contact_leads(conv.contact_id)
+        _who = request.user.get_full_name() or request.user.username
+        log_activity("contact", conv.contact_id or 0, "Завершив чат",
+                     ("причина: %s" % reason) if reason else "без причини", request.user, _who)
+        _close_contact_leads(conv.contact_id, reason)
         return Response(ConversationSerializer(conv).data)
 
     @action(detail=True, methods=["post"])

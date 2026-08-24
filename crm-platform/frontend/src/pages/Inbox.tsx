@@ -257,16 +257,19 @@ export default function Inbox() {
     setPicker(null);
   }
 
+  const [closeMode, setCloseMode] = useState<null | "one" | "bulk">(null);
+  const CLOSE_REASONS = ["\u041D\u0435 \u0432\u0456\u0434\u043F\u043E\u0432\u0456\u0434\u0430\u0454 (\u0456\u0433\u043D\u043E\u0440)", "\u0414\u043E\u0440\u043E\u0433\u043E / \u0431\u044E\u0434\u0436\u0435\u0442", "\u00AB\u041F\u043E\u0434\u0443\u043C\u0430\u044E\u00BB / \u043D\u0430 \u0434\u043D\u044F\u0445", "\u041D\u0435 \u043D\u0430\u0432\u0430\u0436\u0438\u0432\u0441\u044F \u043D\u0430 \u043F\u0440\u043E\u0431\u043D\u0438\u043A", "\u041D\u0435\u043C\u0430\u0454 \u0432 \u043D\u0430\u044F\u0432\u043D\u043E\u0441\u0442\u0456 / \u0434\u043E\u0432\u0433\u0456 \u0442\u0435\u0440\u043C\u0456\u043D\u0438", "\u041A\u0443\u043F\u0438\u0432 \u0443 \u043A\u043E\u043D\u043A\u0443\u0440\u0435\u043D\u0442\u0430", "\u041D\u0435 \u043F\u0456\u0434\u0456\u0439\u0448\u043E\u0432 \u043C\u0430\u0442\u0435\u0440\u0456\u0430\u043B / \u043F\u0440\u043E\u0434\u0443\u043A\u0442", "\u041D\u0435\u043C\u0430\u0454 \u043E\u0431\u02BC\u0454\u043A\u0442\u0430 \u0437\u0430\u0440\u0430\u0437 / \u043F\u0440\u043E\u0441\u0442\u043E \u0434\u0438\u0432\u0438\u0432\u0441\u044F"];
   function toggleSel(id: number) { setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
   function selectAllVisible() { setSelected(new Set(convs.map((c) => c.id))); }
-  async function bulkClose() {
-    if (selected.size === 0) return;
+  async function bulkClose() { if (selected.size === 0) return; setCloseMode("bulk"); }
+  async function doCloseBulk(reason: string) {
     try {
-      await api.post<any>("/api/conversations/bulk_close/", { ids: Array.from(selected) });
+      await api.post<any>("/api/conversations/bulk_close/", { ids: Array.from(selected), reason });
       setConvs((cs) => cs.filter((x) => !selected.has(x.id)));
       if (active && selected.has(active.id)) { setActive(null); setMsgs([]); }
       setSelected(new Set()); setSelMode(false);
     } catch { setErr(t("Не удалось закрыть","Не вдалося закрити")); }
+    setCloseMode(null);
   }
 
   const mItem: any = { padding: "10px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f8fafc" };
@@ -283,15 +286,28 @@ export default function Inbox() {
     }
     setMenu(false);
   }
-  async function closeConv() {
-    if (!active) return;
-    try { await api.post<any>(`/api/conversations/${active.id}/close/`, {}); setConvs((cs) => cs.filter((x) => x.id !== active.id)); setActive(null); setMsgs([]); } catch { setErr(t("Не удалось","Не вдалося")); }
-    setMenu(false);
+  async function closeConv() { if (!active) return; setMenu(false); setCloseMode("one"); }
+  async function doCloseOne(reason: string) {
+    if (!active) { setCloseMode(null); return; }
+    try { await api.post<any>(`/api/conversations/${active.id}/close/`, { reason }); setConvs((cs) => cs.filter((x) => x.id !== active.id)); setActive(null); setMsgs([]); } catch { setErr(t("Не удалось","Не вдалося")); }
+    setCloseMode(null);
   }
   function goToContact() { setMenu(false); if (active?.contact) nav(`/clients/${active.contact}?c=${active.id}`); }
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      {closeMode && (
+        <div onClick={() => setCloseMode(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, width: 340, maxWidth: "92vw", boxShadow: "0 20px 50px rgba(0,0,0,.28)", overflow: "hidden" }}>
+            <div style={{ padding: "12px 16px", fontWeight: 800, fontSize: 14, borderBottom: "1px solid #f1f5f9" }}>{t("Причина завершення","Причина завершення")}{closeMode === "bulk" ? ` (${selected.size})` : ""}</div>
+            <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
+              {CLOSE_REASONS.map((r) => (<div key={r} onClick={() => (closeMode === "bulk" ? doCloseBulk(r) : doCloseOne(r))} style={{ padding: "10px 16px", cursor: "pointer", fontSize: 13.5, borderBottom: "1px solid #f8fafc" }}>{r}</div>))}
+              <div onClick={() => (closeMode === "bulk" ? doCloseBulk("") : doCloseOne(""))} style={{ padding: "10px 16px", cursor: "pointer", fontSize: 13, color: "#94a3b8" }}>{t("Завершити без причини","Завершити без причини")}</div>
+            </div>
+            <div style={{ padding: "8px 16px", textAlign: "right", borderTop: "1px solid #f1f5f9" }}><button className="btn btn-light" style={{ fontSize: 13 }} onClick={() => setCloseMode(null)}>{t("Скасувати","Скасувати")}</button></div>
+          </div>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 6, padding: "8px 12px", background: "#fff", borderBottom: "1px solid #e2e8f0", flexShrink: 0, alignItems: "center" }}>
         <button onClick={() => setTab("chats")} className={"btn" + (tab === "chats" ? " btn-primary" : " btn-light")} style={{ fontSize: 13, fontWeight: 600 }}><Icon n="message" size={15} /> {t("Чаты с клиентами", "Чати з клієнтами")}</button>
         <button onClick={() => setTab("notif")} className={"btn" + (tab === "notif" ? " btn-primary" : " btn-light")} style={{ fontSize: 13, fontWeight: 600 }}><Icon n="bell" size={15} /> {t("Уведомления", "Сповіщення")}{notifN > 0 && <span style={{ marginLeft: 6, background: "#dc2626", color: "#fff", borderRadius: 20, fontSize: 11, fontWeight: 700, padding: "1px 7px" }}>{notifN}</span>}</button>
