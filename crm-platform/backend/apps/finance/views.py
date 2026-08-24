@@ -3115,7 +3115,10 @@ def _yulia_hook_after_shift_action(user, action):
         if getattr(user, "department_id", None):
             dept_name = (user.department.name if user.department else "")
         _log.warning("[HOOK] user=%s action=%s dept=%r" % (getattr(user, "username", "?"), action, dept_name))
-        if "продаж" not in dept_name.lower():
+        # Юлю перемикаємо і для КЕРІВНИЦТВА/власника (не тільки відділ Продаж) —
+        # смена руководителя теж має вмикати/вимикати тихий режим.
+        if not ("продаж" in dept_name.lower() or "керівн" in dept_name.lower()
+                or getattr(user, "is_superuser", False)):
             return
         from apps.inbox.yulia_toggle import apply_yulia_shift_toggle
         r = apply_yulia_shift_toggle()
