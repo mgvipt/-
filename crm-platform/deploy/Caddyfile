@@ -20,6 +20,10 @@
         reverse_proxy web:8000
     }
 
+    handle /d/* {
+        reverse_proxy web:8000
+    }
+
     # WebRTC веб-телефон: WebSocket до Asterisk (через форвардер на телефонному сервері)
     handle /pbx-ws* {
         rewrite * /ws

@@ -823,3 +823,14 @@ class WeeklyManagerReview(models.Model):
 
     class Meta:
         ordering = ["-id"]
+
+
+class KpLink(models.Model):
+    """Публічне посилання на документ (КП/накладну) для швидкої відправки клієнту."""
+    code = models.CharField(max_length=24, unique=True)
+    deal = models.ForeignKey("Deal", on_delete=models.CASCADE, related_name="kp_links")
+    html = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-id"]

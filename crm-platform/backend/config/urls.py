@@ -150,6 +150,7 @@ urlpatterns = [
     path("api/finance/salary/deals/", fin_views.ManagerDealsView.as_view()),
     path("api/analytics/", crm_views.AnalyticsView.as_view()),
     path("api/analytics/funnel-daily/", crm_views.FunnelDailyView.as_view()),
+    path("d/<str:code>/", crm_views.render_kp_public),
     path("api/analytics/manager-actions/", crm_views.ManagerActionsView.as_view()),
     path("api/analytics/weekly-review/", crm_views.WeeklyReviewView.as_view()),
     path("api/analytics/manager-stages/", crm_views.ManagerStagesView.as_view()),

@@ -2323,6 +2323,28 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         return Response({"ok": True, "count": len(hist), "snap": snap})
 
     @action(detail=True, methods=["post"])
+    def kp_link(self, request, pk=None):
+        """Публічне посилання на документ (КП/накладну) — швидко скинути клієнту.
+        Фронт передає готовий HTML документа; зберігаємо під коротким кодом."""
+        import re
+        deal = self.get_object()
+        g = self._guard(deal)
+        if g:
+            return g
+        from .models import KpLink
+        html = re.sub(r"(?is)<script.*?</script>", "", (request.data.get("html") or ""))[:200000]
+        link = deal.kp_links.order_by("-id").first()
+        if link:
+            link.html = html
+            link.save(update_fields=["html"])
+        else:
+            code = _short_code()
+            while KpLink.objects.filter(code=code).exists():
+                code = _short_code()
+            link = KpLink.objects.create(code=code, deal=deal, html=html)
+        return Response({"url": "https://crm.wallcovdec.com.ua/d/%s/" % link.code, "code": link.code})
+
+    @action(detail=True, methods=["post"])
     def ship(self, request, pk=None):
         """Отгрузка: списание товаров сделки со склада + расход по себестоимости (COGS)."""
         from apps.warehouse.models import StockDocument
@@ -4431,3 +4453,20 @@ class ManagerStagesView(APIView):
                         "is_won": st.is_won, "is_lost": st.is_lost} for st in stages],
             "rows": out_rows, "ai_pct": stage_pct,
         })
+
+
+def render_kp_public(request, code):
+    """Публічна сторінка документа (без логіну) — клієнт відкриває посилання."""
+    from django.http import HttpResponse
+    from .models import KpLink
+    link = KpLink.objects.filter(code=code).first()
+    if not link:
+        return HttpResponse("<h3 style='font-family:Arial;margin:40px'>Документ не знайдено</h3>", status=404)
+    page = ("<!doctype html><html lang='uk'><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>\u041d\u0430\u043a\u043b\u0430\u0434\u043d\u0430 #%s</title></head>"
+            "<body style='margin:0;background:#f1f5f9'>"
+            "<div style='max-width:760px;margin:0 auto;padding:16px'>"
+            "<div style='background:#fff;border-radius:10px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.08)'>%s</div>"
+            "</div></body></html>") % (link.deal_id, link.html)
+    return HttpResponse(page)

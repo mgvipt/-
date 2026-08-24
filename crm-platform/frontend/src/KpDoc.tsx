@@ -111,6 +111,13 @@ export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal:
     </div>
   </div>`;
 
+  async function copyLink() {
+    try {
+      const r: any = await api.post(`/api/deals/${deal.id}/kp_link/`, { html: docHtml });
+      try { await navigator.clipboard.writeText(r.url); window.alert("\u2713 \u041f\u043e\u0441\u0438\u043b\u0430\u043d\u043d\u044f \u0441\u043a\u043e\u043f\u0456\u0439\u043e\u0432\u0430\u043d\u043e:\n" + r.url); }
+      catch { window.prompt("\u0421\u043a\u043e\u043f\u0456\u044e\u0439\u0442\u0435 \u043f\u043e\u0441\u0438\u043b\u0430\u043d\u043d\u044f:", r.url); }
+    } catch { window.alert("\u041d\u0435 \u0432\u0434\u0430\u043b\u043e\u0441\u044f \u0441\u0442\u0432\u043e\u0440\u0438\u0442\u0438 \u043f\u043e\u0441\u0438\u043b\u0430\u043d\u043d\u044f"); }
+  }
   async function saveHist() {
     const note = window.prompt("Коментар до версії КП (необовʼязково):", "");
     if (note === null) return;
@@ -243,6 +250,7 @@ export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal:
           <b style={{ fontSize: 17, flex: 1 }}>{readOnly ? `Накладна #${deal.id} · ${today}` : `1. КП Декор #${deal.id}`}</b>
           {!readOnly && <button className="btn" style={{ background: "#ecfdf5", color: "#047857" }} onClick={saveHist}><Icon n="🧾" size={15} /> Зберегти в історію</button>}
           <button className="btn btn-primary" onClick={printWin}><Icon n="🖨" size={15} /> Друк</button>
+          <button className="btn" style={{ background: "#eff6ff", color: "#1d4ed8" }} onClick={copyLink} title="Скопіювати посилання на документ — швидко надіслати клієнту"><Icon n="link" size={15} /> Посилання</button>
           <button className="btn" onClick={pdf} title="Завантажити PDF-файл"><Icon n="📄" size={15} /> PDF</button>
           <button className="btn btn-green" onClick={excel}><Icon n="📊" size={15} /> Excel</button>
           <button className="btn" onClick={onClose}>✕</button>
