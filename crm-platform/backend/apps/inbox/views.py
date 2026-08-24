@@ -293,6 +293,27 @@ _RECENT_REPLY_MIN = 30
 _TAKEOVER_STALE_DAYS = 30
 
 
+def _bg_chatplace_sync(conv_id):
+    """Фонова синхронізація одного ChatPlace-чату — щоб відкриття діалогу НЕ блокувалось
+    повільним/битим ChatPlace. Викликається у daemon-потоці, best-effort."""
+    from django.db import connection as _conn
+    try:
+        from .models import Conversation
+        from .chatplace import sync_one_chat, configured
+        if not configured():
+            return
+        cv = Conversation.objects.filter(id=conv_id).select_related("channel").first()
+        if cv:
+            sync_one_chat(cv)
+    except Exception:
+        pass
+    finally:
+        try:
+            _conn.close()
+        except Exception:
+            pass
+
+
 class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Conversation.objects.select_related("channel", "contact", "assigned_to").prefetch_related("participants")
     serializer_class = ConversationSerializer
@@ -848,16 +869,17 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     def messages(self, request, pk=None):
         conv = self.get_object()
         if (conv.channel.config or {}).get("chatplace"):
-            # Троттл: живий запит у ChatPlace не частіше ніж раз на 30с на чат
-            # (фронт опитує /messages кожні 6с → інакше 10 звернень/хв на чат → Cloudflare-бан).
+            # Троттл: живий запит у ChatPlace не частіше ніж раз на 30с на чат.
+            # ⚡ Синк ChatPlace робимо У ФОНІ (daemon-потік) — щоб відкриття діалогу
+            # НЕ блокувалось повільним/битим ChatPlace. Кеш ставимо ДО запуску, щоб
+            # збій/лаг ChatPlace не спричиняв повторні блокування на кожному опитуванні.
             from django.core.cache import cache as _cache
             _ck = "cp_livesync_%s" % conv.id
             if not _cache.get(_ck):
+                _cache.set(_ck, 1, timeout=30)
                 try:
-                    from .chatplace import sync_one_chat, configured
-                    if configured():
-                        sync_one_chat(conv)
-                        _cache.set(_ck, 1, timeout=30)
+                    import threading
+                    threading.Thread(target=_bg_chatplace_sync, args=(conv.id,), daemon=True).start()
                 except Exception:
                     pass
         # лічильник скидається ЛИШЕ коли менеджер свідомо дивиться чат (?seen=1);
