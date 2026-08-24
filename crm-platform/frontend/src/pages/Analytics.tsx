@@ -30,7 +30,7 @@ interface InvData {
 const fmt = (n: number) => Math.round(n || 0).toLocaleString("ru");
 
 export default function Analytics() {
-  const [tab, setTab] = useState<"sales" | "channels" | "stock">("sales");
+  const [tab, setTab] = useState<"sales" | "channels" | "stock" | "days" | "managers">("sales");
   const { t } = useLang();
   const { can } = useAuth();
   const canStock = can("warehouse.view");
@@ -40,12 +40,16 @@ export default function Analytics() {
       <div className="tabline" style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         {canSales && <button className={tab === "sales" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("sales")}><Icon n="📈" size={15} /> {t("Продажи","Продажі")}</button>}
         {canSales && <button className={tab === "channels" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("channels")}><Icon n="📣" size={15} /> {t("Каналы","Канали")}</button>}
+        {canSales && <button className={tab === "days" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("days")}><Icon n="calendar" size={15} /> {t("По дням","По днях")}</button>}
+        {canSales && <button className={tab === "managers" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("managers")}><Icon n="users" size={15} /> {t("Менеджеры","Менеджери")}</button>}
         {canStock && <button className={tab === "stock" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("stock")}><Icon n="📦" size={15} /> {t("Склад","Склад")}</button>}
       </div>
       {tab === "sales" && canSales && <SalesTab />}
       {tab === "channels" && canSales && <ChannelsTab />}
+      {tab === "days" && canSales && <DaysTab />}
+      {tab === "managers" && canSales && <ManagersTab />}
       {tab === "stock" && canStock && <StockTab />}
-      {((tab === "stock" && !canStock) || ((tab === "sales" || tab === "channels") && !canSales)) && <div className="muted" style={{ padding: 30 }}>{t("Нет доступа к этому разделу","Немає доступу до цього розділу")}</div>}
+      {((tab === "stock" && !canStock) || ((tab === "sales" || tab === "channels" || tab === "days" || tab === "managers") && !canSales)) && <div className="muted" style={{ padding: 30 }}>{t("Нет доступа к этому разделу","Немає доступу до цього розділу")}</div>}
     </div>
   );
 }
@@ -273,5 +277,142 @@ export function StockTab() {
         </div>
       )}
     </>
+  );
+}
+
+
+/* ─── ВКЛАДКА «ПО ДНЯХ» — дневной срез воронки (все воронки) ──────────────── */
+const _th: any = { textAlign: "left", padding: "7px 9px", fontSize: 12, color: "#64748b", borderBottom: "2px solid #eef2f7", whiteSpace: "nowrap" };
+const _td: any = { padding: "6px 9px", fontSize: 13, borderBottom: "1px solid #f1f5f9", verticalAlign: "middle" };
+const _dateSt: any = { height: 32, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 13 };
+const _selSt: any = { height: 32, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px", fontSize: 13, background: "#fff" };
+const _iso = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+
+function DaysTab() {
+  const { t } = useLang();
+  const [fd, setFd] = useState<any>(null);
+  const [funnelId, setFunnelId] = useState<string>("");
+  const [from, setFrom] = useState<string>(() => { const d = new Date(); d.setDate(d.getDate() - 13); return _iso(d); });
+  const [to, setTo] = useState<string>(() => _iso(new Date()));
+  useEffect(() => {
+    const q = `?from=${from}&to=${to}` + (funnelId ? `&funnel=${funnelId}` : "");
+    api.get<any>("/api/analytics/funnel-daily/" + q).then(setFd).catch(() => {});
+  }, [from, to, funnelId]);
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <span className="muted" style={{ fontSize: 12 }}>{t("Период:", "Період:")}</span>
+        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={_dateSt} />
+        <span className="muted">—</span>
+        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={_dateSt} />
+        {fd && <select value={funnelId} onChange={(e) => setFunnelId(e.target.value)} style={_selSt}>
+          {(fd.funnels || []).map((f: any) => <option key={f.id} value={f.id}>{f.name}{f.is_lead ? " ★" : ""}</option>)}
+        </select>}
+      </div>
+      <div className="panel">
+        <div className="label" style={{ marginBottom: 4 }}>{t("Воронка по дням", "Воронка по днях")}{fd ? ` — ${fd.funnel}` : ""}</div>
+        <div className="muted" style={{ fontSize: 11.5, marginBottom: 10, lineHeight: 1.5 }}>
+          {t("«Вошло» — сколько зашло в этот день. По статусам — сколько ДОШЛО до этого статуса в этот день (за день можно пройти несколько статусов; вернувшийся из молчания засчитается в тот день, когда двинулся).", "«Зайшло» — скільки увійшло цього дня. По статусах — скільки ДІЙШЛО до статусу цього дня.")}
+        </div>
+        {!fd ? <div className="muted">…</div> : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+              <thead><tr>
+                <th style={_th}>{t("День", "День")}</th>
+                <th style={{ ..._th, textAlign: "right", color: "#0f172a", fontWeight: 700 }}>{t("Вошло", "Зайшло")}</th>
+                {(fd.stages || []).map((st: any) => <th key={st.id} style={{ ..._th, textAlign: "right", color: st.is_won ? "#166534" : st.is_lost ? "#b91c1c" : "#64748b" }}>{st.name}</th>)}
+              </tr></thead>
+              <tbody>{(fd.days || []).map((d: any) => (
+                <tr key={d.d}>
+                  <td style={{ ..._td, whiteSpace: "nowrap", fontWeight: 600 }}>{d.d}</td>
+                  <td style={{ ..._td, textAlign: "right", fontWeight: 800, color: "#0f172a" }}>{d.entered || 0}</td>
+                  {(d.stages || []).map((st: any) => <td key={st.stage_id} style={{ ..._td, textAlign: "right", color: st.reached ? "#0f172a" : "#cbd5e1", fontWeight: st.reached ? 600 : 400 }}>{st.reached || "·"}</td>)}
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── ВКЛАДКА «МЕНЕДЖЕРИ» — действия в чатах + недельный вердикт AI-РОП ────── */
+function ManagersTab() {
+  const { t } = useLang();
+  const [from, setFrom] = useState<string>(() => { const d = new Date(); d.setDate(d.getDate() - 13); return _iso(d); });
+  const [to, setTo] = useState<string>(() => _iso(new Date()));
+  const [acts, setActs] = useState<any>(null);
+  const [rev, setRev] = useState<any>(null);
+  const [revLoad, setRevLoad] = useState(false);
+  useEffect(() => { api.get<any>(`/api/analytics/manager-actions/?from=${from}&to=${to}`).then(setActs).catch(() => setActs(null)); }, [from, to]);
+  useEffect(() => { api.get<any>("/api/analytics/weekly-review/").then(setRev).catch(() => setRev(null)); }, []);
+  function runReview() { setRevLoad(true); api.post<any>("/api/analytics/weekly-review/", {}).then((r) => { setRev(r); setRevLoad(false); }).catch(() => setRevLoad(false)); }
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <span className="muted" style={{ fontSize: 12 }}>{t("Период:", "Період:")}</span>
+        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={_dateSt} />
+        <span className="muted">—</span>
+        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={_dateSt} />
+      </div>
+
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <div className="label" style={{ marginBottom: 4 }}>{t("Действия менеджеров в чатах", "Дії менеджерів у чатах")}</div>
+        <div className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>{t("За период: ответов, взял в работу, дожимов, закрыл. Команда: вернулись из игнора + причины закрытия.", "За період: відповідей, узяв у роботу, дожимів, закрив.")}</div>
+        {!acts ? <div className="muted">…</div> : (acts.rows || []).length === 0 ? <div className="muted" style={{ fontSize: 12.5 }}>{t("Нет данных за период", "Немає даних за період")}</div> : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
+              <thead><tr>
+                <th style={_th}>{t("Менеджер", "Менеджер")}</th>
+                <th style={{ ..._th, textAlign: "right" }}>{t("Ответов", "Відповідей")}</th>
+                <th style={{ ..._th, textAlign: "right" }}>{t("Взял", "Узяв")}</th>
+                <th style={{ ..._th, textAlign: "right" }}>{t("Дожимов", "Дожимів")}</th>
+                <th style={{ ..._th, textAlign: "right" }}>{t("Закрыл", "Закрив")}</th>
+              </tr></thead>
+              <tbody>{(acts.rows || []).map((r: any) => (
+                <tr key={r.user_id}>
+                  <td style={{ ..._td, fontWeight: 600 }}>{r.name}</td>
+                  <td style={{ ..._td, textAlign: "right" }}>{r.replies || 0}</td>
+                  <td style={{ ..._td, textAlign: "right" }}>{r.taken || 0}</td>
+                  <td style={{ ..._td, textAlign: "right", color: "#c2410c", fontWeight: 600 }}>{r.followups || 0}</td>
+                  <td style={{ ..._td, textAlign: "right" }}>{r.closed || 0}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+            {typeof acts.reactivations === "number" && acts.reactivations > 0 && (
+              <div style={{ marginTop: 10, fontSize: 12.5, color: "#166534", fontWeight: 600 }}>
+                <Icon n="refresh" size={13} /> {t("Вернулись из игнора (команда):", "Повернулись з ігнору (команда):")} <b>{acts.reactivations}</b>
+              </div>
+            )}
+            {acts.close_reasons && acts.close_reasons.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div className="muted" style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{t("Причины закрытия (почему теряем):", "Причини закриття (чому втрачаємо):")}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {acts.close_reasons.map((c: any) => <span key={c.reason} style={{ fontSize: 12, background: "#fff1f2", color: "#9f1239", border: "1px solid #fecdd3", borderRadius: 20, padding: "3px 10px" }}>{c.reason} · <b>{c.count}</b></span>)}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="panel" style={{ marginBottom: 24, border: "2px solid #ddd6fe" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+          <div className="label" style={{ margin: 0 }}>{t("Разбор недели от AI-РОП", "Розбір тижня від AI-РОП")}</div>
+          <button className="btn btn-primary" style={{ fontSize: 13 }} onClick={runReview} disabled={revLoad}>{revLoad ? t("AI анализирует…", "AI аналізує…") : <><Icon n="bulb" size={14} /> {t("Сделать разбор", "Зробити розбір")}</>}</button>
+          {rev && rev.created_at && <span className="muted" style={{ fontSize: 11.5 }}>{t("последний:", "останній:")} {rev.created_at} · {rev.period || ""}</span>}
+        </div>
+        <div className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>{t("AI-РОП разбирает работу менеджеров за неделю и даёт вердикт: кто теряет лиды, групповые ошибки. Дёшево по токенам.", "AI-РОП розбирає роботу менеджерів за тиждень і дає вердикт.")}</div>
+        {rev && rev.summary && <div style={{ background: "#f5f3ff", borderRadius: 10, padding: "10px 14px", fontSize: 13.5, lineHeight: 1.55, marginBottom: 10, whiteSpace: "pre-wrap" }}>{rev.summary}</div>}
+        {rev && (rev.managers || []).length > 0 && (rev.managers || []).map((m: any, i: number) => (
+          <div key={i} style={{ borderTop: "1px solid #eef2f7", padding: "8px 0" }}>
+            <div style={{ fontWeight: 700, fontSize: 13.5 }}>{m.name} {m.score != null && <span className="muted" style={{ fontWeight: 400 }}>· {m.score}/100</span>}</div>
+            {m.verdict && <div style={{ fontSize: 12.5, color: "#334155", lineHeight: 1.5, marginTop: 2, whiteSpace: "pre-wrap" }}>{m.verdict}</div>}
+          </div>
+        ))}
+        {rev && rev.error && <div style={{ color: "#b91c1c", fontSize: 12 }}>{rev.error}</div>}
+      </div>
+    </div>
   );
 }
