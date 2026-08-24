@@ -268,6 +268,23 @@ def sync_chats(max_chats=40, per_chat=40):
             if _tt_exist:
                 ch = tt_ch; is_tt = True; platform = "tiktok"
             else:
+                # IG веде Meta. Але привʼязку Meta-діалогу до цього ChatPlace-чату (для
+                # відправки менеджера) робимо ТУТ БЕЗ жодного зайвого запиту — chats_list
+                # вже у нас. Замість важкого окремого крону, що штурмив усі чати й ловив бан.
+                try:
+                    _un = str(it.get("username") or raw_name.lstrip("@")).strip().lower()
+                    if _un and cid:
+                        from .models import Channel as _Ch
+                        _mig = _Ch.objects.filter(config__meta=True, kind="instagram").first()
+                        if _mig:
+                            _mc = (Conversation.objects.filter(channel=_mig, contact__nickname__iexact=_un)
+                                   .exclude(external_chat_id__startswith="comment:").order_by("-last_message_at").first())
+                            if _mc and not (_mc.config or {}).get("outbound_chatplace", {}).get("chat_id"):
+                                _cfg = _mc.config or {}
+                                _cfg["outbound_chatplace"] = {"chat_id": str(cid), "match": "sync_username", "username": _un}
+                                _mc.config = _cfg; _mc.save(update_fields=["config"])
+                except Exception:
+                    pass
                 continue  # новий/IG чат — його веде Meta, пропускаємо
         # шукаємо діалог в ОБОХ ChatPlace-каналах: визначення платформи (oembed) інколи
         # «фліпає» IG<->TikTok і той самий клієнт дублювався у два чати/контакти
