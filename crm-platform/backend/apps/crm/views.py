@@ -4383,7 +4383,7 @@ class ManagerActionsView(APIView):
         def _row(uid):
             if not uid:
                 return None
-            return agg.setdefault(uid, {"user_id": uid, "replies": 0, "taken": 0, "followups": 0, "closed": 0})
+            return agg.setdefault(uid, {"user_id": uid, "replies": 0, "replies_cp": 0, "taken": 0, "followups": 0, "closed": 0})
 
         msgs = (Message.objects.filter(direction="out", internal=False, sender__isnull=False,
                                        created_at__date__gte=d_from, created_at__date__lte=d_to)
@@ -4408,10 +4408,24 @@ class ManagerActionsView(APIView):
                 r["closed"] += a["n"]
             else:
                 r["taken"] += a["n"]
+        # ChatPlace-ответы живых операторов (sender пуст, side operator/manager/admin) раньше
+        # терялись из статистики — привязываем к ответственному за диалог.
+        unassigned_cp = 0
+        for c in (Message.objects.filter(direction="out", internal=False, sender__isnull=True,
+                                         sender_name__in=["operator", "manager", "admin"],
+                                         created_at__date__gte=d_from, created_at__date__lte=d_to)
+                  .values("conversation__assigned_to").annotate(n=Count("id"))):
+            aid = c["conversation__assigned_to"]
+            if aid:
+                r = _row(aid)
+                if r:
+                    r["replies_cp"] += c["n"]
+            else:
+                unassigned_cp += c["n"]
         names = {x.id: (x.get_full_name() or x.username) for x in User.objects.filter(id__in=list(agg.keys()))}
         rows = sorted(
             [{**v, "name": names.get(v["user_id"], "#%s" % v["user_id"])} for v in agg.values()],
-            key=lambda r: -(r["replies"] + r["taken"] + r["followups"] + r["closed"]))
+            key=lambda r: -(r["replies"] + r["replies_cp"] + r["taken"] + r["followups"] + r["closed"]))
         reactivations = ActivityLog.objects.filter(action="Повернувся з ігнору",
                                                    created_at__date__gte=d_from, created_at__date__lte=d_to).count()
         reasons = {}
@@ -4422,7 +4436,67 @@ class ManagerActionsView(APIView):
                 if rz and rz != "—":
                     reasons[rz] = reasons.get(rz, 0) + 1
         close_reasons = sorted([{"reason": k, "count": v} for k, v in reasons.items()], key=lambda x: -x["count"])
-        return Response({"rows": rows, "reactivations": reactivations, "close_reasons": close_reasons})
+        # честная разбивка ИИ vs человек за период (по всем исходящим)
+        _allout = Message.objects.filter(direction="out", internal=False,
+                                         created_at__date__gte=d_from, created_at__date__lte=d_to)
+        _ai = _allout.filter(sender__isnull=True, sender_name__iexact="ai_assistant").count()
+        _h_crm = _allout.filter(sender__isnull=False).count()
+        _h_cp = _allout.filter(sender__isnull=True, sender_name__in=["operator", "manager", "admin"]).count()
+        _htot = _h_crm + _h_cp
+        summary = {"ai": _ai, "human_crm": _h_crm, "human_cp": _h_cp, "human_total": _htot,
+                   "human_pct": round(_htot * 100.0 / max(_ai + _htot, 1)),
+                   "unassigned_cp": unassigned_cp}
+        return Response({"rows": rows, "reactivations": reactivations,
+                         "close_reasons": close_reasons, "summary": summary})
+
+
+class ManagerDialogsView(APIView):
+    """Раскрытие счётчика: список диалогов, где менеджер участвовал за период —
+    контакт, канал, сколько его сообщений vs Юли, ссылка на диалог. Учитывает и
+    ответы через CRM, и ответы живого оператора прямо в ChatPlace (по ответственному)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from datetime import date, timedelta, datetime as _dt
+        from django.db.models import Q
+        from apps.inbox.models import Message, Conversation
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("analytics.view") or u.has_perm_code("roles.manage")):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            uid = int(request.query_params.get("user") or 0)
+        except (TypeError, ValueError):
+            uid = 0
+        frm = request.query_params.get("from"); to = request.query_params.get("to")
+        try:
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=13))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+        except ValueError:
+            return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
+        HUMAN_CP = ["operator", "manager", "admin"]
+        conv_ids = set(Message.objects.filter(direction="out", internal=False, sender_id=uid,
+                       created_at__date__gte=d_from, created_at__date__lte=d_to)
+                       .values_list("conversation_id", flat=True))
+        conv_ids |= set(Message.objects.filter(direction="out", internal=False, sender__isnull=True,
+                        sender_name__in=HUMAN_CP, conversation__assigned_to_id=uid,
+                        created_at__date__gte=d_from, created_at__date__lte=d_to)
+                        .values_list("conversation_id", flat=True))
+        out = []
+        for conv in (Conversation.objects.filter(id__in=conv_ids).select_related("contact", "channel")[:200]):
+            base = Message.objects.filter(conversation=conv, created_at__date__gte=d_from, created_at__date__lte=d_to)
+            mine = base.filter(direction="out", internal=False).filter(
+                Q(sender_id=uid) | Q(sender__isnull=True, sender_name__in=HUMAN_CP)).count()
+            ai = base.filter(direction="out", internal=False, sender__isnull=True, sender_name__iexact="ai_assistant").count()
+            incoming = base.filter(direction="in").count()
+            out.append({
+                "conversation_id": conv.id,
+                "contact": (str(conv.contact) if conv.contact_id else "") or conv.title or "—",
+                "channel": conv.channel.kind if conv.channel_id else "",
+                "my_msgs": mine, "ai_msgs": ai, "incoming": incoming,
+                "last_at": conv.last_message_at.strftime("%d.%m %H:%M") if conv.last_message_at else "",
+            })
+        out.sort(key=lambda x: -x["my_msgs"])
+        return Response({"dialogs": out, "count": len(out)})
 
 
 class WeeklyReviewView(APIView):

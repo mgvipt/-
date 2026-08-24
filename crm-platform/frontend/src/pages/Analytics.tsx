@@ -428,6 +428,13 @@ function ManagersTab() {
   const [revLoad, setRevLoad] = useState(false);
   const [ms, setMs] = useState<any>(null);
   const [msFunnel, setMsFunnel] = useState<string>("");
+  const [openU, setOpenU] = useState<number | null>(null);
+  const [dlgs, setDlgs] = useState<any>(null);
+  function toggleUser(id: number) {
+    if (openU === id) { setOpenU(null); return; }
+    setOpenU(id); setDlgs(null);
+    api.get<any>(`/api/analytics/manager-dialogs/?user=${id}&from=${from}&to=${to}`).then(setDlgs).catch(() => setDlgs({ dialogs: [] }));
+  }
   useEffect(() => { api.get<any>(`/api/analytics/manager-actions/?from=${from}&to=${to}`).then(setActs).catch(() => setActs(null)); }, [from, to]);
   useEffect(() => { api.get<any>(`/api/analytics/manager-stages/?from=${from}&to=${to}` + (msFunnel ? `&funnel=${msFunnel}` : "")).then(setMs).catch(() => setMs(null)); }, [from, to, msFunnel]);
   useEffect(() => { api.get<any>("/api/analytics/weekly-review/").then(setRev).catch(() => setRev(null)); }, []);
@@ -443,25 +450,59 @@ function ManagersTab() {
 
       <div className="panel" style={{ marginBottom: 16 }}>
         <div className="label" style={{ marginBottom: 4 }}>{t("Действия менеджеров в чатах", "Дії менеджерів у чатах")}</div>
-        <div className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>{t("За период: ответов, взял в работу, дожимов, закрыл. Команда: вернулись из игнора + причины закрытия.", "За період: відповідей, узяв у роботу, дожимів, закрив.")}</div>
+        <div className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>{t("За период: ответов (через CRM), в ChatPlace (живой оператор писал прямо в ChatPlace), взял в работу, дожимов, закрыл. Клик по менеджеру — раскрыть его диалоги.", "За період: відповідей (через CRM), у ChatPlace, узяв у роботу, дожимів, закрив. Клік по менеджеру — розкрити діалоги.")}</div>
+        {acts && acts.summary && (
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", background: "#f0f7ff", border: "1px solid #cfe3f7", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12.5 }}>
+            <span>👤 {t("Люди ответили", "Люди відповіли")}: <b>{acts.summary.human_total}</b> <span className="muted">({t("CRM", "CRM")} {acts.summary.human_crm} + ChatPlace {acts.summary.human_cp})</span></span>
+            <span>🤖 {t("Юля", "Юля")}: <b>{acts.summary.ai}</b></span>
+            <span>{t("Люди вели", "Люди вели")}: <b style={{ color: acts.summary.human_pct >= 50 ? "#166534" : "#c2410c" }}>{acts.summary.human_pct}%</b> {t("переписки", "листування")}</span>
+            {acts.summary.unassigned_cp > 0 && <span className="muted" style={{ fontSize: 11.5 }}>⚠ {acts.summary.unassigned_cp} {t("ответов в ChatPlace без ответственного", "відповідей у ChatPlace без відповідального")}</span>}
+          </div>
+        )}
         {!acts ? <div className="muted">…</div> : (acts.rows || []).length === 0 ? <div className="muted" style={{ fontSize: 12.5 }}>{t("Нет данных за период", "Немає даних за період")}</div> : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
               <thead><tr>
                 <th style={_th}>{t("Менеджер", "Менеджер")}</th>
-                <th style={{ ..._th, textAlign: "right" }}>{t("Ответов", "Відповідей")}</th>
+                <th style={{ ..._th, textAlign: "right" }} title={t("Ответы через CRM", "Відповіді через CRM")}>{t("Ответов", "Відповідей")}</th>
+                <th style={{ ..._th, textAlign: "right" }} title={t("Живой оператор писал прямо в ChatPlace (раньше эти ответы терялись из статистики)", "Живий оператор писав прямо в ChatPlace (раніше ці відповіді губились)")}>{t("в ChatPlace", "у ChatPlace")}</th>
                 <th style={{ ..._th, textAlign: "right" }}>{t("Взял", "Узяв")}</th>
                 <th style={{ ..._th, textAlign: "right" }}>{t("Дожимов", "Дожимів")}</th>
                 <th style={{ ..._th, textAlign: "right" }}>{t("Закрыл", "Закрив")}</th>
               </tr></thead>
               <tbody>{(acts.rows || []).map((r: any) => (
-                <tr key={r.user_id}>
-                  <td style={{ ..._td, fontWeight: 600 }}>{r.name}</td>
+                <Fragment key={r.user_id}>
+                <tr>
+                  <td style={{ ..._td, fontWeight: 600 }}>
+                    <button onClick={() => toggleUser(r.user_id)} style={{ background: "none", border: "none", cursor: "pointer", fontWeight: 600, color: "#0f172a", padding: 0, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13 }}>
+                      <span style={{ display: "inline-block", transform: openU === r.user_id ? "rotate(90deg)" : "none", color: "#94a3b8" }}>▸</span>{r.name}
+                    </button>
+                  </td>
                   <td style={{ ..._td, textAlign: "right" }}>{r.replies || 0}</td>
+                  <td style={{ ..._td, textAlign: "right", color: (r.replies_cp ? "#2563eb" : "#cbd5e1"), fontWeight: r.replies_cp ? 700 : 400 }}>{r.replies_cp || 0}</td>
                   <td style={{ ..._td, textAlign: "right" }}>{r.taken || 0}</td>
                   <td style={{ ..._td, textAlign: "right", color: "#c2410c", fontWeight: 600 }}>{r.followups || 0}</td>
                   <td style={{ ..._td, textAlign: "right" }}>{r.closed || 0}</td>
                 </tr>
+                {openU === r.user_id && (
+                  <tr><td colSpan={6} style={{ padding: 0, background: "#f8fafc" }}>
+                    {!dlgs ? <div className="muted" style={{ padding: 10, fontSize: 12 }}>…</div> : (dlgs.dialogs || []).length === 0 ? <div className="muted" style={{ padding: 10, fontSize: 12 }}>{t("Нет диалогов за период", "Немає діалогів за період")}</div> : (
+                      <div style={{ padding: "8px 10px", maxHeight: 320, overflowY: "auto" }}>
+                        <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>{t("Диалоги менеджера (👤 его сообщений / 🤖 Юли) — клик открывает чат:", "Діалоги менеджера (👤 його / 🤖 Юлі) — клік відкриває чат:")}</div>
+                        {(dlgs.dialogs || []).map((dl: any) => (
+                          <a key={dl.conversation_id} href={`/inbox?c=${dl.conversation_id}`} style={{ display: "flex", gap: 10, alignItems: "center", padding: "5px 8px", borderRadius: 6, fontSize: 12.5, textDecoration: "none", color: "#0f172a", borderBottom: "1px solid #eef2f7" }}>
+                            <span style={{ flex: 1, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{dl.contact}</span>
+                            <span className="muted" style={{ fontSize: 11 }}>{dl.channel}</span>
+                            <span style={{ color: "#2563eb", fontWeight: 700 }}>👤 {dl.my_msgs}</span>
+                            <span style={{ color: "#7c3aed" }}>🤖 {dl.ai_msgs}</span>
+                            <span className="muted" style={{ fontSize: 11, whiteSpace: "nowrap" }}>{dl.last_at}</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </td></tr>
+                )}
+                </Fragment>
               ))}</tbody>
             </table>
             {typeof acts.reactivations === "number" && acts.reactivations > 0 && (
