@@ -172,7 +172,19 @@ def _resolve_chatplace_chat_id(conv):
             nick = (conv.contact.nickname or "").strip()
             if nick:
                 cand = qs.filter(contact__nickname__iexact=nick).order_by("-last_message_at").first()
-        return str(cand.external_chat_id) if (cand and cand.external_chat_id) else ""
+        if cand and cand.external_chat_id:
+            return str(cand.external_chat_id)
+        # 2) спитати ChatPlace напряму (chats_list) — знайти чат по ніку клієнта
+        nick = (conv.contact.nickname or "").strip().lower() if conv.contact_id else ""
+        if nick:
+            from .chatplace import _mcp
+            data = _mcp("chats_list", {"limit": 60})
+            items = data.get("items", []) if isinstance(data, dict) else (data or [])
+            for it in (items or []):
+                un = str(it.get("username") or (it.get("clientName") or "").lstrip("@")).strip().lower()
+                if un and un == nick and it.get("id"):
+                    return str(it.get("id"))
+        return ""
     except Exception:
         return ""
 
