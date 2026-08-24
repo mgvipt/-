@@ -253,27 +253,36 @@ def _close_contact_leads(contact_id, reason=""):
     reason — причина ігнору/відвалу (для аналітики «чому втрачаємо»)."""
     if not contact_id:
         return
-    from apps.crm.models import Lead, Funnel, log_activity
+    from apps.crm.models import Lead, Funnel, Stage, log_activity
     lf = Funnel.objects.filter(is_lead_funnel=True).first()
     if not lf:
         return
-    lost = (lf.stages.filter(is_lost=True).order_by("-order").first()
-            or lf.stages.filter(name__icontains="Не вдалося").first()
-            or lf.stages.order_by("-order").first())
-    if not lost:
+    # «Хочу пізніше» — НЕ втрата: паркуємо у окремий статус (легше дообробити).
+    defer = "хочу піз" in (reason or "").lower() or "хочу поз" in (reason or "").lower()
+    if defer:
+        target = lf.stages.filter(name__icontains="Хочу пізніше").first()
+        if not target:
+            _mx = lf.stages.order_by("-order").first()
+            target = Stage.objects.create(funnel=lf, name="Хочу пізніше",
+                                          order=((_mx.order if _mx else 0) + 1), color="#f59e0b")
+    else:
+        target = (lf.stages.filter(is_lost=True).order_by("-order").first()
+                  or lf.stages.filter(name__icontains="Не вдалося").first()
+                  or lf.stages.order_by("-order").first())
+    if not target:
         return
     for ld in Lead.objects.filter(contact_id=contact_id, funnel=lf).exclude(stage__is_lost=True).exclude(stage__is_won=True):
         old = ld.stage.name
         q = dict(ld.qualification or {})
-        q["_reached_stage_id"] = ld.stage_id  # знімок стадії відвалу — для перенесення при поверненні
+        q["_reached_stage_id"] = ld.stage_id  # знімок стадії — для перенесення при поверненні
         q["_reached_stage_name"] = old
         if reason:
             q["close_reason"] = reason
         ld.qualification = q
-        ld.stage = lost
+        ld.stage = target
         ld.save(update_fields=["stage", "qualification"])
-        log_activity("lead", ld.id, "Закрито разом з чатом",
-                     "%s → %s · причина: %s" % (old, lost.name, reason or "—"), None, "Система")
+        log_activity("lead", ld.id, ("Відкладено (хочу пізніше)" if defer else "Закрито разом з чатом"),
+                     "%s → %s · причина: %s" % (old, target.name, reason or "—"), None, "Система")
 
 
 # Скільки хвилин чат лишається у загальному списку менеджера після того,

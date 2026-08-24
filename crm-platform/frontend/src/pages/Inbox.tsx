@@ -258,7 +258,19 @@ export default function Inbox() {
   }
 
   const [closeMode, setCloseMode] = useState<null | "one" | "bulk">(null);
-  const CLOSE_REASONS = ["\u041D\u0435 \u0432\u0456\u0434\u043F\u043E\u0432\u0456\u0434\u0430\u0454 (\u0456\u0433\u043D\u043E\u0440)", "\u0414\u043E\u0440\u043E\u0433\u043E / \u0431\u044E\u0434\u0436\u0435\u0442", "\u00AB\u041F\u043E\u0434\u0443\u043C\u0430\u044E\u00BB / \u043D\u0430 \u0434\u043D\u044F\u0445", "\u041D\u0435 \u043D\u0430\u0432\u0430\u0436\u0438\u0432\u0441\u044F \u043D\u0430 \u043F\u0440\u043E\u0431\u043D\u0438\u043A", "\u041D\u0435\u043C\u0430\u0454 \u0432 \u043D\u0430\u044F\u0432\u043D\u043E\u0441\u0442\u0456 / \u0434\u043E\u0432\u0433\u0456 \u0442\u0435\u0440\u043C\u0456\u043D\u0438", "\u041A\u0443\u043F\u0438\u0432 \u0443 \u043A\u043E\u043D\u043A\u0443\u0440\u0435\u043D\u0442\u0430", "\u041D\u0435 \u043F\u0456\u0434\u0456\u0439\u0448\u043E\u0432 \u043C\u0430\u0442\u0435\u0440\u0456\u0430\u043B / \u043F\u0440\u043E\u0434\u0443\u043A\u0442", "\u041D\u0435\u043C\u0430\u0454 \u043E\u0431\u02BC\u0454\u043A\u0442\u0430 \u0437\u0430\u0440\u0430\u0437 / \u043F\u0440\u043E\u0441\u0442\u043E \u0434\u0438\u0432\u0438\u0432\u0441\u044F"];
+  const CLOSE_REASONS = [
+  "Хочу пізніше (відкласти)",
+  "Не відповідає (ігнор)",
+  "Дорого / бюджет",
+  "«Подумаю» / на днях",
+  "Не наважився на пробник",
+  "Немає в наявності / довгі терміни",
+  "Купив у конкурента",
+  "Не підійшов матеріал / продукт",
+  "Немає обʼєкта зараз / просто дивився",
+  "Питання вирішено / відповіли",
+  "Не звернення (коментар, спілкування)",
+];
   function toggleSel(id: number) { setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
   function selectAllVisible() { setSelected(new Set(convs.map((c) => c.id))); }
   async function bulkClose() { if (selected.size === 0) return; setCloseMode("bulk"); }

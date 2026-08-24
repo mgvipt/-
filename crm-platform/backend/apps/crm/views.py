@@ -4119,3 +4119,73 @@ class ChangeLogView(APIView):
             title=(title_uk or title_ru)[:200], body=(body_uk or body_ru),
             title_uk=title_uk, title_ru=title_ru, body_uk=body_uk, body_ru=body_ru)
         return Response({"id": e.id}, status=status.HTTP_201_CREATED)
+
+
+class FunnelDailyView(APIView):
+    """Дневной срез воронки: по каждому дню — сколько лидов/сделок ДОШЛО до каждого
+    статуса (из журнала переходов ActivityLog) + сколько вошло в воронку. Работает
+    ретроспективно (на истории). Доступ: аналитика/руководитель."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from datetime import date, timedelta, datetime as _dt
+        from apps.crm.models import Funnel, ActivityLog, Lead, Deal
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("analytics.view") or u.has_perm_code("roles.manage")):
+            return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
+        frm = request.query_params.get("from"); to = request.query_params.get("to")
+        try:
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=13))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+        except ValueError:
+            return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
+        if (d_to - d_from).days > 120:
+            d_from = d_to - timedelta(days=120)
+        fid = request.query_params.get("funnel")
+        funnel = (Funnel.objects.filter(id=int(fid)).first() if (fid and fid.isdigit())
+                  else Funnel.objects.filter(is_lead_funnel=True).first())
+        if not funnel:
+            return Response({"detail": "no funnel"}, status=status.HTTP_404_NOT_FOUND)
+        kind = "lead" if funnel.is_lead_funnel else "deal"
+        stages = list(funnel.stages.order_by("order"))
+        by_name = {st.name.strip(): st for st in stages}
+        rows = ActivityLog.objects.filter(
+            kind=kind, action__in=["Зміна стадії", "Авто-стадія"],
+            created_at__date__gte=d_from, created_at__date__lte=d_to,
+        ).values_list("object_id", "detail", "created_at")
+        agg = {}
+        for oid, detail, cat in rows:
+            if "→" not in (detail or ""):
+                continue
+            new_name = detail.split("→", 1)[1].split("(")[0].strip()
+            st = by_name.get(new_name)
+            if not st:
+                continue
+            di = cat.date().isoformat()
+            agg.setdefault(di, {}).setdefault(st.id, set()).add(oid)
+        Model = Lead if kind == "lead" else Deal
+        created_map = {}
+        for cd in Model.objects.filter(funnel=funnel, created_at__date__gte=d_from,
+                                       created_at__date__lte=d_to).values_list("created_at", flat=True):
+            di = cd.date().isoformat()
+            created_map[di] = created_map.get(di, 0) + 1
+        days = []
+        cur = d_to
+        while cur >= d_from:
+            di = cur.isoformat()
+            per = agg.get(di, {})
+            days.append({
+                "d": di,
+                "entered": created_map.get(di, 0),
+                "stages": [{"stage": st.name, "stage_id": st.id, "reached": len(per.get(st.id, set()))}
+                           for st in stages],
+            })
+            cur -= timedelta(days=1)
+        return Response({
+            "funnel": funnel.name, "funnel_id": funnel.id,
+            "funnels": [{"id": fn.id, "name": fn.name, "is_lead": fn.is_lead_funnel}
+                        for fn in Funnel.objects.filter(is_archive=False).order_by("order")],
+            "stages": [{"name": st.name, "id": st.id, "is_won": st.is_won, "is_lost": st.is_lost}
+                       for st in stages],
+            "days": days,
+        })

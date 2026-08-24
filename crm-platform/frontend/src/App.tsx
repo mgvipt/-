@@ -24,6 +24,7 @@ import AiCosts from "./pages/AiCosts";
 import WhatsNew from "./pages/WhatsNew";
 import Phone from "./pages/Phone";
 import Employees from "./pages/Employees";
+import ManagerAnalytics from "./pages/ManagerAnalytics";
 import InviteAccept from "./InviteAccept";
 
 function Shell() {
@@ -45,6 +46,7 @@ function Shell() {
           <Route path="/deals/:id" element={<DealCard />} />
           <Route path="/roles" element={<Roles />} />
           <Route path="/employees" element={<Employees />} />
+          <Route path="/manager-analytics" element={<ManagerAnalytics />} />
           <Route path="/inbox" element={<Inbox />} />
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/contact-center" element={<ContactCenter />} />
