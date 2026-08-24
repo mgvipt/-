@@ -466,6 +466,7 @@ export default function Inbox() {
               <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                 <button className="btn" style={{ padding: compact ? "0 9px" : undefined, background: "#fef3c7", color: "#92400e" }} title={t("Поставить задачу по клиенту","Поставити задачу по клієнту")} onClick={() => setTaskOpen(true)}><Icon n="check" size={15} />{!compact && <> {t("Задача","Задача")}</>}</button>
                 <button className="btn btn-green" style={{ padding: compact ? "0 9px" : undefined }} title={t("Позвонить","Подзвонити")}><Icon n="phone" size={15} />{!compact && <> {t("Позвонить","Подзвонити")}</>}</button>
+                <button className="btn" style={{ padding: compact ? "0 9px" : undefined, background: "#fee2e2", color: "#b91c1c", fontWeight: 600 }} title={t("Завершить диалог (закрыть неактуальный чат)","Завершити діалог (закрити неактуальний чат)")} onClick={closeConv}><Icon n="check" size={15} />{!compact && <> {t("Завершить","Завершити")}</>}</button>
                 <button className="btn" style={{ background: "#f1f5f9", fontWeight: 700, lineHeight: 1, padding: "0 11px" }} onClick={() => setMenu((m) => !m)} title={t("Ещё","Ще")}><Icon n="more" size={16} /></button>
               </div>
             </div>
