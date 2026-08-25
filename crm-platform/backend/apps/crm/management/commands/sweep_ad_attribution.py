@@ -61,6 +61,36 @@ class Command(BaseCommand):
                         l2.save(update_fields=["meta_attribution"])
             if hit:
                 touched_usernames += 1
+        # ── ДОЗАПОВНЕННЯ КАМПАНІЇ: Meta у вебхуку віддає лише ad_id (номер оголошення),
+        #    а campaign_id — ні. Але звʼязок «оголошення → кампанія» вже є у нас у
+        #    MetaAdDailyStat (синк реклами). Тягнемо звідти, щоб звіт можна було
+        #    згорнути по кампаніях, а не лише по оголошеннях. Тільки де кампанії ще нема.
+        from apps.crm.models import MetaAdDailyStat
+        camp_map = {}
+        for row in MetaAdDailyStat.objects.exclude(campaign_id="").exclude(campaign_id=None)\
+                                          .values("object_id", "ad_id", "campaign_id", "campaign_name", "adset_id"):
+            for key in (row.get("object_id"), row.get("ad_id")):
+                if key and key not in camp_map:
+                    camp_map[str(key)] = row
+        camp_filled = 0
+        for model in (Lead, Deal):
+            for obj in model.objects.filter(meta_attribution__source_kind="paid_ad"):
+                attr = obj.meta_attribution or {}
+                if attr.get("campaign_id"):
+                    continue
+                row = camp_map.get(str(attr.get("ad_id") or ""))
+                if not row:
+                    continue
+                attr["campaign_id"] = str(row.get("campaign_id") or "")[:180]
+                attr["campaign_name"] = str(row.get("campaign_name") or "")[:180]
+                if row.get("adset_id") and not attr.get("adset_id"):
+                    attr["adset_id"] = str(row.get("adset_id"))[:180]
+                camp_filled += 1
+                if apply:
+                    obj.meta_attribution = attr
+                    obj.save(update_fields=["meta_attribution"])
+
         mode = "APPLIED" if apply else "DRY-RUN"
         self.stdout.write(f"[{mode}] usernames з рекламою: {len(best)} | зачеплено username: {touched_usernames} "
-                          f"| сделок отримали мітку: {tagged_deals} | лідів-двійників узгоджено: {tagged_leads}")
+                          f"| сделок отримали мітку: {tagged_deals} | лідів-двійників узгоджено: {tagged_leads} "
+                          f"| проставлено кампаній: {camp_filled}")
