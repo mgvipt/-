@@ -3306,10 +3306,32 @@ class MetaMarketingView(APIView):
             if is_core_sales_funnel(deal) or has_verified_meta_attribution(deal)
         }
         paid_by_deal = defaultdict(list)
+        _native_pay_ids = []
         for deal in sales_deals.values():
             for payment in deal.payments.all():
                 if payment.is_paid:
                     paid_by_deal[deal.pk].append(payment)
+                    _native_pay_ids.append(payment.pk)
+        # ── ДАТА ОПЛАТИ = коли ГРОШІ РЕАЛЬНО НАДІЙШЛИ (журнал), а не коли менеджер
+        #    натиснув «оплачено». Оплата по реквізитах приходить у банк раніше, ніж її
+        #    відмічають у CRM (напр. #66371: гроші 21.08 19:33, відмітка 25.08 13:40) —
+        #    без цього виручка «переїжджає» на день відмітки і денна аналітика бреше.
+        #    Журнал = джерело правди по грошах; якщо журнальної операції нема — лишається
+        #    час відмітки (як було).
+        _tx_moment = {}
+        if _native_pay_ids:
+            for _row in FinanceTransaction.objects.filter(payment_id__in=_native_pay_ids)\
+                                                  .values("payment_id", "date", "op_time"):
+                try:
+                    _tx_moment[_row["payment_id"]] = timezone.make_aware(
+                        datetime.combine(_row["date"], _row["op_time"] or time.min))
+                except Exception:
+                    pass
+            for _rows in paid_by_deal.values():
+                for _p in _rows:
+                    _moment = _tx_moment.get(getattr(_p, "pk", None))
+                    if _moment:
+                        _p.created_at = _moment   # тільки в памʼяті для звіту; у БД нічого не міняємо
 
         # До 26.06.2026 робочі оплати вже були у фінансовому журналі CRM,
         # але ще не створювали записи crm.Payment. Для історичної аналітики

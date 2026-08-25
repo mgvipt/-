@@ -2607,7 +2607,11 @@ class ManagerDealsView(APIView):
         inc = (Transaction.objects.filter(direction="in", deal__owner=u, date__year=y, date__month=mo)
                .select_related("deal", "deal__contact"))
         by_deal = {}
+        _by_day = {}
+        _deal_amounts = {}
         for t in inc:
+            if t.deal_id and t.deal_id not in _deal_amounts and t.deal:
+                _deal_amounts[t.deal_id] = t.deal.amount
             did = t.deal_id
             rw = by_deal.get(did)
             if not rw:
@@ -2624,9 +2628,32 @@ class ManagerDealsView(APIView):
             ds = t.date.isoformat() if t.date else None
             if ds and (rw["last_date"] is None or ds > rw["last_date"]):
                 rw["last_date"] = ds
+            # ── ПІДСУМКИ ЗА ДЕНЬ: скільки грошей менеджер зібрав кожного дня ──
+            if ds:
+                _dy = _by_day.setdefault(ds, {"date": ds, "amount": 0.0, "deals": set(), "fee": 0.0})
+                _dy["amount"] += float(t.amount_uah or 0)
+                _dy["deals"].add(did)
+        # ── КОМІСІЇ платіжних систем по цих сделках (еквайринг/LiqPay/банк) ──
+        _COMM = ("комис", "коміс", "еквайр", "эквайр", "liqpay", "відсот", "процент")
+        _fee_by_deal = {}
+        if by_deal:
+            for ft in (Transaction.objects.filter(direction="out", deal_id__in=list(by_deal.keys()),
+                                                  date__year=y, date__month=mo).select_related("category")):
+                _cn = ((ft.category.name if ft.category_id else "") or "").lower()
+                if not any(k in _cn for k in _COMM):
+                    continue
+                _fee_by_deal[ft.deal_id] = _fee_by_deal.get(ft.deal_id, 0.0) + float(ft.amount_uah or 0)
+                _fd = ft.date.isoformat() if ft.date else None
+                if _fd and _fd in _by_day:
+                    _by_day[_fd]["fee"] += float(ft.amount_uah or 0)
         rows = sorted(by_deal.values(), key=lambda x: -x["amount"])
         for rw in rows:
-            rw["amount"] = round(rw["amount"])
+            rw["amount"] = round(rw["amount"])                       # фактично надійшло (журнал)
+            rw["fee"] = round(_fee_by_deal.get(rw["deal_id"], 0.0))  # комісія платіжної системи
+            rw["net"] = rw["amount"] - rw["fee"]                     # чисто на рахунок
+            _d0 = _deal_amounts.get(rw["deal_id"])
+            rw["deal_amount"] = round(float(_d0)) if _d0 is not None else None  # сума сделки
+            rw["remaining"] = (rw["deal_amount"] - rw["amount"]) if rw["deal_amount"] is not None else None
         # зведення по воронках: скільки грошей привів менеджер у кожній воронці
         _bf = {}
         for rw in rows:
@@ -2634,9 +2661,15 @@ class ManagerDealsView(APIView):
             _b = _bf.setdefault(_fn, {"funnel": _fn, "amount": 0, "deals": 0})
             _b["amount"] += rw["amount"]; _b["deals"] += 1
         by_funnel = sorted(_bf.values(), key=lambda x: -x["amount"])
+        by_day = sorted(({"date": d0["date"], "amount": round(d0["amount"]), "fee": round(d0["fee"]),
+                          "net": round(d0["amount"] - d0["fee"]), "deals": len(d0["deals"])}
+                         for d0 in _by_day.values()), key=lambda x: x["date"], reverse=True)
         return Response({"user_id": u.id, "user_name": u.get_full_name() or u.username, "period": period,
                          "rows": rows, "total": round(sum(rw["amount"] for rw in rows)),
-                         "deals": len(rows), "count": sum(rw["count"] for rw in rows), "by_funnel": by_funnel})
+                         "total_fee": round(sum(rw["fee"] for rw in rows)),
+                         "total_net": round(sum(rw["net"] for rw in rows)),
+                         "deals": len(rows), "count": sum(rw["count"] for rw in rows),
+                         "by_funnel": by_funnel, "by_day": by_day})
 
 
 class SalaryView(APIView):
