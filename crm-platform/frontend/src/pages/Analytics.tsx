@@ -10,6 +10,7 @@ import { useLang } from "../i18n";
 import { useAuth } from "../auth";
 import { Icon } from "../Icon";
 import MetaMarketing from "./MetaMarketing";
+import { Cone } from "../FunnelCone";
 
 /* ─── ТИПЫ ─────────────────────────────────────────────────────────────── */
 interface SalesData {
@@ -108,47 +109,46 @@ function ChannelsTab() {
 }
 
 /* ─── ВКЛАДКА ПРОДАЖІ ──────────────────────────────────────────────────── */
-/* ─── 3D-конус воронки (центрированный, номера слева, подписи справа) ─── */
-const CONE_PALETTE = ["#17a2b8", "#7cb342", "#e5533c", "#f39c12", "#5c6bc0", "#26a69a", "#8e44ad", "#c0392b"];
-function Cone({ d, t }: { d: any; t: any }) {
-  if (!d || !d.stages || d.stages.length === 0) return null;
-  const base = (d.stages[0]?.through) || d.entered || 1;
-  const wOf = (n: number) => Math.max((n / base) * 100, 15);
-  const GC = "30px 1fr minmax(140px,230px)";
+/* Конус вынесен в ../FunnelCone (переиспользуется в Аналитике и Маркетинге) */
+
+/* ─── Дневная динамика: сколько лидов зашло и сколько продаж по дням ─── */
+function DailyChart({ from, to }: { from: string; to: string }) {
+  const { t } = useLang();
+  const [lead, setLead] = useState<any>(null);
+  const [main, setMain] = useState<any>(null);
+  useEffect(() => {
+    api.get<any>(`/api/analytics/funnel-daily/?from=${from}&to=${to}`).then((d) => {
+      setLead(d);
+      const mf = (d.funnels || []).find((f: any) => /основн/i.test(f.name));
+      if (mf) api.get<any>(`/api/analytics/funnel-daily/?from=${from}&to=${to}&funnel=${mf.id}`).then(setMain).catch(() => {});
+    }).catch(() => {});
+  }, [from, to]);
+  if (!lead) return null;
+  const wonByDay: Record<string, number> = {};
+  (main?.days || []).forEach((d: any) => {
+    const w = (d.stages || []).filter((s: any) => (main.stages.find((x: any) => x.id === s.stage_id) || {}).is_won).reduce((a: number, s: any) => a + (s.reached || 0), 0);
+    wonByDay[d.d] = w;
+  });
+  const days = (lead.days || []).slice().reverse(); // от старых к новым
+  const maxEnter = Math.max(...days.map((d: any) => d.entered || 0), 1);
   return (
-    <div style={{ maxWidth: 760, margin: "0 auto" }}>
-      {(d.stages || []).map((st: any, i: number) => {
-        const wTop = i === 0 ? 100 : wOf(d.stages[i - 1].through);
-        const wBot = wOf(st.through);
-        const clip = `polygon(${(50 - wTop / 2).toFixed(2)}% 0, ${(50 + wTop / 2).toFixed(2)}% 0, ${(50 + wBot / 2).toFixed(2)}% 100%, ${(50 - wBot / 2).toFixed(2)}% 100%)`;
-        const col = CONE_PALETTE[i % CONE_PALETTE.length];
-        const drop = i > 0 && st.pct_prev < 55;
-        return (
-          <div key={st.id} style={{ display: "grid", gridTemplateColumns: GC, gap: 10, alignItems: "stretch", minHeight: 52 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ width: 26, height: 26, borderRadius: 7, background: "#2f3b52", color: "#fff", fontWeight: 800, fontSize: 13, display: "grid", placeItems: "center" }}>{i + 1}</span>
-            </div>
-            <div style={{ position: "relative" }}>
-              <div style={{ position: "absolute", inset: "1px 0", clipPath: clip, background: `linear-gradient(180deg, ${col}, ${col}bb)`, boxShadow: "inset 0 3px 7px rgba(255,255,255,.4), inset 0 -7px 11px rgba(0,0,0,.18)" }} />
-              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#fff", fontWeight: 800, fontSize: 16, textShadow: "0 1px 3px rgba(0,0,0,.45)" }}>
-                {st.through}
-                {(st.man > 0 || st.ai > 0) && <span style={{ fontSize: 11, fontWeight: 600, opacity: .95 }}>{st.man > 0 ? `🤖${st.ai} 👤${st.man}` : `🤖${st.ai}`}</span>}
+    <div className="panel" style={{ marginTop: 6 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>📈 {t("Динамика по дням", "Динаміка по днях")}</div>
+      <div className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>{t("Синие столбцы — сколько лидов зашло в этот день. Зелёная точка — сколько продаж (основной продукт) в этот день.", "Сині стовпці — скільки лідів зайшло. Зелена крапка — скільки продажів того дня.")}</div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 150, overflowX: "auto", paddingBottom: 4 }}>
+        {days.map((d: any) => {
+          const h = ((d.entered || 0) / maxEnter) * 120;
+          const won = wonByDay[d.d] || 0;
+          return (
+            <div key={d.d} style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 30, flex: 1 }} title={`${d.d}: ${t("зашло", "зайшло")} ${d.entered || 0}${won ? `, ${t("продаж", "продажів")} ${won}` : ""}`}>
+              <span style={{ fontSize: 10, color: "#64748b", fontWeight: 600 }}>{d.entered || 0}</span>
+              <div style={{ width: "70%", maxWidth: 26, height: Math.max(h, 2), background: "linear-gradient(180deg,#4a90cf,#2E6FB0)", borderRadius: "4px 4px 0 0", position: "relative" }}>
+                {won > 0 && <span style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", fontSize: 10, color: "#166534", fontWeight: 800 }}>●{won}</span>}
               </div>
+              <span style={{ fontSize: 9, color: "#94a3b8", marginTop: 3, whiteSpace: "nowrap" }}>{d.d.slice(5)}</span>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "#334155", lineHeight: 1.2 }}>{st.name}</span>
-              <span style={{ fontSize: 11.5, color: drop ? "#b91c1c" : "#94a3b8", fontWeight: 600 }}>{i === 0 ? t("вход · 100%", "вхід · 100%") : `${st.pct_prev}% ${t("от преды.", "від попер.")}`}{drop && " ⚠"}</span>
-            </div>
-          </div>
-        );
-      })}
-      <div style={{ display: "grid", gridTemplateColumns: GC, gap: 10, alignItems: "center", marginTop: 10 }}>
-        <div />
-        <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ flex: 1, height: 32, borderRadius: 8, background: "#fef2f2", border: "1px solid #fca5a5", display: "flex", alignItems: "center", justifyContent: "center", color: "#b91c1c", fontWeight: 700, fontSize: 12.5 }}>❌ {t("Потеряно", "Втрачено")}: {d.lost.count} · {d.lost.pct}%</div>
-          {d.won.count > 0 && <div style={{ flex: 1, height: 32, borderRadius: 8, background: "#f0fdf4", border: "1px solid #86efac", display: "flex", alignItems: "center", justifyContent: "center", color: "#166534", fontWeight: 700, fontSize: 12.5 }}>✅ {t("Продано", "Продано")}: {d.won.count} · {d.won.pct}%</div>}
-        </div>
-        <div />
+          );
+        })}
       </div>
     </div>
   );
@@ -479,7 +479,8 @@ function DaysTab() {
         );
       })}
       {selected.length === 0 && <div className="muted" style={{ padding: 20 }}>{t("Выбери хотя бы одну воронку выше", "Обери хоча б одну воронку вище")}</div>}
-      <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5, marginTop: 4 }}>
+      <DailyChart from={from} to={to} />
+      <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5, marginTop: 10 }}>
         {t("Единый источник со вкладкой «Продажи»: «прошло через этап» — накопительно (достиг статуса или следующего). «Лід отриманий» = все зашедшие. 🤖 Юля, 👤 менеджер. % — сколько прошло дальше.", "Єдине джерело з «Продажі»: накопичено. «Лід отриманий» = всі, хто зайшов. 🤖 Юля, 👤 менеджер.")}
       </div>
     </div>

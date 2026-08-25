@@ -2,6 +2,7 @@ import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react
 import { createPortal } from "react-dom";
 import { api } from "../api";
 import { useLang } from "../i18n";
+import { Cone, MetaCone } from "../FunnelCone";
 
 // Явна підказка (тултип), яка показується ОДРАЗУ при наведенні і НЕ обрізається
 // прокруткою таблиці (рендериться в body через портал, слідує за курсором).
@@ -123,39 +124,41 @@ function dateTime(v: any) {
   return new Date(v).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-/* ─── Сквозная воронка Меты: Показы → Клики → Диалоги → Лиды → Тест → Оплата ─── */
+/* ─── Дашборды воронок: выбор «Воронка Меты» / «Воронка продаж (CRM)» ─── */
 function MetaConeFunnel({ from, to }: { from: string; to: string }) {
   const { t } = useLang();
+  const [mode, setMode] = useState<"meta" | "crm">("meta");
   const [d, setD] = useState<any>(null);
+  const [funnels, setFunnels] = useState<any[]>([]);
+  const [crmFid, setCrmFid] = useState<string>("");
+  const [crm, setCrm] = useState<any>(null);
   useEffect(() => { api.get<any>(`/api/meta-marketing/funnel/?from=${from}&to=${to}`).then(setD).catch(() => setD(null)); }, [from, to]);
-  if (!d || !d.stages) return null;
-  const COLORS: any = { impressions: "#2563eb", clicks: "#7c3aed", messages: "#0f766e", leads: "#0284c7", test: "#B67A12", won: "#2F8F5B" };
-  const top = d.stages[0]?.n || 1;
-  const logMax = Math.log10(top + 1) || 1;
-  const wOf = (n: number) => Math.max((Math.log10(n + 1) / logMax) * 100, 6);
-  const num = (n: number) => Number(n || 0).toLocaleString("ru-RU");
+  useEffect(() => {
+    if (mode !== "crm") return;
+    const q = `?from=${from}&to=${to}` + (crmFid ? `&funnel=${crmFid}` : "");
+    api.get<any>("/api/analytics/sales-funnel/" + q).then((r) => { setCrm(r); setFunnels((f) => f.length ? f : (r.funnels || [])); }).catch(() => {});
+  }, [mode, from, to, crmFid]);
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
-      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🎯 {t("Воронка Меты: от показа до оплаты", "Воронка Мети: від показу до оплати")}</div>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>{t("Где теряются лиды на каждом этапе рекламы. «% от преды.» — конверсия шага. Тест/оплата считаются по клиентам рекламных лидов; пока атрибуция молодая, значения могут быть малы.", "Де губляться ліди на кожному етапі. «% від попер.» — конверсія кроку. Тест/оплата — по клієнтах рекламних лідів.")}</div>
-      <div>
-        {d.stages.map((s: any, i: number) => (
-          <div key={s.key} style={{ marginBottom: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>{i + 1}. {s.label}</span>
-              {i > 0 && <span style={{ fontSize: 12, color: "#64748b" }}><b style={{ color: s.pct_prev < 20 ? "#b91c1c" : "#475569" }}>{s.pct_prev}%</b> {t("от преды.", "від попер.")}</span>}
-            </div>
-            <div style={{ height: 30, width: `${wOf(s.n)}%`, minWidth: 62, background: `linear-gradient(90deg, ${COLORS[s.key]}, ${COLORS[s.key]}bb)`, borderRadius: 6, display: "flex", alignItems: "center", paddingLeft: 10, color: "#fff", fontWeight: 700, fontSize: 13 }}>{num(s.n)}</div>
-          </div>
-        ))}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, fontSize: 15 }}>🎯 {t("Дашборды воронок", "Дашборди воронок")}</div>
+        <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
+          <button onClick={() => setMode("meta")} className={mode === "meta" ? "btn btn-primary" : "btn btn-light"} style={{ fontSize: 12.5 }}>{t("Воронка Меты", "Воронка Мети")}</button>
+          <button onClick={() => setMode("crm")} className={mode === "crm" ? "btn btn-primary" : "btn btn-light"} style={{ fontSize: 12.5 }}>{t("Воронка продаж (CRM)", "Воронка продажів (CRM)")}</button>
+        </div>
+        {mode === "crm" && funnels.length > 0 && <select value={crmFid} onChange={(e) => setCrmFid(e.target.value)} style={{ height: 30, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 12.5, background: "#fff" }}>{funnels.map((f: any) => <option key={f.id} value={f.id}>{f.name}{f.is_lead ? " ★" : ""}</option>)}</select>}
       </div>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 12, paddingTop: 12, borderTop: "1px solid #eef2f7", fontSize: 13 }}>
-        <span className="muted">{t("Расход", "Витрати")}: <b style={{ color: "#0f172a" }}>{num(Math.round(d.spend_uah))} ₴</b></span>
-        <span className="muted">{t("Цена лида", "Ціна ліда")}: <b style={{ color: "#0f172a" }}>{d.cost_per_lead != null ? num(Math.round(d.cost_per_lead)) + " ₴" : "—"}</b></span>
-        <span className="muted">{t("Цена продажи", "Ціна продажу")}: <b style={{ color: "#0f172a" }}>{d.cost_per_sale != null ? num(Math.round(d.cost_per_sale)) + " ₴" : "—"}</b></span>
-        <span className="muted">{t("Выручка", "Виручка")}: <b style={{ color: "#166534" }}>{num(Math.round(d.revenue))} ₴</b></span>
-        <span className="muted">ROAS: <b style={{ color: (d.roas || 0) >= 1 ? "#166534" : "#b91c1c" }}>{d.roas != null ? d.roas : "—"}</b></span>
-      </div>
+      {mode === "meta" ? (
+        <>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>{t("Где теряются лиды от рекламы до продажи. «% от преды.» — конверсия шага. Тест/оплата — по клиентам рекламных лидов; пока атрибуция молодая, значения малы.", "Де губляться ліди від реклами до продажу. «% від попер.» — конверсія кроку.")}</div>
+          {d ? <MetaCone d={d} t={t} /> : <div className="muted">…</div>}
+        </>
+      ) : (
+        <>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>{t("Воронка CRM — тот же расчёт «прошло через этап», что в Аналитике продаж.", "Воронка CRM — той самий розрахунок, що в Аналітиці продажів.")}</div>
+          {crm ? <Cone d={crm} t={t} /> : <div className="muted">…</div>}
+        </>
+      )}
     </div>
   );
 }
@@ -190,7 +193,7 @@ export default function MetaMarketing() {
     { key: "ads", ru: "Реклама", ua: "Реклама" },
     { key: "creatives", ru: "Креативы", ua: "Креативи" },
     { key: "content", ru: "Органика · SMM", ua: "Органіка · SMM" },
-    { key: "funnel", ru: "Воронка CRM", ua: "Воронка CRM" },
+    { key: "funnel", ru: "Дашборды", ua: "Дашборди" },
     { key: "forms", ru: "Лид-формы", ua: "Лід-форми" },
     { key: "sources", ru: "Источники", ua: "Джерела" },
   ];
