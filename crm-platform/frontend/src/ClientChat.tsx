@@ -203,6 +203,23 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
           {cinfo.social_link && <a href={cinfo.social_link} target="_blank" rel="noreferrer" style={{ color: "#2563eb", fontSize: 11.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 3 }}><Icon n="link" size={12} /> профіль</a>}
         </div>
       )}
+      {/* З ЯКОЇ РЕКЛАМИ прийшов клієнт: менеджер/агент одразу бачить продукт (напр. «Галатея»),
+          бо ChatPlace рекламний контекст не передає. Показуємо лише для платного кліку. */}
+      {cinfo && cinfo.meta_ad && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "linear-gradient(135deg,#fff7ed,#fef3c7)", border: "1px solid #fed7aa", borderRadius: 9, padding: "5px 8px", marginBottom: 6 }}>
+          {cinfo.meta_ad.thumb ? <img src={cinfo.meta_ad.thumb} alt="" style={{ width: 34, height: 34, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} /> : <span style={{ fontSize: 17 }}>📣</span>}
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: .3, textTransform: "uppercase", color: "#c2410c" }}>Прийшов з реклами</div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={[cinfo.meta_ad.title, cinfo.meta_ad.ad_name, cinfo.meta_ad.campaign].filter(Boolean).join(" · ")}>
+              {cinfo.meta_ad.title || cinfo.meta_ad.ad_name || cinfo.meta_ad.campaign || "Оголошення"}
+            </div>
+            {(cinfo.meta_ad.campaign && cinfo.meta_ad.campaign !== cinfo.meta_ad.title) && (
+              <div style={{ fontSize: 10.5, color: "#92400e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cinfo.meta_ad.campaign}</div>
+            )}
+          </div>
+          {cinfo.meta_ad.permalink && <a href={cinfo.meta_ad.permalink} target="_blank" rel="noreferrer" title="Відкрити публікацію" style={{ color: "#c2410c", fontSize: 11.5, textDecoration: "none", flexShrink: 0, fontWeight: 700 }}>↗</a>}
+        </div>
+      )}
       {allConvs.length > 0 && (
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
           {(() => {
