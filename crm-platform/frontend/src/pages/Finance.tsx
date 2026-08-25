@@ -3,7 +3,7 @@
  *  Вкладки: Дашборд (ДДС) · P&L (ATM) · Точка беззбитковості · Фінмодель.
  *  Источник формул — Wallcov Cashflow. Документация: docs/TZ-finmodule.md.
  * ========================================================================== */
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useState, useRef } from "react";
 import { api } from "../api";
 import DealCard from "./DealCard";
 import TxCardModal from "../TxCardModal";
@@ -3144,6 +3144,31 @@ function ManagerDealsModal({ user, period, onClose }: { user: any; period: strin
   const nav = useNavigate();
   const [d, setD] = useState<any>(null);
   const [min0, setMin0] = useState(false);   // згорнуто в смужку (щоб працювати в основному вікні)
+  // ── ШИРИНА ПАНЕЛІ: тягнемо за лівий край, запамʼятовується між сесіями ──
+  const [w, setW] = useState<number>(() => {
+    const saved = Number(localStorage.getItem("mgr_drawer_w") || 0);
+    const maxW = Math.max(420, window.innerWidth - 40);
+    if (saved >= 420) return Math.min(saved, maxW);
+    return Math.min(980, Math.round(window.innerWidth * 0.96));
+  });
+  const dragRef = useRef(false);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current) return;
+      const nw = Math.min(Math.max(window.innerWidth - e.clientX, 420), window.innerWidth - 40);
+      setW(nw);
+    };
+    const onUp = () => {
+      if (!dragRef.current) return;
+      dragRef.current = false;
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      try { localStorage.setItem("mgr_drawer_w", String(Math.round(w))); } catch { /* */ }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [w]);
   useEffect(() => { setD(null); api.get<any>(`/api/finance/salary/deals/?user=${user.id}&period=${period}`).then(setD).catch(() => setD({ rows: [], total: 0, deals: 0, count: 0 })); }, [user.id, period]);
 
   /* ВИСУВНА ПАНЕЛЬ СПРАВА: не перекриває екран затемненням — можна далі працювати
@@ -3157,7 +3182,15 @@ function ManagerDealsModal({ user, period, onClose }: { user: any; period: strin
 
   const cell: any = { padding: "6px 9px", whiteSpace: "nowrap" };
   return (
-    <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: "min(980px, 96vw)", zIndex: 1000, background: "#fff", boxShadow: "-8px 0 28px rgba(15,23,42,.22)", display: "flex", flexDirection: "column", borderLeft: "1px solid #e2e8f0" }}>
+    <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: w, zIndex: 1000, background: "#fff", boxShadow: "-8px 0 28px rgba(15,23,42,.22)", display: "flex", flexDirection: "column", borderLeft: "1px solid #e2e8f0" }}>
+      {/* ручка: тягни ліворуч — панель ширшає, праворуч — вужчає (подвійний клік = на весь екран) */}
+      <div
+        onMouseDown={(e) => { e.preventDefault(); dragRef.current = true; document.body.style.userSelect = "none"; document.body.style.cursor = "col-resize"; }}
+        onDoubleClick={() => { const full = window.innerWidth - 40; setW(full); try { localStorage.setItem("mgr_drawer_w", String(full)); } catch { /* */ } }}
+        title={t("Потяните, чтобы изменить ширину (двойной клик — на весь экран)", "Потягніть, щоб змінити ширину (подвійний клік — на весь екран)")}
+        style={{ position: "absolute", left: -3, top: 0, bottom: 0, width: 9, cursor: "col-resize", zIndex: 5 }}>
+        <div style={{ position: "absolute", left: 3, top: "50%", transform: "translateY(-50%)", width: 4, height: 46, borderRadius: 3, background: "#cbd5e1" }} />
+      </div>
       {/* ── ШАПКА (закріплена) ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "1px solid #e5eaf1", background: "#f8fafc", flexShrink: 0 }}>
         <b style={{ fontSize: 15, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>💰 {user.name} · {t("оплаты за", "оплати за")} {period}</b>
