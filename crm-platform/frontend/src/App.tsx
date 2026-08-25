@@ -34,19 +34,34 @@ function Shell() {
   if (loading) return <div className="spin">Загрузка…</div>;
   if (!me) return <Login />;
 
+  // Доступ до розділу: немає права — сторінка не відкривається навіть за прямим лінком
+  const Guard = ({ perm, children }: { perm: string; children: any }) => {
+    const { can } = useAuth();
+    if (!can(perm)) return <div className="muted" style={{ padding: 40, fontSize: 15 }}>Немає доступу до цього розділу</div>;
+    return children;
+  };
+  const homePath = me?.is_superuser ? "/leads"
+    : (me?.permissions || []).includes("lead.view") ? "/leads"
+    : (me?.permissions || []).includes("deal.view") ? "/deals"
+    : (me?.permissions || []).includes("inbox.view") ? "/inbox"
+    : (me?.permissions || []).includes("task.view") ? "/tasks"
+    : (me?.permissions || []).includes("analytics.view") ? "/analytics"
+    : (me?.permissions || []).includes("marketing.view") ? "/analytics"
+    : "/clients";
+
   return (
     <BrowserRouter>
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<Navigate to="/leads" replace />} />
-          <Route path="/leads" element={<Leads />} />
-          <Route path="/leads/:id" element={<LeadCard />} />
-          <Route path="/deals" element={<Deals />} />
-          <Route path="/deals/:id" element={<DealCard />} />
+          <Route index element={<Navigate to={homePath} replace />} />
+          <Route path="/leads" element={<Guard perm="lead.view"><Leads /></Guard>} />
+          <Route path="/leads/:id" element={<Guard perm="lead.view"><LeadCard /></Guard>} />
+          <Route path="/deals" element={<Guard perm="deal.view"><Deals /></Guard>} />
+          <Route path="/deals/:id" element={<Guard perm="deal.view"><DealCard /></Guard>} />
           <Route path="/roles" element={<Roles />} />
           <Route path="/employees" element={<Employees />} />
-          <Route path="/inbox" element={<Inbox />} />
-          <Route path="/tasks" element={<Tasks />} />
+          <Route path="/inbox" element={<Guard perm="inbox.view"><Inbox /></Guard>} />
+          <Route path="/tasks" element={<Guard perm="task.view"><Tasks /></Guard>} />
           <Route path="/contact-center" element={<ContactCenter />} />
           <Route path="/phone" element={<Phone />} />
           <Route path="/warehouse" element={<Warehouse />} />

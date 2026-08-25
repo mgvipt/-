@@ -13,10 +13,10 @@ import GlobalSearch from "../GlobalSearch";
 
 // [путь, заголовок, иконка, требуемое право (или null)]
 const NAV: [string, string, string, string, string | null][] = [
-  ["/leads", "Лиды", "Ліди", "list", null],
-  ["/deals", "Сделки", "Угоди", "handshake", null],
-  ["/inbox", "Чаты · Открытые линии", "Чати · Відкриті лінії", "chat", null],
-  ["/tasks", "Задачи", "Задачі", "check", null],
+  ["/leads", "Лиды", "Ліди", "list", "lead.view"],
+  ["/deals", "Сделки", "Угоди", "handshake", "deal.view"],
+  ["/inbox", "Чаты · Открытые линии", "Чати · Відкриті лінії", "chat", "inbox.view"],
+  ["/tasks", "Задачи", "Задачі", "check", "task.view"],
   ["/contact-center", "Контакт-центр", "Контакт-центр", "🎛️", "roles.manage"],
   ["/phone", "Телефония", "Телефонія", "phone", "telephony.view"],
   ["/warehouse", "Складской учёт", "Складський облік", "package", "warehouse.view"],
