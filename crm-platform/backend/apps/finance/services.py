@@ -133,7 +133,23 @@ def compute_pnl(d_from, d_to):
         "margin": round(margin), "margin_pct": round(margin / revenue * 100, 1) if revenue else round(_margin_pct(arts), 2),
         "operating": round(operating),
         "net": round(net), "net_pct": round(net / revenue * 100, 1) if revenue else 0,
+        # ── ФАКТ ПО КАСІ (журнал), поруч із НОРМАТИВНОЮ моделлю вище ──
+        # Навіщо: «direct/operating» рахуються за ставками фінмоделі (% і ₴/міс), а не за
+        # реальними витратами. Тому «net» — це ПЛАН, і він може сильно відрізнятись від
+        # грошей у касі (аудит 25.08: рік модель 930к проти факту 389к). Показуємо обидві
+        # цифри, щоб не приймати модель за факт.
+        "fact_expense": round(_fact_expense(d_from, d_to)),
+        "fact_net": round(revenue - _fact_expense(d_from, d_to)),
+        "is_model": True,
     }
+
+
+def _fact_expense(d_from, d_to):
+    """Фактичні витрати з журналу за період (каса, без переказів між рахунками)."""
+    from django.db.models import Sum
+    from .models import Transaction
+    return float(Transaction.objects.filter(direction="out", date__gte=d_from, date__lte=d_to)
+                 .aggregate(s=Sum("amount_uah"))["s"] or 0)
 
 
 def compute_breakeven(d_from, d_to):

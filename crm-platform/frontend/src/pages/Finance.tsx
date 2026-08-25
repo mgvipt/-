@@ -1633,15 +1633,26 @@ function PnL() {
     [tr("Выручка","Виручка"), d.revenue, "#0f172a", d.deals + tr(" сделок"," угод")],
     [tr("− Прямые расходы","− Прямі витрати"), -d.direct, "#ef4444", d.direct_pct + tr("% с выручки + AI ","% з виручки + AI ") + money(d.ai_total)],
     [tr("= Маржа","= Маржа"), d.margin, "#16a34a", d.margin_pct + "%"],
-    [tr("− Операционные (постоянные + переменные)","− Операційні (постійні + змінні)"), -d.operating, "#ef4444", tr("за период","за період")],
-    [tr("= Чистая прибыль","= Чистий прибуток"), d.net, d.net >= 0 ? "#16a34a" : "#dc2626", d.net_pct + "%"],
+    [tr("− Операционные (постоянные + переменные)","− Операційні (постійні + змінні)"), -d.operating, "#ef4444", tr("норматив ₴/мес за период","норматив ₴/міс за період")],
+    [tr("= Чистая прибыль (по модели)","= Чистий прибуток (за моделлю)"), d.net, d.net >= 0 ? "#16a34a" : "#dc2626", d.net_pct + "%"],
+  ];
+  // ── ФАКТ ПО КАСІ поруч із моделлю (аудит 25.08: модель завищує) ──
+  const factRows: [string, number, string, string][] = (d.fact_net == null) ? [] : [
+    [tr("Выручка (та же)","Виручка (та сама)"), d.revenue, "#0f172a", tr("деньги пришли","гроші надійшли")],
+    [tr("− Расходы ФАКТ (журнал)","− Витрати ФАКТ (журнал)"), -d.fact_expense, "#ef4444", tr("реально потрачено","реально витрачено")],
+    [tr("= Прибыль ФАКТ (касса)","= Прибуток ФАКТ (каса)"), d.fact_net, d.fact_net >= 0 ? "#16a34a" : "#dc2626", d.revenue ? Math.round(d.fact_net / d.revenue * 100) + "%" : "0%"],
   ];
   return (
     <>
       <Period from={from} to={to} set={load} />
       <PnLNote />
       <div className="panel" style={{ margin: 0, maxWidth: 620 }}>
-        <b style={{ fontSize: 14 }}>{tr("P&L по методологии ATM","P&L по методології ATM")} · {d.deals} {tr("сделок","угод")}</b>
+        <div>
+          <b style={{ fontSize: 14 }}>{tr("P&L по модели (план)","P&L за моделлю (план)")} · {d.deals} {tr("сделок","угод")}</b>
+          <div style={{ fontSize: 11.5, color: "#b45309", marginTop: 3, lineHeight: 1.4 }}>
+            ⚠️ {tr("Расходы здесь берутся по НОРМАТИВАМ финмодели (% и ₴/мес), а не по факту. Это план. Реальные деньги — в блоке «Факт по кассе» ниже.","Витрати тут беруться за НОРМАТИВАМИ фінмоделі (% і ₴/міс), а не за фактом. Це план. Реальні гроші — у блоці «Факт по касі» нижче.")}
+          </div>
+        </div>
         <table style={{ width: "100%", marginTop: 10 }}>
           <tbody>
             {rows.map(([t, v, c, note], i) => (
@@ -1654,6 +1665,32 @@ function PnL() {
           </tbody>
         </table>
       </div>
+      {factRows.length > 0 && (
+        <div className="panel" style={{ margin: "12px 0 0", maxWidth: 620, borderLeft: "4px solid #16a34a" }}>
+          <div>
+            <b style={{ fontSize: 14 }}>💵 {tr("Факт по кассе (журнал)","Факт по касі (журнал)")}</b>
+            <div style={{ fontSize: 11.5, color: "#475569", marginTop: 3, lineHeight: 1.4 }}>
+              {tr("Реальные деньги: сколько пришло минус сколько потратили по журналу за тот же период. Это факт, а не план.","Реальні гроші: скільки надійшло мінус скільки витратили за журналом за той самий період. Це факт, а не план.")}
+            </div>
+          </div>
+          <table style={{ width: "100%", marginTop: 10 }}>
+            <tbody>
+              {factRows.map(([t, v, c, note], i) => (
+                <tr key={i} style={{ borderBottom: "1px solid #f1f5f9", background: t.startsWith("=") ? "#f0fdf4" : "" }}>
+                  <td style={{ padding: "9px 4px", fontWeight: t.startsWith("=") ? 700 : 400 }}>{t}</td>
+                  <td className="muted" style={{ fontSize: 12, textAlign: "right" }}>{note}</td>
+                  <td style={{ padding: "9px 4px", textAlign: "right", fontWeight: 600, color: c, fontVariantNumeric: "tabular-nums" }}>{money(v)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {Math.abs((d.net || 0) - (d.fact_net || 0)) > 1000 && (
+            <div style={{ marginTop: 8, fontSize: 11.5, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "6px 9px", lineHeight: 1.4 }}>
+              {tr("Разница между планом и фактом:","Різниця між планом і фактом:")} <b>{money(Math.abs((d.net || 0) - (d.fact_net || 0)))}</b>. {tr("Для решений по деньгам смотрите ФАКТ.","Для рішень по грошах дивіться ФАКТ.")}
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 }
