@@ -21,7 +21,7 @@ const NAV: [string, string, string, string, string | null][] = [
   ["/phone", "Телефония", "Телефонія", "phone", "telephony.view"],
   ["/warehouse", "Складской учёт", "Складський облік", "package", "warehouse.view"],
   ["/wh", "Отгрузка", "Відвантаження", "truck", "warehouse.view"],
-  ["/clients", "Клиенты", "Клієнти", "users", null],
+  ["/clients", "Клиенты", "Клієнти", "users", "contact.view"],
   ["/development", "Развитие", "Розвиток", "trophy", "development.view"],
   ["/finance", "Финансы", "Фінанси", "wallet", "finance.view"],
   ["/analytics", "Аналитика", "Аналітика", "chart", "analytics.view"],

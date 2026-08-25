@@ -47,7 +47,8 @@ function Shell() {
     : (me?.permissions || []).includes("task.view") ? "/tasks"
     : (me?.permissions || []).includes("analytics.view") ? "/analytics"
     : (me?.permissions || []).includes("marketing.view") ? "/analytics"
-    : "/clients";
+    : (me?.permissions || []).includes("contact.view") ? "/clients"
+    : "/profile";
 
   return (
     <BrowserRouter>
@@ -66,7 +67,7 @@ function Shell() {
           <Route path="/phone" element={<Phone />} />
           <Route path="/warehouse" element={<Warehouse />} />
           <Route path="/wh" element={<WarehouseWork />} />
-          <Route path="/clients" element={<Clients />} />
+          <Route path="/clients" element={<Guard perm="contact.view"><Clients /></Guard>} />
           <Route path="/clients/:id" element={<ClientCard />} />
           <Route path="/duplicates" element={<Duplicates />} />
           <Route path="/development" element={<Razvitok />} />
