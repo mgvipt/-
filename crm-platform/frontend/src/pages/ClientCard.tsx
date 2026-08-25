@@ -466,10 +466,12 @@ function ClientDebtsBlock({ contactId }: { contactId: number }) {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4, flexWrap: "wrap", gap: 6 }}>
               <div className="muted" style={{ fontSize: 11.5, fontWeight: 700, color: cl }}>{title} · {list.length}</div>
               {list.length > 5 && (
-                <span style={{ display: "inline-flex", gap: 4, alignItems: "center", fontSize: 11 }}>
-                  <span className="muted">{t("Показывать:","Показувати:")}</span>
-                  {[10, 25, 50].map((nn) => <button key={nn} onClick={() => setShowN((pp) => ({ ...pp, [kind]: nn }))} style={{ padding: "1px 7px", borderRadius: 6, border: "1px solid " + (lim === nn ? cl : "#e2e8f0"), background: lim === nn ? cl : "#fff", color: lim === nn ? "#fff" : "#64748b", cursor: "pointer", fontWeight: 600 }}>{nn}</button>)}
-                  <button onClick={() => setShowN((pp) => ({ ...pp, [kind]: 100000 }))} style={{ padding: "1px 7px", borderRadius: 6, border: "1px solid " + (lim >= 100000 ? cl : "#e2e8f0"), background: lim >= 100000 ? cl : "#fff", color: lim >= 100000 ? "#fff" : "#64748b", cursor: "pointer", fontWeight: 600 }}>{t("все","всі")}</button>
+                <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                  <span className="muted" style={{ fontSize: 11 }}>{t("Показывать:","Показувати:")}</span>
+                  <select value={lim} onChange={(e) => setShowN((pp) => ({ ...pp, [kind]: Number(e.target.value) }))} style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 12 }}>
+                    {[5, 10, 25, 50].map((nn) => <option key={nn} value={nn}>{nn}</option>)}
+                    <option value={100000}>{t("все","всі")}</option>
+                  </select>
                 </span>
               )}
             </div>
