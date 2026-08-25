@@ -438,6 +438,7 @@ function ClientDebtsBlock({ contactId }: { contactId: number }) {
   const canPay = can("finance.debts.pay") || can("roles.manage");
   const [rows, setRows] = useState<any[]>([]);
   const [showN, setShowN] = useState<Record<string, number>>({});
+  const [pageN, setPageN] = useState<Record<string, number>>({});
   const load = () => api.get<any>(`/api/contacts/${contactId}/finance/`).then((d) => setRows(d?.debts_list || [])).catch(() => setRows([]));
   useEffect(() => { load(); }, [contactId]);
   // ДЗЕРКАЛО кнопки «Оплачено» з Фінанси → Дт/Кт: той самий серверний обробник
@@ -460,7 +461,9 @@ function ClientDebtsBlock({ contactId }: { contactId: number }) {
         const list = rows.filter((x) => x.kind === kind);
         if (!list.length) return null;
         const lim = showN[kind] ?? 10;
-        const shown = list.slice(0, lim);
+        const maxPg = Math.max(0, Math.ceil(list.length / lim) - 1);
+        const pg = Math.min(pageN[kind] ?? 0, maxPg);
+        const shown = list.slice(pg * lim, pg * lim + lim);
         return (
           <div key={kind} style={{ marginBottom: 8 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4, flexWrap: "wrap", gap: 6 }}>
@@ -468,7 +471,7 @@ function ClientDebtsBlock({ contactId }: { contactId: number }) {
               {list.length > 5 && (
                 <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
                   <span className="muted" style={{ fontSize: 11 }}>{t("Показывать:","Показувати:")}</span>
-                  <select value={lim} onChange={(e) => setShowN((pp) => ({ ...pp, [kind]: Number(e.target.value) }))} style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 12 }}>
+                  <select value={lim} onChange={(e) => { setShowN((pp) => ({ ...pp, [kind]: Number(e.target.value) })); setPageN((pp) => ({ ...pp, [kind]: 0 })); }} style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 6, fontSize: 12 }}>
                     {[5, 10, 25, 50].map((nn) => <option key={nn} value={nn}>{nn}</option>)}
                     <option value={100000}>{t("все","всі")}</option>
                   </select>
@@ -497,6 +500,11 @@ function ClientDebtsBlock({ contactId }: { contactId: number }) {
               );
             })}
             </div>
+            {list.length > lim && (<div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6, marginTop: 6, fontSize: 12 }}>
+              <button className="btn btn-light" style={{ height: 26, padding: "0 8px" }} disabled={pg <= 0} onClick={() => setPageN((pp) => ({ ...pp, [kind]: pg - 1 }))}>←</button>
+              <span>{t("стр.","стор.")} <b>{pg + 1}</b> / {maxPg + 1}</span>
+              <button className="btn btn-light" style={{ height: 26, padding: "0 8px" }} disabled={pg >= maxPg} onClick={() => setPageN((pp) => ({ ...pp, [kind]: pg + 1 }))}>→</button>
+            </div>)}
           </div>
         );
       })}
