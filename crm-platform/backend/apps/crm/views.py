@@ -3542,6 +3542,7 @@ class MetaMarketingView(APIView):
                 row.followers_gained for row in account_daily_stats
                 if row.followers_gained is not None
             ),
+            "daily": [{"date": r.date.isoformat(), "total": r.followers_total, "gained": r.followers_gained} for r in account_daily_stats],
         }
 
         event_qs = MetaConversionEvent.objects.filter(

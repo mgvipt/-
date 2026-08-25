@@ -163,6 +163,35 @@ function MetaConeFunnel({ from, to }: { from: string; to: string }) {
   );
 }
 
+/* ─── График роста подписчиков кабинета по дням ─── */
+function AccountGrowth({ followers, t }: { followers: any; t: any }) {
+  const daily = (followers.daily || []);
+  const maxG = Math.max(...daily.map((d: any) => Math.abs(d.gained || 0)), 1);
+  const num = (n: number) => Number(n || 0).toLocaleString("ru-RU");
+  return (
+    <div className="panel" style={{ margin: 0 }}>
+      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>📈 {t("Прирост подписчиков по дням", "Приріст підписників по днях")}</div>
+      <div className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>{t("Зелёные — набрали подписчиков в этот день, красные — потеряли. Наведи на столбец для деталей.", "Зелені — набрали, червоні — втратили.")}</div>
+      {daily.length === 0 ? <div className="muted">{t("Нет данных за период", "Немає даних за період")}</div> : (
+        <div style={{ display: "flex", alignItems: "center", gap: 3, minHeight: 170, overflowX: "auto" }}>
+          {daily.map((d: any) => {
+            const g = d.gained || 0;
+            const h = (Math.abs(g) / maxG) * 62;
+            return (
+              <div key={d.date} style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 24, flex: 1 }} title={`${d.date}: ${g >= 0 ? "+" : ""}${g} (${t("всего", "всього")} ${num(d.total)})`}>
+                <span style={{ fontSize: 9, color: g >= 0 ? "#15803d" : "#dc2626", fontWeight: 700 }}>{g >= 0 ? "+" : ""}{g}</span>
+                <div style={{ height: 66, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>{g >= 0 && <div style={{ width: 13, height: Math.max(h, 2), background: "#22c55e", borderRadius: "3px 3px 0 0" }} />}</div>
+                <div style={{ height: 66, display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>{g < 0 && <div style={{ width: 13, height: Math.max(h, 2), background: "#ef4444", borderRadius: "0 0 3px 3px" }} />}</div>
+                <span style={{ fontSize: 9, color: "#94a3b8", whiteSpace: "nowrap" }}>{String(d.date).slice(5)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MetaMarketing() {
   const { t } = useLang();
   const today = useMemo(() => new Date(), []);
@@ -176,6 +205,7 @@ export default function MetaMarketing() {
   const [syncSt, setSyncSt] = useState<any>(null);
   const [syncing, setSyncing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [orgView, setOrgView] = useState<"cards" | "table" | "account">("cards");
 
   useEffect(() => {
     setError(""); setLoading(true);
@@ -228,6 +258,10 @@ export default function MetaMarketing() {
   const organic = data?.organic?.content || [];
   const profitability = data?.profitability || {};
   const followers = data?.followers || {};
+  const orgAgg = {
+    reach: organic.reduce((a: number, r: any) => a + (r.reach || 0), 0),
+    er: (() => { const arr = organic.filter((r: any) => r.engagement_rate != null); return arr.length ? arr.reduce((a: number, r: any) => a + r.engagement_rate, 0) / arr.length : 0; })(),
+  };
   const daily = data?.daily || [];
 
   const card = (label: string, value: ReactNode, color = "#0f172a", hint?: string) => (
@@ -389,16 +423,40 @@ export default function MetaMarketing() {
         </>}
 
         {tab === "content" && <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 10, marginBottom: 12 }}>
+            {card(t("Подписчиков сейчас", "Підписників зараз"), count(followers.current_total), "#7c3aed")}
+            {card(t("+ за период", "+ за період"), ((followers.period_gained || 0) >= 0 ? "+" : "") + count(followers.period_gained), (followers.period_gained || 0) >= 0 ? "#15803d" : "#dc2626")}
+            {card(t("Публикаций", "Публікацій"), count(organic.length), "#0284c7")}
+            {card(t("Суммарный охват", "Сумарне охоплення"), count(orgAgg.reach), "#2563eb")}
+            {card(t("Средний ER", "Середній ER"), orgAgg.er ? orgAgg.er.toFixed(1) + "%" : "—", "#0f766e")}
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+            <button className={orgView === "cards" ? "btn btn-primary" : "btn btn-light"} onClick={() => setOrgView("cards")} style={{ fontSize: 12.5 }}>🖼 {t("Карточки", "Картки")}</button>
+            <button className={orgView === "table" ? "btn btn-primary" : "btn btn-light"} onClick={() => setOrgView("table")} style={{ fontSize: 12.5 }}>📋 {t("Таблица", "Таблиця")}</button>
+            <button className={orgView === "account" ? "btn btn-primary" : "btn btn-light"} onClick={() => setOrgView("account")} style={{ fontSize: 12.5 }}>📈 {t("Рост кабинета", "Зростання кабінету")}</button>
+          </div>
           <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
-            <b>{t("Только органика — без рекламных объявлений.", "Лише органіка — без рекламних оголошень.")}</b> {t(
-              "Показатели каждой публикации обновляются автоматически каждые 6 часов. «Подписчики» — люди, подписавшиеся после взаимодействия с конкретной публикацией, но Meta отдаёт этот показатель не для всех форматов. Для Reels и других неподдерживаемых публикаций CRM честно показывает «нет данных».",
-              "Показники кожної публікації оновлюються автоматично кожні 6 годин. «Підписники» — люди, що підписалися після взаємодії з конкретною публікацією, але Meta віддає цей показник не для всіх форматів. Для Reels та інших непідтримуваних публікацій CRM чесно показує «немає даних»."
-            )}
+            <b>{t("Только органика — без рекламы.", "Лише органіка — без реклами.")}</b> {t("«Подписки» Meta отдаёт не для всех форматов (для Reels — нет). Общий рост подписчиков смотри во вкладке «Рост кабинета».", "«Підписки» Meta віддає не для всіх форматів. Загальне зростання — у «Зростання кабінету».")}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))", gap: 12 }}>
-            {organic.map((r: any) => <ContentCard key={r.media_id} row={r} t={t} />)}
-            {!organic.length && <Empty text={t("Органический контент за период не найден", "Органічний контент за період не знайдено")} />}
-          </div>
+          {orgView === "cards" && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))", gap: 12 }}>
+              {organic.map((r: any) => <ContentCard key={r.media_id} row={r} t={t} />)}
+              {!organic.length && <Empty text={t("Органический контент за период не найден", "Органічний контент за період не знайдено")} />}
+            </div>
+          )}
+          {orgView === "table" && table(
+            [t("Дата", "Дата"), t("Тип", "Тип"), t("Публикация", "Публікація"), t("Охват", "Охоплення"), t("Просмотры", "Перегляди"), t("Лайки", "Лайки"), t("Комм.", "Комент."), t("Сохр.", "Збереж."), t("Репосты", "Репости"), t("Взаимод.", "Взаємодії"), "ER %", t("Подписки", "Підписки"), t("Лиды", "Ліди"), t("Сделки", "Угоди")],
+            organic.map((r: any) => [
+              r.published_at ? new Date(r.published_at).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }) : "—",
+              r.media_product_type || r.media_type || "—",
+              <a href={r.permalink} target="_blank" rel="noreferrer" style={{ color: "#2563eb", textDecoration: "none" }}>{(r.caption || "—").slice(0, 40)}</a>,
+              count(r.reach), count(r.views), count(r.likes), count(r.comments), count(r.saved), count(r.shares), count(r.interactions),
+              r.engagement_rate != null ? r.engagement_rate + "%" : "—",
+              r.follows != null ? count(r.follows) : "—",
+              r.crm_leads || 0, r.crm_deals || 0,
+            ]),
+            t("Органический контент за период не найден", "Органічний контент за період не знайдено"), 1100)}
+          {orgView === "account" && <AccountGrowth followers={followers} t={t} />}
         </>}
 
         {tab === "funnel" && <>
