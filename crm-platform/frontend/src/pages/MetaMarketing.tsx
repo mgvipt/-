@@ -373,13 +373,14 @@ export default function MetaMarketing() {
   };
   const daily = data?.daily || [];
 
+  /* Варіант «таблиця показників»: назва ліворуч — значення праворуч, у кілька колонок.
+     Максимально компактно: усе видно без прокрутки. Пояснення — тултип на наведення (ⓘ). */
   const card = (label: string, value: ReactNode, color = "#0f172a", hint?: string) => (
-    <div title={hint || label} style={{ background: "#fff", border: "1px solid #e5eaf1", borderRadius: 9, padding: "7px 9px", margin: 0, minWidth: 0 }}>
-      <div style={{ fontSize: 10.5, lineHeight: 1.2, color: "#475569", fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-        {hint ? <span style={{ color: "#94a3b8", fontSize: 9, flexShrink: 0 }}>ⓘ</span> : null}
-      </div>
-      <div style={{ fontSize: 17, fontWeight: 800, color, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
+    <div title={hint || label} style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "4px 2px", borderBottom: "1px dashed #eef2f7", minWidth: 0 }}>
+      <span style={{ fontSize: 11.5, color: "#475569", fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {label}{hint ? <span style={{ color: "#94a3b8", fontSize: 9.5 }}> ⓘ</span> : null}
+      </span>
+      <b style={{ fontSize: 14.5, fontWeight: 800, color, whiteSpace: "nowrap", flexShrink: 0 }}>{value}</b>
     </div>
   );
   const table = (headers: string[], rows: ReactNode[][], empty: string, minWidth = 760, tips?: string[]) => (
@@ -442,7 +443,7 @@ export default function MetaMarketing() {
         {tab === "overview" && <>
           {syncWarning}
           <PeriodBar from={from} to={to} days={periodDays} t={t} onQuick={setLastDays} setFrom={setFrom} setTo={setTo} minFrom={CONNECTED_FROM} />
-          <SectionTitle title={t("Instagram аккаунт", "Instagram акаунт")} note={t("Баланс подписчиков сохраняется ежедневно; прирост Meta отдаёт по дням", "Баланс підписників зберігається щодня; приріст Meta віддає по днях")} />
+          <SectionTitle title={t("Instagram аккаунт", "Instagram акаунт") + (followers.username ? " · @" + followers.username : "")} note={t("Баланс подписчиков сохраняется ежедневно; прирост Meta отдаёт по дням", "Баланс підписників зберігається щодня; приріст Meta віддає по днях")} />
           <div style={cardsRow}>
             {card(t("Подписчиков сейчас", "Підписників зараз"), optional(followers.current_total, "", t("ожидает синхронизации", "очікує синхронізації")), "#c026d3", followers.username ? `@${followers.username}` : undefined)}
             {card(t("Новых за период", "Нових за період"), followers.period_gained == null ? "—" : count(followers.period_gained), "#db2777")}
@@ -905,7 +906,7 @@ function Empty({ text }: { text: string }) {
   return <div className="panel muted" style={{ padding: 28, textAlign: "center", gridColumn: "1 / -1" }}>{text}</div>;
 }
 
-const cardsRow: any = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(136px, 1fr))", gap: 7, marginBottom: 10, background: "#f8fafc", border: "1px solid #e5eaf1", borderRadius: 10, padding: "8px 9px" };
+const cardsRow: any = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(228px, 1fr))", columnGap: 22, rowGap: 0, marginBottom: 9, background: "#fff", border: "1px solid #e5eaf1", borderRadius: 10, padding: "6px 11px" };
 const metricGrid: any = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: 12 };
 const th: any = { textAlign: "left", padding: "10px 12px", fontSize: 12, color: "#64748b", borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap" };
 const td: any = { padding: "10px 12px", fontSize: 13, borderBottom: "1px solid #eef2f7", verticalAlign: "top" };
