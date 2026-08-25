@@ -16,6 +16,14 @@ export default function InviteAccept() {
     api.get<any>(`/api/invite/${token}/`).then(setInfo).catch(() => setInfo({ valid: false }));
   }, [token]);
 
+  // уже зарегистрирован → сразу ведём на страницу входа (проверить логин/пароль)
+  useEffect(() => {
+    if (info && !info.valid && info.already_registered) {
+      const tm = setTimeout(() => nav("/login"), 2200);
+      return () => clearTimeout(tm);
+    }
+  }, [info, nav]);
+
   async function accept() {
     setErr("");
     try {
@@ -35,8 +43,8 @@ export default function InviteAccept() {
     <div style={wrap}><div style={card}>
       {info.already_registered ? <>
         <h3><Icon n="✅" size={18} /> Реєстрацію вже завершено</h3>
-        <p className="muted" style={{ lineHeight: 1.5 }}>Цей акаунт уже створено. Увійдіть у систему за вашим логіном (або поштою) та паролем, який ви задали.</p>
-        <button className="btn btn-primary" style={{ width: "100%", height: 40, marginTop: 10 }} onClick={() => nav("/login")}>Перейти до входу</button>
+        <p className="muted" style={{ lineHeight: 1.5 }}>Акаунт створено. Переходимо на сторінку входу — увійдіть за вашим логіном (або поштою) і паролем, який ви задали.</p>
+        <button className="btn btn-primary" style={{ width: "100%", height: 40, marginTop: 10 }} onClick={() => nav("/login")}>Увійти зараз</button>
       </> : <>
         <h3>Запрошення недійсне або прострочене</h3>
         <p className="muted">Зверніться до керівника за новим лінком.</p>
