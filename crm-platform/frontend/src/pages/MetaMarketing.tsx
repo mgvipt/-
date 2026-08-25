@@ -318,7 +318,7 @@ export default function MetaMarketing() {
 
   useEffect(() => {
     setError(""); setLoading(true);
-    api.get<any>(`/api/meta-marketing/?from=${from}&to=${to}`)
+    api.get<any>(`/api/meta-marketing/?from=${from}&to=${to}` + (refreshKey ? `&fresh=1` : ""))
       .then(setData)
       .catch(() => setError(t("Не удалось загрузить данные", "Не вдалося завантажити дані")))
       .finally(() => setLoading(false));

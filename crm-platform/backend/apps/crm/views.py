@@ -2790,6 +2790,11 @@ class MetaSyncNowView(APIView):
                 pass
             finally:
                 try:
+                    from django.core.cache import cache as _c
+                    _c.set("mm_ver", int(_c.get("mm_ver", 0)) + 1, None)
+                except Exception:
+                    pass
+                try:
                     connection.close()
                 except Exception:
                     pass
@@ -2940,8 +2945,8 @@ class MetaFunnelView(APIView):
             prev = n
         return Response({
             "from": d_from.isoformat(), "to": d_to.isoformat(),
-            "stages": stages, "spend_uah": spend_uah, "revenue": revenue,
-            "roas": (round(revenue / spend_uah, 2) if spend_uah else None),
+            "stages": stages, "spend_uah": spend_uah, "revenue": (revenue or None),
+            "roas": (round(revenue / spend_uah, 2) if (spend_uah and revenue) else None),  # немає атрибутованих продажів → «—», не хибний «0»
             "cost_per_lead": (round(spend_uah / lead_cnt, 2) if lead_cnt else None),
             "cost_per_sale": (round(spend_uah / len(won_c), 2) if won_c else None),
             "test_funnel": (test_f.name if test_f else None),
@@ -2966,7 +2971,18 @@ class MetaMarketingView(APIView):
         from .meta_conversions import event_name_for_stage, has_verified_meta_attribution, normalized_meta_attribution
         from .models import MetaAccountDailyStat, MetaAdDailyStat, MetaContentStat, MetaConversionEvent
 
+        from django.core.cache import cache as _cache
         user = request.user
+        # ⚡ Кеш готової відповіді (дані Meta оновлюються раз на кілька годин).
+        # Кнопка «Оновити» шле fresh=1 і кеш обходиться.
+        _fresh = str(request.GET.get("fresh") or "") in ("1", "true", "yes")
+        _ck = "mm:%s:%s:%s:%s" % (request.GET.get("from") or "", request.GET.get("to") or "",
+                                  int(bool(user.is_superuser or user.has_perm_code("marketing.money"))),
+                                  _cache.get("mm_ver", 0))
+        if not _fresh:
+            _hit = _cache.get(_ck)
+            if _hit is not None:
+                return Response(_hit)
         # Маркетинг-аналітика — ЗВЕДЕНИЙ дашборд по всій рекламі: доступ до нього вже
         # обмежений правом marketing.view, тому цифри показуємо повні (інакше маркетолог
         # бачив би витрати на рекламу, але 0 продажів — бо угоди не його).
@@ -3719,6 +3735,10 @@ class MetaMarketingView(APIView):
             for row in (payload.get("by_platform") or []):
                 if "revenue" in row:
                     row["revenue"] = None
+        try:
+            _cache.set(_ck, payload, 300)
+        except Exception:
+            pass
         return Response(payload)
 
 

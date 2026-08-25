@@ -103,7 +103,7 @@ export function MetaCone({ d, t }: { d: any; t: any }) {
         <span className="muted">{t("Расход", "Витрати")}: <b style={{ color: "#0f172a" }}>{num(Math.round(d.spend_uah))} ₴</b></span>
         <span className="muted">{t("Цена лида", "Ціна ліда")}: <b style={{ color: "#0f172a" }}>{d.cost_per_lead != null ? num(Math.round(d.cost_per_lead)) + " ₴" : "—"}</b></span>
         <span className="muted">{t("Цена продажи", "Ціна продажу")}: <b style={{ color: "#0f172a" }}>{d.cost_per_sale != null ? num(Math.round(d.cost_per_sale)) + " ₴" : "—"}</b></span>
-        <span className="muted">{t("Выручка", "Виручка")}: <b style={{ color: "#166534" }}>{num(Math.round(d.revenue))} ₴</b></span>
+        <span className="muted">{t("Выручка", "Виручка")}: <b style={{ color: d.revenue != null ? "#166534" : "#94a3b8" }}>{d.revenue != null ? num(Math.round(d.revenue)) + " ₴" : "—"}</b></span>
         <span className="muted">ROAS: <b style={{ color: (d.roas || 0) >= 1 ? "#166534" : "#b91c1c" }}>{d.roas != null ? d.roas : "—"}</b></span>
       </div>
     </div>
