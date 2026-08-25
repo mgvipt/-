@@ -1065,9 +1065,17 @@ function AccessTab({ depts, emps, roles, funnels, reload, t }: any) {
 }
 
 function PermsTab({ depts, emps, perms, permGroups, funnels, roles, reload, t, toggleDept, toggleUser }: any) {
-  const [mode, setMode] = useState<"dept" | "user" | "stage" | "access" | "fin">("dept");
+  const [mode, setMode] = useState<"dept" | "role" | "user" | "stage" | "access" | "fin">("dept");
   const [selDept, setSelDept] = useState<any>("");
+  const [selRole, setSelRole] = useState<any>("");
   const [selUser, setSelUser] = useState<any>("");
+  const rl = roles.find((x: any) => x.id === Number(selRole));
+  const toggleRole = async (r: any, code: string) => {
+    const cur = r.permissions || [];
+    const next = cur.includes(code) ? cur.filter((c: string) => c !== code) : [...cur, code];
+    await api.patch(`/api/roles/${r.id}/`, { permissions: next });
+    reload();
+  };
   const d = depts.find((x: any) => x.id === Number(selDept));
   const u = emps.find((x: any) => x.id === Number(selUser));
   const inp: any = { height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13, minWidth: 240 };
@@ -1110,6 +1118,7 @@ function PermsTab({ depts, emps, perms, permGroups, funnels, roles, reload, t, t
     <div style={{ maxWidth: 820 }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <button className={"btn" + (mode === "dept" ? " btn-primary" : "")} onClick={() => setMode("dept")}>{t("Права отдела", "Права відділу")}</button>
+        <button className={"btn" + (mode === "role" ? " btn-primary" : "")} onClick={() => setMode("role")}>{t("Права роли", "Права ролі")}</button>
         <button className={"btn" + (mode === "user" ? " btn-primary" : "")} onClick={() => setMode("user")}>{t("Индивидуальные", "Індивідуальні")}</button>
         <button className={"btn" + (mode === "stage" ? " btn-primary" : "")} onClick={() => setMode("stage")}><Icon n="🚦" size={15} /> {t("По статусам", "За статусами")}</button>
         <button className={"btn" + (mode === "access" ? " btn-primary" : "")} onClick={() => setMode("access")}>🔀 {t("Воронки и линии", "Воронки і лінії")}</button>
@@ -1121,11 +1130,19 @@ function PermsTab({ depts, emps, perms, permGroups, funnels, roles, reload, t, t
         <AccessTab depts={depts} emps={emps} roles={roles} funnels={funnels} reload={reload} t={t} />
       ) : mode === "stage" ? (
         <StagePerms funnels={funnels} roles={roles} depts={depts} emps={emps} reload={reload} t={t} />
+      ) : mode === "role" ? (
+        <div className="panel">
+          <select style={inp} value={selRole} onChange={(e) => setSelRole(e.target.value)}><option value="">{t("выбери роль", "обери роль")}</option>{roles.map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+          {rl && <>
+            <div className="muted" style={{ fontSize: 12, marginTop: 10, lineHeight: 1.5 }}>{t("Действуют на ВСЕХ сотрудников с этой ролью. Права складываются: ОТДЕЛ + РОЛЬ + индивидуальные − запрещённые. Чтобы закрыть раздел полностью — выключи и здесь, и в отделе.", "Діють на ВСІХ співробітників з цією роллю. Права складаються: ВІДДІЛ + РОЛЬ + індивідуальні − заборонені. Щоб закрити розділ повністю — вимкни і тут, і у відділі.")}</div>
+            <Rows control={(p: any) => { const on = (rl.permissions || []).includes(p.code); return <div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ fontSize: 11, fontWeight: 600, color: on ? "#16a34a" : "#94a3b8", width: 42, textAlign: "right" }}>{on ? t("Вкл", "Увімк") : t("Выкл", "Вимк")}</span><button onClick={() => toggleRole(rl, p.code)} style={sw(on)} aria-label={p.label}><span style={knob(on)} /></button></div>; }} />
+          </>}
+        </div>
       ) : mode === "dept" ? (
         <div className="panel">
           <select style={inp} value={selDept} onChange={(e) => setSelDept(e.target.value)}><option value="">{t("выбери отдел", "обери відділ")}</option>{depts.map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
           {d && <>
-            <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>{t("Действуют на ВСЕХ сотрудников отдела. Нет «видеть все» = сотрудник видит только своё.", "Діють на ВСІХ співробітників відділу. Нема «бачити всі» = співробітник бачить лише своє.")}</div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 10, lineHeight: 1.5 }}>{t("Действуют на ВСЕХ сотрудников отдела. Права складываются: ОТДЕЛ + РОЛЬ + индивидуальные − запрещённые. Если тут выключено, а доступ есть — его даёт РОЛЬ (вкладка «Права роли»).", "Діють на ВСІХ співробітників відділу. Права складаються: ВІДДІЛ + РОЛЬ + індивідуальні − заборонені. Якщо тут вимкнено, а доступ є — його дає РОЛЬ (вкладка «Права ролі»).")}</div>
             <Rows control={(p: any) => { const on = d.permissions.includes(p.code); return <div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ fontSize: 11, fontWeight: 600, color: on ? "#16a34a" : "#94a3b8", width: 42, textAlign: "right" }}>{on ? t("Вкл", "Увімк") : t("Выкл", "Вимк")}</span><button onClick={() => toggleDept(d, p.code)} style={sw(on)} aria-label={p.label}><span style={knob(on)} /></button></div>; }} />
           </>}
         </div>
