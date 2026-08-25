@@ -81,6 +81,16 @@ class ContactViewSet(viewsets.ModelViewSet):
             if _nm2.lower() != _nm.lower():
                 _byname = _byname | _Qc(counterparty__iexact=_nm2) | _Qc(counterparty__istartswith=_nm2 + "/") | _Qc(counterparty__istartswith=_nm2 + " ") | _Qc(counterparty__istartswith=_nm2 + ".")
             _match = _match | _byname  # всі платежі цьому контрагенту, навіть привʼязані до обʼєкта (обʼєкт видно окремим стовпцем)
+        elif _first_nm and not _last_nm:
+            # одиночне імʼя (компанія-постачальник: «Будмаркет») — byname ТІЛЬКИ якщо так зветься
+            # ЛИШЕ цей контакт (унікально). Загальне одиночне «Оксана» (72 тезки) НЕ підтягуємо.
+            from apps.crm.models import Contact as _CtU
+            _shared_nm = _CtU.objects.filter(first_name__iexact=_first_nm).filter(
+                _Qc(last_name="") | _Qc(last_name__isnull=True)).exclude(id=c.id).exists()
+            if not _shared_nm:
+                _byname = (_Qc(counterparty__iexact=_first_nm) | _Qc(counterparty__istartswith=_first_nm + "/")
+                           | _Qc(counterparty__istartswith=_first_nm + " ") | _Qc(counterparty__istartswith=_first_nm + "."))
+                _match = _match | _byname
         qs = _Tx.objects.filter(_match)
         # фільтри блоку операцій (діють на список + лічильник + плитки Дохід/Витрата/Аванс)
         _ocp = (request.query_params.get("op_cp") or "").strip()
