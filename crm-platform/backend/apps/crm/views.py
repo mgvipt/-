@@ -2806,6 +2806,45 @@ class MetaSyncStatusView(APIView):
         })
 
 
+class MetaSyncSettingsView(APIView):
+    """Настройки авто-обновления маркетинга: интервалы по источникам. Чтение —
+    marketing.view; изменение — руководитель (roles.manage) или админ."""
+    permission_classes = [HasPermCode]
+    required_perm = "marketing.view"
+
+    FIELDS = ["ads_enabled", "content_enabled", "account_enabled",
+              "ads_interval_min", "content_interval_min", "account_interval_min", "recent_days"]
+
+    def _data(self, st, request):
+        d = {f: getattr(st, f) for f in self.FIELDS}
+        u = request.user
+        d["can_edit"] = bool(u.is_superuser or u.has_perm_code("roles.manage"))
+        return d
+
+    def get(self, request):
+        from .models import MetaSyncSettings
+        return Response(self._data(MetaSyncSettings.get(), request))
+
+    def put(self, request):
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("roles.manage")):
+            return Response({"detail": "Змінювати налаштування може лише керівник"}, status=status.HTTP_403_FORBIDDEN)
+        from .models import MetaSyncSettings
+        st = MetaSyncSettings.get()
+        for f in self.FIELDS:
+            if f in request.data:
+                v = request.data[f]
+                if f.endswith("_enabled"):
+                    setattr(st, f, bool(v))
+                else:
+                    try:
+                        setattr(st, f, max(1, min(int(v), 10080)))
+                    except (TypeError, ValueError):
+                        pass
+        st.save()
+        return Response(self._data(st, request))
+
+
 class MetaFunnelView(APIView):
     """Сквозная воронка Меты: Показы → Клики → Начатые диалоги → Рекламные лиды CRM
     → Тест-набор → Оплата. Показы/клики/диалоги — из MetaAdDailyStat (level account).

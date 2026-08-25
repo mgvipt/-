@@ -192,6 +192,75 @@ function AccountGrowth({ followers, t }: { followers: any; t: any }) {
   );
 }
 
+/* ─── Модалка настроек маркетинга: интервалы обновления + доступы по ролям ─── */
+function MetaSettingsModal({ onClose }: { onClose: () => void }) {
+  const { t } = useLang();
+  const [st, setSt] = useState<any>(null);
+  const [roles, setRoles] = useState<any[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [savedMsg, setSavedMsg] = useState("");
+  useEffect(() => {
+    api.get<any>("/api/meta-marketing/settings/").then(setSt).catch(() => {});
+    api.get<any>("/api/roles/").then((r: any) => setRoles(r.results || r || [])).catch(() => {});
+  }, []);
+  const PRESETS: [number, string, string][] = [[30, "30 минут", "30 хвилин"], [60, "1 час", "1 година"], [120, "2 часа", "2 години"], [180, "3 часа", "3 години"], [360, "6 часов", "6 годин"], [720, "12 часов", "12 годин"], [1440, "24 часа", "24 години"]];
+  const setField = (f: string, v: any) => setSt((s: any) => ({ ...s, [f]: v }));
+  const save = () => {
+    setSaving(true);
+    api.put<any>("/api/meta-marketing/settings/", st).then((r) => { setSt(r); setSavedMsg(t("Сохранено ✓", "Збережено ✓")); setTimeout(() => setSavedMsg(""), 2500); }).catch(() => setSavedMsg(t("Ошибка", "Помилка"))).finally(() => setSaving(false));
+  };
+  const toggleRoleMkt = (role: any) => {
+    const perms: string[] = role.permissions || [];
+    const has = perms.includes("marketing.view");
+    const next = has ? perms.filter((p) => p !== "marketing.view") : [...perms, "marketing.view"];
+    setRoles((rs) => rs.map((x) => x.id === role.id ? { ...x, permissions: next } : x));
+    api.patch<any>(`/api/roles/${role.id}/`, { permissions: next }).catch(() => {});
+  };
+  const src: [string, string, string][] = [["ads", "Реклама (Ads)", "Реклама (Ads)"], ["content", "Instagram (публикации)", "Instagram (публікації)"], ["account", "Подписчики кабинета", "Підписники кабінету"]];
+  const body = !st ? <div className="muted" style={{ padding: 20 }}>…</div> : (() => {
+    const canEdit = st.can_edit;
+    return (
+      <div>
+        {!canEdit && <div className="note" style={{ marginBottom: 12, background: "#fef9c3", color: "#854d0e" }}>{t("Только просмотр — менять настройки может руководитель.", "Лише перегляд — змінювати може керівник.")}</div>}
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>{t("Частота обновления данных", "Частота оновлення даних")}</div>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{t("Как часто фоновая система тянет свежие данные из каждого источника (действует без перезапуска).", "Як часто фонова система тягне свіжі дані з кожного джерела.")}</div>
+        {src.map(([key, ru, ua]) => (
+          <div key={key} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 220 }}>
+              <input type="checkbox" checked={!!st[`${key}_enabled`]} disabled={!canEdit} onChange={(e) => setField(`${key}_enabled`, e.target.checked)} />
+              <b style={{ fontSize: 13 }}>{t(ru, ua)}</b>
+            </label>
+            <select value={st[`${key}_interval_min`]} disabled={!canEdit || !st[`${key}_enabled`]} onChange={(e) => setField(`${key}_interval_min`, Number(e.target.value))} style={{ height: 32, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 8px", background: "#fff" }}>
+              {PRESETS.map(([v, ru2, ua2]) => <option key={v} value={v}>{t(ru2, ua2)}</option>)}
+            </select>
+          </div>
+        ))}
+        {canEdit && <div style={{ marginTop: 8 }}><button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "…" : t("Сохранить", "Зберегти")}</button> {savedMsg && <span style={{ color: "#15803d", marginLeft: 10, fontWeight: 600 }}>{savedMsg}</span>}</div>}
+        <div style={{ borderTop: "1px solid #eef2f7", margin: "18px 0" }} />
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>{t("Доступ к маркетингу (по ролям)", "Доступ до маркетингу (за ролями)")}</div>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Кому видна аналитика маркетинга. Отметь роль — она получит доступ.", "Кому видно аналітику маркетингу.")}</div>
+        {roles.length === 0 ? <div className="muted">…</div> : roles.map((role) => (
+          <label key={role.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 13 }}>
+            <input type="checkbox" checked={(role.permissions || []).includes("marketing.view")} disabled={!canEdit} onChange={() => toggleRoleMkt(role)} />
+            {role.name}
+          </label>
+        ))}
+        <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>{t("Индивидуально по сотрудникам — Настройки → Пользователи.", "Індивідуально — Налаштування → Користувачі.")}</div>
+      </div>
+    );
+  })();
+  return createPortal(
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 9999, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 24, overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, maxWidth: 620, width: "100%", padding: 22, boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <h3 style={{ margin: 0, fontSize: 18 }}>⚙️ {t("Настройки маркетинга", "Налаштування маркетингу")}</h3>
+          <button className="btn btn-light" onClick={onClose}>✕</button>
+        </div>
+        {body}
+      </div>
+    </div>, document.body);
+}
+
 export default function MetaMarketing() {
   const { t } = useLang();
   const today = useMemo(() => new Date(), []);
@@ -206,6 +275,7 @@ export default function MetaMarketing() {
   const [syncing, setSyncing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [orgView, setOrgView] = useState<"cards" | "table" | "account">("cards");
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     setError(""); setLoading(true);
@@ -313,7 +383,9 @@ export default function MetaMarketing() {
         <label style={dateLabel}>{t("с", "з")} <input type="date" value={from} min={CONNECTED_FROM} onChange={(e) => setFrom(e.target.value)} style={dateInput} /></label>
         <label style={dateLabel}>{t("по", "по")} <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={dateInput} /></label>
         <button className="btn btn-primary" onClick={refreshNow} disabled={syncing} title={t("Подтянуть свежие данные со всех источников (Ads + Instagram + подписчики)", "Підтягнути свіжі дані з усіх джерел")}>{syncing ? `⏳ ${t("Обновляю…", "Оновлюю…")}` : `🔄 ${t("Обновить", "Оновити")}`}</button>
+        <button className="btn btn-light" onClick={() => setShowSettings(true)} title={t("Настройки маркетинга: интервалы обновления и доступы", "Налаштування маркетингу")}>⚙️</button>
       </div>
+      {showSettings && <MetaSettingsModal onClose={() => setShowSettings(false)} />}
       {syncing && <div className="note" style={{ marginBottom: 10, background: "#eff6ff", color: "#1e40af" }}>{t("Тянем свежие данные из Meta (Ads + Instagram + подписчики). Это ~1-3 минуты — таблицы обновятся автоматически, можно продолжать работать.", "Тягнемо свіжі дані з Meta. Це ~1-3 хвилини — таблиці оновляться автоматично.")}</div>}
 
       <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8, marginBottom: 8 }}>

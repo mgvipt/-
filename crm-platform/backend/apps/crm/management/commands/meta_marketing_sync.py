@@ -29,37 +29,57 @@ class Command(BaseCommand):
         if options["ads_only"] and options["content_only"]:
             raise CommandError("Choose either --ads-only or --content-only")
 
-        while True:
-            current_until = date.today() if options["watch"] else until
-            ads_since = since
-            if options["watch"]:
-                ads_since = max(since, current_until - timedelta(days=max(1, options["recent_days"]) - 1))
-            result = {}
-            failures = []
-            if not options["content_only"]:
-                try:
-                    result["ads"] = sync_ads(ads_since, current_until)
-                except MetaGraphError as exc:
-                    failures.append(("ads", exc))
-            if not options["ads_only"]:
-                try:
-                    result["account"] = sync_account(since, current_until)
-                except MetaGraphError as exc:
-                    failures.append(("account", exc))
-                try:
-                    result["content"] = sync_content(since)
-                except MetaGraphError as exc:
-                    failures.append(("content", exc))
-
-            if result:
-                self.stdout.write(self.style.SUCCESS(f"Meta sync OK: {result}"))
-            for section, exc in failures:
+        def run_source(name, current_until, recent_days):
+            try:
+                if name == "ads":
+                    ads_since = max(since, current_until - timedelta(days=max(1, recent_days) - 1))
+                    r = sync_ads(ads_since, current_until)
+                elif name == "account":
+                    r = sync_account(since, current_until)
+                else:
+                    r = sync_content(since)
+                self.stdout.write(self.style.SUCCESS(f"Meta {name} OK: {r}"))
+                return True
+            except MetaGraphError as exc:
                 self.stderr.write(self.style.ERROR(
-                    f"Meta {section} sync failed: code={exc.code or '-'} "
-                    f"subcode={exc.subcode or '-'} {exc}"
-                ))
-            if failures and not options["watch"]:
-                raise CommandError("Meta sync partially failed") from failures[0][1]
-            if not options["watch"]:
-                break
-            time.sleep(max(300, options["interval"]))
+                    f"Meta {name} sync failed: code={exc.code or '-'} "
+                    f"subcode={exc.subcode or '-'} {exc}"))
+            except Exception as exc:
+                self.stderr.write(self.style.ERROR(f"Meta {name} sync error: {exc}"))
+            return False
+
+        # Разовый запуск (без --watch) — как раньше
+        if not options["watch"]:
+            ok = True
+            if not options["content_only"]:
+                ok = run_source("ads", until, options["recent_days"]) and ok
+            if not options["ads_only"]:
+                ok = run_source("account", until, options["recent_days"]) and ok
+                ok = run_source("content", until, options["recent_days"]) and ok
+            if not ok:
+                raise CommandError("Meta sync partially failed")
+            return
+
+        # Фоновый режим: интервалы берём из настроек БД (меняются из UI без рестарта)
+        from apps.crm.models import MetaSyncSettings
+        last = {"ads": 0.0, "account": 0.0, "content": 0.0}
+        while True:
+            try:
+                st = MetaSyncSettings.get()
+            except Exception:
+                st = None
+            now = time.time()
+            current_until = date.today()
+            recent_days = (getattr(st, "recent_days", None) or options["recent_days"])
+            plan = [
+                ("ads", getattr(st, "ads_enabled", True), getattr(st, "ads_interval_min", 360)),
+                ("account", getattr(st, "account_enabled", True), getattr(st, "account_interval_min", 360)),
+                ("content", getattr(st, "content_enabled", True), getattr(st, "content_interval_min", 360)),
+            ]
+            for name, enabled, interval_min in plan:
+                if not enabled:
+                    continue
+                if now - last[name] >= max(1, interval_min) * 60:
+                    run_source(name, current_until, recent_days)
+                    last[name] = time.time()
+            time.sleep(60)

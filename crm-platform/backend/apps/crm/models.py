@@ -834,3 +834,24 @@ class KpLink(models.Model):
 
     class Meta:
         ordering = ["-id"]
+
+
+class MetaSyncSettings(models.Model):
+    """Настройки авто-обновления данных маркетинга: интервалы по источникам."""
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1)
+    ads_enabled = models.BooleanField(default=True)
+    content_enabled = models.BooleanField(default=True)
+    account_enabled = models.BooleanField(default=True)
+    ads_interval_min = models.PositiveIntegerField(default=360)
+    content_interval_min = models.PositiveIntegerField(default=360)
+    account_interval_min = models.PositiveIntegerField(default=360)
+    recent_days = models.PositiveIntegerField(default=7)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Настройки обновления маркетинга"
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(id=1)
+        return obj
