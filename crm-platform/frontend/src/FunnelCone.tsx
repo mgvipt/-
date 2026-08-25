@@ -4,14 +4,16 @@
 
 export const CONE_PALETTE = ["#17a2b8", "#7cb342", "#e5533c", "#f39c12", "#5c6bc0", "#26a69a", "#8e44ad", "#c0392b"];
 
-/* Конус воронки по данным sales-funnel (stages: through/ai/man/pct_prev; lost/won) */
+/* Плавный компактный конус по данным sales-funnel (through монотонно убывает —
+   сегменты стыкуются без зазоров и сводятся к точке; числа/подписи справа) */
 export function Cone({ d, t }: { d: any; t: any }) {
   if (!d || !d.stages || d.stages.length === 0) return null;
   const base = (d.stages[0]?.through) || d.entered || 1;
-  const wOf = (n: number) => Math.max((n / base) * 100, 15);
-  const GC = "30px 1fr minmax(140px,230px)";
+  const wOf = (n: number) => (n > 0 ? Math.max((n / base) * 100, 4) : 0);
+  const GC = "22px minmax(0,1fr) minmax(150px,266px)";
+  const H = 33;
   return (
-    <div style={{ maxWidth: 760, margin: "0 auto" }}>
+    <div style={{ maxWidth: 700, margin: "0 auto" }}>
       {(d.stages || []).map((st: any, i: number) => {
         const wTop = i === 0 ? 100 : wOf(d.stages[i - 1].through);
         const wBot = wOf(st.through);
@@ -19,31 +21,24 @@ export function Cone({ d, t }: { d: any; t: any }) {
         const col = CONE_PALETTE[i % CONE_PALETTE.length];
         const drop = i > 0 && st.pct_prev < 55;
         return (
-          <div key={st.id} style={{ display: "grid", gridTemplateColumns: GC, gap: 10, alignItems: "stretch", minHeight: 52 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ width: 26, height: 26, borderRadius: 7, background: "#2f3b52", color: "#fff", fontWeight: 800, fontSize: 13, display: "grid", placeItems: "center" }}>{i + 1}</span>
+          <div key={st.id} style={{ display: "grid", gridTemplateColumns: GC, columnGap: 8, alignItems: "center" }}>
+            <span style={{ width: 20, height: 20, borderRadius: 6, background: "#2f3b52", color: "#fff", fontWeight: 700, fontSize: 11, display: "grid", placeItems: "center" }}>{i + 1}</span>
+            <div style={{ height: H, position: "relative" }}>
+              <div style={{ position: "absolute", inset: 0, clipPath: clip, background: `linear-gradient(180deg, ${col}, ${col}cc)` }} />
             </div>
-            <div style={{ position: "relative" }}>
-              <div style={{ position: "absolute", inset: "1px 0", clipPath: clip, background: `linear-gradient(180deg, ${col}, ${col}bb)`, boxShadow: "inset 0 3px 7px rgba(255,255,255,.4), inset 0 -7px 11px rgba(0,0,0,.18)" }} />
-              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#fff", fontWeight: 800, fontSize: 16, textShadow: "0 1px 3px rgba(0,0,0,.45)" }}>
-                {st.through}
-                {(st.man > 0 || st.ai > 0) && <span style={{ fontSize: 11, fontWeight: 600, opacity: .95 }}>{st.man > 0 ? `🤖${st.ai} 👤${st.man}` : `🤖${st.ai}`}</span>}
+            <div style={{ lineHeight: 1.15, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, color: "#334155", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <b style={{ fontFamily: "ui-monospace,monospace", fontSize: 14, color: "#0f172a" }}>{st.through}</b> {st.name}
+                {(st.man > 0 || st.ai > 0) && <span style={{ fontSize: 10.5, color: "#94a3b8", marginLeft: 4 }}>🤖{st.ai}{st.man > 0 ? ` 👤${st.man}` : ""}</span>}
               </div>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "#334155", lineHeight: 1.2 }}>{st.name}</span>
-              <span style={{ fontSize: 11.5, color: drop ? "#b91c1c" : "#94a3b8", fontWeight: 600 }}>{i === 0 ? t("вход · 100%", "вхід · 100%") : `${st.pct_prev}% ${t("от преды.", "від попер.")}`}{drop && " ⚠"}</span>
+              <div style={{ fontSize: 10.5, color: drop ? "#dc2626" : "#94a3b8", fontWeight: 600 }}>{i === 0 ? t("вход · 100%", "вхід · 100%") : `${st.pct_prev}% ${t("от преды.", "від попер.")}`}{drop && " ⚠"}</div>
             </div>
           </div>
         );
       })}
-      <div style={{ display: "grid", gridTemplateColumns: GC, gap: 10, alignItems: "center", marginTop: 10 }}>
-        <div />
-        <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ flex: 1, height: 32, borderRadius: 8, background: "#fef2f2", border: "1px solid #fca5a5", display: "flex", alignItems: "center", justifyContent: "center", color: "#b91c1c", fontWeight: 700, fontSize: 12.5 }}>❌ {t("Потеряно", "Втрачено")}: {d.lost.count} · {d.lost.pct}%</div>
-          {d.won.count > 0 && <div style={{ flex: 1, height: 32, borderRadius: 8, background: "#f0fdf4", border: "1px solid #86efac", display: "flex", alignItems: "center", justifyContent: "center", color: "#166534", fontWeight: 700, fontSize: 12.5 }}>✅ {t("Продано", "Продано")}: {d.won.count} · {d.won.pct}%</div>}
-        </div>
-        <div />
+      <div style={{ display: "flex", gap: 14, marginTop: 8, paddingLeft: 30, fontSize: 11.5, flexWrap: "wrap" }}>
+        <span style={{ color: "#dc2626", fontWeight: 700 }}>❌ {t("Потеряно", "Втрачено")}: {d.lost.count} · {d.lost.pct}%</span>
+        {d.won.count > 0 && <span style={{ color: "#16a34a", fontWeight: 700 }}>✅ {t("Продано", "Продано")}: {d.won.count} · {d.won.pct}%</span>}
       </div>
     </div>
   );
