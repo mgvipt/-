@@ -13,6 +13,15 @@ from .models import Account, Category, Transaction, FinModelArticle, FinDirectio
 from .serializers import AccountSerializer, CategorySerializer, TransactionSerializer, FinModelArticleSerializer, FinDirectionSerializer, FundAllocationSerializer, AdvisoryReportSerializer
 from .services import compute_pnl, compute_breakeven, compute_channels
 
+def _today():
+    """Сьогодні за КИЇВСЬКИМ часом. Сервер працює в UTC, а звіти групуються по
+    київському дню — без цього з 00:00 до 03:00 «сьогодні» у звіті = вчора
+    (аудит 25.08). Використовуємо скрізь замість date.today()."""
+    from django.utils import timezone as _tz_today
+    return _tz_today.localdate()
+
+
+
 
 class FinancePerm(HasPermCode):
     """Доступ к финансам только с правом finance.view."""
@@ -1064,7 +1073,7 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
         try:
             dte = _dtm.strptime(d_od, "%d.%m.%Y").date()
         except ValueError:
-            dte = date.today()
+            dte = _today()
         osnd = (tr.get("OSND") or "")[:180]
         from .services import canonical_counterparty as _ccp
         cp = _ccp(tr.get("AUT_CNTR_NAM") or "")[:160]
@@ -2009,7 +2018,7 @@ class BankRuleViewSet(viewsets.ModelViewSet):
         stats = defaultdict(lambda: defaultdict(int))
         pretty = {}
         # тільки ПОТОЧНИЙ рік — свіжа розноска найточніша (можна ?from=YYYY-MM-DD)
-        d_from = request.query_params.get("from") or (date.today().replace(month=1, day=1).isoformat())
+        d_from = request.query_params.get("from") or (_today().replace(month=1, day=1).isoformat())
         qs = (Transaction.objects.filter(date__gte=d_from)
               .exclude(counterparty="").exclude(direction="transfer")
               .exclude(category__isnull=True).values_list("counterparty", "direction", "category_id", "fin_direction_id"))
@@ -2128,7 +2137,7 @@ class FinanceDashboardView(APIView):
     permission_classes = [FinancePerm]
 
     def get(self, request):
-        today = date.today()
+        today = _today()
         month_start = today.replace(day=1)
         tx = Transaction.objects.all()
         month = tx.filter(date__gte=month_start)
@@ -2228,7 +2237,7 @@ class BreakevenView(APIView):
 
     def get(self, request):
         import calendar
-        today = date.today()
+        today = _today()
         d_from = today.replace(day=1)
         d_to = today.replace(day=calendar.monthrange(today.year, today.month)[1])
         return Response({"from": d_from.isoformat(), "to": d_to.isoformat(), **compute_breakeven(d_from, d_to)})
@@ -2497,7 +2506,7 @@ class FundsView(APIView):
     permission_classes = [FinancePerm]
 
     def get(self, request):
-        period = request.query_params.get("period") or date.today().strftime("%Y-%m")
+        period = request.query_params.get("period") or _today().strftime("%Y-%m")
         alloc, spent = _fund_stats(period)
 
         def node(a):
@@ -2543,7 +2552,7 @@ class FundsView(APIView):
     def post(self, request):
         """Авто-розподіл виручки по фондах виручки: кожен ФВ отримує value% від суми.
         body: {account, period, revenue, fin_direction?}"""
-        period = request.data.get("period") or date.today().strftime("%Y-%m")
+        period = request.data.get("period") or _today().strftime("%Y-%m")
         revenue = float(request.data.get("revenue") or 0)
         account_id = request.data.get("account")
         direction_id = request.data.get("fin_direction")
@@ -2595,7 +2604,7 @@ class ManagerDealsView(APIView):
     def get(self, request):
         from django.contrib.auth import get_user_model
         uid = request.query_params.get("user")
-        period = request.query_params.get("period") or date.today().strftime("%Y-%m")
+        period = request.query_params.get("period") or _today().strftime("%Y-%m")
         u = get_user_model().objects.filter(id=uid).first()
         if not u:
             return Response({"rows": [], "total": 0, "deals": 0, "count": 0})
@@ -2678,7 +2687,7 @@ class SalaryView(APIView):
 
     def get(self, request):
         from .services import compute_manager_salary, compute_breakeven
-        period = request.query_params.get("period") or date.today().strftime("%Y-%m")
+        period = request.query_params.get("period") or _today().strftime("%Y-%m")
         uid = request.query_params.get("user")
         if uid:
             from django.contrib.auth import get_user_model
@@ -2736,7 +2745,7 @@ class FxRateView(APIView):
         import json as _json, urllib.request
         ccy = (request.query_params.get("ccy") or "USD").upper()
         if ccy == "UAH":
-            return Response({"ccy": "UAH", "rate": 1.0, "date": date.today().isoformat()})
+            return Response({"ccy": "UAH", "rate": 1.0, "date": _today().isoformat()})
         url = f"https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?valcode={ccy}&json"
         try:
             with urllib.request.urlopen(url, timeout=12) as r:
@@ -2895,7 +2904,7 @@ class OverviewView(APIView):
     def get(self, request):
         from datetime import date as _date, timedelta as _td
         from django.db.models import Sum
-        per = request.query_params.get("period") or _date.today().strftime("%Y-%m")
+        per = request.query_params.get("period") or __today().strftime("%Y-%m")
         y, mo = int(per[:4]), int(per[5:7])
         q_from, q_to = request.query_params.get("from"), request.query_params.get("to")
 
@@ -2958,7 +2967,7 @@ class OverviewView(APIView):
                            for a in Account.objects.filter(is_active=True)], key=lambda x: -x["balance"])
 
         # cashflow 30 днів
-        today = _date.today()
+        today = __today()
         cashflow = []
         for i in range(29, -1, -1):
             dd = today - _td(days=i)
@@ -3106,7 +3115,7 @@ class WorkTimeView(APIView):
         if action == "start":
             if not ws:
                 ws = WorkSession.objects.create(user=request.user, last_seen_at=now)
-                WorkDay.objects.update_or_create(user=request.user, date=_date.today(), defaults={"status": "worked"})
+                WorkDay.objects.update_or_create(user=request.user, date=__today(), defaults={"status": "worked"})
         elif action == "heartbeat" and ws:
             # «пульс» присутності — оновлює last_seen_at (тільки коли реально працює, не на паузі)
             if not ws.paused_at:

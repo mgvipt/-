@@ -12,6 +12,12 @@ from .serializers import (
     LeadSerializer, DealSerializer, DealDetailSerializer, PaymentSerializer,
 )
 
+def _today():
+    """Сьогодні за КИЇВСЬКИМ часом. Сервер працює в UTC, а звіти групуються по
+    київському дню — без цього з 00:00 до 03:00 «сьогодні» у звіті = вчора
+    (аудит 25.08). Використовуємо скрізь замість date.today()."""
+    from django.utils import timezone as _tz_today
+    return _tz_today.localdate()
 
 class ScopedByRoleMixin:
     """Фильтрация по правам: видимость (свои/все) и доступ к воронкам.
@@ -2539,8 +2545,8 @@ class SalesFunnelView(APIView):
             return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
         frm = request.query_params.get("from"); to = request.query_params.get("to")
         try:
-            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=44))
-            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (_today() - timedelta(days=44))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else _today()
         except ValueError:
             return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
         if (d_to - d_from).days > 400:
@@ -2664,8 +2670,8 @@ class SalesJourneyView(APIView):
             return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
         frm = request.query_params.get("from"); to = request.query_params.get("to")
         try:
-            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=44))
-            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (_today() - timedelta(days=44))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else _today()
         except ValueError:
             return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -2783,7 +2789,7 @@ class MetaSyncNowView(APIView):
 
         def _run():
             try:
-                until = date.today()
+                until = _today()
                 since = until - timedelta(days=days)
                 if scope == "ads":
                     from .meta_marketing import sync_ads
@@ -2893,8 +2899,8 @@ class MetaFunnelView(APIView):
         from apps.crm.models import Funnel, Lead, Deal, MetaAdDailyStat
         frm = request.query_params.get("from"); to = request.query_params.get("to")
         try:
-            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=29))
-            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (_today() - timedelta(days=29))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else _today()
         except ValueError:
             return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -4339,15 +4345,15 @@ class AnthropicCostView(APIView):
         frm = request.query_params.get("from"); to = request.query_params.get("to")
         dn = request.query_params.get("days")
         if not frm and dn and dn.isdigit():
-            frm = (date.today() - timedelta(days=int(dn))).isoformat()
+            frm = (_today() - timedelta(days=int(dn))).isoformat()
         if not frm:
-            frm = (date.today() - timedelta(days=30)).isoformat()
+            frm = (_today() - timedelta(days=30)).isoformat()
         if not to:
-            to = date.today().isoformat()
+            to = _today().isoformat()
         # Anthropic usage_report отдаёт бакеты по возрастанию дат с лимитом на страницу:
         # окно 2020→сегодня без пагинации возвращало первые пустые дни → $0. Ставим разумный
         # нижний порог (данные всё равно недавние) и ниже — пагинируем все страницы.
-        _floor = (date.today() - timedelta(days=370)).isoformat()
+        _floor = (_today() - timedelta(days=370)).isoformat()
         a_frm = frm if (frm or "") >= _floor else _floor
         from django.core.cache import cache as _dj_cache
         from apps.integrations.models import IntegrationSettings as _IS
@@ -4702,8 +4708,8 @@ class FunnelDailyView(APIView):
             return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
         frm = request.query_params.get("from"); to = request.query_params.get("to")
         try:
-            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=13))
-            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (_today() - timedelta(days=13))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else _today()
         except ValueError:
             return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
         if (d_to - d_from).days > 120:
@@ -4774,8 +4780,8 @@ class ManagerActionsView(APIView):
             return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
         frm = request.query_params.get("from"); to = request.query_params.get("to")
         try:
-            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=13))
-            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (_today() - timedelta(days=13))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else _today()
         except ValueError:
             return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
         agg = {}
@@ -4869,8 +4875,8 @@ class ManagerDialogsView(APIView):
             uid = 0
         frm = request.query_params.get("from"); to = request.query_params.get("to")
         try:
-            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=13))
-            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (_today() - timedelta(days=13))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else _today()
         except ValueError:
             return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
         HUMAN_CP = ["operator", "manager", "admin"]
@@ -4926,7 +4932,7 @@ class WeeklyReviewView(APIView):
         u = request.user
         if not (u.is_superuser or u.has_perm_code("roles.manage")):
             return Response({"detail": "Немає прав (тільки керівник)"}, status=status.HTTP_403_FORBIDDEN)
-        d_to = date.today(); d_from = d_to - timedelta(days=7)
+        d_to = _today(); d_from = d_to - timedelta(days=7)
 
         def _blank():
             return {"replies": 0, "followups": 0, "taken": 0, "closed": 0, "scores": [], "why": []}
@@ -4998,8 +5004,8 @@ class ManagerStagesView(APIView):
             return Response({"detail": "Немає прав"}, status=status.HTTP_403_FORBIDDEN)
         frm = request.query_params.get("from"); to = request.query_params.get("to")
         try:
-            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=13))
-            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (_today() - timedelta(days=13))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else _today()
         except ValueError:
             return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
         fid = request.query_params.get("funnel")
