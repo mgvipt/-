@@ -374,14 +374,15 @@ class FlexibleAuthTokenView(APIView):
         user = authenticate(request=request, username=identifier, password=password)
         if user is None:
             phone = normalize_client_phone(identifier)
-            lookup = Q(email__iexact=identifier)
-            if phone:
-                lookup |= Q(phone=phone)
-            # Phone/email fallback is intentionally client-only and succeeds
-            # only for one exact account. Staff keep username login unchanged.
+            # Пошта — для ВСІХ (співробітники теж входять поштою, а не лише логіном).
+            # Телефон — лише клієнти, як було. Успіх тільки при ОДНОМУ точному збігу.
             matches = list(User.objects.filter(
-                lookup, account_kind=User.AccountKind.CLIENT,
+                email__iexact=identifier,
             ).only("id", "username")[:2])
+            if not matches and phone:
+                matches = list(User.objects.filter(
+                    phone=phone, account_kind=User.AccountKind.CLIENT,
+                ).only("id", "username")[:2])
             if len(matches) == 1:
                 user = authenticate(
                     request=request,
