@@ -379,10 +379,10 @@ export default function MetaMarketing() {
   const daily = data?.daily || [];
 
   const card = (label: string, value: ReactNode, color = "#0f172a", hint?: string) => (
-    <div className="panel" style={{ padding: 15, minWidth: 165, flex: "1 1 165px" }}>
-      <div className="muted" style={{ fontSize: 12 }}>{label}</div>
-      <div style={{ fontSize: 25, fontWeight: 850, color, marginTop: 4 }}>{value}</div>
-      {hint && <div className="muted" style={{ fontSize: 10, marginTop: 5, lineHeight: 1.3 }}>{hint}</div>}
+    <div className="panel" style={{ padding: "9px 11px", minWidth: 124, flex: "1 1 124px", margin: 0 }}>
+      <div className="muted" style={{ fontSize: 10.5, lineHeight: 1.25 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color, marginTop: 2 }}>{value}</div>
+      {hint && <div className="muted" style={{ fontSize: 9.5, marginTop: 3, lineHeight: 1.25 }}>{hint}</div>}
     </div>
   );
   const table = (headers: string[], rows: ReactNode[][], empty: string, minWidth = 760, tips?: string[]) => (

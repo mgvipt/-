@@ -2871,8 +2871,9 @@ class MetaFunnelView(APIView):
             return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
 
         acc = MetaAdDailyStat.objects.filter(level="account", date__gte=d_from, date__lte=d_to).aggregate(
-            imp=Sum("impressions"), clk=Sum("clicks"), msg=Sum("messages_started"), spend=Sum("spend_uah"))
+            imp=Sum("impressions"), clk=Sum("clicks"), msg=Sum("messages_started"), spend=Sum("spend_uah"), rch=Sum("reach"))
         impressions = int(acc["imp"] or 0)
+        reach = int(acc["rch"] or 0)
         clicks = int(acc["clk"] or 0)
         msgs = int(acc["msg"] or 0)
         spend_uah = float(acc["spend"] or 0)
@@ -2907,6 +2908,7 @@ class MetaFunnelView(APIView):
 
         raw = [
             ("impressions", "Показы", impressions),
+            ("reach", "Охват (уникальные)", reach),
             ("clicks", "Клики", clicks),
             ("messages", "Начатые диалоги", msgs),
             ("leads", "Рекламные лиды CRM", lead_cnt),
