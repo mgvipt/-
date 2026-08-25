@@ -179,11 +179,6 @@ function AccountGrowth({ followers, organic, t }: { followers: any; organic: any
           <div style={{ fontSize: 22, fontWeight: 700, color: (followers.period_gained || 0) >= 0 ? "#15803d" : "#dc2626" }}>{(followers.period_gained || 0) >= 0 ? "+" : ""}{num(followers.period_gained)}</div>
           <div className="muted" style={{ fontSize: 11 }}>{t("чистый прирост кабинета за период", "чистий приріст кабінету за період")}</div>
         </div>
-        <div className="panel" style={{ margin: 0, borderLeft: "3px solid #2563eb" }}>
-          <div className="muted" style={{ fontSize: 12 }}>💰 {t("С рекламы (платно)", "З реклами (платно)")}</div>
-          <div style={{ fontSize: 22, fontWeight: 700 }}>0</div>
-          <div className="muted" style={{ fontSize: 11 }}>{t("кампании на переписку, не на подписку", "кампанії на листування, не на підписку")}</div>
-        </div>
         <div className="panel" style={{ margin: 0, borderLeft: "3px solid #0f766e" }}>
           <div className="muted" style={{ fontSize: 12 }}>📄 {t("Подписок с постов", "Підписок з постів")}</div>
           <div style={{ fontSize: 22, fontWeight: 700 }}>{num(postFollows)}</div>
@@ -448,6 +443,13 @@ export default function MetaMarketing() {
             {card(t("С точным ID рекламы", "З точним ID реклами"), count(summary.attributed_leads), "#2563eb")}
             {card(t("Источник объявления не определён", "Джерело оголошення не визначене"), count(summary.meta_unassigned_leads), "#d97706")}
           </div>
+          <SectionTitle title={t("Подписчики и стоимость (итоги)", "Підписники та вартість (підсумки)")} note={t("Подписки: органика отдельно от рекламы. Цена — рекламный расход ÷ на всех за период (blended).", "Підписки: органіка окремо від реклами. Ціна — витрати ÷ на всіх (blended).")} />
+          <div style={cardsRow}>
+            {card(t("Подписалось (органика)", "Підписалося (органіка)"), (followers.period_gained >= 0 ? "+" : "") + count(followers.period_gained), "#7c3aed")}
+            {card(t("С рекламы (платно)", "З реклами (платно)"), "0", "#2563eb", t("кампании на переписку, не на подписку", "кампанії на листування"))}
+            {card(t("Цена подписчика", "Ціна підписника"), (followers.period_gained > 0 && paidSummary.spend) ? "$" + (paidSummary.spend / followers.period_gained).toFixed(2) : "—", "#0f766e", t("расход рекламы ÷ новых подписчиков", "витрати ÷ нових підписників"))}
+            {card(t("Цена клиента", "Ціна клієнта"), (profitability.buyers > 0 && paidSummary.spend) ? "$" + (paidSummary.spend / profitability.buyers).toFixed(2) : "—", "#dc2626", t("расход рекламы ÷ покупателей", "витрати ÷ покупців"))}
+          </div>
           <SectionTitle title={t("Платная реклама Meta", "Платна реклама Meta")} note={t("Данные Ads Manager за выбранный период", "Дані Ads Manager за вибраний період")} />
           <div style={cardsRow}>
             {card(t("Расход", "Витрати"), moneyUsd(paidSummary.spend), "#dc2626")}
@@ -529,6 +531,11 @@ export default function MetaMarketing() {
 
         {tab === "creatives" && <>
           {syncWarning}
+          <div style={cardsRow}>
+            {card(t("Подписчиков с рекламы", "Підписників з реклами"), "0", "#2563eb", t("кампании настроены на переписку, а не на подписку — платных подписок нет", "кампанії на листування, не на підписку"))}
+            {card(t("Расход на рекламу", "Витрати на рекламу"), moneyUsd(paidSummary.spend), "#dc2626")}
+            {card(t("Начатые диалоги", "Розпочаті діалоги"), count(paidSummary.messages_started), "#0f766e")}
+          </div>
           <div className="note" style={{ marginBottom: 12 }}>
             {t("Каждая карточка — конкретное объявление. Миниатюра и ссылка помогают сразу увидеть, какой креатив дал диалоги и лиды.", "Кожна картка — конкретне оголошення. Мініатюра й посилання допомагають одразу побачити, який креатив дав діалоги та ліди.")}
           </div>
