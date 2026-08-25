@@ -374,10 +374,12 @@ export default function MetaMarketing() {
   const daily = data?.daily || [];
 
   const card = (label: string, value: ReactNode, color = "#0f172a", hint?: string) => (
-    <div className="panel" style={{ padding: "9px 11px", minWidth: 124, flex: "1 1 124px", margin: 0 }}>
-      <div className="muted" style={{ fontSize: 10.5, lineHeight: 1.25 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 800, color, marginTop: 2 }}>{value}</div>
-      {hint && <div className="muted" style={{ fontSize: 9.5, marginTop: 3, lineHeight: 1.25 }}>{hint}</div>}
+    <div title={hint || label} style={{ background: "#fff", border: "1px solid #e5eaf1", borderRadius: 9, padding: "7px 9px", margin: 0, minWidth: 0 }}>
+      <div style={{ fontSize: 10.5, lineHeight: 1.2, color: "#475569", fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+        {hint ? <span style={{ color: "#94a3b8", fontSize: 9, flexShrink: 0 }}>ⓘ</span> : null}
+      </div>
+      <div style={{ fontSize: 17, fontWeight: 800, color, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
     </div>
   );
   const table = (headers: string[], rows: ReactNode[][], empty: string, minWidth = 760, tips?: string[]) => (
@@ -439,7 +441,7 @@ export default function MetaMarketing() {
       {loading && !data ? <div className="muted" style={{ padding: 30 }}>Загрузка…</div> : data && <>
         {tab === "overview" && <>
           {syncWarning}
-          <PeriodBar from={from} to={to} days={periodDays} t={t} onQuick={setLastDays} />
+          <PeriodBar from={from} to={to} days={periodDays} t={t} onQuick={setLastDays} setFrom={setFrom} setTo={setTo} minFrom={CONNECTED_FROM} />
           <SectionTitle title={t("Instagram аккаунт", "Instagram акаунт")} note={t("Баланс подписчиков сохраняется ежедневно; прирост Meta отдаёт по дням", "Баланс підписників зберігається щодня; приріст Meta віддає по днях")} />
           <div style={cardsRow}>
             {card(t("Подписчиков сейчас", "Підписників зараз"), optional(followers.current_total, "", t("ожидает синхронизации", "очікує синхронізації")), "#c026d3", followers.username ? `@${followers.username}` : undefined)}
@@ -466,6 +468,8 @@ export default function MetaMarketing() {
             {card(t("Цена клика (CPC)", "Ціна кліку (CPC)"), cpcUsd == null ? "—" : moneyUsd(cpcUsd), "#0891b2", t("расход ÷ клики", "витрати ÷ кліки"))}
             {card("CPM", optional(paidSummary.cpm), "#0891b2", t("цена 1000 показов, $", "ціна 1000 показів, $"))}
             {card(t("Начатые диалоги по Ads Manager", "Розпочаті діалоги за Ads Manager"), count(paidSummary.messages_started), "#0f766e", t("Это показатель рекламы Meta, а не продажи и не уникальные лиды CRM", "Це показник реклами Meta, а не продажі й не унікальні ліди CRM"))}
+            {card(t("Цена диалога", "Ціна діалогу"), paidSummary.cost_per_message == null ? "—" : moneyUsd(paidSummary.cost_per_message), "#0f766e", t("расход рекламы ÷ начатые диалоги", "витрати реклами ÷ розпочаті діалоги"))}
+            {card(t("Цена диалога, ₴", "Ціна діалогу, ₴"), (paidSummary.spend_uah && paidSummary.messages_started) ? moneyUah(paidSummary.spend_uah / paidSummary.messages_started) : "—", "#0f766e", t("расход в гривне ÷ начатые диалоги", "витрати у гривні ÷ розпочаті діалоги"))}
             {card(t("Лиды Meta", "Ліди Meta"), count(paidSummary.meta_leads), "#0f766e")}
             {card(t("Цена лида (все из Meta)", "Ціна ліда (всі з Meta)"), cplUah == null ? "—" : moneyUah(cplUah), "#b45309", t("расход в грн ÷ все лиды CRM из Meta", "витрати грн ÷ усі ліди CRM з Meta"))}
             {card(t("Цена лида (с точным ID)", "Ціна ліда (з точним ID)"), cplExactUah == null ? "—" : moneyUah(cplExactUah), "#d97706", t("расход в грн ÷ лиды с подтверждённой рекламой", "витрати грн ÷ ліди з підтвердженою рекламою"))}
@@ -502,7 +506,7 @@ export default function MetaMarketing() {
         </>}
 
         {tab === "profitability" && <>
-          <PeriodBar from={from} to={to} days={periodDays} t={t} onQuick={setLastDays} />
+          <PeriodBar from={from} to={to} days={periodDays} t={t} onQuick={setLastDays} setFrom={setFrom} setTo={setTo} minFrom={CONNECTED_FROM} />
           <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
             <b>{t("Что входит в расчёт:", "Що входить у розрахунок:")}</b> {t(
               "Все оплаченные продажи из воронок «21 Основний продукт» и «22 Тестовий набір». Из остальных воронок — только продажи с подтверждённым ID Meta. Выручка считается по фактически оплаченным платежам. Повторная выручка — часть общей выручки, её не нужно прибавлять второй раз. Себестоимость считается по товарам сделки, рекламный расход переводится в гривну по официальному курсу НБУ за каждый день.",
@@ -533,6 +537,8 @@ export default function MetaMarketing() {
             {card("ROMI", profitability.romi == null ? "—" : `${profitability.romi}%`, Number(profitability.romi) >= 0 ? "#15803d" : "#dc2626", t("(валовая прибыль − реклама) ÷ реклама", "(валовий прибуток − реклама) ÷ реклама"))}
             {card(t("Цена клика (CPC)", "Ціна кліку (CPC)"), cpcUsd == null ? "—" : moneyUsd(cpcUsd), "#0891b2")}
             {card(t("Цена лида (все из Meta)", "Ціна ліда (всі з Meta)"), cplUah == null ? "—" : moneyUah(cplUah), "#b45309")}
+            {card(t("Цена диалога, ₴", "Ціна діалогу, ₴"), (paidSummary.spend_uah && paidSummary.messages_started) ? moneyUah(paidSummary.spend_uah / paidSummary.messages_started) : "—", "#0f766e")}
+            {card(t("Цена продажи", "Ціна продажу"), (paidSummary.spend_uah && profitability.sales) ? moneyUah(paidSummary.spend_uah / profitability.sales) : "—", "#dc2626", t("расход рекламы ÷ все продажи периода", "витрати реклами ÷ усі продажі періоду"))}
           </div>
           <SectionTitle title={t("Рентабельность по дням", "Рентабельність за днями")} note={t("Меняйте период сверху: день, неделя, месяц, 90 дней или произвольный диапазон", "Змінюйте період зверху: день, тиждень, місяць, 90 днів або довільний діапазон")} />
           {dailyTable}
@@ -680,24 +686,26 @@ function Block({ title, note, accent, children }: { title: string; note?: string
 }
 
 /* Панель періоду: ЯВНО показує, за який період цифри + швидкий вибір (щоб не гадати) */
-function PeriodBar({ from, to, days, t, onQuick }: { from: string; to: string; days: number; t: any; onQuick: (d: number) => void }) {
-  const fmt = (v: string) => { const p2 = String(v || "").split("-"); return p2.length === 3 ? `${p2[2]}.${p2[1]}.${p2[0]}` : v; };
+function PeriodBar({ from, to, days, t, onQuick, setFrom, setTo, minFrom }:
+  { from: string; to: string; days: number; t: any; onQuick: (d: number) => void; setFrom: (v: string) => void; setTo: (v: string) => void; minFrom?: string }) {
+  const inp: any = { height: 26, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px", fontSize: 12, background: "#fff" };
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "linear-gradient(135deg,#eff6ff,#f0fdfa)", border: "1px solid #bfdbfe", borderRadius: 12, padding: "9px 13px", marginBottom: 12 }}>
-      <span style={{ fontSize: 13, fontWeight: 700, color: "#1e40af" }}>📅 {t("Период:", "Період:")}</span>
-      <span style={{ fontSize: 14, fontWeight: 800, color: "#0f172a" }}>{fmt(from)} — {fmt(to)}</span>
-      <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: "#2563eb", borderRadius: 999, padding: "2px 9px" }}>{days} {days === 1 ? t("день","день") : (days < 5 ? t("дня","дні") : t("дней","днів"))}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "7px 11px", marginBottom: 10 }}>
+      <span style={{ fontSize: 12.5, fontWeight: 700, color: "#1e40af" }}>📅 {t("Период", "Період")}</span>
+      <input type="date" value={from} min={minFrom} onChange={(e) => setFrom(e.target.value)} style={inp} />
+      <span style={{ color: "#64748b" }}>—</span>
+      <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={inp} />
+      <span style={{ fontSize: 11.5, fontWeight: 700, color: "#fff", background: "#2563eb", borderRadius: 999, padding: "2px 8px" }}>{days} {days === 1 ? t("день","день") : (days < 5 ? t("дня","дні") : t("дней","днів"))}</span>
       <div style={{ flex: 1 }} />
-      <span className="muted" style={{ fontSize: 11 }}>{t("Быстро:", "Швидко:")}</span>
-      {[[1, t("сегодня","сьогодні")], [7, "7"], [30, "30"], [90, "90"]].map(([d, lb]: any) => (
-        <button key={d} className="btn btn-light" style={{ height: 26, padding: "0 10px", fontSize: 12 }} onClick={() => onQuick(d)}>{lb}</button>
+      {[[1, t("сегодня","сьогодні")], [7, "7 " + t("дн","дн")], [30, "30 " + t("дн","дн")], [90, "90 " + t("дн","дн")]].map(([d, lb]: any) => (
+        <button key={d} className="btn btn-light" style={{ height: 26, padding: "0 9px", fontSize: 11.5 }} onClick={() => onQuick(d)}>{lb}</button>
       ))}
     </div>
   );
 }
 
 function SectionTitle({ title, note }: { title: string; note: string }) {
-  return <div style={{ margin: "18px 0 8px", paddingLeft: 10, borderLeft: "4px solid #2563eb" }}><b style={{ fontSize: 16, color: "#0f172a" }}>{title}</b><div className="muted" style={{ fontSize: 11.5, marginTop: 2, lineHeight: 1.45 }}>{note}</div></div>;
+  return <div style={{ margin: "12px 0 6px", paddingLeft: 9, borderLeft: "3px solid #2563eb", display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}><b style={{ fontSize: 14.5, color: "#0f172a" }}>{title}</b><span style={{ fontSize: 11.5, color: "#475569", lineHeight: 1.35 }}>{note}</span></div>;
 }
 
 function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string) => string }) {
@@ -897,7 +905,7 @@ function Empty({ text }: { text: string }) {
   return <div className="panel muted" style={{ padding: 28, textAlign: "center", gridColumn: "1 / -1" }}>{text}</div>;
 }
 
-const cardsRow: any = { display: "flex", gap: 9, flexWrap: "wrap", marginBottom: 14, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "11px 12px", boxShadow: "0 1px 3px rgba(15,23,42,.05)" };
+const cardsRow: any = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(136px, 1fr))", gap: 7, marginBottom: 10, background: "#f8fafc", border: "1px solid #e5eaf1", borderRadius: 10, padding: "8px 9px" };
 const metricGrid: any = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: 12 };
 const th: any = { textAlign: "left", padding: "10px 12px", fontSize: 12, color: "#64748b", borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap" };
 const td: any = { padding: "10px 12px", fontSize: 13, borderBottom: "1px solid #eef2f7", verticalAlign: "top" };
