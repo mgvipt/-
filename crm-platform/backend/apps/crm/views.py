@@ -2960,7 +2960,7 @@ class MetaMarketingView(APIView):
         from datetime import date as calendar_date, datetime, time, timedelta
         from types import SimpleNamespace
         from apps.finance.models import Transaction as FinanceTransaction
-        from django.db.models import Max
+        from django.db.models import Max, Q
         from django.utils import timezone
         from django.utils.dateparse import parse_date
         from .meta_conversions import event_name_for_stage, has_verified_meta_attribution, normalized_meta_attribution
@@ -2973,8 +2973,8 @@ class MetaMarketingView(APIView):
         see_all_leads = True
         see_all_deals = True
         show_money = bool(user.is_superuser or user.has_perm_code("marketing.money"))
-        leads_qs = Lead.objects.select_related("funnel", "stage", "owner", "contact")
-        deals_qs = Deal.objects.select_related("funnel", "stage", "owner", "contact")
+        leads_qs = Lead.objects.select_related("funnel", "stage", "stage__funnel", "owner", "contact")
+        deals_qs = Deal.objects.select_related("funnel", "stage", "stage__funnel", "owner", "contact")
         if not see_all_leads:
             leads_qs = leads_qs.filter(owner=user)
         if not see_all_deals:
@@ -3264,8 +3264,15 @@ class MetaMarketingView(APIView):
         def local_day(moment):
             return timezone.localtime(moment).date() if timezone.is_aware(moment) else moment.date()
 
+        # ⚡ Вантажимо ЛИШЕ ті угоди, що потрібні для розрахунку (воронки Основний/
+        # Тестовий або з Meta-атрибуцією) — це надмножина умови sales_deals нижче,
+        # тому результат ідентичний, але замість ~34к угод читаємо ~1.8к.
+        _core_names = Q(funnel__name__icontains="основний продукт") | Q(funnel__name__icontains="основной продукт") \
+            | Q(funnel__name__icontains="тестовий набір") | Q(funnel__name__icontains="тестовый набор")
+        _meta_attr = Q(meta_attribution__isnull=False) & ~Q(meta_attribution={})
         lifetime_deals = list(
-            scoped_deals_qs.select_related("funnel", "stage", "contact", "owner")
+            scoped_deals_qs.filter(_core_names | _meta_attr)
+            .select_related("funnel", "stage", "stage__funnel", "contact", "owner")
             .prefetch_related("items__product", "payments")
         )
         sales_deals = {
