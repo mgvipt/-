@@ -460,7 +460,8 @@ function ClientDebtsBlock({ contactId }: { contactId: number }) {
         if (!list.length) return null;
         return (
           <div key={kind} style={{ marginBottom: 8 }}>
-            <div className="muted" style={{ fontSize: 11.5, fontWeight: 700, color: cl, marginBottom: 4 }}>{title} · {list.length}</div>
+            <div className="muted" style={{ fontSize: 11.5, fontWeight: 700, color: cl, marginBottom: 4 }}>{title} · {list.length}{list.length > 8 ? " · " + t("прокрутка ↓","прокрутка ↓") : ""}</div>
+            <div style={{ maxHeight: list.length > 8 ? 360 : "none", overflowY: list.length > 8 ? "auto" : "visible", paddingRight: list.length > 8 ? 4 : 0 }}>
             {list.map((x) => {
               const paid = x.status === "paid";
               const partial = !paid && Number(x.paid_amount || 0) > 0;
@@ -481,6 +482,7 @@ function ClientDebtsBlock({ contactId }: { contactId: number }) {
                 </div>
               );
             })}
+            </div>
           </div>
         );
       })}
