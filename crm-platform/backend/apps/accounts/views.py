@@ -281,6 +281,16 @@ class InviteViewSet(viewsets.ModelViewSet):
         inv = self.get_object(); inv.status = "revoked"; inv.save(update_fields=["status"])
         return Response({"ok": True})
 
+    @action(detail=True, methods=["post"])
+    def restore(self, request, pk=None):
+        from datetime import timedelta
+        inv = self.get_object()
+        inv.status = "pending"
+        if inv.expires_at < timezone.now() + timedelta(days=1):
+            inv.expires_at = timezone.now() + timedelta(days=7)
+        inv.save(update_fields=["status", "expires_at"])
+        return Response(self.get_serializer(inv).data)
+
 
 class AcceptInviteView(APIView):
     """Публічна сторінка прийняття запрошення: інфо + встановлення пароля -> створення співробітника."""

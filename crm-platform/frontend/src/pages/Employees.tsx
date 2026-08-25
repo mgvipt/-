@@ -854,7 +854,8 @@ function InvitesTab({ depts, roles, invites, reload, t }: any) {
   const [f, setF] = useState({ email: "", first_name: "", last_name: "", department: "", role: "" });
   const [link, setLink] = useState("");
   async function create() { if (!f.email.trim()) return; const body: any = { email: f.email, first_name: f.first_name, last_name: f.last_name }; if (f.department) body.department = Number(f.department); if (f.role) body.role = Number(f.role); const r = await api.post<any>("/api/invites/", body); setLink(r.link); setF({ email: "", first_name: "", last_name: "", department: "", role: "" }); reload(); }
-  async function revoke(id: number) { await api.post(`/api/invites/${id}/revoke/`, {}); reload(); }
+  async function revoke(id: number) { if (!confirm(t("Отозвать приглашение? Ссылка сразу перестанет работать.", "Відкликати запрошення? Посилання одразу перестане працювати.") as string)) return; await api.post(`/api/invites/${id}/revoke/`, {}); reload(); }
+  async function restore(id: number) { await api.post(`/api/invites/${id}/restore/`, {}); reload(); }
   const inp: any = { height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 9px", fontSize: 13 };
   return (
     <div style={{ maxWidth: 720 }}>
@@ -875,7 +876,7 @@ function InvitesTab({ depts, roles, invites, reload, t }: any) {
       </div>
       <div className="tablewrap" style={{ marginTop: 12 }}><table>
         <thead><tr><th>Email</th><th>{t("Отдел", "Відділ")}</th><th>{t("Статус", "Статус")}</th><th></th></tr></thead>
-        <tbody>{invites.map((i: any) => <tr key={i.id}><td>{i.email}</td><td>{i.department_name || "—"}</td><td><span className="chip" style={{ background: i.status === "accepted" ? "#16a34a" : i.status === "pending" ? "#f59e0b" : "#94a3b8" }}>{i.status}</span></td><td>{i.status === "pending" && <><a onClick={() => navigator.clipboard?.writeText(i.link)} style={{ cursor: "pointer", marginRight: 8 }}><Icon n="📋" size={14} /></a><a onClick={() => revoke(i.id)} style={{ cursor: "pointer", color: "#dc2626" }}>{t("отозвать", "відкликати")}</a></>}</td></tr>)}</tbody>
+        <tbody>{invites.map((i: any) => <tr key={i.id}><td>{i.email}</td><td>{i.department_name || "—"}</td><td><span className="chip" style={{ background: i.status === "accepted" ? "#16a34a" : i.status === "pending" ? "#f59e0b" : "#94a3b8" }}>{i.status}</span></td><td><div style={{ display: "flex", gap: 12, alignItems: "center" }}>{i.status === "pending" && <><button className="btn btn-light" style={{ fontSize: 12, padding: "2px 9px" }} onClick={() => { navigator.clipboard?.writeText(i.link); alert(t("Ссылка скопирована", "Посилання скопійовано")); }}><Icon n="📋" size={13} /> {t("Ссылка", "Посилання")}</button><a onClick={() => revoke(i.id)} style={{ cursor: "pointer", color: "#dc2626", fontSize: 12.5 }}>{t("отозвать", "відкликати")}</a></>}{(i.status === "revoked" || i.status === "expired") && <a onClick={() => restore(i.id)} style={{ cursor: "pointer", color: "#16a34a", fontSize: 12.5, fontWeight: 600 }}>{t("восстановить", "відновити")}</a>}</div></td></tr>)}</tbody>
       </table></div>
     </div>
   );
