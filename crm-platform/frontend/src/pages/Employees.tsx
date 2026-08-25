@@ -865,11 +865,15 @@ function InvitesTab({ depts, roles, invites, reload, t }: any) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <input style={inp} placeholder="Email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
           <input style={inp} placeholder={t("Логин (необязательно)", "Логін (необовʼязково)")} value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} />
-          <select style={inp} value={f.department} onChange={(e) => setF({ ...f, department: e.target.value })}><option value="">{t("— отдел —", "— відділ —")}</option>{depts.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
           <input style={inp} placeholder={t("Имя", "Імʼя")} value={f.first_name} onChange={(e) => setF({ ...f, first_name: e.target.value })} />
           <input style={inp} placeholder={t("Фамилия", "Прізвище")} value={f.last_name} onChange={(e) => setF({ ...f, last_name: e.target.value })} />
-          <select style={inp} value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}><option value="">{t("— роль —", "— роль —")}</option>{roles.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-          <button className="btn btn-green" onClick={create}><Icon n="🔗" size={15} /> {t("Создать ссылку", "Створити посилання")}</button>
+          <label style={{ display: "block", fontSize: 11, color: "#64748b" }}>{t("Отдел", "Відділ")}
+            <select style={{ ...inp, width: "100%", marginTop: 2 }} value={f.department} onChange={(e) => setF({ ...f, department: e.target.value })}><option value="">{t("— выбрать отдел —", "— обрати відділ —")}</option>{depts.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
+          </label>
+          <label style={{ display: "block", fontSize: 11, color: "#64748b" }}>{t("Роль (права доступа)", "Роль (права доступу)")}
+            <select style={{ ...inp, width: "100%", marginTop: 2 }} value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}><option value="">{t("— выбрать роль —", "— обрати роль —")}</option>{roles.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+          </label>
+          <button className="btn btn-green" style={{ gridColumn: "1 / -1" }} onClick={create}><Icon n="🔗" size={15} /> {t("Создать ссылку", "Створити посилання")}</button>
         </div>
         {link && <div style={{ marginTop: 10, padding: 10, background: "#ecfdf5", borderRadius: 8 }}>
           <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("Скопируй и отправь сотруднику:", "Скопіюй і надішли:")}</div>
