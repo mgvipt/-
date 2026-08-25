@@ -164,30 +164,74 @@ function MetaConeFunnel({ from, to }: { from: string; to: string }) {
 }
 
 /* ─── График роста подписчиков кабинета по дням ─── */
-function AccountGrowth({ followers, t }: { followers: any; t: any }) {
+function AccountGrowth({ followers, organic, t }: { followers: any; organic: any[]; t: any }) {
   const daily = (followers.daily || []);
   const maxG = Math.max(...daily.map((d: any) => Math.abs(d.gained || 0)), 1);
   const num = (n: number) => Number(n || 0).toLocaleString("ru-RU");
+  const withFollows = (organic || []).filter((r: any) => r.follows != null && r.follows > 0).sort((a: any, b: any) => b.follows - a.follows);
+  const postFollows = withFollows.reduce((a: number, r: any) => a + (r.follows || 0), 0);
+  const reelsCount = (organic || []).filter((r: any) => (r.media_product_type || "") === "REELS").length;
   return (
-    <div className="panel" style={{ margin: 0 }}>
-      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>📈 {t("Прирост подписчиков по дням", "Приріст підписників по днях")}</div>
-      <div className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>{t("Зелёные — набрали подписчиков в этот день, красные — потеряли. Наведи на столбец для деталей.", "Зелені — набрали, червоні — втратили.")}</div>
-      {daily.length === 0 ? <div className="muted">{t("Нет данных за период", "Немає даних за період")}</div> : (
-        <div style={{ display: "flex", alignItems: "center", gap: 3, minHeight: 170, overflowX: "auto" }}>
-          {daily.map((d: any) => {
-            const g = d.gained || 0;
-            const h = (Math.abs(g) / maxG) * 62;
-            return (
-              <div key={d.date} style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 24, flex: 1 }} title={`${d.date}: ${g >= 0 ? "+" : ""}${g} (${t("всего", "всього")} ${num(d.total)})`}>
-                <span style={{ fontSize: 9, color: g >= 0 ? "#15803d" : "#dc2626", fontWeight: 700 }}>{g >= 0 ? "+" : ""}{g}</span>
-                <div style={{ height: 66, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>{g >= 0 && <div style={{ width: 13, height: Math.max(h, 2), background: "#22c55e", borderRadius: "3px 3px 0 0" }} />}</div>
-                <div style={{ height: 66, display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>{g < 0 && <div style={{ width: 13, height: Math.max(h, 2), background: "#ef4444", borderRadius: "0 0 3px 3px" }} />}</div>
-                <span style={{ fontSize: 9, color: "#94a3b8", whiteSpace: "nowrap" }}>{String(d.date).slice(5)}</span>
-              </div>
-            );
-          })}
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(185px,1fr))", gap: 10, marginBottom: 14 }}>
+        <div className="panel" style={{ margin: 0, borderLeft: "3px solid #7c3aed" }}>
+          <div className="muted" style={{ fontSize: 12 }}>👥 {t("Подписалось — органика", "Підписалося — органіка")}</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: (followers.period_gained || 0) >= 0 ? "#15803d" : "#dc2626" }}>{(followers.period_gained || 0) >= 0 ? "+" : ""}{num(followers.period_gained)}</div>
+          <div className="muted" style={{ fontSize: 11 }}>{t("чистый прирост кабинета за период", "чистий приріст кабінету за період")}</div>
         </div>
-      )}
+        <div className="panel" style={{ margin: 0, borderLeft: "3px solid #2563eb" }}>
+          <div className="muted" style={{ fontSize: 12 }}>💰 {t("С рекламы (платно)", "З реклами (платно)")}</div>
+          <div style={{ fontSize: 22, fontWeight: 700 }}>0</div>
+          <div className="muted" style={{ fontSize: 11 }}>{t("кампании на переписку, не на подписку", "кампанії на листування, не на підписку")}</div>
+        </div>
+        <div className="panel" style={{ margin: 0, borderLeft: "3px solid #0f766e" }}>
+          <div className="muted" style={{ fontSize: 12 }}>📄 {t("Подписок с постов", "Підписок з постів")}</div>
+          <div style={{ fontSize: 22, fontWeight: 700 }}>{num(postFollows)}</div>
+          <div className="muted" style={{ fontSize: 11 }}>{t("Meta отдаёт только для обычных постов", "Meta віддає лише для звичайних постів")}</div>
+        </div>
+      </div>
+      <div className="panel" style={{ margin: 0, marginBottom: 14 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>📈 {t("Прирост подписчиков по дням", "Приріст підписників по днях")}</div>
+        <div className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>{t("Зелёные — набрали в этот день, красные — потеряли. Это органика кабинета (платных подписок нет).", "Зелені — набрали, червоні — втратили. Це органіка кабінету.")}</div>
+        {daily.length === 0 ? <div className="muted">{t("Нет данных за период", "Немає даних за період")}</div> : (
+          <div style={{ display: "flex", alignItems: "center", gap: 3, minHeight: 170, overflowX: "auto" }}>
+            {daily.map((d: any) => {
+              const g = d.gained || 0;
+              const h = (Math.abs(g) / maxG) * 62;
+              return (
+                <div key={d.date} style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 24, flex: 1 }} title={`${d.date}: ${g >= 0 ? "+" : ""}${g} (${t("всего", "всього")} ${num(d.total)})`}>
+                  <span style={{ fontSize: 9, color: g >= 0 ? "#15803d" : "#dc2626", fontWeight: 700 }}>{g >= 0 ? "+" : ""}{g}</span>
+                  <div style={{ height: 66, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>{g >= 0 && <div style={{ width: 13, height: Math.max(h, 2), background: "#22c55e", borderRadius: "3px 3px 0 0" }} />}</div>
+                  <div style={{ height: 66, display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>{g < 0 && <div style={{ width: 13, height: Math.max(h, 2), background: "#ef4444", borderRadius: "0 0 3px 3px" }} />}</div>
+                  <span style={{ fontSize: 9, color: "#94a3b8", whiteSpace: "nowrap" }}>{String(d.date).slice(5)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <div className="panel" style={{ margin: 0 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>👥 {t("Подписки по публикациям", "Підписки по публікаціях")}</div>
+        <div className="muted" style={{ fontSize: 11.5, marginBottom: 10, lineHeight: 1.5 }}>{t(`Meta отдаёт «подписки с публикации» ТОЛЬКО для обычных постов. Для Reels (${reelsCount} шт за период) — не отдаёт, это ограничение API Meta (проверено ответом API #100).`, `Meta віддає «підписки з публікації» ЛИШЕ для звичайних постів. Для Reels (${reelsCount}) — не віддає (обмеження API Meta).`)}</div>
+        {withFollows.length === 0 ? <div className="muted" style={{ fontSize: 12.5 }}>{t("За период постов с подписками нет (или только Reels).", "За період постів з підписками немає.")}</div> : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 420, fontSize: 13 }}>
+              <thead><tr>
+                <th style={{ textAlign: "left", padding: "6px 8px", color: "#64748b", fontSize: 12 }}>{t("Публикация", "Публікація")}</th>
+                <th style={{ textAlign: "right", padding: "6px 8px", color: "#64748b", fontSize: 12 }}>{t("Подписок", "Підписок")}</th>
+                <th style={{ textAlign: "right", padding: "6px 8px", color: "#64748b", fontSize: 12 }}>{t("Охват", "Охоплення")}</th>
+              </tr></thead>
+              <tbody>{withFollows.map((r: any) => (
+                <tr key={r.media_id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                  <td style={{ padding: "6px 8px" }}><a href={r.permalink} target="_blank" rel="noreferrer" style={{ color: "#2563eb", textDecoration: "none" }}>{(r.caption || "—").slice(0, 44)}</a></td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: "#7c3aed" }}>+{num(r.follows)}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{num(r.reach)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -528,7 +572,7 @@ export default function MetaMarketing() {
               r.crm_leads || 0, r.crm_deals || 0,
             ]),
             t("Органический контент за период не найден", "Органічний контент за період не знайдено"), 1100)}
-          {orgView === "account" && <AccountGrowth followers={followers} t={t} />}
+          {orgView === "account" && <AccountGrowth followers={followers} organic={organic} t={t} />}
         </>}
 
         {tab === "funnel" && <>
