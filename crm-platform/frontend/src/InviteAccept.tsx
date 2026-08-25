@@ -31,7 +31,18 @@ export default function InviteAccept() {
   const card: any = { width: 360, background: "#fff", borderRadius: 16, boxShadow: "0 14px 44px rgba(0,0,0,.12)", padding: 26 };
 
   if (info === undefined) return <div className="spin">…</div>;
-  if (!info.valid) return <div style={wrap}><div style={card}><h3>Запрошення недійсне або прострочене</h3><p className="muted">Зверніться до керівника за новим лінком.</p></div></div>;
+  if (!info.valid) return (
+    <div style={wrap}><div style={card}>
+      {info.already_registered ? <>
+        <h3><Icon n="✅" size={18} /> Реєстрацію вже завершено</h3>
+        <p className="muted" style={{ lineHeight: 1.5 }}>Цей акаунт уже створено. Увійдіть у систему за вашим логіном (або поштою) та паролем, який ви задали.</p>
+        <button className="btn btn-primary" style={{ width: "100%", height: 40, marginTop: 10 }} onClick={() => nav("/login")}>Перейти до входу</button>
+      </> : <>
+        <h3>Запрошення недійсне або прострочене</h3>
+        <p className="muted">Зверніться до керівника за новим лінком.</p>
+      </>}
+    </div></div>
+  );
   if (done) return <div style={wrap}><div style={card}><h3><Icon n="✅" size={18} /> Акаунт створено!</h3><p>Переходимо на вхід…</p></div></div>;
 
   return (

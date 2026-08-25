@@ -305,6 +305,9 @@ class AcceptInviteView(APIView):
         return inv
 
     def get(self, request, token):
+        raw = Invite.objects.filter(token=token).first()
+        if raw and raw.status == "accepted":
+            return Response({"valid": False, "already_registered": True})
         inv = self._get(token)
         if not inv:
             return Response({"valid": False})
