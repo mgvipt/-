@@ -104,13 +104,13 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ["id", "username", "first_name", "last_name", "full_name", "email",
                   "phone", "account_kind", "extension", "role", "role_name", "department", "department_name",
                   "extra_permissions", "denied_permissions", "effective_permissions", "stage_view_all", "stage_lock", "theme", "is_active",
-                  "employment_status", "dismissed_at", "date_joined",
+                  "employment_status", "dismissed_at", "date_joined", "last_login",
                   "photo", "position", "birthday", "about", "interests", "telegram",
                   "idle_timeout_min", "effective_idle_timeout",
                   "on_shift", "shift_paused",
                   "extra_funnels", "extra_open_lines",
                   "fin_accounts", "fin_cats_in", "fin_cats_out", "fin_dirs", "fin_counterparties"]
-        read_only_fields = ["date_joined", "account_kind"]
+        read_only_fields = ["date_joined", "account_kind", "last_login"]
 
     def get_full_name(self, obj):
         return ("%s %s" % (obj.first_name, obj.last_name)).strip() or obj.username

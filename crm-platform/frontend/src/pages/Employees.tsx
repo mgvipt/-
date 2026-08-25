@@ -5,7 +5,7 @@ import { useLang } from "../i18n";
 import { Icon } from "../Icon";
 
 interface Dept { id: number; name: string; parent: number | null; permissions: string[]; color: string; pos_x: number; pos_y: number; members_count: number; eff_permissions: string[]; idle_timeout_min?: number; }
-interface Emp { id: number; username: string; full_name: string; email: string; role: number | null; role_name: string; department: number | null; department_name: string; extra_permissions: string[]; denied_permissions: string[]; is_active: boolean; account_kind?: "client" | "staff"; employment_status?: string; dismissed_at?: string | null; date_joined?: string; photo?: string; position?: string; birthday?: string | null; about?: string; interests?: string; telegram?: string; phone?: string; on_shift?: boolean; shift_paused?: boolean; }
+interface Emp { id: number; username: string; full_name: string; email: string; role: number | null; role_name: string; department: number | null; department_name: string; extra_permissions: string[]; denied_permissions: string[]; is_active: boolean; account_kind?: "client" | "staff"; employment_status?: string; dismissed_at?: string | null; date_joined?: string; photo?: string; position?: string; birthday?: string | null; about?: string; interests?: string; telegram?: string; phone?: string; on_shift?: boolean; shift_paused?: boolean; last_login?: string | null; }
 interface Invite { id: number; email: string; department_name: string; status: string; link: string; }
 interface Perm { code: string; label: string; }
 interface Role { id: number; name: string; }
@@ -206,6 +206,12 @@ export default function Employees() {
       load(); loadList();
     } catch (err: any) { flash(err?.response?.data?.detail || t("Ошибка", "Помилка")); }
   }
+  async function deleteEmp(e: Emp) {
+    if (!confirm(t(`Удалить аккаунт «${e.full_name || e.username}» полностью? Так можно только с теми, кто ни разу не входил (создан по ошибке). Работавших сотрудников не удаляем — их увольняют.`,
+                   `Видалити акаунт «${e.full_name || e.username}» повністю? Лише для тих, хто жодного разу не входив.`) as string)) return;
+    try { await api.del(`/api/users/${e.id}/`); load(); }
+    catch (err: any) { alert(err?.data?.detail || err?.message || t("Не удалось удалить", "Не вдалося видалити")); }
+  }
   async function setEmpStatus(e: Emp, newStatus: "active" | "inactive" | "dismissed") {
     const labels: any = { active: t("вернуть в активные", "повернути в активні"), inactive: t("пометить неактивным", "позначити неактивним"), dismissed: t("уволить", "звільнити") };
     if (newStatus === "dismissed") { dismissEmp(e); return; }
@@ -368,6 +374,7 @@ export default function Employees() {
                     {st === "active" && <>
                       {btn(t("⏸ Неактивный", "⏸ Неактивний"), () => setEmpStatus(e, "inactive"), "#ca8a04", "#fefce8", "#fde68a")}
                       {btn(t("🚪 Уволить", "🚪 Звільнити"), () => setEmpStatus(e, "dismissed"), "#dc2626", "#fef2f2", "#fecaca")}
+                      {!e.last_login && btn(t("🗑 Удалить", "🗑 Видалити"), () => deleteEmp(e), "#64748b", "#f8fafc", "#e2e8f0")}
                     </>}
                     {st === "inactive" && <>
                       {btn(t("▶ Вернуть", "▶ Повернути"), () => setEmpStatus(e, "active"), "#16a34a", "#f0fdf4", "#bbf7d0")}

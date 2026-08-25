@@ -43,6 +43,17 @@ class UserViewSet(viewsets.ModelViewSet):
     permission_classes = [HasPermCode]
     required_perm = "roles.manage"
 
+    def destroy(self, request, *args, **kwargs):
+        """Видаляти можна ЛИШЕ помилкові акаунти, які жодного разу не входили.
+        Реальних співробітників не видаляємо — їх звільняють (історія лишається)."""
+        u = self.get_object()
+        if u.last_login is not None:
+            return Response({"detail": "Цей співробітник уже працював у системі — його не можна видалити. Використайте «Звільнити»: доступ закриється, а історія залишиться."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if u.is_superuser or u.id == request.user.id:
+            return Response({"detail": "Не можна видалити цей акаунт"}, status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
     def get_queryset(self):
         """Фільтр за статусом занятості: ?status=active|inactive|dismissed|all.
         За замовчуванням (без параметра) — тільки активні (сумісність зі старим фронтом).
