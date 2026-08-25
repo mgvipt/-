@@ -3144,6 +3144,8 @@ function ManagerDealsModal({ user, period, onClose }: { user: any; period: strin
   const nav = useNavigate();
   const [d, setD] = useState<any>(null);
   const [min0, setMin0] = useState(false);   // згорнуто в смужку (щоб працювати в основному вікні)
+  const [openDeal, setOpenDeal] = useState<number | null>(null);  // картка сделки — ПОВЕРХ панелі, не йдемо зі сторінки
+  const [showDeals, setShowDeals] = useState(false);              // список угод розгортається за потреби
   // ── ШИРИНА ПАНЕЛІ: тягнемо за лівий край, запамʼятовується між сесіями ──
   const [w, setW] = useState<number>(() => {
     const saved = Number(localStorage.getItem("mgr_drawer_w") || 0);
@@ -3210,15 +3212,49 @@ function ManagerDealsModal({ user, period, onClose }: { user: any; period: strin
             </div>
             {(d.by_day || []).length > 0 && (
               <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: "#334155", marginBottom: 4 }}>📆 {t("Собрано по дням", "Зібрано за днями")}</div>
-                <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4 }}>
-                  {(d.by_day || []).map((b: any) => (
-                    <div key={b.date} style={{ flex: "0 0 auto", minWidth: 108, background: "#f8fafc", border: "1px solid #e5eaf1", borderRadius: 8, padding: "5px 8px" }}>
-                      <div style={{ fontSize: 10.5, color: "#475569", fontWeight: 700 }}>{new Date(b.date).toLocaleDateString("ru", { day: "2-digit", month: "2-digit" })}</div>
-                      <div style={{ fontSize: 14, fontWeight: 800, color: "#16a34a", whiteSpace: "nowrap" }}>{money(b.amount)}</div>
-                      <div style={{ fontSize: 10, color: "#64748b", whiteSpace: "nowrap" }}>{b.deals} {t("сд.", "уг.")}{b.fee ? <span style={{ color: "#dc2626" }}> · −{money(b.fee)}</span> : null}</div>
-                    </div>
-                  ))}
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: "#334155", marginBottom: 4 }}>📊 {t("Работа по дням (KPI)", "Робота за днями (KPI)")}</div>
+                <div style={{ maxHeight: 230, overflow: "auto", border: "1px solid #e5eaf1", borderRadius: 8 }}>
+                  <table style={{ width: "100%", fontSize: 11.5, borderCollapse: "separate", borderSpacing: 0, minWidth: 760 }}>
+                    <thead><tr style={{ color: "#475569" }}>
+                      {[[t("Дата","Дата"), t("День","День")], [t("Деньги","Гроші"), t("сколько собрал за день","скільки зібрав за день")],
+                        [t("План","План"), t("дневная норма из плана месяца","денна норма з плану місяця")],
+                        [t("Продаж","Продажів"), t("сделок с оплатой в этот день","угод з оплатою цього дня")],
+                        [t("Сам","Сам"), t("в переписке отвечал живой менеджер","у переписці відповідала жива людина")],
+                        [t("ИИ","ШІ"), t("продажа прошла на ответах ИИ","продаж пройшов на відповідях ШІ")],
+                        [t("Осн.","Осн."), t("основной продукт","основний продукт")], [t("Тест","Тест"), t("тестовый набор","тестовий набір")], [t("Др.","Інші"), t("другие воронки","інші воронки")],
+                        [t("Ср.чек","Сер.чек"), t("деньги ÷ продажи","гроші ÷ продажі")],
+                        [t("Взял","Взяв"), t("взял чат/лид в работу","взяв чат/лід у роботу")],
+                        [t("Закрыл","Закрив"), t("завершил чатов (чистота CRM)","завершив чатів (чистота CRM)")],
+                        [t("Игноры","Ігнори"), t("вернул клиента из игнора","повернув клієнта з ігнору")],
+                        [t("Сообщ.","Повідом."), t("написал сообщений клиентам","написав повідомлень клієнтам")]].map(([lb, tip]: any, i: number) => (
+                        <th key={i} title={tip} style={{ position: "sticky", top: 0, background: "#f1f5f9", padding: "5px 6px", textAlign: i === 0 ? "left" : "right", fontSize: 10.5, fontWeight: 700, borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" }}>{lb}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {(d.by_day || []).map((b: any) => {
+                        const cellD: any = { padding: "4px 6px", textAlign: "right", whiteSpace: "nowrap" };
+                        const dim = (v: any) => v ? { color: "#0f172a" } : { color: "#cbd5e1" };
+                        return (
+                          <tr key={b.date} style={{ borderTop: "1px solid #f1f5f9" }}>
+                            <td style={{ ...cellD, textAlign: "left", fontWeight: 700, color: "#475569" }}>{new Date(b.date).toLocaleDateString("ru", { day: "2-digit", month: "2-digit" })}</td>
+                            <td style={{ ...cellD, fontWeight: 800, color: "#16a34a" }}>{money(b.amount)}</td>
+                            <td style={cellD}>{b.plan_day ? <span style={{ color: (b.plan_pct || 0) >= 100 ? "#16a34a" : "#b45309", fontWeight: 700 }}>{b.plan_pct}%</span> : <span style={{ color: "#cbd5e1" }}>—</span>}</td>
+                            <td style={{ ...cellD, fontWeight: 700, ...dim(b.sales) }}>{b.sales || "—"}</td>
+                            <td style={{ ...cellD, ...dim(b.sales_self) }}>{b.sales_self || "—"}</td>
+                            <td style={{ ...cellD, ...dim(b.sales_ai), color: b.sales_ai ? "#7c3aed" : "#cbd5e1" }}>{b.sales_ai || "—"}</td>
+                            <td style={{ ...cellD, ...dim(b.sales_main) }}>{b.sales_main || "—"}</td>
+                            <td style={{ ...cellD, ...dim(b.sales_test) }}>{b.sales_test || "—"}</td>
+                            <td style={{ ...cellD, ...dim(b.sales_other) }}>{b.sales_other || "—"}</td>
+                            <td style={{ ...cellD, ...dim(b.avg_check) }}>{b.avg_check ? money(b.avg_check) : "—"}</td>
+                            <td style={{ ...cellD, ...dim(b.taken) }}>{b.taken || "—"}</td>
+                            <td style={{ ...cellD, ...dim(b.closed) }}>{b.closed || "—"}</td>
+                            <td style={{ ...cellD, ...dim(b.ignores) }}>{b.ignores || "—"}</td>
+                            <td style={{ ...cellD, ...dim(b.msgs) }}>{b.msgs || "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
@@ -3233,8 +3269,14 @@ function ManagerDealsModal({ user, period, onClose }: { user: any; period: strin
             )}
           </div>
 
-          {/* ── ТАБЛИЦЯ: скрол і вертикальний, і горизонтальний; смуга прокрутки — знизу вікна ── */}
-          <div style={{ flex: 1, minHeight: 0, overflow: "auto", borderTop: "1px solid #e5eaf1" }}>
+          {/* ── СПИСОК УГОД: згорнутий за замовчуванням, розгортається за потреби ── */}
+          <div onClick={() => setShowDeals((v) => !v)} style={{ cursor: "pointer", padding: "7px 14px", borderTop: "1px solid #e5eaf1", background: "#f8fafc", fontSize: 12.5, fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
+            <span>{showDeals ? "▾" : "▸"}</span>
+            <span>🧾 {t("Сделки за период", "Угоди за період")} ({(d.rows || []).length})</span>
+            <div style={{ flex: 1 }} />
+            <span className="muted" style={{ fontWeight: 400, fontSize: 11.5 }}>{showDeals ? t("свернуть", "згорнути") : t("развернуть", "розгорнути")}</span>
+          </div>
+          <div style={{ flex: showDeals ? 1 : "0 0 0px", minHeight: 0, overflow: showDeals ? "auto" : "hidden", borderTop: showDeals ? "1px solid #e5eaf1" : "none" }}>
             <table style={{ width: "100%", fontSize: 12.5, minWidth: 900, borderCollapse: "separate", borderSpacing: 0 }}>
               <thead>
                 <tr style={{ fontSize: 10.5, textAlign: "left", color: "#475569" }}>
@@ -3247,7 +3289,7 @@ function ManagerDealsModal({ user, period, onClose }: { user: any; period: strin
               </thead>
               <tbody>
                 {(d.rows || []).map((row: any) => (
-                  <tr key={row.deal_id} onClick={() => nav(`/deals/${row.deal_id}`)} style={{ borderTop: "1px solid #eef2f7", cursor: "pointer" }} title={t("Открыть сделку", "Відкрити угоду")}>
+                  <tr key={row.deal_id} onClick={() => setOpenDeal(row.deal_id)} style={{ borderTop: "1px solid #eef2f7", cursor: "pointer" }} title={t("Открыть сделку", "Відкрити угоду")}>
                     <td style={{ ...cell, color: "#2563eb", fontWeight: 600, maxWidth: 250, overflow: "hidden", textOverflow: "ellipsis" }}>#{row.deal_id}{row.title && row.title !== ("#" + row.deal_id) ? " · " + row.title : ""}{row.count > 1 ? <span className="muted" style={{ fontWeight: 400 }}> ({row.count})</span> : ""}</td>
                     <td style={cell}><span style={{ fontSize: 10.5, background: "#eff6ff", color: "#1e40af", borderRadius: 6, padding: "1px 6px" }}>{row.funnel || "—"}</span></td>
                     <td style={{ ...cell, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>{row.client || "—"}</td>
@@ -3261,6 +3303,20 @@ function ManagerDealsModal({ user, period, onClose }: { user: any; period: strin
                 {(d.rows || []).length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 16, textAlign: "center" }}>{t("Нет оплат за этот месяц", "Немає оплат за цей місяць")}</td></tr>}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+      {/* ── КАРТКА СДЕЛКИ ПОВЕРХ ПАНЕЛІ: не втрачаємо список ЗП, закрив — і назад ── */}
+      {openDeal != null && (
+        <div style={{ position: "absolute", inset: 0, background: "#fff", zIndex: 10, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderBottom: "1px solid #e5eaf1", background: "#f8fafc", flexShrink: 0 }}>
+            <button className="btn btn-light" style={{ height: 28, padding: "0 10px" }} onClick={() => setOpenDeal(null)}>← {t("к оплатам", "до оплат")}</button>
+            <b style={{ fontSize: 14 }}>{t("Сделка", "Угода")} #{openDeal}</b>
+            <div style={{ flex: 1 }} />
+            <button className="btn btn-light" style={{ height: 28, padding: "0 10px" }} title={t("Открыть на всю страницу", "Відкрити на всю сторінку")} onClick={() => nav(`/deals/${openDeal}`)}>⤢</button>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 10 }}>
+            <DealCard dealId={openDeal} onClose={() => setOpenDeal(null)} />
           </div>
         </div>
       )}
@@ -3294,6 +3350,11 @@ function Salary() {
           <div key={r.user_id} className="panel" style={{ margin: "10px 0 0" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <b style={{ fontSize: 15, flex: 1 }}>{r.user_name}</b>
+              <button className="btn" onClick={() => setSelDeals({ id: r.user_id, name: r.user_name })}
+                title={t("Вся статистика сотрудника: деньги по дням, продажи (сам/ИИ), взятые в работу, закрытые чаты, игноры, сообщения, средний чек, выполнение плана + список сделок","Уся статистика співробітника: гроші за днями, продажі (сам/ШІ), взяті в роботу, закриті чати, ігнори, повідомлення, середній чек, виконання плану + список угод")}
+                style={{ height: 28, padding: "0 11px", fontSize: 12, fontWeight: 700, background: "linear-gradient(135deg,#2563eb,#1d4ed8)", color: "#fff", border: 0 }}>
+                📊 {t("Статистика", "Статистика")}
+              </button>
               <span style={{ fontSize: 12, color: "#64748b" }} title={t("Множитель премий за выполнением плана","Множник премій за виконанням плану")}>{tierLabel(r.tier_mult)}</span>
               <span style={{ background: "linear-gradient(135deg,#16a34a,#15803d)", color: "#fff", padding: "4px 12px", borderRadius: 8, fontWeight: 700 }} title={t("Прогноз ЗП за месяц","Прогноз ЗП за місяць")}>{money(r.total)}</span>
             </div>

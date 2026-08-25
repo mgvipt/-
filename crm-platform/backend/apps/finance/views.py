@@ -2670,9 +2670,90 @@ class ManagerDealsView(APIView):
             _b = _bf.setdefault(_fn, {"funnel": _fn, "amount": 0, "deals": 0})
             _b["amount"] += rw["amount"]; _b["deals"] += 1
         by_funnel = sorted(_bf.values(), key=lambda x: -x["amount"])
-        by_day = sorted(({"date": d0["date"], "amount": round(d0["amount"]), "fee": round(d0["fee"]),
-                          "net": round(d0["amount"] - d0["fee"]), "deals": len(d0["deals"])}
-                         for d0 in _by_day.values()), key=lambda x: x["date"], reverse=True)
+        # ══════ KPI ПО ДНЯХ: не лише гроші, а вся робота менеджера ══════
+        from apps.crm.models import ActivityLog as _AL, Deal as _Deal
+        from apps.inbox.models import Message as _Msg
+        from django.db.models import Count as _Cnt
+        import calendar as _cal
+        _dstart = date(y, mo, 1)
+        _dend = date(y, mo, _cal.monthrange(y, mo)[1])
+
+        def _day(ds):
+            return _by_day.setdefault(ds, {"date": ds, "amount": 0.0, "deals": set(), "fee": 0.0})
+
+        # 1) дії у чатах з журналу активності (узяв у роботу / закрив чат / повернув з ігнору)
+        _ACT = {"Взяв чат": "taken", "Призначено відповідального": "taken",
+                "Завершив чат": "closed", "Повернувся з ігнору": "ignores"}
+        for _a in (_AL.objects.filter(user=u, action__in=list(_ACT.keys()),
+                                      created_at__date__gte=_dstart, created_at__date__lte=_dend)
+                   .values("action", "created_at__date").annotate(n=_Cnt("id"))):
+            _d0 = _day(_a["created_at__date"].isoformat())
+            _k = _ACT[_a["action"]]
+            _d0[_k] = _d0.get(_k, 0) + _a["n"]
+        # 2) написані повідомлення (свої в CRM + як оператор ChatPlace на своїх діалогах)
+        for _m in (_Msg.objects.filter(direction="out", internal=False, sender=u,
+                                       created_at__date__gte=_dstart, created_at__date__lte=_dend)
+                   .values("created_at__date").annotate(n=_Cnt("id"))):
+            _d0 = _day(_m["created_at__date"].isoformat())
+            _d0["msgs"] = _d0.get("msgs", 0) + _m["n"]
+        for _m in (_Msg.objects.filter(direction="out", internal=False, sender__isnull=True,
+                                       sender_name__in=["operator", "manager", "admin"],
+                                       conversation__assigned_to=u,
+                                       created_at__date__gte=_dstart, created_at__date__lte=_dend)
+                   .values("created_at__date").annotate(n=_Cnt("id"))):
+            _d0 = _day(_m["created_at__date"].isoformat())
+            _d0["msgs"] = _d0.get("msgs", 0) + _m["n"]
+        # 3) продажі по днях: скільки угод отримали гроші + розбивка по воронках
+        #    і хто ВІВ діалог: якщо у переписці клієнта є хоч одна відповідь ЖИВОЇ людини —
+        #    вважаємо продаж менеджерський, якщо тільки ШІ — продаж ШІ (менеджер лише провів).
+        _deal_ids = list(by_deal.keys())
+        _contact_of = {}
+        _funnel_of = {}
+        for _d1 in _Deal.objects.filter(id__in=_deal_ids).select_related("funnel"):
+            _contact_of[_d1.id] = _d1.contact_id
+            _funnel_of[_d1.id] = (_d1.funnel.name if _d1.funnel_id else "") or ""
+        _human_contacts = set(_Msg.objects.filter(direction="out", internal=False,
+                                                  conversation__contact_id__in=[c for c in _contact_of.values() if c])
+                              .filter(Q(sender__isnull=False) | Q(sender_name__in=["operator", "manager", "admin"]))
+                              .values_list("conversation__contact_id", flat=True).distinct())
+        for _t2 in inc:
+            _ds = _t2.date.isoformat() if _t2.date else None
+            if not _ds:
+                continue
+            _d0 = _day(_ds)
+            _sd = _d0.setdefault("sale_deals", set())
+            if _t2.deal_id in _sd:
+                continue
+            _sd.add(_t2.deal_id)
+            _fn = _funnel_of.get(_t2.deal_id, "")
+            _fl = _fn.lower()
+            _key = "sales_main" if "основн" in _fl else ("sales_test" if "тестов" in _fl or "тестів" in _fl else "sales_other")
+            _d0[_key] = _d0.get(_key, 0) + 1
+            _ck = "sales_self" if _contact_of.get(_t2.deal_id) in _human_contacts else "sales_ai"
+            _d0[_ck] = _d0.get(_ck, 0) + 1
+        # 4) денний план = місячний план ÷ кількість днів місяця
+        _plan_row = ManagerPlan.objects.filter(user=u, period=period).first()
+        _plan_month = float(getattr(_plan_row, "target_revenue", 0) or 0)
+        _plan_day = round(_plan_month / _cal.monthrange(y, mo)[1]) if _plan_month else 0
+
+        by_day = []
+        for d0 in _by_day.values():
+            _sales = len(d0.get("sale_deals") or set())
+            _amt = round(d0["amount"])
+            by_day.append({
+                "date": d0["date"], "amount": _amt, "fee": round(d0["fee"]),
+                "net": round(d0["amount"] - d0["fee"]), "deals": len(d0["deals"]),
+                "sales": _sales,
+                "sales_self": d0.get("sales_self", 0), "sales_ai": d0.get("sales_ai", 0),
+                "sales_main": d0.get("sales_main", 0), "sales_test": d0.get("sales_test", 0),
+                "sales_other": d0.get("sales_other", 0),
+                "avg_check": round(_amt / _sales) if _sales else 0,
+                "taken": d0.get("taken", 0), "closed": d0.get("closed", 0),
+                "ignores": d0.get("ignores", 0), "msgs": d0.get("msgs", 0),
+                "plan_day": _plan_day,
+                "plan_pct": round(_amt * 100.0 / _plan_day) if _plan_day else None,
+            })
+        by_day = sorted(by_day, key=lambda x: x["date"], reverse=True)
         return Response({"user_id": u.id, "user_name": u.get_full_name() or u.username, "period": period,
                          "rows": rows, "total": round(sum(rw["amount"] for rw in rows)),
                          "total_fee": round(sum(rw["fee"] for rw in rows)),
