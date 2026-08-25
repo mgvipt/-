@@ -173,6 +173,9 @@ export default function MetaMarketing() {
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [syncSt, setSyncSt] = useState<any>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     setError(""); setLoading(true);
@@ -180,7 +183,28 @@ export default function MetaMarketing() {
       .then(setData)
       .catch(() => setError(t("Не удалось загрузить данные", "Не вдалося завантажити дані")))
       .finally(() => setLoading(false));
-  }, [from, to, t]);
+  }, [from, to, t, refreshKey]);
+  const loadSyncStatus = () => api.get<any>("/api/meta-marketing/sync-status/").then(setSyncSt).catch(() => {});
+  useEffect(() => { loadSyncStatus(); }, []);
+  const refreshNow = () => {
+    if (syncing) return;
+    setSyncing(true);
+    const baseAds = syncSt?.sources?.ads?.at || "";
+    const baseCont = syncSt?.sources?.content?.at || "";
+    api.post<any>("/api/meta-marketing/sync-now/", { scope: "all", days: 7 }).catch(() => {});
+    // sync из Meta идёт в фоне ~1-3 мин; опрашиваем статус, пока данные не обновятся
+    let tries = 0;
+    const poll = () => {
+      tries++;
+      api.get<any>("/api/meta-marketing/sync-status/").then((st) => {
+        setSyncSt(st);
+        const fresh = (st?.sources?.ads?.at && st.sources.ads.at !== baseAds) || (st?.sources?.content?.at && st.sources.content.at !== baseCont);
+        if (fresh || tries >= 22) { setRefreshKey((k) => k + 1); setSyncing(false); }
+        else setTimeout(poll, 12000);
+      }).catch(() => { if (tries >= 22) setSyncing(false); else setTimeout(poll, 12000); });
+    };
+    setTimeout(poll, 12000);
+  };
 
   const setLastDays = (days: number) => {
     const start = new Date(today); start.setDate(start.getDate() - days + 1);
@@ -243,6 +267,7 @@ export default function MetaMarketing() {
           <h2 style={{ margin: 0, fontSize: 23 }}>📣 {t("Маркетинг · Meta", "Маркетинг · Meta")}</h2>
           <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
             {t("Платная реклама и органический контент считаются отдельно", "Платна реклама й органічний контент рахуються окремо")}
+            {syncSt && <> · {t("обновление каждые", "оновлення кожні")} {syncSt.interval_hours}{t("ч", "год")}{syncSt.sources?.content && <> · Instagram <b style={{ color: (syncSt.sources.content.mins_ago > 420) ? "#b91c1c" : "#166534" }}>{syncSt.sources.content.at}</b></>}{syncSt.sources?.ads && <> · Ads <b style={{ color: (syncSt.sources.ads.mins_ago > 420) ? "#b91c1c" : "#166534" }}>{syncSt.sources.ads.at}</b></>}</>}
           </div>
         </div>
         <div style={{ flex: 1 }} />
@@ -253,7 +278,9 @@ export default function MetaMarketing() {
         <button className="btn btn-light" onClick={() => { setFrom(CONNECTED_FROM); setTo(iso(today)); }}>{t("С подключения CRM", "З підключення CRM")}</button>
         <label style={dateLabel}>{t("с", "з")} <input type="date" value={from} min={CONNECTED_FROM} onChange={(e) => setFrom(e.target.value)} style={dateInput} /></label>
         <label style={dateLabel}>{t("по", "по")} <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={dateInput} /></label>
+        <button className="btn btn-primary" onClick={refreshNow} disabled={syncing} title={t("Подтянуть свежие данные со всех источников (Ads + Instagram + подписчики)", "Підтягнути свіжі дані з усіх джерел")}>{syncing ? `⏳ ${t("Обновляю…", "Оновлюю…")}` : `🔄 ${t("Обновить", "Оновити")}`}</button>
       </div>
+      {syncing && <div className="note" style={{ marginBottom: 10, background: "#eff6ff", color: "#1e40af" }}>{t("Тянем свежие данные из Meta (Ads + Instagram + подписчики). Это ~1-3 минуты — таблицы обновятся автоматически, можно продолжать работать.", "Тягнемо свіжі дані з Meta. Це ~1-3 хвилини — таблиці оновляться автоматично.")}</div>}
 
       <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8, marginBottom: 8 }}>
         {tabs.map((item) => <button key={item.key} className={tab === item.key ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab(item.key)} style={{ whiteSpace: "nowrap" }}>{t(item.ru, item.ua)}</button>)}

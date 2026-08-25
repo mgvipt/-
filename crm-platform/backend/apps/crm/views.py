@@ -2733,6 +2733,79 @@ class SalesJourneyView(APIView):
         })
 
 
+class MetaSyncNowView(APIView):
+    """Ручное обновление данных маркетинга со всех источников (Ads + Instagram
+    органика + подписчики) по кнопке. Запускается в фоне, возвращает сразу."""
+    permission_classes = [HasPermCode]
+    required_perm = "marketing.view"
+
+    def post(self, request):
+        import threading
+        from datetime import date, timedelta
+        from django.db import connection
+        from .meta_marketing import sync_all
+
+        scope = (request.data.get("scope") or "all").lower()
+        try:
+            days = int(request.data.get("days") or 7)
+        except (TypeError, ValueError):
+            days = 7
+        days = max(1, min(days, 60))
+
+        def _run():
+            try:
+                until = date.today()
+                since = until - timedelta(days=days)
+                if scope == "ads":
+                    from .meta_marketing import sync_ads
+                    sync_ads(since, until)
+                elif scope == "content":
+                    from .meta_marketing import sync_content
+                    sync_content(since)
+                elif scope == "account":
+                    from .meta_marketing import sync_account
+                    sync_account(since, until)
+                else:
+                    sync_all(since, until)
+            except Exception:
+                pass
+            finally:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
+
+        threading.Thread(target=_run, daemon=True).start()
+        return Response({"ok": True, "started": True, "scope": scope, "days": days})
+
+
+class MetaSyncStatusView(APIView):
+    """Когда последний раз обновлялись данные по каждому источнику."""
+    permission_classes = [HasPermCode]
+    required_perm = "marketing.view"
+
+    def get(self, request):
+        from django.db.models import Max
+        from django.utils import timezone
+        from .models import MetaAdDailyStat, MetaContentStat, MetaAccountDailyStat
+        now = timezone.now()
+
+        def _fmt(dt):
+            if not dt:
+                return None
+            mins = int((now - dt).total_seconds() // 60)
+            return {"at": timezone.localtime(dt).strftime("%d.%m %H:%M"), "mins_ago": mins}
+        return Response({
+            "now": timezone.localtime(now).strftime("%d.%m %H:%M"),
+            "interval_hours": 6,
+            "sources": {
+                "ads": _fmt(MetaAdDailyStat.objects.aggregate(m=Max("synced_at"))["m"]),
+                "content": _fmt(MetaContentStat.objects.aggregate(m=Max("synced_at"))["m"]),
+                "account": _fmt(MetaAccountDailyStat.objects.aggregate(m=Max("synced_at"))["m"]),
+            },
+        })
+
+
 class MetaFunnelView(APIView):
     """Сквозная воронка Меты: Показы → Клики → Начатые диалоги → Рекламные лиды CRM
     → Тест-набор → Оплата. Показы/клики/диалоги — из MetaAdDailyStat (level account).
