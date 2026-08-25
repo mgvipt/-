@@ -9,6 +9,7 @@ import { api } from "../api";
 import { useLang } from "../i18n";
 import { useAuth } from "../auth";
 import { Icon } from "../Icon";
+import MetaMarketing from "./MetaMarketing";
 
 /* ─── ТИПЫ ─────────────────────────────────────────────────────────────── */
 interface SalesData {
@@ -30,26 +31,36 @@ interface InvData {
 const fmt = (n: number) => Math.round(n || 0).toLocaleString("ru");
 
 export default function Analytics() {
-  const [tab, setTab] = useState<"sales" | "channels" | "stock" | "days" | "managers">("sales");
   const { t } = useLang();
   const { can } = useAuth();
   const canStock = can("warehouse.view");
   const canSales = can("analytics.view");
+  const canMkt = can("marketing.view");
+  const [section, setSection] = useState<"sales" | "marketing">(canSales ? "sales" : "marketing");
+  const [tab, setTab] = useState<"sales" | "channels" | "stock" | "days" | "managers">("sales");
   return (
     <div className="scroll pad fade">
-      <div className="tabline" style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        {canSales && <button className={tab === "sales" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("sales")}><Icon n="📈" size={15} /> {t("Продажи","Продажі")}</button>}
-        {canSales && <button className={tab === "channels" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("channels")}><Icon n="📣" size={15} /> {t("Каналы","Канали")}</button>}
-        {canSales && <button className={tab === "days" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("days")}><Icon n="calendar" size={15} /> {t("По дням","По днях")}</button>}
-        {canSales && <button className={tab === "managers" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("managers")}><Icon n="users" size={15} /> {t("Менеджеры","Менеджери")}</button>}
-        {canStock && <button className={tab === "stock" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("stock")}><Icon n="📦" size={15} /> {t("Склад","Склад")}</button>}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, borderBottom: "2px solid #eef2f7", paddingBottom: 10, flexWrap: "wrap" }}>
+        {canSales && <button className={section === "sales" ? "btn btn-primary" : "btn btn-light"} onClick={() => setSection("sales")} style={{ fontSize: 14, fontWeight: 700 }}>📊 {t("Аналитика продаж", "Аналітика продажів")}</button>}
+        {canMkt && <button className={section === "marketing" ? "btn btn-primary" : "btn btn-light"} onClick={() => setSection("marketing")} style={{ fontSize: 14, fontWeight: 700 }}>📣 {t("Аналитика маркетинга", "Аналітика маркетингу")}</button>}
       </div>
-      {tab === "sales" && canSales && <SalesTab />}
-      {tab === "channels" && canSales && <ChannelsTab />}
-      {tab === "days" && canSales && <DaysTab />}
-      {tab === "managers" && canSales && <ManagersTab />}
-      {tab === "stock" && canStock && <StockTab />}
-      {((tab === "stock" && !canStock) || ((tab === "sales" || tab === "channels" || tab === "days" || tab === "managers") && !canSales)) && <div className="muted" style={{ padding: 30 }}>{t("Нет доступа к этому разделу","Немає доступу до цього розділу")}</div>}
+      {section === "marketing" && canMkt && <MetaMarketing />}
+      {section === "sales" && canSales && <>
+        <div className="tabline" style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          <button className={tab === "sales" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("sales")}><Icon n="📈" size={15} /> {t("Продажи","Продажі")}</button>
+          <button className={tab === "channels" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("channels")}><Icon n="📣" size={15} /> {t("Каналы","Канали")}</button>
+          <button className={tab === "days" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("days")}><Icon n="calendar" size={15} /> {t("По дням","По днях")}</button>
+          <button className={tab === "managers" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("managers")}><Icon n="users" size={15} /> {t("Менеджеры","Менеджери")}</button>
+          {canStock && <button className={tab === "stock" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("stock")}><Icon n="📦" size={15} /> {t("Склад","Склад")}</button>}
+        </div>
+        {tab === "sales" && <SalesTab />}
+        {tab === "channels" && <ChannelsTab />}
+        {tab === "days" && <DaysTab />}
+        {tab === "managers" && <ManagersTab />}
+        {tab === "stock" && canStock && <StockTab />}
+        {tab === "stock" && !canStock && <div className="muted" style={{ padding: 30 }}>{t("Нет доступа к этому разделу","Немає доступу до цього розділу")}</div>}
+      </>}
+      {section === "sales" && !canSales && <div className="muted" style={{ padding: 30 }}>{t("Нет доступа к аналитике продаж","Немає доступу до аналітики продажів")}</div>}
     </div>
   );
 }
@@ -97,42 +108,48 @@ function ChannelsTab() {
 }
 
 /* ─── ВКЛАДКА ПРОДАЖІ ──────────────────────────────────────────────────── */
-/* ─── Конус одной воронки (чистый рендер по данным sales-funnel) ─── */
+/* ─── 3D-конус воронки (центрированный, номера слева, подписи справа) ─── */
+const CONE_PALETTE = ["#17a2b8", "#7cb342", "#e5533c", "#f39c12", "#5c6bc0", "#26a69a", "#8e44ad", "#c0392b"];
 function Cone({ d, t }: { d: any; t: any }) {
-  if (!d || !d.stages) return null;
+  if (!d || !d.stages || d.stages.length === 0) return null;
   const base = (d.stages[0]?.through) || d.entered || 1;
-  const wOf = (n: number) => Math.max((n / base) * 100, 7);
-  const gcols = "minmax(120px,150px) 1fr 96px";
+  const wOf = (n: number) => Math.max((n / base) * 100, 15);
+  const GC = "30px 1fr minmax(140px,230px)";
   return (
-    <div>
+    <div style={{ maxWidth: 760, margin: "0 auto" }}>
       {(d.stages || []).map((st: any, i: number) => {
         const wTop = i === 0 ? 100 : wOf(d.stages[i - 1].through);
         const wBot = wOf(st.through);
-        const clip = `polygon(${(50 - wTop / 2).toFixed(1)}% 0, ${(50 + wTop / 2).toFixed(1)}% 0, ${(50 + wBot / 2).toFixed(1)}% 100%, ${(50 - wBot / 2).toFixed(1)}% 100%)`;
+        const clip = `polygon(${(50 - wTop / 2).toFixed(2)}% 0, ${(50 + wTop / 2).toFixed(2)}% 0, ${(50 + wBot / 2).toFixed(2)}% 100%, ${(50 - wBot / 2).toFixed(2)}% 100%)`;
+        const col = CONE_PALETTE[i % CONE_PALETTE.length];
         const drop = i > 0 && st.pct_prev < 55;
         return (
-          <div key={st.id} style={{ display: "grid", gridTemplateColumns: gcols, gap: 10, alignItems: "center", marginBottom: 4 }}>
-            <div style={{ fontSize: 12, textAlign: "right", color: "#334155", lineHeight: 1.2 }}>{st.name}<div style={{ fontSize: 18, fontWeight: 800, fontFamily: "ui-monospace,monospace" }}>{st.through}</div></div>
-            <div style={{ height: 46, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <div style={{ position: "absolute", inset: 0, clipPath: clip, background: `linear-gradient(90deg, ${st.color}dd, ${st.color})` }} />
-              <span style={{ position: "relative", color: "#fff", fontSize: 11.5, fontWeight: 600, textShadow: "0 1px 2px rgba(0,0,0,.4)" }}>{st.man > 0 ? `🤖 ${st.ai} · 👤 ${st.man}` : (st.ai > 0 ? `🤖 ${st.ai}` : "")}</span>
+          <div key={st.id} style={{ display: "grid", gridTemplateColumns: GC, gap: 10, alignItems: "stretch", minHeight: 52 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ width: 26, height: 26, borderRadius: 7, background: "#2f3b52", color: "#fff", fontWeight: 800, fontSize: 13, display: "grid", placeItems: "center" }}>{i + 1}</span>
             </div>
-            <div style={{ fontSize: 13, fontFamily: "ui-monospace,monospace", fontWeight: 700, color: drop ? "#b91c1c" : "#475569" }}>{i === 0 ? "100%" : st.pct_prev + "%"}{drop && <span style={{ fontSize: 10, display: "block", fontWeight: 600 }}>⚠ {t("обвал", "обвал")}</span>}</div>
+            <div style={{ position: "relative" }}>
+              <div style={{ position: "absolute", inset: "1px 0", clipPath: clip, background: `linear-gradient(180deg, ${col}, ${col}bb)`, boxShadow: "inset 0 3px 7px rgba(255,255,255,.4), inset 0 -7px 11px rgba(0,0,0,.18)" }} />
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#fff", fontWeight: 800, fontSize: 16, textShadow: "0 1px 3px rgba(0,0,0,.45)" }}>
+                {st.through}
+                {(st.man > 0 || st.ai > 0) && <span style={{ fontSize: 11, fontWeight: 600, opacity: .95 }}>{st.man > 0 ? `🤖${st.ai} 👤${st.man}` : `🤖${st.ai}`}</span>}
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "#334155", lineHeight: 1.2 }}>{st.name}</span>
+              <span style={{ fontSize: 11.5, color: drop ? "#b91c1c" : "#94a3b8", fontWeight: 600 }}>{i === 0 ? t("вход · 100%", "вхід · 100%") : `${st.pct_prev}% ${t("от преды.", "від попер.")}`}{drop && " ⚠"}</span>
+            </div>
           </div>
         );
       })}
-      <div style={{ display: "grid", gridTemplateColumns: gcols, gap: 10, alignItems: "center", marginTop: 8, paddingTop: 8, borderTop: "1px dashed #e2e8f0" }}>
-        <div style={{ fontSize: 12, textAlign: "right", color: "#b91c1c", lineHeight: 1.2 }}>{t("Потеряно", "Втрачено")}<div style={{ fontSize: 17, fontWeight: 800, fontFamily: "ui-monospace,monospace" }}>{d.lost.count}</div></div>
-        <div style={{ height: 28, borderRadius: 8, background: "#fef2f2", border: "1px solid #fca5a5", display: "flex", alignItems: "center", padding: "0 12px", color: "#b91c1c", fontWeight: 700, fontSize: 12 }}>{t("потеряно от всех зашедших", "втрачено від усіх, що зайшли")}</div>
-        <div style={{ fontSize: 13, fontFamily: "ui-monospace,monospace", fontWeight: 700, color: "#b91c1c" }}>{d.lost.pct}%</div>
-      </div>
-      {d.won.count > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: gcols, gap: 10, alignItems: "center", marginTop: 4 }}>
-          <div style={{ fontSize: 12, textAlign: "right", color: "#166534", lineHeight: 1.2 }}>{t("Продано", "Продано")}<div style={{ fontSize: 17, fontWeight: 800, fontFamily: "ui-monospace,monospace" }}>{d.won.count}</div></div>
-          <div style={{ height: 28, borderRadius: 8, background: "#f0fdf4", border: "1px solid #86efac", display: "flex", alignItems: "center", padding: "0 12px", color: "#166534", fontWeight: 700, fontSize: 12 }}>{t("дошло до оплаты", "дійшло до оплати")}</div>
-          <div style={{ fontSize: 13, fontFamily: "ui-monospace,monospace", fontWeight: 700, color: "#166534" }}>{d.won.pct}%</div>
+      <div style={{ display: "grid", gridTemplateColumns: GC, gap: 10, alignItems: "center", marginTop: 10 }}>
+        <div />
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ flex: 1, height: 32, borderRadius: 8, background: "#fef2f2", border: "1px solid #fca5a5", display: "flex", alignItems: "center", justifyContent: "center", color: "#b91c1c", fontWeight: 700, fontSize: 12.5 }}>❌ {t("Потеряно", "Втрачено")}: {d.lost.count} · {d.lost.pct}%</div>
+          {d.won.count > 0 && <div style={{ flex: 1, height: 32, borderRadius: 8, background: "#f0fdf4", border: "1px solid #86efac", display: "flex", alignItems: "center", justifyContent: "center", color: "#166534", fontWeight: 700, fontSize: 12.5 }}>✅ {t("Продано", "Продано")}: {d.won.count} · {d.won.pct}%</div>}
         </div>
-      )}
+        <div />
+      </div>
     </div>
   );
 }
@@ -402,48 +419,68 @@ const _iso = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padS
 
 function DaysTab() {
   const { t } = useLang();
-  const [fd, setFd] = useState<any>(null);
-  const [funnelId, setFunnelId] = useState<string>("");
-  const [from, setFrom] = useState<string>(() => { const d = new Date(); d.setDate(d.getDate() - 13); return _iso(d); });
+  const [funnels, setFunnels] = useState<any[]>([]);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [src, setSrc] = useState("all");
+  const [from, setFrom] = useState<string>(() => { const d = new Date(); d.setDate(d.getDate() - 29); return _iso(d); });
   const [to, setTo] = useState<string>(() => _iso(new Date()));
+  const [cones, setCones] = useState<Record<number, any>>({});
+  const [sources, setSources] = useState<any[]>([]);
+  const [inited, setInited] = useState(false);
+  // список воронок + чипы источника (тот же источник, что «Продажи»)
   useEffect(() => {
-    const q = `?from=${from}&to=${to}` + (funnelId ? `&funnel=${funnelId}` : "");
-    api.get<any>("/api/analytics/funnel-daily/" + q).then(setFd).catch(() => {});
-  }, [from, to, funnelId]);
+    api.get<any>(`/api/analytics/sales-funnel/?from=${from}&to=${to}&source=${src}`).then((d) => {
+      setFunnels(d.funnels || []);
+      if (d.sources) setSources(d.sources);
+      if (!inited) {
+        const lead = (d.funnels || []).find((f: any) => f.is_lead);
+        const test = (d.funnels || []).find((f: any) => /тест/i.test(f.name) && /(набір|набор)/i.test(f.name));
+        const main = (d.funnels || []).find((f: any) => /основн/i.test(f.name));
+        setSelected([lead?.id, test?.id, main?.id].filter(Boolean));
+        setInited(true);
+      }
+    }).catch(() => {});
+  }, [from, to, src]);
+  // конусы выбранных воронок
+  useEffect(() => {
+    selected.forEach((fid) => {
+      api.get<any>(`/api/analytics/sales-funnel/?from=${from}&to=${to}&source=${src}&funnel=${fid}`)
+        .then((d) => setCones((c) => ({ ...c, [fid]: d }))).catch(() => {});
+    });
+  }, [selected, from, to, src]);
+  function toggle(fid: number) {
+    setSelected((s) => s.includes(fid) ? s.filter((x) => x !== fid) : [...s, fid]);
+  }
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
         <span className="muted" style={{ fontSize: 12 }}>{t("Период:", "Період:")}</span>
         <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={_dateSt} />
         <span className="muted">—</span>
         <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={_dateSt} />
-        {fd && <select value={funnelId} onChange={(e) => setFunnelId(e.target.value)} style={_selSt}>
-          {(fd.funnels || []).map((f: any) => <option key={f.id} value={f.id}>{f.name}{f.is_lead ? " ★" : ""}</option>)}
-        </select>}
       </div>
-      <div className="panel">
-        <div className="label" style={{ marginBottom: 4 }}>{t("Воронка по дням", "Воронка по днях")}{fd ? ` — ${fd.funnel}` : ""}</div>
-        <div className="muted" style={{ fontSize: 11.5, marginBottom: 10, lineHeight: 1.5 }}>
-          {t("«Вошло» — сколько зашло в этот день. По статусам — сколько ДОШЛО до этого статуса в этот день (за день можно пройти несколько статусов; вернувшийся из молчания засчитается в тот день, когда двинулся).", "«Зайшло» — скільки увійшло цього дня. По статусах — скільки ДІЙШЛО до статусу цього дня.")}
+      {sources.length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        {sources.map((s: any) => <button key={s.key} onClick={() => setSrc(s.key)} style={{ fontSize: 12, padding: "3px 11px", borderRadius: 20, cursor: "pointer", background: src === s.key ? "#2E6FB0" : "#f1f5f9", color: src === s.key ? "#fff" : "#475569", border: "none", fontWeight: 600 }}>{s.label} <b>{s.n}</b></button>)}
+      </div>}
+      <div className="panel" style={{ marginBottom: 12 }}>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("Выбери воронки для показа (можно несколько — листай вниз):", "Обери воронки (можна кілька — гортай вниз):")}</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {funnels.map((f: any) => <button key={f.id} onClick={() => toggle(f.id)} style={{ fontSize: 12.5, padding: "5px 12px", borderRadius: 8, cursor: "pointer", border: "1px solid", borderColor: selected.includes(f.id) ? "#2E6FB0" : "#cbd5e1", background: selected.includes(f.id) ? "#e2ecf7" : "#fff", color: selected.includes(f.id) ? "#2E6FB0" : "#475569", fontWeight: 600 }}>{selected.includes(f.id) ? "✓ " : "+ "}{f.name}{f.is_lead ? " ★" : ""}</button>)}
         </div>
-        {!fd ? <div className="muted">…</div> : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
-              <thead><tr>
-                <th style={_th}>{t("День", "День")}</th>
-                <th style={{ ..._th, textAlign: "right", color: "#0f172a", fontWeight: 700 }}>{t("Вошло", "Зайшло")}</th>
-                {(fd.stages || []).map((st: any) => <th key={st.id} style={{ ..._th, textAlign: "right", color: st.is_won ? "#166534" : st.is_lost ? "#b91c1c" : "#64748b" }}>{st.name}</th>)}
-              </tr></thead>
-              <tbody>{(fd.days || []).map((d: any) => (
-                <tr key={d.d}>
-                  <td style={{ ..._td, whiteSpace: "nowrap", fontWeight: 600 }}>{d.d}</td>
-                  <td style={{ ..._td, textAlign: "right", fontWeight: 800, color: "#0f172a" }}>{d.entered || 0}</td>
-                  {(d.stages || []).map((st: any) => <td key={st.stage_id} style={{ ..._td, textAlign: "right", color: st.reached ? "#0f172a" : "#cbd5e1", fontWeight: st.reached ? 600 : 400 }}>{st.reached || "·"}</td>)}
-                </tr>
-              ))}</tbody>
-            </table>
+      </div>
+      {selected.map((fid) => {
+        const d = cones[fid];
+        const fn = funnels.find((f) => f.id === fid);
+        return (
+          <div key={fid} className="panel" style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>🎯 {fn?.name || ""}{d && <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}> · {t("зашло", "зайшло")} {d.entered}</span>}</div>
+            {d ? <Cone d={d} t={t} /> : <div className="muted">…</div>}
           </div>
-        )}
+        );
+      })}
+      {selected.length === 0 && <div className="muted" style={{ padding: 20 }}>{t("Выбери хотя бы одну воронку выше", "Обери хоча б одну воронку вище")}</div>}
+      <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5, marginTop: 4 }}>
+        {t("Единый источник со вкладкой «Продажи»: «прошло через этап» — накопительно (достиг статуса или следующего). «Лід отриманий» = все зашедшие. 🤖 Юля, 👤 менеджер. % — сколько прошло дальше.", "Єдине джерело з «Продажі»: накопичено. «Лід отриманий» = всі, хто зайшов. 🤖 Юля, 👤 менеджер.")}
       </div>
     </div>
   );

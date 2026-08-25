@@ -25,7 +25,6 @@ const NAV: [string, string, string, string, string | null][] = [
   ["/development", "Развитие", "Розвиток", "trophy", "development.view"],
   ["/finance", "Финансы", "Фінанси", "wallet", "finance.view"],
   ["/analytics", "Аналитика", "Аналітика", "chart", "analytics.view"],
-  ["/marketing/meta", "Маркетинг · Meta", "Маркетинг · Meta", "📣", "marketing.view"],
   ["/ai-costs", "Расходы ИИ", "Витрати ШІ", "money", "settings.agent"],
   ["/employees", "Сотрудники и права", "Співробітники і права", "🛡️", "roles.manage"],
   ["/duplicates", "Дубли", "Дублі", "copy", "roles.manage"],
@@ -236,7 +235,7 @@ export default function Layout() {
 
   const { t } = useLang();
   const SETTINGS_PERMS = ["settings.sounds", "settings.agent", "settings.automations", "settings.rules", "calc.settings.manage"];
-  const items = NAV.filter(([path, , , , perm]) => path === "/settings" ? (can("roles.manage") || SETTINGS_PERMS.some((pp) => can(pp))) : (!perm || can(perm)));
+  const items = NAV.filter(([path, , , , perm]) => path === "/settings" ? (can("roles.manage") || SETTINGS_PERMS.some((pp) => can(pp))) : path === "/analytics" ? (can("analytics.view") || can("marketing.view")) : (!perm || can(perm)));
   const _cur = NAV.find(([path]) => loc.pathname.startsWith(path));
   const title = _cur ? t(_cur[1], _cur[2]) : "CRM";
   const fullName = me ? `${me.first_name} ${me.last_name}`.trim() || me.username : "";
