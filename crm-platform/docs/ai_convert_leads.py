@@ -20,8 +20,14 @@ lead_funnel = Funnel.objects.filter(is_lead_funnel=True).first()
 test_funnel = (Funnel.objects.filter(is_lead_funnel=False, name__icontains="Тестовий набір").exclude(name__contains="·").first() or Funnel.objects.filter(is_lead_funnel=False, name__icontains="Тестовий набір").first())
 main_funnel = (Funnel.objects.filter(is_lead_funnel=False, name__icontains="Основний продукт").exclude(name__contains="·").first() or Funnel.objects.filter(is_lead_funnel=False, name__icontains="Основний продукт").first())
 DECIDE = ["Кваліфікований", "Підбір рішення"]
+# ── РАННІ стадії: перевіряємо ТІЛЬКИ якщо в діалозі є ЯВНИЙ сигнал купівлі ──
+#  Навіщо: клієнт часто пише «беру» ще до того, як менеджер перевів лід у «Кваліфікований»
+#  (з 713 ранніх лідів такі знайшлись). Прескрінінг по словах = 0 витрат ШІ на решту.
+EARLY = ["Взято в роботу", "Контакт встановлений", "Лід отриманий"]
+BUY_KW = ["беру", "замовля", "заказыв", "оформ", "куплю", "купую", "виставте рахунок",
+          "выставьте счет", "хочу взяти", "давайте офор", "оплачу", "оплатив", "оплатила"]
 
-leads = Lead.objects.filter(funnel=lead_funnel, stage__name__in=DECIDE).select_related("contact", "stage", "owner")
+leads = Lead.objects.filter(funnel=lead_funnel, stage__name__in=(DECIDE + EARLY)).select_related("contact", "stage", "owner")
 checked = converted = skipped = 0
 for lead in leads:
     if not lead.contact_id:
@@ -42,14 +48,21 @@ for lead in leads:
     dialog = "\n".join((("Клієнт: " if m["direction"] == "in" else "Менеджер: ") + (m["text"] or "")) for m in msgs if m.get("text"))
     if not dialog.strip():
         continue
+    # рання стадія → до ШІ тільки якщо клієнт ЯВНО щось сказав про купівлю (економія токенів)
+    if lead.stage.name in EARLY:
+        _in_txt = " ".join((m["text"] or "").lower() for m in msgs if m.get("direction") == "in")
+        if not any(k in _in_txt for k in BUY_KW):
+            skipped += 1
+            continue
     checked += 1
     prompt = (
         "Ти аналізуєш діалог продажу декоративних покриттів Wallcov. "
-        "Визнач, чи клієнт ВЖЕ остаточно визначився що замовляє. Поверни СТРОГО JSON: "
-        '{"decision":"none|test|main","why":"дуже коротко чому"} де '
-        "test = клієнт погодився взяти ТЕСТОВИЙ НАБІР / пробник / зразок; "
-        "main = клієнт обрав ОСНОВНИЙ продукт / повний обʼєм / замовляє на обʼєкт; "
-        "none = ще не визначився остаточно. Будь суворим: 'none' якщо є сумнів.\n\nДіалог:\n" + dialog)
+        "Визнач, чи клієнт ЯВНО, СВОЇМИ СЛОВАМИ ПІДТВЕРДИВ, що ЗАМОВЛЯЄ / бере (не просто цікавиться, не просить інформацію/ціну). "
+        "Поверни СТРОГО JSON: {\"decision\":\"none|test|main\",\"why\":\"дуже коротко чому\"} де "
+        "test = клієнт ПРЯМО сказав що БЕРЕ/ЗАМОВЛЯЄ тестовий набір (напр. \"беру тест\", \"давайте оформимо пробник\", \"так, хочу тест-набір\"); "
+        "main = клієнт ПРЯМО сказав що ЗАМОВЛЯЄ основний продукт/повний обʼєм на обʼєкт; "
+        "none = у ВСІХ інших випадках — цікавиться, питає ціну, просить інформацію/прорахунок, думає, \"давайте тестовый набор\" як питання-уточнення без згоди, будь-який сумнів. "
+        "⛔ ДУЖЕ ВАЖЛИВО: якщо немає ЯВНОГО \"беру/замовляю/оформляйте\" — це ЗАВЖДИ none. Краще не конвертувати, ніж конвертувати рано.\n\nДіалог:\n" + dialog)
     try:
         res = claude_json(prompt, model=MODEL, source=SRC)
     except Exception:
