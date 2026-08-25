@@ -309,7 +309,8 @@ class AcceptInviteView(APIView):
         if not inv:
             return Response({"valid": False})
         return Response({"valid": True, "email": inv.email, "first_name": inv.first_name,
-                         "last_name": inv.last_name, "department": inv.department.name if inv.department else ""})
+                         "last_name": inv.last_name, "username": inv.username or (inv.email.split("@")[0] if inv.email else ""),
+                         "department": inv.department.name if inv.department else ""})
 
     def post(self, request, token):
         inv = self._get(token)
@@ -320,7 +321,7 @@ class AcceptInviteView(APIView):
             return Response({"detail": "Пароль мінімум 6 символів"}, status=status.HTTP_400_BAD_REQUEST)
         if inv.email and User.objects.filter(email__iexact=inv.email).exists():
             return Response({"detail": "Користувач з таким email вже існує"}, status=status.HTTP_400_BAD_REQUEST)
-        base_un = (inv.email.split("@")[0] or "user").lower()
+        base_un = ((inv.username or "").strip() or inv.email.split("@")[0] or "user").lower()
         un = base_un; i = 1
         while User.objects.filter(username=un).exists():
             i += 1; un = "%s%d" % (base_un, i)

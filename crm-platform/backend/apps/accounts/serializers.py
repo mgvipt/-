@@ -175,9 +175,17 @@ class InviteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Invite
-        fields = ["id", "email", "first_name", "last_name", "department", "department_name",
+        fields = ["id", "email", "username", "first_name", "last_name", "department", "department_name",
                   "role", "token", "status", "expires_at", "created_at", "link"]
         read_only_fields = ["token", "status", "created_at", "expires_at"]
+
+    def validate_username(self, value):
+        value = (value or "").strip()
+        if value:
+            from .models import User
+            if User.objects.filter(username__iexact=value).exists():
+                raise serializers.ValidationError("Такий логін вже зайнятий")
+        return value
 
     def get_link(self, obj):
         return "https://crm.wallcovdec.com.ua/invite/" + obj.token

@@ -440,6 +440,7 @@ class Invite(models.Model):
     email = models.EmailField()
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
+    username = models.CharField(max_length=150, blank=True, default="", help_text="Бажаний логін; якщо порожньо — з пошти")
     department = models.ForeignKey(Department, null=True, blank=True, on_delete=models.SET_NULL, related_name="invites")
     role = models.ForeignKey(Role, null=True, blank=True, on_delete=models.SET_NULL)
     token = models.CharField(max_length=64, unique=True, db_index=True)

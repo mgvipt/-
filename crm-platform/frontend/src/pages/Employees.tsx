@@ -851,9 +851,9 @@ function ActivityTab({ depts, t, statusChip, openCard }: any) {
 }
 
 function InvitesTab({ depts, roles, invites, reload, t }: any) {
-  const [f, setF] = useState({ email: "", first_name: "", last_name: "", department: "", role: "" });
+  const [f, setF] = useState({ email: "", username: "", first_name: "", last_name: "", department: "", role: "" });
   const [link, setLink] = useState("");
-  async function create() { if (!f.email.trim()) return; const body: any = { email: f.email, first_name: f.first_name, last_name: f.last_name }; if (f.department) body.department = Number(f.department); if (f.role) body.role = Number(f.role); const r = await api.post<any>("/api/invites/", body); setLink(r.link); setF({ email: "", first_name: "", last_name: "", department: "", role: "" }); reload(); }
+  async function create() { if (!f.email.trim()) return; const body: any = { email: f.email, first_name: f.first_name, last_name: f.last_name }; if (f.username.trim()) body.username = f.username.trim(); if (f.department) body.department = Number(f.department); if (f.role) body.role = Number(f.role); try { const r = await api.post<any>("/api/invites/", body); setLink(r.link); setF({ email: "", username: "", first_name: "", last_name: "", department: "", role: "" }); reload(); } catch (e: any) { const msg = e?.data?.username?.[0] || e?.body?.username?.[0] || e?.data?.detail || e?.message; alert(msg || t("Не удалось создать (возможно логин уже занят)", "Не вдалося створити (можливо логін зайнятий)")); } }
   async function revoke(id: number) { if (!confirm(t("Отозвать приглашение? Ссылка сразу перестанет работать.", "Відкликати запрошення? Посилання одразу перестане працювати.") as string)) return; await api.post(`/api/invites/${id}/revoke/`, {}); reload(); }
   async function restore(id: number) { await api.post(`/api/invites/${id}/restore/`, {}); reload(); }
   async function delInvite(id: number) { if (!confirm(t("Удалить это приглашение из списка? Аккаунт сотрудника (если уже создан) останется — его убирают отдельно.", "Видалити це запрошення зі списку? Акаунт співробітника залишиться.") as string)) return; await api.del(`/api/invites/${id}/`); reload(); }
@@ -864,6 +864,7 @@ function InvitesTab({ depts, roles, invites, reload, t }: any) {
         <div className="label" style={{ marginBottom: 8 }}>{t("Пригласить сотрудника по почте", "Запросити співробітника поштою")}</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <input style={inp} placeholder="Email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+          <input style={inp} placeholder={t("Логин (необязательно)", "Логін (необовʼязково)")} value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} />
           <select style={inp} value={f.department} onChange={(e) => setF({ ...f, department: e.target.value })}><option value="">{t("— отдел —", "— відділ —")}</option>{depts.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
           <input style={inp} placeholder={t("Имя", "Імʼя")} value={f.first_name} onChange={(e) => setF({ ...f, first_name: e.target.value })} />
           <input style={inp} placeholder={t("Фамилия", "Прізвище")} value={f.last_name} onChange={(e) => setF({ ...f, last_name: e.target.value })} />
