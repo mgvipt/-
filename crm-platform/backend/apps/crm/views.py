@@ -2967,19 +2967,20 @@ class MetaMarketingView(APIView):
         from .models import MetaAccountDailyStat, MetaAdDailyStat, MetaContentStat, MetaConversionEvent
 
         user = request.user
-        see_all_leads = user.is_superuser or user.can_see_all_leads()
-        see_all_deals = user.is_superuser or user.can_see_all_deals()
+        # Маркетинг-аналітика — ЗВЕДЕНИЙ дашборд по всій рекламі: доступ до нього вже
+        # обмежений правом marketing.view, тому цифри показуємо повні (інакше маркетолог
+        # бачив би витрати на рекламу, але 0 продажів — бо угоди не його).
+        see_all_leads = True
+        see_all_deals = True
+        show_money = bool(user.is_superuser or user.has_perm_code("marketing.money"))
         leads_qs = Lead.objects.select_related("funnel", "stage", "owner", "contact")
         deals_qs = Deal.objects.select_related("funnel", "stage", "owner", "contact")
         if not see_all_leads:
             leads_qs = leads_qs.filter(owner=user)
         if not see_all_deals:
             deals_qs = deals_qs.filter(owner=user)
-        allowed = user.allowed_funnel_ids()
-        if allowed is not None:
-            leads_qs = leads_qs.filter(funnel_id__in=allowed)
-            deals_qs = deals_qs.filter(funnel_id__in=allowed)
-
+        # Обмеження по воронках теж НЕ застосовуємо: маркетологу воронки не
+        # призначають, а зведений дашборд має показувати рекламу по всій компанії.
         scoped_leads_qs = leads_qs
         scoped_deals_qs = deals_qs
         today = timezone.localdate()
@@ -3640,8 +3641,9 @@ class MetaMarketingView(APIView):
         latest_account_sync = MetaAccountDailyStat.objects.aggregate(value=Max("synced_at"))["value"]
         meta_origin_leads = [item for item in all_leads if is_meta_origin(item)]
         meta_origin_deals = [item for item in all_deals if is_meta_origin(item)]
-        return Response({
+        payload = {
             "period": {"from": date_from, "to": date_to},
+            "show_money": show_money,
             "integration": {
                 "capi_enabled": os.environ.get("META_CAPI_ENABLED", "0") == "1",
                 "capi_dataset_configured": bool(os.environ.get("META_CAPI_DATASET_ID", "").strip()),
@@ -3688,7 +3690,29 @@ class MetaMarketingView(APIView):
             "unavailable_until_insights_sync": [] if latest_ads_sync else [
                 "spend", "impressions", "reach", "cpm", "ctr", "video_views",
             ],
-        })
+        }
+        if not show_money:
+            # Ховаємо ГРОШІ (виручка/прибуток/собівартість/LTV/ROAS/ROMI), лишаємо
+            # штуки: ліди, діалоги, продажі, підписники, витрати на рекламу.
+            MONEY_PROFIT = ("revenue", "repeat_revenue", "cost", "gross_profit", "average_ltv",
+                            "exact_ad_revenue", "exact_ad_gross_profit", "marketing_profit",
+                            "blended_roas", "exact_ad_roas", "romi")
+            for k in MONEY_PROFIT:
+                if isinstance(payload.get("profitability"), dict) and k in payload["profitability"]:
+                    payload["profitability"][k] = None
+            for k in ("won_revenue", "paid_revenue"):
+                if isinstance(payload.get("summary"), dict) and k in payload["summary"]:
+                    payload["summary"][k] = None
+            if isinstance(payload.get("paid"), dict) and isinstance(payload["paid"].get("summary"), dict):
+                payload["paid"]["summary"]["crm_revenue"] = None
+            for row in (payload.get("daily") or []):
+                for k in ("revenue", "repeat_revenue", "cost", "profit", "ltv", "roas", "romi", "gross_profit"):
+                    if k in row:
+                        row[k] = None
+            for row in (payload.get("by_platform") or []):
+                if "revenue" in row:
+                    row["revenue"] = None
+        return Response(payload)
 
 
 class ActivityLogView(APIView):
