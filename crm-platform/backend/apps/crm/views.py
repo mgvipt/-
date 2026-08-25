@@ -3623,7 +3623,7 @@ class MetaMarketingView(APIView):
             "exact_ad_gross_profit": round(float(exact_ad_gross_profit), 2),
             "ad_spend_uah": spend_uah,
             "blended_roas": round(float(period_revenue) / spend_uah, 2) if spend_uah else None,
-            "exact_ad_roas": round(float(exact_ad_revenue) / spend_uah, 2) if spend_uah else None,
+            "exact_ad_roas": (round(float(exact_ad_revenue) / spend_uah, 2) if (spend_uah and exact_ad_revenue) else None),  # немає підтверджених продажів → «—», не хибний «0»
             "marketing_profit": round(float(gross_profit) - spend_uah, 2) if spend_uah is not None else None,
             "romi": round((float(gross_profit) - spend_uah) / spend_uah * 100, 1) if spend_uah else None,
         }

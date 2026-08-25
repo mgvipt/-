@@ -402,6 +402,11 @@ export default function MetaMarketing() {
     count(r.messages_started), count(r.meta_leads), count(r.crm_leads), r.cost_per_message == null ? "—" : moneyUsd(r.cost_per_message),
   ]);
   const dailyTable = <DailySalesTable rows={daily} t={t} />;
+  const periodDays = (() => { try { return Math.max(1, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86400000) + 1); } catch { return 0; } })();
+  // похідні показники реклами (дзеркало для «Огляду»)
+  const cpcUsd = paidSummary.clicks ? paidSummary.spend / paidSummary.clicks : null;              // ціна кліку
+  const cplUah = (paidSummary.spend_uah && summary.meta_origin_leads) ? paidSummary.spend_uah / summary.meta_origin_leads : null;  // ціна ліда CRM з Meta
+  const cplExactUah = (paidSummary.spend_uah && summary.attributed_leads) ? paidSummary.spend_uah / summary.attributed_leads : null;
 
   return <div style={{ height: "100%", overflowY: "auto", padding: 16, boxSizing: "border-box" }}>
     <div style={{ width: "100%" }}>
@@ -434,6 +439,7 @@ export default function MetaMarketing() {
       {loading && !data ? <div className="muted" style={{ padding: 30 }}>Загрузка…</div> : data && <>
         {tab === "overview" && <>
           {syncWarning}
+          <PeriodBar from={from} to={to} days={periodDays} t={t} onQuick={setLastDays} />
           <SectionTitle title={t("Instagram аккаунт", "Instagram акаунт")} note={t("Баланс подписчиков сохраняется ежедневно; прирост Meta отдаёт по дням", "Баланс підписників зберігається щодня; приріст Meta віддає по днях")} />
           <div style={cardsRow}>
             {card(t("Подписчиков сейчас", "Підписників зараз"), optional(followers.current_total, "", t("ожидает синхронизации", "очікує синхронізації")), "#c026d3", followers.username ? `@${followers.username}` : undefined)}
@@ -456,8 +462,13 @@ export default function MetaMarketing() {
             {card(t("Показы", "Покази"), count(paidSummary.impressions), "#2563eb")}
             {card(t("Клики", "Кліки"), count(paidSummary.clicks), "#7c3aed")}
             {card("CTR", optional(paidSummary.ctr, "%"), "#7c3aed")}
+            {card(t("Расход в гривне (НБУ)", "Витрати у гривні (НБУ)"), paidSummary.spend_uah == null ? "—" : moneyUah(paidSummary.spend_uah), "#dc2626", t("официальный курс НБУ на каждый день", "офіційний курс НБУ на кожен день"))}
+            {card(t("Цена клика (CPC)", "Ціна кліку (CPC)"), cpcUsd == null ? "—" : moneyUsd(cpcUsd), "#0891b2", t("расход ÷ клики", "витрати ÷ кліки"))}
+            {card("CPM", optional(paidSummary.cpm), "#0891b2", t("цена 1000 показов, $", "ціна 1000 показів, $"))}
             {card(t("Начатые диалоги по Ads Manager", "Розпочаті діалоги за Ads Manager"), count(paidSummary.messages_started), "#0f766e", t("Это показатель рекламы Meta, а не продажи и не уникальные лиды CRM", "Це показник реклами Meta, а не продажі й не унікальні ліди CRM"))}
             {card(t("Лиды Meta", "Ліди Meta"), count(paidSummary.meta_leads), "#0f766e")}
+            {card(t("Цена лида (все из Meta)", "Ціна ліда (всі з Meta)"), cplUah == null ? "—" : moneyUah(cplUah), "#b45309", t("расход в грн ÷ все лиды CRM из Meta", "витрати грн ÷ усі ліди CRM з Meta"))}
+            {card(t("Цена лида (с точным ID)", "Ціна ліда (з точним ID)"), cplExactUah == null ? "—" : moneyUah(cplExactUah), "#d97706", t("расход в грн ÷ лиды с подтверждённой рекламой", "витрати грн ÷ ліди з підтвердженою рекламою"))}
           </div>
           <SectionTitle title={t("Подтверждённый результат в CRM", "Підтверджений результат у CRM")} note={t("Только карточки с точным ID рекламы; ручные и органические исключены", "Лише картки з точним ID реклами; ручні та органічні виключені")} />
           <div style={cardsRow}>
@@ -480,6 +491,10 @@ export default function MetaMarketing() {
             {card(t("Повторные продажи", "Повторні продажі"), count(profitability.repeat_sales), "#0891b2")}
             {card(t("Из выручки — повторные", "З виручки — повторні"), moneyUah(profitability.repeat_revenue), "#0e7490")}
             {card(t("Средний LTV", "Середній LTV"), moneyUah(profitability.average_ltv), "#7c3aed")}
+            {card(t("Реклама по курсу НБУ", "Реклама за курсом НБУ"), profitability.ad_spend_uah == null ? "—" : moneyUah(profitability.ad_spend_uah), "#dc2626")}
+            {card(t("Прибыль после рекламы", "Прибуток після реклами"), profitability.marketing_profit == null ? "—" : moneyUah(profitability.marketing_profit), Number(profitability.marketing_profit) >= 0 ? "#15803d" : "#dc2626")}
+            {card(t("Общий ROAS", "Загальний ROAS"), profitability.blended_roas == null ? "—" : `${profitability.blended_roas}×`, "#2563eb", t("вся выручка ÷ реклама", "вся виручка ÷ реклама"))}
+            {card(t("ROAS с точным ID", "ROAS з точним ID"), profitability.exact_ad_roas == null ? "—" : `${profitability.exact_ad_roas}×`, "#7c3aed", t("только доказанная связь с объявлением", "лише доведений звʼязок з оголошенням"))}
             {card("ROMI", profitability.romi == null ? "—" : `${profitability.romi}%`, Number(profitability.romi) >= 0 ? "#15803d" : "#dc2626")}
           </div>
           <SectionTitle title={t("Общая статистика по дням", "Загальна статистика за днями")} note={t("Реклама, лиды, продажи, повторные покупки, LTV и прибыль в одной таблице", "Реклама, ліди, продажі, повторні покупки, LTV і прибуток в одній таблиці")} />
@@ -487,27 +502,37 @@ export default function MetaMarketing() {
         </>}
 
         {tab === "profitability" && <>
+          <PeriodBar from={from} to={to} days={periodDays} t={t} onQuick={setLastDays} />
           <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
             <b>{t("Что входит в расчёт:", "Що входить у розрахунок:")}</b> {t(
               "Все оплаченные продажи из воронок «21 Основний продукт» и «22 Тестовий набір». Из остальных воронок — только продажи с подтверждённым ID Meta. Выручка считается по фактически оплаченным платежам. Повторная выручка — часть общей выручки, её не нужно прибавлять второй раз. Себестоимость считается по товарам сделки, рекламный расход переводится в гривну по официальному курсу НБУ за каждый день.",
               "Усі оплачені продажі з воронок «21 Основний продукт» і «22 Тестовий набір». З інших воронок — лише продажі з підтвердженим ID Meta. Виручка рахується за фактично сплаченими платежами. Повторна виручка — частина загальної виручки, її не потрібно додавати вдруге. Собівартість рахується за товарами угоди, рекламні витрати переводяться у гривню за офіційним курсом НБУ за кожен день."
             )}
           </div>
+          <SectionTitle title={t("1 · Продажи и клиенты", "1 · Продажі та клієнти")} note={t("Сколько сделок оплачено и сколько людей купило за период", "Скільки угод оплачено і скільки людей купило за період")} />
           <div style={cardsRow}>
             {card(t("Продажи", "Продажі"), count(profitability.sales), "#16a34a")}
             {card(t("Покупатели", "Покупці"), count(profitability.buyers), "#0f766e")}
             {card(t("Повторные продажи", "Повторні продажі"), count(profitability.repeat_sales), "#0891b2")}
             {card(t("Повторные клиенты", "Повторні клієнти"), count(profitability.repeat_buyers), "#0891b2")}
+            {card(t("Средний LTV", "Середній LTV"), moneyUah(profitability.average_ltv), "#7c3aed", t("сколько в среднем приносит один покупатель", "скільки в середньому приносить один покупець"))}
+          </div>
+          <SectionTitle title={t("2 · Деньги: выручка и прибыль", "2 · Гроші: виручка та прибуток")} note={t("Выручка — по фактически оплаченным платежам. Валовая прибыль = выручка − себестоимость товаров.", "Виручка — за фактично сплаченими платежами. Валовий прибуток = виручка − собівартість товарів.")} />
+          <div style={cardsRow}>
             {card(t("Выручка", "Виручка"), moneyUah(profitability.revenue), "#047857")}
-            {card(t("Из выручки — повторные", "З виручки — повторні"), moneyUah(profitability.repeat_revenue), "#0e7490")}
-            {card(t("Средний LTV", "Середній LTV"), moneyUah(profitability.average_ltv), "#7c3aed")}
+            {card(t("Из выручки — повторные", "З виручки — повторні"), moneyUah(profitability.repeat_revenue), "#0e7490", t("часть общей выручки, не прибавлять второй раз", "частина загальної виручки, не додавати вдруге"))}
             {card(t("Себестоимость", "Собівартість"), moneyUah(profitability.cost), "#b45309")}
             {card(t("Валовая прибыль", "Валовий прибуток"), moneyUah(profitability.gross_profit), "#15803d")}
+          </div>
+          <SectionTitle title={t("3 · Реклама и окупаемость", "3 · Реклама та окупність")} note={t("Расход рекламы в гривне по официальному курсу НБУ за каждый день. ROAS = выручка ÷ реклама.", "Витрати реклами у гривні за офіційним курсом НБУ за кожен день. ROAS = виручка ÷ реклама.")} />
+          <div style={cardsRow}>
             {card(t("Реклама по курсу НБУ", "Реклама за курсом НБУ"), profitability.ad_spend_uah == null ? "—" : moneyUah(profitability.ad_spend_uah), "#dc2626")}
-            {card(t("Прибыль после рекламы", "Прибуток після реклами"), profitability.marketing_profit == null ? "—" : moneyUah(profitability.marketing_profit), Number(profitability.marketing_profit) >= 0 ? "#15803d" : "#dc2626")}
-            {card(t("Общий ROAS", "Загальний ROAS"), profitability.blended_roas == null ? "—" : `${profitability.blended_roas}×`, "#2563eb")}
-            {card(t("ROAS с точным ID", "ROAS з точним ID"), profitability.exact_ad_roas == null ? "—" : `${profitability.exact_ad_roas}×`, "#7c3aed", t("Консервативный показатель: только доказанная связь с объявлением", "Консервативний показник: лише доведений зв'язок з оголошенням"))}
-            {card("ROMI", profitability.romi == null ? "—" : `${profitability.romi}%`, Number(profitability.romi) >= 0 ? "#15803d" : "#dc2626")}
+            {card(t("Прибыль после рекламы", "Прибуток після реклами"), profitability.marketing_profit == null ? "—" : moneyUah(profitability.marketing_profit), Number(profitability.marketing_profit) >= 0 ? "#15803d" : "#dc2626", t("валовая прибыль − реклама", "валовий прибуток − реклама"))}
+            {card(t("Общий ROAS", "Загальний ROAS"), profitability.blended_roas == null ? "—" : `${profitability.blended_roas}×`, "#2563eb", t("вся выручка ÷ реклама (blended)", "вся виручка ÷ реклама (blended)"))}
+            {card(t("ROAS с точным ID", "ROAS з точним ID"), profitability.exact_ad_roas == null ? "—" : `${profitability.exact_ad_roas}×`, "#7c3aed", t("Консервативный: только доказанная связь с объявлением. «—» = таких продаж пока нет", "Консервативний: лише доведений звʼязок з оголошенням. «—» = таких продажів поки немає"))}
+            {card("ROMI", profitability.romi == null ? "—" : `${profitability.romi}%`, Number(profitability.romi) >= 0 ? "#15803d" : "#dc2626", t("(валовая прибыль − реклама) ÷ реклама", "(валовий прибуток − реклама) ÷ реклама"))}
+            {card(t("Цена клика (CPC)", "Ціна кліку (CPC)"), cpcUsd == null ? "—" : moneyUsd(cpcUsd), "#0891b2")}
+            {card(t("Цена лида (все из Meta)", "Ціна ліда (всі з Meta)"), cplUah == null ? "—" : moneyUah(cplUah), "#b45309")}
           </div>
           <SectionTitle title={t("Рентабельность по дням", "Рентабельність за днями")} note={t("Меняйте период сверху: день, неделя, месяц, 90 дней или произвольный диапазон", "Змінюйте період зверху: день, тиждень, місяць, 90 днів або довільний діапазон")} />
           {dailyTable}
@@ -640,8 +665,39 @@ export default function MetaMarketing() {
   </div>;
 }
 
+/* Візуальний блок-контейнер: групує картки показників під заголовком (щоб не було «каші») */
+function Block({ title, note, accent, children }: { title: string; note?: string; accent?: string; children: any }) {
+  const c = accent || "#2563eb";
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderLeft: `4px solid ${c}`, borderRadius: 12, padding: "12px 14px", marginBottom: 12, boxShadow: "0 1px 3px rgba(15,23,42,.05)" }}>
+      <div style={{ marginBottom: 9 }}>
+        <b style={{ fontSize: 15, color: "#0f172a" }}>{title}</b>
+        {note ? <div className="muted" style={{ fontSize: 11.5, marginTop: 2, lineHeight: 1.45 }}>{note}</div> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/* Панель періоду: ЯВНО показує, за який період цифри + швидкий вибір (щоб не гадати) */
+function PeriodBar({ from, to, days, t, onQuick }: { from: string; to: string; days: number; t: any; onQuick: (d: number) => void }) {
+  const fmt = (v: string) => { const p2 = String(v || "").split("-"); return p2.length === 3 ? `${p2[2]}.${p2[1]}.${p2[0]}` : v; };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "linear-gradient(135deg,#eff6ff,#f0fdfa)", border: "1px solid #bfdbfe", borderRadius: 12, padding: "9px 13px", marginBottom: 12 }}>
+      <span style={{ fontSize: 13, fontWeight: 700, color: "#1e40af" }}>📅 {t("Период:", "Період:")}</span>
+      <span style={{ fontSize: 14, fontWeight: 800, color: "#0f172a" }}>{fmt(from)} — {fmt(to)}</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: "#2563eb", borderRadius: 999, padding: "2px 9px" }}>{days} {days === 1 ? t("день","день") : (days < 5 ? t("дня","дні") : t("дней","днів"))}</span>
+      <div style={{ flex: 1 }} />
+      <span className="muted" style={{ fontSize: 11 }}>{t("Быстро:", "Швидко:")}</span>
+      {[[1, t("сегодня","сьогодні")], [7, "7"], [30, "30"], [90, "90"]].map(([d, lb]: any) => (
+        <button key={d} className="btn btn-light" style={{ height: 26, padding: "0 10px", fontSize: 12 }} onClick={() => onQuick(d)}>{lb}</button>
+      ))}
+    </div>
+  );
+}
+
 function SectionTitle({ title, note }: { title: string; note: string }) {
-  return <div style={{ margin: "14px 0 8px" }}><b style={{ fontSize: 16 }}>{title}</b><span className="muted" style={{ fontSize: 11, marginLeft: 8 }}>{note}</span></div>;
+  return <div style={{ margin: "18px 0 8px", paddingLeft: 10, borderLeft: "4px solid #2563eb" }}><b style={{ fontSize: 16, color: "#0f172a" }}>{title}</b><div className="muted" style={{ fontSize: 11.5, marginTop: 2, lineHeight: 1.45 }}>{note}</div></div>;
 }
 
 function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string) => string }) {
@@ -841,7 +897,7 @@ function Empty({ text }: { text: string }) {
   return <div className="panel muted" style={{ padding: 28, textAlign: "center", gridColumn: "1 / -1" }}>{text}</div>;
 }
 
-const cardsRow: any = { display: "flex", gap: 9, flexWrap: "wrap", marginBottom: 10 };
+const cardsRow: any = { display: "flex", gap: 9, flexWrap: "wrap", marginBottom: 14, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "11px 12px", boxShadow: "0 1px 3px rgba(15,23,42,.05)" };
 const metricGrid: any = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: 12 };
 const th: any = { textAlign: "left", padding: "10px 12px", fontSize: 12, color: "#64748b", borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap" };
 const td: any = { padding: "10px 12px", fontSize: 13, borderBottom: "1px solid #eef2f7", verticalAlign: "top" };
