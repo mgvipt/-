@@ -229,6 +229,7 @@ function SalesTab() {
   const { t } = useLang();
   const [d, setD] = useState<SalesData | null>(null);
   const [fid, setFid] = useState("");
+  const [view, setView] = useState<"dash" | "table">("dash");
   useEffect(() => { api.get<SalesData>(`/api/analytics/${fid ? "?funnel=" + fid : ""}`).then(setD); }, [fid]);
   if (!d) return <div className="spin">{t("Загрузка аналитики…","Завантаження аналітики…")}</div>;
   const maxCount = Math.max(...d.stages.map((s) => s.count), 1);
@@ -239,7 +240,12 @@ function SalesTab() {
   ];
   return (
     <>
-      <SalesJourney />
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+        <button className={view === "dash" ? "btn btn-primary" : "btn btn-light"} onClick={() => setView("dash")}>📊 {t("Дашборды","Дашборди")}</button>
+        <button className={view === "table" ? "btn btn-primary" : "btn btn-light"} onClick={() => setView("table")}>📋 {t("Таблица","Таблиця")}</button>
+      </div>
+      {view === "dash" && <SalesJourney />}
+      {view === "table" && <>
       <div className="toolbar" style={{ borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 12, background: "#fff" }}>
         <span className="muted">{t("Воронка:","Воронка:")}</span>
         <select value={fid} onChange={(e) => setFid(e.target.value)}>
@@ -289,6 +295,7 @@ function SalesTab() {
         </table>
         <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>{t("Живые лиды (Instagram / Telegram / Facebook) падают по источникам автоматически. «Лиды» — новые обращения, «Сделок/Выиграно» — за всё время. Конверсия = выиграно / (выиграно + проиграно).","Живі ліди (Instagram / Telegram / Facebook) розподіляються за джерелами автоматично. «Ліди» — нові звернення, «Угод/Виграно» — за весь час. Конверсія = виграно / (виграно + програно).")}</div>
       </div>
+      </>}
     </>
   );
 }

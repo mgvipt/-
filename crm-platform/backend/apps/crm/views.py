@@ -2545,22 +2545,23 @@ class SalesFunnelView(APIView):
         Model = Lead if kind == "lead" else Deal
 
         objs = Model.objects.filter(funnel=funnel, created_at__date__gte=d_from, created_at__date__lte=d_to)
-        base_rows = list(objs.values_list("id", "stage_id", "source"))
+        base_rows = list(objs.values_list("id", "stage_id", "source", "amount"))
         src_counter = _C()
-        for _id, _st, _s in base_rows:
-            src_counter[self._grp(_s)] += 1
+        for _row in base_rows:
+            src_counter[self._grp(_row[2])] += 1
 
         src = (request.query_params.get("source") or "all").lower()
         if src in self.SRC_GROUPS:
             allow = self.SRC_GROUPS[src]
-            rows0 = [(i, st, s) for (i, st, s) in base_rows if (s or "") in allow]
+            rows0 = [r for r in base_rows if (r[2] or "") in allow]
         elif src == "offline":
-            rows0 = [(i, st, s) for (i, st, s) in base_rows if self._grp(s) == "offline"]
+            rows0 = [r for r in base_rows if self._grp(r[2]) == "offline"]
         else:
             src = "all"
             rows0 = base_rows
         obj_ids = [r[0] for r in rows0]
         cur_stage = {r[0]: r[1] for r in rows0}
+        amount_of = {r[0]: float(r[3] or 0) for r in rows0}
 
         stages = list(funnel.stages.order_by("order"))
         progress = [s for s in stages if not s.is_won and not s.is_lost]
@@ -2601,12 +2602,14 @@ class SalesFunnelView(APIView):
         out_stages = []
         prev = None
         for i, s in enumerate(progress):
-            through = sum(1 for oid in obj_ids if maxpos[oid] >= i)
+            reached_ids = [oid for oid in obj_ids if maxpos[oid] >= i]
+            through = len(reached_ids)
+            amount = sum(amount_of.get(oid, 0) for oid in reached_ids)
             man_here = len(into[i]["man"])
             ai_here = len(into[i]["ai"] - into[i]["man"])
             out_stages.append({
                 "id": s.id, "name": s.name, "color": s.color or "#2E6FB0",
-                "through": through, "ai": ai_here, "man": man_here,
+                "through": through, "amount": round(amount), "ai": ai_here, "man": man_here,
                 "pct_prev": (round(through * 100.0 / prev) if prev else 100),
                 "pct_entered": (round(through * 100.0 / entered) if entered else 0),
             })
@@ -2614,6 +2617,9 @@ class SalesFunnelView(APIView):
 
         lost_cnt = sum(1 for oid in obj_ids if cur_stage.get(oid) in lost_ids)
         won_cnt = sum(1 for oid in obj_ids if cur_stage.get(oid) in won_ids)
+        won_amt = sum(amount_of.get(oid, 0) for oid in obj_ids if cur_stage.get(oid) in won_ids)
+        lost_amt = sum(amount_of.get(oid, 0) for oid in obj_ids if cur_stage.get(oid) in lost_ids)
+        won_names = [st.name for st in stages if st.is_won]
         man_any = len(set().union(*[into[i]["man"] for i in into])) if into else 0
 
         src_list = [{"key": "all", "label": "Все", "n": len(base_rows)}]
@@ -2625,8 +2631,8 @@ class SalesFunnelView(APIView):
             "is_lead": funnel.is_lead_funnel,
             "from": d_from.isoformat(), "to": d_to.isoformat(),
             "entered": entered, "stages": out_stages,
-            "lost": {"count": lost_cnt, "pct": (round(lost_cnt * 100.0 / entered) if entered else 0)},
-            "won": {"count": won_cnt, "pct": (round(won_cnt * 100.0 / entered) if entered else 0)},
+            "lost": {"count": lost_cnt, "amount": round(lost_amt), "pct": (round(lost_cnt * 100.0 / entered) if entered else 0)},
+            "won": {"count": won_cnt, "amount": round(won_amt), "pct": (round(won_cnt * 100.0 / entered) if entered else 0), "label": (won_names[0] if won_names else "")},
             "manager_moved": man_any, "source": src, "sources": src_list,
             "funnels": [{"id": fn.id, "name": fn.name, "is_lead": fn.is_lead_funnel}
                         for fn in Funnel.objects.filter(is_archive=False).order_by("order")],

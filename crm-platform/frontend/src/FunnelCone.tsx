@@ -1,19 +1,35 @@
 /* ============================================================================
  *  Переиспользуемые конусы воронок (Аналитика продаж + Маркетинг Meta)
  * ========================================================================== */
+import { Icon } from "./Icon";
 
-export const CONE_PALETTE = ["#17a2b8", "#7cb342", "#e5533c", "#f39c12", "#5c6bc0", "#26a69a", "#8e44ad", "#c0392b"];
+// Единая палитра-градиент воронки: от бирюзы вверху к фиолету внизу (без «тревожного» красного в середине)
+export const CONE_PALETTE = ["#17a2b8", "#2298c0", "#2f8ec6", "#3d80c8", "#4d6fc6", "#5f5cbe", "#7248b0", "#8433a0"];
 
-/* Плавный компактный конус по данным sales-funnel (through монотонно убывает —
-   сегменты стыкуются без зазоров и сводятся к точке; числа/подписи справа) */
+function shadeDown(hex: string): string {
+  // затемняем цвет для нижней грани сегмента (3D)
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const r = Math.max(0, ((n >> 16) & 255) - 34), g = Math.max(0, ((n >> 8) & 255) - 34), b = Math.max(0, (n & 255) - 34);
+  return `rgb(${r},${g},${b})`;
+}
+function fmtMoney(n: number): string {
+  n = Math.round(n || 0);
+  if (n >= 1000000) return (n / 1000000).toFixed(n >= 10000000 ? 0 : 1).replace(".0", "") + " млн ₴";
+  if (n >= 1000) return Math.round(n / 1000) + " тыс ₴";
+  return n + " ₴";
+}
+
+/* Конус воронки: 3D-сегменты, число внутри, плавное сужение к плоскому дну;
+   справа — % перехода, сумма ₴ и кто вёл (бот-ИИ / менеджер) */
 export function Cone({ d, t }: { d: any; t: any }) {
   if (!d || !d.stages || d.stages.length === 0) return null;
   const base = (d.stages[0]?.through) || d.entered || 1;
-  const wOf = (n: number) => (n > 0 ? Math.max((n / base) * 100, 4) : 0);
-  const GC = "22px minmax(0,1fr) minmax(150px,266px)";
-  const H = 33;
+  const wOf = (n: number) => Math.max((n / base) * 100, 14);   // пол 14% — дно не острое
+  const GC = "minmax(0,1fr) minmax(168px,250px)";
   return (
-    <div style={{ maxWidth: 700, margin: "0 auto" }}>
+    <div style={{ maxWidth: 680, margin: "0 auto" }}>
       {(d.stages || []).map((st: any, i: number) => {
         const wTop = i === 0 ? 100 : wOf(d.stages[i - 1].through);
         const wBot = wOf(st.through);
@@ -21,24 +37,30 @@ export function Cone({ d, t }: { d: any; t: any }) {
         const col = CONE_PALETTE[i % CONE_PALETTE.length];
         const drop = i > 0 && st.pct_prev < 55;
         return (
-          <div key={st.id} style={{ display: "grid", gridTemplateColumns: GC, columnGap: 8, alignItems: "center" }}>
-            <span style={{ width: 20, height: 20, borderRadius: 6, background: "#2f3b52", color: "#fff", fontWeight: 700, fontSize: 11, display: "grid", placeItems: "center" }}>{i + 1}</span>
-            <div style={{ height: H, position: "relative" }}>
-              <div style={{ position: "absolute", inset: 0, clipPath: clip, background: `linear-gradient(180deg, ${col}, ${col}cc)` }} />
+          <div key={st.id} style={{ display: "grid", gridTemplateColumns: GC, columnGap: 12, alignItems: "center" }}>
+            <div style={{ height: 40, position: "relative" }}>
+              <div style={{ position: "absolute", inset: 0, clipPath: clip, background: `linear-gradient(180deg, ${col}, ${shadeDown(col)})`, boxShadow: "inset 0 3px 8px rgba(255,255,255,.45), inset 0 -9px 13px rgba(0,0,0,.22)" }} />
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 15, fontFamily: "ui-monospace,monospace", textShadow: "0 1px 3px rgba(0,0,0,.55)" }}>{st.through}</div>
             </div>
-            <div style={{ lineHeight: 1.15, minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, color: "#334155", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                <b style={{ fontFamily: "ui-monospace,monospace", fontSize: 14, color: "#0f172a" }}>{st.through}</b> {st.name}
-                {(st.man > 0 || st.ai > 0) && <span style={{ fontSize: 10.5, color: "#94a3b8", marginLeft: 4 }}>🤖{st.ai}{st.man > 0 ? ` 👤${st.man}` : ""}</span>}
+            <div style={{ lineHeight: 1.25, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: "#334155", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{st.name}</div>
+              <div style={{ fontSize: 11, display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ color: drop ? "#dc2626" : "#94a3b8", fontWeight: 700 }}>{i === 0 ? "100%" : st.pct_prev + "%"}{drop && " ⚠"}</span>
+                {st.amount > 0 && <span style={{ color: "#0f766e", fontWeight: 600 }}>{fmtMoney(st.amount)}</span>}
+                {(st.ai > 0 || st.man > 0) && (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    {st.ai > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 2, color: "#7c3aed" }}><Icon n="bot" size={12} />{st.ai}</span>}
+                    {st.man > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 2, color: "#334155" }}><Icon n="user" size={11} />{st.man}</span>}
+                  </span>
+                )}
               </div>
-              <div style={{ fontSize: 10.5, color: drop ? "#dc2626" : "#94a3b8", fontWeight: 600 }}>{i === 0 ? t("вход · 100%", "вхід · 100%") : `${st.pct_prev}% ${t("от преды.", "від попер.")}`}{drop && " ⚠"}</div>
             </div>
           </div>
         );
       })}
-      <div style={{ display: "flex", gap: 14, marginTop: 8, paddingLeft: 30, fontSize: 11.5, flexWrap: "wrap" }}>
-        <span style={{ color: "#dc2626", fontWeight: 700 }}>❌ {t("Потеряно", "Втрачено")}: {d.lost.count} · {d.lost.pct}%</span>
-        {d.won.count > 0 && <span style={{ color: "#16a34a", fontWeight: 700 }}>✅ {t("Продано", "Продано")}: {d.won.count} · {d.won.pct}%</span>}
+      <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 12, flexWrap: "wrap" }}>
+        <span style={{ color: "#dc2626", fontWeight: 700 }}>❌ {t("Потеряно (отказы)", "Втрачено (відмови)")}: {d.lost.count}{d.lost.amount > 0 ? " · " + fmtMoney(d.lost.amount) : ""}</span>
+        {d.won.count > 0 && <span style={{ color: "#16a34a", fontWeight: 700 }}>✅ {d.won.label || t("Продано", "Продано")}: {d.won.count}{d.won.amount > 0 ? " · " + fmtMoney(d.won.amount) : ""}</span>}
       </div>
     </div>
   );
