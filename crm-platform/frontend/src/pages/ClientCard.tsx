@@ -437,6 +437,7 @@ function ClientDebtsBlock({ contactId }: { contactId: number }) {
   const { can } = useAuth();
   const canPay = can("finance.debts.pay") || can("roles.manage");
   const [rows, setRows] = useState<any[]>([]);
+  const [showN, setShowN] = useState<Record<string, number>>({});
   const load = () => api.get<any>(`/api/contacts/${contactId}/finance/`).then((d) => setRows(d?.debts_list || [])).catch(() => setRows([]));
   useEffect(() => { load(); }, [contactId]);
   // ДЗЕРКАЛО кнопки «Оплачено» з Фінанси → Дт/Кт: той самий серверний обробник
@@ -458,11 +459,22 @@ function ClientDebtsBlock({ contactId }: { contactId: number }) {
       {[["receivable", t("Дебиторка — нам должны","Дебіторка — нам винні"), "#0e7490"], ["payable", t("Кредиторка — мы должны","Кредиторка — ми винні"), "#b45309"]].map(([kind, title, cl]: any) => {
         const list = rows.filter((x) => x.kind === kind);
         if (!list.length) return null;
+        const lim = showN[kind] ?? 10;
+        const shown = list.slice(0, lim);
         return (
           <div key={kind} style={{ marginBottom: 8 }}>
-            <div className="muted" style={{ fontSize: 11.5, fontWeight: 700, color: cl, marginBottom: 4 }}>{title} · {list.length}{list.length > 8 ? " · " + t("прокрутка ↓","прокрутка ↓") : ""}</div>
-            <div style={{ maxHeight: list.length > 8 ? 360 : "none", overflowY: list.length > 8 ? "auto" : "visible", paddingRight: list.length > 8 ? 4 : 0 }}>
-            {list.map((x) => {
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4, flexWrap: "wrap", gap: 6 }}>
+              <div className="muted" style={{ fontSize: 11.5, fontWeight: 700, color: cl }}>{title} · {list.length}</div>
+              {list.length > 5 && (
+                <span style={{ display: "inline-flex", gap: 4, alignItems: "center", fontSize: 11 }}>
+                  <span className="muted">{t("Показывать:","Показувати:")}</span>
+                  {[10, 25, 50].map((nn) => <button key={nn} onClick={() => setShowN((pp) => ({ ...pp, [kind]: nn }))} style={{ padding: "1px 7px", borderRadius: 6, border: "1px solid " + (lim === nn ? cl : "#e2e8f0"), background: lim === nn ? cl : "#fff", color: lim === nn ? "#fff" : "#64748b", cursor: "pointer", fontWeight: 600 }}>{nn}</button>)}
+                  <button onClick={() => setShowN((pp) => ({ ...pp, [kind]: 100000 }))} style={{ padding: "1px 7px", borderRadius: 6, border: "1px solid " + (lim >= 100000 ? cl : "#e2e8f0"), background: lim >= 100000 ? cl : "#fff", color: lim >= 100000 ? "#fff" : "#64748b", cursor: "pointer", fontWeight: 600 }}>{t("все","всі")}</button>
+                </span>
+              )}
+            </div>
+            <div style={{ maxHeight: shown.length > 8 ? 360 : "none", overflowY: shown.length > 8 ? "auto" : "visible", paddingRight: shown.length > 8 ? 4 : 0 }}>
+            {shown.map((x) => {
               const paid = x.status === "paid";
               const partial = !paid && Number(x.paid_amount || 0) > 0;
               const shownAmt = partial ? Number(x.remaining) : Number(x.amount);
