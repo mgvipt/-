@@ -3143,75 +3143,94 @@ function ManagerDealsModal({ user, period, onClose }: { user: any; period: strin
   const { t } = useLang();
   const nav = useNavigate();
   const [d, setD] = useState<any>(null);
+  const [min0, setMin0] = useState(false);   // згорнуто в смужку (щоб працювати в основному вікні)
   useEffect(() => { setD(null); api.get<any>(`/api/finance/salary/deals/?user=${user.id}&period=${period}`).then(setD).catch(() => setD({ rows: [], total: 0, deals: 0, count: 0 })); }, [user.id, period]);
+
+  /* ВИСУВНА ПАНЕЛЬ СПРАВА: не перекриває екран затемненням — можна далі працювати
+     в основному вікні; кнопка «−» згортає в смужку, «✕» закриває. */
+  if (min0) return (
+    <div onClick={() => setMin0(false)} title={t("Развернуть", "Розгорнути")}
+      style={{ position: "fixed", right: 0, top: "35%", zIndex: 1000, background: "#2563eb", color: "#fff", padding: "10px 8px", borderRadius: "10px 0 0 10px", cursor: "pointer", fontSize: 12, fontWeight: 700, writingMode: "vertical-rl", boxShadow: "-3px 0 12px rgba(15,23,42,.25)" }}>
+      💰 {user.name} · {money(d?.total || 0)}
+    </div>
+  );
+
+  const cell: any = { padding: "6px 9px", whiteSpace: "nowrap" };
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 16, overflow: "auto" }}>
-      <div onClick={(e) => e.stopPropagation()} className="panel" style={{ maxWidth: 720, width: "100%", margin: "40px 0", maxHeight: "85vh", overflow: "auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-          <b style={{ fontSize: 16, flex: 1 }}>{user.name} · {t("оплаты за", "оплати за")} {period}</b>
-          <button className="btn btn-light" onClick={onClose}>✕</button>
-        </div>
-        {!d ? <div className="spin">{t("Загрузка…", "Завантаження…")}</div> : (<>
-          <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>{t("Поступило денег", "Надійшло грошей")}: <b style={{ color: "#16a34a" }}>{money(d.total)}</b> · {d.deals} {t("сделок", "угод")} · {d.count} {t("операций", "операцій")}. {t("Клик по сделке — открыть карточку.", "Клік по угоді — відкрити картку.")}</div>
-          {(d.by_day || []).length > 0 && (
-            <div style={{ marginBottom: 10, border: "1px solid #e5eaf1", borderRadius: 9, overflow: "hidden" }}>
-              <div style={{ background: "#f8fafc", padding: "5px 9px", fontSize: 11.5, fontWeight: 700, color: "#334155", display: "flex", justifyContent: "space-between" }}>
-                <span>📆 {t("Собрано по дням", "Зібрано за днями")}</span>
-                <span>{t("Всего", "Всього")}: <b style={{ color: "#16a34a" }}>{money(d.total)}</b>{d.total_fee ? <> · {t("комиссия", "комісія")} <b style={{ color: "#dc2626" }}>−{money(d.total_fee)}</b> · {t("чисто", "чисто")} <b style={{ color: "#047857" }}>{money(d.total_net)}</b></> : null}</span>
+    <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: "min(980px, 96vw)", zIndex: 1000, background: "#fff", boxShadow: "-8px 0 28px rgba(15,23,42,.22)", display: "flex", flexDirection: "column", borderLeft: "1px solid #e2e8f0" }}>
+      {/* ── ШАПКА (закріплена) ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "1px solid #e5eaf1", background: "#f8fafc", flexShrink: 0 }}>
+        <b style={{ fontSize: 15, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>💰 {user.name} · {t("оплаты за", "оплати за")} {period}</b>
+        <button className="btn btn-light" style={{ height: 28, padding: "0 10px" }} title={t("Свернуть в полоску — можно работать в основном окне", "Згорнути в смужку — можна працювати в основному вікні")} onClick={() => setMin0(true)}>—</button>
+        <button className="btn btn-light" style={{ height: 28, padding: "0 10px" }} onClick={onClose}>✕</button>
+      </div>
+
+      {!d ? <div className="spin" style={{ padding: 24 }}>{t("Загрузка…", "Завантаження…")}</div> : (
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+          {/* ── ПІДСУМКИ + ДНІ (не скролиться разом з таблицею) ── */}
+          <div style={{ padding: "9px 14px 0", flexShrink: 0 }}>
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12.5, marginBottom: 8 }}>
+              <span>{t("Поступило", "Надійшло")}: <b style={{ color: "#16a34a", fontSize: 14 }}>{money(d.total)}</b></span>
+              {d.total_fee ? <span>{t("комиссия", "комісія")}: <b style={{ color: "#dc2626" }}>−{money(d.total_fee)}</b></span> : null}
+              {d.total_net != null ? <span>{t("чисто", "чисто")}: <b style={{ color: "#047857", fontSize: 14 }}>{money(d.total_net)}</b></span> : null}
+              <span className="muted">{d.deals} {t("сделок", "угод")} · {d.count} {t("операций", "операцій")}</span>
+            </div>
+            {(d.by_day || []).length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: "#334155", marginBottom: 4 }}>📆 {t("Собрано по дням", "Зібрано за днями")}</div>
+                <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4 }}>
+                  {(d.by_day || []).map((b: any) => (
+                    <div key={b.date} style={{ flex: "0 0 auto", minWidth: 108, background: "#f8fafc", border: "1px solid #e5eaf1", borderRadius: 8, padding: "5px 8px" }}>
+                      <div style={{ fontSize: 10.5, color: "#475569", fontWeight: 700 }}>{new Date(b.date).toLocaleDateString("ru", { day: "2-digit", month: "2-digit" })}</div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: "#16a34a", whiteSpace: "nowrap" }}>{money(b.amount)}</div>
+                      <div style={{ fontSize: 10, color: "#64748b", whiteSpace: "nowrap" }}>{b.deals} {t("сд.", "уг.")}{b.fee ? <span style={{ color: "#dc2626" }}> · −{money(b.fee)}</span> : null}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div style={{ maxHeight: 150, overflowY: "auto" }}>
-                {(d.by_day || []).map((b: any) => (
-                  <div key={b.date} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 9px", fontSize: 12, borderTop: "1px solid #f1f5f9" }}>
-                    <span style={{ width: 86, color: "#475569", fontWeight: 600 }}>{new Date(b.date).toLocaleDateString("ru")}</span>
-                    <span className="muted" style={{ width: 66, fontSize: 11 }}>{b.deals} {t("сделок", "угод")}</span>
-                    <div style={{ flex: 1 }} />
-                    {b.fee ? <span style={{ color: "#dc2626", fontSize: 11.5 }}>−{money(b.fee)}</span> : null}
-                    <b style={{ color: "#16a34a", minWidth: 84, textAlign: "right" }}>{money(b.amount)}</b>
+            )}
+            {(d.by_funnel || []).length > 1 && (
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+                {(d.by_funnel || []).map((b: any) => (
+                  <div key={b.funnel} style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 7, padding: "3px 8px", fontSize: 11.5 }}>
+                    <span style={{ color: "#1e40af", fontWeight: 600 }}>{b.funnel}</span>: <b style={{ color: "#16a34a" }}>{money(b.amount)}</b> <span className="muted">· {b.deals}</span>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-          {(d.by_funnel || []).length > 1 && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }} title={t("Сколько денег привлечено по каждой воронке","Скільки грошей залучено по кожній воронці")}>
-              {(d.by_funnel || []).map((b: any) => (
-                <div key={b.funnel} style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "5px 10px", fontSize: 12 }}>
-                  <span style={{ color: "#1e40af", fontWeight: 600 }}>{b.funnel}</span>: <b style={{ color: "#16a34a" }}>{money(b.amount)}</b> <span className="muted">· {b.deals} {t("сделок", "угод")}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", fontSize: 13, minWidth: 480 }}>
-              <thead><tr className="muted" style={{ fontSize: 11, textAlign: "left" }}>
-                <th style={{ padding: "4px 8px" }}>{t("Сделка", "Угода")}</th>
-                <th style={{ padding: "4px 8px" }}>{t("Воронка", "Воронка")}</th>
-                <th style={{ padding: "4px 8px" }}>{t("Клиент", "Клієнт")}</th>
-                <th style={{ textAlign: "right", padding: "4px 8px" }} title={t("Полная сумма сделки","Повна сума угоди")}>{t("Сумма сделки", "Сума угоди")}</th>
-                <th style={{ textAlign: "right", padding: "4px 8px" }} title={t("Сколько денег реально пришло (журнал)","Скільки грошей реально надійшло (журнал)")}>{t("Поступило", "Надійшло")}</th>
-                <th style={{ textAlign: "right", padding: "4px 8px" }} title={t("Комиссия платёжной системы (эквайринг/LiqPay)","Комісія платіжної системи (еквайринг/LiqPay)")}>{t("Комиссия", "Комісія")}</th>
-                <th style={{ textAlign: "right", padding: "4px 8px" }} title={t("Поступило минус комиссия","Надійшло мінус комісія")}>{t("Чисто", "Чисто")}</th>
-                <th style={{ textAlign: "right", padding: "4px 8px" }}>{t("Дата оплаты", "Дата оплати")}</th>
-              </tr></thead>
+            )}
+          </div>
+
+          {/* ── ТАБЛИЦЯ: скрол і вертикальний, і горизонтальний; смуга прокрутки — знизу вікна ── */}
+          <div style={{ flex: 1, minHeight: 0, overflow: "auto", borderTop: "1px solid #e5eaf1" }}>
+            <table style={{ width: "100%", fontSize: 12.5, minWidth: 900, borderCollapse: "separate", borderSpacing: 0 }}>
+              <thead>
+                <tr style={{ fontSize: 10.5, textAlign: "left", color: "#475569" }}>
+                  {[[t("Сделка", "Угода"), ""], [t("Воронка", "Воронка"), ""], [t("Клиент", "Клієнт"), ""],
+                    [t("Сумма сделки", "Сума угоди"), "r"], [t("Поступило", "Надійшло"), "r"],
+                    [t("Комиссия", "Комісія"), "r"], [t("Чисто", "Чисто"), "r"], [t("Дата оплаты", "Дата оплати"), "r"]].map(([lb, al]: any, i: number) => (
+                    <th key={i} style={{ ...cell, textAlign: al === "r" ? "right" : "left", position: "sticky", top: 0, background: "#f1f5f9", zIndex: 2, borderBottom: "1px solid #e2e8f0", fontWeight: 700 }}>{lb}</th>
+                  ))}
+                </tr>
+              </thead>
               <tbody>
                 {(d.rows || []).map((row: any) => (
                   <tr key={row.deal_id} onClick={() => nav(`/deals/${row.deal_id}`)} style={{ borderTop: "1px solid #eef2f7", cursor: "pointer" }} title={t("Открыть сделку", "Відкрити угоду")}>
-                    <td style={{ padding: "5px 8px", color: "#2563eb", fontWeight: 600 }}>#{row.deal_id}{row.title && row.title !== ("#" + row.deal_id) ? " · " + row.title : ""}{row.count > 1 ? <span className="muted" style={{ fontWeight: 400 }}> ({row.count})</span> : ""}</td>
-                    <td style={{ padding: "5px 8px" }}><span style={{ fontSize: 11, background: "#eff6ff", color: "#1e40af", borderRadius: 6, padding: "1px 7px", whiteSpace: "nowrap" }}>{row.funnel || "—"}</span></td>
-                    <td style={{ padding: "5px 8px" }}>{row.client || "—"}</td>
-                    <td style={{ textAlign: "right", padding: "5px 8px", color: "#475569" }}>{row.deal_amount == null ? "—" : money(row.deal_amount)}{(row.remaining != null && row.remaining > 1) ? <div style={{ fontSize: 10.5, color: "#b45309" }}>{t("ещё", "ще")} {money(row.remaining)}</div> : null}</td>
-                    <td style={{ textAlign: "right", padding: "5px 8px", fontWeight: 700, color: "#16a34a" }}>{money(row.amount)}</td>
-                    <td style={{ textAlign: "right", padding: "5px 8px", color: row.fee ? "#dc2626" : "#94a3b8" }}>{row.fee ? "−" + money(row.fee) : "—"}</td>
-                    <td style={{ textAlign: "right", padding: "5px 8px", fontWeight: 700, color: "#047857" }}>{money(row.net != null ? row.net : row.amount)}</td>
-                    <td className="muted" style={{ textAlign: "right", padding: "5px 8px", whiteSpace: "nowrap" }}>{row.last_date ? new Date(row.last_date).toLocaleDateString("ru") : "—"}</td>
+                    <td style={{ ...cell, color: "#2563eb", fontWeight: 600, maxWidth: 250, overflow: "hidden", textOverflow: "ellipsis" }}>#{row.deal_id}{row.title && row.title !== ("#" + row.deal_id) ? " · " + row.title : ""}{row.count > 1 ? <span className="muted" style={{ fontWeight: 400 }}> ({row.count})</span> : ""}</td>
+                    <td style={cell}><span style={{ fontSize: 10.5, background: "#eff6ff", color: "#1e40af", borderRadius: 6, padding: "1px 6px" }}>{row.funnel || "—"}</span></td>
+                    <td style={{ ...cell, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>{row.client || "—"}</td>
+                    <td style={{ ...cell, textAlign: "right", color: "#475569" }}>{row.deal_amount == null ? "—" : money(row.deal_amount)}{(row.remaining != null && row.remaining > 1) ? <div style={{ fontSize: 10, color: "#b45309" }}>{t("ещё", "ще")} {money(row.remaining)}</div> : null}</td>
+                    <td style={{ ...cell, textAlign: "right", fontWeight: 700, color: "#16a34a" }}>{money(row.amount)}</td>
+                    <td style={{ ...cell, textAlign: "right", color: row.fee ? "#dc2626" : "#94a3b8" }}>{row.fee ? "−" + money(row.fee) : "—"}</td>
+                    <td style={{ ...cell, textAlign: "right", fontWeight: 700, color: "#047857" }}>{money(row.net != null ? row.net : row.amount)}</td>
+                    <td style={{ ...cell, textAlign: "right", color: "#64748b" }}>{row.last_date ? new Date(row.last_date).toLocaleDateString("ru") : "—"}</td>
                   </tr>
                 ))}
-                {(d.rows || []).length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 14, textAlign: "center" }}>{t("Нет оплат за этот месяц", "Немає оплат за цей місяць")}</td></tr>}
+                {(d.rows || []).length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 16, textAlign: "center" }}>{t("Нет оплат за этот месяц", "Немає оплат за цей місяць")}</td></tr>}
               </tbody>
             </table>
           </div>
-        </>)}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
