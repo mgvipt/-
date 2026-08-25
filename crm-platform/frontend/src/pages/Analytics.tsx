@@ -209,6 +209,23 @@ function SalesJourney() {
         <span style={{ padding: "6px 12px", borderRadius: 8, background: "#e1f1e8", color: "#2F8F5B", fontWeight: 700 }}>{t("Основной", "Основний")} {C.main}</span>
         <span style={{ marginLeft: "auto", fontSize: 12.5, color: "#475569" }}>{t("сразу основной", "одразу основний")}: <b>{C.main_direct}</b> · {t("лид→оплата", "лід→оплата")}: <b style={{ color: "#166534" }}>{P.lead_to_sale}%</b></span>
       </div>
+      {jr.distribution && (
+        <div style={{ marginBottom: 18 }}>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{t("Куда ушли все лиды за период (по клиенту, с учётом фильтра источника):", "Куди пішли всі ліди за період (по клієнту, з урахуванням джерела):")}</div>
+          <div style={{ display: "flex", height: 30, borderRadius: 8, overflow: "hidden", border: "1px solid #e2e8f0" }}>
+            {([["bought_main", "#2F8F5B"], ["bought_test_only", "#B67A12"], ["stuck", "#2E6FB0"], ["lost", "#dc2626"]] as [string, string][]).map(([key, col]) => {
+              const p = jr.distribution[key + "_pct"] || 0;
+              if (!jr.distribution[key]) return null;
+              return <div key={key} style={{ width: p + "%", background: col, color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap", overflow: "hidden" }}>{p >= 7 ? p + "%" : ""}</div>;
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6, fontSize: 11.5 }}>
+            {([["bought_main", t("Купили основной", "Купили основний"), "#2F8F5B"], ["bought_test_only", t("Только тест", "Тільки тест"), "#B67A12"], ["stuck", t("В работе", "В роботі"), "#2E6FB0"], ["lost", t("Потеряно", "Втрачено"), "#dc2626"]] as [string, string, string][]).map(([key, lbl, col]) => (
+              <span key={key} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: col }} />{lbl}: <b>{jr.distribution[key] || 0}</b> ({jr.distribution[key + "_pct"] || 0}%)</span>
+            ))}
+          </div>
+        </div>
+      )}
       {blocks.map(([k, label, color]) => (
         <div key={k} style={{ marginBottom: 18 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>

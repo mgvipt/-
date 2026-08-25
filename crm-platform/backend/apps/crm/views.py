@@ -2720,6 +2720,13 @@ class SalesJourneyView(APIView):
         won_c = _with_deal(test_f, True) | _with_deal(main_f, True)
         main_via_test = main_c & test_c
         main_direct = main_c - test_c
+        lost_lead_contacts = set(Lead.objects.filter(funnel=lead_f, contact_id__in=cohort, stage__is_lost=True).values_list("contact_id", flat=True))
+        has_deal = test_c | main_c
+        bought_main = len(main_c)
+        bought_test_only = len(test_c - main_c)
+        converted = len(has_deal)
+        lost_leads = len(lost_lead_contacts - has_deal)
+        stuck = max(0, lead_count - converted - lost_leads)
 
         def pct(a, b):
             return round(a * 100.0 / b) if b else 0
@@ -2732,6 +2739,12 @@ class SalesJourneyView(APIView):
             },
             "counts": {"lead": lead_count, "test": len(test_c), "main": len(main_c),
                        "main_via_test": len(main_via_test), "main_direct": len(main_direct), "won": len(won_c)},
+            "distribution": {
+                "bought_main": bought_main, "bought_test_only": bought_test_only,
+                "stuck": stuck, "lost": lost_leads,
+                "bought_main_pct": pct(bought_main, lead_count), "bought_test_only_pct": pct(bought_test_only, lead_count),
+                "stuck_pct": pct(stuck, lead_count), "lost_pct": pct(lost_leads, lead_count),
+            },
             "pct": {"lead_to_test": pct(len(test_c), lead_count),
                     "test_to_main": pct(len(main_via_test), len(test_c)),
                     "lead_to_main_direct": pct(len(main_direct), lead_count),
