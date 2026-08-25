@@ -2617,6 +2617,7 @@ class ManagerDealsView(APIView):
                .select_related("deal", "deal__contact"))
         by_deal = {}
         _by_day = {}
+        _per_day_deal = {}
         _deal_amounts = {}
         for t in inc:
             if t.deal_id and t.deal_id not in _deal_amounts and t.deal:
@@ -2635,6 +2636,9 @@ class ManagerDealsView(APIView):
             rw["amount"] += float(t.amount_uah or 0)
             rw["count"] += 1
             ds = t.date.isoformat() if t.date else None
+            if ds:   # СКІЛЬКИ саме ЦЬОГО ДНЯ прийшло по цій сделці (для звірки по днях)
+                _pd = _per_day_deal.setdefault((ds, did), 0.0)
+                _per_day_deal[(ds, did)] = _pd + float(t.amount_uah or 0)
             if ds and (rw["last_date"] is None or ds > rw["last_date"]):
                 rw["last_date"] = ds
             # ── ПІДСУМКИ ЗА ДЕНЬ: скільки грошей менеджер зібрав кожного дня ──
@@ -2754,7 +2758,25 @@ class ManagerDealsView(APIView):
                 "plan_pct": round(_amt * 100.0 / _plan_day) if _plan_day else None,
             })
         by_day = sorted(by_day, key=lambda x: x["date"], reverse=True)
-        return Response({"user_id": u.id, "user_name": u.get_full_name() or u.username, "period": period,
+        # ── СПИСОК УГОД, ЗГРУПОВАНИЙ ПО ДНЯХ (щоб можна було звіритись за конкретний день) ──
+        _row_by_id = {rw["deal_id"]: rw for rw in rows}
+        _grp = {}
+        for (ds, did), amt in _per_day_deal.items():
+            base = _row_by_id.get(did) or {}
+            g = _grp.setdefault(ds, {"date": ds, "total": 0.0, "deals": []})
+            g["total"] += amt
+            g["deals"].append({
+                "deal_id": did, "title": base.get("title", ""), "client": base.get("client", ""),
+                "funnel": base.get("funnel", ""), "amount": round(amt),
+                "deal_amount": base.get("deal_amount"), "fee": base.get("fee", 0),
+            })
+        rows_by_day = []
+        for g in sorted(_grp.values(), key=lambda x: x["date"], reverse=True):
+            g["deals"] = sorted(g["deals"], key=lambda x: -x["amount"])
+            g["total"] = round(g["total"])
+            rows_by_day.append(g)
+        return Response({"rows_by_day": rows_by_day,
+                         "user_id": u.id, "user_name": u.get_full_name() or u.username, "period": period,
                          "rows": rows, "total": round(sum(rw["amount"] for rw in rows)),
                          "total_fee": round(sum(rw["fee"] for rw in rows)),
                          "total_net": round(sum(rw["net"] for rw in rows)),

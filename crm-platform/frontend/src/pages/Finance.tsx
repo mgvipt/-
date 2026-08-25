@@ -3146,6 +3146,7 @@ function ManagerDealsModal({ user, period, onClose }: { user: any; period: strin
   const [min0, setMin0] = useState(false);   // згорнуто в смужку (щоб працювати в основному вікні)
   const [openDeal, setOpenDeal] = useState<number | null>(null);  // картка сделки — ПОВЕРХ панелі, не йдемо зі сторінки
   const [showDeals, setShowDeals] = useState(false);              // список угод розгортається за потреби
+  const [byDayList, setByDayList] = useState(true);               // список угод: групувати по днях (для звірки) чи одним списком
   // ── ШИРИНА ПАНЕЛІ: тягнемо за лівий край, запамʼятовується між сесіями ──
   const [w, setW] = useState<number>(() => {
     const saved = Number(localStorage.getItem("mgr_drawer_w") || 0);
@@ -3274,6 +3275,13 @@ function ManagerDealsModal({ user, period, onClose }: { user: any; period: strin
             <span>{showDeals ? "▾" : "▸"}</span>
             <span>🧾 {t("Сделки за период", "Угоди за період")} ({(d.rows || []).length})</span>
             <div style={{ flex: 1 }} />
+            {showDeals && (
+              <span onClick={(e) => { e.stopPropagation(); setByDayList((v) => !v); }} className="btn btn-light"
+                style={{ height: 24, padding: "0 9px", fontSize: 11, fontWeight: 600 }}
+                title={t("Переключить: по дням (для сверки) или одним списком по сумме", "Перемкнути: за днями (для звірки) або одним списком за сумою")}>
+                {byDayList ? "📆 " + t("по дням", "за днями") : "💰 " + t("по сумме", "за сумою")}
+              </span>
+            )}
             <span className="muted" style={{ fontWeight: 400, fontSize: 11.5 }}>{showDeals ? t("свернуть", "згорнути") : t("развернуть", "розгорнути")}</span>
           </div>
           <div style={{ flex: showDeals ? 1 : "0 0 0px", minHeight: 0, overflow: showDeals ? "auto" : "hidden", borderTop: showDeals ? "1px solid #e5eaf1" : "none" }}>
@@ -3288,7 +3296,27 @@ function ManagerDealsModal({ user, period, onClose }: { user: any; period: strin
                 </tr>
               </thead>
               <tbody>
-                {(d.rows || []).map((row: any) => (
+                {byDayList && (d.rows_by_day || []).length > 0 ? (d.rows_by_day || []).flatMap((g: any) => ([
+                  <tr key={"h" + g.date} style={{ background: "#eff6ff" }}>
+                    <td colSpan={3} style={{ padding: "5px 9px", fontWeight: 800, color: "#1e40af", fontSize: 12 }}>
+                      📆 {new Date(g.date).toLocaleDateString("ru", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                      <span style={{ fontWeight: 400, color: "#64748b" }}> · {g.deals.length} {t("сделок", "угод")}</span>
+                    </td>
+                    <td style={{ padding: "5px 9px", textAlign: "right", fontWeight: 800, color: "#16a34a" }} colSpan={5}>{t("за день", "за день")}: {money(g.total)}</td>
+                  </tr>,
+                  ...g.deals.map((row: any) => (
+                    <tr key={g.date + "-" + row.deal_id} onClick={() => setOpenDeal(row.deal_id)} style={{ borderTop: "1px solid #eef2f7", cursor: "pointer" }} title={t("Открыть сделку", "Відкрити угоду")}>
+                      <td style={{ ...cell, color: "#2563eb", fontWeight: 600, maxWidth: 250, overflow: "hidden", textOverflow: "ellipsis" }}>#{row.deal_id}{row.title && row.title !== ("#" + row.deal_id) ? " · " + row.title : ""}</td>
+                      <td style={cell}><span style={{ fontSize: 10.5, background: "#eff6ff", color: "#1e40af", borderRadius: 6, padding: "1px 6px" }}>{row.funnel || "—"}</span></td>
+                      <td style={{ ...cell, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>{row.client || "—"}</td>
+                      <td style={{ ...cell, textAlign: "right", color: "#475569" }}>{row.deal_amount == null ? "—" : money(row.deal_amount)}</td>
+                      <td style={{ ...cell, textAlign: "right", fontWeight: 700, color: "#16a34a" }}>{money(row.amount)}</td>
+                      <td style={{ ...cell, textAlign: "right", color: row.fee ? "#dc2626" : "#94a3b8" }}>{row.fee ? "−" + money(row.fee) : "—"}</td>
+                      <td style={{ ...cell, textAlign: "right", color: "#64748b" }}>—</td>
+                      <td style={{ ...cell, textAlign: "right", color: "#64748b" }}>{new Date(g.date).toLocaleDateString("ru")}</td>
+                    </tr>
+                  )),
+                ])) : (d.rows || []).map((row: any) => (
                   <tr key={row.deal_id} onClick={() => setOpenDeal(row.deal_id)} style={{ borderTop: "1px solid #eef2f7", cursor: "pointer" }} title={t("Открыть сделку", "Відкрити угоду")}>
                     <td style={{ ...cell, color: "#2563eb", fontWeight: 600, maxWidth: 250, overflow: "hidden", textOverflow: "ellipsis" }}>#{row.deal_id}{row.title && row.title !== ("#" + row.deal_id) ? " · " + row.title : ""}{row.count > 1 ? <span className="muted" style={{ fontWeight: 400 }}> ({row.count})</span> : ""}</td>
                     <td style={cell}><span style={{ fontSize: 10.5, background: "#eff6ff", color: "#1e40af", borderRadius: 6, padding: "1px 6px" }}>{row.funnel || "—"}</span></td>
