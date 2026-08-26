@@ -250,3 +250,56 @@ def parse_generic_invoice(raw, name=""):
             if _sup["name"]:
                 break
     return {"lines": lines, "invoice_number": inv, "invoice_date": dt, "total": total, "supplier": _sup}
+
+
+def parse_pdf_invoice(raw, name="invoice.pdf"):
+    """Розбір PDF-накладної постачальника. Дістаємо таблиці/текст через pdfplumber,
+    перетворюємо на сітку рядків і віддаємо в parse_generic_invoice (уся логіка розбору
+    шапки/позицій/підсумку/реквізитів переюзається без дублювання).
+    Якщо PDF — скан (немає тексту), повернемо порожні lines: чернетка створиться з файлом,
+    позиції додаються вручну."""
+    import io as _io
+    try:
+        import pdfplumber
+    except Exception as e:  # noqa
+        return {"lines": [], "invoice_number": None, "invoice_date": None, "total": None,
+                "supplier": {}, "_pdf_error": "pdfplumber недоступний: %s" % e}
+
+    grid = []
+    try:
+        with pdfplumber.open(_io.BytesIO(raw)) as pdf:
+            for page in pdf.pages:
+                # 1) явні таблиці
+                for tbl in (page.extract_tables() or []):
+                    for row in tbl:
+                        grid.append(["" if c is None else str(c).replace("\n", " ").strip() for c in row])
+                # 2) плюс сирий текст рядками (щоб шапка/реквізити/номер теж потрапили)
+                txt = page.extract_text() or ""
+                for ln in txt.split("\n"):
+                    ln = ln.strip()
+                    if ln:
+                        # ділимо на «колонки» за 2+ пробілами
+                        import re as _re
+                        cells = _re.split(r"\s{2,}", ln)
+                        grid.append([c.strip() for c in cells])
+    except Exception as e:  # noqa
+        return {"lines": [], "invoice_number": None, "invoice_date": None, "total": None,
+                "supplier": {}, "_pdf_error": "не вдалося прочитати PDF: %s" % e}
+
+    if not grid:
+        return {"lines": [], "invoice_number": None, "invoice_date": None, "total": None, "supplier": {}}
+
+    # Пакуємо сітку в .xlsx у памʼяті і віддаємо в універсальний парсер
+    try:
+        import openpyxl
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        for row in grid:
+            ws.append([(c[:32000] if isinstance(c, str) else c) for c in row])
+        buf = _io.BytesIO()
+        wb.save(buf)
+        res = parse_generic_invoice(buf.getvalue(), "invoice.xlsx")
+    except Exception as e:  # noqa
+        return {"lines": [], "invoice_number": None, "invoice_date": None, "total": None,
+                "supplier": {}, "_pdf_error": "розбір таблиці PDF не вдався: %s" % e}
+    return res

@@ -704,21 +704,31 @@ class IncomingDocUploadView(APIView):
         if not f:
             return Response({"detail": "Файл не передано"}, status=400)
         name = f.name or "invoice.xlsx"
-        if not name.lower().endswith((".xls", ".xlsx")):
-            return Response({"detail": "Підтримуються лише .xls / .xlsx (для фото — OCR окремо)"}, status=400)
+        _low = name.lower()
+        if not _low.endswith((".xls", ".xlsx", ".pdf")):
+            return Response({"detail": "Підтримуються .xls / .xlsx / .pdf (скан-фото — поки лише вручну)"}, status=400)
         raw = f.read()
-        try:
-            act = parse_korzh(raw)
-        except Exception as e:  # noqa
-            return Response({"detail": "Не вдалося розібрати файл: %s" % e}, status=400)
-        if not act.get("lines"):   # парсер Корженевського не зміг → універсальний фолбек (Ковчег/КОРСИКА тощо)
+        if _low.endswith(".pdf"):
             try:
-                from .supplier_act import parse_generic_invoice
-                _ag = parse_generic_invoice(raw, name)
-                if _ag.get("lines"):
-                    act = _ag
-            except Exception:
-                pass
+                from .supplier_act import parse_pdf_invoice
+                act = parse_pdf_invoice(raw, name)
+            except Exception as e:  # noqa
+                return Response({"detail": "Не вдалося розібрати PDF: %s" % e}, status=400)
+            if act.get("_pdf_error"):
+                return Response({"detail": "PDF: %s" % act["_pdf_error"]}, status=400)
+        else:
+            try:
+                act = parse_korzh(raw)
+            except Exception as e:  # noqa
+                return Response({"detail": "Не вдалося розібрати файл: %s" % e}, status=400)
+            if not act.get("lines"):   # парсер Корженевського не зміг → універсальний фолбек (Ковчег/КОРСИКА тощо)
+                try:
+                    from .supplier_act import parse_generic_invoice
+                    _ag = parse_generic_invoice(raw, name)
+                    if _ag.get("lines"):
+                        act = _ag
+                except Exception:
+                    pass
         inv = act.get("invoice_number")
         _sup = act.get("supplier") or {}
         _nml = (name or "").lower()
@@ -791,7 +801,10 @@ class IncomingDocFileView(APIView):
         a = atts[idx]
         raw = base64.b64decode(a.get("b64") or "")
         name = a.get("name") or "file.xls"
-        ct = "application/vnd.ms-excel" if name.lower().endswith(".xls") else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        _ln = name.lower()
+        ct = ("application/pdf" if _ln.endswith(".pdf")
+              else "application/vnd.ms-excel" if _ln.endswith(".xls")
+              else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         resp = HttpResponse(raw, content_type=ct)
         resp["Content-Disposition"] = 'attachment; filename="%s"' % name.encode("ascii", "ignore").decode() or "file.xls"
         return resp

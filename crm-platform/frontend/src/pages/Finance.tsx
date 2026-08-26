@@ -3929,9 +3929,9 @@ function IncomingDocsTab() {
         <button className={"btn" + (sub === "np_act" ? " btn-primary" : " btn-light")} onClick={() => setSub("np_act")}><Icon n="🚚" size={14} /> {t("Нова Пошта", "Нова Пошта")} ({np.length})</button>
         <button className={"btn" + (sub === "supplier" ? " btn-primary" : " btn-light")} onClick={() => setSub("supplier")}><Icon n="📦" size={14} /> {t("Поставщики", "Постачальники")} ({sup.length})</button>
         <div style={{ flex: 1 }} />
-        <label className="btn btn-light" style={{ cursor: "pointer" }} title={t("Загрузить накладную .xls/.xlsx с любой почты (если пришла не на почту CRM)", "Завантажити накладну .xls/.xlsx з будь-якої пошти (якщо прийшла не на пошту CRM)")}>
+        <label className="btn btn-light" style={{ cursor: "pointer" }} title={t("Загрузить накладную .xls/.xlsx/.pdf с любой почты (если пришла не на почту CRM)", "Завантажити накладну .xls/.xlsx/.pdf з будь-якої пошти (якщо прийшла не на пошту CRM)")}>
           <Icon n="📤" size={14} /> {t("Загрузить накладную", "Завантажити накладну")}
-          <input type="file" accept=".xls,.xlsx" style={{ display: "none" }} onChange={async (e) => {
+          <input type="file" accept=".xls,.xlsx,.pdf" style={{ display: "none" }} onChange={async (e) => {
             const f = e.target.files?.[0]; if (!f) return; (e.target as any).value = "";
             setBusy(true);
             try {
