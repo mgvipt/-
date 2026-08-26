@@ -70,4 +70,13 @@ class Command(BaseCommand):
                              ws.user, "Система")
                 paused_n += 1
 
+        # Звести стан Юлі з ФАКТИЧНИМИ змінами: авто-пауза/авто-закриття вище могли
+        # змінити к-сть активних sales-менеджерів ПОВЗ hook у WorkTimeView → тихий режим
+        # Юлі дрейфував. apply_yulia_shift_toggle() чіпає ChatPlace ЛИШЕ коли треба
+        # (want != збережений стан) — при стабільному стані 0 зайвих запитів.
+        try:
+            from apps.inbox.yulia_toggle import apply_yulia_shift_toggle
+            apply_yulia_shift_toggle()
+        except Exception:
+            pass
         self.stdout.write("sweep_worktime: авто-пауз %d, авто-завершень %d (активних змін %d)" % (paused_n, closed_n, active.count()))
