@@ -86,6 +86,12 @@ class ContactViewSet(viewsets.ModelViewSet):
             _byname = _Qc(counterparty__iexact=_nm) | _Qc(counterparty__istartswith=_nm + "/") | _Qc(counterparty__istartswith=_nm + " ") | _Qc(counterparty__istartswith=_nm + ".")
             if _nm2.lower() != _nm.lower():
                 _byname = _byname | _Qc(counterparty__iexact=_nm2) | _Qc(counterparty__istartswith=_nm2 + "/") | _Qc(counterparty__istartswith=_nm2 + " ") | _Qc(counterparty__istartswith=_nm2 + ".")
+            # ⭐ Легасі-написання, де імʼя НЕ на початку рядка: «ФОП Корженевський Євгеній»,
+            #    «БудМаркет/Гольденштейн А.», «Оплата — Іваненко Олександр». Вимагаємо, щоб у
+            #    тексті були ОБИДВІ частини (імʼя І прізвище) — тезок («Оксана») це не чіпає,
+            #    але повертає операції, які інакше зникають з картки контрагента (26.08).
+            if len(_first_nm) >= 3 and len(_last_nm) >= 3:
+                _byname = _byname | (_Qc(counterparty__icontains=_first_nm) & _Qc(counterparty__icontains=_last_nm))
             _match = _match | _byname  # всі платежі цьому контрагенту, навіть привʼязані до обʼєкта (обʼєкт видно окремим стовпцем)
         elif _first_nm and not _last_nm:
             # одиночне імʼя (компанія-постачальник: «Будмаркет») — byname ТІЛЬКИ якщо так зветься
