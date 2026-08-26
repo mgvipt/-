@@ -426,6 +426,12 @@ def import_share_report(*, dry_run: bool = False) -> dict:
         state_cfg["share_last_error"] = str(exc)[:500]
         state.config = state_cfg
         state.save(update_fields=["config", "updated_at"])
+        _notify_telegram(
+            "🔴 CRM: не вдалося прочитати звіт підписок Instagram (share-посилання).\n"
+            "Помилка: %s\n"
+            "Якщо посилання спливло — продовжити: Ads Manager → Отчёты → CRM IG Follows Daily → "
+            "Поделиться → срок действия." % str(exc)[:200]
+        )
         return {"source": "share", "error": str(exc)[:200]}
 
     imported = 0
@@ -447,6 +453,7 @@ def import_share_report(*, dry_run: bool = False) -> dict:
             warning = ("Share-посилання Ads-звіту спливає через %d дн. — Олег має перевидати його: "
                        "Ads Reporting → CRM IG Follows Daily → Поділитися → строк дії" % days_left)
             state_cfg["share_expire_warning"] = warning
+            _notify_telegram("⚠️ " + warning)
         else:
             state_cfg.pop("share_expire_warning", None)
     state_cfg["share_last_sync"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
@@ -493,3 +500,27 @@ def import_csv_file(path: str, *, dry_run: bool = False) -> dict:
                 )
                 imported += 1
     return {"source": "csv", "rows": rows_seen, "imported": imported, "dry_run": dry_run}
+
+
+def _notify_telegram(text: str) -> None:
+    """Службове сповіщення Олегу через @wallcov_brain_bot (SERVICE_TG_* у .env).
+
+    Використовується лише для критичних станів каналу підписок (посилання
+    спливає/померло). Мовчки ігнорує збої — сповіщення не має валити крон.
+    """
+    import json as _json
+    import urllib.request
+
+    token = os.environ.get("SERVICE_TG_TOKEN", "").strip()
+    chat_id = os.environ.get("SERVICE_TG_CHAT_ID", "").strip()
+    if not token or not chat_id:
+        return
+    try:
+        payload = _json.dumps({"chat_id": chat_id, "text": text}).encode("utf-8")
+        request = urllib.request.Request(
+            "https://api.telegram.org/bot%s/sendMessage" % token,
+            data=payload, headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(request, timeout=15).read()
+    except Exception:
+        pass
