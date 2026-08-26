@@ -305,6 +305,12 @@ function PixelEventsTab({ from, to }: { from: string; to: string }) {
   const { t } = useLang();
   const [px, setPx] = useState<"crm" | "site">("crm");
   const [d, setD] = useState<any>(null);
+  const [sortKey, setSortKey] = useState<string>("at");
+  const [sortDir, setSortDir] = useState<1 | -1>(-1);
+  const [fStage, setFStage] = useState("");
+  const [fEvent, setFEvent] = useState("");
+  const [pg, setPg] = useState(0);
+  useEffect(() => { setPg(0); }, [fStage, fEvent, sortKey, sortDir, from, to]);
   useEffect(() => { setD(null); api.get<any>(`/api/meta-marketing/pixel-events/?from=${from}&to=${to}` + (px === "site" ? "&pixel=site" : "")).then(setD).catch(() => setD({ error: true })); }, [from, to, px]);
   if (d && d.error) return <div className="muted" style={{ padding: 20 }}>{t("Не удалось загрузить", "Не вдалося завантажити")}</div>;
   const sm = (d && d.summary) || {};
@@ -415,16 +421,70 @@ function PixelEventsTab({ from, to }: { from: string; to: string }) {
         })}
       </div>
     </div>
-    <SectionTitle title={t("Последние события", "Останні події")} note={t("Кто, какая стадия, ушло ли", "Хто, яка стадія, чи пішло")} />
-    {table([t("Когда", "Коли"), t("Клиент", "Клієнт"), t("Стадия CRM", "Стадія CRM"), t("Событие", "Подія"), t("Канал", "Канал"), t("Статус", "Статус")],
-      (d.recent || []).map((r: any) => [
-        r.at,
-        <a href={`/${r.object_type === "lead" ? "leads" : "deals"}/${r.object_id}`} style={{ color: "#2563eb", textDecoration: "none" }}>{r.contact}</a>,
-        r.stage, EV_LABEL[r.event] || r.event, r.channel,
-        r.status === "sent" ? <b style={{ color: "#15803d" }}>✅ {t("отправлено", "відправлено")}</b>
-          : r.status === "pending" ? <span style={{ color: "#a16207" }}>⏳ {t("в очереди", "у черзі")}</span>
-          : <b style={{ color: "#dc2626" }}>❌ {r.status}</b>,
-      ]), t("Событий нет", "Подій немає"), 820)}
+    <SectionTitle title={t("Последние события", "Останні події")} note={t("Клик по заголовку столбца — сортировка; фильтры по стадии и событию", "Клік по заголовку — сортування; фільтри за стадією та подією")} />
+    {(() => {
+      const rows: any[] = d.recent || [];
+      const stages = Array.from(new Set(rows.map((r) => r.stage).filter(Boolean))).sort();
+      const events = Array.from(new Set(rows.map((r) => r.event).filter(Boolean))).sort();
+      let list = rows.filter((r) => (!fStage || r.stage === fStage) && (!fEvent || r.event === fEvent));
+      const val = (r: any, k: string) => (k === "at" ? r.at : String(r[k] ?? ""));
+      list = list.slice().sort((a, b) => val(a, sortKey).localeCompare(val(b, sortKey), "uk") * sortDir);
+      const PAGE = 20;
+      const pages = Math.max(1, Math.ceil(list.length / PAGE));
+      const cur = Math.min(pg, pages - 1);
+      const slice = list.slice(cur * PAGE, cur * PAGE + PAGE);
+      const hdr = (key: string, label: string) => (
+        <th key={key} onClick={() => { if (sortKey === key) setSortDir((x) => (x === 1 ? -1 : 1)); else { setSortKey(key); setSortDir(key === "at" ? -1 : 1); } }}
+          style={{ textAlign: "left", padding: "8px 10px", fontSize: 11.5, color: sortKey === key ? "#0f172a" : "#64748b", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", borderBottom: "2px solid #e2e8f0", background: "#f8fafc" }}>
+          {label}{sortKey === key ? (sortDir === 1 ? " ▲" : " ▼") : ""}
+        </th>
+      );
+      return (<div className="panel" style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "10px 12px" }}>
+          <select value={fStage} onChange={(e) => setFStage(e.target.value)} style={{ height: 30, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 12.5, background: "#fff" }}>
+            <option value="">{t("— все стадии —", "— всі стадії —")}</option>
+            {stages.map((x) => <option key={x} value={x}>{x}</option>)}
+          </select>
+          <select value={fEvent} onChange={(e) => setFEvent(e.target.value)} style={{ height: 30, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 8px", fontSize: 12.5, background: "#fff" }}>
+            <option value="">{t("— все события —", "— всі події —")}</option>
+            {events.map((x) => <option key={x} value={x}>{EV_LABEL[x] || x}</option>)}
+          </select>
+          <span className="muted" style={{ fontSize: 12 }}>{t("найдено", "знайдено")}: <b>{list.length}</b></span>
+          <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6, alignItems: "center" }}>
+            <button className="btn btn-light" style={{ padding: "2px 10px" }} disabled={cur === 0} onClick={() => setPg(cur - 1)}>‹</button>
+            <span className="muted" style={{ fontSize: 12 }}>{cur + 1} / {pages}</span>
+            <button className="btn btn-light" style={{ padding: "2px 10px" }} disabled={cur >= pages - 1} onClick={() => setPg(cur + 1)}>›</button>
+          </span>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820, fontSize: 13 }}>
+            <thead><tr>
+              {hdr("at", t("Когда", "Коли"))}
+              {hdr("contact", t("Клиент", "Клієнт"))}
+              {hdr("stage", t("Стадия CRM", "Стадія CRM"))}
+              {hdr("event", t("Событие", "Подія"))}
+              {hdr("channel", t("Канал", "Канал"))}
+              {hdr("status", t("Статус", "Статус"))}
+            </tr></thead>
+            <tbody>
+              {slice.map((r: any, i: number) => (
+                <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                  <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>{r.at}</td>
+                  <td style={{ padding: "7px 10px" }}><a href={`/${r.object_type === "lead" ? "leads" : "deals"}/${r.object_id}`} style={{ color: "#2563eb", textDecoration: "none" }}>{r.contact}</a></td>
+                  <td style={{ padding: "7px 10px" }}>{r.stage}</td>
+                  <td style={{ padding: "7px 10px" }}>{EV_LABEL[r.event] || r.event}</td>
+                  <td style={{ padding: "7px 10px" }}>{r.channel}</td>
+                  <td style={{ padding: "7px 10px" }}>{r.status === "sent" ? <b style={{ color: "#15803d" }}>✅ {t("отправлено", "відправлено")}</b>
+                    : r.status === "pending" ? <span style={{ color: "#a16207" }}>⏳ {t("в очереди", "у черзі")}</span>
+                    : <b style={{ color: "#dc2626" }}>❌ {r.status}</b>}</td>
+                </tr>
+              ))}
+              {!slice.length && <tr><td colSpan={6} style={{ padding: 22, textAlign: "center", color: "#64748b" }}>{t("Событий нет", "Подій немає")}</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>);
+    })()}
   </>);
 }
 

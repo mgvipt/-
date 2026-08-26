@@ -2969,7 +2969,7 @@ class MetaPixelEventsView(APIView):
         bm = qs.filter(payload__action_source="business_messaging").count()
         total = qs.count()
         recent = []
-        for e in qs.select_related("contact", "stage").order_by("-created_at")[:40]:
+        for e in qs.select_related("contact", "stage").order_by("-created_at")[:400]:
             p = e.payload or {}
             recent.append({
                 "at": _tz.localtime(e.created_at).strftime("%d.%m %H:%M"),
