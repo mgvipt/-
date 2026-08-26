@@ -3383,9 +3383,19 @@ class MetaMarketingView(APIView):
         detail_follow_rows = [row for row in paid_follow_rows if row.ad_name]
         summary_follow_rows = detail_follow_rows or [row for row in paid_follow_rows if row.adset_name] or paid_follow_rows
         paid_summary["instagram_follows"] = sum(row.follows for row in summary_follow_rows)
+        # Витрати можуть покривати ширший період, ніж дані підписок (звіт ведеться
+        # з 1 червня). Тому ціна підписника рахується по витратах ЗА ТІ Ж ДНІ,
+        # за які є рядки підписок, — інакше ціна завищується.
+        follow_days = {row.date for row in summary_follow_rows}
+        _spend_follow_days = sum(float(r.spend) for r in account_daily if r.date in follow_days)
+        _spend_uah_follow_days = sum(float(r.spend_uah or 0) for r in account_daily if r.date in follow_days)
         paid_summary["cost_per_instagram_follow"] = (
-            round(paid_summary["spend"] / paid_summary["instagram_follows"], 2)
+            round(_spend_follow_days / paid_summary["instagram_follows"], 2)
             if paid_summary["instagram_follows"] else None
+        )
+        paid_summary["cost_per_instagram_follow_uah"] = (
+            round(_spend_uah_follow_days / paid_summary["instagram_follows"], 2)
+            if (paid_summary["instagram_follows"] and _spend_uah_follow_days) else None
         )
 
         account_map = {}
@@ -3830,10 +3840,13 @@ class MetaMarketingView(APIView):
             ),
             "paid_from_ads": paid_summary["instagram_follows"],
             "paid_report_rows": len(summary_follow_rows),
+            # Органіка чесна лише коли дані підписок покривають період з його
+            # початку (звіт ведеться з 01.06.2026); інакше «—», а не завищене число.
+            "paid_coverage_from": min(follow_days).isoformat() if follow_days else None,
             "organic_other": (
                 sum(row.followers_gained for row in account_daily_stats if row.followers_gained is not None)
                 - paid_summary["instagram_follows"]
-                if account_daily_stats and summary_follow_rows else None
+                if account_daily_stats and follow_days and min(follow_days) <= date_from else None
             ),
             "daily": [{"date": r.date.isoformat(), "total": r.followers_total, "gained": r.followers_gained} for r in account_daily_stats],
         }
