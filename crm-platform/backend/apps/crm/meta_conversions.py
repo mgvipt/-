@@ -22,38 +22,54 @@ def _key(value):
 # Назви взяті з live CRM 21.08.2026. Платіжні стадії тут навмисно відсутні:
 # Purchase створюється лише з реально оплаченого Payment.
 STAGE_EVENT_NAMES = {
-    # Новий запит / лід
-    _key("Лід отриманий"): "Lead",
-    _key("Новая заявка"): "Lead",
-    _key("Нове замовлення з сайту"): "Lead",
-    _key("Не обработан"): "Lead",
-    _key("Данні для розрахунку"): "Lead",
-    _key("Виявлення потреби"): "Lead",
-    _key("Выявление потребности"): "Lead",
-    _key("Вхідні ліди"): "Lead",
-    _key("Новая"): "Lead",
-    # Контакт і кваліфікація
-    _key("Контакт встановлений"): "Contact",
-    _key("Контакт установлен"): "Contact",
-    _key("Первый контакт"): "Contact",
+    # ── Стадія CRM → подія Meta → ярлик у Direct ──────────────────────────
+    # LeadSubmitted → ярлик «Лид»
+    _key("Лід отриманий"): "LeadSubmitted",
+    _key("Взято в роботу"): "LeadSubmitted",
+    _key("Данні для розрахунку"): "LeadSubmitted",
+    _key("Новая заявка"): "LeadSubmitted",
+    _key("Нове замовлення з сайту"): "LeadSubmitted",
+    _key("Не обработан"): "LeadSubmitted",
+    _key("Виявлення потреби"): "LeadSubmitted",
+    _key("Выявление потребности"): "LeadSubmitted",
+    _key("Вхідні ліди"): "LeadSubmitted",
+    _key("Новая"): "LeadSubmitted",
+    # QualifiedLead → клієнт підтверджений як цільовий
+    _key("Контакт встановлений"): "QualifiedLead",
+    _key("Контакт установлен"): "QualifiedLead",
+    _key("Первый контакт"): "QualifiedLead",
     _key("Кваліфікований"): "QualifiedLead",
-    # Комерційна пропозиція / розрахунок
-    _key("Розрахунок здійснено"): "QuoteSent",
-    _key("Розрахунок здійснено (КП)"): "QuoteSent",
-    _key("Розрахунок здійснен"): "QuoteSent",
-    _key("Расчёт отправлен"): "QuoteSent",
-    _key("Выслал каталог"): "QuoteSent",
-    _key("Выставлен счет"): "QuoteSent",
-    # Намір оплатити
+    _key("Підбір рішення"): "QualifiedLead",
+    # ViewContent → показали прорахунок / КП
+    _key("Розрахунок здійснено"): "ViewContent",
+    _key("Розрахунок здійснено (КП)"): "ViewContent",
+    _key("Розрахунок здійснен"): "ViewContent",
+    _key("Расчёт отправлен"): "ViewContent",
+    _key("Выслал каталог"): "ViewContent",
+    _key("Выставлен счет"): "ViewContent",
+    # InitiateCheckout → домовились платити
     _key("Домовились про оплату"): "InitiateCheckout",
     _key("Ожидаем оплату"): "InitiateCheckout",
     _key("Cчёт на предоплату"): "InitiateCheckout",
     _key("Счёт на предоплату"): "InitiateCheckout",
     _key("Финальный счёт"): "InitiateCheckout",
-    # Успішне завершення — окрема аналітична подія, не заміна Purchase
-    _key("Успішна угода"): "OrderCompleted",
-    _key("Сделка успешна"): "OrderCompleted",
-    _key("Получена полная оплата по заявке"): "OrderCompleted",
+    # Purchase → ярлик «Оплачено»
+    _key("Оплату отримано"): "Purchase",
+    _key("Получена полная оплата по заявке"): "Purchase",
+    # OrderCreated → ярлик «Размещен заказ»
+    _key("Заброньовано"): "OrderCreated",
+    # OrderShipped → ярлик «Отправлено»
+    _key("Відвантаження"): "OrderShipped",
+    _key("НП_ТТН створена"): "OrderShipped",
+    _key("НП_Відправленя в Мог.-Под."): "OrderShipped",
+    _key("НП_В дорозі"): "OrderShipped",
+    # OrderDelivered → доставлено клієнту
+    _key("НП_Прибув на відділення"): "OrderDelivered",
+    _key("Отримано"): "OrderDelivered",
+    _key("Успішна угода"): "OrderDelivered",
+    _key("Сделка успешна"): "OrderDelivered",
+    # OrderCanceled → скасування вже оплаченого
+    _key("Скасовано після оплати"): "OrderCanceled",
 }
 
 # Ніколи не відправляємо кадрову, технічну або архівну воронку. Назви взяті
@@ -158,19 +174,67 @@ def _user_data(contact):
     return data
 
 
+def _messaging_identity(contact):
+    """IGSID/PSID переписки клієнта у ПРЯМОМУ Meta-каналі + тип каналу.
+
+    Meta зіставляє події бізнес-листування не за поштою/телефоном (яких у
+    Direct-клієнтів немає), а за ідентифікатором самої переписки. Повертає
+    (channel, ident, account_id) або (None, None, None)."""
+    if not contact or not getattr(contact, "pk", None):
+        return (None, None, None)
+    try:
+        from apps.inbox.models import Conversation
+        row = (Conversation.objects
+               .filter(contact_id=contact.pk, channel__config__meta=True,
+                       channel__kind__in=("instagram", "facebook"))
+               .exclude(external_chat_id="")
+               .exclude(external_chat_id__startswith="comment:")
+               .order_by("-last_message_at")
+               .values_list("external_chat_id", "channel__kind", "channel__config")
+               .first())
+        if not row:
+            return (None, None, None)
+        ident, kind, cfg = row
+        cfg = cfg or {}
+        if kind == "instagram":
+            acc = str(cfg.get("ig_account_id") or os.environ.get("META_IG_ACCOUNT_ID", "")).strip()
+            return ("instagram", str(ident), acc) if acc else (None, None, None)
+        acc = str(cfg.get("page_id") or "").strip()
+        return ("messenger", str(ident), acc) if acc else (None, None, None)
+    except Exception:
+        return (None, None, None)
+
+
 def _money(value):
     return float(Decimal(value or 0).quantize(Decimal("0.01")))
 
 
 def _server_event(*, event_id, event_name, occurred_at, contact, custom_data):
-    return {
+    """Формат Meta «Conversions API for Business Messaging»: якщо знаємо
+    переписку (IGSID/PSID) — шлемо business_messaging, щоб Meta реально
+    зіставила подію з рекламою. Інакше — старий system_generated."""
+    base = {
         "event_name": event_name,
         "event_time": int(occurred_at.timestamp()),
         "event_id": event_id,
-        "action_source": "system_generated",
-        "user_data": _user_data(contact),
         "custom_data": custom_data,
     }
+    channel, ident, account_id = _messaging_identity(contact)
+    if channel and ident and account_id:
+        user_data = dict(_user_data(contact))
+        if channel == "instagram":
+            user_data["ig_account_id"] = account_id
+            user_data["ig_sid"] = ident
+        else:
+            user_data["page_id"] = account_id
+            user_data["page_scoped_user_id"] = ident
+        base["action_source"] = "business_messaging"
+        base["messaging_channel"] = channel
+        base["user_data"] = user_data
+        return base
+    base["action_source"] = "system_generated"
+    base["user_data"] = _user_data(contact)
+    return base
 
 
 def queue_stage_event(entity, *, occurred_at=None):
