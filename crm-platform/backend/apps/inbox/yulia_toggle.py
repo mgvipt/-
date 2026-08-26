@@ -9,6 +9,17 @@
       → Юля відповідає ВСІМ одразу (повний автопілот, людей немає).
 - Тригер — hook у WorkTimeView.post після start/pause/stop.
 - При зміні режиму — TG-нотифікація + БД-мітка для бейджа.
+
+INVARIANTS -- NE LAMATY pry hlobalnyh perevirkah/refaktori (rehlament Oleha 22.08):
+1. "Aktyvnyy" = vede kliyentiv = viddil mistyt "Prodazh" ABO "Kerivn"(ytstvo) ABO user.is_superuser.
+   Sklad/Lohistyka/Vyrobnytstvo NE rahuyutsya. Tse v 3 mistsyah, VSI musyat buty odnakovi:
+   (a) _active_sales_managers() tut; (b) _yulia_hook_after_shift_action() u finance/views.py
+   (guard na start/pauzu/stop zminy); (c) sweep_worktime.py -- zve apply_yulia_shift_toggle()
+   u kintsi (kron */3) dlya SVERKY, bo avto-pauza/avto-zakryttya zminy ydut povz hook.
+   Yakshcho des lyshyty tilky "Prodazh" -- stan Yuli dreyfuye (Oleh/Kerivnytstvo ne tryheryt).
+2. answerOnMessageEnabled -- ZAVZHDY True (Yulya nikoly povnistyu ne vymykayetsya).
+3. apply_yulia_shift_toggle() bez force chipaye ChatPlace LYShE koly want != zberezhenyy stan
+   (stabilno = 0 zayvyh zapytiv; sweep mozhe zvaty shchohvylyny bezpechno).
 """
 import logging
 import json
