@@ -178,12 +178,12 @@ def parse_generic_invoice(raw, name=""):
     col = {}
     for i, r in enumerate(rows):
         j = " ".join(_s(c).lower() for c in r)
-        if ("товар" in j or "наймен" in j or "номенклат" in j) and ("кільк" in j or "к-сть" in j or "колич" in j) and ("сума" in j or "сумма" in j):
+        if ("товар" in j or "наймен" in j or "номенклат" in j) and any(_qk in j for _qk in ("кільк", "к-сть", "к-ть", "кіл-", "кіл.", "колич", "кол-во", "кол-сть")) and ("сума" in j or "сумма" in j):
             for ci, c in enumerate(r):
                 t = _s(c).lower()
                 if ("товар" in t or "наймен" in t or "номенклат" in t) and "name" not in col:
                     col["name"] = ci
-                elif ("кільк" in t or "к-сть" in t or "колич" in t):
+                elif any(_qk in t for _qk in ("кільк", "к-сть", "к-ть", "кіл-", "кіл.", "колич", "кол-во", "кол-сть")):
                     col["qty"] = ci
                 elif ("ціна" in t or "цена" in t) and "price" not in col:
                     col["price"] = ci
@@ -217,8 +217,15 @@ def parse_generic_invoice(raw, name=""):
     alltext = "\n".join(" ".join(_s(c) for c in r) for r in rows)
     mi = _re.search(r"[Рр]ахунок[-\s]*фактура\s*[№N]?\s*([^\s,;]+)", alltext)
     inv = mi.group(1).strip() if mi else None
+    if not inv:   # «Рахунок на оплату № 555» тощо
+        mi2 = _re.search(r"[Рр]ахунок[^№\n]{0,40}№\s*([0-9][^\s,;]*)", alltext)
+        inv = mi2.group(1).strip() if mi2 else None
     md = _re.search(r"\d{2}\.\d{2}\.\d{4}", alltext)
     dt = md.group(0) if md else None
+    if not dt:   # «від 26 серпня 2026 р.»
+        md2 = _re.search(r"від\s+(\d{1,2}\s+[а-яіїєґ']+\s+\d{4})", alltext, _re.I)
+        if md2:
+            dt = _ua_date(md2.group(1))
     if total is None and lines:
         total = round(sum((l["sum"] or 0) for l in lines), 2)
     # реквізити ПОСТАЧАЛЬНИКА (продавця): від рядка "Постачальник" до "Одержувач/Покупець"
@@ -240,7 +247,26 @@ def parse_generic_invoice(raw, name=""):
     _mp = _re.search(r"[ІИ]ПН[:\s]*([0-9]{8,12})", _blk)
     if _mp:
         _sup["ipn"] = _mp.group(1)
-    if _ps is not None:
+    # fallback по всьому тексту (коли блок постачальника не виділився через слово «Постачальника» у шапці-інструкції)
+    if not _sup["ipn"]:
+        _m2 = _re.search(r"[ІИ]ПН\s*([0-9]{10,12})", alltext)
+        if _m2:
+            _sup["ipn"] = _m2.group(1)
+    if not _sup["edrpou"]:
+        _m2 = _re.search(r"ЄДРПОУ\s*([0-9]{6,10})", alltext)
+        if _m2:
+            _sup["edrpou"] = _m2.group(1)
+    if not _sup["iban"]:
+        _m2 = _re.search(r"UA\d{27}", alltext.replace(" ", ""))
+        if _m2:
+            _sup["iban"] = _m2.group(0)
+    # назва — з рядка «Постачальник: <назва>, ІПН …»
+    _mn = _re.search(r"[Пп]остачальник\s*:\s*(.+)", alltext)
+    if _mn:
+        _nm = _re.split(r",\s*(?:ІПН|ИНН|код|ЄДРПОУ|р/р|IBAN)", _mn.group(1).strip())[0].strip().strip('"').strip()
+        if len(_nm) > 3:
+            _sup["name"] = _nm[:160]
+    if not _sup["name"] and _ps is not None:
         for _r in rows[_ps:_ps + 2]:
             for _c in _r:
                 _t = _s(_c)
