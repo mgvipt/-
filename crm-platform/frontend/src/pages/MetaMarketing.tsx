@@ -373,14 +373,11 @@ export default function MetaMarketing() {
   };
   const daily = data?.daily || [];
 
-  /* Варіант «таблиця показників»: назва ліворуч — значення праворуч, у кілька колонок.
-     Максимально компактно: усе видно без прокрутки. Пояснення — тултип на наведення (ⓘ). */
   const card = (label: string, value: ReactNode, color = "#0f172a", hint?: string) => (
-    <div title={hint || label} style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "4px 2px", borderBottom: "1px dashed #eef2f7", minWidth: 0 }}>
-      <span style={{ fontSize: 11.5, color: "#475569", fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {label}{hint ? <span style={{ color: "#94a3b8", fontSize: 9.5 }}> ⓘ</span> : null}
-      </span>
-      <b style={{ fontSize: 14.5, fontWeight: 800, color, whiteSpace: "nowrap", flexShrink: 0 }}>{value}</b>
+    <div className="panel" style={{ padding: "9px 11px", minWidth: 124, flex: "1 1 124px", margin: 0 }}>
+      <div className="muted" style={{ fontSize: 10.5, lineHeight: 1.25 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color, marginTop: 2 }}>{value}</div>
+      {hint && <div className="muted" style={{ fontSize: 9.5, marginTop: 3, lineHeight: 1.25 }}>{hint}</div>}
     </div>
   );
   const table = (headers: string[], rows: ReactNode[][], empty: string, minWidth = 760, tips?: string[]) => (
@@ -405,11 +402,6 @@ export default function MetaMarketing() {
     count(r.messages_started), count(r.meta_leads), count(r.crm_leads), r.cost_per_message == null ? "—" : moneyUsd(r.cost_per_message),
   ]);
   const dailyTable = <DailySalesTable rows={daily} t={t} />;
-  const periodDays = (() => { try { return Math.max(1, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86400000) + 1); } catch { return 0; } })();
-  // похідні показники реклами (дзеркало для «Огляду»)
-  const cpcUsd = paidSummary.clicks ? paidSummary.spend / paidSummary.clicks : null;              // ціна кліку
-  const cplUah = (paidSummary.spend_uah && summary.meta_origin_leads) ? paidSummary.spend_uah / summary.meta_origin_leads : null;  // ціна ліда CRM з Meta
-  const cplExactUah = (paidSummary.spend_uah && summary.attributed_leads) ? paidSummary.spend_uah / summary.attributed_leads : null;
 
   return <div style={{ height: "100%", overflowY: "auto", padding: 16, boxSizing: "border-box" }}>
     <div style={{ width: "100%" }}>
@@ -442,8 +434,7 @@ export default function MetaMarketing() {
       {loading && !data ? <div className="muted" style={{ padding: 30 }}>Загрузка…</div> : data && <>
         {tab === "overview" && <>
           {syncWarning}
-          <PeriodBar from={from} to={to} days={periodDays} t={t} onQuick={setLastDays} setFrom={setFrom} setTo={setTo} minFrom={CONNECTED_FROM} />
-          <SectionTitle title={t("Instagram аккаунт", "Instagram акаунт") + (followers.username ? " · @" + followers.username : "")} note={t("Баланс подписчиков сохраняется ежедневно; прирост Meta отдаёт по дням", "Баланс підписників зберігається щодня; приріст Meta віддає по днях")} />
+          <SectionTitle title={t("Instagram аккаунт", "Instagram акаунт")} note={t("Баланс подписчиков сохраняется ежедневно; прирост Meta отдаёт по дням", "Баланс підписників зберігається щодня; приріст Meta віддає по днях")} />
           <div style={cardsRow}>
             {card(t("Подписчиков сейчас", "Підписників зараз"), optional(followers.current_total, "", t("ожидает синхронизации", "очікує синхронізації")), "#c026d3", followers.username ? `@${followers.username}` : undefined)}
             {card(t("Новых за период", "Нових за період"), followers.period_gained == null ? "—" : count(followers.period_gained), "#db2777")}
@@ -465,15 +456,8 @@ export default function MetaMarketing() {
             {card(t("Показы", "Покази"), count(paidSummary.impressions), "#2563eb")}
             {card(t("Клики", "Кліки"), count(paidSummary.clicks), "#7c3aed")}
             {card("CTR", optional(paidSummary.ctr, "%"), "#7c3aed")}
-            {card(t("Расход в гривне (НБУ)", "Витрати у гривні (НБУ)"), paidSummary.spend_uah == null ? "—" : moneyUah(paidSummary.spend_uah), "#dc2626", t("официальный курс НБУ на каждый день", "офіційний курс НБУ на кожен день"))}
-            {card(t("Цена клика (CPC)", "Ціна кліку (CPC)"), cpcUsd == null ? "—" : moneyUsd(cpcUsd), "#0891b2", t("расход ÷ клики", "витрати ÷ кліки"))}
-            {card("CPM", optional(paidSummary.cpm), "#0891b2", t("цена 1000 показов, $", "ціна 1000 показів, $"))}
             {card(t("Начатые диалоги по Ads Manager", "Розпочаті діалоги за Ads Manager"), count(paidSummary.messages_started), "#0f766e", t("Это показатель рекламы Meta, а не продажи и не уникальные лиды CRM", "Це показник реклами Meta, а не продажі й не унікальні ліди CRM"))}
-            {card(t("Цена диалога", "Ціна діалогу"), paidSummary.cost_per_message == null ? "—" : moneyUsd(paidSummary.cost_per_message), "#0f766e", t("расход рекламы ÷ начатые диалоги", "витрати реклами ÷ розпочаті діалоги"))}
-            {card(t("Цена диалога, ₴", "Ціна діалогу, ₴"), (paidSummary.spend_uah && paidSummary.messages_started) ? moneyUah(paidSummary.spend_uah / paidSummary.messages_started) : "—", "#0f766e", t("расход в гривне ÷ начатые диалоги", "витрати у гривні ÷ розпочаті діалоги"))}
             {card(t("Лиды Meta", "Ліди Meta"), count(paidSummary.meta_leads), "#0f766e")}
-            {card(t("Цена лида (все из Meta)", "Ціна ліда (всі з Meta)"), cplUah == null ? "—" : moneyUah(cplUah), "#b45309", t("расход в грн ÷ все лиды CRM из Meta", "витрати грн ÷ усі ліди CRM з Meta"))}
-            {card(t("Цена лида (с точным ID)", "Ціна ліда (з точним ID)"), cplExactUah == null ? "—" : moneyUah(cplExactUah), "#d97706", t("расход в грн ÷ лиды с подтверждённой рекламой", "витрати грн ÷ ліди з підтвердженою рекламою"))}
           </div>
           <SectionTitle title={t("Подтверждённый результат в CRM", "Підтверджений результат у CRM")} note={t("Только карточки с точным ID рекламы; ручные и органические исключены", "Лише картки з точним ID реклами; ручні та органічні виключені")} />
           <div style={cardsRow}>
@@ -496,10 +480,6 @@ export default function MetaMarketing() {
             {card(t("Повторные продажи", "Повторні продажі"), count(profitability.repeat_sales), "#0891b2")}
             {card(t("Из выручки — повторные", "З виручки — повторні"), moneyUah(profitability.repeat_revenue), "#0e7490")}
             {card(t("Средний LTV", "Середній LTV"), moneyUah(profitability.average_ltv), "#7c3aed")}
-            {card(t("Реклама по курсу НБУ", "Реклама за курсом НБУ"), profitability.ad_spend_uah == null ? "—" : moneyUah(profitability.ad_spend_uah), "#dc2626")}
-            {card(t("Прибыль после рекламы", "Прибуток після реклами"), profitability.marketing_profit == null ? "—" : moneyUah(profitability.marketing_profit), Number(profitability.marketing_profit) >= 0 ? "#15803d" : "#dc2626")}
-            {card(t("Общий ROAS", "Загальний ROAS"), profitability.blended_roas == null ? "—" : `${profitability.blended_roas}×`, "#2563eb", t("вся выручка ÷ реклама", "вся виручка ÷ реклама"))}
-            {card(t("ROAS с точным ID", "ROAS з точним ID"), profitability.exact_ad_roas == null ? "—" : `${profitability.exact_ad_roas}×`, "#7c3aed", t("только доказанная связь с объявлением", "лише доведений звʼязок з оголошенням"))}
             {card("ROMI", profitability.romi == null ? "—" : `${profitability.romi}%`, Number(profitability.romi) >= 0 ? "#15803d" : "#dc2626")}
           </div>
           <SectionTitle title={t("Общая статистика по дням", "Загальна статистика за днями")} note={t("Реклама, лиды, продажи, повторные покупки, LTV и прибыль в одной таблице", "Реклама, ліди, продажі, повторні покупки, LTV і прибуток в одній таблиці")} />
@@ -507,39 +487,27 @@ export default function MetaMarketing() {
         </>}
 
         {tab === "profitability" && <>
-          <PeriodBar from={from} to={to} days={periodDays} t={t} onQuick={setLastDays} setFrom={setFrom} setTo={setTo} minFrom={CONNECTED_FROM} />
           <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
             <b>{t("Что входит в расчёт:", "Що входить у розрахунок:")}</b> {t(
               "Все оплаченные продажи из воронок «21 Основний продукт» и «22 Тестовий набір». Из остальных воронок — только продажи с подтверждённым ID Meta. Выручка считается по фактически оплаченным платежам. Повторная выручка — часть общей выручки, её не нужно прибавлять второй раз. Себестоимость считается по товарам сделки, рекламный расход переводится в гривну по официальному курсу НБУ за каждый день.",
               "Усі оплачені продажі з воронок «21 Основний продукт» і «22 Тестовий набір». З інших воронок — лише продажі з підтвердженим ID Meta. Виручка рахується за фактично сплаченими платежами. Повторна виручка — частина загальної виручки, її не потрібно додавати вдруге. Собівартість рахується за товарами угоди, рекламні витрати переводяться у гривню за офіційним курсом НБУ за кожен день."
             )}
           </div>
-          <SectionTitle title={t("1 · Продажи и клиенты", "1 · Продажі та клієнти")} note={t("Сколько сделок оплачено и сколько людей купило за период", "Скільки угод оплачено і скільки людей купило за період")} />
           <div style={cardsRow}>
             {card(t("Продажи", "Продажі"), count(profitability.sales), "#16a34a")}
             {card(t("Покупатели", "Покупці"), count(profitability.buyers), "#0f766e")}
             {card(t("Повторные продажи", "Повторні продажі"), count(profitability.repeat_sales), "#0891b2")}
             {card(t("Повторные клиенты", "Повторні клієнти"), count(profitability.repeat_buyers), "#0891b2")}
-            {card(t("Средний LTV", "Середній LTV"), moneyUah(profitability.average_ltv), "#7c3aed", t("сколько в среднем приносит один покупатель", "скільки в середньому приносить один покупець"))}
-          </div>
-          <SectionTitle title={t("2 · Деньги: выручка и прибыль", "2 · Гроші: виручка та прибуток")} note={t("Выручка — по фактически оплаченным платежам. Валовая прибыль = выручка − себестоимость товаров.", "Виручка — за фактично сплаченими платежами. Валовий прибуток = виручка − собівартість товарів.")} />
-          <div style={cardsRow}>
             {card(t("Выручка", "Виручка"), moneyUah(profitability.revenue), "#047857")}
-            {card(t("Из выручки — повторные", "З виручки — повторні"), moneyUah(profitability.repeat_revenue), "#0e7490", t("часть общей выручки, не прибавлять второй раз", "частина загальної виручки, не додавати вдруге"))}
+            {card(t("Из выручки — повторные", "З виручки — повторні"), moneyUah(profitability.repeat_revenue), "#0e7490")}
+            {card(t("Средний LTV", "Середній LTV"), moneyUah(profitability.average_ltv), "#7c3aed")}
             {card(t("Себестоимость", "Собівартість"), moneyUah(profitability.cost), "#b45309")}
             {card(t("Валовая прибыль", "Валовий прибуток"), moneyUah(profitability.gross_profit), "#15803d")}
-          </div>
-          <SectionTitle title={t("3 · Реклама и окупаемость", "3 · Реклама та окупність")} note={t("Расход рекламы в гривне по официальному курсу НБУ за каждый день. ROAS = выручка ÷ реклама.", "Витрати реклами у гривні за офіційним курсом НБУ за кожен день. ROAS = виручка ÷ реклама.")} />
-          <div style={cardsRow}>
             {card(t("Реклама по курсу НБУ", "Реклама за курсом НБУ"), profitability.ad_spend_uah == null ? "—" : moneyUah(profitability.ad_spend_uah), "#dc2626")}
-            {card(t("Прибыль после рекламы", "Прибуток після реклами"), profitability.marketing_profit == null ? "—" : moneyUah(profitability.marketing_profit), Number(profitability.marketing_profit) >= 0 ? "#15803d" : "#dc2626", t("валовая прибыль − реклама", "валовий прибуток − реклама"))}
-            {card(t("Общий ROAS", "Загальний ROAS"), profitability.blended_roas == null ? "—" : `${profitability.blended_roas}×`, "#2563eb", t("вся выручка ÷ реклама (blended)", "вся виручка ÷ реклама (blended)"))}
-            {card(t("ROAS с точным ID", "ROAS з точним ID"), profitability.exact_ad_roas == null ? "—" : `${profitability.exact_ad_roas}×`, "#7c3aed", t("Консервативный: только доказанная связь с объявлением. «—» = таких продаж пока нет", "Консервативний: лише доведений звʼязок з оголошенням. «—» = таких продажів поки немає"))}
-            {card("ROMI", profitability.romi == null ? "—" : `${profitability.romi}%`, Number(profitability.romi) >= 0 ? "#15803d" : "#dc2626", t("(валовая прибыль − реклама) ÷ реклама", "(валовий прибуток − реклама) ÷ реклама"))}
-            {card(t("Цена клика (CPC)", "Ціна кліку (CPC)"), cpcUsd == null ? "—" : moneyUsd(cpcUsd), "#0891b2")}
-            {card(t("Цена лида (все из Meta)", "Ціна ліда (всі з Meta)"), cplUah == null ? "—" : moneyUah(cplUah), "#b45309")}
-            {card(t("Цена диалога, ₴", "Ціна діалогу, ₴"), (paidSummary.spend_uah && paidSummary.messages_started) ? moneyUah(paidSummary.spend_uah / paidSummary.messages_started) : "—", "#0f766e")}
-            {card(t("Цена продажи", "Ціна продажу"), (paidSummary.spend_uah && profitability.sales) ? moneyUah(paidSummary.spend_uah / profitability.sales) : "—", "#dc2626", t("расход рекламы ÷ все продажи периода", "витрати реклами ÷ усі продажі періоду"))}
+            {card(t("Прибыль после рекламы", "Прибуток після реклами"), profitability.marketing_profit == null ? "—" : moneyUah(profitability.marketing_profit), Number(profitability.marketing_profit) >= 0 ? "#15803d" : "#dc2626")}
+            {card(t("Общий ROAS", "Загальний ROAS"), profitability.blended_roas == null ? "—" : `${profitability.blended_roas}×`, "#2563eb")}
+            {card(t("ROAS с точным ID", "ROAS з точним ID"), profitability.exact_ad_roas == null ? "—" : `${profitability.exact_ad_roas}×`, "#7c3aed", t("Консервативный показатель: только доказанная связь с объявлением", "Консервативний показник: лише доведений зв'язок з оголошенням"))}
+            {card("ROMI", profitability.romi == null ? "—" : `${profitability.romi}%`, Number(profitability.romi) >= 0 ? "#15803d" : "#dc2626")}
           </div>
           <SectionTitle title={t("Рентабельность по дням", "Рентабельність за днями")} note={t("Меняйте период сверху: день, неделя, месяц, 90 дней или произвольный диапазон", "Змінюйте період зверху: день, тиждень, місяць, 90 днів або довільний діапазон")} />
           {dailyTable}
@@ -569,7 +537,7 @@ export default function MetaMarketing() {
             {card(t("Начатые диалоги", "Розпочаті діалоги"), count(paidSummary.messages_started), "#0f766e")}
           </div>
           <div className="note" style={{ marginBottom: 12 }}>
-            {t("Каждая карточка — конкретное объявление. Миниатюра и ссылка помогают сразу увидеть, какой креатив дал диалоги и лиды.", "Кожна картка — конкретне оголошення. Мініатюра й посилання допомагають одразу побачити, який креатив дав діалоги та ліди.")}
+            <b>{t("Каждая карточка — одно объявление.", "Кожна картка — одне оголошення.")}</b> {t("Наведи на название любого показателя (значок ⓘ) — появится объяснение простыми словами. Коротко: Диалоги — сколько людей написали, Лиды CRM — сколько из них реально попали к нам в базу, CTR — насколько цепляет креатив, Цена диалога — во сколько обошлась одна переписка.", "Наведи на назву будь-якого показника (значок ⓘ) — з'явиться пояснення простими словами. Коротко: Діалоги — скільки людей написали, Ліди CRM — скільки з них реально потрапили в базу, CTR — наскільки чіпляє креатив, Ціна діалогу — у скільки обійшлося одне листування.")}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: 12 }}>
             {(paid.ads || []).map((r: any) => <AdCard key={r.id} row={r} t={t} />)}
@@ -672,41 +640,8 @@ export default function MetaMarketing() {
   </div>;
 }
 
-/* Візуальний блок-контейнер: групує картки показників під заголовком (щоб не було «каші») */
-function Block({ title, note, accent, children }: { title: string; note?: string; accent?: string; children: any }) {
-  const c = accent || "#2563eb";
-  return (
-    <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderLeft: `4px solid ${c}`, borderRadius: 12, padding: "12px 14px", marginBottom: 12, boxShadow: "0 1px 3px rgba(15,23,42,.05)" }}>
-      <div style={{ marginBottom: 9 }}>
-        <b style={{ fontSize: 15, color: "#0f172a" }}>{title}</b>
-        {note ? <div className="muted" style={{ fontSize: 11.5, marginTop: 2, lineHeight: 1.45 }}>{note}</div> : null}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-/* Панель періоду: ЯВНО показує, за який період цифри + швидкий вибір (щоб не гадати) */
-function PeriodBar({ from, to, days, t, onQuick, setFrom, setTo, minFrom }:
-  { from: string; to: string; days: number; t: any; onQuick: (d: number) => void; setFrom: (v: string) => void; setTo: (v: string) => void; minFrom?: string }) {
-  const inp: any = { height: 26, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px", fontSize: 12, background: "#fff" };
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "7px 11px", marginBottom: 10 }}>
-      <span style={{ fontSize: 12.5, fontWeight: 700, color: "#1e40af" }}>📅 {t("Период", "Період")}</span>
-      <input type="date" value={from} min={minFrom} onChange={(e) => setFrom(e.target.value)} style={inp} />
-      <span style={{ color: "#64748b" }}>—</span>
-      <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={inp} />
-      <span style={{ fontSize: 11.5, fontWeight: 700, color: "#fff", background: "#2563eb", borderRadius: 999, padding: "2px 8px" }}>{days} {days === 1 ? t("день","день") : (days < 5 ? t("дня","дні") : t("дней","днів"))}</span>
-      <div style={{ flex: 1 }} />
-      {[[1, t("сегодня","сьогодні")], [7, "7 " + t("дн","дн")], [30, "30 " + t("дн","дн")], [90, "90 " + t("дн","дн")]].map(([d, lb]: any) => (
-        <button key={d} className="btn btn-light" style={{ height: 26, padding: "0 9px", fontSize: 11.5 }} onClick={() => onQuick(d)}>{lb}</button>
-      ))}
-    </div>
-  );
-}
-
 function SectionTitle({ title, note }: { title: string; note: string }) {
-  return <div style={{ margin: "12px 0 6px", paddingLeft: 9, borderLeft: "3px solid #2563eb", display: "flex", alignItems: "baseline", gap: 9, flexWrap: "wrap" }}><b style={{ fontSize: 14.5, color: "#0f172a" }}>{title}</b><span style={{ fontSize: 11.5, color: "#475569", lineHeight: 1.35 }}>{note}</span></div>;
+  return <div style={{ margin: "14px 0 8px" }}><b style={{ fontSize: 16 }}>{title}</b><span className="muted" style={{ fontSize: 11, marginLeft: 8 }}>{note}</span></div>;
 }
 
 function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string) => string }) {
@@ -857,12 +792,18 @@ function AdCard({ row, t }: { row: any; t: (ru: string, ua: string) => string })
       </div>
     </div>
     <div style={metricGrid}>
-      <Metric label={t("Расход", "Витрати")} value={moneyUsd(row.spend)} />
-      <Metric label={t("Диалоги Meta", "Діалоги Meta")} value={count(row.messages_started)} />
-      <Metric label={t("Лиды Meta", "Ліди Meta")} value={count(row.meta_leads)} />
-      <Metric label={t("Лиды CRM", "Ліди CRM")} value={count(row.crm_leads)} />
-      <Metric label="CTR" value={row.ctr == null ? "—" : `${row.ctr}%`} />
-      <Metric label={t("Цена диалога", "Ціна діалогу")} value={row.cost_per_message == null ? "—" : moneyUsd(row.cost_per_message)} />
+      <Metric label={t("Расход", "Витрати")} value={moneyUsd(row.spend)}
+        tip={t("Сколько денег потрачено на это объявление за выбранный период.", "Скільки грошей витрачено на це оголошення за обраний період.")} />
+      <Metric label={t("Диалоги Meta", "Діалоги Meta")} value={count(row.messages_started)}
+        tip={t("Сколько человек написали нам в Direct после этого объявления. Считает сама Meta. Это ещё не клиенты — просто начатые переписки.", "Скільки людей написали нам у Direct після цього оголошення. Рахує сама Meta. Це ще не клієнти — просто розпочаті листування.")} />
+      <Metric label={t("Лиды Meta", "Ліди Meta")} value={count(row.meta_leads)}
+        tip={t("Заявки, которые Meta засчитала себе как результат (например, заполненная лид-форма). Это оценка Meta, она может отличаться от CRM.", "Заявки, які Meta зарахувала собі як результат (наприклад, заповнена лід-форма). Це оцінка Meta, вона може відрізнятися від CRM.")} />
+      <Metric label={t("Лиды CRM", "Ліди CRM")} value={count(row.crm_leads)}
+        tip={t("Сколько РЕАЛЬНЫХ карточек клиентов появилось у нас в CRM с меткой этого объявления. Это наша правда — по ней и считаем работу рекламы. Может быть меньше диалогов: не каждый написавший становится лидом.", "Скільки РЕАЛЬНИХ карток клієнтів з'явилося в CRM з міткою цього оголошення. Це наша правда. Може бути менше за діалоги: не кожен, хто написав, стає лідом.")} />
+      <Metric label="CTR" value={row.ctr == null ? "—" : `${row.ctr}%`}
+        tip={t("Какой процент увидевших нажал на объявление. Показывает, насколько цепляет картинка и текст. Норма обычно 1-3%: выше — креатив хороший.", "Який відсоток тих, хто побачив, натиснув на оголошення. Показує, наскільки чіпляє картинка й текст. Норма 1-3%.")} />
+      <Metric label={t("Цена диалога", "Ціна діалогу")} value={row.cost_per_message == null ? "—" : moneyUsd(row.cost_per_message)}
+        tip={t("Сколько стоила одна начатая переписка: расход ÷ диалоги. Чем дешевле — тем эффективнее объявление.", "Скільки коштувало одне розпочате листування: витрати ÷ діалоги. Чим дешевше — тим ефективніше оголошення.")} />
     </div>
   </div>;
 }
@@ -880,24 +821,32 @@ function ContentCard({ row, t }: { row: any; t: (ru: string, ua: string) => stri
       </div>
     </div>
     <div style={metricGrid}>
-      <Metric label={t("Охват", "Охоплення")} value={contentMetric(row.reach)} />
-      <Metric label={t("Просмотры", "Перегляди")} value={contentMetric(row.views)} />
+      <Metric label={t("Охват", "Охоплення")} value={contentMetric(row.reach)}
+        tip={t("Сколько РАЗНЫХ людей увидели публикацию (без повторов).", "Скільки РІЗНИХ людей побачили публікацію (без повторів).")} />
+      <Metric label={t("Просмотры", "Перегляди")} value={contentMetric(row.views)}
+        tip={t("Сколько раз ролик запускали. Один человек мог посмотреть несколько раз — поэтому больше охвата.", "Скільки разів ролик запускали. Одна людина могла подивитись кілька разів.")} />
       <Metric label={t("Лайки", "Вподобання")} value={count(row.likes)} />
       <Metric label={t("Комментарии", "Коментарі")} value={count(row.comments)} />
-      <Metric label={t("Сохранения", "Збереження")} value={contentMetric(row.saved)} />
-      <Metric label={t("Поделились", "Поширення")} value={contentMetric(row.shares)} />
-      <Metric label={t("Подписчики", "Підписники")} value={contentMetric(row.follows)} accent />
-      <Metric label={t("Визиты профиля", "Візити профілю")} value={contentMetric(row.profile_visits)} />
-      <Metric label={t("Вовлечённость", "Залученість")} value={row.engagement_rate == null ? "—" : `${row.engagement_rate}%`} />
-      <Metric label={t("Диалоги CRM", "Діалоги CRM")} value={count(row.crm_dialogues)} />
+      <Metric label={t("Сохранения", "Збереження")} value={contentMetric(row.saved)}
+        tip={t("Сколько человек сохранили пост себе. Хороший знак: контент полезный, хотят вернуться.", "Скільки людей зберегли пост собі. Хороший знак: контент корисний.")} />
+      <Metric label={t("Поделились", "Поширення")} value={contentMetric(row.shares)}
+        tip={t("Сколько раз публикацию отправили друзьям или в сторис. Самый сильный сигнал, что зашло.", "Скільки разів публікацію надіслали друзям або в сторіс. Найсильніший сигнал.")} />
+      <Metric label={t("Подписчики", "Підписники")} value={contentMetric(row.follows)} accent
+        tip={t("Сколько человек подписалось после этой публикации. ВАЖНО: для Reels Meta эту цифру не отдаёт — там будет «нет данных». Общий рост смотри во вкладке «Рост кабинета».", "Скільки людей підписалося після цієї публікації. ВАЖЛИВО: для Reels Meta цю цифру не віддає.")} />
+      <Metric label={t("Визиты профиля", "Візити профілю")} value={contentMetric(row.profile_visits)}
+        tip={t("Сколько человек зашли в наш профиль после этой публикации.", "Скільки людей зайшли в наш профіль після цієї публікації.")} />
+      <Metric label={t("Вовлечённость", "Залученість")} value={row.engagement_rate == null ? "—" : `${row.engagement_rate}%`}
+        tip={t("Какой процент увидевших как-то отреагировал (лайк, коммент, сохранение, репост). Показывает, насколько контент цепляет.", "Який відсоток тих, хто побачив, якось відреагував (лайк, коментар, збереження, репост).")} />
+      <Metric label={t("Диалоги CRM", "Діалоги CRM")} value={count(row.crm_dialogues)}
+        tip={t("Сколько переписок в нашей CRM началось с этой публикации — то есть сколько она реально привела людей в Direct.", "Скільки листувань у нашій CRM почалося з цієї публікації.")} />
     </div>
     <div className="muted" style={{ fontSize: 9, marginTop: 8 }}>{t("Обновлено", "Оновлено")}: {dateTime(row.synced_at)}</div>
   </div>;
 }
 
-function Metric({ label, value, accent = false }: { label: string; value: ReactNode; accent?: boolean }) {
+function Metric({ label, value, accent = false, tip }: { label: string; value: ReactNode; accent?: boolean; tip?: string }) {
   return <div style={{ background: accent ? "#ecfdf5" : "#f8fafc", borderRadius: 8, padding: "7px 8px" }}>
-    <div className="muted" style={{ fontSize: 9 }}>{label}</div>
+    <div className="muted" style={{ fontSize: 9 }}>{tip ? <Tip text={tip}>{label}<span style={{ opacity: .5, marginLeft: 3 }}>ⓘ</span></Tip> : label}</div>
     <div style={{ fontSize: 13, fontWeight: 800, color: accent ? "#047857" : "#0f172a", marginTop: 2 }}>{value}</div>
   </div>;
 }
@@ -906,7 +855,7 @@ function Empty({ text }: { text: string }) {
   return <div className="panel muted" style={{ padding: 28, textAlign: "center", gridColumn: "1 / -1" }}>{text}</div>;
 }
 
-const cardsRow: any = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(228px, 1fr))", columnGap: 22, rowGap: 0, marginBottom: 9, background: "#fff", border: "1px solid #e5eaf1", borderRadius: 10, padding: "6px 11px" };
+const cardsRow: any = { display: "flex", gap: 9, flexWrap: "wrap", marginBottom: 10 };
 const metricGrid: any = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: 12 };
 const th: any = { textAlign: "left", padding: "10px 12px", fontSize: 12, color: "#64748b", borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap" };
 const td: any = { padding: "10px 12px", fontSize: 13, borderBottom: "1px solid #eef2f7", verticalAlign: "top" };
