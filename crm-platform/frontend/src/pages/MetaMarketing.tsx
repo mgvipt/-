@@ -562,11 +562,15 @@ export default function MetaMarketing() {
   };
   const daily = data?.daily || [];
 
+  /* UI v3 «таблиця показників»: назва ліворуч — значення праворуч, у кілька колонок.
+     Максимально компактно: усе видно без прокрутки. Пояснення — тултип Tip на наведення (ⓘ),
+     НЕ нативний title (нативний не видно при демонстрації екрана). */
   const card = (label: string, value: ReactNode, color = "#0f172a", hint?: string) => (
-    <div className="panel" style={{ padding: "9px 11px", minWidth: 124, flex: "1 1 124px", margin: 0 }}>
-      <div className="muted" style={{ fontSize: 10.5, lineHeight: 1.25 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 800, color, marginTop: 2 }}>{value}</div>
-      {hint && <div className="muted" style={{ fontSize: 9.5, marginTop: 3, lineHeight: 1.25 }}>{hint}</div>}
+    <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "5px 2px", borderBottom: "1px dashed #eef2f7", minWidth: 0 }}>
+      <span style={{ fontSize: 11.5, color: "#475569", fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {hint ? <Tip text={hint}>{label} <span style={{ color: "#94a3b8", fontSize: 9.5 }}>ⓘ</span></Tip> : label}
+      </span>
+      <b style={{ fontSize: 14.5, fontWeight: 800, color, whiteSpace: "nowrap", flexShrink: 0 }}>{value}</b>
     </div>
   );
   const table = (headers: string[], rows: ReactNode[][], empty: string, minWidth = 760, tips?: string[]) => (
@@ -591,6 +595,10 @@ export default function MetaMarketing() {
     count(r.messages_started), count(r.meta_leads), count(r.crm_leads), r.cost_per_message == null ? "—" : moneyUsd(r.cost_per_message),
   ]);
   const dailyTable = <DailySalesTable rows={daily} t={t} />;
+  // похідні показники реклами: ціни за клік / ліда (дзеркало Ads Manager простими словами)
+  const cpcUsd = paidSummary.clicks ? paidSummary.spend / paidSummary.clicks : null;
+  const cplUah = (paidSummary.spend_uah && summary.meta_origin_leads) ? paidSummary.spend_uah / summary.meta_origin_leads : null;
+  const cplExactUah = (paidSummary.spend_uah && summary.attributed_leads) ? paidSummary.spend_uah / summary.attributed_leads : null;
 
   return <div style={{ height: "100%", overflowY: "auto", padding: 16, boxSizing: "border-box" }}>
     <div style={{ width: "100%" }}>
@@ -623,30 +631,37 @@ export default function MetaMarketing() {
       {loading && !data ? <div className="muted" style={{ padding: 30 }}>Загрузка…</div> : data && <>
         {tab === "overview" && <>
           {syncWarning}
-          <SectionTitle title={t("Instagram аккаунт", "Instagram акаунт")} note={t("Баланс подписчиков сохраняется ежедневно; прирост Meta отдаёт по дням", "Баланс підписників зберігається щодня; приріст Meta віддає по днях")} />
+          <SectionTitle title={t("Подписчики Instagram", "Підписники Instagram") + (followers.username ? " · @" + followers.username : "")} note={t("Всё о подписчиках в одном блоке: сколько есть, сколько пришло за период и почём", "Все про підписників в одному блоці: скільки є, скільки прийшло за період і почому")} />
           <div style={cardsRow}>
-            {card(t("Подписчиков сейчас", "Підписників зараз"), optional(followers.current_total, "", t("ожидает синхронизации", "очікує синхронізації")), "#c026d3", followers.username ? `@${followers.username}` : undefined)}
-            {card(t("Новых за период", "Нових за період"), followers.period_gained == null ? "—" : count(followers.period_gained), "#db2777")}
+            {card(t("Подписчиков сейчас", "Підписників зараз"), optional(followers.current_total, "", t("ожидает синхронизации", "очікує синхронізації")), "#c026d3")}
+            {card(t("Новых за период (итог)", "Нових за період (підсумок)"), followers.period_gained == null ? "—" : (followers.period_gained >= 0 ? "+" : "") + count(followers.period_gained), "#db2777", t("подписались минус отписались за выбранный период", "підписалися мінус відписалися за вибраний період"))}
+            {card(t("С рекламы (платно)", "З реклами (платно)"), "—", "#2563eb", t("Meta показывает «Подписки в Instagram» только в кабинете Ads Manager и не отдаёт через API (проверено на всех версиях). Задача передана Мета-агенту: забирать цифру из кабинета.", "Meta показує «Підписки в Instagram» лише в кабінеті Ads Manager і не віддає через API (перевірено на всіх версіях). Задачу передано Мета-агенту: забирати цифру з кабінету."))}
+            {card(t("Органика (остальные)", "Органіка (решта)"), "—", "#7c3aed", t("все новые минус платные — появится вместе с цифрой из кабинета Ads. По Reels Meta «подписки» тоже не отдаёт.", "усі нові мінус платні — з'явиться разом з цифрою з кабінету Ads. По Reels Meta «підписки» теж не віддає."))}
+            {card(t("Цена подписчика", "Ціна підписника"), (followers.period_gained > 0 && paidSummary.spend) ? "$" + (paidSummary.spend / followers.period_gained).toFixed(2) : "—", "#0f766e", t("весь расход рекламы ÷ все новые подписчики за период (blended)", "усі витрати реклами ÷ усі нові підписники за період (blended)"))}
+            {card(t("Цена подписчика, ₴", "Ціна підписника, ₴"), (followers.period_gained > 0 && paidSummary.spend_uah) ? moneyUah(paidSummary.spend_uah / followers.period_gained) : "—", "#0f766e", t("расход в гривне по курсу НБУ ÷ новых подписчиков", "витрати у гривні за курсом НБУ ÷ нових підписників"))}
             {card(t("Публикаций за период", "Публікацій за період"), count(daily.reduce((sum: number, r: any) => sum + Number(r.content_published || 0), 0)), "#7c3aed")}
+          </div>
+          <SectionTitle title={t("Лиды из Meta в CRM", "Ліди з Meta у CRM")} note={t("Сколько людей с Meta-каналов попало в CRM за период", "Скільки людей з Meta-каналів потрапило в CRM за період")} />
+          <div style={cardsRow}>
             {card(t("Все лиды CRM из Meta", "Усі ліди CRM з Meta"), count(summary.meta_origin_leads), "#0284c7")}
             {card(t("С точным ID рекламы", "З точним ID реклами"), count(summary.attributed_leads), "#2563eb")}
             {card(t("Источник объявления не определён", "Джерело оголошення не визначене"), count(summary.meta_unassigned_leads), "#d97706")}
           </div>
-          <SectionTitle title={t("Подписчики и стоимость (итоги)", "Підписники та вартість (підсумки)")} note={t("Подписки: органика отдельно от рекламы. Цена — рекламный расход ÷ на всех за период (blended).", "Підписки: органіка окремо від реклами. Ціна — витрати ÷ на всіх (blended).")} />
-          <div style={cardsRow}>
-            {card(t("Подписалось (органика)", "Підписалося (органіка)"), (followers.period_gained >= 0 ? "+" : "") + count(followers.period_gained), "#7c3aed")}
-            {card(t("С рекламы (платно)", "З реклами (платно)"), "0", "#2563eb", t("кампании на переписку, не на подписку", "кампанії на листування"))}
-            {card(t("Цена подписчика", "Ціна підписника"), (followers.period_gained > 0 && paidSummary.spend) ? "$" + (paidSummary.spend / followers.period_gained).toFixed(2) : "—", "#0f766e", t("расход рекламы ÷ новых подписчиков", "витрати ÷ нових підписників"))}
-            {card(t("Цена клиента", "Ціна клієнта"), (profitability.buyers > 0 && paidSummary.spend) ? "$" + (paidSummary.spend / profitability.buyers).toFixed(2) : "—", "#dc2626", t("расход рекламы ÷ покупателей", "витрати ÷ покупців"))}
-          </div>
           <SectionTitle title={t("Платная реклама Meta", "Платна реклама Meta")} note={t("Данные Ads Manager за выбранный период", "Дані Ads Manager за вибраний період")} />
           <div style={cardsRow}>
             {card(t("Расход", "Витрати"), moneyUsd(paidSummary.spend), "#dc2626")}
+            {card(t("Расход в гривне (НБУ)", "Витрати у гривні (НБУ)"), paidSummary.spend_uah == null ? "—" : moneyUah(paidSummary.spend_uah), "#dc2626", t("официальный курс НБУ на каждый день", "офіційний курс НБУ на кожен день"))}
             {card(t("Показы", "Покази"), count(paidSummary.impressions), "#2563eb")}
             {card(t("Клики", "Кліки"), count(paidSummary.clicks), "#7c3aed")}
             {card("CTR", optional(paidSummary.ctr, "%"), "#7c3aed")}
+            {card(t("Цена клика (CPC)", "Ціна кліку (CPC)"), cpcUsd == null ? "—" : moneyUsd(cpcUsd), "#0891b2", t("расход ÷ клики", "витрати ÷ кліки"))}
+            {card("CPM", optional(paidSummary.cpm), "#0891b2", t("цена 1000 показов, $", "ціна 1000 показів, $"))}
             {card(t("Начатые диалоги по Ads Manager", "Розпочаті діалоги за Ads Manager"), count(paidSummary.messages_started), "#0f766e", t("Это показатель рекламы Meta, а не продажи и не уникальные лиды CRM", "Це показник реклами Meta, а не продажі й не унікальні ліди CRM"))}
+            {card(t("Цена диалога", "Ціна діалогу"), paidSummary.cost_per_message == null ? "—" : moneyUsd(paidSummary.cost_per_message), "#0f766e", t("расход рекламы ÷ начатые диалоги", "витрати реклами ÷ розпочаті діалоги"))}
+            {card(t("Цена диалога, ₴", "Ціна діалогу, ₴"), (paidSummary.spend_uah && paidSummary.messages_started) ? moneyUah(paidSummary.spend_uah / paidSummary.messages_started) : "—", "#0f766e", t("расход в гривне ÷ начатые диалоги", "витрати у гривні ÷ розпочаті діалоги"))}
             {card(t("Лиды Meta", "Ліди Meta"), count(paidSummary.meta_leads), "#0f766e")}
+            {card(t("Цена лида (все из Meta)", "Ціна ліда (всі з Meta)"), cplUah == null ? "—" : moneyUah(cplUah), "#b45309", t("расход в грн ÷ все лиды CRM из Meta", "витрати грн ÷ усі ліди CRM з Meta"))}
+            {card(t("Цена лида (с точным ID)", "Ціна ліда (з точним ID)"), cplExactUah == null ? "—" : moneyUah(cplExactUah), "#d97706", t("расход в грн ÷ лиды с подтверждённой рекламой", "витрати грн ÷ ліди з підтвердженою рекламою"))}
           </div>
           <SectionTitle title={t("Подтверждённый результат в CRM", "Підтверджений результат у CRM")} note={t("Только карточки с точным ID рекламы; ручные и органические исключены", "Лише картки з точним ID реклами; ручні та органічні виключені")} />
           <div style={cardsRow}>
@@ -667,9 +682,15 @@ export default function MetaMarketing() {
             {card(t("Продажи", "Продажі"), count(profitability.sales), "#16a34a")}
             {card(t("Выручка", "Виручка"), moneyUah(profitability.revenue), "#047857")}
             {card(t("Повторные продажи", "Повторні продажі"), count(profitability.repeat_sales), "#0891b2")}
-            {card(t("Из выручки — повторные", "З виручки — повторні"), moneyUah(profitability.repeat_revenue), "#0e7490")}
-            {card(t("Средний LTV", "Середній LTV"), moneyUah(profitability.average_ltv), "#7c3aed")}
-            {card("ROMI", profitability.romi == null ? "—" : `${profitability.romi}%`, Number(profitability.romi) >= 0 ? "#15803d" : "#dc2626")}
+            {card(t("Из выручки — повторные", "З виручки — повторні"), moneyUah(profitability.repeat_revenue), "#0e7490", t("часть общей выручки, не прибавлять второй раз", "частина загальної виручки, не додавати вдруге"))}
+            {card(t("Средний LTV", "Середній LTV"), moneyUah(profitability.average_ltv), "#7c3aed", t("сколько в среднем приносит один покупатель", "скільки в середньому приносить один покупець"))}
+            {card(t("Цена клиента", "Ціна клієнта"), (profitability.buyers > 0 && paidSummary.spend) ? "$" + (paidSummary.spend / profitability.buyers).toFixed(2) : "—", "#dc2626", t("расход рекламы ÷ покупателей", "витрати реклами ÷ покупців"))}
+            {card(t("Цена продажи", "Ціна продажу"), (paidSummary.spend_uah && profitability.sales) ? moneyUah(paidSummary.spend_uah / profitability.sales) : "—", "#dc2626", t("расход рекламы в грн ÷ все продажи периода", "витрати реклами в грн ÷ усі продажі періоду"))}
+            {card(t("Реклама по курсу НБУ", "Реклама за курсом НБУ"), profitability.ad_spend_uah == null ? "—" : moneyUah(profitability.ad_spend_uah), "#dc2626")}
+            {card(t("Прибыль после рекламы", "Прибуток після реклами"), profitability.marketing_profit == null ? "—" : moneyUah(profitability.marketing_profit), Number(profitability.marketing_profit) >= 0 ? "#15803d" : "#dc2626", t("валовая прибыль − реклама", "валовий прибуток − реклама"))}
+            {card(t("Общий ROAS", "Загальний ROAS"), profitability.blended_roas == null ? "—" : `${profitability.blended_roas}×`, "#2563eb", t("вся выручка ÷ реклама (blended)", "вся виручка ÷ реклама (blended)"))}
+            {card(t("ROAS с точным ID", "ROAS з точним ID"), profitability.exact_ad_roas == null ? "—" : `${profitability.exact_ad_roas}×`, "#7c3aed", t("только доказанная связь с объявлением; «—» = таких продаж пока нет", "лише доведений звʼязок з оголошенням; «—» = таких продажів поки немає"))}
+            {card("ROMI", profitability.romi == null ? "—" : `${profitability.romi}%`, Number(profitability.romi) >= 0 ? "#15803d" : "#dc2626", t("(валовая прибыль − реклама) ÷ реклама", "(валовий прибуток − реклама) ÷ реклама"))}
           </div>
           <SectionTitle title={t("Общая статистика по дням", "Загальна статистика за днями")} note={t("Реклама, лиды, продажи, повторные покупки, LTV и прибыль в одной таблице", "Реклама, ліди, продажі, повторні покупки, LTV і прибуток в одній таблиці")} />
           {dailyTable}
@@ -728,7 +749,7 @@ export default function MetaMarketing() {
               {t("Остальные тоже в CRM — просто без привязки к конкретному объявлению: метку передаёт только прямой канал Meta, через ChatPlace её нет. Значит реальный результат рекламы ВЫШЕ, чем показано в карточках ниже.", "Решта теж у CRM — просто без привʼязки до конкретного оголошення: мітку передає лише прямий канал Meta, через ChatPlace її немає. Отже реальний результат реклами ВИЩИЙ, ніж показано нижче.")}
             </div> : null; })()}
           <div style={cardsRow}>
-            {card(t("Подписчиков с рекламы", "Підписників з реклами"), "0", "#2563eb", t("кампании настроены на переписку, а не на подписку — платных подписок нет", "кампанії на листування, не на підписку"))}
+            {card(t("Подписчиков с рекламы", "Підписників з реклами"), "—", "#2563eb", t("Meta показывает «Подписки в Instagram» только в кабинете Ads Manager и не отдаёт через API. Задача у Мета-агента: забирать цифру из кабинета.", "Meta показує «Підписки в Instagram» лише в кабінеті Ads Manager і не віддає через API. Задача у Мета-агента: забирати цифру з кабінету."))}
             {card(t("Расход на рекламу", "Витрати на рекламу"), moneyUsd(paidSummary.spend), "#dc2626")}
             {card(t("Начатые диалоги", "Розпочаті діалоги"), count(paidSummary.messages_started), "#0f766e")}
           </div>
@@ -1073,7 +1094,8 @@ function Empty({ text }: { text: string }) {
   return <div className="panel muted" style={{ padding: 28, textAlign: "center", gridColumn: "1 / -1" }}>{text}</div>;
 }
 
-const cardsRow: any = { display: "flex", gap: 9, flexWrap: "wrap", marginBottom: 10 };
+/* UI v3: біла панель-сітка, рядки «назва — значення» у кілька колонок (компакт без прокрутки) */
+const cardsRow: any = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(228px, 1fr))", columnGap: 22, rowGap: 0, marginBottom: 9, background: "#fff", border: "1px solid #e5eaf1", borderRadius: 10, padding: "6px 11px" };
 const metricGrid: any = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: 12 };
 const th: any = { textAlign: "left", padding: "10px 12px", fontSize: 12, color: "#64748b", borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap" };
 const td: any = { padding: "10px 12px", fontSize: 13, borderBottom: "1px solid #eef2f7", verticalAlign: "top" };
