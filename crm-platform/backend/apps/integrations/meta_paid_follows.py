@@ -283,3 +283,213 @@ def import_reports(*, backfill: bool = False, dry_run: bool = False, limit: int 
                 "dry_run": dry_run, "errors": errors}
     finally:
         client.logout()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Джерело №2 (Claude, 26.08.2026): анонімне share-посилання Ads Reporting.
+#
+# ЧОМУ (для Codex і майбутніх сесій): розсилку звітів ПОШТОЮ Meta прибрала з
+# нового кабінету Ads Reporting — перевірено вручну 26.08.2026, в UI лишився
+# тільки разовий експорт файлом. Тож листи від advertise-noreply самі не
+# приходитимуть, а download_report-посилання з них вимагає залогіненого
+# браузера (звідси Selenium вище). НАТОМІСТЬ «Поділитися → доступ за
+# посиланням» віддає сторінку зі вбудованими даними ПОВНІСТЮ АНОНІМНО —
+# достатньо браузерних заголовків, без cookie/логіна/Selenium.
+#
+# Обмеження: у HTML вбудовані перші ~50 рядків (сортування за датою desc) =
+# останні 3-4 дні. Для щоденного крону цього достатньо (upsert перекриває
+# пізню атрибуцію). Історію разово вантажимо CSV-файлом (--csv-file).
+# Посилання діє 30 днів (expire пишемо у state і попереджаємо заздалегідь).
+# Звіт у кабінеті: «CRM IG Follows Daily» (акаунт Wallcov, розбивка
+# день+кампанія+campaign_id, метрика «Підписки в Instagram»).
+# ═══════════════════════════════════════════════════════════════════════════
+
+SHARE_URL_ENV = "META_ADS_SHARE_REPORT_URL"
+_SHARE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ru-RU,ru;q=0.9,uk;q=0.8,en-US;q=0.7",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+
+def share_report_url() -> str:
+    return os.environ.get(SHARE_URL_ENV, "").strip()
+
+
+def fetch_share_html(url: str | None = None, timeout: int = 60) -> str:
+    import requests
+
+    target = (url or share_report_url())
+    if not target:
+        raise ValueError("META_ADS_SHARE_REPORT_URL is not configured")
+    session = requests.Session()
+    response = session.get(target, headers=_SHARE_HEADERS, timeout=timeout, allow_redirects=True)
+    response.raise_for_status()
+    if "adsviewreport" not in (response.url or "") and "dimensions" not in response.text:
+        raise ValueError("Share link did not return the report page (login wall or expired link?)")
+    return response.text
+
+
+def _iter_row_objects(html: str):
+    """Yield each embedded {"dimensions":[...],"metrics":[...]} object as parsed JSON."""
+    import json as _json
+
+    for match in re.finditer(r'\{"dimensions":\[\{"value":"(\d{4}-\d\d-\d\d)"', html):
+        start = match.start()
+        depth = 0
+        end = None
+        for index in range(start, min(start + 20000, len(html))):
+            char = html[index]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    end = index + 1
+                    break
+        if end is None:
+            continue
+        try:
+            yield _json.loads(html[start:end])
+        except ValueError:
+            continue
+
+
+def parse_share_html(html: str) -> tuple[list[dict], dict]:
+    """Return campaign-level follow rows + report metadata from the share page.
+
+    Індекс метрики НЕ хардкодиться: береться зі схеми полів у тому ж HTML
+    (список [{"name":"delivery_info"...}]) — переживе зміну складу колонок.
+    """
+    schema_match = re.search(r'\[\{"name":"delivery_info".*?\]', html)
+    if not schema_match:
+        raise ValueError("Share page: field schema not found (layout changed?)")
+    field_names = re.findall(r'\{"name":"([a-z_0-9:.]+)"', schema_match.group(0))
+    try:
+        follows_index = field_names.index("instagram_profile_follow_v2")
+    except ValueError:
+        raise ValueError("Share page: instagram_profile_follow_v2 missing from schema")
+
+    meta: dict = {}
+    meta_match = re.search(r'"reportName":"([^"]*)","updateTime":(\d+),"expireTime":(\d+)', html)
+    if meta_match:
+        meta = {
+            "report_name": meta_match.group(1),
+            "update_time": int(meta_match.group(2)),
+            "expire_time": int(meta_match.group(3)),
+        }
+
+    rows: list[dict] = []
+    for row in _iter_row_objects(html):
+        dims = [d.get("value") for d in row.get("dimensions") or []]
+        if len(dims) < 3:
+            continue
+        day, campaign_name, campaign_id = dims[0], dims[1], dims[2]
+        # рядок кампанії без дубля: беремо той, де третя розмірність = campaign_id
+        if campaign_name == "__summary__" or not str(campaign_id or "").isdigit():
+            continue
+        metrics = row.get("metrics") or []
+        if follows_index >= len(metrics):
+            continue
+        value = _parse_number((metrics[follows_index] or {}).get("value"))
+        parsed_day = _parse_date(day)
+        if parsed_day is None or value is None:
+            continue
+        rows.append({
+            "date": parsed_day,
+            "campaign_name": str(campaign_name or "").strip()[:255],
+            "adset_name": "",
+            "ad_name": "",
+            "follows": value,
+        })
+    return rows, meta
+
+
+def import_share_report(*, dry_run: bool = False) -> dict:
+    """Fetch the anonymous share page and upsert campaign-level follow rows."""
+    from apps.crm.models import MetaPaidFollowStat
+    from .models import IntegrationSettings
+
+    state, _ = IntegrationSettings.objects.get_or_create(
+        provider="meta_paid_follows", defaults={"is_active": True, "config": {}},
+    )
+    state_cfg = dict(state.config or {})
+    try:
+        html = fetch_share_html()
+        rows, meta = parse_share_html(html)
+    except Exception as exc:
+        state_cfg["share_last_error"] = str(exc)[:500]
+        state.config = state_cfg
+        state.save(update_fields=["config", "updated_at"])
+        return {"source": "share", "error": str(exc)[:200]}
+
+    imported = 0
+    if not dry_run:
+        for row in rows:
+            MetaPaidFollowStat.objects.update_or_create(
+                date=row["date"], campaign_name=row["campaign_name"],
+                adset_name="", ad_name="",
+                defaults={"follows": row["follows"], "report_uid": "share"},
+            )
+            imported += 1
+
+    warning = ""
+    expire_time = meta.get("expire_time")
+    if expire_time:
+        days_left = (datetime.utcfromtimestamp(expire_time) - datetime.utcnow()).days
+        state_cfg["share_expires_at"] = datetime.utcfromtimestamp(expire_time).isoformat(timespec="seconds") + "Z"
+        if days_left <= 7:
+            warning = ("Share-посилання Ads-звіту спливає через %d дн. — Олег має перевидати його: "
+                       "Ads Reporting → CRM IG Follows Daily → Поділитися → строк дії" % days_left)
+            state_cfg["share_expire_warning"] = warning
+        else:
+            state_cfg.pop("share_expire_warning", None)
+    state_cfg["share_last_sync"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    state_cfg.pop("share_last_error", None)
+    state.config = state_cfg
+    state.is_active = True
+    state.save(update_fields=["config", "is_active", "updated_at"])
+    dates = sorted({row["date"].isoformat() for row in rows})
+    return {"source": "share", "rows": len(rows), "imported": imported, "dates": dates,
+            "dry_run": dry_run, **({"warning": warning} if warning else {})}
+
+
+def import_csv_file(path: str, *, dry_run: bool = False) -> dict:
+    """One-off history backfill from an Ads Reporting CSV export («CRM IG Follows Daily»)."""
+    import csv
+
+    from apps.crm.models import MetaPaidFollowStat
+
+    with open(path, newline="", encoding="utf-8-sig") as handle:
+        reader = csv.reader(handle)
+        try:
+            headers = next(reader)
+        except StopIteration:
+            return {"source": "csv", "error": "empty file"}
+        day_col = _first_column(headers, (("день",), ("date",), ("дата",)))
+        campaign_col = _first_column(headers, (("кампан", "наз"), ("campaign", "name")))
+        follows_col = _first_column(headers, (("instagram", "подпис"), ("instagram", "підпис"), ("instagram", "follow")))
+        if day_col is None or follows_col is None:
+            return {"source": "csv", "error": "columns not found: %s" % headers}
+        rows_seen = imported = 0
+        for source in reader:
+            if len(source) <= max(day_col, follows_col):
+                continue
+            day = _parse_date(source[day_col])
+            follows = _parse_number(source[follows_col])
+            campaign = str(source[campaign_col] or "").strip()[:255] if campaign_col is not None and len(source) > campaign_col else ""
+            if day is None or follows is None or not campaign or campaign.casefold() in {"все", "всего", "итого", "total"}:
+                continue
+            rows_seen += 1
+            if not dry_run:
+                MetaPaidFollowStat.objects.update_or_create(
+                    date=day, campaign_name=campaign, adset_name="", ad_name="",
+                    defaults={"follows": follows, "report_uid": "csv-backfill"},
+                )
+                imported += 1
+    return {"source": "csv", "rows": rows_seen, "imported": imported, "dry_run": dry_run}
