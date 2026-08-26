@@ -3755,6 +3755,10 @@ class MetaMarketingView(APIView):
             "outbox": outbox,
             "recent": recent,
             "attribution_coverage": {
+                "since": (lambda first: first.strftime("%d.%m.%Y") if first else None)(
+                    next((x.created_at for x in sorted(
+                        [y for y in Lead.objects.filter(meta_attribution__source_kind="paid_ad").only("created_at", "meta_attribution")],
+                        key=lambda z: z.created_at)), None)),
                 "messenger_leads": len([x for x in all_leads
                                         if (x.source or "") in ("instagram", "facebook")
                                         and date_from <= local_day(x.created_at) <= date_to]),
