@@ -322,18 +322,18 @@ def share_report_url() -> str:
 
 
 def fetch_share_html(url: str | None = None, timeout: int = 60) -> str:
-    import requests
+    import urllib.request
 
     target = (url or share_report_url())
     if not target:
         raise ValueError("META_ADS_SHARE_REPORT_URL is not configured")
-    session = requests.Session()
-    response = session.get(target, headers=_SHARE_HEADERS, timeout=timeout, allow_redirects=True)
-    response.raise_for_status()
-    if "adsviewreport" not in (response.url or "") and "dimensions" not in response.text:
+    request = urllib.request.Request(target, headers=_SHARE_HEADERS)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        final_url = response.geturl() or ""
+        text = response.read().decode("utf-8", "replace")
+    if "adsviewreport" not in final_url and '"dimensions"' not in text:
         raise ValueError("Share link did not return the report page (login wall or expired link?)")
-    return response.text
-
+    return text
 
 def _iter_row_objects(html: str):
     """Yield each embedded {"dimensions":[...],"metrics":[...]} object as parsed JSON."""
