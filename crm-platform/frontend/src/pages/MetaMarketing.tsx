@@ -636,7 +636,7 @@ export default function MetaMarketing() {
           <div style={cardsRow}>
             {card(t("Подписчиков сейчас", "Підписників зараз"), optional(followers.current_total, "", t("ожидает синхронизации", "очікує синхронізації")), "#c026d3")}
             {card(t("Новых за период (итог)", "Нових за період (підсумок)"), followers.period_gained == null ? "—" : (followers.period_gained >= 0 ? "+" : "") + count(followers.period_gained), "#db2777", t("подписались минус отписались за выбранный период", "підписалися мінус відписалися за вибраний період"))}
-            {card(t("С рекламы (платно)", "З реклами (платно)"), followers.paid_report_rows ? count(followers.paid_from_ads) : "—", "#2563eb", t("Из ежедневного XLSX-отчёта Ads Manager: только подписки, которые Meta отнесла к рекламе.", "З щоденного XLSX-звіту Ads Manager: лише підписки, які Meta віднесла до реклами."))}
+            {card(t("С рекламы (платно)", "З реклами (платно)"), followers.paid_report_rows ? count(followers.paid_from_ads) : "—", "#2563eb", t("Из ежедневного отчёта Ads Manager: только подписки, которые Meta отнесла к рекламе.", "З щоденного звіту Ads Manager: лише підписки, які Meta віднесла до реклами."))}
             {card(t("Органика (остальные)", "Органіка (решта)"), followers.organic_other == null ? "—" : count(followers.organic_other), "#7c3aed", t("Итоговый прирост кабинета минус подписки с рекламы. Для Reels Meta отдельные подписки не отдаёт.", "Підсумковий приріст кабінету мінус підписки з реклами. Для Reels Meta окремі підписки не віддає."))}
             {card(t("Цена подписчика", "Ціна підписника"), paidSummary.cost_per_instagram_follow == null ? "—" : moneyUsd(paidSummary.cost_per_instagram_follow), "#0f766e", t("расход рекламы ÷ подписки с рекламы из отчёта Ads Manager", "витрати реклами ÷ підписки з реклами зі звіту Ads Manager"))}
             {card(t("Цена подписчика, ₴", "Ціна підписника, ₴"), (paidSummary.spend_uah && paidSummary.instagram_follows) ? moneyUah(paidSummary.spend_uah / paidSummary.instagram_follows) : "—", "#0f766e", t("расход в гривне ÷ подписки с рекламы", "витрати у гривні ÷ підписки з реклами"))}
@@ -651,7 +651,7 @@ export default function MetaMarketing() {
           <SectionTitle title={t("Платная реклама Meta", "Платна реклама Meta")} note={t("Данные Ads Manager за выбранный период", "Дані Ads Manager за вибраний період")} />
           <div style={cardsRow}>
             {card(t("Расход", "Витрати"), moneyUsd(paidSummary.spend), "#dc2626")}
-            {card(t("Подписки с рекламы", "Підписки з реклами"), followers.paid_report_rows ? count(paidSummary.instagram_follows) : "—", "#2563eb", t("Из ежедневного XLSX-отчёта Meta", "З щоденного XLSX-звіту Meta"))}
+            {card(t("Подписки с рекламы", "Підписки з реклами"), followers.paid_report_rows ? count(paidSummary.instagram_follows) : "—", "#2563eb", t("Из ежедневного отчёта Ads Manager", "З щоденного звіту Ads Manager"))}
             {card(t("Цена подписчика", "Ціна підписника"), paidSummary.cost_per_instagram_follow == null ? "—" : moneyUsd(paidSummary.cost_per_instagram_follow), "#0f766e")}
             {card(t("Расход в гривне (НБУ)", "Витрати у гривні (НБУ)"), paidSummary.spend_uah == null ? "—" : moneyUah(paidSummary.spend_uah), "#dc2626", t("официальный курс НБУ на каждый день", "офіційний курс НБУ на кожен день"))}
             {card(t("Показы", "Покази"), count(paidSummary.impressions), "#2563eb")}
@@ -752,7 +752,7 @@ export default function MetaMarketing() {
               {t("Остальные тоже в CRM — просто без привязки к конкретному объявлению: метку передаёт только прямой канал Meta, через ChatPlace её нет. Значит реальный результат рекламы ВЫШЕ, чем показано в карточках ниже.", "Решта теж у CRM — просто без привʼязки до конкретного оголошення: мітку передає лише прямий канал Meta, через ChatPlace її немає. Отже реальний результат реклами ВИЩИЙ, ніж показано нижче.")}
             </div> : null; })()}
           <div style={cardsRow}>
-            {card(t("Подписчиков с рекламы", "Підписників з реклами"), followers.paid_report_rows ? count(paidSummary.instagram_follows) : "—", "#2563eb", t("Из ежедневного XLSX-отчёта Meta. В таблице «Объявления» видно, какое объявление их привело.", "З щоденного XLSX-звіту Meta. У таблиці «Оголошення» видно, яке оголошення їх привело."))}
+            {card(t("Подписчиков с рекламы", "Підписників з реклами"), followers.paid_report_rows ? count(paidSummary.instagram_follows) : "—", "#2563eb", t("Из ежедневного отчёта Ads Manager. В таблице «Объявления» видно, какое объявление их привело.", "З щоденного звіту Ads Manager. У таблиці «Оголошення» видно, яке оголошення їх привело."))}
             {card(t("Расход на рекламу", "Витрати на рекламу"), moneyUsd(paidSummary.spend), "#dc2626")}
             {card(t("Начатые диалоги", "Розпочаті діалоги"), count(paidSummary.messages_started), "#0f766e")}
           </div>
