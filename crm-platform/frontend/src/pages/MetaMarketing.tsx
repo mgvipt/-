@@ -303,11 +303,11 @@ function MetaSettingsModal({ onClose }: { onClose: () => void }) {
 /* ─── События · Пиксель: что CRM отправила в Meta (статусы переписок) ─── */
 function PixelEventsTab({ from, to }: { from: string; to: string }) {
   const { t } = useLang();
+  const [px, setPx] = useState<"crm" | "site">("crm");
   const [d, setD] = useState<any>(null);
-  useEffect(() => { api.get<any>(`/api/meta-marketing/pixel-events/?from=${from}&to=${to}`).then(setD).catch(() => setD({ error: true })); }, [from, to]);
-  if (!d) return <div className="muted" style={{ padding: 20 }}>…</div>;
-  if (d.error) return <div className="muted" style={{ padding: 20 }}>{t("Не удалось загрузить", "Не вдалося завантажити")}</div>;
-  const sm = d.summary || {};
+  useEffect(() => { setD(null); api.get<any>(`/api/meta-marketing/pixel-events/?from=${from}&to=${to}` + (px === "site" ? "&pixel=site" : "")).then(setD).catch(() => setD({ error: true })); }, [from, to, px]);
+  if (d && d.error) return <div className="muted" style={{ padding: 20 }}>{t("Не удалось загрузить", "Не вдалося завантажити")}</div>;
+  const sm = (d && d.summary) || {};
   const EV_LABEL: any = {
     LeadSubmitted: t("Лид (заявка)", "Лід (заявка)"), QualifiedLead: t("Квалифицированный лид", "Кваліфікований лід"),
     ViewContent: t("Просмотр предложения (КП)", "Перегляд пропозиції (КП)"), InitiateCheckout: t("Договорились об оплате", "Домовились про оплату"),
@@ -316,7 +316,7 @@ function PixelEventsTab({ from, to }: { from: string; to: string }) {
     OrderCanceled: t("Отменено", "Скасовано"), Lead: t("Лид (старый формат)", "Лід (старий формат)"),
     Contact: t("Контакт (старый формат)", "Контакт (старий формат)"),
   };
-  const maxDay = Math.max(...(d.daily || []).map((x: any) => (x.sent || 0) + (x.pending || 0) + (x.failed || 0)), 1);
+  const maxDay = Math.max(...((d && d.daily) || []).map((x: any) => (x.sent || 0) + (x.pending || 0) + (x.failed || 0)), 1);
   const cardsRow: any = { display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 14 };
   const card = (label: string, value: ReactNode, color = "#0f172a", hint?: string) => (
     <div className="panel" style={{ padding: "9px 11px", minWidth: 124, flex: "1 1 124px", margin: 0 }}>
@@ -329,7 +329,62 @@ function PixelEventsTab({ from, to }: { from: string; to: string }) {
     <ResizableTable headers={headers} rows={rows} empty={empty} minWidth={minWidth}
       storageKey={"mm_px_" + headers.length} />
   );
+  const SITE_EV: any = {
+    PageView: t("Открыл страницу сайта", "Відкрив сторінку сайту"),
+    ViewContent: t("Просмотр контента", "Перегляд контенту"),
+    Lead: t("Заявка с сайта", "Заявка з сайту"),
+    Purchase: t("Покупка", "Покупка"),
+    QuizStart: t("Начал квиз", "Почав квіз"),
+    QuizMaterialPhotoViewed: t("Смотрел фото материалов (квиз)", "Дивився фото матеріалів (квіз)"),
+    QuizSilkSelected: t("Выбрал шёлк (квиз)", "Обрав шовк (квіз)"),
+    QuizVelvetSelected: t("Выбрал бархат (квиз)", "Обрав оксамит (квіз)"),
+    QuizVelvetColorSelected: t("Выбрал цвет бархата (квиз)", "Обрав колір оксамиту (квіз)"),
+    VelvetColorPreviewed: t("Смотрел цвета бархата", "Дивився кольори оксамиту"),
+    VelvetColorConfirmed: t("Подтвердил цвет", "Підтвердив колір"),
+    VelvetGallerySlide: t("Листал галерею (бархат)", "Гортав галерею (оксамит)"),
+    SilkGallerySlide: t("Листал галерею (шёлк)", "Гортав галерею (шовк)"),
+  };
+  const pxTabs = (
+    <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+      <button className={px === "crm" ? "btn btn-primary" : "btn btn-light"} onClick={() => setPx("crm")} style={{ fontSize: 12.5 }}>💬 {t("Переписки (CRM → Meta)", "Листування (CRM → Meta)")}</button>
+      <button className={px === "site" ? "btn btn-primary" : "btn btn-light"} onClick={() => setPx("site")} style={{ fontSize: 12.5 }}>🌐 {t("Пиксель сайта (лендинг)", "Піксель сайту (лендінг)")}</button>
+    </div>
+  );
+  if (px === "site") {
+    const sm2 = d?.summary || {};
+    const maxD2 = Math.max(...((d?.daily || []).map((x: any) => x.total || 0)), 1);
+    return (<>
+      {pxTabs}
+      <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
+        {t("Это события с САЙТА (лендинга): что люди делали на страницах — открывали, проходили квиз, выбирали цвета. Их шлёт пиксель, установленный на сайте («Пиксель Лендинг новый»). Данные из Meta, обновляются ~раз в 5 минут.", "Це події з САЙТУ (лендінгу): що люди робили на сторінках. Їх шле піксель, встановлений на сайті. Дані з Meta.")}
+      </div>
+      {!d ? <div className="muted" style={{ padding: 20 }}>…</div> : d.error ? <div className="muted" style={{ padding: 20 }}>{t("Ошибка загрузки из Meta:", "Помилка завантаження з Meta:")} {d.error}</div> : (<>
+        <div style={cardsRow}>
+          {card(t("Всего событий", "Всього подій"), count(sm2.total), "#0f172a")}
+          {card(t("Открытий страниц", "Відкриттів сторінок"), count(sm2.pageviews), "#2563eb")}
+          {card(t("Типов событий", "Типів подій"), count(sm2.types), "#7c3aed")}
+        </div>
+        {table([t("Событие", "Подія"), t("Что означает", "Що означає"), t("Сколько раз", "Скільки разів")],
+          (d.by_event || []).map((r: any) => [r.event_name, SITE_EV[r.event_name] || "—", <b>{count(r.total)}</b>]),
+          t("Событий с сайта за период нет", "Подій із сайту за період немає"), 640)}
+        <SectionTitle title={t("По дням", "По днях")} note={t("Активность на сайте", "Активність на сайті")} />
+        <div className="panel">
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 110, overflowX: "auto" }}>
+            {(d.daily || []).map((x: any) => (
+              <div key={x.d} style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 30, flex: 1 }} title={`${x.d}: ${x.total}`}>
+                <span style={{ fontSize: 10, color: "#334155", fontWeight: 700 }}>{x.total}</span>
+                <div style={{ width: "70%", maxWidth: 24, height: Math.max((x.total / maxD2) * 74, 2), background: "#2563eb", borderRadius: "4px 4px 0 0" }} />
+                <span style={{ fontSize: 9, color: "#94a3b8", whiteSpace: "nowrap" }}>{String(x.d).slice(5)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>)}
+    </>);
+  }
+  if (!d) return (<>{pxTabs}<div className="muted" style={{ padding: 20 }}>…</div></>);
   return (<>
+    {pxTabs}
     <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
       {t("Это события, которые CRM отправляет в пиксель Meta по стадиям сделок (Лид → Оплачено → Отправлено). По ним Meta ставит ярлыки в переписках Direct и учится находить платящих клиентов.", "Це події, які CRM відправляє в піксель Meta за стадіями угод. За ними Meta ставить ярлики в Direct і вчиться знаходити платників.")}
     </div>

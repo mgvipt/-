@@ -2909,6 +2909,47 @@ class MetaPixelEventsView(APIView):
             d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
         except ValueError:
             return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
+        # ── Пиксель САЙТА (лендинг): статистика событий из Graph API ──
+        if (request.query_params.get("pixel") or "").lower() == "site":
+            import json as _json, os as _os, urllib.request as _ur, time as _time
+            from datetime import datetime as _dt2, time as _t2
+            from django.core.cache import cache as _cache
+            SITE_PIXEL = _os.environ.get("META_SITE_PIXEL_ID", "27927667286854032")
+            ck = "px_site:%s:%s" % (d_from, d_to)
+            hit = _cache.get(ck)
+            if hit is not None:
+                return Response(hit)
+            st_ts = int(_dt2.combine(d_from, _t2.min).timestamp())
+            en_ts = int(_dt2.combine(d_to, _t2.max).timestamp())
+            tok = _os.environ.get("META_MARKETING_ACCESS_TOKEN", "").strip()
+            url = ("https://graph.facebook.com/v21.0/%s/stats?aggregation=event"
+                   "&start_time=%d&end_time=%d&access_token=%s" % (SITE_PIXEL, st_ts, en_ts, tok))
+            try:
+                raw = _json.loads(_ur.urlopen(url, timeout=25).read())
+            except Exception as exc:
+                return Response({"pixel": "site", "error": str(exc)[:200]})
+            by_ev, by_day = {}, {}
+            for bucket in raw.get("data", []):
+                day = str(bucket.get("start_time", ""))[:10]
+                for d in bucket.get("data", []):
+                    n = int(d.get("count") or 0)
+                    by_ev[d.get("value")] = by_ev.get(d.get("value"), 0) + n
+                    if day:
+                        row = by_day.setdefault(day, {"d": day, "total": 0})
+                        row["total"] += n
+            payload = {
+                "pixel": "site", "pixel_id": SITE_PIXEL, "pixel_name": "Пиксель Лендинг новый",
+                "from": d_from.isoformat(), "to": d_to.isoformat(),
+                "summary": {"total": sum(by_ev.values()),
+                            "pageviews": by_ev.get("PageView", 0),
+                            "types": len(by_ev)},
+                "by_event": sorted(({"event_name": k, "total": v} for k, v in by_ev.items()),
+                                   key=lambda x: -x["total"]),
+                "daily": sorted(by_day.values(), key=lambda x: x["d"]),
+            }
+            _cache.set(ck, payload, 300)
+            return Response(payload)
+
         qs = MetaConversionEvent.objects.filter(created_at__date__gte=d_from, created_at__date__lte=d_to)
 
         by_event = list(qs.values("event_name").annotate(
@@ -2935,7 +2976,7 @@ class MetaPixelEventsView(APIView):
                 "event": e.event_name, "status": e.status,
                 "contact": (str(e.contact) if e.contact_id else "—"),
                 "stage": (e.stage.name if e.stage_id else "—"),
-                "channel": p.get("messaging_channel") or ("сайт/CRM" if p.get("action_source") == "system_generated" else "—"),
+                "channel": p.get("messaging_channel") or ("CRM (без переписки)" if p.get("action_source") == "system_generated" else "—"),
                 "matched": bool((p.get("user_data") or {}).get("ig_sid") or (p.get("user_data") or {}).get("page_scoped_user_id")),
                 "object_type": e.source_type, "object_id": e.source_id,
             })
