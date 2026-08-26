@@ -230,8 +230,11 @@ class WebChatView(APIView):
         product = PRODUCTS.get(product_key)
         if product_key and not product:
             raise ValueError("Невідоме покриття")
+        submission_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(request.data.get("submission_id") or ""))[:80]
+        if not submission_id:
+            submission_id = secrets.token_urlsafe(24)
 
-        contact = Contact.objects.filter(phone__in=_phone_variants(phone)).order_by("id").first()
+        contact = Contact.objects.select_for_update().filter(phone__in=_phone_variants(phone)).order_by("id").first()
         if contact is None:
             contact = Contact.objects.create(first_name=name or "Клієнт із сайту", phone=phone, source="site", channels=[preferred] if preferred != "phone" else [])
         else:
@@ -275,39 +278,39 @@ class WebChatView(APIView):
             "preferred_channel": preferred,
             "utm": {str(k)[:40]: str(v)[:300] for k, v in analytics.items()},
             "conversation_id": conv.id,
+            "submission_id": submission_id,
         }
-        deal = Deal.objects.filter(contact=contact, funnel=funnel).exclude(stage__is_lost=True).order_by("-created_at").first()
-        if deal is None:
+        deal = Deal.objects.filter(
+            contact=contact, funnel=funnel, qualification__submission_id=submission_id,
+        ).order_by("-created_at").first()
+        duplicate = deal is not None
+        if not duplicate:
             deal = Deal.objects.create(
                 title="Заявка %s · %s" % (LANDING_ID, name or phone),
                 contact=contact, funnel=funnel, stage=stage, source="site", amount=low,
                 qualification=qualification, is_seen=False,
             )
-        else:
-            deal.amount = low
-            deal.qualification = {**(deal.qualification or {}), **qualification}
-            deal.is_seen = False
-            deal.save(update_fields=["amount", "qualification", "is_seen", "updated_at"])
-        color_note = ""
-        if product_key == "luna" and qualification["velvet_color"]:
-            color_note = "; колір: %s (%s)" % (
-                qualification["velvet_color"], qualification["velvet_formula"] or "формула не вказана"
+            color_note = ""
+            if product_key == "luna" and qualification["velvet_color"]:
+                color_note = "; колір: %s (%s)" % (
+                    qualification["velvet_color"], qualification["velvet_formula"] or "формула не вказана"
+                )
+            note = (
+                "Нова заявка #%s з лендингу: %s; площа: %s м²; попередній матеріал: %s–%s грн; "
+                "мінімальне замовлення: тест-набір %s грн; бажаний зв’язок: %s%s."
+                % (deal.id, product["label"] if product else "ще не обрано", area or "не вказано", low, high, TEST_KIT_MINIMUM, preferred, color_note)
             )
-        note = (
-            "Заявка з лендингу: %s; площа: %s м²; попередній матеріал: %s–%s грн; "
-            "мінімальне замовлення: тест-набір %s грн; бажаний зв’язок: %s%s."
-            % (product["label"] if product else "ще не обрано", area or "не вказано", low, high, TEST_KIT_MINIMUM, preferred, color_note)
-        )
-        Message.objects.create(conversation=conv, direction="out", internal=True, text=note, sender_name="Лендинг")
-        if not conv.messages.filter(external_id="web-contact:%s" % deal.id).exists():
-            Message.objects.create(
-                conversation=conv, direction="out",
-                text="Контакт збережено — менеджер бачить цей діалог у CRM і продовжить тут або у вибраному месенджері.",
-                external_id="web-contact:%s" % deal.id, sender_name="Юля · Wallcov",
-            )
+            Message.objects.create(conversation=conv, direction="out", internal=True, text=note, sender_name="Лендинг")
+            if not conv.messages.filter(external_id__startswith="web-contact:").exists():
+                Message.objects.create(
+                    conversation=conv, direction="out",
+                    text="Контакт збережено — менеджер бачить цей діалог у CRM і продовжить тут або у вибраному месенджері.",
+                    external_id="web-contact:%s" % deal.id, sender_name="Юля · Wallcov",
+                )
         return Response({
             "ok": True,
             "deal_id": deal.id,
+            "duplicate": duplicate,
             "estimate_from": float(low),
             "estimate_to": float(high),
             "minimum_order": float(TEST_KIT_MINIMUM),

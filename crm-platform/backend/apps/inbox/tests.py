@@ -62,13 +62,48 @@ class WebChatLandingTests(TestCase):
             "action": "lead", "token": started.json()["token"], "name": "Тест",
             "phone": "0970000011", "preferred": "telegram", "consent": True,
             "room": "bedroom", "area": 1, "product": "mermi", "analytics": {"utm_source": "test"},
+            "submission_id": "calculation-1",
         })
         self.assertEqual(lead.status_code, 200)
         deal = Deal.objects.get(pk=lead.json()["deal_id"])
         self.assertEqual(str(deal.amount), "220.00")
         self.assertEqual(deal.qualification["product"], "Шовк · Мерми")
         self.assertEqual(deal.qualification["minimum_order"], "220.00")
+        self.assertEqual(deal.qualification["submission_id"], "calculation-1")
         self.assertEqual(deal.funnel, funnel)
+
+    def test_each_calculation_creates_a_new_deal_but_retry_is_idempotent(self):
+        from apps.crm.models import Deal, Funnel, Stage
+        funnel = Funnel.objects.create(name="Лендинг · wallcovdliastin.com.ua")
+        Stage.objects.create(funnel=funnel, name="Новая заявка", order=0)
+        started = self._post({"action": "start", "visitor_id": "visitor-multiple-calculations"})
+        base = {
+            "action": "lead", "token": started.json()["token"], "name": "Тест",
+            "phone": "0970000012", "preferred": "viber", "consent": True,
+            "room": "Вітальня", "area": 20, "product": "luna",
+            "velvet_color": "LK03-5 · Сірі · Насичений", "velvet_formula": "LK03-5",
+        }
+
+        first = self._post({**base, "submission_id": "calculation-a"})
+        retry = self._post({**base, "submission_id": "calculation-a"})
+        second = self._post({**base, "submission_id": "calculation-b", "velvet_formula": "LK03-2"})
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.json()["deal_id"], retry.json()["deal_id"])
+        self.assertTrue(retry.json()["duplicate"])
+        self.assertNotEqual(first.json()["deal_id"], second.json()["deal_id"])
+        self.assertFalse(second.json()["duplicate"])
+        self.assertEqual(Deal.objects.filter(funnel=funnel).count(), 2)
+        self.assertEqual(Deal.objects.filter(funnel=funnel).values("contact_id").distinct().count(), 1)
+        self.assertSetEqual(
+            set(Deal.objects.filter(funnel=funnel).values_list("qualification__submission_id", flat=True)),
+            {"calculation-a", "calculation-b"},
+        )
+        conv = Conversation.objects.get(pk=started.json()["conversation_id"])
+        self.assertEqual(conv.messages.filter(external_id__startswith="web-contact:").count(), 1)
+        self.assertEqual(conv.messages.filter(internal=True).count(), 2)
 
     def test_unknown_origin_is_rejected(self):
         response = self.client.post(
