@@ -2478,6 +2478,7 @@ function DebtCard({ row, cats, dirs, arts, accs2, t, onClose, onSaved }: any) {
     counterparty: row?.counterparty || "", category: row?.category || "", account: row?.account || "",
     fin_direction: row?.fin_direction || "", fin_article: row?.fin_article || "", channel: row?.channel || "",
     deal: row?.deal || "", comment: row?.comment || "",
+    contact: row?.contact || 0, contact_name: row?.contact_name || "", deal_title: row?.deal_title || "",
   }));
   const [busy, setBusy] = useState(false);
   const inp: any = { height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 9px", fontSize: 13, background: "#fff" };
@@ -2487,7 +2488,8 @@ function DebtCard({ row, cats, dirs, arts, accs2, t, onClose, onSaved }: any) {
     if (!f.amount || !f.due_date) { alert(t("Сумма и срок обязательны", "Сума і строк обовʼязкові")); return; }
     setBusy(true);
     const body: any = { ...f, amount: Number(String(f.amount).replace(",", ".")) };
-    ["category", "account", "fin_direction", "fin_article", "deal"].forEach((k) => { body[k] = f[k] ? Number(f[k]) : null; });
+    ["category", "account", "fin_direction", "fin_article", "deal", "contact"].forEach((k) => { body[k] = f[k] ? Number(f[k]) : null; });
+    delete body.contact_name; delete body.deal_title;   // це підписи для показу, не поля моделі
     try {
       if (row?.id) await api.patch(`/api/planned-payments/${row.id}/`, body);
       else await api.post("/api/planned-payments/", body);
@@ -2540,8 +2542,17 @@ function DebtCard({ row, cats, dirs, arts, accs2, t, onClose, onSaved }: any) {
             </select></Fld>
           <Fld><div style={lab}>{t("Канал", "Канал")}</div>
             <input value={f.channel} onChange={(e) => setF({ ...f, channel: e.target.value })} placeholder="instagram / tiktok / offline…" style={{ ...inp, width: "100%" }} /></Fld>
-          <Fld><div style={lab}>{t("Угода (№)", "Угода (№)")}</div>
-            <input type="number" value={f.deal} onChange={(e) => setF({ ...f, deal: e.target.value })} placeholder="65496" style={{ ...inp, width: "100%" }} /></Fld>
+        </div>
+        {/* ── ЗЕРКАЛЬНО З ЖУРНАЛУ: сделка + клієнт-обʼєкт з пошуком і переходом ── */}
+        <div style={{ marginTop: 12 }}>
+          <div style={lab} title={t("Привязать к сделке — найди по номеру или названию","Привʼязати до сделки — знайди за номером або назвою")}>{t("Сделка (№ или название)", "Угода (№ або назва)")}</div>
+          <DealPick value={Number(f.deal) || 0} label={f.deal_title} contact={Number(f.contact) || 0} onPick={(did: number, dt: string) => setF({ ...f, deal: did, deal_title: dt })} />
+          {f.deal ? <span onClick={() => window.location.assign(`/deals/${f.deal}`)} style={{ fontSize: 12, color: "#1d4ed8", cursor: "pointer" }}>↗ {t("Открыть сделку", "Відкрити угоду")}</span> : null}
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <div style={lab} title={t("Клиент CRM, к которому относятся эти деньги (объект). Контрагент может быть мастером/магазином, а деньги считаются по этому клиенту.","Клієнт CRM, якого стосуються ці гроші (обʼєкт). Контрагент може бути майстром/магазином, а гроші рахуються по цьому клієнту.")}>{t("Клиент (объект)", "Клієнт (обʼєкт)")}</div>
+          <ClientPick value={Number(f.contact) || 0} label={f.contact_name} placeholder={t("начни вводить имя или телефон…", "почни вводити імʼя або телефон…")} onPick={(cid: number, nm: string) => setF({ ...f, contact: cid, contact_name: nm })} />
+          {f.contact ? <span onClick={() => window.location.assign(`/clients/${f.contact}`)} style={{ fontSize: 12, color: "#1d4ed8", cursor: "pointer" }}>↗ {t("Открыть клиента", "Відкрити клієнта")}</span> : null}
         </div>
         <div style={{ marginTop: 12 }}>
           <div style={lab}>{t("Комментарий", "Коментар")}</div>
