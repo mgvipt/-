@@ -3754,6 +3754,13 @@ class MetaMarketingView(APIView):
             "daily": daily_rows,
             "outbox": outbox,
             "recent": recent,
+            "attribution_coverage": {
+                "messenger_leads": len([x for x in all_leads
+                                        if (x.source or "") in ("instagram", "facebook")
+                                        and date_from <= local_day(x.created_at) <= date_to]),
+                "tagged_leads": len([x for x in leads
+                                     if date_from <= local_day(x.created_at) <= date_to]),
+            },
             "unavailable_until_insights_sync": [] if latest_ads_sync else [
                 "spend", "impressions", "reach", "cpm", "ctr", "video_views",
             ],
