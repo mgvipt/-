@@ -86,6 +86,26 @@ services:
     depends_on: [db]
     restart: unless-stopped
 
+  # Persistent, isolated Meta session. The noVNC port stays on localhost and
+  # is used only for Oleg's one-time Ads Manager login through an SSH tunnel.
+  meta-report-browser:
+    image: selenium/standalone-chrome@sha256:cd778b6f38d99d1e14a05a767f576aff2face98d5202a2192d857614c265ec4d
+    shm_size: 2gb
+    volumes:
+      - meta_report_browser_profile:/home/seluser/.config/google-chrome
+      - meta_report_downloads:/reports
+    ports: ["127.0.0.1:7900:7900"]
+    restart: unless-stopped
+
+  meta-paid-follows-sync:
+    build: { context: ./backend }
+    command: python manage.py meta_paid_follows_sync --watch --interval 600
+    environment: *crm-environment
+    volumes:
+      - meta_report_downloads:/reports
+    depends_on: [db, meta-report-browser]
+    restart: unless-stopped
+
   caddy:
     build: { context: ., dockerfile: deploy/Dockerfile.caddy }
     environment:
@@ -97,3 +117,5 @@ services:
 
 volumes:
   pgdata:
+  meta_report_browser_profile:
+  meta_report_downloads:

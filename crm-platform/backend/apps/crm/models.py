@@ -380,6 +380,40 @@ class MetaAdDailyStat(models.Model):
         return f"{self.date} · {self.level} · {self.object_id}"
 
 
+class MetaPaidFollowStat(models.Model):
+    """Платні підписки Instagram із експортованого звіту Ads Manager.
+
+    Marketing API не віддає цю метрику. CRM читає саме плановий XLSX-звіт
+    Meta, тому тут зберігається тільки розріз, який фактично відображений у
+    кабінеті: день → кампанія → група → оголошення.
+    """
+
+    date = models.DateField(db_index=True)
+    campaign_name = models.CharField(max_length=255, blank=True, default="")
+    adset_name = models.CharField(max_length=255, blank=True, default="")
+    ad_name = models.CharField(max_length=255, blank=True, default="")
+    follows = models.PositiveIntegerField(default=0)
+    report_uid = models.CharField(max_length=64, blank=True, default="")
+    synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-date", "campaign_name", "adset_name", "ad_name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["date", "campaign_name", "adset_name", "ad_name"],
+                name="uniq_meta_paid_follow_daily_ad",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["date", "campaign_name"], name="crm_meta_follow_campaign_day"),
+            models.Index(fields=["date", "adset_name"], name="crm_meta_follow_adset_day"),
+            models.Index(fields=["date", "ad_name"], name="crm_meta_follow_ad_day"),
+        ]
+
+    def __str__(self):
+        return f"{self.date} · {self.ad_name or self.adset_name or self.campaign_name} · {self.follows}"
+
+
 class MetaAccountDailyStat(models.Model):
     """Щоденний зріз професійного Instagram-акаунта.
 

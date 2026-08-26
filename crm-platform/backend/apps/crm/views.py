@@ -2808,6 +2808,11 @@ class MetaSyncNowView(APIView):
                     sync_account(since, until)
                 else:
                     sync_all(since, until)
+                    # The daily XLSX is independent from Marketing API. A
+                    # manual refresh checks for a newly delivered Meta email
+                    # as well; scheduled import continues every 10 minutes.
+                    from apps.integrations.meta_paid_follows import import_reports
+                    import_reports()
             except Exception:
                 pass
             finally:
@@ -3091,7 +3096,10 @@ class MetaMarketingView(APIView):
         from django.utils import timezone
         from django.utils.dateparse import parse_date
         from .meta_conversions import event_name_for_stage, has_verified_meta_attribution, normalized_meta_attribution
-        from .models import MetaAccountDailyStat, MetaAdDailyStat, MetaContentStat, MetaConversionEvent
+        from .models import (
+            MetaAccountDailyStat, MetaAdDailyStat, MetaContentStat,
+            MetaConversionEvent, MetaPaidFollowStat,
+        )
 
         from django.core.cache import cache as _cache
         user = request.user
@@ -3221,6 +3229,9 @@ class MetaMarketingView(APIView):
         account_daily = list(MetaAdDailyStat.objects.filter(
             date__gte=date_from, date__lte=date_to, level="account",
         ).order_by("date", "id"))
+        paid_follow_rows = list(MetaPaidFollowStat.objects.filter(
+            date__gte=date_from, date__lte=date_to,
+        ).order_by("date", "id"))
 
         def metric_bucket():
             return {
@@ -3229,6 +3240,7 @@ class MetaMarketingView(APIView):
                 "outbound_clicks": 0, "messages_started": 0, "meta_leads": 0,
                 "purchases": 0, "video_views": 0, "crm_leads": set(),
                 "crm_deals": set(), "crm_won": set(), "crm_revenue": 0.0,
+                "instagram_follows": 0,
             }
 
         def group_ad_rows(field):
@@ -3263,6 +3275,41 @@ class MetaMarketingView(APIView):
         campaign_stats = group_ad_rows("campaign_id")
         adset_stats = group_ad_rows("adset_id")
         ad_stats = group_ad_rows("ad_id")
+
+        def _meta_label(value):
+            return "".join(ch for ch in (value or "").casefold() if ch.isalnum())
+
+        def _follow_target(grouped, row, label_field, context):
+            label = row.get(label_field) or ""
+            if not label:
+                return None
+            wanted = _meta_label(label)
+            for target in grouped.values():
+                if _meta_label(target.get(label_field) or target.get("name") or "") == wanted:
+                    return target
+            # A finished/archived ad may not be present in the API's recent
+            # seven-day Insights window. Keep the email row visible instead of
+            # hiding its subscriptions just because the ad is no longer active.
+            key = "email:" + wanted
+            target = {"id": key, **metric_bucket(), **context}
+            target["name"] = label
+            grouped[key] = target
+            return target
+
+        for follow in paid_follow_rows:
+            source = {
+                "campaign_name": follow.campaign_name,
+                "adset_name": follow.adset_name,
+                "ad_name": follow.ad_name,
+            }
+            for grouped, label_field, context in (
+                (campaign_stats, "campaign_name", {"campaign_name": follow.campaign_name}),
+                (adset_stats, "adset_name", source),
+                (ad_stats, "ad_name", source),
+            ):
+                target = _follow_target(grouped, source, label_field, context)
+                if target is not None:
+                    target["instagram_follows"] += follow.follows
         ad_hierarchy = {
             key: (row.get("campaign_id") or "", row.get("adset_id") or "")
             for key, row in ad_stats.items()
@@ -3303,6 +3350,10 @@ class MetaMarketingView(APIView):
                 row["cost_per_message"] = round(row["spend"] / row["messages_started"], 2) if row["messages_started"] else None
                 row["cost_per_meta_lead"] = round(row["spend"] / row["meta_leads"], 2) if row["meta_leads"] else None
                 row["cost_per_crm_lead"] = round(row["spend"] / row["crm_leads"], 2) if row["crm_leads"] else None
+                row["cost_per_instagram_follow"] = (
+                    round(row["spend"] / row["instagram_follows"], 2)
+                    if row["instagram_follows"] else None
+                )
                 result.append(row)
             return sorted(result, key=lambda row: (-row["spend"], row["name"]))
 
@@ -3329,6 +3380,13 @@ class MetaMarketingView(APIView):
         paid_summary["cpm"] = round(paid_summary["spend"] / paid_summary["impressions"] * 1000, 2) if paid_summary["impressions"] else None
         paid_summary["cost_per_message"] = round(paid_summary["spend"] / paid_summary["messages_started"], 2) if paid_summary["messages_started"] else None
         paid_summary["cost_per_meta_lead"] = round(paid_summary["spend"] / paid_summary["meta_leads"], 2) if paid_summary["meta_leads"] else None
+        detail_follow_rows = [row for row in paid_follow_rows if row.ad_name]
+        summary_follow_rows = detail_follow_rows or [row for row in paid_follow_rows if row.adset_name] or paid_follow_rows
+        paid_summary["instagram_follows"] = sum(row.follows for row in summary_follow_rows)
+        paid_summary["cost_per_instagram_follow"] = (
+            round(paid_summary["spend"] / paid_summary["instagram_follows"], 2)
+            if paid_summary["instagram_follows"] else None
+        )
 
         account_map = {}
         for row in account_daily:
@@ -3770,6 +3828,13 @@ class MetaMarketingView(APIView):
                 row.followers_gained for row in account_daily_stats
                 if row.followers_gained is not None
             ),
+            "paid_from_ads": paid_summary["instagram_follows"],
+            "paid_report_rows": len(summary_follow_rows),
+            "organic_other": (
+                sum(row.followers_gained for row in account_daily_stats if row.followers_gained is not None)
+                - paid_summary["instagram_follows"]
+                if account_daily_stats and summary_follow_rows else None
+            ),
             "daily": [{"date": r.date.isoformat(), "total": r.followers_total, "gained": r.followers_gained} for r in account_daily_stats],
         }
 
@@ -3806,6 +3871,7 @@ class MetaMarketingView(APIView):
         latest_ads_sync = MetaAdDailyStat.objects.aggregate(value=Max("synced_at"))["value"]
         latest_content_sync = MetaContentStat.objects.aggregate(value=Max("synced_at"))["value"]
         latest_account_sync = MetaAccountDailyStat.objects.aggregate(value=Max("synced_at"))["value"]
+        latest_paid_follows_sync = MetaPaidFollowStat.objects.aggregate(value=Max("synced_at"))["value"]
         meta_origin_leads = [item for item in all_leads if is_meta_origin(item)]
         meta_origin_deals = [item for item in all_deals if is_meta_origin(item)]
         payload = {
@@ -3820,6 +3886,7 @@ class MetaMarketingView(APIView):
                 "latest_ads_sync": latest_ads_sync,
                 "latest_content_sync": latest_content_sync,
                 "latest_account_sync": latest_account_sync,
+                "latest_paid_follows_sync": latest_paid_follows_sync,
                 "available_from": "2026-06-16",
             },
             "summary": {

@@ -10,7 +10,7 @@ from apps.finance.models import Account, Transaction
 
 from .meta_marketing import _action_map, _date_chunks, _nbu_rate, _pick, sync_account
 from .models import (
-    Contact, Deal, Funnel, Lead, MetaAccountDailyStat, MetaAdDailyStat,
+    Contact, Deal, Funnel, Lead, MetaAccountDailyStat, MetaAdDailyStat, MetaPaidFollowStat,
     MetaContentStat, Payment, Stage,
 )
 
@@ -36,6 +36,10 @@ class MetaMarketingAnalyticsTests(TransactionTestCase):
             adset_id="adset-1", adset_name="Test adset", ad_id="ad-1", ad_name="Test creative",
             thumbnail_url="https://example.com/ad.jpg", **common,
         )
+        MetaPaidFollowStat.objects.create(
+            date=date(2026, 8, 20), campaign_name="Test campaign", adset_name="Test adset",
+            ad_name="Test creative", follows=7, report_uid="100",
+        )
         MetaContentStat.objects.create(
             ig_account_id="ig-1", media_id="media-1", caption="Organic post",
             media_type="IMAGE", media_product_type="FEED",
@@ -48,7 +52,10 @@ class MetaMarketingAnalyticsTests(TransactionTestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["paid"]["summary"]["spend"], 12.5)
+        self.assertEqual(body["paid"]["summary"]["instagram_follows"], 7)
+        self.assertEqual(body["paid"]["summary"]["cost_per_instagram_follow"], round(12.5 / 7, 2))
         self.assertEqual(body["paid"]["ads"][0]["ad_id"], "ad-1")
+        self.assertEqual(body["paid"]["ads"][0]["instagram_follows"], 7)
         self.assertEqual(body["organic"]["content"][0]["media_id"], "media-1")
         self.assertEqual(body["organic"]["content"][0]["follows"], 6)
         self.assertNotIn("caption", body["paid"]["summary"])
