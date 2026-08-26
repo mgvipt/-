@@ -108,7 +108,7 @@ function ResizableTable({ headers, rows, empty, minWidth, storageKey, tips }: { 
 }
 
 const CONNECTED_FROM = "2026-06-16";
-const TAB_KEYS = ["overview", "profitability", "ads", "creatives", "content", "funnel", "forms", "sources"] as const;
+const TAB_KEYS = ["overview", "profitability", "ads", "creatives", "content", "funnel", "pixel", "forms", "sources"] as const;
 type Tab = typeof TAB_KEYS[number];
 type AdLevel = "campaigns" | "adsets" | "ads";
 
@@ -300,6 +300,79 @@ function MetaSettingsModal({ onClose }: { onClose: () => void }) {
     </div>, document.body);
 }
 
+/* ─── События · Пиксель: что CRM отправила в Meta (статусы переписок) ─── */
+function PixelEventsTab({ from, to }: { from: string; to: string }) {
+  const { t } = useLang();
+  const [d, setD] = useState<any>(null);
+  useEffect(() => { api.get<any>(`/api/meta-marketing/pixel-events/?from=${from}&to=${to}`).then(setD).catch(() => setD({ error: true })); }, [from, to]);
+  if (!d) return <div className="muted" style={{ padding: 20 }}>…</div>;
+  if (d.error) return <div className="muted" style={{ padding: 20 }}>{t("Не удалось загрузить", "Не вдалося завантажити")}</div>;
+  const sm = d.summary || {};
+  const EV_LABEL: any = {
+    LeadSubmitted: t("Лид (заявка)", "Лід (заявка)"), QualifiedLead: t("Квалифицированный лид", "Кваліфікований лід"),
+    ViewContent: t("Просмотр предложения (КП)", "Перегляд пропозиції (КП)"), InitiateCheckout: t("Договорились об оплате", "Домовились про оплату"),
+    Purchase: t("Оплачено", "Оплачено"), OrderCreated: t("Размещен заказ", "Розміщено замовлення"),
+    OrderShipped: t("Отправлено", "Відправлено"), OrderDelivered: t("Доставлено", "Доставлено"),
+    OrderCanceled: t("Отменено", "Скасовано"), Lead: t("Лид (старый формат)", "Лід (старий формат)"),
+    Contact: t("Контакт (старый формат)", "Контакт (старий формат)"),
+  };
+  const maxDay = Math.max(...(d.daily || []).map((x: any) => (x.sent || 0) + (x.pending || 0) + (x.failed || 0)), 1);
+  const cardsRow: any = { display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 14 };
+  const card = (label: string, value: ReactNode, color = "#0f172a", hint?: string) => (
+    <div className="panel" style={{ padding: "9px 11px", minWidth: 124, flex: "1 1 124px", margin: 0 }}>
+      <div className="muted" style={{ fontSize: 10.5, lineHeight: 1.25 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color, marginTop: 2 }}>{value}</div>
+      {hint && <div className="muted" style={{ fontSize: 9.5, marginTop: 3, lineHeight: 1.25 }}>{hint}</div>}
+    </div>
+  );
+  const table = (headers: string[], rows: ReactNode[][], empty: string, minWidth = 760) => (
+    <ResizableTable headers={headers} rows={rows} empty={empty} minWidth={minWidth}
+      storageKey={"mm_px_" + headers.length} />
+  );
+  return (<>
+    <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
+      {t("Это события, которые CRM отправляет в пиксель Meta по стадиям сделок (Лид → Оплачено → Отправлено). По ним Meta ставит ярлыки в переписках Direct и учится находить платящих клиентов.", "Це події, які CRM відправляє в піксель Meta за стадіями угод. За ними Meta ставить ярлики в Direct і вчиться знаходити платників.")}
+    </div>
+    <div style={cardsRow}>
+      {card(t("Всего событий", "Всього подій"), count(sm.total), "#0f172a")}
+      {card(t("Отправлено ✅", "Відправлено ✅"), count(sm.sent), "#15803d")}
+      {card(t("В очереди", "У черзі"), count(sm.pending), sm.pending ? "#a16207" : "#94a3b8", t("уйдут автоматически (раз в 10 минут)", "підуть автоматично"))}
+      {card(t("Ошибки", "Помилки"), count(sm.failed), sm.failed ? "#dc2626" : "#94a3b8")}
+      {card(t("С привязкой к переписке", "З привʼязкою до листування"), `${sm.bm_pct}%`, "#7c3aed", t("сопоставлены по номеру переписки (IGSID) — Meta их точно узнаёт", "зіставлені за номером листування (IGSID)"))}
+    </div>
+    <SectionTitle title={t("По типам событий", "За типами подій")} note={t("Что именно отправили за период", "Що саме відправили за період")} />
+    {table([t("Событие", "Подія"), t("Что означает", "Що означає"), t("Всего", "Всього"), t("Отправлено", "Відправлено"), t("В очереди", "У черзі"), t("Ошибки", "Помилки")],
+      (d.by_event || []).map((r: any) => [
+        r.event_name, EV_LABEL[r.event_name] || "—", r.total,
+        <b style={{ color: "#15803d" }}>{r.sent}</b>, r.pending || 0,
+        r.failed ? <b style={{ color: "#dc2626" }}>{r.failed}</b> : 0,
+      ]), t("За период событий нет", "За період подій немає"), 700)}
+    <SectionTitle title={t("По дням", "По днях")} note={t("Сколько событий уходило в Meta каждый день", "Скільки подій йшло в Meta щодня")} />
+    <div className="panel" style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 120, overflowX: "auto" }}>
+        {(d.daily || []).map((x: any) => {
+          const tot = (x.sent || 0) + (x.pending || 0) + (x.failed || 0);
+          return <div key={x.d} style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 30, flex: 1 }} title={`${x.d}: ✅${x.sent} ⏳${x.pending || 0} ❌${x.failed || 0}`}>
+            <span style={{ fontSize: 10, color: "#334155", fontWeight: 700 }}>{tot}</span>
+            <div style={{ width: "70%", maxWidth: 24, height: Math.max((tot / maxDay) * 84, 2), background: (x.failed || 0) > 0 ? "linear-gradient(180deg,#dc2626,#15803d)" : "#15803d", borderRadius: "4px 4px 0 0" }} />
+            <span style={{ fontSize: 9, color: "#94a3b8", whiteSpace: "nowrap" }}>{String(x.d).slice(5)}</span>
+          </div>;
+        })}
+      </div>
+    </div>
+    <SectionTitle title={t("Последние события", "Останні події")} note={t("Кто, какая стадия, ушло ли", "Хто, яка стадія, чи пішло")} />
+    {table([t("Когда", "Коли"), t("Клиент", "Клієнт"), t("Стадия CRM", "Стадія CRM"), t("Событие", "Подія"), t("Канал", "Канал"), t("Статус", "Статус")],
+      (d.recent || []).map((r: any) => [
+        r.at,
+        <a href={`/${r.object_type === "lead" ? "leads" : "deals"}/${r.object_id}`} style={{ color: "#2563eb", textDecoration: "none" }}>{r.contact}</a>,
+        r.stage, EV_LABEL[r.event] || r.event, r.channel,
+        r.status === "sent" ? <b style={{ color: "#15803d" }}>✅ {t("отправлено", "відправлено")}</b>
+          : r.status === "pending" ? <span style={{ color: "#a16207" }}>⏳ {t("в очереди", "у черзі")}</span>
+          : <b style={{ color: "#dc2626" }}>❌ {r.status}</b>,
+      ]), t("Событий нет", "Подій немає"), 820)}
+  </>);
+}
+
 export default function MetaMarketing() {
   const { t } = useLang();
   const today = useMemo(() => new Date(), []);
@@ -357,6 +430,7 @@ export default function MetaMarketing() {
     { key: "creatives", ru: "Креативы", ua: "Креативи" },
     { key: "content", ru: "Органика · SMM", ua: "Органіка · SMM" },
     { key: "funnel", ru: "Дашборды", ua: "Дашборди" },
+    { key: "pixel", ru: "События · Пиксель", ua: "Події · Піксель" },
     { key: "forms", ru: "Лид-формы", ua: "Лід-форми" },
     { key: "sources", ru: "Источники", ua: "Джерела" },
   ];
@@ -613,6 +687,8 @@ export default function MetaMarketing() {
             (data.stages || []).map((r: any) => [r.funnel, r.stage, r.meta_event, r.leads, r.deals]),
             t("Нет карточек с точным рекламным ID", "Немає карток із точним рекламним ID"))}
         </>}
+
+        {tab === "pixel" && <PixelEventsTab from={from} to={to} />}
 
         {tab === "forms" && table([
           t("Тип", "Тип"), t("Лиды", "Ліди"), t("Сделки", "Угоди"), t("Назначение", "Призначення")],

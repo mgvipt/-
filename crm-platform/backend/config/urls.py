@@ -160,6 +160,7 @@ urlpatterns = [
     path("api/meta-marketing/sync-now/", crm_views.MetaSyncNowView.as_view()),
     path("api/meta-marketing/sync-status/", crm_views.MetaSyncStatusView.as_view()),
     path("api/meta-marketing/settings/", crm_views.MetaSyncSettingsView.as_view()),
+    path("api/meta-marketing/pixel-events/", crm_views.MetaPixelEventsView.as_view()),
     path("api/analytics/manager-dialogs/", crm_views.ManagerDialogsView.as_view()),
     path("api/meta-marketing/", crm_views.MetaMarketingView.as_view()),
     path("api/analytics/inventory/", wh_views.InventoryAnalyticsView.as_view()),

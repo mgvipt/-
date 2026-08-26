@@ -2891,6 +2891,65 @@ class MetaSyncSettingsView(APIView):
         return Response(self._data(st, request))
 
 
+class MetaPixelEventsView(APIView):
+    """Аналитика по пикселю: какие события CRM отправила в Meta (статусы лидов из
+    переписок). Считает по нашей очереди MetaConversionEvent — то, что реально
+    ушло/уходит в «Пиксель лендинга WallCov»."""
+    permission_classes = [HasPermCode]
+    required_perm = "marketing.view"
+
+    def get(self, request):
+        from datetime import date, timedelta, datetime as _dt
+        from django.db.models import Count, Q
+        from django.utils import timezone as _tz
+        from .models import MetaConversionEvent
+        frm = request.query_params.get("from"); to = request.query_params.get("to")
+        try:
+            d_from = _dt.strptime(frm, "%Y-%m-%d").date() if frm else (date.today() - timedelta(days=29))
+            d_to = _dt.strptime(to, "%Y-%m-%d").date() if to else date.today()
+        except ValueError:
+            return Response({"detail": "bad dates"}, status=status.HTTP_400_BAD_REQUEST)
+        qs = MetaConversionEvent.objects.filter(created_at__date__gte=d_from, created_at__date__lte=d_to)
+
+        by_event = list(qs.values("event_name").annotate(
+            total=Count("id"),
+            sent=Count("id", filter=Q(status="sent")),
+            pending=Count("id", filter=Q(status="pending")),
+            failed=Count("id", filter=Q(status="failed")),
+        ).order_by("-total"))
+
+        by_day = {}
+        for r in qs.values("created_at__date", "status").annotate(n=Count("id")):
+            d = r["created_at__date"].isoformat()
+            row = by_day.setdefault(d, {"d": d, "sent": 0, "pending": 0, "failed": 0, "skipped": 0})
+            row[r["status"]] = row.get(r["status"], 0) + r["n"]
+        daily = sorted(by_day.values(), key=lambda x: x["d"])
+
+        bm = qs.filter(payload__action_source="business_messaging").count()
+        total = qs.count()
+        recent = []
+        for e in qs.select_related("contact", "stage").order_by("-created_at")[:40]:
+            p = e.payload or {}
+            recent.append({
+                "at": _tz.localtime(e.created_at).strftime("%d.%m %H:%M"),
+                "event": e.event_name, "status": e.status,
+                "contact": (str(e.contact) if e.contact_id else "—"),
+                "stage": (e.stage.name if e.stage_id else "—"),
+                "channel": p.get("messaging_channel") or ("сайт/CRM" if p.get("action_source") == "system_generated" else "—"),
+                "matched": bool((p.get("user_data") or {}).get("ig_sid") or (p.get("user_data") or {}).get("page_scoped_user_id")),
+                "object_type": e.source_type, "object_id": e.source_id,
+            })
+        return Response({
+            "from": d_from.isoformat(), "to": d_to.isoformat(),
+            "summary": {"total": total, "sent": qs.filter(status="sent").count(),
+                        "pending": qs.filter(status="pending").count(),
+                        "failed": qs.filter(status="failed").count(),
+                        "business_messaging": bm,
+                        "bm_pct": (round(bm * 100.0 / total) if total else 0)},
+            "by_event": by_event, "daily": daily, "recent": recent,
+        })
+
+
 class MetaFunnelView(APIView):
     """Сквозная воронка Меты: Показы → Клики → Начатые диалоги → Рекламные лиды CRM
     → Тест-набор → Оплата. Показы/клики/диалоги — из MetaAdDailyStat (level account).
