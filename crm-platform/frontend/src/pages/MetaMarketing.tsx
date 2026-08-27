@@ -287,10 +287,9 @@ function MetaSettingsModal({ onClose }: { onClose: () => void }) {
     setSaving(true);
     api.put<any>("/api/meta-marketing/settings/", st).then((r) => { setSt(r); setSavedMsg(t("Сохранено ✓", "Збережено ✓")); setTimeout(() => setSavedMsg(""), 2500); }).catch(() => setSavedMsg(t("Ошибка", "Помилка"))).finally(() => setSaving(false));
   };
-  const toggleRoleMkt = (role: any) => {
+  const togglePerm = (role: any, code: string) => {
     const perms: string[] = role.permissions || [];
-    const has = perms.includes("marketing.view");
-    const next = has ? perms.filter((p) => p !== "marketing.view") : [...perms, "marketing.view"];
+    const next = perms.includes(code) ? perms.filter((p) => p !== code) : [...perms, code];
     setRoles((rs) => rs.map((x) => x.id === role.id ? { ...x, permissions: next } : x));
     api.patch<any>(`/api/roles/${role.id}/`, { permissions: next }).catch(() => {});
   };
@@ -317,12 +316,31 @@ function MetaSettingsModal({ onClose }: { onClose: () => void }) {
         <div style={{ borderTop: "1px solid #eef2f7", margin: "18px 0" }} />
         <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>{t("Доступ к маркетингу (по ролям)", "Доступ до маркетингу (за ролями)")}</div>
         <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>{t("Кому видна аналитика маркетинга. Отметь роль — она получит доступ.", "Кому видно аналітику маркетингу.")}</div>
-        {roles.length === 0 ? <div className="muted">…</div> : roles.map((role) => (
-          <label key={role.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 13 }}>
-            <input type="checkbox" checked={(role.permissions || []).includes("marketing.view")} disabled={!canEdit} onChange={() => toggleRoleMkt(role)} />
-            {role.name}
-          </label>
-        ))}
+        {roles.length === 0 ? <div className="muted">…</div> : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", fontSize: 12.5, minWidth: 480 }}>
+              <thead><tr>
+                <th style={{ textAlign: "left", padding: "4px 8px" }}>{t("Роль", "Роль")}</th>
+                <th style={{ padding: "4px 8px" }}>{t("Доступ", "Доступ")}</th>
+                <th style={{ padding: "4px 8px" }}>{t("Обзор", "Огляд")}</th>
+                <th style={{ padding: "4px 8px" }}>Meta</th>
+                <th style={{ padding: "4px 8px" }}>{t("Сайт", "Сайт")}</th>
+                <th style={{ padding: "4px 8px" }}>{t("Офлайн", "Офлайн")}</th>
+              </tr></thead>
+              <tbody>{roles.map((role) => (
+                <tr key={role.id} style={{ borderTop: "1px solid #eef2f7" }}>
+                  <td style={{ padding: "4px 8px", fontWeight: 600 }}>{role.name}</td>
+                  {["marketing.view", "marketing.section.overview", "marketing.section.meta", "marketing.section.site", "marketing.section.offline"].map((code) => (
+                    <td key={code} style={{ padding: "4px 8px", textAlign: "center" }}>
+                      <input type="checkbox" checked={(role.permissions || []).includes(code)} disabled={!canEdit} onChange={() => togglePerm(role, code)} />
+                    </td>
+                  ))}
+                </tr>
+              ))}</tbody>
+            </table>
+            <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{t("«Доступ» — вход в маркетинг. Разделы: если не отмечен НИ ОДИН — роль видит все разделы; отметьте нужные — увидит только их.", "«Доступ» — вхід у маркетинг. Розділи: якщо не позначено ЖОДНОГО — роль бачить усі розділи; позначте потрібні — бачитиме лише їх.")}</div>
+          </div>
+        )}
         <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>{t("Индивидуально по сотрудникам — Настройки → Пользователи.", "Індивідуально — Налаштування → Користувачі.")}</div>
       </div>
     );
@@ -588,7 +606,6 @@ export default function MetaMarketing() {
     { key: "creatives", ru: "Креативы", ua: "Креативи" },
     { key: "content", ru: "Органика · SMM", ua: "Органіка · SMM" },
     { key: "funnel", ru: "Дашборды", ua: "Дашборди" },
-    { key: "pixel", ru: "События · Пиксель", ua: "Події · Піксель" },
     { key: "forms", ru: "Лид-формы", ua: "Лід-форми" },
     { key: "sources", ru: "Источники", ua: "Джерела" },
   ];
@@ -712,12 +729,29 @@ export default function MetaMarketing() {
       {showSettings && <MetaSettingsModal onClose={() => setShowSettings(false)} />}
       {syncing && <div className="note" style={{ marginBottom: 10, background: "#eff6ff", color: "#1e40af" }}>{t("Тянем свежие данные из Meta (Ads + Instagram + подписчики). Это ~1-3 минуты — таблицы обновятся автоматически, можно продолжать работать.", "Тягнемо свіжі дані з Meta. Це ~1-3 хвилини — таблиці оновляться автоматично.")}</div>}
 
-      <nav style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+        {([
+          { key: "overview", icon: "chart", ru: "Обзор (все каналы)", ua: "Огляд (усі канали)" },
+          { key: "meta", icon: "instagram", ru: "Meta · соцсети", ua: "Meta · соцмережі" },
+          { key: "site", icon: "🌐", ru: "Сайт · Google", ua: "Сайт · Google" },
+          { key: "offline", icon: "building", ru: "Офлайн · салон", ua: "Офлайн · салон" },
+        ] as any[]).filter((s) => allowedSections.includes(s.key)).map((s) => (
+          <button key={s.key} onClick={() => pickSection(s.key)}
+            className={"rd-pill" + (section === s.key ? " active" : "")}
+            style={{ fontWeight: 700, fontSize: 13.5, padding: "10px 16px", display: "inline-flex", alignItems: "center", gap: 7 }}>
+            <Icon n={s.icon} size={16} /> {t(s.ru, s.ua)}
+          </button>
+        ))}
+      </div>
+      {section === "meta" && <nav style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 14 }}>
         {tabs.map((item) => <button key={item.key} className={"rd-pill" + (tab === item.key ? " active" : "")} onClick={() => setTab(item.key)}>{t(item.ru, item.ua)}</button>)}
-      </nav>
+      </nav>}
       {error && <div className="note" style={{ color: "#b91c1c" }}>{error}</div>}
+      {section === "overview" && data && <AllChannelsOverview data={data} offlineData={offlineData} t={t} go={pickSection} />}
+      {section === "site" && data && <SiteSection data={data} from={from} to={to} t={t} />}
+      {section === "offline" && <OfflineSection data={offlineData} t={t} />}
       {loading && !data ? <div className="muted" style={{ padding: 30 }}>Загрузка…</div> : data && <>
-        {tab === "overview" && <>
+        {section === "meta" && tab === "overview" && <>
           {syncWarning}
           {/* ── Ряд 1 (макет 27.08): Instagram Аудитория + Ads Manager Эффективность ── */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(430px,100%), 1fr))", gap: 20, marginBottom: 20 }}>
@@ -847,11 +881,6 @@ export default function MetaMarketing() {
                 <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Другие каналы", "Інші канали")} <InfoI tip={t("Telegram, Viber, WhatsApp, веб-чат — не соцсети", "Telegram, Viber, WhatsApp, веб-чат — не соцмережі")} /></div>
                 <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-text2)", marginBottom: 6 }}>{count(dialogues.other)}</div>
                 <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>{t("всего диалогов", "всього діалогів")}: {count(dialogues.total)}</div>
-              </div>
-              <div className="rd-tile" style={{ background: "rgba(255,251,235,.7)", borderColor: "#fde68a" }}>
-                <div style={{ fontSize: 12, color: "var(--rd-warning)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Офлайн-воронки", "Офлайн-воронки")} <InfoI tip={t("Салон: «1.С/Покрытия для стен» и «4.С/Алмазное + Вентиляция». Обращения и продажи за период — отдельно от соцсетей", "Салон: «1.С/Покриття для стін» і «4.С/Алмазне + Вентиляція». Звернення і продажі за період — окремо від соцмереж")} /></div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-warning)", marginBottom: 6 }}>{count(offline.deals_created)}</div>
-                <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>{t("продаж", "продажів")}: {count(offline.sales)} · {moneyUah(offline.revenue)}</div>
               </div>
             </div>
           </div>
@@ -1027,7 +1056,7 @@ export default function MetaMarketing() {
           <DailySalesTable rows={dailyFiltered} t={t} />
         </>}
 
-        {tab === "profitability" && <>
+        {section === "meta" && tab === "profitability" && <>
           <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
             <b>{t("Что входит в расчёт:", "Що входить у розрахунок:")}</b> {t(
               "Все оплаченные продажи из воронок «21 Основний продукт» и «22 Тестовий набір». Из остальных воронок — только продажи с подтверждённым ID Meta. Выручка считается по фактически оплаченным платежам. Повторная выручка — часть общей выручки, её не нужно прибавлять второй раз. Себестоимость считается по товарам сделки, рекламный расход переводится в гривну по официальному курсу НБУ за каждый день.",
@@ -1054,7 +1083,7 @@ export default function MetaMarketing() {
           {dailyTable}
         </>}
 
-        {tab === "ads" && <>
+        {section === "meta" && tab === "ads" && <>
           {syncWarning}
           <div style={{ display: "flex", gap: 7, marginBottom: 10, flexWrap: "wrap" }}>
             {(["campaigns", "adsets", "ads"] as AdLevel[]).map((key) => <button key={key} className={adLevel === key ? "btn btn-primary" : "btn btn-light"} onClick={() => setAdLevel(key)}>
@@ -1083,7 +1112,7 @@ export default function MetaMarketing() {
           </div>
         </>}
 
-        {tab === "creatives" && <>
+        {section === "meta" && tab === "creatives" && <>
           {syncWarning}
           {(() => { const c = data.attribution_coverage || {}; const m = c.messenger_leads || 0; const g = c.tagged_leads || 0;
             const pct = m ? Math.round(g * 100 / m) : 0;
@@ -1113,7 +1142,7 @@ export default function MetaMarketing() {
           </div>
         </>}
 
-        {tab === "content" && <>
+        {section === "meta" && tab === "content" && <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 10, marginBottom: 12 }}>
             {card(t("Подписчиков сейчас", "Підписників зараз"), count(followers.current_total), "#7c3aed")}
             {card(t("+ за период", "+ за період"), ((followers.period_gained || 0) >= 0 ? "+" : "") + count(followers.period_gained), (followers.period_gained || 0) >= 0 ? "#15803d" : "#dc2626")}
@@ -1150,7 +1179,7 @@ export default function MetaMarketing() {
           {orgView === "account" && <AccountGrowth followers={followers} organic={organic} t={t} />}
         </>}
 
-        {tab === "funnel" && <>
+        {section === "meta" && tab === "funnel" && <>
           <MetaConeFunnel from={from} to={to} />
           <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
             {t("Первая таблица показывает все реальные обращения Instagram и Facebook в CRM. «Точный ID рекламы» означает, что Meta передала идентификатор объявления/кампании/формы. «Не определено» — обращение пришло из Meta, но конкретное объявление технически не было передано.", "Перша таблиця показує всі реальні звернення Instagram і Facebook у CRM. «Точний ID реклами» означає, що Meta передала ідентифікатор оголошення/кампанії/форми. «Не визначено» — звернення прийшло з Meta, але конкретне оголошення технічно не було передано.")}
@@ -1168,14 +1197,14 @@ export default function MetaMarketing() {
             t("Нет карточек с точным рекламным ID", "Немає карток із точним рекламним ID"))}
         </>}
 
-        {tab === "pixel" && <PixelEventsTab from={from} to={to} />}
+        {section === "meta" && tab === "pixel" && <PixelEventsTab from={from} to={to} />}
 
-        {tab === "forms" && table([
+        {section === "meta" && tab === "forms" && table([
           t("Тип", "Тип"), t("Лиды", "Ліди"), t("Сделки", "Угоди"), t("Назначение", "Призначення")],
           (data.by_source_kind || []).filter((r: any) => r.source_kind === "lead_form").map((r: any) => [t("Лид-форма Meta", "Лід-форма Meta"), r.leads, r.deals, t("Автоматическое создание лида", "Автоматичне створення ліда")]),
           t("За период лид-формы не зафиксированы", "За період лід-форми не зафіксовані"))}
 
-        {tab === "sources" && <>
+        {section === "meta" && tab === "sources" && <>
           <div className="note" style={{ marginBottom: 12 }}>{t("Метка «Реклама подтверждена» ставится только когда в карточке есть стабильный ID объявления, кампании или лид-формы Meta. Если обращение пришло из Instagram/Facebook, но Meta не передала ID, CRM показывает «Источник объявления не определён» и не приписывает его конкретной рекламе.", "Позначка «Реклама підтверджена» ставиться лише коли в картці є стабільний ID оголошення, кампанії або лід-форми Meta. Якщо звернення прийшло з Instagram/Facebook, але Meta не передала ID, CRM показує «Джерело оголошення не визначене» і не приписує його конкретній рекламі.")}</div>
           {table([t("Платформа", "Платформа"), t("Лиды", "Ліди"), t("Сделки", "Угоди"), t("Успешные", "Успішні"), t("Выручка", "Виручка")],
             (data.by_platform || []).map((r: any) => [r.platform, r.leads, r.deals, r.won, moneyUah(r.revenue)]),
@@ -1212,6 +1241,150 @@ export default function MetaMarketing() {
 
 function SectionTitle({ title, note }: { title: string; note: string }) {
   return <div style={{ margin: "14px 0 8px" }}><b style={{ fontSize: 16 }}>{title}</b><span className="muted" style={{ fontSize: 11, marginLeft: 8 }}>{note}</span></div>;
+}
+
+/* ── Розділ «Офлайн · салон»: воронки «1.С/Покриття для стін» + «4.С/Алмазне +
+   Вентиляція». Дані: /api/marketing/offline/ ── */
+function OfflineSection({ data, t }: { data: any; t: (ru: string, ua: string) => string }) {
+  if (!data) return <div className="muted" style={{ padding: 30 }}>{t("Загрузка…", "Завантаження…")}</div>;
+  const total = data.total || {};
+  const thS: any = { textAlign: "left", padding: "8px 10px", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--rd-text2)", borderBottom: "1px solid var(--rd-border)", background: "var(--rd-muted)", whiteSpace: "normal", lineHeight: 1.25 } as any;
+  const tdS: any = { padding: "8px 10px", fontSize: 13, borderBottom: "1px solid var(--rd-border)" };
+  return <>
+    <div className="rd-card" style={{ marginBottom: 20 }}>
+      <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}><Icon n="building" size={18} style={{ color: "var(--rd-warning)" }} /> {t("Офлайн вместе", "Офлайн разом")}</b>
+      <div style={{ fontSize: 12, color: "var(--rd-text2)", margin: "2px 0 16px" }}>{t("Обе салонные воронки за выбранный период", "Обидві салонні воронки за вибраний період")}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 14 }}>
+        <div className="rd-tile"><div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Обращений", "Звернень")} <InfoI tip={t("Создано сделок в офлайн-воронках за период", "Створено угод в офлайн-воронках за період")} /></div><div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-text)" }}>{count(total.deals_created)}</div></div>
+        <div className="rd-tile"><div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Продаж", "Продажів")} <InfoI tip={t("Сделок, получивших оплату за период", "Угод, що отримали оплату за період")} /></div><div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-success)" }}>{count(total.sales)}</div></div>
+        <div className="rd-tile"><div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Выручка", "Виручка")} <InfoI tip={t("Оплаты по офлайн-сделкам за период", "Оплати по офлайн-угодах за період")} /></div><div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-success)" }}>{moneyUah(total.revenue)}</div></div>
+        <div className="rd-tile"><div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Средний чек", "Середній чек")} <InfoI tip={t("выручка ÷ продажи", "виручка ÷ продажі")} /></div><div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-purple)" }}>{total.avg_check ? moneyUah(total.avg_check) : "—"}</div></div>
+      </div>
+    </div>
+    {(data.funnels || []).map((f: any) => (
+      <div key={f.key} className="rd-card" style={{ marginBottom: 20 }}>
+        <b style={{ fontSize: 16, color: "var(--rd-text)" }}>{f.name}</b>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 14, margin: "14px 0 18px" }}>
+          <div className="rd-tile"><div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Обращений", "Звернень")}</div><div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-text)" }}>{count(f.deals_created)}</div></div>
+          <div className="rd-tile"><div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Продаж", "Продажів")}</div><div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-success)" }}>{count(f.sales)}</div></div>
+          <div className="rd-tile"><div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Конверсия", "Конверсія")} <InfoI tip={t("продажи ÷ обращения периода. Салонная сделка может оплатиться позже — тогда процент выше 100 не ошибка", "продажі ÷ звернення періоду. Салонна угода може оплатитись пізніше — тоді відсоток вище 100 не помилка")} /></div><div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-primary)" }}>{f.conversion_pct == null ? "—" : f.conversion_pct + "%"}</div></div>
+          <div className="rd-tile"><div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Выручка", "Виручка")}</div><div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-success)" }}>{moneyUah(f.revenue)}</div></div>
+          <div className="rd-tile"><div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Средний чек", "Середній чек")}</div><div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-purple)" }}>{f.avg_check ? moneyUah(f.avg_check) : "—"}</div></div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(420px,100%), 1fr))", gap: 20 }}>
+          <div>
+            <div style={{ fontSize: 11, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 700, marginBottom: 6 }}>{t("По менеджерам", "По менеджерах")}</div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 380 }}>
+                <thead><tr><th style={thS}>{t("Менеджер", "Менеджер")}</th><th style={thS}>{t("Обращ.", "Зверн.")}</th><th style={thS}>{t("Продажи", "Продажі")}</th><th style={thS}>{t("Выручка", "Виручка")}</th><th style={thS}>{t("Чек", "Чек")}</th></tr></thead>
+                <tbody>{(f.by_manager || []).map((m: any) => (
+                  <tr key={m.manager}><td style={{ ...tdS, fontWeight: 600 }}>{m.manager}</td><td style={tdS}>{count(m.deals_created)}</td><td style={tdS}>{count(m.sales)}</td><td style={tdS}>{moneyUah(m.revenue)}</td><td style={tdS}>{m.avg_check ? moneyUah(m.avg_check) : "—"}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 700, marginBottom: 6 }}>{t("По дням", "По днях")}</div>
+            <div style={{ overflowX: "auto", maxHeight: 320, overflowY: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 340 }}>
+                <thead><tr><th style={thS}>{t("Дата", "Дата")}</th><th style={thS}>{t("Обращ.", "Зверн.")}</th><th style={thS}>{t("Продажи", "Продажі")}</th><th style={thS}>{t("Выручка", "Виручка")}</th></tr></thead>
+                <tbody>{(f.by_day || []).map((d: any) => (
+                  <tr key={d.date}><td style={{ ...tdS, fontWeight: 600 }}>{d.date}</td><td style={tdS}>{count(d.deals_created)}</td><td style={tdS}>{count(d.sales)}</td><td style={tdS}>{moneyUah(d.revenue)}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    ))}
+  </>;
+}
+
+/* ── Розділ «Сайт · Google»: лендінг-кампанії Meta + події пікселя + GA4 ── */
+function SiteSection({ data, from, to, t }: { data: any; from: string; to: string; t: (ru: string, ua: string) => string }) {
+  const campaigns = ((data?.paid || {}).campaigns || []).filter((c: any) =>
+    /ленд|quiz|сайт|site/i.test(c.name || "") || c.objective === "OUTCOME_SALES");
+  const quiz = Object.entries(((data?.paid || {}).summary || {}).results_by_type || {})
+    .filter(([k]) => (k as string).includes("fb_pixel_custom"));
+  const thS: any = { textAlign: "left", padding: "8px 10px", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--rd-text2)", borderBottom: "1px solid var(--rd-border)", background: "var(--rd-muted)", whiteSpace: "normal", lineHeight: 1.25 };
+  const tdS: any = { padding: "8px 10px", fontSize: 13, borderBottom: "1px solid var(--rd-border)" };
+  return <>
+    <div className="rd-card" style={{ marginBottom: 20 }}>
+      <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}><Icon n="🌐" size={18} style={{ color: "var(--rd-primary)" }} /> {t("Реклама на сайт (Meta)", "Реклама на сайт (Meta)")}</b>
+      <div style={{ fontSize: 12, color: "var(--rd-text2)", margin: "2px 0 14px" }}>{t("Кампании, ведущие на лендинги/сайт. Сайт может продвигаться и в Meta, и в Google — здесь обе стороны в одном разделе.", "Кампанії, що ведуть на лендінги/сайт. Сайт може просуватись і в Meta, і в Google — тут обидві сторони в одному розділі.")}</div>
+      {quiz.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14, marginBottom: 14 }}>
+        {quiz.map(([k, v]: any) => (
+          <div key={k} className="rd-tile"><div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{resultLabel(k, t)} <InfoI tip={t("Событие пикселя с лендинга — «Результат» по цели кампании из Ads Manager", "Подія пікселя з лендінгу — «Результат» за ціллю кампанії з Ads Manager")} /></div><div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-purple)" }}>{count(v)}</div></div>
+        ))}
+      </div>}
+      {campaigns.length ? <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
+          <thead><tr><th style={thS}>{t("Кампания", "Кампанія")}</th><th style={thS}>{t("Расход", "Витрати")}</th><th style={thS}>{t("Клики", "Кліки")}</th><th style={thS}>{t("Результат", "Результат")}</th><th style={thS}>{t("Лиды CRM", "Ліди CRM")}</th></tr></thead>
+          <tbody>{campaigns.map((c: any) => (
+            <tr key={c.id}><td style={{ ...tdS, fontWeight: 600 }}>{c.name}</td><td style={tdS}>{moneyUsd(c.spend)}</td><td style={tdS}>{count(c.clicks)}</td><td style={tdS}>{c.result_value ? count(c.result_value) + " · " + resultLabel(c.result_indicator, t) : "—"}</td><td style={tdS}>{count(c.crm_leads)}</td></tr>
+          ))}</tbody>
+        </table>
+      </div> : <div className="muted" style={{ fontSize: 13 }}>{t("За период кампаний на сайт не было", "За період кампаній на сайт не було")}</div>}
+    </div>
+    <div className="rd-card" style={{ marginBottom: 20 }}>
+      <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}><Icon n="chart" size={18} style={{ color: "var(--rd-warning)" }} /> Google Analytics</b>
+      <div style={{ fontSize: 13, color: "var(--rd-text2)", margin: "6px 0 10px", lineHeight: 1.6 }}>
+        {t("Ещё не подключено. Даст: посещаемость сайта, источники переходов (Google/Meta/прямые), поведение и конверсии — рядом с рекламой.",
+           "Ще не підключено. Дасть: відвідуваність сайту, джерела переходів (Google/Meta/прямі), поведінку та конверсії — поруч із рекламою.")}
+      </div>
+      <div className="note" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+        {t("Чтобы подключить: скажите Claude «подключаем GA4» — он создаст сервисный ключ и проведёт по шагам (добавить доступ Viewer в аккаунте GA4, ~10 минут, один раз).",
+           "Щоб підключити: скажіть Claude «підключаємо GA4» — він створить сервісний ключ і проведе по кроках (додати доступ Viewer в акаунті GA4, ~10 хвилин, один раз).")}
+      </div>
+    </div>
+    <PixelEventsTab from={from} to={to} />
+  </>;
+}
+
+/* ── Зведений «Огляд (усі канали)» для власника: все канали поруч, детально — у розділах ── */
+function AllChannelsOverview({ data, offlineData, t, go }: { data: any; offlineData: any; t: (ru: string, ua: string) => string; go: (s: string) => void }) {
+  const ps = (data?.paid || {}).summary || {};
+  const pf = data?.profitability || {};
+  const dlg = data?.dialogues || {};
+  const fol = data?.followers || {};
+  const off = offlineData?.total || data?.offline || {};
+  const quizTotal = Object.entries(ps.results_by_type || {}).filter(([k]) => (k as string).includes("fb_pixel_custom")).reduce((a: number, [, v]: any) => a + Number(v || 0), 0);
+  const Card = ({ icon, iconColor, title, sec, tiles }: any) => (
+    <div className="rd-card">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}><Icon n={icon} size={18} style={{ color: iconColor }} /> {title}</b>
+        {sec && <button className="rd-pill" style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => go(sec)}>{t("Открыть раздел", "Відкрити розділ")} →</button>}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12 }}>
+        {tiles.map((x: any) => (
+          <div key={x.l} className="rd-tile">
+            <div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{x.l} {x.tip && <InfoI tip={x.tip} />}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: x.c || "var(--rd-text)" }}>{x.v}</div>
+            {x.sub && <div style={{ fontSize: 11, color: "var(--rd-text2)", marginTop: 4 }}>{x.sub}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+  return <div style={{ display: "flex", flexDirection: "column", gap: 20, marginBottom: 8 }}>
+    <Card icon="instagram" iconColor="var(--rd-purple)" title={t("Meta · соцсети", "Meta · соцмережі")} sec="meta" tiles={[
+      { l: t("Расход", "Витрати"), v: moneyUsd(ps.spend), c: "var(--rd-error)", sub: ps.spend_uah != null ? moneyUah(ps.spend_uah) + (ps.avg_fx ? " · " + ps.avg_fx : "") : undefined, tip: t("Реклама Ads Manager за период; гривна по курсу НБУ", "Реклама Ads Manager за період; гривня за курсом НБУ") },
+      { l: t("Диалоги соцсетей", "Діалоги соцмереж"), v: count(dlg.social_total), c: "var(--rd-success)", sub: dlg.cost_social_all?.uah != null ? t("цена ", "ціна ") + moneyUah(dlg.cost_social_all.uah) : undefined, tip: t("Instagram + Facebook + TikTok, органика и платные вместе", "Instagram + Facebook + TikTok, органіка і платні разом") },
+      { l: t("Подписчики", "Підписники"), v: (fol.period_gained >= 0 ? "+" : "") + count(fol.period_gained), c: "var(--rd-purple)", sub: fol.paid_from_ads != null && fol.paid_report_rows ? t("с рекламы ", "з реклами ") + count(fol.paid_from_ads) : undefined, tip: t("Прирост за период; сколько из них привела реклама", "Приріст за період; скільки з них привела реклама") },
+      { l: t("Продажи", "Продажі"), v: count(pf.sales), c: "var(--rd-success)", sub: moneyUah(pf.revenue), tip: t("Оплаченные продажи онлайн-воронок за период", "Оплачені продажі онлайн-воронок за період") },
+      { l: "ROAS", v: pf.blended_roas == null ? "—" : pf.blended_roas + "×", c: "var(--rd-primary)", tip: t("вся выручка ÷ реклама", "вся виручка ÷ реклама") },
+    ]} />
+    <Card icon="🌐" iconColor="var(--rd-primary)" title={t("Сайт · Google", "Сайт · Google")} sec="site" tiles={[
+      { l: t("Заявки с лендинга", "Заявки з лендінгу"), v: count(quizTotal), c: "var(--rd-purple)", tip: t("События пикселя (QuizStart и другие) по цели кампаний на сайт", "Події пікселя (QuizStart та інші) за ціллю кампаній на сайт") },
+      { l: "Google Analytics", v: "—", sub: t("не подключено", "не підключено"), tip: t("Подключим — появится посещаемость и источники", "Підключимо — зʼявиться відвідуваність і джерела") },
+    ]} />
+    <Card icon="building" iconColor="var(--rd-warning)" title={t("Офлайн · салон", "Офлайн · салон")} sec="offline" tiles={[
+      { l: t("Обращений", "Звернень"), v: count(off.deals_created), tip: t("Сделки в салонных воронках за период", "Угоди в салонних воронках за період") },
+      { l: t("Продаж", "Продажів"), v: count(off.sales), c: "var(--rd-success)" },
+      { l: t("Выручка", "Виручка"), v: moneyUah(off.revenue), c: "var(--rd-success)" },
+      { l: t("Средний чек", "Середній чек"), v: off.avg_check ? moneyUah(off.avg_check) : "—", c: "var(--rd-purple)", tip: t("Салонный чек обычно сильно выше онлайнового", "Салонний чек зазвичай сильно вищий за онлайновий") },
+    ]} />
+  </div>;
 }
 
 function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string) => string }) {

@@ -2857,6 +2857,94 @@ class MetaSyncStatusView(APIView):
         })
 
 
+class MarketingOfflineView(APIView):
+    """Аналітика офлайн-воронок салону: «1.С/Покриття для стін» і «4.С/Алмазне +
+    Вентиляція». Окремо від Meta (запит Олега 27.08): звернення, продажі,
+    конверсія, чек, розрізи по менеджерах і по днях — щоб канал можна було
+    делегувати окремій людині."""
+    permission_classes = [HasPermCode]
+    required_perm = "marketing.view"
+
+    def get(self, request):
+        from django.utils.dateparse import parse_date
+        today = timezone.localdate()
+        date_from = parse_date(request.GET.get("from") or "") or (today - timedelta(days=29))
+        date_to = parse_date(request.GET.get("to") or "") or today
+        if date_from > date_to:
+            date_from, date_to = date_to, date_from
+
+        def local_day(moment):
+            return timezone.localtime(moment).date() if timezone.is_aware(moment) else moment.date()
+
+        funnel_defs = [
+            ("wallcov", "1.С/Покриття для стін",
+             Q(funnel__name__icontains="покрытия для стен") | Q(funnel__name__icontains="покриття для стін")),
+            ("almaz", "4.С/Алмазне + Вентиляція", Q(funnel__name__icontains="алмаз")),
+        ]
+        funnels_out = []
+        total = {"deals_created": 0, "sales": 0, "revenue": 0.0}
+        for key, label, cond in funnel_defs:
+            deals = list(
+                Deal.objects.filter(cond).filter(
+                    Q(created_at__date__gte=date_from, created_at__date__lte=date_to)
+                    | Q(payments__is_paid=True,
+                        payments__created_at__date__gte=date_from,
+                        payments__created_at__date__lte=date_to)
+                ).distinct().select_related("owner").prefetch_related("payments")
+            )
+            managers = {}
+            days = {}
+            created = 0
+            sale_ids = set()
+            revenue = Decimal("0")
+            for deal in deals:
+                owner = (str(deal.owner) if deal.owner_id else "—")
+                m = managers.setdefault(owner, {"manager": owner, "deals_created": 0,
+                                                "sales": set(), "revenue": Decimal("0")})
+                if date_from <= local_day(deal.created_at) <= date_to:
+                    created += 1
+                    m["deals_created"] += 1
+                    d = days.setdefault(local_day(deal.created_at).isoformat(),
+                                        {"deals_created": 0, "sales": set(), "revenue": Decimal("0")})
+                    d["deals_created"] += 1
+                for p in deal.payments.all():
+                    if p.is_paid and date_from <= local_day(p.created_at) <= date_to:
+                        revenue += p.amount
+                        sale_ids.add(deal.pk)
+                        m["sales"].add(deal.pk)
+                        m["revenue"] += p.amount
+                        d = days.setdefault(local_day(p.created_at).isoformat(),
+                                            {"deals_created": 0, "sales": set(), "revenue": Decimal("0")})
+                        d["sales"].add(deal.pk)
+                        d["revenue"] += p.amount
+            by_manager = sorted((
+                {"manager": m["manager"], "deals_created": m["deals_created"],
+                 "sales": len(m["sales"]), "revenue": round(float(m["revenue"]), 2),
+                 "avg_check": round(float(m["revenue"]) / len(m["sales"])) if m["sales"] else None}
+                for m in managers.values()
+            ), key=lambda r: -r["revenue"])
+            by_day = sorted((
+                {"date": day, "deals_created": v["deals_created"], "sales": len(v["sales"]),
+                 "revenue": round(float(v["revenue"]), 2)}
+                for day, v in days.items()
+            ), key=lambda r: r["date"], reverse=True)
+            funnels_out.append({
+                "key": key, "name": label,
+                "deals_created": created, "sales": len(sale_ids),
+                "revenue": round(float(revenue), 2),
+                "avg_check": round(float(revenue) / len(sale_ids)) if sale_ids else None,
+                "conversion_pct": round(len(sale_ids) * 100.0 / created, 1) if created else None,
+                "by_manager": by_manager, "by_day": by_day,
+            })
+            total["deals_created"] += created
+            total["sales"] += len(sale_ids)
+            total["revenue"] += round(float(revenue), 2)
+        total["revenue"] = round(total["revenue"], 2)
+        total["avg_check"] = round(total["revenue"] / total["sales"]) if total["sales"] else None
+        return Response({"from": date_from.isoformat(), "to": date_to.isoformat(),
+                         "funnels": funnels_out, "total": total})
+
+
 class MetaSyncSettingsView(APIView):
     """Настройки авто-обновления маркетинга: интервалы по источникам. Чтение —
     marketing.view; изменение — руководитель (roles.manage) или админ."""
@@ -4023,6 +4111,13 @@ class MetaMarketingView(APIView):
             "followers": followers,
             "dialogues": dialogues,
             "offline": offline,
+            # Розділи маркетингу, які бачить користувач: якщо секційних прав нема
+            # ЗОВСІМ — бачить усі (зворотна сумісність); інакше — лише зазначені.
+            "sections": (
+                [s for s in ("overview", "meta", "site", "offline")
+                 if request.user.has_perm_code("marketing.section." + s)]
+                or ["overview", "meta", "site", "offline"]
+            ),
             "profitability": profitability,
             "daily": daily_rows,
             "outbox": outbox,
