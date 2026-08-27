@@ -2866,7 +2866,10 @@ class MarketingOfflineView(APIView):
     required_perm = "marketing.view"
 
     def get(self, request):
+        from django.utils import timezone
         from django.utils.dateparse import parse_date
+        from datetime import timedelta
+        from decimal import Decimal
         today = timezone.localdate()
         date_from = parse_date(request.GET.get("from") or "") or (today - timedelta(days=29))
         date_to = parse_date(request.GET.get("to") or "") or today
