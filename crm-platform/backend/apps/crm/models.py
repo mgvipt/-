@@ -80,6 +80,16 @@ class Contact(models.Model):
     shared_with = models.ManyToManyField(
         settings.AUTH_USER_MODEL, blank=True, related_name="contacts_shared",
         help_text="Доступ к клиенту выдан этим менеджерам (шаринг). Свои клиенты видны и без этого.")
+
+    # ── Ручна поправка авансу (обʼєктні роботи/матеріали, не оформлені сделками) ──
+    # Формула авансу «заплатив − купив по сделках» не бачить робіт майстрів і закупок,
+    # оформлених поза сделками, тому дає завищений залишок. Поправка ставить реальну суму.
+    # Рухів грошей НЕ створює (26.08).
+    advance_adjust = models.DecimalField("Коригування авансу", max_digits=14, decimal_places=2, default=0)
+    advance_adjust_note = models.CharField("Причина коригування", max_length=200, blank=True, default="")
+    # ── Ручна поправка ВИТРАТ по клієнту (обʼєктні закупки/роботи, проведені поза журналом) ──
+    expense_adjust = models.DecimalField("Коригування витрат", max_digits=14, decimal_places=2, default=0)
+    expense_adjust_note = models.CharField("Причина коригування витрат", max_length=200, blank=True, default="")
     last_touch_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

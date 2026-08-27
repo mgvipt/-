@@ -141,7 +141,13 @@ class ContactViewSet(viewsets.ModelViewSet):
         # доступні кнопкою "З авансу клієнта"» (фантомний аванс 2,39 млн — аудит 18.08).
         # У списку операцій і в плитці «Дохід» byname-рядки ЛИШАЮТЬСЯ видимими.
         inc_linked = qs.filter(_linked, direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0
-        adv = _Dadv(str(inc_linked or 0)) - _pay_consumed   # АВАНС = деньги КЛИЕНТА (Заплатил − Купил); НАШИ затраты exp сюда НЕ входят (это маржа, не деньги клиента)
+        adv = _Dadv(str(inc_linked or 0)) - _pay_consumed   # АВАНС = деньги КЛИЕНТА (Заплатил − Купил); НАШІ затрати exp сюди НЕ входять (це маржа)
+        # ⭐ Ручна поправка авансу: обʼєктні роботи/матеріали часто НЕ оформлені сделками,
+        #   тому формула «заплатив − купив» показує більше, ніж є насправді. Поправка дає
+        #   поставити реальний залишок клієнта. Рухів грошей НЕ створює (26.08).
+        _adj = _Dadv(str(getattr(c, "advance_adjust", 0) or 0))
+        adv = adv + _adj
+        _exp_adj = _Dadv(str(getattr(c, "expense_adjust", 0) or 0))   # поправка витрат (обʼєктні закупки поза журналом)
         _ppq = _PP.objects.filter(status="planned").filter(_Qc(contact=c) | ((_Qc(is_internal=False) & _byname) if _byname is not None else _Qc(pk__in=[])))
         from django.db.models import F as _F
         debt = _ppq.filter(kind="payable").aggregate(s=_Sum(_F("amount") - _F("paid_amount")))["s"] or 0
@@ -262,16 +268,42 @@ class ContactViewSet(viewsets.ModelViewSet):
                        "due_date": p.due_date.isoformat() if p.due_date else None,
                        "deal": p.deal_id, "deal_title": (p.deal.title if p.deal_id else ""),
                        "comment": (p.comment or "")[:70]} for p in _all_pp]
+        # ── ТОВАРНИЙ КРЕДИТ: незакриті сделки клієнта — це теж «нам винні» ──
+        # Товар віддано, гроші не отримані. Раніше це було видно лише у блоці угод,
+        # тому плитка «Дебіторка» показувала 0, хоча борг є (Олег, 27.08).
+        # Не дублюємо: якщо на сделку вже є ЗАПЛАНОВАНА дебіторка у Дт/Кт — пропускаємо.
+        from django.db.models import Sum as _Sg
+        _pp_deals = set(_PP.objects.filter(contact=c, kind="receivable", status="planned")
+                        .exclude(deal__isnull=True).values_list("deal_id", flat=True))
+        _goods_credit = 0.0
+        for _d3 in (_Deal.objects.filter(contact=c).exclude(stage__is_won=True).exclude(stage__is_lost=True)
+                    .select_related("stage").annotate(_pd=_Sg("payments__amount", filter=_Qc(payments__is_paid=True)))):
+            if _d3.pk in _pp_deals:
+                continue
+            _rem = float(_d3.amount or 0) - float(_d3._pd or 0)
+            if _rem <= 0.5:
+                continue
+            _goods_credit += _rem
+            debts_list.append({
+                "id": None, "kind": "receivable", "amount": _rem, "counterparty": _cn(c),
+                "paid_amount": float(_d3._pd or 0), "remaining": _rem,
+                "status": "planned", "is_loan": False,
+                "due_date": (_d3.created_at.date().isoformat() if _d3.created_at else None),
+                "deal": _d3.pk, "deal_title": (_d3.title or "")[:60],
+                "source": "deal",   # віртуальний рядок зі сделки — кнопки «Оплачено» тут нема
+                "comment": ("Товар віддано, не оплачено · %s" % ((_d3.stage.name if _d3.stage_id else "")[:32])),
+            })
+        recv_sale = float(recv_sale or 0) + _goods_credit
         _uu = request.user
         _full = bool(_uu.is_superuser or (hasattr(_uu, "has_perm_code") and _uu.has_perm_code("client.finance.full")))
-        _resp = {"income": inc, "advance": adv, "debt": debt,
+        _resp = {"income": inc, "advance": adv, "advance_adjust": float(_adj), "advance_adjust_note": (getattr(c, "advance_adjust_note", "") or ""), "expense_adjust": float(_exp_adj), "expense_adjust_note": (getattr(c, "expense_adjust_note", "") or ""), "debt": debt,
                  "receivable": (recv_sale or 0) + (recv_loan or 0), "receivable_sale": recv_sale, "receivable_loan": recv_loan,
                  "count": qs.count(), "ops": ops, "debts_list": debts_list,
                  "commissions": float(_commissions), "can_full": _full,
                  "is_supplier": ("supplier" in (getattr(c, "kinds", None) or []))}
         if _full:
             # майстри показуємо ЛИШЕ якщо в сделках реально є послуги (planned_srv>0) — інакше блоку немає
-            _resp.update({"expense": exp, "revenue": float(_rev or 0), "cost_ext": float(_cext or 0),
+            _resp.update({"expense": (_Dadv(str(exp or 0)) + _exp_adj), "revenue": float(_rev or 0), "cost_ext": float(_cext or 0),
                           "cogs": float(_cogs), "profit": _profit,
                           "margin_pct": (round(_profit / float(_rev) * 100, 1) if _rev else 0),
                           "planned_srv": float(_planned_srv), "actual_srv": float(_actual_srv) if _planned_srv > 0 else 0.0,

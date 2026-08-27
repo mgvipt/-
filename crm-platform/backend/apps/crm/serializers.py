@@ -41,7 +41,7 @@ class ContactSerializer(serializers.ModelSerializer):
                   "email", "social_link", "messengers", "company", "channels", "loyalty_tag", "birthday",
                   "source", "address", "comment", "edrpou", "iban", "owner", "owner_name", "created_at",
                   "kinds", "gender", "monitor_docs", "doc_email", "default_purchase_category", "payment_purpose",
-                  "emails_extra", "phones_extra", "links_extra", "accounts", "monitor_emails", "meta_ad"]
+                  "emails_extra", "phones_extra", "links_extra", "accounts", "monitor_emails", "meta_ad", "advance_adjust", "advance_adjust_note", "expense_adjust", "expense_adjust_note"]
 
     def get_display_name(self, obj):
         return str(obj)
