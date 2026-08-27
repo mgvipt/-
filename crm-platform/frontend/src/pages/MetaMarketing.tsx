@@ -551,6 +551,11 @@ export default function MetaMarketing() {
   const [from, setFrom] = useState(CONNECTED_FROM);
   const [to, setTo] = useState(iso(today));
   const [tab, setTab] = useState<Tab>("overview");
+  // Розділи маркетингу (27.08): зведений огляд / Meta / Сайт·Google / Офлайн.
+  // Кожен розділ можна делегувати окремій людині (права marketing.section.*).
+  const [section, setSection] = useState<string>(() => { try { return localStorage.getItem("mm_section") || "overview"; } catch { return "overview"; } });
+  const pickSection = (key: string) => { setSection(key); try { localStorage.setItem("mm_section", key); } catch { /* */ } };
+  const [offlineData, setOfflineData] = useState<any>(null);
   const [adLevel, setAdLevel] = useState<AdLevel>("campaigns");
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState("");
@@ -618,6 +623,15 @@ export default function MetaMarketing() {
   const followers = data?.followers || {};
   const dialogues = data?.dialogues || {};
   const offline = data?.offline || {};
+  const allowedSections: string[] = data?.sections || ["overview", "meta", "site", "offline"];
+  useEffect(() => {
+    if (data && !allowedSections.includes(section)) pickSection(allowedSections[0] || "meta");
+  }, [data]);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (section === "offline" || section === "overview") {
+      api.get<any>(`/api/marketing/offline/?from=${from}&to=${to}`).then(setOfflineData).catch(() => {});
+    }
+  }, [section, from, to]);
   const orgAgg = {
     reach: organic.reduce((a: number, r: any) => a + (r.reach || 0), 0),
     er: (() => { const arr = organic.filter((r: any) => r.engagement_rate != null); return arr.length ? arr.reduce((a: number, r: any) => a + r.engagement_rate, 0) / arr.length : 0; })(),
@@ -691,7 +705,7 @@ export default function MetaMarketing() {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
             <span style={{ background: "var(--rd-primary)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4, letterSpacing: ".04em" }}>BETA</span>
-            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "var(--rd-text)" }}>{t("Маркетинг · Meta", "Маркетинг · Meta")}</h1>
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "var(--rd-text)" }}>{t("Маркетинг", "Маркетинг")}</h1>
           </div>
           <div style={{ fontSize: 13, color: "var(--rd-text2)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--rd-success)", display: "inline-block", flexShrink: 0 }} />
