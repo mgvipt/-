@@ -3411,6 +3411,10 @@ class MetaMarketingView(APIView):
             round(_spend_uah_follow_days / paid_summary["instagram_follows"], 2)
             if (paid_summary["instagram_follows"] and _spend_uah_follow_days) else None
         )
+        paid_summary["avg_fx"] = (
+            round(paid_summary["spend_uah"] / paid_summary["spend"], 2)
+            if (paid_summary["spend"] and paid_summary["spend_uah"]) else None
+        )
 
         account_map = {}
         for row in account_daily:
@@ -3619,8 +3623,11 @@ class MetaMarketingView(APIView):
             deal = sales_deals[deal_id]
             contact_id = deal.contact_id
             is_main_product = is_main_product_funnel(deal)
+            # Дозамовлення (parent_deal) — частина ТОГО Ж замовлення, а не
+            # повернення клієнта, тому повторним продажем його не рахуємо.
             repeat_deal[deal_id] = bool(
                 is_main_product and contact_id and contact_id in seen_main_product_contacts
+                and not deal.parent_deal_id
             )
             if is_main_product and contact_id:
                 seen_main_product_contacts.add(contact_id)
@@ -3843,6 +3850,76 @@ class MetaMarketingView(APIView):
             "marketing_profit": round(float(gross_profit) - spend_uah, 2) if spend_uah is not None else None,
             "romi": round((float(gross_profit) - spend_uah) / spend_uah * 100, 1) if spend_uah else None,
         }
+        # ── Діалоги за каналами: реклама йде лише на Instagram, але пишуть і з
+        #    Facebook/TikTok — Олег хоче бачити кожен канал окремо і три ціни
+        #    діалогу: лише Ads, всі IG (органіка+платні), всі соцмережі разом. ──
+        from apps.inbox.models import Conversation as _Conv
+        _conv_counts = defaultdict(int)
+        for (_kind,) in (_Conv.objects.filter(
+                created_at__date__gte=date_from, created_at__date__lte=date_to)
+                .values_list("channel__kind")):
+            _conv_counts[_kind or "other"] += 1
+        _dlg_ig = _conv_counts.get("instagram", 0)
+        _dlg_fb = _conv_counts.get("facebook", 0)
+        _dlg_tt = _conv_counts.get("tiktok", 0)
+        _dlg_social = _dlg_ig + _dlg_fb + _dlg_tt
+        _dlg_total = sum(_conv_counts.values())
+        _sp_usd = float(paid_summary["spend"] or 0)
+        _sp_uah = paid_summary.get("spend_uah")
+
+        def _dlg_cost(count):
+            return {
+                "usd": round(_sp_usd / count, 2) if (count and _sp_usd) else None,
+                "uah": round(float(_sp_uah) / count, 2) if (count and _sp_uah) else None,
+            }
+
+        dialogues = {
+            "ads": paid_summary["messages_started"],
+            "cost_ads": {
+                "usd": paid_summary.get("cost_per_message"),
+                "uah": (round(float(_sp_uah) / paid_summary["messages_started"], 2)
+                        if (paid_summary["messages_started"] and _sp_uah) else None),
+            },
+            "instagram": _dlg_ig, "facebook": _dlg_fb, "tiktok": _dlg_tt,
+            "social_total": _dlg_social,
+            "other": _dlg_total - _dlg_social, "total": _dlg_total,
+            "cost_ig_all": _dlg_cost(_dlg_ig),
+            "cost_social_all": _dlg_cost(_dlg_social),
+            "by_kind": dict(_conv_counts),
+        }
+
+        # ── Офлайн-воронки (салон): «1.С/Покрытия для стен» + «4.С/Алмазне +
+        #    Вентиляція» — окремо від соцмереж, як просив Олег. ──
+        _offline_q = (Q(funnel__name__icontains="покрытия для стен")
+                      | Q(funnel__name__icontains="покриття для стін")
+                      | Q(funnel__name__icontains="алмаз"))
+        _offline_deals = list(
+            scoped_deals_qs.filter(_offline_q).filter(
+                Q(created_at__date__gte=date_from, created_at__date__lte=date_to)
+                | Q(payments__is_paid=True,
+                    payments__created_at__date__gte=date_from,
+                    payments__created_at__date__lte=date_to)
+            ).distinct().prefetch_related("payments")
+        )
+        _off_created = sum(
+            1 for d in _offline_deals
+            if date_from <= local_day(d.created_at) <= date_to
+        )
+        _off_sale_ids = set()
+        _off_revenue = Decimal("0")
+        for d in _offline_deals:
+            for p in d.payments.all():
+                if p.is_paid and date_from <= local_day(p.created_at) <= date_to:
+                    _off_revenue += p.amount
+                    _off_sale_ids.add(d.pk)
+        offline = {
+            "deals_created": _off_created,
+            "sales": len(_off_sale_ids),
+            "revenue": round(float(_off_revenue), 2),
+            "avg_check": (round(float(_off_revenue) / len(_off_sale_ids))
+                          if _off_sale_ids else None),
+        }
+
         followers = {
             "username": current_account.username if current_account else "",
             "current_total": current_account.followers_total if current_account else None,
@@ -3944,6 +4021,8 @@ class MetaMarketingView(APIView):
             "stages": sorted(stages.values(), key=lambda x: (x["funnel"], x["stage"])),
             "all_meta_stages": sorted(all_meta_stages.values(), key=lambda x: (x["funnel"], x["stage"])),
             "followers": followers,
+            "dialogues": dialogues,
+            "offline": offline,
             "profitability": profitability,
             "daily": daily_rows,
             "outbox": outbox,

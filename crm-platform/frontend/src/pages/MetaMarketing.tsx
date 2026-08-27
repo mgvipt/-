@@ -135,7 +135,7 @@ function ResizableTable({ headers, rows, empty, minWidth, storageKey, tips }: { 
           <colgroup>{headers.map((_, i) => <col key={i} style={cw.widths[i] ? { width: cw.widths[i] } : undefined} />)}</colgroup>
           <thead style={{ position: "sticky", top: 0, zIndex: 3 }}><tr>{headers.map((h, i) => (
             <ResizableTh key={h + i} width={cw.widths[i]} onResize={(w) => cw.set(i, w)}
-              thStyle={{ ...th, whiteSpace: "normal", wordBreak: "break-word", verticalAlign: "bottom", background: "var(--rd-muted)" }}
+              thStyle={{ ...th, whiteSpace: "normal", verticalAlign: "bottom", background: "var(--rd-muted)", fontSize: 10.5, lineHeight: 1.25 }}
               label={tips && tips[i] ? <Tip text={tips[i]}>{h}<span style={{ opacity: .45, marginLeft: 3, fontSize: 10, fontWeight: 400 }}>ⓘ</span></Tip> : h} />
           ))}</tr></thead>
           <tbody>{rows.length ? rows.map((row, i) => <tr key={i}>{row.map((v, j) => <td key={j} style={td}>{v}</td>)}</tr>) :
@@ -599,6 +599,8 @@ export default function MetaMarketing() {
   const organic = data?.organic?.content || [];
   const profitability = data?.profitability || {};
   const followers = data?.followers || {};
+  const dialogues = data?.dialogues || {};
+  const offline = data?.offline || {};
   const orgAgg = {
     reach: organic.reduce((a: number, r: any) => a + (r.reach || 0), 0),
     er: (() => { const arr = organic.filter((r: any) => r.engagement_rate != null); return arr.length ? arr.reduce((a: number, r: any) => a + r.engagement_rate, 0) / arr.length : 0; })(),
@@ -806,6 +808,53 @@ export default function MetaMarketing() {
               </div>
             </div>
           </div>
+          {/* ── Діалоги за каналами (27.08): реклама йде лише на Instagram, тому
+              Facebook/TikTok — органіка; ціни діалогу три — лише Ads, всі IG,
+              всі соцмережі. Офлайн-воронки салону — окремо. ── */}
+          <div className="rd-card" style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+              <span style={{ width: 24, height: 24, background: "#ecfdf5", borderRadius: 4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Icon n="chat" size={14} style={{ color: "var(--rd-success)" }} /></span>
+              <b style={{ fontSize: 16, color: "var(--rd-text)" }}>{t("Диалоги по каналам", "Діалоги за каналами")}</b>
+            </div>
+            <div style={{ fontSize: 13, color: "var(--rd-text2)", marginBottom: 18 }}>{t("Новые переписки за период: сколько зашло и почём", "Нові переписки за період: скільки зайшло і почому")}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14 }}>
+              <div className="rd-tile" style={{ background: "rgba(239,246,255,.5)", borderColor: "#bfdbfe" }}>
+                <div style={{ fontSize: 12, color: "var(--rd-primary)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("С рекламы (Ads)", "З реклами (Ads)")} <InfoI tip={t("Начатые переписки по кабинету Meta: все, кто написал в течение 7 дней после клика по рекламе", "Розпочаті переписки за кабінетом Meta: всі, хто написав протягом 7 днів після кліку по рекламі")} /></div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-primary)", marginBottom: 6 }}>{count(dialogues.ads)}</div>
+                <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>{t("Цена", "Ціна")}: {dialogues.cost_ads?.usd != null ? moneyUsd(dialogues.cost_ads.usd) : "—"}{dialogues.cost_ads?.uah != null ? " / " + moneyUah(dialogues.cost_ads.uah) : ""}</div>
+              </div>
+              <div className="rd-tile">
+                <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Instagram все", "Instagram усі")} <InfoI tip={t("Все новые переписки Instagram в CRM за период: и с рекламы, и органика. Цена — весь расход рекламы ÷ все IG-диалоги", "Усі нові переписки Instagram у CRM за період: і з реклами, і органіка. Ціна — всі витрати реклами ÷ всі IG-діалоги")} /></div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-purple)", marginBottom: 6 }}>{count(dialogues.instagram)}</div>
+                <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>{t("Цена", "Ціна")}: {dialogues.cost_ig_all?.usd != null ? moneyUsd(dialogues.cost_ig_all.usd) : "—"}{dialogues.cost_ig_all?.uah != null ? " / " + moneyUah(dialogues.cost_ig_all.uah) : ""}</div>
+              </div>
+              <div className="rd-tile">
+                <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>Facebook <InfoI tip={t("Новые переписки из Facebook. Реклама на Facebook не идёт — это органика, но продажи отсюда тоже есть", "Нові переписки з Facebook. Реклама на Facebook не йде — це органіка, але продажі звідси теж є")} /></div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-text)", marginBottom: 6 }}>{count(dialogues.facebook)}</div>
+                <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>{t("органика", "органіка")}</div>
+              </div>
+              <div className="rd-tile">
+                <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>TikTok <InfoI tip={t("Новые переписки из TikTok за период", "Нові переписки з TikTok за період")} /></div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-text)", marginBottom: 6 }}>{count(dialogues.tiktok)}</div>
+                <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>{t("органика", "органіка")}</div>
+              </div>
+              <div className="rd-tile" style={{ background: "rgba(236,253,245,.6)", borderColor: "#bbf7d0" }}>
+                <div style={{ fontSize: 12, color: "var(--rd-success)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Соцсети вместе", "Соцмережі разом")} <InfoI tip={t("Instagram + Facebook + TikTok. Общая цена: весь расход рекламы ÷ все диалоги соцсетей", "Instagram + Facebook + TikTok. Загальна ціна: всі витрати реклами ÷ всі діалоги соцмереж")} /></div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-success)", marginBottom: 6 }}>{count(dialogues.social_total)}</div>
+                <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>{t("Цена", "Ціна")}: {dialogues.cost_social_all?.usd != null ? moneyUsd(dialogues.cost_social_all.usd) : "—"}{dialogues.cost_social_all?.uah != null ? " / " + moneyUah(dialogues.cost_social_all.uah) : ""}</div>
+              </div>
+              <div className="rd-tile">
+                <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Другие каналы", "Інші канали")} <InfoI tip={t("Telegram, Viber, WhatsApp, веб-чат — не соцсети", "Telegram, Viber, WhatsApp, веб-чат — не соцмережі")} /></div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-text2)", marginBottom: 6 }}>{count(dialogues.other)}</div>
+                <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>{t("всего диалогов", "всього діалогів")}: {count(dialogues.total)}</div>
+              </div>
+              <div className="rd-tile" style={{ background: "rgba(255,251,235,.7)", borderColor: "#fde68a" }}>
+                <div style={{ fontSize: 12, color: "var(--rd-warning)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Офлайн-воронки", "Офлайн-воронки")} <InfoI tip={t("Салон: «1.С/Покрытия для стен» и «4.С/Алмазное + Вентиляция». Обращения и продажи за период — отдельно от соцсетей", "Салон: «1.С/Покриття для стін» і «4.С/Алмазне + Вентиляція». Звернення і продажі за період — окремо від соцмереж")} /></div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-warning)", marginBottom: 6 }}>{count(offline.deals_created)}</div>
+                <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>{t("продаж", "продажів")}: {count(offline.sales)} · {moneyUah(offline.revenue)}</div>
+              </div>
+            </div>
+          </div>
           {/* ── Ряд 2 (макет 27.08): Лиды в CRM + Подтверждённый результат ── */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(430px,100%), 1fr))", gap: 20, marginBottom: 8 }}>
             <div className="rd-card">
@@ -889,7 +938,7 @@ export default function MetaMarketing() {
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
                 <tbody>
                   <tr style={{ borderBottom: "1px solid var(--rd-border)" }}>
-                    {kv(<>{t("Расходы", "Витрати")} <InfoI tip={t("Потрачено в Ads Manager за период, $", "Витрачено в Ads Manager за період, $")} /></>, moneyUsd(paidSummary.spend), "var(--rd-error)")}
+                    {kv(<>{t("Расходы", "Витрати")} <InfoI tip={t("Потрачено в Ads Manager за период; в гривне — по официальному курсу НБУ за каждый день", "Витрачено в Ads Manager за період; у гривні — за офіційним курсом НБУ на кожен день")} /></>, <>{moneyUsd(paidSummary.spend)}{paidSummary.spend_uah != null && <span style={{ fontSize: 13, color: "var(--rd-text2)", fontWeight: 400 }}> / {moneyUah(paidSummary.spend_uah)}{paidSummary.avg_fx ? " · " + t("курс", "курс") + " " + paidSummary.avg_fx : ""}</span>}</>, "var(--rd-error)")}
                     {kv(<>{t("Подписки с рекламы", "Підписки з реклами")} <InfoI tip={t("Из ежедневного отчёта Ads Manager: только подписки, которые Meta отнесла к рекламе", "З щоденного звіту Ads Manager: лише підписки, які Meta віднесла до реклами")} /></>, followers.paid_report_rows ? count(paidSummary.instagram_follows) : "—", "var(--rd-primary)", true)}
                     {kv(t("Стоимость подписчика", "Вартість підписника"), paidSummary.cost_per_instagram_follow == null ? "—" : moneyUsd(paidSummary.cost_per_instagram_follow), "var(--rd-success)", true)}
                   </tr>
@@ -907,20 +956,55 @@ export default function MetaMarketing() {
               </table>
             </div>
           </div>
-          <SectionTitle title={t("Продажи и окупаемость", "Продажі та окупність")} note={t("21 Основний продукт, 22 Тестовий набір; другие воронки только с точным ID рекламы", "21 Основний продукт, 22 Тестовий набір; інші воронки лише з точним ID реклами")} />
-          <div style={cardsRow}>
-            {card(t("Продажи", "Продажі"), count(profitability.sales), "#16a34a")}
-            {card(t("Выручка", "Виручка"), moneyUah(profitability.revenue), "#047857")}
-            {card(t("Повторные продажи", "Повторні продажі"), count(profitability.repeat_sales), "#0891b2")}
-            {card(t("Из выручки — повторные", "З виручки — повторні"), moneyUah(profitability.repeat_revenue), "#0e7490", t("часть общей выручки, не прибавлять второй раз", "частина загальної виручки, не додавати вдруге"))}
-            {card(t("Средний LTV", "Середній LTV"), moneyUah(profitability.average_ltv), "#7c3aed", t("сколько в среднем приносит один покупатель", "скільки в середньому приносить один покупець"))}
-            {card(t("Цена клиента", "Ціна клієнта"), (profitability.buyers > 0 && paidSummary.spend) ? "$" + (paidSummary.spend / profitability.buyers).toFixed(2) : "—", "#dc2626", t("расход рекламы ÷ покупателей", "витрати реклами ÷ покупців"))}
-            {card(t("Цена продажи", "Ціна продажу"), (paidSummary.spend_uah && profitability.sales) ? moneyUah(paidSummary.spend_uah / profitability.sales) : "—", "#dc2626", t("расход рекламы в грн ÷ все продажи периода", "витрати реклами в грн ÷ усі продажі періоду"))}
-            {card(t("Реклама по курсу НБУ", "Реклама за курсом НБУ"), profitability.ad_spend_uah == null ? "—" : moneyUah(profitability.ad_spend_uah), "#dc2626")}
-            {card(t("Прибыль после рекламы", "Прибуток після реклами"), profitability.marketing_profit == null ? "—" : moneyUah(profitability.marketing_profit), Number(profitability.marketing_profit) >= 0 ? "#15803d" : "#dc2626", t("валовая прибыль − реклама", "валовий прибуток − реклама"))}
-            {card(t("Общий ROAS", "Загальний ROAS"), profitability.blended_roas == null ? "—" : `${profitability.blended_roas}×`, "#2563eb", t("вся выручка ÷ реклама (blended)", "вся виручка ÷ реклама (blended)"))}
-            {card(t("ROAS с точным ID", "ROAS з точним ID"), profitability.exact_ad_roas == null ? "—" : `${profitability.exact_ad_roas}×`, "#7c3aed", t("только доказанная связь с объявлением; «—» = таких продаж пока нет", "лише доведений звʼязок з оголошенням; «—» = таких продажів поки немає"))}
-            {card("ROMI", profitability.romi == null ? "—" : `${profitability.romi}%`, Number(profitability.romi) >= 0 ? "#15803d" : "#dc2626", t("(валовая прибыль − реклама) ÷ реклама", "(валовий прибуток − реклама) ÷ реклама"))}
+          {/* «Продажі та окупність» у механіці редизайну (27.08): показники згруповано —
+              продажі зі своїми цінами, гроші, реклама з курсом і окупністю. */}
+          <div className="rd-card" style={{ marginTop: 20, marginBottom: 8 }}>
+            <div style={{ marginBottom: 18 }}>
+              <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}><Icon n="money" size={18} style={{ color: "var(--rd-success)" }} /> {t("Продажи и окупаемость", "Продажі та окупність")}</b>
+              <div style={{ fontSize: 12, color: "var(--rd-text2)", marginTop: 2 }}>{t("21 Основной продукт, 22 Тестовый набор; другие воронки только с точным ID рекламы", "21 Основний продукт, 22 Тестовий набір; інші воронки лише з точним ID реклами")}</div>
+            </div>
+            {[
+              {
+                label: t("ПРОДАЖИ И ИХ ЦЕНА", "ПРОДАЖІ ТА ЇХ ЦІНА"),
+                tiles: [
+                  { l: t("Продажи", "Продажі"), v: count(profitability.sales), c: "var(--rd-success)", tip: t("Оплаченные продажи за период", "Оплачені продажі за період"), sub: t("повторных", "повторних") + ": " + count(profitability.repeat_sales) },
+                  { l: t("Повторные продажи", "Повторні продажі"), v: count(profitability.repeat_sales), c: "#0891b2", tip: t("Клиент вернулся и купил основной продукт снова. Дозаказы к текущему заказу НЕ считаются", "Клієнт повернувся і купив основний продукт знову. Дозамовлення до поточного замовлення НЕ рахуються") },
+                  { l: t("Цена клиента", "Ціна клієнта"), v: (profitability.buyers > 0 && paidSummary.spend) ? "$" + (paidSummary.spend / profitability.buyers).toFixed(2) : "—", c: "var(--rd-error)", tip: t("расход рекламы ÷ покупателей", "витрати реклами ÷ покупців") },
+                  { l: t("Цена продажи", "Ціна продажу"), v: (paidSummary.spend_uah && profitability.sales) ? moneyUah(paidSummary.spend_uah / profitability.sales) : "—", c: "var(--rd-error)", tip: t("расход рекламы в грн ÷ все продажи периода", "витрати реклами в грн ÷ усі продажі періоду") },
+                  { l: t("Средний LTV", "Середній LTV"), v: moneyUah(profitability.average_ltv), c: "var(--rd-purple)", tip: t("сколько в среднем приносит один покупатель за всё время", "скільки в середньому приносить один покупець за весь час") },
+                ],
+              },
+              {
+                label: t("ДЕНЬГИ", "ГРОШІ"),
+                tiles: [
+                  { l: t("Выручка", "Виручка"), v: moneyUah(profitability.revenue), c: "var(--rd-success)", tip: t("Сумма фактически оплаченных платежей за период", "Сума фактично сплачених платежів за період") },
+                  { l: t("Из выручки — повторные", "З виручки — повторні"), v: moneyUah(profitability.repeat_revenue), c: "#0e7490", tip: t("часть общей выручки от вернувшихся клиентов, не прибавлять второй раз", "частина загальної виручки від клієнтів, що повернулись; не додавати вдруге") },
+                  { l: t("Прибыль после рекламы", "Прибуток після реклами"), v: profitability.marketing_profit == null ? "—" : moneyUah(profitability.marketing_profit), c: Number(profitability.marketing_profit) >= 0 ? "var(--rd-success)" : "var(--rd-error)", tip: t("валовая прибыль (выручка − себестоимость) минус реклама", "валовий прибуток (виручка − собівартість) мінус реклама") },
+                ],
+              },
+              {
+                label: t("РЕКЛАМА И ОКУПАЕМОСТЬ", "РЕКЛАМА Й ОКУПНІСТЬ"),
+                tiles: [
+                  { l: t("Реклама за период", "Реклама за період"), v: <>{moneyUsd(paidSummary.spend)}{profitability.ad_spend_uah != null && <span style={{ fontSize: 13, color: "var(--rd-text2)", fontWeight: 400 }}> / {moneyUah(profitability.ad_spend_uah)}</span>}</>, c: "var(--rd-error)", tip: t("Расход Ads Manager; гривна — по официальному курсу НБУ за каждый день", "Витрати Ads Manager; гривня — за офіційним курсом НБУ на кожен день"), sub: paidSummary.avg_fx ? t("курс НБУ ≈ ", "курс НБУ ≈ ") + paidSummary.avg_fx + " ₴/$" : undefined },
+                  { l: t("Общий ROAS", "Загальний ROAS"), v: profitability.blended_roas == null ? "—" : profitability.blended_roas + "×", c: "var(--rd-primary)", tip: t("вся выручка ÷ реклама: сколько гривен вернула 1 грн рекламы", "вся виручка ÷ реклама: скільки гривень повернула 1 грн реклами") },
+                  { l: t("ROAS с точным ID", "ROAS з точним ID"), v: profitability.exact_ad_roas == null ? "—" : profitability.exact_ad_roas + "×", c: "var(--rd-purple)", tip: t("только продажи с доказанной меткой объявления; «—» = таких продаж пока нет", "лише продажі з доведеною міткою оголошення; «—» = таких продажів поки немає") },
+                  { l: "ROMI", v: profitability.romi == null ? "—" : profitability.romi + "%", c: Number(profitability.romi) >= 0 ? "var(--rd-success)" : "var(--rd-error)", tip: t("(валовая прибыль − реклама) ÷ реклама, в %", "(валовий прибуток − реклама) ÷ реклама, у %") },
+                ],
+              },
+            ].map((group: any) => (
+              <div key={group.label} style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 10, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 700, margin: "0 0 8px" }}>{group.label}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14 }}>
+                  {group.tiles.map((tile: any) => (
+                    <div key={tile.l} className="rd-tile">
+                      <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{tile.l} {tile.tip && <InfoI tip={tile.tip} />}</div>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: tile.c, marginBottom: tile.sub ? 6 : 0 }}>{tile.v}</div>
+                      {tile.sub && <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>{tile.sub}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
           {/* «Деталізація за днями» (макет 27.08): шапка-панель з пошуком дати і скачуванням CSV */}
           <div className="rd-card" style={{ padding: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12, marginTop: 20 }}>
@@ -1178,7 +1262,7 @@ function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string)
     <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 240px)" }}>
     <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1400 }}>
       <colgroup>{headers.map((_, i) => <col key={i} style={cw.widths[i] ? { width: cw.widths[i] } : undefined} />)}</colgroup>
-      <thead style={{ position: "sticky", top: 0, zIndex: 3 }}><tr>{headers.map((header, i) => <ResizableTh key={header.s} label={<Tip text={header.tip}>{header.s}<span style={{ opacity: .45, marginLeft: 3, fontSize: 10, fontWeight: 400 }}>ⓘ</span></Tip>} width={cw.widths[i]} onResize={(w) => cw.set(i, w)} thStyle={{ ...th, whiteSpace: "normal", wordBreak: "break-word", verticalAlign: "bottom", background: "var(--rd-muted)" }} />)}</tr></thead>
+      <thead style={{ position: "sticky", top: 0, zIndex: 3 }}><tr>{headers.map((header, i) => <ResizableTh key={header.s} label={<Tip text={header.tip}>{header.s}<span style={{ opacity: .45, marginLeft: 3, fontSize: 10, fontWeight: 400 }}>ⓘ</span></Tip>} width={cw.widths[i]} onResize={(w) => cw.set(i, w)} thStyle={{ ...th, whiteSpace: "normal", verticalAlign: "bottom", background: "var(--rd-muted)", fontSize: 10.5, lineHeight: 1.25 }} />)}</tr></thead>
       <tbody>{rows.length ? paged.map((r: any) => {
         const isOpen = expanded.has(r.date);
         return <Fragment key={r.date}>

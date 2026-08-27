@@ -3233,8 +3233,10 @@ function ManagerDealsModal({ user, period, onClose }: { user: any; period: strin
                         [t("Продаж","Продажів"), t("сделок с оплатой в этот день","угод з оплатою цього дня")],
                         [t("Сам","Сам"), t("в переписке отвечал живой менеджер","у переписці відповідала жива людина")],
                         [t("ИИ","ШІ"), t("продажа прошла на ответах ИИ","продаж пройшов на відповідях ШІ")],
-                        [t("Осн.","Осн."), t("основной продукт","основний продукт")], [t("Тест","Тест"), t("тестовый набор","тестовий набір")], [t("Др.","Інші"), t("другие воронки","інші воронки")],
-                        [t("Ср.чек","Сер.чек"), t("деньги ÷ продажи","гроші ÷ продажі")],
+                        [t("Осн.","Осн."), t("основной продукт","основний продукт")], [t("Тест","Тест"), t("тестовый набор","тестовий набір")],
+                        [t("Офл.","Офл."), t("салонные воронки: Покрытия для стен + Алмазное и вентиляция","салонні воронки: Покриття для стін + Алмазне і вентиляція")],
+                        [t("Др.","Інші"), t("другие воронки","інші воронки")],
+                        [t("Ср.чек","Сер.чек"), t("средний чек ОСНОВНОЙ воронки (не смешиваем воронки); наведите — разбивка по всем","середній чек ОСНОВНОЇ воронки (не змішуємо воронки); наведіть — розбивка по всіх")],
                         [t("Взял","Взяв"), t("взял чат/лид в работу","взяв чат/лід у роботу")],
                         [t("Закрыл","Закрив"), t("завершил чатов (чистота CRM)","завершив чатів (чистота CRM)")],
                         [t("Игноры","Ігнори"), t("вернул клиента из игнора","повернув клієнта з ігнору")],
@@ -3256,8 +3258,19 @@ function ManagerDealsModal({ user, period, onClose }: { user: any; period: strin
                             <td style={{ ...cellD, ...dim(b.sales_ai), color: b.sales_ai ? "#7c3aed" : "#cbd5e1" }}>{b.sales_ai || "—"}</td>
                             <td style={{ ...cellD, ...dim(b.sales_main) }}>{b.sales_main || "—"}</td>
                             <td style={{ ...cellD, ...dim(b.sales_test) }}>{b.sales_test || "—"}</td>
+                            <td style={{ ...cellD, ...dim(b.sales_offline), color: b.sales_offline ? "#b45309" : "#cbd5e1" }}>{b.sales_offline || "—"}</td>
                             <td style={{ ...cellD, ...dim(b.sales_other) }}>{b.sales_other || "—"}</td>
-                            <td style={{ ...cellD, ...dim(b.avg_check) }}>{b.avg_check ? money(b.avg_check) : "—"}</td>
+                            <td style={{ ...cellD, ...dim(b.avg_check_main || b.avg_check) }}
+                              title={[
+                                b.avg_check_main ? t("Осн: ", "Осн: ") + money(b.avg_check_main) : "",
+                                b.avg_check_test ? t("Тест: ", "Тест: ") + money(b.avg_check_test) : "",
+                                b.avg_check_offline ? t("Офл: ", "Офл: ") + money(b.avg_check_offline) : "",
+                                b.avg_check_other ? t("Др: ", "Інші: ") + money(b.avg_check_other) : "",
+                                b.avg_check ? t("Общий: ", "Разом: ") + money(b.avg_check) : "",
+                              ].filter(Boolean).join(" · ")}>
+                              {b.avg_check_main ? money(b.avg_check_main) : (b.avg_check ? money(b.avg_check) : "—")}
+                              {b.avg_check_offline ? <div style={{ fontSize: 9.5, color: "#b45309" }}>{t("офл", "офл")} {money(b.avg_check_offline)}</div> : null}
+                            </td>
                             <td style={{ ...cellD, ...dim(b.taken) }}>{b.taken || "—"}</td>
                             <td style={{ ...cellD, ...dim(b.closed) }}>{b.closed || "—"}</td>
                             <td style={{ ...cellD, ...dim(b.ignores) }}>{b.ignores || "—"}</td>

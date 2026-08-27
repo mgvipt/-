@@ -2731,8 +2731,16 @@ class ManagerDealsView(APIView):
             _sd.add(_t2.deal_id)
             _fn = _funnel_of.get(_t2.deal_id, "")
             _fl = _fn.lower()
-            _key = "sales_main" if "основн" in _fl else ("sales_test" if "тестов" in _fl or "тестів" in _fl else "sales_other")
+            # Офлайн-воронки салону рахуємо окремо від «інших» — і збираємо СУМИ
+            # по кожній воронці, щоб середній чек показувати без змішування воронок.
+            _key = ("sales_main" if "основн" in _fl
+                    else "sales_test" if ("тестов" in _fl or "тестів" in _fl)
+                    else "sales_offline" if ("покрыт" in _fl or "покритт" in _fl or "алмаз" in _fl)
+                    else "sales_other")
             _d0[_key] = _d0.get(_key, 0) + 1
+            _amt_key = _key.replace("sales_", "amount_")
+            _d0[_amt_key] = _d0.get(_amt_key, 0) + float(
+                getattr(_t2, "amount_uah", None) or getattr(_t2, "amount", 0) or 0)
             _ck = "sales_self" if _contact_of.get(_t2.deal_id) in _human_contacts else "sales_ai"
             _d0[_ck] = _d0.get(_ck, 0) + 1
         # 4) денний план = місячний план ÷ кількість днів місяця
@@ -2750,8 +2758,17 @@ class ManagerDealsView(APIView):
                 "sales": _sales,
                 "sales_self": d0.get("sales_self", 0), "sales_ai": d0.get("sales_ai", 0),
                 "sales_main": d0.get("sales_main", 0), "sales_test": d0.get("sales_test", 0),
+                "sales_offline": d0.get("sales_offline", 0),
                 "sales_other": d0.get("sales_other", 0),
                 "avg_check": round(_amt / _sales) if _sales else 0,
+                "avg_check_main": (round(d0.get("amount_main", 0) / d0["sales_main"])
+                                   if d0.get("sales_main") else 0),
+                "avg_check_test": (round(d0.get("amount_test", 0) / d0["sales_test"])
+                                   if d0.get("sales_test") else 0),
+                "avg_check_offline": (round(d0.get("amount_offline", 0) / d0["sales_offline"])
+                                      if d0.get("sales_offline") else 0),
+                "avg_check_other": (round(d0.get("amount_other", 0) / d0["sales_other"])
+                                    if d0.get("sales_other") else 0),
                 "taken": d0.get("taken", 0), "closed": d0.get("closed", 0),
                 "ignores": d0.get("ignores", 0), "msgs": d0.get("msgs", 0),
                 "plan_day": _plan_day,
