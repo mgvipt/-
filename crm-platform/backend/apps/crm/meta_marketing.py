@@ -183,7 +183,7 @@ def _catalog(account_id):
 def _insight_rows(account_id, level, since, until):
     common = (
         "account_id,account_name,date_start,date_stop,spend,impressions,reach,clicks,"
-        "outbound_clicks,cpc,cpm,ctr,frequency,actions,action_values,video_play_actions"
+        "outbound_clicks,cpc,cpm,ctr,frequency,actions,action_values,video_play_actions,results"
     )
     hierarchy = "" if level == "account" else ",campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name"
     return graph_pages(account_id + "/insights", {
@@ -237,6 +237,31 @@ def sync_ads(since: date, until: date):
     return {"accounts": len(accounts), "rows": written}
 
 
+def _parse_results(raw):
+    """«Результат» за ціллю кампанії, як у кабінеті Ads Manager.
+
+    Graph віддає [{"indicator": "actions:onsite_...", "values": [{"value": "13"}]}].
+    Індикатор зберігаємо без префіксів actions:/conversions: — і він працює для
+    БУДЬ-ЯКОЇ нової цілі кампанії (переписки, QuizStart, візити профілю…)
+    без дописування коду.
+    """
+    items = raw if isinstance(raw, list) else []
+    if not items:
+        return "", 0
+    first = items[0] or {}
+    indicator = str(first.get("indicator") or "")
+    for prefix in ("actions:", "conversions:"):
+        if indicator.startswith(prefix):
+            indicator = indicator[len(prefix):]
+    total = 0
+    for values in (first.get("values") or []):
+        try:
+            total += int(float((values or {}).get("value") or 0))
+        except (TypeError, ValueError):
+            pass
+    return indicator[:160], total
+
+
 def _save_ad_insight(row, *, level, account_id, account, campaigns, ads):
     ad_id = str(row.get("ad_id") or "")
     campaign_id = str(row.get("campaign_id") or "")
@@ -246,6 +271,7 @@ def _save_ad_insight(row, *, level, account_id, account, campaigns, ads):
     actions = _action_map(row.get("actions"))
     outbound = _action_map(row.get("outbound_clicks"))
     videos = _action_map(row.get("video_play_actions"))
+    result_indicator, result_value = _parse_results(row.get("results"))
     insight_date = date.fromisoformat(row["date_start"])
     spend = _decimal(row.get("spend"))
     currency = account.get("currency") or "USD"
@@ -283,6 +309,8 @@ def _save_ad_insight(row, *, level, account_id, account, campaigns, ads):
             "meta_leads": _pick(actions, ("lead", "onsite_conversion.lead_grouped", "leadgen_grouped")),
             "purchases": _pick(actions, ("purchase", "omni_purchase", "offsite_conversion.fb_pixel_purchase")),
             "video_views": _pick(videos, ("video_view",)) or sum(videos.values()),
+            "result_indicator": result_indicator,
+            "result_value": result_value,
             "actions": actions,
         },
     )

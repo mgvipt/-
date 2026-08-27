@@ -3238,7 +3238,8 @@ class MetaMarketingView(APIView):
                 "spend": 0.0, "spend_uah": 0.0, "spend_uah_complete": True,
                 "impressions": 0, "reach": 0, "clicks": 0,
                 "outbound_clicks": 0, "messages_started": 0, "meta_leads": 0,
-                "purchases": 0, "video_views": 0, "crm_leads": set(),
+                "purchases": 0, "video_views": 0,
+                "result_value": 0, "result_indicators": set(), "crm_leads": set(),
                 "crm_deals": set(), "crm_won": set(), "crm_revenue": 0.0,
                 "instagram_follows": 0,
             }
@@ -3259,6 +3260,9 @@ class MetaMarketingView(APIView):
                     target["spend_uah_complete"] = False
                 else:
                     target["spend_uah"] += float(row.spend_uah or 0)
+                target["result_value"] += int(row.result_value or 0)
+                if row.result_indicator:
+                    target["result_indicators"].add(row.result_indicator)
                 # Latest metadata refreshes expiring thumbnails and statuses.
                 target.update({
                     "account_id": row.account_id, "account_name": row.account_name,
@@ -3354,6 +3358,8 @@ class MetaMarketingView(APIView):
                     round(row["spend"] / row["instagram_follows"], 2)
                     if row["instagram_follows"] else None
                 )
+                indicators = row.pop("result_indicators")
+                row["result_indicator"] = "mixed" if len(indicators) > 1 else next(iter(indicators), "")
                 result.append(row)
             return sorted(result, key=lambda row: (-row["spend"], row["name"]))
 
@@ -3380,6 +3386,14 @@ class MetaMarketingView(APIView):
         paid_summary["cpm"] = round(paid_summary["spend"] / paid_summary["impressions"] * 1000, 2) if paid_summary["impressions"] else None
         paid_summary["cost_per_message"] = round(paid_summary["spend"] / paid_summary["messages_started"], 2) if paid_summary["messages_started"] else None
         paid_summary["cost_per_meta_lead"] = round(paid_summary["spend"] / paid_summary["meta_leads"], 2) if paid_summary["meta_leads"] else None
+        # «Результат» за ціллю кампанії (колонка «Результати» кабінету): агрегат
+        # по індикатору з ad-рівня. Нові цілі кампаній зʼявляються автоматично.
+        results_by_type = defaultdict(int)
+        for row in ad_daily:
+            if row.result_indicator and row.result_indicator != "mixed":
+                results_by_type[row.result_indicator] += int(row.result_value or 0)
+        paid_summary["results_by_type"] = dict(results_by_type)
+
         detail_follow_rows = [row for row in paid_follow_rows if row.ad_name]
         summary_follow_rows = detail_follow_rows or [row for row in paid_follow_rows if row.adset_name] or paid_follow_rows
         paid_summary["instagram_follows"] = sum(row.follows for row in summary_follow_rows)

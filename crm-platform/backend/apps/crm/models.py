@@ -358,6 +358,10 @@ class MetaAdDailyStat(models.Model):
     meta_leads = models.PositiveBigIntegerField(default=0)
     purchases = models.PositiveBigIntegerField(default=0)
     video_views = models.PositiveBigIntegerField(default=0)
+    # «Результат» кампанії за її ціллю — як колонка «Результати» в Ads Manager
+    # (Graph insights field=results). Індикатор без префіксів actions:/conversions:.
+    result_indicator = models.CharField(max_length=160, blank=True, default="")
+    result_value = models.PositiveBigIntegerField(default=0)
     actions = models.JSONField(default=dict, blank=True)
     synced_at = models.DateTimeField(auto_now=True)
 

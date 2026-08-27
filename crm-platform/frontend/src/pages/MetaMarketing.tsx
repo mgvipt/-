@@ -7,6 +7,23 @@ import { Cone, MetaCone } from "../FunnelCone";
 
 // Явна підказка (тултип), яка показується ОДРАЗУ при наведенні і НЕ обрізається
 // прокруткою таблиці (рендериться в body через портал, слідує за курсором).
+/* Людська назва «Результату» за ціллю кампанії (колонка «Результати» кабінету).
+   Невідомий індикатор показуємо його хвостом (напр. імʼя події пікселя) —
+   нові цілі кампаній зʼявляються автоматично, без дописування коду. */
+function resultLabel(indicator: string, t: (ru: string, ua: string) => string): string {
+  if (!indicator) return "";
+  if (indicator === "mixed") return t("смешанные цели", "змішані цілі");
+  if (indicator === "profile_visit_view") return t("Визиты профиля", "Візити профілю");
+  if (indicator.includes("messaging_conversation_started")) return t("Переписки", "Переписки");
+  if (indicator === "landing_page_view") return t("Просмотры лендинга", "Перегляди лендінгу");
+  if (indicator === "lead" || indicator.endsWith(".lead") || indicator.endsWith("lead_grouped")) return t("Лиды", "Ліди");
+  if (indicator.includes("purchase")) return t("Покупки", "Покупки");
+  if (indicator === "link_click") return t("Клики по ссылке", "Кліки за посиланням");
+  const custom = indicator.match(/fb_pixel_custom\.(.+)$/);
+  if (custom) return custom[1];
+  return (indicator.split(".").pop() || indicator).replace(/_/g, " ");
+}
+
 function Tip({ text, children }: { text: string; children: ReactNode }) {
   const [show, setShow] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -623,6 +640,7 @@ export default function MetaMarketing() {
   };
   const adRows = (paid[adLevel] || []).map((r: any) => [
     platformLabel(r), moneyUsd(r.spend), count(r.impressions), count(r.clicks), optional(r.ctr, "%"),
+    r.result_value ? <span>{count(r.result_value)}<div style={{ fontSize: 10, color: "var(--rd-text2)" }}>{resultLabel(r.result_indicator, t)}</div></span> : "—",
     count(r.instagram_follows), r.cost_per_instagram_follow == null ? "—" : moneyUsd(r.cost_per_instagram_follow),
     count(r.messages_started), count(r.meta_leads), count(r.crm_leads), r.cost_per_message == null ? "—" : moneyUsd(r.cost_per_message),
   ]);
@@ -709,7 +727,7 @@ export default function MetaMarketing() {
               <div style={{ fontSize: 13, color: "var(--rd-text2)", marginBottom: 22 }}>{followers.username ? "@" + followers.username : "—"}</div>
               <div style={{ marginBottom: 22 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 13, color: "var(--rd-text2)" }}>{t("Подписчиков сейчас", "Підписників зараз")}</span>
+                  <span style={{ fontSize: 13, color: "var(--rd-text2)", display: "inline-flex", alignItems: "center" }}>{t("Подписчиков сейчас", "Підписників зараз")} <InfoI tip={t("Живой баланс подписчиков аккаунта; CRM сохраняет его каждый день", "Живий баланс підписників акаунта; CRM зберігає його щодня")} /></span>
                   {followers.period_gained != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: followers.period_gained >= 0 ? "#ecfdf5" : "#fef2f2", color: followers.period_gained >= 0 ? "var(--rd-success)" : "var(--rd-error)", fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 4 }}>
                     <Icon n={followers.period_gained >= 0 ? "trending-up" : "🔻"} size={14} /> {followers.period_gained >= 0 ? "+" : ""}{count(followers.period_gained)}
                     <InfoI tip={t("подписались минус отписались за выбранный период", "підписалися мінус відписалися за вибраний період")} />
@@ -732,7 +750,7 @@ export default function MetaMarketing() {
                   <div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-success)" }}>{paidSummary.cost_per_instagram_follow == null ? "—" : <>{moneyUsd(paidSummary.cost_per_instagram_follow)}{paidSummary.cost_per_instagram_follow_uah != null && <span style={{ fontSize: 14, color: "var(--rd-text2)", fontWeight: 400 }}> / {moneyUah(paidSummary.cost_per_instagram_follow_uah)}</span>}</>}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Публикаций", "Публікацій")}</div>
+                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Публикаций", "Публікацій")} <InfoI tip={t("Сколько постов и Reels вышло за выбранный период", "Скільки постів і Reels вийшло за вибраний період")} /></div>
                   <div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-text)" }}>{count(daily.reduce((sum: number, r: any) => sum + Number(r.content_published || 0), 0))}</div>
                 </div>
               </div>
@@ -747,18 +765,18 @@ export default function MetaMarketing() {
                   <div style={{ fontSize: 13, color: "var(--rd-text2)" }}>{t("Расходы и конверсии за выбранный период", "Витрати та конверсії за вибраний період")}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 2 }}>{t("Расходы", "Витрати")}</div>
+                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 2, display: "flex", alignItems: "center", justifyContent: "flex-end" }}>{t("Расходы", "Витрати")} <InfoI tip={t("Потрачено в Ads Manager за период; в гривне — по курсу НБУ за каждый день", "Витрачено в Ads Manager за період; у гривні — за курсом НБУ на кожен день")} /></div>
                   <div style={{ fontSize: 24, fontWeight: 700, color: "var(--rd-error)", whiteSpace: "nowrap" }}>{moneyUsd(paidSummary.spend)}{paidSummary.spend_uah != null && <span style={{ fontSize: 16, color: "var(--rd-text2)", fontWeight: 400 }}> / {moneyUah(paidSummary.spend_uah)}</span>}</div>
                 </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(118px, 1fr))", gap: 14 }}>
                 <div className="rd-tile">
-                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Показы", "Покази")}</div>
+                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Показы", "Покази")} <InfoI tip={t("Сколько раз реклама была показана; CPM — цена 1000 показов", "Скільки разів рекламу показали; CPM — ціна 1000 показів")} /></div>
                   <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-text)", marginBottom: 6 }}>{count(paidSummary.impressions)}</div>
                   <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>CPM: {paidSummary.cpm == null ? "—" : moneyUsd(paidSummary.cpm)}</div>
                 </div>
                 <div className="rd-tile">
-                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Клики", "Кліки")}</div>
+                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Клики", "Кліки")} <InfoI tip={t("Все клики по рекламе; CTR — % кликов от показов", "Усі кліки по рекламі; CTR — % кліків від показів")} /></div>
                   <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-primary)", marginBottom: 6 }}>{count(paidSummary.clicks)}</div>
                   <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>CTR: <span style={{ color: "var(--rd-purple)" }}>{paidSummary.ctr == null ? "—" : paidSummary.ctr + "%"}</span></div>
                 </div>
@@ -772,6 +790,19 @@ export default function MetaMarketing() {
                   <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-primary)", marginBottom: 6 }}>{count(paidSummary.meta_leads)}</div>
                   <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>{t("Цена", "Ціна")}: {cplUah == null ? "—" : moneyUah(cplUah)}</div>
                 </div>
+                {/* Результати за ціллю кампанії (як «Результати» в кабінеті). Переписки
+                    не дублюємо — вони вже показані плиткою «Діалоги». Нові цілі
+                    (QuizStart, візити профілю…) зʼявляються тут автоматично. */}
+                {Object.entries((paidSummary.results_by_type || {}) as Record<string, number>)
+                  .filter(([key, value]) => key && value > 0 && !key.includes("messaging_conversation_started"))
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([key, value]) => (
+                    <div key={key} className="rd-tile">
+                      <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{resultLabel(key, t)} <InfoI tip={t("«Результат» из кабинета Ads Manager: считается по цели каждой кампании (переписки, QuizStart, визиты профиля…)", "«Результат» з кабінету Ads Manager: рахується за ціллю кожної кампанії (переписки, QuizStart, візити профілю…)")} /></div>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-purple)", marginBottom: 6 }}>{count(value)}</div>
+                      <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>{t("по цели кампании", "за ціллю кампанії")}</div>
+                    </div>
+                  ))}
               </div>
             </div>
           </div>
@@ -779,7 +810,7 @@ export default function MetaMarketing() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(430px,100%), 1fr))", gap: 20, marginBottom: 8 }}>
             <div className="rd-card">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 22 }}>
-                <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}><Icon n="💱" size={18} style={{ color: "var(--rd-primary)" }} /> {t("Лиды в CRM", "Ліди в CRM")}</b>
+                <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}><Icon n="💱" size={18} style={{ color: "var(--rd-primary)" }} /> {t("Лиды в CRM", "Ліди в CRM")} <InfoI tip={t("Люди с Meta-каналов, попавшие в CRM за период. Диаграмма — какая часть с точной привязкой к объявлению", "Люди з Meta-каналів, що потрапили в CRM за період. Діаграма — яка частина з точною привʼязкою до оголошення")} /></b>
                 <span style={{ fontSize: 11, background: "var(--rd-bg)", padding: "4px 8px", borderRadius: 4, color: "var(--rd-text2)" }}>Meta → CRM</span>
               </div>
               {(() => {
@@ -793,7 +824,7 @@ export default function MetaMarketing() {
                     <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 14 }}>
                       <div>
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-                          <span style={{ color: "var(--rd-text2)" }}>{t("С точным ID рекламы", "З точним ID реклами")}</span>
+                          <span style={{ color: "var(--rd-text2)", display: "inline-flex", alignItems: "center" }}>{t("С точным ID рекламы", "З точним ID реклами")} <InfoI tip={t("Instagram передал метку объявления — лид точно с этой рекламы", "Instagram передав мітку оголошення — лід точно з цієї реклами")} /></span>
                           <b style={{ color: "var(--rd-text)" }}>{count(attributed)}</b>
                         </div>
                         <div style={{ width: "100%", background: "var(--rd-border)", height: 6, borderRadius: 999, overflow: "hidden" }}>
@@ -802,7 +833,7 @@ export default function MetaMarketing() {
                       </div>
                       <div>
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-                          <span style={{ color: "var(--rd-text2)" }}>{t("Источник не определён", "Джерело не визначене")}</span>
+                          <span style={{ color: "var(--rd-text2)", display: "inline-flex", alignItems: "center" }}>{t("Источник не определён", "Джерело не визначене")} <InfoI tip={t("Лид пришёл из Meta, но без метки объявления: например, через ChatPlace или сам зашёл в профиль", "Лід прийшов з Meta, але без мітки оголошення: наприклад, через ChatPlace або сам зайшов у профіль")} /></span>
                           <b style={{ color: "var(--rd-warning)" }}>{count(unassigned)}</b>
                         </div>
                         <div style={{ width: "100%", background: "var(--rd-border)", height: 6, borderRadius: 999, overflow: "hidden" }}>
@@ -825,19 +856,19 @@ export default function MetaMarketing() {
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(105px, 1fr))", gap: 14, marginBottom: 20, position: "relative", zIndex: 1 }}>
                 <div style={{ border: "1px solid var(--rd-border)", borderRadius: 8, padding: 14, background: "var(--rd-card)" }}>
-                  <div style={{ fontSize: 10, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>{t("Рекл. лиды", "Рекл. ліди")}</div>
+                  <div style={{ fontSize: 10, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8, display: "flex", alignItems: "center" }}>{t("Рекл. лиды", "Рекл. ліди")} <InfoI tip={t("Карточки CRM с точной привязкой к объявлению за период", "Картки CRM з точною привʼязкою до оголошення за період")} /></div>
                   <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-primary)" }}>{count(summary.attributed_leads)}</div>
                 </div>
                 <div style={{ border: "1px solid var(--rd-border)", borderRadius: 8, padding: 14, background: "var(--rd-card)" }}>
-                  <div style={{ fontSize: 10, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>{t("Сделки", "Угоди")}</div>
+                  <div style={{ fontSize: 10, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8, display: "flex", alignItems: "center" }}>{t("Сделки", "Угоди")} <InfoI tip={t("Сделки, созданные из рекламных лидов", "Угоди, створені з рекламних лідів")} /></div>
                   <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-purple)" }}>{count(summary.attributed_deals)}</div>
                 </div>
                 <div style={{ border: "1px solid var(--rd-border)", borderRadius: 8, padding: 14, background: "var(--rd-card)" }}>
-                  <div style={{ fontSize: 10, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>{t("Успешные", "Успішні")}</div>
+                  <div style={{ fontSize: 10, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8, display: "flex", alignItems: "center" }}>{t("Успешные", "Успішні")} <InfoI tip={t("Из них доведены до успешного закрытия", "З них доведені до успішного закриття")} /></div>
                   <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-success)" }}>{count(summary.won_deals)}</div>
                 </div>
                 <div style={{ border: "1px solid var(--rd-border)", borderRadius: 8, padding: 14, background: "var(--rd-card)" }}>
-                  <div style={{ fontSize: 10, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>{t("Выручка", "Виручка")}</div>
+                  <div style={{ fontSize: 10, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8, display: "flex", alignItems: "center" }}>{t("Выручка", "Виручка")} <InfoI tip={t("Деньги успешных сделок рекламных лидов", "Гроші успішних угод рекламних лідів")} /></div>
                   <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-success)", whiteSpace: "nowrap" }}>{moneyUah(summary.won_revenue)}</div>
                 </div>
               </div>
@@ -858,17 +889,17 @@ export default function MetaMarketing() {
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
                 <tbody>
                   <tr style={{ borderBottom: "1px solid var(--rd-border)" }}>
-                    {kv(t("Расходы", "Витрати"), moneyUsd(paidSummary.spend), "var(--rd-error)")}
+                    {kv(<>{t("Расходы", "Витрати")} <InfoI tip={t("Потрачено в Ads Manager за период, $", "Витрачено в Ads Manager за період, $")} /></>, moneyUsd(paidSummary.spend), "var(--rd-error)")}
                     {kv(<>{t("Подписки с рекламы", "Підписки з реклами")} <InfoI tip={t("Из ежедневного отчёта Ads Manager: только подписки, которые Meta отнесла к рекламе", "З щоденного звіту Ads Manager: лише підписки, які Meta віднесла до реклами")} /></>, followers.paid_report_rows ? count(paidSummary.instagram_follows) : "—", "var(--rd-primary)", true)}
                     {kv(t("Стоимость подписчика", "Вартість підписника"), paidSummary.cost_per_instagram_follow == null ? "—" : moneyUsd(paidSummary.cost_per_instagram_follow), "var(--rd-success)", true)}
                   </tr>
                   <tr style={{ borderBottom: "1px solid var(--rd-border)" }}>
-                    {kv("CTR", optional(paidSummary.ctr, "%"), "var(--rd-purple)")}
+                    {kv(<>CTR <InfoI tip={t("% кликов от показов: сколько из увидевших кликнули", "% кліків від показів: скільки з тих, хто побачив, клікнули")} /></>, optional(paidSummary.ctr, "%"), "var(--rd-purple)")}
                     {kv(<>{t("Стоимость клика (CPC)", "Вартість кліку (CPC)")} <InfoI tip={t("расход ÷ клики", "витрати ÷ кліки")} /></>, cpcUsd == null ? "—" : moneyUsd(cpcUsd), "var(--rd-primary)", true)}
                     {kv(<>CPM <InfoI tip={t("цена 1000 показов, $", "ціна 1000 показів, $")} /></>, optional(paidSummary.cpm), "var(--rd-primary)", true)}
                   </tr>
                   <tr>
-                    {kv(t("Лиды Meta", "Ліди Meta"), count(paidSummary.meta_leads), "var(--rd-success)")}
+                    {kv(<>{t("Лиды Meta", "Ліди Meta")} <InfoI tip={t("Сколько лидов засчитала себе Meta по своему окну атрибуции", "Скільки лідів зарахувала собі Meta за власним вікном атрибуції")} /></>, count(paidSummary.meta_leads), "var(--rd-success)")}
                     {kv(<>{t("Стоимость лида (все из Meta)", "Вартість ліда (всі з Meta)")} <InfoI tip={t("расход в грн ÷ все лиды CRM из Meta", "витрати грн ÷ усі ліди CRM з Meta")} /></>, cplUah == null ? "—" : moneyUah(cplUah), "var(--rd-warning)", true)}
                     {kv(<>{t("Стоимость лида (с точным ID)", "Вартість ліда (з точним ID)")} <InfoI tip={t("расход в грн ÷ лиды с подтверждённой рекламой", "витрати грн ÷ ліди з підтвердженою рекламою")} /></>, cplExactUah == null ? "—" : moneyUah(cplExactUah), "var(--rd-warning)", true)}
                   </tr>
@@ -948,8 +979,21 @@ export default function MetaMarketing() {
           </div>
           {table([
             adLevel === "campaigns" ? t("Кампания", "Кампанія") : adLevel === "adsets" ? t("Группа", "Група") : t("Объявление", "Оголошення"),
-            t("Расход", "Витрати"), t("Показы", "Покази"), t("Клики", "Кліки"), "CTR", t("Подписки", "Підписки"), t("Цена подписки", "Ціна підписки"), t("Диалоги Meta", "Діалоги Meta"), t("Лиды Meta", "Ліди Meta"), t("Лиды CRM", "Ліди CRM"), t("Цена диалога", "Ціна діалогу"),
-          ], adRows, t("За выбранный период реклама не показывалась", "За вибраний період реклама не показувалась"), 1300)}
+            t("Расход", "Витрати"), t("Показы", "Покази"), t("Клики", "Кліки"), "CTR", t("Результат", "Результат"), t("Подписки", "Підписки"), t("Цена подписки", "Ціна підписки"), t("Диалоги Meta", "Діалоги Meta"), t("Лиды Meta", "Ліди Meta"), t("Лиды CRM", "Ліди CRM"), t("Цена диалога", "Ціна діалогу"),
+          ], adRows, t("За выбранный период реклама не показывалась", "За вибраний період реклама не показувалась"), 1360, [
+            t("Название из Ads Manager", "Назва з Ads Manager"),
+            t("Потрачено за период, $", "Витрачено за період, $"),
+            t("Сколько раз показали рекламу", "Скільки разів показали рекламу"),
+            t("Все клики по рекламе", "Усі кліки по рекламі"),
+            t("% кликов от показов", "% кліків від показів"),
+            t("Как «Результаты» в кабинете: по цели кампании — переписки, QuizStart, визиты профиля", "Як «Результати» в кабінеті: за ціллю кампанії — переписки, QuizStart, візити профілю"),
+            t("Подписки в Instagram из отчёта Ads Manager", "Підписки в Instagram зі звіту Ads Manager"),
+            t("расход ÷ подписки", "витрати ÷ підписки"),
+            t("Начатые переписки по данным Meta (7 дней после клика)", "Розпочаті переписки за даними Meta (7 днів після кліку)"),
+            t("Лиды по подсчёту Meta (её окно атрибуции)", "Ліди за підрахунком Meta (її вікно атрибуції)"),
+            t("Реальные карточки CRM с меткой этого объявления", "Реальні картки CRM з міткою цього оголошення"),
+            t("расход ÷ начатые переписки", "витрати ÷ розпочаті переписки"),
+          ])}
           <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
             {t("Охват по дням не суммируется как уникальный охват периода, поэтому в таблице он не используется для оценки результата.", "Охоплення за днями не підсумовується як унікальне охоплення періоду, тому в таблиці воно не використовується для оцінки результату.")}
           </div>
