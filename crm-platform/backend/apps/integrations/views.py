@@ -576,6 +576,16 @@ def _confirm_supplier(d, request):
             SupplierProductMap.objects.update_or_create(supplier_key=skey, their_name=tn,
                                                         defaults={"product": prod, "qty_factor": _Df(str(factor))})
             rules += 1
+    # ── ПЕРЕРАХУНОК СОБІВАРТОСТІ: документ створюється одразу проведеним (posted=True),
+    #    тож залишок оновлюється, АЛЕ середньозважена закупка в картці товару — ні,
+    #    бо цей шлях не проходив через post_document/_on_posted. Через це у сделках
+    #    показувалась стара (або нульова) закупка (26.08). Викликаємо явно.
+    try:
+        from apps.warehouse.services import _weighted_cost_update
+        _weighted_cost_update(doc)
+    except Exception:
+        pass
+
     amt = p.get("amount") or round(total, 2)
     _cp = (contact and str(contact)) or sup.get("name") or "Постачальник"
     pp = PlannedPayment.objects.create(
