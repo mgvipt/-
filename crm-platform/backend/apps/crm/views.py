@@ -2868,6 +2868,7 @@ class MarketingOfflineView(APIView):
     def get(self, request):
         from django.utils import timezone
         from django.utils.dateparse import parse_date
+        from django.db.models import Q
         from datetime import timedelta
         from decimal import Decimal
         today = timezone.localdate()
