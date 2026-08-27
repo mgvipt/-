@@ -291,3 +291,38 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
 input.num-tight::-webkit-outer-spin-button,
 input.num-tight::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 input.num-tight { -moz-appearance: textfield; appearance: textfield; }
+
+/* ══════════ РЕДИЗАЙН 2026-08-27 (палитра из макетов Олега, префикс rd-) ══════════
+   Все цвета нового дизайна живут ТОЛЬКО здесь. Для будущей тёмной темы достаточно
+   переопределить эти переменные в блоке [data-theme="dark"]. Блок 1: Маркетинг · Meta. */
+:root{
+  --rd-primary:#1a6fb3;   /* основной синий (кнопки, активные вкладки, акценты) */
+  --rd-bg:#f6f3f2;        /* тёплый фон страницы */
+  --rd-card:#ffffff;      /* фон карточек */
+  --rd-border:#E5E7EB;    /* рамки карточек и плиток */
+  --rd-text:#1b1c1c;      /* основной текст */
+  --rd-text2:#6B7280;     /* вторичный текст */
+  --rd-success:#2D8A4E;   /* зелёный (рост, успех) */
+  --rd-warning:#E69B00;   /* жёлтый (внимание) */
+  --rd-error:#D32F2F;     /* красный (расходы, ошибки) */
+  --rd-purple:#7e22ce;    /* фиолетовый (крупные цифры аудитории) */
+}
+/* Белая карточка с мягкой тенью (при наведении тень чуть сильнее) */
+.rd-card{background:var(--rd-card);border:1px solid var(--rd-border);border-radius:12px;box-shadow:0 4px 6px -1px rgba(0,0,0,.05),0 2px 4px -1px rgba(0,0,0,.03);padding:24px;transition:box-shadow .2s ease-in-out;}
+.rd-card:hover{box-shadow:0 10px 15px -3px rgba(0,0,0,.05),0 4px 6px -2px rgba(0,0,0,.025);}
+/* Плитка-показатель внутри карточки */
+.rd-tile{background:var(--rd-bg);border:1px solid var(--rd-border);border-radius:8px;padding:16px;min-width:0;}
+/* Круглый значок «i» с подсказкой */
+.rd-info{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:#f0eded;color:#717782;font-size:10px;margin-left:4px;cursor:help;font-style:normal;flex-shrink:0;transition:all .2s;}
+.rd-info:hover{background:#e5e2e1;color:var(--rd-text);}
+/* Вкладка-пилюля (навигация по вкладкам страницы) */
+.rd-pill{padding:8px 20px;font-size:13px;border-radius:6px;font-weight:500;white-space:nowrap;border:1px solid var(--rd-border);background:var(--rd-card);color:var(--rd-text);cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.05);transition:background .15s;}
+.rd-pill:hover{background:#f0eded;}
+.rd-pill.active{background:var(--rd-primary);color:#fff;border-color:var(--rd-primary);}
+/* Переключатель периода (Сегодня / 7 / 30 / 90 дней) */
+.rd-seg{display:flex;background:var(--rd-bg);border:1px solid var(--rd-border);border-radius:6px;padding:3px;flex-wrap:wrap;}
+.rd-seg button{padding:6px 14px;font-size:13px;border:1px solid transparent;background:transparent;border-radius:4px;color:var(--rd-text2);cursor:pointer;font-weight:500;white-space:nowrap;}
+.rd-seg button:hover{background:rgba(0,0,0,.04);}
+.rd-seg button.active{background:var(--rd-card);color:var(--rd-text);border-color:var(--rd-border);box-shadow:0 1px 2px rgba(0,0,0,.05);}
+/* Крутящаяся иконка на кнопке «Обновить» пока идёт синхронизация */
+@keyframes rd-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}

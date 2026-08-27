@@ -2,6 +2,7 @@ import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react
 import { createPortal } from "react-dom";
 import { api } from "../api";
 import { useLang } from "../i18n";
+import { Icon } from "../Icon";
 import { Cone, MetaCone } from "../FunnelCone";
 
 // Явна підказка (тултип), яка показується ОДРАЗУ при наведенні і НЕ обрізається
@@ -19,6 +20,26 @@ function Tip({ text, children }: { text: string; children: ReactNode }) {
         <div style={{ position: "fixed", left: Math.min(pos.x + 14, window.innerWidth - 300), top: pos.y + 16, zIndex: 99999, background: "#231c18", color: "#fff", padding: "8px 11px", borderRadius: 9, fontSize: 12.5, maxWidth: 280, lineHeight: 1.45, fontWeight: 500, boxShadow: "0 6px 22px rgba(0,0,0,.35)", pointerEvents: "none" }}>{text}</div>,
         document.body)}
     </span>
+  );
+}
+
+// ── Редизайн 27.08 (макет Олега): кругла «i»-підказка та кільцева діаграма ──
+function InfoI({ tip }: { tip: string }) {
+  return <Tip text={tip}><span className="rd-info">i</span></Tip>;
+}
+
+// Кільце «скільки з усіх лідів мають точний ID реклами» (центр — всього лідів)
+function Donut({ total, part, label }: { total: number; part: number; label: string }) {
+  const R = 40, C = 2 * Math.PI * R;
+  const pct = total > 0 ? Math.min(part / total, 1) : 0;
+  return (
+    <svg width={96} height={96} viewBox="0 0 96 96" style={{ flexShrink: 0 }}>
+      <circle cx={48} cy={48} r={R} fill="none" stroke="var(--rd-border)" strokeWidth={8} />
+      {pct > 0 && <circle cx={48} cy={48} r={R} fill="none" stroke="var(--rd-primary)" strokeWidth={8}
+        strokeDasharray={`${C * pct} ${C}`} strokeLinecap="round" transform="rotate(-90 48 48)" />}
+      <text x={48} y={48} textAnchor="middle" fontSize={total >= 1000 ? 16 : 24} fontWeight={700} fill="var(--rd-primary)">{count(total)}</text>
+      <text x={48} y={64} textAnchor="middle" fontSize={10} fill="var(--rd-text2)">{label}</text>
+    </svg>
   );
 }
 
@@ -503,6 +524,9 @@ export default function MetaMarketing() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [orgView, setOrgView] = useState<"cards" | "table" | "account">("cards");
   const [showSettings, setShowSettings] = useState(false);
+  // Редизайн 27.08: який пресет періоду підсвічено + пошук дати в «Деталізації за днями»
+  const [preset, setPreset] = useState<string>("all");
+  const [daySearch, setDaySearch] = useState("");
 
   useEffect(() => {
     setError(""); setLoading(true);
@@ -533,9 +557,10 @@ export default function MetaMarketing() {
     setTimeout(poll, 12000);
   };
 
-  const setLastDays = (days: number) => {
+  const setLastDays = (days: number, key?: string) => {
     const start = new Date(today); start.setDate(start.getDate() - days + 1);
     setFrom(iso(start)); setTo(iso(today));
+    setPreset(key || "");
   };
 
   const tabs: { key: Tab; ru: string; ua: string }[] = [
@@ -596,57 +621,225 @@ export default function MetaMarketing() {
     count(r.messages_started), count(r.meta_leads), count(r.crm_leads), r.cost_per_message == null ? "—" : moneyUsd(r.cost_per_message),
   ]);
   const dailyTable = <DailySalesTable rows={daily} t={t} />;
+  // Пошук дати в «Деталізації за днями» (Огляд): збіг і по 2026-08-27, і по 27.08.2026
+  const dailyFiltered = daySearch.trim() ? daily.filter((r: any) => {
+    const q = daySearch.trim();
+    const human = new Date(`${r.date}T12:00:00`).toLocaleDateString("ru-RU");
+    return String(r.date).includes(q) || human.includes(q);
+  }) : daily;
+  // Кнопка «скачати» в «Деталізації за днями»: та сама таблиця файлом CSV (відкривається в Excel)
+  const downloadDailyCsv = () => {
+    const heads = [t("Дата", "Дата"), t("Подписчики", "Підписники"), t("Новые", "Нові"), t("Контент", "Контент"), "Реклама $", "Реклама ₴", t("Диалоги", "Діалоги"), t("Лиды", "Ліди"), t("С рекламой", "З рекламою"), t("Продажи", "Продажі"), t("Повторные", "Повторні"), t("Выручка", "Виручка"), t("Из них повторные", "З них повторні"), "LTV", t("Прибыль", "Прибуток"), "ROAS", "ROMI"];
+    const lines = daily.map((r: any) => [r.date, r.followers_total ?? "", r.followers_gained ?? "", r.content_published ?? 0, r.spend ?? 0, r.spend_uah ?? "", r.messages_started ?? 0, r.crm_meta_leads ?? 0, r.exact_ad_leads ?? 0, r.sales ?? 0, r.repeat_sales ?? 0, r.revenue ?? 0, r.repeat_revenue ?? 0, r.average_ltv ?? 0, r.gross_profit ?? 0, r.roas ?? "", r.romi ?? ""].join(";"));
+    const blob = new Blob(["﻿" + [heads.join(";"), ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `meta-daily_${from}_${to}.csv`; a.click();
+    URL.revokeObjectURL(a.href);
+  };
   // похідні показники реклами: ціни за клік / ліда (дзеркало Ads Manager простими словами)
   const cpcUsd = paidSummary.clicks ? paidSummary.spend / paidSummary.clicks : null;
   const cplUah = (paidSummary.spend_uah && summary.meta_origin_leads) ? paidSummary.spend_uah / summary.meta_origin_leads : null;
   const cplExactUah = (paidSummary.spend_uah && summary.attributed_leads) ? paidSummary.spend_uah / summary.attributed_leads : null;
 
-  return <div style={{ height: "100%", overflowY: "auto", padding: 16, boxSizing: "border-box" }}>
-    <div style={{ width: "100%" }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+  return <div style={{ height: "100%", overflowY: "auto", background: "var(--rd-bg)", boxSizing: "border-box" }}>
+    {/* Шапка-смуга (редизайн 27.08 за макетом Олега) */}
+    <div style={{ background: "var(--rd-card)", borderBottom: "1px solid var(--rd-border)", padding: "18px clamp(14px,2.5vw,32px) 16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 23 }}>📣 {t("Маркетинг · Meta", "Маркетинг · Meta")}</h2>
-          <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <span style={{ background: "var(--rd-primary)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4, letterSpacing: ".04em" }}>BETA</span>
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "var(--rd-text)" }}>{t("Маркетинг · Meta", "Маркетинг · Meta")}</h1>
+          </div>
+          <div style={{ fontSize: 13, color: "var(--rd-text2)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--rd-success)", display: "inline-block", flexShrink: 0 }} />
             {t("Платная реклама и органический контент считаются отдельно", "Платна реклама й органічний контент рахуються окремо")}
-            {syncSt && <> · {t("обновление каждые", "оновлення кожні")} {syncSt.interval_hours}{t("ч", "год")}{syncSt.sources?.content && <> · Instagram <b style={{ color: (syncSt.sources.content.mins_ago > 420) ? "#b91c1c" : "#166534" }}>{syncSt.sources.content.at}</b></>}{syncSt.sources?.ads && <> · Ads <b style={{ color: (syncSt.sources.ads.mins_ago > 420) ? "#b91c1c" : "#166534" }}>{syncSt.sources.ads.at}</b></>}</>}
+            {syncSt && <span style={{ fontSize: 12 }}>· {t("обновление каждые", "оновлення кожні")} {syncSt.interval_hours}{t("ч", "год")}{syncSt.sources?.content && <> · Instagram <b style={{ color: (syncSt.sources.content.mins_ago > 420) ? "var(--rd-error)" : "var(--rd-success)" }}>{syncSt.sources.content.at}</b></>}{syncSt.sources?.ads && <> · Ads <b style={{ color: (syncSt.sources.ads.mins_ago > 420) ? "var(--rd-error)" : "var(--rd-success)" }}>{syncSt.sources.ads.at}</b></>}</span>}
           </div>
         </div>
-        <div style={{ flex: 1 }} />
-        <button className="btn btn-light" onClick={() => setLastDays(1)}>{t("Сегодня", "Сьогодні")}</button>
-        <button className="btn btn-light" onClick={() => setLastDays(7)}>7 {t("дней", "днів")}</button>
-        <button className="btn btn-light" onClick={() => setLastDays(30)}>30 {t("дней", "днів")}</button>
-        <button className="btn btn-light" onClick={() => setLastDays(90)}>90 {t("дней", "днів")}</button>
-        <button className="btn btn-light" onClick={() => { setFrom(CONNECTED_FROM); setTo(iso(today)); }}>{t("С подключения CRM", "З підключення CRM")}</button>
-        <label style={dateLabel}>{t("с", "з")} <input type="date" value={from} min={CONNECTED_FROM} onChange={(e) => setFrom(e.target.value)} style={dateInput} /></label>
-        <label style={dateLabel}>{t("по", "по")} <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={dateInput} /></label>
-        <button className="btn btn-primary" onClick={refreshNow} disabled={syncing} title={t("Подтянуть свежие данные со всех источников (Ads + Instagram + подписчики)", "Підтягнути свіжі дані з усіх джерел")}>{syncing ? `⏳ ${t("Обновляю…", "Оновлюю…")}` : `🔄 ${t("Обновить", "Оновити")}`}</button>
-        <button className="btn btn-light" onClick={() => setShowSettings(true)} title={t("Настройки маркетинга: интервалы обновления и доступы", "Налаштування маркетингу")}>⚙️</button>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+          <div className="rd-seg">
+            <button className={preset === "1d" ? "active" : ""} onClick={() => setLastDays(1, "1d")}>{t("Сегодня", "Сьогодні")}</button>
+            <button className={preset === "7d" ? "active" : ""} onClick={() => setLastDays(7, "7d")}>7 {t("дней", "днів")}</button>
+            <button className={preset === "30d" ? "active" : ""} onClick={() => setLastDays(30, "30d")}>30 {t("дней", "днів")}</button>
+            <button className={preset === "90d" ? "active" : ""} onClick={() => setLastDays(90, "90d")}>90 {t("дней", "днів")}</button>
+            <button className={preset === "all" ? "active" : ""} onClick={() => { setFrom(CONNECTED_FROM); setTo(iso(today)); setPreset("all"); }}>{t("С подключения", "З підключення")}</button>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--rd-card)", border: "1px solid var(--rd-border)", borderRadius: 6, padding: "5px 10px", boxShadow: "0 1px 2px rgba(0,0,0,.05)" }}>
+            <Icon n="calendar" size={15} style={{ color: "var(--rd-text2)" }} />
+            <input type="date" value={from} min={CONNECTED_FROM} onChange={(e) => { setFrom(e.target.value); setPreset(""); }} style={rdDate} />
+            <span style={{ color: "var(--rd-text2)", fontSize: 12 }}>—</span>
+            <input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPreset(""); }} style={rdDate} />
+          </div>
+        </div>
       </div>
+      <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 8 }}>
+        <button onClick={refreshNow} disabled={syncing} title={t("Подтянуть свежие данные со всех источников (Ads + Instagram + подписчики)", "Підтягнути свіжі дані з усіх джерел")}
+          style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 16px", fontSize: 13, fontWeight: 500, background: "var(--rd-primary)", color: "#fff", border: "none", borderRadius: 6, cursor: syncing ? "default" : "pointer", opacity: syncing ? .7 : 1, boxShadow: "0 1px 2px rgba(0,0,0,.05)" }}>
+          <Icon n="refresh" size={16} style={syncing ? { animation: "rd-spin 1.2s linear infinite" } : undefined} /> {syncing ? t("Обновляю…", "Оновлюю…") : t("Обновить", "Оновити")}
+        </button>
+        <button className="rd-pill" onClick={() => setShowSettings(true)} title={t("Настройки маркетинга: интервалы обновления и доступы", "Налаштування маркетингу")} style={{ padding: "8px 12px", display: "inline-flex", alignItems: "center" }}>
+          <Icon n="settings" size={16} style={{ color: "var(--rd-text2)" }} />
+        </button>
+      </div>
+    </div>
+    <div style={{ padding: "20px clamp(14px,2.5vw,32px) 28px" }}>
       {showSettings && <MetaSettingsModal onClose={() => setShowSettings(false)} />}
       {syncing && <div className="note" style={{ marginBottom: 10, background: "#eff6ff", color: "#1e40af" }}>{t("Тянем свежие данные из Meta (Ads + Instagram + подписчики). Это ~1-3 минуты — таблицы обновятся автоматически, можно продолжать работать.", "Тягнемо свіжі дані з Meta. Це ~1-3 хвилини — таблиці оновляться автоматично.")}</div>}
 
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8, marginBottom: 8 }}>
-        {tabs.map((item) => <button key={item.key} className={tab === item.key ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab(item.key)} style={{ whiteSpace: "nowrap" }}>{t(item.ru, item.ua)}</button>)}
-      </div>
+      <nav style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 14 }}>
+        {tabs.map((item) => <button key={item.key} className={"rd-pill" + (tab === item.key ? " active" : "")} onClick={() => setTab(item.key)}>{t(item.ru, item.ua)}</button>)}
+      </nav>
       {error && <div className="note" style={{ color: "#b91c1c" }}>{error}</div>}
       {loading && !data ? <div className="muted" style={{ padding: 30 }}>Загрузка…</div> : data && <>
         {tab === "overview" && <>
           {syncWarning}
-          <SectionTitle title={t("Подписчики Instagram", "Підписники Instagram") + (followers.username ? " · @" + followers.username : "")} note={t("Всё о подписчиках в одном блоке: сколько есть, сколько пришло за период и почём", "Все про підписників в одному блоці: скільки є, скільки прийшло за період і почому")} />
-          <div style={cardsRow}>
-            {card(t("Подписчиков сейчас", "Підписників зараз"), optional(followers.current_total, "", t("ожидает синхронизации", "очікує синхронізації")), "#c026d3")}
-            {card(t("Новых за период (итог)", "Нових за період (підсумок)"), followers.period_gained == null ? "—" : (followers.period_gained >= 0 ? "+" : "") + count(followers.period_gained), "#db2777", t("подписались минус отписались за выбранный период", "підписалися мінус відписалися за вибраний період"))}
-            {card(t("С рекламы (платно)", "З реклами (платно)"), followers.paid_report_rows ? count(followers.paid_from_ads) : "—", "#2563eb", t("Из ежедневного отчёта Ads Manager: только подписки, которые Meta отнесла к рекламе.", "З щоденного звіту Ads Manager: лише підписки, які Meta віднесла до реклами."))}
-            {card(t("Органика (остальные)", "Органіка (решта)"), followers.organic_other == null ? "—" : count(followers.organic_other), "#7c3aed", t("Итоговый прирост кабинета минус подписки с рекламы. Для Reels Meta отдельные подписки не отдаёт.", "Підсумковий приріст кабінету мінус підписки з реклами. Для Reels Meta окремі підписки не віддає."))}
-            {card(t("Цена подписчика", "Ціна підписника"), paidSummary.cost_per_instagram_follow == null ? "—" : moneyUsd(paidSummary.cost_per_instagram_follow), "#0f766e", t("расход за дни с данными подписок ÷ подписки с рекламы", "витрати за дні з даними підписок ÷ підписки з реклами"))}
-            {card(t("Цена подписчика, ₴", "Ціна підписника, ₴"), paidSummary.cost_per_instagram_follow_uah == null ? "—" : moneyUah(paidSummary.cost_per_instagram_follow_uah), "#0f766e", t("расход в гривне за дни с данными подписок ÷ подписки с рекламы", "витрати у гривні за дні з даними підписок ÷ підписки з реклами"))}
-            {card(t("Публикаций за период", "Публікацій за період"), count(daily.reduce((sum: number, r: any) => sum + Number(r.content_published || 0), 0)), "#7c3aed")}
+          {/* ── Ряд 1 (макет 27.08): Instagram Аудитория + Ads Manager Эффективность ── */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(430px,100%), 1fr))", gap: 20, marginBottom: 20 }}>
+            <div className="rd-card">
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                <span style={{ width: 24, height: 24, background: "#e5e7eb", borderRadius: 4, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "var(--rd-text)" }}>IG</span>
+                <b style={{ fontSize: 16, color: "var(--rd-text)" }}>Instagram {t("Аудитория", "Аудиторія")}</b>
+              </div>
+              <div style={{ fontSize: 13, color: "var(--rd-text2)", marginBottom: 22 }}>{followers.username ? "@" + followers.username : "—"}</div>
+              <div style={{ marginBottom: 22 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, color: "var(--rd-text2)" }}>{t("Подписчиков сейчас", "Підписників зараз")}</span>
+                  {followers.period_gained != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: followers.period_gained >= 0 ? "#ecfdf5" : "#fef2f2", color: followers.period_gained >= 0 ? "var(--rd-success)" : "var(--rd-error)", fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 4 }}>
+                    <Icon n={followers.period_gained >= 0 ? "trending-up" : "🔻"} size={14} /> {followers.period_gained >= 0 ? "+" : ""}{count(followers.period_gained)}
+                    <InfoI tip={t("подписались минус отписались за выбранный период", "підписалися мінус відписалися за вибраний період")} />
+                  </span>}
+                </div>
+                <div style={{ fontSize: 32, fontWeight: 700, color: "var(--rd-purple)", lineHeight: 1.25 }}>{optional(followers.current_total, "", t("ожидает синхронизации", "очікує синхронізації"))}</div>
+              </div>
+              <div style={{ height: 1, background: "var(--rd-border)", marginBottom: 22 }} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", rowGap: 22, columnGap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("С рекламы", "З реклами")} <InfoI tip={t("Из ежедневного отчёта Ads Manager: только подписки, которые Meta отнесла к рекламе.", "З щоденного звіту Ads Manager: лише підписки, які Meta віднесла до реклами.")} /></div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-primary)" }}>{followers.paid_report_rows ? count(followers.paid_from_ads) : "—"}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Органика", "Органіка")} <InfoI tip={t("Итоговый прирост кабинета минус подписки с рекламы. Для Reels Meta отдельные подписки не отдаёт.", "Підсумковий приріст кабінету мінус підписки з реклами. Для Reels Meta окремі підписки не віддає.")} /></div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-text2)" }}>{followers.organic_other == null ? "—" : count(followers.organic_other)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Цена подп.", "Ціна підп.")} <InfoI tip={t("расход за дни с данными подписок ÷ подписки с рекламы", "витрати за дні з даними підписок ÷ підписки з реклами")} /></div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-success)" }}>{paidSummary.cost_per_instagram_follow == null ? "—" : <>{moneyUsd(paidSummary.cost_per_instagram_follow)}{paidSummary.cost_per_instagram_follow_uah != null && <span style={{ fontSize: 14, color: "var(--rd-text2)", fontWeight: 400 }}> / {moneyUah(paidSummary.cost_per_instagram_follow_uah)}</span>}</>}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Публикаций", "Публікацій")}</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-text)" }}>{count(daily.reduce((sum: number, r: any) => sum + Number(r.content_published || 0), 0))}</div>
+                </div>
+              </div>
+            </div>
+            <div className="rd-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                    <span style={{ width: 24, height: 24, background: "#dbeafe", borderRadius: 4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Icon n="megaphone" size={14} style={{ color: "var(--rd-primary)" }} /></span>
+                    <b style={{ fontSize: 16, color: "var(--rd-text)" }}>Ads Manager {t("Эффективность", "Ефективність")}</b>
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--rd-text2)" }}>{t("Расходы и конверсии за выбранный период", "Витрати та конверсії за вибраний період")}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 2 }}>{t("Расходы", "Витрати")}</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: "var(--rd-error)", whiteSpace: "nowrap" }}>{moneyUsd(paidSummary.spend)}{paidSummary.spend_uah != null && <span style={{ fontSize: 16, color: "var(--rd-text2)", fontWeight: 400 }}> / {moneyUah(paidSummary.spend_uah)}</span>}</div>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(118px, 1fr))", gap: 14 }}>
+                <div className="rd-tile">
+                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Показы", "Покази")}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-text)", marginBottom: 6 }}>{count(paidSummary.impressions)}</div>
+                  <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>CPM: {paidSummary.cpm == null ? "—" : moneyUsd(paidSummary.cpm)}</div>
+                </div>
+                <div className="rd-tile">
+                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Клики", "Кліки")}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-primary)", marginBottom: 6 }}>{count(paidSummary.clicks)}</div>
+                  <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>CTR: <span style={{ color: "var(--rd-purple)" }}>{paidSummary.ctr == null ? "—" : paidSummary.ctr + "%"}</span></div>
+                </div>
+                <div className="rd-tile">
+                  <div style={{ fontSize: 12, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Диалоги", "Діалоги")} <InfoI tip={t("Это показатель рекламы Meta, а не продажи и не уникальные лиды CRM", "Це показник реклами Meta, а не продажі й не унікальні ліди CRM")} /></div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-success)", marginBottom: 6 }}>{count(paidSummary.messages_started)}</div>
+                  <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>{t("Цена", "Ціна")}: {paidSummary.cost_per_message == null ? "—" : moneyUsd(paidSummary.cost_per_message)}{(paidSummary.spend_uah && paidSummary.messages_started) ? " / " + moneyUah(paidSummary.spend_uah / paidSummary.messages_started) : ""}</div>
+                </div>
+                <div className="rd-tile" style={{ background: "rgba(239,246,255,.5)", borderColor: "#bfdbfe" }}>
+                  <div style={{ fontSize: 12, color: "var(--rd-primary)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Лиды Meta", "Ліди Meta")} <InfoI tip={t("Сколько лидов засчитала себе Meta по своему окну атрибуции", "Скільки лідів зарахувала собі Meta за власним вікном атрибуції")} /></div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-primary)", marginBottom: 6 }}>{count(paidSummary.meta_leads)}</div>
+                  <div style={{ fontSize: 11, color: "var(--rd-text2)" }}>{t("Цена", "Ціна")}: {cplUah == null ? "—" : moneyUah(cplUah)}</div>
+                </div>
+              </div>
+            </div>
           </div>
-          <SectionTitle title={t("Лиды из Meta в CRM", "Ліди з Meta у CRM")} note={t("Сколько людей с Meta-каналов попало в CRM за период", "Скільки людей з Meta-каналів потрапило в CRM за період")} />
-          <div style={cardsRow}>
-            {card(t("Все лиды CRM из Meta", "Усі ліди CRM з Meta"), count(summary.meta_origin_leads), "#0284c7")}
-            {card(t("С точным ID рекламы", "З точним ID реклами"), count(summary.attributed_leads), "#2563eb")}
-            {card(t("Источник объявления не определён", "Джерело оголошення не визначене"), count(summary.meta_unassigned_leads), "#d97706")}
+          {/* ── Ряд 2 (макет 27.08): Лиды в CRM + Подтверждённый результат ── */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(430px,100%), 1fr))", gap: 20, marginBottom: 8 }}>
+            <div className="rd-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 22 }}>
+                <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}><Icon n="💱" size={18} style={{ color: "var(--rd-primary)" }} /> {t("Лиды в CRM", "Ліди в CRM")}</b>
+                <span style={{ fontSize: 11, background: "var(--rd-bg)", padding: "4px 8px", borderRadius: 4, color: "var(--rd-text2)" }}>Meta → CRM</span>
+              </div>
+              {(() => {
+                const totalLeads = Number(summary.meta_origin_leads || 0);
+                const attributed = Number(summary.attributed_leads || 0);
+                const unassigned = Number(summary.meta_unassigned_leads || 0);
+                const convPct = totalLeads ? Math.round(attributed * 100 / totalLeads) : 0;
+                return (
+                  <div style={{ display: "flex", alignItems: "center", gap: 28, flexWrap: "wrap" }}>
+                    <Donut total={totalLeads} part={attributed} label={t("всего", "всього")} />
+                    <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 14 }}>
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                          <span style={{ color: "var(--rd-text2)" }}>{t("С точным ID рекламы", "З точним ID реклами")}</span>
+                          <b style={{ color: "var(--rd-text)" }}>{count(attributed)}</b>
+                        </div>
+                        <div style={{ width: "100%", background: "var(--rd-border)", height: 6, borderRadius: 999, overflow: "hidden" }}>
+                          <div style={{ background: "var(--rd-primary)", height: "100%", width: convPct + "%" }} />
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                          <span style={{ color: "var(--rd-text2)" }}>{t("Источник не определён", "Джерело не визначене")}</span>
+                          <b style={{ color: "var(--rd-warning)" }}>{count(unassigned)}</b>
+                        </div>
+                        <div style={{ width: "100%", background: "var(--rd-border)", height: 6, borderRadius: 999, overflow: "hidden" }}>
+                          <div style={{ background: "var(--rd-warning)", height: "100%", width: (totalLeads ? Math.round(unassigned * 100 / totalLeads) : 0) + "%" }} />
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--rd-text2)", display: "flex", alignItems: "center", gap: 4 }}>
+                        <Icon n="info" size={14} /> {t("Конверсия в точный лид", "Конверсія в точний лід")}: {convPct}%
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="rd-card" style={{ position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", right: -24, bottom: -24, opacity: .05, pointerEvents: "none" }}><Icon n="money" size={150} strokeWidth={1} /></div>
+              <div style={{ marginBottom: 22 }}>
+                <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}><Icon n="badge-check" size={18} style={{ color: "var(--rd-success)" }} /> {t("Подтверждённый результат", "Підтверджений результат")}</b>
+                <div style={{ fontSize: 12, color: "var(--rd-text2)" }}>{t("Только карточки с точным ID рекламы", "Лише картки з точним ID реклами")}</div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(105px, 1fr))", gap: 14, marginBottom: 20, position: "relative", zIndex: 1 }}>
+                <div style={{ border: "1px solid var(--rd-border)", borderRadius: 8, padding: 14, background: "var(--rd-card)" }}>
+                  <div style={{ fontSize: 10, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>{t("Рекл. лиды", "Рекл. ліди")}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-primary)" }}>{count(summary.attributed_leads)}</div>
+                </div>
+                <div style={{ border: "1px solid var(--rd-border)", borderRadius: 8, padding: 14, background: "var(--rd-card)" }}>
+                  <div style={{ fontSize: 10, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>{t("Сделки", "Угоди")}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-purple)" }}>{count(summary.attributed_deals)}</div>
+                </div>
+                <div style={{ border: "1px solid var(--rd-border)", borderRadius: 8, padding: 14, background: "var(--rd-card)" }}>
+                  <div style={{ fontSize: 10, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>{t("Успешные", "Успішні")}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-success)" }}>{count(summary.won_deals)}</div>
+                </div>
+                <div style={{ border: "1px solid var(--rd-border)", borderRadius: 8, padding: 14, background: "var(--rd-card)" }}>
+                  <div style={{ fontSize: 10, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>{t("Выручка", "Виручка")}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "var(--rd-success)", whiteSpace: "nowrap" }}>{moneyUah(summary.won_revenue)}</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, color: "var(--rd-text2)", position: "relative", zIndex: 1 }}>
+                <Icon n="bulb" size={16} style={{ color: "var(--rd-warning)", flexShrink: 0, marginTop: 2 }} />
+                <span>{t("Meta считает события по своему окну атрибуции. CRM показывает только реальные карточки. Исторические лиды без ID не приписываются рекламе.", "Meta рахує події за власним вікном атрибуції. CRM показує лише реальні картки. Історичні ліди без ID не приписуються рекламі.")}</span>
+              </div>
+            </div>
           </div>
           <SectionTitle title={t("Платная реклама Meta", "Платна реклама Meta")} note={t("Данные Ads Manager за выбранный период", "Дані Ads Manager за вибраний період")} />
           <div style={cardsRow}>
@@ -666,20 +859,6 @@ export default function MetaMarketing() {
             {card(t("Цена лида (все из Meta)", "Ціна ліда (всі з Meta)"), cplUah == null ? "—" : moneyUah(cplUah), "#b45309", t("расход в грн ÷ все лиды CRM из Meta", "витрати грн ÷ усі ліди CRM з Meta"))}
             {card(t("Цена лида (с точным ID)", "Ціна ліда (з точним ID)"), cplExactUah == null ? "—" : moneyUah(cplExactUah), "#d97706", t("расход в грн ÷ лиды с подтверждённой рекламой", "витрати грн ÷ ліди з підтвердженою рекламою"))}
           </div>
-          <SectionTitle title={t("Подтверждённый результат в CRM", "Підтверджений результат у CRM")} note={t("Только карточки с точным ID рекламы; ручные и органические исключены", "Лише картки з точним ID реклами; ручні та органічні виключені")} />
-          <div style={cardsRow}>
-            {card(t("Рекламные лиды CRM", "Рекламні ліди CRM"), count(summary.attributed_leads), "#2563eb")}
-            {card(t("Рекламные сделки", "Рекламні угоди"), count(summary.attributed_deals), "#7c3aed")}
-            {card(t("Успешные", "Успішні"), count(summary.won_deals), "#16a34a")}
-            {card(t("Выручка успешных", "Виручка успішних"), moneyUah(summary.won_revenue), "#15803d")}
-            {card(t("Оплачено", "Сплачено"), moneyUah(summary.paid_revenue), "#047857")}
-          </div>
-          <div className="note" style={{ lineHeight: 1.5 }}>
-            <b>{t("Почему цифры Meta и CRM отличаются:", "Чому цифри Meta й CRM відрізняються:")}</b> {t(
-              "Meta считает события по своему окну атрибуции. CRM показывает только реальные карточки с доказанной рекламной связью. Исторические лиды без ID объявления не приписываются рекламе задним числом.",
-              "Meta рахує події за власним вікном атрибуції. CRM показує лише реальні картки з доведеною рекламною прив'язкою. Історичні ліди без ID оголошення не приписуються рекламі заднім числом."
-            )}
-          </div>
           <SectionTitle title={t("Продажи и окупаемость", "Продажі та окупність")} note={t("21 Основний продукт, 22 Тестовий набір; другие воронки только с точным ID рекламы", "21 Основний продукт, 22 Тестовий набір; інші воронки лише з точним ID реклами")} />
           <div style={cardsRow}>
             {card(t("Продажи", "Продажі"), count(profitability.sales), "#16a34a")}
@@ -695,8 +874,25 @@ export default function MetaMarketing() {
             {card(t("ROAS с точным ID", "ROAS з точним ID"), profitability.exact_ad_roas == null ? "—" : `${profitability.exact_ad_roas}×`, "#7c3aed", t("только доказанная связь с объявлением; «—» = таких продаж пока нет", "лише доведений звʼязок з оголошенням; «—» = таких продажів поки немає"))}
             {card("ROMI", profitability.romi == null ? "—" : `${profitability.romi}%`, Number(profitability.romi) >= 0 ? "#15803d" : "#dc2626", t("(валовая прибыль − реклама) ÷ реклама", "(валовий прибуток − реклама) ÷ реклама"))}
           </div>
-          <SectionTitle title={t("Общая статистика по дням", "Загальна статистика за днями")} note={t("Реклама, лиды, продажи, повторные покупки, LTV и прибыль в одной таблице", "Реклама, ліди, продажі, повторні покупки, LTV і прибуток в одній таблиці")} />
-          {dailyTable}
+          {/* «Деталізація за днями» (макет 27.08): шапка-панель з пошуком дати і скачуванням CSV */}
+          <div className="rd-card" style={{ padding: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12, marginTop: 20 }}>
+            <div>
+              <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}><Icon n="list" size={18} style={{ color: "var(--rd-primary)" }} /> {t("Детализация по дням", "Деталізація за днями")}</b>
+              <div style={{ fontSize: 12, color: "var(--rd-text2)", marginTop: 2 }}>{t("Сводная статистика по всем каналам", "Зведена статистика по всіх каналах")}</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ position: "relative" }}>
+                <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", display: "inline-flex" }}><Icon n="search" size={16} style={{ color: "var(--rd-text2)" }} /></span>
+                <input value={daySearch} onChange={(e) => setDaySearch(e.target.value)} placeholder={t("Поиск даты…", "Пошук дати…")}
+                  style={{ paddingLeft: 34, paddingRight: 12, height: 36, border: "1px solid var(--rd-border)", borderRadius: 6, fontSize: 13, width: 180, outline: "none", background: "var(--rd-card)", color: "var(--rd-text)", boxSizing: "border-box" }} />
+              </div>
+              <button onClick={downloadDailyCsv} title={t("Скачать таблицу файлом (CSV, открывается в Excel)", "Скачати таблицю файлом (CSV, відкривається в Excel)")}
+                style={{ width: 36, height: 36, border: "1px solid var(--rd-border)", borderRadius: 6, background: "var(--rd-card)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                <Icon n="download" size={16} style={{ color: "var(--rd-text2)" }} />
+              </button>
+            </div>
+          </div>
+          <DailySalesTable rows={dailyFiltered} t={t} />
         </>}
 
         {tab === "profitability" && <>
@@ -1104,5 +1300,5 @@ const th: any = { textAlign: "left", padding: "10px 12px", fontSize: 12, color: 
 const td: any = { padding: "10px 12px", fontSize: 13, borderBottom: "1px solid #eef2f7", verticalAlign: "top" };
 const dealTd: any = { padding: "9px 10px", fontSize: 12, borderTop: "1px solid #eef2f7", verticalAlign: "top" };
 const dayToggle: any = { minHeight: 36, padding: "0 8px 0 0", border: 0, background: "transparent", color: "#0f172a", fontWeight: 750, cursor: "pointer", display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", textAlign: "left" };
-const dateLabel: any = { display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#64748b" };
-const dateInput: any = { height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px", background: "#fff" };
+/* Поля дат у шапці редизайну: без рамки, всередині спільного «чипа» з календариком */
+const rdDate: any = { border: "none", padding: 0, fontSize: 13, color: "var(--rd-text)", background: "transparent", outline: "none", width: 118, fontFamily: "inherit" };
