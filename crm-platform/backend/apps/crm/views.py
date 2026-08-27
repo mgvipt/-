@@ -4115,13 +4115,12 @@ class MetaMarketingView(APIView):
             "followers": followers,
             "dialogues": dialogues,
             "offline": offline,
-            # Розділи маркетингу, які бачить користувач: якщо секційних прав нема
-            # ЗОВСІМ — бачить усі (зворотна сумісність); інакше — лише зазначені.
-            "sections": (
-                [s for s in ("overview", "meta", "site", "offline")
-                 if request.user.has_perm_code("marketing.section." + s)]
-                or ["overview", "meta", "site", "offline"]
-            ),
+            # Розділи маркетингу: видно ЛИШЕ явно увімкнені (вимога Олега 27.08:
+            # «коли включено — тоді бачить»). Суперюзер бачить усі.
+            "sections": [
+                s for s in ("overview", "meta", "site", "offline")
+                if request.user.has_perm_code("marketing.section." + s)
+            ],
             "profitability": profitability,
             "daily": daily_rows,
             "outbox": outbox,

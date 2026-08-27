@@ -338,7 +338,7 @@ function MetaSettingsModal({ onClose }: { onClose: () => void }) {
                 </tr>
               ))}</tbody>
             </table>
-            <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{t("«Доступ» — вход в маркетинг. Разделы: если не отмечен НИ ОДИН — роль видит все разделы; отметьте нужные — увидит только их.", "«Доступ» — вхід у маркетинг. Розділи: якщо не позначено ЖОДНОГО — роль бачить усі розділи; позначте потрібні — бачитиме лише їх.")}</div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{t("«Доступ» — вход в маркетинг. Разделы: роль видит ТОЛЬКО отмеченные; не отмечено ничего — разделы не видны.", "«Доступ» — вхід у маркетинг. Розділи: роль бачить ЛИШЕ позначені; нічого не позначено — розділи не видно.")}</div>
           </div>
         )}
         <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>{t("Индивидуально по сотрудникам — Настройки → Пользователи.", "Індивідуально — Налаштування → Користувачі.")}</div>
@@ -625,7 +625,7 @@ export default function MetaMarketing() {
   const offline = data?.offline || {};
   const allowedSections: string[] = data?.sections || ["overview", "meta", "site", "offline"];
   useEffect(() => {
-    if (data && !allowedSections.includes(section)) pickSection(allowedSections[0] || "meta");
+    if (data && allowedSections.length && !allowedSections.includes(section)) pickSection(allowedSections[0]);
   }, [data]);  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (section === "offline" || section === "overview") {
@@ -761,6 +761,7 @@ export default function MetaMarketing() {
         {tabs.map((item) => <button key={item.key} className={"rd-pill" + (tab === item.key ? " active" : "")} onClick={() => setTab(item.key)}>{t(item.ru, item.ua)}</button>)}
       </nav>}
       {error && <div className="note" style={{ color: "#b91c1c" }}>{error}</div>}
+      {data && allowedSections.length === 0 && <div className="note" style={{ background: "#fef9c3", color: "#854d0e" }}>{t("Вам не назначен ни один раздел маркетинга. Попросите руководителя включить нужные разделы: ⚙️ настройки маркетинга → доступ по ролям.", "Вам не призначено жодного розділу маркетингу. Попросіть керівника увімкнути потрібні розділи: ⚙️ налаштування маркетингу → доступ за ролями.")}</div>}
       {section === "overview" && data && <AllChannelsOverview data={data} offlineData={offlineData} t={t} go={pickSection} />}
       {section === "site" && data && <SiteSection data={data} from={from} to={to} t={t} />}
       {section === "offline" && <OfflineSection data={offlineData} t={t} />}
