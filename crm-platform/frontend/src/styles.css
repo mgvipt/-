@@ -306,6 +306,7 @@ input.num-tight { -moz-appearance: textfield; appearance: textfield; }
   --rd-warning:#E69B00;   /* жёлтый (внимание) */
   --rd-error:#D32F2F;     /* красный (расходы, ошибки) */
   --rd-purple:#7e22ce;    /* фиолетовый (крупные цифры аудитории) */
+  --rd-muted:#F9FAFB;     /* молочный фон шапок таблиц и панелей */
 }
 /* Белая карточка с мягкой тенью (при наведении тень чуть сильнее) */
 .rd-card{background:var(--rd-card);border:1px solid var(--rd-border);border-radius:12px;box-shadow:0 4px 6px -1px rgba(0,0,0,.05),0 2px 4px -1px rgba(0,0,0,.03);padding:24px;transition:box-shadow .2s ease-in-out;}

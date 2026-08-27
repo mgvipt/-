@@ -83,12 +83,13 @@ function Pager({ total, pageSize, page, sizeKey, onSize, onPage, t }: { total: n
   const pages = all ? 1 : Math.max(1, Math.ceil(total / pageSize));
   const from = all || total === 0 ? (total ? 1 : 0) : page * pageSize + 1;
   const to = all ? total : Math.min(total, (page + 1) * pageSize);
-  const btn: any = { minWidth: 30, height: 28, border: "1px solid #cbd5e1", borderRadius: 7, background: "#fff", cursor: "pointer", fontSize: 13 };
+  /* Стиль пагінації за макетами crm_2/crm_3 (27.08): кнопки-квадратики в рамках, «сторінка 1 / 2» */
+  const btn: any = { minWidth: 32, height: 32, border: "1px solid var(--rd-border)", borderRadius: 6, background: "var(--rd-card)", cursor: "pointer", fontSize: 13, color: "var(--rd-text)" };
   return (
-    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "8px 12px", fontSize: 12.5, color: "#475569" }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "10px 14px", fontSize: 13, color: "var(--rd-text2)" }}>
       <span>{t("Показывать по", "Показувати по")}:</span>
       <select value={pageSize} onChange={(e) => { const n = Number(e.target.value); try { localStorage.setItem(sizeKey, String(n)); } catch { /* */ } onSize(n); onPage(0); }}
-        style={{ height: 28, border: "1px solid #cbd5e1", borderRadius: 7, fontSize: 12.5, padding: "0 6px" }}>
+        style={{ height: 32, border: "1px solid var(--rd-border)", borderRadius: 6, fontSize: 13, padding: "0 8px", background: "var(--rd-card)", color: "var(--rd-text)" }}>
         {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
         <option value={99999}>{t("все", "всі")}</option>
       </select>
@@ -97,7 +98,7 @@ function Pager({ total, pageSize, page, sizeKey, onSize, onPage, t }: { total: n
       {!all && pages > 1 && <>
         <button style={btn} disabled={page <= 0} onClick={() => onPage(0)}>«</button>
         <button style={btn} disabled={page <= 0} onClick={() => onPage(page - 1)}>‹</button>
-        <span style={{ minWidth: 78, textAlign: "center" }}>{t("стр.", "стор.")} {page + 1} / {pages}</span>
+        <span style={{ minWidth: 96, textAlign: "center", color: "var(--rd-text)" }}>{t("страница", "сторінка")} {page + 1} / {pages}</span>
         <button style={btn} disabled={page >= pages - 1} onClick={() => onPage(page + 1)}>›</button>
         <button style={btn} disabled={page >= pages - 1} onClick={() => onPage(pages - 1)}>»</button>
       </>}
@@ -117,7 +118,7 @@ function ResizableTable({ headers, rows, empty, minWidth, storageKey, tips }: { 
           <colgroup>{headers.map((_, i) => <col key={i} style={cw.widths[i] ? { width: cw.widths[i] } : undefined} />)}</colgroup>
           <thead style={{ position: "sticky", top: 0, zIndex: 3 }}><tr>{headers.map((h, i) => (
             <ResizableTh key={h + i} width={cw.widths[i]} onResize={(w) => cw.set(i, w)}
-              thStyle={{ ...th, whiteSpace: "normal", wordBreak: "break-word", verticalAlign: "bottom", background: "#eef2f7" }}
+              thStyle={{ ...th, whiteSpace: "normal", wordBreak: "break-word", verticalAlign: "bottom", background: "var(--rd-muted)" }}
               label={tips && tips[i] ? <Tip text={tips[i]}>{h}<span style={{ opacity: .45, marginLeft: 3, fontSize: 10, fontWeight: 400 }}>ⓘ</span></Tip> : h} />
           ))}</tr></thead>
           <tbody>{rows.length ? rows.map((row, i) => <tr key={i}>{row.map((v, j) => <td key={j} style={td}>{v}</td>)}</tr>) :
@@ -456,7 +457,7 @@ function PixelEventsTab({ from, to }: { from: string; to: string }) {
       const slice = list.slice(cur * PAGE, cur * PAGE + PAGE);
       const hdr = (key: string, label: string) => (
         <th key={key} onClick={() => { if (sortKey === key) setSortDir((x) => (x === 1 ? -1 : 1)); else { setSortKey(key); setSortDir(key === "at" ? -1 : 1); } }}
-          style={{ textAlign: "left", padding: "8px 10px", fontSize: 11.5, color: sortKey === key ? "#0f172a" : "#64748b", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", borderBottom: "2px solid #e2e8f0", background: "#f8fafc" }}>
+          style={{ textAlign: "left", padding: "10px 10px", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em", color: sortKey === key ? "var(--rd-text)" : "var(--rd-text2)", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", borderBottom: "1px solid var(--rd-border)", background: "var(--rd-muted)" }}>
           {label}{sortKey === key ? (sortDir === 1 ? " ▲" : " ▼") : ""}
         </th>
       );
@@ -602,6 +603,11 @@ export default function MetaMarketing() {
     <ResizableTable headers={headers} rows={rows} empty={empty} minWidth={minWidth}
       storageKey={"mm_tbl_" + headers.join("|").slice(0, 60)} tips={tips} />
   );
+  // Пара комірок «назва | значення» для панелі-таблиці «Платна реклама Meta» (макет crm_1)
+  const kv = (label: ReactNode, value: ReactNode, color: string, divider = false) => (<>
+    <td style={{ padding: "12px 24px", fontSize: 14, color: "var(--rd-text)", whiteSpace: "nowrap", borderLeft: divider ? "1px solid var(--rd-border)" : "none" }}>{label}</td>
+    <td style={{ padding: "12px 24px", fontSize: 14, fontWeight: 600, color, textAlign: "right", whiteSpace: "nowrap" }}>{value}</td>
+  </>);
 
   const syncWarning = !integration.insights_sync_configured ? (
     <div className="note" style={{ marginBottom: 14, borderLeft: "4px solid #f59e0b", lineHeight: 1.55 }}>
@@ -841,23 +847,34 @@ export default function MetaMarketing() {
               </div>
             </div>
           </div>
-          <SectionTitle title={t("Платная реклама Meta", "Платна реклама Meta")} note={t("Данные Ads Manager за выбранный период", "Дані Ads Manager за вибраний період")} />
-          <div style={cardsRow}>
-            {card(t("Расход", "Витрати"), moneyUsd(paidSummary.spend), "#dc2626")}
-            {card(t("Подписки с рекламы", "Підписки з реклами"), followers.paid_report_rows ? count(paidSummary.instagram_follows) : "—", "#2563eb", t("Из ежедневного отчёта Ads Manager", "З щоденного звіту Ads Manager"))}
-            {card(t("Цена подписчика", "Ціна підписника"), paidSummary.cost_per_instagram_follow == null ? "—" : moneyUsd(paidSummary.cost_per_instagram_follow), "#0f766e")}
-            {card(t("Расход в гривне (НБУ)", "Витрати у гривні (НБУ)"), paidSummary.spend_uah == null ? "—" : moneyUah(paidSummary.spend_uah), "#dc2626", t("официальный курс НБУ на каждый день", "офіційний курс НБУ на кожен день"))}
-            {card(t("Показы", "Покази"), count(paidSummary.impressions), "#2563eb")}
-            {card(t("Клики", "Кліки"), count(paidSummary.clicks), "#7c3aed")}
-            {card("CTR", optional(paidSummary.ctr, "%"), "#7c3aed")}
-            {card(t("Цена клика (CPC)", "Ціна кліку (CPC)"), cpcUsd == null ? "—" : moneyUsd(cpcUsd), "#0891b2", t("расход ÷ клики", "витрати ÷ кліки"))}
-            {card("CPM", optional(paidSummary.cpm), "#0891b2", t("цена 1000 показов, $", "ціна 1000 показів, $"))}
-            {card(t("Начатые диалоги по Ads Manager", "Розпочаті діалоги за Ads Manager"), count(paidSummary.messages_started), "#0f766e", t("Это показатель рекламы Meta, а не продажи и не уникальные лиды CRM", "Це показник реклами Meta, а не продажі й не унікальні ліди CRM"))}
-            {card(t("Цена диалога", "Ціна діалогу"), paidSummary.cost_per_message == null ? "—" : moneyUsd(paidSummary.cost_per_message), "#0f766e", t("расход рекламы ÷ начатые диалоги", "витрати реклами ÷ розпочаті діалоги"))}
-            {card(t("Цена диалога, ₴", "Ціна діалогу, ₴"), (paidSummary.spend_uah && paidSummary.messages_started) ? moneyUah(paidSummary.spend_uah / paidSummary.messages_started) : "—", "#0f766e", t("расход в гривне ÷ начатые диалоги", "витрати у гривні ÷ розпочаті діалоги"))}
-            {card(t("Лиды Meta", "Ліди Meta"), count(paidSummary.meta_leads), "#0f766e")}
-            {card(t("Цена лида (все из Meta)", "Ціна ліда (всі з Meta)"), cplUah == null ? "—" : moneyUah(cplUah), "#b45309", t("расход в грн ÷ все лиды CRM из Meta", "витрати грн ÷ усі ліди CRM з Meta"))}
-            {card(t("Цена лида (с точным ID)", "Ціна ліда (з точним ID)"), cplExactUah == null ? "—" : moneyUah(cplExactUah), "#d97706", t("расход в грн ÷ лиды с подтверждённой рекламой", "витрати грн ÷ ліди з підтвердженою рекламою"))}
+          {/* «Платна реклама Meta» (макет crm_1 27.08): панель-таблиця «назва — значення» 3×3.
+              Покази / кліки / діалоги та витрати в ₴ не дублюються — вони у картці Ads Manager вище. */}
+          <div className="rd-card" style={{ padding: 0, overflow: "hidden", marginTop: 20, marginBottom: 8 }}>
+            <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--rd-border)", background: "var(--rd-muted)" }}>
+              <b style={{ fontSize: 18, color: "var(--rd-text)" }}>{t("Платная реклама Meta", "Платна реклама Meta")}</b>
+              <div style={{ fontSize: 12, color: "var(--rd-text2)", marginTop: 2 }}>{t("Данные Ads Manager за выбранный период", "Дані Ads Manager за вибраний період")}</div>
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
+                <tbody>
+                  <tr style={{ borderBottom: "1px solid var(--rd-border)" }}>
+                    {kv(t("Расходы", "Витрати"), moneyUsd(paidSummary.spend), "var(--rd-error)")}
+                    {kv(<>{t("Подписки с рекламы", "Підписки з реклами")} <InfoI tip={t("Из ежедневного отчёта Ads Manager: только подписки, которые Meta отнесла к рекламе", "З щоденного звіту Ads Manager: лише підписки, які Meta віднесла до реклами")} /></>, followers.paid_report_rows ? count(paidSummary.instagram_follows) : "—", "var(--rd-primary)", true)}
+                    {kv(t("Стоимость подписчика", "Вартість підписника"), paidSummary.cost_per_instagram_follow == null ? "—" : moneyUsd(paidSummary.cost_per_instagram_follow), "var(--rd-success)", true)}
+                  </tr>
+                  <tr style={{ borderBottom: "1px solid var(--rd-border)" }}>
+                    {kv("CTR", optional(paidSummary.ctr, "%"), "var(--rd-purple)")}
+                    {kv(<>{t("Стоимость клика (CPC)", "Вартість кліку (CPC)")} <InfoI tip={t("расход ÷ клики", "витрати ÷ кліки")} /></>, cpcUsd == null ? "—" : moneyUsd(cpcUsd), "var(--rd-primary)", true)}
+                    {kv(<>CPM <InfoI tip={t("цена 1000 показов, $", "ціна 1000 показів, $")} /></>, optional(paidSummary.cpm), "var(--rd-primary)", true)}
+                  </tr>
+                  <tr>
+                    {kv(t("Лиды Meta", "Ліди Meta"), count(paidSummary.meta_leads), "var(--rd-success)")}
+                    {kv(<>{t("Стоимость лида (все из Meta)", "Вартість ліда (всі з Meta)")} <InfoI tip={t("расход в грн ÷ все лиды CRM из Meta", "витрати грн ÷ усі ліди CRM з Meta")} /></>, cplUah == null ? "—" : moneyUah(cplUah), "var(--rd-warning)", true)}
+                    {kv(<>{t("Стоимость лида (с точным ID)", "Вартість ліда (з точним ID)")} <InfoI tip={t("расход в грн ÷ лиды с подтверждённой рекламой", "витрати грн ÷ ліди з підтвердженою рекламою")} /></>, cplExactUah == null ? "—" : moneyUah(cplExactUah), "var(--rd-warning)", true)}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
           <SectionTitle title={t("Продажи и окупаемость", "Продажі та окупність")} note={t("21 Основний продукт, 22 Тестовий набір; другие воронки только с точным ID рекламы", "21 Основний продукт, 22 Тестовий набір; інші воронки лише з точним ID реклами")} />
           <div style={cardsRow}>
@@ -1104,7 +1121,7 @@ function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string)
   });
   const values = (r: any): ReactNode[] => [
     optional(r.followers_total, "", t("снимок ещё не сохранён", "знімок ще не збережено")),
-    r.followers_gained == null ? "—" : `${r.followers_gained > 0 ? "+" : ""}${count(r.followers_gained)}`,
+    r.followers_gained == null ? "—" : <b style={{ color: r.followers_gained > 0 ? "var(--rd-success)" : r.followers_gained < 0 ? "var(--rd-error)" : "var(--rd-text2)" }}>{r.followers_gained > 0 ? "+" : ""}{count(r.followers_gained)}</b>,
     count(r.content_published), moneyUsd(r.spend), r.spend_uah == null ? "—" : moneyUah(r.spend_uah),
     count(r.messages_started), count(r.crm_meta_leads), count(r.exact_ad_leads), count(r.sales),
     count(r.repeat_sales), moneyUah(r.revenue), moneyUah(r.repeat_revenue), moneyUah(r.average_ltv),
@@ -1117,29 +1134,29 @@ function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string)
     <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 240px)" }}>
     <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1400 }}>
       <colgroup>{headers.map((_, i) => <col key={i} style={cw.widths[i] ? { width: cw.widths[i] } : undefined} />)}</colgroup>
-      <thead style={{ position: "sticky", top: 0, zIndex: 3 }}><tr>{headers.map((header, i) => <ResizableTh key={header.s} label={<Tip text={header.tip}>{header.s}<span style={{ opacity: .45, marginLeft: 3, fontSize: 10, fontWeight: 400 }}>ⓘ</span></Tip>} width={cw.widths[i]} onResize={(w) => cw.set(i, w)} thStyle={{ ...th, whiteSpace: "normal", wordBreak: "break-word", verticalAlign: "bottom", background: "#eef2f7" }} />)}</tr></thead>
+      <thead style={{ position: "sticky", top: 0, zIndex: 3 }}><tr>{headers.map((header, i) => <ResizableTh key={header.s} label={<Tip text={header.tip}>{header.s}<span style={{ opacity: .45, marginLeft: 3, fontSize: 10, fontWeight: 400 }}>ⓘ</span></Tip>} width={cw.widths[i]} onResize={(w) => cw.set(i, w)} thStyle={{ ...th, whiteSpace: "normal", wordBreak: "break-word", verticalAlign: "bottom", background: "var(--rd-muted)" }} />)}</tr></thead>
       <tbody>{rows.length ? paged.map((r: any) => {
         const isOpen = expanded.has(r.date);
         return <Fragment key={r.date}>
-          <tr style={{ background: isOpen ? "#f8fafc" : undefined }}>
+          <tr style={{ background: isOpen ? "var(--rd-muted)" : undefined }}>
             <td style={td}>
               <button
                 type="button"
                 aria-expanded={isOpen}
                 aria-label={t(`Показать сделки за ${r.date}`, `Показати угоди за ${r.date}`)}
                 onClick={() => toggle(r.date)}
-                style={dayToggle}
+                style={{ ...dayToggle, color: isOpen ? "var(--rd-primary)" : "var(--rd-text)" }}
               >
-                <span style={{ width: 18, color: "#2563eb" }}>{isOpen ? "▾" : "▸"}</span>
+                <span style={{ width: 18, color: "var(--rd-primary)" }}>{isOpen ? "▾" : "▸"}</span>
                 {new Date(`${r.date}T12:00:00`).toLocaleDateString("ru-RU")}
               </button>
             </td>
             {values(r).map((value, index) => <td key={index} style={td}>{value}</td>)}
           </tr>
           {isOpen && <tr>
-            <td colSpan={headers.length} style={{ padding: 0, borderBottom: "1px solid #cbd5e1" }}>
-              <div style={{ padding: "14px 16px 18px", background: "#f8fafc" }}>
-                <div className="muted" style={{ fontSize: 11, marginBottom: 10 }}>
+            <td colSpan={headers.length} style={{ padding: 0, borderBottom: "1px solid var(--rd-border)" }}>
+              <div style={{ padding: "14px 20px 18px", background: "var(--rd-bg)" }}>
+                <div style={{ fontSize: 12, color: "var(--rd-text2)", fontStyle: "italic", marginBottom: 10 }}>
                   {t(
                     "Расшифровка ровно этой строки. Повторные сделки уже входят в общие продажи и выручку.",
                     "Розшифровка саме цього рядка. Повторні угоди вже входять у загальні продажі та виручку.",
@@ -1148,13 +1165,13 @@ function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string)
                 <DailyDealSection
                   title={t("Первичные оплаченные сделки", "Первинні оплачені угоди")}
                   rows={r.deals?.primary || []}
-                  color="#15803d"
+                  color="var(--rd-success)"
                   t={t}
                 />
                 <DailyDealSection
                   title={t("Повторные оплаченные сделки", "Повторні оплачені угоди")}
                   rows={r.deals?.repeat || []}
-                  color="#0e7490"
+                  color="var(--rd-primary)"
                   t={t}
                 />
               </div>
@@ -1168,20 +1185,21 @@ function DailySalesTable({ rows, t }: { rows: any[]; t: (ru: string, ua: string)
   </div>;
 }
 
+/* Розшифровка дня (макет crm_3): заголовок секції кольором ПОЗА рамкою, таблиця угод у білій картці */
 function DailyDealSection({ title, rows, color, t }: { title: string; rows: any[]; color: string; t: (ru: string, ua: string) => string }) {
   const sectionTotal = rows.reduce((sum, row) => sum + Number(row.paid_today || 0), 0);
-  return <div style={{ marginTop: 10, border: "1px solid #e2e8f0", borderRadius: 10, background: "#fff", overflow: "hidden" }}>
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 12px", background: "#f1f5f9", alignItems: "center" }}>
-      <b style={{ color }}>{title}</b>
-      <span style={{ fontWeight: 800, color }}>{count(rows.length)} · {moneyUah(sectionTotal)}</span>
+  return <div style={{ marginTop: 12 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "0 2px 8px", alignItems: "center" }}>
+      <b style={{ color, fontSize: 13.5 }}>{title}</b>
+      <span style={{ fontWeight: 800, color, fontSize: 13.5 }}>{count(rows.length)} · {moneyUah(sectionTotal)}</span>
     </div>
-    {rows.length ? <div style={{ overflowX: "auto" }}>
+    {rows.length ? <div style={{ overflowX: "auto", border: "1px solid var(--rd-border)", borderRadius: 8, background: "var(--rd-card)" }}>
       <table style={{ width: "100%", minWidth: 1040, borderCollapse: "collapse" }}>
         <thead><tr>
           {[t("Сделка", "Угода"), t("Клиент", "Клієнт"), t("Воронка / стадия", "Воронка / стадія"), t("Менеджер", "Менеджер"), t("Способ оплаты", "Спосіб оплати"), t("Время", "Час"), t("Оплачено в этот день", "Сплачено цього дня"), t("Сумма сделки", "Сума угоди")].map((header) => <th key={header} style={{ ...th, padding: "8px 10px", fontSize: 11 }}>{header}</th>)}
         </tr></thead>
         <tbody>{rows.map((deal: any) => <tr key={deal.deal_id}>
-          <td style={dealTd}><a href={`/deals/${deal.deal_id}`} style={{ color: "#2563eb", fontWeight: 750 }}>#{deal.deal_id} · {deal.title || t("Без названия", "Без назви")}</a>{deal.meta_attributed && <div style={{ color: "#7c3aed", fontSize: 10, marginTop: 2 }}>{t("Есть точный ID Meta", "Є точний ID Meta")}</div>}</td>
+          <td style={dealTd}><a href={`/deals/${deal.deal_id}`} style={{ color: "var(--rd-primary)", fontWeight: 750 }}>#{deal.deal_id} · {deal.title || t("Без названия", "Без назви")}</a>{deal.meta_attributed && <div style={{ color: "var(--rd-purple)", fontSize: 10, marginTop: 2 }}>{t("Есть точный ID Meta", "Є точний ID Meta")}</div>}</td>
           <td style={dealTd}>{deal.contact_name || "—"}</td>
           <td style={dealTd}><b>{deal.funnel || "—"}</b><div className="muted" style={{ fontSize: 10, marginTop: 2 }}>{deal.stage || "—"}</div></td>
           <td style={dealTd}>{deal.manager || "—"}</td>
@@ -1296,9 +1314,10 @@ function Empty({ text }: { text: string }) {
 /* UI v3: біла панель-сітка, рядки «назва — значення» у кілька колонок (компакт без прокрутки) */
 const cardsRow: any = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(228px, 1fr))", columnGap: 22, rowGap: 0, marginBottom: 9, background: "#fff", border: "1px solid #e5eaf1", borderRadius: 10, padding: "6px 11px" };
 const metricGrid: any = { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: 12 };
-const th: any = { textAlign: "left", padding: "10px 12px", fontSize: 12, color: "#64748b", borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap" };
-const td: any = { padding: "10px 12px", fontSize: 13, borderBottom: "1px solid #eef2f7", verticalAlign: "top" };
-const dealTd: any = { padding: "9px 10px", fontSize: 12, borderTop: "1px solid #eef2f7", verticalAlign: "top" };
+/* Шапки таблиць за макетами crm_2/crm_3: ВЕЛИКІ літери, сірий текст, молочний фон */
+const th: any = { textAlign: "left", padding: "12px 12px", fontSize: 11, fontWeight: 600, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".04em", borderBottom: "1px solid var(--rd-border)", whiteSpace: "nowrap", background: "var(--rd-muted)" };
+const td: any = { padding: "10px 12px", fontSize: 13, color: "var(--rd-text)", borderBottom: "1px solid var(--rd-border)", verticalAlign: "top" };
+const dealTd: any = { padding: "9px 10px", fontSize: 12, borderTop: "1px solid var(--rd-border)", verticalAlign: "top" };
 const dayToggle: any = { minHeight: 36, padding: "0 8px 0 0", border: 0, background: "transparent", color: "#0f172a", fontWeight: 750, cursor: "pointer", display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", textAlign: "left" };
 /* Поля дат у шапці редизайну: без рамки, всередині спільного «чипа» з календариком */
 const rdDate: any = { border: "none", padding: 0, fontSize: 13, color: "var(--rd-text)", background: "transparent", outline: "none", width: 118, fontFamily: "inherit" };
