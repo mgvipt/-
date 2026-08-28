@@ -3908,7 +3908,7 @@ function IncomingDocsTab() {
   const { t } = useLang();
   const [rows, setRows] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
-  const [sub, setSub] = useState<"np_act" | "supplier">("np_act");
+  const [sub, setSub] = useState<"np_act" | "supplier" | "privat">("np_act");
   const [mapDoc, setMapDoc] = useState<number | null>(null);
   const [msgDoc, setMsgDoc] = useState<number | null>(null);
   const load = () => api.get<any[]>("/api/integrations/incoming-docs/?status=draft").then(setRows).catch(() => setRows([]));
@@ -3931,7 +3931,7 @@ function IncomingDocsTab() {
   };
   const np = rows.filter((r) => r.doc_type === "np_act");
   const sup = rows.filter((r) => r.doc_type === "supplier");
-  const list = sub === "np_act" ? np : sup;
+  const list = sub === "np_act" ? np : sub === "supplier" ? sup : [];
   return (
     <div className="scroll pad">
       <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
@@ -3941,6 +3941,7 @@ function IncomingDocsTab() {
       <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
         <button className={"btn" + (sub === "np_act" ? " btn-primary" : " btn-light")} onClick={() => setSub("np_act")}><Icon n="🚚" size={14} /> {t("Нова Пошта", "Нова Пошта")} ({np.length})</button>
         <button className={"btn" + (sub === "supplier" ? " btn-primary" : " btn-light")} onClick={() => setSub("supplier")}><Icon n="📦" size={14} /> {t("Поставщики", "Постачальники")} ({sup.length})</button>
+        <button className={"btn" + (sub === "privat" ? " btn-primary" : " btn-light")} onClick={() => setSub("privat")}><Icon n="🏦" size={14} /> {t("ПриватБанк", "ПриватБанк")}</button>
         <div style={{ flex: 1 }} />
         <label className="btn btn-light" style={{ cursor: "pointer" }} title={t("Загрузить накладную .xls/.xlsx/.pdf с любой почты (если пришла не на почту CRM)", "Завантажити накладну .xls/.xlsx/.pdf з будь-якої пошти (якщо прийшла не на пошту CRM)")}>
           <Icon n="📤" size={14} /> {t("Загрузить накладную", "Завантажити накладну")}
@@ -3964,7 +3965,8 @@ function IncomingDocsTab() {
       </div>
       {mapDoc && <SupplierMapModal docId={mapDoc} onClose={() => setMapDoc(null)} onDone={load} />}
       {msgDoc && <IncomingMsgModal docId={msgDoc} onClose={() => setMsgDoc(null)} onProvesti={(id, dt) => { setMsgDoc(null); if (dt === "supplier") setMapDoc(id); else act(id, "confirm"); }} onReject={(id) => { act(id, "reject"); setMsgDoc(null); }} />}
-      {!list.length && <div className="muted" style={{ padding: 8 }}>{t("Пусто — новых документов нет", "Порожньо — нових документів немає")}</div>}
+      {sub === "privat" && <PrivatBankImport />}
+      {sub !== "privat" && !list.length && <div className="muted" style={{ padding: 8 }}>{t("Пусто — новых документов нет", "Порожньо — нових документів немає")}</div>}
       {list.map((r) => (
         <div key={r.id} className="panel" style={{ margin: "0 0 8px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 240, cursor: "pointer" }} onClick={() => setMsgDoc(r.id)} title={t("Открыть письмо", "Відкрити лист")}>
@@ -3993,6 +3995,97 @@ function IncomingDocsTab() {
   );
 }
 
+
+// ── ПриватБанк: імпорт виписки .xlsx у журнал (окремий блок, рушій import-statement) ──
+function PrivatBankImport() {
+  const { t } = useLang();
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [account, setAccount] = useState<number | 0>(0);
+  const [csv, setCsv] = useState("");
+  const [fname, setFname] = useState("");
+  const [prev, setPrev] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.get<any>("/api/accounts/?page_size=200").then((x) => {
+      const a = (x.results || x) as any[];
+      setAccounts(a);
+      const cc = a.find((z) => /кредит|картк|card|4627/i.test(z.name || ""));
+      setAccount((cc || a[0])?.id || 0);
+    }).catch(() => {});
+  }, []);
+  const preview = async (data: string, acc: number) => {
+    const p: any = await api.post("/api/transactions/import-statement/", { data, account: acc || undefined, commit: false });
+    setPrev(p);
+  };
+  const onFile = async (f: File) => {
+    setBusy(true); setPrev(null); setCsv("");
+    try {
+      const fd = new FormData(); fd.append("file", f);
+      const r: any = await api.uploadForm("/api/transactions/privat-xlsx-csv/", fd);
+      setCsv(r.csv); setFname(f.name);
+      await preview(r.csv, account);
+    } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось разобрать файл", "Не вдалося розібрати файл")); }
+    finally { setBusy(false); }
+  };
+  const doImport = async () => {
+    if (!csv) return;
+    const accName = accounts.find((a) => a.id === account)?.name || "?";
+    if (!confirm(t("Импортировать операции в журнал на счёт", "Імпортувати операції в журнал на рахунок") + ` «${accName}»?
+` + t("Автоправила проставят фонды и категории. Дубли пропустятся.", "Автоправила проставлять фонди й категорії. Дублі пропустяться."))) return;
+    setBusy(true);
+    try {
+      const p: any = await api.post("/api/transactions/import-statement/", { data: csv, account: account || undefined, commit: true });
+      alert("✓ " + t("Импортировано", "Імпортовано") + `: ${p.created}
+` + t("дубли", "дублі") + `: ${p.duplicates}, ` + t("ошибки", "помилки") + `: ${p.errors}` + (p.skipped_bank ? `
+${t("пропущено (уже тянется с банка)", "пропущено (вже тягнеться з банку)")}: ${p.skipped_bank}` : ""));
+      setCsv(""); setPrev(null); setFname("");
+    } catch (e: any) { alert(e?.response?.data?.detail || t("Ошибка", "Помилка")); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="panel" style={{ margin: 0 }}>
+      <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+        {t("Выписка по карте ПриватБанка (файл «Історія операцій» из письма). Личные карты банк по API не отдаёт — поэтому загружаем файл. Операции лягут в журнал, автоправила проставят фонды и категории, дубли пропустятся.",
+           "Виписка по картці ПриватБанку (файл «Історія операцій» з листа). Особисті картки банк по API не віддає — тому вантажимо файл. Операції ляжуть у журнал, автоправила проставлять фонди й категорії, дублі пропустяться.")}
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+        <span className="muted" style={{ fontSize: 13 }}>{t("Счёт", "Рахунок")}:</span>
+        <select value={account} onChange={(e) => { const a = Number(e.target.value); setAccount(a); if (csv) preview(csv, a); }} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px", minWidth: 200 }}>
+          {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        <label className="btn btn-primary" style={{ cursor: "pointer" }}>
+          <Icon n="📤" size={14} /> {busy ? "…" : t("Загрузить выписку .xlsx", "Завантажити виписку .xlsx")}
+          <input type="file" accept=".xlsx" style={{ display: "none" }} disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); (e.target as any).value = ""; }} />
+        </label>
+        {fname && <span className="muted" style={{ fontSize: 12 }}>{fname}</span>}
+      </div>
+      {prev && (
+        <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, background: "#f8fafc" }}>
+          <div style={{ fontSize: 13, marginBottom: 8 }}>
+            <b>{t("Будет добавлено", "Буде додано")}: {prev.created}</b> · {t("дубли", "дублі")}: {prev.duplicates} · {t("ошибки", "помилки")}: {prev.errors}
+            {prev.skipped_bank ? " · " + t("пропущено (с банка)", "пропущено (з банку)") + ": " + prev.skipped_bank : ""}
+          </div>
+          {(prev.preview || []).length > 0 && (
+            <table style={{ width: "100%", fontSize: 12.5, borderCollapse: "collapse", marginBottom: 8 }}>
+              <thead><tr style={{ textAlign: "left", color: "#64748b" }}><th style={{ padding: 3 }}>{t("Дата", "Дата")}</th><th>{t("Операция", "Операція")}</th><th style={{ textAlign: "right" }}>{t("Сумма", "Сума")}</th></tr></thead>
+              <tbody>
+                {prev.preview.map((p: any, i: number) => (
+                  <tr key={i} style={{ borderTop: "1px solid #eef2f7" }}>
+                    <td style={{ padding: 3 }}>{p.date}</td>
+                    <td>{p.osnd}</td>
+                    <td style={{ textAlign: "right", color: p.dir === "out" ? "#dc2626" : "#16a34a", fontWeight: 600 }}>{p.dir === "out" ? "−" : "+"}{Number(p.amount).toLocaleString("ru")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <button className="btn btn-primary" disabled={busy || !prev.created} onClick={doImport}>{busy ? "…" : "✓ " + t("Импортировать в журнал", "Імпортувати в журнал") + (prev.created ? ` (${prev.created})` : "")}</button>
+          <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{t("Показаны первые несколько строк. Импортируются все распознанные, кроме дублей.", "Показані перші кілька рядків. Імпортуються всі розпізнані, крім дублів.")}</div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Пошук товару складу по БУДЬ-ЯКІЙ частині назви (заміна кривого <datalist>)
 function ProductPicker({ value, productId, prods, onPick }:

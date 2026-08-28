@@ -793,6 +793,71 @@ class TransactionViewSet(viewsets.ModelViewSet):
                          "committed": commit, "preview": preview, "account": acc.name if acc else None,
                          "batch": st_batch if commit else None})
 
+    @action(detail=False, methods=["post"], url_path="privat-xlsx-csv")
+    def privat_xlsx_csv(self, request):
+        """Приват24 «Історія операцій» .xlsx → CSV (Дата;Опис;Сума) для import-statement.
+        ТІЛЬКИ ЧИТАННЯ файлу, жодних записів у БД. Окремий блок для виписок по картці —
+        бізнес-API AutoClient особисті картки не віддає, тож вантажимо файл вручну."""
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("finance.manage")):
+            return Response({"detail": "Потрібне право «Керування фінмоделлю»"}, status=403)
+        f = request.FILES.get("file")
+        if not f:
+            return Response({"detail": "Файл не передано"}, status=400)
+        import io as _io, csv as _csv
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(_io.BytesIO(f.read()), data_only=True)
+        except Exception as e:  # noqa
+            return Response({"detail": "Не вдалося прочитати xlsx: %s" % e}, status=400)
+        ws = wb[wb.sheetnames[0]]
+        rows = list(ws.iter_rows(values_only=True))
+        hdr_i = None
+        col = {}
+        for i, r in enumerate(rows[:15]):
+            low = [str(c or "").strip().lower() for c in r]
+            joined = " ".join(low)
+            if "дата" in joined and "сума" in joined and ("опис" in joined or "картк" in joined):
+                for ci, x in enumerate(low):
+                    if x.startswith("дата") and "date" not in col:
+                        col["date"] = ci
+                    elif "опис" in x and "osnd" not in col:
+                        col["osnd"] = ci
+                    elif "категор" in x and "cat" not in col:
+                        col["cat"] = ci
+                    elif "сума" in x and "карт" in x and "sum" not in col:
+                        col["sum"] = ci
+                    elif "сума" in x and "sum_any" not in col:
+                        col["sum_any"] = ci
+                hdr_i = i
+                break
+        if hdr_i is None or "date" not in col:
+            return Response({"detail": "Не схоже на виписку Приват24 (немає колонок Дата/Сума)"}, status=400)
+        sum_ci = col.get("sum", col.get("sum_any"))
+        if sum_ci is None:
+            return Response({"detail": "Не знайдено колонку Сума"}, status=400)
+        out = _io.StringIO()
+        w = _csv.writer(out, delimiter=";")
+        w.writerow(["Дата", "Опис", "Сума"])
+        n = 0
+        for r in rows[hdr_i + 1:]:
+            if col["date"] >= len(r):
+                continue
+            dv = r[col["date"]]
+            if dv is None or str(dv).strip() == "":
+                continue
+            ds10 = str(dv).strip()[:10]   # «28.08.2026 04:00» або datetime «2026-08-28 ...» → дата
+            osnd = str(r[col["osnd"]] if (col.get("osnd") is not None and col["osnd"] < len(r)) else "").strip()
+            cat = str(r[col["cat"]] if (col.get("cat") is not None and col["cat"] < len(r)) else "").strip()
+            if cat and cat not in ("None", ""):
+                osnd = (osnd + " · " + cat) if osnd else cat
+            sv = r[sum_ci] if sum_ci < len(r) else None
+            if sv is None or str(sv).strip() == "":
+                continue
+            w.writerow([ds10, osnd[:180], str(sv)])
+            n += 1
+        return Response({"csv": out.getvalue(), "count": n})
+
     def get_queryset(self):
         qs = super().get_queryset()
         allowed = self.request.user.allowed_fin("fin_accounts")
