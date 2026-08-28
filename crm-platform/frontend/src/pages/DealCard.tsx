@@ -290,7 +290,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   }
   useEffect(() => {
     load();
-    api.get<Paginated<Product>>("/api/products/?is_active=true&page_size=200").then((p) => setProducts(p.results));
+    api.get<Paginated<Product>>("/api/products/?is_active=true&page_size=500").then((p) => setProducts(p.results));
     api.get<any>("/api/funnels/").then((f) => setAllFunnels(f.results || f)).catch(() => {});
   }, [id]);
   // live-оновлення стадії/відповідального без перезавантаження (не чіпає поля сделки)
@@ -383,13 +383,13 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   }
   useEffect(() => {
     if (!psearch.trim() || psel) { setPresults([]); return; }
-    const t = setTimeout(() => api.get<Paginated<Product>>(`/api/products/?is_active=true&search=${encodeURIComponent(psearch)}&page_size=12`).then((d) => setPresults(d.results)).catch(() => setPresults([])), 250);
+    const t = setTimeout(() => api.get<Paginated<Product>>(`/api/products/?is_active=true&search=${encodeURIComponent(psearch)}&page_size=500`).then((d) => setPresults(d.results)).catch(() => setPresults([])), 250);
     return () => clearTimeout(t);
   }, [psearch, psel]);
   // поиск для ПЕРЕВЫБОРА товара в позиции
   useEffect(() => {
     if (!editProdItem || !epq.trim()) { setEpr([]); return; }
-    const t = setTimeout(() => api.get<Paginated<Product>>(`/api/products/?is_active=true&search=${encodeURIComponent(epq)}&page_size=10`).then((d) => setEpr(d.results)).catch(() => setEpr([])), 250);
+    const t = setTimeout(() => api.get<Paginated<Product>>(`/api/products/?is_active=true&search=${encodeURIComponent(epq)}&page_size=500`).then((d) => setEpr(d.results)).catch(() => setEpr([])), 250);
     return () => clearTimeout(t);
   }, [epq, editProdItem]);
   async function reselectItemProduct(itemId: number, prodId: number) {
