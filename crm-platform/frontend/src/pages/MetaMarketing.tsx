@@ -1462,8 +1462,65 @@ function Ga4Block({ from, to, t }: { from: string; to: string; t: (ru: string, u
   if (!d) return <div className="muted" style={{ padding: 30 }}>{t("Загрузка…", "Завантаження…")}</div>;
   if (d.error) return <div className="muted" style={{ padding: 30 }}>{t("Не удалось загрузить Google Analytics", "Не вдалося завантажити Google Analytics")}</div>;
   const sites = d.sites || [];
-  if (!sites.length) return <div className="rd-card"><div className="muted" style={{ padding: 10 }}>{t("Данных за период нет. Синхронизация Google Analytics идёт раз в сутки; статистика появляется по мере посещений сайтов.", "Даних за період немає. Синхронізація Google Analytics іде раз на добу; статистика зʼявляється в міру відвідувань сайтів.")}</div></div>;
-  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(460px,100%), 1fr))", gap: 20 }}>
+  const leads = d.crm_leads;
+  const srcMeta: Record<string, { label: string; color: string }> = {
+    meta: { label: t("Реклама Meta (IG/FB)", "Реклама Meta (IG/FB)"), color: "var(--rd-primary)" },
+    google: { label: "Google", color: "var(--rd-success)" },
+    other: { label: t("Другие источники", "Інші джерела"), color: "var(--rd-warning)" },
+    unknown: { label: t("Источник неизвестен", "Джерело невідоме"), color: "var(--rd-text2)" },
+  };
+  const chLabel = (name: string) => (({
+    "Paid Social": t("Платная соцреклама (Meta)", "Платна соцреклама (Meta)"),
+    "Organic Social": t("Соцсети (органика)", "Соцмережі (органіка)"),
+    "Paid Search": t("Реклама Google", "Реклама Google"),
+    "Organic Search": t("Поиск Google (бесплатно)", "Пошук Google (безкоштовно)"),
+    "Paid Other": t("Другая платная реклама", "Інша платна реклама"),
+    "Direct": t("Прямые заходы", "Прямі заходи"),
+    "Referral": t("Переходы с других сайтов", "Переходи з інших сайтів"),
+    "Organic Video": t("Видео (YouTube и др.)", "Відео (YouTube та ін.)"),
+    "Cross-network": t("Кросс-сеть Google", "Крос-мережа Google"),
+    "Unassigned": t("Не определено", "Не визначено"),
+  }) as Record<string, string>)[name] || name;
+  const fmtDur = (sec: number) => `${Math.floor((sec || 0) / 60)}:${String((sec || 0) % 60).padStart(2, "0")}`;
+  const thS: React.CSSProperties = { padding: "6px 8px", fontSize: 10.5, color: "var(--rd-text2)", textAlign: "left", textTransform: "uppercase", letterSpacing: ".04em", whiteSpace: "nowrap" };
+  const tdS: React.CSSProperties = { padding: "6px 8px", fontSize: 12.5, borderTop: "1px solid var(--rd-border)", whiteSpace: "nowrap" };
+  return <div>
+    {leads && <div className="rd-card" style={{ marginBottom: 20 }}>
+      <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}>
+        <Icon n="📥" size={16} style={{ color: "var(--rd-primary)" }} /> {t("Заявки с сайта в CRM", "Заявки з сайту в CRM")}
+        <InfoI tip={t("Сделки, созданные с лендинга за период, с разбивкой: пришёл человек с рекламы Meta, с Google или иначе", "Угоди, створені з лендінгу за період, з розбивкою: прийшла людина з реклами Meta, з Google чи інакше")} />
+      </b>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12, margin: "14px 0 10px" }}>
+        <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Всего заявок", "Всього заявок")}</div><div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-text)" }}>{count(leads.total)}</div></div>
+        {(["meta", "google", "other", "unknown"] as const).map(k => (
+          <div key={k} className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4 }}>{srcMeta[k].label}</div><div style={{ fontSize: 18, fontWeight: 700, color: srcMeta[k].color }}>{count(leads.by_source?.[k] || 0)}</div></div>
+        ))}
+        <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Продажи / выручка", "Продажі / виручка")} <InfoI tip={t("Заявки, по которым уже есть оплата, и сумма этих оплат", "Заявки, по яких вже є оплата, і сума цих оплат")} /></div><div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-success)" }}>{count(leads.sales)} · {count(Math.round(leads.revenue || 0))} ₴</div></div>
+      </div>
+      <div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 10 }}>{t("Метка источника записывается с 28.08.2026 — старые заявки показываются как «источник неизвестен».", "Мітка джерела записується з 28.08.2026 — старі заявки показуються як «джерело невідоме».")}</div>
+      {(leads.recent || []).length > 0 && <div style={{ overflowX: "auto", maxHeight: 380, overflowY: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr>
+            <th style={thS}>{t("Дата", "Дата")}</th><th style={thS}>{t("Клиент", "Клієнт")}</th><th style={thS}>{t("Источник", "Джерело")}</th><th style={thS}>{t("Кампания", "Кампанія")}</th><th style={{ ...thS, textAlign: "right" }}>{t("Сумма", "Сума")}</th><th style={{ ...thS, textAlign: "right" }}>{t("Оплачено", "Оплачено")}</th><th style={thS}>{t("Стадия", "Стадія")}</th>
+          </tr></thead>
+          <tbody>
+            {(leads.recent || []).map((r: any) => (
+              <tr key={r.id}>
+                <td style={tdS}>{r.date}</td>
+                <td style={{ ...tdS, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis" }}><a href={`/deals/${r.id}`} style={{ color: "var(--rd-primary)", textDecoration: "none" }}>{r.contact}</a></td>
+                <td style={tdS}><span style={{ color: srcMeta[r.source]?.color || "var(--rd-text2)", fontWeight: 600 }}>{srcMeta[r.source]?.label || r.source}</span></td>
+                <td style={{ ...tdS, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", color: "var(--rd-text2)" }} title={r.utm_campaign}>{r.utm_campaign || (r.utm_source ? `utm: ${r.utm_source}` : "—")}</td>
+                <td style={{ ...tdS, textAlign: "right" }}>{r.amount ? count(Math.round(r.amount)) + " ₴" : "—"}</td>
+                <td style={{ ...tdS, textAlign: "right", color: r.paid ? "var(--rd-success)" : "var(--rd-text2)", fontWeight: r.paid ? 700 : 400 }}>{r.paid ? count(Math.round(r.paid)) + " ₴" : "—"}</td>
+                <td style={{ ...tdS, color: "var(--rd-text2)" }}>{r.stage}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>}
+    </div>}
+    {!sites.length && <div className="rd-card"><div className="muted" style={{ padding: 10 }}>{t("Данных Google Analytics за период нет. Синхронизация идёт раз в сутки; статистика появляется по мере посещений сайтов.", "Даних Google Analytics за період немає. Синхронізація іде раз на добу; статистика зʼявляється в міру відвідувань сайтів.")}</div></div>}
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(460px,100%), 1fr))", gap: 20 }}>
     {sites.map((s: any) => {
       const maxD = Math.max(...(s.daily || []).map((x: any) => x.sessions || 0), 1);
       return (
@@ -1474,16 +1531,32 @@ function Ga4Block({ from, to, t }: { from: string; to: string; t: (ru: string, u
             <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Люди", "Люди")} <InfoI tip={t("Уникальные посетители", "Унікальні відвідувачі")} /></div><div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-purple)" }}>{count(s.active_users)}</div></div>
             <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Новые", "Нові")} <InfoI tip={t("Впервые на сайте", "Вперше на сайті")} /></div><div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-success)" }}>{count(s.new_users)}</div></div>
             <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Ключевые события", "Ключові події")} <InfoI tip={t("Конверсии, отмеченные в GA как ключевые", "Конверсії, позначені в GA як ключові")} /></div><div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-warning)" }}>{count(s.key_events)}</div></div>
+            <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Вовлечённость", "Залученість")} <InfoI tip={t("Доля сессий, где человек реально смотрел сайт (не ушёл сразу)", "Частка сесій, де людина реально дивилась сайт (не пішла одразу)")} /></div><div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-text)" }}>{s.engagement_rate || 0}%</div></div>
+            <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Время на сайте", "Час на сайті")} <InfoI tip={t("Средняя длительность визита, мин:сек", "Середня тривалість візиту, хв:сек")} /></div><div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-text)" }}>{fmtDur(s.avg_duration_sec)}</div></div>
           </div>
+          {(s.channels || []).length > 0 && <>
+            <div style={{ fontSize: 10.5, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 700, margin: "4px 0 6px" }}>{t("Каналы трафика", "Канали трафіку")} <InfoI tip={t("Как Google группирует визиты: платная реклама, соцсети, поиск, прямые заходы. Зелёная цифра — ключевые события из этого канала", "Як Google групує візити: платна реклама, соцмережі, пошук, прямі заходи. Зелена цифра — ключові події з цього каналу")} /></div>
+            {(s.channels || []).map(([name, v]: any) => (
+              <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 0" }}>
+                <span style={{ flex: 1, fontSize: 12, color: "var(--rd-text2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{chLabel(name)}</span>
+                <div style={{ width: 110, background: "var(--rd-bg)", borderRadius: 4, height: 10 }}>
+                  <div style={{ width: Math.max((v?.s || 0) * 100 / (s.sessions || 1), 2) + "%", height: "100%", background: name.indexOf("Paid") === 0 ? "var(--rd-primary)" : "var(--rd-purple)", borderRadius: 4, opacity: .8 }} />
+                </div>
+                <b style={{ width: 44, textAlign: "right", fontSize: 12 }}>{count(v?.s || 0)}</b>
+                <span style={{ width: 40, textAlign: "right", fontSize: 11, color: "var(--rd-success)", fontWeight: 700 }} title={t("Ключевые события", "Ключові події")}>{v?.k ? count(v.k) : ""}</span>
+              </div>
+            ))}
+          </>}
           {(s.sources || []).length > 0 && <>
-            <div style={{ fontSize: 10.5, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 700, margin: "4px 0 6px" }}>{t("Откуда приходят", "Звідки приходять")}</div>
+            <div style={{ fontSize: 10.5, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 700, margin: "10px 0 6px" }}>{t("Откуда приходят (точные источники)", "Звідки приходять (точні джерела)")}</div>
             {(s.sources || []).map(([source, cnt]: any) => (
               <div key={source} style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 0" }}>
                 <span style={{ flex: 1, fontSize: 12, color: "var(--rd-text2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{source}</span>
-                <div style={{ width: 120, background: "var(--rd-bg)", borderRadius: 4, height: 10 }}>
+                <div style={{ width: 110, background: "var(--rd-bg)", borderRadius: 4, height: 10 }}>
                   <div style={{ width: Math.max(cnt * 100 / (s.sessions || 1), 2) + "%", height: "100%", background: "var(--rd-primary)", borderRadius: 4, opacity: .8 }} />
                 </div>
                 <b style={{ width: 44, textAlign: "right", fontSize: 12 }}>{count(cnt)}</b>
+                <span style={{ width: 40 }} />
               </div>
             ))}
           </>}
@@ -1497,6 +1570,7 @@ function Ga4Block({ from, to, t }: { from: string; to: string; t: (ru: string, u
         </div>
       );
     })}
+    </div>
   </div>;
 }
 

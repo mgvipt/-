@@ -444,6 +444,10 @@ class Ga4DailyStat(models.Model):
     new_users = models.PositiveIntegerField(default=0)
     key_events = models.PositiveIntegerField(default=0)
     sources = models.JSONField(default=dict, blank=True)
+    # Канали GA (sessionDefaultChannelGroup): {"Paid Social": {"s": сесії, "k": ключові події}}
+    channels = models.JSONField(default=dict, blank=True)
+    engagement_rate = models.FloatField(default=0)      # % залучених сесій
+    avg_duration_sec = models.PositiveIntegerField(default=0)
     synced_at = models.DateTimeField(auto_now=True)
 
     class Meta:

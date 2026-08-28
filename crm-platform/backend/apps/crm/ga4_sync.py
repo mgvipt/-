@@ -94,9 +94,23 @@ def sync_ga4(days: int = 30) -> dict:
                 "dateRanges": [{"startDate": since, "endDate": until}],
                 "dimensions": [{"name": "date"}],
                 "metrics": [{"name": "sessions"}, {"name": "activeUsers"},
-                            {"name": "newUsers"}, {"name": "keyEvents"}],
+                            {"name": "newUsers"}, {"name": "keyEvents"},
+                            {"name": "engagementRate"}, {"name": "averageSessionDuration"}],
                 "limit": 400,
             })
+            channels = _run_report(property_id, {
+                "dateRanges": [{"startDate": since, "endDate": until}],
+                "dimensions": [{"name": "date"}, {"name": "sessionDefaultChannelGroup"}],
+                "metrics": [{"name": "sessions"}, {"name": "keyEvents"}],
+                "limit": 2000,
+            })
+            ch_by_day: dict[str, dict] = {}
+            for row in channels.get("rows") or []:
+                day = row["dimensionValues"][0]["value"]
+                group = row["dimensionValues"][1]["value"] or "(other)"
+                sessions_n = int(float(row["metricValues"][0]["value"] or 0))
+                key_n = int(float(row["metricValues"][1]["value"] or 0))
+                ch_by_day.setdefault(day, {})[group] = {"s": sessions_n, "k": key_n}
             sources = _run_report(property_id, {
                 "dateRanges": [{"startDate": since, "endDate": until}],
                 "dimensions": [{"name": "date"}, {"name": "sessionSourceMedium"}],
@@ -115,14 +129,17 @@ def sync_ga4(days: int = 30) -> dict:
             for row in daily.get("rows") or []:
                 raw_day = row["dimensionValues"][0]["value"]  # YYYYMMDD
                 day = date(int(raw_day[:4]), int(raw_day[4:6]), int(raw_day[6:8]))
-                values = [int(float(v["value"] or 0)) for v in row["metricValues"]]
+                raw_values = [float(v["value"] or 0) for v in row["metricValues"]]
                 Ga4DailyStat.objects.update_or_create(
                     property_id=property_id, date=day,
                     defaults={
                         "site": site,
-                        "sessions": values[0], "active_users": values[1],
-                        "new_users": values[2], "key_events": values[3],
+                        "sessions": int(raw_values[0]), "active_users": int(raw_values[1]),
+                        "new_users": int(raw_values[2]), "key_events": int(raw_values[3]),
+                        "engagement_rate": round(raw_values[4] * 100, 1),
+                        "avg_duration_sec": int(raw_values[5]),
                         "sources": src_by_day.get(raw_day, {}),
+                        "channels": ch_by_day.get(raw_day, {}),
                     },
                 )
                 saved += 1

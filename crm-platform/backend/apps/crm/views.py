@@ -2988,9 +2988,11 @@ class MarketingGa4View(APIView):
     required_perm = "marketing.view"
 
     def get(self, request):
+        from django.utils import timezone
         from django.utils import timezone as _tz2
         from django.utils.dateparse import parse_date
         from datetime import timedelta as _td
+        from decimal import Decimal
         from .ga4_sync import ga4_configured
         from .models import Ga4DailyStat
 
@@ -3006,22 +3008,78 @@ class MarketingGa4View(APIView):
             s = sites.setdefault(row.site or row.property_id, {
                 "site": row.site or row.property_id, "property_id": row.property_id,
                 "sessions": 0, "active_users": 0, "new_users": 0, "key_events": 0,
-                "sources": {}, "daily": [],
+                "sources": {}, "channels": {}, "daily": [],
+                "_eng_weighted": 0.0, "_dur_weighted": 0.0,
             })
             s["sessions"] += row.sessions
             s["active_users"] += row.active_users
             s["new_users"] += row.new_users
             s["key_events"] += row.key_events
+            s["_eng_weighted"] += row.engagement_rate * row.sessions
+            s["_dur_weighted"] += row.avg_duration_sec * row.sessions
             for source, cnt in (row.sources or {}).items():
                 s["sources"][source] = s["sources"].get(source, 0) + int(cnt or 0)
+            for group, val in (row.channels or {}).items():
+                bucket = s["channels"].setdefault(group, {"s": 0, "k": 0})
+                bucket["s"] += int((val or {}).get("s") or 0)
+                bucket["k"] += int((val or {}).get("k") or 0)
             s["daily"].append({"date": row.date.isoformat(), "sessions": row.sessions,
                                "users": row.active_users, "key_events": row.key_events})
         for s in sites.values():
             s["sources"] = sorted(s["sources"].items(), key=lambda kv: -kv[1])[:8]
+            s["channels"] = sorted(s["channels"].items(), key=lambda kv: -kv[1]["s"])
+            s["engagement_rate"] = round(s.pop("_eng_weighted") / s["sessions"], 1) if s["sessions"] else 0
+            s["avg_duration_sec"] = int(s.pop("_dur_weighted") / s["sessions"]) if s["sessions"] else 0
+
+        # ── Заявки лендінгу в CRM за джерелами (utm/fbclid/gclid/referrer) ──
+        def _classify(utm):
+            source = (utm.get("utm_source") or "").lower()
+            referrer = (utm.get("referrer") or utm.get("first_referrer") or "").lower()
+            if utm.get("fbclid") or source in ("fb", "facebook", "ig", "instagram", "meta")                     or "instagram" in referrer or "facebook" in referrer:
+                return "meta"
+            if utm.get("gclid") or "google" in source or "google." in referrer:
+                return "google"
+            if source or referrer:
+                return "other"
+            return "unknown"
+
+        _landing_deals = list(
+            Deal.objects.filter(funnel__name__icontains="ленд",
+                                created_at__date__gte=date_from, created_at__date__lte=date_to)
+            .select_related("contact", "stage").prefetch_related("payments")
+            .order_by("-created_at")
+        )
+        _by_src = {"meta": 0, "google": 0, "other": 0, "unknown": 0}
+        _sales = 0
+        _revenue = Decimal("0")
+        _recent = []
+        for deal in _landing_deals:
+            utm = ((deal.qualification or {}).get("utm") or {})
+            bucket = _classify(utm)
+            _by_src[bucket] += 1
+            paid = sum((p.amount for p in deal.payments.all() if p.is_paid), Decimal("0"))
+            if paid > 0:
+                _sales += 1
+                _revenue += paid
+            if len(_recent) < 30:
+                _recent.append({
+                    "id": deal.pk, "date": timezone.localtime(deal.created_at).strftime("%d.%m %H:%M"),
+                    "contact": str(deal.contact) if deal.contact_id else "—",
+                    "source": bucket,
+                    "utm_source": utm.get("utm_source") or "", "utm_campaign": utm.get("utm_campaign") or "",
+                    "amount": float(deal.amount or 0), "paid": float(paid),
+                    "stage": deal.stage.name if deal.stage_id else "—",
+                })
+        crm_leads = {
+            "total": len(_landing_deals), "by_source": _by_src,
+            "sales": _sales, "revenue": round(float(_revenue), 2),
+            "recent": _recent,
+        }
         return Response({
             "configured": ga4_configured(),
             "from": date_from.isoformat(), "to": date_to.isoformat(),
             "sites": sorted(sites.values(), key=lambda s: -s["sessions"]),
+            "crm_leads": crm_leads,
         })
 
 
