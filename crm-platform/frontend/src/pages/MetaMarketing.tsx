@@ -358,9 +358,9 @@ function MetaSettingsModal({ onClose }: { onClose: () => void }) {
 }
 
 /* ─── События · Пиксель: что CRM отправила в Meta (статусы переписок) ─── */
-function PixelEventsTab({ from, to }: { from: string; to: string }) {
+function PixelEventsTab({ from, to, mode }: { from: string; to: string; mode?: "crm" | "site" }) {
   const { t } = useLang();
-  const [px, setPx] = useState<"crm" | "site">("crm");
+  const [px, setPx] = useState<"crm" | "site">(mode || "crm");
   const [d, setD] = useState<any>(null);
   const [sortKey, setSortKey] = useState<string>("at");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
@@ -407,7 +407,8 @@ function PixelEventsTab({ from, to }: { from: string; to: string }) {
     VelvetGallerySlide: t("Листал галерею (бархат)", "Гортав галерею (оксамит)"),
     SilkGallerySlide: t("Листал галерею (шёлк)", "Гортав галерею (шовк)"),
   };
-  const pxTabs = (
+  // mode заданий = вкладку рендерять у своєму розділі (Meta або Сайт) — перемикач зайвий
+  const pxTabs = mode ? null : (
     <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
       <button className={px === "crm" ? "btn btn-primary" : "btn btn-light"} onClick={() => setPx("crm")} style={{ fontSize: 12.5 }}>💬 {t("Переписки (CRM → Meta)", "Листування (CRM → Meta)")}</button>
       <button className={px === "site" ? "btn btn-primary" : "btn btn-light"} onClick={() => setPx("site")} style={{ fontSize: 12.5 }}>🌐 {t("Пиксель сайта (лендинг)", "Піксель сайту (лендінг)")}</button>
@@ -422,11 +423,53 @@ function PixelEventsTab({ from, to }: { from: string; to: string }) {
         {t("Это события с САЙТА (лендинга): что люди делали на страницах — открывали, проходили квиз, выбирали цвета. Их шлёт пиксель, установленный на сайте («Пиксель Лендинг новый»). Данные из Meta, обновляются ~раз в 5 минут.", "Це події з САЙТУ (лендінгу): що люди робили на сторінках. Їх шле піксель, встановлений на сайті. Дані з Meta.")}
       </div>
       {!d ? <div className="muted" style={{ padding: 20 }}>…</div> : d.error ? <div className="muted" style={{ padding: 20 }}>{t("Ошибка загрузки из Meta:", "Помилка завантаження з Meta:")} {d.error}</div> : (<>
-        <div style={cardsRow}>
-          {card(t("Всего событий", "Всього подій"), count(sm2.total), "#0f172a")}
-          {card(t("Открытий страниц", "Відкриттів сторінок"), count(sm2.pageviews), "#2563eb")}
-          {card(t("Типов событий", "Типів подій"), count(sm2.types), "#7c3aed")}
-        </div>
+        {(() => {
+          const ev: Record<string, number> = {};
+          (d.by_event || []).forEach((r: any) => { ev[r.event_name] = r.total; });
+          const quiz = ev.QuizStart || 0;
+          const leads = (ev.QuizLeadSubmitted || 0) + (ev.Lead || 0);
+          const pv = ev.PageView || 0;
+          return <div style={cardsRow}>
+            {card(t("Всего событий", "Всього подій"), count(sm2.total), "#0f172a")}
+            {card(t("Открытий страниц", "Відкриттів сторінок"), count(pv || sm2.pageviews), "#2563eb")}
+            {card(t("Начали квиз", "Почали квіз"), count(quiz), "#7c3aed", pv ? t("конверсия с сайта ", "конверсія з сайту ") + Math.round(quiz * 100 / pv) + "%" : undefined)}
+            {card(t("Заявки", "Заявки"), count(leads), "#15803d", quiz ? t("из начавших квиз ", "з тих, хто почав квіз ") + Math.round(leads * 100 / quiz) + "%" : undefined)}
+            {card(t("Типов событий", "Типів подій"), count(sm2.types), "#94a3b8")}
+          </div>;
+        })()}
+        {(() => {
+          const ev: Record<string, number> = {};
+          (d.by_event || []).forEach((r: any) => { ev[r.event_name] = r.total; });
+          const steps = [
+            { l: t("Открыли сайт", "Відкрили сайт"), v: ev.PageView || 0 },
+            { l: t("Смотрели контент", "Дивились контент"), v: ev.ViewContent || 0 },
+            { l: t("Начали квиз", "Почали квіз"), v: ev.QuizStart || 0 },
+            { l: t("Выбрали комнату", "Обрали кімнату"), v: ev.QuizRoomSelected || 0 },
+            { l: t("Выбрали материал", "Обрали матеріал"), v: (ev.QuizSilkSelected || 0) + (ev.QuizVelvetSelected || 0) },
+            { l: t("Дошли до формы", "Дійшли до форми"), v: ev.QuizFormShown || 0 },
+            { l: t("Оставили заявку", "Залишили заявку"), v: (ev.QuizLeadSubmitted || 0) + (ev.Lead || 0) },
+          ];
+          const maxV = Math.max(...steps.map((s) => s.v), 1);
+          return <>
+            <SectionTitle title={t("Воронка квиза", "Воронка квіза")} note={t("Сколько людей дошло до каждого шага; % — от предыдущего шага", "Скільки людей дійшло до кожного кроку; % — від попереднього кроку")} />
+            <div className="panel" style={{ marginBottom: 14 }}>
+              {steps.map((s, i) => {
+                const prev = i ? steps[i - 1].v : s.v;
+                const pct = i && prev ? Math.round(s.v * 100 / prev) : null;
+                return (
+                  <div key={s.l} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0" }}>
+                    <span style={{ width: 160, fontSize: 12.5, color: "#475569", fontWeight: 600, flexShrink: 0 }}>{s.l}</span>
+                    <div style={{ flex: 1, background: "#eef2f7", borderRadius: 6, height: 18, minWidth: 50 }}>
+                      <div style={{ width: Math.max((s.v / maxV) * 100, 2) + "%", height: "100%", background: "#2563eb", borderRadius: 6, opacity: .85 }} />
+                    </div>
+                    <b style={{ width: 52, textAlign: "right", fontSize: 13, flexShrink: 0 }}>{count(s.v)}</b>
+                    <span style={{ width: 44, textAlign: "right", fontSize: 11.5, flexShrink: 0, color: pct == null ? "#94a3b8" : pct >= 50 ? "#15803d" : pct >= 20 ? "#a16207" : "#dc2626" }}>{pct == null ? "" : pct + "%"}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </>;
+        })()}
         {table([t("Событие", "Подія"), t("Что означает", "Що означає"), t("Сколько раз", "Скільки разів")],
           (d.by_event || []).map((r: any) => [r.event_name, SITE_EV[r.event_name] || "—", <b>{count(r.total)}</b>]),
           t("Событий с сайта за период нет", "Подій із сайту за період немає"), 640)}
@@ -457,6 +500,7 @@ function PixelEventsTab({ from, to }: { from: string; to: string }) {
       {card(t("В очереди", "У черзі"), count(sm.pending), sm.pending ? "#a16207" : "#94a3b8", t("уйдут автоматически (раз в 10 минут)", "підуть автоматично"))}
       {card(t("Ошибки", "Помилки"), count(sm.failed), sm.failed ? "#dc2626" : "#94a3b8")}
       {card(t("С привязкой к переписке", "З привʼязкою до листування"), `${sm.bm_pct}%`, "#7c3aed", t("сопоставлены по номеру переписки (IGSID) — Meta их точно узнаёт", "зіставлені за номером листування (IGSID)"))}
+      {sm.by_channel && card(t("Каналы", "Канали"), <span style={{ fontSize: 14 }}>IG {count(sm.by_channel.instagram || 0)} · FB {count(sm.by_channel.facebook || 0)}</span>, "#0f172a", t("события идут и по Instagram, и по Facebook перепискам — FB-кампании можно оптимизировать так же", "події йдуть і по Instagram, і по Facebook переписках — FB-кампанії можна оптимізувати так само"))}
     </div>
     <SectionTitle title={t("По типам событий", "За типами подій")} note={t("Что именно отправили за период", "Що саме відправили за період")} />
     {table([t("Событие", "Подія"), t("Что означает", "Що означає"), t("Всего", "Всього"), t("Отправлено", "Відправлено"), t("В очереди", "У черзі"), t("Ошибки", "Помилки")],
@@ -616,6 +660,7 @@ export default function MetaMarketing() {
     { key: "creatives", ru: "Креативы", ua: "Креативи" },
     { key: "content", ru: "Органика · SMM", ua: "Органіка · SMM" },
     { key: "funnel", ru: "Дашборды", ua: "Дашборди" },
+    { key: "pixel", ru: "Пиксель · Direct", ua: "Піксель · Direct" },
     { key: "forms", ru: "Лид-формы", ua: "Лід-форми" },
     { key: "sources", ru: "Источники", ua: "Джерела" },
   ];
@@ -1218,7 +1263,10 @@ export default function MetaMarketing() {
             t("Нет карточек с точным рекламным ID", "Немає карток із точним рекламним ID"))}
         </>}
 
-        {section === "meta" && tab === "pixel" && <PixelEventsTab from={from} to={to} />}
+        {section === "meta" && tab === "pixel" && <>
+          <div className="note" style={{ marginBottom: 10 }}>{t("Пиксель Meta · события из переписок Direct: CRM сообщает Meta стадии сделок, Meta ставит ярлыки и учится находить платящих.", "Піксель Meta · події з переписок Direct: CRM повідомляє Meta стадії угод, Meta ставить ярлики і вчиться знаходити платників.")}</div>
+          <PixelEventsTab from={from} to={to} mode="crm" />
+        </>}
 
         {section === "meta" && tab === "forms" && table([
           t("Тип", "Тип"), t("Лиды", "Ліди"), t("Сделки", "Угоди"), t("Назначение", "Призначення")],
@@ -1323,6 +1371,8 @@ function OfflineSection({ data, t }: { data: any; t: (ru: string, ua: string) =>
 
 /* ── Розділ «Сайт · Google»: лендінг-кампанії Meta + події пікселя + GA4 ── */
 function SiteSection({ data, from, to, t }: { data: any; from: string; to: string; t: (ru: string, ua: string) => string }) {
+  const [siteTab, setSiteTab] = useState<string>(() => { try { return sessionStorage.getItem("mm_site_tab") || "ads"; } catch { return "ads"; } });
+  const pickSiteTab = (k: string) => { setSiteTab(k); try { sessionStorage.setItem("mm_site_tab", k); } catch { /* */ } };
   const campaigns = ((data?.paid || {}).campaigns || []).filter((c: any) =>
     /ленд|quiz|сайт|site/i.test(c.name || "") || c.objective === "OUTCOME_SALES");
   const quiz = Object.entries(((data?.paid || {}).summary || {}).results_by_type || {})
@@ -1330,7 +1380,14 @@ function SiteSection({ data, from, to, t }: { data: any; from: string; to: strin
   const thS: any = { textAlign: "left", padding: "8px 10px", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--rd-text2)", borderBottom: "1px solid var(--rd-border)", background: "var(--rd-muted)", whiteSpace: "normal", lineHeight: 1.25 };
   const tdS: any = { padding: "8px 10px", fontSize: 13, borderBottom: "1px solid var(--rd-border)" };
   return <>
-    <div className="rd-card" style={{ marginBottom: 20 }}>
+    <nav style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 14 }}>
+      {[
+        { k: "ads", ru: "Реклама на сайт", ua: "Реклама на сайт" },
+        { k: "pixel", ru: "Пиксель сайта", ua: "Піксель сайту" },
+        { k: "ga", ru: "Google Analytics", ua: "Google Analytics" },
+      ].map((s) => <button key={s.k} className={"rd-pill" + (siteTab === s.k ? " active" : "")} onClick={() => pickSiteTab(s.k)}>{t(s.ru, s.ua)}</button>)}
+    </nav>
+    {siteTab === "ads" && <div className="rd-card" style={{ marginBottom: 20 }}>
       <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}><Icon n="🌐" size={18} style={{ color: "var(--rd-primary)" }} /> {t("Реклама на сайт (Meta)", "Реклама на сайт (Meta)")}</b>
       <div style={{ fontSize: 12, color: "var(--rd-text2)", margin: "2px 0 14px" }}>{t("Кампании, ведущие на лендинги/сайт. Сайт может продвигаться и в Meta, и в Google — здесь обе стороны в одном разделе.", "Кампанії, що ведуть на лендінги/сайт. Сайт може просуватись і в Meta, і в Google — тут обидві сторони в одному розділі.")}</div>
       {quiz.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14, marginBottom: 14 }}>
@@ -1346,8 +1403,8 @@ function SiteSection({ data, from, to, t }: { data: any; from: string; to: strin
           ))}</tbody>
         </table>
       </div> : <div className="muted" style={{ fontSize: 13 }}>{t("За период кампаний на сайт не было", "За період кампаній на сайт не було")}</div>}
-    </div>
-    <div className="rd-card" style={{ marginBottom: 20 }}>
+    </div>}
+    {siteTab === "ga" && <div className="rd-card" style={{ marginBottom: 20 }}>
       <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}><Icon n="chart" size={18} style={{ color: "var(--rd-warning)" }} /> Google Analytics</b>
       <div style={{ fontSize: 13, color: "var(--rd-text2)", margin: "6px 0 10px", lineHeight: 1.6 }}>
         {t("Ещё не подключено. Даст: посещаемость сайта, источники переходов (Google/Meta/прямые), поведение и конверсии — рядом с рекламой.",
@@ -1357,8 +1414,8 @@ function SiteSection({ data, from, to, t }: { data: any; from: string; to: strin
         {t("Чтобы подключить: скажите Claude «подключаем GA4» — он создаст сервисный ключ и проведёт по шагам (добавить доступ Viewer в аккаунте GA4, ~10 минут, один раз).",
            "Щоб підключити: скажіть Claude «підключаємо GA4» — він створить сервісний ключ і проведе по кроках (додати доступ Viewer в акаунті GA4, ~10 хвилин, один раз).")}
       </div>
-    </div>
-    <PixelEventsTab from={from} to={to} />
+    </div>}
+    {siteTab === "pixel" && <PixelEventsTab from={from} to={to} mode="site" />}
   </>;
 }
 

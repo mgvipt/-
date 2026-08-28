@@ -3097,6 +3097,9 @@ class MetaPixelEventsView(APIView):
 
         bm = qs.filter(payload__action_source="business_messaging").count()
         total = qs.count()
+        by_channel = {}
+        for r in qs.values("payload__messaging_channel").annotate(n=Count("id")):
+            by_channel[r["payload__messaging_channel"] or "no_messaging"] = r["n"]
         recent = []
         for e in qs.select_related("contact", "stage").order_by("-created_at")[:400]:
             p = e.payload or {}
@@ -3115,7 +3118,7 @@ class MetaPixelEventsView(APIView):
                         "pending": qs.filter(status="pending").count(),
                         "failed": qs.filter(status="failed").count(),
                         "business_messaging": bm,
-                        "bm_pct": (round(bm * 100.0 / total) if total else 0)},
+                        "bm_pct": (round(bm * 100.0 / total) if total else 0), "by_channel": by_channel},
             "by_event": by_event, "daily": daily, "recent": recent,
         })
 
