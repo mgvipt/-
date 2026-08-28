@@ -905,7 +905,21 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Товар не знайдено."}, status=status.HTTP_404_NOT_FOUND)
         wh = Warehouse.objects.filter(is_default=True).first() or Warehouse.objects.first()
         src_cost = src.cost or Decimal("0")
-        tgt_unit_cost = (src_cost * sq / tq) if tq else Decimal("0")  # перенос собівартості на дрібну фасовку
+        # додаткові списання (тара тощо): [{product, qty}]
+        extras = request.data.get("extras") or []
+        extra_movs = []; extra_cost = Decimal("0")
+        for ex in extras:
+            ep = Product.objects.filter(id=ex.get("product")).first()
+            try:
+                eq = Decimal(str(ex.get("qty") or 0))
+            except (InvalidOperation, TypeError):
+                eq = Decimal("0")
+            if ep and eq > 0 and ep.id not in (src.id, tgt.id):
+                if not ep.track_stock:
+                    ep.track_stock = True; ep.save(update_fields=["track_stock"])
+                extra_cost += (ep.cost or Decimal("0")) * eq
+                extra_movs.append((ep, eq, ep.cost or Decimal("0")))
+        tgt_unit_cost = ((src_cost * sq + extra_cost) / tq) if tq else Decimal("0")  # перенос собівартості (джерело+тара)
         # обидва товари мусять бути на складському обліку (щоб розлив рахувався в залишку/інвентаризації)
         _fix = []
         if not src.track_stock:
@@ -926,6 +940,8 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
             comment=("Розлив: %s ×%s → %s ×%s" % (src.name[:24], sq, tgt.name[:24], tq))[:255],
             author=(u if u.is_authenticated else None), posted=True)
         StockMovement.objects.create(document=doc, product=src, quantity=-sq, price=src_cost)
+        for _ep, _eq, _ec in extra_movs:
+            StockMovement.objects.create(document=doc, product=_ep, quantity=-_eq, price=_ec)
         StockMovement.objects.create(document=doc, product=tgt, quantity=tq, price=tgt_unit_cost)
         return Response({"ok": True, "doc": doc.id,
                          "source_stock": float(src.stock()), "target_stock": float(tgt.stock()),
