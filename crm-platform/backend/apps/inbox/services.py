@@ -195,6 +195,21 @@ def _resolve_chatplace_chat_id(conv):
                     found.add(str(cid))
             if len(found) == 1:  # тільки при ОДНОЗНАЧНОМУ збігу (без ризику переплутати)
                 return next(iter(found))
+            # 3) клієнт лише з @ніком (Meta не дав реального імені) — chats_list НЕ віддає
+            # username, а chats_get — віддає. Клієнт активний → його чат зверху списку:
+            # перевіряємо ТОП-10 свіжих чатів через chats_get і матчимо по @ніку.
+            if nick:
+                for it in (items or [])[:10]:
+                    cid = it.get("id")
+                    if not cid:
+                        continue
+                    try:
+                        g = _mcp("chats_get", {"chatId": str(cid)})
+                        un = str((g or {}).get("username") or "").strip().lstrip("@").lower()
+                        if un and un == nick:
+                            return str(cid)
+                    except Exception:
+                        break  # ChatPlace лагає/бан — не довбимо далі
         return ""
     except Exception:
         return ""
