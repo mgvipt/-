@@ -93,14 +93,14 @@ export default function Warehouse() {
   const canTabStat = can("analytics.warehouse");
   // якщо збережена вкладка стала недоступною (зняли право) — повертаємось до товарів
   useEffect(() => {
-    if ((view === "realiz" && !canTabReal) || (view === "receipt" && !canTabRec) ||
+    if ((view === "realiz" && !canTabReal) || (view === "receipt" && !canTabRec) || (view === "writeoff" && !canTabRec) ||
         (view === "inv" && !canTabInv) || (view === "stat" && !canTabStat)) setView("goods");
     // eslint-disable-next-line
   }, [canTabReal, canTabRec, canTabInv, canTabStat]);
-  const [view, setView] = useState<"goods" | "realiz" | "receipt" | "inv" | "stat" | "dups">(() => (localStorage.getItem("whacc_tab") as any) || "goods");
+  const [view, setView] = useState<"goods" | "realiz" | "receipt" | "writeoff" | "inv" | "stat" | "dups">(() => (localStorage.getItem("whacc_tab") as any) || "goods");
   useEffect(() => { try { localStorage.setItem("whacc_tab", view); } catch (e) { /* noop */ } }, [view]);
   // авто-загрузка списка документов при входе на вкладку (в т.ч. после перезагрузки / создания прихода)
-  useEffect(() => { if (view === "receipt") openReceiptList(); else if (view === "realiz") openRealizList(); else if (view === "inv") openInventory(); /* eslint-disable-next-line */ }, [view]);
+  useEffect(() => { if (view === "receipt") openReceiptList(); else if (view === "realiz") openRealizList(); else if (view === "writeoff") openWriteoffList(); else if (view === "inv") openInventory(); /* eslint-disable-next-line */ }, [view]);
   const [realizDocs, setRealizDocs] = useState<any[]>([]);
   const [realizBusy, setRealizBusy] = useState(false);
   const [realizSel, setRealizSel] = useState<any>(null);
@@ -115,9 +115,11 @@ export default function Warehouse() {
   const [recColW, setRecColW] = useState<Record<string, number>>(() => {
     try { return JSON.parse(localStorage.getItem("wh_receipt_colw") || "{}"); } catch { return {}; }
   });
-  const [docPage, setDocPage] = useState({ realiz: 1, receipt: 1 });
-  const [docPS, setDocPS] = useState({ realiz: 25, receipt: 25 });
-  const [docCount, setDocCount] = useState({ realiz: 0, receipt: 0 });
+  const [docPage, setDocPage] = useState({ realiz: 1, receipt: 1, writeoff: 1 });
+  const [docPS, setDocPS] = useState({ realiz: 25, receipt: 25, writeoff: 25 });
+  const [docCount, setDocCount] = useState({ realiz: 0, receipt: 0, writeoff: 0 });
+  const [writeoffDocs, setWriteoffDocs] = useState<any[]>([]);
+  const [writeoffBusy, setWriteoffBusy] = useState(false);
   async function openReceiptList(pg?: number, ps?: number) {
     setReceiptBusy(true);
     const page = pg ?? docPage.receipt, size = ps ?? docPS.receipt;
@@ -220,6 +222,26 @@ export default function Warehouse() {
       try { const fresh: any = await api.get(`/api/stock-documents/${rid}/`); setReceiptSel(fresh); } catch { /* */ }
       openReceiptList(); loadProducts();
     } catch { alert(t("Нет доступа (нужно «Редактировать склад» или «Финмодель»)","Немає доступу (потрібне «Редагувати склад» або «Фінмодель»)")); }
+  }
+  async function openWriteoffList(pg?: number, ps?: number) {
+    setWriteoffBusy(true);
+    const page = pg ?? docPage.writeoff, size = ps ?? docPS.writeoff;
+    try { const r: any = await api.get(`/api/stock-documents/?kinds=writeoff,repack&page=${page}&page_size=${size}`);
+      setWriteoffDocs(Array.isArray(r) ? r : (r.results || [])); setDocCount((c) => ({ ...c, writeoff: r.count ?? (r.results || r).length })); }
+    catch { setWriteoffDocs([]); }
+    setWriteoffBusy(false);
+  }
+  // удалить документ (приход / списание / розлив) — движения снимутся, остаток пересчитается
+  async function delDoc(id: number, kind: string, after: () => void) {
+    const nm = kind === "in" ? t("этот приход","цей прихід") : kind === "repack" ? t("этот розлив","цей розлив") : t("это списание","це списання");
+    if (!confirm(t(`Удалить ${nm} полностью? Документ и его движения удалятся, остаток товара пересчитается. Отменить нельзя.`, `Видалити ${nm} повністю? Документ і його рухи видаляться, залишок товару перерахується. Скасувати не можна.`))) return;
+    try { await api.delete(`/api/stock-documents/${id}/`); loadProducts(); after(); }
+    catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось удалить (нужны права склада)","Не вдалося видалити (потрібні права складу)")); }
+  }
+  async function docToggle(id: number, post: boolean, after: () => void) {
+    if (!post && !confirm(t("Отменить проведение? Товар вернётся/уйдёт с остатка.","Скасувати проведення? Товар повернеться/піде із залишку."))) return;
+    try { await api.post(`/api/stock-documents/${id}/${post ? "post" : "unpost"}/`, {}); loadProducts(); after(); }
+    catch { alert(t("Нет доступа (нужно «Редактировать склад»)","Немає доступу (потрібне «Редагувати склад»)")); }
   }
   const [form, setForm] = useState({ product: 0, quantity: 1, price: 0 });
   const [loading, setLoading] = useState(false);
@@ -821,6 +843,7 @@ export default function Warehouse() {
         <button className={"btn" + (view === "goods" ? " btn-primary" : " btn-light")} onClick={() => setView("goods")}><Icon n="📦" size={15} /> {t("Товары и остатки","Товари та залишки")}</button>
         {canTabReal && <button className={"btn" + (view === "realiz" ? " btn-primary" : " btn-light")} onClick={() => { setView("realiz"); setRealizSel(null); openRealizList(); }}><Icon n="📤" size={15} /> {t("Реализации","Реалізації")}</button>}
         {canTabRec && <button className={"btn" + (view === "receipt" ? " btn-primary" : " btn-light")} onClick={() => { setView("receipt"); setReceiptSel(null); openReceiptList(); }}><Icon n="📥" size={15} /> {t("Приходные накладные","Прибуткові накладні")}</button>}
+        {canTabRec && <button className={"btn" + (view === "writeoff" ? " btn-primary" : " btn-light")} onClick={() => { setView("writeoff"); openWriteoffList(); }}><Icon n="🗑" size={15} /> {t("Списания","Списання")}</button>}
         {canTabInv && <button className={"btn" + (view === "inv" ? " btn-primary" : " btn-light")} onClick={() => { setView("inv"); openInventory(); }}><Icon n="📋" size={15} /> {t("Инвентаризация","Інвентаризація")}</button>}
         {canTabStat && <button className={"btn" + (view === "stat" ? " btn-primary" : " btn-light")} onClick={() => setView("stat")}><Icon n="📊" size={15} /> {t("Аналитика","Аналітика")}</button>}
         {canEdit && <button className={"btn" + (view === "dups" ? " btn-primary" : " btn-light")} onClick={() => setView("dups")}><Icon n="📦" size={15} /> {t("Дубли товаров","Дублі товарів")}</button>}
@@ -966,6 +989,7 @@ export default function Warehouse() {
                       <button className="btn btn-light" style={{ padding: "4px 12px" }} onClick={() => setReceiptFor({ editDoc: receiptSel })} title={t("Изменить позиции, поставщика, дату (пока не проведено)","Змінити позиції, постачальника, дату (поки не проведено)")}><Icon n="✏" size={13} /> {t("Редактировать","Редагувати")}</button>
                       <button className="btn btn-primary" style={{ padding: "4px 12px" }} onClick={() => receiptToggle(receiptSel.id, true)} title={t("Провести приход — товар встанет на остаток","Провести прихід — товар стане на залишок")}>{t("Провести приход","Провести прихід")}</button>
                     </>}
+                {canEdit && <button className="btn btn-light" style={{ padding: "4px 12px", color: "#dc2626", marginLeft: "auto" }} onClick={() => delDoc(receiptSel.id, "in", () => { setReceiptSel(null); openReceiptList(); })} title={t("Удалить приход полностью (документ и движения, остаток пересчитается)","Видалити прихід повністю (документ і рухи, залишок перерахується)")}><Icon n="🗑" size={13} /> {t("Удалить","Видалити")}</button>}
               </div>
             )}
             <table style={{ width: "100%", marginTop: 14 }}>
@@ -1029,6 +1053,36 @@ export default function Warehouse() {
               <button className="btn btn-light" disabled={docPage.receipt >= Math.ceil(docCount.receipt / docPS.receipt)} onClick={() => { const p = docPage.receipt + 1; setDocPage((x) => ({ ...x, receipt: p })); openReceiptList(p); }}>→</button>
             </div>
           </>
+        )}
+      </div>
+      ) : view === "writeoff" ? (
+      <div className="panel">
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+          <h3 style={{ margin: 0 }}>{t("Списания и розливы","Списання та розливи")}</h3>
+          {canEdit && <button className="btn btn-light" onClick={() => setModal("out")} title={t("Списание: брак, порча, выкраска","Списання: брак, псування, викраска")}><Icon n="🗑" size={14} /> {t("Новое списание","Нове списання")}</button>}
+        </div>
+        <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>{t("Списания (брак / порча / выкраска) и розливы/фасовки. Можно отменить проведение или удалить документ полностью.","Списання (брак / псування / викраска) і розливи/фасовки. Можна скасувати проведення або видалити документ повністю.")}</div>
+        {writeoffBusy ? <div className="muted">{t("Загрузка…","Завантаження…")}</div> : (
+        <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", fontSize: 13 }}>
+          <thead><tr><th style={{ textAlign: "left" }}>{t("Тип","Тип")}</th><th style={{ textAlign: "left" }}>{t("Дата","Дата")}</th><th style={{ textAlign: "left" }}>{t("Комментарий","Коментар")}</th><th style={{ textAlign: "right" }}>{t("Позиций","Позицій")}</th><th style={{ textAlign: "center" }}>{t("Статус","Статус")}</th><th></th></tr></thead>
+          <tbody>{writeoffDocs.map((d: any) => (
+            <tr key={d.id}>
+              <td>{d.kind === "repack" ? "🧪 " + t("Розлив","Розлив") : "🗑 " + t("Списание","Списання")}</td>
+              <td className="muted">{(d.doc_date || d.created_at || "").slice(0, 10)}</td>
+              <td className="muted">{d.comment || "—"}</td>
+              <td style={{ textAlign: "right" }}>{(d.items || []).length}</td>
+              <td style={{ textAlign: "center" }}><span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: d.posted ? "#dcfce7" : "#fef3c7", color: d.posted ? "#166534" : "#92400e" }}>{d.posted ? t("Проведён","Проведено") : t("Черновик","Чернетка")}</span></td>
+              <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                {canEdit && <button className="btn btn-light" style={{ padding: "2px 8px", fontSize: 11.5 }} onClick={() => docToggle(d.id, !d.posted, () => openWriteoffList())}>{d.posted ? t("Отменить","Скасувати") : t("Провести","Провести")}</button>}
+                {canEdit && <button className="btn btn-light" style={{ padding: "2px 8px", fontSize: 11.5, color: "#dc2626", marginLeft: 4 }} onClick={() => delDoc(d.id, d.kind, () => openWriteoffList())}>{t("Удалить","Видалити")}</button>}
+              </td>
+            </tr>
+          ))}
+          {writeoffDocs.length === 0 && <tr><td colSpan={6} className="muted" style={{ padding: 12 }}>{t("Списаний и розливов пока нет","Списань і розливів поки немає")}</td></tr>}
+          </tbody>
+        </table>
+        </div>
         )}
       </div>
       ) : view === "goods" ? (

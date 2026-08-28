@@ -651,6 +651,9 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         u = self.request.user
+        _kinds = self.request.query_params.get("kinds")  # кілька типів через кому (напр. writeoff,repack)
+        if _kinds:
+            qs = qs.filter(kind__in=[k for k in _kinds.split(",") if k])
         # документи конкретної сделки (блок «Сума» у картці) — доступні відповідальному як і раніше
         if u.is_superuser or "deal" in self.request.query_params:
             return qs
