@@ -548,13 +548,14 @@ function PixelEventsTab({ from, to }: { from: string; to: string }) {
 export default function MetaMarketing() {
   const { t } = useLang();
   const today = useMemo(() => new Date(), []);
-  const [from, setFrom] = useState(CONNECTED_FROM);
-  const [to, setTo] = useState(iso(today));
-  const [tab, setTab] = useState<Tab>("overview");
+  const _ss = (key: string, fallback: string) => { try { return sessionStorage.getItem(key) || fallback; } catch { return fallback; } };
+  const [from, setFrom] = useState(() => _ss("mm_from", CONNECTED_FROM));
+  const [to, setTo] = useState(() => _ss("mm_to", iso(today)));
+  const [tab, setTab] = useState<Tab>(() => _ss("mm_tab", "overview") as Tab);
   // Розділи маркетингу (27.08): зведений огляд / Meta / Сайт·Google / Офлайн.
   // Кожен розділ можна делегувати окремій людині (права marketing.section.*).
-  const [section, setSection] = useState<string>(() => { try { return localStorage.getItem("mm_section") || "overview"; } catch { return "overview"; } });
-  const pickSection = (key: string) => { setSection(key); try { localStorage.setItem("mm_section", key); } catch { /* */ } };
+  const [section, setSection] = useState<string>(() => _ss("mm_section", "overview"));
+  const pickSection = (key: string) => { setSection(key); try { sessionStorage.setItem("mm_section", key); } catch { /* */ } };
   const [offlineData, setOfflineData] = useState<any>(null);
   const [adLevel, setAdLevel] = useState<AdLevel>("campaigns");
   const [data, setData] = useState<any>(null);
@@ -566,7 +567,11 @@ export default function MetaMarketing() {
   const [orgView, setOrgView] = useState<"cards" | "table" | "account">("cards");
   const [showSettings, setShowSettings] = useState(false);
   // Редизайн 27.08: який пресет періоду підсвічено + пошук дати в «Деталізації за днями»
-  const [preset, setPreset] = useState<string>("all");
+  const [preset, setPreset] = useState<string>(() => _ss("mm_preset", "all"));
+  useEffect(() => { try {
+    sessionStorage.setItem("mm_from", from); sessionStorage.setItem("mm_to", to);
+    sessionStorage.setItem("mm_tab", tab); sessionStorage.setItem("mm_preset", preset);
+  } catch { /* */ } }, [from, to, tab, preset]);
   const [daySearch, setDaySearch] = useState("");
 
   useEffect(() => {
@@ -716,6 +721,7 @@ export default function MetaMarketing() {
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
           <div className="rd-seg">
             <button className={preset === "1d" ? "active" : ""} onClick={() => setLastDays(1, "1d")}>{t("Сегодня", "Сьогодні")}</button>
+            <button className={preset === "yd" ? "active" : ""} onClick={() => { const y = new Date(today); y.setDate(y.getDate() - 1); setFrom(iso(y)); setTo(iso(y)); setPreset("yd"); }}>{t("Вчера", "Вчора")}</button>
             <button className={preset === "7d" ? "active" : ""} onClick={() => setLastDays(7, "7d")}>7 {t("дней", "днів")}</button>
             <button className={preset === "30d" ? "active" : ""} onClick={() => setLastDays(30, "30d")}>30 {t("дней", "днів")}</button>
             <button className={preset === "90d" ? "active" : ""} onClick={() => setLastDays(90, "90d")}>90 {t("дней", "днів")}</button>
