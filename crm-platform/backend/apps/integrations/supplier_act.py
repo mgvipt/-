@@ -50,6 +50,23 @@ def _rows_from_bytes(data):
 _END_MARKERS = ("Разом", "Всього до", "Всьго до", "Без податку", "ПДВ", "Всього наймен")
 
 
+def _grand_total_with_vat(rows):
+    """Знаходить підсумок НАКЛАДНОЇ ІЗ ПДВ (\u00abУсього з ПДВ: 15120\u00bb / \u00abВсього до сплати з ПДВ\u00bb).
+    Для неплатника ПДВ реальна закупівля = сума З ПДВ. Ігноруємо колонки/рядки \u00abбез ПДВ\u00bb.
+    Повертає число або None (тоді лишається звичайний підсумок)."""
+    best = None
+    for row in rows:
+        j = " ".join(str(x) for x in row if x).lower()
+        if not j or "без пдв" in j or "без ндс" in j:
+            continue
+        if ("з пдв" in j or "із пдв" in j or "с ндс" in j) and any(k in j for k in ("усього", "всього", "разом", "итого", "до сплати", "к оплате")):
+            nums = [_f(x) for x in row if _f(x) is not None]
+            nums = [n for n in nums if n and n > 0]
+            if nums:
+                best = max(nums)   # у рядку-підсумку зазвичай одне число
+    return best
+
+
 def parse_korzh(file_contents):
     """file_contents — bytes .xls/.xlsx. Повертає dict акта постачальника."""
     rows = _rows_from_bytes(file_contents)
@@ -128,6 +145,9 @@ def parse_korzh(file_contents):
                     sm = round(pr * qty, 2)
                 out["lines"].append({"name": name, "qty": qty, "price": pr, "sum": sm})
 
+    _vt = _grand_total_with_vat(rows)
+    if _vt:
+        out["total"] = _vt
     if out["total"] is None and out["lines"]:
         out["total"] = round(sum(l["sum"] or 0 for l in out["lines"]), 2)
     return out
@@ -226,6 +246,9 @@ def parse_generic_invoice(raw, name=""):
         md2 = _re.search(r"від\s+(\d{1,2}\s+[а-яіїєґ']+\s+\d{4})", alltext, _re.I)
         if md2:
             dt = _ua_date(md2.group(1))
+    _vt = _grand_total_with_vat(rows)
+    if _vt:
+        total = _vt
     if total is None and lines:
         total = round(sum((l["sum"] or 0) for l in lines), 2)
     # реквізити ПОСТАЧАЛЬНИКА (продавця): від рядка "Постачальник" до "Одержувач/Покупець"
