@@ -2981,6 +2981,50 @@ class MarketingOfflineView(APIView):
                          "funnels": funnels_out, "total": total})
 
 
+class MarketingGa4View(APIView):
+    """Google Analytics 4 для розділу «Сайт · Google»: по кожному сайту —
+    сесії/користувачі/нові/ключові події, топ джерел, динаміка по днях."""
+    permission_classes = [HasPermCode]
+    required_perm = "marketing.view"
+
+    def get(self, request):
+        from django.utils import timezone as _tz2
+        from django.utils.dateparse import parse_date
+        from datetime import timedelta as _td
+        from .ga4_sync import ga4_configured
+        from .models import Ga4DailyStat
+
+        today = _tz2.localdate()
+        date_from = parse_date(request.GET.get("from") or "") or (today - _td(days=29))
+        date_to = parse_date(request.GET.get("to") or "") or today
+        if date_from > date_to:
+            date_from, date_to = date_to, date_from
+        rows = list(Ga4DailyStat.objects.filter(date__gte=date_from, date__lte=date_to)
+                    .order_by("site", "date"))
+        sites = {}
+        for row in rows:
+            s = sites.setdefault(row.site or row.property_id, {
+                "site": row.site or row.property_id, "property_id": row.property_id,
+                "sessions": 0, "active_users": 0, "new_users": 0, "key_events": 0,
+                "sources": {}, "daily": [],
+            })
+            s["sessions"] += row.sessions
+            s["active_users"] += row.active_users
+            s["new_users"] += row.new_users
+            s["key_events"] += row.key_events
+            for source, cnt in (row.sources or {}).items():
+                s["sources"][source] = s["sources"].get(source, 0) + int(cnt or 0)
+            s["daily"].append({"date": row.date.isoformat(), "sessions": row.sessions,
+                               "users": row.active_users, "key_events": row.key_events})
+        for s in sites.values():
+            s["sources"] = sorted(s["sources"].items(), key=lambda kv: -kv[1])[:8]
+        return Response({
+            "configured": ga4_configured(),
+            "from": date_from.isoformat(), "to": date_to.isoformat(),
+            "sites": sorted(sites.values(), key=lambda s: -s["sessions"]),
+        })
+
+
 class MetaSyncSettingsView(APIView):
     """Настройки авто-обновления маркетинга: интервалы по источникам. Чтение —
     marketing.view; изменение — руководитель (roles.manage) или админ."""

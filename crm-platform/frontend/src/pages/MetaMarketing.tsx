@@ -1404,17 +1404,7 @@ function SiteSection({ data, from, to, t }: { data: any; from: string; to: strin
         </table>
       </div> : <div className="muted" style={{ fontSize: 13 }}>{t("За период кампаний на сайт не было", "За період кампаній на сайт не було")}</div>}
     </div>}
-    {siteTab === "ga" && <div className="rd-card" style={{ marginBottom: 20 }}>
-      <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}><Icon n="chart" size={18} style={{ color: "var(--rd-warning)" }} /> Google Analytics</b>
-      <div style={{ fontSize: 13, color: "var(--rd-text2)", margin: "6px 0 10px", lineHeight: 1.6 }}>
-        {t("Ещё не подключено. Даст: посещаемость сайта, источники переходов (Google/Meta/прямые), поведение и конверсии — рядом с рекламой.",
-           "Ще не підключено. Дасть: відвідуваність сайту, джерела переходів (Google/Meta/прямі), поведінку та конверсії — поруч із рекламою.")}
-      </div>
-      <div className="note" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
-        {t("Чтобы подключить: скажите Claude «подключаем GA4» — он создаст сервисный ключ и проведёт по шагам (добавить доступ Viewer в аккаунте GA4, ~10 минут, один раз).",
-           "Щоб підключити: скажіть Claude «підключаємо GA4» — він створить сервісний ключ і проведе по кроках (додати доступ Viewer в акаунті GA4, ~10 хвилин, один раз).")}
-      </div>
-    </div>}
+    {siteTab === "ga" && <Ga4Block from={from} to={to} t={t} />}
     {siteTab === "pixel" && <PixelEventsTab from={from} to={to} mode="site" />}
   </>;
 }
@@ -1462,6 +1452,51 @@ function AllChannelsOverview({ data, offlineData, t, go }: { data: any; offlineD
       { l: t("Выручка", "Виручка"), v: moneyUah(off.revenue), c: "var(--rd-success)" },
       { l: t("Средний чек", "Середній чек"), v: off.avg_check ? moneyUah(off.avg_check) : "—", c: "var(--rd-purple)", tip: t("Салонный чек обычно сильно выше онлайнового", "Салонний чек зазвичай сильно вищий за онлайновий") },
     ]} />
+  </div>;
+}
+
+/* ── Google Analytics 4: статистика сайтів Wallcov (дані синкує ga4_sync, крон) ── */
+function Ga4Block({ from, to, t }: { from: string; to: string; t: (ru: string, ua: string) => string }) {
+  const [d, setD] = useState<any>(null);
+  useEffect(() => { setD(null); api.get<any>(`/api/marketing/ga4/?from=${from}&to=${to}`).then(setD).catch(() => setD({ error: true })); }, [from, to]);
+  if (!d) return <div className="muted" style={{ padding: 30 }}>{t("Загрузка…", "Завантаження…")}</div>;
+  if (d.error) return <div className="muted" style={{ padding: 30 }}>{t("Не удалось загрузить Google Analytics", "Не вдалося завантажити Google Analytics")}</div>;
+  const sites = d.sites || [];
+  if (!sites.length) return <div className="rd-card"><div className="muted" style={{ padding: 10 }}>{t("Данных за период нет. Синхронизация Google Analytics идёт раз в сутки; статистика появляется по мере посещений сайтов.", "Даних за період немає. Синхронізація Google Analytics іде раз на добу; статистика зʼявляється в міру відвідувань сайтів.")}</div></div>;
+  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(460px,100%), 1fr))", gap: 20 }}>
+    {sites.map((s: any) => {
+      const maxD = Math.max(...(s.daily || []).map((x: any) => x.sessions || 0), 1);
+      return (
+        <div key={s.property_id} className="rd-card">
+          <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}><Icon n="🌐" size={16} style={{ color: "var(--rd-warning)" }} /> {s.site}</b>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(105px, 1fr))", gap: 12, margin: "14px 0" }}>
+            <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Сессии", "Сесії")} <InfoI tip={t("Сколько раз заходили на сайт за период", "Скільки разів заходили на сайт за період")} /></div><div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-primary)" }}>{count(s.sessions)}</div></div>
+            <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Люди", "Люди")} <InfoI tip={t("Уникальные посетители", "Унікальні відвідувачі")} /></div><div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-purple)" }}>{count(s.active_users)}</div></div>
+            <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Новые", "Нові")} <InfoI tip={t("Впервые на сайте", "Вперше на сайті")} /></div><div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-success)" }}>{count(s.new_users)}</div></div>
+            <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Ключевые события", "Ключові події")} <InfoI tip={t("Конверсии, отмеченные в GA как ключевые", "Конверсії, позначені в GA як ключові")} /></div><div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-warning)" }}>{count(s.key_events)}</div></div>
+          </div>
+          {(s.sources || []).length > 0 && <>
+            <div style={{ fontSize: 10.5, color: "var(--rd-text2)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 700, margin: "4px 0 6px" }}>{t("Откуда приходят", "Звідки приходять")}</div>
+            {(s.sources || []).map(([source, cnt]: any) => (
+              <div key={source} style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 0" }}>
+                <span style={{ flex: 1, fontSize: 12, color: "var(--rd-text2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{source}</span>
+                <div style={{ width: 120, background: "var(--rd-bg)", borderRadius: 4, height: 10 }}>
+                  <div style={{ width: Math.max(cnt * 100 / (s.sessions || 1), 2) + "%", height: "100%", background: "var(--rd-primary)", borderRadius: 4, opacity: .8 }} />
+                </div>
+                <b style={{ width: 44, textAlign: "right", fontSize: 12 }}>{count(cnt)}</b>
+              </div>
+            ))}
+          </>}
+          {(s.daily || []).length > 1 && <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 64, marginTop: 12, overflowX: "auto" }}>
+            {(s.daily || []).map((x: any) => (
+              <div key={x.date} style={{ flex: 1, minWidth: 8, display: "flex", flexDirection: "column", alignItems: "center" }} title={`${x.date}: ${x.sessions} ${t("сессий", "сесій")}`}>
+                <div style={{ width: "70%", maxWidth: 16, height: Math.max((x.sessions / maxD) * 52, 2), background: "var(--rd-primary)", borderRadius: "3px 3px 0 0", opacity: .8 }} />
+              </div>
+            ))}
+          </div>}
+        </div>
+      );
+    })}
   </div>;
 }
 

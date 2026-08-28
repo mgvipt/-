@@ -428,6 +428,34 @@ class MetaPaidFollowStat(models.Model):
         return f"{self.date} · {self.ad_name or self.adset_name or self.campaign_name} · {self.follows}"
 
 
+class Ga4DailyStat(models.Model):
+    """Денна статистика сайту з Google Analytics 4 (Data API, runReport).
+
+    Одна властивість (property) = один сайт Wallcov. ``sources`` — топ джерел
+    трафіку дня {"source / medium": sessions} (до 10). NULL немає: день без
+    трафіку просто відсутній.
+    """
+
+    property_id = models.CharField(max_length=32, db_index=True)
+    site = models.CharField(max_length=120, blank=True, default="")
+    date = models.DateField(db_index=True)
+    sessions = models.PositiveIntegerField(default=0)
+    active_users = models.PositiveIntegerField(default=0)
+    new_users = models.PositiveIntegerField(default=0)
+    key_events = models.PositiveIntegerField(default=0)
+    sources = models.JSONField(default=dict, blank=True)
+    synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("property_id", "date"), name="uniq_ga4_property_day"),
+        ]
+        indexes = [models.Index(fields=["site", "date"], name="crm_ga4_site_day")]
+
+    def __str__(self):
+        return f"{self.date} · {self.site or self.property_id}"
+
+
 class MetaAccountDailyStat(models.Model):
     """Щоденний зріз професійного Instagram-акаунта.
 

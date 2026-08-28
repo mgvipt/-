@@ -158,6 +158,7 @@ urlpatterns = [
     path("api/analytics/sales-journey/", crm_views.SalesJourneyView.as_view()),
     path("api/meta-marketing/funnel/", crm_views.MetaFunnelView.as_view()),
     path("api/marketing/offline/", crm_views.MarketingOfflineView.as_view()),
+    path("api/marketing/ga4/", crm_views.MarketingGa4View.as_view()),
     path("api/meta-marketing/sync-now/", crm_views.MetaSyncNowView.as_view()),
     path("api/meta-marketing/sync-status/", crm_views.MetaSyncStatusView.as_view()),
     path("api/meta-marketing/settings/", crm_views.MetaSyncSettingsView.as_view()),
