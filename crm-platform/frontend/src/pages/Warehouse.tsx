@@ -235,7 +235,7 @@ export default function Warehouse() {
   async function delDoc(id: number, kind: string, after: () => void) {
     const nm = kind === "in" ? t("этот приход","цей прихід") : kind === "repack" ? t("этот розлив","цей розлив") : t("это списание","це списання");
     if (!confirm(t(`Удалить ${nm} полностью? Документ и его движения удалятся, остаток товара пересчитается. Отменить нельзя.`, `Видалити ${nm} повністю? Документ і його рухи видаляться, залишок товару перерахується. Скасувати не можна.`))) return;
-    try { await api.delete(`/api/stock-documents/${id}/`); loadProducts(); after(); }
+    try { await api.del(`/api/stock-documents/${id}/`); loadProducts(); after(); }
     catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось удалить (нужны права склада)","Не вдалося видалити (потрібні права складу)")); }
   }
   async function docToggle(id: number, post: boolean, after: () => void) {
