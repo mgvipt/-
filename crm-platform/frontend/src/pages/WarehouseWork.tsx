@@ -45,7 +45,7 @@ export default function WarehouseWork() {
       {view === "kanban" && <KanbanView t={t} onOpen={setJob} />}
       {view === "shift" && <ShiftView t={t} />}
       {view === "salary" && <SalaryView t={t} />}
-      {view === "repack" && <div style={{ maxWidth: 640 }}><RepackForm /></div>}
+      {view === "repack" && <RepackPage t={t} />}
       {view === "control" && <ControlView t={t} />}
       {view === "dashboard" && <DashboardView t={t} />}
     </div>
@@ -623,6 +623,50 @@ function ControlView({ t }: any) {
           {i.status === "new" && <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={() => award(i)}>{t("Премировать", "Преміювати")}</button>}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ── Кабінет складу: форма розливу + список останніх розливів/списань (з відміною/видаленням) ──
+function RepackPage({ t }: { t: any }) {
+  const [docs, setDocs] = useState<any[]>([]);
+  const [busy, setBusy] = useState(false);
+  const load = () => { setBusy(true); api.get<any>("/api/stock-documents/?kinds=writeoff,repack&page_size=20").then((r: any) => setDocs(r.results || r)).catch(() => setDocs([])).finally(() => setBusy(false)); };
+  useEffect(() => { load(); }, []);
+  const del = async (id: number, kind: string) => {
+    const nm = kind === "repack" ? t("этот розлив", "цей розлив") : t("это списание", "це списання");
+    if (!confirm(t("Удалить " + nm + "? Движения откатятся, остаток пересчитается. Отменить нельзя.", "Видалити " + nm + "? Рухи відкотяться, залишок перерахується. Скасувати не можна."))) return;
+    try { await api.del(`/api/stock-documents/${id}/`); load(); } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось удалить", "Не вдалося видалити")); }
+  };
+  const toggle = async (id: number, post: boolean) => {
+    if (!post && !confirm(t("Отменить проведение? Товар вернётся/уйдёт с остатка.", "Скасувати проведення? Товар повернеться/піде із залишку."))) return;
+    try { await api.post(`/api/stock-documents/${id}/${post ? "post" : "unpost"}/`, {}); load(); } catch { alert(t("Нет доступа (нужно «Редактировать склад»)", "Немає доступу (потрібне «Редагувати склад»)")); }
+  };
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <RepackForm onDone={load} />
+      <div style={{ marginTop: 18 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>{t("Последние розливы и списания", "Останні розливи та списання")}</div>
+        {busy ? <div className="muted">{t("Загрузка…", "Завантаження…")}</div> : docs.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Пока пусто", "Поки порожньо")}</div> : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", fontSize: 13 }}>
+              <thead><tr><th style={{ textAlign: "left" }}>{t("Тип", "Тип")}</th><th style={{ textAlign: "left" }}>{t("Дата", "Дата")}</th><th style={{ textAlign: "left" }}>{t("Что", "Що")}</th><th style={{ textAlign: "center" }}>{t("Статус", "Статус")}</th><th></th></tr></thead>
+              <tbody>{docs.map((d: any) => (
+                <tr key={d.id}>
+                  <td>{d.kind === "repack" ? "🧪 " + t("Розлив", "Розлив") : "🗑 " + t("Списание", "Списання")}</td>
+                  <td className="muted">{(d.doc_date || d.created_at || "").slice(0, 10)}</td>
+                  <td className="muted" style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.comment}>{d.comment || "—"}</td>
+                  <td style={{ textAlign: "center" }}><span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: d.posted ? "#dcfce7" : "#fef3c7", color: d.posted ? "#166534" : "#92400e" }}>{d.posted ? t("Проведён", "Проведено") : t("Черновик", "Чернетка")}</span></td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    <button className="btn btn-light" style={{ padding: "2px 8px", fontSize: 11.5 }} onClick={() => toggle(d.id, !d.posted)}>{d.posted ? t("Отменить", "Скасувати") : t("Провести", "Провести")}</button>
+                    <button className="btn btn-light" style={{ padding: "2px 8px", fontSize: 11.5, color: "#dc2626", marginLeft: 4 }} onClick={() => del(d.id, d.kind)}>{t("Удалить", "Видалити")}</button>
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
