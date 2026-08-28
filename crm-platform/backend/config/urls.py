@@ -167,6 +167,7 @@ urlpatterns = [
     path("api/meta-marketing/", crm_views.MetaMarketingView.as_view()),
     path("api/analytics/inventory/", wh_views.InventoryAnalyticsView.as_view()),
     path("api/warehouse/inventory-sheet/", wh_views.InventorySheetView.as_view()),
+    path("api/warehouse/inventory-summary/", wh_views.InventorySummaryView.as_view()),
     path("api/warehouse/inventory-draft/", wh_views.InventoryDraftView.as_view()),
     path("api/warehouse/product-shipments/", wh_views.ProductShipmentsView.as_view()),
     path("api/warehouse/queue/", whv.queue),

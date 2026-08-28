@@ -1382,3 +1382,41 @@ class InventorySheetView(APIView):
                          "sold": float(sold), "book": float(book)})
         return Response({"from": d_from, "to": d_to, "rows": rows,
                          "count": count, "page": page, "page_size": page_size})
+
+
+class InventorySummaryView(APIView):
+    """Зведення для звірки: залишок (факт) кожного товару по датах проведених
+    інвентаризацій + поточний залишок. Факт на інвентаризацію = накопичений
+    залишок одразу ПІСЛЯ її руху (before+розбіжність). Право warehouse.tab.inventory."""
+
+    def get(self, request):
+        u = request.user
+        if not (u.is_superuser or (hasattr(u, "has_perm_code") and u.has_perm_code("warehouse.tab.inventory"))):
+            return Response({"detail": "Немає доступу до інвентаризації"}, status=status.HTTP_403_FORBIDDEN)
+        from collections import defaultdict
+        from django.db.models import Count as _Cnt
+        # колонки — лише змістовні інвентаризації (≥3 позицій); дрібні корекції не показуємо
+        inv_docs = list(StockDocument.objects.filter(kind="inv", posted=True)
+                        .annotate(_n=_Cnt("items")).filter(_n__gte=3).order_by("created_at"))
+        _big_ids = set(d.id for d in inv_docs)
+        columns = [{"id": d.id,
+                    "date": (d.doc_date or (d.created_at.date() if d.created_at else None)).isoformat() if (d.doc_date or d.created_at) else "",
+                    "label": (d.comment or "")[:40]} for d in inv_docs]
+        prod_ids = list(StockMovement.objects.filter(
+            document__kind="inv", document__posted=True).values_list("product_id", flat=True).distinct())
+        movs = defaultdict(list)
+        for m in (StockMovement.objects.filter(product_id__in=prod_ids, document__posted=True)
+                  .select_related("document").order_by("document__created_at", "document_id")):
+            movs[m.product_id].append(m)
+        rows = []
+        for p in Product.objects.filter(id__in=prod_ids):
+            run = 0.0
+            facts = {}
+            for m in movs.get(p.id, []):
+                run += float(m.quantity)
+                if m.document.kind == "inv" and m.document_id in _big_ids:
+                    facts[str(m.document_id)] = round(run, 2)
+            rows.append({"product": p.id, "name": p.name, "unit": p.unit,
+                         "current": float(p.stock()), "facts": facts})
+        rows.sort(key=lambda r: (r["name"] or "").lower())
+        return Response({"columns": columns, "rows": rows, "count": len(rows)})

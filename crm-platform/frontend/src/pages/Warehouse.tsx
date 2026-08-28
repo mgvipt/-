@@ -393,7 +393,15 @@ export default function Warehouse() {
   const [invImportPageSize, setInvImportPageSize] = useState(50);
   const invTotalPages = Math.max(1, Math.ceil(invCount / invPageSize));
   // инвентаризация: экран (ведомость / история проведённых) + список истории
-  const [invScreen, setInvScreen] = useState<"sheet" | "history">("sheet");
+  const [invScreen, setInvScreen] = useState<"sheet" | "history" | "summary">("sheet");
+  const [invSummary, setInvSummary] = useState<any>(null);
+  const [invSummaryBusy, setInvSummaryBusy] = useState(false);
+  async function loadInvSummary() {
+    setInvSummaryBusy(true);
+    try { const d: any = await api.get("/api/warehouse/inventory-summary/"); setInvSummary(d); }
+    catch { setInvSummary(null); }
+    setInvSummaryBusy(false);
+  }
   // при входе в ведомость — подтянуть общий черновик; обновлять каждые 8с (видеть ввод коллег)
   useEffect(() => {
     if (view !== "inv" || invScreen !== "sheet") return;
@@ -1369,7 +1377,34 @@ export default function Warehouse() {
             <div style={{ display: "flex", gap: 8, marginBottom: 12, borderBottom: "1px solid #f1f5f9", paddingBottom: 8 }}>
               <button className={"btn " + (invScreen === "sheet" ? "btn-primary" : "btn-light")} onClick={() => setInvScreen("sheet")}>{t("Ведомость","Відомість")}</button>
               <button className={"btn " + (invScreen === "history" ? "btn-primary" : "btn-light")} onClick={() => { setInvScreen("history"); setInvHistSel(null); loadInvHistory(1); }}>{t("История","Історія")}{invHistCount ? " (" + invHistCount + ")" : ""}</button>
+              <button className={"btn " + (invScreen === "summary" ? "btn-primary" : "btn-light")} onClick={() => { setInvScreen("summary"); loadInvSummary(); }} title={t("Остатки (факт) по датам инвентаризаций — для сверки","Залишки (факт) по датах інвентаризацій — для звірки")}>{t("Сводная сверка","Зведена звірка")}</button>
             </div>
+            {invScreen === "summary" && (
+              <div>
+                <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>{t("Остаток (факт), зафиксированный каждой проведённой инвентаризацией, + текущий остаток. Столбцы — даты инвентаризаций. «—» = товар не входил в ту инвентаризацию.","Залишок (факт), зафіксований кожною проведеною інвентаризацією, + поточний залишок. Стовпці — дати інвентаризацій. «—» = товар не входив у ту інвентаризацію.")}</div>
+                {invSummaryBusy ? <div className="muted" style={{ padding: 10 }}>{t("Загрузка…","Завантаження…")}</div> : invSummary ? (
+                  <div style={{ overflowX: "auto", maxHeight: "calc(100vh - 260px)", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                    <table style={{ borderCollapse: "collapse", fontSize: 12.5, minWidth: 560 }}>
+                      <thead><tr>
+                        <th style={{ position: "sticky", left: 0, top: 0, zIndex: 3, background: "var(--card-bg,#fff)", textAlign: "left", padding: "6px 10px", boxShadow: "inset 0 -1px 0 #e2e8f0, inset -1px 0 0 #e2e8f0", minWidth: 220 }}>{t("Товар","Товар")}</th>
+                        {(invSummary.columns || []).map((c: any) => <th key={c.id} style={{ position: "sticky", top: 0, zIndex: 2, background: "var(--card-bg,#fff)", textAlign: "right", padding: "6px 10px", boxShadow: "inset 0 -1px 0 #e2e8f0", whiteSpace: "nowrap" }} title={c.label + " (" + c.date + ")"}>{(c.date || "").slice(5) || c.id}</th>)}
+                        <th style={{ position: "sticky", top: 0, zIndex: 2, background: "#eef2ff", textAlign: "right", padding: "6px 10px", boxShadow: "inset 0 -1px 0 #e2e8f0", fontWeight: 800, whiteSpace: "nowrap" }}>{t("Текущий","Поточний")}</th>
+                      </tr></thead>
+                      <tbody>
+                        {(invSummary.rows || []).map((r: any) => (
+                          <tr key={r.product}>
+                            <td style={{ position: "sticky", left: 0, background: "var(--card-bg,#fff)", padding: "5px 10px", boxShadow: "inset -1px 0 0 #e2e8f0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 260 }} title={r.name}>{r.name}</td>
+                            {(invSummary.columns || []).map((c: any) => { const v = r.facts?.[String(c.id)]; return <td key={c.id} style={{ textAlign: "right", padding: "5px 10px", color: v == null ? "#cbd5e1" : "#0f172a" }}>{v == null ? "—" : Number(v).toLocaleString("ru")}</td>; })}
+                            <td style={{ textAlign: "right", padding: "5px 10px", background: "#f8faff", fontWeight: 700 }}>{Number(r.current).toLocaleString("ru")}</td>
+                          </tr>
+                        ))}
+                        {(invSummary.rows || []).length === 0 && <tr><td colSpan={(invSummary.columns || []).length + 2} className="muted" style={{ padding: 12 }}>{t("Инвентаризаций ещё не было","Інвентаризацій ще не було")}</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : <div className="muted" style={{ padding: 10 }}>{t("Нет данных","Немає даних")}</div>}
+              </div>
+            )}
             {invScreen === "sheet" && (<>
             <h3 style={{ marginTop: 0 }}>{t("Инвентаризационная ведомость","Інвентаризаційна відомість")} · {invMode === "moved" ? t("продано за период","продано за період") : (invMode === "folder" && invCat ? (invCat === -1 ? t("без категории","без категорії") : (cats.find((c) => c.id === invCat)?.name || t("папка","папка"))) : t("все товары","всі товари"))} <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>({invCount})</span></h3>
             {/* Отображение: все товары / по папке + печать */}
