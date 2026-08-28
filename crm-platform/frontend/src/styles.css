@@ -1,5 +1,9 @@
 :root{--brand:#C67D5F;--brand2:#8B9D77;--sidebar:#33291f;--sidebar2:#463a30;--dt:#efe9e1;}
-*{box-sizing:border-box;font-family:'Inter','Segoe UI',system-ui,-apple-system,Arial,sans-serif;}
+/* ГЛОБАЛЬНО — БЕЗ Inter: коли 27.08 Inter реально підключили, увесь CRM
+   «збільшився» (Inter візуально крупніший за системний шрифт) — співробітники
+   скаржились. Inter лишається ТІЛЬКИ в розділі маркетингу (клас .rd-font). */
+*{box-sizing:border-box;font-family:'Segoe UI',system-ui,-apple-system,Arial,sans-serif;}
+.rd-font,.rd-font *{font-family:'Inter','Segoe UI',system-ui,-apple-system,Arial,sans-serif;}
 html,body,#root{margin:0;height:100%;color:#1e293b;background:#f1f5f9;}
 ::-webkit-scrollbar{width:8px;height:8px;}::-webkit-scrollbar-thumb{background:rgba(0,0,0,.18);border-radius:8px;}
 .app{display:flex;height:100vh;width:100vw;overflow:hidden;}

@@ -698,7 +698,7 @@ export default function MetaMarketing() {
   const cplUah = (paidSummary.spend_uah && summary.meta_origin_leads) ? paidSummary.spend_uah / summary.meta_origin_leads : null;
   const cplExactUah = (paidSummary.spend_uah && summary.attributed_leads) ? paidSummary.spend_uah / summary.attributed_leads : null;
 
-  return <div style={{ height: "100%", overflowY: "auto", background: "var(--rd-bg)", boxSizing: "border-box" }}>
+  return <div className="rd-font" style={{ height: "100%", overflowY: "auto", background: "var(--rd-bg)", boxSizing: "border-box" }}>
     {/* Шапка-смуга (редизайн 27.08 за макетом Олега) */}
     <div style={{ background: "var(--rd-card)", borderBottom: "1px solid var(--rd-border)", padding: "18px clamp(14px,2.5vw,32px) 16px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
@@ -743,7 +743,7 @@ export default function MetaMarketing() {
       {showSettings && <MetaSettingsModal onClose={() => setShowSettings(false)} />}
       {syncing && <div className="note" style={{ marginBottom: 10, background: "#eff6ff", color: "#1e40af" }}>{t("Тянем свежие данные из Meta (Ads + Instagram + подписчики). Это ~1-3 минуты — таблицы обновятся автоматически, можно продолжать работать.", "Тягнемо свіжі дані з Meta. Це ~1-3 хвилини — таблиці оновляться автоматично.")}</div>}
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+      {data && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         {([
           { key: "overview", icon: "chart", ru: "Обзор (все каналы)", ua: "Огляд (усі канали)" },
           { key: "meta", icon: "instagram", ru: "Meta · соцсети", ua: "Meta · соцмережі" },
@@ -756,7 +756,7 @@ export default function MetaMarketing() {
             <Icon n={s.icon} size={16} /> {t(s.ru, s.ua)}
           </button>
         ))}
-      </div>
+      </div>}
       {section === "meta" && <nav style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 14 }}>
         {tabs.map((item) => <button key={item.key} className={"rd-pill" + (tab === item.key ? " active" : "")} onClick={() => setTab(item.key)}>{t(item.ru, item.ua)}</button>)}
       </nav>}

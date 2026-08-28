@@ -474,6 +474,11 @@ def import_share_report(*, dry_run: bool = False) -> dict:
             )
     state_cfg["share_last_sync"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
     state_cfg.pop("share_last_error", None)
+    try:
+        from django.core.cache import cache as _mmc
+        _mmc.set("mm_ver", int(_mmc.get("mm_ver", 0)) + 1, None)
+    except Exception:
+        pass
     state.config = state_cfg
     state.is_active = True
     state.save(update_fields=["config", "is_active", "updated_at"])

@@ -3233,10 +3233,18 @@ class MetaMarketingView(APIView):
         _ck = "mm:%s:%s:%s:%s" % (request.GET.get("from") or "", request.GET.get("to") or "",
                                   int(bool(user.is_superuser or user.has_perm_code("marketing.money"))),
                                   _cache.get("mm_ver", 0))
+        def _user_sections(u):
+            # Персональні розділи НЕ можна класти у спільний кеш — інакше людина
+            # отримає чужий список. Рахуємо окремо і підставляємо у відповідь.
+            return [s for s in ("overview", "meta", "site", "offline")
+                    if u.has_perm_code("marketing.section." + s)]
+
         if not _fresh:
             _hit = _cache.get(_ck)
             if _hit is not None:
-                return Response(_hit)
+                _resp = dict(_hit)
+                _resp["sections"] = _user_sections(user)
+                return Response(_resp)
         # Маркетинг-аналітика — ЗВЕДЕНИЙ дашборд по всій рекламі: доступ до нього вже
         # обмежений правом marketing.view, тому цифри показуємо повні (інакше маркетолог
         # бачив би витрати на рекламу, але 0 продажів — бо угоди не його).
@@ -4147,12 +4155,7 @@ class MetaMarketingView(APIView):
             "followers": followers,
             "dialogues": dialogues,
             "offline": offline,
-            # Розділи маркетингу: видно ЛИШЕ явно увімкнені (вимога Олега 27.08:
-            # «коли включено — тоді бачить»). Суперюзер бачить усі.
-            "sections": [
-                s for s in ("overview", "meta", "site", "offline")
-                if request.user.has_perm_code("marketing.section." + s)
-            ],
+
             "profitability": profitability,
             "daily": daily_rows,
             "outbox": outbox,
@@ -4194,9 +4197,13 @@ class MetaMarketingView(APIView):
                 if "revenue" in row:
                     row["revenue"] = None
         try:
-            _cache.set(_ck, payload, 300)
+            # 1 год: фонові синки бамплять mm_ver — кеш інвалідується даними,
+            # а не таймером (було 300с → повільне завантаження на кожен захід).
+            _cache.set(_ck, payload, 3600)
         except Exception:
             pass
+        payload = dict(payload)
+        payload["sections"] = _user_sections(user)
         return Response(payload)
 
 

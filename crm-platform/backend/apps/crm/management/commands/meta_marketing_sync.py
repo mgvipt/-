@@ -1,4 +1,13 @@
 import time
+
+from django.core.cache import cache as _mm_cache
+
+
+def _bump_mm_ver():
+    try:
+        _mm_cache.set("mm_ver", int(_mm_cache.get("mm_ver", 0)) + 1, None)
+    except Exception:
+        pass
 from datetime import date, timedelta
 
 from django.core.management.base import BaseCommand, CommandError
@@ -34,6 +43,7 @@ class Command(BaseCommand):
                 if name == "ads":
                     ads_since = max(since, current_until - timedelta(days=max(1, recent_days) - 1))
                     r = sync_ads(ads_since, current_until)
+                    _bump_mm_ver()
                 elif name == "account":
                     r = sync_account(since, current_until)
                 else:
