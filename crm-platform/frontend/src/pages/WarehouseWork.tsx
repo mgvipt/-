@@ -19,18 +19,18 @@ const ST: any = { queued: ["#eff6ff", "#1d4ed8", "У черзі"], taken: ["#fff
 
 export default function WarehouseWork() {
   const { t } = useLang();
-  const [view, setView] = useState<"queue" | "mine" | "kanban" | "shift" | "salary" | "control" | "dashboard">(() => (localStorage.getItem("wh_view") as any) || "shift");
+  const [view, setView] = useState<"queue" | "mine" | "kanban" | "shift" | "salary" | "control" | "dashboard" | "repack">(() => (localStorage.getItem("wh_view") as any) || "shift");
   useEffect(() => { try { localStorage.setItem("wh_view", view); } catch (e) { /* noop */ } }, [view]);
   const [sp] = useSearchParams();
   const [job, setJob] = useState<number | null>(null);
   useEffect(() => {
     const tb = sp.get("tab");
-    if (tb && ["queue", "mine", "kanban", "shift", "salary", "control", "dashboard"].includes(tb)) { setView(tb as any); setJob(null); }
+    if (tb && ["queue", "mine", "kanban", "shift", "salary", "control", "dashboard", "repack"].includes(tb)) { setView(tb as any); setJob(null); }
   }, [sp]);
   if (job) return <TaskCard t={t} jobId={job} onBack={() => setJob(null)} />;
   const { can } = useAuth();
   const mgr = can("warehouse.view.all") || can("roles.manage");
-  const TABS: any[] = [["shift", "🏠", "Смена", "Зміна"], ["queue", "📋", "Общий список", "Загальний список"], ["kanban", "🗂", "Мои задачи", "Мої задачі"], ["salary", "💰", "Зарплата", "ЗП"]].concat(mgr ? [["control", "🛡", "Контроль", "Контроль"], ["dashboard", "📊", "Дашборд", "Дашборд"]] : []);
+  const TABS: any[] = [["shift", "🏠", "Смена", "Зміна"], ["queue", "📋", "Общий список", "Загальний список"], ["kanban", "🗂", "Мои задачи", "Мої задачі"], ["salary", "💰", "Зарплата", "ЗП"], ["repack", "🧪", "Розлив", "Розлив"]].concat(mgr ? [["control", "🛡", "Контроль", "Контроль"], ["dashboard", "📊", "Дашборд", "Дашборд"]] : []);
   return (
     <div className="scroll pad fade" style={{ width: "100%" }}>
       <h2 style={{ margin: "0 0 12px", fontSize: 22, display: "flex", alignItems: "center", gap: 8 }}><Icon n="truck" size={20} /> {t("Отгрузка", "Відвантаження")}</h2>
@@ -44,6 +44,7 @@ export default function WarehouseWork() {
       {view === "kanban" && <KanbanView t={t} onOpen={setJob} />}
       {view === "shift" && <ShiftView t={t} />}
       {view === "salary" && <SalaryView t={t} />}
+      {view === "repack" && <RepackView t={t} />}
       {view === "control" && <ControlView t={t} />}
       {view === "dashboard" && <DashboardView t={t} />}
     </div>
@@ -621,6 +622,87 @@ function ControlView({ t }: any) {
           {i.status === "new" && <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={() => award(i)}>{t("Премировать", "Преміювати")}</button>}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ── РОЗЛИВ / ФАСУВАННЯ (кабінет складу): списати джерело+тару, оприбуткувати ціль ──
+function ProdPick({ t, val, q, setQ, opts, setOpts, onPick, ph, color, exclId }:
+  { t: any; val: any; q: string; setQ: (v: string) => void; opts: any[]; setOpts: (v: any[]) => void; onPick: (p: any) => void; ph: string; color: string; exclId?: number }) {
+  useEffect(() => {
+    const s = q.trim();
+    if (!s || (val && s === val.name)) { setOpts([]); return; }
+    const h = setTimeout(() => api.get<any>(`/api/products/?search=${encodeURIComponent(s)}&page_size=8&is_active=true`)
+      .then((r) => setOpts(((r.results || r) as any[]).filter((x: any) => x.id !== exclId))).catch(() => setOpts([])), 250);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line
+  }, [q]);
+  return (
+    <div style={{ position: "relative" }}>
+      {val
+        ? <div style={{ display: "flex", alignItems: "center", gap: 8, background: color, borderRadius: 8, padding: "8px 12px", fontSize: 13 }}><span style={{ flex: 1 }}><b>{val.name}</b> <span className="muted">({t("ост.", "зал.")} {val.stock})</span></span><span onClick={() => onPick(null)} style={{ cursor: "pointer", color: "#94a3b8", fontSize: 16 }}>✕</span></div>
+        : <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={ph} style={{ width: "100%", height: 40, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 12px", fontSize: 13.5, boxSizing: "border-box" }} />}
+      {!val && opts.length > 0 && (
+        <div style={{ position: "absolute", top: 42, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 10px 26px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 240, overflow: "auto" }}>
+          {opts.map((o: any) => <div key={o.id} onClick={() => { onPick(o); setOpts([]); }} style={{ padding: "9px 12px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f1f5f9" }}>{o.name} <span className="muted">{o.sku} · {t("ост.", "зал.")} {o.stock}</span></div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RepackView({ t }: { t: any }) {
+  const [tgt, setTgt] = useState<any>(null); const [tgtQ, setTgtQ] = useState(""); const [tgtOpts, setTgtOpts] = useState<any[]>([]);
+  const [src, setSrc] = useState<any>(null); const [srcQ, setSrcQ] = useState(""); const [srcOpts, setSrcOpts] = useState<any[]>([]);
+  const [tara, setTara] = useState<any>(null); const [taraQ, setTaraQ] = useState(""); const [taraOpts, setTaraOpts] = useState<any[]>([]);
+  const [sq, setSq] = useState("1"); const [tq, setTq] = useState(""); const [taraQty, setTaraQty] = useState("");
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState("");
+  const doIt = async () => {
+    if (!tgt || !src) { setMsg(t("Выбери что разливаем (источник) и во что (цель)", "Обери що розливаємо (джерело) і в що (ціль)")); return; }
+    const _sq = Number(String(sq).replace(",", ".")) || 0; const _tq = Number(String(tq).replace(",", ".")) || 0;
+    if (_sq <= 0 || _tq <= 0) { setMsg(t("Укажи: сколько списать и сколько получилось", "Вкажи: скільки списати і скільки вийшло")); return; }
+    const _taraQ = Number(String(taraQty).replace(",", ".")) || 0;
+    const extras = (tara && _taraQ > 0) ? [{ product: tara.id, qty: _taraQ }] : [];
+    setBusy(true); setMsg("");
+    try {
+      const r: any = await api.post("/api/stock-documents/repack/", { source: src.id, source_qty: _sq, target: tgt.id, target_qty: _tq, extras });
+      setMsg(t(`✓ Готово. Списано ${_sq}${extras.length ? " + тара " + _taraQ : ""} → оприходовано ${_tq}. Остаток цели: ${r.target_stock}`, `✓ Готово. Списано ${_sq}${extras.length ? " + тара " + _taraQ : ""} → оприбутковано ${_tq}. Залишок цілі: ${r.target_stock}`));
+      setSrc(null); setSrcQ(""); setTgt(null); setTgtQ(""); setTara(null); setTaraQ(""); setSq("1"); setTq(""); setTaraQty("");
+    } catch (e: any) { setMsg(e?.response?.data?.detail || t("Не удалось провести розлив", "Не вдалося провести розлив")); }
+    setBusy(false);
+  };
+  const lbl: any = { fontSize: 12, fontWeight: 700, color: "#475569", margin: "0 0 5px" };
+  return (
+    <div style={{ maxWidth: 620 }}>
+      <div className="panel" style={{ background: "#fbfdff" }}>
+        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>🧪 {t("Розлив / Фасовка", "Розлив / Фасування")}</div>
+        <div className="muted" style={{ fontSize: 12.5, marginBottom: 14 }}>{t("Переливаешь из крупной тары в мелкую? Спишется исходный товар и тара, оприходуется готовая фасовка. Себестоимость переносится, деньги не двигаются.", "Переливаєш із великої тари в дрібну? Спишеться вихідний товар і тара, оприбуткується готова фасовка. Собівартість переноситься, гроші не рухаються.")}</div>
+
+        <div style={{ ...lbl }}>1. {t("Что разливаем (спишется)", "Що розливаємо (спишеться)")}</div>
+        <ProdPick t={t} val={src} q={srcQ} setQ={(v) => { setSrcQ(v); if (src) setSrc(null); }} opts={srcOpts} setOpts={setSrcOpts} onPick={(p) => { setSrc(p); setSrcQ(p ? p.name : ""); }} ph={t("🔍 Напр. Primer Deep литровый…", "🔍 Напр. Primer Deep літровий…")} color="#eff6ff" exclId={tgt?.id} />
+        <div style={{ margin: "8px 0 14px", maxWidth: 180 }}>
+          <div style={{ ...lbl }}>{t("Сколько списать", "Скільки списати")}</div>
+          <input type="number" value={sq} onChange={(e) => setSq(e.target.value)} style={{ width: "100%", height: 38, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", boxSizing: "border-box" }} />
+        </div>
+
+        <div style={{ ...lbl }}>2. {t("Тара (тоже спишется) — если нужно", "Тара (теж спишеться) — якщо потрібно")}</div>
+        <ProdPick t={t} val={tara} q={taraQ} setQ={(v) => { setTaraQ(v); if (tara) setTara(null); }} opts={taraOpts} setOpts={setTaraOpts} onPick={(p) => { setTara(p); setTaraQ(p ? p.name : ""); setTaraQty(p ? (tq || "1") : ""); }} ph={t("📦 Напр. флакон 100 мл (необязательно)…", "📦 Напр. флакон 100 мл (необовʼязково)…")} color="#fef9c3" exclId={tgt?.id} />
+        {tara && <div style={{ margin: "8px 0 14px", maxWidth: 180 }}>
+          <div style={{ ...lbl }}>{t("Сколько тары", "Скільки тари")}</div>
+          <input type="number" value={taraQty} onChange={(e) => setTaraQty(e.target.value)} style={{ width: "100%", height: 38, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", boxSizing: "border-box" }} />
+        </div>}
+        {!tara && <div style={{ height: 14 }} />}
+
+        <div style={{ ...lbl }}>3. {t("Во что оприходовать (готовая фасовка)", "У що оприбуткувати (готова фасовка)")}</div>
+        <ProdPick t={t} val={tgt} q={tgtQ} setQ={(v) => { setTgtQ(v); if (tgt) setTgt(null); }} opts={tgtOpts} setOpts={setTgtOpts} onPick={(p) => { setTgt(p); setTgtQ(p ? p.name : ""); }} ph={t("🔍 Напр. Primer Deep 100 мл…", "🔍 Напр. Primer Deep 100 мл…")} color="#dcfce7" exclId={src?.id} />
+        <div style={{ margin: "8px 0 16px", maxWidth: 180 }}>
+          <div style={{ ...lbl }}>{t("Сколько получилось", "Скільки вийшло")}</div>
+          <input type="number" value={tq} onChange={(e) => setTq(e.target.value)} placeholder={t("напр. 10", "напр. 10")} style={{ width: "100%", height: 38, border: "1px solid #86efac", borderRadius: 8, padding: "0 10px", boxSizing: "border-box" }} />
+        </div>
+
+        <button className="btn btn-primary" disabled={busy || !src || !tgt} onClick={doIt} style={{ height: 46, width: "100%", fontSize: 15, fontWeight: 700 }}>{busy ? "…" : "✓ " + t("Провести розлив", "Провести розлив")}</button>
+        {msg && <div style={{ fontSize: 13, marginTop: 10, padding: "8px 12px", borderRadius: 8, background: msg.startsWith("✓") ? "#f0fdf4" : "#fef2f2", color: msg.startsWith("✓") ? "#166534" : "#b91c1c" }}>{msg}</div>}
+      </div>
     </div>
   );
 }
