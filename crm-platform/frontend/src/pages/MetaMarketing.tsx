@@ -1487,37 +1487,54 @@ function Ga4Block({ from, to, t }: { from: string; to: string; t: (ru: string, u
   return <div>
     {leads && <div className="rd-card" style={{ marginBottom: 20 }}>
       <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}>
-        <Icon n="📥" size={16} style={{ color: "var(--rd-primary)" }} /> {t("Заявки с сайта в CRM", "Заявки з сайту в CRM")}
-        <InfoI tip={t("Сделки, созданные с лендинга за период, с разбивкой: пришёл человек с рекламы Meta, с Google или иначе", "Угоди, створені з лендінгу за період, з розбивкою: прийшла людина з реклами Meta, з Google чи інакше")} />
+        <Icon n="📥" size={16} style={{ color: "var(--rd-primary)" }} /> {t("Заявки с сайтов в CRM", "Заявки з сайтів у CRM")}
+        <InfoI tip={t("По каждому сайту: сколько сделок создано в CRM за период и откуда пришёл человек — реклама Meta, Google или иначе", "По кожному сайту: скільки угод створено в CRM за період і звідки прийшла людина — реклама Meta, Google чи інакше")} />
       </b>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12, margin: "14px 0 10px" }}>
-        <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Всего заявок", "Всього заявок")}</div><div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-text)" }}>{count(leads.total)}</div></div>
-        {(["meta", "google", "other", "unknown"] as const).map(k => (
-          <div key={k} className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4 }}>{srcMeta[k].label}</div><div style={{ fontSize: 18, fontWeight: 700, color: srcMeta[k].color }}>{count(leads.by_source?.[k] || 0)}</div></div>
+      {(leads.sites || []).map((ls: any) => (
+        <div key={ls.site} style={{ marginTop: 16 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+            <b style={{ fontSize: 13.5, color: "var(--rd-text)" }}>{ls.site}</b>
+            <span style={{ fontSize: 11, color: "var(--rd-text2)" }}>{t("воронка", "воронка")} «{ls.funnel}»</span>
+          </div>
+          {ls.total > 0 ? <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, margin: "10px 0 8px" }}>
+              <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Всего заявок", "Всього заявок")}</div><div style={{ fontSize: 17, fontWeight: 700, color: "var(--rd-text)" }}>{count(ls.total)}</div></div>
+              {(["meta", "google", "other", "unknown"] as const).map(k => (
+                <div key={k} className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4 }}>{srcMeta[k].label}</div><div style={{ fontSize: 17, fontWeight: 700, color: srcMeta[k].color }}>{count(ls.by_source?.[k] || 0)}</div></div>
+              ))}
+              <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Продажи / выручка", "Продажі / виручка")} <InfoI tip={t("Заявки, по которым уже есть оплата, и сумма этих оплат", "Заявки, по яких вже є оплата, і сума цих оплат")} /></div><div style={{ fontSize: 17, fontWeight: 700, color: "var(--rd-success)" }}>{count(ls.sales)} · {count(Math.round(ls.revenue || 0))} ₴</div></div>
+            </div>
+            {(ls.recent || []).length > 0 && <div style={{ overflowX: "auto", maxHeight: 300, overflowY: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr>
+                  <th style={thS}>{t("Дата", "Дата")}</th><th style={thS}>{t("Клиент", "Клієнт")}</th><th style={thS}>{t("Источник", "Джерело")}</th><th style={thS}>{t("Кампания", "Кампанія")}</th><th style={{ ...thS, textAlign: "right" }}>{t("Сумма", "Сума")}</th><th style={{ ...thS, textAlign: "right" }}>{t("Оплачено", "Оплачено")}</th><th style={thS}>{t("Стадия", "Стадія")}</th>
+                </tr></thead>
+                <tbody>
+                  {(ls.recent || []).map((r: any) => (
+                    <tr key={r.id}>
+                      <td style={tdS}>{r.date}</td>
+                      <td style={{ ...tdS, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis" }}><a href={`/deals/${r.id}`} style={{ color: "var(--rd-primary)", textDecoration: "none" }}>{r.contact}</a></td>
+                      <td style={tdS}><span style={{ color: srcMeta[r.source]?.color || "var(--rd-text2)", fontWeight: 600 }}>{srcMeta[r.source]?.label || r.source}</span></td>
+                      <td style={{ ...tdS, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", color: "var(--rd-text2)" }} title={r.utm_campaign}>{r.utm_campaign || (r.utm_source ? `utm: ${r.utm_source}` : "—")}</td>
+                      <td style={{ ...tdS, textAlign: "right" }}>{r.amount ? count(Math.round(r.amount)) + " ₴" : "—"}</td>
+                      <td style={{ ...tdS, textAlign: "right", color: r.paid ? "var(--rd-success)" : "var(--rd-text2)", fontWeight: r.paid ? 700 : 400 }}>{r.paid ? count(Math.round(r.paid)) + " ₴" : "—"}</td>
+                      <td style={{ ...tdS, color: "var(--rd-text2)" }}>{r.stage}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>}
+          </> : <div style={{ fontSize: 12, color: "var(--rd-text2)", margin: "6px 0 2px" }}>{t("Заявок за период нет", "Заявок за період немає")}</div>}
+        </div>
+      ))}
+      {(leads.no_flow || []).length > 0 && <div style={{ marginTop: 14, paddingTop: 10, borderTop: "1px dashed var(--rd-border)" }}>
+        {(leads.no_flow || []).map((n: any) => (
+          <div key={n.site} style={{ fontSize: 12, color: "var(--rd-text2)", padding: "2px 0" }}>
+            {n.site} — {n.reason === "form_telegram" ? t("форма на сайте ведёт сразу в Telegram, отдельные сделки в CRM не создаются", "форма на сайті веде одразу в Telegram, окремі угоди в CRM не створюються") : t("сайт ещё не опубликован", "сайт ще не опубліковано")}
+          </div>
         ))}
-        <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4, display: "flex", alignItems: "center" }}>{t("Продажи / выручка", "Продажі / виручка")} <InfoI tip={t("Заявки, по которым уже есть оплата, и сумма этих оплат", "Заявки, по яких вже є оплата, і сума цих оплат")} /></div><div style={{ fontSize: 18, fontWeight: 700, color: "var(--rd-success)" }}>{count(leads.sales)} · {count(Math.round(leads.revenue || 0))} ₴</div></div>
-      </div>
-      <div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 10 }}>{t("Метка источника записывается с 28.08.2026 — старые заявки показываются как «источник неизвестен».", "Мітка джерела записується з 28.08.2026 — старі заявки показуються як «джерело невідоме».")}</div>
-      {(leads.recent || []).length > 0 && <div style={{ overflowX: "auto", maxHeight: 380, overflowY: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr>
-            <th style={thS}>{t("Дата", "Дата")}</th><th style={thS}>{t("Клиент", "Клієнт")}</th><th style={thS}>{t("Источник", "Джерело")}</th><th style={thS}>{t("Кампания", "Кампанія")}</th><th style={{ ...thS, textAlign: "right" }}>{t("Сумма", "Сума")}</th><th style={{ ...thS, textAlign: "right" }}>{t("Оплачено", "Оплачено")}</th><th style={thS}>{t("Стадия", "Стадія")}</th>
-          </tr></thead>
-          <tbody>
-            {(leads.recent || []).map((r: any) => (
-              <tr key={r.id}>
-                <td style={tdS}>{r.date}</td>
-                <td style={{ ...tdS, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis" }}><a href={`/deals/${r.id}`} style={{ color: "var(--rd-primary)", textDecoration: "none" }}>{r.contact}</a></td>
-                <td style={tdS}><span style={{ color: srcMeta[r.source]?.color || "var(--rd-text2)", fontWeight: 600 }}>{srcMeta[r.source]?.label || r.source}</span></td>
-                <td style={{ ...tdS, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", color: "var(--rd-text2)" }} title={r.utm_campaign}>{r.utm_campaign || (r.utm_source ? `utm: ${r.utm_source}` : "—")}</td>
-                <td style={{ ...tdS, textAlign: "right" }}>{r.amount ? count(Math.round(r.amount)) + " ₴" : "—"}</td>
-                <td style={{ ...tdS, textAlign: "right", color: r.paid ? "var(--rd-success)" : "var(--rd-text2)", fontWeight: r.paid ? 700 : 400 }}>{r.paid ? count(Math.round(r.paid)) + " ₴" : "—"}</td>
-                <td style={{ ...tdS, color: "var(--rd-text2)" }}>{r.stage}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>}
+      <div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginTop: 10 }}>{t("Лендинг: метка источника записывается с 28.08.2026, старые заявки — «источник неизвестен». Магазин ловит метки с запуска.", "Лендінг: мітка джерела записується з 28.08.2026, старі заявки — «джерело невідоме». Магазин ловить мітки з запуску.")}</div>
     </div>}
     {!sites.length && <div className="rd-card"><div className="muted" style={{ padding: 10 }}>{t("Данных Google Analytics за период нет. Синхронизация идёт раз в сутки; статистика появляется по мере посещений сайтов.", "Даних Google Analytics за період немає. Синхронізація іде раз на добу; статистика зʼявляється в міру відвідувань сайтів.")}</div></div>}
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(460px,100%), 1fr))", gap: 20 }}>

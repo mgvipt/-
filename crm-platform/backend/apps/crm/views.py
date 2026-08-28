@@ -3031,11 +3031,24 @@ class MarketingGa4View(APIView):
             s["engagement_rate"] = round(s.pop("_eng_weighted") / s["sessions"], 1) if s["sessions"] else 0
             s["avg_duration_sec"] = int(s.pop("_dur_weighted") / s["sessions"]) if s["sessions"] else 0
 
-        # ── Заявки лендінгу в CRM за джерелами (utm/fbclid/gclid/referrer) ──
+        # ── Заявки сайтів у CRM за джерелами ─────────────────────────────
+        # Кожен сайт зі своєю воронкою. mode "utm" = qualification.utm (лендінг,
+        # пише webchat), mode "attribution" = qualification.attribution.first_touch
+        # (інтернет-магазин, пише CaptureShopAttribution + integrations.views).
+        SITE_FLOWS = [
+            {"site": "wallcovdliastin.com.ua", "funnel": "Лендинг · wallcovdliastin.com.ua", "mode": "utm"},
+            {"site": "wallcov.com.ua", "funnel": "23 Інтернет-магазин", "mode": "attribution"},
+        ]
+        NO_FLOW = [
+            {"site": "dekoratyvna-shtukaturka.com.ua", "reason": "form_telegram"},
+            {"site": "shtukaturka.kiev.ua", "reason": "not_published"},
+        ]
+
         def _classify(utm):
             source = (utm.get("utm_source") or "").lower()
             referrer = (utm.get("referrer") or utm.get("first_referrer") or "").lower()
-            if utm.get("fbclid") or source in ("fb", "facebook", "ig", "instagram", "meta")                     or "instagram" in referrer or "facebook" in referrer:
+            if utm.get("fbclid") or source in ("fb", "facebook", "ig", "instagram", "meta") \
+                    or "instagram" in referrer or "facebook" in referrer:
                 return "meta"
             if utm.get("gclid") or "google" in source or "google." in referrer:
                 return "google"
@@ -3043,43 +3056,52 @@ class MarketingGa4View(APIView):
                 return "other"
             return "unknown"
 
-        _landing_deals = list(
-            Deal.objects.filter(funnel__name__icontains="ленд",
-                                created_at__date__gte=date_from, created_at__date__lte=date_to)
-            .select_related("contact", "stage").prefetch_related("payments")
-            .order_by("-created_at")
-        )
-        _by_src = {"meta": 0, "google": 0, "other": 0, "unknown": 0}
-        _sales = 0
-        _revenue = Decimal("0")
-        _recent = []
-        for deal in _landing_deals:
-            utm = ((deal.qualification or {}).get("utm") or {})
-            bucket = _classify(utm)
-            _by_src[bucket] += 1
-            paid = sum((p.amount for p in deal.payments.all() if p.is_paid), Decimal("0"))
-            if paid > 0:
-                _sales += 1
-                _revenue += paid
-            if len(_recent) < 30:
-                _recent.append({
-                    "id": deal.pk, "date": timezone.localtime(deal.created_at).strftime("%d.%m %H:%M"),
-                    "contact": str(deal.contact) if deal.contact_id else "—",
-                    "source": bucket,
-                    "utm_source": utm.get("utm_source") or "", "utm_campaign": utm.get("utm_campaign") or "",
-                    "amount": float(deal.amount or 0), "paid": float(paid),
-                    "stage": deal.stage.name if deal.stage_id else "—",
-                })
-        crm_leads = {
-            "total": len(_landing_deals), "by_source": _by_src,
-            "sales": _sales, "revenue": round(float(_revenue), 2),
-            "recent": _recent,
-        }
+        crm_sites = []
+        for flow in SITE_FLOWS:
+            deals_qs = (Deal.objects.filter(funnel__name=flow["funnel"],
+                                            created_at__date__gte=date_from,
+                                            created_at__date__lte=date_to)
+                        .select_related("contact", "stage").prefetch_related("payments")
+                        .order_by("-created_at"))
+            by_src = {"meta": 0, "google": 0, "other": 0, "unknown": 0}
+            sales = 0
+            revenue = Decimal("0")
+            recent = []
+            total = 0
+            for deal in deals_qs:
+                q = deal.qualification or {}
+                if flow["mode"] == "attribution":
+                    att = (q.get("attribution") or {})
+                    utm = dict(att.get("first_touch") or att.get("last_touch") or {})
+                else:
+                    utm = (q.get("utm") or {})
+                bucket = _classify(utm)
+                by_src[bucket] += 1
+                total += 1
+                paid = sum((p.amount for p in deal.payments.all() if p.is_paid), Decimal("0"))
+                if paid > 0:
+                    sales += 1
+                    revenue += paid
+                if len(recent) < 20:
+                    recent.append({
+                        "id": deal.pk, "date": timezone.localtime(deal.created_at).strftime("%d.%m %H:%M"),
+                        "contact": str(deal.contact) if deal.contact_id else "—",
+                        "source": bucket,
+                        "utm_source": utm.get("utm_source") or "", "utm_campaign": utm.get("utm_campaign") or "",
+                        "amount": float(deal.amount or 0), "paid": float(paid),
+                        "stage": deal.stage.name if deal.stage_id else "—",
+                    })
+            crm_sites.append({
+                "site": flow["site"], "funnel": flow["funnel"],
+                "total": total, "by_source": by_src,
+                "sales": sales, "revenue": round(float(revenue), 2),
+                "recent": recent,
+            })
         return Response({
             "configured": ga4_configured(),
             "from": date_from.isoformat(), "to": date_to.isoformat(),
             "sites": sorted(sites.values(), key=lambda s: -s["sessions"]),
-            "crm_leads": crm_leads,
+            "crm_leads": {"sites": crm_sites, "no_flow": NO_FLOW},
         })
 
 
