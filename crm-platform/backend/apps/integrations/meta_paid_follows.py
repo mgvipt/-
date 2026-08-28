@@ -457,20 +457,22 @@ def import_share_report(*, dry_run: bool = False) -> dict:
         else:
             state_cfg.pop("share_expire_warning", None)
     # Share-сторінка віддає ЗНІМОК даних на момент останнього збереження звіту
-    # (підтверджено 27.08.2026). Знімок оновлює щоденна задача на Маку
-    # (resave-ads-report-daily, 10:30). Якщо знімок старший за 72 год — Мак не
-    # пересохраняв 3 дні, дані відстають: попереджаємо Олега в Telegram.
-    update_time = meta.get("update_time")
-    if update_time:
-        state_cfg["share_data_version"] = datetime.utcfromtimestamp(update_time).isoformat(timespec="seconds") + "Z"
-        age_hours = (datetime.utcnow() - datetime.utcfromtimestamp(update_time)).total_seconds() / 3600
-        if age_hours > 72:
+    # (підтверджено 27.08.2026); знімок оновлює щоденна задача на Маку
+    # (resave-ads-report-daily, ~10:39). ⚠️ update_time з HTML — СТАТИЧНИЙ час
+    # створення посилання, для контролю свіжості непридатний (виявлено 28.08).
+    # Тому свіжість міряємо по САМИХ ДАНИХ: якщо найновіший день у знімку
+    # старший за позавчора — пересохранение не працює, попереджаємо Олега.
+    if rows:
+        max_day = max(row["date"] for row in rows)
+        state_cfg["share_data_max_date"] = max_day.isoformat()
+        lag_days = (datetime.utcnow().date() - max_day).days
+        if lag_days > 2:
             _notify_telegram(
-                "⚠️ Дані звіту підписок Instagram не оновлювались %d год. "
-                "Щоденне пересохранение звіту на Маку не спрацьовує (Мак вимкнений "
-                "або Chrome розлогінений у Facebook). Дані в CRM відстають; запас "
-                "знімка ~4 дні. Можна вручну: Ads Manager → Отчёты → CRM IG Follows "
-                "Daily → Сохранить." % int(age_hours)
+                "⚠️ Дані звіту підписок Instagram застигли: найновіший день у знімку — %s "
+                "(відставання %d дн.). Щоденне пересохранение звіту на Маку не спрацьовує "
+                "(Мак вимкнений, Chrome розлогінений або задача не має дозволів). "
+                "Вручну: Ads Manager → Отчёты → CRM IG Follows Daily → Сохранить."
+                % (max_day.isoformat(), lag_days)
             )
     state_cfg["share_last_sync"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
     state_cfg.pop("share_last_error", None)
