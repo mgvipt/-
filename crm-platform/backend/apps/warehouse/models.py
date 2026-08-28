@@ -215,7 +215,7 @@ class ShopSiteMedia(models.Model):
 
 class StockDocument(models.Model):
     """Складской документ: приход / расход / инвентаризация."""
-    KINDS = [("in", "Приход"), ("out", "Расход"), ("inv", "Инвентаризация"), ("writeoff", "Списание")]
+    KINDS = [("in", "Приход"), ("out", "Расход"), ("inv", "Инвентаризация"), ("writeoff", "Списание"), ("repack", "Розлив/Фасування")]
     kind = models.CharField(max_length=8, choices=KINDS)
     number = models.CharField(max_length=40, blank=True)
     warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="documents")

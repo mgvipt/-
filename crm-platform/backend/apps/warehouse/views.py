@@ -881,6 +881,56 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
             res["doc_id"] = doc.id
         return Response(res)
 
+    @action(detail=False, methods=["post"], url_path="repack")
+    def repack(self, request):
+        """Розлив/фасування: списати source_qty джерела (напр. літровий) і оприбуткувати
+        target_qty цілі (напр. 100 мл) з перенесенням собівартості, БЕЗ руху грошей.
+        Право warehouse.tab.inventory або warehouse.edit (щоб міг комірник)."""
+        u = request.user
+        if not (u.is_superuser or u.has_perm_code("warehouse.tab.inventory") or u.has_perm_code("warehouse.edit")):
+            return Response({"detail": "Немає права на розлив/фасування."}, status=status.HTTP_403_FORBIDDEN)
+        from decimal import Decimal, InvalidOperation
+        try:
+            sq = Decimal(str(request.data.get("source_qty") or 0))
+            tq = Decimal(str(request.data.get("target_qty") or 0))
+        except (InvalidOperation, TypeError):
+            return Response({"detail": "Невірна кількість."}, status=status.HTTP_400_BAD_REQUEST)
+        src_id = request.data.get("source"); tgt_id = request.data.get("target")
+        if not (src_id and tgt_id) or sq <= 0 or tq <= 0:
+            return Response({"detail": "Вкажіть джерело, ціль і кількості > 0."}, status=status.HTTP_400_BAD_REQUEST)
+        if str(src_id) == str(tgt_id):
+            return Response({"detail": "Джерело і ціль мають бути різними товарами."}, status=status.HTTP_400_BAD_REQUEST)
+        src = Product.objects.filter(id=src_id).first(); tgt = Product.objects.filter(id=tgt_id).first()
+        if not (src and tgt):
+            return Response({"detail": "Товар не знайдено."}, status=status.HTTP_404_NOT_FOUND)
+        wh = Warehouse.objects.filter(is_default=True).first() or Warehouse.objects.first()
+        src_cost = src.cost or Decimal("0")
+        tgt_unit_cost = (src_cost * sq / tq) if tq else Decimal("0")  # перенос собівартості на дрібну фасовку
+        # обидва товари мусять бути на складському обліку (щоб розлив рахувався в залишку/інвентаризації)
+        _fix = []
+        if not src.track_stock:
+            src.track_stock = True; _fix.append(src)
+        if not tgt.track_stock:
+            tgt.track_stock = True; _fix.append(tgt)
+        for _p in _fix:
+            _p.save(update_fields=["track_stock"])
+        # зважена собівартість цілі з урахуванням нового приходу
+        tgt_before = tgt.stock(wh)
+        if tgt_before + tq > 0:
+            new_cost = ((tgt_before * (tgt.cost or Decimal("0"))) + (tq * tgt_unit_cost)) / (tgt_before + tq)
+            if tgt_before <= 0:
+                new_cost = tgt_unit_cost
+            tgt.cost = round(new_cost, 2); tgt.save(update_fields=["cost"])
+        doc = StockDocument.objects.create(
+            kind="repack", warehouse=wh, number=("ФАС-%s" % tgt.id)[:40],
+            comment=("Розлив: %s ×%s → %s ×%s" % (src.name[:24], sq, tgt.name[:24], tq))[:255],
+            author=(u if u.is_authenticated else None), posted=True)
+        StockMovement.objects.create(document=doc, product=src, quantity=-sq, price=src_cost)
+        StockMovement.objects.create(document=doc, product=tgt, quantity=tq, price=tgt_unit_cost)
+        return Response({"ok": True, "doc": doc.id,
+                         "source_stock": float(src.stock()), "target_stock": float(tgt.stock()),
+                         "target_cost": float(tgt_unit_cost)})
+
     @action(detail=False, methods=["post"], url_path="import-inventory")
     def import_inventory(self, request):
         """Імпорт інвентаризації: файл (xlsx/csv), вставлений текст АБО фото (ІІ розпізнає рукописний факт).
@@ -1361,9 +1411,9 @@ class InventorySheetView(APIView):
 
         agg = (StockMovement.objects.filter(product_id__in=ids, document__posted=True).values("product_id").annotate(
             opening=Coalesce(Sum("quantity", filter=Q(document__created_at__date__lt=df)), Decimal("0")),
-            received=Coalesce(Sum("quantity", filter=Q(document__kind="in", quantity__gt=0,
+            received=Coalesce(Sum("quantity", filter=Q(document__kind__in=["in", "repack"], quantity__gt=0,
                 document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
-            sold_neg=Coalesce(Sum("quantity", filter=Q(document__kind="out", quantity__lt=0,
+            sold_neg=Coalesce(Sum("quantity", filter=Q(document__kind__in=["out", "repack"], quantity__lt=0,
                 document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
             inv_net=Coalesce(Sum("quantity", filter=Q(document__kind="inv",
                 document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
