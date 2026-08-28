@@ -21,7 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { StockTab } from "./Analytics";
 import { api, Paginated } from "../api";
-import RepackForm from "../RepackForm";
+import RepackForm, { RepackDocModal } from "../RepackForm";
 import { useLang } from "../i18n";
 import { useAuth } from "../auth";
 import { Icon } from "../Icon";
@@ -119,6 +119,7 @@ export default function Warehouse() {
   const [docPS, setDocPS] = useState({ realiz: 25, receipt: 25, writeoff: 25 });
   const [docCount, setDocCount] = useState({ realiz: 0, receipt: 0, writeoff: 0 });
   const [writeoffDocs, setWriteoffDocs] = useState<any[]>([]);
+  const [woSel, setWoSel] = useState<number | null>(null);
   const [writeoffBusy, setWriteoffBusy] = useState(false);
   async function openReceiptList(pg?: number, ps?: number) {
     setReceiptBusy(true);
@@ -1067,13 +1068,13 @@ export default function Warehouse() {
         <table style={{ width: "100%", fontSize: 13 }}>
           <thead><tr><th style={{ textAlign: "left" }}>{t("Тип","Тип")}</th><th style={{ textAlign: "left" }}>{t("Дата","Дата")}</th><th style={{ textAlign: "left" }}>{t("Комментарий","Коментар")}</th><th style={{ textAlign: "right" }}>{t("Позиций","Позицій")}</th><th style={{ textAlign: "center" }}>{t("Статус","Статус")}</th><th></th></tr></thead>
           <tbody>{writeoffDocs.map((d: any) => (
-            <tr key={d.id}>
+            <tr key={d.id} onClick={() => setWoSel(d.id)} style={{ cursor: "pointer" }} title={t("Открыть — посмотреть что списано и оприходовано","Відкрити — подивитись що списано і оприбутковано")}>
               <td>{d.kind === "repack" ? "🧪 " + t("Розлив","Розлив") : "🗑 " + t("Списание","Списання")}</td>
               <td className="muted">{(d.doc_date || d.created_at || "").slice(0, 10)}</td>
               <td className="muted">{d.comment || "—"}</td>
               <td style={{ textAlign: "right" }}>{(d.items || []).length}</td>
               <td style={{ textAlign: "center" }}><span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: d.posted ? "#dcfce7" : "#fef3c7", color: d.posted ? "#166534" : "#92400e" }}>{d.posted ? t("Проведён","Проведено") : t("Черновик","Чернетка")}</span></td>
-              <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+              <td style={{ textAlign: "right", whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
                 {canEdit && <button className="btn btn-light" style={{ padding: "2px 8px", fontSize: 11.5 }} onClick={() => docToggle(d.id, !d.posted, () => openWriteoffList())}>{d.posted ? t("Отменить","Скасувати") : t("Провести","Провести")}</button>}
                 {canEdit && <button className="btn btn-light" style={{ padding: "2px 8px", fontSize: 11.5, color: "#dc2626", marginLeft: 4 }} onClick={() => delDoc(d.id, d.kind, () => openWriteoffList())}>{t("Удалить","Видалити")}</button>}
               </td>
@@ -1084,6 +1085,7 @@ export default function Warehouse() {
         </table>
         </div>
         )}
+        {woSel && <RepackDocModal id={woSel} onClose={() => setWoSel(null)} />}
       </div>
       ) : view === "goods" ? (
       <div style={{ display: "grid", gridTemplateColumns: `${catW}px 8px 1fr`, gap: 6, alignItems: "start" }}>

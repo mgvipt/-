@@ -95,3 +95,54 @@ export default function RepackForm({ onDone, defaultTarget, compact }:
     </div>
   );
 }
+
+// ── Просмотр документа розлива/списания: что списано и что оприходовано ──
+export function RepackDocModal({ id, onClose }: { id: number; onClose: () => void }) {
+  const { t } = useLang();
+  const [doc, setDoc] = useState<any>(null);
+  const [err, setErr] = useState(false);
+  useEffect(() => { setDoc(null); setErr(false); api.get<any>(`/api/stock-documents/${id}/`).then(setDoc).catch(() => setErr(true)); }, [id]);
+  const items: any[] = (doc && doc.items) || [];
+  const outs = items.filter((m) => Number(m.quantity) < 0);
+  const ins = items.filter((m) => Number(m.quantity) > 0);
+  const isRepack = doc && doc.kind === "repack";
+  const money = (v: any) => Number(v || 0).toLocaleString("uk-UA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const qtyFmt = (v: any) => { const n = Number(v); return (Number.isInteger(n) ? n : n.toFixed(3).replace(/\.?0+$/, "")); };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 18, maxWidth: 560, width: "100%", maxHeight: "85vh", overflow: "auto", boxShadow: "0 20px 50px rgba(15,23,42,.3)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>{isRepack ? "🧪 " + t("Розлив / Фасовка", "Розлив / Фасування") : "🗑 " + t("Списание", "Списання")}</div>
+            {doc && <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>{t("от", "від")} {(doc.doc_date || doc.created_at || "").slice(0, 10)}{doc.number ? " · №" + doc.number : ""}{doc.posted ? " · " + t("проведён", "проведено") : " · " + t("черновик", "чернетка")}</div>}
+          </div>
+          <button onClick={onClose} style={{ border: "none", background: "#f1f5f9", borderRadius: 8, width: 30, height: 30, cursor: "pointer", fontSize: 16 }}>✕</button>
+        </div>
+        {err ? <div style={{ color: "#b91c1c", fontSize: 13 }}>{t("Не удалось загрузить документ", "Не вдалося завантажити документ")}</div>
+          : !doc ? <div className="muted" style={{ fontSize: 13 }}>{t("Загрузка…", "Завантаження…")}</div> : (<>
+          {doc.comment && <div className="muted" style={{ fontSize: 12.5, marginBottom: 12, lineHeight: 1.5 }}>{doc.comment}</div>}
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: "#b91c1c", margin: "0 0 6px" }}>▼ {t("Списано со склада", "Списано зі складу")}</div>
+          {outs.length === 0 ? <div className="muted" style={{ fontSize: 12.5, marginBottom: 12 }}>—</div> : (
+            <div style={{ marginBottom: 14 }}>{outs.map((m) => (
+              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#fef2f2", borderRadius: 8, padding: "8px 12px", marginBottom: 4, fontSize: 13 }}>
+                <span style={{ flex: 1 }}>{m.product_name}</span>
+                <b style={{ color: "#b91c1c" }}>−{qtyFmt(Math.abs(Number(m.quantity)))}</b>
+                <span className="muted" style={{ fontSize: 12, minWidth: 92, textAlign: "right" }}>{money(m.price)} ₴/{t("ед", "од")}</span>
+              </div>
+            ))}</div>
+          )}
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: "#166534", margin: "0 0 6px" }}>▲ {t("Оприходовано на склад", "Оприбутковано на склад")}</div>
+          {ins.length === 0 ? <div className="muted" style={{ fontSize: 12.5 }}>—</div> : (
+            <div>{ins.map((m) => (
+              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#f0fdf4", borderRadius: 8, padding: "8px 12px", marginBottom: 4, fontSize: 13 }}>
+                <span style={{ flex: 1 }}>{m.product_name}</span>
+                <b style={{ color: "#166534" }}>+{qtyFmt(Number(m.quantity))}</b>
+                <span className="muted" style={{ fontSize: 12, minWidth: 92, textAlign: "right" }}>{money(m.price)} ₴/{t("ед", "од")}</span>
+              </div>
+            ))}</div>
+          )}
+        </>)}
+      </div>
+    </div>
+  );
+}

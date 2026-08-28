@@ -9,7 +9,7 @@ import { Icon } from "../Icon";
 import VykraskaDoc from "../VykraskaDoc";
 import KpDoc from "../KpDoc";
 import { useAuth } from "../auth";
-import RepackForm from "../RepackForm";
+import RepackForm, { RepackDocModal } from "../RepackForm";
 import NPDelivery from "./NPDelivery";
 import ClientChat from "../ClientChat";
 
@@ -631,6 +631,7 @@ function ControlView({ t }: any) {
 function RepackPage({ t }: { t: any }) {
   const [docs, setDocs] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
+  const [sel, setSel] = useState<number | null>(null);
   const load = () => { setBusy(true); api.get<any>("/api/stock-documents/?kinds=writeoff,repack&page_size=20").then((r: any) => setDocs(r.results || r)).catch(() => setDocs([])).finally(() => setBusy(false)); };
   useEffect(() => { load(); }, []);
   const del = async (id: number, kind: string) => {
@@ -652,12 +653,12 @@ function RepackPage({ t }: { t: any }) {
             <table style={{ width: "100%", fontSize: 13 }}>
               <thead><tr><th style={{ textAlign: "left" }}>{t("Тип", "Тип")}</th><th style={{ textAlign: "left" }}>{t("Дата", "Дата")}</th><th style={{ textAlign: "left" }}>{t("Что", "Що")}</th><th style={{ textAlign: "center" }}>{t("Статус", "Статус")}</th><th></th></tr></thead>
               <tbody>{docs.map((d: any) => (
-                <tr key={d.id}>
+                <tr key={d.id} onClick={() => setSel(d.id)} style={{ cursor: "pointer" }} title={t("Открыть — посмотреть что списано и оприходовано", "Відкрити — подивитись що списано і оприбутковано")}>
                   <td>{d.kind === "repack" ? "🧪 " + t("Розлив", "Розлив") : "🗑 " + t("Списание", "Списання")}</td>
                   <td className="muted">{(d.doc_date || d.created_at || "").slice(0, 10)}</td>
                   <td className="muted" style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.comment}>{d.comment || "—"}</td>
                   <td style={{ textAlign: "center" }}><span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: d.posted ? "#dcfce7" : "#fef3c7", color: d.posted ? "#166534" : "#92400e" }}>{d.posted ? t("Проведён", "Проведено") : t("Черновик", "Чернетка")}</span></td>
-                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
                     <button className="btn btn-light" style={{ padding: "2px 8px", fontSize: 11.5 }} onClick={() => toggle(d.id, !d.posted)}>{d.posted ? t("Отменить", "Скасувати") : t("Провести", "Провести")}</button>
                     <button className="btn btn-light" style={{ padding: "2px 8px", fontSize: 11.5, color: "#dc2626", marginLeft: 4 }} onClick={() => del(d.id, d.kind)}>{t("Удалить", "Видалити")}</button>
                   </td>
@@ -667,6 +668,7 @@ function RepackPage({ t }: { t: any }) {
           </div>
         )}
       </div>
+      {sel && <RepackDocModal id={sel} onClose={() => setSel(null)} />}
     </div>
   );
 }
