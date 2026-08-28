@@ -14,7 +14,7 @@ function ProdPick({ t, val, onPick, ph, color, exclId }:
   useEffect(() => {
     const s = q.trim();
     if (!s || (val && s === val.name)) { setOpts([]); return; }
-    const h = setTimeout(() => api.get<any>(`/api/products/?search=${encodeURIComponent(s)}&page_size=8&is_active=true`)
+    const h = setTimeout(() => api.get<any>(`/api/products/?search=${encodeURIComponent(s)}&page_size=50&is_active=true`)
       .then((r) => setOpts(((r.results || r) as any[]).filter((x: any) => x.id !== exclId))).catch(() => setOpts([])), 250);
     return () => clearTimeout(h);
     // eslint-disable-next-line
