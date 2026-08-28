@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { StockTab } from "./Analytics";
 import { api, Paginated } from "../api";
+import RepackForm from "../RepackForm";
 import { useLang } from "../i18n";
 import { useAuth } from "../auth";
 import { Icon } from "../Icon";
@@ -300,12 +301,6 @@ export default function Warehouse() {
   const [bundle, setBundle] = useState<any>(null);
   const [bundleQ, setBundleQ] = useState("");
   const [bundleOpts, setBundleOpts] = useState<any[]>([]);
-  // розлив/фасування
-  const [rpQ, setRpQ] = useState(""); const [rpOpts, setRpOpts] = useState<any[]>([]); const [rpSrc, setRpSrc] = useState<any>(null);
-  const [rpSQ, setRpSQ] = useState("1"); const [rpTQ, setRpTQ] = useState(""); const [rpBusy, setRpBusy] = useState(false); const [rpMsg, setRpMsg] = useState("");
-  // тара для розлива (доп. списание)
-  const [rpTaraQ, setRpTaraQ] = useState(""); const [rpTaraOpts, setRpTaraOpts] = useState<any[]>([]); const [rpTara, setRpTara] = useState<any>(null); const [rpTaraQty, setRpTaraQty] = useState("");
-  const [rpDir, setRpDir] = useState<"into" | "from">("into"); // into = оприбуткувати В ЦЕЙ товар; from = списати З ЦЬОГО товару
   async function loadBundle(pid: number) {
     try { setBundle(await api.get(`/api/products/${pid}/components/`)); } catch { setBundle(null); }
   }
@@ -499,37 +494,6 @@ export default function Warehouse() {
     if (!card) return;
     const fresh = await api.get<Product>(`/api/products/${card.id}/`);
     setCard(fresh);
-  }
-  // поиск источника для розлива
-  useEffect(() => {
-    const q = rpQ.trim();
-    if (!q || (rpSrc && q === rpSrc.name)) { setRpOpts([]); return; }
-    const h = setTimeout(() => api.get<any>(`/api/products/?search=${encodeURIComponent(q)}&page_size=8&is_active=true`).then((r) => setRpOpts((r.results || []).filter((x: any) => x.id !== card?.id))).catch(() => setRpOpts([])), 250);
-    return () => clearTimeout(h);
-  }, [rpQ, rpSrc, card?.id]);
-  // поиск тары для розлива
-  useEffect(() => {
-    const q = rpTaraQ.trim();
-    if (!q || (rpTara && q === rpTara.name)) { setRpTaraOpts([]); return; }
-    const h = setTimeout(() => api.get<any>(`/api/products/?search=${encodeURIComponent(q)}&page_size=8&is_active=true`).then((r) => setRpTaraOpts((r.results || []).filter((x: any) => x.id !== card?.id))).catch(() => setRpTaraOpts([])), 250);
-    return () => clearTimeout(h);
-  }, [rpTaraQ, rpTara, card?.id]);
-  async function doRepack() {
-    if (!card || !rpSrc || rpBusy) return;
-    const sq = Number(String(rpSQ).replace(",", ".")) || 0;
-    const tq = Number(String(rpTQ).replace(",", ".")) || 0;
-    if (sq <= 0 || tq <= 0) { setRpMsg(t("Укажи сколько списать и сколько получилось", "Вкажи скільки списати і скільки вийшло")); return; }
-    const extras = (rpTara && Number(String(rpTaraQty).replace(",", ".")) > 0) ? [{ product: rpTara.id, qty: Number(String(rpTaraQty).replace(",", ".")) }] : [];
-    setRpBusy(true); setRpMsg("");
-    try {
-      const source = rpDir === "from" ? card.id : rpSrc.id;
-      const target = rpDir === "from" ? rpSrc.id : card.id;
-      const r: any = await api.post("/api/stock-documents/repack/", { source, source_qty: sq, target, target_qty: tq, extras });
-      setRpMsg(t(`✓ Розлив проведён. Списано ${sq}${extras.length ? " + тара " + extras[0].qty : ""} · оприходовано ${tq}. Остаток: ${r.target_stock}`, `✓ Розлив проведено. Списано ${sq}${extras.length ? " + тара " + extras[0].qty : ""} · оприбутковано ${tq}. Залишок: ${r.target_stock}`));
-      setRpSrc(null); setRpQ(""); setRpSQ("1"); setRpTQ(""); setRpTara(null); setRpTaraQ(""); setRpTaraQty("");
-      await refreshCard(); loadProducts(); api.get<Movement[]>(`/api/products/${card.id}/movements/`).then(setMovements).catch(() => {});
-    } catch (e: any) { setRpMsg(e?.response?.data?.detail || t("Не удалось провести розлив", "Не вдалося провести розлив")); }
-    setRpBusy(false);
   }
   async function queueShopSync() {
     if (!card) return;
@@ -1388,41 +1352,9 @@ export default function Warehouse() {
                 )}
               </div>
             )}
-            {(canTabInv || canEdit) && (
-              <div className="panel" style={{ margin: "0 0 16px", background: "#fbfdff" }}>
-                <b style={{ fontSize: 13.5 }}>🧪 {t("Розлив / Фасовка","Розлив / Фасування")}</b>
-                <div className="muted" style={{ fontSize: 11.5, margin: "3px 0 8px" }}>{t("Розлив из крупной фасовки в эту. Спишется исходный товар, оприходуется этот, себестоимость перенесётся. Денег не двигает.","Розлив із більшої фасовки в цю. Спишеться вихідний товар, оприбуткується цей, собівартість перенесеться. Грошей не рухає.")}</div>
-                <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                  <button className={"btn " + (rpDir === "into" ? "btn-primary" : "btn-light")} style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => { setRpDir("into"); setRpSrc(null); setRpQ(""); }} title={t("Этот товар получаем (напр. открыли карточку 100 мл)","Цей товар отримуємо (напр. відкрили картку 100 мл)")}>{t("Оприходовать В этот","Оприбуткувати В цей")}</button>
-                  <button className={"btn " + (rpDir === "from" ? "btn-primary" : "btn-light")} style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => { setRpDir("from"); setRpSrc(null); setRpQ(""); }} title={t("Этот товар списываем (напр. открыли карточку литрового)","Цей товар списуємо (напр. відкрили картку літрового)")}>{t("Списать ИЗ этого","Списати З цього")}</button>
-                </div>
-                <div style={{ position: "relative", marginBottom: 6 }}>
-                  {rpSrc
-                    ? <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#eff6ff", borderRadius: 7, padding: "6px 10px", fontSize: 12.5 }}><span style={{ flex: 1 }}>{rpDir === "from" ? t("В:","У:") : t("Из:","З:")} <b>{rpSrc.name}</b> <span className="muted">({t("ост.","зал.")} {rpSrc.stock})</span></span><span onClick={() => { setRpSrc(null); setRpQ(""); }} style={{ cursor: "pointer", color: "#94a3b8" }}>✕</span></div>
-                    : <input value={rpQ} onChange={(e) => setRpQ(e.target.value)} placeholder={rpDir === "from" ? t("🔍 В какой товар оприходовать (напр. 100 мл)…","🔍 У який товар оприбуткувати (напр. 100 мл)…") : t("🔍 Из какого товара разливаем (напр. литровый)…","🔍 З якого товару розливаємо (напр. літровий)…")} style={{ width: "100%", height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px", fontSize: 13 }} />}
-                  {!rpSrc && rpOpts.length > 0 && (
-                    <div style={{ position: "absolute", top: 34, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 20px rgba(15,23,42,.12)", zIndex: 6, maxHeight: 200, overflow: "auto" }}>
-                      {rpOpts.map((o: any) => <div key={o.id} onClick={() => { setRpSrc(o); setRpQ(o.name); setRpOpts([]); }} style={{ padding: "7px 10px", cursor: "pointer", fontSize: 12.5, borderBottom: "1px solid #f1f5f9" }}>{o.name} <span className="muted">{o.sku} · {t("ост.","зал.")} {o.stock}</span></div>)}
-                    </div>
-                  )}
-                </div>
-                <div style={{ fontSize: 12.5, margin: "2px 0 8px", color: rpDir === "from" ? "#b91c1c" : "#166534" }}>{rpDir === "from" ? "← " + t("Списывается:","Списується:") : "→ " + t("Оприходуется:","Оприбуткується:")} <b>{card.name}</b> <span className="muted">({t("этот товар","цей товар")})</span></div>
-                <div style={{ position: "relative", marginBottom: 8 }}>
-                  {rpTara
-                    ? <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#fef9c3", borderRadius: 7, padding: "6px 10px", fontSize: 12.5 }}><span style={{ flex: 1 }}>📦 {t("Тара:","Тара:")} <b>{rpTara.name}</b> <span className="muted">({t("ост.","зал.")} {rpTara.stock})</span></span><input type="number" value={rpTaraQty} onChange={(e) => setRpTaraQty(e.target.value)} placeholder={t("шт","шт")} title={t("Сколько тары списать","Скільки тари списати")} style={{ width: 70, height: 28, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /><span onClick={() => { setRpTara(null); setRpTaraQ(""); setRpTaraQty(""); }} style={{ cursor: "pointer", color: "#94a3b8" }}>✕</span></div>
-                    : <input value={rpTaraQ} onChange={(e) => setRpTaraQ(e.target.value)} placeholder={t("📦 Тара (необязательно) — тоже спишется, напр. флакон 100мл…","📦 Тара (необовʼязково) — теж спишеться, напр. флакон 100мл…")} style={{ width: "100%", height: 30, border: "1px dashed #cbd5e1", borderRadius: 7, padding: "0 10px", fontSize: 12.5 }} />}
-                  {!rpTara && rpTaraOpts.length > 0 && (
-                    <div style={{ position: "absolute", top: 32, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 20px rgba(15,23,42,.12)", zIndex: 6, maxHeight: 200, overflow: "auto" }}>
-                      {rpTaraOpts.map((o: any) => <div key={o.id} onClick={() => { setRpTara(o); setRpTaraQ(o.name); setRpTaraQty(rpTQ || "1"); setRpTaraOpts([]); }} style={{ padding: "7px 10px", cursor: "pointer", fontSize: 12.5, borderBottom: "1px solid #f1f5f9" }}>{o.name} <span className="muted">{o.sku} · {t("ост.","зал.")} {o.stock}</span></div>)}
-                    </div>
-                  )}
-                </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-                  <label style={{ fontSize: 11.5 }} className="muted">{t("Списать (сколько)","Списати (скільки)")}<br /><input type="number" value={rpSQ} onChange={(e) => setRpSQ(e.target.value)} style={{ width: 90, height: 32, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }} /></label>
-                  <label style={{ fontSize: 11.5 }} className="muted">{t("Получилось (сколько)","Вийшло (скільки)")}<br /><input type="number" value={rpTQ} onChange={(e) => setRpTQ(e.target.value)} placeholder={t("напр. 10","напр. 10")} style={{ width: 90, height: 32, border: "1px solid #86efac", borderRadius: 7, padding: "0 8px" }} /></label>
-                  <button className="btn btn-primary" disabled={rpBusy || !rpSrc} onClick={doRepack} style={{ height: 32 }}>{rpBusy ? "…" : t("Провести розлив","Провести розлив")}</button>
-                </div>
-                {rpMsg && <div style={{ fontSize: 12, marginTop: 6, color: rpMsg.startsWith("✓") ? "#166534" : "#b91c1c" }}>{rpMsg}</div>}
+            {(canTabInv || canEdit) && card && (
+              <div style={{ margin: "0 0 16px" }}>
+                <RepackForm defaultTarget={card} compact onDone={() => { refreshCard(); loadProducts(); api.get<Movement[]>(`/api/products/${card.id}/movements/`).then(setMovements).catch(() => {}); }} />
               </div>
             )}
             <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
