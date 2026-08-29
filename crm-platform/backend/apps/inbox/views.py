@@ -401,9 +401,12 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(sq).distinct()
         _mgr_view = self.request.query_params.get("manager")
         if _mgr_view and _mgr_view.isdigit() and can_all:
-            # РОП/керівник: чати КОНКРЕТНОГО співробітника (перевірка якості обслуговування) —
-            # обходимо логіку черги, показуємо саме його призначені чати.
-            qs = qs.filter(assigned_to_id=int(_mgr_view))
+            # РОП/керівник: чати ПІД ВІДПОВІДАЛЬНІСТЮ конкретного співробітника (перевірка
+            # якості обслуговування): або ЗАКРІПЛЕНІ за ним (assigned_to), або де він РЕАЛЬНО
+            # відповідав (автор вихідного повідомлення) — навіть якщо чат закріплений за іншим.
+            _mid = int(_mgr_view)
+            qs = qs.filter(Q(assigned_to_id=_mid)
+                           | Q(messages__sender_id=_mid, messages__direction="out")).distinct()
         elif _searching:
             pass  # poshuk - bez obmezhennya potochnoyu vkladkoyu
         elif scope == "mine":
