@@ -106,11 +106,12 @@ class EchatWebhookView(APIView):
                 _new = None
                 if "seen" in _desc or "read" in _desc or _st == "2":
                     _new = "read"
-                elif _st == "1" or "deliver" in _desc:
+                elif _st == "1" or ("deliver" in _desc and "not" not in _desc):
                     _new = "delivered"
-                elif ("fail" in _desc or "error" in _desc or "not deliver" in _desc
-                      or "undeliver" in _desc or _st.startswith("-")):
-                    _new = "failed"
+                elif (_st in ("3", "4", "5") or "block" in _desc or "fail" in _desc
+                      or "error" in _desc or "not deliver" in _desc or "undeliver" in _desc
+                      or _st.startswith("-")):
+                    _new = "failed"  # напр. WhatsApp status 4 «Message blocked. Try again later»
                 if _mid and _new:
                     Message.objects.filter(external_id=_mid).exclude(status="read").update(status=_new)
             except Exception:
