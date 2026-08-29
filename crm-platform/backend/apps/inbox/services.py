@@ -253,12 +253,6 @@ def send_message(conv: Conversation, text: str, user=None) -> Message:
         last_in = Message.objects.filter(conversation=conv, direction="in").order_by("-created_at").first()
         if not last_in or (timezone.now() - last_in.created_at).total_seconds() > 24 * 3600:
             status = "window_risk"  # вікно Meta 24г закрите — ChatPlace прийняв, але IG міг не доставити
-    elif conv.channel.kind in ("echat", "viber", "whatsapp"):
-        # Viber/WhatsApp-бізнес (через e-chat) можна писати ТІЛЬКИ якщо клієнт сам звертався
-        # (є сесія). Якщо вхідних НЕ було — «холодне» повідомлення НЕ доходить, хоча e-chat
-        # може відрапортувати «delivered».
-        if not Message.objects.filter(conversation=conv, direction="in").exists():
-            status = "window_risk"
     msg = Message.objects.create(
         conversation=conv, direction="out", text=text,
         external_id=ext_id, sender=user,
