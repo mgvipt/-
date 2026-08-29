@@ -23,7 +23,7 @@ export default function Inbox() {
   const { t } = useLang();
   const [params] = useSearchParams();
   const nav = useNavigate();
-  const [scope, setScope] = useState<"mine" | "all" | "unassigned" | "clients" | "need" | "waiting">("all");
+  const [scope, setScope] = useState<"mine" | "all" | "unassigned" | "clients" | "need" | "waiting">(() => (localStorage.getItem("inboxScope") as any) || "all");
   const [tab, setTab] = useState<"chats" | "notif" | "team">("chats");
   const [sndCli, setSndCli] = useState(msgSoundOn());
   const [sndTeam, setSndTeam] = useState(teamSoundOn());
@@ -72,14 +72,23 @@ export default function Inbox() {
   }, [active]);
   const [search, setSearch] = useState("");
   const [channels, setChannels] = useState<{ id: number; name: string }[]>([]);
-  const [chFilter, setChFilter] = useState("");
-  const [period, setPeriod] = useState("all");
-  const [prio, setPrio] = useState("");
-  const [mgrFilter, setMgrFilter] = useState("");  // РОП: чаты конкретного сотрудника
+  const [chFilter, setChFilter] = useState(() => localStorage.getItem("inboxChFilter") || "");
+  const [period, setPeriod] = useState(() => localStorage.getItem("inboxPeriod") || "all");
+  const [prio, setPrio] = useState(() => localStorage.getItem("inboxPrio") || "");
+  const [mgrFilter, setMgrFilter] = useState(() => localStorage.getItem("inboxMgrFilter") || "");  // РОП: чаты конкретного сотрудника
   const [density, setDensity] = useState<"xs" | "sm" | "md" | "lg">(() => ((localStorage.getItem("inboxDensity") as any) || "sm"));
   const [filtersOpen, setFiltersOpen] = useState(() => localStorage.getItem("inboxFiltersOpen") === "1");
   useEffect(() => { localStorage.setItem("inboxDensity", density); }, [density]);
   useEffect(() => { localStorage.setItem("inboxFiltersOpen", filtersOpen ? "1" : "0"); }, [filtersOpen]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("inboxScope", scope);
+      localStorage.setItem("inboxChFilter", chFilter);
+      localStorage.setItem("inboxPeriod", period);
+      localStorage.setItem("inboxPrio", prio);
+      localStorage.setItem("inboxMgrFilter", mgrFilter);
+    } catch {}
+  }, [scope, chFilter, period, prio, mgrFilter]);
   const DENS = ({ xs: { pad: "3px 10px", gap: 0, av: "", name: 11, text: 9.5, sub: 9, time: 8.5 }, sm: { pad: "4px 9px", gap: 6, av: "av-xs", name: 11.5, text: 10.5, sub: 9.5, time: 9 }, md: { pad: "6px 10px", gap: 7, av: "av-sm", name: 12.5, text: 11.5, sub: 10, time: 9.5 }, lg: { pad: "9px 12px", gap: 9, av: "av-md", name: 13.5, text: 12.5, sub: 11, time: 10 } } as any)[density];
   const [selMode, setSelMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
