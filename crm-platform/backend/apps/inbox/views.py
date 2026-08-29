@@ -365,7 +365,8 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                 qs = qs.exclude(external_chat_id__startswith="comment:")
         # RBAC: менеджер без права «все чаты» видит только свои —
         # по ответственному чата ИЛИ по ответственному контакта.
-        can_all = user.can_see_all_conversations()
+        # РОП з правом «перевіряти чати» теж бачить чужі чати (для фільтра по співробітнику).
+        can_all = user.can_see_all_conversations() or user.has_perm_code("conversation.supervise")
         # БАЗОВИЙ ДОСТУП (для retrieve/messages/send/відкриття через картку):
         # «бачити всі чати» (право відділу) → доступ до будь-якого; інакше — лише свої звʼязки
         # (призначений / контакт мій / учасник / у контакта є мій лід чи сделка).
@@ -398,7 +399,12 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                     if _v:
                         sq |= Q(contact__phone__icontains=_v)
             qs = qs.filter(sq).distinct()
-        if _searching:
+        _mgr_view = self.request.query_params.get("manager")
+        if _mgr_view and _mgr_view.isdigit() and can_all:
+            # РОП/керівник: чати КОНКРЕТНОГО співробітника (перевірка якості обслуговування) —
+            # обходимо логіку черги, показуємо саме його призначені чати.
+            qs = qs.filter(assigned_to_id=int(_mgr_view))
+        elif _searching:
             pass  # poshuk - bez obmezhennya potochnoyu vkladkoyu
         elif scope == "mine":
             qs = qs.filter(Q(assigned_to=user) | Q(participants=user))

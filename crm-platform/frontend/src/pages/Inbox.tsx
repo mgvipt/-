@@ -75,6 +75,7 @@ export default function Inbox() {
   const [chFilter, setChFilter] = useState("");
   const [period, setPeriod] = useState("all");
   const [prio, setPrio] = useState("");
+  const [mgrFilter, setMgrFilter] = useState("");  // РОП: чаты конкретного сотрудника
   const [density, setDensity] = useState<"xs" | "sm" | "md" | "lg">(() => ((localStorage.getItem("inboxDensity") as any) || "sm"));
   const [filtersOpen, setFiltersOpen] = useState(() => localStorage.getItem("inboxFiltersOpen") === "1");
   useEffect(() => { localStorage.setItem("inboxDensity", density); }, [density]);
@@ -93,6 +94,7 @@ export default function Inbox() {
     else if (chFilter) sp.set("channel", chFilter);
     if (period && period !== "all") sp.set("period", period);
     if (prio) sp.set("priority", prio);
+    if (mgrFilter) sp.set("manager", mgrFilter);
     if (search.trim()) sp.set("search", search.trim());
     return "?" + sp.toString();
   }
@@ -129,7 +131,7 @@ export default function Inbox() {
       return added.length ? [...added, ...merged] : merged;
     });
   }
-  useEffect(() => { loadConvs(); }, [scope, chFilter, period, prio]);
+  useEffect(() => { loadConvs(); }, [scope, chFilter, period, prio, mgrFilter]);
   useEffect(() => { const id = setTimeout(() => loadConvs(), 400); return () => clearTimeout(id); /* eslint-disable-next-line */ }, [search]);
   // live-оновлення відкритого чату (без ручного refresh)
   useEffect(() => {
@@ -146,7 +148,7 @@ export default function Inbox() {
   useEffect(() => {
     const t = setInterval(() => refreshList(), 20000);
     return () => clearInterval(t);
-  }, [scope, chFilter, period, prio]);
+  }, [scope, chFilter, period, prio, mgrFilter]);
   useEffect(() => {
     const contactId = params.get("contact");
     if (contactId) {
@@ -359,13 +361,21 @@ export default function Inbox() {
         </div>
         {filtersOpen && (
           <div style={{ borderBottom: "1px solid #f1f5f9" }}>
-            <div style={{ display: "flex", gap: 6, padding: "8px 12px 4px", flexWrap: "wrap" }}>
-              {(([["mine", t("Мои","Мої")], ["clients", t("Клиенты","Клієнти")], ["need", t("Нужен ответ","Потрібна відповідь")], ["waiting", t("Ждём клиента","Чекаємо клієнта")]].concat(can("conversation.view.all") ? [["all", t("Все","Всі")], ["unassigned", t("Не назначены","Не призначені")]] : [])) as [string, string][]).map(([k, label]) => (
-                <button key={k} onClick={() => setScope(k as any)} title={t("Раздел диалогов","Розділ діалогів")}
-                  style={{ fontSize: 12, padding: "4px 10px", borderRadius: 14, cursor: "pointer", border: "1px solid " + (scope === k ? "var(--brand)" : "#e2e8f0"), background: scope === k ? "var(--brand)" : "#fff", color: scope === k ? "#fff" : "#475569" }}>{label}</button>
-              ))}
-            </div>
-            <div style={{ display: "flex", gap: 6, padding: "0 12px 8px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 6, padding: "8px 12px", alignItems: "center", flexWrap: "wrap" }}>
+              <select value={scope} onChange={(e) => setScope(e.target.value as any)} title={t("Раздел диалогов","Розділ діалогів")} style={{ flex: 1, minWidth: 96, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px", fontWeight: 600, background: "#fff" }}>
+                <option value="mine">{t("Мои","Мої")}</option>
+                <option value="clients">{t("Клиенты","Клієнти")}</option>
+                <option value="need">{t("Нужен ответ","Потрібна відповідь")}</option>
+                <option value="waiting">{t("Ждём клиента","Чекаємо клієнта")}</option>
+                {can("conversation.view.all") && <option value="all">{t("Все","Всі")}</option>}
+                {can("conversation.view.all") && <option value="unassigned">{t("Не назначены","Не призначені")}</option>}
+              </select>
+              {(can("conversation.view.all") || can("conversation.supervise")) && (
+                <select value={mgrFilter} onChange={(e) => setMgrFilter(e.target.value)} title={t("Чаты сотрудника — проверка качества обслуживания","Чати співробітника — перевірка якості обслуговування")} style={{ flex: 1, minWidth: 104, height: 28, fontSize: 12, border: "1px solid " + (mgrFilter ? "var(--brand)" : "#e2e8f0"), borderRadius: 7, padding: "0 6px", background: "#fff", color: mgrFilter ? "var(--brand)" : "#475569", fontWeight: mgrFilter ? 600 : 400 }}>
+                  <option value="">{t("Все сотрудники","Всі співробітники")}</option>
+                  {emps.map((e) => <option key={e.id} value={String(e.id)}>{e.full_name}</option>)}
+                </select>
+              )}
               <select value={chFilter} onChange={(e) => setChFilter(e.target.value)} title={t("Фильтр по каналу (Instagram, Telegram…)","Фільтр за каналом (Instagram, Telegram…)")} style={{ flex: 1, minWidth: 86, height: 28, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 6px" }}>
                 <option value="">{t("Все каналы","Всі канали")}</option>
                 <option value="meta_instagram_direct">Meta · Instagram Direct</option>
