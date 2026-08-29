@@ -1,7 +1,15 @@
 # AGENTS.md — обязательные правила для ЛЮБОГО агента (Codex, Claude) в этом репо
 
 Прод Wallcov-CRM живёт ЗДЕСЬ: Netcup `159.195.136.213`, `/root/gmideas`, ветка `codex/webchat-landing-crm`.
-Деплой: `cd /root/gmideas/crm-platform && docker compose -f docker-compose.prod.yml build web && docker compose -f docker-compose.prod.yml up -d` (бэкенд запечён в образ, `restart` НЕ хватает; фронтенд — `build caddy && up -d`).
+Деплой: **ТОЛЬКО `cd /root/gmideas/crm-platform && ./deploy.sh`** (варианты: `./deploy.sh web` — бэкенд, `./deploy.sh caddy` — фронтенд).
+Руками `build && up -d` НЕ деплоить: deploy.sh прогоняет смоук 33 ключевых функций (backend/smoke_all.py) НА НОВОМ ОБРАЗЕ до переключения — если хоть одна красная, прод не трогается и продолжает работать старая версия. Бэкенд запечён в образ, `restart` НЕ хватает.
+
+## 🧪 Смоук-набор — правило пополнения
+
+Файл `crm-platform/backend/smoke_all.py` — список проверок всех видимых функций (владелец + менеджер Илона id=2).
+**Добавил новую видимую функцию / новый экран / новый эндпоинт → добавь строку в CHECKS в том же коммите.**
+Проверки только читающие (GET). Смоук уже ловил реальную поломку: 29.08 нашёл NameError в /api/finance/overview/
+(сломан коммитом 1dd5c7c от 15.08 — массовая замена таймзоны задела 3 места, включая учёт рабочего дня).
 
 ## 🔴 ГЛАВНОЕ ПРАВИЛО: не затирать чужую работу
 

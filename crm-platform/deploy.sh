@@ -1,55 +1,45 @@
 #!/usr/bin/env bash
-# Боевой запуск GMIdeas CRM одной командой.
-# Делает всё сам: ставит Docker (если нет), настраивает .env, собирает и поднимает стек.
-# Запускать на сервере из каталога crm-platform/:
-#   sudo bash deploy.sh
+# ЄДИНИЙ спосіб деплою CRM (правило для Claude І Codex — руками build/up не робити).
+#
+# Порядок: збірка → міграції → СМОУК НА НОВОМУ ОБРАЗІ → і тільки якщо все
+# зелене — перемикання на нову версію. Якщо смоук червоний, стара версія
+# продовжує працювати, нічого не ламається.
+#
+# Використання:
+#   ./deploy.sh          — бекенд + фронтенд (web + caddy)
+#   ./deploy.sh web      — тільки бекенд
+#   ./deploy.sh caddy    — тільки фронтенд (смоук все одно проганяємо)
 set -euo pipefail
+cd /root/gmideas/crm-platform
 
-cd "$(dirname "$0")"
-echo "==> GMIdeas CRM — развёртывание"
+TARGETS="${1:-web caddy}"
+C="docker compose -f docker-compose.prod.yml"
 
-# 1) Docker
-if ! command -v docker >/dev/null 2>&1; then
-  echo "==> Docker не найден, устанавливаю…"
-  curl -fsSL https://get.docker.com | sh
-fi
-DC="docker compose"
-$DC version >/dev/null 2>&1 || DC="docker-compose"
+echo "== 1/4 Збірка: $TARGETS =="
+# shellcheck disable=SC2086
+$C build $TARGETS
 
-# 2) .env
-if [ ! -f .env ]; then
-  echo "==> Создаю .env"
-  read -rp "Домен CRM (например crm.wallcovdec.com.ua): " DOMAIN
-  DOMAIN=${DOMAIN:-crm.wallcovdec.com.ua}
-  SECRET_KEY=$(openssl rand -hex 32 2>/dev/null || head -c32 /dev/urandom | base64)
-  DBPASS=$(openssl rand -hex 16 2>/dev/null || head -c16 /dev/urandom | base64 | tr -d '/+=')
-  cat > .env <<EOF
-DOMAIN=$DOMAIN
-SECRET_KEY=$SECRET_KEY
-POSTGRES_DB=crm
-POSTGRES_USER=crm
-POSTGRES_PASSWORD=$DBPASS
-EOF
-  echo "==> .env создан (домен: $DOMAIN)"
-else
-  echo "==> .env уже есть — использую его"
-  DOMAIN=$(grep ^DOMAIN= .env | cut -d= -f2)
+echo "== 2/4 Міграції =="
+$C run --rm -T web python manage.py migrate --no-input | tail -3
+
+echo "== 3/4 Смоук нової версії (стара ще працює) =="
+if ! $C run --rm -T web python smoke_all.py; then
+    echo ""
+    echo "ДЕПЛОЙ ЗУПИНЕНО: смоук червоний. Прод НЕ чіпали — працює стара версія."
+    echo "Полагодь причину і запусти ./deploy.sh знову."
+    exit 1
 fi
 
-# 3) Сборка и запуск
-echo "==> Сборка и запуск контейнеров (может занять пару минут)…"
-$DC -f docker-compose.prod.yml up -d --build
-
-echo
-echo "============================================================"
-echo "  Готово. Открой:  https://$DOMAIN"
-echo "  (Сертификат HTTPS выпускается автоматически ~30–60 сек.)"
-echo
-echo "  Демо-вход:  kirill / demo12345  или  head / demo12345"
-echo "  Создать своего админа:"
-echo "    $DC -f docker-compose.prod.yml exec web python manage.py createsuperuser"
-echo
-echo "  Подключить Telegram-бота:"
-echo "    $DC -f docker-compose.prod.yml exec web \\"
-echo "      python manage.py telegram_channel --token ТОКЕН --name 'Wallcov бот' --domain $DOMAIN"
-echo "============================================================"
+echo "== 4/4 Перемикання на нову версію =="
+$C up -d
+for i in 1 2 3 4 5 6; do
+    sleep 5
+    code="$(curl -s -o /dev/null -w '%{http_code}' https://crm.wallcovdec.com.ua/api/privacy/ || true)"
+    [ "$code" = "200" ] && break
+done
+echo "healthcheck HTTP=$code (спроба $i)"
+if [ "$code" != "200" ]; then
+    echo "УВАГА: прод не відповідає 200 після перемикання — перевір docker logs crm-platform-web-1"
+    exit 1
+fi
+echo "DEPLOY OK $(date '+%F %T')"

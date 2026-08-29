@@ -3089,7 +3089,7 @@ class OverviewView(APIView):
     def get(self, request):
         from datetime import date as _date, timedelta as _td
         from django.db.models import Sum
-        per = request.query_params.get("period") or __today().strftime("%Y-%m")
+        per = request.query_params.get("period") or _today().strftime("%Y-%m")
         y, mo = int(per[:4]), int(per[5:7])
         q_from, q_to = request.query_params.get("from"), request.query_params.get("to")
 
@@ -3152,7 +3152,7 @@ class OverviewView(APIView):
                            for a in Account.objects.filter(is_active=True)], key=lambda x: -x["balance"])
 
         # cashflow 30 днів
-        today = __today()
+        today = _today()
         cashflow = []
         for i in range(29, -1, -1):
             dd = today - _td(days=i)
@@ -3300,7 +3300,7 @@ class WorkTimeView(APIView):
         if action == "start":
             if not ws:
                 ws = WorkSession.objects.create(user=request.user, last_seen_at=now)
-                WorkDay.objects.update_or_create(user=request.user, date=__today(), defaults={"status": "worked"})
+                WorkDay.objects.update_or_create(user=request.user, date=_today(), defaults={"status": "worked"})
         elif action == "heartbeat" and ws:
             # «пульс» присутності — оновлює last_seen_at (тільки коли реально працює, не на паузі)
             if not ws.paused_at:
