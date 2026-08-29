@@ -176,8 +176,8 @@ def _resolve_chatplace_chat_id(conv):
             return str(cand.external_chat_id)
         # 2) спитати ChatPlace напряму (chats_list) — знайти чат по @ніку АБО по ПОВНОМУ
         # імені (ChatPlace для IG часто дає clientName=імʼя, а username=None).
-        nick = (conv.contact.nickname or "").strip().lower() if conv.contact_id else ""
-        fullname = str(conv.contact).strip().lower() if conv.contact_id else ""
+        nick = " ".join((conv.contact.nickname or "").split()).lower() if conv.contact_id else ""
+        fullname = " ".join(str(conv.contact).split()).lower() if conv.contact_id else ""  # норм. пробілів (ChatPlace дає подвійні)
         _parts = fullname.split()
         swapped = " ".join(reversed(_parts)) if len(_parts) == 2 else ""
         if nick or fullname:
@@ -189,8 +189,8 @@ def _resolve_chatplace_chat_id(conv):
                 cid = it.get("id")
                 if not cid:
                     continue
-                un = str(it.get("username") or "").strip().lower()
-                cn = str(it.get("clientName") or "").strip().lstrip("@").lower()
+                un = " ".join(str(it.get("username") or "").split()).lower()
+                cn = " ".join(str(it.get("clientName") or "").lstrip("@").split()).lower()
                 if (nick and (un == nick or cn == nick)) or (fullname and cn and cn in (fullname, swapped)):
                     found.append((str(cid), it.get("lastMessageAt") or 0))
             if found:
