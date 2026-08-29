@@ -237,40 +237,46 @@ def send_message(conv: Conversation, text: str, user=None) -> Message:
         and (conv.channel.config or {}).get("meta")
         and not str(conv.external_chat_id or "").startswith("comment:")
     )
-    if is_meta_instagram_direct:
-        chat_id = str(route.get("chat_id") or "").strip()
-        if not chat_id:
-            # спробувати знайти чат ChatPlace того ж клієнта і закріпити привʼязку
-            chat_id = _resolve_chatplace_chat_id(conv)
-            if chat_id:
-                _cfg = conv.config or {}
-                _cfg["outbound_chatplace"] = {"chat_id": chat_id, "match": "resolve_on_send"}
-                conv.config = _cfg
-                conv.save(update_fields=["config"])
-        if chat_id:
-            # ChatPlace володіє Direct-веткою і Юлею: open ставить AI на паузу,
-            # send доставляє відповідь менеджера в той самий Instagram-чат.
-            from .chatplace import send as chatplace_send
-            result = chatplace_send(chat_id, text)
-            ext_id = str((result or {}).get("id") or "") if isinstance(result, dict) else ""
-        else:
-            # Немає чату ChatPlace → шлемо НАПРЯМУ через Meta, щоб повідомлення таки пішло
-            # (у межах 24-год вікна). Раніше тут була жорстка відмова — менеджер не міг відповісти.
-            adapter = get_adapter(conv.channel)
-            ext_id = adapter.send(conv.external_chat_id, text)
-    else:
-        adapter = get_adapter(conv.channel)
-        ext_id = adapter.send(conv.external_chat_id, text)
     status = "sent"
     if conv.channel.kind in ("instagram", "facebook"):
         last_in = Message.objects.filter(conversation=conv, direction="in").order_by("-created_at").first()
         if not last_in or (timezone.now() - last_in.created_at).total_seconds() > 24 * 3600:
             status = "window_risk"  # вікно Meta 24г закрите — ChatPlace прийняв, але IG міг не доставити
+    # ГОНКА-ФІКС (Олег 29.08): РЕЄСТРУЄМО вихідне ДО реальної відправки, щоб Meta-echo того
+    # самого тексту знайшов НАШ запис (дедуп по text+meta_external_id="") і НЕ створив дубль
+    # «ai_assistant». Раніше echo іноді випереджав нас -> задвоєння. НЕ ЛАМАТИ порядок.
     msg = Message.objects.create(
         conversation=conv, direction="out", text=text,
-        external_id=ext_id, sender=user,
+        external_id="", sender=user,
         sender_name=(user.get_full_name() if user else "") or "", status=status,
     )
+    try:
+        if is_meta_instagram_direct:
+            chat_id = str(route.get("chat_id") or "").strip()
+            if not chat_id:
+                chat_id = _resolve_chatplace_chat_id(conv)
+                if chat_id:
+                    _cfg = conv.config or {}
+                    _cfg["outbound_chatplace"] = {"chat_id": chat_id, "match": "resolve_on_send"}
+                    conv.config = _cfg
+                    conv.save(update_fields=["config"])
+            if chat_id:
+                from .chatplace import send as chatplace_send
+                result = chatplace_send(chat_id, text)
+                ext_id = str((result or {}).get("id") or "") if isinstance(result, dict) else ""
+            else:
+                adapter = get_adapter(conv.channel)
+                ext_id = adapter.send(conv.external_chat_id, text)
+        else:
+            adapter = get_adapter(conv.channel)
+            ext_id = adapter.send(conv.external_chat_id, text)
+    except Exception:
+        msg.status = "failed"
+        msg.save(update_fields=["status"])
+        raise
+    if ext_id and not (msg.external_id or "").strip():
+        msg.external_id = ext_id
+        msg.save(update_fields=["external_id"])
     conv.last_message_at = msg.created_at
     conv.save(update_fields=["last_message_at"])
     try:
