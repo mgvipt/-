@@ -868,6 +868,32 @@ def handle_webhook(payload: dict):
             # (external_id порожній). Echo того самого mid НЕ має створювати дубль-«ai_assistant».
             if mid and Message.objects.filter(conversation=conv, meta_external_id=mid).exists():
                 continue
+            # ДОДАТКОВИЙ дедуп echo (Олег 29.08 — задвоєння IG): наше вихідне вже записане
+            # (менеджер/агент відправив через CRM), АЛЕ mid не зберігся (window_risk / прямий
+            # send без id). Echo того самого ТЕКСТУ за останні 10 хв — це НЕ новий дубль:
+            # доклеюємо mid до наявного повідомлення і, якщо Meta підтвердив доставку, знімаємо
+            # позначку window_risk. Раніше через це зʼявлявся дубль-«ai_assistant» (Юля).
+            if is_echo and mid:
+                _etx = (msg.get("text") or "").strip()
+                if _etx:
+                    from django.utils import timezone as _tzx
+                    from datetime import timedelta as _tdx
+                    from django.db.models import Q as _Qx
+                    # ще НЕ звірене з Meta = meta_external_id порожній (ChatPlace-відправка має
+                    # свій external_id, тому фільтруємо саме по meta_external_id, а не external_id).
+                    _own = (Message.objects.filter(conversation=conv, direction="out", text=_etx[:5000])
+                            .filter(_Qx(meta_external_id="") | _Qx(meta_external_id__isnull=True))
+                            .filter(created_at__gte=_tzx.now() - _tdx(minutes=10))
+                            .order_by("-created_at").first())
+                    if _own:
+                        _flds = ["meta_external_id"]
+                        _own.meta_external_id = mid
+                        if not (_own.external_id or "").strip():
+                            _own.external_id = mid; _flds.append("external_id")
+                        if getattr(_own, "status", "") == "window_risk":
+                            _own.status = "sent"; _flds.append("status")
+                        _own.save(update_fields=_flds)
+                        continue
             if is_echo and _relink_manager_echo(
                     conv, mid, msg.get("text") or "", ev.get("timestamp")):
                 continue
