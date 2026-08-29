@@ -5688,3 +5688,58 @@ def render_kp_public(request, code):
             "<div style='background:#fff;border-radius:10px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.08)'>%s</div>"
             "</div></body></html>") % (link.deal_id, link.html)
     return HttpResponse(page)
+
+
+class KbEntryViewSet(viewsets.ModelViewSet):
+    """База знань ІІ-продавця (AI ЦЕНТР). Пошук ?search= по питанню/відповіді."""
+    queryset = __import__("apps.crm.models", fromlist=["KbEntry"]).KbEntry.objects.all()
+    serializer_class = __import__("apps.crm.serializers", fromlist=["KbEntrySerializer"]).KbEntrySerializer
+    permission_classes = [_manage_or_read("settings.rules")]
+    filterset_fields = ["source", "enabled"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        q = (self.request.query_params.get("search") or "").strip()
+        if q:
+            from django.db.models import Q as _Q
+            qs = qs.filter(_Q(question__icontains=q) | _Q(answer__icontains=q) | _Q(tags__icontains=q))
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(source="manual")
+
+
+class KbUnknownQuestionViewSet(viewsets.ModelViewSet):
+    """Невідомі питання (ІІ не знав відповіді). Дія to_kb → додати в базу."""
+    queryset = __import__("apps.crm.models", fromlist=["KbUnknownQuestion"]).KbUnknownQuestion.objects.select_related("answer_entry").all()
+    serializer_class = __import__("apps.crm.serializers", fromlist=["KbUnknownQuestionSerializer"]).KbUnknownQuestionSerializer
+    permission_classes = [_manage_or_read("settings.rules")]
+    filterset_fields = ["status", "source"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        q = (self.request.query_params.get("search") or "").strip()
+        if q:
+            qs = qs.filter(question__icontains=q)
+        return qs
+
+    @action(detail=True, methods=["post"])
+    def to_kb(self, request, pk=None):
+        """Створити запис бази знань з цього питання + текст відповіді (request.data['answer'])."""
+        from apps.crm.models import KbEntry
+        obj = self.get_object()
+        answer = (request.data.get("answer") or "").strip()
+        if not answer:
+            return Response({"detail": "Потрібна відповідь"}, status=status.HTTP_400_BAD_REQUEST)
+        entry = KbEntry.objects.create(question=obj.question, answer=answer, source="dialog", enabled=True)
+        obj.answer_entry = entry
+        obj.status = "answered"
+        obj.save(update_fields=["answer_entry", "status", "updated_at"])
+        return Response({"ok": True, "entry_id": entry.id})
+
+    @action(detail=True, methods=["post"])
+    def ignore(self, request, pk=None):
+        obj = self.get_object()
+        obj.status = "ignored"
+        obj.save(update_fields=["status", "updated_at"])
+        return Response({"ok": True})

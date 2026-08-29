@@ -401,3 +401,24 @@ class TaskSerializer(serializers.ModelSerializer):
                   "status", "status_display",
                   "due_at", "created_by_agent", "created_at", "bucket"]
         read_only_fields = ["created_by", "created_at", "created_by_agent"]
+
+
+class KbEntrySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = __import__("apps.crm.models", fromlist=["KbEntry"]).KbEntry
+        fields = ["id", "ext_id", "question", "answer", "specific_rules", "source",
+                  "client_chat_count", "tags", "enabled", "created_at", "updated_at"]
+        read_only_fields = ["ext_id", "client_chat_count", "created_at", "updated_at"]
+
+
+class KbUnknownQuestionSerializer(serializers.ModelSerializer):
+    answer_preview = serializers.SerializerMethodField()
+
+    class Meta:
+        model = __import__("apps.crm.models", fromlist=["KbUnknownQuestion"]).KbUnknownQuestion
+        fields = ["id", "ext_id", "question", "status", "source", "answer_entry",
+                  "answer_preview", "times_asked", "created_at", "updated_at"]
+        read_only_fields = ["ext_id", "created_at", "updated_at"]
+
+    def get_answer_preview(self, obj):
+        return (obj.answer_entry.answer[:120] if obj.answer_entry_id and obj.answer_entry else "")
