@@ -60,7 +60,18 @@ def _graph(method, path, params=None):
             _d = e.read().decode()[:300]
         except Exception:
             _d = ""
-        raise RuntimeError("Meta %s: %s" % (e.code, _d or "Bad Request"))
+        raise RuntimeError(_friendly_meta_err(e.code, _d))
+
+
+def _friendly_meta_err(code, body):
+    """Замінюємо сирий JSON/німецький текст Meta на зрозуміле пояснення.
+    2534037 = наш акаунт не власник IG-треда (тредом володіє ChatPlace/Юля)."""
+    b = body or ""
+    if "2534037" in b or "owner of the thread" in b or "Eigent" in b:
+        return ("Цей Instagram-діалог веде ChatPlace (Юля) — пряма відповідь через Meta "
+                "неможлива. Відкрийте діалог цього клієнта на каналі «ChatPlace · Instagram» "
+                "і відповідайте там.")
+    return "Meta IG %s: %s" % (code, b or "Bad Request")
 
 
 def _ig_post(path, params):
@@ -75,7 +86,7 @@ def _ig_post(path, params):
             _d = e.read().decode()[:300]
         except Exception:
             _d = ""
-        raise RuntimeError("Meta IG %s: %s" % (e.code, _d or "Bad Request"))
+        raise RuntimeError(_friendly_meta_err(e.code, _d))
 
 
 def send_message(recipient_id: str, text: str, platform: str = "instagram"):
