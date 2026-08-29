@@ -194,9 +194,18 @@ def _resolve_chatplace_chat_id(conv):
                 if (nick and (un == nick or cn == nick)) or (fullname and cn and cn in (fullname, swapped)):
                     found.append((str(cid), it.get("lastMessageAt") or 0))
             if found:
-                # ПРАВИЛО (Олег 29.08): ChatPlace дублює чати одному клієнту і НЕ дає @нік/IGSID по IG.
-                # РАНІШЕ при кількох збігах відмовляли -> менеджер ВЗАГАЛІ не міг відповісти (баг).
-                # ТЕПЕР беремо САМИЙ СВІЖИЙ чат. НЕ ЛАМАТИ цю поведінку.
+                # НАДІЙНО: уточнюємо по @ніку — chats_get віддає username навіть коли chats_list ні.
+                # Якщо серед кандидатів є чат з username == нік клієнта — беремо САМЕ його.
+                if nick:
+                    for _cid, _ in found:
+                        try:
+                            _g = _mcp("chats_get", {"chatId": _cid})
+                            _gun = " ".join(str((_g or {}).get("username") or "").lstrip("@").split()).lower()
+                            if _gun and _gun == nick:
+                                return _cid
+                        except Exception:
+                            break
+                # Ніка нема / жоден не збігся -> беремо САМИЙ СВІЖИЙ чат (Олег 29.08). НЕ ЛАМАТИ.
                 found.sort(key=lambda x: x[1], reverse=True)
                 return found[0][0]
             # 3) клієнт лише з @ніком (Meta не дав реального імені) — chats_list НЕ віддає
