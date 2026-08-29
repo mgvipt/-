@@ -114,6 +114,37 @@ class SharedLink(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class MediaLibraryItem(models.Model):
+    """Reusable asset for Open Lines. The bytes live in one SharedLink and are never copied per send."""
+    KIND = [("image", "Фото"), ("video", "Відео"), ("catalog", "Каталог")]
+    SECTION = [("colors", "Кольори"), ("quick", "Швидкі відповіді")]
+    title = models.CharField(max_length=160)
+    kind = models.CharField(max_length=16, choices=KIND, default="image")
+    section = models.CharField(max_length=16, choices=SECTION, default="quick")
+    color_code = models.CharField(max_length=48, blank=True, db_index=True)
+    tags = models.CharField(max_length=240, blank=True)
+    file = models.ForeignKey(SharedLink, null=True, blank=True, on_delete=models.SET_NULL, related_name="library_items")
+    public_url = models.URLField(blank=True)
+    is_active = models.BooleanField(default=True)
+    sort = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["section", "sort", "title"]
+
+
+class QuickReply(models.Model):
+    title = models.CharField(max_length=120)
+    text = models.TextField(blank=True)
+    assets = models.ManyToManyField(MediaLibraryItem, blank=True, related_name="quick_replies")
+    is_active = models.BooleanField(default=True)
+    sort = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort", "title"]
+
+
 
 class TeamMessage(models.Model):
     """Внутрішній чат між співробітниками (DM). Текст + файли + згадки (@)."""

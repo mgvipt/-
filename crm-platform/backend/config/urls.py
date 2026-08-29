@@ -103,6 +103,7 @@ urlpatterns = [
     path("api/sounds/", inbox_views.SoundLibraryView.as_view()),
     path("api/sounds/<int:pk>/file/", inbox_views.SoundFileView.as_view()),
     path("api/sounds/<int:pk>/", inbox_views.SoundDeleteView.as_view()),
+    path("api/inbox/media-library/", inbox_views.MediaLibraryView.as_view()),
     path("api/inbox/tg-file/<int:message_id>/<int:idx>/", inbox_views.TgFileView.as_view()),
     path("api/telephony/lines/", tel_views.PhoneLineView.as_view()),
     path("api/telephony/line-status/", tel_views.LineStatusView.as_view()),

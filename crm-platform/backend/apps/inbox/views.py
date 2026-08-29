@@ -7,10 +7,82 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
 
-from .models import Channel, Conversation, Message
+from .models import Channel, Conversation, Message, MediaLibraryItem, QuickReply, SharedLink
 from .serializers import ChannelSerializer, ConversationSerializer, MessageSerializer
 from .adapters import get_adapter
 from .services import ingest, send_message
+
+
+def _library_item_data(request, item):
+    """Small public representation; file data never leaves the API response."""
+    url = item.public_url
+    if not url and item.file_id:
+        url = request.build_absolute_uri("/api/f/%s/" % item.file.token)
+    return {"id": item.id, "title": item.title, "kind": item.kind, "section": item.section,
+            "color_code": item.color_code, "tags": item.tags, "url": url, "sort": item.sort}
+
+
+class MediaLibraryView(APIView):
+    """Settings data for reusable Open Lines media and quick replies."""
+    def get(self, request):
+        items = MediaLibraryItem.objects.filter(is_active=True).select_related("file")
+        replies = QuickReply.objects.filter(is_active=True).prefetch_related("assets__file")
+        return Response({
+            "items": [_library_item_data(request, x) for x in items],
+            "replies": [{"id": q.id, "title": q.title, "text": q.text,
+                         "asset_ids": list(q.assets.values_list("id", flat=True))} for q in replies],
+        })
+
+    def post(self, request):
+        if not request.user.has_perm_code("roles.manage"):
+            return Response({"detail": "Немає прав на налаштування"}, status=status.HTTP_403_FORBIDDEN)
+        action_name = request.data.get("action")
+        if action_name == "asset":
+            import base64, mimetypes, secrets
+            raw = request.data.get("content_b64") or ""
+            file = None
+            if raw:
+                filename = (request.data.get("filename") or "file")[:255]
+                content = base64.b64decode(raw.split(",")[-1])
+                file = SharedLink.objects.create(token=secrets.token_urlsafe(16), filename=filename,
+                    content_type=mimetypes.guess_type(filename)[0] or "application/octet-stream", data=content)
+            item = MediaLibraryItem.objects.create(
+                title=(request.data.get("title") or request.data.get("filename") or "Матеріал")[:160],
+                kind=request.data.get("kind") if request.data.get("kind") in ("image", "video", "catalog") else "image",
+                section=request.data.get("section") if request.data.get("section") in ("colors", "quick") else "quick",
+                color_code=(request.data.get("color_code") or "")[:48], tags=(request.data.get("tags") or "")[:240],
+                public_url=(request.data.get("public_url") or "")[:200], file=file,
+            )
+            return Response(_library_item_data(request, item), status=status.HTTP_201_CREATED)
+        if action_name == "reply":
+            q = QuickReply.objects.create(title=(request.data.get("title") or "Швидка відповідь")[:120],
+                                          text=request.data.get("text") or "")
+            q.assets.set(MediaLibraryItem.objects.filter(id__in=request.data.get("asset_ids", []), is_active=True))
+            return Response({"id": q.id, "title": q.title, "text": q.text,
+                             "asset_ids": list(q.assets.values_list("id", flat=True))}, status=status.HTTP_201_CREATED)
+        if action_name == "delete_asset":
+            MediaLibraryItem.objects.filter(id=request.data.get("id")).update(is_active=False)
+            return Response({"ok": True})
+        if action_name == "update_asset":
+            item = MediaLibraryItem.objects.filter(id=request.data.get("id")).first()
+            if not item:
+                return Response({"detail": "Матеріал не знайдено"}, status=status.HTTP_404_NOT_FOUND)
+            for field, limit in (("title", 160), ("color_code", 48), ("tags", 240)):
+                if field in request.data:
+                    setattr(item, field, str(request.data.get(field) or "")[:limit])
+            item.save()
+            return Response(_library_item_data(request, item))
+        if action_name == "delete_reply":
+            QuickReply.objects.filter(id=request.data.get("id")).update(is_active=False)
+            return Response({"ok": True})
+        if action_name == "update_reply":
+            q = QuickReply.objects.filter(id=request.data.get("id")).first()
+            if not q:
+                return Response({"detail": "Відповідь не знайдено"}, status=status.HTTP_404_NOT_FOUND)
+            q.title = (request.data.get("title") or q.title)[:120]; q.text = request.data.get("text") or ""; q.save()
+            q.assets.set(MediaLibraryItem.objects.filter(id__in=request.data.get("asset_ids", []), is_active=True))
+            return Response({"id": q.id, "title": q.title, "text": q.text, "asset_ids": list(q.assets.values_list("id", flat=True))})
+        return Response({"detail": "Невідома дія"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class TelegramWebhookView(APIView):
@@ -1142,6 +1214,42 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
         msg = Message.objects.create(conversation=conv, direction="out", text=f"[{kind}] {filename}",
                                      external_id=str(msg_id or ""), attachments=[{"type": kind, "name": filename}])
+        return Response(MessageSerializer(msg).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="send-library")
+    def send_library(self, request, pk=None):
+        """Send saved catalog/quick-reply assets without re-uploading or duplicating their bytes."""
+        conv = self.get_object()
+        item_ids = request.data.get("item_ids") or []
+        reply_id = request.data.get("reply_id")
+        items = list(MediaLibraryItem.objects.filter(id__in=item_ids, is_active=True).select_related("file"))
+        text = (request.data.get("text") or "").strip()
+        if reply_id:
+            reply = QuickReply.objects.filter(id=reply_id, is_active=True).prefetch_related("assets__file").first()
+            if not reply:
+                return Response({"detail": "Швидку відповідь не знайдено"}, status=status.HTTP_404_NOT_FOUND)
+            text = text or reply.text
+            items.extend(list(reply.assets.filter(is_active=True).select_related("file")))
+        if not items and not text:
+            return Response({"detail": "Оберіть матеріал або відповідь"}, status=status.HTTP_400_BAD_REQUEST)
+        lines = [text] if text else []
+        attachments = []
+        for item in items:
+            url = item.public_url or (request.build_absolute_uri("/api/f/%s/" % item.file.token) if item.file_id else "")
+            if not url:
+                continue
+            label = "🎥 Відео" if item.kind == "video" else ("🎨 Каталог" if item.kind == "catalog" else "📷 Фото")
+            title = (item.color_code + " · " if item.color_code else "") + item.title
+            lines.append(f"{label} — {title}\n{url}")
+            attachments.append({"type": item.kind, "url": url, "name": item.title, "library_asset_id": item.id,
+                                "color_code": item.color_code})
+        try:
+            msg = send_message(conv, "\n\n".join(lines), user=request.user)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+        if attachments:
+            msg.attachments = attachments
+            msg.save(update_fields=["attachments"])
         return Response(MessageSerializer(msg).data, status=status.HTTP_201_CREATED)
 
 

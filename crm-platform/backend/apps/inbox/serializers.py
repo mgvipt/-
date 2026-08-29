@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Channel, Conversation, Message
+from .models import Channel, Conversation, Message, MediaLibraryItem, QuickReply
 
 
 class ChannelSerializer(serializers.ModelSerializer):

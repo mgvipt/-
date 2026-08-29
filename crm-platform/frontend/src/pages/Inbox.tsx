@@ -14,6 +14,7 @@ import { TaskQuickModal } from "../TaskQuickModal";
 import ConversationSourceCard from "../ConversationSourceCard";
 import { ReplyContext, ReactionBadges, MessageStatusLine, CorrectionAction, messagesHaveSameVisibleState, isContextAttachment } from "../MessageContext";
 import { msgSoundOn, setMsgSoundOn, teamSoundOn, setTeamSoundOn } from "../sounds";
+import { MediaLibraryPicker } from "./MediaLibraryPicker";
 
 
 
@@ -48,6 +49,7 @@ export default function Inbox() {
   const [taskOpen, setTaskOpen] = useState(false);
   const [composerH, setComposerH] = useState<number | null>(null);
   const [pending, setPending] = useState<any[]>([]);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   function startResizeComposer(e: any) {
     e.preventDefault();
@@ -641,7 +643,8 @@ export default function Inbox() {
               <input ref={fileRef} type="file" hidden onChange={sendFile} />
               <button className="btn" type="button" style={{ background: internalNote ? "#fde68a" : "#f1f5f9", color: internalNote ? "#92400e" : "#475569", fontWeight: internalNote ? 700 : 400, flex: "0 0 auto", height: 38 }} title={t("Скрытая заметка для менеджеров (клиент не увидит)","Прихована нотатка для менеджерів (клієнт не побачить)")} onClick={() => setInternalNote((v) => !v)}><Icon n="eye" size={17} /></button>
               <EmojiButton onPick={(em) => setText((tx) => tx + em)} />
-              <button className="btn" type="button" style={{ background: "#f1f5f9", flex: "0 0 auto", height: 38 }} title={t("Прикрепить файл / фото / видео / документ","Прикріпити файл / фото / відео / документ")} onClick={() => fileRef.current?.click()} disabled={sending}><Icon n="paperclip" size={17} /></button>
+              <div style={{ position: "relative", flex: "0 0 auto" }}><button className="btn" type="button" style={{ background: "#f1f5f9", height: 38 }} title={t("Файл або бібліотека кольорів","Файл або бібліотека кольорів")} onClick={() => setLibraryOpen((v) => !v)} disabled={sending}><Icon n="paperclip" size={17} /></button>{libraryOpen && active && <MediaLibraryPicker conversationId={active.id} onSent={(m) => setMsgs((ms) => [...ms, m])} onClose={() => setLibraryOpen(false)} />}</div>
+              <button className="btn" type="button" style={{ background: "#f1f5f9", flex: "0 0 auto", height: 38, padding: "0 7px" }} title={t("Завантажити з пристрою","Завантажити з пристрою")} onClick={() => fileRef.current?.click()} disabled={sending}>＋</button>
               <textarea value={text} rows={1}
                 onChange={(e) => { setText(e.target.value); if (composerH === null) { e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 170) + "px"; } }}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
