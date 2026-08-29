@@ -273,8 +273,25 @@ class ContactViewSet(viewsets.ModelViewSet):
         # тому плитка «Дебіторка» показувала 0, хоча борг є (Олег, 27.08).
         # Не дублюємо: якщо на сделку вже є ЗАПЛАНОВАНА дебіторка у Дт/Кт — пропускаємо.
         from django.db.models import Sum as _Sg
+        from apps.crm.models import Stage as _StageRC
+        import re as _reRC
         _pp_deals = set(_PP.objects.filter(contact=c, kind="receivable", status="planned")
                         .exclude(deal__isnull=True).values_list("deal_id", flat=True))
+        # Дебіторка «товар віддано» рахується ТІЛЬКИ коли сделка дійшла до стадії
+        # «Оплату отримано» і далі (Олег, 29.08) — раніше рахувалась БУДЬ-ЯКА відкрита
+        # неоплачена сделка (навіть «Домовились про оплату», де товар ще на складі → фантомний борг).
+        _pay_ord_cache = {}
+        def _pay_ord(_fid):
+            if _fid in _pay_ord_cache:
+                return _pay_ord_cache[_fid]
+            _v = None
+            for _s in _StageRC.objects.filter(funnel_id=_fid).order_by("order"):
+                _nm = _reRC.sub(r"\s+", "", (_s.name or "").lower())
+                if "оплат" in _nm and "отрим" in _nm:
+                    _v = _s.order
+                    break
+            _pay_ord_cache[_fid] = _v
+            return _v
         _goods_credit = 0.0
         for _d3 in (_Deal.objects.filter(contact=c).exclude(stage__is_won=True).exclude(stage__is_lost=True)
                     .select_related("stage").annotate(_pd=_Sg("payments__amount", filter=_Qc(payments__is_paid=True)))):
@@ -282,6 +299,12 @@ class ContactViewSet(viewsets.ModelViewSet):
                 continue
             _rem = float(_d3.amount or 0) - float(_d3._pd or 0)
             if _rem <= 0.5:
+                continue
+            # гейт «товар віддано»: стадія >= «Оплату отримано» у своїй воронці,
+            # АБО є задача складу на відвантаження (для воронок без такої стадії — лише склад).
+            _po = _pay_ord(_d3.stage.funnel_id) if _d3.stage_id else None
+            _shipped = (_po is not None and (_d3.stage.order or 0) >= _po) or _d3.warehouse_jobs.exists()
+            if not _shipped:
                 continue
             _goods_credit += _rem
             debts_list.append({
