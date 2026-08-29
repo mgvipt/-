@@ -1940,6 +1940,15 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                     send_message(conv, _ship_msg, user=request.user)
                 except Exception:
                     pass
+                # ТРЕТЄ повідомлення (окремо): строк відправлення після оплати (Олег 29.08).
+                _term_msg = (
+                    "🚚 Після оплати відправляємо Ваше замовлення протягом 2–3 робочих днів. "
+                    "Одразу після відправлення надішлемо Вам ТТН для відстеження 😊"
+                )
+                try:
+                    send_message(conv, _term_msg, user=request.user)
+                except Exception:
+                    pass
                 break
         else:
             _err = "у сделки немає контакту"
