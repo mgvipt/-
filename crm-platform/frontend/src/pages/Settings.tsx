@@ -26,8 +26,8 @@ export default function Settings() {
   const [edit, setEdit] = useState<Record<string, Record<string, string>>>({});
   const [saved, setSaved] = useState("");
   const [library, setLibrary] = useState<any[]>([]); const [quickReplies, setQuickReplies] = useState<any[]>([]);
-  const [assetFile, setAssetFile] = useState<File | null>(null); const [assetTitle, setAssetTitle] = useState(""); const [assetCode, setAssetCode] = useState(""); const [assetSection, setAssetSection] = useState("colors");
-  const [replyTitle, setReplyTitle] = useState(""); const [replyText, setReplyText] = useState(""); const [replyAssets, setReplyAssets] = useState<number[]>([]);
+  const [assetFile, setAssetFile] = useState<File | null>(null); const [assetTitle, setAssetTitle] = useState(""); const [assetCode, setAssetCode] = useState(""); const [assetSection, setAssetSection] = useState("colors"); const [assetEditId, setAssetEditId] = useState<number | null>(null);
+  const [replyTitle, setReplyTitle] = useState(""); const [replyText, setReplyText] = useState(""); const [replyAssets, setReplyAssets] = useState<number[]>([]); const [replyEditId, setReplyEditId] = useState<number | null>(null);
 
   const TABDEFS: [string, React.ReactNode, string][] = [
     ["rules", <><Icon n="📋" size={15} /> {t("Глобальные правила", "Глобальні правила")}</>, "settings.rules"],
@@ -50,10 +50,10 @@ export default function Settings() {
   async function addAsset() {
     let content_b64 = ""; let filename = "";
     if (assetFile) { filename = assetFile.name; content_b64 = await new Promise<string>((resolve) => { const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.readAsDataURL(assetFile); }); }
-    await api.post("/api/inbox/media-library/", { action: "asset", title: assetTitle, filename, content_b64, color_code: assetCode, section: assetSection, kind: assetFile?.type.startsWith("video") ? "video" : (assetSection === "colors" ? "catalog" : "image") });
-    setAssetFile(null); setAssetTitle(""); setAssetCode(""); loadLibrary();
+    await api.post("/api/inbox/media-library/", assetEditId ? { action: "update_asset", id: assetEditId, title: assetTitle, color_code: assetCode, section: assetSection } : { action: "asset", title: assetTitle, filename, content_b64, color_code: assetCode, section: assetSection, kind: assetFile?.type.startsWith("video") ? "video" : (assetSection === "colors" ? "catalog" : "image") });
+    setAssetFile(null); setAssetTitle(""); setAssetCode(""); setAssetEditId(null); loadLibrary();
   }
-  async function addReply() { await api.post("/api/inbox/media-library/", { action: "reply", title: replyTitle, text: replyText, asset_ids: replyAssets }); setReplyTitle(""); setReplyText(""); setReplyAssets([]); loadLibrary(); }
+  async function addReply() { await api.post("/api/inbox/media-library/", replyEditId ? { action: "update_reply", id: replyEditId, title: replyTitle, text: replyText, asset_ids: replyAssets } : { action: "reply", title: replyTitle, text: replyText, asset_ids: replyAssets }); setReplyTitle(""); setReplyText(""); setReplyAssets([]); setReplyEditId(null); loadLibrary(); }
 
   async function save(p: Prov) {
     const body: any = { provider: p.provider, is_active: p.is_active, ...(edit[p.provider] || {}) };
@@ -90,15 +90,15 @@ export default function Settings() {
           <input value={assetTitle} onChange={(e) => setAssetTitle(e.target.value)} placeholder={t("Название материала", "Назва матеріалу")} style={{ width: "100%", boxSizing: "border-box", marginBottom: 7 }} />
           <input value={assetCode} onChange={(e) => setAssetCode(e.target.value)} placeholder="CSK 03-32 (якщо це колір)" style={{ width: "100%", boxSizing: "border-box", marginBottom: 7 }} />
           <input type="file" accept="image/*,video/*" onChange={(e) => setAssetFile(e.target.files?.[0] || null)} style={{ marginBottom: 7, width: "100%" }} />
-          <button className="btn btn-primary" disabled={!assetFile} onClick={addAsset}>{t("Добавить материал", "Додати матеріал")}</button>
-          <div style={{ marginTop: 12, display: "grid", gap: 5 }}>{library.map((a) => <div key={a.id} style={{ borderTop: "1px solid #e2e8f0", paddingTop: 6, fontSize: 12, display: "flex", gap: 7, alignItems: "center" }}><span style={{ flex: 1 }}><b>{a.color_code ? a.color_code + " · " : ""}{a.title}</b> <span className="muted">{a.kind}</span></span><button className="btn" onClick={async () => { await api.post("/api/inbox/media-library/", { action: "delete_asset", id: a.id }); loadLibrary(); }}>×</button></div>)}</div>
+          <button className="btn btn-primary" disabled={!assetEditId && !assetFile} onClick={addAsset}>{assetEditId ? t("Сохранить изменения", "Зберегти зміни") : t("Добавить материал", "Додати матеріал")}</button>{assetEditId && <button className="btn" style={{ marginLeft: 6 }} onClick={() => { setAssetEditId(null); setAssetFile(null); setAssetTitle(""); setAssetCode(""); }}>{t("Отмена", "Скасувати")}</button>}
+          <div style={{ marginTop: 12, display: "grid", gap: 5 }}>{library.map((a) => <div key={a.id} style={{ borderTop: "1px solid #e2e8f0", paddingTop: 6, fontSize: 12, display: "flex", gap: 7, alignItems: "center" }}><span style={{ flex: 1 }}><b>{a.color_code ? a.color_code + " · " : ""}{a.title}</b> <span className="muted">{a.kind}</span></span><button className="btn" onClick={() => { setAssetEditId(a.id); setAssetTitle(a.title); setAssetCode(a.color_code || ""); setAssetSection(a.section); }}>{t("Изменить", "Змінити")}</button><button className="btn" onClick={async () => { await api.post("/api/inbox/media-library/", { action: "delete_asset", id: a.id }); loadLibrary(); }}>×</button></div>)}</div>
         </div>
         <div className="panel" style={{ margin: 0 }}><b>⚡ {t("Быстрые ответы", "Швидкі відповіді")}</b><div className="muted" style={{ fontSize: 12, margin: "5px 0 10px" }}>{t("Текст и отмеченные фото/видео уходят клиенту одним действием.", "Текст і позначені фото/відео йдуть клієнту однією дією.")}</div>
           <input value={replyTitle} onChange={(e) => setReplyTitle(e.target.value)} placeholder={t("Название, например «Каталог шелка»", "Назва, наприклад «Каталог шовку»")} style={{ width: "100%", boxSizing: "border-box", marginBottom: 7 }} />
           <textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder={t("Текст ответа", "Текст відповіді")} style={{ width: "100%", boxSizing: "border-box", minHeight: 72, marginBottom: 7 }} />
           <div style={{ maxHeight: 140, overflow: "auto", fontSize: 12, marginBottom: 7 }}>{library.map((a) => <label key={a.id} style={{ display: "block", padding: "3px 0" }}><input type="checkbox" checked={replyAssets.includes(a.id)} onChange={() => setReplyAssets((ids) => ids.includes(a.id) ? ids.filter((x) => x !== a.id) : [...ids, a.id])} /> {a.color_code ? a.color_code + " · " : ""}{a.title}</label>)}</div>
-          <button className="btn btn-primary" disabled={!replyTitle} onClick={addReply}>{t("Сохранить быстрый ответ", "Зберегти швидку відповідь")}</button>
-          <div style={{ marginTop: 12, display: "grid", gap: 5 }}>{quickReplies.map((q) => <div key={q.id} style={{ borderTop: "1px solid #e2e8f0", paddingTop: 6, fontSize: 12, display: "flex", gap: 7, alignItems: "center" }}><span style={{ flex: 1 }}><b>{q.title}</b><br /><span className="muted">{q.text}</span></span><button className="btn" onClick={async () => { await api.post("/api/inbox/media-library/", { action: "delete_reply", id: q.id }); loadLibrary(); }}>×</button></div>)}</div>
+          <button className="btn btn-primary" disabled={!replyTitle} onClick={addReply}>{replyEditId ? t("Сохранить изменения", "Зберегти зміни") : t("Сохранить быстрый ответ", "Зберегти швидку відповідь")}</button>{replyEditId && <button className="btn" style={{ marginLeft: 6 }} onClick={() => { setReplyEditId(null); setReplyTitle(""); setReplyText(""); setReplyAssets([]); }}>{t("Отмена", "Скасувати")}</button>}
+          <div style={{ marginTop: 12, display: "grid", gap: 5 }}>{quickReplies.map((q) => <div key={q.id} style={{ borderTop: "1px solid #e2e8f0", paddingTop: 6, fontSize: 12, display: "flex", gap: 7, alignItems: "center" }}><span style={{ flex: 1 }}><b>{q.title}</b><br /><span className="muted">{q.text}</span></span><button className="btn" onClick={() => { setReplyEditId(q.id); setReplyTitle(q.title); setReplyText(q.text); setReplyAssets(q.assets.map((a: any) => a.id)); }}>{t("Изменить", "Змінити")}</button><button className="btn" onClick={async () => { await api.post("/api/inbox/media-library/", { action: "delete_reply", id: q.id }); loadLibrary(); }}>×</button></div>)}</div>
         </div>
       </div>}
 
