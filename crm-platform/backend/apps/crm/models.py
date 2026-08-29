@@ -935,3 +935,48 @@ class MetaSyncSettings(models.Model):
     def get(cls):
         obj, _ = cls.objects.get_or_create(id=1)
         return obj
+
+
+
+class KbEntry(models.Model):
+    """База знань ІІ-продавця Wallcov (незалежна від ChatPlace).
+    Імпорт із ChatPlace + ручне поповнення + додавання з невідомих питань.
+    ІІ-продавець підтягує сюди точні відповіді (без вигадування)."""
+    SOURCE = [("chatplace", "ChatPlace-імпорт"), ("manual", "Додано вручну"), ("dialog", "З діалогу")]
+    ext_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    question = models.TextField()
+    answer = models.TextField(blank=True, default="")
+    specific_rules = models.TextField(blank=True, default="")
+    source = models.CharField(max_length=16, choices=SOURCE, default="manual")
+    client_chat_count = models.IntegerField(default=0, help_text="Скільки разів клієнти про це питали (популярність)")
+    tags = models.CharField(max_length=255, blank=True, default="")
+    enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-client_chat_count", "question"]
+
+    def __str__(self):
+        return (self.question or "")[:60]
+
+
+class KbUnknownQuestion(models.Model):
+    """Питання, на які ІІ не знав відповіді (як «невідомі» у ChatPlace).
+    На розгляд менеджера → додати відповідь у KbEntry."""
+    STATUS = [("new", "Нове"), ("answered", "Додано в базу"), ("ignored", "Ігнор")]
+    SOURCE = [("chatplace", "ChatPlace"), ("dialog", "З діалогу CRM")]
+    ext_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    question = models.TextField()
+    status = models.CharField(max_length=16, choices=STATUS, default="new", db_index=True)
+    source = models.CharField(max_length=16, choices=SOURCE, default="chatplace")
+    answer_entry = models.ForeignKey(KbEntry, null=True, blank=True, on_delete=models.SET_NULL, related_name="from_questions")
+    times_asked = models.IntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-times_asked", "-created_at"]
+
+    def __str__(self):
+        return (self.question or "")[:60]
