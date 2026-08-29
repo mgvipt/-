@@ -96,6 +96,25 @@ class EchatWebhookView(APIView):
                 print("ECHAT-OUT-STATUS ch=%s: %s" % (channel_id, _j.dumps(d, ensure_ascii=False)[:600]), file=_sys.stderr, flush=True)
             except Exception:
                 pass
+            # Оновлюємо статус НАШОГО вихідного (галочки в CRM): delivered/read/failed.
+            # Раніше лише логувалось → всі Viber/WhatsApp-повідомлення вічно «sent» (1 галочка),
+            # хоча e-chat підтверджував доставку → менеджеру здавалось «не дійшло».
+            try:
+                _mid = str(d.get("message_id") or "")
+                _st = str(d.get("status") or "")
+                _desc = str(d.get("description") or "").lower()
+                _new = None
+                if "seen" in _desc or "read" in _desc or _st == "2":
+                    _new = "read"
+                elif _st == "1" or "deliver" in _desc:
+                    _new = "delivered"
+                elif ("fail" in _desc or "error" in _desc or "not deliver" in _desc
+                      or "undeliver" in _desc or _st.startswith("-")):
+                    _new = "failed"
+                if _mid and _new:
+                    Message.objects.filter(external_id=_mid).exclude(status="read").update(status=_new)
+            except Exception:
+                pass
             return Response({"status": 0})  # власні вихідні / статуси — не створюємо повідомлень
         inc = get_adapter(channel).parse_webhook(d)
         if inc and inc.external_chat_id:
