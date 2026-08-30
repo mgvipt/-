@@ -65,6 +65,8 @@ export default function Inbox() {
   const [nextUrl, setNextUrl] = useState<string | null>(null);
   const [picker, setPicker] = useState<null | "transfer" | "add">(null);
   const [emps, setEmps] = useState<{ id: number; full_name: string }[]>([]);
+  const [aiMode, setAiMode] = useState("");      // режим підказки AI-РОП
+  const [aiHint, setAiHint] = useState("");      // навідна думка менеджера
   const [menu, setMenu] = useState(false);
   const headRef = useRef<HTMLDivElement | null>(null);
   const [compact, setCompact] = useState(false);
@@ -191,7 +193,7 @@ export default function Inbox() {
 
   async function analyzeAI(id: number) {
     setAiLoad(true);
-    try { setAi(await api.post<any>(`/api/conversations/${id}/ai_reply/`, {})); }
+    try { setAi(await api.post<any>(`/api/conversations/${id}/ai_reply/`, { mode: aiMode, hint: aiHint.trim() })); }
     catch { setAi(null); }
     setAiLoad(false);
   }
@@ -678,6 +680,20 @@ export default function Inbox() {
           <div style={{ flex: 1 }} />
           {active && <button className="btn" style={{ fontSize: 12, padding: "3px 10px" }} onClick={() => analyzeAI(active.id)} disabled={aiLoad}>{aiLoad ? "…" : <><Icon n="refresh" size={14} /> {t("Обновить","Оновити")}</>}</button>}
         </div>
+        {active && (
+          <div style={{ padding: "0 12px 8px" }}>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
+              {([["", t("Сам вирішить","Сам вирішить")], ["dozhim", t("Дожим","Дожим")], ["objection", t("Возражение","Заперечення")], ["calc", t("Просчёт","Прорахунок")], ["close", t("Закрытие","Закриття")], ["negative", t("Негатив","Негатив")], ["first", t("Первый контакт","Перший контакт")]] as [string,string][]).map(([k, lbl]) => (
+                <button key={k} onClick={() => setAiMode(k)} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 12, cursor: "pointer", border: "1px solid " + (aiMode === k ? "var(--brand)" : "#e2e8f0"), background: aiMode === k ? "var(--brand)" : "#fff", color: aiMode === k ? "#fff" : "#64748b", fontWeight: aiMode === k ? 700 : 500 }}>{lbl}</button>
+              ))}
+            </div>
+            <input value={aiHint} onChange={(e) => setAiHint(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && active) analyzeAI(active.id); }}
+              placeholder={t("Подсказка ИИ-РОПу: что учесть…","Підказка ІІ-РОПу: що врахувати…")}
+              title={t("Напиши свою мысль — ИИ учтёт её в первую очередь. Enter — обновить подсказку.","Напиши свою думку — ІІ врахує її в першу чергу. Enter — оновити підказку.")}
+              style={{ width: "100%", boxSizing: "border-box", height: 30, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 8px" }} />
+          </div>
+        )}
         <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
           {!active ? (
             <div className="muted" style={{ fontSize: 13 }}>{t("Выбери диалог — AI-РОП подскажет тезисы и ответ.","Обери діалог — AI-РОП підкаже тези й відповідь.")}</div>

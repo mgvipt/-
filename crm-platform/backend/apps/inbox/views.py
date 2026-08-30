@@ -1060,12 +1060,40 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         from apps.crm.coach_prompt import COACH_SYSTEM
 
         conv = self.get_object()
-        msgs = list(conv.messages.order_by("id").values("direction", "text"))[-30:]
+        msgs = list(conv.messages.order_by("id").values("direction", "text", "created_at"))[-30:]
         dialog = "\n".join(
             ("Клієнт: " if m["direction"] == "in" else "Менеджер/AI: ") + (m["text"] or "")
             for m in msgs if m.get("text"))
+        # ОСТАННЄ повідомлення КЛІЄНТА окремо — головне, на що треба реагувати.
+        # Було: РОП брав діалог «загалом» і ігнорував свіже «дякую, я ще подумаю»
+        # → радив ще раз прорахунок замість дожиму (Олег 30.08).
+        _last_in = next((m for m in reversed(msgs) if m["direction"] == "in" and (m.get("text") or "").strip()), None)
+        _last_txt = (_last_in.get("text") or "").strip() if _last_in else ""
+        _mins = ""
+        if _last_in and _last_in.get("created_at"):
+            from django.utils import timezone as _tz
+            _mins = " (%d хв тому)" % max(0, int((_tz.now() - _last_in["created_at"]).total_seconds() // 60))
+        # Режим і підказка від менеджера — ПРІОРИТЕТ над власними висновками ІІ
+        _MODES = {
+            "dozhim": "ДОЖИМ: клієнт зупинився/думає — мʼяко повернути до рішення, дати конкретний наступний крок, БЕЗ нового прайс-дампу.",
+            "objection": "ЗАПЕРЕЧЕННЯ: відпрацювати конкретне заперечення клієнта (дорого/подумаю/сам не зроблю/не впевнений у кольорі).",
+            "calc": "ПРОРАХУНОК: дати чіткий кошторис цифрами по його площі/матеріалу.",
+            "close": "ЗАКРИТТЯ: клієнт готовий — підтвердити, оформити замовлення, реквізити/посилання на оплату.",
+            "negative": "НЕГАТИВ: клієнт незадоволений — спершу зняти напругу, без виправдань, потім рішення.",
+            "first": "ПЕРШИЙ КОНТАКТ: зацікавити, витягнути 1-2 параметри (приміщення/площа), без допиту.",
+        }
+        _mode = str(request.data.get("mode") or "").strip()
+        _hint = str(request.data.get("hint") or "").strip()[:600]
+        _task = ""
+        if _mode and _MODES.get(_mode):
+            _task += "\n\n🎯 РЕЖИМ (обрав менеджер, ПРІОРИТЕТ): " + _MODES[_mode]
+        if _hint:
+            _task += "\n\n📝 НАВІДНА ДУМКА ВІД МЕНЕДЖЕРА (ВРАХУЙ ОБОВʼЯЗКОВО): " + _hint
         prompt = (
             "Клієнт: %s\nКанал: %s\n\nПереписка:\n%s\n\n"
+            "❗ ОСТАННЄ ПОВІДОМЛЕННЯ КЛІЄНТА%s: «%s»\n"
+            "Твоя відповідь МУСИТЬ реагувати САМЕ на нього. Якщо клієнт сказав «подумаю»/«дякую»/замовк — "
+            "це НЕ привід повторювати прорахунок: потрібен мʼякий дожим або відпрацювання заперечення.%s\n\n"
             "Поверни СТРОГО JSON без пояснень: "
             '{"context": "1 коротке речення-підсумок", '
             '"points": ["3-6 коротких тез: на якому етапі клієнт, що хоче, площа/матеріал/бюджет якщо згадані, '
@@ -1073,7 +1101,8 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             '"suggestion": "готова відповідь клієнту ТІЄЮ Ж мовою, що й він — по суті, з наступним кроком до продажу"}'
         ) % (str(conv.contact) if conv.contact_id else "невідомий",
              conv.channel.name if conv.channel_id else "-",
-             dialog or "(переписки ще немає)")
+             dialog or "(переписки ще немає)",
+             _mins, _last_txt or "(клієнт ще не писав)", _task)
         try:
             return Response(claude_json(prompt, max_tokens=1200, system=COACH_SYSTEM,
                                         cache=True, source="AI-РОП підказка в чаті"))
