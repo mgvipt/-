@@ -307,6 +307,17 @@ def _get_or_make_contact(kind, sender_id, name="", username=""):
     fn = ((parts[0] if parts else "") or username or kind)[:120]
     ln = (parts[1] if len(parts) > 1 else "")[:120]
     link = f"https://instagram.com/{username}" if kind == "instagram" and username else ""
+    # ДЕДУП по ТОЧНОМУ IG-профілю (Олег 30.08): Meta шукає клієнта по IGSID і НЕ бачить
+    # контакт, створений через ChatPlace (інший ID) → плодить дубль. Якщо вже є контакт із
+    # ЦИМ ЖЕ профілем (точний social_link АБО нік) — беремо його, діалог привʼяжеться до нього.
+    # ТІЛЬКИ точний збіг нік/URL (НЕ по імені — склейка людей по імені заборонена). Гроші не чіпаємо.
+    if link and username:
+        # ТІЛЬКИ точний IG-URL (social_link). НЕ по нику/імені — нік може бути іменем
+        # (людмила/оксана) → різні люди склеяться. IG-URL унікальний.
+        existing = (Contact.objects.filter(social_link__iexact=link)
+                    .exclude(social_link="").order_by("id").first())
+        if existing:
+            return existing
     return Contact.objects.create(
         first_name=fn, last_name=ln, nickname=username,
         channels=[kind] if kind else [], social_link=link,
