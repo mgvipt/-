@@ -211,18 +211,30 @@ def _resolve_chatplace_chat_id(conv):
             # 3) клієнт лише з @ніком (Meta не дав реального імені) — chats_list НЕ віддає
             # username, а chats_get — віддає. Клієнт активний → його чат зверху списку:
             # перевіряємо ТОП-10 свіжих чатів через chats_get і матчимо по @ніку.
+            # 30.08: було ТІЛЬКИ 10 чатів → клієнти глибше не знаходились і менеджер бачив
+            # «пряма відповідь через Meta неможлива» (кейс @natali__21_07__).
+            # Тепер будуємо ІНДЕКС нік→chat_id по 60 свіжих чатах і кешуємо на 10 хв:
+            # один скан обслуговує ВСІ діалоги, ChatPlace не перевантажуємо.
             if nick:
-                for it in (items or [])[:10]:
-                    cid = it.get("id")
-                    if not cid:
-                        continue
-                    try:
-                        g = _mcp("chats_get", {"chatId": str(cid)})
-                        un = str((g or {}).get("username") or "").strip().lstrip("@").lower()
-                        if un and un == nick:
-                            return str(cid)
-                    except Exception:
-                        break  # ChatPlace лагає/бан — не довбимо далі
+                from django.core.cache import cache as _cache
+                idx = _cache.get("cp_handle_idx")
+                if idx is None:
+                    idx = {}
+                    for it in (items or [])[:60]:
+                        cid = it.get("id")
+                        if not cid:
+                            continue
+                        try:
+                            g = _mcp("chats_get", {"chatId": str(cid)})
+                            un = str((g or {}).get("username") or "").strip().lstrip("@").lower()
+                            if un:
+                                idx[un] = str(cid)
+                        except Exception:
+                            break  # ChatPlace лагає/бан — зберігаємо що встигли
+                    _cache.set("cp_handle_idx", idx, 600)
+                hit = idx.get(nick)
+                if hit:
+                    return hit
         return ""
     except Exception:
         return ""
