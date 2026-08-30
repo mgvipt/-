@@ -1373,10 +1373,12 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         if not area or area <= 0:
             return Response({"detail": "Спочатку вкажіть площу стін (м²)."}, status=status.HTTP_400_BAD_REQUEST)
         changed = 0
+        with_consumption = 0
         for it in deal.items.select_related("product").all():
             c = getattr(it.product, "consumption_per_m2", None) if it.product_id else None
             if not c or c <= 0:
                 continue
+            with_consumption += 1
             qty = (_Dq(str(area)) * _Dq(str(c))).quantize(_Dq("0.01"))
             if qty <= 0 or qty == it.quantity:
                 continue
@@ -1385,7 +1387,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             it.save(update_fields=["quantity", "cost"])
             changed += 1
         self._recalc_amount(deal)
-        return Response({"ok": True, "changed": changed,
+        return Response({"ok": True, "changed": changed, "with_consumption": with_consumption,
                          "deal": DealDetailSerializer(deal, context={"request": request}).data})
 
     @action(detail=True, methods=["post"])

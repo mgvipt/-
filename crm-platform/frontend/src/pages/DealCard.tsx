@@ -367,7 +367,9 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     try {
       const r = await api.post<any>(`/api/deals/${id}/recalc_by_area/`, {});
       if (r?.deal) setDeal(r.deal);
-      flash(r?.changed ? t("✓ Пересчитано позиций: " + r.changed, "✓ Перераховано позицій: " + r.changed) : t("Нет позиций с расходом на м²", "Немає позицій з витратою на м²"));
+      if (r?.changed) flash(t("✓ Пересчитано позиций: " + r.changed, "✓ Перераховано позицій: " + r.changed));
+      else if (r?.with_consumption) flash(t("✓ Количества уже верные (площадь × расход)", "✓ Кількості вже правильні (площа × витрата)"));
+      else flash(t("Ни у одного товара не заполнен «Расход на 1 м²» — впишите его в карточке товара", "У жодного товару не заповнено «Витрата на 1 м²» — впишіть її в картці товару"));
     } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось пересчитать","Не вдалося перерахувати")); }
   }
   async function saveArea() {
