@@ -584,6 +584,28 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         ser = self.get_serializer(objs, many=True)
         return self.get_paginated_response(ser.data) if page is not None else Response(ser.data)
 
+    @action(detail=True, methods=["get"])
+    def ad_context(self, request, pk=None):
+        """Контент, з якого прийшов клієнт (реклама/рілс/пост) — з атрибуції ліда контакту.
+        Тільки читання вже збережених даних (ad_title/ad_thumb/content_id). ChatPlace не чіпає."""
+        conv = self.get_object()
+        if not conv.contact_id:
+            return Response({})
+        from apps.crm.models import Lead
+        for l in (Lead.objects.filter(contact_id=conv.contact_id)
+                  .exclude(meta_attribution={}).exclude(meta_attribution__isnull=True)
+                  .order_by("-id")[:8]):
+            a = l.meta_attribution or {}
+            if a.get("source_kind") == "paid_ad" and (a.get("ad_title") or a.get("ad_thumb")):
+                return Response({
+                    "ad_title": a.get("ad_title") or "",
+                    "ad_thumb": a.get("ad_thumb") or "",
+                    "content_id": a.get("content_id") or "",
+                    "ad_id": a.get("ad_id") or "",
+                    "campaign_name": a.get("campaign_name") or "",
+                })
+        return Response({})
+
     @action(detail=False, methods=["post"])
     def bulk_close(self, request):
         """Масово завершити вибрані діалоги (тільки ті, що видно користувачу)."""

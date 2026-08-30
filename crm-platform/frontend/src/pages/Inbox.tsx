@@ -42,6 +42,7 @@ export default function Inbox() {
   };
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [siblings, setSiblings] = useState<Conversation[]>([]); // інші діалоги того ж клієнта (інші канали)
+  const [adCtx, setAdCtx] = useState<any>(null);  // контент реклами, з якого прийшов клієнт
   const [text, setText] = useState("");
   const [correctionTarget, setCorrectionTarget] = useState<{ id: number; text: string } | null>(null);
   const [sending, setSending] = useState(false);
@@ -196,7 +197,8 @@ export default function Inbox() {
   }
 
   async function openConv(c: Conversation) {
-    setActive(c); setErr(""); setAi(null); setCorrectionTarget(null);
+    setActive(c); setErr(""); setAi(null); setCorrectionTarget(null); setAdCtx(null);
+    api.get<any>(`/api/conversations/${c.id}/ad_context/`).then((a) => setAdCtx(a && (a.ad_title || a.ad_thumb) ? a : null)).catch(() => setAdCtx(null));
     const m = await api.get<ChatMessage[]>(`/api/conversations/${c.id}/messages/?seen=1`);
     setMsgs(m);
     setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, unread: 0 } : x)));
@@ -563,6 +565,16 @@ export default function Inbox() {
             )}
             <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
               <ConversationSourceCard card={(active as any)?.source_card} />
+              {adCtx && (adCtx.ad_title || adCtx.ad_thumb) && (
+                <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 10px", marginBottom: 8, border: "1px solid #fde68a", background: "#fffbeb", borderRadius: 10, flex: "none" }}>
+                  {adCtx.ad_thumb && <img src={adCtx.ad_thumb} alt="" style={{ width: 46, height: 46, borderRadius: 8, objectFit: "cover", flex: "none" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 11, color: "#92400e", fontWeight: 700 }}>🎯 {t("Пришёл с рекламы", "Прийшов з реклами")}</div>
+                    <div style={{ fontSize: 12.5, color: "#78350f", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={adCtx.ad_title || adCtx.campaign_name || ""}>{adCtx.ad_title || adCtx.campaign_name || ""}</div>
+                  </div>
+                  {adCtx.ad_thumb && <a href={adCtx.ad_thumb} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: "#1d4ed8", flex: "none", whiteSpace: "nowrap" }}>{t("открыть креатив", "відкрити креатив")}</a>}
+                </div>
+              )}
               {msgs.map((m, i) => (
                 <Fragment key={m.id}>
                 {(i === 0 || new Date((m as any).created_at).toDateString() !== new Date((msgs[i - 1] as any).created_at).toDateString()) && <div style={{ position: "sticky", top: 2, zIndex: 3, textAlign: "center", margin: "8px 0 6px", pointerEvents: "none" }}><span style={{ fontSize: 11, fontWeight: 700, color: "#475569", background: "#e2e8f0", borderRadius: 20, padding: "3px 13px", boxShadow: "0 1px 4px rgba(0,0,0,.14)" }}>{dayLabel((m as any).created_at, t)}</span></div>}
