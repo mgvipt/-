@@ -206,7 +206,11 @@ body.fx-neon .logo b{background:linear-gradient(90deg,var(--fx2),var(--brand));-
 
 @keyframes drawerSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
 @keyframes drawerBgIn { from { opacity: 0; } to { opacity: 1; } }
-.deal-drawer { animation: drawerSlideIn .26s cubic-bezier(.22,.61,.36,1); will-change: transform; }
+/* will-change: transform ПРИБРАНО (Олег 30.08): браузер тримав панель в окремому шарі
+   постійно → текст картки сделки виглядав розмитим («не у фокусі»), у чаті такого не було.
+   Анімація виїзду лишається; після неї шар знімається і текст чіткий. */
+.deal-drawer { animation: drawerSlideIn .26s cubic-bezier(.22,.61,.36,1); }
+.deal-drawer, .deal-drawer * { -webkit-font-smoothing: auto; text-rendering: optimizeLegibility; }
 .deal-drawer-bg { animation: drawerBgIn .2s ease; }
 
 /* журнал: контент не вилазить за межі колонок (fixed layout) */
