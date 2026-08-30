@@ -311,11 +311,15 @@ def _get_or_make_contact(kind, sender_id, name="", username=""):
     # контакт, створений через ChatPlace (інший ID) → плодить дубль. Якщо вже є контакт із
     # ЦИМ ЖЕ профілем (точний social_link АБО нік) — беремо його, діалог привʼяжеться до нього.
     # ТІЛЬКИ точний збіг нік/URL (НЕ по імені — склейка людей по імені заборонена). Гроші не чіпаємо.
-    if link and username:
-        # ТІЛЬКИ точний IG-URL (social_link). НЕ по нику/імені — нік може бути іменем
-        # (людмила/оксана) → різні люди склеяться. IG-URL унікальний.
-        existing = (Contact.objects.filter(social_link__iexact=link)
-                    .exclude(social_link="").order_by("id").first())
+    if kind == "instagram" and username:
+        # Матч по IG-ніку: посилання ЗАКІНЧУЄТЬСЯ на /<нік> (будь-який формат URL) АБО
+        # точний nickname == нік. Нік IG унікальний (ASCII). НЕ по імені (різні люди
+        # з одним іменем НЕ склеюються). Беремо найстаріший (keeper з історією).
+        from django.db.models import Q as _Qdd
+        _u = username.lower()
+        existing = (Contact.objects.filter(
+                        _Qdd(social_link__iendswith="/%s" % _u) | _Qdd(nickname__iexact=username))
+                    .order_by("id").first())
         if existing:
             return existing
     return Contact.objects.create(
