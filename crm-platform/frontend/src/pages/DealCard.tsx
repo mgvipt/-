@@ -374,7 +374,15 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     const v = areaInput.trim() === "" ? null : Number(areaInput);
     if (v !== null && (isNaN(v) || v < 0)) return;
     if (String((deal as any)?.area_m2 ?? "") === String(v ?? "")) return;
-    try { setDeal(await api.patch<Deal>(`/api/deals/${id}/`, { area_m2: v })); } catch { /* ignore */ }
+    try {
+      await api.patch<Deal>(`/api/deals/${id}/`, { area_m2: v });
+      // Змінив площу → одразу перераховуємо кількість і суму (як калькулятор, без зайвих кнопок)
+      if (v) {
+        const r = await api.post<any>(`/api/deals/${id}/recalc_by_area/`, {});
+        if (r?.deal) { setDeal(r.deal); return; }
+      }
+      setDeal(await api.get<Deal>(`/api/deals/${id}/`));
+    } catch { /* ignore */ }
   }
   // Авто-кількість: якщо у товару є витрата на м² і в сделці вказана площа —
   // кількість = площа × витрата (менеджер може виправити перед додаванням).
