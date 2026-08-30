@@ -59,7 +59,7 @@ export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal:
       <td style="border:1px solid #333;padding:4px;text-align:center">${i + 1}</td>
       <td style="border:1px solid #333;padding:4px">${(it.product_name || "").replace(/</g, "&lt;")}</td>
       <td style="border:1px solid #333;padding:4px;text-align:center">${Number(it.quantity)}</td>
-      <td style="border:1px solid #333;padding:4px;text-align:center">шт</td>
+      <td style="border:1px solid #333;padding:4px;text-align:center">${(it as any).unit || "шт"}</td>
       <td style="border:1px solid #333;padding:4px;text-align:right">${money(Number(it.price))}</td>
       <td style="border:1px solid #333;padding:4px;text-align:right">${money(Number(it.total))}</td>
     </tr>`).join("");
@@ -143,7 +143,7 @@ export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal:
   async function excel() {
     const ExcelJS = (window as any).ExcelJS;
     if (!ExcelJS) {   // fallback: простий .xls (HTML) якщо бібліотека не завантажилась
-      const rows = items.map((it: any, i: number) => `<tr><td>${i + 1}</td><td>${it.product_name}</td><td>${Number(it.quantity)}</td><td>шт</td><td>${Number(it.price)}</td><td>${Number(it.total)}</td></tr>`).join("");
+      const rows = items.map((it: any, i: number) => `<tr><td>${i + 1}</td><td>${it.product_name}</td><td>${Number(it.quantity)}</td><td>${(it as any).unit || "шт"}</td><td>${Number(it.price)}</td><td>${Number(it.total)}</td></tr>`).join("");
       const html = `<table border="1"><tr><th>№</th><th>Товар</th><th>Кіл-сть</th><th>Од</th><th>Ціна</th><th>Сума</th></tr>${rows}</table>`;
       const blob = new Blob(["﻿" + html], { type: "application/vnd.ms-excel" });
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `KP_Decor_${deal.id}.xls`; a.click();
@@ -213,7 +213,7 @@ export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal:
     // ── Рядки товарів (з рамками) ──
     let row = HR + 1;
     items.forEach((it: any, i: number) => {
-      const vals: any[] = [i + 1, it.product_name, Number(it.quantity), "шт", Number(it.price), Number(it.total)];
+      const vals: any[] = [i + 1, it.product_name, Number(it.quantity), (it as any).unit || "шт", Number(it.price), Number(it.total)];
       vals.forEach((v, ci) => {
         const c = ws.getCell(row, ci + 1);
         c.value = v; c.border = box;

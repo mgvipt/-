@@ -363,6 +363,13 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     catch { flash(t("Сначала добавьте товары","Спершу додайте товари")); }
   }
   useEffect(() => { setAreaInput((deal as any)?.area_m2 != null ? String((deal as any).area_m2) : ""); }, [deal?.id, (deal as any)?.area_m2]);
+  async function recalcByArea() {
+    try {
+      const r = await api.post<any>(`/api/deals/${id}/recalc_by_area/`, {});
+      if (r?.deal) setDeal(r.deal);
+      flash(r?.changed ? t("✓ Пересчитано позиций: " + r.changed, "✓ Перераховано позицій: " + r.changed) : t("Нет позиций с расходом на м²", "Немає позицій з витратою на м²"));
+    } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось пересчитать","Не вдалося перерахувати")); }
+  }
   async function saveArea() {
     const v = areaInput.trim() === "" ? null : Number(areaInput);
     if (v !== null && (isNaN(v) || v < 0)) return;
@@ -1012,12 +1019,13 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   onBlur={saveArea} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                   placeholder={t("напр. 11","напр. 11")} style={{ width: 92, height: 30, border: "1px solid #7dd3fc", borderRadius: 7, padding: "0 8px", fontWeight: 600 }} />
                 <span style={{ fontSize: 12, color: "#0369a1" }}>м²</span>
-                <span style={{ fontSize: 11.5, color: "#64748b" }}>{t("— количество материала считается само (площадь × расход из карточки товара)","— кількість матеріалу рахується сама (площа × витрата з картки товару)")}</span>
+                <button className="btn" style={{ height: 28, fontSize: 12 }} onClick={recalcByArea} title={t("Пересчитать количество уже добавленных материалов по площади","Перерахувати кількість уже доданих матеріалів по площі")}>↻ {t("Пересчитать позиции","Перерахувати позиції")}</button>
+                <span style={{ fontSize: 11.5, color: "#64748b" }}>{t("— количество считается само (площадь × расход из карточки товара)","— кількість рахується сама (площа × витрата з картки товару)")}</span>
               </div>
               <div className="prod-search" style={{ position: "relative", margin: "8px 0 12px" }}>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                   <input value={psearch} onChange={(e) => { setPsearch(e.target.value); setPsel(null); }} placeholder={t("🔍 Поиск товара из номенклатуры по названию…","🔍 Пошук товару з номенклатури за назвою…")} style={{ flex: "1 1 200px", minWidth: 0, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px" }} />
-                  <input type="number" value={addQty} min={1} onChange={(e) => setAddQty(Number(e.target.value))} title={t("Количество","Кількість")} style={{ width: 56, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px" }} />
+                  <input type="number" step="0.01" value={addQty} min={0.01} onChange={(e) => setAddQty(Number(e.target.value))} title={t("Количество","Кількість")} style={{ width: 56, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px" }} />
                   <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, whiteSpace: "nowrap" }} title={t("Зарезервировать товар под сделку","Зарезервувати товар під угоду")}><input type="checkbox" checked={addReserve} onChange={(e) => setAddReserve(e.target.checked)} />{t("Резерв","Резерв")}</label>
                   <button className="btn btn-primary" onClick={() => addItem()} disabled={!psel}>{t("Добавить","Додати")}</button>
                   <button className="btn" onClick={() => setShowList((s) => !s)} title={t("Показать весь список товаров (двойной клик — добавить)","Показати весь список товарів (подвійний клік — додати)")}>{showList ? <>{t("✕ Список","✕ Список")}</> : <><Icon n="📋" size={14} /> {t("Список","Список")}</>}</button>
@@ -1029,7 +1037,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 {presults.length > 0 && (
                   <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 260, overflowY: "auto" }}>
                     {presults.map((p) => (
-                      <div key={p.id} onClick={() => { setPsel(p); setPsearch(p.name); setPresults([]); }} onDoubleClick={() => addItem(p)} title={t("Клик — выбрать, двойной клик — сразу добавить","Клік — обрати, подвійний клік — одразу додати")} style={{ padding: "8px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13, display: "flex", alignItems: "flex-start", gap: 8 }}>
+                      <div key={p.id} onClick={() => { setPsel(p); setPsearch(p.name); setPresults([]); const _q = autoQty(p); if (_q) setAddQty(_q); }} onDoubleClick={() => addItem(p)} title={t("Клик — выбрать, двойной клик — сразу добавить","Клік — обрати, подвійний клік — одразу додати")} style={{ padding: "8px 10px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontSize: 13, display: "flex", alignItems: "flex-start", gap: 8 }}>
                         <b style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{p.name}</b>
                         <span style={{ width: 78, textAlign: "right", flexShrink: 0, fontWeight: 600, whiteSpace: "nowrap" }}>{fmt(Number(p.price))} ₴</span>
                         <span style={{ width: 86, textAlign: "right", flexShrink: 0, whiteSpace: "nowrap", fontSize: 12.5, color: Number((p as any).stock) < 0 ? "#dc2626" : Number((p as any).stock) > 0 ? "#16a34a" : "#94a3b8" }}>{t("ост.","зал.")} {(p as any).stock}</span>

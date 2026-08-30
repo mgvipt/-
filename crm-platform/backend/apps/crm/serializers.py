@@ -5,7 +5,12 @@ from .models import Company, Contact, Funnel, Stage, Lead, Deal, DealItem, Payme
 class DealItemSerializer(serializers.ModelSerializer):
     product_name = serializers.SerializerMethodField()
     product_stock = serializers.SerializerMethodField()
+    unit = serializers.SerializerMethodField()
     total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+
+    def get_unit(self, obj):
+        """Одиниця виміру З НОМЕНКЛАТУРИ (щоб у накладній було те саме, що в картці товару)."""
+        return (getattr(obj.product, "unit", "") or "шт") if obj.product_id else "шт"
 
     def get_product_name(self, obj):
         if obj.product_id:
@@ -20,7 +25,7 @@ class DealItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DealItem
-        fields = ["id", "deal", "product", "custom_name", "product_name", "product_stock", "quantity", "price", "cost", "discount_pct", "discount_amount", "discount_sum", "total", "reserved"]
+        fields = ["unit", "id", "deal", "product", "custom_name", "product_name", "product_stock", "quantity", "price", "cost", "discount_pct", "discount_amount", "discount_sum", "total", "reserved"]
         read_only_fields = ["deal"]
 
 

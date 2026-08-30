@@ -1358,6 +1358,37 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         return None
 
     @action(detail=True, methods=["post"])
+    def recalc_by_area(self, request, pk=None):
+        """Перерахувати кількість позицій по площі сделки: qty = площа × витрата товару.
+        Чіпає ТІЛЬКИ позиції, у яких товар має заповнену витрату на м²."""
+        from decimal import Decimal as _Dq
+        deal = self.get_object()
+        g = self._guard(deal)
+        if g:
+            return g
+        g2 = self._fiscal_lock(deal)
+        if g2:
+            return g2
+        area = deal.area_m2
+        if not area or area <= 0:
+            return Response({"detail": "Спочатку вкажіть площу стін (м²)."}, status=status.HTTP_400_BAD_REQUEST)
+        changed = 0
+        for it in deal.items.select_related("product").all():
+            c = getattr(it.product, "consumption_per_m2", None) if it.product_id else None
+            if not c or c <= 0:
+                continue
+            qty = (_Dq(str(area)) * _Dq(str(c))).quantize(_Dq("0.01"))
+            if qty <= 0 or qty == it.quantity:
+                continue
+            it.quantity = qty
+            it.cost = _deal_item_cost(it.product, it.price, qty)
+            it.save(update_fields=["quantity", "cost"])
+            changed += 1
+        self._recalc_amount(deal)
+        return Response({"ok": True, "changed": changed,
+                         "deal": DealDetailSerializer(deal, context={"request": request}).data})
+
+    @action(detail=True, methods=["post"])
     def add_item(self, request, pk=None):
         deal = self.get_object()
         g = self._guard(deal)
