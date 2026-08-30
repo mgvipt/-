@@ -202,7 +202,7 @@ class DealSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Deal
-        fields = ["id", "title", "contact", "contact_name", "contact_social_link", "contact_phone", "funnel", "funnel_name", "stage",
+        fields = ["area_m2", "id", "title", "contact", "contact_name", "contact_social_link", "contact_phone", "funnel", "funnel_name", "stage",
                   "source", "amount", "discount_pct", "pay_type", "ttn", "checkbox_status", "checkbox_url", "checkbox_relation_id", "parent_deal", "parent_deal_title",
                   "qualification", "card_fields", "meta_attribution", "meta_ad", "owner", "owner_name", "closed_at", "is_seen",
                   "created_at", "updated_at"]

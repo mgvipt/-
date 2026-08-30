@@ -211,6 +211,8 @@ class Deal(TimestampedOwned):
         default=dict, blank=True,
         help_text="Перевірена рекламна атрибуція Meta, перенесена з ліда",
     )
+    area_m2 = models.DecimalField("Площа, м²", max_digits=10, decimal_places=2, null=True, blank=True,
+                                  help_text="Площа стін для авто-розрахунку кількості матеріалу")
 
     class Meta:
         ordering = ["-created_at"]

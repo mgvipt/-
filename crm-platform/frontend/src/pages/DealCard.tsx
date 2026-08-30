@@ -213,6 +213,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [gearOpen, setGearOpen] = useState(false);
   const gItem: any = { display: "flex", alignItems: "center", gap: 8, padding: "9px 13px", fontSize: 13.5, cursor: "pointer", borderBottom: "1px solid #f6f8fb" };
   const [deal, setDeal] = useState<Deal | null>(null);
+  const [areaInput, setAreaInput] = useState<string>("");
   const [discMode, setDiscMode] = useState<Record<number, "pct" | "amt">>({});   // режим скидки на позицию: % или ₴
   const { t } = useLang();
   const [chatW, setChatW] = useState(() => Number(localStorage.getItem("crm_card_chatW")) || 360);
@@ -361,11 +362,27 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     try { const d = await api.post<any>(`/api/deals/${id}/confirm_items/`, {}); setDeal(d); flash(t("✓ Список сохранён · стадия → Розрахунок здійснено","✓ Список збережено · стадія → Розрахунок здійснено")); }
     catch { flash(t("Сначала добавьте товары","Спершу додайте товари")); }
   }
+  useEffect(() => { setAreaInput((deal as any)?.area_m2 != null ? String((deal as any).area_m2) : ""); }, [deal?.id, (deal as any)?.area_m2]);
+  async function saveArea() {
+    const v = areaInput.trim() === "" ? null : Number(areaInput);
+    if (v !== null && (isNaN(v) || v < 0)) return;
+    if (String((deal as any)?.area_m2 ?? "") === String(v ?? "")) return;
+    try { setDeal(await api.patch<Deal>(`/api/deals/${id}/`, { area_m2: v })); } catch { /* ignore */ }
+  }
+  // Авто-кількість: якщо у товару є витрата на м² і в сделці вказана площа —
+  // кількість = площа × витрата (менеджер може виправити перед додаванням).
+  function autoQty(p: any): number | null {
+    const c = Number(p?.consumption_per_m2 || 0);
+    const a = Number((deal as any)?.area_m2 || 0);
+    if (!c || !a) return null;
+    return Math.round(c * a * 100) / 100;
+  }
   async function addItem(prod?: Product) {
     const p = prod && (prod as any).id ? prod : psel;   // двойной клик передаёт товар напрямую, иначе берём выбранный
     if (!p) return;
     try {
-      setDeal(await api.post<Deal>(`/api/deals/${id}/add_item/`, { product: p.id, quantity: addQty, reserved: addReserve }));
+      const _aq = autoQty(p);
+      setDeal(await api.post<Deal>(`/api/deals/${id}/add_item/`, { product: p.id, quantity: (_aq && Number(addQty) === 1 ? _aq : addQty), reserved: addReserve }));
       setPsel(null); setPsearch(""); setPresults([]); setAddQty(1); setAddReserve(false);
     } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось добавить товар","Не вдалося додати товар")); }
   }
@@ -987,6 +1004,15 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
               <div className="label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span>{t("Товары в сделке","Товари в угоді")}</span>
                 <button className="btn" onClick={() => setDocOpen(true)} title={t("Сформировать документ КП","Сформувати документ КП")}><Icon n="📄" size={14} /> {t("Документ","Документ")}</button>
+              </div>
+              {/* Площа стін: якщо вказана — кількість матеріалу рахується сама (площа × витрата товару) */}
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "7px 10px", margin: "8px 0 4px" }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#0369a1" }}>📐 {t("Площадь стен","Площа стін")}</span>
+                <input type="number" step="0.01" value={areaInput} onChange={(e) => setAreaInput(e.target.value)}
+                  onBlur={saveArea} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                  placeholder={t("напр. 11","напр. 11")} style={{ width: 92, height: 30, border: "1px solid #7dd3fc", borderRadius: 7, padding: "0 8px", fontWeight: 600 }} />
+                <span style={{ fontSize: 12, color: "#0369a1" }}>м²</span>
+                <span style={{ fontSize: 11.5, color: "#64748b" }}>{t("— количество материала считается само (площадь × расход из карточки товара)","— кількість матеріалу рахується сама (площа × витрата з картки товару)")}</span>
               </div>
               <div className="prod-search" style={{ position: "relative", margin: "8px 0 12px" }}>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
