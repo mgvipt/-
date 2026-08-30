@@ -19,7 +19,7 @@ def _library_item_data(request, item):
     if not url and item.file_id:
         url = request.build_absolute_uri("/api/f/%s/" % item.file.token)
     return {"id": item.id, "title": item.title, "kind": item.kind, "section": item.section,
-            "color_code": item.color_code, "tags": item.tags, "url": url, "sort": item.sort}
+            "material": item.material, "color_code": item.color_code, "tags": item.tags, "url": url, "sort": item.sort}
 
 
 class MediaLibraryView(APIView):
@@ -50,6 +50,7 @@ class MediaLibraryView(APIView):
                 title=(request.data.get("title") or request.data.get("filename") or "Матеріал")[:160],
                 kind=request.data.get("kind") if request.data.get("kind") in ("image", "video", "catalog") else "image",
                 section=request.data.get("section") if request.data.get("section") in ("colors", "quick") else "quick",
+                material=(request.data.get("material") or "Мокрий шовк")[:100],
                 color_code=(request.data.get("color_code") or "")[:48], tags=(request.data.get("tags") or "")[:240],
                 public_url=(request.data.get("public_url") or "")[:200], file=file,
             )
@@ -67,9 +68,11 @@ class MediaLibraryView(APIView):
             item = MediaLibraryItem.objects.filter(id=request.data.get("id")).first()
             if not item:
                 return Response({"detail": "Матеріал не знайдено"}, status=status.HTTP_404_NOT_FOUND)
-            for field, limit in (("title", 160), ("color_code", 48), ("tags", 240)):
+            for field, limit in (("title", 160), ("material", 100), ("color_code", 48), ("tags", 240)):
                 if field in request.data:
                     setattr(item, field, str(request.data.get(field) or "")[:limit])
+            if request.data.get("section") in ("colors", "quick"):
+                item.section = request.data["section"]
             item.save()
             return Response(_library_item_data(request, item))
         if action_name == "delete_reply":

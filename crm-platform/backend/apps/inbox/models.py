@@ -121,6 +121,7 @@ class MediaLibraryItem(models.Model):
     title = models.CharField(max_length=160)
     kind = models.CharField(max_length=16, choices=KIND, default="image")
     section = models.CharField(max_length=16, choices=SECTION, default="quick")
+    material = models.CharField(max_length=100, default="Мокрий шовк", db_index=True)
     color_code = models.CharField(max_length=48, blank=True, db_index=True)
     tags = models.CharField(max_length=240, blank=True)
     file = models.ForeignKey(SharedLink, null=True, blank=True, on_delete=models.SET_NULL, related_name="library_items")
