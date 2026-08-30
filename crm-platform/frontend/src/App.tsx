@@ -21,6 +21,7 @@ import Settings from "./pages/Settings";
 import Analytics from "./pages/Analytics";
 import MetaMarketing from "./pages/MetaMarketing";
 import AiCosts from "./pages/AiCosts";
+import AiCenter from "./pages/AiCenter";
 import WhatsNew from "./pages/WhatsNew";
 import Phone from "./pages/Phone";
 import Employees from "./pages/Employees";
@@ -75,7 +76,7 @@ function Shell() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/marketing/meta" element={<MetaMarketing />} />
-          <Route path="/ai-costs" element={<AiCosts />} />
+          <Route path="/ai-costs" element={<AiCenter />} />
           <Route path="/whats-new" element={<WhatsNew />} />
           <Route path="*" element={<Navigate to="/leads" replace />} />
         </Route>
