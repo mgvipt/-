@@ -46,7 +46,14 @@ export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal:
   useEffect(() => { if (deal.contact_id) api.get<any>(`/api/contacts/${deal.contact_id}/`).then(setContact).catch(() => {}); }, [deal.contact_id]);
 
   const today = dateOverride || new Date().toLocaleDateString("uk-UA");
-  const items = deal.items || [];
+  // Порядок як у сделці: позиції згруповані по приміщеннях, загальні — в кінці
+  const items = [...(deal.items || [])].sort((a: any, b: any) => {
+    const ra = a.room || 0, rb = b.room || 0;
+    if (ra === rb) return a.id - b.id;
+    if (!ra) return 1;
+    if (!rb) return -1;
+    return ra - rb;
+  });
   // «По кімнатах»: за замовч. ВИМКНЕНО — однакові товари сумуються в один рядок (звичайна накладна).
   const [byRooms, setByRooms] = useState(false);
   const hasRooms = items.some((x: any) => (x.room_name || "").trim());
@@ -68,17 +75,6 @@ export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal:
     </tr>`;
   const _head = (title: string) => `
     <tr><td colspan="6" style="border:1px solid #333;padding:5px 6px;background:#f3f4f6;font-weight:bold">${title}</td></tr>`;
-  // ЗВИЧАЙНА накладна: однакові товари (та сама назва+ціна) склеюємо в один рядок
-  const _merged = (() => {
-    const map = new Map<string, any>();
-    for (const it of items as any[]) {
-      const k = (it.product_name || "") + "|" + Number(it.price);
-      const cur = map.get(k);
-      if (cur) { cur.quantity = Number(cur.quantity) + Number(it.quantity); cur.total = Number(cur.total) + Number(it.total); }
-      else map.set(k, { ...it, quantity: Number(it.quantity), total: Number(it.total) });
-    }
-    return [...map.values()];
-  })();
   const rowsHtml = (byRooms && hasRooms)
     ? (() => {
         const groups = new Map<string, any[]>();
@@ -97,7 +93,7 @@ export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal:
         if (gen.length) { out += _head("Загальні позиції"); for (const it of gen) out += _row(it, ++n); }
         return out;
       })()
-    : _merged.map((it: any, i: number) => _row(it, i + 1)).join("");
+    : (items as any[]).map((it: any, i: number) => _row(it, i + 1)).join("");
 
   const docHtml = `
   <div style="font-family:Arial,sans-serif;color:#111;max-width:720px;margin:0 auto;font-size:13px">
