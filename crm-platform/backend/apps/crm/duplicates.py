@@ -7,6 +7,8 @@
   ?q=      — пошук по номеру / прізвищу / email / ніку (шукає серед учасників групи)
   ?by=     — тільки групи, знайдені за критерієм: chat | phone | email | social | nick | name
   ?min=    — мінімальна «сила» збігу: скільки полів однакові у ВСІХ учасників групи (1..4)
+  ?dismissed=1 — показати навпаки ТІЛЬКИ приховані («це різні люди»), щоб можна було повернути
+ПОЗНАЧКА «ЦЕ РІЗНІ ЛЮДИ» (POST {"action": "dismiss"|"undismiss", "ids": [...], "reason": "..."})
 МАСОВЕ ОБ'ЄДНАННЯ (POST {"groups": [{"keep": id, "ids": [..]}, ...], "dry_run": true|false}).
 
 31.08.2026:
@@ -25,8 +27,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
+from django.db.models import Count
 from apps.inbox.models import Contact, Conversation
-from apps.crm.models import Lead, Deal
+from apps.crm.models import Lead, Deal, DuplicateDismissal
 
 # скільки груп максимум віддаємо на фронт / скільки груп максимум за один масовий мердж
 MAX_GROUPS = 1200
@@ -143,6 +146,11 @@ def _nick_is_reliable(nick, links):
     return bool(_NICK_MARKS.search(nick)) or any(l.endswith("/" + nick) for l in links)
 
 
+def _group_key(ids):
+    """Ключ групи для позначки «це різні люди» — ID карток через дефіс."""
+    return "-".join(str(i) for i in sorted(ids))
+
+
 def _full(i):
     return ((i.get("first_name") or "") + " " + (i.get("last_name") or "")).strip() or "—"
 
@@ -251,7 +259,9 @@ class DuplicatesView(APIView):
         except ValueError:
             min_strength = 0
         if typ == "contacts":
-            return Response(self._contacts(q=q, by=by, min_strength=min_strength))
+            return Response(self._contacts(q=q, by=by, min_strength=min_strength,
+                                           dismissed=request.query_params.get("dismissed") in ("1", "true"),
+                                           user=request.user))
         if typ == "leads":
             return Response(self._entity(Lead, "leads", q=q))
         if typ == "deals":
@@ -259,7 +269,7 @@ class DuplicatesView(APIView):
         return Response({"type": typ, "total": 0, "groups": []})
 
     # ── дублі контактів ──
-    def _contacts(self, q="", by="", min_strength=0):
+    def _contacts(self, q="", by="", min_strength=0, dismissed=False, user=None):
         rows = [r for r in Contact.objects.values(
             "id", "first_name", "last_name", "phone", "email",
             "social_link", "messengers", "links_extra", "nickname", "comment")
@@ -301,6 +311,14 @@ class DuplicatesView(APIView):
             if len(cids) > 1:
                 buckets["chat"][f"{ch}:{ext}"] = [idx[i] for i in cids if i in idx]
 
+        # головною пропонуємо картку, де Є СДЕЛКИ (там гроші та історія), а вже потім —
+        # де більше заповнених полів. Раніше рахували лише поля — і система пропонувала
+        # лишити порожню новішу картку замість тієї, де сделка (кейс MARGO 31.08).
+        deal_cnt = {}
+        for cid, n in Deal.objects.values_list("contact_id").annotate(n=Count("id")):
+            if cid:
+                deal_cnt[cid] = n
+
         # ── склеюємо однакові набори контактів: одна група = один набір id ──
         # (раніше та сама пара контактів показувалась 4 рази — по разу на критерій)
         cand = {}
@@ -313,12 +331,22 @@ class DuplicatesView(APIView):
                 e["by"].add(reason)
                 e["keys"][reason] = key
 
+        # приховані рішенням «це різні люди»
+        hidden = dict(DuplicateDismissal.objects.values_list("key", "reason"))
         labels = {"chat": "Номер переписки", "phone": "Телефон", "email": "Email",
                   "social": "Мессенджер/нік", "nick": "Нік з месенджера", "name": "Имя"}
         order = {"chat": 0, "phone": 1, "email": 2, "social": 3, "nick": 4, "name": 5}
         groups = []
+        n_hidden = 0
         for fs, e in cand.items():
             items = [idx[i] for i in sorted(fs)]
+            gkey = _group_key(fs)
+            is_hidden = gkey in hidden
+            if is_hidden:
+                n_hidden += 1
+            # звичайний режим — ховаємо позначені; ?dismissed=1 — показуємо ТІЛЬКИ їх
+            if is_hidden != bool(dismissed):
+                continue
             if q and not any(_row_hits(r, q) for r in items):
                 continue
             if by and by not in e["by"]:
@@ -328,9 +356,13 @@ class DuplicatesView(APIView):
                 continue
             primary = sorted(e["by"], key=lambda x: order.get(x, 9))[0]
             conflicts = _conflicts_to_show(primary, _conflict_fields(items))
-            keep_suggest = sorted(items, key=lambda r: (-_filled_score(r), r["id"]))[0]["id"]
+            keep_suggest = sorted(items, key=lambda r: (-deal_cnt.get(r["id"], 0),
+                                                        -_filled_score(r), r["id"]))[0]["id"]
             groups.append({
                 "reason": labels[primary], "by": primary, "key": e["keys"][primary],
+                "gkey": gkey,                             # ключ для позначки «це різні люди»
+                "dismissed": is_hidden,
+                "dismiss_reason": hidden.get(gkey, ""),
                 "matched": matched,                       # список полів, однакових у ВСІХ
                 "conflicts": conflicts,                   # поля, що РОЗХОДЯТЬСЯ (ознака різних людей)
                 "strength": len(matched),                 # «сила» збігу 1..4
@@ -343,7 +375,8 @@ class DuplicatesView(APIView):
             })
         # спершу найнадійніший критерій (переписка → телефон → …), потім сила збігу
         groups.sort(key=lambda g: (order.get(g["by"], 9), -g["strength"], -g["count"]))
-        return {"type": "contacts", "total": len(groups), "groups": groups[:MAX_GROUPS]}
+        return {"type": "contacts", "total": len(groups), "hidden_total": n_hidden,
+                "groups": groups[:MAX_GROUPS]}
 
     # ── дублі лідів/сделок: один контакт + ОДНАКОВА назва (реальний дубль вводу) ──
     def _entity(self, Model, typ, q=""):
@@ -377,6 +410,22 @@ class DuplicatesView(APIView):
     def post(self, request):
         if not _can(request.user):
             return Response({"detail": "Немає доступу"}, status=403)
+
+        # ── позначка «це РІЗНІ люди» / повернути назад ──
+        action = (request.data.get("action") or "").strip()
+        if action in ("dismiss", "undismiss"):
+            ids = [int(i) for i in (request.data.get("ids") or [])]
+            if len(ids) < 2:
+                return Response({"detail": "Потрібні мінімум 2 картки"}, status=400)
+            key = _group_key(ids)
+            if action == "undismiss":
+                DuplicateDismissal.objects.filter(key=key).delete()
+                return Response({"ok": True, "dismissed": False})
+            DuplicateDismissal.objects.update_or_create(
+                key=key, defaults={"contact_ids": sorted(ids),
+                                   "reason": (request.data.get("reason") or "")[:200],
+                                   "by_user": request.user if request.user.is_authenticated else None})
+            return Response({"ok": True, "dismissed": True})
 
         # ── МАСОВЕ об'єднання: [{keep, ids}, ...] ──
         bulk = request.data.get("groups")

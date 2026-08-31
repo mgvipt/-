@@ -982,3 +982,29 @@ class KbUnknownQuestion(models.Model):
 
     def __str__(self):
         return (self.question or "")[:60]
+
+
+class DuplicateDismissal(models.Model):
+    """«Це РІЗНІ люди» — рішення менеджера по групі з розділу «Дублі».
+
+    Навіщо: у списку дублів є групи-однофамільці й люди з одним номером на двох
+    (Анна Пікшрєнє / Юлия Чикаловец на +380678664328). Злити їх не можна, а без
+    цієї позначки вони висіли б у списку вічно й заважали бачити справжні дублі.
+    Натиснув «Це різні люди» → група зникає зі списку, рішення зберігається.
+    Ключ = ID карток групи через дефіс. Якщо до групи додасться НОВА картка —
+    ключ інший, і група покажеться знову (це навмисно: нові дані треба глянути).
+    """
+    key = models.CharField("Ключ групи", max_length=255, unique=True, db_index=True)
+    contact_ids = models.JSONField("ID карток", default=list)
+    reason = models.CharField("Чому не дубль", max_length=200, blank=True, default="")
+    by_user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                on_delete=models.SET_NULL, related_name="duplicate_dismissals")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Позначка «не дубль»"
+        verbose_name_plural = "Позначки «не дублі»"
+
+    def __str__(self):
+        return "не дублі: %s" % self.key

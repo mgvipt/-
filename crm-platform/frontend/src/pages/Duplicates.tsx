@@ -10,7 +10,8 @@ import { useLang } from "../i18n";
 import { Icon } from "../Icon";
 
 type Item = { id: number; name: string; phone?: string; email?: string; social?: string; stage?: string; owner?: string; amount?: string };
-type Group = { reason: string; by: string; key: string; count: number; items: Item[]; matched?: string[]; conflicts?: string[]; strength?: number; keep_suggest?: number };
+type Group = { reason: string; by: string; key: string; count: number; items: Item[]; matched?: string[]; conflicts?: string[]; strength?: number; keep_suggest?: number;
+  gkey?: string; dismissed?: boolean; dismiss_reason?: string };
 
 const REASON_ICON: Record<string, string> = { chat: "chat", phone: "phone", email: "mail", social: "link", nick: "hash", name: "user", contact: "user" };
 const REASON_LABEL: Record<string, [string, string]> = { chat: ["Номер переписки", "Номер переписки"], nick: ["Ник из мессенджера", "Нік з месенджера"], phone: ["Телефон", "Телефон"], email: ["Email", "Email"], social: ["Мессенджер/ник", "Мессенджер/нік"], name: ["Имя", "Імʼя"], contact: ["Один контакт — несколько", "Один контакт — декілька"] };
@@ -38,7 +39,7 @@ const MFIELDS: [string, string, string][] = [
 export default function Duplicates() {
   const { t } = useLang();
   const [tab, setTab] = useState<"contacts" | "leads" | "deals">("contacts");
-  const [data, setData] = useState<{ total: number; groups: Group[] } | null>(null);
+  const [data, setData] = useState<{ total: number; hidden_total?: number; groups: Group[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [keep, setKeep] = useState<Record<number, number>>({}); // groupIdx -> contactId
   const [busy, setBusy] = useState<number | null>(null);
@@ -53,6 +54,7 @@ export default function Duplicates() {
   const [minF, setMinF] = useState(0);        // мінімальна «сила» збігу
   // ── масове обʼєднання ──
   const [sel, setSel] = useState<Record<number, boolean>>({}); // groupIdx -> відмічено
+  const [showHidden, setShowHidden] = useState(false);   // показувати ТІЛЬКИ позначені «різні люди»
   const [bulk, setBulk] = useState<null | { preview: any; busy: boolean }>(null);
 
   // пошук з затримкою 400мс — щоб не смикати сервер на кожну літеру
@@ -63,10 +65,11 @@ export default function Duplicates() {
     const p = new URLSearchParams({ type: tab });
     if (q) p.set("q", q);
     if (tab === "contacts" && byF) p.set("by", byF);
+    if (tab === "contacts" && showHidden) p.set("dismissed", "1");
     if (tab === "contacts" && minF) p.set("min", String(minF));
     api.get<any>(`/api/duplicates/?${p.toString()}`).then((d) => setData(d)).catch(() => setData({ total: 0, groups: [] })).finally(() => setLoading(false));
   };
-  useEffect(load, [tab, q, byF, minF]);
+  useEffect(load, [tab, q, byF, minF, showHidden]);
 
   const openMerge = async (gi: number, g: Group) => {
     const ids = g.items.map((i) => i.id);
@@ -98,7 +101,19 @@ export default function Duplicates() {
   };
 
   // ── масове обʼєднання: спершу показуємо «що буде зроблено», лише потім виконуємо ──
-  const selectedGroups = () => (data ? data.groups.map((g, i) => ({ g, i })).filter(({ i }) => sel[i]) : []);
+  // «Це різні люди» — прибрати групу зі списку назавжди (рішення зберігається)
+  const markNotDuplicate = async (g: Group, undo = false) => {
+    const ids = g.items.map((i) => i.id);
+    if (!undo && !window.confirm(t(
+      `Отметить как РАЗНЫХ людей (${ids.length} карточки)? Группа исчезнет из списка. Карточки не меняются.`,
+      `Позначити як РІЗНИХ людей (${ids.length} картки)? Група зникне зі списку. Картки не змінюються.`))) return;
+    await api.post("/api/duplicates/", { action: undo ? "undismiss" : "dismiss", ids });
+    load();
+  };
+
+  const selectedGroups = () => (data
+    ? data.groups.map((g, i) => ({ g, i })).filter(({ g, i }) => sel[i] && !(g.conflicts || []).length)
+    : []);
   const payloadGroups = () => selectedGroups().map(({ g, i }) => ({ keep: keep[i] ?? g.keep_suggest ?? g.items[0].id, ids: g.items.map((x) => x.id) }));
 
   const previewBulk = async () => {
@@ -139,7 +154,9 @@ export default function Duplicates() {
   ];
   const pageGroups = data ? data.groups.slice((page - 1) * pageSize, page * pageSize) : [];
   const selCount = Object.values(sel).filter(Boolean).length;
-  const allPageSelected = pageGroups.length > 0 && pageGroups.every((_, j) => sel[(page - 1) * pageSize + j]);
+  // «все відмічені» рахуємо ЛИШЕ по тих, які взагалі можна об'єднувати
+  const pickable = () => pageGroups.map((g, j) => ({ g, j })).filter(({ g }) => !(g.conflicts || []).length);
+  const allPageSelected = pickable().length > 0 && pickable().every(({ j }) => sel[(page - 1) * pageSize + j]);
 
   return (
     <div className="scroll pad fade">
@@ -174,6 +191,14 @@ export default function Duplicates() {
           <select value={minF} onChange={(e) => setMinF(Number(e.target.value))} style={{ height: 34, borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 12.5, padding: "0 8px" }}>
             {minOptions.map(([v, ru, ua]) => <option key={v} value={v}>{t(ru, ua)}</option>)}
           </select>
+          <button className="btn" onClick={() => setShowHidden((v) => !v)}
+            style={{ height: 34, fontSize: 12.5, borderColor: showHidden ? "#dc2626" : "#cbd5e1", color: showHidden ? "#dc2626" : "#475569" }}
+            title={t("Группы, которые вы отметили как разных людей", "Групи, які ви позначили як різних людей")}>
+            <Icon n={showHidden ? "eye-off" : "eye"} size={13} />{" "}
+            {showHidden ? t("Скрытые «разные люди»", "Приховані «різні люди»")
+                        : t("Показать скрытые", "Показати приховані")}
+            {!showHidden && !!(data?.hidden_total) ? ` (${data.hidden_total})` : ""}
+          </button>
         </>)}
       </div>
 
@@ -186,11 +211,21 @@ export default function Duplicates() {
               <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, cursor: "pointer" }}>
                 <input type="checkbox" checked={allPageSelected} onChange={() => {
                   const next = { ...sel };
-                  pageGroups.forEach((_, j) => { next[(page - 1) * pageSize + j] = !allPageSelected; });
+                  // групи з міткою «різні люди» масово не беремо — їх і поодинці не можна
+                  pageGroups.forEach((g, j) => {
+                    if ((g.conflicts || []).length) return;
+                    next[(page - 1) * pageSize + j] = !allPageSelected;
+                  });
                   setSel(next);
                 }} />
                 {t("Отметить всё на странице", "Відмітити все на сторінці")}
               </label>
+            )}
+            {tab === "contacts" && selCount > 0 && (
+              <button className="btn btn-light" style={{ fontSize: 12, padding: "3px 10px" }} onClick={() => setSel({})}
+                title={t("Снять все галочки", "Зняти всі галочки")}>
+                {t(`Снять отметки (${selCount})`, `Зняти позначки (${selCount})`)}
+              </button>
             )}
             <div style={{ flex: 1 }} />
             {data.groups.length > pageSize && (() => { const pages = Math.max(1, Math.ceil(data.groups.length / pageSize)); return (<>
@@ -245,6 +280,21 @@ export default function Duplicates() {
                     </span>
                   )}
                   <div style={{ flex: 1 }} />
+                  {tab === "contacts" && !g.dismissed && (
+                    <button className="btn" style={{ fontSize: 12, marginRight: 6, borderColor: "#cbd5e1", color: "#475569" }}
+                      title={t("Это разные люди — убрать группу из списка навсегда",
+                               "Це різні люди — прибрати групу зі списку назавжди")}
+                      onClick={() => markNotDuplicate(g)}>
+                      <Icon n="x" size={13} /> {t("Это разные люди", "Це різні люди")}
+                    </button>
+                  )}
+                  {tab === "contacts" && g.dismissed && (
+                    <button className="btn" style={{ fontSize: 12, marginRight: 6, borderColor: "#cbd5e1", color: "#475569" }}
+                      title={t("Вернуть группу в список дублей", "Повернути групу до списку дублів")}
+                      onClick={() => markNotDuplicate(g, true)}>
+                      <Icon n="refresh" size={13} /> {t("Вернуть в список", "Повернути до списку")}
+                    </button>
+                  )}
                   {tab === "contacts" && (
                     <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={busy === gi} onClick={() => openMerge(gi, g)}>
                       <Icon n="check" size={14} /> {busy === gi ? "…" : t("Объединить", "Обʼєднати")}
