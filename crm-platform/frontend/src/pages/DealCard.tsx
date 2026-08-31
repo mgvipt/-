@@ -1128,7 +1128,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 <colgroup><col style={{ width: 22 }} /><col /><col style={{ width: 74 }} />{can("product.cost.view") && <><col style={{ width: 58 }} /><col style={{ width: 68 }} /></>}<col style={{ width: 44 }} /><col style={{ width: 40 }} /><col style={{ width: 44 }} /><col style={{ width: 98 }} /><col style={{ width: 62 }} /><col style={{ width: 22 }} /></colgroup>
                 <thead><tr style={{ color: "#64748b", fontSize: 9.5, lineHeight: 1.1, textAlign: "left", verticalAlign: "bottom" }}>
                   <th style={{ padding: "6px 4px" }}>№</th><th style={{ padding: "6px 4px" }}>{t("Товар","Товар")}</th>
-                  <th style={{ padding: "6px 4px" }}>{t("Цена","Ціна")}</th>{can("product.cost.view") && <><th style={{ padding: "4px 3px" }}>{t("Закуп/ед","Закуп/од")}</th><th style={{ padding: "4px 3px" }}>{t("Сумма закуп","Сума закуп")}</th></>}<th style={{ padding: "6px 4px" }}>{t("Кол-во","К-сть")}</th>
+                  <th style={{ padding: "6px 4px" }}>{t("Цена","Ціна")}</th>{can("product.cost.view") && <><th style={{ padding: "4px 3px" }}>{t("Закуп/ед","Закуп/од")}</th><th style={{ padding: "4px 3px" }}>{t("Сумма закуп","Сума закуп")}</th></>}<th style={{ padding: "4px 3px" }}>{t("Помещение","Приміщ.")}</th><th style={{ padding: "6px 4px" }}>{t("Кол-во","К-сть")}</th>
                   <th style={{ padding: "4px 3px", textAlign: "center" }}>{t("Рез.","Рез.")}</th><th style={{ padding: "4px 3px" }}>{t("Ост.","Зал.")}</th>
                   <th style={{ padding: "4px 3px" }}>{t("Скидка","Знижка")}</th>
                   <th style={{ padding: "6px 4px" }}>{t("Сумма","Сума")}</th><th></th></tr></thead>
