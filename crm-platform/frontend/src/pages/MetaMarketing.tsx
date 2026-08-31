@@ -470,6 +470,31 @@ function PixelEventsTab({ from, to, mode }: { from: string; to: string; mode?: "
             </div>
           </>;
         })()}
+        {d.site_summary && (
+          <div className="panel" style={{ marginBottom: 14, borderLeft: "4px solid #7c3aed" }}>
+            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>📝 {t("Заявки с сайта за период", "Заявки з сайту за період")}: {d.site_summary.total}
+              <span style={{ marginLeft: 12, fontSize: 13, color: "#2563eb" }}>{t("из них с рекламы", "з них з реклами")}: <b>{d.site_summary.from_ads}</b></span>
+              <span style={{ marginLeft: 12, fontSize: 13, color: "#16a34a" }}>{t("купили", "купили")}: <b>{d.site_summary.won}</b></span>
+            </div>
+            <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>{t("«С рекламы» — заявка пришла по клику из Facebook/Instagram/Google (по меткам ссылки). Клик по имени — карточка сделки.", "«З реклами» — заявка прийшла за кліком з Facebook/Instagram/Google (за мітками посилання).")}</div>
+            {(d.site_deals || []).length === 0 ? <div className="muted" style={{ fontSize: 12.5 }}>{t("Заявок за период нет", "Заявок за період немає")}</div> : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640, fontSize: 13 }}>
+                  <thead><tr>{[t("Когда", "Коли"), t("Клиент", "Клієнт"), t("Стадия", "Стадія"), t("Сумма", "Сума"), t("Откуда", "Звідки")].map((h) => <th key={h} style={{ textAlign: "left", padding: "6px 9px", fontSize: 11.5, color: "#64748b", borderBottom: "2px solid #e2e8f0" }}>{h}</th>)}</tr></thead>
+                  <tbody>{d.site_deals.map((r: any) => (
+                    <tr key={r.id} style={{ borderBottom: "1px solid #f1f5f9", background: r.won ? "#f0fdf4" : undefined }}>
+                      <td style={{ padding: "6px 9px", whiteSpace: "nowrap" }}>{r.at}</td>
+                      <td style={{ padding: "6px 9px" }}><a href={`/deals/${r.id}`} style={{ color: "#2563eb", textDecoration: "none", fontWeight: 600 }}>{r.contact}</a></td>
+                      <td style={{ padding: "6px 9px" }}>{r.won ? <b style={{ color: "#16a34a" }}>✅ {r.stage}</b> : r.stage}</td>
+                      <td style={{ padding: "6px 9px" }}>{r.amount ? Math.round(r.amount).toLocaleString("ru-RU") + " ₴" : "—"}</td>
+                      <td style={{ padding: "6px 9px" }}>{r.from_ads ? <b style={{ color: "#2563eb" }}>📣 {t("с рекламы", "з реклами")}{r.campaign ? ` · ${r.campaign}` : ""}</b> : <span className="muted">{t("сам нашёл (органика/прямой заход)", "сам знайшов")}</span>}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
         {table([t("Событие", "Подія"), t("Что означает", "Що означає"), t("Сколько раз", "Скільки разів")],
           (d.by_event || []).map((r: any) => [r.event_name, SITE_EV[r.event_name] || "—", <b>{count(r.total)}</b>]),
           t("Событий с сайта за период нет", "Подій із сайту за період немає"), 640)}
@@ -491,6 +516,20 @@ function PixelEventsTab({ from, to, mode }: { from: string; to: string; mode?: "
   if (!d) return (<>{pxTabs}<div className="muted" style={{ padding: 20 }}>…</div></>);
   return (<>
     {pxTabs}
+    {(d.purchases || []).length > 0 && (
+      <div className="panel" style={{ marginBottom: 14, borderLeft: "4px solid #16a34a", background: "#f0fdf4" }}>
+        <div style={{ fontWeight: 800, fontSize: 15, color: "#166534", marginBottom: 4 }}>💰 {t("Покупки с рекламы", "Покупки з реклами")} — {d.purchases.length}</div>
+        <div className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>{t("Реальные оплаты клиентов, которых привела реклама (CRM сообщила Meta — они видны как «Покупки» в Ads Manager). Клик по имени — карточка сделки.", "Реальні оплати клієнтів з реклами. Клік по імені — картка угоди.")}</div>
+        {d.purchases.map((r: any, i: number) => (
+          <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", padding: "7px 0", borderTop: i ? "1px solid #dcfce7" : "none", fontSize: 13, flexWrap: "wrap" }}>
+            <span className="muted" style={{ fontSize: 11.5, minWidth: 42 }}>{r.at}</span>
+            <a href={`/deals/${r.deal_id}`} style={{ fontWeight: 700, color: "#166534", textDecoration: "none" }}>{r.contact}</a>
+            <b style={{ color: "#15803d" }}>{Math.round(r.amount || 0).toLocaleString("ru-RU")} {r.currency === "UAH" ? "₴" : r.currency}</b>
+            <span className="muted" style={{ fontSize: 11.5 }}>{t("объявление", "оголошення")}: <b style={{ color: "#334155" }}>{r.ad}</b> · {r.campaign}</span>
+          </div>
+        ))}
+      </div>
+    )}
     <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
       {t("Это события, которые CRM отправляет в пиксель Meta по стадиям сделок (Лид → Оплачено → Отправлено). По ним Meta ставит ярлыки в переписках Direct и учится находить платящих клиентов.", "Це події, які CRM відправляє в піксель Meta за стадіями угод. За ними Meta ставить ярлики в Direct і вчиться знаходити платників.")}
     </div>

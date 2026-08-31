@@ -3273,8 +3273,35 @@ class MetaPixelEventsView(APIView):
                     if day:
                         row = by_day.setdefault(day, {"d": day, "total": 0})
                         row["total"] += n
+            from .models import Deal as _Deal
+            _AD_HINTS = ("fbclid", "utm_source", "utm_campaign", "gclid")
+            _AD_SOURCES = ("facebook", "fb", "instagram", "ig", "meta", "an", "msg")
+            site_deals = []
+            _sd_total = _sd_ads = _sd_won = 0
+            for _d in (_Deal.objects.filter(funnel__name="Лендинг · wallcovdliastin.com.ua",
+                                            created_at__date__gte=d_from, created_at__date__lte=d_to)
+                       .select_related("contact", "stage").order_by("-created_at")[:100]):
+                _q = _d.qualification or {}
+                _utm = _q.get("utm") or {}
+                _src = str(_utm.get("utm_source") or "").lower()
+                _from_ads = bool(_utm.get("fbclid")) or bool(_utm.get("gclid")) or _src in _AD_SOURCES
+                _sd_total += 1
+                if _from_ads: _sd_ads += 1
+                _is_won = bool(_d.stage_id and _d.stage.is_won)
+                if _is_won: _sd_won += 1
+                site_deals.append({
+                    "id": _d.pk, "contact": (str(_d.contact) if _d.contact_id else "—"),
+                    "stage": (_d.stage.name if _d.stage_id else "—"), "won": _is_won,
+                    "amount": float(_d.amount or 0),
+                    "at": _d.created_at.strftime("%d.%m %H:%M"),
+                    "from_ads": _from_ads,
+                    "ad_source": (_src or ("fbclid" if _utm.get("fbclid") else ("gclid" if _utm.get("gclid") else ""))),
+                    "campaign": str(_utm.get("utm_campaign") or "")[:60],
+                })
             payload = {
                 "pixel": "site", "pixel_id": SITE_PIXEL, "pixel_name": "Пиксель Лендинг новый",
+                "site_deals": site_deals,
+                "site_summary": {"total": _sd_total, "from_ads": _sd_ads, "won": _sd_won},
                 "from": d_from.isoformat(), "to": d_to.isoformat(),
                 "summary": {"total": sum(by_ev.values()),
                             "pageviews": by_ev.get("PageView", 0),
@@ -3319,8 +3346,28 @@ class MetaPixelEventsView(APIView):
                 "matched": bool((p.get("user_data") or {}).get("ig_sid") or (p.get("user_data") or {}).get("page_scoped_user_id")),
                 "object_type": e.source_type, "object_id": e.source_id,
             })
+        purchases = []
+        _seen_deals = set()
+        for e in (MetaConversionEvent.objects.filter(event_name="Purchase", status="sent",
+                                                     created_at__date__gte=d_from, created_at__date__lte=d_to)
+                  .select_related("contact", "deal").order_by("-created_at")):
+            if e.deal_id and e.deal_id in _seen_deals:
+                continue
+            if e.deal_id: _seen_deals.add(e.deal_id)
+            pp = e.payload or {}; cdd = pp.get("custom_data") or {}
+            camp_id = cdd.get("meta_campaign_id") or ""; adid = cdd.get("meta_ad_id") or ""
+            from .models import MetaAdDailyStat as _MAS
+            purchases.append({
+                "at": _tz.localtime(e.created_at).strftime("%d.%m"),
+                "contact": (str(e.contact) if e.contact_id else "—"),
+                "amount": cdd.get("value"), "currency": cdd.get("currency") or "UAH",
+                "campaign": (_MAS.objects.filter(campaign_id=camp_id).values_list("campaign_name", flat=True).first() or camp_id or "—") if camp_id else "—",
+                "ad": (_MAS.objects.filter(ad_id=adid).values_list("ad_name", flat=True).first() or adid or "—") if adid else "—",
+                "deal_id": e.deal_id,
+            })
         return Response({
             "from": d_from.isoformat(), "to": d_to.isoformat(),
+            "purchases": purchases,
             "summary": {"total": total, "sent": qs.filter(status="sent").count(),
                         "pending": qs.filter(status="pending").count(),
                         "failed": qs.filter(status="failed").count(),
