@@ -467,7 +467,16 @@ class TiktokDirectAdapter(ChannelAdapter):
     kind = "tiktok"
 
     def send(self, external_chat_id: str, text: str) -> str:
-        from .models import Conversation
+        from .models import Conversation, Message
+        if str(external_chat_id).startswith("comment:"):
+            # Відповідь на КОМЕНТАР під відео — публічно, на останній коментар клієнта в цій звʼязці
+            conv = Conversation.objects.filter(channel=self.channel, external_chat_id=external_chat_id).first()
+            last_in = (Message.objects.filter(conversation=conv, direction="in").order_by("-id").first()
+                       if conv else None)
+            if not last_in or not last_in.external_id:
+                raise RuntimeError("TikTok: не знайдено коментар клієнта для відповіді")
+            video_id = str(external_chat_id).split(":")[2]
+            return send_comment_reply(self.channel, video_id, last_in.external_id, text)
         conv = Conversation.objects.filter(channel=self.channel, external_chat_id=external_chat_id).first()
         if conv is not None:
             st = window_state(conv)
@@ -589,3 +598,108 @@ class TiktokWebhookView(APIView):
         except Exception:
             log.exception("TikTok webhook failed")
         return HttpResponse("ok")
+
+
+# ============================================================================
+# 8. КОМЕНТАРІ ПІД ВІДЕО → Чати CRM (право comment.list + comment.list.manage)
+# ============================================================================
+COMMENT_POLL_VIDEOS = 15      # скільки останніх відео перевіряти
+COMMENT_PAGE = 30
+
+def send_comment_reply(channel, video_id: str, comment_id: str, text: str) -> str:
+    """Публічна відповідь на коментар під нашим відео."""
+    token = valid_token(channel)
+    js = _request("POST", "/business/comment/reply/create/", token=token, body={
+        "business_id": (channel.config or {}).get("business_id", ""),
+        "video_id": str(video_id), "comment_id": str(comment_id), "text": text,
+    })
+    d = js.get("data") or {}
+    return str(d.get("comment_id") or d.get("reply_id") or "")
+
+
+def _ingest_comment(ch, video: dict, c: dict) -> int:
+    """Один коментар → чат «клієнт + відео» (як Meta-коменти). Повертає 1, якщо записали."""
+    from .models import Conversation, Message
+    cid = str(c.get("comment_id") or "")
+    if not cid:
+        return 0
+    ours = bool(c.get("owner"))
+    username = str(c.get("username") or "")
+    display = str(c.get("display_name") or username or "TikTok")[:160]
+    user_key = (username or str(c.get("user_id") or cid))[:60]
+    vid = str(video.get("item_id") or "")
+    ext_chat = "comment:tiktok:%s:%s" % (vid, user_key.lower())
+    conv, created = Conversation.objects.get_or_create(
+        channel=ch, external_chat_id=ext_chat,
+        defaults={"title": display or "TikTok · коментар"})
+    if created:
+        if not ours:
+            _new_lead(conv, username or display, user_key)
+        conv.config = {**(conv.config or {}), "source_card": {
+            "type": "comment", "platform": "tiktok", "media_id": vid,
+            "permalink": video.get("share_url") or "", "thumbnail": video.get("thumbnail_url") or "",
+            "caption": (video.get("caption") or "")[:280], "is_ad": False,
+        }}
+        conv.save(update_fields=["config"])
+    if Message.objects.filter(conversation=conv, external_id=cid).exists():
+        return 0
+    Message.objects.create(conversation=conv, direction=("out" if ours else "in"),
+                           text=str(c.get("text") or "")[:5000], external_id=cid,
+                           sender_name=("ai_assistant" if ours else (username or display)))
+    conv.unread = (conv.unread or 0) + (0 if ours else 1)
+    conv.last_message_at = _now()
+    conv.save()
+    return 1
+
+
+def poll_comments() -> dict:
+    """Нові коментарі останніх відео → Чати. Перший запуск по відео — лише БАЗОВА ЛІНІЯ
+    (запамʼятовуємо найсвіжіший час, історію НЕ заливаємо, щоб не засмітити CRM лідами)."""
+    from .models import Channel
+    ch = get_channel(active_only=True)
+    if ch is None:
+        return {"detail": "канал не підключено"}
+    token = valid_token(ch)
+    biz = (ch.config or {}).get("business_id", "")
+    js = _request("GET", "/business/video/list/", token=token, params={
+        "business_id": biz,
+        "fields": json.dumps(["item_id", "caption", "thumbnail_url", "share_url", "comments"]),
+        "max_count": COMMENT_POLL_VIDEOS,
+    })
+    videos = (js.get("data") or {}).get("videos") or []
+    state = dict((ch.config or {}).get("tt_comment_state") or {})
+    n_new = 0
+    baselined = 0
+    for v in videos:
+        vid = str(v.get("item_id") or "")
+        if not vid:
+            continue
+        first_run = vid not in state
+        known_ts = int(state.get(vid) or 0)
+        newest_ts = known_ts
+        cursor = None
+        for _page in range(5):
+            params = {"business_id": biz, "video_id": vid, "max_count": COMMENT_PAGE,
+                      "sort_field": "create_time", "sort_order": "desc"}
+            if cursor:
+                params["cursor"] = cursor
+            cjs = _request("GET", "/business/comment/list/", token=token, params=params)
+            cd = cjs.get("data") or {}
+            comments = cd.get("comments") or []
+            stop = False
+            for c in comments:
+                cts = int(c.get("create_time") or 0)
+                if cts <= known_ts:
+                    stop = True
+                    break
+                newest_ts = max(newest_ts, cts)
+                if not first_run:
+                    n_new += _ingest_comment(ch, v, c)
+            if stop or not cd.get("has_more") or first_run:
+                break
+            cursor = cd.get("cursor")
+        state[vid] = newest_ts
+        if first_run:
+            baselined += 1
+    Channel.objects.filter(pk=ch.pk).update(config={**ch.config, "tt_comment_state": state})
+    return {"new_comments": n_new, "videos_checked": len(videos), "baselined": baselined}

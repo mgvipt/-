@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import time
+import urllib.parse
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -218,7 +219,7 @@ class TiktokViewsTests(TestCase):
             self.assertEqual(r.status_code, 200)
             self.assertIn("https://www.tiktok.com/v2/auth/authorize?", r.data["url"])
             self.assertIn("client_key=app123", r.data["url"])
-            self.assertIn("message.list.send", r.data["url"])
+            self.assertIn(urllib.parse.quote(",".join(tiktok.SCOPES), safe=""), r.data["url"].replace("%2C", "%2C"))
 
     def test_connect_requires_manage_permission(self):
         from apps.accounts.models import Role
@@ -253,3 +254,73 @@ class TiktokViewsTests(TestCase):
     def test_callback_rejects_bad_state(self):
         r = APIClient().get("/api/inbox/tiktok/callback/", {"code": "abc", "state": "forged"})
         self.assertEqual(r.status_code, 403)
+
+
+class TiktokCommentsTests(TestCase):
+    """Коментарі під відео → Чати: базова лінія, нові коментарі, echo, відповідь з CRM."""
+
+    def setUp(self):
+        self.ch = Channel.objects.create(kind="tiktok", name="TikTok · Direct", config={
+            "tiktok_direct": True, "business_id": BIZ, "access_token": "tok",
+            "expires_at": (timezone.now() + timedelta(hours=12)).isoformat(),
+            "refresh_token": "ref", "refresh_expires_at": (timezone.now() + timedelta(days=20)).isoformat(),
+        })
+        self.video_page = {"code": 0, "data": {"videos": [
+            {"item_id": "v1", "caption": "Мокрий шовк", "thumbnail_url": "https://t/1.jpg",
+             "share_url": "https://www.tiktok.com/@dekor_dlia_stin/video/v1", "comments": 2}]}}
+
+    @patch("apps.inbox.tiktok._request")
+    def test_first_run_only_baselines(self, req):
+        comments = {"code": 0, "data": {"has_more": False, "comments": [
+            {"comment_id": "c9", "create_time": 500, "text": "стара історія", "owner": False,
+             "username": "old_user", "display_name": "Old", "user_id": "u9", "video_id": "v1"}]}}
+        req.side_effect = [self.video_page, comments]
+        out = tiktok.poll_comments()
+        self.assertEqual((out["new_comments"], out["baselined"]), (0, 1))
+        self.ch.refresh_from_db()
+        self.assertEqual(self.ch.config["tt_comment_state"]["v1"], 500)
+        self.assertFalse(Conversation.objects.filter(external_chat_id__startswith="comment:tiktok:").exists())
+
+    @patch("apps.inbox.tiktok._request")
+    def test_new_comments_ingested_with_lead_and_echo(self, req):
+        self.ch.config["tt_comment_state"] = {"v1": 100}
+        self.ch.save()
+        comments = {"code": 0, "data": {"has_more": False, "comments": [
+            {"comment_id": "c2", "create_time": 200, "text": "Скільки коштує?", "owner": False,
+             "username": "olena_x", "display_name": "Olena", "user_id": "u1", "video_id": "v1"},
+            {"comment_id": "c1", "create_time": 150, "text": "Дякуємо за інтерес!", "owner": True,
+             "username": "dekor_dlia_stin", "display_name": "Wallcov", "user_id": "biz", "video_id": "v1"},
+        ]}}
+        req.side_effect = [self.video_page, comments]
+        out = tiktok.poll_comments()
+        self.assertEqual(out["new_comments"], 2)
+        conv = Conversation.objects.get(external_chat_id="comment:tiktok:v1:olena_x")
+        self.assertEqual(conv.unread, 1)
+        self.assertEqual(conv.config["source_card"]["platform"], "tiktok")
+        self.assertEqual(conv.config["source_card"]["media_id"], "v1")
+        m_in = conv.messages.get(external_id="c2")
+        self.assertEqual((m_in.direction, m_in.sender_name), ("in", "olena_x"))
+        self.assertEqual(Lead.objects.filter(contact=conv.contact, source="tiktok").count(), 1)
+        conv_own = Conversation.objects.get(external_chat_id="comment:tiktok:v1:dekor_dlia_stin")
+        out_msg = conv_own.messages.get()
+        self.assertEqual((out_msg.direction, out_msg.sender_name), ("out", "ai_assistant"))
+        self.ch.refresh_from_db()
+        req.side_effect = [self.video_page, comments]
+        self.assertEqual(tiktok.poll_comments()["new_comments"], 0)
+
+    @patch("apps.inbox.tiktok._request")
+    def test_adapter_replies_to_last_client_comment(self, req):
+        conv = Conversation.objects.create(channel=self.ch, external_chat_id="comment:tiktok:v1:olena_x",
+                                           title="Olena")
+        Message.objects.create(conversation=conv, direction="in", text="Скільки коштує?", external_id="c2")
+        req.return_value = {"code": 0, "data": {"comment_id": "r1"}}
+        rid = tiktok.TiktokDirectAdapter(self.ch).send("comment:tiktok:v1:olena_x", "Відповідь")
+        self.assertEqual(rid, "r1")
+        args, kwargs = req.call_args
+        self.assertEqual(args[1], "/business/comment/reply/create/")
+        self.assertEqual(kwargs["body"]["video_id"], "v1")
+        self.assertEqual(kwargs["body"]["comment_id"], "c2")
+
+    def test_adapter_comment_reply_without_incoming_raises(self):
+        with self.assertRaises(RuntimeError):
+            tiktok.TiktokDirectAdapter(self.ch).send("comment:tiktok:v1:nobody", "Hi")

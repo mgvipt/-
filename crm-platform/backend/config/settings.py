@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "apps.integrations",
     "apps.telephony",
     "apps.gamification",
+    "apps.tiktok_insights",
 ]
 
 MIDDLEWARE = [

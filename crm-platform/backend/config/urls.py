@@ -7,6 +7,7 @@ from apps.accounts import views as acc_views
 from apps.inbox import views as inbox_views
 from apps.inbox.webchat import WebChatView
 from apps.inbox import tiktok as tiktok_views
+from apps.tiktok_insights import views as tti_views
 from apps.warehouse import views as wh_views
 from apps.warehouse import wh_views as whv
 from apps.warehouse import shop_import_views
@@ -94,6 +95,12 @@ urlpatterns = [
     path("api/inbox/tiktok/callback", tiktok_views.TiktokCallbackView.as_view()),
     path("api/inbox/tiktok/webhook/", tiktok_views.TiktokWebhookView.as_view()),
     path("api/inbox/tiktok/webhook", tiktok_views.TiktokWebhookView.as_view()),
+    # ── Аналітика TikTok (сторінка «TikTok», право analytics.view) ──
+    path("api/tiktok-insights/summary/", tti_views.TtSummaryView.as_view()),
+    path("api/tiktok-insights/timeseries/", tti_views.TtTimeseriesView.as_view()),
+    path("api/tiktok-insights/videos/", tti_views.TtVideosView.as_view()),
+    path("api/tiktok-insights/trending/", tti_views.TtTrendingView.as_view()),
+    path("api/tiktok-insights/sync/", tti_views.TtSyncView.as_view()),
     path("api/duplicates/", DuplicatesView.as_view()),
     path("api/gamification/me/", gam_views.MeView.as_view()),
     path("api/gamification/leaderboard/", gam_views.LeaderboardView.as_view()),
