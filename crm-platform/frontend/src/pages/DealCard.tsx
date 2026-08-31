@@ -1127,17 +1127,17 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 <table style={{ width: "100%", minWidth: 730, fontSize: 13, tableLayout: "fixed" as const }}>
                 <colgroup><col style={{ width: 22 }} /><col /><col style={{ width: 74 }} />{can("product.cost.view") && <><col style={{ width: 58 }} /><col style={{ width: 68 }} /></>}<col style={{ width: 44 }} /><col style={{ width: 40 }} /><col style={{ width: 44 }} /><col style={{ width: 98 }} /><col style={{ width: 62 }} /><col style={{ width: 22 }} /></colgroup>
                 <thead><tr style={{ color: "#64748b", fontSize: "clamp(8.5px, 0.72vw, 10.5px)", lineHeight: 1.15, textAlign: "left", verticalAlign: "bottom", whiteSpace: "nowrap" }}>
-                  <th style={{ padding: "6px 4px" }}>№</th><th style={{ padding: "6px 4px" }}>{t("Товар","Товар")}</th>
-                  <th style={{ padding: "6px 4px" }}>{t("Цена","Ціна")}</th>{can("product.cost.view") && <><th style={{ padding: "4px 3px" }}>{t("Закуп/ед","Закуп/од")}</th><th style={{ padding: "4px 3px" }}>{t("Сумма закуп","Сума закуп")}</th></>}<th style={{ padding: "6px 4px" }}>{t("Кол-во","К-сть")}</th>
+                  <th style={{ padding: "6px 4px" }}>№</th><th style={{ padding: "6px 4px" }}>{t("Товар","Товар")}</th><th style={{ padding: "6px 6px" }}>{t("Помещ.","Приміщ.")}</th>
+                  <th style={{ padding: "6px 4px" }}>{t("Цена","Ціна")}</th>{can("product.cost.view") && <><th style={{ padding: "4px 3px" }}>{t("Закуп","Закуп")}</th><th style={{ padding: "4px 3px" }}>{t("Σ закуп","Σ закуп")}</th></>}<th style={{ padding: "6px 4px" }}>{t("Кол-во","К-сть")}</th>
                   <th style={{ padding: "4px 3px", textAlign: "center" }}>{t("Рез.","Рез.")}</th><th style={{ padding: "4px 3px" }}>{t("Ост.","Зал.")}</th>
                   <th style={{ padding: "4px 3px" }}>{t("Скидка","Знижка")}</th>
                   <th style={{ padding: "6px 4px" }}>{t("Сумма","Сума")}</th><th></th></tr></thead>
                   <tbody>{deal.items.map((it: any, idx: number) => {
                     const low = it.product_stock != null && Number(it.quantity) > Number(it.product_stock);
                     return (
-                    <tr key={it.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                    <tr key={it.id} style={{ verticalAlign: "middle", borderTop: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "6px 4px", color: "#94a3b8" }}>{idx + 1}</td>
-                      <td style={{ padding: "6px 4px", position: "relative" }}>{(it as any).room_name ? <div style={{ fontSize: 10, color: "#0369a1", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 9, padding: "0 6px", display: "inline-block", marginBottom: 2 }}>🏠 {(it as any).room_name}</div> : null}
+                      <td style={{ padding: "6px 4px", position: "relative" }}>
                         {editProdItem === it.id ? (
                           <>
                             <div ref={epBoxRef} style={{ display: "flex", alignItems: "center", gap: 4, border: "1px solid #2563eb", borderRadius: 6, padding: "0 6px", height: 30, background: "#fff", boxSizing: "border-box" }}>
@@ -1162,6 +1162,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                           </div>
                         )}
                       </td>
+                      <td style={{ padding: "6px 6px", fontSize: 10.5, color: "#0369a1", whiteSpace: "nowrap" }}>{(it as any).room_name ? "🏠 " + (it as any).room_name : ""}</td>
                       <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><input key={"pr-" + it.id + "-" + it.price} defaultValue={Number(it.price)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.price) && updateItem(it.id, { price: e.target.value })} style={editInp} /> ₴</td>
                       {can("product.cost.view") && <><td style={{ padding: "6px 4px", color: "#9a3412", whiteSpace: "nowrap" }} title={t("Закупка за единицу (себестоимость товара)","Закупка за одиницю (собівартість товару)")}>{Number(it.cost || 0) > 0 ? fmt(Number(it.cost)) + " ₴" : "—"}</td><td style={{ padding: "6px 4px", color: "#9a3412", whiteSpace: "nowrap", fontWeight: 600 }} title={t("Сумма закупки по строке (себестоимость × кол-во)","Сума закупки по рядку (собівартість × кількість)")}>{Number(it.cost || 0) > 0 ? fmt(Number(it.cost) * Number(it.quantity)) + " ₴" : "—"}</td></>}
                       <td style={{ padding: "6px 4px" }}><input key={`q-${it.id}-${it.quantity}`} defaultValue={Number(it.quantity)} type="number" step="0.01" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.quantity) && updateItem(it.id, { quantity: e.target.value })} style={{ ...editInp, width: 50 }} /></td>
