@@ -12,7 +12,6 @@ import Tasks from "./pages/Tasks";
 import Duplicates from "./pages/Duplicates";
 import Razvitok from "./pages/Razvitok";
 import ContactCenter from "./pages/ContactCenter";
-import TiktokAnalytics from "./pages/TiktokAnalytics";
 import Warehouse from "./pages/Warehouse";
 import WarehouseWork from "./pages/WarehouseWork";
 import Finance from "./pages/Finance";
@@ -76,7 +75,7 @@ function Shell() {
           <Route path="/finance" element={<Finance />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/analytics" element={<Analytics />} />
-          <Route path="/tiktok" element={<TiktokAnalytics />} />
+          <Route path="/tiktok" element={<Navigate to="/analytics" replace />} />
           <Route path="/marketing/meta" element={<MetaMarketing />} />
           <Route path="/ai-costs" element={<AiCenter />} />
           <Route path="/whats-new" element={<WhatsNew />} />

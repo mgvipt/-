@@ -103,7 +103,7 @@ export default function TiktokAnalytics() {
   );
 
   return (
-    <div className="scroll fade" style={{ padding: 20 }}>
+    <div className="fade">
       {/* ── Шапка ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: 22, display: "flex", alignItems: "center", gap: 8 }}><Icon n="tiktok" size={20} /> TikTok · @{sum?.profile?.username || "dekor_dlia_stin"}</h2>

@@ -10,6 +10,7 @@ import { useLang } from "../i18n";
 import { useAuth } from "../auth";
 import { Icon } from "../Icon";
 import MetaMarketing from "./MetaMarketing";
+import TiktokAnalytics from "./TiktokAnalytics";
 import { Cone } from "../FunnelCone";
 
 /* ─── ТИПЫ ─────────────────────────────────────────────────────────────── */
@@ -37,15 +38,17 @@ export default function Analytics() {
   const canStock = can("warehouse.view");
   const canSales = can("analytics.view");
   const canMkt = can("marketing.view");
-  const [section, setSection] = useState<"sales" | "marketing">(canSales ? "sales" : "marketing");
+  const [section, setSection] = useState<"sales" | "marketing" | "tiktok">(canSales ? "sales" : "marketing");
   const [tab, setTab] = useState<"sales" | "channels" | "stock" | "days" | "managers">("sales");
   return (
     <div className="scroll pad fade">
       <div style={{ display: "flex", gap: 8, marginBottom: 14, borderBottom: "2px solid #eef2f7", paddingBottom: 10, flexWrap: "wrap" }}>
         {canSales && <button className={section === "sales" ? "btn btn-primary" : "btn btn-light"} onClick={() => setSection("sales")} style={{ fontSize: 14, fontWeight: 700 }}>📊 {t("Аналитика продаж", "Аналітика продажів")}</button>}
         {canMkt && <button className={section === "marketing" ? "btn btn-primary" : "btn btn-light"} onClick={() => setSection("marketing")} style={{ fontSize: 14, fontWeight: 700 }}>📣 {t("Аналитика маркетинга", "Аналітика маркетингу")}</button>}
+        {canSales && <button className={section === "tiktok" ? "btn btn-primary" : "btn btn-light"} onClick={() => setSection("tiktok")} style={{ fontSize: 14, fontWeight: 700 }}><Icon n="tiktok" size={15} /> TikTok</button>}
       </div>
       {section === "marketing" && canMkt && <MetaMarketing />}
+      {section === "tiktok" && canSales && <TiktokAnalytics />}
       {section === "sales" && canSales && <>
         <div className="tabline" style={{ display: "flex", gap: 6, marginBottom: 12 }}>
           <button className={tab === "sales" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("sales")}><Icon n="📈" size={15} /> {t("Продажи","Продажі")}</button>
