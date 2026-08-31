@@ -25,8 +25,10 @@ def _library_item_data(request, item):
 class MediaLibraryView(APIView):
     """Settings data for reusable Open Lines media and quick replies."""
     def get(self, request):
-        items = MediaLibraryItem.objects.filter(is_active=True).select_related("file")
-        replies = QuickReply.objects.filter(is_active=True).prefetch_related("assets__file")
+        # SharedLink.data stores the original binary (the library is several GB).
+        # The picker only needs the token to build a URL, so never read binaries here.
+        items = MediaLibraryItem.objects.filter(is_active=True).select_related("file").defer("file__data")
+        replies = QuickReply.objects.filter(is_active=True)
         return Response({
             "items": [_library_item_data(request, x) for x in items],
             "replies": [{"id": q.id, "title": q.title, "text": q.text,
