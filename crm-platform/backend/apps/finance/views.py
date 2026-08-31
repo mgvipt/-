@@ -1820,19 +1820,27 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         _mnum = None if _minv else _redst.search(r"(?:рахун\w*|накладн\w*|№)\s*№?\s*(\S+)", pp.comment or "", _redst.I)
         _inv_s = _minv.group(1) if _minv else (_mnum.group(1) if _mnum else "")
         _date_s = _minv.group(2) if _minv else ""
+        # «?» у номері/даті (борг створено без розпізнаного рахунку) — вважаємо порожнім,
+        # інакше у призначення потрапить «?», який Приват відхиляє (недопустимий символ).
+        if _inv_s in ("?", "№", "-"):
+            _inv_s = ""
+        if _date_s in ("?", "-"):
+            _date_s = ""
         _tmpl = ((getattr(pp.contact, "payment_purpose", "") or "").strip()) if pp.contact_id else ""
-        if _tmpl:
+        if _tmpl and _inv_s:
             dest = (_tmpl.replace("{номер}", _inv_s).replace("{дата}", _date_s)
                          .replace("{number}", _inv_s).replace("{date}", _date_s)).strip()
-        elif _minv:
+        elif _inv_s and _date_s:
             dest = "Оплата рахунку №%s від %s" % (_inv_s, _date_s)
+        elif _inv_s:
+            dest = "Оплата рахунку №%s" % _inv_s
         else:
-            dest = ("Оплата рахунку №%s" % _inv_s) if _inv_s else "Оплата рахунку постачальника"
+            dest = "Оплата за товар згідно рахунку постачальника"
         dest = (dest or "Оплата рахунку постачальника")[:120]
         # Приват приймає обмежений набір символів: прибираємо «№» та російські літери,
         # яких немає в українській (інакше API: "Incorrect symbols (including russian symbol)")
         def _pv_clean(_s):
-            _s = (_s or "").replace("№", "N ").replace("«", "").replace("»", "").replace("\"", "")
+            _s = (_s or "").replace("№", "N ").replace("«", "").replace("»", "").replace("\"", "").replace("?", "")
             for _a, _b in (("Э", "Е"), ("э", "е"), ("Ы", "И"), ("ы", "и"), ("Ё", "Е"), ("ё", "е"), ("Ъ", ""), ("ъ", ""), ("Щ", "Щ")):
                 _s = _s.replace(_a, _b)
             _s = _redst.sub(r"\s+", " ", _s).strip()
@@ -1866,7 +1874,9 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         except _ue.HTTPError as e:
             return Response({"detail": "Приват відхилив: %s" % e.read().decode("cp1251", "ignore")[:400]}, status=400)
         except Exception as e:  # noqa
-            return Response({"detail": "Помилка звʼязку з Приват: %s" % e}, status=400)
+            import traceback as _tb
+            print("[pay_with_fop] send failed:", repr(e), _tb.format_exc()[:500])
+            return Response({"detail": "Помилка звʼязку з Приват: %r" % e}, status=400)
         ref = resp.get("payment_ref")
         pp.comment = ((pp.comment or "")[:200] + (" · Privat:%s" % (ref or "?")))[:255]
         pp.save(update_fields=["comment"])
