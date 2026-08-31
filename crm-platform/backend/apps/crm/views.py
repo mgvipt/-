@@ -1357,6 +1357,42 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
         return None
 
+    @action(detail=True, methods=["get", "post", "delete"])
+    def rooms(self, request, pk=None):
+        """Приміщення сделки. GET=список, POST={name,area_m2}=додати/оновити(id), DELETE?room=ID."""
+        from apps.crm.models import DealRoom
+        from apps.crm.serializers import DealRoomSerializer
+        deal = self.get_object()
+        if request.method == "GET":
+            return Response(DealRoomSerializer(deal.rooms.all(), many=True).data)
+        g = self._guard(deal)
+        if g:
+            return g
+        if request.method == "DELETE":
+            rid = request.query_params.get("room")
+            DealRoom.objects.filter(deal=deal, pk=rid).delete()
+            return Response({"ok": True})
+        rid = request.data.get("id")
+        name = str(request.data.get("name") or "").strip()[:80]
+        try:
+            area = Decimal(str(request.data.get("area_m2") or 0))
+        except Exception:
+            area = Decimal("0")
+        if rid:
+            r = DealRoom.objects.filter(deal=deal, pk=rid).first()
+            if not r:
+                return Response({"detail": "Приміщення не знайдено"}, status=status.HTTP_404_NOT_FOUND)
+            if name:
+                r.name = name
+            r.area_m2 = area
+            r.save(update_fields=["name", "area_m2"])
+        else:
+            if not name:
+                return Response({"detail": "Вкажіть назву приміщення"}, status=status.HTTP_400_BAD_REQUEST)
+            r = DealRoom.objects.create(deal=deal, name=name, area_m2=area,
+                                        order=deal.rooms.count())
+        return Response(DealRoomSerializer(r).data)
+
     @action(detail=True, methods=["post"])
     def recalc_by_area(self, request, pk=None):
         """Перерахувати кількість позицій по площі сделки: qty = площа × витрата товару.
@@ -1374,12 +1410,13 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             return Response({"detail": "Спочатку вкажіть площу стін (м²)."}, status=status.HTTP_400_BAD_REQUEST)
         changed = 0
         with_consumption = 0
-        for it in deal.items.select_related("product").all():
+        for it in deal.items.select_related("product", "room").all():
             c = getattr(it.product, "consumption_per_m2", None) if it.product_id else None
             if not c or c <= 0:
                 continue
             with_consumption += 1
-            qty = (_Dq(str(area)) * _Dq(str(c))).quantize(_Dq("0.01"))
+            _a = it.room.area_m2 if (it.room_id and it.room and it.room.area_m2) else area
+            qty = (_Dq(str(_a)) * _Dq(str(c))).quantize(_Dq("0.01"))
             if qty <= 0 or qty == it.quantity:
                 continue
             it.quantity = qty
@@ -1422,7 +1459,9 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         disc_amt = Decimal(str(request.data.get("discount_amount", 0) or 0))
         if qty <= 0 or price < 0 or disc < 0 or disc > 100 or disc_amt < 0:  # #14 захист від дурня/від'ємних
             return Response({"detail": "Кількість > 0, ціна ≥ 0, знижка 0–100% або сума ≥ 0."}, status=status.HTTP_400_BAD_REQUEST)
+        _room_id = request.data.get("room") or None
         DealItem.objects.create(deal=deal, product=product, quantity=qty, price=price, cost=_deal_item_cost(product, price, qty),
+                                room_id=(_room_id if deal.rooms.filter(pk=_room_id).exists() else None),
                                 discount_pct=disc, discount_amount=disc_amt, reserved=bool(request.data.get("reserved")))
         self._recalc_amount(deal)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)

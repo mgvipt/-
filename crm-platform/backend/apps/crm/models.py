@@ -221,6 +221,21 @@ class Deal(TimestampedOwned):
         return self.title
 
 
+class DealRoom(models.Model):
+    """Приміщення (кімната) у сделці: назва + площа. Один матеріал може рахуватись
+    на РІЗНУ квадратуру по кімнатах (Олег 31.08). Позиція без кімнати = «Загальна»."""
+    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="rooms")
+    name = models.CharField("Приміщення", max_length=80)
+    area_m2 = models.DecimalField("Площа, м²", max_digits=10, decimal_places=2, default=0)
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return "%s (%s м²)" % (self.name, self.area_m2)
+
+
 class DealItem(models.Model):
     """Товар в сделке. Сумма сделки = сумма строк."""
     deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="items")
@@ -229,6 +244,8 @@ class DealItem(models.Model):
                                    help_text="Своя позиція НЕ з номенклатури: без складського обліку і списання")
     quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1)
     price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    room = models.ForeignKey("DealRoom", null=True, blank=True, on_delete=models.SET_NULL,
+                             related_name="items", help_text="Приміщення (порожньо = загальна позиція)")
     reserved = models.BooleanField(default=False, help_text="Товар зарезервовано під цю сделку")
     discount_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="Знижка на позицію, %")
     discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0,

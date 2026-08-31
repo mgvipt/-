@@ -6,7 +6,11 @@ class DealItemSerializer(serializers.ModelSerializer):
     product_name = serializers.SerializerMethodField()
     product_stock = serializers.SerializerMethodField()
     unit = serializers.SerializerMethodField()
+    room_name = serializers.SerializerMethodField()
     total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+
+    def get_room_name(self, obj):
+        return obj.room.name if obj.room_id else ""
 
     def get_unit(self, obj):
         """Одиниця виміру З НОМЕНКЛАТУРИ (щоб у накладній було те саме, що в картці товару)."""
@@ -25,7 +29,7 @@ class DealItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DealItem
-        fields = ["unit", "id", "deal", "product", "custom_name", "product_name", "product_stock", "quantity", "price", "cost", "discount_pct", "discount_amount", "discount_sum", "total", "reserved"]
+        fields = ["room", "room_name", "unit", "id", "deal", "product", "custom_name", "product_name", "product_stock", "quantity", "price", "cost", "discount_pct", "discount_amount", "discount_sum", "total", "reserved"]
         read_only_fields = ["deal"]
 
 
@@ -427,3 +431,10 @@ class KbUnknownQuestionSerializer(serializers.ModelSerializer):
 
     def get_answer_preview(self, obj):
         return (obj.answer_entry.answer[:120] if obj.answer_entry_id and obj.answer_entry else "")
+
+
+class DealRoomSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = __import__("apps.crm.models", fromlist=["DealRoom"]).DealRoom
+        fields = ["id", "deal", "name", "area_m2", "order"]
+        read_only_fields = ["deal"]

@@ -47,6 +47,9 @@ export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal:
 
   const today = dateOverride || new Date().toLocaleDateString("uk-UA");
   const items = deal.items || [];
+  // «По кімнатах»: за замовч. ВИМКНЕНО — однакові товари сумуються в один рядок (звичайна накладна).
+  const [byRooms, setByRooms] = useState(false);
+  const hasRooms = items.some((x: any) => (x.room_name || "").trim());
   const subtotal = items.reduce((s: number, i: any) => s + Number(i.quantity) * Number(i.price), 0);
   const discount = items.reduce((s: number, i: any) => s + Number(i.discount_sum || 0), 0);
   const total = items.reduce((s: number, i: any) => s + Number(i.total), 0);
@@ -54,15 +57,47 @@ export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal:
   const clientPhone = contact?.phone || "";
   const qr = `https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent("https://instagram.com/" + SUP.ig)}`;
 
-  const rowsHtml = items.map((it: any, i: number) => `
+  const _row = (it: any, n: number) => `
     <tr>
-      <td style="border:1px solid #333;padding:4px;text-align:center">${i + 1}</td>
+      <td style="border:1px solid #333;padding:4px;text-align:center">${n}</td>
       <td style="border:1px solid #333;padding:4px">${(it.product_name || "").replace(/</g, "&lt;")}</td>
       <td style="border:1px solid #333;padding:4px;text-align:center">${Number(it.quantity)}</td>
       <td style="border:1px solid #333;padding:4px;text-align:center">${(it as any).unit || "шт"}</td>
       <td style="border:1px solid #333;padding:4px;text-align:right">${money(Number(it.price))}</td>
       <td style="border:1px solid #333;padding:4px;text-align:right">${money(Number(it.total))}</td>
-    </tr>`).join("");
+    </tr>`;
+  const _head = (title: string) => `
+    <tr><td colspan="6" style="border:1px solid #333;padding:5px 6px;background:#f3f4f6;font-weight:bold">${title}</td></tr>`;
+  // ЗВИЧАЙНА накладна: однакові товари (та сама назва+ціна) склеюємо в один рядок
+  const _merged = (() => {
+    const map = new Map<string, any>();
+    for (const it of items as any[]) {
+      const k = (it.product_name || "") + "|" + Number(it.price);
+      const cur = map.get(k);
+      if (cur) { cur.quantity = Number(cur.quantity) + Number(it.quantity); cur.total = Number(cur.total) + Number(it.total); }
+      else map.set(k, { ...it, quantity: Number(it.quantity), total: Number(it.total) });
+    }
+    return [...map.values()];
+  })();
+  const rowsHtml = (byRooms && hasRooms)
+    ? (() => {
+        const groups = new Map<string, any[]>();
+        for (const it of items as any[]) {
+          const k = ((it as any).room_name || "").trim() || "__general__";
+          if (!groups.has(k)) groups.set(k, []);
+          groups.get(k)!.push(it);
+        }
+        let n = 0, out = "";
+        for (const [k, arr] of groups) {
+          if (k === "__general__") continue;
+          out += _head(k);
+          for (const it of arr) out += _row(it, ++n);
+        }
+        const gen = groups.get("__general__") || [];
+        if (gen.length) { out += _head("Загальні позиції"); for (const it of gen) out += _row(it, ++n); }
+        return out;
+      })()
+    : _merged.map((it: any, i: number) => _row(it, i + 1)).join("");
 
   const docHtml = `
   <div style="font-family:Arial,sans-serif;color:#111;max-width:720px;margin:0 auto;font-size:13px">
@@ -250,6 +285,7 @@ export default function KpDoc({ deal, onClose, dateOverride, readOnly }: { deal:
           <b style={{ fontSize: 17, flex: 1 }}>{readOnly ? `Накладна #${deal.id} · ${today}` : `1. КП Декор #${deal.id}`}</b>
           {!readOnly && <button className="btn" style={{ background: "#ecfdf5", color: "#047857" }} onClick={saveHist}><Icon n="🧾" size={15} /> Зберегти в історію</button>}
           <button className="btn btn-primary" onClick={printWin}><Icon n="🖨" size={15} /> Друк</button>
+          {hasRooms && <label style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "#475569", cursor: "pointer", marginRight: 4 }} title="Показати позиції згруповані по приміщеннях"><input type="checkbox" checked={byRooms} onChange={(e) => setByRooms(e.target.checked)} /> по кімнатах</label>}
           <button className="btn" style={{ background: "#eff6ff", color: "#1d4ed8" }} onClick={copyLink} title="Скопіювати посилання на документ — швидко надіслати клієнту"><Icon n="link" size={15} /> Посилання</button>
           <button className="btn" onClick={pdf} title="Завантажити PDF-файл"><Icon n="📄" size={15} /> PDF</button>
           <button className="btn btn-green" onClick={excel}><Icon n="📊" size={15} /> Excel</button>

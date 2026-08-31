@@ -214,6 +214,9 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const gItem: any = { display: "flex", alignItems: "center", gap: 8, padding: "9px 13px", fontSize: 13.5, cursor: "pointer", borderBottom: "1px solid #f6f8fb" };
   const [deal, setDeal] = useState<Deal | null>(null);
   const [areaInput, setAreaInput] = useState<string>("");
+  const [rooms, setRooms] = useState<any[]>([]);           // приміщення сделки
+  const [addRoom, setAddRoom] = useState("");              // до якого приміщення додаємо товар
+  const [newRoomName, setNewRoomName] = useState(""); const [newRoomArea, setNewRoomArea] = useState("");
   const [discMode, setDiscMode] = useState<Record<number, "pct" | "amt">>({});   // режим скидки на позицию: % или ₴
   const { t } = useLang();
   const [chatW, setChatW] = useState(() => Number(localStorage.getItem("crm_card_chatW")) || 360);
@@ -286,6 +289,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     try {
       const d = await api.get<Deal>(`/api/deals/${id}/`);
       setDeal(d);
+      loadRooms();
       if (!funnel || funnel.id !== d.funnel) setFunnel(await api.get<Funnel>(`/api/funnels/${d.funnel}/`));
     } catch { setNotFound(true); }
   }
@@ -363,6 +367,17 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     catch { flash(t("Сначала добавьте товары","Спершу додайте товари")); }
   }
   useEffect(() => { setAreaInput((deal as any)?.area_m2 != null ? String((deal as any).area_m2) : ""); }, [deal?.id, (deal as any)?.area_m2]);
+  async function loadRooms() {
+    try { setRooms(await api.get<any[]>(`/api/deals/${id}/rooms/`)); } catch { setRooms([]); }
+  }
+  async function saveRoom(payload: any) {
+    try { await api.post(`/api/deals/${id}/rooms/`, payload); await loadRooms(); }
+    catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось","Не вдалося")); }
+  }
+  async function delRoom(rid: number) {
+    if (!confirm(t("Удалить помещение? Позиции останутся, но станут общими.","Видалити приміщення? Позиції залишаться, але стануть загальними."))) return;
+    try { await api.del(`/api/deals/${id}/rooms/?room=${rid}`); await loadRooms(); await load(); } catch { /* */ }
+  }
   async function recalcByArea() {
     try {
       const r = await api.post<any>(`/api/deals/${id}/recalc_by_area/`, {});
@@ -398,8 +413,9 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     const p = prod && (prod as any).id ? prod : psel;   // двойной клик передаёт товар напрямую, иначе берём выбранный
     if (!p) return;
     try {
-      const _aq = autoQty(p);
-      setDeal(await api.post<Deal>(`/api/deals/${id}/add_item/`, { product: p.id, quantity: (_aq && Number(addQty) === 1 ? _aq : addQty), reserved: addReserve }));
+      const _rm = rooms.find((r) => String(r.id) === addRoom);
+      const _aq = _rm ? (Number((p as any)?.consumption_per_m2 || 0) && Number(_rm.area_m2) ? Math.round(Number((p as any).consumption_per_m2) * Number(_rm.area_m2) * 100) / 100 : null) : autoQty(p);
+      setDeal(await api.post<Deal>(`/api/deals/${id}/add_item/`, { product: p.id, quantity: (_aq && Number(addQty) === 1 ? _aq : addQty), reserved: addReserve, room: addRoom || null }));
       setPsel(null); setPsearch(""); setPresults([]); setAddQty(1); setAddReserve(false);
     } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось добавить товар","Не вдалося додати товар")); }
   }
@@ -1032,11 +1048,34 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 <button className="btn" style={{ height: 28, fontSize: 12 }} onClick={recalcByArea} title={t("Пересчитать количество уже добавленных материалов по площади","Перерахувати кількість уже доданих матеріалів по площі")}>↻ {t("Пересчитать позиции","Перерахувати позиції")}</button>
                 <span style={{ fontSize: 11.5, color: "#64748b" }}>{t("— количество считается само (площадь × расход из карточки товара)","— кількість рахується сама (площа × витрата з картки товару)")}</span>
               </div>
+              {/* Приміщення: один матеріал на РІЗНУ квадратуру (спальня/коридор). Порожньо = загальні позиції */}
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "0 0 6px", fontSize: 12 }}>
+                <span style={{ color: "#64748b", fontWeight: 600 }}>🏠 {t("Помещения","Приміщення")}:</span>
+                {rooms.map((r) => (
+                  <span key={r.id} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 14, padding: "2px 4px 2px 9px" }}>
+                    <b style={{ fontSize: 11.5 }}>{r.name}</b>
+                    <input type="number" step="0.01" defaultValue={Number(r.area_m2)} onBlur={(e) => Number(e.target.value) !== Number(r.area_m2) && saveRoom({ id: r.id, name: r.name, area_m2: e.target.value })}
+                      title={t("Площадь помещения, м²","Площа приміщення, м²")} style={{ width: 54, height: 22, fontSize: 11.5, border: "1px solid #cbd5e1", borderRadius: 5, padding: "0 4px" }} />
+                    <span style={{ fontSize: 10.5, color: "#94a3b8" }}>м²</span>
+                    <button onClick={() => delRoom(r.id)} title={t("Удалить","Видалити")} style={{ border: "none", background: "none", cursor: "pointer", color: "#cbd5e1", fontSize: 13, lineHeight: 1 }}>✕</button>
+                  </span>
+                ))}
+                <input value={newRoomName} onChange={(e) => setNewRoomName(e.target.value)} placeholder={t("спальня","спальня")} style={{ width: 92, height: 24, fontSize: 11.5, border: "1px solid #e2e8f0", borderRadius: 6, padding: "0 6px" }} />
+                <input type="number" step="0.01" value={newRoomArea} onChange={(e) => setNewRoomArea(e.target.value)} placeholder="м²" style={{ width: 58, height: 24, fontSize: 11.5, border: "1px solid #e2e8f0", borderRadius: 6, padding: "0 6px" }} />
+                <button className="btn" style={{ height: 24, fontSize: 11.5, padding: "0 9px" }}
+                  onClick={() => { if (!newRoomName.trim()) return; saveRoom({ name: newRoomName.trim(), area_m2: newRoomArea || 0 }); setNewRoomName(""); setNewRoomArea(""); }}>+ {t("Добавить","Додати")}</button>
+              </div>
               <div className="prod-search" style={{ position: "relative", margin: "8px 0 12px" }}>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                   <input value={psearch} onChange={(e) => { setPsearch(e.target.value); setPsel(null); }} placeholder={t("🔍 Поиск товара из номенклатуры по названию…","🔍 Пошук товару з номенклатури за назвою…")} style={{ flex: "1 1 200px", minWidth: 0, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 10px" }} />
                   <input type="number" step="0.01" value={addQty} min={0.01} onChange={(e) => setAddQty(Number(e.target.value))} title={t("Количество","Кількість")} style={{ width: 56, height: 34, borderRadius: 7, border: "1px solid #cbd5e1", padding: "0 8px" }} />
                   <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, whiteSpace: "nowrap" }} title={t("Зарезервировать товар под сделку","Зарезервувати товар під угоду")}><input type="checkbox" checked={addReserve} onChange={(e) => setAddReserve(e.target.checked)} />{t("Резерв","Резерв")}</label>
+                  {rooms.length > 0 && (
+                    <select value={addRoom} onChange={(e) => setAddRoom(e.target.value)} title={t("В какое помещение","До якого приміщення")} style={{ height: 34, fontSize: 12.5, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 6px" }}>
+                      <option value="">{t("Общая","Загальна")}</option>
+                      {rooms.map((r) => <option key={r.id} value={String(r.id)}>{r.name} · {Number(r.area_m2)} м²</option>)}
+                    </select>
+                  )}
                   <button className="btn btn-primary" onClick={() => addItem()} disabled={!psel}>{t("Добавить","Додати")}</button>
                   <button className="btn" onClick={() => setShowList((s) => !s)} title={t("Показать весь список товаров (двойной клик — добавить)","Показати весь список товарів (подвійний клік — додати)")}>{showList ? <>{t("✕ Список","✕ Список")}</> : <><Icon n="📋" size={14} /> {t("Список","Список")}</>}</button>
                   {can("deal.items.custom") || can("roles.manage") ? <button className="btn" onClick={() => setCiOpen((v) => !v)} title={t("Добавить позицию НЕ из номенклатуры — без складского учёта и списания","Додати позицію НЕ з номенклатури — без складського обліку і списання")} style={{ whiteSpace: "nowrap" }}>{ciOpen ? "✕" : "➕"} {t("Своя","Своя")}</button> : null}
@@ -1125,6 +1164,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                       </td>
                       <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><input key={"pr-" + it.id + "-" + it.price} defaultValue={Number(it.price)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.price) && updateItem(it.id, { price: e.target.value })} style={editInp} /> ₴</td>
                       {can("product.cost.view") && <><td style={{ padding: "6px 4px", color: "#9a3412", whiteSpace: "nowrap" }} title={t("Закупка за единицу (себестоимость товара)","Закупка за одиницю (собівартість товару)")}>{Number(it.cost || 0) > 0 ? fmt(Number(it.cost)) + " ₴" : "—"}</td><td style={{ padding: "6px 4px", color: "#9a3412", whiteSpace: "nowrap", fontWeight: 600 }} title={t("Сумма закупки по строке (себестоимость × кол-во)","Сума закупки по рядку (собівартість × кількість)")}>{Number(it.cost || 0) > 0 ? fmt(Number(it.cost) * Number(it.quantity)) + " ₴" : "—"}</td></>}
+                      <td style={{ padding: "6px 4px", fontSize: 11.5, color: "#64748b", whiteSpace: "nowrap" }}>{(it as any).room_name || "—"}</td>
                       <td style={{ padding: "6px 4px" }}><input key={`q-${it.id}-${it.quantity}`} defaultValue={Number(it.quantity)} type="number" step="0.01" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.quantity) && updateItem(it.id, { quantity: e.target.value })} style={{ ...editInp, width: 50 }} /></td>
                       <td style={{ padding: "6px 4px", textAlign: "center" }}><input type="checkbox" checked={!!it.reserved} onChange={() => toggleReserve(it)} title={t("Зарезервировать под сделку","Зарезервувати під угоду")} /></td>
                       <td style={{ padding: "6px 4px", color: low ? "#dc2626" : "#64748b" }} title={low ? t("Не хватает на складе","Не вистачає на складі") : ""}>{it.product_stock != null ? Number(it.product_stock) : "—"}{low ? " ⚠" : ""}</td>
