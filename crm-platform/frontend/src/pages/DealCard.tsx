@@ -23,7 +23,7 @@
  *  КАК ДОБАВИТЬ ПОЛЕ СДЕЛКИ: тип в [1] + строка в нужном блоке-панели [10].
  * ========================================================================== */
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
@@ -1126,7 +1126,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", minWidth: 730, fontSize: 13, tableLayout: "fixed" as const }}>
                 <colgroup><col style={{ width: 22 }} /><col /><col style={{ width: 74 }} />{can("product.cost.view") && <><col style={{ width: 58 }} /><col style={{ width: 68 }} /></>}<col style={{ width: 44 }} /><col style={{ width: 40 }} /><col style={{ width: 44 }} /><col style={{ width: 98 }} /><col style={{ width: 62 }} /><col style={{ width: 22 }} /></colgroup>
-                <thead><tr style={{ color: "#64748b", fontSize: 9.5, lineHeight: 1.1, textAlign: "left", verticalAlign: "bottom" }}>
+                <thead><tr style={{ color: "#64748b", fontSize: 9.5, lineHeight: 1.1, textAlign: "left", verticalAlign: "middle", whiteSpace: "nowrap" }}>
                   <th style={{ padding: "6px 4px" }}>№</th><th style={{ padding: "6px 4px" }}>{t("Товар","Товар")}</th>
                   <th style={{ padding: "6px 4px" }}>{t("Цена","Ціна")}</th>{can("product.cost.view") && <><th style={{ padding: "4px 3px" }}>{t("Закуп/ед","Закуп/од")}</th><th style={{ padding: "4px 3px" }}>{t("Сумма закуп","Сума закуп")}</th></>}<th style={{ padding: "6px 4px" }}>{t("Кол-во","К-сть")}</th>
                   <th style={{ padding: "4px 3px", textAlign: "center" }}>{t("Рез.","Рез.")}</th><th style={{ padding: "4px 3px" }}>{t("Ост.","Зал.")}</th>
@@ -1135,7 +1135,15 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   <tbody>{deal.items.map((it: any, idx: number) => {
                     const low = it.product_stock != null && Number(it.quantity) > Number(it.product_stock);
                     return (
-                    <tr key={it.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                    <Fragment key={it.id}>
+                    {(it as any).room_name ? (
+                      <tr>
+                        <td colSpan={11} style={{ padding: "5px 4px 1px", fontSize: 10.5, color: "#0369a1", fontWeight: 600 }}>
+                          <Icon n="home" size={11} /> {(it as any).room_name}
+                        </td>
+                      </tr>
+                    ) : null}
+                    <tr style={{ borderTop: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "6px 4px", color: "#94a3b8" }}>{idx + 1}</td>
                       <td style={{ padding: "6px 4px", position: "relative" }}>
                         {editProdItem === it.id ? (
@@ -1181,6 +1189,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                       
                       <td style={{ padding: "6px 4px" }}><b>{fmt(Number(it.total))} ₴</b></td>
                       <td style={{ padding: "6px 4px" }}><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => removeItem(it.id)}>✕</span></td></tr>
+                    </Fragment>
                   ); })}</tbody>
                 </table>
                 </div>
