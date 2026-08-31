@@ -234,7 +234,7 @@ export default function Duplicates() {
               <button className="btn btn-light" style={{ fontSize: 12, padding: "3px 9px" }} disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))}>→</button>
             </>); })()}
             <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} style={{ height: 28, borderRadius: 7, border: "1px solid #cbd5e1", fontSize: 12.5, padding: "0 6px" }}>
-              {[5, 20, 50, 100].map((n) => <option key={n} value={n}>{t(`по ${n}`, `по ${n}`)}</option>)}
+              {[20, 50, 100, 200, 300, 500].map((n) => <option key={n} value={n}>{t(`по ${n}`, `по ${n}`)}</option>)}
             </select>
           </div>
           {data.total === 0 && <div className="note" style={{ display: "flex", gap: 8, alignItems: "center" }}><Icon n="check" size={16} /> {t("Дублей не найдено — чисто!", "Дублів не знайдено — чисто!")}</div>}

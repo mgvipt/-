@@ -547,9 +547,41 @@ class DuplicatesView(APIView):
         except Exception:
             pass
         # 3) дозаповнити ПОРОЖНІ поля keep з дублів (для полів, що НЕ обрані явно)
-        for src in Contact.objects.filter(id__in=ids):
+        dups = list(Contact.objects.filter(id__in=ids))
+        for src in dups:
             for f in ["phone", "email", "social_link", "first_name", "last_name", "address", "company", "birthday"]:
                 if not getattr(k, f) and getattr(src, f):
                     setattr(k, f, getattr(src, f))
+        # 4) ⚠️ НІЧОГО НЕ ГУБИМО: другий телефон / друга пошта дубля не влізають у головне
+        # поле (воно вже зайняте) — складаємо їх у «Додаткові телефони/пошти» з підписом,
+        # з якої картки прийшли. Раніше такі дані просто зникали разом з дублем.
+        def _push_extra(field, value, label):
+            if not value:
+                return
+            cur = list(getattr(k, field, None) or [])
+            main = (getattr(k, "phone" if field == "phones_extra" else "email", "") or "").strip().lower()
+            same = {(x.get("value") or "").strip().lower() for x in cur if isinstance(x, dict)}
+            same.add(main)
+            if value.strip().lower() in same:
+                return
+            cur.append({"label": label, "value": value})
+            setattr(k, field, cur)
+
+        for src in dups:
+            src_name = ((src.first_name or "") + " " + (src.last_name or "")).strip() or ("#%d" % src.id)
+            _push_extra("phones_extra", (src.phone or "").strip(), "з картки %s" % src_name)
+            _push_extra("emails_extra", (src.email or "").strip(), "з картки %s" % src_name)
+            for x in (src.phones_extra or []):
+                if isinstance(x, dict):
+                    _push_extra("phones_extra", (x.get("value") or "").strip(), x.get("label") or ("з картки %s" % src_name))
+            for x in (src.emails_extra or []):
+                if isinstance(x, dict):
+                    _push_extra("emails_extra", (x.get("value") or "").strip(), x.get("label") or ("з картки %s" % src_name))
+            # інша адреса — дописуємо в нотатки, щоб не загубити доставку
+            a = (src.address or "").strip()
+            if a and a.lower() != (k.address or "").strip().lower():
+                note = "Адреса з картки %s: %s" % (src_name, a)
+                if note not in (k.comment or ""):
+                    k.comment = ((k.comment or "") + (" | " if k.comment else "") + note)[:4000]
         k.save()
         Contact.objects.filter(id__in=ids).delete()
