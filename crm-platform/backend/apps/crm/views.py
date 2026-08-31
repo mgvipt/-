@@ -1420,6 +1420,12 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             if not _a or _a <= 0:
                 continue  # немає ні площі кімнати, ні загальної — не чіпаємо позицію
             qty = (_Dq(str(_a)) * _Dq(str(c))).quantize(_Dq("0.01"))
+            # ШТУЧНИЙ товар (пляшка/відро/упаковка) — округляємо ВГОРУ: половину банки не відвантажиш.
+            # Ваговий (кг/л/м) лишаємо дробовим.
+            _u = (getattr(it.product, "unit", "") or "").strip().lower()
+            if _u in ("шт", "шт.", "уп", "уп.", "компл", "набір", "набор"):
+                import math as _math
+                qty = _Dq(str(int(_math.ceil(float(qty)))))
             if qty <= 0 or qty == it.quantity:
                 continue
             it.quantity = qty
