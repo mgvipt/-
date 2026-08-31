@@ -4267,10 +4267,11 @@ class MetaMarketingView(APIView):
             "current_total": current_account.followers_total if current_account else None,
             "snapshot_date": current_account.date if current_account else None,
             "history_started": first_account.date if first_account else None,
-            "period_gained": sum(
-                row.followers_gained for row in account_daily_stats
-                if row.followers_gained is not None
-            ),
+            "period_gained": (lambda rows: sum(
+                (r.followers_gained if r.followers_gained is not None
+                 else ((r.followers_total - rows[i - 1].followers_total)
+                       if i > 0 and r.followers_total is not None and rows[i - 1].followers_total is not None else 0))
+                for i, r in enumerate(rows)))(list(account_daily_stats)),
             "paid_from_ads": paid_summary["instagram_follows"],
             "paid_report_rows": len(summary_follow_rows),
             # Органіка чесна лише коли дані підписок покривають період з його
@@ -4281,7 +4282,14 @@ class MetaMarketingView(APIView):
                 - paid_summary["instagram_follows"]
                 if account_daily_stats and follow_days and min(follow_days) <= date_from else None
             ),
-            "daily": [{"date": r.date.isoformat(), "total": r.followers_total, "gained": r.followers_gained} for r in account_daily_stats],
+            "daily": (lambda rows: [
+                {"date": r.date.isoformat(), "total": r.followers_total,
+                 "gained": (r.followers_gained if r.followers_gained is not None
+                            else ((r.followers_total - rows[i - 1].followers_total)
+                                  if i > 0 and r.followers_total is not None and rows[i - 1].followers_total is not None
+                                  else None)),
+                 "estimated": r.followers_gained is None}
+                for i, r in enumerate(rows)])(list(account_daily_stats)),
         }
 
         event_qs = MetaConversionEvent.objects.filter(
