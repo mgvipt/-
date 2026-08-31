@@ -82,22 +82,24 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
     try {
       if (editDoc) {
         // редактирование черновика прихода — обновляем позиции/поставщика/дату (остаётся черновиком, проводится отдельно)
-        await api.post(`/api/stock-documents/${editDoc.id}/edit-receipt/`, {
+        const _er: any = await api.post(`/api/stock-documents/${editDoc.id}/edit-receipt/`, {
           supplier: sup.id || null, supplier_invoice: invoice, doc_date: dt || null, comment, items,
         });
+        if (_er?.payable_warning) alert("⚠️ " + _er.payable_warning);
         for (const r of rows) { const rp = Number(String(r.retail).replace(",", ".")) || 0; const f = Number(r.factor) || 1; const patch: any = {}; if (rp > 0) patch.price = rp; if (f !== 1) patch.pack_factor = f; if (r.product && Object.keys(patch).length) { await api.patch(`/api/products/${r.product}/`, patch).catch(() => {}); } }
         onSaved && onSaved(); onClose(); return;
       }
-      await api.post("/api/stock-documents/", {
+      const _sd: any = await api.post("/api/stock-documents/", {
         kind: "in", warehouse: wh, comment,
         supplier: sup.id || null, supplier_invoice: invoice, doc_date: dt || null,
         deal: dealId || null, items,
       });
-      // в долг → кредиторка постачальнику (ми винні магазину)
+      // в долг → кредиторка постачальнику (ми винні магазину); зв'язуємо з приходом для дзеркала
       if (!paid && total > 0) {
         await api.post("/api/planned-payments/", {
           kind: "payable", amount: total, due_date: dt || new Date().toISOString().slice(0, 10),
-          counterparty: sup.name || "", contact: sup.id || null, comment: (t("Прихід товару", "Прихід товару") + (invoice ? " №" + invoice : "")).slice(0, 255),
+          counterparty: sup.name || "", contact: sup.id || null, source_stock: _sd?.id || null,
+          comment: (t("Прихід товару", "Прихід товару") + (invoice ? " №" + invoice : "")).slice(0, 255),
         }).catch(() => {});
       }
       // обновить РОЗНИЧНУЮ цену товара, где задана (закупка обновляется сама при проведении прихода)

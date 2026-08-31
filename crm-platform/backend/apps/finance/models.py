@@ -284,6 +284,9 @@ class PlannedPayment(models.Model):
                                            help_text="Операція-розподіл, що породила цей внутрішній борг")
     source_planned = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="derived_debts",
                                        help_text="Джерело-борг (напр. кредиторка магазину), що породив цей транзитний борг клієнта — видаляється каскадом")
+    source_stock = models.ForeignKey("warehouse.StockDocument", null=True, blank=True, on_delete=models.SET_NULL,
+                                     related_name="planned_payments",
+                                     help_text="Прихід, що породив цей борг — при правці приходу борг (сума/дата) дзеркалиться, якщо не оплачений")
     fin_article = models.ForeignKey("FinModelArticle", null=True, blank=True, on_delete=models.SET_NULL, related_name="planned_payments")
     channel = models.CharField(max_length=24, blank=True, default="")
     comment = models.CharField(max_length=255, blank=True)

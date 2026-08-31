@@ -780,7 +780,35 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
                 if qty <= 0:
                     continue
                 StockMovement.objects.create(document=doc, product_id=int(pid), quantity=qty, price=price)
-        return Response(StockDocumentSerializer(doc, context={"request": request}).data)
+        # ── ДЗЕРКАЛО: пов'язана кредиторка/дебіторка (сума + дата) слідує за приходом ──
+        # оплачену НЕ чіпаємо (щоб не зламати облік оплат), а попереджаємо.
+        _pay_warn = None
+        try:
+            from apps.finance.models import PlannedPayment as _PP
+            _new_total = sum(float(m.quantity) * float(m.price) for m in doc.items.all())
+            for _pp in _PP.objects.filter(source_stock=doc):
+                if _pp.status == "paid" or float(_pp.paid_amount or 0) > 0:
+                    _pay_warn = ("Борг #%d вже частково/повністю оплачений — суму НЕ змінено автоматично, перевір вручну (%s ₴)."
+                                 % (_pp.id, _pp.amount))
+                    continue
+                _upd = []
+                from decimal import Decimal as _Dm
+                if float(_pp.amount) != _new_total:
+                    _pp.amount = _Dm(str(round(_new_total, 2))); _upd.append("amount")
+                if doc.doc_date and _pp.due_date != doc.doc_date:
+                    _pp.due_date = doc.doc_date; _upd.append("due_date")
+                if doc.supplier_id and _pp.contact_id != doc.supplier_id:
+                    _pp.contact_id = doc.supplier_id
+                    _pp.counterparty = str(doc.supplier)[:160]
+                    _upd += ["contact", "counterparty"]
+                if _upd:
+                    _pp.save(update_fields=list(set(_upd)))
+        except Exception as _e:  # noqa
+            print("[edit_receipt] payable mirror failed:", repr(_e))
+        _data = StockDocumentSerializer(doc, context={"request": request}).data
+        if _pay_warn:
+            _data = dict(_data); _data["payable_warning"] = _pay_warn
+        return Response(_data)
 
     @action(detail=True, methods=["post"], url_path="edit-realization", permission_classes=[RealizationManage])
     def edit_realization(self, request, pk=None):

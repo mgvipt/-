@@ -60,7 +60,7 @@ class PlannedPaymentSerializer(serializers.ModelSerializer):
                   "account", "account_name", "fin_direction", "fin_direction_name",
                   "fin_article", "fin_article_name", "channel", "deal", "deal_title",
                   "comment", "status", "paid_amount", "remaining", "source_doc_id", "paid_date", "paid_account_name", "is_loan", "is_internal", "counterparty_contact",
-                  "source_transaction", "source_planned", "created_at"]
+                  "source_transaction", "source_planned", "source_stock", "created_at"]
 
 
 class TransactionSerializer(serializers.ModelSerializer):
