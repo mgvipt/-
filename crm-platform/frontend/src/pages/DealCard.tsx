@@ -1129,14 +1129,30 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   <th style={{ padding: "4px 3px", textAlign: "center" }}>{t("Рез.","Рез.")}</th><th style={{ padding: "4px 3px" }}>{t("Ост.","Зал.")}</th>
                   <th style={{ padding: "4px 3px" }}>{t("Скидка","Знижка")}</th>
                   <th style={{ padding: "6px 4px" }}>{t("Сумма","Сума")}</th><th></th></tr></thead>
-                  <tbody>{deal.items.map((it: any, idx: number) => {
+                  <tbody>{(() => {
+                    // Групуємо позиції по приміщеннях: спершу кімнати (у порядку створення),
+                    // потім загальні. Назва приміщення пишеться ОДИН раз над групою.
+                    const _sorted = [...(deal.items || [])].sort((a: any, b: any) => {
+                      const ra = a.room || 0, rb = b.room || 0;
+                      if (ra === rb) return a.id - b.id;
+                      if (!ra) return 1;
+                      if (!rb) return -1;
+                      return ra - rb;
+                    });
+                    let _lastRoom: any = "__start__";
+                    return _sorted.map((it: any, idx: number) => {
+                    const _rk = it.room || 0;
+                    const _showRoom = _rk !== _lastRoom;
+                    _lastRoom = _rk;
                     const low = it.product_stock != null && Number(it.quantity) > Number(it.product_stock);
                     return (
                     <Fragment key={it.id}>
-                    {(it as any).room_name ? (
+                    {_showRoom && ((it as any).room_name || rooms.length > 0) ? (
                       <tr>
-                        <td colSpan={11} style={{ padding: "5px 4px 1px", fontSize: 10.5, color: "#0369a1", fontWeight: 600 }}>
-                          <Icon n="home" size={11} /> {(it as any).room_name}
+                        <td colSpan={11} style={{ padding: "9px 4px 2px", fontSize: 11, color: (it as any).room_name ? "#0369a1" : "#94a3b8", fontWeight: 700 }}>
+                          {(it as any).room_name
+                            ? <><Icon n="home" size={11} /> {(it as any).room_name}</>
+                            : t("Общие позиции","Загальні позиції")}
                         </td>
                       </tr>
                     ) : null}
@@ -1187,7 +1203,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                       <td style={{ padding: "6px 4px" }}><b>{fmt(Number(it.total))} ₴</b></td>
                       <td style={{ padding: "6px 4px" }}><span style={{ color: "#ef4444", cursor: "pointer" }} onClick={() => removeItem(it.id)}>✕</span></td></tr>
                     </Fragment>
-                  ); })}</tbody>
+                  ); }); })()}</tbody>
                 </table>
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
