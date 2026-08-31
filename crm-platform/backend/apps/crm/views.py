@@ -1406,8 +1406,9 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         if g2:
             return g2
         area = deal.area_m2
-        if not area or area <= 0:
-            return Response({"detail": "Спочатку вкажіть площу стін (м²)."}, status=status.HTTP_400_BAD_REQUEST)
+        _has_rooms = deal.rooms.exists()
+        if (not area or area <= 0) and not _has_rooms:
+            return Response({"detail": "Спочатку додайте приміщення з площею (м²)."}, status=status.HTTP_400_BAD_REQUEST)
         changed = 0
         with_consumption = 0
         for it in deal.items.select_related("product", "room").all():
@@ -1416,6 +1417,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 continue
             with_consumption += 1
             _a = it.room.area_m2 if (it.room_id and it.room and it.room.area_m2) else area
+            if not _a or _a <= 0:
+                continue  # немає ні площі кімнати, ні загальної — не чіпаємо позицію
             qty = (_Dq(str(_a)) * _Dq(str(c))).quantize(_Dq("0.01"))
             if qty <= 0 or qty == it.quantity:
                 continue

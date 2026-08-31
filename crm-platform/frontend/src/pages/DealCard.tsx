@@ -1038,19 +1038,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 <span>{t("Товары в сделке","Товари в угоді")}</span>
                 <button className="btn" onClick={() => setDocOpen(true)} title={t("Сформировать документ КП","Сформувати документ КП")}><Icon n="📄" size={14} /> {t("Документ","Документ")}</button>
               </div>
-              {/* Площа стін: якщо вказана — кількість матеріалу рахується сама (площа × витрата товару) */}
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "7px 10px", margin: "8px 0 4px" }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#0369a1" }}>📐 {t("Площадь стен","Площа стін")}</span>
-                <input type="number" step="0.01" value={areaInput} onChange={(e) => setAreaInput(e.target.value)}
-                  onBlur={saveArea} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                  placeholder={t("напр. 11","напр. 11")} style={{ width: 92, height: 30, border: "1px solid #7dd3fc", borderRadius: 7, padding: "0 8px", fontWeight: 600 }} />
-                <span style={{ fontSize: 12, color: "#0369a1" }}>м²</span>
-                <button className="btn" style={{ height: 28, fontSize: 12 }} onClick={recalcByArea} title={t("Пересчитать количество уже добавленных материалов по площади","Перерахувати кількість уже доданих матеріалів по площі")}>↻ {t("Пересчитать позиции","Перерахувати позиції")}</button>
-                <span style={{ fontSize: 11.5, color: "#64748b" }}>{t("— количество считается само (площадь × расход из карточки товара)","— кількість рахується сама (площа × витрата з картки товару)")}</span>
-              </div>
+              
               {/* Приміщення: один матеріал на РІЗНУ квадратуру (спальня/коридор). Порожньо = загальні позиції */}
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "0 0 6px", fontSize: 12 }}>
-                <span style={{ color: "#64748b", fontWeight: 600 }}>🏠 {t("Помещения","Приміщення")}:</span>
+                <span style={{ color: "#0369a1", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}
+                  title={t("Помещения и их площадь. Количество материала считается: площадь помещения × расход из карточки товара","Приміщення та їх площа. Кількість матеріалу рахується: площа приміщення × витрата з картки товару")}>
+                  <Icon n="home" size={13} /> {t("Помещения","Приміщення")}</span>
                 {rooms.map((r) => (
                   <span key={r.id} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 14, padding: "2px 4px 2px 9px" }}>
                     <b style={{ fontSize: 11.5 }}>{r.name}</b>
@@ -1064,6 +1057,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 <input type="number" step="0.01" value={newRoomArea} onChange={(e) => setNewRoomArea(e.target.value)} placeholder="м²" style={{ width: 58, height: 24, fontSize: 11.5, border: "1px solid #e2e8f0", borderRadius: 6, padding: "0 6px" }} />
                 <button className="btn" style={{ height: 24, fontSize: 11.5, padding: "0 9px" }}
                   onClick={() => { if (!newRoomName.trim()) return; saveRoom({ name: newRoomName.trim(), area_m2: newRoomArea || 0 }); setNewRoomName(""); setNewRoomArea(""); }}>+ {t("Добавить","Додати")}</button>
+                <span style={{ flex: 1 }} />
+                <button className="btn" style={{ height: 24, fontSize: 11.5, padding: "0 9px" }} onClick={recalcByArea}
+                  title={t("Пересчитать количество всех материалов по площади их помещений","Перерахувати кількість усіх матеріалів за площею їх приміщень")}>
+                  <Icon n="refresh" size={12} /> {t("Пересчитать","Перерахувати")}</button>
               </div>
               <div className="prod-search" style={{ position: "relative", margin: "8px 0 12px" }}>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
@@ -1077,11 +1074,11 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                     </select>
                   )}
                   <button className="btn btn-primary" onClick={() => addItem()} disabled={!psel}>{t("Добавить","Додати")}</button>
-                  <button className="btn" onClick={() => setShowList((s) => !s)} title={t("Показать весь список товаров (двойной клик — добавить)","Показати весь список товарів (подвійний клік — додати)")}>{showList ? <>{t("✕ Список","✕ Список")}</> : <><Icon n="📋" size={14} /> {t("Список","Список")}</>}</button>
-                  {can("deal.items.custom") || can("roles.manage") ? <button className="btn" onClick={() => setCiOpen((v) => !v)} title={t("Добавить позицию НЕ из номенклатуры — без складского учёта и списания","Додати позицію НЕ з номенклатури — без складського обліку і списання")} style={{ whiteSpace: "nowrap" }}>{ciOpen ? "✕" : "➕"} {t("Своя","Своя")}</button> : null}
-                  {can("warehouse.tab.receipts") && <button className="btn" onClick={() => setShowReceipt(true)} title={t("Оприходовать товар (дроп/закупка у поставщика) — приход на склад с выбором поставщика","Оприбуткувати товар (дроп/закупка у постачальника) — прихід на склад з вибором постачальника")} style={{ whiteSpace: "nowrap" }}><Icon n="📥" size={14} /> {t("Приход","Прихід")}</button>}
-                  {can("product.cost.view") && deal.items && deal.items.length > 0 && <button className="btn" onClick={refreshCosts} title={t("Подтянуть свежую закупку из номенклатуры во все товары (маржа обновится; сумма клиента и чек не меняются)","Підтягнути свіжу закупівлю з номенклатури в усі товари (маржа оновиться; сума клієнта і чек не змінюються)")} style={{ whiteSpace: "nowrap" }}><Icon n="🔄" size={14} /> {t("Обновить закупку","Оновити закупівлю")}</button>}
-                  {can("deal.price.refresh") && (Number(deal.paid) || 0) <= 0 && deal.items && deal.items.length > 0 && <button className="btn" onClick={refreshPrices} title={t("Подтянуть свежие розничные цены из номенклатуры во все товары (сумма сделки пересчитается). Только для неоплаченных.","Підтягнути свіжі роздрібні ціни з номенклатури в усі товари (сума сделки перерахується). Лише для неоплачених.")} style={{ whiteSpace: "nowrap" }}><Icon n="🏷️" size={14} /> {t("Обновить цены","Оновити ціни")}</button>}
+                  <button className="btn" onClick={() => setShowList((s) => !s)} title={t("Показать весь список товаров (двойной клик — добавить)","Показати весь список товарів (подвійний клік — додати)")}>{showList ? <>{t("✕ Список","✕ Список")}</> : <><Icon n="list" size={13} /> {t("Список","Список")}</>}</button>
+                  {can("deal.items.custom") || can("roles.manage") ? <button className="btn" onClick={() => setCiOpen((v) => !v)} title={t("Добавить позицию НЕ из номенклатуры — без складского учёта и списания","Додати позицію НЕ з номенклатури — без складського обліку і списання")} style={{ whiteSpace: "nowrap" }}>{ciOpen ? "✕" : <Icon n="plus" size={13} />} {t("Своя","Своя")}</button> : null}
+                  {can("warehouse.tab.receipts") && <button className="btn" onClick={() => setShowReceipt(true)} title={t("Оприходовать товар (дроп/закупка у поставщика) — приход на склад с выбором поставщика","Оприбуткувати товар (дроп/закупка у постачальника) — прихід на склад з вибором постачальника")} style={{ whiteSpace: "nowrap" }}><Icon n="download" size={13} /> {t("Приход","Прихід")}</button>}
+                  {can("product.cost.view") && deal.items && deal.items.length > 0 && <button className="btn" onClick={refreshCosts} title={t("Подтянуть свежую закупку из номенклатуры во все товары (маржа обновится; сумма клиента и чек не меняются)","Підтягнути свіжу закупівлю з номенклатури в усі товари (маржа оновиться; сума клієнта і чек не змінюються)")} style={{ whiteSpace: "nowrap" }}><Icon n="refresh" size={13} /> {t("Закупка","Закупівля")}</button>}
+                  {can("deal.price.refresh") && (Number(deal.paid) || 0) <= 0 && deal.items && deal.items.length > 0 && <button className="btn" onClick={refreshPrices} title={t("Подтянуть свежие розничные цены из номенклатуры во все товары (сумма сделки пересчитается). Только для неоплаченных.","Підтягнути свіжі роздрібні ціни з номенклатури в усі товари (сума сделки перерахується). Лише для неоплачених.")} style={{ whiteSpace: "nowrap" }}><Icon n="money" size={13} /> {t("Цены","Ціни")}</button>}
                 </div>
                 {presults.length > 0 && (
                   <div style={{ position: "absolute", top: 38, left: 0, right: 0, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.15)", zIndex: 20, maxHeight: 260, overflowY: "auto" }}>
