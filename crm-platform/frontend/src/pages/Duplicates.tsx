@@ -10,7 +10,7 @@ import { useLang } from "../i18n";
 import { Icon } from "../Icon";
 
 type Item = { id: number; name: string; phone?: string; email?: string; social?: string; stage?: string; owner?: string; amount?: string };
-type Group = { reason: string; by: string; key: string; count: number; items: Item[]; matched?: string[]; strength?: number; keep_suggest?: number };
+type Group = { reason: string; by: string; key: string; count: number; items: Item[]; matched?: string[]; conflicts?: string[]; strength?: number; keep_suggest?: number };
 
 const REASON_ICON: Record<string, string> = { chat: "chat", phone: "phone", email: "mail", social: "link", nick: "hash", name: "user", contact: "user" };
 const REASON_LABEL: Record<string, [string, string]> = { chat: ["Номер переписки", "Номер переписки"], nick: ["Ник из мессенджера", "Нік з месенджера"], phone: ["Телефон", "Телефон"], email: ["Email", "Email"], social: ["Мессенджер/ник", "Мессенджер/нік"], name: ["Имя", "Імʼя"], contact: ["Один контакт — несколько", "Один контакт — декілька"] };
@@ -211,8 +211,13 @@ export default function Duplicates() {
               <div key={gi} className="panel" style={{ marginBottom: 12, padding: 0, overflow: "hidden", border: sel[gi] ? "1.5px solid #16a34a" : "" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", background: "#f8fafc", borderBottom: "1px solid #eef2f7", flexWrap: "wrap" }}>
                   {tab === "contacts" && (
-                    <input type="checkbox" checked={!!sel[gi]} onChange={() => setSel((s) => ({ ...s, [gi]: !s[gi] }))}
-                      title={t("Отметить для массового объединения", "Відмітити для масового обʼєднання")} style={{ cursor: "pointer" }} />
+                    <input type="checkbox" checked={!!sel[gi]} disabled={!!(g.conflicts || []).length}
+                      onChange={() => setSel((s) => ({ ...s, [gi]: !s[gi] }))}
+                      title={(g.conflicts || []).length
+                        ? t("Похоже на разных людей — массовое объединение заблокировано, разбирайте вручную",
+                            "Схоже на різних людей — масове обʼєднання заблоковано, розбирайте вручну")
+                        : t("Отметить для массового объединения", "Відмітити для масового обʼєднання")}
+                      style={{ cursor: (g.conflicts || []).length ? "not-allowed" : "pointer" }} />
                   )}
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, color: "#475569" }}>
                     <Icon n={REASON_ICON[g.by] || "copy"} size={14} /> {t(...(REASON_LABEL[g.by] || [g.reason, g.reason]))}
@@ -228,6 +233,15 @@ export default function Duplicates() {
                   {(g.strength || 0) >= 2 && (
                     <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: "#16a34a", borderRadius: 5, padding: "1px 6px" }}>
                       {t(`совпало ${g.strength}`, `збіглось ${g.strength}`)}
+                    </span>
+                  )}
+                  {/* РІЗНІ люди: у групі розходяться телефони/акаунти — злиття зіпсує дані */}
+                  {!!(g.conflicts || []).length && (
+                    <span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff", background: "#dc2626", borderRadius: 5, padding: "2px 8px" }}
+                      title={t("Внутри группы разные значения — проверьте, прежде чем объединять",
+                               "Всередині групи різні значення — перевірте, перш ніж обʼєднувати")}>
+                      {t("ПОХОЖЕ НА РАЗНЫХ ЛЮДЕЙ: разные ", "СХОЖЕ НА РІЗНИХ ЛЮДЕЙ: різні ")}
+                      {(g.conflicts || []).map((c) => t(...(REASON_LABEL[c] || [c, c])).toLowerCase()).join(", ")}
                     </span>
                   )}
                   <div style={{ flex: 1 }} />

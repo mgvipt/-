@@ -56,8 +56,20 @@ class Command(BaseCommand):
                 if live:
                     Conversation.objects.filter(contact=c).update(contact=keeper)
                     Lead.objects.filter(contact=c).update(contact=keeper)
+                    # посилання дубля переносимо КЕЙПЕРУ (щоб не загубити другий акаунт
+                    # клієнта), а в самому хвості чистимо ВСІ поля з акаунтами.
+                    # 31.08.2026: раніше чистили лише social_link+nickname, а messengers
+                    # лишався — і хвіст знову спливав у пошуку дублів як «новий дубль».
+                    keep_links = list(keeper.messengers or [])
+                    for link in ([c.social_link] + list(c.messengers or [])):
+                        link = (link or "").strip()
+                        if link and link not in keep_links:
+                            keep_links.append(link)
+                    if keep_links != list(keeper.messengers or []):
+                        keeper.messengers = keep_links
+                        keeper.save(update_fields=["messengers"])
                     c.comment = ("[обʼєднано → #%d] " % keeper.id) + (c.comment or "")
-                    c.social_link = ""; c.nickname = ""  # щоб не матчився знову
-                    c.save(update_fields=["comment", "social_link", "nickname"])
+                    c.social_link = ""; c.nickname = ""; c.messengers = []; c.links_extra = []
+                    c.save(update_fields=["comment", "social_link", "nickname", "messengers", "links_extra"])
                 merged += 1
         self.stdout.write("=== %s: merged=%d skipped=%d ===" % ("LIVE" if live else "DRY", merged, skipped))

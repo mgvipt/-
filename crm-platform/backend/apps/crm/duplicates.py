@@ -9,10 +9,15 @@
   ?min=    — мінімальна «сила» збігу: скільки полів однакові у ВСІХ учасників групи (1..4)
 МАСОВЕ ОБ'ЄДНАННЯ (POST {"groups": [{"keep": id, "ids": [..]}, ...], "dry_run": true|false}).
 
-31.08.2026 — розширено пошук месенджерів (було: тільки поле social_link → пропускало 202 групи
-реальних дублів, бо у свіжих карток посилання лежить у списку messengers), додано критерії
-«номер переписки» (один external_chat_id у різних контактів = 100% дубль) і «нік з месенджера»
-(тільки username-подібний: латиниця/цифри — текстові ніки типу «Людмила» НЕ беремо, бо це імʼя).
+31.08.2026:
+  • месенджер шукаємо в УСІХ посиланнях картки (social_link + messengers + links_extra),
+    раніше — тільки social_link;
+  • новий критерій «номер переписки» (один external_chat_id у різних контактів = 100% дубль);
+  • новий критерій «нік з месенджера» — ТІЛЬКИ справжній нік акаунта (див. _nick_is_reliable);
+  • картки з міткою «[обʼєднано → #N]» (хвости після dedup_ig_contacts) зі списку прибрані —
+    вони вже склеєні, просто не видалені (265 штук);
+  • конфлікти: якщо всередині групи РІЗНІ телефони/акаунти — це, найімовірніше, РІЗНІ люди
+    (поле "conflicts"), фронт показує попередження і не дає масово злити не глянувши.
 """
 import re
 from collections import defaultdict
@@ -26,6 +31,10 @@ from apps.crm.models import Lead, Deal
 # скільки груп максимум віддаємо на фронт / скільки груп максимум за один масовий мердж
 MAX_GROUPS = 1200
 MAX_BULK = 300
+# скільки карток на одному посиланні ще схоже на дубль (більше — це спільний/службовий акаунт)
+MAX_SAME_LINK = 8
+# мітка, якою dedup_ig_contacts позначає вже об'єднаний дубль
+_MERGED_MARK = "[обʼєднано →"
 
 
 def _can(user):
@@ -62,17 +71,36 @@ def _norm_email(e):
     return (e or "").strip().lower()
 
 
+# рекламні/трекінгові хвости, які НЕ впливають на те, чий це акаунт
+_TRACK_PARAMS = {"igshid", "fbclid", "mibextid", "hl", "ref", "ref_src", "si", "_rdr",
+                 "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"}
+
+
 def _norm_social(s):
     """Посилання на акаунт → однаковий вигляд «instagram.com/nick».
-    Прибираємо протокол, www., хвіст ?igshid=… та слеш у кінці — інакше та сама сторінка
-    у двох картках виглядає по-різному і дубль не знаходиться."""
+    Прибираємо протокол, www., трекінгові параметри (?igshid=…, ?fbclid=…) і слеш у кінці —
+    інакше та сама сторінка у двох картках виглядає по-різному і дубль не знаходиться.
+    ⚠️ ВЕСЬ «?…» різати НЕ можна: у «viber://chat?number=380…» і «tg://user?id=…» саме
+    в параметрі лежить сам номер — без нього всі вайбер-контакти злипаються в одну купу."""
     v = (s or "").strip().lower()
     if not v:
         return ""
     v = re.sub(r"^https?://", "", v)
     v = re.sub(r"^www\.", "", v)
-    v = v.split("?")[0].split("#")[0]
+    v = v.split("#")[0]
+    if "?" in v:
+        base, qs = v.split("?", 1)
+        keep = sorted(p for p in qs.split("&") if p and p.split("=", 1)[0] not in _TRACK_PARAMS)
+        v = base + ("?" + "&".join(keep) if keep else "")
     return v.rstrip("/")
+
+
+def _platform(link):
+    """Площадка посилання: instagram.com / tiktok.com / t.me / viber / tg."""
+    v = link or ""
+    if "://" in v:                      # viber://chat?number=…, tg://user?id=…
+        return v.split("://", 1)[0]
+    return v.split("/", 1)[0]
 
 
 def _links_of(r):
@@ -94,11 +122,25 @@ def _links_of(r):
 # нік вважаємо надійним, лише якщо він схожий на username месенджера (латиниця/цифри/._-).
 # Текстовий нік («Людмила», «Юлія») — це просто імʼя, по ньому зливати НЕ можна.
 _USERNAME_RE = re.compile(r"^[a-z0-9._\-]{3,}$")
+# ⚠️ латиниця сама по собі НЕ доказ: «Iryna», «Tetiana», «Ludmila» — це теж імена, і по них
+# злиплися б РІЗНІ люди (перевірено 31.08: 4 різні Ludmila, у двох є сделки). Тому нік беремо
+# лише якщо в ньому є цифра/крапка/підкреслення/дефіс АБО його підтверджує посилання /<нік>.
+_NICK_MARKS = re.compile(r"[0-9._\-]")
+_NICK_PLACEHOLDERS = {"instagram", "facebook", "telegram", "viber", "whatsapp", "tiktok", "user", "guest"}
 
 
 def _norm_nick(n):
     v = (n or "").strip().lower().lstrip("@")
+    if v in _NICK_PLACEHOLDERS:
+        return ""
     return v if _USERNAME_RE.match(v) else ""
+
+
+def _nick_is_reliable(nick, links):
+    """Чи це справжній нік акаунта, а не імʼя латиницею."""
+    if not nick:
+        return False
+    return bool(_NICK_MARKS.search(nick)) or any(l.endswith("/" + nick) for l in links)
 
 
 def _full(i):
@@ -126,6 +168,52 @@ def _matched_fields(items):
     if all(link_sets) and set.intersection(*link_sets):
         out.append("social")
     return out
+
+
+def _conflict_fields(items):
+    """Поля, які у групі РОЗХОДЯТЬСЯ → швидше за все це РІЗНІ люди, а не дублі.
+    Приклад із життя (31.08): два різні клієнти на одному номері — Анна Пікшрєнє і
+    Юлия Чикаловец (+380678664328). Збіг телефону є, але аккаунти різні → не зливати."""
+    out = []
+    for key, fn in _NORMALIZERS:
+        vals = {fn(r) for r in items}
+        vals.discard("")
+        if len(vals) > 1:
+            out.append(key)
+    # ⚠️ порівнюємо акаунти ПОМАЙДАНЧИКОВО: «instagram.com/natasha.sharun» і
+    # «tiktok.com/@natasha.sharun» — це та сама людина у двох мережах, а не розбіжність.
+    # Конфлікт = на ОДНІЙ площадці різні акаунти (instagram.com/baranovska953 vs .../zhmurko784).
+    by_platform = defaultdict(list)
+    for r in items:
+        seen = defaultdict(set)
+        for l in _links_of(r):
+            seen[_platform(l)].add(l)
+        for plat, links in seen.items():
+            by_platform[plat].append(links)
+    for plat, sets_ in by_platform.items():
+        if len(sets_) > 1 and not set.intersection(*sets_):
+            out.append("social")
+            break
+    return out
+
+
+# жорсткі ідентифікатори: розбіжність тут — вагома підстава вважати людей різними
+_HARD_IDS = {"phone", "email", "social"}
+
+
+def _conflicts_to_show(by, conflicts):
+    """Що саме попереджати. Не кожна розбіжність = різні люди:
+    • знайшли по НОМЕРУ ПЕРЕПИСКИ — це точно одна людина (у Meta/IG імʼя міняють вільно:
+      «MARGO RYSTAMOVA» → «MARGO CHUB»), попереджати немає про що;
+    • знайшли по СПІЛЬНОМУ АКАУНТУ — акаунт особистий, імʼя/нік у картках можуть різнитись,
+      важливо лише якщо розходяться телефон/пошта;
+    • знайшли по телефону або імені — попереджаємо про будь-яку розбіжність (один номер на
+      двох людей реально буває: Анна Пікшрєнє / Юлия Чикаловец на +380678664328)."""
+    if by == "chat":
+        return []
+    if by == "social":
+        return [c for c in conflicts if c in _HARD_IDS]
+    return conflicts
 
 
 def _filled_score(r):
@@ -172,8 +260,12 @@ class DuplicatesView(APIView):
 
     # ── дублі контактів ──
     def _contacts(self, q="", by="", min_strength=0):
-        rows = list(Contact.objects.values("id", "first_name", "last_name", "phone", "email",
-                                           "social_link", "messengers", "links_extra", "nickname"))
+        rows = [r for r in Contact.objects.values(
+            "id", "first_name", "last_name", "phone", "email",
+            "social_link", "messengers", "links_extra", "nickname", "comment")
+            # хвости вже об'єднаних карток (мітку ставить dedup_ig_contacts) — не дублі,
+            # а порожні залишки: показувати їх у списку немає сенсу
+            if _MERGED_MARK not in (r.get("comment") or "")]
         idx = {r["id"]: r for r in rows}
         buckets = {"chat": defaultdict(list), "phone": defaultdict(list), "email": defaultdict(list),
                    "social": defaultdict(list), "nick": defaultdict(list), "name": defaultdict(list)}
@@ -188,11 +280,16 @@ class DuplicatesView(APIView):
             for sl in _links_of(r):
                 buckets["social"][sl].append(r)
             nk = _norm_nick(r.get("nickname"))
-            if nk:
+            if nk and _nick_is_reliable(nk, _links_of(r)):
                 buckets["nick"][nk].append(r)
             nm = _norm_name(r["first_name"], r["last_name"])
             if nm:
                 buckets["name"][nm].append(r)
+
+        # службові/спільні посилання (наш власний профіль, заглушки без номера) —
+        # це не «одна людина двома картками», прибираємо цілком
+        for sl in [k for k, v in buckets["social"].items() if len(v) > MAX_SAME_LINK]:
+            del buckets["social"][sl]
 
         # ── НОМЕР ПЕРЕПИСКИ: один і той самий чат у різних карток = 100% дубль ──
         chats = defaultdict(set)
@@ -230,10 +327,12 @@ class DuplicatesView(APIView):
             if min_strength and len(matched) < min_strength:
                 continue
             primary = sorted(e["by"], key=lambda x: order.get(x, 9))[0]
+            conflicts = _conflicts_to_show(primary, _conflict_fields(items))
             keep_suggest = sorted(items, key=lambda r: (-_filled_score(r), r["id"]))[0]["id"]
             groups.append({
                 "reason": labels[primary], "by": primary, "key": e["keys"][primary],
                 "matched": matched,                       # список полів, однакових у ВСІХ
+                "conflicts": conflicts,                   # поля, що РОЗХОДЯТЬСЯ (ознака різних людей)
                 "strength": len(matched),                 # «сила» збігу 1..4
                 "count": len(items),
                 "keep_suggest": keep_suggest,
@@ -266,7 +365,7 @@ class DuplicatesView(APIView):
             groups.append({
                 "reason": "Одинаковые у одного контакта", "by": "contact",
                 "key": f"{cname} · {objs[0].title}", "count": len(objs),
-                "matched": [], "strength": 0, "keep_suggest": objs[0].id,
+                "matched": [], "conflicts": [], "strength": 0, "keep_suggest": objs[0].id,
                 "items": [{"id": o.id, "name": o.title or "—", "stage": getattr(o.stage, "name", "") or "",
                            "owner": (o.owner.get_full_name() if o.owner else "") or "",
                            "amount": str(o.amount or 0)} for o in objs],
