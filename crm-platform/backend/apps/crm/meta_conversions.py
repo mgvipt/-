@@ -248,6 +248,11 @@ def queue_stage_event(entity, *, occurred_at=None):
     if not event_name:
         return None
     source_type = "lead" if isinstance(entity, Lead) else "deal"
+    # Покупку по СТАДІЇ не дублюємо, якщо вже є Purchase від платежу цієї угоди
+    # (різні event_id → Meta порахувала б покупку двічі).
+    if event_name == "Purchase" and source_type == "deal" and MetaConversionEvent.objects.filter(
+            deal=entity, event_name="Purchase", payment__isnull=False).exists():
+        return None
     event_id = f"crm-{source_type}-{entity.pk}-stage-{stage.pk}-{event_name.lower()}"
     occurred_at = occurred_at or entity.updated_at or timezone.now()
     custom_data = {
