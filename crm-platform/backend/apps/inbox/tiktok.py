@@ -54,12 +54,12 @@ PUBLIC_BASE = "https://crm.wallcovdec.com.ua"
 API_BASE = "https://business-api.tiktok.com/open_api/%s" % API_VERSION
 AUTHORIZE_URL = "https://www.tiktok.com/v2/auth/authorize"
 
-# Права, які просимо у бізнес-акаунта (як у відкритому коді Chatwoot для TikTok)
-SCOPES = [
-    "user.info.basic", "user.info.username", "user.info.stats", "user.info.profile",
-    "user.account.type", "user.insights",
-    "message.list.read", "message.list.send", "message.list.manage",
-]
+# Права, які просимо у бізнес-акаунта. TikTok відхиляє authorize, якщо просити
+# не видані app-у scope (перевірено 31.08: message.* чекають схвалення анкети Accounts API).
+# Тому список можна звузити/розширити через .env TIKTOK_SCOPES (кома-список) БЕЗ перезбирання образу.
+_DEFAULT_SCOPES = ("user.info.basic,user.info.username,user.info.profile,user.account.type,"
+                   "message.list.read,message.list.send,message.list.manage")
+SCOPES = [x.strip() for x in (os.environ.get("TIKTOK_SCOPES", "") or _DEFAULT_SCOPES).split(",") if x.strip()]
 
 CHANNEL_NAME = "TikTok · Direct"
 CHANNEL_KIND = "tiktok"
