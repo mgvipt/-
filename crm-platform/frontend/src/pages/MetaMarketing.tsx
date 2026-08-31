@@ -410,8 +410,8 @@ function PixelEventsTab({ from, to, mode }: { from: string; to: string; mode?: "
   // mode заданий = вкладку рендерять у своєму розділі (Meta або Сайт) — перемикач зайвий
   const pxTabs = mode ? null : (
     <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-      <button className={px === "crm" ? "btn btn-primary" : "btn btn-light"} onClick={() => setPx("crm")} style={{ fontSize: 12.5 }}>💬 {t("Переписки (CRM → Meta)", "Листування (CRM → Meta)")}</button>
-      <button className={px === "site" ? "btn btn-primary" : "btn btn-light"} onClick={() => setPx("site")} style={{ fontSize: 12.5 }}>🌐 {t("Пиксель сайта (лендинг)", "Піксель сайту (лендінг)")}</button>
+      <button className={px === "crm" ? "btn btn-primary" : "btn btn-light"} onClick={() => setPx("crm")} style={{ fontSize: 12.5 }}>💬 {t("Пиксель Директ (переписки)", "Піксель Директ (листування)")}</button>
+      <button className={px === "site" ? "btn btn-primary" : "btn btn-light"} onClick={() => setPx("site")} style={{ fontSize: 12.5 }}>🌐 {t("Пиксель Сайта (лендинг)", "Піксель Сайту (лендінг)")}</button>
     </div>
   );
   if (px === "site") {
@@ -518,8 +518,8 @@ function PixelEventsTab({ from, to, mode }: { from: string; to: string; mode?: "
     {pxTabs}
     {(d.purchases || []).length > 0 && (
       <div className="panel" style={{ marginBottom: 14, borderLeft: "4px solid #16a34a", background: "#f0fdf4" }}>
-        <div style={{ fontWeight: 800, fontSize: 15, color: "#166534", marginBottom: 4 }}>💰 {t("Покупки с рекламы", "Покупки з реклами")} — {d.purchases.length}</div>
-        <div className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>{t("Реальные оплаты клиентов, которых привела реклама (CRM сообщила Meta — они видны как «Покупки» в Ads Manager). Клик по имени — карточка сделки.", "Реальні оплати клієнтів з реклами. Клік по імені — картка угоди.")}</div>
+        <div style={{ fontWeight: 800, fontSize: 15, color: "#166534", marginBottom: 4 }}>💰 {t("Покупки с рекламы в Директе", "Покупки з реклами в Директі")} — {d.purchases.length}</div>
+        <div className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>{t("Клиенты, которые пришли с рекламы В ПЕРЕПИСКУ Instagram и оплатили. CRM сообщила об этом Meta — в Ads Manager они видны как «Покупки». Клик по имени — карточка сделки. Покупки с САЙТА — на соседней вкладке «Пиксель Сайта».", "Клієнти, що прийшли з реклами В ЛИСТУВАННЯ Instagram і оплатили. Покупки з САЙТУ — на сусідній вкладці «Піксель Сайту».")}</div>
         {d.purchases.map((r: any, i: number) => (
           <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", padding: "7px 0", borderTop: i ? "1px solid #dcfce7" : "none", fontSize: 13, flexWrap: "wrap" }}>
             <span className="muted" style={{ fontSize: 11.5, minWidth: 42 }}>{r.at}</span>
@@ -531,7 +531,7 @@ function PixelEventsTab({ from, to, mode }: { from: string; to: string; mode?: "
       </div>
     )}
     <div className="note" style={{ marginBottom: 12, lineHeight: 1.5 }}>
-      {t("Это события, которые CRM отправляет в пиксель Meta по стадиям сделок (Лид → Оплачено → Отправлено). По ним Meta ставит ярлыки в переписках Direct и учится находить платящих клиентов.", "Це події, які CRM відправляє в піксель Meta за стадіями угод. За ними Meta ставить ярлики в Direct і вчиться знаходити платників.")}
+      {t("Это ДИРЕКТ: события по клиентам из переписок Instagram/Facebook. CRM отправляет их в Meta по стадиям сделок (Лид → Оплачено → Отправлено) — Meta ставит ярлыки в переписках и учится находить платящих. События САЙТА — на вкладке «Пиксель Сайта».", "Це ДИРЕКТ: події по клієнтах з листувань Instagram/Facebook. Події САЙТУ — на вкладці «Піксель Сайту».")}
     </div>
     <div style={cardsRow}>
       {card(t("Всего событий", "Всього подій"), count(sm.total), "#0f172a")}
