@@ -7,7 +7,7 @@ type Asset = {
 };
 type Reply = { id: number; title: string; text: string; asset_ids: number[] };
 type Screen = "materials" | "material" | "color";
-const isColorSwatch = (asset: Asset) => asset.kind === "image" && /\b(каталог|зразок|sample)\b/i.test(`${asset.title} ${asset.tags}`);
+const isColorSwatch = (asset: Asset) => asset.kind === "image" && /(каталог|зразок|sample)/i.test(`${asset.title} ${asset.tags}`);
 
 export function MediaLibraryPicker({ conversationId, onSent, onClose }: { conversationId: number; onSent: (m: ChatMessage) => void; onClose: () => void }) {
   const [items, setItems] = useState<Asset[]>([]); const [replies, setReplies] = useState<Reply[]>([]);
