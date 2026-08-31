@@ -7,7 +7,13 @@ class DealItemSerializer(serializers.ModelSerializer):
     product_stock = serializers.SerializerMethodField()
     unit = serializers.SerializerMethodField()
     room_name = serializers.SerializerMethodField()
+    consumption = serializers.SerializerMethodField()
     total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+
+    def get_consumption(self, obj):
+        """Витрата товару на 1 м² (щоб у сделці було видно, чому кількість не рахується)."""
+        v = getattr(obj.product, "consumption_per_m2", None) if obj.product_id else None
+        return float(v) if v else 0
 
     def get_room_name(self, obj):
         return obj.room.name if obj.room_id else ""
@@ -29,7 +35,7 @@ class DealItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DealItem
-        fields = ["room", "room_name", "unit", "id", "deal", "product", "custom_name", "product_name", "product_stock", "quantity", "price", "cost", "discount_pct", "discount_amount", "discount_sum", "total", "reserved"]
+        fields = ["consumption", "room", "room_name", "unit", "id", "deal", "product", "custom_name", "product_name", "product_stock", "quantity", "price", "cost", "discount_pct", "discount_amount", "discount_sum", "total", "reserved"]
         read_only_fields = ["deal"]
 
 
