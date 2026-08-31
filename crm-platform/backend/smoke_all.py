@@ -37,6 +37,8 @@ CHECKS = [
     ("Картка контакту (останній)", "owner", "CONTACT_DETAIL", {200}, []),
     ("Задачі", "owner", "/api/tasks/?page_size=5", {200}, []),
     ("Дублікати", "owner", "/api/duplicates/", {200}, []),
+    ("Дублікати: номер переписки", "owner", "/api/duplicates/?by=chat", {200}, []),
+    ("Дублікати: месенджер", "owner", "/api/duplicates/?by=social", {200}, []),
     # ── Чати / відкриті лінії ──
     ("Список чатів", "owner", "/api/conversations/?page_size=5", {200}, []),
     ("Список чатів (менеджер)", "manager", "/api/conversations/?page_size=5", {200}, []),

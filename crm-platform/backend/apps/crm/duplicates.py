@@ -1,13 +1,18 @@
 """Пошук дублів клієнтів / лідів / сделок + об'єднання.
-Дублі контактів шукаємо за: телефоном, email, мессенджером(social_link), іменем.
+Дублі контактів шукаємо за: НОМЕРОМ ПЕРЕПИСКИ, телефоном, email, мессенджером, ніком, іменем.
 Дублі лідів/сделок = один контакт має кілька сутностей.
 Доступ — лише адмін (roles.manage / staff).
 
 ФІЛЬТРИ (GET):
   ?q=      — пошук по номеру / прізвищу / email / ніку (шукає серед учасників групи)
-  ?by=     — тільки групи, знайдені за критерієм: phone | email | social | name
+  ?by=     — тільки групи, знайдені за критерієм: chat | phone | email | social | nick | name
   ?min=    — мінімальна «сила» збігу: скільки полів однакові у ВСІХ учасників групи (1..4)
 МАСОВЕ ОБ'ЄДНАННЯ (POST {"groups": [{"keep": id, "ids": [..]}, ...], "dry_run": true|false}).
+
+31.08.2026 — розширено пошук месенджерів (було: тільки поле social_link → пропускало 202 групи
+реальних дублів, бо у свіжих карток посилання лежить у списку messengers), додано критерії
+«номер переписки» (один external_chat_id у різних контактів = 100% дубль) і «нік з месенджера»
+(тільки username-подібний: латиниця/цифри — текстові ніки типу «Людмила» НЕ беремо, бо це імʼя).
 """
 import re
 from collections import defaultdict
@@ -19,7 +24,7 @@ from apps.inbox.models import Contact, Conversation
 from apps.crm.models import Lead, Deal
 
 # скільки груп максимум віддаємо на фронт / скільки груп максимум за один масовий мердж
-MAX_GROUPS = 500
+MAX_GROUPS = 1200
 MAX_BULK = 300
 
 
@@ -58,7 +63,42 @@ def _norm_email(e):
 
 
 def _norm_social(s):
-    return (s or "").strip().lower().rstrip("/")
+    """Посилання на акаунт → однаковий вигляд «instagram.com/nick».
+    Прибираємо протокол, www., хвіст ?igshid=… та слеш у кінці — інакше та сама сторінка
+    у двох картках виглядає по-різному і дубль не знаходиться."""
+    v = (s or "").strip().lower()
+    if not v:
+        return ""
+    v = re.sub(r"^https?://", "", v)
+    v = re.sub(r"^www\.", "", v)
+    v = v.split("?")[0].split("#")[0]
+    return v.rstrip("/")
+
+
+def _links_of(r):
+    """ВСІ посилання на акаунти контакта: головне поле + список месенджерів + додаткові.
+    Раніше дивились лише в social_link — у карток, створених з переписки, воно порожнє,
+    а посилання лежить у messengers → дублі були невидимі."""
+    pool = [r.get("social_link")]
+    pool += list(r.get("messengers") or [])
+    for x in (r.get("links_extra") or []):
+        pool.append(x.get("value") if isinstance(x, dict) else x)
+    out = set()
+    for m in pool:
+        m = _norm_social(m if isinstance(m, str) else "")
+        if m:
+            out.add(m)
+    return out
+
+
+# нік вважаємо надійним, лише якщо він схожий на username месенджера (латиниця/цифри/._-).
+# Текстовий нік («Людмила», «Юлія») — це просто імʼя, по ньому зливати НЕ можна.
+_USERNAME_RE = re.compile(r"^[a-z0-9._\-]{3,}$")
+
+
+def _norm_nick(n):
+    v = (n or "").strip().lower().lstrip("@")
+    return v if _USERNAME_RE.match(v) else ""
 
 
 def _full(i):
@@ -69,7 +109,7 @@ def _full(i):
 _NORMALIZERS = [
     ("phone", lambda r: _norm_phone(r["phone"])),
     ("email", lambda r: _norm_email(r["email"])),
-    ("social", lambda r: _norm_social(r["social_link"])),
+    ("nick", lambda r: _norm_nick(r.get("nickname"))),
     ("name", lambda r: _norm_name(r["first_name"], r["last_name"])),
 ]
 
@@ -81,6 +121,10 @@ def _matched_fields(items):
         vals = {fn(r) for r in items}
         if len(vals) == 1 and "" not in vals:
             out.append(key)
+    # месенджер рахуємо як збіг, якщо у ВСІХ є хоч одне спільне посилання
+    link_sets = [_links_of(r) for r in items]
+    if all(link_sets) and set.intersection(*link_sets):
+        out.append("social")
     return out
 
 
@@ -100,6 +144,7 @@ def _row_hits(r, q):
             return True
     hay = " ".join([(r.get("first_name") or ""), (r.get("last_name") or ""),
                     (r.get("email") or ""), (r.get("social_link") or ""),
+                    (r.get("nickname") or ""), " ".join(_links_of(r)),
                     (r.get("phone") or "")]).lower()
     return ql in hay
 
@@ -127,10 +172,11 @@ class DuplicatesView(APIView):
 
     # ── дублі контактів ──
     def _contacts(self, q="", by="", min_strength=0):
-        rows = list(Contact.objects.values("id", "first_name", "last_name", "phone", "email", "social_link"))
+        rows = list(Contact.objects.values("id", "first_name", "last_name", "phone", "email",
+                                           "social_link", "messengers", "links_extra", "nickname"))
         idx = {r["id"]: r for r in rows}
-        buckets = {"phone": defaultdict(list), "email": defaultdict(list),
-                   "social": defaultdict(list), "name": defaultdict(list)}
+        buckets = {"chat": defaultdict(list), "phone": defaultdict(list), "email": defaultdict(list),
+                   "social": defaultdict(list), "nick": defaultdict(list), "name": defaultdict(list)}
         for r in rows:
             ph = _norm_phone(r["phone"])
             if ph:
@@ -138,12 +184,25 @@ class DuplicatesView(APIView):
             em = _norm_email(r["email"])
             if em:
                 buckets["email"][em].append(r)
-            sl = _norm_social(r["social_link"])
-            if sl:
+            # месенджер: усі посилання картки (головне поле + список + додаткові)
+            for sl in _links_of(r):
                 buckets["social"][sl].append(r)
+            nk = _norm_nick(r.get("nickname"))
+            if nk:
+                buckets["nick"][nk].append(r)
             nm = _norm_name(r["first_name"], r["last_name"])
             if nm:
                 buckets["name"][nm].append(r)
+
+        # ── НОМЕР ПЕРЕПИСКИ: один і той самий чат у різних карток = 100% дубль ──
+        chats = defaultdict(set)
+        for cid, ch, ext in Conversation.objects.exclude(contact__isnull=True).values_list(
+                "contact_id", "channel_id", "external_chat_id"):
+            if ext:
+                chats[(ch, ext)].add(cid)
+        for (ch, ext), cids in chats.items():
+            if len(cids) > 1:
+                buckets["chat"][f"{ch}:{ext}"] = [idx[i] for i in cids if i in idx]
 
         # ── склеюємо однакові набори контактів: одна група = один набір id ──
         # (раніше та сама пара контактів показувалась 4 рази — по разу на критерій)
@@ -157,8 +216,9 @@ class DuplicatesView(APIView):
                 e["by"].add(reason)
                 e["keys"][reason] = key
 
-        labels = {"phone": "Телефон", "email": "Email", "social": "Мессенджер/нік", "name": "Имя"}
-        order = {"phone": 0, "email": 1, "social": 2, "name": 3}
+        labels = {"chat": "Номер переписки", "phone": "Телефон", "email": "Email",
+                  "social": "Мессенджер/нік", "nick": "Нік з месенджера", "name": "Имя"}
+        order = {"chat": 0, "phone": 1, "email": 2, "social": 3, "nick": 4, "name": 5}
         groups = []
         for fs, e in cand.items():
             items = [idx[i] for i in sorted(fs)]
@@ -178,10 +238,12 @@ class DuplicatesView(APIView):
                 "count": len(items),
                 "keep_suggest": keep_suggest,
                 "items": [{"id": i["id"], "name": _full(i), "phone": i["phone"] or "",
-                           "email": i["email"] or "", "social": i["social_link"] or ""} for i in items],
+                           "email": i["email"] or "",
+                           # показуємо ВСІ месенджери картки, а не лише головне поле
+                           "social": " · ".join(sorted(_links_of(i))) or ""} for i in items],
             })
-        # найнадійніші (збіг по багатьох полях) — першими
-        groups.sort(key=lambda g: (-g["strength"], order.get(g["by"], 9), -g["count"]))
+        # спершу найнадійніший критерій (переписка → телефон → …), потім сила збігу
+        groups.sort(key=lambda g: (order.get(g["by"], 9), -g["strength"], -g["count"]))
         return {"type": "contacts", "total": len(groups), "groups": groups[:MAX_GROUPS]}
 
     # ── дублі лідів/сделок: один контакт + ОДНАКОВА назва (реальний дубль вводу) ──

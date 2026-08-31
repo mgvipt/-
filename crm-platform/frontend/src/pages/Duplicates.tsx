@@ -1,4 +1,4 @@
-/* Пошук дублів: контакти (телефон/email/мессенджер/імʼя) + ліди/сделки (один контакт — кілька).
+/* Пошук дублів: контакти (номер переписки/телефон/email/мессенджер/нік/імʼя) + ліди/сделки.
    Контакти можна обʼєднати в один (перепривʼязка лідів/сделок/чатів + дозаповнення полів).
    Є: пошук по номеру/прізвищу, фільтр за критерієм збігу, фільтр за «силою» збігу
    та МАСОВЕ обʼєднання відмічених груп (з попереднім показом «що буде зроблено»). */
@@ -12,8 +12,8 @@ import { Icon } from "../Icon";
 type Item = { id: number; name: string; phone?: string; email?: string; social?: string; stage?: string; owner?: string; amount?: string };
 type Group = { reason: string; by: string; key: string; count: number; items: Item[]; matched?: string[]; strength?: number; keep_suggest?: number };
 
-const REASON_ICON: Record<string, string> = { phone: "phone", email: "mail", social: "link", name: "user", contact: "user" };
-const REASON_LABEL: Record<string, [string, string]> = { phone: ["Телефон", "Телефон"], email: ["Email", "Email"], social: ["Мессенджер/ник", "Мессенджер/нік"], name: ["Имя", "Імʼя"], contact: ["Один контакт — несколько", "Один контакт — декілька"] };
+const REASON_ICON: Record<string, string> = { chat: "chat", phone: "phone", email: "mail", social: "link", nick: "hash", name: "user", contact: "user" };
+const REASON_LABEL: Record<string, [string, string]> = { chat: ["Номер переписки", "Номер переписки"], nick: ["Ник из мессенджера", "Нік з месенджера"], phone: ["Телефон", "Телефон"], email: ["Email", "Email"], social: ["Мессенджер/ник", "Мессенджер/нік"], name: ["Имя", "Імʼя"], contact: ["Один контакт — несколько", "Один контакт — декілька"] };
 
 // поля, які можна перенести при обʼєднанні (ключ, RU, UA)
 function msgLabel(v: string): string {
@@ -127,9 +127,11 @@ export default function Duplicates() {
     ["contacts", "Клиенты", "Клієнти"], ["leads", "Лиды", "Ліди"], ["deals", "Сделки", "Сделки"],
   ];
   const byOptions: [string, string, string][] = [
-    ["", "Все совпадения", "Всі збіги"], ["phone", "Только телефон", "Тільки телефон"],
+    ["", "Все совпадения", "Всі збіги"], ["chat", "Только номер переписки", "Тільки номер переписки"],
+    ["phone", "Только телефон", "Тільки телефон"],
     ["email", "Только email", "Тільки email"], ["social", "Только мессенджер", "Тільки месенджер"],
-    ["name", "Только имя/фамилия", "Тільки імʼя/прізвище"],
+    ["nick", "Только ник", "Тільки нік"],
+    ["name", "Только имя/фамилия", "Тільки имʼя/прізвище"],
   ];
   const minOptions: [number, string, string][] = [
     [0, "Любая точность", "Будь-яка точність"], [2, "Совпало ≥ 2 полей", "Збіглось ≥ 2 полів"],
@@ -145,8 +147,8 @@ export default function Duplicates() {
         <Icon n="copy" size={20} /> {t("Поиск дублей", "Пошук дублів")}
       </h2>
       <div className="muted" style={{ fontSize: 12.5, marginBottom: 14 }}>
-        {t("Совпадения по телефону, email, мессенджеру и имени. Контакты можно объединить в один.",
-          "Збіги за телефоном, email, мессенджером та імʼям. Контакти можна обʼєднати в один.")}
+        {t("Совпадения по номеру переписки, телефону, email, мессенджеру, нику и имени. Контакты можно объединить в один. Самые надёжные совпадения — сверху.",
+          "Збіги за номером переписки, телефоном, email, месенджером, ніком та імʼям. Контакти можна обʼєднати в один. Найнадійніші збіги — зверху.")}
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
