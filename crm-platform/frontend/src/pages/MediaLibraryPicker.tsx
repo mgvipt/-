@@ -13,7 +13,16 @@ const effectFor = (asset: Asset) => {
   return match?.[1]?.trim() || "";
 };
 
-export function MediaLibraryPicker({ conversationId, onSent, onClose }: { conversationId: number; onSent: (m: ChatMessage) => void; onClose: () => void }) {
+export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertText, clientName }: { conversationId: number; onSent: (m: ChatMessage) => void; onClose: () => void; onInsertText?: (t: string) => void; clientName?: string }) {
+  // Підставляє імʼя клієнта замість {Ім'я}/{Имя} у шаблоні швидкої відповіді.
+  const fillName = (txt: string) => {
+    const raw = (clientName || "").trim();
+    const first = raw.split(/[\s(·|]/)[0].replace(/^@/, "");
+    const name = first && !/^\d+$/.test(first) && first.length > 1 ? first : "";
+    return (txt || "")
+      .replace(/\{\s*(Ім['’]я|Имя|ім['’]я|имя)\s*\}[,]?\s*/g, name ? name + ", " : "")
+      .replace(/^([a-zа-яіїєґ])/u, (m0) => (name ? m0 : m0.toUpperCase()));
+  };
   const [items, setItems] = useState<Asset[]>([]); const [replies, setReplies] = useState<Reply[]>([]);
   const [query, setQuery] = useState(""); const [tab, setTab] = useState<"colors" | "quick">("colors");
   const [screen, setScreen] = useState<Screen>("materials"); const [material, setMaterial] = useState(""); const [color, setColor] = useState("");
@@ -46,7 +55,11 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose }: { conver
   return <div style={{ position: "absolute", zIndex: 50, left: 0, bottom: 46, width: 390, maxWidth: "calc(100vw - 24px)", maxHeight: 470, overflow: "auto", background: "#fff", border: "1px solid #cbd5e1", borderRadius: 12, padding: 10, boxShadow: "0 12px 32px rgba(15,23,42,.2)" }}>
     <div style={{ display: "flex", gap: 6, marginBottom: 8 }}><b style={{ fontSize: 13 }}>Бібліотека</b><span style={{ flex: 1 }} /><button className="btn" style={{ padding: "1px 7px" }} onClick={onClose}>×</button></div>
     <div style={{ display: "flex", gap: 6, marginBottom: 8 }}><button className="btn" onClick={() => { setTab("colors"); setScreen("materials"); setQuery(""); }} style={{ fontSize: 12, background: tab === "colors" ? "#e0edff" : undefined }}>🎨 Матеріали</button><button className="btn" onClick={() => { setTab("quick"); setQuery(""); }} style={{ fontSize: 12, background: tab === "quick" ? "#e0edff" : undefined }}>⚡ Швидкі відповіді</button></div>
-    {tab === "quick" && <div style={{ display: "grid", gap: 6, marginBottom: 8 }}>{replies.map((r) => <button key={r.id} className="btn" style={{ justifyContent: "flex-start", textAlign: "left", fontSize: 12 }} disabled={busy} onClick={() => send(r.id)}><b>{r.title}</b>{r.text ? <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}> — {r.text}</span> : ""}</button>)}</div>}
+    {tab === "quick" && <div style={{ display: "grid", gap: 6, marginBottom: 8 }}>{replies.map((r) => <button key={r.id} className="btn" style={{ justifyContent: "flex-start", textAlign: "left", fontSize: 12 }} disabled={busy} onClick={() => {
+      const hasAssets = (r.asset_ids || []).length > 0;
+      if (!hasAssets && onInsertText) { onInsertText(fillName(r.text || "")); onClose(); return; }
+      send(r.id);
+    }}><b>{r.title}</b>{r.text ? <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}> — {r.text}</span> : ""}</button>)}</div>}
     {tab === "quick" && <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Пошук швидкої відповіді" style={{ width: "100%", boxSizing: "border-box", padding: "7px 9px", border: "1px solid #cbd5e1", borderRadius: 7, fontSize: 12 }} />}
     {tab === "colors" && <>
       {screen !== "materials" && <button className="btn" onClick={back} style={{ fontSize: 12, marginBottom: 8 }}>← {screen === "color" ? material : "Усі матеріали"}</button>}

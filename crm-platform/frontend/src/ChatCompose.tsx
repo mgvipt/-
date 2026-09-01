@@ -7,7 +7,7 @@ export function EmojiButton({ onPick, up = true }: { onPick: (e: string) => void
   const [open, setOpen] = useState(false);
   return (
     <div style={{ position: "relative", flex: "0 0 auto" }}>
-      <button className="btn" type="button" style={{ background: "#f1f5f9" }} title="Емодзі та символи" onClick={() => setOpen((o) => !o)}><Icon n="smile" size={18} /></button>
+      <button className="btn" type="button" style={{ background: "#f1f5f9", height: 38, width: 38, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }} title="Емодзі та символи" onClick={() => setOpen((o) => !o)}><Icon n="smile" size={18} /></button>
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 49 }} />
