@@ -2251,6 +2251,13 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         deal = self.get_object()
         nd = request.data.get("np_data")
         if nd is not None:
+            # ЗБЕРІГАЄМО службові прапорці (Олег 01.09): форма присилає ТІЛЬКИ поля накладної,
+            # а повний перезапис затирав msg_arrived/msg_shipped/msg_3days/upsell_sent →
+            # поллер НП вважав, що не відправляв, і слав клієнту одне й те саме по колу
+            # (кейс Анна Омельченко: 105 повідомлень «прибуло у відділення» за 2 дні).
+            _keep = {k: v for k, v in (deal.np_data or {}).items()
+                     if k.startswith("msg_") or k in ("upsell_sent", "cancelled")}
+            nd = {**_keep, **(nd or {})}
             deal.np_data = nd
         dd = request.data.get("delivery_date")
         if dd is not None:

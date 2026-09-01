@@ -88,6 +88,19 @@ def _maybe_send(deal, row, ctr):
     conv = Conversation.objects.filter(contact_id=deal.contact_id).order_by("-last_message_at").first()
     if not conv or not conv.external_chat_id:
         return
+    # СТРАХОВКА від дублів: навіть якщо прапорець загубився (перезапис np_data, збій),
+    # не шлемо повторно те, що вже є в чаті клієнта за останні 30 днів.
+    from apps.inbox.models import Message as _Msg
+    from django.utils import timezone as _tz
+    from datetime import timedelta as _td
+    _MARK = {"shipped": "відправлено Новою Поштою", "arrived": "прибуло у відділення", "3days": "3 дні"}
+    _mark = _MARK.get(key, "")
+    if _mark and _Msg.objects.filter(conversation__contact_id=deal.contact_id, direction="out",
+                                     created_at__gte=_tz.now() - _td(days=30),
+                                     text__icontains=_mark).exists():
+        nd2 = dict(deal.np_data or {}); nd2[flag] = True
+        deal.np_data = nd2; deal.save(update_fields=["np_data"])
+        return
     try:
         send_message(conv, _msg(key, deal, row), user=None)
     except Exception:
