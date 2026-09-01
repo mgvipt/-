@@ -24,6 +24,9 @@
         reverse_proxy web:8000
     }
 
+    # Публічна policy URL, вже зареєстрована у TikTok Developer Portal.
+    redir /privacy /api/privacy/ 302
+
     # WebRTC веб-телефон: WebSocket до Asterisk (через форвардер на телефонному сервері)
     handle /pbx-ws* {
         rewrite * /ws
