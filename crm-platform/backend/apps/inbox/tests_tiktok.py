@@ -277,13 +277,14 @@ class TiktokCommentsTests(TestCase):
         req.side_effect = [self.video_page, comments]
         out = tiktok.poll_comments()
         self.assertEqual((out["new_comments"], out["baselined"]), (0, 1))
+        self.assertEqual(out["lists_checked"], 1)
         self.ch.refresh_from_db()
-        self.assertEqual(self.ch.config["tt_comment_state"]["v1"], 500)
+        self.assertEqual(self.ch.config["tt_comment_state"]["v1"], {"ts": 500, "n": 2})
         self.assertFalse(Conversation.objects.filter(external_chat_id__startswith="comment:tiktok:").exists())
 
     @patch("apps.inbox.tiktok._request")
     def test_new_comments_ingested_with_lead_and_echo(self, req):
-        self.ch.config["tt_comment_state"] = {"v1": 100}
+        self.ch.config["tt_comment_state"] = {"v1": 100}  # старий формат — має мігрувати
         self.ch.save()
         comments = {"code": 0, "data": {"has_more": False, "comments": [
             {"comment_id": "c2", "create_time": 200, "text": "Скільки коштує?", "owner": False,

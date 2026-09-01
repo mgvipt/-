@@ -603,7 +603,7 @@ class TiktokWebhookView(APIView):
 # ============================================================================
 # 8. КОМЕНТАРІ ПІД ВІДЕО → Чати CRM (право comment.list + comment.list.manage)
 # ============================================================================
-COMMENT_POLL_VIDEOS = 15      # скільки останніх відео перевіряти
+COMMENT_POLL_VIDEOS = 60      # скільки останніх відео тримати під наглядом (3 сторінки по 20)
 COMMENT_PAGE = 30
 
 def send_comment_reply(channel, video_id: str, comment_id: str, text: str) -> str:
@@ -668,21 +668,40 @@ def poll_comments() -> dict:
         return {"detail": "канал не підключено"}
     token = valid_token(ch)
     biz = (ch.config or {}).get("business_id", "")
-    js = _request("GET", "/business/video/list/", token=token, params={
-        "business_id": biz,
-        "fields": json.dumps(["item_id", "caption", "thumbnail_url", "share_url", "comments"]),
-        "max_count": COMMENT_POLL_VIDEOS,
-    })
-    videos = (js.get("data") or {}).get("videos") or []
+    videos, cursor = [], None
+    while len(videos) < COMMENT_POLL_VIDEOS:
+        params = {"business_id": biz,
+                  "fields": json.dumps(["item_id", "caption", "thumbnail_url", "share_url", "comments"]),
+                  "max_count": 20}
+        if cursor:
+            params["cursor"] = cursor
+        js = _request("GET", "/business/video/list/", token=token, params=params)
+        d = js.get("data") or {}
+        videos += d.get("videos") or []
+        if not d.get("has_more") or not d.get("cursor"):
+            break
+        cursor = d.get("cursor")
     state = dict((ch.config or {}).get("tt_comment_state") or {})
     n_new = 0
     baselined = 0
+    checked = 0
     for v in videos:
         vid = str(v.get("item_id") or "")
         if not vid:
             continue
-        first_run = vid not in state
-        known_ts = int(state.get(vid) or 0)
+        raw_st = state.get(vid)
+        first_run = raw_st is None
+        # старий формат стану — просто число (timestamp); новий — {"ts":…, "n": кількість коментарів}
+        if isinstance(raw_st, dict):
+            known_ts, known_n = int(raw_st.get("ts") or 0), int(raw_st.get("n") or -1)
+        else:
+            known_ts, known_n = int(raw_st or 0), -1
+        cur_n = int(v.get("comments") or 0)
+        if not first_run and known_n == cur_n:
+            # лічильник коментарів не змінився — не смикаємо comment/list (економія запитів)
+            state[vid] = {"ts": known_ts, "n": cur_n}
+            continue
+        checked += 1
         newest_ts = known_ts
         cursor = None
         for _page in range(5):
@@ -705,8 +724,9 @@ def poll_comments() -> dict:
             if stop or not cd.get("has_more") or first_run:
                 break
             cursor = cd.get("cursor")
-        state[vid] = newest_ts
+        state[vid] = {"ts": newest_ts, "n": cur_n}
         if first_run:
             baselined += 1
     Channel.objects.filter(pk=ch.pk).update(config={**ch.config, "tt_comment_state": state})
-    return {"new_comments": n_new, "videos_checked": len(videos), "baselined": baselined}
+    return {"new_comments": n_new, "videos_watched": len(videos), "lists_checked": checked,
+            "baselined": baselined}
