@@ -1407,6 +1407,13 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             return g2
         area = deal.area_m2
         _has_rooms = deal.rooms.exists()
+        # ЗАГАЛЬНА позиція (без кімнати), коли кімнати є → рахуємо по СУМІ їх площ
+        # (матеріал на весь обʼєкт). Олег 31.08: додав товар як «Загальна» — має рахуватись.
+        if _has_rooms:
+            from django.db.models import Sum as _Sm
+            _tot = deal.rooms.aggregate(s=_Sm("area_m2"))["s"] or 0
+            if _tot and _tot > 0:
+                area = _tot
         if (not area or area <= 0) and not _has_rooms:
             return Response({"detail": "Спочатку додайте приміщення з площею (м²)."}, status=status.HTTP_400_BAD_REQUEST)
         changed = 0
