@@ -951,6 +951,14 @@ def handle_webhook(payload: dict):
                                    text=(msg.get("text") or ("📷 Фото" if atts else ""))[:5000],
                                    attachments=atts, external_id=mid,
                                    sender_name=("ai_assistant" if is_echo else ""))
+            # Клієнт написав телефон/пошту в чаті → у картку клієнта (Олег 31.08:
+            # для Meta-каналів цього не було, тому контакти перестали додаватись).
+            if (not is_echo) and conv.contact_id:
+                try:
+                    from apps.crm.automation import capture_contacts as _cc
+                    _cc(conv.contact, msg.get("text") or "")
+                except Exception:
+                    pass
             conv.unread = (conv.unread or 0) + (0 if is_echo else 1)
             if (not is_echo) and was_closed:
                 # Клієнт написав у ЗАКРИТИЙ діалог → відкриваємо. В ПЕРШУ ЧЕРГУ віддаємо

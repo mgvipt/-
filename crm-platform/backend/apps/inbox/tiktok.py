@@ -646,6 +646,13 @@ def _ingest_comment(ch, video: dict, c: dict) -> int:
     Message.objects.create(conversation=conv, direction=("out" if ours else "in"),
                            text=str(c.get("text") or "")[:5000], external_id=cid,
                            sender_name=("ai_assistant" if ours else (username or display)))
+    # Клієнт написав телефон/пошту → у картку клієнта (як в інших каналах)
+    if (not ours) and conv.contact_id:
+        try:
+            from apps.crm.automation import capture_contacts as _cc
+            _cc(conv.contact, text or "")
+        except Exception:
+            pass
     conv.unread = (conv.unread or 0) + (0 if ours else 1)
     conv.last_message_at = _now()
     conv.save()

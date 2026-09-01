@@ -97,9 +97,33 @@ def capture_phone(contact, text):
         pass
 
 
+def _extract_email(text):
+    """Витягти email з тексту."""
+    if not text:
+        return ""
+    m = _re_phone.search(r"[A-Za-z0-9._%%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", str(text))
+    return m.group(0)[:190] if m else ""
+
+
+def capture_contacts(contact, text):
+    """Клієнт написав телефон/пошту в чаті → вписати в картку (лише якщо порожньо).
+    Викликається з УСІХ каналів: ChatPlace, Meta (IG/FB), TikTok, веб-чат, e-chat.
+    Наявні значення НЕ затираємо (правило Олега)."""
+    if contact is None or not text:
+        return
+    capture_phone(contact, text)
+    em = _extract_email(text)
+    if em and not (getattr(contact, "email", "") or "").strip():
+        contact.email = em
+        try:
+            contact.save(update_fields=["email"])
+        except Exception:
+            pass
+
+
 def on_incoming(contact, text: str = ""):
     """Клієнт написав → бейдж 'непереглянуто' + авто-просування (готовність купити має пріоритет)."""
-    capture_phone(contact, text)
+    capture_contacts(contact, text)
     _flag_seen(contact, False)
     lead = _lead_for(contact)
     if not lead:
