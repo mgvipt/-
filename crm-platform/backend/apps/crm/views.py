@@ -1489,6 +1489,34 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         if not deal.items.exists():
             return Response({"detail": "Спочатку додайте товари"}, status=status.HTTP_400_BAD_REQUEST)
         self._recalc_amount(deal)
+        # ЗБЕРІГАЄМО ПРОРАХУНОК В ІСТОРІЮ (Олег 31.08): сделка одна, а прорахунків може бути
+        # кілька — щоб можна було повернутись і подивитись попередній варіант.
+        # Видно у «Стрічка/Чат» → блок «Історія КП / накладних».
+        try:
+            from django.utils import timezone as _tzc
+            _items, _sub, _dsc, _tot = [], 0.0, 0.0, 0.0
+            for it in deal.items.select_related("product", "room").all():
+                _q = float(it.quantity or 0); _p = float(it.price or 0); _d = float(it.discount_pct or 0)
+                _gross = _q * _p; _ds = _gross * _d / 100.0; _line = _gross - _ds
+                _sub += _gross; _dsc += _ds; _tot += _line
+                _items.append({"name": (it.product.name if it.product_id else (it.custom_name or "")),
+                               "room": (it.room.name if it.room_id else ""),
+                               "qty": _q, "price": _p, "discount_pct": _d, "total": round(_line, 2)})
+            _rooms = [{"name": r.name, "area_m2": float(r.area_m2 or 0)} for r in deal.rooms.all()]
+            _snap = {"ts": _tzc.now().isoformat(), "total": round(_tot, 2), "subtotal": round(_sub, 2),
+                     "discount": round(_dsc, 2), "note": "Розрахунок", "rooms": _rooms,
+                     "by": (request.user.get_full_name() or request.user.username), "items": _items}
+            _hist = list(deal.kp_history or [])
+            # без дублів: якщо останній знімок такий самий за складом і сумою — не додаємо
+            _same = bool(_hist) and _hist[-1].get("total") == _snap["total"] and \
+                [(x.get("name"), x.get("qty"), x.get("room")) for x in (_hist[-1].get("items") or [])] == \
+                [(x.get("name"), x.get("qty"), x.get("room")) for x in _items]
+            if not _same:
+                _hist.append(_snap)
+                deal.kp_history = _hist
+                deal.save(update_fields=["kp_history"])
+        except Exception:
+            pass
         _advance_deal_stage(deal, 1, "список товарів збережено")
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 

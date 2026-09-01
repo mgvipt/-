@@ -128,7 +128,7 @@ function KpHistory({ history, deal }: { history?: any[]; deal: any }) {
   return (
     <div className="panel">
       <div className="label" style={{ marginBottom: 8 }}>🧾 {t("История КП / накладных", "Історія КП / накладних")} <span className="muted" style={{ fontSize: 11, fontWeight: 400 }}>({h.length})</span></div>
-      {h.length === 0 ? <div className="muted" style={{ fontSize: 12.5 }}>{t("Пока пусто — сохрани КП из документа (кнопка «Зберегти в історію»)", "Поки порожньо — збережи КП з документа (кнопка «Зберегти в історію»)")}</div> : (
+      {h.length === 0 ? <div className="muted" style={{ fontSize: 12.5 }}>{t("Пока пусто — сохранится при нажатии «Зберегти список → Розрахунок» или «Зберегти в історію» в документе","Поки порожньо — збережеться при натисканні «Зберегти список → Розрахунок» або «Зберегти в історію» у документі")}</div> : (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {h.slice().reverse().map((s: any, idx: number) => (
             <div key={idx} onClick={() => setView(s)} title={t("Открыть версию", "Відкрити версію")} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", border: "1px solid #e8edf3", borderRadius: 8, cursor: "pointer" }}>
@@ -143,7 +143,8 @@ function KpHistory({ history, deal }: { history?: any[]; deal: any }) {
       {view && (
         <KpDoc
           deal={{ ...deal, items: (view.items || []).map((it: any) => ({
-            product_name: it.name, quantity: it.qty, price: it.price, total: it.total,
+            product_name: it.name, quantity: it.qty, price: it.price, total: it.total, room_name: it.room || "",
+            room: it.room ? 1 : 0, unit: it.unit || "",
             discount_sum: Math.max(0, Number(it.qty) * Number(it.price) - Number(it.total)),
           })) }}
           readOnly
