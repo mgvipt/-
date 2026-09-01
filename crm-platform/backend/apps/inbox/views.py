@@ -1408,30 +1408,56 @@ class ContactCenterView(APIView):
 _PRIVACY_HTML = """<!doctype html><html lang="uk"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Політика конфіденційності — Wallcov</title>
-<style>body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;color:#1e293b;line-height:1.6}h1{color:#C67D5F}h2{margin-top:28px}small{color:#64748b}</style>
+<style>body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:820px;margin:40px auto;padding:0 20px;color:#1e293b;line-height:1.6}h1{color:#C67D5F}h2{margin-top:30px}h3{margin-top:22px}small,.muted{color:#64748b}a{color:#9a5d45}.en{margin-top:48px;padding-top:28px;border-top:1px solid #e2e8f0}</style>
 </head><body>
 <h1>Політика конфіденційності Wallcov</h1>
-<small>Оновлено: 2026</small>
-<p>Компанія <b>Wallcov</b> («Покриття для стін») поважає вашу приватність. Ця політика пояснює, які дані ми збираємо під час спілкування з клієнтами через месенджери та як їх використовуємо.</p>
-<h2>Які дані ми збираємо</h2>
+<small>Оновлено: 1 вересня 2026 року · English version below</small>
+<p><b>Контролер даних:</b> ФІЗИЧНА ОСОБА-ПІДПРИЄМЕЦЬ КРІЖЕВСЬКІ ОЛЕГ, бренд Wallcov («Покриття для стін»). Ця політика пояснює обробку персональних даних під час спілкування з Wallcov через TikTok Direct, Instagram Direct, Facebook Messenger, Telegram та інші підключені канали.</p>
+<h2>Дані, які ми обробляємо</h2>
 <ul>
-<li>Повідомлення, які ви надсилаєте нам у Instagram Direct, Facebook Messenger, Telegram;</li>
-<li>Ваше імʼя/нік у месенджері, ідентифікатор облікового запису;</li>
-<li>Зміст переписки, фото та файли, якими ви ділитесь у діалозі;</li>
-<li>Контактні дані, які ви добровільно надаєте (телефон, місто, обʼєкт).</li>
+<li>імʼя, нікнейм, аватар, посилання та ідентифікатор акаунта або діалогу;</li>
+<li>вміст вхідних і вихідних повідомлень, коментарів, фото та файлів, час і статус доставки;</li>
+<li>контактні та замовні дані, які ви добровільно надаєте: телефон, email, місто, адреса доставки, інформація про обʼєкт;</li>
+<li>технічні журнали, необхідні для безпеки, доставки повідомлень і запобігання дублюванню.</li>
 </ul>
-<h2>Як ми використовуємо дані</h2>
+<p>Ми не отримуємо пароль до вашого TikTok чи іншого соціального акаунта.</p>
+<h2>Мета та правові підстави</h2>
 <ul>
-<li>Щоб відповідати на ваші запити та консультувати щодо декоративних покриттів;</li>
-<li>Щоб оформити та доставити замовлення;</li>
-<li>Для покращення якості обслуговування.</li>
+<li>відповідати на звернення, консультувати та вести діалог у CRM;</li>
+<li>підготувати пропозицію, оформити, виконати й доставити замовлення;</li>
+<li>забезпечувати безпеку, якість підтримки та виконувати законні обовʼязки.</li>
 </ul>
-<h2>Зберігання та передача</h2>
-<p>Дані зберігаються у нашій внутрішній CRM-системі та використовуються лише співробітниками Wallcov. Ми <b>не продаємо</b> і не передаємо ваші дані третім особам, окрім випадків, передбачених законом, та сервісів, потрібних для обробки замовлення (доставка, оплата).</p>
+<p>Підставою є виконання дій на ваш запит до укладення договору, виконання договору, законні інтереси Wallcov щодо підтримки клієнтів і безпеки та, де це потрібно, ваша згода або вимога закону.</p>
+<h2>Автоматизована допомога</h2>
+<p>Для класифікації звернень і підготовки відповідей можуть використовуватися автоматизовані та AI-інструменти під контролем Wallcov. Вони не приймають рішень, що створюють для вас юридичні або аналогічно істотні наслідки; менеджер може продовжити діалог вручну.</p>
+<h2>Зберігання, розміщення та одержувачі</h2>
+<p>Дані діалогів зберігаються у внутрішній Wallcov CRM на захищеній серверній інфраструктурі в Німеччині. Доступ надається лише уповноваженим працівникам за ролями. Для передачі повідомлень, хостингу, автоматизованої допомоги, доставки й оплати ми можемо залучати постачальників, зокрема TikTok, Meta, ChatPlace, Netcup та відповідних AI-, логістичних і платіжних провайдерів. Вони отримують лише дані, потрібні для конкретної послуги. Транскордонна передача виконується з належними договірними та технічними гарантіями.</p>
+<p>Ми <b>не продаємо</b> персональні дані та не використовуємо вміст приватних повідомлень для продажу третім особам.</p>
+<h2>Строк зберігання</h2>
+<p>Дані активних звернень і клієнтських діалогів зберігаються, доки це потрібно для консультації, замовлення та підтримки, але дані неактивного діалогу — не довше 24 місяців після останньої взаємодії, якщо довший строк не потрібен для виконання договору, гарантії, бухгалтерського чи іншого законного обовʼязку або вирішення спору. Після припинення авторизації каналу дані видаляються або знеособлюються, коли відпадає законна необхідність у їх зберіганні. Резервні копії мають обмежений строк зберігання й видаляються за циклом ротації.</p>
+<h2>Захист даних</h2>
+<p>Ми застосовуємо розмежування доступу за ролями, принцип мінімально необхідного доступу, захищене зʼєднання HTTPS/TLS, резервне копіювання, журналювання та процедури реагування на інциденти. Доступи переглядаються та відкликаються, коли вони більше не потрібні.</p>
 <h2>Ваші права</h2>
-<p>Ви можете запросити видалення своїх даних або відмовитись від спілкування, написавши нам у будь-якому месенджері або на пошту.</p>
+<p>Ви можете запросити доступ, копію, виправлення або видалення даних, обмежити чи заперечити обробку, відкликати згоду та відмовитися від спілкування. Запити виконуються після перевірки особи, зазвичай протягом 30 днів, крім даних, які ми зобовʼязані зберігати за законом.</p>
+<p>Інструкція: <a href="https://crm.wallcovdec.com.ua/api/data-deletion/">видалення даних Wallcov</a>.</p>
 <h2>Контакти</h2>
-<p>Wallcov · сайт <a href="https://wallcovdec.com.ua">wallcovdec.com.ua</a> · Instagram @dekor_dlia_stin</p>
+<p>Wallcov · ФОП КРІЖЕВСЬКІ ОЛЕГ · <a href="mailto:info@wallcovdliastin.com.ua">info@wallcovdliastin.com.ua</a> · <a href="https://wallcovdliastin.com.ua">wallcovdliastin.com.ua</a> · TikTok/Instagram @dekor_dlia_stin</p>
+
+<section class="en" lang="en">
+<h1>Wallcov Privacy Policy</h1>
+<small>Last updated: September 1, 2026</small>
+<p><b>Data controller:</b> SOLE PROPRIETOR KRIZHEVSKI OLEH, trading as Wallcov. This policy applies when customers communicate with Wallcov through TikTok Direct, Instagram Direct, Facebook Messenger, Telegram, and other connected channels.</p>
+<h2>Data we process and purposes</h2>
+<p>We process account and conversation identifiers, display name, username, avatar, message and comment content, attachments, timestamps, delivery status, voluntarily provided contact/order information, and limited security logs. We use this data to answer requests, provide consultations, prepare and fulfil orders, support customers, prevent duplicate or fraudulent activity, and comply with legal obligations.</p>
+<h2>Automated assistance</h2>
+<p>Automated and AI tools may help classify requests or prepare responses under Wallcov's control. They do not make decisions producing legal or similarly significant effects. A human manager may take over the conversation.</p>
+<h2>Storage, recipients and transfers</h2>
+<p>Conversation data is stored in Wallcov's internal CRM on secured server infrastructure in Germany. Access is role-based and limited to authorized staff. We may use service providers for channel delivery, hosting, automated assistance, shipping and payments, including TikTok, Meta, ChatPlace, Netcup and relevant AI, logistics and payment providers. They receive only the data needed for their service. Appropriate contractual and technical safeguards are used for international transfers. We do not sell personal data.</p>
+<h2>Retention and security</h2>
+<p>Active conversation data is kept as needed for the enquiry, order and customer support. Inactive conversation data is retained for no longer than 24 months after the last interaction unless a longer period is required for a contract, warranty, accounting, legal obligation or dispute. Data is deleted or anonymised when no longer required. Backups are deleted through a limited rotation cycle. We use role-based least-privilege access, HTTPS/TLS, backups, logging and incident-response procedures.</p>
+<h2>Your rights and contact</h2>
+<p>You may request access, a copy, correction or deletion, restrict or object to processing, withdraw consent, or stop communications. We verify the requester and normally respond within 30 days, except where retention is legally required. See our <a href="https://crm.wallcovdec.com.ua/api/data-deletion/">data deletion instructions</a> or contact <a href="mailto:info@wallcovdliastin.com.ua">info@wallcovdliastin.com.ua</a>.</p>
+</section>
 </body></html>"""
 
 
@@ -1456,8 +1482,8 @@ _DATADEL_HTML = """<!doctype html><html lang="uk"><head><meta charset="utf-8">
 <p>Ви маєте право у будь-який момент попросити видалити всі дані, які Wallcov зберіг про вас (переписку, контактні дані, ідентифікатори месенджерів).</p>
 <h2>Як видалити свої дані</h2>
 <ol>
-<li>Напишіть нам у будь-якому месенджері (Instagram @dekor_dlia_stin, Facebook, Telegram) фразу «Видаліть мої дані» / «Удалите мои данные»;</li>
-<li>або надішліть запит на пошту <b>salonstukaturka@gmail.com</b> з темою «Видалення даних»;</li>
+<li>Напишіть нам у будь-якому месенджері (TikTok/Instagram @dekor_dlia_stin, Facebook, Telegram) фразу «Видаліть мої дані» / «Удалите мои данные»;</li>
+<li>або надішліть запит на <a href="mailto:info@wallcovdliastin.com.ua">info@wallcovdliastin.com.ua</a> з темою «Видалення даних»;</li>
 <li>Ми видалимо всі ваші персональні дані з нашої CRM протягом <b>30 днів</b> і підтвердимо це у відповідь.</li>
 </ol>
 <p>Wallcov · <a href="https://wallcovdec.com.ua">wallcovdec.com.ua</a></p>
