@@ -1635,7 +1635,7 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
     queryset = _PP.objects.select_related("category", "account")
     from .serializers import PlannedPaymentSerializer as _PPS
     serializer_class = _PPS
-    filterset_fields = ["kind", "status"]
+    filterset_fields = ["kind", "status", "source_stock"]
     permission_classes = [FinancePerm]
 
     def perform_create(self, serializer):

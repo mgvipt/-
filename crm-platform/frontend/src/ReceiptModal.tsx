@@ -23,6 +23,7 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
   const [paid, setPaid] = useState(true);   // true = оплачено, false = в долг (кредиторка постачальнику)
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const [existPP, setExistPP] = useState(0);   // вже привʼязана кредиторка до цього приходу
 
   useEffect(() => { api.get<any>("/api/warehouses/").then((d) => { const arr = d.results || d || []; if (arr[0]) setWh(arr[0].id); }).catch(() => {}); }, []);
 
@@ -40,6 +41,10 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
     setDt((editDoc.doc_date || (editDoc.created_at || "").slice(0, 10)) || new Date().toISOString().slice(0, 10));
     setComment(editDoc.comment || "");
     setPaid(true);
+    api.get<any>(`/api/planned-payments/?source_stock=${editDoc.id}&page_size=1`).then((d) => {
+      const arr = (d.results || d || []) as any[];
+      if (arr.length) { setPaid(false); setExistPP(arr[0].id); } else { setExistPP(0); }
+    }).catch(() => setExistPP(0));
     // eslint-disable-next-line
   }, [editDoc]);
 
@@ -87,6 +92,19 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
         });
         if (_er?.payable_warning) alert("⚠️ " + _er.payable_warning);
         for (const r of rows) { const rp = Number(String(r.retail).replace(",", ".")) || 0; const f = Number(r.factor) || 1; const patch: any = {}; if (rp > 0) patch.price = rp; if (f !== 1) patch.pack_factor = f; if (r.product && Object.keys(patch).length) { await api.patch(`/api/products/${r.product}/`, patch).catch(() => {}); } }
+        // «в борг» проставили вже після створення приходу — кредиторки ще немає, створюємо
+        if (!paid && total > 0 && !existPP) {
+          try {
+            await api.post("/api/planned-payments/", {
+              kind: "payable", amount: total, due_date: dt || new Date().toISOString().slice(0, 10),
+              counterparty: sup.name || "", contact: sup.id || null, source_stock: editDoc.id,
+              comment: (t("Прихід товару", "Прихід товару") + (invoice ? " №" + invoice : "")).slice(0, 255),
+            });
+          } catch (e: any) {
+            setErr(t("Приход сохранён, но кредиторку создать не удалось: ", "Прихід збережено, але кредиторку створити не вдалося: ")
+              + (e?.response?.data?.detail || "")); setBusy(false); return;
+          }
+        }
         onSaved && onSaved(); onClose(); return;
       }
       const _sd: any = await api.post("/api/stock-documents/", {
@@ -100,7 +118,10 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
           kind: "payable", amount: total, due_date: dt || new Date().toISOString().slice(0, 10),
           counterparty: sup.name || "", contact: sup.id || null, source_stock: _sd?.id || null,
           comment: (t("Прихід товару", "Прихід товару") + (invoice ? " №" + invoice : "")).slice(0, 255),
-        }).catch(() => {});
+        }).catch((e: any) => {
+          alert("⚠️ " + t("Приход проведён, но кредиторка НЕ создалась: ", "Прихід проведено, але кредиторка НЕ створилась: ")
+            + (e?.response?.data?.detail || t("проверь права на Дт/Кт", "перевір права на Дт/Кт")));
+        });
       }
       // обновить РОЗНИЧНУЮ цену товара, где задана (закупка обновляется сама при проведении прихода)
       for (const r of rows) {
