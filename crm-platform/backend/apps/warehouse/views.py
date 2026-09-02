@@ -1376,7 +1376,9 @@ class InventorySheetView(APIView):
           ?page=<n>&page_size=<n> — пагинация (по умолч. 1 / 50)
           ?all=1                  — все строки без пагинации (для печати)
 
-    Початковий залишок (до from) + Надходження − Продано = Кінцевий обліковий.
+    Початковий (залишок до from + переоблік, проведений САМЕ у день from = затверджений
+    факт останньої інвентаризації) + Надходження − Продано + Переоблік (інвентаризації
+    ВСЕРЕДИНІ періоду) = Кінцевий обліковий.
     Факт вносится вручную на фронте, Розбіжність = Факт − Кінцевий.
     Параметры дат: ?from=YYYY-MM-DD &to=YYYY-MM-DD (по умолч. текущий месяц)."""
 
@@ -1458,25 +1460,29 @@ class InventorySheetView(APIView):
 
         agg = (StockMovement.objects.filter(product_id__in=ids, document__posted=True).values("product_id").annotate(
             opening=Coalesce(Sum("quantity", filter=Q(document__created_at__date__lt=df)), Decimal("0")),
+            # переоблік, проведений САМЕ в день початку періоду, входить у «Початковий»:
+            # тоді Початковий = затверджений ФАКТ останньої інвентаризації, а не «що було до неї»
+            opening_inv=Coalesce(Sum("quantity", filter=Q(document__kind="inv",
+                document__created_at__date=df)), Decimal("0")),
             received=Coalesce(Sum("quantity", filter=Q(document__kind__in=["in", "repack"], quantity__gt=0,
                 document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
             sold_neg=Coalesce(Sum("quantity", filter=Q(document__kind__in=["out", "repack"], quantity__lt=0,
                 document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
             inv_net=Coalesce(Sum("quantity", filter=Q(document__kind="inv",
-                document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
+                document__created_at__date__gt=df, document__created_at__date__lte=dt)), Decimal("0")),
         ))
         by_id = {a["product_id"]: a for a in agg}
         rows = []
         for p in products:
             a = by_id.get(p.id, {})
-            opening = a.get("opening") or Decimal("0")
+            opening = (a.get("opening") or Decimal("0")) + (a.get("opening_inv") or Decimal("0"))
             received = a.get("received") or Decimal("0")
             sold = abs(a.get("sold_neg") or Decimal("0"))
             inv_net = a.get("inv_net") or Decimal("0")
             book = opening + received - sold + inv_net
             rows.append({"id": p.id, "name": p.name, "sku": p.sku, "unit": p.unit,
                          "opening": float(opening), "received": float(received),
-                         "sold": float(sold), "book": float(book)})
+                         "sold": float(sold), "recount": float(inv_net), "book": float(book)})
         return Response({"from": d_from, "to": d_to, "rows": rows,
                          "count": count, "page": page, "page_size": page_size})
 

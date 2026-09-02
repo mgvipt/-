@@ -64,6 +64,8 @@ CHECKS = [
     ("Склад: товари", "owner", "/api/products/?page_size=5", {200}, []),
     ("Склад: дашборд", "owner", "/api/warehouse/dashboard/", {200}, []),
     ("Склад: черга робіт", "owner", "/api/warehouse/queue/", {200}, []),
+    ("Склад: інвентаризаційна відомість", "owner",
+     "/api/warehouse/inventory-sheet/?from=2026-07-31&to=2026-09-02&page_size=5", {200}, ["rows"]),
     # ── Персонал ──
     ("Аналітика співробітників", "owner", "/api/staff/analytics/", {200}, []),
     ("Що нового", "owner", "/api/changelog/", {200}, []),

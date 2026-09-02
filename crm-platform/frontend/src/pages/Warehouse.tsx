@@ -51,7 +51,7 @@ interface Category { id: number; name: string; parent: number | null; order: num
 interface WH { id: number; name: string; is_default: boolean; }
 interface Movement { id: number; kind: string; kind_display: string; quantity: number; price: number; warehouse: string; date: string; posted_at?: string; number: string | number; }
 
-interface SheetRow { id: number; name: string; sku?: string; unit: string; opening: number; received: number; sold: number; book: number; }
+interface SheetRow { id: number; name: string; sku?: string; unit: string; opening: number; received: number; sold: number; recount?: number; book: number; }
 const PAGE_SIZES = [5, 20, 50, 100, 500];
 const SHOP_CATEGORY_SUGGESTIONS = [
   "Декоративные покрытия",
@@ -1503,8 +1503,8 @@ export default function Warehouse() {
               <span className="muted">—</span>
               <input type="date" value={pTo} onChange={(e) => { setPTo(e.target.value); setInvPage(1); loadSheet(pFrom, e.target.value, { page: 1 }); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
               <button className="btn btn-light" style={{ padding: "3px 10px", fontSize: 12 }} title={t("Поставить период = эта неделя (с понедельника)","Поставити період = цей тиждень (з понеділка)")} onClick={() => { const wf = weekStart(); const wt = today(); setPFrom(wf); setPTo(wt); setInvPage(1); loadSheet(wf, wt, { page: 1 }); }}>{t("Эта неделя","Цей тиждень")}</button>
-              <button className="btn btn-light" style={{ padding: "3px 10px", fontSize: 12 }} title={t("Период = с последней проведённой инвентаризации — чтобы видеть ВСЕ приходы и продажи после неё (иначе приход попадает в «Початковий»)","Період = з останньої проведеної інвентаризації — щоб бачити ВСІ приходи і продажі після неї (інакше прихід потрапляє в «Початковий»)")} onClick={async () => { try { const sm: any = await api.get("/api/warehouse/inventory-summary/"); const cols = sm.columns || []; if (cols.length) { const from = cols[cols.length - 1].date; const to = today(); setPFrom(from); setPTo(to); setInvPage(1); loadSheet(from, to, { page: 1 }); } } catch { /* */ } }}>{t("С последней инвентаризации","З останньої інвентаризації")}</button>
-              <span className="muted" style={{ fontSize: 12 }}>{t("Начальный + Поступление − Продано = Конечный учётный. Расхождение = Факт − учётный.","Початковий + Надходження − Продано = Кінцевий обліковий. Розбіжність = Факт − обліковий.")}</span>
+              <button className="btn btn-light" style={{ padding: "3px 10px", fontSize: 12 }} title={t("Период = с последней проведённой инвентаризации. В «Початковий» встанет утверждённый факт той инвентаризации, а все приходы и продажи после неё будут видны отдельными колонками","Період = з останньої проведеної інвентаризації. У «Початковий» стане затверджений факт тієї інвентаризації, а всі приходи і продажі після неї будуть видні окремими колонками")} onClick={async () => { try { const sm: any = await api.get("/api/warehouse/inventory-summary/"); const cols = sm.columns || []; if (cols.length) { const from = cols[cols.length - 1].date; const to = today(); setPFrom(from); setPTo(to); setInvPage(1); loadSheet(from, to, { page: 1 }); } } catch { /* */ } }}>{t("С последней инвентаризации","З останньої інвентаризації")}</button>
+              <span className="muted" style={{ fontSize: 12 }}>{t("Начальный (факт последней инвентаризации) + Поступление − Продано + Переучёт = Конечный учётный. Расхождение = Факт − учётный.","Початковий (факт останньої інвентаризації) + Надходження − Продано + Переоблік = Кінцевий обліковий. Розбіжність = Факт − обліковий.")}</span>
             </div>
             {Object.keys(facts).length > 0 && (
               <div style={{ fontSize: 12, marginBottom: 8, padding: "6px 10px", borderRadius: 7, background: "#ecfeff", color: "#155e75", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -1515,7 +1515,7 @@ export default function Warehouse() {
             )}
             <div style={{ overflowY: "auto", flex: 1 }}>
               <table style={{ width: "100%", fontSize: 13 }}>
-                <thead><tr>{[t("Товар","Товар"), t("Ед.","Од."), t("Начальный","Початковий"), t("Поступ.","Надходж."), t("Продано","Продано"), t("Конечный (учёт)","Кінцевий (облік)"), t("Факт","Факт"), t("Расхождение","Розбіжність")].map((h) => <th key={h} style={{ position: "sticky", top: 0, background: "#fff", zIndex: 2, boxShadow: "inset 0 -1px 0 #e2e8f0", textAlign: "left" }}>{h}</th>)}</tr></thead>
+                <thead><tr>{[t("Товар","Товар"), t("Ед.","Од."), t("Начальный","Початковий"), t("Поступ.","Надходж."), t("Продано","Продано"), t("Переучёт","Переоблік"), t("Конечный (учёт)","Кінцевий (облік)"), t("Факт","Факт"), t("Расхождение","Розбіжність")].map((h) => <th key={h} style={{ position: "sticky", top: 0, background: "#fff", zIndex: 2, boxShadow: "inset 0 -1px 0 #e2e8f0", textAlign: "left" }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {sheet.map((r) => {
                     const fact = facts[r.id] ?? String(r.book);
@@ -1526,13 +1526,14 @@ export default function Warehouse() {
                         <td>{r.opening.toLocaleString("ru")}</td>
                         <td style={{ color: r.received ? "#16a34a" : "#94a3b8" }}>{r.received ? "+" + r.received.toLocaleString("ru") : "—"}</td>
                         <td style={{ color: r.sold ? "#dc2626" : "#94a3b8" }}>{r.sold ? <a onClick={() => openInvDeals(r.id, r.name)} style={{ cursor: "pointer", color: "#fff", background: "#dc2626", fontWeight: 600, borderRadius: 6, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }} title={t("Клик — сделки, которые уехали с этим товаром за период","Клік — сделки, які поїхали з цим товаром за період")}>−{r.sold.toLocaleString("ru")} <span style={{ fontSize: 11 }}>↗ {t("сделки","сделки")}</span></a> : "—"}</td>
+                        <td style={{ color: (r.recount || 0) > 0 ? "#16a34a" : (r.recount || 0) < 0 ? "#dc2626" : "#94a3b8" }} title={t("Инвентаризации, проведённые ВНУТРИ периода (кроме той, что на дату начала — она уже в «Початковий»)","Інвентаризації, проведені ВСЕРЕДИНІ періоду (крім тієї, що на дату початку — вона вже в «Початковий»)")}>{r.recount ? ((r.recount > 0 ? "+" : "") + r.recount.toLocaleString("ru")) : "—"}</td>
                         <td style={{ fontWeight: 600 }}>{r.book.toLocaleString("ru")}</td>
                         <td><input type="number" value={fact} onChange={(e) => { setFacts({ ...facts, [r.id]: e.target.value }); saveDraftFact(r.id, e.target.value); }} style={{ width: 74, height: 28, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} /></td>
                         <td style={{ color: delta < 0 ? "#dc2626" : delta > 0 ? "#16a34a" : "#94a3b8", fontWeight: 600 }}>{delta > 0 ? "+" : ""}{Math.round(delta * 100) / 100 || 0}</td>
                       </tr>
                     );
                   })}
-                  {sheet.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 12 }}>{invLoading ? t("Загрузка ведомости…","Завантаження відомості…") : t("Нет товаров по этому фильтру.","Немає товарів за цим фільтром.")}</td></tr>}
+                  {sheet.length === 0 && <tr><td colSpan={9} className="muted" style={{ padding: 12 }}>{invLoading ? t("Загрузка ведомости…","Завантаження відомості…") : t("Нет товаров по этому фильтру.","Немає товарів за цим фільтром.")}</td></tr>}
                 </tbody>
               </table>
             </div>
