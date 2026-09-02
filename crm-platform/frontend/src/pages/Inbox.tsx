@@ -512,10 +512,12 @@ export default function Inbox() {
             <div ref={headRef} style={{ minHeight: 52, background: "#fff", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, rowGap: 6, padding: "7px 14px" }}>
               <Avatar name={active.contact_name || active.title || "?"} cls="av-md" src={(active as any).contact_avatar || ""} />
               <div style={{ flex: "1 1 130px", minWidth: 0, display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                <b style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{active.contact_name || active.title}</b>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                  <b style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{active.contact_name || active.title}</b>
+                  <button className="btn btn-green" style={{ height: 24, width: 24, padding: 0, flexShrink: 0, borderRadius: 6, display: "inline-flex", alignItems: "center", justifyContent: "center" }} title={t("Позвонить клиенту","Подзвонити клієнту")}><Icon n="phone" size={13} /></button>
+                </span>
                 <span className="muted" style={{ fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{active.assigned_to ? "👤 " + active.assigned_to_name : t("Не назначено","Не призначено")}{(active as any).participant_names && (active as any).participant_names.length > 0 ? " · 👥 " + (active as any).participant_names.join(", ") : ""} · {active.channel_name}</span>
               </div>
-              <button className="btn btn-green" style={{ height: 28, width: 28, padding: 0, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }} title={t("Позвонить клиенту","Подзвонити клієнту")}><Icon n="phone" size={14} /></button>
               <SourceChip source={active.channel_kind} />
               {(() => { const w = metaWindow(active, msgs); return w ? <span title={w.closed ? t("Окно Instagram (24ч) закрыто — клиент может НЕ получить обычное сообщение","Вікно Instagram (24г) закрите — клієнт може НЕ отримати звичайне повідомлення") : t("Окно открыто — клиент получит сообщение","Вікно відкрите — клієнт отримає повідомлення")} style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap", color: w.closed ? "#b91c1c" : "#15803d", background: w.closed ? "#fee2e2" : "#dcfce7" }}>{w.closed ? t("Окно закрыто","Вікно закрите") + " · " + w.hrs + t("ч","г") : t("Окно 24ч","Вікно 24 год")}</span> : null; })()}
               <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
