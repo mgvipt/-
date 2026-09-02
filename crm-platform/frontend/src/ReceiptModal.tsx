@@ -54,7 +54,7 @@ export default function ReceiptModal({ productId, productName, dealId, editDoc, 
   function searchProd(i: number, q: string) {
     setRow(i, { q, open: true, product: 0, product_name: "" });
     if (!q.trim()) { setRow(i, { res: [] }); return; }
-    api.get<any>(`/api/products/?search=${encodeURIComponent(q)}&page_size=8`).then((d) => setRow(i, { res: (d.results || d) as any[] })).catch(() => setRow(i, { res: [] }));
+    api.get<any>(`/api/products/?search=${encodeURIComponent(q)}&page_size=8&is_active=true`).then((d) => setRow(i, { res: (d.results || d) as any[] })).catch(() => setRow(i, { res: [] }));
   }
   // создать карточку товара прямо из формы прихода, если нужного нет
   async function createProdRow(i: number, q: string) {
