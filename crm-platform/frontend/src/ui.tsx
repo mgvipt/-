@@ -1,3 +1,4 @@
+import { useState } from "react";
 // Мелкие визуальные помощники (аватар-инициалы, бейдж канала).
 export const SOURCES: Record<string, [string, string]> = {
   telegram: ["Telegram", "#27a7e7"], viber: ["Viber", "#7d4fc4"],
@@ -16,7 +17,15 @@ function initials(s: string) {
   return ((p[0]?.[0] ?? "") + (p[1]?.[0] ?? "")).toUpperCase();
 }
 
-export function Avatar({ name, cls }: { name: string; cls?: string }) {
+export function Avatar({ name, cls, src }: { name: string; cls?: string; src?: string }) {
+  // src — фото профілю клієнта з месенджера (Instagram/Facebook). Посилання тимчасове:
+  // якщо протухло і картинка не вантажиться — тихо показуємо ініціали, як раніше.
+  const [bad, setBad] = useState(false);
+  if (src && !bad) {
+    return <img className={"av " + (cls ?? "")} src={src} alt={name} title={name}
+      onError={() => setBad(true)}
+      style={{ objectFit: "cover", background: colorFor(name) }} />;
+  }
   return <span className={"av " + (cls ?? "")} style={{ background: colorFor(name) }}>{initials(name)}</span>;
 }
 

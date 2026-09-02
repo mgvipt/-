@@ -30,6 +30,8 @@ class Contact(models.Model):
     nickname = models.CharField(max_length=150, blank=True, default="", help_text="Нік / імʼя з месенджера (оригінал)")
     phone = models.CharField(max_length=32, blank=True, db_index=True)
     email = models.EmailField(blank=True)
+    avatar_url = models.URLField("Фото профілю (з месенджера)", max_length=500, blank=True, default="",
+                                 help_text="Тягнеться з Instagram/Facebook. Посилання тимчасове — оновлюється при новому повідомленні.")
     portal_user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         null=True,

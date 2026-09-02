@@ -193,12 +193,16 @@ def _ig_get(path, params=None):
         return json.load(r)
 
 
+_PIC_CACHE = {}
+
+
 def _meta_profile(sender_id, kind):
     """Повертає (повне_ім'я, нік) автора Meta. Instagram → graph.instagram.com (name+username);
     Facebook → Page (тільки name)."""
     if kind == "instagram" and IG_TOKEN:
         try:
-            d = _ig_get(str(sender_id), {"fields": "name,username"})
+            d = _ig_get(str(sender_id), {"fields": "name,username,profile_pic"})
+            _PIC_CACHE[str(sender_id)] = str((d or {}).get("profile_pic") or "")[:500]
             return (str((d or {}).get("name") or "").strip(), str((d or {}).get("username") or "").strip())
         except Exception:
             pass
@@ -290,6 +294,9 @@ def _enrich_contact(contact, kind, sender_id, name="", username=""):
     """Дозаповнити контакт з Meta. Повертає список реально змінених полів."""
     name, username = _resolve_meta_identity(sender_id, kind, name, username)
     changes = _contact_identity_changes(contact, kind, name, username)
+    _pic = _PIC_CACHE.pop(str(sender_id), "")
+    if _pic and getattr(contact, "avatar_url", None) != _pic:
+        changes["avatar_url"] = _pic
     if changes:
         for field, value in changes.items():
             setattr(contact, field, value)

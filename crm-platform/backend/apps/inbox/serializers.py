@@ -73,6 +73,7 @@ class ConversationSerializer(serializers.ModelSerializer):
     channel_kind = serializers.CharField(source="channel.kind", read_only=True)
     channel_name = serializers.CharField(source="channel.name", read_only=True)
     contact_name = serializers.SerializerMethodField()
+    contact_avatar = serializers.SerializerMethodField()
     assigned_to_name = serializers.SerializerMethodField()
     last_text = serializers.SerializerMethodField()
     needs_reply = serializers.SerializerMethodField()
@@ -87,6 +88,10 @@ class ConversationSerializer(serializers.ModelSerializer):
         """Картка джерела для комент-чатів Meta (публікація/ролик/реклама, на яку відповів клієнт)."""
         cfg = getattr(obj, "config", None) or {}
         return cfg.get("source_card") or None
+
+    def get_contact_avatar(self, obj):
+        """Фото профілю клієнта з месенджера (Instagram/Facebook)."""
+        return (getattr(obj.contact, "avatar_url", "") or "") if obj.contact_id else ""
 
     def get_contact_name(self, obj):
         if not obj.contact:
@@ -129,7 +134,7 @@ class ConversationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Conversation
-        fields = ["id", "channel", "channel_kind", "channel_name", "contact",
+        fields = ["contact_avatar", "id", "channel", "channel_kind", "channel_name", "contact",
                   "contact_name", "title", "status", "assigned_to", "assigned_to_name",
                   "unread", "last_message_at", "last_text", "needs_reply", "ai_answered", "unhandled_in", "participants", "participant_names", "priority", "priority_reason", "deal_stage", "deal_id", "source_card"]
 
