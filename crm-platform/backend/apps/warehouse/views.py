@@ -1458,6 +1458,18 @@ class InventorySheetView(APIView):
             return Response({"from": d_from, "to": d_to, "rows": [],
                              "count": count, "page": page, "page_size": page_size})
 
+        # контрольні переобліки ВСЕРЕДИНІ періоду (той, що на дату «з», уже в Початковому)
+        _ctrl = list(StockDocument.objects.filter(kind="inv", posted=True,
+            created_at__date__gt=df, created_at__date__lte=dt).order_by("created_at")[:6])
+        _ctrl_ann = {}
+        for _i, _d in enumerate(_ctrl):
+            # скільки НАРАХУВАЛИ на тому переобліку = накопичений залишок одразу після нього
+            _ctrl_ann["cfact_%d" % _i] = Coalesce(Sum("quantity",
+                filter=Q(document__created_at__lte=_d.created_at)), Decimal("0"))
+            # скільки він дописав/списав саме по цьому товару
+            _ctrl_ann["cdelta_%d" % _i] = Coalesce(Sum("quantity",
+                filter=Q(document_id=_d.id)), Decimal("0"))
+
         agg = (StockMovement.objects.filter(product_id__in=ids, document__posted=True).values("product_id").annotate(
             opening=Coalesce(Sum("quantity", filter=Q(document__created_at__date__lt=df)), Decimal("0")),
             # переоблік, проведений САМЕ в день початку періоду, входить у «Початковий»:
@@ -1470,6 +1482,7 @@ class InventorySheetView(APIView):
                 document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
             inv_net=Coalesce(Sum("quantity", filter=Q(document__kind="inv",
                 document__created_at__date__gt=df, document__created_at__date__lte=dt)), Decimal("0")),
+            **_ctrl_ann
         ))
         by_id = {a["product_id"]: a for a in agg}
         rows = []
@@ -1480,9 +1493,22 @@ class InventorySheetView(APIView):
             sold = abs(a.get("sold_neg") or Decimal("0"))
             inv_net = a.get("inv_net") or Decimal("0")
             book = opening + received - sold + inv_net
+            _ctrl_rows = []
+            for _i, _d in enumerate(_ctrl):
+                _dl = a.get("cdelta_%d" % _i) or Decimal("0")
+                if _dl:
+                    _ctrl_rows.append({
+                        "date": (_d.created_at.date().isoformat() if _d.created_at else ""),
+                        "fact": float(a.get("cfact_%d" % _i) or Decimal("0")),
+                        "delta": float(_dl)})
             rows.append({"id": p.id, "name": p.name, "sku": p.sku, "unit": p.unit,
-                         "opening": float(opening), "received": float(received),
-                         "sold": float(sold), "recount": float(inv_net), "book": float(book)})
+                         "opening": float(opening),
+                         "opening_recount": float(a.get("opening_inv") or Decimal("0")),
+                         "received": float(received),
+                         "sold": float(sold), "recount": float(inv_net),
+                         "controls": _ctrl_rows,
+                         "calc": float(opening + received - sold),
+                         "book": float(book)})
         return Response({"from": d_from, "to": d_to, "rows": rows,
                          "count": count, "page": page, "page_size": page_size})
 
