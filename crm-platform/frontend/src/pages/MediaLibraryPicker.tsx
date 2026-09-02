@@ -7,6 +7,7 @@ type Asset = {
 };
 type Reply = { id: number; title: string; text: string; asset_ids: number[] };
 type Screen = "materials" | "material" | "color";
+const SAND_EFFECTS = ["Galateya", "Eleganti", "Gaia Gloss", "Mio Gloss"] as const;
 const isColorSwatch = (asset: Asset) => asset.kind === "image" && /(каталог|зразок|sample)/i.test(`${asset.title} ${asset.tags}`);
 const effectFor = (asset: Asset) => {
   const match = (asset.tags || "").match(/(?:^|[,;\s])effect:([^,;]+)/i);
@@ -42,6 +43,18 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
     });
     return Array.from(groups.entries());
   }, [colorAssets]);
+  const visibleColorGroups = useMemo(() => {
+    if (material !== "Песочки") return colorGroups;
+    const grouped = new Map(colorGroups);
+    const ordered: [string, Asset[]][] = [];
+    const reference = grouped.get("Еталон і відео");
+    if (reference?.length) ordered.push(["Еталон і відео", reference]);
+    SAND_EFFECTS.forEach((effect) => ordered.push([effect, grouped.get(effect) || []]));
+    colorGroups.forEach(([name, assets]) => {
+      if (name !== "Еталон і відео" && !SAND_EFFECTS.includes(name as typeof SAND_EFFECTS[number])) ordered.push([name, assets]);
+    });
+    return ordered;
+  }, [colorGroups, material]);
   function toggle(id: number) { setPicked((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]); }
   function openMaterial(name: string) { setMaterial(name); setColor(""); setQuery(""); setScreen("material"); }
   function openColor(code: string) { setColor(code); setQuery(""); setScreen("color"); }
@@ -68,7 +81,7 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
       {screen !== "materials" && <button className="btn" onClick={back} style={{ fontSize: 12, marginBottom: 8 }}>← {screen === "color" ? material : "Усі матеріали"}</button>}
       {screen === "materials" && <><div className="muted" style={{ fontSize: 12, marginBottom: 7 }}>Спочатку оберіть матеріал — далі побачите лише кольори-образки. Відео та інтер'єри відкриваються всередині кольору.</div><div style={{ display: "grid", gap: 7 }}>{materials.map((name) => { const group = colorItems.filter((x) => (x.material || "Матеріал без назви") === name); const codes = new Set(group.filter(isColorSwatch).map((x) => x.color_code).filter(Boolean)).size; const preview = group.find(isColorSwatch) || group.find((x) => x.kind === "catalog"); return <button key={name} onClick={() => openMaterial(name)} className="btn" style={{ display: "flex", alignItems: "center", gap: 8, textAlign: "left" }}>{preview?.url && <img src={preview.url} loading="lazy" decoding="async" style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 6 }} />}<span><b>{name}</b><br /><span className="muted" style={{ fontSize: 11 }}>{codes} кольорів · {group.filter((x) => x.kind === "catalog").length} сторінок каталогу</span></span><span style={{ marginLeft: "auto" }}>›</span></button>; })}</div></>}
       {screen === "material" && <><b style={{ fontSize: 13 }}>{material}</b><div className="muted" style={{ fontSize: 12, margin: "3px 0 8px" }}>Сторінки каталогу та кольори-образки. Інтер'єри — після вибору кольору.</div>{catalogPages.length > 0 && <div style={{ marginBottom: 10 }}><b style={{ fontSize: 12 }}>📖 Каталог</b><div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 5 }}>{catalogPages.map(card)}</div></div>}<b style={{ fontSize: 12 }}>🎨 Кольори ({colors.length})</b><div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 5 }}>{colors.map((code) => { const sample = materialItems.find((x) => x.color_code === code && isColorSwatch(x)); return <button key={code} onClick={() => openColor(code)} style={{ border: "1px solid #dbe3ee", background: "#fff", padding: 5, borderRadius: 8, textAlign: "left", cursor: "pointer" }}>{sample?.url && <img src={sample.url} loading="lazy" decoding="async" style={{ width: "100%", height: 65, objectFit: "cover", borderRadius: 5 }} />}<div style={{ fontSize: 11, marginTop: 3 }}><b>{code}</b><br /><span className="muted">Відкрити добірку ›</span></div></button>; })}</div></>}
-      {screen === "color" && <><b style={{ fontSize: 13 }}>{material} · {color}</b><div className="muted" style={{ fontSize: 12, margin: "3px 0 8px" }}>{material === "Патера" ? "Оберіть ефект: усередині — інтер'єри та світло." : "Еталон, відео та інтер'єри цього кольору"}</div>{colorGroups.map(([name, assets]) => <section key={name} style={{ marginTop: 10 }}><b style={{ fontSize: 12 }}>{name === "Еталон і відео" ? "◈ " : "✦ "}{name}</b><div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 5 }}>{assets.map(card)}</div></section>)}</>}
+      {screen === "color" && <><b style={{ fontSize: 13 }}>{material} · {color}</b><div className="muted" style={{ fontSize: 12, margin: "3px 0 8px" }}>{material === "Патера" ? "Оберіть ефект: усередині — інтер'єри та світло." : material === "Песочки" ? "Оберіть вид песочків — інтер'єри додамо після затвердження фактури." : "Еталон, відео та інтер'єри цього кольору"}</div>{visibleColorGroups.map(([name, assets]) => <section key={name} style={{ marginTop: 10 }}><b style={{ fontSize: 12 }}>{name === "Еталон і відео" ? "◈ " : "✦ "}{name}</b>{assets.length > 0 ? <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 5 }}>{assets.map(card)}</div> : <div className="muted" style={{ fontSize: 11, marginTop: 4, padding: "7px 8px", border: "1px dashed #dbe3ee", borderRadius: 7 }}>Інтер'єри додамо після затвердження фактури.</div>}</section>)}</>}
       {screen === "materials" && !materials.length && <div className="muted" style={{ fontSize: 12 }}>Матеріалів поки немає — додайте їх у Налаштування → Відкриті лінії.</div>}
     </>}
     </div>
