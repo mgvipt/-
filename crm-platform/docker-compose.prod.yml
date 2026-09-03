@@ -14,6 +14,7 @@ services:
     volumes:
       - /root/telephony-recordings:/app/media/recordings:ro
       - /root/crm-media/warehouse_photos:/app/warehouse_photos
+      - /root/crm-media/chat_thumbs:/app/chat_thumbs
     command: >
       sh -c "python manage.py migrate &&
              python manage.py collectstatic --noinput &&

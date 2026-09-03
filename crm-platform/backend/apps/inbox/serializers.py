@@ -59,6 +59,9 @@ class MessageSerializer(serializers.ModelSerializer):
             a = dict(a)
             if a.get("file_id") and not a.get("url"):
                 a["url"] = "/api/inbox/tg-file/%s/%s/?s=%s" % (obj.id, i, _tg_sig(obj.id, i))
+            # мініатюра для стрічки чату (оригінал відкривається по кліку)
+            if a.get("type") == "photo" and (a.get("url") or a.get("file_id")):
+                a["thumb"] = "/api/inbox/thumb/%s/%s/?w=480&s=%s" % (obj.id, i, _tg_sig(obj.id, i))
             out.append(a)
         return out
 

@@ -343,8 +343,8 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
                 <span style={{ wordBreak: "break-word" }}>{linkify(m.text, m.direction !== "in")}</span>
                 {(m as any).attachments?.map((a: any, j: number) => (
                   isContextAttachment(a) ? null
-                  : (a.url && a.type === "photo") ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 6 }}><img src={a.url} alt="" style={{ maxWidth: 220, maxHeight: 240, borderRadius: 8, display: "block", objectFit: "cover" }} /></a>
-                  : (a.url && a.type === "video") ? <video key={j} src={a.url} controls style={{ maxWidth: 220, borderRadius: 8, marginTop: 6, display: "block" }} />
+                  : (a.url && a.type === "photo") ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 6 }}><img src={a.thumb || a.url} alt="" loading="lazy" decoding="async" style={{ maxWidth: 220, maxHeight: 240, borderRadius: 8, display: "block", objectFit: "cover" }} /></a>
+                  : (a.url && a.type === "video") ? <video key={j} src={a.url} controls preload="none" style={{ maxWidth: 220, borderRadius: 8, marginTop: 6, display: "block" }} />
                   : (a.url && a.type === "voice") ? <audio key={j} src={a.url} controls style={{ marginTop: 6, maxWidth: 220 }} />
                   : a.type === "story_ref" ? (
                     <div key={j} style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6, padding: "5px 8px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 11.5, color: "#475569" }}>
@@ -393,7 +393,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
                     <span style={{ wordBreak: "break-word" }}>{linkify(m.text, m.direction !== "in")}</span>
                     {(m as any).attachments?.map((a: any, j: number) => (
                       isContextAttachment(a) ? null
-                      : (a.url && a.type === "photo") ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 4 }}><img src={a.url} alt="" style={{ maxWidth: 160, borderRadius: 6, display: "block" }} /></a>
+                      : (a.url && a.type === "photo") ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 4 }}><img src={a.thumb || a.url} alt="" loading="lazy" decoding="async" style={{ maxWidth: 160, borderRadius: 6, display: "block" }} /></a>
                       : a.url ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 4, fontSize: 12, color: "#2563eb", fontWeight: 600 }}>файл</a> : null
                     ))}
                     <ReactionBadges attachments={(m as any).attachments} />

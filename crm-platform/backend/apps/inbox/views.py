@@ -1737,6 +1737,83 @@ class TgFileView(APIView):
         return resp
 
 
+class ThumbView(APIView):
+    """Мініатюра фото з чату.
+
+    Навіщо: у чат приходять оригінали по 5-12 МБ, а показуються у віконці ~240px.
+    Тут віддаємо зменшену копію (кеш на диску), тож чат відкривається одразу.
+    Оригінал лишається доступним по кліку — фронт веде посилання на a.url.
+    Підпис ?s= той самий, що в TgFileView, — захищає від перебору.
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    CACHE_DIR = "/app/chat_thumbs"
+
+    def get(self, request, message_id, idx):
+        from django.http import HttpResponse, FileResponse
+        import urllib.request as _u, json as _j, hashlib, os, io as _io
+        if request.query_params.get("s") != _tg_sig(message_id, idx):
+            return Response({"detail": "bad signature"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            w = min(max(int(request.query_params.get("w") or 480), 64), 1280)
+        except (TypeError, ValueError):
+            w = 480
+        msg = Message.objects.filter(id=message_id).select_related("conversation__channel").first()
+        if not msg:
+            return Response(status=404)
+        atts = msg.attachments or []
+        if idx < 0 or idx >= len(atts):
+            return Response(status=404)
+        att = atts[idx]
+        src = str(att.get("url") or att.get("file_id") or "")
+        if not src:
+            return Response(status=404)
+        key = hashlib.sha256(("%s|%s|%s|%s" % (message_id, idx, w, src)).encode()).hexdigest()[:32]
+        path = os.path.join(self.CACHE_DIR, key + ".jpg")
+        if os.path.exists(path):
+            resp = FileResponse(open(path, "rb"), content_type="image/jpeg")
+            resp["Cache-Control"] = "public, max-age=2592000, immutable"
+            return resp
+        raw = None
+        try:
+            if src.startswith("http"):
+                req = _u.Request(src, headers={"User-Agent": "Mozilla/5.0 (compatible; WallcovCRM/1.0)"})
+                with _u.urlopen(req, timeout=25) as r:
+                    raw = r.read()
+            elif att.get("file_id"):
+                token = ((msg.conversation.channel.config or {}).get("bot_token")) if msg.conversation_id and msg.conversation.channel_id else None
+                if not token:
+                    return Response(status=404)
+                with _u.urlopen("https://api.telegram.org/bot%s/getFile?file_id=%s" % (token, att["file_id"]), timeout=20) as r:
+                    fp = _j.loads(r.read().decode())["result"]["file_path"]
+                with _u.urlopen("https://api.telegram.org/file/bot%s/%s" % (token, fp), timeout=40) as r:
+                    raw = r.read()
+        except Exception as e:
+            return Response({"detail": str(e)[:80]}, status=502)
+        if not raw:
+            return Response(status=404)
+        try:
+            from PIL import Image, ImageOps
+            im = Image.open(_io.BytesIO(raw))
+            im = ImageOps.exif_transpose(im)
+            if im.mode != "RGB":
+                im = im.convert("RGB")
+            im.thumbnail((w, w * 3), Image.LANCZOS)
+            os.makedirs(self.CACHE_DIR, exist_ok=True)
+            tmp = path + ".part"
+            im.save(tmp, "JPEG", quality=82, optimize=True, progressive=True)
+            os.replace(tmp, path)
+        except Exception:
+            # не картинка або не вдалося зменшити — віддаємо оригінал, щоб нічого не зникло
+            resp = HttpResponse(raw, content_type=att.get("mime") or "image/jpeg")
+            resp["Cache-Control"] = "public, max-age=86400"
+            return resp
+        resp = FileResponse(open(path, "rb"), content_type="image/jpeg")
+        resp["Cache-Control"] = "public, max-age=2592000, immutable"
+        return resp
+
+
 class TeamContactsView(APIView):
     """Список співробітників для внутрішнього чату + останнє повідомлення + непрочитані."""
     permission_classes = [IsAuthenticated]

@@ -613,8 +613,8 @@ export default function Inbox() {
                   )}
                   {m.attachments?.map((a: any, i: number) => (
                     isContextAttachment(a) ? null
-                    : (a.url && a.type === "photo") ? <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 6 }}><img src={a.url} alt="" style={{ maxWidth: 240, maxHeight: 260, borderRadius: 8, display: "block", objectFit: "cover" }} /></a>
-                    : (a.url && a.type === "video") ? <video key={i} src={a.url} controls style={{ maxWidth: 240, borderRadius: 8, marginTop: 6, display: "block" }} />
+                    : (a.url && a.type === "photo") ? <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 6 }}><img src={a.thumb || a.url} alt="" loading="lazy" decoding="async" style={{ maxWidth: 240, maxHeight: 260, borderRadius: 8, display: "block", objectFit: "cover" }} /></a>
+                    : (a.url && a.type === "video") ? <video key={i} src={a.url} controls preload="none" style={{ maxWidth: 240, borderRadius: 8, marginTop: 6, display: "block" }} />
                     : (a.url && a.type === "voice") ? <audio key={i} src={a.url} controls style={{ marginTop: 6, maxWidth: 240 }} />
                     : a.url ? <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 12.5, color: "#2563eb", fontWeight: 600 }}><Icon n="paperclip" size={14} /> {a.name || t("файл","файл")}</a>
                     : <div key={i} style={{ fontSize: 11, opacity: .8, marginTop: 4 }}><Icon n="paperclip" size={13} /> {a.type === "voice" ? t(`голосовое ${a.duration ?? ""}с`,`голосове ${a.duration ?? ""}с`) : a.type}</div>
