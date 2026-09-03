@@ -1832,27 +1832,54 @@ function UnifiedAdsDashboard({ paidSummary, dialogues, followers, summary, t }: 
 
 function AdsPerformanceTable({ rows, level, t }: { rows: any[]; level: AdLevel; t: (ru: string, ua: string) => string }) {
   const levelName = level === "campaigns" ? t("Кампания", "Кампанія") : level === "adsets" ? t("Группа объявлений", "Група оголошень") : t("Объявление", "Оголошення");
-  if (!rows.length) return <Empty text={t("За выбранный период реклама не показывалась", "За вибраний період реклама не показувалась")} />;
-  return <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
-    <div style={{ padding: "11px 13px", background: "var(--rd-muted)", borderBottom: "1px solid var(--rd-border)" }}><b>{t("Таблица", "Таблиця")}: {levelName}</b><div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{t("Каждая строка раскрывается вертикально — все столбцы видны без горизонтальной прокрутки.", "Кожен рядок розкривається вертикально — усі стовпці видно без горизонтальної прокрутки.")}</div></div>
-    {rows.map((row) => <details key={row.id} style={{ borderBottom: "1px solid var(--rd-border)" }}>
-      <summary style={{ cursor: "pointer", padding: "11px 13px", display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 10, alignItems: "center" }}><span style={{ minWidth: 0 }}><b style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name || row.id}</b><small className="muted">{moneyUsd(row.spend)} · {count(row.messages_started)} {t("диалогов Meta", "діалогів Meta")} · {count(row.crm_leads)} CRM</small></span><b style={{ color: "var(--rd-primary)" }}>{row.ctr == null ? "—" : row.ctr + "%"} CTR</b></summary>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 7, padding: "0 13px 12px" }}>
-        <Metric label={t("Расход", "Витрати")} value={moneyUsd(row.spend)} />
-        <Metric label={t("Показы", "Покази")} value={count(row.impressions)} />
-        <Metric label={t("Охват", "Охоплення")} value={count(row.reach)} />
-        <Metric label={t("Клики · исходящие", "Кліки · вихідні")} value={`${count(row.clicks)} · ${count(row.outbound_clicks)}`} />
-        <Metric label="CTR · CPC · CPM" value={`${row.ctr == null ? "—" : row.ctr + "%"} · ${row.clicks ? moneyUsd(row.spend / row.clicks) : "—"} · ${row.cpm == null ? "—" : moneyUsd(row.cpm)}`} />
-        <Metric label={t("Результат Meta", "Результат Meta")} value={row.result_value ? `${count(row.result_value)} · ${resultLabel(row.result_indicator, t)}` : "—"} />
-        <Metric label={t("Подписки Meta · цена", "Підписки Meta · ціна")} value={`${count(row.instagram_follows)} · ${row.cost_per_instagram_follow == null ? "—" : moneyUsd(row.cost_per_instagram_follow)}`} />
-        <Metric label={t("Переписки Meta · цена", "Переписки Meta · ціна")} value={`${count(row.messages_started)} · ${row.cost_per_message == null ? "—" : moneyUsd(row.cost_per_message)}`} />
-        <Metric label={t("Лиды Meta · цена", "Ліди Meta · ціна")} value={`${count(row.meta_leads)} · ${row.cost_per_meta_lead == null ? "—" : moneyUsd(row.cost_per_meta_lead)}`} />
-        <Metric label={t("Лиды CRM с точной меткой · цена", "Ліди CRM з точною міткою · ціна")} value={`${count(row.crm_leads)} · ${row.cost_per_crm_lead == null ? "—" : moneyUsd(row.cost_per_crm_lead)}`} accent />
-        <Metric label={t("Сделки · успешные", "Угоди · успішні")} value={`${count(row.crm_deals)} · ${count(row.crm_won)}`} />
-        <Metric label={t("Выручка CRM", "Виручка CRM")} value={moneyUah(row.crm_revenue)} accent />
-      </div>
-    </details>)}
-  </div>;
+  const nameCell = (r: any) => {
+    const title = r.name || r.ad_name || r.adset_name || r.campaign_name || r.id;
+    return <div style={{ minWidth: 200 }}><b>{title || "—"}</b>{r.effective_status && <div className="muted" style={{ fontSize: 10 }}>{r.effective_status}</div>}</div>;
+  };
+  const toned = (v: ReactNode, tone?: "good" | "warn" | "bad") => tone ? <b style={{ color: TONE_FG[tone] }}>{v}</b> : <>{v}</>;
+  const bodyRows = rows.map((r: any) => [
+    nameCell(r),
+    moneyUsd(r.spend),
+    count(r.impressions),
+    count(r.reach),
+    <span>{count(r.clicks)}{r.outbound_clicks != null && <div className="muted" style={{ fontSize: 10 }}>{t("исходящих:", "вихідних:")} {count(r.outbound_clicks)}</div>}</span>,
+    toned(optional(r.ctr, "%"), toneCtr(r.ctr)),
+    r.result_value ? <span>{count(r.result_value)}<div className="muted" style={{ fontSize: 10 }}>{resultLabel(r.result_indicator, t)}</div></span> : "—",
+    count(r.instagram_follows),
+    r.cost_per_instagram_follow == null ? "—" : moneyUsd(r.cost_per_instagram_follow),
+    count(r.messages_started),
+    toned(r.cost_per_message == null ? "—" : moneyUsd(r.cost_per_message), toneCostMsg(r.cost_per_message)),
+    <span>{count(r.meta_leads)}{r.cost_per_meta_lead != null && <div className="muted" style={{ fontSize: 10 }}>{moneyUsd(r.cost_per_meta_lead)}</div>}</span>,
+    <span style={{ color: "#047857", fontWeight: 700 }}>{count(r.crm_leads)}{r.cost_per_crm_lead != null && <div className="muted" style={{ fontSize: 10, fontWeight: 400 }}>{moneyUsd(r.cost_per_crm_lead)}</div>}</span>,
+    <span>{count(r.crm_deals)} · {count(r.crm_won)}</span>,
+    moneyUah(r.crm_revenue),
+  ]);
+  return <>
+    <ResizableTable storageKey={"mm_ads_" + level} minWidth={1560}
+      headers={[levelName,
+        t("Расход", "Витрати"), t("Показы", "Покази"), t("Охват", "Охоплення"), t("Клики", "Кліки"), "CTR",
+        t("Результат", "Результат"), t("Подписки", "Підписки"), t("Цена подписки", "Ціна підписки"),
+        t("Начатые переписки", "Розпочаті переписки"), t("Цена диалога", "Ціна діалогу"),
+        t("Лиды Meta", "Ліди Meta"), t("Лиды CRM", "Ліди CRM"), t("Сделки · успешные", "Угоди · успішні"), t("Выручка CRM", "Виручка CRM")]}
+      tips={[
+        t("Название из Ads Manager", "Назва з Ads Manager"),
+        t("Потрачено за период, $", "Витрачено за період, $"),
+        t("Сколько раз показали рекламу", "Скільки разів показали рекламу"),
+        t("Сколько разных людей увидели. По дням не суммируется как уникальный охват периода", "Скільки різних людей побачили. За днями не підсумовується як унікальне охоплення періоду"),
+        t("Все клики по рекламе; ниже — исходящие (увели с Facebook/Instagram)", "Усі кліки по рекламі; нижче — вихідні (повели з Facebook/Instagram)"),
+        t("% кликов от показов. Зелёный от 3%, красный ниже 1%", "% кліків від показів. Зелений від 3%, червоний нижче 1%"),
+        t("Как «Результаты» в кабинете: по цели кампании — переписки, QuizStart, визиты профиля", "Як «Результати» в кабінеті: за ціллю кампанії — переписки, QuizStart, візити профілю"),
+        t("Подписки в Instagram из ежедневного отчёта Ads Manager", "Підписки в Instagram зі щоденного звіту Ads Manager"),
+        t("расход ÷ подписки", "витрати ÷ підписки"),
+        t("«Начатые переписки» по данным Meta: все, кто написал в течение 7 дней после клика", "«Розпочаті переписки» за даними Meta: всі, хто написав протягом 7 днів після кліку"),
+        t("расход ÷ начатые переписки. Зелёный до $1, красный дороже $2", "витрати ÷ розпочаті переписки. Зелений до $1, червоний дорожче $2"),
+        t("Лиды по подсчёту Meta (её окно атрибуции); ниже — цена", "Ліди за підрахунком Meta (її вікно атрибуції); нижче — ціна"),
+        t("Реальные карточки CRM с точной меткой этого объявления; ниже — цена", "Реальні картки CRM з точною міткою цього оголошення; нижче — ціна"),
+        t("Сделки в CRM по этим лидам · из них успешные", "Угоди в CRM за цими лідами · з них успішні"),
+        t("Деньги по оплатам сделок с точной меткой", "Гроші за оплатами угод з точною міткою")]}
+      rows={bodyRows} empty={t("За выбранный период реклама не показывалась", "За вибраний період реклама не показувалась")} />
+    <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>{t("Столбцы можно сузить, потянув за край заголовка — ширина запоминается.", "Стовпці можна звузити, потягнувши за край заголовка — ширина запам'ятовується.")}</div>
+  </>;
 }
 
 function ContentCard({ row, t }: { row: any; t: (ru: string, ua: string) => string }) {
