@@ -51,7 +51,7 @@ interface Category { id: number; name: string; parent: number | null; order: num
 interface WH { id: number; name: string; is_default: boolean; }
 interface Movement { id: number; kind: string; kind_display: string; quantity: number; price: number; warehouse: string; date: string; posted_at?: string; number: string | number; }
 
-interface SheetRow { id: number; name: string; sku?: string; unit: string; opening: number; opening_recount?: number; received: number; sold: number; recount?: number; controls?: { date: string; fact: number; delta: number }[]; calc?: number; book: number; }
+interface SheetRow { id: number; name: string; sku?: string; unit: string; opening: number; opening_recount?: number; received: number; sold: number; repack_in?: number; repack_out?: number; recount?: number; controls?: { date: string; fact: number; delta: number }[]; calc?: number; book: number; }
 const PAGE_SIZES = [5, 20, 50, 100, 500];
 const SHOP_CATEGORY_SUGGESTIONS = [
   "Декоративные покрытия",
@@ -583,14 +583,19 @@ export default function Warehouse() {
     setInvPage(1);
     await loadSheet(pFrom, pTo, { page: 1 });
   }
-  // шаг 1: собрать расхождения текущей страницы и открыть встроенное окно подтверждения (без браузерного confirm)
-  function conductInventory() {
-    const items = sheet
-      .filter((r) => facts[r.id] !== undefined && Number(facts[r.id]) !== Number(r.book))
-      .map((r) => {
-        const q = Number(facts[r.id]);
-        return { product: r.id, name: r.name, unit: r.unit, book: Number(r.book), fact: q, delta: q - Number(r.book), quantity: q, price: 0 };
-      });
+  // шаг 1: собрать расхождения ПО ВСЕМ страницам (общий черновик на сервере), не только по видимой
+  async function conductInventory() {
+    let items: any[] = [];
+    try {
+      const d: any = await api.get(`/api/warehouse/inventory-draft/?rows=1&to=${encodeURIComponent(pTo)}`);
+      items = (d.rows || [])
+        .filter((r: any) => Math.abs(Number(r.delta)) > 0.0001)
+        .map((r: any) => ({ product: r.product, name: r.name, unit: r.unit, book: Number(r.book), fact: Number(r.fact), delta: Number(r.delta), quantity: Number(r.fact), price: 0 }));
+    } catch {
+      items = sheet
+        .filter((r) => facts[r.id] !== undefined && Number(facts[r.id]) !== Number(r.book))
+        .map((r) => { const q = Number(facts[r.id]); return { product: r.id, name: r.name, unit: r.unit, book: Number(r.book), fact: q, delta: q - Number(r.book), quantity: q, price: 0 }; });
+    }
     if (!items.length) {
       setInvMsg(t("⚠ Расхождений нет: впишите фактический остаток в колонку «Факт» у нужных товаров, потом жмите «Провести».","⚠ Розбіжностей немає: впишіть фактичний залишок у колонку «Факт» у потрібних товарів, потім тисніть «Провести»."));
       return;
@@ -1504,7 +1509,7 @@ export default function Warehouse() {
               <input type="date" value={pTo} onChange={(e) => { setPTo(e.target.value); setInvPage(1); loadSheet(pFrom, e.target.value, { page: 1 }); }} style={{ height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
               <button className="btn btn-light" style={{ padding: "3px 10px", fontSize: 12 }} title={t("Поставить период = эта неделя (с понедельника)","Поставити період = цей тиждень (з понеділка)")} onClick={() => { const wf = weekStart(); const wt = today(); setPFrom(wf); setPTo(wt); setInvPage(1); loadSheet(wf, wt, { page: 1 }); }}>{t("Эта неделя","Цей тиждень")}</button>
               <button className="btn btn-light" style={{ padding: "3px 10px", fontSize: 12 }} title={t("Период = с последней проведённой инвентаризации. В «Початковий» встанет утверждённый факт той инвентаризации, а все приходы и продажи после неё будут видны отдельными колонками","Період = з останньої проведеної інвентаризації. У «Початковий» стане затверджений факт тієї інвентаризації, а всі приходи і продажі після неї будуть видні окремими колонками")} onClick={async () => { try { const sm: any = await api.get("/api/warehouse/inventory-summary/"); const cols = sm.columns || []; if (cols.length) { const from = cols[cols.length - 1].date; const to = today(); setPFrom(from); setPTo(to); setInvPage(1); loadSheet(from, to, { page: 1 }); } } catch { /* */ } }}>{t("С последней инвентаризации","З останньої інвентаризації")}</button>
-              <span className="muted" style={{ fontSize: 12 }}>{t("Начальный (факт переучёта) + Поступление − Продано = Конечный расчётный. Плюс контрольные пересчёты = В системе. Расхождение = Факт − В системе.","Початковий (факт переобліку) + Надходження − Продано = Кінцевий розрахунок. Плюс контрольні переобліки = В системі. Розбіжність = Факт − В системі.")}</span>
+              <span className="muted" style={{ fontSize: 12 }}>{t("Начальный (факт переучёта) + Поступление − Продано ± розлив = Конечный расчётный. Плюс контрольные пересчёты = В системе. Расхождение = Факт − В системе.","Початковий (факт переобліку) + Надходження − Продано ± розлив = Кінцевий розрахунок. Плюс контрольні переобліки = В системі. Розбіжність = Факт − В системі.")}</span>
             </div>
             {Object.keys(facts).length > 0 && (
               <div style={{ fontSize: 12, marginBottom: 8, padding: "6px 10px", borderRadius: 7, background: "#ecfeff", color: "#155e75", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -1524,8 +1529,8 @@ export default function Warehouse() {
                       <tr key={r.id}>
                         <td>{r.name}</td><td className="muted">{r.unit}</td>
                         <td>{r.opening.toLocaleString("ru")}<div className="muted" style={{ fontSize: 10 }}>{r.opening_recount ? t("факт переучёта","факт переобліку") : t("на","на")} {pFrom.split("-").reverse().slice(0, 2).join(".")}</div></td>
-                        <td style={{ color: r.received ? "#16a34a" : "#94a3b8" }}>{r.received ? "+" + r.received.toLocaleString("ru") : "—"}</td>
-                        <td style={{ color: r.sold ? "#dc2626" : "#94a3b8" }}>{r.sold ? <a onClick={() => openInvDeals(r.id, r.name)} style={{ cursor: "pointer", color: "#fff", background: "#dc2626", fontWeight: 600, borderRadius: 6, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }} title={t("Клик — сделки, которые уехали с этим товаром за период","Клік — сделки, які поїхали з цим товаром за період")}>−{r.sold.toLocaleString("ru")} <span style={{ fontSize: 11 }}>↗ {t("сделки","сделки")}</span></a> : "—"}</td>
+                        <td style={{ color: r.received ? "#16a34a" : "#94a3b8" }}>{r.received ? "+" + r.received.toLocaleString("ru") : (r.repack_in ? "" : "—")}{r.repack_in ? <div style={{ fontSize: 10, color: "#7c3aed" }} title={t("Пришло с розлива/фасовки, а не от поставщика","Прийшло з розливу/фасування, а не від постачальника")}>{t("розлив","розлив")} +{r.repack_in.toLocaleString("ru")}</div> : null}</td>
+                        <td style={{ color: r.sold ? "#dc2626" : "#94a3b8" }}>{r.sold ? <a onClick={() => openInvDeals(r.id, r.name)} style={{ cursor: "pointer", color: "#fff", background: "#dc2626", fontWeight: 600, borderRadius: 6, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }} title={t("Клик — сделки, которые уехали с этим товаром за период","Клік — сделки, які поїхали з цим товаром за період")}>−{r.sold.toLocaleString("ru")} <span style={{ fontSize: 11 }}>↗ {t("сделки","сделки")}</span></a> : (r.repack_out ? "" : "—")}{r.repack_out ? <div style={{ fontSize: 10, color: "#7c3aed" }} title={t("Ушло на розлив/фасовку, а не продано клиенту","Пішло на розлив/фасування, а не продано клієнту")}>{t("розлив","розлив")} −{r.repack_out.toLocaleString("ru")}</div> : null}</td>
                         <td style={{ fontWeight: 600 }} title={t("Начальный + Поступление − Продано. Сколько ДОЛЖНО быть по документам, без контрольных пересчётов","Початковий + Надходження − Продано. Скільки МАЄ бути за документами, без контрольних переобліків")}>{(r.calc !== undefined ? r.calc : r.book).toLocaleString("ru")}</td>
                         <td style={{ background: "#eff5ff" }} title={t("Контрольные пересчёты ВНУТРИ периода: дата → сколько насчитали, и сколько система дописала","Контрольні переобліки ВСЕРЕДИНІ періоду: дата → скільки нарахували, і скільки система дописала")}>{(r.controls && r.controls.length) ? r.controls.map((c) => (<div key={c.date} style={{ marginBottom: 3 }}><div style={{ whiteSpace: "nowrap", fontSize: 11 }}>{c.date.split("-").reverse().slice(0, 2).join(".")}: <b style={{ color: c.delta > 0 ? "#16a34a" : "#dc2626" }}>{c.delta > 0 ? "+" : ""}{c.delta.toLocaleString("ru")}</b></div><div className="muted" style={{ whiteSpace: "nowrap", fontSize: 10 }}>{t("насчитали","нарахували")} {c.fact.toLocaleString("ru")}</div></div>)) : <span className="muted">—</span>}</td>
                         <td style={{ fontWeight: 600 }} title={t("Сколько система числит сейчас. Именно от этой цифры считается расхождение при проведении инвентаризации","Скільки система числить зараз. Саме від цієї цифри рахується розбіжність при проведенні інвентаризації")}>{r.book.toLocaleString("ru")}</td>

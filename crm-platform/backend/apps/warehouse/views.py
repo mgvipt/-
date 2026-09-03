@@ -1339,7 +1339,38 @@ class InventoryDraftView(APIView):
 
     def get(self, request):
         facts = {str(d.product_id): str(d.quantity) for d in InventoryFactDraft.objects.all()}
-        return Response({"facts": facts, "count": len(facts)})
+        out = {"facts": facts, "count": len(facts)}
+        # ?rows=1&to=YYYY-MM-DD → повний список розбіжностей ПО ВСІХ сторінках відомості
+        # (щоб «Провести інвентаризацію» не обмежувалось поточною сторінкою)
+        if request.GET.get("rows") in ("1", "true", "yes"):
+            from datetime import date as _date
+            from django.utils import timezone as _tz
+            _to = request.GET.get("to")
+            try:
+                dtc = _date.fromisoformat(str(_to)[:10]) if _to else _tz.localdate()
+            except (ValueError, TypeError):
+                dtc = _tz.localdate()
+            ids = [int(k) for k in facts.keys() if str(k).isdigit()]
+            prods = {p.id: p for p in Product.objects.filter(id__in=ids)}
+            bal = {r["product_id"]: r["s"] for r in StockMovement.objects.filter(
+                product_id__in=ids, document__posted=True,
+                document__created_at__date__lte=dtc).values("product_id").annotate(s=Sum("quantity"))}
+            rows = []
+            for pid_s, val in facts.items():
+                pid = int(pid_s)
+                p = prods.get(pid)
+                if not p:
+                    continue
+                try:
+                    fact = float(val)
+                except (TypeError, ValueError):
+                    continue
+                book = float(bal.get(pid) or 0)
+                rows.append({"product": pid, "name": p.name, "sku": p.sku, "unit": p.unit,
+                             "book": book, "fact": fact, "delta": round(fact - book, 3)})
+            rows.sort(key=lambda r: (r["name"] or "").lower())
+            out["rows"] = rows
+        return Response(out)
 
     def post(self, request):
         if request.data.get("clear_all"):
@@ -1476,9 +1507,14 @@ class InventorySheetView(APIView):
             # тоді Початковий = затверджений ФАКТ останньої інвентаризації, а не «що було до неї»
             opening_inv=Coalesce(Sum("quantity", filter=Q(document__kind="inv",
                 document__created_at__date=df)), Decimal("0")),
-            received=Coalesce(Sum("quantity", filter=Q(document__kind__in=["in", "repack"], quantity__gt=0,
+            received=Coalesce(Sum("quantity", filter=Q(document__kind="in", quantity__gt=0,
                 document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
-            sold_neg=Coalesce(Sum("quantity", filter=Q(document__kind__in=["out", "repack"], quantity__lt=0,
+            sold_neg=Coalesce(Sum("quantity", filter=Q(document__kind="out", quantity__lt=0,
+                document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
+            # розлив/фасування — це НЕ продаж і НЕ прихід від постачальника, показуємо окремо
+            repack_in=Coalesce(Sum("quantity", filter=Q(document__kind="repack", quantity__gt=0,
+                document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
+            repack_out=Coalesce(Sum("quantity", filter=Q(document__kind="repack", quantity__lt=0,
                 document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
             inv_net=Coalesce(Sum("quantity", filter=Q(document__kind="inv",
                 document__created_at__date__gt=df, document__created_at__date__lte=dt)), Decimal("0")),
@@ -1492,7 +1528,9 @@ class InventorySheetView(APIView):
             received = a.get("received") or Decimal("0")
             sold = abs(a.get("sold_neg") or Decimal("0"))
             inv_net = a.get("inv_net") or Decimal("0")
-            book = opening + received - sold + inv_net
+            rp_in = a.get("repack_in") or Decimal("0")
+            rp_out = abs(a.get("repack_out") or Decimal("0"))
+            book = opening + received + rp_in - sold - rp_out + inv_net
             _ctrl_rows = []
             for _i, _d in enumerate(_ctrl):
                 _dl = a.get("cdelta_%d" % _i) or Decimal("0")
@@ -1506,8 +1544,9 @@ class InventorySheetView(APIView):
                          "opening_recount": float(a.get("opening_inv") or Decimal("0")),
                          "received": float(received),
                          "sold": float(sold), "recount": float(inv_net),
+                         "repack_in": float(rp_in), "repack_out": float(rp_out),
                          "controls": _ctrl_rows,
-                         "calc": float(opening + received - sold),
+                         "calc": float(opening + received + rp_in - sold - rp_out),
                          "book": float(book)})
         return Response({"from": d_from, "to": d_to, "rows": rows,
                          "count": count, "page": page, "page_size": page_size})

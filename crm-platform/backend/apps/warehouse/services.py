@@ -25,12 +25,17 @@ def realize_deal(deal, user=None):
     items = list(deal.items.select_related("product"))
     if not items:
         return None, Decimal("0"), False
+    rows = _expand_deal_items(items)
+    if not rows:
+        # у сделці немає жодної складської позиції → НЕ створюємо порожню накладну
+        # (інакше картка показує «реалізація проведена», а зі складу нічого не списано)
+        return None, Decimal("0"), False
     wh = Warehouse.objects.filter(is_default=True).first() or Warehouse.objects.first()
     doc = StockDocument.objects.create(kind="out", number="РН-%s" % deal.id, warehouse=wh, deal=deal,
                                        comment="Реалізація по угоді #%s" % deal.id, author=user,
                                        close_stage=(deal.stage.name if deal.stage_id else ""))
     cogs = Decimal("0")
-    for prod, qty, cost in _expand_deal_items(items):
+    for prod, qty, cost in rows:
         StockMovement.objects.create(document=doc, product=prod, quantity=-qty, price=cost)
         cogs += qty * cost
     _on_posted(doc)  # єдина точка: COGS-витрата з тегом COGS doc#id

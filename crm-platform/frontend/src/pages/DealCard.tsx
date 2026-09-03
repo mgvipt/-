@@ -1228,6 +1228,23 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                         </span>
                       </div>
                     )}
+                    {(deal as any).realization?.missing?.length > 0 && (
+                      <div style={{ marginTop: 6, padding: "7px 9px", borderRadius: 8, background: "#fef2f2", border: "1px solid #fecaca", fontSize: 12 }}>
+                        <b style={{ color: "#b91c1c" }}>{t("⚠️ Не списано со склада","⚠️ Не списано зі складу")}</b>
+                        <div style={{ color: "#7f1d1d", marginTop: 3 }}>
+                          {(deal as any).realization.missing.map((m: any) => m.name + " — " + m.quantity + " " + (m.unit || "")).join("; ")}
+                        </div>
+                        <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>
+                          {t("Позицию добавили после отгрузки — в накладную она не попала. Товар числится на складе, хотя уехал.","Позицію додали після відвантаження — у накладну вона не потрапила. Товар числиться на складі, хоча поїхав.")}
+                        </div>
+                        {(can("warehouse.edit") || can("finance.manage")) && (
+                          <button className="btn btn-primary" style={{ padding: "2px 8px", fontSize: 11, marginTop: 5 }} onClick={reship}
+                            title={t("Перевыписать накладную по текущим позициям сделки","Перевиписати накладну по поточних позиціях сделки")}>
+                            {t("Дописать в реализацию","Дописати в реалізацію")}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 14 }}>

@@ -264,8 +264,24 @@ class DealDetailSerializer(DealSerializer):
         doc = StockDocument.objects.filter(kind="out", deal=obj).order_by("-id").first()
         if not doc:
             return None
+        # позиції сделки, яких НЕМА у проведеній реалізації (додали товар після відвантаження)
+        missing = []
+        if doc.posted:
+            from apps.warehouse.models import StockMovement
+            from django.db.models import Sum as _S
+            wrote = {r["product_id"]: abs(float(r["q"] or 0)) for r in StockMovement.objects
+                     .filter(document__deal=obj, document__kind="out", document__posted=True)
+                     .values("product_id").annotate(q=_S("quantity"))}
+            for it in obj.items.select_related("product").all():
+                p = it.product
+                if not p or not p.track_stock or p.components.exists():
+                    continue
+                left = float(it.quantity or 0) - wrote.get(p.id, 0.0)
+                if left > 0.001:
+                    missing.append({"product": p.id, "name": p.name, "unit": p.unit, "quantity": round(left, 3)})
         return {"id": doc.id, "number": doc.number, "posted": doc.posted,
-                "total": float(doc.total), "created_at": doc.created_at, "close_stage": doc.close_stage}
+                "total": float(doc.total), "created_at": doc.created_at, "close_stage": doc.close_stage,
+                "missing": missing}
 
     def get_pay_method(self, obj):
         paid = [p for p in obj.payments.all() if p.is_paid]
