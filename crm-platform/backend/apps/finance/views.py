@@ -1682,6 +1682,16 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         pp.paid_tx = tx
         pp.account = tx.account or pp.account
         pp.save(update_fields=["paid_amount", "status", "paid_tx", "account"])
+        # дебіторка по сделці погашена ПОВНІСТЮ → сделка має закритись «Успішною»,
+        # пройшовши всі стадії (раніше гроші падали в касу, а сделка лишалась у «Видано в кредит»)
+        if pp.kind == "receivable" and pp.deal_id and pp.status == "paid":
+            try:
+                from apps.crm.views import sync_deal_payment_from_tx, walk_deal_to_won
+                sync_deal_payment_from_tx(tx)   # Payment на сделці + «Оплату отримано»
+                pp.deal.refresh_from_db()
+                walk_deal_to_won(pp.deal, "погашення дебіторки (товарний кредит)")
+            except Exception:
+                pass
         return Response(self.get_serializer(pp).data)
 
     @action(detail=True, methods=["get"], url_path="pay-candidates")

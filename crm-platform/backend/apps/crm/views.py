@@ -267,6 +267,8 @@ class ContactViewSet(viewsets.ModelViewSet):
                        "status": p.status, "is_loan": bool(p.is_loan),
                        "due_date": p.due_date.isoformat() if p.due_date else None,
                        "deal": p.deal_id, "deal_title": (p.deal.title if p.deal_id else ""),
+                       "created_at": (p.created_at.date().isoformat() if p.created_at else None),
+                       "paid_date": (p.paid_tx.date.isoformat() if (p.paid_tx_id and p.paid_tx and p.paid_tx.date) else None),
                        "comment": (p.comment or "")[:70]} for p in _all_pp]
         # ── ТОВАРНИЙ КРЕДИТ: незакриті сделки клієнта — це теж «нам винні» ──
         # Товар віддано, гроші не отримані. Раніше це було видно лише у блоці угод,
@@ -4852,6 +4854,33 @@ def _advance_after_payment(deal, reason, actor="Автоматизація", cre
     if target:
         return _advance_deal_stage(deal, target.order, reason, actor, create_wh=create_wh)
     return _advance_deal_stage(deal, 3, reason, actor, create_wh=create_wh)
+
+
+def walk_deal_to_won(deal, reason, actor="Автоматизація"):
+    """Провести сделку по ВСІХ проміжних стадіях до «Успішної» — щоб у стрічці лишився
+    шлях, а не стрибок. Кожен крок логується окремо. Програшні стадії пропускаємо.
+    Склад НЕ тригеримо (create_wh=False): по товарному кредиту відвантаження вже було."""
+    try:
+        if not deal.funnel_id or not deal.stage_id:
+            return False
+        won = deal.funnel.stages.filter(is_won=True).order_by("order").first()
+        if not won or deal.stage.order >= won.order:
+            return False
+        moved = False
+        stages = list(deal.funnel.stages.filter(
+            order__gt=deal.stage.order, order__lte=won.order).exclude(is_lost=True).order_by("order"))
+        for st in stages:
+            if _advance_deal_stage(deal, st.order, reason, actor, create_wh=False):
+                moved = True
+        if moved:
+            try:  # успішна стадія → списання товару (ідемпотентно, повторно не спише)
+                from apps.warehouse.services import realize_deal
+                realize_deal(deal, None)
+            except Exception:
+                pass
+        return moved
+    except Exception:
+        return False
 
 
 def sync_deal_payment_from_tx(tx):

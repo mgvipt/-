@@ -23,6 +23,8 @@ interface Contact {
   zamer_projects?: ZamerProject[];
 }
 const money = (n: number) => Math.round(n || 0).toLocaleString("ru") + " ₴";
+// борги показуємо з копійками: накладна на 321,50 не має виглядати як 322
+const amt2 = (n: number) => { const v = Math.round((Number(n) || 0) * 100) / 100; return v.toLocaleString("ru", { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 }); };
 const LOYALTY = ["", "Новий", "Активний", "VIP", "Сплячий"];
 const KINDS: [string, string][] = [
   ["client", "Клієнт"], ["supplier", "Постачальник"], ["master", "Майстер"],
@@ -447,7 +449,7 @@ function ClientDebtsBlock({ contactId }: { contactId: number }) {
   async function markPaid(x: any, e: any) {
     e.stopPropagation();
     const rem = Number(x.remaining ?? (Number(x.amount) - Number(x.paid_amount || 0)));
-    const inp = prompt(t(`Сумма погашения. Остаток по этому долгу: ${Math.round(rem).toLocaleString("ru")} грн. Можно частично.`, `Сума погашення. Залишок за цим боргом: ${Math.round(rem).toLocaleString("ru")} грн. Можна частково.`), String(rem));
+    const inp = prompt(t(`Сумма погашения. Остаток по этому долгу: ${amt2(rem)} грн. Можно частично.`, `Сума погашення. Залишок за цим боргом: ${amt2(rem)} грн. Можна частково.`), String(rem));
     if (inp === null) return;
     const amt = parseFloat(String(inp).replace(",", "."));
     if (!amt || amt <= 0) return;
@@ -487,9 +489,25 @@ function ClientDebtsBlock({ contactId }: { contactId: number }) {
               return (
                 <div key={x.id ?? ("d" + x.deal)} onClick={() => { if (x.source === "deal" && x.deal) navDeal(`/deals/${x.deal}`); }} style={{ cursor: x.source === "deal" ? "pointer" : "default", display: "flex", alignItems: "center", gap: 8, padding: "5px 9px", borderRadius: 8, background: paid ? "#f0fdf4" : "#fff7ed", border: "1px solid " + (paid ? "#bbf7d0" : "#fed7aa"), marginBottom: 4, fontSize: 12.5 }}>
                   <span>{paid ? "✅" : "🕐"}</span>
-                  <span style={{ flex: 1, textDecoration: paid ? "line-through" : "none", color: paid ? "#16a34a" : "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.source === "deal" ? "🧾 " : ""}{x.counterparty || t("Без имени","Без імені")}{x.comment ? " · " + x.comment : ""}{x.deal ? " · №" + x.deal : ""}</span>
-                  <b style={{ color: cl, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{Math.round(shownAmt).toLocaleString("ru")} ₴</b>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: paid ? "#16a34a" : partial ? "#2563eb" : "#c2410c", whiteSpace: "nowrap" }}>{paid ? t("оплачено","оплачено") : partial ? (t("частично · оплачено","частково · оплачено") + " " + Math.round(Number(x.paid_amount)).toLocaleString("ru")) : t("не оплачено","не оплачено")}</span>
+                  {(x.created_at || x.due_date) && (
+                    <span className="muted" style={{ fontSize: 11, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", flex: "0 0 auto" }}
+                      title={t("Дата операции","Дата операції") + (x.paid_date ? " · " + t("оплачено","оплачено") + " " + x.paid_date.split("-").reverse().join(".") : "")}>
+                      {String(x.created_at || x.due_date).slice(8, 10)}.{String(x.created_at || x.due_date).slice(5, 7)}
+                    </span>
+                  )}
+                  <span style={{ flex: 1, textDecoration: paid ? "line-through" : "none", color: paid ? "#16a34a" : "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.source === "deal" ? "🧾 " : ""}{x.counterparty || t("Без имени","Без імені")}{x.comment ? " · " + x.comment : ""}</span>
+                  {x.deal && (
+                    <a onClick={(e) => { e.stopPropagation(); navDeal(`/deals/${x.deal}`); }}
+                      title={t("Открыть сделку нашего магазина","Відкрити сделку нашого магазину")}
+                      style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", cursor: "pointer", whiteSpace: "nowrap", flex: "0 0 auto" }}>№{x.deal} ↗</a>
+                  )}
+                  <b style={{ color: cl, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{amt2(shownAmt)} ₴</b>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: paid ? "#16a34a" : partial ? "#2563eb" : "#c2410c", whiteSpace: "nowrap" }}>{paid ? t("оплачено","оплачено") : partial ? (t("частично · оплачено","частково · оплачено") + " " + amt2(Number(x.paid_amount))) : t("не оплачено","не оплачено")}</span>
+                  {x.id && (
+                    <button className="btn" onClick={(e) => { e.stopPropagation(); navDeal(`/finance?tab=debts&debt=${x.id}`); }}
+                      title={t("Открыть карточку операции — как в журнале, с проверкой и правкой","Відкрити картку операції — як у журналі, з перевіркою і правкою")}
+                      style={{ fontSize: 11, padding: "2px 7px", height: 22, background: "#fff", border: "1px solid #cbd5e1", color: "#475569", flex: "0 0 auto" }}>✎</button>
+                  )}
                   {!paid && canPay && x.source !== "deal" && (
                     <button className="btn" onClick={(e) => markPaid(x, e)}
                       title={t("Отметить оплату — создаст операцию погашения в журнале (как в Финансы → Дт/Кт)","Відмітити оплату — створить операцію погашення в журналі (як у Фінанси → Дт/Кт)")}

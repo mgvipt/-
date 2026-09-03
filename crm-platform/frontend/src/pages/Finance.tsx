@@ -71,7 +71,7 @@ const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pa
 
 export default function Finance() {
   const { t } = useLang();
-  const [tab, setTab] = useState<"dash" | "cashflow" | "journal" | "triage" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model" | "incoming">(() => ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash"));
+  const [tab, setTab] = useState<"dash" | "cashflow" | "journal" | "triage" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model" | "incoming">(() => (new URLSearchParams(window.location.search).get("debt") ? "debts" : ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash")));
   useEffect(() => { try { localStorage.setItem("fin_tab", tab); } catch (e) { /* noop */ } }, [tab]);
   const [quickOpen, setQuickOpen] = useState(false);
   const isMobile = useIsMobile();
@@ -2654,6 +2654,12 @@ function Debts() {
   const [card, setCard] = useState<any>(undefined); // undefined=закрыто, null=новая, obj=правка
   const load = () => api.get<any>(`/api/planned-payments/?status=${st}&page_size=500`).then((d) => setRows(d.results || d)).catch(() => {});
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [st]);
+  // прихід з картки клієнта: /finance?tab=debts&debt=<id> → одразу відкрити картку операції
+  useEffect(() => {
+    const _id = Number(new URLSearchParams(window.location.search).get("debt")) || 0;
+    if (!_id) return;
+    api.get<any>(`/api/planned-payments/${_id}/`).then((d) => setCard(d)).catch(() => {});
+  }, []);
   useEffect(() => { setSortF(st === "paid" ? "-paid_date" : st === "planned" ? "due_date" : "-due_date"); }, [st]);
   useEffect(() => {
     api.get<any>("/api/categories/?page_size=300").then((d) => setCats(d.results || d)).catch(() => {});
