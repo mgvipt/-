@@ -84,7 +84,11 @@ function JobCard({ j, t, onClick, action }: any) {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <b style={{ fontSize: 15 }}>#{j.deal_id} · {j.client}</b>
             <span style={{ fontSize: 10.5, fontWeight: 700, background: bg, color: fg, borderRadius: 20, padding: "2px 9px" }}>{lbl}</span>
-            {(j.is_dozakaz || (j.parcel_orders && j.parcel_orders.length > 0)) && <span title={t("Едет одной посылкой","Їде однією посилкою")} style={{ fontSize: 10, fontWeight: 700, background: "#ecfeff", color: "#0e7490", borderRadius: 20, padding: "2px 8px" }}>📦 {t("одна посылка","одна посилка")}</span>}
+            {j.is_dozakaz
+              ? <span title={t("Это допродажа к основной сделке — едет одной посылкой","Це допродаж до основної угоди — їде однією посилкою")} style={{ fontSize: 10, fontWeight: 700, background: "#fef3c7", color: "#92400e", borderRadius: 20, padding: "2px 8px" }}>📦 {t("допродажа","допродаж")} → #{j.parcel_main}</span>
+              : (j.parcel_orders && j.parcel_orders.length > 0)
+              ? <span title={t("К заказу есть допродажа — посылка не одна, пакуется вместе","До замовлення є допродаж — посилка не одна, пакується разом")} style={{ fontSize: 10, fontWeight: 700, background: "#fef3c7", color: "#92400e", borderRadius: 20, padding: "2px 8px" }}>📦 +{j.parcel_orders.length} {t("допродажа","допродаж")}</span>
+              : null}
           </div>
           <div className="muted" style={{ fontSize: 12.5, marginTop: 3, display: "flex", gap: 10, flexWrap: "wrap" }}>
             <span>📍 {j.city || "—"}</span>
