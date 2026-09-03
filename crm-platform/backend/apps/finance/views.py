@@ -1668,6 +1668,15 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Сума погашення має бути > 0"}, status=400)
         if amt > remaining:
             amt = remaining
+        # ── ПОГАШЕННЯ З АВАНСУ КЛІЄНТА: грошей у касу НЕ додаємо (вони вже там),
+        #    просто закриваємо борг і зменшуємо вільні гроші клієнта ──
+        if request.data.get("from_advance") and pp.kind == "receivable":
+            pp.paid_amount = _D(str(pp.paid_amount or 0)) + amt
+            if pp.paid_amount >= _D(str(pp.amount)):
+                pp.status = "paid"
+            pp.paid_from_advance = True
+            pp.save(update_fields=["paid_amount", "status", "paid_from_advance"])
+            return Response(self.get_serializer(pp).data)
         acc = pp.account or Account.objects.filter(is_active=True).first()
         tx = Transaction.objects.create(
             direction="out" if pp.kind == "payable" else "in",

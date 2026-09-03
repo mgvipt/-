@@ -142,6 +142,13 @@ class ContactViewSet(viewsets.ModelViewSet):
         # У списку операцій і в плитці «Дохід» byname-рядки ЛИШАЮТЬСЯ видимими.
         inc_linked = qs.filter(_linked, direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0
         adv = _Dadv(str(inc_linked or 0)) - _pay_consumed   # АВАНС = деньги КЛИЕНТА (Заплатил − Купил); НАШІ затрати exp сюди НЕ входять (це маржа)
+        # ⚠️ Погашення дебіторки БЕЗ сделки (транзит-матеріали з іншого магазину) — це НЕ вільні гроші:
+        #    клієнт закрив борг за товар, який ми вже купили йому. Сделки нема → у _pay_consumed
+        #    воно не потрапляє, і кожне «✓ Оплачено» у Дт/Кт роздувало аванс (Олег, 03.09).
+        _debt_settled = _PP.objects.filter(contact=c, kind="receivable", deal__isnull=True).filter(
+            _Qc(paid_tx__isnull=False) | _Qc(paid_from_advance=True)
+        ).aggregate(s=_Sum("paid_amount"))["s"] or 0
+        adv = adv - _Dadv(str(_debt_settled))
         # ⭐ Ручна поправка авансу: обʼєктні роботи/матеріали часто НЕ оформлені сделками,
         #   тому формула «заплатив − купив» показує більше, ніж є насправді. Поправка дає
         #   поставити реальний залишок клієнта. Рухів грошей НЕ створює (26.08).
@@ -1779,6 +1786,12 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 _a2 = Decimal(str(_dav.amount or 0))
                 _used += _p2 if _p2 < _a2 else _a2   # min(оплата, сума сделки)
             _avail = Decimal(str(_inc)) - _used   # деньги клиента = доход − Σmin(оплата,сумма); НАШИ затраты (exp) НЕ вычитаем
+            # ДЗЕРКАЛЬНО до finance(): погашені дебіторки без сделки (транзит-матеріали) не є вільним авансом
+            from apps.finance.models import PlannedPayment as _PPav
+            _settled_av = _PPav.objects.filter(contact=_cc, kind="receivable", deal__isnull=True).filter(
+                _AdvQ(paid_tx__isnull=False) | _AdvQ(paid_from_advance=True)
+            ).aggregate(s=_AdvS("paid_amount"))["s"] or 0
+            _avail = _avail - Decimal(str(_settled_av))
             if amount > _avail + Decimal("0.01"):
                 return Response({"detail": "Недостатньо авансу клієнта. Доступно: %.2f грн." % float(_avail)}, status=status.HTTP_400_BAD_REQUEST)
         # ── РОЗПОДІЛ ПЛАТЕЖУ: частина на сделку, частина закриває дебіторки клієнта (транзит-матеріали БудМаркет тощо) ──

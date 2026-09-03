@@ -284,6 +284,8 @@ class PlannedPayment(models.Model):
                                            help_text="Операція-розподіл, що породила цей внутрішній борг")
     source_planned = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="derived_debts",
                                        help_text="Джерело-борг (напр. кредиторка магазину), що породив цей транзитний борг клієнта — видаляється каскадом")
+    # погашено З АВАНСУ клієнта: руху грошей нема, але вільні гроші клієнта зменшуються
+    paid_from_advance = models.BooleanField("Погашено з авансу клієнта", default=False)
     source_stock = models.ForeignKey("warehouse.StockDocument", null=True, blank=True, on_delete=models.SET_NULL,
                                      related_name="planned_payments",
                                      help_text="Прихід, що породив цей борг — при правці приходу борг (сума/дата) дзеркалиться, якщо не оплачений")

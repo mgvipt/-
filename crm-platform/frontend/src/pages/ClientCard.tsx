@@ -442,7 +442,8 @@ function ClientDebtsBlock({ contactId }: { contactId: number }) {
   const [rows, setRows] = useState<any[]>([]);
   const [showN, setShowN] = useState<Record<string, number>>({});
   const [pageN, setPageN] = useState<Record<string, number>>({});
-  const load = () => api.get<any>(`/api/contacts/${contactId}/finance/`).then((d) => setRows(d?.debts_list || [])).catch(() => setRows([]));
+  const [advance, setAdvance] = useState(0);   // вільні гроші клієнта — з них можна закрити борг
+  const load = () => api.get<any>(`/api/contacts/${contactId}/finance/`).then((d) => { setRows(d?.debts_list || []); setAdvance(Number(d?.advance || 0)); }).catch(() => setRows([]));
   useEffect(() => { load(); }, [contactId]);
   // ДЗЕРКАЛО кнопки «Оплачено» з Фінанси → Дт/Кт: той самий серверний обробник
   // /api/planned-payments/<id>/mark-paid/ — створює операцію погашення в журналі.
@@ -453,7 +454,14 @@ function ClientDebtsBlock({ contactId }: { contactId: number }) {
     if (inp === null) return;
     const amt = parseFloat(String(inp).replace(",", "."));
     if (!amt || amt <= 0) return;
-    try { await api.post(`/api/planned-payments/${x.id}/mark-paid/`, { amount: amt }); load(); }
+    // у клієнта лежить наш аванс? тоді борг логічніше закрити З НЬОГО, а не створювати новий прихід
+    let fromAdv = false;
+    if (x.kind === "receivable" && advance > 0) {
+      fromAdv = window.confirm(t(
+        `У клиента есть свободные деньги: ${amt2(advance)} ₴.\n\nОК — погасить ИЗ АВАНСА: деньги в кассу не поступают, свободные уменьшатся на ${amt2(amt)} ₴.\nОтмена — клиент заплатил заново, создастся приход в кассу.`,
+        `У клієнта є вільні гроші: ${amt2(advance)} ₴.\n\nОК — погасити З АВАНСУ: гроші в касу не надходять, вільні зменшаться на ${amt2(amt)} ₴.\nСкасувати — клієнт заплатив заново, створиться прихід у касу.`));
+    }
+    try { await api.post(`/api/planned-payments/${x.id}/mark-paid/`, fromAdv ? { amount: amt, from_advance: true } : { amount: amt }); load(); }
     catch (err: any) { alert(err?.message || t("Не удалось отметить оплату", "Не вдалося відмітити оплату")); }
   }
   if (!rows.length) return null;
