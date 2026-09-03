@@ -634,11 +634,18 @@ export default function MetaMarketing() {
   const _ss = (key: string, fallback: string) => { try { return sessionStorage.getItem(key) || fallback; } catch { return fallback; } };
   const [from, setFrom] = useState(() => _ss("mm_from", CONNECTED_FROM));
   const [to, setTo] = useState(() => _ss("mm_to", iso(today)));
-  const [tab, setTab] = useState<Tab>(() => _ss("mm_tab", "overview") as Tab);
+  const [tab, setTab] = useState<Tab>(() => {
+    const saved = _ss("mm_tab", "ads") as Tab;
+    return saved === "overview" ? "ads" : saved;
+  });
   // Розділи маркетингу (27.08): зведений огляд / Meta / Сайт·Google / Офлайн.
   // Кожен розділ можна делегувати окремій людині (права marketing.section.*).
   const [section, setSection] = useState<string>(() => _ss("mm_section", "overview"));
-  const pickSection = (key: string) => { setSection(key); try { sessionStorage.setItem("mm_section", key); } catch { /* */ } };
+  const pickSection = (key: string) => {
+    setSection(key);
+    if (key === "meta") setTab("ads");
+    try { sessionStorage.setItem("mm_section", key); } catch { /* */ }
+  };
   const [offlineData, setOfflineData] = useState<any>(null);
   const [adLevel, setAdLevel] = useState<AdLevel>("campaigns");
   const [data, setData] = useState<any>(null);
@@ -693,7 +700,6 @@ export default function MetaMarketing() {
   };
 
   const tabs: { key: Tab; ru: string; ua: string }[] = [
-    { key: "overview", ru: "Обзор", ua: "Огляд" },
     { key: "profitability", ru: "Продажи и рентабельность", ua: "Продажі та рентабельність" },
     { key: "ads", ru: "Реклама", ua: "Реклама" },
     { key: "creatives", ru: "Креативы", ua: "Креативи" },
@@ -756,16 +762,6 @@ export default function MetaMarketing() {
     </div>
   ) : null;
 
-  const platformLabel = (row: any) => {
-    const title = row.name || row.ad_name || row.adset_name || row.campaign_name || row.id;
-    return <div style={{ minWidth: 220 }}><b>{title || "—"}</b>{row.effective_status && <div className="muted" style={{ fontSize: 10 }}>{row.effective_status}</div>}</div>;
-  };
-  const adRows = (paid[adLevel] || []).map((r: any) => [
-    platformLabel(r), moneyUsd(r.spend), count(r.impressions), count(r.clicks), optional(r.ctr, "%"),
-    r.result_value ? <span>{count(r.result_value)}<div style={{ fontSize: 10, color: "var(--rd-text2)" }}>{resultLabel(r.result_indicator, t)}</div></span> : "—",
-    count(r.instagram_follows), r.cost_per_instagram_follow == null ? "—" : moneyUsd(r.cost_per_instagram_follow),
-    count(r.messages_started), count(r.meta_leads), count(r.crm_leads), r.cost_per_message == null ? "—" : moneyUsd(r.cost_per_message),
-  ]);
   const dailyTable = <DailySalesTable rows={daily} t={t} />;
   // Пошук дати в «Деталізації за днями» (Огляд): збіг і по 2026-08-27, і по 27.08.2026
   const dailyFiltered = daySearch.trim() ? daily.filter((r: any) => {
@@ -1190,30 +1186,15 @@ export default function MetaMarketing() {
 
         {section === "meta" && tab === "ads" && <>
           {syncWarning}
+          <UnifiedAdsDashboard paidSummary={paidSummary} dialogues={dialogues} followers={followers} summary={summary} t={t} />
           <div style={{ display: "flex", gap: 7, marginBottom: 10, flexWrap: "wrap" }}>
             {(["campaigns", "adsets", "ads"] as AdLevel[]).map((key) => <button key={key} className={adLevel === key ? "btn btn-primary" : "btn btn-light"} onClick={() => setAdLevel(key)}>
               {key === "campaigns" ? t("Кампании", "Кампанії") : key === "adsets" ? t("Группы объявлений", "Групи оголошень") : t("Объявления", "Оголошення")}
             </button>)}
           </div>
-          {table([
-            adLevel === "campaigns" ? t("Кампания", "Кампанія") : adLevel === "adsets" ? t("Группа", "Група") : t("Объявление", "Оголошення"),
-            t("Расход", "Витрати"), t("Показы", "Покази"), t("Клики", "Кліки"), "CTR", t("Результат", "Результат"), t("Подписки", "Підписки"), t("Цена подписки", "Ціна підписки"), t("Диалоги Meta", "Діалоги Meta"), t("Лиды Meta", "Ліди Meta"), t("Лиды CRM", "Ліди CRM"), t("Цена диалога", "Ціна діалогу"),
-          ], adRows, t("За выбранный период реклама не показывалась", "За вибраний період реклама не показувалась"), 1360, [
-            t("Название из Ads Manager", "Назва з Ads Manager"),
-            t("Потрачено за период, $", "Витрачено за період, $"),
-            t("Сколько раз показали рекламу", "Скільки разів показали рекламу"),
-            t("Все клики по рекламе", "Усі кліки по рекламі"),
-            t("% кликов от показов", "% кліків від показів"),
-            t("Как «Результаты» в кабинете: по цели кампании — переписки, QuizStart, визиты профиля", "Як «Результати» в кабінеті: за ціллю кампанії — переписки, QuizStart, візити профілю"),
-            t("Подписки в Instagram из отчёта Ads Manager", "Підписки в Instagram зі звіту Ads Manager"),
-            t("расход ÷ подписки", "витрати ÷ підписки"),
-            t("Начатые переписки по данным Meta (7 дней после клика)", "Розпочаті переписки за даними Meta (7 днів після кліку)"),
-            t("Лиды по подсчёту Meta (её окно атрибуции)", "Ліди за підрахунком Meta (її вікно атрибуції)"),
-            t("Реальные карточки CRM с меткой этого объявления", "Реальні картки CRM з міткою цього оголошення"),
-            t("расход ÷ начатые переписки", "витрати ÷ розпочаті переписки"),
-          ])}
+          <AdsPerformanceTable rows={paid[adLevel] || []} level={adLevel} t={t} />
           <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
-            {t("Охват по дням не суммируется как уникальный охват периода, поэтому в таблице он не используется для оценки результата.", "Охоплення за днями не підсумовується як унікальне охоплення періоду, тому в таблиці воно не використовується для оцінки результату.")}
+            {t("Охват — сумма дневных охватов, а не уникальный охват периода. Чаты по конкретному объявлению исторически не приписываются приблизительно: в строке показываем только реальные CRM-лиды с точной меткой Meta.", "Охоплення — сума денних охоплень, а не унікальне охоплення періоду. Чати за конкретним оголошенням історично не приписуємо приблизно: у рядку показуємо лише реальні CRM-ліди з точною міткою Meta.")}
           </div>
         </>}
 
@@ -1792,6 +1773,85 @@ function AdCard({ row, t }: { row: any; t: (ru: string, ua: string) => string })
       <Metric label={t("Цена диалога", "Ціна діалогу")} value={row.cost_per_message == null ? "—" : moneyUsd(row.cost_per_message)} tone={toneCostMsg(row.cost_per_message)}
         tip={t("Сколько стоила одна начатая переписка: расход ÷ диалоги. Чем дешевле — тем выгоднее объявление. Сравнивай креативы между собой: тот, у кого диалог дешевле при таком же качестве лидов, — на него и переносить бюджет.", "Скільки коштувало одне розпочате листування: витрати ÷ діалоги. Порівнюй креативи між собою: де діалог дешевший за тієї ж якості лідів — туди й переносити бюджет.")} />
     </div>
+  </div>;
+}
+
+function UnifiedAdsDashboard({ paidSummary, dialogues, followers, summary, t }: { paidSummary: any; dialogues: any; followers: any; summary: any; t: (ru: string, ua: string) => string }) {
+  const exactLeads = Number(dialogues.crm_exact_meta_leads ?? summary.attributed_leads ?? 0);
+  const exactCost = exactLeads && paidSummary.spend ? paidSummary.spend / exactLeads : null;
+  const cpc = paidSummary.clicks ? paidSummary.spend / paidSummary.clicks : null;
+  const blocks = [
+    {
+      title: "Ads Manager",
+      color: "#2563eb",
+      note: t("Атрибуция Meta: её окно после клика", "Атрибуція Meta: її вікно після кліку"),
+      metrics: [
+        [t("Расход", "Витрати"), <>{moneyUsd(paidSummary.spend)}{paidSummary.spend_uah != null && <small> / {moneyUah(paidSummary.spend_uah)}</small>}</>],
+        [t("Показы · охват", "Покази · охоплення"), <>{count(paidSummary.impressions)} · {count(paidSummary.reach)}</>],
+        [t("Клики · CTR", "Кліки · CTR"), <>{count(paidSummary.clicks)} · {paidSummary.ctr == null ? "—" : paidSummary.ctr + "%"}<small> · CPC {cpc == null ? "—" : moneyUsd(cpc)}</small></>],
+        [t("Исходящие клики", "Вихідні кліки"), count(paidSummary.outbound_clicks)],
+        [t("Начатые переписки — Meta Ads", "Розпочаті переписки — Meta Ads"), <>{count(paidSummary.messages_started)}<small> · {paidSummary.cost_per_message == null ? "—" : moneyUsd(paidSummary.cost_per_message)}</small></>],
+        [t("Лиды Meta", "Ліди Meta"), <>{count(paidSummary.meta_leads)}<small> · {paidSummary.cost_per_meta_lead == null ? "—" : moneyUsd(paidSummary.cost_per_meta_lead)}</small></>],
+        [t("Подписки с рекламы", "Підписки з реклами"), <>{count(paidSummary.instagram_follows)}<small> · {paidSummary.cost_per_instagram_follow == null ? "—" : moneyUsd(paidSummary.cost_per_instagram_follow)}</small></>],
+        [t("Визиты профиля", "Візити профілю"), count((paidSummary.results_by_type || {}).profile_visit || (paidSummary.results_by_type || {}).profile_visits || 0)],
+      ],
+    },
+    {
+      title: t("Фактически в CRM", "Фактично в CRM"),
+      color: "#15803d",
+      note: t("Только созданные чаты и карточки Wallcov", "Лише створені чати та картки Wallcov"),
+      metrics: [
+        [t("Начатые переписки CRM", "Розпочаті переписки CRM"), count(dialogues.crm_ig_fb)],
+        ["Direct", count(dialogues.crm_direct_ig_fb)],
+        [t("Комментарии", "Коментарі"), <>{count(dialogues.crm_comments_ig_fb)}<small> · {t("уже входят выше", "вже входять вище")}</small></>],
+        [t("Новые лиды CRM", "Нові ліди CRM"), count(dialogues.crm_ig_fb_leads)],
+        [t("Лиды с точной Meta-меткой", "Ліди з точною Meta-міткою"), <>{count(exactLeads)}<small> · {exactCost == null ? "—" : moneyUsd(exactCost)}</small></>],
+        [t("Подписки органика / другое", "Підписки органіка / інше"), followers.organic_other == null ? "—" : count(followers.organic_other)],
+        [t("Прирост подписчиков", "Приріст підписників"), followers.period_gained == null ? "—" : count(followers.period_gained)],
+        [t("Текущие подписчики", "Поточні підписники"), followers.current_total == null ? "—" : count(followers.current_total)],
+      ],
+    },
+  ];
+  return <div className="rd-card" style={{ marginBottom: 14, padding: 0, overflow: "hidden" }}>
+    <div style={{ padding: "15px 16px", borderBottom: "1px solid var(--rd-border)", background: "var(--rd-muted)" }}>
+      <b style={{ fontSize: 17, color: "var(--rd-text)" }}>{t("Единая сверка рекламы: Ads Manager ↔ CRM", "Єдина звірка реклами: Ads Manager ↔ CRM")}</b>
+      <div style={{ color: "var(--rd-text2)", fontSize: 12, marginTop: 3 }}>{t("Все рекламные показатели в одном месте. Это два разных способа подсчёта — цифры не обязаны совпадать.", "Усі рекламні показники в одному місці. Це два різні способи підрахунку — цифри не зобов’язані збігатися.")}</div>
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(350px,100%), 1fr))", gap: 12, padding: 12 }}>
+      {blocks.map((block) => <div key={block.title} style={{ border: `1px solid ${block.color}33`, borderRadius: 9, padding: 11, background: block.color === "#2563eb" ? "#f5f9ff" : "#f2fbf5" }}>
+        <div style={{ color: block.color, fontWeight: 800, fontSize: 14 }}>{block.title}</div>
+        <div style={{ color: "var(--rd-text2)", fontSize: 10, margin: "2px 0 8px" }}>{block.note}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7 }}>
+          {block.metrics.map(([label, value]) => <div key={String(label)} style={{ background: "var(--rd-card)", borderRadius: 7, padding: "7px 8px", minWidth: 0 }}><div style={{ fontSize: 10, color: "var(--rd-text2)", lineHeight: 1.2 }}>{label}</div><div style={{ fontSize: 14, fontWeight: 800, color: "var(--rd-text)", marginTop: 3, overflowWrap: "anywhere" }}>{value}</div></div>)}
+        </div>
+      </div>)}
+    </div>
+    <div className="note" style={{ margin: "0 12px 12px", fontSize: 11, lineHeight: 1.45 }}><b>{t("Важно:", "Важливо:")}</b> {t("комментарии уже входят в «Начатые переписки CRM». Для конкретной кампании/группы/объявления CRM показывает только лиды с точной меткой Meta; исторические чаты без метки не приписываются приблизительно.", "коментарі вже входять у «Розпочаті переписки CRM». Для конкретної кампанії/групи/оголошення CRM показує лише ліди з точною міткою Meta; історичні чати без мітки не приписуються приблизно.")}</div>
+  </div>;
+}
+
+function AdsPerformanceTable({ rows, level, t }: { rows: any[]; level: AdLevel; t: (ru: string, ua: string) => string }) {
+  const levelName = level === "campaigns" ? t("Кампания", "Кампанія") : level === "adsets" ? t("Группа объявлений", "Група оголошень") : t("Объявление", "Оголошення");
+  if (!rows.length) return <Empty text={t("За выбранный период реклама не показывалась", "За вибраний період реклама не показувалась")} />;
+  return <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
+    <div style={{ padding: "11px 13px", background: "var(--rd-muted)", borderBottom: "1px solid var(--rd-border)" }}><b>{t("Таблица", "Таблиця")}: {levelName}</b><div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{t("Каждая строка раскрывается вертикально — все столбцы видны без горизонтальной прокрутки.", "Кожен рядок розкривається вертикально — усі стовпці видно без горизонтальної прокрутки.")}</div></div>
+    {rows.map((row) => <details key={row.id} style={{ borderBottom: "1px solid var(--rd-border)" }}>
+      <summary style={{ cursor: "pointer", padding: "11px 13px", display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 10, alignItems: "center" }}><span style={{ minWidth: 0 }}><b style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name || row.id}</b><small className="muted">{moneyUsd(row.spend)} · {count(row.messages_started)} {t("диалогов Meta", "діалогів Meta")} · {count(row.crm_leads)} CRM</small></span><b style={{ color: "var(--rd-primary)" }}>{row.ctr == null ? "—" : row.ctr + "%"} CTR</b></summary>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 7, padding: "0 13px 12px" }}>
+        <Metric label={t("Расход", "Витрати")} value={moneyUsd(row.spend)} />
+        <Metric label={t("Показы", "Покази")} value={count(row.impressions)} />
+        <Metric label={t("Охват", "Охоплення")} value={count(row.reach)} />
+        <Metric label={t("Клики · исходящие", "Кліки · вихідні")} value={`${count(row.clicks)} · ${count(row.outbound_clicks)}`} />
+        <Metric label="CTR · CPC · CPM" value={`${row.ctr == null ? "—" : row.ctr + "%"} · ${row.clicks ? moneyUsd(row.spend / row.clicks) : "—"} · ${row.cpm == null ? "—" : moneyUsd(row.cpm)}`} />
+        <Metric label={t("Результат Meta", "Результат Meta")} value={row.result_value ? `${count(row.result_value)} · ${resultLabel(row.result_indicator, t)}` : "—"} />
+        <Metric label={t("Подписки Meta · цена", "Підписки Meta · ціна")} value={`${count(row.instagram_follows)} · ${row.cost_per_instagram_follow == null ? "—" : moneyUsd(row.cost_per_instagram_follow)}`} />
+        <Metric label={t("Переписки Meta · цена", "Переписки Meta · ціна")} value={`${count(row.messages_started)} · ${row.cost_per_message == null ? "—" : moneyUsd(row.cost_per_message)}`} />
+        <Metric label={t("Лиды Meta · цена", "Ліди Meta · ціна")} value={`${count(row.meta_leads)} · ${row.cost_per_meta_lead == null ? "—" : moneyUsd(row.cost_per_meta_lead)}`} />
+        <Metric label={t("Лиды CRM с точной меткой · цена", "Ліди CRM з точною міткою · ціна")} value={`${count(row.crm_leads)} · ${row.cost_per_crm_lead == null ? "—" : moneyUsd(row.cost_per_crm_lead)}`} accent />
+        <Metric label={t("Сделки · успешные", "Угоди · успішні")} value={`${count(row.crm_deals)} · ${count(row.crm_won)}`} />
+        <Metric label={t("Выручка CRM", "Виручка CRM")} value={moneyUah(row.crm_revenue)} accent />
+      </div>
+    </details>)}
   </div>;
 }
 

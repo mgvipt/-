@@ -2,6 +2,7 @@ from datetime import date, datetime
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.test import TransactionTestCase
 from django.utils import timezone
@@ -19,6 +20,7 @@ class MetaMarketingAnalyticsTests(TransactionTestCase):
     reset_sequences = True
 
     def setUp(self):
+        cache.clear()
         self.admin = get_user_model().objects.create_superuser(
             username="meta-analytics-admin", password="test-pass-123", email="analytics@example.com",
         )
@@ -43,7 +45,7 @@ class MetaMarketingAnalyticsTests(TransactionTestCase):
         MetaContentStat.objects.create(
             ig_account_id="ig-1", media_id="media-1", caption="Organic post",
             media_type="IMAGE", media_product_type="FEED",
-            published_at=timezone.now(), like_count=25, comments_count=3,
+            published_at=timezone.make_aware(datetime(2026, 8, 20, 12, 0)), like_count=25, comments_count=3,
             reach=500, views=550, saved=7, shares=4, total_interactions=39,
             follows=6, profile_visits=11,
         )
@@ -54,6 +56,9 @@ class MetaMarketingAnalyticsTests(TransactionTestCase):
         self.assertEqual(body["paid"]["summary"]["spend"], 12.5)
         self.assertEqual(body["paid"]["summary"]["instagram_follows"], 7)
         self.assertEqual(body["paid"]["summary"]["cost_per_instagram_follow"], round(12.5 / 7, 2))
+        self.assertEqual(body["dialogues"]["crm_ig_fb"], 0)
+        self.assertEqual(body["dialogues"]["crm_direct_ig_fb"], 0)
+        self.assertEqual(body["dialogues"]["crm_comments_ig_fb"], 0)
         self.assertEqual(body["paid"]["ads"][0]["ad_id"], "ad-1")
         self.assertEqual(body["paid"]["ads"][0]["instagram_follows"], 7)
         self.assertEqual(body["organic"]["content"][0]["media_id"], "media-1")
@@ -70,14 +75,17 @@ class MetaMarketingAnalyticsTests(TransactionTestCase):
         first_customer = Contact.objects.create(first_name="Первый")
         ad_customer = Contact.objects.create(first_name="Реклама")
 
-        Lead.objects.create(
+        first_lead = Lead.objects.create(
             title="Instagram без ID", contact=first_customer, funnel=lead_funnel,
             stage=lead_stage, source="instagram",
         )
-        Lead.objects.create(
+        paid_lead = Lead.objects.create(
             title="Instagram с ID", contact=ad_customer, funnel=lead_funnel,
             stage=lead_stage, source="instagram",
             meta_attribution={"platform": "instagram", "source_kind": "paid_ad", "ad_id": "ad-1"},
+        )
+        Lead.objects.filter(pk__in=(first_lead.pk, paid_lead.pk)).update(
+            created_at=timezone.make_aware(datetime(2026, 8, 13, 12, 0)),
         )
         first = Deal.objects.create(
             title="Первая", contact=first_customer, funnel=core, stage=core_stage,
@@ -272,7 +280,7 @@ class MetaMarketingAnalyticsTests(TransactionTestCase):
     def test_unsupported_follower_metric_stays_null_not_zero(self):
         MetaContentStat.objects.create(
             ig_account_id="ig-1", media_id="reel-1", caption="Reel",
-            media_type="VIDEO", media_product_type="REELS", published_at=timezone.now(),
+            media_type="VIDEO", media_product_type="REELS", published_at=timezone.make_aware(datetime(2026, 8, 20, 12, 0)),
             follows=None, profile_visits=None,
         )
         body = self.client.get("/api/meta-marketing/?from=2026-08-01&to=2026-08-31").json()

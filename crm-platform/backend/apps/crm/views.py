@@ -4348,16 +4348,24 @@ class MetaMarketingView(APIView):
         #    Facebook/TikTok — Олег хоче бачити кожен канал окремо і три ціни
         #    діалогу: лише Ads, всі IG (органіка+платні), всі соцмережі разом. ──
         from apps.inbox.models import Conversation as _Conv
+        _conversations = _Conv.objects.filter(
+            created_at__date__gte=date_from, created_at__date__lte=date_to,
+        )
         _conv_counts = defaultdict(int)
-        for (_kind,) in (_Conv.objects.filter(
-                created_at__date__gte=date_from, created_at__date__lte=date_to)
-                .values_list("channel__kind")):
+        for (_kind,) in _conversations.values_list("channel__kind"):
             _conv_counts[_kind or "other"] += 1
         _dlg_ig = _conv_counts.get("instagram", 0)
         _dlg_fb = _conv_counts.get("facebook", 0)
         _dlg_tt = _conv_counts.get("tiktok", 0)
         _dlg_social = _dlg_ig + _dlg_fb + _dlg_tt
         _dlg_total = sum(_conv_counts.values())
+        # Коментарі в Inbox є окремими Conversation, але це не окрема людина
+        # поза підсумком: вони вже входять у число нових переписок. Віддаємо
+        # розкладку явно, щоб інтерфейс не міг порахувати їх удруге.
+        _ig_fb_conversations = _conversations.filter(channel__kind__in=("instagram", "facebook"))
+        _comments_ig_fb = _ig_fb_conversations.filter(external_chat_id__startswith="comment:").count()
+        _direct_ig_fb = _ig_fb_conversations.exclude(external_chat_id__startswith="comment:").count()
+        _leads_ig_fb = sum(1 for item in all_leads if (item.source or "") in ("instagram", "facebook"))
         _sp_usd = float(paid_summary["spend"] or 0)
         _sp_uah = paid_summary.get("spend_uah")
 
@@ -4377,6 +4385,12 @@ class MetaMarketingView(APIView):
             "instagram": _dlg_ig, "facebook": _dlg_fb, "tiktok": _dlg_tt,
             "social_total": _dlg_social,
             "other": _dlg_total - _dlg_social, "total": _dlg_total,
+            "crm_ig_fb": _direct_ig_fb + _comments_ig_fb,
+            "crm_direct_ig_fb": _direct_ig_fb,
+            "crm_comments_ig_fb": _comments_ig_fb,
+            "crm_ig_fb_leads": _leads_ig_fb,
+            "crm_exact_meta_leads": len(leads),
+            "cost_exact_meta_lead": _dlg_cost(len(leads)),
             "cost_ig_all": _dlg_cost(_dlg_ig),
             "cost_social_all": _dlg_cost(_dlg_social),
             "by_kind": dict(_conv_counts),
@@ -4428,12 +4442,20 @@ class MetaMarketingView(APIView):
             "paid_report_rows": len(summary_follow_rows),
             # Органіка чесна лише коли дані підписок покривають період з його
             # початку (звіт ведеться з 01.06.2026); інакше «—», а не завищене число.
+            # Приріст: офіційний gained, а поки Meta його не віддала (лаг ~2 дні) —
+            # різниця балансів за день. Якщо приріст невідомий взагалі — None («—»),
+            # а не 0−paid (давало фантомний мінус, 03.09.2026).
             "paid_coverage_from": min(follow_days).isoformat() if follow_days else None,
-            "organic_other": (
-                sum(row.followers_gained for row in account_daily_stats if row.followers_gained is not None)
-                - paid_summary["instagram_follows"]
-                if account_daily_stats and follow_days and min(follow_days) <= date_from else None
-            ),
+            "organic_other": (lambda rows: (
+                (lambda vals: (sum(vals) - paid_summary["instagram_follows"]) if vals else None)([
+                    (r.followers_gained if r.followers_gained is not None
+                     else r.followers_total - rows[i - 1].followers_total)
+                    for i, r in enumerate(rows)
+                    if r.followers_gained is not None
+                    or (i > 0 and r.followers_total is not None and rows[i - 1].followers_total is not None)
+                ])
+                if rows and follow_days and min(follow_days) <= date_from else None
+            ))(list(account_daily_stats)),
             "daily": (lambda rows: [
                 {"date": r.date.isoformat(), "total": r.followers_total,
                  "gained": (r.followers_gained if r.followers_gained is not None
