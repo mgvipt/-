@@ -114,6 +114,43 @@ function KpDocLoader({ dealId, onClose }: { dealId: number; onClose: () => void 
   return <KpDoc deal={deal} onClose={onClose} />;
 }
 
+// Печать накладной с учётом допродажи: если у задачи есть дозаказ — показываем обе сделки (основную и допродаж),
+// чтобы склад распечатал накладную по каждой (едут одной посылкой).
+function NakladnaPrint({ j, t, style, size = 16 }: any) {
+  const [pick, setPick] = useState(false);
+  const [kpId, setKpId] = useState<number | null>(null);
+  const subs = (j.subtasks || []).filter((s: any) => s && s.deal_id);
+  const deals = [{ id: j.deal_id, title: j.client || ("#" + j.deal_id), dozakaz: false },
+                 ...subs.map((s: any) => ({ id: s.deal_id, title: s.title || ("#" + s.deal_id), dozakaz: true }))];
+  const multi = deals.length > 1;
+  const btnStyle: any = { display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", borderRadius: 8, ...style, ...(multi ? { width: "auto", paddingLeft: 9, paddingRight: 9 } : {}) };
+  return (
+    <>
+      <button className="btn" title={multi ? t("В задаче 2 сделки — печать накладных", "У задачі 2 угоди — друк накладних") : t("Печать накладной", "Друк накладної")}
+        onClick={(e) => { e.stopPropagation(); if (multi) setPick(true); else setKpId(j.deal_id); }} style={btnStyle}>
+        <Icon n="file" size={size} />{multi ? <span style={{ marginLeft: 3, fontSize: 12, fontWeight: 800 }}>×{deals.length}</span> : null}
+      </button>
+      {pick && (
+        <div onClick={(e) => { e.stopPropagation(); setPick(false); }} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 18, maxWidth: 460, width: "100%", boxShadow: "0 20px 50px rgba(15,23,42,.3)" }}>
+            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>🖨 {t("В этой задаче 2 сделки", "У цій задачі 2 угоди")}</div>
+            <div className="muted" style={{ fontSize: 12.5, marginBottom: 14, lineHeight: 1.5 }}>{t("Основная сделка и допродажа. Распечатай накладную по каждой — они едут одной посылкой.", "Основна угода і допродаж. Роздрукуй накладну по кожній — вони їдуть однією посилкою.")}</div>
+            {deals.map((pd: any) => (
+              <button key={pd.id} className="btn btn-light" onClick={(e) => { e.stopPropagation(); setKpId(pd.id); }}
+                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, height: 48, marginBottom: 8, textAlign: "left", padding: "0 12px" }}>
+                <span style={{ fontSize: 13.5 }}>{pd.dozakaz ? "📦 " + t("Допродажа", "Допродаж") : "🧾 " + t("Основная", "Основна")} · <b>#{pd.id}</b>{pd.title ? " · " + pd.title : ""}</span>
+                <span style={{ color: "#1d4ed8", fontWeight: 700, whiteSpace: "nowrap" }}>🖨 {t("Печать", "Друк")}</span>
+              </button>
+            ))}
+            <button className="btn btn-light" onClick={(e) => { e.stopPropagation(); setPick(false); }} style={{ width: "100%", height: 40, marginTop: 4 }}>{t("Закрыть", "Закрити")}</button>
+          </div>
+        </div>
+      )}
+      {kpId != null && <KpDocLoader dealId={kpId} onClose={() => setKpId(null)} />}
+    </>
+  );
+}
+
 function QueueView({ t, onOpen, mgr }: any) {
   const [staff, setStaff] = useState<any[]>([]);
   useEffect(() => { if (mgr) api.get<any>("/api/warehouse/jobs/0/reassign/").then((d) => setStaff(d)).catch(() => {}); }, [mgr]);
@@ -130,7 +167,7 @@ function QueueView({ t, onOpen, mgr }: any) {
   if (!d) return <div className="spin">…</div>;
   const take = (id: number) => api.post<any>(`/api/warehouse/jobs/${id}/take/`, {}).then(() => onOpen(id)).catch((e: any) => { alert(e?.response?.data?.by ? t("Уже взяла ", "Вже взяла ") + e.response.data.by : t("Не удалось взять", "Не вдалося взяти")); load(); });
   const cancel = (id: number) => { if (!confirm(t("Удалить задачу из списка? Складовщики её не увидят.", "Видалити задачу зі списку? Працівники складу її не побачать."))) return; api.post<any>(`/api/warehouse/jobs/${id}/cancel/`, {}).then(load).catch(() => alert(t("Нет прав (только руководитель склада)", "Немає прав (лише керівник складу)"))); };
-  const row = (j: any) => <JobCard key={j.id} j={j} t={t} onClick={() => setPrev(j.id)} action={<div style={{ display: "flex", gap: 6 }}><button className="btn" title={t("Печать бланка выкраски","Друк бланка викраски")} onClick={(e) => { e.stopPropagation(); setVkJob(j); }} style={{ height: 42, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe" }}><Icon n="🎨" size={16} /></button><button className="btn" title={t("Печать накладной","Друк накладної")} onClick={(e) => { e.stopPropagation(); setKpId(j.deal_id); }} style={{ height: 42, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}><Icon n="file" size={16} /></button>{mgr && <button className="btn" title={t("Удалить неактуальную задачу","Видалити неактуальну задачу")} onClick={(e) => { e.stopPropagation(); cancel(j.id); }} style={{ height: 42, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca" }}><Icon n="trash" size={16} /></button>}<button className="btn btn-primary" style={{ height: 42, fontSize: 14, fontWeight: 600 }} onClick={(e) => { e.stopPropagation(); take(j.id); }}>{t("Взять", "Взяти")}</button>{mgr && <select value="" onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = Number(e.target.value); if (e.target.value !== "") reassign(j.id, v); }} title={t("Назначить сотрудника","Призначити співробітника")} style={{ height: 42, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 12, maxWidth: 130 }}><option value="">👤 {t("Кому…","Кому…")}</option>{staff.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select>}</div>} />;
+  const row = (j: any) => <JobCard key={j.id} j={j} t={t} onClick={() => setPrev(j.id)} action={<div style={{ display: "flex", gap: 6 }}><button className="btn" title={t("Печать бланка выкраски","Друк бланка викраски")} onClick={(e) => { e.stopPropagation(); setVkJob(j); }} style={{ height: 42, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe" }}><Icon n="🎨" size={16} /></button><NakladnaPrint j={j} t={t} style={{ height: 42, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }} size={16} />{mgr && <button className="btn" title={t("Удалить неактуальную задачу","Видалити неактуальну задачу")} onClick={(e) => { e.stopPropagation(); cancel(j.id); }} style={{ height: 42, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca" }}><Icon n="trash" size={16} /></button>}<button className="btn btn-primary" style={{ height: 42, fontSize: 14, fontWeight: 600 }} onClick={(e) => { e.stopPropagation(); take(j.id); }}>{t("Взять", "Взяти")}</button>{mgr && <select value="" onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = Number(e.target.value); if (e.target.value !== "") reassign(j.id, v); }} title={t("Назначить сотрудника","Призначити співробітника")} style={{ height: 42, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 12, maxWidth: 130 }}><option value="">👤 {t("Кому…","Кому…")}</option>{staff.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select>}</div>} />;
   const sal = (d.queue || []).filter((j: any) => j.channel === "offline");
   const rest = (d.queue || []).filter((j: any) => j.channel !== "offline");
   return (
@@ -377,7 +414,7 @@ function TaskCard({ t, jobId, onBack }: any) {
       <div className="panel" style={{ borderLeft: `4px solid ${C.terra}` }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
           <b style={{ fontSize: 17, flex: 1 }}>#{j.deal_id} · {j.client}</b>
-          <button title={t("Печать накладной (как в сделке)", "Друк накладної (як в угоді)")} onClick={() => { if (!deal) { alert(t("Сделка ещё загружается…", "Угода ще завантажується…")); return; } setDocOpen(true); }} style={{ width: 36, height: 32, borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon n="file" size={17} /></button>
+          <NakladnaPrint j={j} t={t} style={{ minWidth: 36, height: 32, borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", flexShrink: 0 }} size={17} />
           <button title={t("Печать бланка выкраски", "Друк бланка викраски")} onClick={() => setVkOpen(true)} style={{ width: 36, height: 32, borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon n="palette" size={17} /></button>
         </div>
         <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>📍 {j.city || "—"} · {j.ship || ""}{(deal && deal.ttn) ? " · ТТН " + deal.ttn : ""}</div>
