@@ -86,8 +86,8 @@ function JobCard({ j, t, onClick, action }: any) {
             <span style={{ fontSize: 10.5, fontWeight: 700, background: bg, color: fg, borderRadius: 20, padding: "2px 9px" }}>{lbl}</span>
             {j.is_dozakaz
               ? <span title={t("Это допродажа к основной сделке — едет одной посылкой","Це допродаж до основної угоди — їде однією посилкою")} style={{ fontSize: 10, fontWeight: 700, background: "#fef3c7", color: "#92400e", borderRadius: 20, padding: "2px 8px" }}>📦 {t("допродажа","допродаж")} → #{j.parcel_main}</span>
-              : (j.parcel_orders && j.parcel_orders.length > 0)
-              ? <span title={t("К заказу есть допродажа — посылка не одна, пакуется вместе","До замовлення є допродаж — посилка не одна, пакується разом")} style={{ fontSize: 10, fontWeight: 700, background: "#fef3c7", color: "#92400e", borderRadius: 20, padding: "2px 8px" }}>📦 +{j.parcel_orders.length} {t("допродажа","допродаж")}</span>
+              : ((j.subtasks && j.subtasks.length > 0) || (j.parcel_orders && j.parcel_orders.length > 0))
+              ? <span title={t("К заказу есть допродажа — посылка не одна, пакуется вместе","До замовлення є допродаж — посилка не одна, пакується разом")} style={{ fontSize: 10, fontWeight: 700, background: "#fef3c7", color: "#92400e", borderRadius: 20, padding: "2px 8px" }}>📦 +{(j.subtasks && j.subtasks.length) || (j.parcel_orders && j.parcel_orders.length) || 0} {t("допродажа","допродаж")}</span>
               : null}
           </div>
           <div className="muted" style={{ fontSize: 12.5, marginTop: 3, display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -215,10 +215,10 @@ function JobPreview({ jobId, t, onClose, onTake }: any) {
             <button className="btn btn-light" onClick={onClose} style={{ padding: "4px 11px" }}>✕</button>
           </div>
           <div className="muted" style={{ fontSize: 12.5, margin: "4px 0 12px" }}>📍 {j.city || "—"} · {j.kind_type === "test" ? "🧪 " + t("тест-набор", "тест-набір") : "📦 " + t("основной", "основний")}{j.channel === "offline" ? " · 🏪 " + t("салон", "салон") : ""}</div>
-          {(j.is_dozakaz || (j.parcel_orders && j.parcel_orders.length > 0)) && (
+          {(j.is_dozakaz || (j.parcel_orders && j.parcel_orders.length > 0) || (j.subtasks && j.subtasks.length > 0)) && (
             <div style={{ background: "#ecfeff", border: "1px solid #a5f3fc", borderRadius: 10, padding: "8px 11px", marginBottom: 12, fontSize: 12.5, color: "#0e7490" }}>
               📦 <b>{t("Одна посылка.","Одна посилка.")}</b> {j.is_dozakaz ? t("Это дозаказ — упаковать вместе с основной сделкой.","Це дозамовлення — пакувати разом з основною сделкою.") : t("К этой сделке едут дозаказы — упаковать в одну коробку.","До цієї сделки їдуть дозамовлення — пакувати в одну коробку.")}
-              {j.parcel_orders && j.parcel_orders.length > 0 ? <> {t("Вместе:","Разом:")} {j.parcel_orders.map((p: any) => "#" + p.id).join(", ")}.</> : null}{" "}{j.is_dozakaz ? <>{t("ТТН — на основной","ТТН — на основній")} #{j.parcel_main}.</> : <>{t("Склад создаёт ОДНУ ТТН здесь (внизу, «Нова Пошта»).","Склад створює ОДНУ ТТН тут (внизу, «Нова Пошта»).")}</>}
+              {((j.parcel_orders && j.parcel_orders.length > 0) || (j.subtasks && j.subtasks.length > 0)) ? <> {t("Вместе:","Разом:")} {((j.parcel_orders && j.parcel_orders.length > 0) ? j.parcel_orders.map((p: any) => "#" + p.id) : (j.subtasks || []).map((s: any) => "#" + s.deal_id)).join(", ")}.</> : null}{" "}{j.is_dozakaz ? <>{t("ТТН — на основной","ТТН — на основній")} #{j.parcel_main}.</> : <>{t("Склад создаёт ОДНУ ТТН здесь (внизу, «Нова Пошта»).","Склад створює ОДНУ ТТН тут (внизу, «Нова Пошта»).")}</>}
             </div>
           )}
           <div className="label">📦 {t("Товары в сделке", "Товари в угоді")}</div>
