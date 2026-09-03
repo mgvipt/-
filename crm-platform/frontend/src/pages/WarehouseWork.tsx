@@ -437,6 +437,13 @@ function TaskCard({ t, jobId, onBack }: any) {
       <div className="panel" style={{ borderLeft: "4px solid #2563eb" }}>
         <div className="label" style={{ marginBottom: 8 }}>📋 {t("Что отгрузить — ознакомься", "Що відвантажити — ознайомся")}</div>
         {(j.items || []).length > 0 && <div style={{ marginBottom: 9 }}><div className="muted" style={{ fontSize: 11.5, marginBottom: 3 }}>📦 {t("Товары", "Товари")}</div>{(j.items || []).map((it: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "2px 0" }}>• {it.name} <b>× {it.qty}</b>{it.weight_kg && it.weight_kg !== "0" && it.weight_kg !== "0.000" ? <span className="muted"> · {it.weight_kg} кг</span> : null}</div>)}</div>}
+        {(j.subtasks || []).length > 0 && (j.subtasks).map((s: any) => (
+          <div key={"subship" + s.job_id} style={{ marginBottom: 9, background: "#f0fdff", border: "1px solid #cffafe", borderRadius: 10, padding: "8px 11px" }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#0e7490", marginBottom: 3 }}>↳ 📦 {t("Допродажа", "Допродаж")} #{s.deal_id}{s.title ? " · " + s.title : ""} <span style={{ fontWeight: 400 }}>— {t("упаковать вместе", "спакувати разом")}</span></div>
+            {(s.items || []).map((it: any, i: number) => <div key={i} style={{ fontSize: 13, padding: "2px 0", color: "#334155" }}>• {it.name} <b>× {it.qty}</b></div>)}
+            {s.kits_n > 0 ? <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>🎨 {t("наборов", "наборів")}: {s.kits_n}</div> : null}
+          </div>
+        ))}
         {(j.kits || []).length > 0 && <div style={{ marginBottom: 9 }}><div className="muted" style={{ fontSize: 11.5, marginBottom: 3 }}>🎨 {t("Наборы", "Набори")} ({(j.kits || []).length})</div>{(j.kits || []).map((k: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "2px 0" }}>• <b>{k.material || "—"}</b> <span className="muted">{k.color}</span>{k.tint ? " · 🎨 " + t("тонировать", "тонувати") : ""}{k.board ? " · " + t("с дощечкой", "з дощечкою") : ""}</div>)}</div>}
         {Object.keys(j.needs || {}).filter((k) => (j.needs[k] !== "" && j.needs[k] != null && j.needs[k] !== "—" && !k.startsWith("_"))).length > 0 && <div><div className="muted" style={{ fontSize: 11.5, marginBottom: 3 }}>📝 {t("Выявление потребности", "Виявлення потреби")}</div>{Object.entries(j.needs).filter(([k, v]: any) => v !== "" && v != null && v !== "—" && !k.startsWith("_")).map(([k, v]: any) => <div key={k} style={{ fontSize: 12.5, padding: "1px 0", display: "flex", gap: 8 }}><span className="muted" style={{ minWidth: 140, flexShrink: 0 }}>{NEEDS_LBL[k] || k}</span><b>{String(v)}</b></div>)}</div>}
         <RefShots photos={j.ref_photos} t={t} />
