@@ -1463,9 +1463,29 @@ class SharedFileView(APIView):
         f = SharedLink.objects.filter(token=token).first()
         if not f:
             return _HttpResponse("not found", status=404)
+        # Navigation gets a viewport-sized viewer; <img> and integrations keep raw bytes.
+        if f.content_type.startswith("image/") and "text/html" in request.headers.get("Accept", "") and request.query_params.get("raw") != "1":
+            from django.utils.html import escape
+            raw_url = escape(request.path + "?raw=1")
+            title = escape(f.filename)
+            html = """<!doctype html><html lang="uk"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Фото — Wallcov</title><style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#111720;color:#f1f5f9;font-family:system-ui,sans-serif}
+.viewer{position:fixed;inset:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:100vh;height:100dvh;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));gap:12px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:15px}header b{letter-spacing:2px}main{min-height:0;min-width:0;display:flex;align-items:center;justify-content:center}main img{display:block;width:100%;height:100%;object-fit:contain;object-position:center}footer{display:flex;align-items:center;justify-content:center;gap:12px}a,button{display:inline-block;border:1px solid #536176;border-radius:10px;padding:12px 18px;background:#202c3c;color:#fff;font:inherit;text-decoration:none;cursor:pointer}button[hidden]{display:none}
+</style></head><body><div class="viewer"><header><b>WALLCOV</b><span>Фото</span></header>
+<main><img src="__RAW__" alt="__TITLE__"></main><footer><a href="__RAW__" target="_blank" rel="noopener">Відкрити оригінал ↗</a><button id="full" hidden>На весь екран</button></footer></div>
+<script>const b=document.getElementById('full');if(document.documentElement.requestFullscreen){b.hidden=false;b.onclick=()=>document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();}</script>
+</body></html>""".replace("__RAW__", str(raw_url)).replace("__TITLE__", str(title))
+            r = _HttpResponse(html, content_type="text/html; charset=utf-8")
+            r["Cache-Control"] = "no-cache"
+            r["Vary"] = "Accept"
+            return r
         r = _HttpResponse(bytes(f.data), content_type=f.content_type)
         r["Content-Disposition"] = 'inline; filename="%s"' % f.filename
         r["Cache-Control"] = "public, max-age=2592000, immutable"
+        r["Vary"] = "Accept"
         return r
 
 
