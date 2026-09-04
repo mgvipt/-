@@ -1,4 +1,6 @@
-from django.db.models import Q
+import re
+
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
@@ -18,8 +20,16 @@ def _library_item_data(request, item):
     url = item.public_url
     if not url and item.file_id:
         url = request.build_absolute_uri("/api/f/%s/" % item.file.token)
+    preview_url = url
+    if item.preview_file_id:
+        preview_url = request.build_absolute_uri("/api/f/%s/" % item.preview_file.token)
     return {"id": item.id, "title": item.title, "kind": item.kind, "section": item.section,
-            "material": item.material, "color_code": item.color_code, "tags": item.tags, "url": url, "sort": item.sort}
+            "material": item.material, "color_code": item.color_code, "tags": item.tags,
+            "url": url, "preview_url": preview_url, "sort": item.sort}
+
+
+def _is_color_swatch(item):
+    return item.kind == "image" and bool(re.search(r"(каталог|зразок|sample)", "%s %s" % (item.title, item.tags), re.I))
 
 
 class MediaLibraryView(APIView):
@@ -27,8 +37,44 @@ class MediaLibraryView(APIView):
     def get(self, request):
         # SharedLink.data stores the original binary (the library is several GB).
         # The picker only needs the token to build a URL, so never read binaries here.
-        items = MediaLibraryItem.objects.filter(is_active=True).select_related("file").defer("file__data")
+        items = MediaLibraryItem.objects.filter(is_active=True).select_related("file", "preview_file").defer(
+            "file__data", "preview_file__data")
         replies = QuickReply.objects.filter(is_active=True)
+        # The chat picker does not need metadata for every photo before a manager has
+        # selected a material and a code.  Returning it in three small stages keeps
+        # the panel responsive as the catalogue grows.
+        if request.query_params.get("view") == "picker":
+            material = (request.query_params.get("material") or "").strip()
+            color = (request.query_params.get("color") or "").strip()
+            reply_data = [{"id": q.id, "title": q.title, "text": q.text,
+                           "asset_ids": list(q.assets.values_list("id", flat=True))} for q in replies]
+            if not material:
+                summaries = []
+                for row in items.filter(section="colors").values("material").annotate(
+                    code_count=Count("color_code", filter=~Q(color_code=""), distinct=True),
+                    catalog_count=Count("id", filter=Q(kind="catalog"))
+                ).order_by("material"):
+                    sample = items.filter(section="colors", material=row["material"]).filter(
+                        Q(kind="catalog") | Q(kind="image")
+                    ).order_by("sort", "id").first()
+                    summaries.append({"name": row["material"], "codes": row["code_count"],
+                                      "catalog_pages": row["catalog_count"],
+                                      "preview_url": _library_item_data(request, sample)["preview_url"] if sample else ""})
+                return Response({"items": [], "materials": summaries, "replies": reply_data})
+            scoped = items.filter(section="colors", material=material)
+            if color:
+                return Response({"items": [_library_item_data(request, x) for x in scoped.filter(color_code=color)],
+                                 "materials": [], "replies": reply_data})
+            # One swatch per code plus catalogue pages; interiors stay unloaded until
+            # a manager opens that exact code.
+            selected, seen_codes = [], set()
+            for item in scoped.order_by("sort", "id"):
+                if item.kind == "catalog":
+                    selected.append(item)
+                elif _is_color_swatch(item) and item.color_code and item.color_code not in seen_codes:
+                    selected.append(item); seen_codes.add(item.color_code)
+            return Response({"items": [_library_item_data(request, x) for x in selected],
+                             "materials": [], "replies": reply_data})
         return Response({
             "items": [_library_item_data(request, x) for x in items],
             "replies": [{"id": q.id, "title": q.title, "text": q.text,
@@ -1383,6 +1429,7 @@ class SharedFileView(APIView):
             return _HttpResponse("not found", status=404)
         r = _HttpResponse(bytes(f.data), content_type=f.content_type)
         r["Content-Disposition"] = 'inline; filename="%s"' % f.filename
+        r["Cache-Control"] = "public, max-age=2592000, immutable"
         return r
 
 

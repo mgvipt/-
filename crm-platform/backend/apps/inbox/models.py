@@ -125,6 +125,9 @@ class MediaLibraryItem(models.Model):
     color_code = models.CharField(max_length=48, blank=True, db_index=True)
     tags = models.CharField(max_length=240, blank=True)
     file = models.ForeignKey(SharedLink, null=True, blank=True, on_delete=models.SET_NULL, related_name="library_items")
+    # A compact copy only for grids.  The original stays untouched for opening/sending.
+    preview_file = models.ForeignKey(SharedLink, null=True, blank=True, on_delete=models.SET_NULL,
+                                     related_name="library_preview_items")
     public_url = models.URLField(blank=True)
     is_active = models.BooleanField(default=True)
     sort = models.PositiveIntegerField(default=0)
