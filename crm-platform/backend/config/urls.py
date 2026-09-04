@@ -117,6 +117,7 @@ urlpatterns = [
     path("api/telephony/line-status/", tel_views.LineStatusView.as_view()),
     path("api/team-chat/contacts/", inbox_views.TeamContactsView.as_view()),
     path("api/team-chat/<int:user_id>/", inbox_views.TeamThreadView.as_view()),
+    path("api/l/<str:code>", inbox_views.LibraryShortFileView.as_view()),
     path("api/f/<str:token>/", inbox_views.SharedFileView.as_view()),
     path("api/f/<str:token>/<path:name>", inbox_views.SharedFileView.as_view()),
     path("api/contact-form-config/", crm_views.ContactFormConfigView.as_view()),

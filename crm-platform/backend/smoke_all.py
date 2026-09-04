@@ -25,6 +25,8 @@ HOST = "crm.wallcovdec.com.ua"
 
 # (назва, роль, url, допустимі статуси, обов'язкові ключі верхнього рівня)
 CHECKS = [
+    ("Бібліотека: захист коротких посилань", "manager", "/api/l/not-valid", {404}, []),
+    ("Cezar: бібліотека моделей", "manager", "/api/inbox/media-library/?view=picker&material=%D0%9F%D0%BB%D1%96%D0%BD%D1%82%D1%83%D1%81%D0%B8%20Cezar", {200}, ["items"]),
     # ── базове ──
     ("Мій профіль (owner)", "owner", "/api/me/", {200}, []),
     ("Мій профіль (менеджер)", "manager", "/api/me/", {200}, []),

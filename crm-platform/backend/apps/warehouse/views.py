@@ -525,7 +525,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         from .models import ProductImage
         try:
             im = ProductImage.objects.get(id=img_id, product_id=pk)
-            return FileResponse(open(im.file_path, "rb"))
+            return FileResponse(open(im.file_path, "rb"), content_type="image/webp" if im.file_path.lower().endswith(".webp") else None)
         except (ProductImage.DoesNotExist, FileNotFoundError):
             raise Http404
 

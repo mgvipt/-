@@ -13,19 +13,35 @@ from .models import Channel, Conversation, Message, MediaLibraryItem, QuickReply
 from .serializers import ChannelSerializer, ConversationSerializer, MessageSerializer
 from .adapters import get_adapter
 from .services import ingest, send_message
+from .library_products import library_product, cezar_message
+
+
+def _library_file_url(request, item):
+    if item.public_url:
+        return item.public_url
+    if not item.file_id:
+        return ""
+    # Shorten only deliberately public library assets, never customer attachments.
+    if not hasattr(request, "_library_short_counts"):
+        from collections import Counter
+        request._library_short_counts = Counter(token[:12] for token in SharedLink.objects.filter(
+            library_items__is_active=True).values_list("token", flat=True).distinct())
+    token = item.file.token
+    path = "/api/l/%s" % token[:12] if len(token) >= 12 and request._library_short_counts[token[:12]] == 1 else "/api/f/%s/" % token
+    if path.startswith("/api/l/"):
+        return "https://wallcov.com.ua/f/" + token[:12]
+    return request.build_absolute_uri(path).replace("http://", "https://", 1)
 
 
 def _library_item_data(request, item):
     """Small public representation; file data never leaves the API response."""
-    url = item.public_url
-    if not url and item.file_id:
-        url = request.build_absolute_uri("/api/f/%s/" % item.file.token)
+    url = _library_file_url(request, item)
     preview_url = url
     if item.preview_file_id:
         preview_url = request.build_absolute_uri("/api/f/%s/" % item.preview_file.token)
     return {"id": item.id, "title": item.title, "kind": item.kind, "section": item.section,
             "material": item.material, "color_code": item.color_code, "tags": item.tags,
-            "url": url, "preview_url": preview_url, "sort": item.sort}
+            "url": url, "preview_url": preview_url, "sort": item.sort, "product": library_product(request, item)}
 
 
 def _is_color_swatch(item):
@@ -1392,10 +1408,15 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             items.extend(list(reply.assets.filter(is_active=True).select_related("file")))
         if not items and not text:
             return Response({"detail": "Оберіть матеріал або відповідь"}, status=status.HTTP_400_BAD_REQUEST)
+        if "cezar_include_price" in request.data:
+            try:
+                text = cezar_message(request, items)
+            except (ValueError, ArithmeticError) as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         lines = [text] if text else []
         attachments = []
         for item in items:
-            url = item.public_url or (request.build_absolute_uri("/api/f/%s/" % item.file.token) if item.file_id else "")
+            url = _library_file_url(request, item)
             if not url:
                 continue
             label = "🎥 Відео" if item.kind == "video" else ("🎨 Каталог" if item.kind == "catalog" else "📷 Фото")
@@ -1415,6 +1436,21 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
 
 from django.http import HttpResponse as _HttpResponse
 from rest_framework.permissions import AllowAny as _AllowAny
+
+
+class LibraryShortFileView(APIView):
+    """Opaque short links only for active, already-public library files."""
+    authentication_classes = []
+    permission_classes = [_AllowAny]
+
+    def get(self, request, code):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{12}", code):
+            return _HttpResponse("not found", status=404)
+        tokens = list(SharedLink.objects.filter(token__startswith=code, library_items__is_active=True)
+                      .values_list("token", flat=True).distinct()[:2])
+        if len(tokens) != 1:
+            return _HttpResponse("not found", status=404)
+        return SharedFileView().get(request, tokens[0])
 
 
 class SharedFileView(APIView):
