@@ -1,4 +1,7 @@
 from decimal import Decimal
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.filters import SearchFilter
+from .product_ordering import ProductCatalogOrdering, catalog_name
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -112,6 +115,7 @@ class ProductCategoryViewSet(viewsets.ModelViewSet):
 
 
 class ProductViewSet(viewsets.ModelViewSet):
+    filter_backends = [DjangoFilterBackend, ProductCatalogOrdering, SearchFilter]
     permission_classes = [WarehouseWrite]
     queryset = Product.objects.select_related("category").all()
     serializer_class = ProductSerializer
@@ -150,6 +154,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             .order_by("shop_parent_name", "shop_group_key", "shop_variant_order", "id")
         )
         grouped = {}
+        group_order = {}
         product_errors = {}
         missing_photo = 0
 
@@ -161,6 +166,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                 missing_photo += 1
             image = next((image for image in approved if image.is_primary), approved[0] if approved else None)
             key = product.shop_group_key or "product-%s" % product.id
+            group_order[key] = catalog_name(product)
             group = grouped.setdefault(key, {
                 "key": key,
                 "name": product.shop_parent_name or product.name,
@@ -225,7 +231,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             })
 
         status_order = {"error": 0, "draft": 1, "ready": 2, "published": 3}
-        groups.sort(key=lambda group: (status_order[group["status"]], group["name"].lower()))
+        groups.sort(key=lambda group: (status_order[group["status"]], group_order[group["key"]], group["key"]))
         pending_events = ShopSyncEvent.objects.filter(status__in=["pending", "processing"]).count()
         failed_events = ShopSyncEvent.objects.filter(status="failed").count()
         return Response({
