@@ -2666,7 +2666,54 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         _logr("deal", deal.id, "Повернення коштів",
               "LiqPay повернув клієнту %s ₴ (%s)" % (amt, order_id), getattr(u, "id", None),
               getattr(u, "get_full_name", lambda: "")() or getattr(u, "username", ""))
+        _warn = None
+        _receipt = None
+        # ── ЧЕК ПОВЕРНЕННЯ (Checkbox) — тільки якщо попросили і є чек продажу ──
+        if request.data.get("receipt") and pay.checkbox_receipt_id:
+            try:
+                from . import checkbox as _cbr
+                _kop = int(round(float(amt) * 100))
+                _goods = [{"good": {"code": "REFUND-%s" % deal.id,
+                                    "name": ("Повернення коштів за замовленням #%s" % deal.id)[:200],
+                                    "price": _kop}, "quantity": 1000}]
+                _receipt = _cbr.create_return_receipt(
+                    pay.checkbox_receipt_id, _goods, _kop, "WCCRM-%s-R%s-%s" % (deal.id, pay.id, _kop),
+                    payment_method="CASHLESS", payment_label="Інтернет еквайринг",
+                    client_name=(getattr(deal.contact, "name", None) if deal.contact_id else None))
+                _logr("deal", deal.id, "Чек повернення", "Checkbox: %s" % (_receipt.get("url") or ""),
+                      getattr(u, "id", None), getattr(u, "username", ""))
+            except Exception as _e:
+                _warn = "Гроші повернуто, але фіскальний чек повернення НЕ пройшов: %s" % str(_e)[:220]
+                _logr("deal", deal.id, "Checkbox помилка", _warn[:400], getattr(u, "id", None), "Checkbox")
+        # ── СТАДІЯ «ВОЗВРАТ» + товар назад на склад (тільки за явним прапорцем) ──
+        if request.data.get("to_return_stage") and deal.funnel_id:
+            _rst = (deal.funnel.stages.filter(name__icontains="возврат").order_by("order").first()
+                    or deal.funnel.stages.filter(name__icontains="поверн").order_by("order").first())
+            if _rst:
+                _old = deal.stage.name if deal.stage_id else ""
+                deal.stage = _rst
+                _fl = ["stage"]
+                if hasattr(deal, "stage_changed_at"):
+                    deal.stage_changed_at = _tzr.now(); _fl.append("stage_changed_at")
+                if (getattr(_rst, "is_won", False) or getattr(_rst, "is_lost", False)) and not deal.closed_at:
+                    deal.closed_at = _tzr.now(); _fl.append("closed_at")
+                deal.save(update_fields=_fl)
+                _logr("deal", deal.id, "Зміна стадії", "%s → %s (повернення коштів)" % (_old, _rst.name),
+                      getattr(u, "id", None), getattr(u, "username", ""))
+            if request.data.get("unship"):
+                try:
+                    from apps.warehouse.models import StockDocument as _SDr
+                    from apps.warehouse.services import unpost_document as _unp
+                    _doc = _SDr.objects.filter(kind="out", deal=deal, posted=True).first()
+                    if _doc:
+                        _unp(_doc)
+                        _logr("deal", deal.id, "Повернення товару", "Реалізацію %s скасовано, товар повернувся на склад" % _doc.number,
+                              getattr(u, "id", None), getattr(u, "username", ""))
+                except Exception as _e2:
+                    _warn = (_warn + " | " if _warn else "") + "Товар на склад НЕ повернувся: %s" % str(_e2)[:150]
+        deal.refresh_from_db()
         return Response({"ok": True, "refunded": float(amt), "order_id": order_id, "liqpay": res,
+                         "receipt": _receipt, "warning": _warn,
                          "deal": DealDetailSerializer(deal, context={"request": request}).data})
 
     @action(detail=True, methods=["post"])

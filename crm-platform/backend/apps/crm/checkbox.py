@@ -128,3 +128,40 @@ def create_receipt(goods, amount_kopecks, external_id, payment_method="CASHLESS"
         "tax_url": url,       # cabinet.tax.gov.ua — для архіву
         "relation_id": str(d.get("pre_payment_relation_id") or relation_id or ""),
     }
+
+
+def create_return_receipt(related_receipt_id, goods, amount_kopecks, external_id,
+                          payment_method="CASHLESS", payment_label=None, client_name=None):
+    """Чек ПОВЕРНЕННЯ коштів, звʼязаний з чеком продажу (окремий ендпоінт Checkbox —
+    продажні чеки не зачіпає). related_receipt_id = id чека, по якому повертаємо."""
+    token = signin()
+    ensure_shift(token)
+    body = {
+        "external_id": external_id,
+        "related_receipt_id": str(related_receipt_id),
+        "goods": goods,
+        "payments": [dict({"type": payment_method, "value": amount_kopecks},
+                          **({"label": payment_label} if payment_label else {}))],
+    }
+    if client_name:
+        body["client_full_name"] = client_name[:120]
+    d = _req("POST", "/api/v1/receipts/return", token=token, body=body)
+    rid = str(d.get("id") or "")
+    url = d.get("tax_url") or d.get("url") or ""
+    fiscal = d.get("fiscal_code")
+    if rid and not url:                       # Checkbox фіскалізує асинхронно
+        for _ in range(11):
+            time.sleep(1.2)
+            try:
+                rr = _req("GET", "/api/v1/receipts/%s" % rid, token=token)
+            except CheckboxError:
+                continue
+            st = rr.get("status")
+            if rr.get("tax_url") or st in ("DONE", "ERROR"):
+                if st == "ERROR":
+                    raise CheckboxError("Чек повернення відхилено ДПС: %s" % (rr.get("failure_message") or "невідома причина"))
+                url = rr.get("tax_url") or rr.get("url") or ""
+                fiscal = rr.get("fiscal_code") or fiscal
+                break
+    return {"id": rid, "fiscal_code": fiscal,
+            "url": ("https://check.checkbox.ua/%s" % rid if rid else url), "tax_url": url}
