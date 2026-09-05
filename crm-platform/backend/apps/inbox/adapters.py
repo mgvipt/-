@@ -229,6 +229,24 @@ class ChatPlaceAdapter(ChannelAdapter):
         # для TikTok, коли їхня інтеграція не доставляє). НЕ пишемо цей текст як id
         # (це давало сміттєвий external_id і duplicate key) — кидаємо чесну помилку,
         # менеджер бачить «не надіслано», а не фейковий «відправлено».
+        # ЧОМУ не надіслалось: питаємо ChatPlace статус чату — ТІЛЬКИ при помилці,
+        # щоб не сповільнювати робочі відправки (Олег 05.09: у TikTok сипались
+        # незрозумілі «Failed to send message», а причина — клієнт зупинив бота).
+        # ChatPlace status: 1=active, 2=stopped, 3=unsubscribe.
+        _why = ""
+        try:
+            from .chatplace import _mcp as _cp_mcp
+            _st = (_cp_mcp("chats_get", {"chatId": str(external_chat_id)}) or {})
+            _code = _st.get("status")
+            if _code == 2:
+                _why = ("Клієнт зупинив бота в цьому чаті — платформа не приймає від нас повідомлення. "
+                        "Напишіть йому з іншого каналу або дочекайтесь, поки він відповість сам.")
+            elif _code == 3:
+                _why = "Клієнт відписався від чату — відправка неможлива."
+        except Exception:
+            pass
+        if _why:
+            raise RuntimeError(_why)
         raise RuntimeError("ChatPlace не зміг надіслати: %s" % (str(r or "порожня відповідь")[:200]))
 
 
