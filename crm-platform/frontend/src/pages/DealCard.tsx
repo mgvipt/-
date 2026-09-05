@@ -262,6 +262,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [ai, setAi] = useState<{ context: string; suggestion: string } | null>(null);
   const [aiLoad, setAiLoad] = useState(false);
   const [ncOpen, setNcOpen] = useState(false);
+  const [refundOpen, setRefundOpen] = useState(false);      // вікно повернення коштів LiqPay
+  const [refundAmt, setRefundAmt] = useState("");
+  const [refundBusy, setRefundBusy] = useState(false);
+  const [refundErr, setRefundErr] = useState("");
   const [nc, setNc] = useState({ name: "", phone: "", email: "" });
   const [ncMode, setNcMode] = useState<"pick" | "new">("pick");
   const [ncSearch, setNcSearch] = useState(""); const [ncResults, setNcResults] = useState<any[]>([]);
@@ -969,21 +973,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             {(deal.payments || []).some((p: any) => p.is_paid && p.provider === "liqpay") && (can("payment.process") || can("roles.manage")) && (
               <button className="btn" style={{ width: "100%", height: 32, marginTop: 6, background: "#fff7ed", border: "1px solid #fed7aa", color: "#c2410c", fontWeight: 700, fontSize: 12.5 }}
                 title={t("Вернуть деньги клиенту на карту через LiqPay — по той же ссылке, которой он платил","Повернути гроші клієнту на карту через LiqPay — по тому самому посиланню, яким платив")}
-                onClick={async () => {
+                onClick={() => {
                   const pl = (deal.payments || []).filter((p: any) => p.is_paid && p.provider === "liqpay").sort((a: any, b: any) => b.id - a.id)[0];
-                  const maxA = Number(pl?.amount || 0);
-                  const inp = window.prompt(t(`Сумма возврата на карту клиента. Оплачено через LiqPay: ${fmt(maxA)} ₴.`, `Сума повернення на карту клієнта. Оплачено через LiqPay: ${fmt(maxA)} ₴.`), String(maxA));
-                  if (inp === null) return;
-                  const a = parseFloat(String(inp).replace(",", "."));
-                  if (!a || a <= 0) return;
-                  if (!window.confirm(t(`Вернуть ${fmt(a)} ₴ клиенту на карту? Деньги уйдут сразу, отменить нельзя.`, `Повернути ${fmt(a)} ₴ клієнту на карту? Гроші підуть одразу, скасувати не можна.`))) return;
-                  try {
-                    const r: any = await api.post(`/api/deals/${id}/liqpay-refund/`, { amount: a });
-                    if (r?.deal) setDeal(r.deal);
-                    flash(t(`✓ LiqPay вернул клиенту ${fmt(r.refunded)} ₴`, `✓ LiqPay повернув клієнту ${fmt(r.refunded)} ₴`));
-                  } catch (e: any) {
-                    alert("⚠️ " + (e?.response?.data?.detail || e?.message || t("Не удалось вернуть","Не вдалося повернути")));
-                  }
+                  setRefundAmt(String(Number(pl?.amount || 0)));
+                  setRefundErr(""); setRefundOpen(true);
                 }}>↩ {t("Вернуть деньги (LiqPay)","Повернути кошти (LiqPay)")}</button>
             )}
             {(deal.payments || []).length > 0 && (
@@ -1370,6 +1363,58 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
           </div>
         </div>
       )}
+      {refundOpen && (() => {
+        const pl = (deal.payments || []).filter((p: any) => p.is_paid && p.provider === "liqpay").sort((a: any, b: any) => b.id - a.id)[0];
+        const maxA = Number(pl?.amount || 0);
+        const a = parseFloat(String(refundAmt).replace(",", ".")) || 0;
+        return (
+          <div onClick={() => !refundBusy && setRefundOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 380 }}>
+              <h3 style={{ marginTop: 0, marginBottom: 4 }}>↩ {t("Возврат денег клиенту","Повернення грошей клієнту")}</h3>
+              <div className="muted" style={{ fontSize: 12.5, marginBottom: 14 }}>
+                {t("LiqPay вернёт деньги на ту же карту, которой клиент платил.","LiqPay поверне гроші на ту саму картку, якою клієнт платив.")}
+              </div>
+              <div style={{ background: "#f8fafc", borderRadius: 8, padding: "9px 11px", fontSize: 12.5, marginBottom: 14, display: "flex", justifyContent: "space-between" }}>
+                <span className="muted">{t("Оплачено через LiqPay","Оплачено через LiqPay")}</span>
+                <b style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(maxA)} ₴</b>
+              </div>
+              <label className="label" style={{ marginBottom: 6 }}>{t("Сумма возврата, ₴","Сума повернення, ₴")}</label>
+              <input autoFocus type="number" step="0.01" value={refundAmt} onChange={(e) => { setRefundAmt(e.target.value); setRefundErr(""); }}
+                style={{ width: "100%", height: 40, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 11px", fontSize: 16, fontWeight: 600, boxSizing: "border-box" }} />
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                <button className="btn" style={{ flex: 1, fontSize: 12, height: 28 }} onClick={() => setRefundAmt(String(maxA))}>{t("Вся оплата","Уся оплата")}</button>
+                {Number(deal.amount) > 0 && maxA > Number(deal.amount) && (
+                  <button className="btn" style={{ flex: 1, fontSize: 12, height: 28 }} onClick={() => setRefundAmt(String(Math.round((maxA - Number(deal.amount)) * 100) / 100))}>
+                    {t("Только переплата","Тільки переплата")} {fmt(maxA - Number(deal.amount))} ₴
+                  </button>
+                )}
+              </div>
+              <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", borderRadius: 8, padding: "9px 11px", fontSize: 12, margin: "14px 0" }}>
+                {t("Деньги уйдут сразу и отменить нельзя. В журнале появится расход, оплата по сделке уменьшится.","Гроші підуть одразу і скасувати не можна. У журналі зʼявиться розхід, оплата по сделці зменшиться.")}
+              </div>
+              {refundErr && <div style={{ color: "#b91c1c", fontSize: 12.5, marginBottom: 10, whiteSpace: "pre-wrap" }}>{refundErr}</div>}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn" style={{ flex: 1, height: 38 }} disabled={refundBusy} onClick={() => setRefundOpen(false)}>{t("Отмена","Скасувати")}</button>
+                <button className="btn" style={{ flex: 2, height: 38, background: "#c2410c", color: "#fff", border: "none", fontWeight: 700 }}
+                  disabled={refundBusy || !(a > 0 && a <= maxA)}
+                  onClick={async () => {
+                    setRefundBusy(true); setRefundErr("");
+                    try {
+                      const r: any = await api.post(`/api/deals/${id}/liqpay-refund/`, { amount: a });
+                      if (r?.deal) setDeal(r.deal);
+                      setRefundOpen(false);
+                      flash(t(`✓ LiqPay вернул клиенту ${fmt(r.refunded)} ₴`, `✓ LiqPay повернув клієнту ${fmt(r.refunded)} ₴`));
+                    } catch (e: any) {
+                      setRefundErr(e?.response?.data?.detail || e?.message || t("Не удалось вернуть","Не вдалося повернути"));
+                    } finally { setRefundBusy(false); }
+                  }}>
+                  {refundBusy ? t("Возвращаем…","Повертаємо…") : (t("Вернуть","Повернути") + " " + fmt(a) + " ₴")}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {payOpen && (
         <div onClick={() => setPayOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 380 }}>
