@@ -61,6 +61,7 @@ def _job_dict(job, full=False):
     }
     fn = (deal.funnel.name if deal.funnel_id else "") or ""
     d["funnel"] = fn
+    d["ship_offreg"] = bool(q.get("ship_offreg") or q.get("ship_offreg_note"))
     d["kind_type"] = "test" if "\u0442\u0435\u0441\u0442\u043e\u0432" in fn.lower() else "main"
     d["channel"] = "offline" if any(x in fn.lower() for x in ["салон", "покрыт", "покритт"]) else "online"
     try:

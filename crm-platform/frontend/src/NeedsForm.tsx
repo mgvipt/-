@@ -87,7 +87,7 @@ const STEPS: any[] = [
     fields: [["sel", "probe", "Пробник чи обʼєм", PROBE], ["num", "budget", "Бюджет, ₴"], ["chk", "calc_sent_date", "КП відправлено клієнту"], ["chk", "layers_shown", "Розкладку по шарах показано"], ["sel", "color_photo_approved", "Фото кольору погоджено", COLOR_APPROVED]] },
   { n: 7, icon: "🚚", title: "Оплата і доставка", stage: "Оплату отримано → Відвантаження → …",
     tip: "ОБОВʼЯЗКОВО попередь про звичайне відділення НП ДО оплати: рідкі/пилоподібні товари НП страхує лише на ВАНТАЖНИХ відділеннях. Клієнт наполягає на звичайному → постав галочку підтвердження з датою (фіксує попередження, закриває спір при пошкодженні).",
-    fields: [["sel", "pay", "Спосіб оплати", PAY], ["sel", "ship", "Спосіб доставки", SHIP], ["sel", "np_department_type", "Тип відділення НП", NP_DEPT], ["chk", "np_insurance_confirmed", "Клієнт попереджений про страховку"]] },
+    fields: [["sel", "pay", "Спосіб оплати", PAY], ["sel", "ship", "Спосіб доставки", SHIP], ["sel", "np_department_type", "Тип відділення НП", NP_DEPT], ["chk", "np_insurance_confirmed", "Клієнт попереджений про страховку"], ["chk", "ship_offreg", "Відправка не за регламентом — під відповідальність клієнта"], ["txt", "ship_offreg_note", "Коментар до нестандартної доставки (поштомат / без страховки / ризик на клієнті)"]] },
 ];
 
 function NeedsForm({ leadId, initial, endpoint = "/api/leads/" }: { leadId: number; initial?: any; endpoint?: string }) {

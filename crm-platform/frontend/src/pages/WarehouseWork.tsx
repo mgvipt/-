@@ -89,6 +89,7 @@ function JobCard({ j, t, onClick, action }: any) {
               : ((j.subtasks && j.subtasks.length > 0) || (j.parcel_orders && j.parcel_orders.length > 0))
               ? <span title={t("К заказу есть допродажа — посылка не одна, пакуется вместе","До замовлення є допродаж — посилка не одна, пакується разом")} style={{ fontSize: 10, fontWeight: 700, background: "#fef3c7", color: "#92400e", borderRadius: 20, padding: "2px 8px" }}>📦 +{(j.subtasks && j.subtasks.length) || (j.parcel_orders && j.parcel_orders.length) || 0} {t("допродажа","допродаж")}</span>
               : null}
+            {j.ship_offreg && <span title={t("Доставка не по регламенту — под ответственность клиента","Доставка не за регламентом — під відповідальність клієнта")} style={{ fontSize: 10, fontWeight: 700, background: "#fee2e2", color: "#b91c1c", borderRadius: 20, padding: "2px 8px" }}>⚠ {t("доставка","доставка")}</span>}
           </div>
           <div className="muted" style={{ fontSize: 12.5, marginTop: 3, display: "flex", gap: 10, flexWrap: "wrap" }}>
             <span>📍 {j.city || "—"}</span>
@@ -221,6 +222,11 @@ function JobPreview({ jobId, t, onClose, onTake }: any) {
               {((j.parcel_orders && j.parcel_orders.length > 0) || (j.subtasks && j.subtasks.length > 0)) ? <> {t("Вместе:","Разом:")} {((j.parcel_orders && j.parcel_orders.length > 0) ? j.parcel_orders.map((p: any) => "#" + p.id) : (j.subtasks || []).map((s: any) => "#" + s.deal_id)).join(", ")}.</> : null}{" "}{j.is_dozakaz ? <>{t("ТТН — на основной","ТТН — на основній")} #{j.parcel_main}.</> : <>{t("Склад создаёт ОДНУ ТТН здесь (внизу, «Нова Пошта»).","Склад створює ОДНУ ТТН тут (внизу, «Нова Пошта»).")}</>}
             </div>
           )}
+          {j.needs && (j.needs.ship_offreg || j.needs.ship_offreg_note) && (
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "8px 11px", marginBottom: 12, fontSize: 12.5, color: "#b91c1c" }}>
+              ⚠ <b>{t("Доставка не по регламенту","Доставка не за регламентом")}</b> — {t("под ответственность клиента","під відповідальність клієнта")}.{j.needs.ship_offreg_note ? " " + j.needs.ship_offreg_note : ""}
+            </div>
+          )}
           <div className="label">📦 {t("Товары в сделке", "Товари в угоді")}</div>
           {(j.items || []).length ? (j.items || []).map((it: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "5px 0", borderBottom: "1px solid #f6f8fb" }}>• {it.name} <b>× {it.qty}</b> {it.weight_kg && it.weight_kg !== "0" && it.weight_kg !== "0.000" ? <span className="muted">· {it.weight_kg} кг</span> : null}</div>) : <div className="muted" style={{ fontSize: 12 }}>—</div>}
           {(j.subtasks || []).length > 0 && (j.subtasks).map((s: any) => (
@@ -233,7 +239,7 @@ function JobPreview({ jobId, t, onClose, onTake }: any) {
           {(j.kits || []).length > 0 && <><div className="label" style={{ marginTop: 14 }}>🎨 {t("Наборы / тонировка", "Набори / тонування")} ({(j.kits || []).length})</div>
             {(j.kits || []).map((k: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "4px 0" }}>• <b>{k.material || "—"}</b> <span className="muted">{k.color}</span>{k.tint ? " · 🎨 " + t("тонировать", "тонувати") : ""}{k.board ? " · " + t("с дощечкой", "з дощечкою") : ""}{k.note ? <span style={{ color: "#0369a1" }}> · 💬 {k.note}</span> : null}</div>)}</>}
           <div className="label" style={{ marginTop: 14 }}>📋 {t("Выявление потребности", "Виявлення потреби")}</div>
-          {Object.keys(j.needs || {}).length ? Object.entries(j.needs).filter(([, v]: any) => v !== "" && v != null && v !== "—").map(([k, v]: any) => <div key={k} style={{ fontSize: 13, padding: "3px 0", display: "flex", gap: 10, borderBottom: "1px solid #f8fafc" }}><span className="muted" style={{ minWidth: 150, flexShrink: 0 }}>{NEEDS_LBL[k] || k}</span><b>{String(v)}</b></div>) : <div className="muted" style={{ fontSize: 12 }}>{t("Потребность не заполнена", "Потребу не заповнено")}</div>}
+          {Object.keys(j.needs || {}).length ? Object.entries(j.needs).filter(([k, v]: any) => v !== "" && v != null && v !== "—" && k !== "ship_offreg" && k !== "ship_offreg_note").map(([k, v]: any) => <div key={k} style={{ fontSize: 13, padding: "3px 0", display: "flex", gap: 10, borderBottom: "1px solid #f8fafc" }}><span className="muted" style={{ minWidth: 150, flexShrink: 0 }}>{NEEDS_LBL[k] || k}</span><b>{String(v)}</b></div>) : <div className="muted" style={{ fontSize: 12 }}>{t("Потребность не заполнена", "Потребу не заповнено")}</div>}
           <RefShots photos={j.ref_photos} t={t} />
           <button className="btn btn-primary" style={{ width: "100%", height: 48, marginTop: 18, fontWeight: 700, fontSize: 15 }} onClick={() => onTake(j.id)}>✋ {t("Взять в работу", "Взяти в роботу")}</button>
         </>}
@@ -438,6 +444,13 @@ function TaskCard({ t, jobId, onBack }: any) {
         </div>
       </div>
 
+      {j.needs && (j.needs.ship_offreg || j.needs.ship_offreg_note) && (
+        <div className="panel" style={{ borderLeft: "4px solid #dc2626", background: "#fef2f2" }}>
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: "#b91c1c" }}>⚠ {t("Доставка не по регламенту — под ответственность клиента", "Доставка не за регламентом — під відповідальність клієнта")}</div>
+          {j.needs.ship_offreg_note ? <div style={{ fontSize: 13, color: "#7f1d1d", marginTop: 4, lineHeight: 1.5 }}>{j.needs.ship_offreg_note}</div> : null}
+          {typeof j.needs.ship_offreg === "string" && j.needs.ship_offreg ? <div className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>{t("Подтверждено", "Підтверджено")}: {j.needs.ship_offreg}</div> : null}
+        </div>
+      )}
       <div className="panel" style={{ borderLeft: "4px solid #2563eb" }}>
         <div className="label" style={{ marginBottom: 8 }}>📋 {t("Что отгрузить — ознакомься", "Що відвантажити — ознайомся")}</div>
         {(j.items || []).length > 0 && <div style={{ marginBottom: 9 }}><div className="muted" style={{ fontSize: 11.5, marginBottom: 3 }}>📦 {t("Товары", "Товари")}</div>{(j.items || []).map((it: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "2px 0" }}>• {it.name} <b>× {it.qty}</b>{it.weight_kg && it.weight_kg !== "0" && it.weight_kg !== "0.000" ? <span className="muted"> · {it.weight_kg} кг</span> : null}</div>)}</div>}
@@ -449,7 +462,7 @@ function TaskCard({ t, jobId, onBack }: any) {
           </div>
         ))}
         {(j.kits || []).length > 0 && <div style={{ marginBottom: 9 }}><div className="muted" style={{ fontSize: 11.5, marginBottom: 3 }}>🎨 {t("Наборы", "Набори")} ({(j.kits || []).length})</div>{(j.kits || []).map((k: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "2px 0" }}>• <b>{k.material || "—"}</b> <span className="muted">{k.color}</span>{k.tint ? " · 🎨 " + t("тонировать", "тонувати") : ""}{k.board ? " · " + t("с дощечкой", "з дощечкою") : ""}{k.note ? <span style={{ color: "#0369a1" }}> · 💬 {k.note}</span> : null}</div>)}</div>}
-        {Object.keys(j.needs || {}).filter((k) => (j.needs[k] !== "" && j.needs[k] != null && j.needs[k] !== "—" && !k.startsWith("_"))).length > 0 && <div><div className="muted" style={{ fontSize: 11.5, marginBottom: 3 }}>📝 {t("Выявление потребности", "Виявлення потреби")}</div>{Object.entries(j.needs).filter(([k, v]: any) => v !== "" && v != null && v !== "—" && !k.startsWith("_")).map(([k, v]: any) => <div key={k} style={{ fontSize: 12.5, padding: "1px 0", display: "flex", gap: 8 }}><span className="muted" style={{ minWidth: 140, flexShrink: 0 }}>{NEEDS_LBL[k] || k}</span><b>{String(v)}</b></div>)}</div>}
+        {Object.keys(j.needs || {}).filter((k) => (j.needs[k] !== "" && j.needs[k] != null && j.needs[k] !== "—" && !k.startsWith("_") && k !== "ship_offreg" && k !== "ship_offreg_note")).length > 0 && <div><div className="muted" style={{ fontSize: 11.5, marginBottom: 3 }}>📝 {t("Выявление потребности", "Виявлення потреби")}</div>{Object.entries(j.needs).filter(([k, v]: any) => v !== "" && v != null && v !== "—" && !k.startsWith("_") && k !== "ship_offreg" && k !== "ship_offreg_note").map(([k, v]: any) => <div key={k} style={{ fontSize: 12.5, padding: "1px 0", display: "flex", gap: 8 }}><span className="muted" style={{ minWidth: 140, flexShrink: 0 }}>{NEEDS_LBL[k] || k}</span><b>{String(v)}</b></div>)}</div>}
         <RefShots photos={j.ref_photos} t={t} />
         {(j.items || []).length === 0 && (j.kits || []).length === 0 && <div className="muted" style={{ fontSize: 12.5 }}>{t("Позиции не указаны — уточни у менеджера", "Позиції не вказані — уточни у менеджера")}</div>}
       </div>
