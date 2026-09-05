@@ -164,6 +164,24 @@ def normalized_shop_specs(specs):
     return specs
 
 
+def product_calculation_specs(product):
+    """Derive the shop calculator contract from the editable nomenclature fields.
+
+    consumption_per_m2 is already the finished result (all coats), expressed in
+    Product.unit. pack_factor describes purchasing, not retail pack rounding.
+    Always replace calc so clearing a CRM rate also clears an older shop rate.
+    """
+    specs = normalized_shop_specs(product.shop_specs)
+    rate = product.consumption_per_m2
+    specs["calc"] = {
+        "consumption_per_m2": str(rate) if rate is not None and rate > 0 else None,
+        "unit": product.unit,
+        "basis": "finished_m2",
+        "source": "crm_product",
+    }
+    return specs
+
+
 def product_payload(product, action=None):
     product = prepare_product_for_shop(product)
     hidden = action == "hide" or not product.is_active or not product.shop_enabled
@@ -203,7 +221,7 @@ def product_payload(product, action=None):
             "instruction_url": product.shop_instruction_url,
             "sort": product.shop_sort,
             "badges": product.shop_badges,
-            "specs": normalized_shop_specs(product.shop_specs),
+            "specs": product_calculation_specs(product),
             "variant": {
                 "type": product.shop_variant_type,
                 "has_board": product.shop_has_board,
