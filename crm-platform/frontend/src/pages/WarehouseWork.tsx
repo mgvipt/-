@@ -231,7 +231,7 @@ function JobPreview({ jobId, t, onClose, onTake }: any) {
             </div>
           ))}
           {(j.kits || []).length > 0 && <><div className="label" style={{ marginTop: 14 }}>🎨 {t("Наборы / тонировка", "Набори / тонування")} ({(j.kits || []).length})</div>
-            {(j.kits || []).map((k: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "4px 0" }}>• <b>{k.material || "—"}</b> <span className="muted">{k.color}</span>{k.tint ? " · 🎨 " + t("тонировать", "тонувати") : ""}{k.board ? " · " + t("с дощечкой", "з дощечкою") : ""}</div>)}</>}
+            {(j.kits || []).map((k: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "4px 0" }}>• <b>{k.material || "—"}</b> <span className="muted">{k.color}</span>{k.tint ? " · 🎨 " + t("тонировать", "тонувати") : ""}{k.board ? " · " + t("с дощечкой", "з дощечкою") : ""}{k.note ? <span style={{ color: "#0369a1" }}> · 💬 {k.note}</span> : null}</div>)}</>}
           <div className="label" style={{ marginTop: 14 }}>📋 {t("Выявление потребности", "Виявлення потреби")}</div>
           {Object.keys(j.needs || {}).length ? Object.entries(j.needs).filter(([, v]: any) => v !== "" && v != null && v !== "—").map(([k, v]: any) => <div key={k} style={{ fontSize: 13, padding: "3px 0", display: "flex", gap: 10, borderBottom: "1px solid #f8fafc" }}><span className="muted" style={{ minWidth: 150, flexShrink: 0 }}>{NEEDS_LBL[k] || k}</span><b>{String(v)}</b></div>) : <div className="muted" style={{ fontSize: 12 }}>{t("Потребность не заполнена", "Потребу не заповнено")}</div>}
           <RefShots photos={j.ref_photos} t={t} />
@@ -448,7 +448,7 @@ function TaskCard({ t, jobId, onBack }: any) {
             {s.kits_n > 0 ? <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>🎨 {t("наборов", "наборів")}: {s.kits_n}</div> : null}
           </div>
         ))}
-        {(j.kits || []).length > 0 && <div style={{ marginBottom: 9 }}><div className="muted" style={{ fontSize: 11.5, marginBottom: 3 }}>🎨 {t("Наборы", "Набори")} ({(j.kits || []).length})</div>{(j.kits || []).map((k: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "2px 0" }}>• <b>{k.material || "—"}</b> <span className="muted">{k.color}</span>{k.tint ? " · 🎨 " + t("тонировать", "тонувати") : ""}{k.board ? " · " + t("с дощечкой", "з дощечкою") : ""}</div>)}</div>}
+        {(j.kits || []).length > 0 && <div style={{ marginBottom: 9 }}><div className="muted" style={{ fontSize: 11.5, marginBottom: 3 }}>🎨 {t("Наборы", "Набори")} ({(j.kits || []).length})</div>{(j.kits || []).map((k: any, i: number) => <div key={i} style={{ fontSize: 13.5, padding: "2px 0" }}>• <b>{k.material || "—"}</b> <span className="muted">{k.color}</span>{k.tint ? " · 🎨 " + t("тонировать", "тонувати") : ""}{k.board ? " · " + t("с дощечкой", "з дощечкою") : ""}{k.note ? <span style={{ color: "#0369a1" }}> · 💬 {k.note}</span> : null}</div>)}</div>}
         {Object.keys(j.needs || {}).filter((k) => (j.needs[k] !== "" && j.needs[k] != null && j.needs[k] !== "—" && !k.startsWith("_"))).length > 0 && <div><div className="muted" style={{ fontSize: 11.5, marginBottom: 3 }}>📝 {t("Выявление потребности", "Виявлення потреби")}</div>{Object.entries(j.needs).filter(([k, v]: any) => v !== "" && v != null && v !== "—" && !k.startsWith("_")).map(([k, v]: any) => <div key={k} style={{ fontSize: 12.5, padding: "1px 0", display: "flex", gap: 8 }}><span className="muted" style={{ minWidth: 140, flexShrink: 0 }}>{NEEDS_LBL[k] || k}</span><b>{String(v)}</b></div>)}</div>}
         <RefShots photos={j.ref_photos} t={t} />
         {(j.items || []).length === 0 && (j.kits || []).length === 0 && <div className="muted" style={{ fontSize: 12.5 }}>{t("Позиции не указаны — уточни у менеджера", "Позиції не вказані — уточни у менеджера")}</div>}
@@ -459,6 +459,7 @@ function TaskCard({ t, jobId, onBack }: any) {
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", borderRadius: 10, marginBottom: 6, background: tinted.has(i) ? "#ecfdf5" : "#f8fafc", border: "1px solid " + (tinted.has(i) ? "#a7f3d0" : "#eef2f7") }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <b style={{ fontSize: 14.5 }}>{k.material || "—"} <span className="muted">{k.color}</span></b>
+              {k.note ? <div style={{ fontSize: 12.5, color: "#0369a1", marginTop: 2 }}>💬 {k.note}</div> : null}
               <div style={{ display: "flex", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
                 {k.tint && <span className="chip" style={{ background: "#fff7ed", color: "#9a3412", fontSize: 10.5 }}>{t("тонировать", "тонувати")}</span>}
                 <span className="chip" style={{ background: "#f1f5f9", fontSize: 10.5 }}>{k.board ? t("с дощечкой", "з дощечкою") : t("без дощечки", "без дощечки")}</span>

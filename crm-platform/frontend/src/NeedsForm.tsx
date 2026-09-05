@@ -75,13 +75,13 @@ const STEPS: any[] = [
     fields: [["sel", "room", "Тип приміщення", ROOMS], ["num", "area", "Площа стін, м²"], ["txt", "city", "Місто / регіон"], ["sel", "term", "Терміни ремонту", TERMS]] },
   { n: 3, icon: "🔥", title: "Прогрів після пробника", stage: "Прогрів після пробника",
     tip: "Найконверсійніший місток. «Готовий на обʼєм» → веди прямо до розрахунку (крок 6), не консультуй повторно. «Хоче інший відтінок» → запропонуй новий пробник, не тисни на великий обсяг зараз.",
-    fields: [["sel", "contacted", "Контакт раніше", CONTACTED], ["kits"], ["sel", "probe_reaction", "Реакція на пробник", PROBE_REACT]] },
+    fields: [["sel", "contacted", "Контакт раніше", CONTACTED], ["sel", "probe_reaction", "Реакція на пробник", PROBE_REACT]] },
   { n: 4, icon: "🧱", title: "Стан стін і причина ремонту", stage: "Завдання виявлено",
     tip: "Скажи прямо: «підходить після ґрунту глибокого проникнення» — закриває страх «чи підійде». Побілка вапном → треба спецґрунт-адгезив (попередь про доп. вартість ЗАРАЗ). «Готує на продаж» → базова Galateya; «для себе надовго» → можна дорожчий (Velvet Lux).",
     fields: [["sel", "wall_current_coating", "Поточне покриття стін", WALL_COAT], ["sel", "prep", "Підготовка стін", PREP], ["sel", "renovation_reason", "Причина ремонту", RENO_REASON]] },
   { n: 5, icon: "🎨", title: "Підбір матеріалу і ефекту", stage: "Каталог відправлено / Рекомендації",
     tip: "Озвуч вигоду під ефект: «Спокійний перелив» → «не набридає з часом»; «Виразна текстура» → «акцентна стіна, ефект каменю»; «Оксамитовий мат» → «дорого і стримано». «Ще не визначився» → максимум 2 варіанти + тест-набір. «Сам наносить» → «після оплати даємо відео-МК, ви не один на один з матеріалом».",
-    fields: [["sel", "material", "Матеріал", null], ["sel", "effect", "Бажаний ефект", EFFECT], ["txt", "color", "Колір / тонування"], ["sel", "underlay", "Підкладка (бланк викраски)", UNDERLAY], ["sel", "applier", "Хто наносить", APPLIER]] },
+    fields: [["sel", "material", "Матеріал", null], ["sel", "effect", "Бажаний ефект", EFFECT], ["txt", "color", "Колір / тонування"], ["kits"], ["sel", "underlay", "Підкладка (бланк викраски)", UNDERLAY], ["sel", "applier", "Хто наносить", APPLIER]] },
   { n: 6, icon: "🧮", title: "Розрахунок і колір", stage: "Розрахунок (КП) / Домовились про оплату",
     tip: "Прорахунок за 15-20 хв, ЗАВЖДИ з PDF і розкладкою по шарах — не називай суму без цього. Наполягає «просто суму»? → «щоб не помилитись, дайте хвилину — порахую точно». Фото кольору погодь ДО тонування всього обсягу. Якщо «надіслано, чекаємо» >2-3 дні — сигнал для дотиску. Бюджет менший за розрахунок → пропонуй меншу площу (стіна-акцент), не знижку.",
     fields: [["sel", "probe", "Пробник чи обʼєм", PROBE], ["num", "budget", "Бюджет, ₴"], ["chk", "calc_sent_date", "КП відправлено клієнту"], ["chk", "layers_shown", "Розкладку по шарах показано"], ["sel", "color_photo_approved", "Фото кольору погоджено", COLOR_APPROVED]] },
@@ -101,7 +101,7 @@ function NeedsForm({ leadId, initial, endpoint = "/api/leads/" }: { leadId: numb
   function set(k: string, v: any) { setQ((p: any) => ({ ...p, [k]: v })); setSaved(false); }
   const kits: any[] = q.kits || [];
   function setKit(i: number, f: string, v: any) { const a = [...(q.kits || [])]; a[i] = { ...a[i], [f]: v }; set("kits", a); }
-  function addKit() { set("kits", [...(q.kits || []), { material: "", color: "", board: false, tint: false }]); }
+  function addKit() { set("kits", [...(q.kits || []), { material: "", color: "", note: "", board: false, tint: false }]); }
   function removeKit(i: number) { const a = [...(q.kits || [])]; a.splice(i, 1); set("kits", a); }
   // сервер/агент заповнив анкету → підхопити лише порожні поля
   useEffect(() => {
@@ -120,17 +120,22 @@ function NeedsForm({ leadId, initial, endpoint = "/api/leads/" }: { leadId: numb
     const [type, k, label, opts] = f;
     if (type === "kits") return (
       <div key="kits" style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 11.5, color: "#64748b", marginBottom: 4, fontWeight: 600 }}>{t("Тест-наборы (для склада)", "Тест-набори (для складу)")}</div>
+        <div style={{ fontSize: 12, color: "#0f172a", marginBottom: 4, fontWeight: 700 }}>🎨 {t("Тест-наборы клиента — добавь КАЖДЫЙ отдельно", "Тест-набори клієнта — додай КОЖЕН окремо")}</div>
+        <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>{t("У каждого набора — свой материал, цвет и комментарий к цвету. Это видит склад при отгрузке.", "У кожного набору — свій матеріал, колір і коментар до кольору. Це бачить склад при відвантаженні.")}</div>
         {kits.map((kit: any, i: number) => (
-          <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center", flexWrap: "wrap" }}>
-            <DomSelect value={kit.material || ""} options={mats} onChange={(v) => setKit(i, "material", v)} wrapStyle={{ flex: "2 1 120px" }} placeholder={t("материал…", "матеріал…")} />
-            <input value={kit.color || ""} placeholder={t("цвет", "колір")} onChange={(e) => setKit(i, "color", e.target.value)} style={{ ...inp, flex: "1 1 80px", width: "auto" }} />
-            <label style={{ fontSize: 11, display: "flex", gap: 3, alignItems: "center" }}><input type="checkbox" checked={!!kit.board} onChange={(e) => setKit(i, "board", e.target.checked)} />{t("дощечка", "дощечка")}</label>
-            <label style={{ fontSize: 11, display: "flex", gap: 3, alignItems: "center" }}><input type="checkbox" checked={!!kit.tint} onChange={(e) => setKit(i, "tint", e.target.checked)} />{t("тон.", "тон.")}</label>
-            <button onClick={() => removeKit(i)} style={{ border: "none", background: "#fef2f2", color: "#dc2626", borderRadius: 6, width: 24, height: 24, cursor: "pointer" }}>✕</button>
+          <div key={i} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 9px", marginBottom: 6, background: "#fbfdff" }}>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", minWidth: 18 }}>#{i + 1}</span>
+              <DomSelect value={kit.material || ""} options={mats} onChange={(v) => setKit(i, "material", v)} wrapStyle={{ flex: "2 1 120px" }} placeholder={t("материал…", "матеріал…")} />
+              <input value={kit.color || ""} placeholder={t("цвет", "колір")} onChange={(e) => setKit(i, "color", e.target.value)} style={{ ...inp, flex: "1 1 80px", width: "auto" }} />
+              <label style={{ fontSize: 11, display: "flex", gap: 3, alignItems: "center" }}><input type="checkbox" checked={!!kit.board} onChange={(e) => setKit(i, "board", e.target.checked)} />{t("дощечка", "дощечка")}</label>
+              <label style={{ fontSize: 11, display: "flex", gap: 3, alignItems: "center" }}><input type="checkbox" checked={!!kit.tint} onChange={(e) => setKit(i, "tint", e.target.checked)} />{t("тон.", "тон.")}</label>
+              <button onClick={() => removeKit(i)} style={{ border: "none", background: "#fef2f2", color: "#dc2626", borderRadius: 6, width: 24, height: 24, cursor: "pointer", marginLeft: "auto" }}>✕</button>
+            </div>
+            <input value={kit.note || ""} placeholder={t("💬 комментарий к цвету (напр. база + перламутр, наносить в 2 слоя)", "💬 коментар до кольору (напр. база + перламутр, наносити у 2 шари)")} onChange={(e) => setKit(i, "note", e.target.value)} style={{ ...inp, width: "100%" }} />
           </div>
         ))}
-        <button onClick={addKit} className="btn btn-light" style={{ fontSize: 12 }}>+ {t("Тест-набор", "Тест-набір")}</button>
+        <button onClick={addKit} className="btn btn-light" style={{ fontSize: 12 }}>+ {t("Добавить набор", "Додати набір")}</button>
       </div>
     );
     if (type === "chk") return (
