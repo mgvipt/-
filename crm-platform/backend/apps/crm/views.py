@@ -2647,16 +2647,23 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                                                                    or (res or {}).get("err_code") or "")}, status=400)
         # гроші пішли клієнту → фіксуємо розхід у журналі на тому самому рахунку, що й прихід
         try:
-            from apps.finance.models import Transaction as _TxR
+            from apps.finance.models import Transaction as _TxR, Category as _CatR
             _src = _TxR.objects.filter(payment=pay).first()
-            _TxR.objects.create(direction="out", amount=amt, amount_uah=amt,
+            # категорія повернення: товар назад → «Возврат товара», інакше «Возврат денег».
+            # Без категорії P&L рахував би це звичайною витратою — а це не витрата, а мінус доходу.
+            _cname = "Возврат товара" if request.data.get("to_return_stage") else "Возврат денег"
+            _cat = _CatR.objects.filter(name__istartswith=_cname).order_by("id").first()
+            _tx_ref = _TxR.objects.create(direction="out", amount=amt, amount_uah=amt,
                                 account=(_src.account if _src else None),
+                                category=_cat,
+                                fin_direction=(_src.fin_direction if _src else None),
                                 date=_tzr.localdate(), op_time=_tzr.localtime().time(),
                                 deal=deal, contact=deal.contact,
                                 counterparty=(str(deal.contact) if deal.contact_id else ""),
                                 comment=("Повернення LiqPay по сделці #%s (%s)" % (deal.id, order_id))[:255])
+            globals().setdefault("_", None)
         except Exception:
-            pass
+            _tx_ref = None
         pay.amount = _Dr(str(pay.amount)) - amt
         if pay.amount <= 0:
             pay.is_paid = False
@@ -2682,6 +2689,26 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                     client_name=(getattr(deal.contact, "name", None) if deal.contact_id else None))
                 _logr("deal", deal.id, "Чек повернення", "Checkbox: %s" % (_receipt.get("url") or ""),
                       getattr(u, "id", None), getattr(u, "username", ""))
+                # зберігаємо чек у CRM: на платежі + у коментарі операції журналу
+                if _receipt.get("id"):
+                    pay.checkbox_return_id = str(_receipt["id"])[:64]
+                    pay.save(update_fields=["checkbox_return_id"])
+                if _tx_ref and _receipt.get("url"):
+                    _tx_ref.comment = (("🧾 Чек повернення: %s · " % _receipt["url"]) + (_tx_ref.comment or ""))[:255]
+                    _tx_ref.save(update_fields=["comment"])
+                # надіслати чек клієнту в його чат (якщо попросили і чат відкритий)
+                if request.data.get("send_receipt") and deal.contact_id and _receipt.get("url"):
+                    try:
+                        from apps.inbox.models import Conversation as _ConvR
+                        from apps.inbox.services import send_message as _sendR
+                        _cv = _ConvR.objects.filter(contact_id=deal.contact_id).order_by("-last_message_at").first()
+                        if _cv:
+                            _sendR(_cv, "Повернули вам %s грн на картку 🙌\nФіскальний чек повернення: %s" % (amt, _receipt["url"]), u)
+                            _logr("deal", deal.id, "Чек надіслано клієнту", _receipt["url"], getattr(u, "id", None), getattr(u, "username", ""))
+                        else:
+                            _warn = (_warn + " | " if _warn else "") + "Чек створено, але відкритого чату з клієнтом немає — надішли вручну."
+                    except Exception as _e3:
+                        _warn = (_warn + " | " if _warn else "") + "Чек створено, але не надіслався клієнту: %s" % str(_e3)[:120]
             except Exception as _e:
                 _warn = "Гроші повернуто, але фіскальний чек повернення НЕ пройшов: %s" % str(_e)[:220]
                 _logr("deal", deal.id, "Checkbox помилка", _warn[:400], getattr(u, "id", None), "Checkbox")

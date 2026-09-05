@@ -49,7 +49,7 @@ import DealEstimatePanel from "./DealEstimatePanel";
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
 interface Item { id: number; product: number; product_name: string; quantity: string; price: string; discount_pct?: string; discount_amount?: string; discount_sum?: string; total: string; reserved?: boolean; product_stock?: number | null; }
-interface Pay { id: number; provider: string; amount: string; is_paid: boolean; created_at: string; checkbox_receipt_id?: string; }
+interface Pay { id: number; provider: string; amount: string; is_paid: boolean; created_at: string; checkbox_receipt_id?: string; checkbox_return_id?: string; }
 interface Deal {
   qualification?: any; card_fields?: any[];
   id: number; title: string; contact_name?: string; contact_social_link?: string; contact_phone?: string; owner_name?: string; owner?: number | null; created_at?: string;
@@ -268,6 +268,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [refundErr, setRefundErr] = useState("");
   const [refundReceipt, setRefundReceipt] = useState(true);   // пробити чек повернення Checkbox
   const [refundStage, setRefundStage] = useState(false);      // перевести сделку у «Возврат» + товар на склад
+  const [refundSend, setRefundSend] = useState(true);         // надіслати чек повернення клієнту в чат
   const [nc, setNc] = useState({ name: "", phone: "", email: "" });
   const [ncMode, setNcMode] = useState<"pick" | "new">("pick");
   const [ncSearch, setNcSearch] = useState(""); const [ncResults, setNcResults] = useState<any[]>([]);
@@ -986,7 +987,8 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("История платежей","Історія платежів")}</div>
                 {(deal.payments || []).map((p: any) => (
                   <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}>
-                    <span className="muted">{t(...methodPair(p.provider))} · {p.created_at ? new Date(p.created_at).toLocaleDateString("uk", { day: "2-digit", month: "2-digit" }) : ""}</span>
+                    <span className="muted">{t(...methodPair(p.provider))} · {p.created_at ? new Date(p.created_at).toLocaleDateString("uk", { day: "2-digit", month: "2-digit" }) : ""}
+                      {p.checkbox_return_id ? <a href={"https://check.checkbox.ua/" + p.checkbox_return_id} target="_blank" rel="noreferrer" style={{ marginLeft: 6, color: "#c2410c", fontWeight: 700 }} title={t("Фискальный чек возврата","Фіскальний чек повернення")}>↩ 🧾</a> : null}</span>
                     <b style={{ color: "#16a34a" }}>{fmt(Number(p.amount))} ₴</b>
                   </div>
                 ))}
@@ -1400,6 +1402,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   <span>🧾 {t("Пробить фискальный чек возврата (Checkbox)","Пробити фіскальний чек повернення (Checkbox)")}</span>
                 </label>
               )}
+              {pl?.checkbox_receipt_id && refundReceipt && (
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, marginBottom: 8, cursor: "pointer", paddingLeft: 22 }}>
+                  <input type="checkbox" checked={refundSend} onChange={(e) => setRefundSend(e.target.checked)} style={{ marginTop: 2 }} />
+                  <span>✉️ {t("Отправить чек клиенту в чат","Надіслати чек клієнту в чат")}</span>
+                </label>
+              )}
               {a >= maxA - 0.001 && (
                 <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, marginBottom: 8, cursor: "pointer" }}>
                   <input type="checkbox" checked={refundStage} onChange={(e) => setRefundStage(e.target.checked)} style={{ marginTop: 2 }} />
@@ -1419,6 +1427,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                         receipt: refundReceipt && !!pl?.checkbox_receipt_id,
                         to_return_stage: refundStage && a >= maxA - 0.001,
                         unship: refundStage && a >= maxA - 0.001,
+                        send_receipt: refundSend && refundReceipt && !!pl?.checkbox_receipt_id,
                       });
                       if (r?.deal) setDeal(r.deal);
                       setRefundOpen(false);
