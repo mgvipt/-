@@ -55,7 +55,7 @@ export function CezarLibrary({ conversationId, onSent, onBack, onClose }: {
     finally { setBusy(false); }
   }
   const cardStyle = { border: "1px solid #dbe3ee", background: "#fff", padding: 8, borderRadius: 9, textAlign: "left" as const, cursor: "pointer", color: "#172b42" };
-  return <div style={{ position: "absolute", zIndex: 50, left: 0, bottom: 46, width: "min(480px, 100%)", maxWidth: "calc(100vw - 24px)", maxHeight: "min(650px, 75dvh)", display: "flex", flexDirection: "column", overflow: "hidden", background: "#fff", color: "#172b42", border: "1px solid #cbd5e1", borderRadius: 12, boxShadow: "0 12px 32px rgba(15,23,42,.2)" }}>
+  return <div style={{ position: "fixed", zIndex: 1000, left: "50%", transform: "translateX(-50%)", bottom: 80, width: "min(480px, calc(100vw - 24px))", maxWidth: "calc(100vw - 24px)", maxHeight: "min(650px, 75dvh)", display: "flex", flexDirection: "column", overflow: "hidden", background: "#fff", color: "#172b42", border: "1px solid #cbd5e1", borderRadius: 12, boxShadow: "0 12px 32px rgba(15,23,42,.2)" }}>
     <div style={{ padding: 14, display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid #e2e8f0" }}><b>Бібліотека · Плінтуси Cezar</b><button className="btn" aria-label="Закрити бібліотеку" disabled={busy} onClick={onClose} style={{ marginLeft: "auto" }}>×</button></div>
     <div style={{ padding: 14, overflowY: "auto", minHeight: 0 }}>
       <button className="btn" disabled={busy} onClick={() => { if (preview) setPreview(false); else if (selected) { setSelected(null); setError(""); } else onBack(); }} style={{ display: "block", marginBottom: 12 }}>← {preview ? "До фото" : selected ? "Усі моделі Cezar" : "Усі матеріали"}</button>
