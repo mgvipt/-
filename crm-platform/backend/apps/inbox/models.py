@@ -105,6 +105,21 @@ class Notification(models.Model):
 
 
 
+class LandingSubmission(models.Model):
+    """Durable receipt: retries keep the same deal even after funnel moves."""
+    request_id = models.CharField(max_length=80, unique=True)
+    payload_hash = models.CharField(max_length=64)
+    phone_hash = models.CharField(max_length=64)
+    conversation = models.ForeignKey(Conversation, on_delete=models.PROTECT)
+    deal = models.OneToOneField("crm.Deal", null=True, on_delete=models.PROTECT, related_name="landing_receipt")
+    task = models.OneToOneField("crm.Task", null=True, on_delete=models.SET_NULL, related_name="landing_receipt")
+    photos = models.JSONField(default=list)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+    escalated_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class SharedLink(models.Model):
     """Файл/фото для відправки клієнту ПОСИЛАННЯМ (обхід обмеження IG на медіа)."""
     token = models.CharField(max_length=48, unique=True, db_index=True)

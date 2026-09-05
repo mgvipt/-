@@ -9,3 +9,4 @@ class InboxConfig(AppConfig):
         # TikTok Direct: реєструє адаптер kind="tiktok" в adapters.ADAPTERS (див. apps/inbox/tiktok.py).
         # Імпорт тут, а не в adapters.py, щоб не чіпати спільний файл адаптерів.
         from . import tiktok  # noqa: F401
+        from . import landing_signals  # noqa: F401

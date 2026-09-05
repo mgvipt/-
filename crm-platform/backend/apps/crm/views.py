@@ -3519,35 +3519,12 @@ class MetaPixelEventsView(APIView):
                     if day:
                         row = by_day.setdefault(day, {"d": day, "total": 0})
                         row["total"] += n
-            from .models import Deal as _Deal
-            _AD_HINTS = ("fbclid", "utm_source", "utm_campaign", "gclid")
-            _AD_SOURCES = ("facebook", "fb", "instagram", "ig", "meta", "an", "msg")
-            site_deals = []
-            _sd_total = _sd_ads = _sd_won = 0
-            for _d in (_Deal.objects.filter(funnel__name="Лендинг · wallcovdliastin.com.ua",
-                                            created_at__date__gte=d_from, created_at__date__lte=d_to)
-                       .select_related("contact", "stage").order_by("-created_at")[:100]):
-                _q = _d.qualification or {}
-                _utm = _q.get("utm") or {}
-                _src = str(_utm.get("utm_source") or "").lower()
-                _from_ads = bool(_utm.get("fbclid")) or bool(_utm.get("gclid")) or _src in _AD_SOURCES
-                _sd_total += 1
-                if _from_ads: _sd_ads += 1
-                _is_won = bool(_d.stage_id and _d.stage.is_won)
-                if _is_won: _sd_won += 1
-                site_deals.append({
-                    "id": _d.pk, "contact": (str(_d.contact) if _d.contact_id else "—"),
-                    "stage": (_d.stage.name if _d.stage_id else "—"), "won": _is_won,
-                    "amount": float(_d.amount or 0),
-                    "at": _d.created_at.strftime("%d.%m %H:%M"),
-                    "from_ads": _from_ads,
-                    "ad_source": (_src or ("fbclid" if _utm.get("fbclid") else ("gclid" if _utm.get("gclid") else ""))),
-                    "campaign": str(_utm.get("utm_campaign") or "")[:60],
-                })
+            from .landing_metrics import landing_report
+            site_deals, site_summary = landing_report(d_from, d_to)
             payload = {
                 "pixel": "site", "pixel_id": SITE_PIXEL, "pixel_name": "Пиксель Лендинг новый",
                 "site_deals": site_deals,
-                "site_summary": {"total": _sd_total, "from_ads": _sd_ads, "won": _sd_won},
+                "site_summary": site_summary,
                 "from": d_from.isoformat(), "to": d_to.isoformat(),
                 "summary": {"total": sum(by_ev.values()),
                             "pageviews": by_ev.get("PageView", 0),
@@ -5255,6 +5232,28 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def accept(self, request, pk=None):
+        from apps.inbox.models import LandingSubmission
+        from django.db import transaction
+        from django.utils import timezone
+        candidate = self.get_object()
+        if LandingSubmission.objects.filter(task=candidate).exists():
+            with transaction.atomic():
+                t = Task.objects.select_for_update().get(pk=candidate.pk)
+                if t.status in ("done", "canceled"):
+                    return Response({"detail": "Задачу вже закрито. Для відновлення використайте окрему дію."}, status=409)
+                if t.status not in ("open", "proposed") and t.assignee_id != request.user.pk:
+                    return Response({"detail": "Звернення вже прийняв інший менеджер"}, status=409)
+                t.assignee = request.user
+                t.status = "in_progress"
+                t.save(update_fields=["assignee", "status"])
+                receipt = LandingSubmission.objects.select_for_update().get(task=t)
+                if receipt.accepted_at is None:
+                    receipt.accepted_at = timezone.now()
+                    receipt.save(update_fields=["accepted_at"])
+                Deal.objects.filter(pk=receipt.deal_id).update(owner=request.user)
+                from apps.inbox.models import Conversation
+                Conversation.objects.filter(pk=receipt.conversation_id).update(assigned_to=request.user)
+            return Response(self.get_serializer(t).data)
         t = self.get_object(); t.assignee = request.user
         if t.status in ("proposed", "open"):
             t.status = "in_progress"

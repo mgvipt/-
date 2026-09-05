@@ -6,7 +6,7 @@ import re
 import secrets
 import urllib.request
 from datetime import timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.core import signing
 from django.core.cache import cache
@@ -70,12 +70,28 @@ def _conversation(raw_token: str) -> Conversation:
 def _rate_ok(request, suffix: str, limit: int = 12) -> bool:
     forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
     ip = forwarded or request.META.get("REMOTE_ADDR", "unknown")
-    key = "webchat:%s:%s:%s" % (LANDING_ID, ip, suffix)
-    count = cache.get(key, 0)
-    if count >= limit:
-        return False
-    cache.set(key, count + 1, timeout=60)
-    return True
+    identity = "ip:" + ip
+    # Sites proxies many visitors through the same IP. A verified, signed
+    # session gets its own fixed window; arbitrary client headers cannot pick it.
+    raw = request.data.get("token")
+    if raw:
+        try:
+            payload = signing.loads(raw, salt=TOKEN_SALT, max_age=60 * 60 * 24 * 14)
+            if payload.get("landing_id") == LANDING_ID:
+                identity = "conversation:" + str(payload["conversation_id"])
+        except (signing.BadSignature, KeyError, TypeError):
+            pass
+    if suffix == "poll":
+        limit = 30
+    elif suffix == "start":
+        limit = 60
+    key = "webchat:v2:%s:%s:%s" % (LANDING_ID, identity, suffix)
+    if cache.add(key, 1, timeout=60):
+        return True
+    try:
+        return cache.incr(key) <= limit
+    except ValueError:  # Window expired between add and incr.
+        return cache.add(key, 1, timeout=60)
 
 
 def _ai_reply(conv: Conversation, incoming: Message, client_name: str = ""):
@@ -118,10 +134,10 @@ def _ai_reply(conv: Conversation, incoming: Message, client_name: str = ""):
 
 def _decimal_area(value) -> Decimal:
     try:
-        area = Decimal(str(value)).quantize(Decimal("0.1"))
+        area = Decimal(str(value)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError("Вкажіть площу числом")
-    if area < Decimal("1") or area > Decimal("1000"):
+    if not area.is_finite() or area < Decimal("1") or area > Decimal("1000"):
         raise ValueError("Площа має бути від 1 до 1000 м²")
     return area
 
@@ -147,7 +163,9 @@ class WebChatView(APIView):
         if not _origin_allowed(request):
             return self._cors(request, Response({"detail": "origin not allowed"}, status=403))
         action = str(request.data.get("action") or "").strip()
-        if not _rate_ok(request, action or "unknown"):
+        if action not in {"start", "poll", "message", "lead", "photo"}:
+            return self._cors(request, Response({"detail": "unknown action"}, status=400))
+        if not _rate_ok(request, action):
             return self._cors(request, Response({"detail": "Забагато запитів. Спробуйте за хвилину."}, status=429))
         try:
             handler = getattr(self, "_action_" + action)
@@ -208,111 +226,15 @@ class WebChatView(APIView):
             _ai_reply(conv, incoming, str(request.data.get("name") or "")[:120])
         return Response({"messages": _messages(conv)})
 
-    @transaction.atomic
     def _action_lead(self, request):
+        from .landing_intake import receive
         conv = _conversation(str(request.data.get("token") or ""))
-        consent = bool(request.data.get("consent"))
-        if not consent:
-            raise ValueError("Потрібна згода на зв’язок і обробку контактних даних")
-        name = str(request.data.get("name") or "").strip()[:120]
-        phone = str(request.data.get("phone") or "").strip()[:32]
-        digits = re.sub(r"\D", "", phone)
-        if len(digits) == 10 and digits.startswith("0"):
-            digits = "38" + digits
-        if len(digits) < 10 or len(digits) > 15:
-            raise ValueError("Вкажіть коректний номер телефону")
-        phone = "+" + digits
-        preferred = str(request.data.get("preferred") or "phone")
-        if preferred not in {"phone", "telegram", "viber"}:
-            preferred = "phone"
-        area = _decimal_area(request.data.get("area")) if request.data.get("area") not in (None, "") else None
-        product_key = str(request.data.get("product") or "")
-        product = PRODUCTS.get(product_key)
-        if product_key and not product:
-            raise ValueError("Невідоме покриття")
-        submission_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(request.data.get("submission_id") or ""))[:80]
-        if not submission_id:
-            submission_id = secrets.token_urlsafe(24)
+        result = receive(conv, request.data)
+        saved_conv = Conversation.objects.get(pk=result["conversation_id"])
+        result.update(token=_token(saved_conv), messages=_messages(saved_conv))
+        return Response(result)
 
-        contact = Contact.objects.select_for_update().filter(phone__in=_phone_variants(phone)).order_by("id").first()
-        if contact is None:
-            contact = Contact.objects.create(first_name=name or "Клієнт із сайту", phone=phone, source="site", channels=[preferred] if preferred != "phone" else [])
-        else:
-            changed = []
-            if name and not contact.first_name:
-                contact.first_name = name
-                changed.append("first_name")
-            channels = list(contact.channels or [])
-            if preferred != "phone" and preferred not in channels:
-                contact.channels = channels + [preferred]
-                changed.append("channels")
-            if changed:
-                contact.save(update_fields=changed)
-        conv.contact = contact
-        conv.title = "[%s] %s" % (LANDING_ID, str(contact))
-        conv.save(update_fields=["contact", "title"])
-
-        funnel = Funnel.objects.filter(name="Лендинг · wallcovdliastin.com.ua").first()
-        if not funnel:
-            raise ValueError("Воронку лендингу не знайдено")
-        stage = funnel.stages.order_by("order", "id").first()
-        if not stage:
-            raise ValueError("У воронці немає стартового статусу")
-
-        low = high = Decimal("0")
-        if area is not None and product:
-            low = max((area * product["price_from"]).quantize(Decimal("0.01")), TEST_KIT_MINIMUM)
-            high = max((area * product["price_to"]).quantize(Decimal("0.01")), TEST_KIT_MINIMUM)
-        analytics = request.data.get("analytics") if isinstance(request.data.get("analytics"), dict) else {}
-        qualification = {
-            "landing_id": LANDING_ID,
-            "room": str(request.data.get("room") or "")[:80],
-            "area_m2": str(area) if area is not None else "",
-            "product_key": product_key,
-            "product": product["label"] if product else "",
-            "velvet_color": str(request.data.get("velvet_color") or "")[:120],
-            "velvet_formula": str(request.data.get("velvet_formula") or "")[:120],
-            "estimate_from": str(low),
-            "estimate_to": str(high),
-            "minimum_order": str(TEST_KIT_MINIMUM),
-            "preferred_channel": preferred,
-            "utm": {str(k)[:40]: str(v)[:300] for k, v in analytics.items()},
-            "conversation_id": conv.id,
-            "submission_id": submission_id,
-        }
-        deal = Deal.objects.filter(
-            contact=contact, funnel=funnel, qualification__submission_id=submission_id,
-        ).order_by("-created_at").first()
-        duplicate = deal is not None
-        if not duplicate:
-            deal = Deal.objects.create(
-                title="Заявка %s · %s" % (LANDING_ID, name or phone),
-                contact=contact, funnel=funnel, stage=stage, source="site", amount=low,
-                qualification=qualification, is_seen=False,
-            )
-            color_note = ""
-            if product_key == "luna" and qualification["velvet_color"]:
-                color_note = "; колір: %s (%s)" % (
-                    qualification["velvet_color"], qualification["velvet_formula"] or "формула не вказана"
-                )
-            note = (
-                "Нова заявка #%s з лендингу: %s; площа: %s м²; попередній матеріал: %s–%s грн; "
-                "мінімальне замовлення: тест-набір %s грн; бажаний зв’язок: %s%s."
-                % (deal.id, product["label"] if product else "ще не обрано", area or "не вказано", low, high, TEST_KIT_MINIMUM, preferred, color_note)
-            )
-            Message.objects.create(conversation=conv, direction="out", internal=True, text=note, sender_name="Лендинг")
-            if not conv.messages.filter(external_id__startswith="web-contact:").exists():
-                Message.objects.create(
-                    conversation=conv, direction="out",
-                    text="Контакт збережено — менеджер бачить цей діалог у CRM і продовжить тут або у вибраному месенджері.",
-                    external_id="web-contact:%s" % deal.id, sender_name="Юля · Wallcov",
-                )
-        return Response({
-            "ok": True,
-            "deal_id": deal.id,
-            "duplicate": duplicate,
-            "estimate_from": float(low),
-            "estimate_to": float(high),
-            "minimum_order": float(TEST_KIT_MINIMUM),
-            "messages": _messages(conv),
-        })
+    def _action_photo(self, request):
+        from .landing_intake import attach_photos
+        conv = _conversation(str(request.data.get("token") or ""))
+        return Response(attach_photos(conv, request.data))
