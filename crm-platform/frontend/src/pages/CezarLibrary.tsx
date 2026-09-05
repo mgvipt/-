@@ -5,6 +5,7 @@ type Asset = { id: number; title: string; color_code: string; tags: string; url:
 const MATERIAL = "Плінтуси Cezar";
 const value = (a: Asset, key: string) => a.product ? String(a.product[key] ?? "") : (a.tags.match(new RegExp(`(?:^|\\s)${key}:([^\\s;]+)`)) || [])[1] || "";
 const money = (n: number) => n.toLocaleString("uk-UA", { maximumFractionDigits: 2 });
+const interiorStyle = (a: Asset) => /(?:^|\s)cad20260905(?:\s|$)/.test(a.tags) ? (a.tags.match(/(?:^|\s)style:(patera|silk)(?:\s|$)/) || [])[1] : undefined;
 
 export function CezarLibrary({ conversationId, onSent, onBack, onClose }: {
   conversationId: number; onSent: (m: ChatMessage) => void; onBack: () => void; onClose: () => void;
@@ -54,7 +55,7 @@ export function CezarLibrary({ conversationId, onSent, onBack, onClose }: {
     finally { setBusy(false); }
   }
   const cardStyle = { border: "1px solid #dbe3ee", background: "#fff", padding: 8, borderRadius: 9, textAlign: "left" as const, cursor: "pointer", color: "#172b42" };
-  return <div style={{ position: "absolute", zIndex: 50, left: 0, bottom: 46, width: 480, maxWidth: "calc(100vw - 24px)", maxHeight: "min(650px, 75dvh)", display: "flex", flexDirection: "column", overflow: "hidden", background: "#fff", color: "#172b42", border: "1px solid #cbd5e1", borderRadius: 12, boxShadow: "0 12px 32px rgba(15,23,42,.2)" }}>
+  return <div style={{ position: "absolute", zIndex: 50, left: 0, bottom: 46, width: "min(480px, 100%)", maxWidth: "calc(100vw - 24px)", maxHeight: "min(650px, 75dvh)", display: "flex", flexDirection: "column", overflow: "hidden", background: "#fff", color: "#172b42", border: "1px solid #cbd5e1", borderRadius: 12, boxShadow: "0 12px 32px rgba(15,23,42,.2)" }}>
     <div style={{ padding: 14, display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid #e2e8f0" }}><b>Бібліотека · Плінтуси Cezar</b><button className="btn" aria-label="Закрити бібліотеку" disabled={busy} onClick={onClose} style={{ marginLeft: "auto" }}>×</button></div>
     <div style={{ padding: 14, overflowY: "auto", minHeight: 0 }}>
       <button className="btn" disabled={busy} onClick={() => { if (preview) setPreview(false); else if (selected) { setSelected(null); setError(""); } else onBack(); }} style={{ display: "block", marginBottom: 12 }}>← {preview ? "До фото" : selected ? "Усі моделі Cezar" : "Усі матеріали"}</button>
@@ -81,9 +82,9 @@ export function CezarLibrary({ conversationId, onSent, onBack, onClose }: {
         {selected.product?.id && <div style={{ fontSize: 12, marginBottom: 12 }}><a href={`/warehouse?product=${selected.product.id}`} target="_blank" rel="noreferrer">Змінити ціну в номенклатурі ↗</a><span> · </span><a href="/shop-catalog" target="_blank" rel="noreferrer">Завантажити прайс ↗</a></div>}
         {!preview && selected.product?.description && <details style={{ marginBottom: 14, fontSize: 13 }}><summary style={{ cursor: "pointer", fontWeight: 600 }}>Як пояснити цінність клієнту</summary><div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, marginTop: 10 }}>{selected.product.description}</div></details>}
         {preview ? <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", padding: 12, background: "#f1f5f9", borderRadius: 8, fontSize: 13, lineHeight: 1.5 }}><b>Попередній перегляд повідомлення</b><div style={{ marginTop: 10 }}>{message}</div></div> : <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 9 }}>{photos.map(a => <button key={a.id} aria-pressed={picked.includes(a.id)} style={{ ...cardStyle, border: picked.includes(a.id) ? "2px solid #397aca" : cardStyle.border }} onClick={() => { setPicked(ids => ids.includes(a.id) ? ids.filter(id => id !== a.id) : [...ids,a.id]); setPreview(false); }}>
-            <img src={a.preview_url || a.url} alt={a.title} style={{ width: "100%", height: 120, objectFit: "contain" }} /><span style={{ fontSize: 12 }}>{picked.includes(a.id) ? "✓ " : ""}{a.title}</span>
-          </button>)}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 9 }}>{photos.map(a => <div key={a.id} style={{ gridColumn: interiorStyle(a) ? "1 / -1" : undefined, minWidth: 0 }}><button aria-pressed={picked.includes(a.id)} style={{ ...cardStyle, width: "100%", border: picked.includes(a.id) ? "2px solid #397aca" : cardStyle.border }} onClick={() => { setPicked(ids => ids.includes(a.id) ? ids.filter(id => id !== a.id) : [...ids,a.id]); setPreview(false); }}>
+            <img src={a.preview_url || a.url} alt={a.title} loading="lazy" style={{ width: "100%", height: interiorStyle(a) ? "auto" : 120, objectFit: "contain" }} /><span style={{ fontSize: 13 }}>{picked.includes(a.id) ? "✓ " : ""}{a.title}</span>
+          </button>{interiorStyle(a) && <div style={{ display: "flex", flexWrap: "wrap", gap: 12, margin: "8px 0 12px", fontSize: 13 }}><a href={a.url} target="_blank" rel="noopener noreferrer">Відкрити інтер’єр ↗</a>{a.product?.sku && <a href={`https://wallcov.com.ua/interior/design-${interiorStyle(a)}-${encodeURIComponent(a.product.sku)}`} target="_blank" rel="noopener noreferrer">Розрахувати цей комплект ↗</a>}</div>}</div>)}</div>
           <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 15, fontSize: 13 }}><input type="checkbox" checked={withPrice} onChange={e => { setWithPrice(e.target.checked); setPreview(false); }} />Додати розміри й ціну до фото</label>
         </>}
       </>}
