@@ -2602,6 +2602,73 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         return Response({"ok": True, "cogs": float(cogs),
                          "deal": DealDetailSerializer(deal, context={"request": request}).data})
 
+    @action(detail=True, methods=["post"], url_path="liqpay-refund")
+    def liqpay_refund(self, request, pk=None):
+        """Повернення коштів клієнту на карту через LiqPay — по тому самому посиланню, яким платив.
+        {amount} — сума (за замовчуванням уся оплата), {check: true} — тільки перевірити статус
+        платежу в LiqPay (грошей НЕ рухає, потрібно щоб переконатись що IP у білому списку).
+        Після успіху: розхід у журналі + зменшення оплати сделки + запис у стрічку."""
+        from decimal import Decimal as _Dr
+        from django.conf import settings as _sr
+        from django.utils import timezone as _tzr
+        from .liqpay import api_request as _lq_api
+        u = request.user
+        if not (u.is_superuser or (hasattr(u, "has_perm_code") and u.has_perm_code("payment.process"))):
+            return Response({"detail": "Потрібне право «Проводити оплати»"}, status=status.HTTP_403_FORBIDDEN)
+        deal = self.get_object()
+        pay = Payment.objects.filter(deal=deal, provider="liqpay", is_paid=True).order_by("-id").first()
+        if not pay:
+            return Response({"detail": "По сделці немає оплаченого платежу LiqPay."}, status=400)
+        from .models import PayLink as _PLr
+        link = _PLr.objects.filter(deal=deal).order_by("-id").first()
+        if not link:
+            return Response({"detail": "Не знайдено платіжне посилання цієї сделки (order_id)."}, status=400)
+        order_id = "WCCRM-%s-%s" % (deal.id, link.code)
+        pub = getattr(_sr, "LIQPAY_PUBLIC_KEY", "")
+        prv = getattr(_sr, "LIQPAY_PRIVATE_KEY", "")
+        if not (pub and prv):
+            return Response({"detail": "Не налаштовані ключі LiqPay."}, status=400)
+        # ── ПЕРЕВІРКА (без руху грошей) ──
+        if request.data.get("check"):
+            res = _lq_api(pub, prv, {"action": "status", "order_id": order_id})
+            return Response({"ok": True, "mode": "check", "order_id": order_id, "liqpay": res})
+        # ── РЕАЛЬНЕ ПОВЕРНЕННЯ ──
+        try:
+            amt = _Dr(str(request.data.get("amount") or pay.amount))
+        except (TypeError, ValueError):
+            amt = _Dr(str(pay.amount))
+        if amt <= 0 or amt > _Dr(str(pay.amount)):
+            return Response({"detail": "Сума повернення має бути від 0.01 до %s ₴." % pay.amount}, status=400)
+        res = _lq_api(pub, prv, {"action": "refund", "order_id": order_id, "amount": float(amt)})
+        st = str((res or {}).get("status") or "")
+        if st not in ("reversed", "refunded", "success"):
+            return Response({"ok": False, "order_id": order_id, "liqpay": res,
+                             "detail": "LiqPay відмовив: %s %s" % (st, (res or {}).get("err_description")
+                                                                   or (res or {}).get("err_code") or "")}, status=400)
+        # гроші пішли клієнту → фіксуємо розхід у журналі на тому самому рахунку, що й прихід
+        try:
+            from apps.finance.models import Transaction as _TxR
+            _src = _TxR.objects.filter(payment=pay).first()
+            _TxR.objects.create(direction="out", amount=amt, amount_uah=amt,
+                                account=(_src.account if _src else None),
+                                date=_tzr.localdate(), op_time=_tzr.localtime().time(),
+                                deal=deal, contact=deal.contact,
+                                counterparty=(str(deal.contact) if deal.contact_id else ""),
+                                comment=("Повернення LiqPay по сделці #%s (%s)" % (deal.id, order_id))[:255])
+        except Exception:
+            pass
+        pay.amount = _Dr(str(pay.amount)) - amt
+        if pay.amount <= 0:
+            pay.is_paid = False
+            pay.amount = _Dr("0")
+        pay.save(update_fields=["amount", "is_paid"])
+        from .models import log_activity as _logr
+        _logr("deal", deal.id, "Повернення коштів",
+              "LiqPay повернув клієнту %s ₴ (%s)" % (amt, order_id), getattr(u, "id", None),
+              getattr(u, "get_full_name", lambda: "")() or getattr(u, "username", ""))
+        return Response({"ok": True, "refunded": float(amt), "order_id": order_id, "liqpay": res,
+                         "deal": DealDetailSerializer(deal, context={"request": request}).data})
+
     @action(detail=True, methods=["post"])
     def unship(self, request, pk=None):
         """Скасувати реалізацію (відвантаження) — товар ПОВЕРТАЄТЬСЯ на склад.

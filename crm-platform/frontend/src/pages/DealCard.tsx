@@ -966,6 +966,26 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
               return <div style={{ textAlign: "center", fontSize: 12.5, fontWeight: 600, padding: "6px", borderRadius: 8, background: st.bg, color: st.c, marginBottom: 8 }}>{st.txt}</div>;
             })()}
             <button className="btn btn-primary" style={{ width: "100%", height: 36 }} onClick={() => { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }}>{t("💳 Принять оплату","💳 Прийняти оплату")}</button>
+            {(deal.payments || []).some((p: any) => p.is_paid && p.provider === "liqpay") && (can("payment.process") || can("roles.manage")) && (
+              <button className="btn" style={{ width: "100%", height: 32, marginTop: 6, background: "#fff7ed", border: "1px solid #fed7aa", color: "#c2410c", fontWeight: 700, fontSize: 12.5 }}
+                title={t("Вернуть деньги клиенту на карту через LiqPay — по той же ссылке, которой он платил","Повернути гроші клієнту на карту через LiqPay — по тому самому посиланню, яким платив")}
+                onClick={async () => {
+                  const pl = (deal.payments || []).filter((p: any) => p.is_paid && p.provider === "liqpay").sort((a: any, b: any) => b.id - a.id)[0];
+                  const maxA = Number(pl?.amount || 0);
+                  const inp = window.prompt(t(`Сумма возврата на карту клиента. Оплачено через LiqPay: ${fmt(maxA)} ₴.`, `Сума повернення на карту клієнта. Оплачено через LiqPay: ${fmt(maxA)} ₴.`), String(maxA));
+                  if (inp === null) return;
+                  const a = parseFloat(String(inp).replace(",", "."));
+                  if (!a || a <= 0) return;
+                  if (!window.confirm(t(`Вернуть ${fmt(a)} ₴ клиенту на карту? Деньги уйдут сразу, отменить нельзя.`, `Повернути ${fmt(a)} ₴ клієнту на карту? Гроші підуть одразу, скасувати не можна.`))) return;
+                  try {
+                    const r: any = await api.post(`/api/deals/${id}/liqpay-refund/`, { amount: a });
+                    if (r?.deal) setDeal(r.deal);
+                    flash(t(`✓ LiqPay вернул клиенту ${fmt(r.refunded)} ₴`, `✓ LiqPay повернув клієнту ${fmt(r.refunded)} ₴`));
+                  } catch (e: any) {
+                    alert("⚠️ " + (e?.response?.data?.detail || e?.message || t("Не удалось вернуть","Не вдалося повернути")));
+                  }
+                }}>↩ {t("Вернуть деньги (LiqPay)","Повернути кошти (LiqPay)")}</button>
+            )}
             {(deal.payments || []).length > 0 && (
               <div style={{ marginTop: 10, borderTop: "1px solid #f1f5f9", paddingTop: 8 }}>
                 <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("История платежей","Історія платежів")}</div>
