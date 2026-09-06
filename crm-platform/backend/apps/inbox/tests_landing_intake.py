@@ -80,6 +80,81 @@ class LandingIntakeTests(TestCase):
         self.assertEqual(result["estimate_from"], 3900)
         self.assertEqual(result["estimate_to"], 3900)
 
+    def test_dimensions_and_silk_code_persist_and_are_visible_to_manager(self):
+        data = {**self.data, "area": "34.8", "area_mode": "dimensions", "silk_color": " csk 18-4 ",
+                "room_dimensions": {"length": "4", "width": "3", "height": "2,7", "openings": "3"}}
+        result = receive(self.conv, data)
+        deal = Deal.objects.get(pk=result["deal_id"])
+        self.assertEqual(deal.area_m2, Decimal("34.8"))
+        self.assertEqual(deal.amount, Decimal("6603.30"))
+        self.assertEqual(deal.qualification["silk_color"], "CSK18-4")
+        self.assertEqual(deal.qualification["room_dimensions"]["height"], "2.7")
+        note = Message.objects.get(conversation=self.conv, internal=True).text
+        self.assertIn("CSK18-4", note)
+        self.assertIn("4 × 3 м; висота 2.7 м; вікна й двері 3 м²", note)
+        again = receive(self.conv, {**data, "silk_color": "CSK18-4", "room_dimensions":
+                                   {"length": "4.0", "width": "3", "height": "2.70", "openings": "3.0"}})
+        self.assertTrue(again["duplicate"])
+        self.assertEqual(again["deal_id"], result["deal_id"])
+
+    def test_changed_dimensions_or_exact_code_conflict_on_same_request(self):
+        data = {**self.data, "area": 34.8, "area_mode": "dimensions", "silk_color": "CSK18-4",
+                "room_dimensions": {"length": "4", "width": "3", "height": "2.7", "openings": "3"}}
+        receive(self.conv, data)
+        for change in ({"silk_color": "CSK18/16-2/3"}, {"room_dimensions":
+                       {"length": "5", "width": "2", "height": "2.7", "openings": "3"}}):
+            with self.assertRaisesRegex(ValueError, "інший підбір"):
+                receive(self.conv, {**data, **change})
+        self.assertEqual(Deal.objects.count(), 1)
+        self.assertEqual(Task.objects.count(), 1)
+
+    def test_bad_dimensions_modes_and_material_color_rejected_before_writes(self):
+        data = {**self.data, "area": 37.8, "area_mode": "dimensions",
+                "room_dimensions": {"length": "4", "width": "3", "height": "2.7", "openings": "0"}}
+        for change in ({"area": 30}, {"area_mode": "floor"}, {"room_dimensions": []},
+                       {"area_mode": "known", "area": None},
+                       {"product": "luna", "silk_color": "CSK18-4"}, {"silk_color": "<script>"}):
+            with self.assertRaises(ValueError):
+                receive(self.conv, {**data, **change})
+        for key, value in (("length", "NaN"), ("width", "Infinity"), ("height", "0"),
+                           ("length", "101"), ("height", True), ("openings", "-1"),
+                           ("openings", "37.8"), ("height", "0.01")):
+            with self.assertRaises(ValueError):
+                receive(self.conv, {**data, "room_dimensions": {**data["room_dimensions"], key: value}})
+        self.assertEqual(Deal.objects.count(), 0)
+        self.assertEqual(Contact.objects.count(), 0)
+        self.assertEqual(LandingSubmission.objects.count(), 0)
+
+    def test_known_help_and_sample_do_not_reuse_stale_dimensions(self):
+        for i, mode in enumerate(("known", "help")):
+            result = receive(self.conv, {**self.data, "submission_id": "mode-%s" % i,
+                                        "area_mode": mode, "room_dimensions": {"length": "stale"}})
+            deal = Deal.objects.get(pk=result["deal_id"])
+            self.assertIsNone(deal.qualification["room_dimensions"])
+            self.assertEqual(deal.qualification["area_m2"], "30.0" if mode == "known" else "")
+        for i, mode in enumerate(("known", "dimensions", "help")):
+            result = receive(self.conv, {**self.data, "submission_id": "sample-mode-%s" % i,
+                            "intent": "sample", "area": None, "area_mode": mode,
+                            "room_dimensions": {"length": "stale"}, "silk_color": "CSK18-4"})
+            deal = Deal.objects.get(pk=result["deal_id"])
+            self.assertEqual(deal.qualification["area_mode"], "help")
+            self.assertIsNone(deal.qualification["room_dimensions"])
+            self.assertEqual(deal.qualification["area_m2"], "")
+            self.assertEqual(deal.amount, Decimal("220"))
+        sample = receive(self.conv, {**self.data, "submission_id": "sample-stale-area", "intent": "sample",
+                                    "area": "not-needed", "area_mode": "dimensions"})
+        self.assertEqual(sample["estimate_from"], 220)
+
+    def test_legacy_payload_hash_shape_is_unchanged(self):
+        import hashlib, json
+        result = receive(self.conv, self.data)
+        legacy = {key: str(self.data.get(key) or "")[:300] for key in
+                  ("name", "room", "velvet_color", "velvet_formula", "mood", "installer", "reference", "flow_id", "silk_base")}
+        legacy.update(phone="+380970000012", area="30.0", product="sirena", intent="selection", preferred="viber")
+        receipt = LandingSubmission.objects.get(deal_id=result["deal_id"])
+        self.assertEqual(receipt.payload_hash, hashlib.sha256(json.dumps(legacy, sort_keys=True).encode()).hexdigest())
+        self.assertNotIn("area_mode", receipt.deal.qualification)
+
     def test_invalid_phone_nan_and_photos_do_not_create_deals(self):
         for change in ({"phone": "123"}, {"area": "NaN"}, {"photos": [{"data": "aGVsbG8="}]}):
             with self.assertRaises(ValueError):

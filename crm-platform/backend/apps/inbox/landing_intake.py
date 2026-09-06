@@ -5,7 +5,7 @@ import io
 import json
 import re
 import secrets
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.db import connection, transaction
 from django.db.models import F
@@ -53,6 +53,64 @@ def calculate(product, area, intent):
             "estimate_kind": "minimum_consumption" if volume is not None else "needs_consultation",
             "volume_kg": str(volume) if volume is not None else "",
             "consumption_kg_m2": p[1] if p else "", "price_per_kg": p[2] if p else ""}
+
+
+def selection_details(data, area, product, intent):
+    """Canonical optional inputs, included in the immutable request hash.
+
+    No added keys for legacy payloads: their existing receipt hashes stay valid.
+    Dimensions describe all four walls of a rectangular room, not floor area.
+    """
+    extra = {}
+    if "area_mode" in data or "room_dimensions" in data:
+        mode = data.get("area_mode")
+        if mode not in {"known", "dimensions", "help"}:
+            raise ValueError("Оберіть спосіб визначення площі")
+        dimensions = None
+        if intent == "sample":
+            mode, area = "help", None  # A sample never requires whole-room measurements.
+        elif mode == "help":
+            area = None
+        elif mode == "known":
+            if area is None:
+                raise ValueError("Вкажіть площу стін або оберіть допомогу")
+        else:
+            raw = data.get("room_dimensions")
+            if not isinstance(raw, dict):
+                raise ValueError("Вкажіть розміри кімнати")
+            values = {}
+            for key in ("length", "width", "height", "openings"):
+                value = raw.get(key, "0" if key == "openings" else "")
+                text = str(value).strip().replace(",", ".")
+                if key == "openings" and not text:
+                    text = "0"
+                if not re.fullmatch(r"[0-9]{1,6}(?:\.[0-9]{1,6})?", text):
+                    raise ValueError("Вкажіть розміри додатними числами в метрах")
+                try:
+                    number = Decimal(text)
+                except InvalidOperation:
+                    raise ValueError("Не вдалося прочитати розміри кімнати")
+                if key != "openings" and not (0 < number <= 100):
+                    raise ValueError("Розміри мають бути більше нуля та до 100 метрів")
+                values[key] = number
+            gross = 2 * (values["length"] + values["width"]) * values["height"]
+            net = gross - values["openings"]
+            if values["openings"] >= gross or not (1 <= net <= 1000):
+                raise ValueError("Перевірте розміри та площу вікон і дверей")
+            calculated = net.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+            if area is None or area != calculated:
+                raise ValueError("Площа не відповідає розмірам. Оновіть розрахунок")
+            area = calculated
+            dimensions = {key: format(value.normalize(), "f") for key, value in values.items()}
+        extra.update(area_mode=mode, room_dimensions=dimensions)
+    if "silk_color" in data:
+        color = re.sub(r"\s+", "", str(data.get("silk_color") or "")).upper()
+        if color and (len(color) > 64 or not re.fullmatch(r"CSK[0-9][0-9.,/-]*", color)):
+            raise ValueError("Перевірте код кольору Шовку")
+        if color and product not in {"sirena", "mermi"}:
+            raise ValueError("Колір Шовку не відповідає обраному покриттю")
+        extra["silk_color"] = color
+    return area, extra
 
 
 def decode_photos(items):
@@ -128,11 +186,13 @@ def receive(conv, data):
     if data.get("consent") is not True:
         raise ValueError("Потрібна згода на зв’язок і обробку контактних даних")
     phone = normalize_phone(data.get("phone"))
-    area = _decimal_area(data["area"]) if data.get("area") not in (None, "") else None
+    intent = "sample" if data.get("intent") == "sample" else "selection"
+    area = (_decimal_area(data["area"]) if intent != "sample" and data.get("area_mode") != "help"
+            and data.get("area") not in (None, "") else None)
     product_key = str(data.get("product") or "")
     if product_key and product_key not in PRICES:
         raise ValueError("Невідоме покриття")
-    intent = "sample" if data.get("intent") == "sample" else "selection"
+    area, details = selection_details(data, area, product_key, intent)
     preferred = data.get("preferred") if data.get("preferred") in {"phone", "telegram", "viber"} else "phone"
     request_id = str(data.get("submission_id") or secrets.token_urlsafe(24))
     if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", request_id):
@@ -140,6 +200,7 @@ def receive(conv, data):
     snapshot = {key: str(data.get(key) or "")[:300] for key in
                 ("name", "room", "velvet_color", "velvet_formula", "mood", "installer", "reference", "flow_id", "silk_base")}
     snapshot.update(phone=phone, area=str(area) if area is not None else "", product=product_key, intent=intent, preferred=preferred)
+    snapshot.update(details)
     digest = hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
     phone_hash = hashlib.sha256(phone.encode()).hexdigest()
     receipt, _ = LandingSubmission.objects.get_or_create(request_id=request_id,
@@ -177,6 +238,7 @@ def receive(conv, data):
         "silk_base": snapshot["silk_base"], "mood": snapshot["mood"], "installer": snapshot["installer"],
         "reference": snapshot["reference"], "flow_id": snapshot["flow_id"], "intent": intent,
         "preferred_channel": preferred, "utm": first, "first_touch": first, "last_touch": last,
+        **details,
         **calculate(product_key, area, intent)}
     # Old receipts created before this table still deduplicate after a move.
     deal = Deal.objects.filter(contact=contact, qualification__landing_id=LANDING_ID,
@@ -196,8 +258,19 @@ def receive(conv, data):
     receipt.save(update_fields=["deal", "task"])
     note = "Нове звернення #%s · %s\nКімната: %s; площа стін: %s\nКолір: %s; нанесення: %s\nОрієнтир: %s грн (%s). Зв’язок: %s. Задача #%s." % (
         deal.id, qualification["product"], snapshot["room"] or "уточнити", snapshot["area"] or "уточнити",
-        snapshot["velvet_color"] or snapshot["mood"] or "підібрати", snapshot["installer"] or "уточнити",
+        details.get("silk_color") or snapshot["velvet_color"] or snapshot["mood"] or "підібрати", snapshot["installer"] or "уточнити",
         qualification["estimate_from"], qualification["estimate_kind"], preferred, receipt.task_id)
+    if details.get("area_mode") == "dimensions":
+        d = details["room_dimensions"]
+        note += ("\nЗа розмірами кімнати: %s × %s м; висота %s м; вікна й двері %s м². "
+                 "Чотири стіни прямокутної кімнати, укоси не враховані." %
+                 (d["length"], d["width"], d["height"], d["openings"]))
+    elif intent == "sample":
+        note += "\nПробний набір: площа всієї кімнати не потрібна."
+    elif details.get("area_mode") == "help":
+        note += "\nПотрібна допомога з вимірюванням площі стін."
+    elif details.get("area_mode") == "known":
+        note += "\nПлощу стін вказав клієнт."
     Message.objects.create(conversation=conv, direction="out", internal=True, text=note, sender_name="Лендинг")
     type(conv).objects.filter(pk=conv.pk).update(contact=contact, title="[%s] %s" % (LANDING_ID, str(contact)),
         status="open", assigned_to=owner, unread=F("unread") + 1, last_message_at=timezone.now())
