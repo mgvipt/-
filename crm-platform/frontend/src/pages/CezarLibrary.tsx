@@ -5,7 +5,7 @@ type Asset = { id: number; title: string; color_code: string; tags: string; url:
 const MATERIAL = "Плінтуси Cezar";
 const value = (a: Asset, key: string) => a.product ? String(a.product[key] ?? "") : (a.tags.match(new RegExp(`(?:^|\\s)${key}:([^\\s;]+)`)) || [])[1] || "";
 const money = (n: number) => n.toLocaleString("uk-UA", { maximumFractionDigits: 2 });
-const interiorStyle = (a: Asset) => /(?:^|\s)cad20260905(?:\s|$)/.test(a.tags) ? (a.tags.match(/(?:^|\s)style:(patera|silk)(?:\s|$)/) || [])[1] : undefined;
+const interiorStyle = (a: Asset) => /(?:^|\s)interior(?:\s|$)/.test(a.tags) ? (a.tags.match(/(?:^|\s)style:(patera|silk|sand)(?:\s|$)/) || [])[1] : undefined;
 
 export function CezarLibrary({ conversationId, onSent, onBack, onClose }: {
   conversationId: number; onSent: (m: ChatMessage) => void; onBack: () => void; onClose: () => void;

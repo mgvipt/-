@@ -61,6 +61,7 @@ CHECKS = [
     ("Маркетинг: GA4 + заявки сайтів", "owner", "/api/marketing/ga4/", {200}, ["sites", "crm_leads"]),
     ("Маркетинг: офлайн-воронки", "owner", "/api/marketing/offline/", {200}, []),
     ("Маркетинг: піксель", "owner", "/api/meta-marketing/pixel-events/", {200}, []),
+    ("Лендинг: заявки та підсумок джерела", "owner", "/api/meta-marketing/pixel-events/?pixel=site", {200}, ["site_deals", "site_summary"]),
     ("Маркетинг закритий менеджеру без прав", "manager", "/api/meta-marketing/", {200, 403}, []),
     # ── Склад ──
     ("Склад: товари", "owner", "/api/products/?page_size=5", {200}, []),
