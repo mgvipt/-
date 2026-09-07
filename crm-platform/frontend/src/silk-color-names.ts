@@ -1,0 +1,55 @@
+// Approved by Oleg on 2026-09-07. Keep this map identical in the Site and CRM.
+// Display names only: catalog codes, recipes and stored selections remain unchanged.
+export const silkColorNames: Record<string, string> = {
+  "CSK 01-2": "Світлий льон",
+  "CSK 01-21": "Пісочний кашемір",
+  "CSK 02-0.5": "Димчаста пудра",
+  "CSK 02-4": "Рожева глина",
+  "CSK 02-20": "Какао",
+  "CSK 03-0.5": "Срібний туман",
+  "CSK 03-10": "Крижаний перламутр",
+  "CSK 03-32": "Срібна шавлія",
+  "CSK 04-1": "М’ятна хмаринка",
+  "CSK 04-4": "Ніжна фісташка",
+  "CSK 05-8": "Морська бірюза",
+  "CSK 06-3": "Білий чай",
+  "CSK 06-10": "Світла шавлія",
+  "CSK 06-30": "Оливковий лист",
+  "CSK 07-1.2": "Ранкова імла",
+  "CSK 07-6": "Блакитний сланець",
+  "CSK 08-6": "Вершковий",
+  "CSK 09-0.5": "Пудровий льон",
+  "CSK 09-6": "Персиковий нюд",
+  "CSK 09-20": "Абрикосова глина",
+  "CSK 10-0.2": "Молочний льон",
+  "CSK 10-1": "Тепла ваніль",
+  "CSK 11-0.6": "Слонова кістка",
+  "CSK 11-2": "Сірий евкаліпт",
+  "CSK 12-1": "Золотий пісок",
+  "CSK 13-1": "Перлинний білий",
+  "CSK 13-10": "Лавандовий серпанок",
+  "CSK 14-1": "Димчаста бірюза",
+  "CSK 14-3": "Блакитна порцеляна",
+  "CSK 15-2": "Ранкова роса",
+  "CSK 16-0.1": "Рожевий перламутр",
+  "CSK 16-1": "Пудрова троянда",
+  "CSK 16-42": "Теракотова троянда",
+  "CSK 17-4": "Пелюстка персика",
+  "CSK 17-14": "Димчастий трюфель",
+  "CSK 17-30": "Рожевий кашемір",
+  "CSK 18-4": "Золота олива",
+  "CSK 18/16-2/3": "Коралова глина",
+  "CSK 19-0.5": "Теплий вапняк",
+  "CSK 19-3": "Натуральний льон",
+  "CSK 20-1": "Світлий кашемір",
+  "CSK 20-3": "Сірий кашемір",
+  "CSK 20-12": "Пісочний туман",
+  "CSK 21-0.5": "Вівсяний",
+  "CSK 21-2": "Пшеничний",
+  "CSK 21-4": "Медова охра"
+};
+export const silkColorName = (code: string) => silkColorNames[code] || "";
+export const formatSilkColor = (code: string) => silkColorName(code) ? `${silkColorName(code)} · ${code}` : code;
+const normalize = (value: string) => value.normalize("NFKC").toLocaleUpperCase("uk-UA").replace(/[’'ʼ]/g, "").replace(/\s/g, "");
+export const matchesSilkColor = (code: string, query: string) => normalize(`${code} ${silkColorName(code)}`).includes(normalize(query));
+
