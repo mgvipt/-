@@ -35,10 +35,16 @@ function DomSelect({ value, options, onChange, wrapStyle, placeholder = "—" }:
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   function toggle() { if (!open && btnRef.current) setRect(btnRef.current.getBoundingClientRect()); setOpen((o) => !o); }
   useEffect(() => {
     if (!open) return;
-    const close = () => setOpen(false);
+    // Закриваємо при прокрутці СТОРІНКИ позаду (fixed-список відірвався б від поля),
+    // але НЕ при прокрутці всередині самого списку — інакше довгий список неможливо догорнути.
+    const close = (e: Event) => {
+      if (e.type === "scroll" && e.target instanceof Node && listRef.current && listRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
     window.addEventListener("scroll", close, true); window.addEventListener("resize", close);
     return () => { window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
   }, [open]);
@@ -52,7 +58,7 @@ function DomSelect({ value, options, onChange, wrapStyle, placeholder = "—" }:
       {open && rect && createPortal(
         <>
           <div onMouseDown={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 3000 }} />
-          <div style={{ position: "fixed", top: rect.bottom + 3, left: rect.left, width: rect.width, zIndex: 3001, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 14px 36px rgba(0,0,0,.2)", maxHeight: 300, overflowY: "auto" }}>
+          <div ref={listRef} style={{ position: "fixed", top: rect.bottom + 3, left: rect.left, width: rect.width, zIndex: 3001, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 14px 36px rgba(0,0,0,.2)", maxHeight: 300, overflowY: "auto", overscrollBehavior: "contain" }}>
             <div onClick={() => { onChange(""); setOpen(false); }} style={{ ...row(false), color: "#94a3b8" }}>{placeholder}</div>
             {options.map((o) => (
               <div key={o} onClick={() => { onChange(o); setOpen(false); }} style={row(o === value)}
