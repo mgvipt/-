@@ -32,7 +32,9 @@ class LandingIntakeTests(TestCase):
     def test_receipt_task_owner_notification_and_reopen_are_atomic(self):
         result = receive(self.conv, self.data)
         deal = Deal.objects.get(pk=result["deal_id"])
-        self.assertEqual(deal.owner, self.owner)
+        # Новий відвідувач лишається НІЧИЇМ — спільна черга менеджерів (рішення Олега 08.09.2026);
+        # сповіщення отримує черга (тут — суперкористувач).
+        self.assertIsNone(deal.owner)
         self.assertEqual(deal.amount, Decimal("5692.50"))
         self.assertEqual(deal.qualification["volume_kg"], "4.500")
         self.assertEqual(deal.qualification["utm"]["fbclid"], "test123")
@@ -41,6 +43,7 @@ class LandingIntakeTests(TestCase):
         self.conv.refresh_from_db()
         self.assertEqual(self.conv.status, "open")
         self.assertEqual(self.conv.unread, 1)
+        self.assertIsNone(self.conv.assigned_to_id)
 
     def test_retry_after_move_keeps_deal_and_task(self):
         first = receive(self.conv, self.data)

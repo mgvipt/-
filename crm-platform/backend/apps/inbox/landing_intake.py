@@ -143,15 +143,22 @@ def decode_photos(items):
 
 
 def _owner(conv, contact, funnel):
-    # Existing client ownership wins. Unknown visitors go to the responsible
-    # department head, or the active administrator as a visible intake queue.
+    # Existing client ownership wins: заявка старого клієнта йде його менеджеру.
+    # Новий відвідувач лишається НІЧИЙ (спільна черга, рішення Олега 08.09.2026):
+    # чат і угоду бачать усі менеджери, хто перший узяв — той і веде.
     ids = [contact.owner_id, conv.assigned_to_id]
-    ids += list(funnel.departments.exclude(head=None).order_by("id").values_list("head_id", flat=True))
     for pk in ids:
         user = User.objects.filter(pk=pk, is_active=True, account_kind="staff", employment_status="active").first()
         if user:
             return user
-    return User.objects.filter(is_active=True, is_superuser=True, account_kind="staff").order_by("id").first()
+    return None
+
+
+def _queue_recipients():
+    # Кого дзвонити про нічию заявку: всі активні співробітники з правом
+    # «Сповіщення про нові незакріплені чати» (inbox.notify.unassigned) + адміністратори.
+    users = User.objects.filter(is_active=True, account_kind="staff", employment_status="active")
+    return [u for u in users if u.is_superuser or u.has_perm_code("inbox.notify.unassigned")]
 
 
 def _photos(receipt, decoded):
@@ -227,8 +234,6 @@ def receive(conv, data):
     if not stage:
         raise ValueError("Не вдалося прийняти звернення. Зателефонуйте нам або спробуйте пізніше")
     owner = _owner(conv, contact, funnel)
-    if owner is None:
-        raise ValueError("Черга звернень недоступна. Зателефонуйте нам або спробуйте пізніше")
     first = clean_touch(data.get("first_touch") or data.get("analytics"))
     last = clean_touch(data.get("last_touch"))
     qualification = {"landing_id": LANDING_ID, "submission_id": request_id, "conversation_id": conv.id,
@@ -254,7 +259,8 @@ def receive(conv, data):
     receipt.task = Task.objects.create(kind="manager", title="Прийняти звернення з сайту #%s" % deal.id,
         body="Перевірити підбір і фото. Зв’язатися через %s. Після відповіді записати результат і наступний крок. Автоматичне підтвердження не є відповіддю менеджера." % preferred,
         priority="high", deal=deal, contact=contact, conversation=conv, assignee=owner,
-        department=owner.department, status="open", created_by_agent=False)
+        department=(owner.department if owner else funnel.departments.order_by("id").first()),
+        status="open", created_by_agent=False)
     receipt.save(update_fields=["deal", "task"])
     note = "Нове звернення #%s · %s\nКімната: %s; площа стін: %s\nКолір: %s; нанесення: %s\nОрієнтир: %s грн (%s). Зв’язок: %s. Задача #%s." % (
         deal.id, qualification["product"], snapshot["room"] or "уточнити", snapshot["area"] or "уточнити",
@@ -274,7 +280,8 @@ def receive(conv, data):
     Message.objects.create(conversation=conv, direction="out", internal=True, text=note, sender_name="Лендинг")
     type(conv).objects.filter(pk=conv.pk).update(contact=contact, title="[%s] %s" % (LANDING_ID, str(contact)),
         status="open", assigned_to=owner, unread=F("unread") + 1, last_message_at=timezone.now())
-    Notification.objects.create(user=owner, kind="system", conversation=conv, text="Нове звернення з сайту #%s. Прийміть задачу #%s та зв’яжіться з клієнтом." % (deal.id, receipt.task_id))
+    for _recipient in ([owner] if owner else _queue_recipients()):
+        Notification.objects.create(user=_recipient, kind="system", conversation=conv, text="Нове звернення з сайту #%s. Прийміть задачу #%s та зв’яжіться з клієнтом." % (deal.id, receipt.task_id))
     if not conv.messages.filter(external_id__startswith="web-contact:").exists():
         Message.objects.create(conversation=conv, direction="out", sender_name="Wallcov",
             external_id="web-contact:%s" % deal.id, text="Звернення збережено. Менеджер уточнить підбір і спосіб зв’язку.")
@@ -294,4 +301,9 @@ def attach_photos(conv, data):
         if receipt.deal.owner_id:
             Notification.objects.create(user_id=receipt.deal.owner_id, kind="system", conversation=conv,
                 text="Клієнт додав фото до звернення з сайту #%s." % receipt.deal_id)
+        else:
+            # нічия заявка — фото бачить уся черга (ті самі отримувачі, що й про нове звернення)
+            for _recipient in _queue_recipients():
+                Notification.objects.create(user=_recipient, kind="system", conversation=conv,
+                    text="Клієнт додав фото до звернення з сайту #%s." % receipt.deal_id)
     return {"ok": True, "deal_id": receipt.deal_id, "photo_count": count}

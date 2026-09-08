@@ -45,6 +45,8 @@ CHECKS = [
     # ── Чати / відкриті лінії ──
     ("Список чатів", "owner", "/api/conversations/?page_size=5", {200}, []),
     ("Список чатів (менеджер)", "manager", "/api/conversations/?page_size=5", {200}, []),
+    ("Лендинг: менеджер бачить угоди воронки 22", "manager", "/api/deals/?funnel=22&page_size=5", {200}, []),
+    ("Лендинг: менеджер бачить чати каналу web", "manager", "/api/conversations/?channel=10&page_size=5", {200}, []),
     ("Інбокс-пінг", "owner", "/api/inbox/ping/", {200}, []),
     ("Контакт-центр", "owner", "/api/contact-center/", {200}, []),
     # ── Гроші (найдорожче) ──
