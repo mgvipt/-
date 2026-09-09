@@ -23,7 +23,7 @@ PROVIDERS = {
     "liqpay": ["public_key", "private_key", "currency"],
     "checkbox": ["token", "license_key"],
     "novaposhta": ["api_key", "sender_ref", "sender_city_ref", "sender_contact", "sender_phone"],
-    "email_invoices": ["imap_host", "email", "app_password", "senders"],
+    "email_invoices": ["imap_host", "email", "app_password", "email2", "app_password2", "senders"],
 }
 
 

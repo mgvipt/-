@@ -12,7 +12,7 @@ import { Icon } from "../Icon";
 interface Prov { provider: string; fields: string[]; values: Record<string, string>; is_active: boolean; }
 
 const TITLES: Record<string, string> = { liqpay: "LiqPay", checkbox: "Checkbox", novaposhta: "Нова Пошта", email_invoices: "Пошта накладних" };
-const FIELD_LABELS: Record<string, string> = { imap_host: "IMAP-сервер (Gmail: imap.gmail.com)", email: "E-mail скриньки", app_password: "Пароль застосунку (app-password)", senders: "Відправники через кому (Нова Пошта, постачальники)" };
+const FIELD_LABELS: Record<string, string> = { email2: "Друга скринька (пошта)", app_password2: "Друга скринька · пароль застосунку", imap_host: "IMAP-сервер (Gmail: imap.gmail.com)", email: "E-mail скриньки", app_password: "Пароль застосунку (app-password)", senders: "Відправники через кому (Нова Пошта, постачальники)" };
 
 export default function Settings() {
   const { t, lang, setLang } = useLang();

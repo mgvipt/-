@@ -100,17 +100,50 @@ def _attachments(msg):
 
 
 def poll(limit=60, backfill=False, log=lambda m: None):
-    """Забирає нові листи від відправників білого списку, робить чернетки.
+    """Забирає нові листи від відправників білого списку, робить чернетки з УСІХ підключених скриньок.
     backfill=True — ігнорує last_uid (для ручного першого затягування)."""
+    obj0, cfg0 = _load()
+    if obj0 is None:
+        return {"error": "not_configured"}
+    boxes = [{"email": (cfg0.get("email") or "").strip(),
+              "app_password": (cfg0.get("app_password") or "").strip(),
+              "imap_host": (cfg0.get("imap_host") or "imap.gmail.com").strip()}]
+    # друга скринька простими полями (⚙️ Інтеграції → Пошта накладних)
+    if (cfg0.get("email2") or "").strip() and (cfg0.get("app_password2") or "").strip():
+        boxes.append({"email": cfg0["email2"].strip(), "app_password": cfg0["app_password2"].strip(),
+                      "imap_host": (cfg0.get("imap_host2") or cfg0.get("imap_host") or "imap.gmail.com").strip()})
+    for b in (cfg0.get("mailboxes") or []):
+        if (b.get("email") or "").strip() and (b.get("app_password") or "").strip():
+            boxes.append({"email": b["email"].strip(), "app_password": b["app_password"].strip(),
+                          "imap_host": (b.get("imap_host") or "imap.gmail.com").strip()})
+    if len(boxes) <= 1:
+        return _poll_one(limit=limit, backfill=backfill, log=log)
+    total = {"scanned": 0, "created": 0, "np": 0, "supplier": 0, "boxes": []}
+    for b in boxes:
+        try:
+            r = _poll_one(limit=limit, backfill=backfill, log=log, box=b)
+        except Exception as e:
+            r = {"error": str(e)[:200]}
+        r = dict(r or {})
+        r["mailbox"] = b["email"]
+        total["boxes"].append(r)
+        for k in ("scanned", "created", "np", "supplier"):
+            total[k] += int(r.get(k) or 0)
+    return total
+
+
+def _poll_one(limit=60, backfill=False, log=lambda m: None, box=None):
+    """Одна скринька. box=None → основна з налаштувань (стара поведінка, 1-в-1)."""
     from .models import IncomingDoc
     from apps.finance.np_act import parse_act
 
     obj, cfg = _load()
     if obj is None:
         return {"error": "not_configured"}
-    host = (cfg.get("imap_host") or "imap.gmail.com").strip()
-    user = (cfg.get("email") or "").strip()
-    pwd = (cfg.get("app_password") or "").strip()
+    host = ((box or {}).get("imap_host") or cfg.get("imap_host") or "imap.gmail.com").strip()
+    user = ((box or {}).get("email") or cfg.get("email") or "").strip()
+    pwd = ((box or {}).get("app_password") or cfg.get("app_password") or "").strip()
+    _pfx = (user + "|") if box else ""     # last_uid окремо для кожної скриньки
     senders = [x.strip().lower() for x in re.split(r"[,;\s]+", cfg.get("senders") or "") if x.strip()]
     # + постачальники, позначені в CRM «Моніторити накладні» (дедуп, порядок збережено)
     senders = list(dict.fromkeys(senders + _contact_senders()))
@@ -128,7 +161,7 @@ def poll(limit=60, backfill=False, log=lambda m: None):
         uids = sorted(int(x) for x in data[0].split()) if (data and data[0]) else []
         if not uids:
             continue
-        prev = 0 if backfill else int(last_uid.get(snd or "*", 0))
+        prev = 0 if backfill else int(last_uid.get(_pfx + (snd or "*"), 0))
         new = [u for u in uids if u > prev]
         if prev == 0 and not backfill:
             new = uids[-limit:]        # перший запуск — останні N
@@ -236,7 +269,7 @@ def poll(limit=60, backfill=False, log=lambda m: None):
                         created += 1
                         sup_created += 1
         if uids:
-            last_uid[snd or "*"] = max(uids)
+            last_uid[_pfx + (snd or "*")] = max(uids)
 
     M.logout()
     # зберегти last_uid (тільки якщо не backfill, щоб не збити прогрес)
