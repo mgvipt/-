@@ -45,10 +45,10 @@ if not dry:
     shared=SharedLink.objects.filter(filename=filename,content_type='image/webp').first()
     if shared:assert hashlib.sha256(bytes(shared.data)).hexdigest()==a['sha256']
     else:shared=SharedLink.objects.create(token=secrets.token_urlsafe(24),filename=filename,content_type='image/webp',data=path.read_bytes())
-    label='Інтер’єр Orac'if a['kind']=='interior'else'Офіційний вигляд профілю Orac'
+    label=a.get('caption') or ('Інтер’єр Orac'if a['kind']=='interior'else'Офіційний вигляд профілю Orac')
     item,_=MediaLibraryItem.objects.get_or_create(file=shared,material='Orac Decor',color_code=sku[:48],defaults={'title':label,'kind':'image','section':'colors','preview_file':shared,'tags':'source:orac product:'+str(p.id),'sort':order})
     ProductImage.objects.get_or_create(product=p,file_path=str(path),defaults={'order':order,'alt_text':sku+' · '+label,'is_primary':False,'is_approved':True})
-    spec['media_provenance'].append({k:a[k]for k in ['sha256','source_sha256','source_url','source_page','kind']}|{'shared_link_id':shared.id,'library_id':item.id,'enrichment':'regional-gallery-v2'})
+    spec['media_provenance'].append({k:a[k]for k in ['sha256','source_sha256','source_url','source_page','kind']}|{'shared_link_id':shared.id,'library_id':item.id,'enrichment':'official-archive-v3' if a.get('rights_source') else 'regional-gallery-v2', **{k:a[k] for k in ['caption','rights_source','evidence'] if k in a}})
     order+=1
    spec['gallery_enrichment']='regional-gallery-v2';p.shop_specs=specs
    p.save(update_fields=['shop_specs','updated_at']);e=queue_product_sync(p)
