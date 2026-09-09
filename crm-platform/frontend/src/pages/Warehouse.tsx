@@ -25,6 +25,7 @@ import RepackForm, { RepackDocModal } from "../RepackForm";
 import { useLang } from "../i18n";
 import { useAuth } from "../auth";
 import { Icon } from "../Icon";
+import { ProductFacts } from "./ProductFacts";
 import ReceiptModal from "../ReceiptModal";
 import DupsPanel from "./DupsPanel";
 
@@ -1340,6 +1341,7 @@ export default function Warehouse() {
                 {card.images.map((im) => <a key={im.id} href={im.url} target="_blank" rel="noreferrer"><img src={im.url} alt="" style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0" }} /></a>)}
               </div>
             )}
+            {!cardEdit && <ProductFacts key={card.id} id={card.id} canEdit={canEdit} onSaved={() => { api.get<Product>(`/api/products/${card.id}/`).then(setCard); loadProducts(); }} />}
             {!cardEdit && (card.description || "").trim() !== "" && (
               <div className="panel" style={{ margin: "0 0 14px", fontSize: 13, whiteSpace: "pre-wrap" }}>{card.description}</div>
             )}

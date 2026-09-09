@@ -20,6 +20,10 @@ class ProductCategorySerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    def validate_shop_specs(self, value):
+        from .product_source import validate_specs
+        return validate_specs(value)
+
     stock = serializers.SerializerMethodField()
     category_name = serializers.CharField(source="category.name", read_only=True, default="")
     shop_validation_errors = serializers.SerializerMethodField()

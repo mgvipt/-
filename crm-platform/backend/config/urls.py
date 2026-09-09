@@ -11,6 +11,7 @@ from apps.tiktok_insights import views as tti_views
 from apps.warehouse import views as wh_views
 from apps.warehouse import wh_views as whv
 from apps.warehouse import shop_import_views
+from apps.warehouse.product_source import ProductReadCatalog, ProductFacts
 from apps.warehouse import shop_site
 from apps.finance import views as fin_views
 from apps.integrations import views as intg_views
@@ -60,6 +61,8 @@ router.register("workdays", fin_views.WorkDayViewSet)
 router.register("calls", tel_views.CallViewSet)
 
 urlpatterns = [
+    path("api/product-source/", ProductReadCatalog.as_view()),
+    path("api/products/<int:pk>/facts/", ProductFacts.as_view()),
     path("admin/", admin.site.urls),
     path("api/", include(router.urls)),
     path("api/zamer/", ZamerView.as_view()),  # приёмник замера из iOS-приложения
