@@ -1,0 +1,10 @@
+[Unit]
+Description=Wallcov Orac approved retail source verification
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec crm-platform-web-1 python manage.py sync_orac_prices --apply
+TimeoutStartSec=1800
+

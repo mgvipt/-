@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Orac retail price verification
+
+[Timer]
+OnCalendar=*-*-* 06:30:00 Europe/Kyiv
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target
