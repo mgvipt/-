@@ -165,7 +165,7 @@ class ShopOrderWebhookView(APIView):
                 )
             resolved_items.append((item, qty, unit_price, product))
 
-        funnel_name = "23 Інтернет-магазин"
+        funnel_name = "23 Інтернет-магазин wallcov.com.ua"
         funnel = Funnel.objects.filter(name=funnel_name).prefetch_related("stages").first()
         if funnel is None or not funnel.stages.exists():
             return Response({"detail": f"В CRM не настроена воронка {funnel_name}"}, status=503)

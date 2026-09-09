@@ -17,7 +17,7 @@ from .models import ShopOrderImport
 class ShopOrderWebhookTest(TestCase):
     def setUp(self):
         self.client = APIClient()
-        for name in ("21 Основний продукт", "22 Тестовий набір", "23 Інтернет-магазин"):
+        for name in ("21 Основний продукт", "22 Тестовий набір", "23 Інтернет-магазин wallcov.com.ua"):
             funnel, _ = Funnel.objects.get_or_create(name=name)
             Stage.objects.get_or_create(funnel=funnel, order=0, defaults={"name": "Данні для розрахунку"})
 
@@ -42,7 +42,7 @@ class ShopOrderWebhookTest(TestCase):
         self.assertEqual(Contact.objects.count(), 1)
         self.assertEqual(ShopOrderImport.objects.count(), 1)
         self.assertEqual(Deal.objects.get().items.count(), 1)
-        self.assertEqual(Deal.objects.get().funnel.name, "23 Інтернет-магазин")
+        self.assertEqual(Deal.objects.get().funnel.name, "23 Інтернет-магазин wallcov.com.ua")
 
     def test_sample_order_also_uses_only_shop_funnel(self):
         Product.objects.create(name="Galateya — повний тест-набір", sku="B24-38486", price=430, cost=180)
@@ -59,7 +59,7 @@ class ShopOrderWebhookTest(TestCase):
 
         self.assertEqual(response.status_code, 201)
         deal = Deal.objects.get()
-        self.assertEqual(deal.funnel.name, "23 Інтернет-магазин")
+        self.assertEqual(deal.funnel.name, "23 Інтернет-магазин wallcov.com.ua")
         self.assertEqual(deal.items.get().product.sku, "B24-38486")
         self.assertEqual(deal.items.get().custom_name, "")
 
@@ -79,7 +79,7 @@ class ShopOrderWebhookTest(TestCase):
         self.assertEqual(Deal.objects.count(), 0)
 
     def test_manager_sees_unowned_first_stage_and_becomes_owner_after_moving_it(self):
-        funnel = Funnel.objects.get(name="23 Інтернет-магазин")
+        funnel = Funnel.objects.get(name="23 Інтернет-магазин wallcov.com.ua")
         first_stage = funnel.stages.get(order=0)
         next_stage = Stage.objects.create(funnel=funnel, name="Розрахунок", order=1)
         manager = User.objects.create_user(

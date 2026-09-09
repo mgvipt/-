@@ -3366,7 +3366,7 @@ class MarketingGa4View(APIView):
         # (інтернет-магазин, пише CaptureShopAttribution + integrations.views).
         SITE_FLOWS = [
             {"site": "wallcovdliastin.com.ua", "funnel": "Лендинг · wallcovdliastin.com.ua", "mode": "utm"},
-            {"site": "wallcov.com.ua", "funnel": "23 Інтернет-магазин", "mode": "attribution"},
+            {"site": "wallcov.com.ua", "funnel": "23 Інтернет-магазин wallcov.com.ua", "mode": "attribution"},
         ]
         NO_FLOW = [
             {"site": "dekoratyvna-shtukaturka.com.ua", "reason": "form_telegram"},
