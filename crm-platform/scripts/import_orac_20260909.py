@@ -25,6 +25,13 @@ def category_for(r,seo):
  if r['price_ua']['category'].strip()=='Інструмент':return 37,'Инструменты'
  if r['sku'].startswith('DX'):return 36,'Дверное обрамление'
  return categories[seo['category_slug']]
+def short_text(text):
+ if len(text)<=255:return text
+ sentences=re.split(r'(?<=[.!?])\s+',text);selected=[]
+ for sentence in sentences:
+  if len(' '.join(selected+[sentence]))>255:break
+  selected.append(sentence)
+ return ' '.join(selected) if selected else text[:252].rsplit(' ',1)[0]+'…'
 prepared=[]
 for row in plan:
  if selected and row['sku'] not in selected:continue
@@ -91,7 +98,7 @@ if not dry:
    p.description=seo['full_description']
    p.shop_enabled=True;p.shop_managed=True;p.shop_variant_type='product'
    p.shop_category_path=['Orac',cname];p.shop_parent_name=seo['h1'];p.shop_group_key=slug;p.shop_slug=slug
-   p.shop_short_description=seo['short_description'];p.shop_full_description=seo['full_description'];p.shop_variant_name=row['sku'];p.shop_variant_order=1
+   p.shop_short_description=short_text(seo['short_description']);p.shop_full_description=seo['full_description'];p.shop_variant_name=row['sku'];p.shop_variant_order=1
    p.seo_title=seo['title'];p.seo_h1=seo['h1'];p.seo_description=seo['description'];p.seo_index=True
    spec['seo']['images']=[]
    for i,(a,im)in enumerate(media):

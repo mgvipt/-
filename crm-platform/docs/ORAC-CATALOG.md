@@ -48,3 +48,13 @@ Logs: timestamped dry/apply JSON with status per SKU,source URL/hash/check time;
 4 focused price-safety unit tests; standard CRM deployment45read-only smoke checks. PilotC200id1017(existing),C323id3008(new),events427/428. Remaining419must follow successful shop/media pilot checks and a fresh dry run.
 
 Rollback only reviewed exact ids/fields from the timestamped before-products snapshot. Never reverse warehouse movements. Stop timer to pause future price observations. Shop-only release is owned separately by OracSEO task and documented in `Projects/Wallcov-Shop/Orac-SEO` in the vault.
+
+## Release verification update09.09.2026
+
+421Orac products imported;manager picker421unique SKUcards,997contextual library links to790uniqueSharedLinkfiles. Empty legacy SKUsofFDP500/FX400filled only;initial failed transaction rolled back before corrected pilots/full import. StockC21310/SX15735preserved,SX157price480. Repeat importer dryrun0writes.
+
+Daily timer enabled;full dry/apply421observations:358unchanged,9explicit source-conflict holds,53no_verified_live_source holds,1manualSX157hold.0pricewrites. Full later-date changes require the guarded2-observation path.
+
+Shop subtitleVARCHAR255 rejected37long short-descriptions. Importer now keeps complete sentences within255only inshop_short_description;fullspecs.orac.seo.short_descriptionandfullcopyunchanged. PilotC341/C352republished,remaining35requeued.
+
+CRM instructionsChangeLogEntry125:«Інтернет-магазин»→«Як працювати з каталогом Orac та його цінами». AuthenticatedmanagerAPIandChrome/whats-newvisual checked. Oleg requested improved photo/cardpresentation;officialsources+hashesconfirmed,final designapproval is separate from publisheddata.
