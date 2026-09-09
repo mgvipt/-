@@ -55,6 +55,8 @@ Rollback only reviewed exact ids/fields from the timestamped before-products sna
 
 Daily timer enabled;full dry/apply421observations:358unchanged,9explicit source-conflict holds,53no_verified_live_source holds,1manualSX157hold.0pricewrites. Full later-date changes require the guarded2-observation path.
 
-Shop subtitleVARCHAR255 rejected37long short-descriptions. Importer now keeps complete sentences within255only inshop_short_description;fullspecs.orac.seo.short_descriptionandfullcopyunchanged. PilotC341/C352republished,remaining35requeued.
+Shop subtitle VARCHAR255 initially rejected 37 long descriptions. Per Oleg’s instruction, shop owner migrated products.subtitle to TEXT. Full originals restored for all 37 only where current text matched our temporary shortening; zero manual conflicts. Pilot C341 (286 chars) and C352 (308 chars) published successfully, remaining 35 requeued. Importer writes full short_description without truncation; all 421 CRM subtitles match the full SEO source.
 
 CRM instructionsChangeLogEntry125:«Інтернет-магазин»→«Як працювати з каталогом Orac та його цінами». AuthenticatedmanagerAPIandChrome/whats-newvisual checked. Oleg requested improved photo/cardpresentation;officialsources+hashesconfirmed,final designapproval is separate from publisheddata.
+
+Oleg requested full official galleries, exact-SKU interiors, angles and diagrams for all 421 cards. This enrichment is ongoing; published is not design-approved. C200 official Orac catalogue 2019 pages74–75 identifies The Mint Madrid interior with C200 marker1 and PX117 marker2. Technical PDF links remain official links; do not raster-publish technical PDFs bearing explicit reproduction restrictions without permission.
