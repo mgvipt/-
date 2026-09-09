@@ -60,3 +60,13 @@ Shop subtitle VARCHAR255 initially rejected 37 long descriptions. Per Oleg’s i
 CRM instructionsChangeLogEntry125:«Інтернет-магазин»→«Як працювати з каталогом Orac та його цінами». AuthenticatedmanagerAPIandChrome/whats-newvisual checked. Oleg requested improved photo/cardpresentation;officialsources+hashesconfirmed,final designapproval is separate from publisheddata.
 
 Oleg requested full official galleries, exact-SKU interiors, angles and diagrams for all 421 cards. This enrichment is ongoing; published is not design-approved. C200 official Orac catalogue 2019 pages74–75 identifies The Mint Madrid interior with C200 marker1 and PX117 marker2. Technical PDF links remain official links; do not raster-publish technical PDFs bearing explicit reproduction restrictions without permission.
+
+## Gallery enrichment09.09.2026
+
+Regional galleries are merged by exact manufacturer SKU, retaining source pages.1330sourceURLs→866unique preparedWebPfiles.47candidate SKU/file pairs excluded by visual comparison as duplicate views/crops/lighting. Two initial pilot duplicate relations1823/1824 and library items4249/4250 were removed by exact IDs with backup; sourceSharedLinks retained. Revised pilotCX189/CX197 passed, then30products updated.55additional relations across32products, total1052ProductImage/1052librarylinks→819unique livefiles. Existing text/prices/stock untouched.
+
+No arbitrary photo limit; earlier4-interior cap removed. `scripts/enrich_orac_gallery_20260909.py` defaultdry, exactfilehashes, expectedupdated_at,row/advisorylocks, productbackup,append-onlyapprovedassets, existingqueue. `gallery-visual-audit.json` records visual exclusions. Repeated enrichment dryrun0writes.
+
+Coverage421:259with manufacturer interior/application images,409with PDFdrawinglinks,90with at least2profileviews. An image assigned to the manufacturer SKU/model gallery does not prove the specific installed length,Flex orRAL finish. TechnicalPDFs are linked, not raster-republished. C200 all25regional pages and uncached3originals checked:sameprofilebytes underdifferentURLs. TheMint cataloguesource exactC200, but extractedJPEG publicationrights unresolved, not imported. The876officialdownloadcentreassets checked by metadata and thumbnail matching; no confirmed separateTheMintasset found.
+
+421publicproducts independently checked by shopowner forHTTP/SEO/price/unit/images. Initiallisting design rejected by Oleg; shopowner release30c765f fixed scopedlistingCSS/padding/categorybuttons/CTA. Desktop and mobile390px independently visually verified. W100gallery/PDPpresentation still under shopowner review; not declared approved.

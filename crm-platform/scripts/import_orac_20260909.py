@@ -20,6 +20,8 @@ catalog={r['sku']:r for r in json.loads((ROOT/'orac-products.json').read_text())
 overlay={r['sku']:r for r in json.loads((ROOT/'orac-seo-overlay.json').read_text())}
 assets=json.loads((ROOT/'media-manifest.json').read_text())
 asset_by_url={a['source_url']:a for a in assets if 'error'not in a}
+audit_path=ROOT/'gallery-visual-audit.json'
+excluded={(r['sku'],r['sha256'])for r in json.loads(audit_path.read_text())if r['exclude']}if audit_path.exists()else set()
 categories={'karnyzy':(35,'Карнизы'),'moldynhy':(39,'Молдинги'),'plintusy':(41,'Плинтусы'),'rozetky':(40,'Потолочные розетки'),'dekoratyvni-elementy':(None,'Декоративні елементи'),'stinovi-paneli':(None,'Стінові панелі'),'klei-ta-montazh':(38,'Клей')}
 def category_for(r,seo):
  if r['price_ua']['category'].strip()=='Інструмент':return 37,'Инструменты'
@@ -40,13 +42,13 @@ for row in plan:
    raise RuntimeError(('Concurrent manual change; regenerate plan',row['sku'],p.id))
   assert (p.is_active or p.id in {2286,2287,1230}) and 'cezar' not in p.name.lower()
  images=sorted(r['images'],key=lambda im:not im['is_main'])
- images += [dict(url=i['url'],is_main=False,kind='interior',title=i['title'])for i in r['interior_images'][:4]]
+ images += [dict(url=i['url'],is_main=False,kind='interior',title=i['title'])for i in r['interior_images']]
  media=[];seen=set()
  for im in images:
   if re.search(r'/(?:rmin|rxmin|rxxmin)[^/]*\.',im['url']):continue
   a=asset_by_url.get(im['url'])
   if not a:raise RuntimeError(('Missing official media',row['sku'],im['url']))
-  if a['sha256']in seen:continue
+  if a['sha256']in seen or (row['sku'],a['sha256'])in excluded:continue
   seen.add(a['sha256']);path=ROOT/'media'/(a['sha256']+'.webp')
   assert hashlib.sha256(path.read_bytes()).hexdigest()==a['sha256']
   media.append((a,im))
