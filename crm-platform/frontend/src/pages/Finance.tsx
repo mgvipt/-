@@ -922,7 +922,10 @@ function Journal() {
         <button title={t("Добавить ещё одно поле — изменить несколько полей за один раз","Додати ще одне поле — змінити кілька полів за один раз")}
           disabled={bulkVal === "" && !BULK_EMPTY_OK.includes(bulkField)}
           onClick={() => { setBulkSet((s) => ({ ...s, [bulkField]: normBulk(bulkField, bulkVal) })); setBulkVal(""); }}
-          style={{ padding: "8px 12px", borderRadius: 9, border: "1px solid #5a5047", background: "transparent", color: "#fff", fontSize: 13, cursor: "pointer" }}>＋ {t("ещё поле","ще поле")}</button>
+          style={{ padding: "8px 12px", borderRadius: 9, border: "1px solid " + ((bulkVal === "" && !BULK_EMPTY_OK.includes(bulkField)) ? "#3a312a" : "#C67D5F"), background: (bulkVal === "" && !BULK_EMPTY_OK.includes(bulkField)) ? "transparent" : "#3a312a", color: "#fff", fontSize: 13, cursor: (bulkVal === "" && !BULK_EMPTY_OK.includes(bulkField)) ? "not-allowed" : "pointer", opacity: (bulkVal === "" && !BULK_EMPTY_OK.includes(bulkField)) ? 0.4 : 1 }}>＋ {t("ещё поле","ще поле")}</button>
+        {!Object.keys(bulkSet).length && bulkVal === "" && !BULK_EMPTY_OK.includes(bulkField) && (
+          <span style={{ fontSize: 11.5, color: "#cbbfb4" }}>{t("сначала выбери значение, потом ＋","спершу вибери значення, потім ＋")}</span>
+        )}
         {Object.entries(bulkSet).map(([k, v]) => (
           <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#3a312a", borderRadius: 999, padding: "4px 10px", fontSize: 12 }}>
             <span style={{ color: "#cbbfb4" }}>{BULK_NAMES[k] || k}:</span> <b>{bulkLabel(k, v)}</b>
