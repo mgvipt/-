@@ -31,16 +31,31 @@ const funnelShade = (p: number) => {
   const a = [0xee, 0xf1, 0xf5], b = [0xc3, 0xcc, 0xd7];
   return "#" + a.map((v, k) => Math.round(v + (b[k] - v) * p).toString(16).padStart(2, "0")).join("");
 };
+// «В колір воронки» (Олег, 10.09): цвет воронки подмешивается к белому — сверху светлее, к низу насыщеннее
+const mixHex = (hex: string, share: number) => {
+  const h = hex.replace("#", ""), c = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  return "#" + c.map((v) => Math.round(255 + (v - 255) * share).toString(16).padStart(2, "0")).join("");
+};
+// Цвета — те же, что у заголовков «Ліди / Тест-набір / Основний продукт» в Аналітиці; прочие воронки остаются серыми
+export function funnelColor(d: any): string | undefined {
+  const n = String(d?.funnel || "").toLowerCase();
+  if (d?.is_lead || /лід|лид/.test(n)) return "#2E6FB0";
+  if (/набір|набор/.test(n)) return "#B67A12";
+  if (/основн/.test(n)) return "#2F8F5B";
+  return undefined;
+}
 
-export function FunnelSteps({ steps, t }: {
+export function FunnelSteps({ steps, t, color }: {
   steps: FunnelVisualStep[];
   t: any;
   scale?: "linear" | "log";
+  color?: string;
 }) {
   if (!steps.length) return null;
   const n = steps.length;
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "2px 0", display: "grid", gap: 2 }}>
+      {color && <style>{".fs-dk,.fs-dk *{color:#fff !important}"}</style>}
       <div style={{ display: "grid", gridTemplateColumns: FUNNEL_COLS, gap: 14, paddingBottom: 6, fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em" }}>
         <span style={{ textAlign: "right" }}>{t("Этап", "Етап")}</span>
         <span style={{ textAlign: "center" }}>{t("Прошло через этап", "Пройшло через етап")}</span>
@@ -48,10 +63,12 @@ export function FunnelSteps({ steps, t }: {
       </div>
       {steps.map((step, i) => {
         const top = funnelWidth(i / n), bottom = funnelWidth((i + 1) / n);
+        const p = n > 1 ? i / (n - 1) : 0, share = 0.16 + 0.84 * p, dark = !!color && share >= 0.58;
+        const bg = color ? mixHex(color, share) : funnelShade(p);
         const clip = `polygon(${(50 - top / 2).toFixed(2)}% 0, ${(50 + top / 2).toFixed(2)}% 0, ${(50 + bottom / 2).toFixed(2)}% 100%, ${(50 - bottom / 2).toFixed(2)}% 100%)`;
         return <div key={step.key} style={{ display: "grid", gridTemplateColumns: FUNNEL_COLS, gap: 14, alignItems: "center" }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.25, color: "#172033", textAlign: "right", overflowWrap: "anywhere" }}>{step.label}</div>
-          <div style={{ minHeight: 54, clipPath: clip, background: funnelShade(n > 1 ? i / (n - 1) : 0), color: "#172033", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "6px 0", boxSizing: "border-box" }}>
+          <div className={dark ? "fs-dk" : undefined} style={{ minHeight: 54, clipPath: clip, background: bg, color: dark ? "#fff" : "#172033", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "6px 0", boxSizing: "border-box" }}>
             <div style={{ fontSize: 22, fontWeight: 850, lineHeight: 1.05, fontVariantNumeric: "tabular-nums" }}>{Number(step.value || 0).toLocaleString("ru-RU")}</div>
             {step.detail && <div style={{ fontSize: 11, color: "#526071", marginTop: 3, lineHeight: 1.3, maxWidth: "100%" }}>{step.detail}</div>}
           </div>
@@ -68,7 +85,7 @@ export function FunnelSteps({ steps, t }: {
 
 /* Конус воронки: 3D-сегменты, число внутри, плавное сужение к плоскому дну;
    справа — % перехода, сумма ₴ и кто вёл (бот-ИИ / менеджер) */
-export function Cone({ d, t }: { d: any; t: any }) {
+export function Cone({ d, t, color }: { d: any; t: any; color?: string }) {
   if (!d || !d.stages || d.stages.length === 0) return null;
   return (
     <div style={{ maxWidth: 900, margin: "0 auto" }}>
@@ -82,7 +99,7 @@ export function Cone({ d, t }: { d: any; t: any }) {
           {st.ai > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 3, color: "#7c3aed" }}><Icon n="bot" size={12} />{st.ai}</span>}
           {st.man > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Icon n="user" size={11} />{st.man}</span>}
         </span>,
-      }))} t={t} />
+      }))} t={t} color={color || funnelColor(d)} />
       <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 12, flexWrap: "wrap" }}>
         <span style={{ color: "#dc2626", fontWeight: 700 }}>❌ {t("Потеряно (отказы)", "Втрачено (відмови)")}: {d.lost.count}{d.lost.amount > 0 ? " · " + fmtMoney(d.lost.amount) : ""}</span>
         {d.won.count > 0 && <span style={{ color: "#16a34a", fontWeight: 700 }}>✅ {d.won.label || t("Продано", "Продано")}: {d.won.count}{d.won.amount > 0 ? " · " + fmtMoney(d.won.amount) : ""}</span>}
