@@ -18,36 +18,47 @@ export type FunnelVisualStep = {
   detail?: any;
 };
 
-/* Спокойная воронка в стиле YouTube Analytics: реальные числа остаются внутри
-   сегментов, а процент перехода вынесен в белую полосу между этапами. */
-export function FunnelSteps({ steps, t, scale = "linear" }: {
+/* Статичная воронка (Олег, 10.09.2026): форма ПОСТОЯННАЯ — плавно сужается от широкого
+   верха к узкому низу; ширина этапа зависит только от его места, а НЕ от числа.
+   Слева — название этапа, внутри — число и детали, справа — % от предыдущего этапа.
+   Параметр scale оставлен для совместимости вызовов (на форму больше не влияет). */
+const FUNNEL_COLS = "minmax(90px, 210px) minmax(0, 1fr) minmax(56px, 150px)";
+const FUNNEL_BOTTOM = 30;   // ширина нижнего края, % от верхнего
+const FUNNEL_CURVE = 1.35;  // изгиб боков (1 = прямые)
+const funnelWidth = (y: number) => FUNNEL_BOTTOM + (100 - FUNNEL_BOTTOM) * Math.pow(1 - y, FUNNEL_CURVE);
+// спокойный серый: сверху светлее (#eef1f5), к низу чуть темнее (#c3ccd7)
+const funnelShade = (p: number) => {
+  const a = [0xee, 0xf1, 0xf5], b = [0xc3, 0xcc, 0xd7];
+  return "#" + a.map((v, k) => Math.round(v + (b[k] - v) * p).toString(16).padStart(2, "0")).join("");
+};
+
+export function FunnelSteps({ steps, t }: {
   steps: FunnelVisualStep[];
   t: any;
   scale?: "linear" | "log";
 }) {
   if (!steps.length) return null;
-  const top = Math.max(Number(steps[0]?.value || 0), 1);
-  const ratio = (value: number) => {
-    if (scale === "log") return Math.log10(Math.max(value, 0) + 1) / Math.log10(top + 1);
-    return Math.max(value, 0) / top;
-  };
+  const n = steps.length;
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: "2px 0" }}>
+    <div style={{ maxWidth: 900, margin: "0 auto", padding: "2px 0", display: "grid", gap: 2 }}>
+      <div style={{ display: "grid", gridTemplateColumns: FUNNEL_COLS, gap: 14, paddingBottom: 6, fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em" }}>
+        <span style={{ textAlign: "right" }}>{t("Этап", "Етап")}</span>
+        <span style={{ textAlign: "center" }}>{t("Прошло через этап", "Пройшло через етап")}</span>
+        <span>{t("% от предыдущего", "% від попереднього")}</span>
+      </div>
       {steps.map((step, i) => {
-        const width = Math.max(Math.min(ratio(step.value) * 100, 100), 28);
-        return <div key={step.key}>
-          {i > 0 && (
-            <div style={{ minHeight: 34, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, color: "#64748b", fontSize: 12, fontWeight: 700 }}>
-              <span aria-hidden="true" style={{ color: "#94a3b8" }}>↓</span>
-              {step.pctPrev == null
-                ? t("нет базы для расчёта", "немає бази для розрахунку")
-                : `${step.pctPrev}% ${t("от предыдущего этапа", "від попереднього етапу")}`}
-            </div>
-          )}
-          <div style={{ width: `${width}%`, minWidth: "min(220px, 100%)", margin: "0 auto", background: "linear-gradient(180deg,#eef1f5,#d9dee5)", border: "1px solid #c8ced7", clipPath: "polygon(3% 0,97% 0,94% 100%,6% 100%)", color: "#172033", textAlign: "center", padding: "12px 24px 13px", boxSizing: "border-box" }}>
-            <div style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.25, overflowWrap: "anywhere" }}>{step.label}</div>
-            <div style={{ fontSize: 28, fontWeight: 850, lineHeight: 1.05, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{Number(step.value || 0).toLocaleString("ru-RU")}</div>
-            {step.detail && <div style={{ fontSize: 11, color: "#526071", marginTop: 5, lineHeight: 1.3 }}>{step.detail}</div>}
+        const top = funnelWidth(i / n), bottom = funnelWidth((i + 1) / n);
+        const clip = `polygon(${(50 - top / 2).toFixed(2)}% 0, ${(50 + top / 2).toFixed(2)}% 0, ${(50 + bottom / 2).toFixed(2)}% 100%, ${(50 - bottom / 2).toFixed(2)}% 100%)`;
+        return <div key={step.key} style={{ display: "grid", gridTemplateColumns: FUNNEL_COLS, gap: 14, alignItems: "center" }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.25, color: "#172033", textAlign: "right", overflowWrap: "anywhere" }}>{step.label}</div>
+          <div style={{ minHeight: 54, clipPath: clip, background: funnelShade(n > 1 ? i / (n - 1) : 0), color: "#172033", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "6px 0", boxSizing: "border-box" }}>
+            <div style={{ fontSize: 22, fontWeight: 850, lineHeight: 1.05, fontVariantNumeric: "tabular-nums" }}>{Number(step.value || 0).toLocaleString("ru-RU")}</div>
+            {step.detail && <div style={{ fontSize: 11, color: "#526071", marginTop: 3, lineHeight: 1.3, maxWidth: "100%" }}>{step.detail}</div>}
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b" }}>
+            {i > 0 && (step.pctPrev == null
+              ? <span style={{ fontWeight: 600, color: "#94a3b8" }}>{t("нет базы для расчёта", "немає бази для розрахунку")}</span>
+              : <><span aria-hidden="true" style={{ color: "#94a3b8" }}>↓</span> {step.pctPrev}%</>)}
           </div>
         </div>;
       })}
@@ -60,7 +71,7 @@ export function FunnelSteps({ steps, t, scale = "linear" }: {
 export function Cone({ d, t }: { d: any; t: any }) {
   if (!d || !d.stages || d.stages.length === 0) return null;
   return (
-    <div style={{ maxWidth: 680, margin: "0 auto" }}>
+    <div style={{ maxWidth: 900, margin: "0 auto" }}>
       <FunnelSteps steps={(d.stages || []).map((st: any, i: number) => ({
         key: st.id,
         label: st.name,
@@ -85,7 +96,7 @@ export function MetaCone({ d, t }: { d: any; t: any }) {
   if (!d || !d.stages || d.stages.length === 0) return null;
   const num = (n: number) => Number(n || 0).toLocaleString("ru-RU");
   return (
-    <div style={{ maxWidth: 780, margin: "0 auto" }}>
+    <div style={{ maxWidth: 900, margin: "0 auto" }}>
       <FunnelSteps steps={d.stages.map((s: any, i: number) => ({
         key: s.key,
         label: s.label,
