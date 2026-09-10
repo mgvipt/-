@@ -261,6 +261,82 @@ class TransactionViewSet(viewsets.ModelViewSet):
             except Exception:
                 pass
 
+    @action(detail=False, methods=["post"], url_path="rule-suggest")
+    def rule_suggest(self, request):
+        """Підказка для автоправила з вибраних операцій. {ids, set?} →
+        {conditions, logic, direction, actions, dynamic, matches_90d}. Нічого не записує:
+        правило створює вже вікно правил (/api/finance/bank-rules/) після перевірки Олегом."""
+        import re as _re
+        from types import SimpleNamespace as _NS
+        from datetime import timedelta as _td
+        from django.utils import timezone as _tzs
+        ids = [int(x) for x in (request.data.get("ids") or []) if str(x).isdigit()][:500]
+        if not ids:
+            return Response({"detail": "ids обовʼязкові"}, status=400)
+        txs = list(Transaction.objects.filter(id__in=ids).select_related("account"))
+
+        def _clean(v):
+            v = (v or "").lower()
+            v = _re.sub(r"https?://\S+", " ", v)
+            v = _re.sub(r"[#№]?\d[\d\s.,:/\-]*", " ", v)      # номери, дати, суми — динамічні
+            return _re.sub(r"\s+", " ", v).strip(" ·,.-:;")
+
+        def _common(strs):
+            """Найдовший спільний шматок тексту в усіх рядках (по перших 40, до 120 символів)."""
+            strs = [x for x in strs if x][:40]
+            if not strs:
+                return ""
+            base = min(strs, key=len)[:120]
+            best = ""
+            for i in range(len(base)):
+                for j in range(len(base), i + len(best), -1):
+                    if all(base[i:j] in x for x in strs):
+                        best = base[i:j]
+                        break
+            return best.strip(" ·,.-:;")
+
+        conds = []
+        cps = [_clean(t.counterparty) for t in txs]
+        cp_common = _common(cps) if all(cps) else ""
+        if len(cp_common) >= 3:
+            conds.append({"field": "counterparty", "op": "contains", "text": cp_common})
+        cms = [_clean(t.comment) for t in txs]
+        cm_common = _common(cms) if all(cms) else ""
+        if len(cm_common) >= 5 and cm_common not in cp_common:
+            conds.append({"field": "osnd", "op": "contains", "text": cm_common})
+        dset = {t.direction for t in txs}
+        direction = next(iter(dset)) if len(dset) == 1 and next(iter(dset)) in ("in", "out") else ""
+        # дії: те, що задано в масовій правці, + поля, ОДНАКОВІ в усіх вибраних (статичні)
+        st = request.data.get("set") or {}
+        actions, dynamic = {}, []
+        getters = (("category", lambda t: t.category_id), ("fin_direction", lambda t: t.fin_direction_id),
+                   ("fin_article", lambda t: t.fin_article_id), ("channel", lambda t: t.channel or ""),
+                   ("counterparty", lambda t: t.counterparty or ""))
+        for key, g in getters:
+            if key in st and st[key] not in (None, ""):
+                actions[key] = st[key]
+                continue
+            vals = {g(t) for t in txs}
+            if len(vals) == 1 and next(iter(vals)) not in (None, ""):
+                actions[key] = next(iter(vals))
+            elif any(g(t) for t in txs):
+                dynamic.append(key)
+        if "counterparty" not in st:
+            actions.pop("counterparty", None)   # без явної вказівки правило лишає банківського контрагента
+        # наскільки широке правило: скільки операцій журналу за 90 днів під нього підпало б
+        matches = 0
+        if conds:
+            probe = _NS(direction=direction, logic="and", conditions=conds)
+            for t in (Transaction.objects.filter(date__gte=_tzs.localdate() - _td(days=90))
+                      .select_related("account").only("direction", "comment", "counterparty", "account__name")[:20000]):
+                if _rule_matches(probe, t.direction, t.comment or "", t.counterparty or "",
+                                 t.account.name if t.account_id else ""):
+                    matches += 1
+        accs = {t.account.name for t in txs if t.account_id}
+        return Response({"conditions": conds, "logic": "and", "direction": direction,
+                         "actions": actions, "dynamic": dynamic, "selected": len(txs),
+                         "account": (next(iter(accs)) if len(accs) == 1 else ""), "matches_90d": matches})
+
     @action(detail=False, methods=["post"], url_path="bulk-edit")
     @transaction.atomic
     def bulk_edit(self, request):

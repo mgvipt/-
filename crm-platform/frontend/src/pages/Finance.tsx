@@ -811,19 +811,53 @@ function Journal() {
   const [bulkField, setBulkField] = useState("category");
   const [bulkVal, setBulkVal] = useState<any>("");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkSet, setBulkSet] = useState<Record<string, any>>({});   // кілька полів за один раз
+  const [ruleDraft, setRuleDraft] = useState<any>(undefined);          // вікно автоправила з вибраних
+  const [ruleHint, setRuleHint] = useState<any>(null);
+  const BULK_NAMES: Record<string, string> = { category: "Категорія", counterparty: "Контрагент", account: "Рахунок", deal: "Угода", fin_article: "Фонд", fin_direction: "Напрямок", channel: "Канал", comment: "Коментар", currency: "Валюта" };
+  const BULK_EMPTY_OK = ["counterparty", "comment", "deal", "fin_article", "fin_direction"];
+  const normBulk = (fld: string, v: any) => (fld === "counterparty" || fld === "comment" || fld === "channel" || fld === "currency") ? v : (Number(v) || null);
+  const bulkLabel = (fld: string, v: any) => {
+    if (v === "" || v === null || v === undefined) return "—";
+    if (fld === "category") return cats.find((c: any) => String(c.id) === String(v))?.name || String(v);
+    if (fld === "account") return accounts.find((a: any) => String(a.id) === String(v))?.name || String(v);
+    if (fld === "fin_direction") return dirs.find((d: any) => String(d.id) === String(v))?.name || String(v);
+    if (fld === "fin_article") return arts.find((a: any) => String(a.id) === String(v))?.name || String(v);
+    if (fld === "channel") return (CHANNELS.find(([k]) => k === v) || [v, v])[1];
+    return String(v);
+  };
   const selCount = Object.values(selTx).filter(Boolean).length;
   const selSum = (tx || []).filter((r: any) => selTx[r.id] && r.direction !== "transfer").reduce((sm: number, r: any) => sm + (r.direction === "out" ? -1 : 1) * Number(r.amount_uah ?? r.amount ?? 0), 0);
   async function applyBulk() {
     const ids = Object.entries(selTx).filter(([, v]) => v).map(([k]) => Number(k));
     if (!ids.length || bulkBusy) return;
-    const v = bulkField === "counterparty" || bulkField === "comment" || bulkField === "channel" || bulkField === "currency" ? bulkVal : (Number(bulkVal) || null);
+    const set: any = { ...bulkSet };
+    const hasChips = Object.keys(bulkSet).length > 0;
+    if (bulkVal !== "") set[bulkField] = normBulk(bulkField, bulkVal);
+    else if (!hasChips && BULK_EMPTY_OK.includes(bulkField)) set[bulkField] = normBulk(bulkField, bulkVal);
+    if (!Object.keys(set).length) return;
     setBulkBusy(true);
     try {
-      await api.post("/api/transactions/bulk-edit/", { ids, set: { [bulkField]: v } });
-      setBulkVal("");
+      await api.post("/api/transactions/bulk-edit/", { ids, set });
+      setBulkVal(""); setBulkSet({});
       load(page); loadAccs();
     } catch (e: any) { alert(e?.response?.data?.detail || "Помилка"); }
     finally { setBulkBusy(false); }
+  }
+  async function makeRuleFromSelection() {
+    const ids = Object.entries(selTx).filter(([, v]) => v).map(([k]) => Number(k));
+    if (!ids.length) return;
+    const set: any = { ...bulkSet };
+    if (bulkVal !== "") set[bulkField] = normBulk(bulkField, bulkVal);
+    try {
+      const s: any = await api.post("/api/transactions/rule-suggest/", { ids, set });
+      const acts: any = {};
+      ["category", "fin_direction", "fin_article", "counterparty", "channel"].forEach((k) => { const v = s?.actions?.[k]; if (v !== undefined && v !== null && v !== "") acts[k] = v; });
+      setRuleHint(s);
+      setRuleDraft({ name: "", direction: s?.direction || "", logic: s?.logic || "and", active: true,
+        conditions: (s?.conditions && s.conditions.length) ? s.conditions : [{ field: "counterparty", op: "contains", text: "" }],
+        actions: Object.keys(acts).length ? acts : { category: "" } });
+    } catch (e: any) { alert(e?.response?.data?.detail || "Помилка"); }
   }
   const [fContact, setFContact] = useState(() => Number(new URLSearchParams(window.location.search).get("client")) || 0);
   const [fContactName, setFContactName] = useState(() => new URLSearchParams(window.location.search).get("cname") || "");
@@ -885,10 +919,23 @@ function Journal() {
           </select>)}
         {(bulkField === "counterparty" || bulkField === "comment" || bulkField === "deal") && (
           <input value={bulkVal} onChange={(e) => setBulkVal(e.target.value)} placeholder={bulkField === "deal" ? t("№ сделки (пусто — отвязать)","№ угоди (порожньо — відвʼязати)") : t("Новое значение","Нове значення")} style={{ padding: "7px 10px", borderRadius: 8, border: "none", fontSize: 13, minWidth: 220 }} />)}
-        <button disabled={bulkBusy || (bulkVal === "" && !["counterparty", "comment", "deal", "fin_article", "fin_direction"].includes(bulkField))} onClick={applyBulk}
+        <button title={t("Добавить ещё одно поле — изменить несколько полей за один раз","Додати ще одне поле — змінити кілька полів за один раз")}
+          disabled={bulkVal === "" && !BULK_EMPTY_OK.includes(bulkField)}
+          onClick={() => { setBulkSet((s) => ({ ...s, [bulkField]: normBulk(bulkField, bulkVal) })); setBulkVal(""); }}
+          style={{ padding: "8px 12px", borderRadius: 9, border: "1px solid #5a5047", background: "transparent", color: "#fff", fontSize: 13, cursor: "pointer" }}>＋ {t("ещё поле","ще поле")}</button>
+        {Object.entries(bulkSet).map(([k, v]) => (
+          <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#3a312a", borderRadius: 999, padding: "4px 10px", fontSize: 12 }}>
+            <span style={{ color: "#cbbfb4" }}>{BULK_NAMES[k] || k}:</span> <b>{bulkLabel(k, v)}</b>
+            <span onClick={() => setBulkSet((s) => { const n2 = { ...s }; delete n2[k]; return n2; })} style={{ cursor: "pointer", color: "#fca5a5" }}>×</span>
+          </span>
+        ))}
+        <button disabled={bulkBusy || (bulkVal === "" && !Object.keys(bulkSet).length && !BULK_EMPTY_OK.includes(bulkField))} onClick={applyBulk}
           style={{ padding: "8px 18px", borderRadius: 9, border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", background: "#C67D5F", color: "#fff", opacity: bulkBusy ? 0.6 : 1 }}>
           {bulkBusy ? "…" : "✓ " + t("Применить к выбранным","Застосувати до вибраних")}
         </button>
+        <button onClick={makeRuleFromSelection}
+          title={t("Создать правило авторазноски: в следующий раз такие же операции из банка получат эти данные сами","Створити правило авторозноски: наступного разу такі самі операції з банку отримають ці дані самі")}
+          style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C67D5F", background: "transparent", color: "#f5c6b1", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>⚡ {t("В автоправило","В автоправило")}</button>
         <button onClick={() => setSelTx({})} style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #5a5047", background: "transparent", color: "#cbbfb4", fontSize: 13, cursor: "pointer" }}>{t("снять выделение","зняти виділення")}</button>
       </div>
     </div>
@@ -1242,6 +1289,16 @@ function Journal() {
       )}
 
       {bulkPanel}
+      {ruleDraft !== undefined && ruleHint && (
+        <div style={{ position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 2000, background: "#fff7ed", border: "1px solid #fed7aa", color: "#7c2d12", borderRadius: 10, padding: "10px 14px", fontSize: 12.5, maxWidth: 640, boxShadow: "0 6px 24px rgba(0,0,0,.18)" }}>
+          <b>⚡ {t("Автоправило из","Автоправило з")} {ruleHint.selected} {t("выбранных операций.","вибраних операцій.")}</b>{" "}
+          {t("Условия взяты из того, что одинаково во всех; номера, даты и суммы вырезаны.","Умови взяті з того, що однакове в усіх; номери, дати й суми вирізані.")}{" "}
+          {ruleHint.conditions?.length ? <>{t("За 90 дней под эти условия попадает","За 90 днів під ці умови підпадає")} <b>{ruleHint.matches_90d}</b> {t("операций журнала.","операцій журналу.")}</> : <b>{t("Общего текста не нашлось — впиши условие вручную.","Спільного тексту не знайшлось — впиши умову вручну.")}</b>}
+          {ruleHint.dynamic?.length ? <> {t("Разные у выбранных (в правило не берём):","Різні у вибраних (у правило не беремо):")} {ruleHint.dynamic.map((k: string) => BULK_NAMES[k] || k).join(", ")}.</> : null}
+        </div>
+      )}
+      {ruleDraft !== undefined && <RuleEditor rule={ruleDraft} cats={cats} dirs={dirs} arts={arts} accsR={accounts} cps={[]} t={t}
+        onClose={() => { setRuleDraft(undefined); setRuleHint(null); }} onSaved={() => { setRuleDraft(undefined); setRuleHint(null); }} />}
       {open && (
         <TxCardModal
           key={"txm-" + (f.id || "new") + "-" + f.direction + "-" + (f.contact || 0)}
