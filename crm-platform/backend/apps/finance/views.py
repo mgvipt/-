@@ -1122,6 +1122,14 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
         pass
     created = skipped = 0
     for tr in txs:
+        # A commission has its own bank leg (REFN), despite sharing the payment REF.
+        # Import it before the legacy payment dedup; PB-COM# does not mask PB#.
+        from .privat_fees import import_privat_fee
+        fee_result = import_privat_fee(tr, _resolve_account(tr.get("AUT_MY_ACC") or ""), batch)
+        if fee_result is not None:
+            created += int(fee_result[1])
+            skipped += int(not fee_result[1])
+            continue
         ref = tr.get("REF") or ""
         reftag = "PB#%s/%s" % (ref, tr.get("TRANTYPE") or "")
         if not ref or Transaction.objects.filter(comment__startswith=reftag).exists():
