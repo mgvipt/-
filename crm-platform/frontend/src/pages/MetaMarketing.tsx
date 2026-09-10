@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { api } from "../api";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
-import { Cone, MetaCone } from "../FunnelCone";
+import { Cone, FunnelSteps, MetaCone } from "../FunnelCone";
 
 // Явна підказка (тултип), яка показується ОДРАЗУ при наведенні і НЕ обрізається
 // прокруткою таблиці (рендериться в body через портал, слідує за курсором).
@@ -449,24 +449,13 @@ function PixelEventsTab({ from, to, mode }: { from: string; to: string; mode?: "
             { l: t("Дошли до формы", "Дійшли до форми"), v: ev.QuizFormShown || 0 },
             { l: t("Оставили заявку", "Залишили заявку"), v: (ev.QuizLeadSubmitted || 0) + (ev.Lead || 0) },
           ];
-          const maxV = Math.max(...steps.map((s) => s.v), 1);
           return <>
             <SectionTitle title={t("Воронка квиза", "Воронка квіза")} note={t("Сколько людей дошло до каждого шага; % — от предыдущего шага", "Скільки людей дійшло до кожного кроку; % — від попереднього кроку")} />
             <div className="panel" style={{ marginBottom: 14 }}>
-              {steps.map((s, i) => {
+              <FunnelSteps steps={steps.map((s, i) => {
                 const prev = i ? steps[i - 1].v : s.v;
-                const pct = i && prev ? Math.round(s.v * 100 / prev) : null;
-                return (
-                  <div key={s.l} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0" }}>
-                    <span style={{ width: 160, fontSize: 12.5, color: "#475569", fontWeight: 600, flexShrink: 0 }}>{s.l}</span>
-                    <div style={{ flex: 1, background: "#eef2f7", borderRadius: 6, height: 18, minWidth: 50 }}>
-                      <div style={{ width: Math.max((s.v / maxV) * 100, 2) + "%", height: "100%", background: "#2563eb", borderRadius: 6, opacity: .85 }} />
-                    </div>
-                    <b style={{ width: 52, textAlign: "right", fontSize: 13, flexShrink: 0 }}>{count(s.v)}</b>
-                    <span style={{ width: 44, textAlign: "right", fontSize: 11.5, flexShrink: 0, color: pct == null ? "#94a3b8" : pct >= 50 ? "#15803d" : pct >= 20 ? "#a16207" : "#dc2626" }}>{pct == null ? "" : pct + "%"}</span>
-                  </div>
-                );
-              })}
+                return { key: s.l, label: s.l, value: s.v, pctPrev: i === 0 ? undefined : (prev ? Math.round(s.v * 100 / prev) : null) };
+              })} t={t} />
             </div>
           </>;
         })()}
@@ -1464,7 +1453,7 @@ function AllChannelsOverview({ data, offlineData, t, go }: { data: any; offlineD
     ]} />
     <Card icon="🌐" iconColor="var(--rd-primary)" title={t("Сайт · Google", "Сайт · Google")} sec="site" tiles={[
       { l: t("Заявки с лендинга", "Заявки з лендінгу"), v: count(quizTotal), c: "var(--rd-purple)", tip: t("События пикселя (QuizStart и другие) по цели кампаний на сайт", "Події пікселя (QuizStart та інші) за ціллю кампаній на сайт") },
-      { l: "Google Analytics", v: "—", sub: t("не подключено", "не підключено"), tip: t("Подключим — появится посещаемость и источники", "Підключимо — зʼявиться відвідуваність і джерела") },
+      { l: "Google Analytics", v: "→", sub: t("открыть Сайт · Google", "відкрити Сайт · Google"), tip: t("Посещаемость и источники находятся в разделе «Сайт · Google»", "Відвідуваність і джерела знаходяться в розділі «Сайт · Google»") },
     ]} />
     <Card icon="building" iconColor="var(--rd-warning)" title={t("Офлайн · салон", "Офлайн · салон")} sec="offline" tiles={[
       { l: t("Обращений", "Звернень"), v: count(off.deals_created), tip: t("Сделки в салонных воронках за период", "Угоди в салонних воронках за період") },
@@ -1483,6 +1472,8 @@ function Ga4Block({ from, to, t }: { from: string; to: string; t: (ru: string, u
   if (d.error) return <div className="muted" style={{ padding: 30 }}>{t("Не удалось загрузить Google Analytics", "Не вдалося завантажити Google Analytics")}</div>;
   const sites = d.sites || [];
   const leads = d.crm_leads;
+  const shopStatus = d.shop_analytics?.status;
+  const shop = d.shop_analytics?.data;
   const srcMeta: Record<string, { label: string; color: string }> = {
     meta: { label: t("Реклама Meta (IG/FB)", "Реклама Meta (IG/FB)"), color: "var(--rd-primary)" },
     google: { label: "Google", color: "var(--rd-success)" },
@@ -1505,6 +1496,50 @@ function Ga4Block({ from, to, t }: { from: string; to: string; t: (ru: string, u
   const thS: React.CSSProperties = { padding: "6px 8px", fontSize: 10.5, color: "var(--rd-text2)", textAlign: "left", textTransform: "uppercase", letterSpacing: ".04em", whiteSpace: "nowrap" };
   const tdS: React.CSSProperties = { padding: "6px 8px", fontSize: 12.5, borderTop: "1px solid var(--rd-border)", whiteSpace: "nowrap" };
   return <div>
+    <div className="rd-card" style={{ marginBottom: 20 }}>
+      <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}>
+        <Icon n="🌐" size={16} style={{ color: "var(--rd-primary)" }} /> wallcov.com.ua · {t("интернет-магазин", "інтернет-магазин")}
+      </b>
+      {shopStatus === "unavailable" && <div className="muted" style={{ padding: "14px 0 2px" }}>
+        {t("Внутренняя статистика магазина сейчас недоступна. CRM не подставляет вместо неё нули.", "Внутрішня статистика магазину зараз недоступна. CRM не підставляє замість неї нулі.")}
+      </div>}
+      {shopStatus === "ok" && shop && <>
+        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+          {t("Точный период", "Точний період")}: {shop.from} — {shop.to}. {t("Источник: собственный счётчик магазина.", "Джерело: власний лічильник магазину.")}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(125px,1fr))", gap: 10, margin: "12px 0" }}>
+          {[
+            [t("Просмотры страниц", "Перегляди сторінок"), shop.summary?.views],
+            [t("Посетители", "Відвідувачі"), shop.summary?.visitors],
+            [t("Просмотры товаров", "Перегляди товарів"), shop.summary?.product_views],
+            [t("Добавили в корзину", "Додали в кошик"), shop.summary?.add_to_cart],
+            [t("Начали оформление", "Почали оформлення"), shop.summary?.checkout_started],
+            [t("Заказы", "Замовлення"), shop.summary?.orders],
+          ].map(([label, value]) => <div key={String(label)} className="rd-tile">
+            <div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4 }}>{label}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "var(--rd-text)" }}>{count(Number(value || 0))}</div>
+          </div>)}
+          <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Конверсия в заказ", "Конверсія в замовлення")}</div><div style={{ fontSize: 20, fontWeight: 800, color: "var(--rd-success)" }}>{shop.summary?.conversion ?? 0}%</div></div>
+          <div className="rd-tile"><div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginBottom: 4 }}>{t("Выручка заказов", "Виручка замовлень")}</div><div style={{ fontSize: 20, fontWeight: 800, color: "var(--rd-success)" }}>{count(Math.round(shop.summary?.revenue || 0))} ₴</div></div>
+        </div>
+        {shop.measurement?.status === "partial" && <div className="note" style={{ marginBottom: 12, lineHeight: 1.45 }}>
+          <b>{t("Важно о точности", "Важливо про точність")}:</b> {t("добавление в корзину пока фиксируется не на всех карточках товара. Поэтому CRM показывает реальные числа, но не рассчитывает переходы между корзиной и оформлением.", "додавання в кошик поки фіксується не на всіх картках товару. Тому CRM показує реальні числа, але не розраховує переходи між кошиком та оформленням.")}
+        </div>}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(280px,100%),1fr))", gap: 16 }}>
+          <div><b style={{ fontSize: 13 }}>{t("Популярные товары", "Популярні товари")}</b>{(shop.top_products || []).slice(0, 7).map((row: any, i: number) => <div key={`${row.product_id}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "5px 0", borderBottom: "1px solid var(--rd-border)", fontSize: 12 }}><span>{row.name || `#${row.product_id}`}</span><b>{count(row.views)}</b></div>)}</div>
+          <div><b style={{ fontSize: 13 }}>{t("Популярные страницы", "Популярні сторінки")}</b>{(shop.top_pages || []).slice(0, 7).map((row: any, i: number) => <div key={`${row.path}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "5px 0", borderBottom: "1px solid var(--rd-border)", fontSize: 12 }}><span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{row.path}</span><b>{count(row.views)}</b></div>)}</div>
+        </div>
+      </>}
+      <div className="muted" style={{ fontSize: 11.5, marginTop: 12 }}>
+        {t("Источники посещений ниже берутся из Google Analytics. Внутренний счётчик магазина не используется для источников, потому что исторически он видел переход на собственный домен.", "Джерела відвідувань нижче беруться з Google Analytics. Внутрішній лічильник магазину не використовується для джерел, бо історично він бачив перехід на власний домен.")}
+      </div>
+    </div>
+    <div className="rd-card" style={{ marginBottom: 20 }}>
+      <b style={{ fontSize: 14 }}>Google Search Console</b>
+      <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+        {t("Не подключено к CRM: запросы, показы и клики Google пока не отображаются. Это не означает нулевые показатели.", "Не підключено до CRM: запити, покази та кліки Google поки не відображаються. Це не означає нульові показники.")}
+      </div>
+    </div>
     {leads && <div className="rd-card" style={{ marginBottom: 20 }}>
       <b style={{ fontSize: 16, color: "var(--rd-text)", display: "flex", alignItems: "center", gap: 8 }}>
         <Icon n="📥" size={16} style={{ color: "var(--rd-primary)" }} /> {t("Заявки с сайтов в CRM", "Заявки з сайтів у CRM")}
@@ -1556,7 +1591,9 @@ function Ga4Block({ from, to, t }: { from: string; to: string; t: (ru: string, u
       </div>}
       <div style={{ fontSize: 11.5, color: "var(--rd-text2)", marginTop: 10 }}>{t("Лендинг: метка источника записывается с 28.08.2026, старые заявки — «источник неизвестен». Магазин ловит метки с запуска.", "Лендінг: мітка джерела записується з 28.08.2026, старі заявки — «джерело невідоме». Магазин ловить мітки з запуску.")}</div>
     </div>}
-    {!sites.length && <div className="rd-card"><div className="muted" style={{ padding: 10 }}>{t("Данных Google Analytics за период нет. Синхронизация идёт раз в сутки; статистика появляется по мере посещений сайтов.", "Даних Google Analytics за період немає. Синхронізація іде раз на добу; статистика зʼявляється в міру відвідувань сайтів.")}</div></div>}
+    {!sites.length && <div className="rd-card"><div className="muted" style={{ padding: 10 }}>{d.configured
+      ? t("Google Analytics подключён, но за выбранный период строки не получены. Это не считается подтверждённым нулём посещений.", "Google Analytics підключений, але за обраний період рядки не отримані. Це не вважається підтвердженим нулем відвідувань.")
+      : t("Google Analytics не настроен; данные не показываются и не заменяются нулями.", "Google Analytics не налаштований; дані не показуються і не замінюються нулями.")}</div></div>}
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(460px,100%), 1fr))", gap: 20 }}>
     {sites.map((s: any) => {
       const maxD = Math.max(...(s.daily || []).map((x: any) => x.sessions || 0), 1);

@@ -2993,7 +2993,7 @@ class SalesFunnelView(APIView):
             out_stages.append({
                 "id": s.id, "name": s.name, "color": s.color or "#2E6FB0",
                 "through": through, "amount": round(amount), "ai": ai_here, "man": man_here,
-                "pct_prev": (round(through * 100.0 / prev) if prev else 100),
+                "pct_prev": (100 if i == 0 else (round(through * 100.0 / prev) if prev else None)),
                 "pct_entered": (round(through * 100.0 / entered) if entered else 0),
             })
             prev = through
@@ -3426,11 +3426,32 @@ class MarketingGa4View(APIView):
                 "sales": sales, "revenue": round(float(revenue), 2),
                 "recent": recent,
             })
+
+        # Внутренняя статистика магазина дополняет GA4 и CRM, но не подменяет их.
+        # Ошибка магазина не должна превращаться в ложные нули и не должна ломать
+        # весь раздел «Сайт · Google».
+        shop_analytics = {"status": "unavailable", "data": None}
+        try:
+            from urllib.error import HTTPError, URLError
+            from apps.warehouse.shop_site import fetch_shop_analytics
+            shop_analytics = {
+                "status": "ok",
+                "data": fetch_shop_analytics({
+                    "from": date_from.isoformat(), "to": date_to.isoformat(),
+                }),
+            }
+        except (HTTPError, URLError, TimeoutError, ValueError, OSError):
+            pass
         return Response({
             "configured": ga4_configured(),
             "from": date_from.isoformat(), "to": date_to.isoformat(),
             "sites": sorted(sites.values(), key=lambda s: -s["sessions"]),
             "crm_leads": {"sites": crm_sites, "no_flow": NO_FLOW},
+            "shop_analytics": shop_analytics,
+            "search_console": {
+                "status": "not_connected",
+                "message": "Google Search Console ещё не подключён к CRM; клики и показы не отображаются.",
+            },
         })
 
 

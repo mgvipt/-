@@ -39,6 +39,11 @@ def _shop_url(kind="content"):
     return os.environ.get("SHOP_SITE_CONTENT_URL", f"{default_root}/api/crm/site-content/home")
 
 
+def fetch_shop_analytics(params):
+    """Read-only shop analytics with one shared signing path for CRM screens."""
+    return _signed_request(f"{_shop_url('analytics')}?{urlencode(params)}")
+
+
 def _error_response(exc):
     if isinstance(exc, HTTPError):
         detail = exc.read().decode(errors="replace")[:500]
@@ -111,11 +116,18 @@ class ShopSiteAnalyticsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        params = {}
+        if request.query_params.get("from") or request.query_params.get("to"):
+            params = {
+                "from": request.query_params.get("from", ""),
+                "to": request.query_params.get("to", ""),
+            }
+        else:
+            try:
+                params["days"] = min(365, max(1, int(request.query_params.get("days", 30))))
+            except ValueError:
+                params["days"] = 30
         try:
-            days = min(365, max(1, int(request.query_params.get("days", 30))))
-        except ValueError:
-            days = 30
-        try:
-            return Response(_signed_request(f"{_shop_url('analytics')}?{urlencode({'days': days})}"))
+            return Response(fetch_shop_analytics(params))
         except (HTTPError, URLError, TimeoutError, ValueError) as exc:
             return _error_response(exc)
