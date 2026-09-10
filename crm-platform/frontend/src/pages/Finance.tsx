@@ -812,6 +812,13 @@ function Journal() {
   const [bulkVal, setBulkVal] = useState<any>("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkSet, setBulkSet] = useState<Record<string, any>>({});   // кілька полів за один раз
+  const [cpAll, setCpAll] = useState<any[]>([]);   // усі контрагенти журналу — для пошуку в масовій правці
+  const [cpOpen, setCpOpen] = useState(false);
+  useEffect(() => {
+    if (bulkField !== "counterparty" || cpAll.length) return;
+    api.get<any>("/api/finance/counterparties/").then((d: any) => setCpAll(((d?.results || d) as any[]).filter((x: any) => x && x.name))).catch(() => {});
+    // eslint-disable-next-line
+  }, [bulkField]);
   const [ruleDraft, setRuleDraft] = useState<any>(undefined);          // вікно автоправила з вибраних
   const [ruleHint, setRuleHint] = useState<any>(null);
   const BULK_NAMES: Record<string, string> = { category: "Категорія", counterparty: "Контрагент", account: "Рахунок", deal: "Угода", fin_article: "Фонд", fin_direction: "Напрямок", channel: "Канал", comment: "Коментар", currency: "Валюта" };
@@ -917,7 +924,32 @@ function Journal() {
             <option value="">—</option>
             {["UAH", "USD", "EUR", "PLN", "GBP"].map((c) => <option key={c} value={c}>{c}</option>)}
           </select>)}
-        {(bulkField === "counterparty" || bulkField === "comment" || bulkField === "deal") && (
+        {bulkField === "counterparty" && (
+          <span style={{ position: "relative", display: "inline-block" }}>
+            <input value={bulkVal} autoFocus onFocus={() => setCpOpen(true)} onBlur={() => setTimeout(() => setCpOpen(false), 180)}
+              onChange={(e) => { setBulkVal(e.target.value); setCpOpen(true); }}
+              placeholder={t("Начни вводить имя контрагента…","Почни вводити імʼя контрагента…")}
+              style={{ padding: "7px 10px", borderRadius: 8, border: "none", fontSize: 13, minWidth: 260 }} />
+            {cpOpen && (() => {
+              const q = String(bulkVal || "").trim().toLowerCase();
+              const list = (q ? cpAll.filter((c: any) => String(c.name || "").toLowerCase().includes(q)) : cpAll).slice(0, 12);
+              return (
+                <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, minWidth: 320, maxHeight: 320, overflowY: "auto", background: "#fff", color: "#0f172a", borderRadius: 10, boxShadow: "0 -8px 28px rgba(0,0,0,.35)", zIndex: 70 }}>
+                  {!cpAll.length && <div style={{ padding: "8px 11px", fontSize: 12.5, color: "#64748b" }}>{t("Загружаю контрагентов…","Завантажую контрагентів…")}</div>}
+                  {cpAll.length > 0 && !list.length && <div style={{ padding: "8px 11px", fontSize: 12.5, color: "#64748b" }}>{t("Не найдено — запишется как новый:","Не знайдено — запишеться як новий:")} <b>{bulkVal}</b></div>}
+                  {list.map((c: any) => (
+                    <div key={c.name} onMouseDown={(e) => { e.preventDefault(); setBulkVal(c.name); setCpOpen(false); }}
+                      style={{ padding: "7px 11px", fontSize: 13, cursor: "pointer", display: "flex", justifyContent: "space-between", gap: 10, borderBottom: "1px solid #f1f5f9" }}
+                      title={c.contact_id ? t("Привязан к карточке клиента","Привʼязаний до картки клієнта") : ""}>
+                      <span>{c.contact_id ? "👤 " : ""}{c.name}</span>
+                      <span style={{ color: "#94a3b8", fontSize: 11.5, whiteSpace: "nowrap" }}>{c.count} {t("опер.","опер.")}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </span>)}
+        {(bulkField === "comment" || bulkField === "deal") && (
           <input value={bulkVal} onChange={(e) => setBulkVal(e.target.value)} placeholder={bulkField === "deal" ? t("№ сделки (пусто — отвязать)","№ угоди (порожньо — відвʼязати)") : t("Новое значение","Нове значення")} style={{ padding: "7px 10px", borderRadius: 8, border: "none", fontSize: 13, minWidth: 220 }} />)}
         <button title={t("Добавить ещё одно поле — изменить несколько полей за один раз","Додати ще одне поле — змінити кілька полів за один раз")}
           disabled={bulkVal === "" && !BULK_EMPTY_OK.includes(bulkField)}
