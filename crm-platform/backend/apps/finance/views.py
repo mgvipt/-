@@ -2399,13 +2399,39 @@ def _period(request):
         raise ValidationError({"detail": "Невірний формат дати — очікується YYYY-MM-DD"})
 
 
+def _meta_ads_reconcile(d_from, d_to):
+    """Реклама Meta: скільки витратили в Ads Manager (синк у CRM, у гривні за курсом НБУ) і скільки
+    оплат реклами є в журналі. Різниця = оплати, яких немає в журналі (напр. не завантажена виписка
+    картки *9778, з якої Meta списує з липня 2026). Щоденні витрати в журнал НЕ пишемо — був би дубль з випискою."""
+    from django.db.models import Min, Q, Sum
+    from apps.crm.models import MetaAdDailyStat
+    from .models import Transaction as _Tx
+    st = MetaAdDailyStat.objects.filter(level="account", date__gte=d_from, date__lte=d_to)
+    spend = float(st.aggregate(s=Sum("spend_uah"))["s"] or 0)
+    since = MetaAdDailyStat.objects.filter(level="account").aggregate(m=Min("date"))["m"]
+    paid_q = (Q(category__name__icontains="ТАРГЕТ_бюджет") | Q(comment__icontains="facebook")
+              | Q(comment__icontains="facebk") | Q(counterparty__icontains="facebook")
+              | Q(counterparty__icontains="фейсбук"))
+    paid = float(_Tx.objects.filter(direction="out", date__gte=d_from, date__lte=d_to).filter(paid_q)
+                 .aggregate(s=Sum("amount_uah"))["s"] or 0)
+    return {"meta_spend_uah": round(spend, 2), "journal_paid_uah": round(paid, 2), "gap_uah": round(spend - paid, 2),
+            "spend_incomplete": st.filter(spend_uah__isnull=True, spend__gt=0).exists(),
+            "meta_data_since": since.isoformat() if since else None}
+
+
 class ProfitLossView(APIView):
     """P&L по ATM (5 уровней) за период."""
     permission_classes = [FinancePerm]
 
     def get(self, request):
         d_from, d_to = _period(request)
-        return Response({"from": d_from.isoformat(), "to": d_to.isoformat(), **compute_pnl(d_from, d_to)})
+        try:
+            ads = _meta_ads_reconcile(d_from, d_to)
+        except Exception:  # noqa: BLE001 — звірка реклами не повинна ламати P&L
+            import logging
+            logging.getLogger(__name__).exception("meta ads reconcile failed")
+            ads = None
+        return Response({"from": d_from.isoformat(), "to": d_to.isoformat(), **compute_pnl(d_from, d_to), "ads_meta": ads})
 
 
 class BreakevenView(APIView):

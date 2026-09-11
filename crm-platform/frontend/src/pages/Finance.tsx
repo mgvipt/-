@@ -1783,6 +1783,30 @@ function PnL() {
           )}
         </div>
       )}
+      {d.ads_meta && (d.ads_meta.meta_spend_uah > 0 || d.ads_meta.journal_paid_uah > 0) && (() => {
+        const a = d.ads_meta; const gap = Number(a.gap_uah || 0);
+        const numS: any = { padding: "7px 4px", textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" };
+        return (
+          <div className="panel" style={{ margin: "12px 0 0", maxWidth: 620, borderLeft: `4px solid ${gap > 1000 ? "#f59e0b" : "#16a34a"}` }}>
+            <b style={{ fontSize: 14 }}>📣 {tr("Реклама Meta: потрачено и оплачено","Реклама Meta: витрачено й оплачено")}</b>
+            <table style={{ width: "100%", marginTop: 8 }}>
+              <tbody>
+                <tr style={{ borderBottom: "1px solid #f1f5f9" }}><td style={{ padding: "7px 4px" }}>{tr("Потрачено в Ads Manager","Витрачено в Ads Manager")}</td><td style={numS}>{money(a.meta_spend_uah)}</td></tr>
+                <tr style={{ borderBottom: "1px solid #f1f5f9" }}><td style={{ padding: "7px 4px" }}>{tr("Оплаты рекламы в журнале","Оплати реклами в журналі")}</td><td style={numS}>{money(a.journal_paid_uah)}</td></tr>
+                <tr style={{ background: "#f8fafc" }}><td style={{ padding: "7px 4px", fontWeight: 700 }}>{gap >= 0 ? tr("Не хватает в журнале","Бракує в журналі") : tr("В журнале больше (оплачено наперёд)","У журналі більше (оплачено наперед)")}</td><td style={{ ...numS, color: gap > 1000 ? "#b45309" : "#16a34a" }}>{money(Math.abs(gap))}</td></tr>
+              </tbody>
+            </table>
+            {gap > 1000 && (
+              <div style={{ marginTop: 8, fontSize: 11.5, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "6px 9px", lineHeight: 1.45 }}>
+                {tr("Оплат рекламы в журнале меньше, чем потратила Meta. С июля Meta списывает с карты *9778 — загрузите её выписку в журнал (счёт «КАРТА_Реклама Meta (...9778)»). Расход за день в журнал не пишем — был бы дубль с выпиской.","Оплат реклами в журналі менше, ніж витратила Meta. З липня Meta списує з картки *9778 — завантажте її виписку в журнал (рахунок «КАРТА_Реклама Meta (...9778)»). Витрати за день у журнал не пишемо — був би дубль з випискою.")}
+              </div>
+            )}
+            <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+              {tr("Данные Meta в CRM с ","Дані Meta в CRM з ")}{a.meta_data_since || "—"}{a.spend_incomplete ? tr(" · часть дней без курса гривны"," · частина днів без курсу гривні") : ""}. {tr("Разница в пару тысяч — это сроки списания: Meta списывает частями.","Різниця в кілька тисяч — це терміни списання: Meta списує частинами.")}
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 }
