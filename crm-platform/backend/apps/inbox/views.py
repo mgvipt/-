@@ -444,6 +444,68 @@ def _close_contact_leads(contact_id, reason=""):
                      "%s → %s · причина: %s" % (old, target.name, reason or "—"), None, "Система")
 
 
+# Причина завершення чату → програшна стадія угоди (такі стадії є у воронках 15/16).
+# Причини без відповідника («Хочу пізніше», «Питання вирішено», без причини) угоди НЕ чіпають.
+_DEAL_LOST_BY_REASON = [
+    ("ігнор", "Игнор"),
+    ("не звернення", "Спам"),
+    ("купив у конкурента", "Уже купил"),
+    ("дорого", "Дорого"),
+    ("не наважився", "Отказался"),
+    ("не підійшов", "Отказался"),
+    ("немає в наявності", "Отказ"),
+    ("просто дивився", "НЕ АКТУАЛЬНО"),
+    ("не актуально", "НЕ АКТУАЛЬНО"),
+    ("подумаю", "Отказался назвать причину"),
+]
+
+
+def _close_contact_deals(contact_id, reason=""):
+    """При завершенні чату — закрити НЕОПЛАЧЕНІ угоди контакту на стадіях ДО «Оплату отримано»
+    у програшну стадію з тією ж причиною, щоб на канбані лишались лише актуальні угоди.
+    Не чіпаємо: угоди з оплатою (Payment або прихід у журналі), стадії від «Оплату отримано»
+    і далі, причини без відповідника. Повертає кількість закритих угод."""
+    if not contact_id:
+        return 0
+    low = (reason or "").lower()
+    target_name = next((st for key, st in _DEAL_LOST_BY_REASON if key in low), None)
+    if not target_name:
+        return 0
+    from django.utils import timezone as _tzd
+    from apps.crm.models import Deal, Stage, log_activity
+    from apps.finance.models import Transaction
+    done = 0
+    deals = (Deal.objects.filter(contact_id=contact_id, funnel__is_lead_funnel=False)
+             .exclude(stage__is_won=True).exclude(stage__is_lost=True).select_related("stage"))
+    for d in deals:
+        paid_stage = Stage.objects.filter(funnel_id=d.funnel_id, name__icontains="Оплату отримано").first()
+        if not paid_stage or d.stage.order >= paid_stage.order:
+            continue
+        if d.payments.filter(is_paid=True).exists() or Transaction.objects.filter(deal_id=d.id, direction="in").exists():
+            continue
+        target = Stage.objects.filter(funnel_id=d.funnel_id, is_lost=True, name=target_name).first()
+        if not target:
+            continue
+        old = d.stage.name
+        q = dict(d.qualification or {})
+        q["_reached_stage_id"] = d.stage_id  # знімок стадії — щоб повернути, якщо клієнт оживе
+        q["_reached_stage_name"] = old
+        q["close_reason"] = reason
+        now = _tzd.now()
+        d.qualification = q
+        d.stage = target
+        d.stage_changed_at = now
+        flds = ["stage", "qualification", "stage_changed_at"]
+        if not d.closed_at:
+            d.closed_at = now
+            flds.append("closed_at")
+        d.save(update_fields=flds)
+        log_activity("deal", d.id, "Закрито разом з чатом",
+                     "%s → %s · причина: %s" % (old, target.name, reason), None, "Система")
+        done += 1
+    return done
+
+
 # Скільки хвилин чат лишається у загальному списку менеджера після того,
 # як ВІН написав у чужий (закріплений за іншим) чат. Закріпити = назавжди.
 _RECENT_REPLY_MIN = 30
@@ -686,6 +748,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             log_activity("contact", r["contact_id"] or 0, "Завершив чат",
                          ("причина: %s" % reason) if reason else "без причини", request.user, _who)
             _close_contact_leads(r["contact_id"], reason)
+            _close_contact_deals(r["contact_id"], reason)
         return Response({"closed": len(rows)})
 
     @action(detail=True, methods=["post"])
@@ -715,6 +778,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         log_activity("contact", conv.contact_id or 0, "Завершив чат",
                      ("причина: %s" % reason) if reason else "без причини", request.user, _who)
         _close_contact_leads(conv.contact_id, reason)
+        _close_contact_deals(conv.contact_id, reason)
         return Response(ConversationSerializer(conv).data)
 
     @action(detail=True, methods=["post"])
