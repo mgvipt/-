@@ -1,4 +1,5 @@
 from datetime import date as _date
+from django.conf import settings
 from django.db import models
 from django.db.models import Sum
 
@@ -420,3 +421,26 @@ class TransactionSplit(models.Model):
 
     def __str__(self):
         return "split #%s · %s грн" % (self.transaction_id, self.amount)
+
+
+class DaySnapshot(models.Model):
+    """Знімок платежів дня («Закрити день») — замість скріна журналу в Telegram о 18:00.
+    rows — заморожені рядки операцій дня, totals — підсумки. Логіка — apps/finance/day_close.py."""
+    KIND = [("manual", "Вручну"), ("auto", "Авто 18:00"), ("reclose", "Перезнімок")]
+    date = models.DateField(db_index=True)
+    version = models.PositiveSmallIntegerField(default=1)
+    kind = models.CharField(max_length=10, choices=KIND, default="manual")
+    closed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    closed_at = models.DateTimeField(auto_now_add=True)
+    rows = models.JSONField(default=list, blank=True)
+    totals = models.JSONField(default=dict, blank=True)
+    note = models.CharField(max_length=255, blank=True, default="")
+    reopened_at = models.DateTimeField(null=True, blank=True)
+    reopened_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        ordering = ["-date", "-version"]
+        unique_together = [("date", "version")]
+
+    def __str__(self):
+        return "знімок %s v%s" % (self.date, self.version)

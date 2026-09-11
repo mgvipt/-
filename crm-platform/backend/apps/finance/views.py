@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from apps.common.permissions import HasPermCode
+from .models import DaySnapshot  # noqa: E402  (знімки дня)
 from .models import Account, Category, Transaction, FinModelArticle, FinDirection, ChannelSpend, FundAllocation, AdvisoryReport, TransactionAttachment, ManagerPlan, WorkDay, WorkSession
 from .serializers import AccountSerializer, CategorySerializer, TransactionSerializer, FinModelArticleSerializer, FinDirectionSerializer, FundAllocationSerializer, AdvisoryReportSerializer
 from .services import compute_pnl, compute_breakeven, compute_channels
@@ -120,6 +121,43 @@ def _guard_period(request, tx_date):
         if not (u.is_superuser or u.has_perm_code("finance.period.close")):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("Період до %s закрито бухгалтерією — операції не змінюються" % cu.isoformat())
+
+
+# ── Історія змін операцій журналу (було → стало) — для «Знімків дня» ──
+_AUDIT_FIELDS = (("amount", "Сума"), ("date", "Дата"), ("account_id", "Рахунок"), ("direction", "Тип"),
+                 ("currency", "Валюта"), ("category_id", "Категорія"), ("counterparty", "Контрагент"),
+                 ("deal_id", "Угода"), ("comment", "Коментар"))
+
+
+def _tx_audit_state(t):
+    return {k: getattr(t, k) for k, _ in _AUDIT_FIELDS}
+
+
+def _tx_audit_log(request, t, before, action="Зміна операції"):
+    try:
+        from apps.crm.models import log_activity
+        parts = []
+        for k, lbl in _AUDIT_FIELDS:
+            a, b = before.get(k), getattr(t, k)
+            if a != b:
+                parts.append("%s %s→%s" % (lbl, a if a not in (None, "") else "—", b if b not in (None, "") else "—"))
+        if parts:
+            u = request.user
+            log_activity("finance", t.id, action, "; ".join(parts)[:400], u, u.get_full_name() or u.username)
+    except Exception:  # noqa: BLE001 — історія не повинна ламати збереження
+        pass
+
+
+def _tx_delete_log(request, t):
+    try:
+        from apps.crm.models import log_activity
+        u = request.user
+        sign = "+" if t.direction == "in" else ("−" if t.direction == "out" else "↔")
+        log_activity("finance", t.id, "Видалено операцію", "%s · %s%s %s · %s · %s" % (
+            t.date, sign, t.amount, t.currency, t.account.name if t.account_id else "", t.counterparty or ""),
+            u, u.get_full_name() or u.username)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 class AccountViewSet(viewsets.ModelViewSet):
@@ -240,7 +278,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
         nd = serializer.validated_data.get("date")
         if nd:
             _guard_period(self.request, nd)
+        _audit_before = _tx_audit_state(serializer.instance)
         serializer.save()
+        _tx_audit_log(self.request, serializer.instance, _audit_before)
         self._apply_splits(serializer.instance, self.request.data)
         try:
             from apps.crm.views import sync_deal_payment_from_tx
@@ -251,6 +291,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         _fin_guard(self.request, "finance.tx.edit", "Журнал: лише перегляд — нема права видаляти операції")
         _guard_period(self.request, instance.date)
+        _tx_delete_log(self.request, instance)
         # Якщо операція повʼязана з платежем угоди (crm.Payment) — видаляємо і його,
         # щоб у картці угоди не лишався «привид» платежу з бейджем після видалення з журналу.
         pay = getattr(instance, "payment", None)
@@ -3500,3 +3541,96 @@ class YuliaStatusView(APIView):
     def get(self, request):
         from apps.inbox.yulia_toggle import yulia_status
         return Response(yulia_status())
+
+
+
+class DaySnapshotViewSet(viewsets.ReadOnlyModelViewSet):
+    """Знімки дня (Фінанси → Операції → Знімки дня). Бачать усі, хто має доступ до Журналу.
+    GET ?from&to — список; GET <id> — рядки + що змінилось; POST close/ {date}; POST <id>/reclose/, <id>/reopen/."""
+    permission_classes = [FinancePerm]
+    queryset = DaySnapshot.objects.all()
+
+    def _can(self, code):
+        u = self.request.user
+        return u.is_superuser or u.has_perm_code(code)
+
+    def _check_view(self):
+        if not (self._can("finance.tab.journal") or self._can("roles.manage")):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Немає доступу до Журналу")
+
+    def _head(self, s, with_count=True):
+        from .day_close import diff
+        by = s.closed_by
+        rb = s.reopened_by
+        return {"id": s.id, "date": s.date.isoformat(), "version": s.version, "kind": s.kind,
+                "kind_label": dict(DaySnapshot.KIND).get(s.kind, s.kind),
+                "closed_by": (by.get_full_name() or by.username) if by else "Автоматично",
+                "closed_at": s.closed_at.isoformat(), "totals": s.totals,
+                "reopened_at": s.reopened_at.isoformat() if s.reopened_at else None,
+                "reopened_by": (rb.get_full_name() or rb.username) if rb else "",
+                "diff_count": diff(s)["count"] if with_count else None}
+
+    def list(self, request, *args, **kwargs):
+        self._check_view()
+        from .day_close import day_closed_until
+        d_from, d_to = _period(request)
+        qs = DaySnapshot.objects.filter(date__gte=d_from, date__lte=d_to).select_related("closed_by", "reopened_by")
+        cu = day_closed_until()
+        return Response({
+            "results": [self._head(s) for s in qs],
+            "today": _today().isoformat(),
+            "today_closed": DaySnapshot.objects.filter(date=_today(), reopened_at__isnull=True).exists(),
+            "closed_until": cu.isoformat() if cu else None,
+            "can_close_day": self._can("finance.day.close"),
+            "can_edit_closed_day": self._can("finance.day.edit_closed") or self._can("finance.period.close"),
+        })
+
+    def retrieve(self, request, *args, **kwargs):
+        self._check_view()
+        from .day_close import diff
+        from apps.crm.models import ActivityLog
+        s = self.get_object()
+        dd = diff(s)
+        ids = [r["id"] for r in (s.rows or [])] + [r["id"] for r in dd["added_after"]] + [r["id"] for r in dd["appeared"]]
+        log = [{"object_id": a.object_id, "action": a.action, "detail": a.detail, "actor": a.actor,
+                "at": a.created_at.isoformat()}
+               for a in ActivityLog.objects.filter(kind="finance", object_id__in=ids, created_at__gt=s.closed_at).order_by("created_at")[:300]]
+        return Response({**self._head(s, with_count=False), "rows": s.rows, "diff": dd, "log": log})
+
+    @action(detail=False, methods=["post"])
+    def close(self, request):
+        from .day_close import close_day
+        if not self._can("finance.day.close"):
+            return Response({"detail": "Немає права закривати день"}, status=403)
+        from datetime import date as _d
+        raw = (request.data.get("date") or "").strip()
+        try:
+            d = _d.fromisoformat(raw) if raw else _today()
+        except ValueError:
+            return Response({"detail": "Невірна дата"}, status=400)
+        if d > _today():
+            return Response({"detail": "Не можна закрити майбутній день"}, status=400)
+        s, created = close_day(d, request.user, "manual")
+        return Response({**self._head(s), "created": created})
+
+    @action(detail=True, methods=["post"])
+    def reclose(self, request, pk=None):
+        from .day_close import close_day
+        if not (self._can("finance.day.edit_closed") or self._can("finance.period.close")):
+            return Response({"detail": "Немає права робити перезнімок"}, status=403)
+        s = self.get_object()
+        ns, _ = close_day(s.date, request.user, "reclose")
+        return Response(self._head(ns))
+
+    @action(detail=True, methods=["post"])
+    def reopen(self, request, pk=None):
+        from django.utils import timezone as _tzr
+        if not (self._can("finance.day.edit_closed") or self._can("finance.period.close")):
+            return Response({"detail": "Немає права відкривати день"}, status=403)
+        s = self.get_object()
+        if not s.reopened_at:
+            s.reopened_at = _tzr.now()
+            s.reopened_by = request.user
+            s.save(update_fields=["reopened_at", "reopened_by"])
+        return Response(self._head(s))

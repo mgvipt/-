@@ -58,6 +58,8 @@ CHECKS = [
     ("Фінанси: дашборд", "owner", "/api/finance/dashboard/", {200}, []),
     ("Фінанси: огляд", "owner", "/api/finance/overview/", {200}, []),
     ("Фінанси: P&L", "owner", "/api/finance/pnl/", {200}, []),
+    ("Фінанси: знімки дня", "owner", "/api/day-snapshots/", {200}, ["results", "can_close_day"]),
+    ("Фінанси: знімки дня (менеджер з журналом)", "manager", "/api/day-snapshots/", {200}, ["results"]),
     ("Фінанси: рахунки", "owner", "/api/accounts/", {200}, []),
     ("КПІ менеджерів", "owner", "/api/finance/salary/", {200}, []),
     ("КПІ: свої цифри (менеджер)", "manager", "/api/finance/salary/", {200, 403}, []),

@@ -7,6 +7,7 @@ import { Fragment, useEffect, useState, useRef } from "react";
 import { api } from "../api";
 import DealCard from "./DealCard";
 import TxCardModal from "../TxCardModal";
+import DaySnapshots from "./finance/DaySnapshots";
 import { useNavigate } from "react-router-dom";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
@@ -71,18 +72,18 @@ const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${pa
 
 export default function Finance() {
   const { t } = useLang();
-  const [tab, setTab] = useState<"dash" | "cashflow" | "journal" | "triage" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model" | "incoming">(() => (new URLSearchParams(window.location.search).get("debt") ? "debts" : ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash")));
+  const [tab, setTab] = useState<"dash" | "cashflow" | "journal" | "triage" | "pnl" | "be" | "dir" | "plan" | "debts" | "grow" | "salary" | "mplan" | "time" | "ref" | "model" | "incoming" | "days">(() => (new URLSearchParams(window.location.search).get("debt") ? "debts" : ((new URLSearchParams(window.location.search).get("tx") || new URLSearchParams(window.location.search).get("client")) ? "journal" : (localStorage.getItem("fin_tab") as any) || "dash")));
   useEffect(() => { try { localStorage.setItem("fin_tab", tab); } catch (e) { /* noop */ } }, [tab]);
   const [quickOpen, setQuickOpen] = useState(false);
   const isMobile = useIsMobile();
   const { can: canF } = useAuth();
-  const tabAllowed = (k: string) => k === "dash" ? true : (canF("finance.tab." + k) || canF("roles.manage"));
+  const tabAllowed = (k: string) => k === "dash" ? true : k === "days" ? (canF("finance.tab.journal") || canF("roles.manage")) : (canF("finance.tab." + k) || canF("roles.manage"));
   useEffect(() => { if (!tabAllowed(tab)) setTab("dash"); /* eslint-disable-next-line */ }, [tab]);
-  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["cashflow", <><Icon n="💵" size={15} /> {t("Деньги","Гроші")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["incoming", <><Icon n="📥" size={15} /> {t("Вх. накладные","Вхідні накладні")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>]];
+  const tabs: [string, React.ReactNode][] = [["dash", <><Icon n="💰" size={15} /> {t("Дашборд","Дашборд")}</>], ["cashflow", <><Icon n="💵" size={15} /> {t("Деньги","Гроші")}</>], ["journal", <><Icon n="🧾" size={15} /> {t("Журнал","Журнал")}</>], ["triage", <><Icon n="🧹" size={15} /> {t("Разноска","Рознесення")}</>], ["pnl", <><Icon n="📊" size={15} /> {t("P&L (ATM)","P&L (ATM)")}</>], ["be", <><Icon n="🎯" size={15} /> {t("Точка безубыточности","Точка беззбитковості")}</>], ["dir", <><Icon n="🗂" size={15} /> {t("Направления (проекты)","Напрямки (проекти)")}</>], ["plan", <><Icon n="💼" size={15} /> {t("Планирование","Планування")}</>], ["debts", <><Icon n="🤝" size={15} /> {t("Дт/Кт","Дт/Кт")}</>], ["incoming", <><Icon n="📥" size={15} /> {t("Вх. накладные","Вхідні накладні")}</>], ["grow", <><Icon n="🚀" size={15} /> {t("Рост","Зростання")}</>], ["salary", <><Icon n="💰" size={15} /> {t("ЗП/KPI","ЗП/KPI")}</>], ["mplan", <><Icon n="🎯" size={15} /> {t("Планы","Плани")}</>], ["time", <><Icon n="🕐" size={15} /> {t("Табель","Табель")}</>], ["ref", <><Icon n="📚" size={15} /> {t("Справочники","Довідники")}</>], ["model", <><Icon n="⚙️" size={15} /> {t("Финмодель","Фінмодель")}</>], ["days", <><Icon n="📸" size={15} /> {t("Снимки дня","Знімки дня")}</>]];
   const tabMap: any = Object.fromEntries(tabs);
   const GROUPS: [string, string[], string][] = [
     [t("Обзор", "Огляд"), ["dash", "cashflow"], "💰"],
-    [t("Операции", "Операції"), ["journal", "triage", "debts", "incoming"], "🧾"],
+    [t("Операции", "Операції"), ["journal", "days", "triage", "debts", "incoming"], "🧾"],
     [t("Аналитика", "Аналітика"), ["pnl", "be", "grow", "dir"], "📊"],
     [t("Планы", "Плани"), ["plan", "mplan", "salary", "time"], "💼"],
     [t("Справочники", "Довідники"), ["ref", "model"], "📚"],
@@ -108,6 +109,7 @@ export default function Finance() {
       {tab === "dash" && <Dashboard />}
       {tab === "cashflow" && <CashFlow />}
       {tab === "journal" && <Journal />}
+      {tab === "days" && <DaySnapshots />}
       {tab === "triage" && <TriageTab />}
       {tab === "pnl" && <PnL />}
       {tab === "be" && <Breakeven />}
