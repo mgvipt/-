@@ -39,6 +39,7 @@ import ActivityLog from "../ActivityLog";
 import CallButton from "../CallButton";
 import KpDoc from "../KpDoc";
 import { useLang } from "../i18n";
+import LeadQuality from "../LeadQuality";
 import VykraskaDoc from "../VykraskaDoc";
 import { SocialLink } from "../social";
 import { SalesAnalystPanel } from "../SalesAnalyst";
@@ -815,6 +816,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   <span style={{ fontWeight: 600 }}>{deal.contact_name || t("Без контакта","Без контакту")}</span>
                   {loyalty && <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: (LOYALTY_COLOR[loyalty] || "#64748b") + "22", color: LOYALTY_COLOR[loyalty] || "#64748b" }}>{loyalty}</span>}
                 </div>
+                {deal.contact_id ? <div style={{ marginTop: 6 }}><LeadQuality contactId={deal.contact_id} /></div> : null}
                 {(deal.contact_phone || deal.contact_social_link) && (
                   <div style={{ marginTop: 6, fontSize: 12.5, display: "flex", flexDirection: "column", gap: 3 }}>
                     {deal.contact_phone && <a href={`tel:${deal.contact_phone}`} style={{ color: "#0f172a", fontWeight: 600 }}><Icon n="📱" size={13} /> {deal.contact_phone}</a>}

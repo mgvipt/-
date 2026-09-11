@@ -87,6 +87,8 @@ def from_close_reason(reason):
         return ("nontarget", "other")
     if "не звернення" in low:
         return ("comment", "")
+    if "не відповів після" in low:
+        return ("noreply", "")
     return ("target", "")
 
 

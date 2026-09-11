@@ -10,6 +10,7 @@ import NeedsForm from "../NeedsForm";
 import CardFields from "../CardFields";
 import ActivityLog from "../ActivityLog";
 import { useLang } from "../i18n";
+import LeadQuality from "../LeadQuality";
 import { SocialLink } from "../social";
 import { SalesAnalystPanel } from "../SalesAnalyst";
 import { Icon } from "../Icon";
@@ -185,6 +186,7 @@ export default function LeadCard() {
                 {([["instagram", "Instagram"], ["telegram", "Telegram"], ["tiktok", "TikTok"], ["facebook", "Facebook"], ["viber", "Viber"], ["call", t("Звонок","Дзвінок")], ["site", t("Сайт","Сайт")], ["wholesale", t("Опт / дилеры","Опт / дилери")], ["designers", t("Дизайнеры","Дизайнери")], ["other", t("Другое","Інше")]] as [string, string][]).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </div>
+            <div style={{ marginTop: 8 }}><LeadQuality contactId={lead.contact} /></div>
           </div>
           <SalesAnalystPanel kind="leads" id={lead.id} />
           <CardFields leadId={lead.id} initial={lead.card_fields} />

@@ -13,6 +13,7 @@ import { Icon } from "../Icon";
 import { TaskQuickModal } from "../TaskQuickModal";
 import ConversationSourceCard from "../ConversationSourceCard";
 import LeadQuality from "../LeadQuality";
+import { CLOSE_REASONS, GROUP_HDR } from "../closeReasons";
 import { ReplyContext, ReactionBadges, MessageStatusLine, CorrectionAction, messagesHaveSameVisibleState, isContextAttachment } from "../MessageContext";
 import { msgSoundOn, setMsgSoundOn, teamSoundOn, setTeamSoundOn } from "../sounds";
 import { MediaLibraryPicker } from "./MediaLibraryPicker";
@@ -291,24 +292,6 @@ export default function Inbox() {
   }
 
   const [closeMode, setCloseMode] = useState<null | "one" | "bulk">(null);
-  const CLOSE_REASONS = [
-  "Хочу пізніше (відкласти)",
-  "Не відповідає (ігнор)",
-  "Дорого / бюджет",
-  "«Подумаю» / на днях",
-  "Не наважився на пробник",
-  "Немає в наявності / довгі терміни",
-  "Купив у конкурента",
-  "Не підійшов матеріал / продукт",
-  "Немає обʼєкта зараз / просто дивився",
-  "Не актуально",
-  "Питання вирішено / відповіли",
-  "Не звернення (коментар, спілкування)",
-  "Нецільовий: спам / бот",
-  "Нецільовий: не наш товар",
-  "Нецільовий: постачальник / вакансія",
-  "Нецільовий: помилився адресою",
-];
   function toggleSel(id: number) { setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
   function selectAllVisible() { setSelected(new Set(convs.map((c) => c.id))); }
   async function bulkClose() { if (selected.size === 0) return; setCloseMode("bulk"); }
@@ -351,7 +334,7 @@ export default function Inbox() {
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, width: 340, maxWidth: "92vw", boxShadow: "0 20px 50px rgba(0,0,0,.28)", overflow: "hidden" }}>
             <div style={{ padding: "12px 16px", fontWeight: 800, fontSize: 14, borderBottom: "1px solid #f1f5f9" }}>{t("Причина завершення","Причина завершення")}{closeMode === "bulk" ? ` (${selected.size})` : ""}</div>
             <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
-              {CLOSE_REASONS.map((r) => (<div key={r} onClick={() => (closeMode === "bulk" ? doCloseBulk(r) : doCloseOne(r))} style={{ padding: "10px 16px", cursor: "pointer", fontSize: 13.5, borderBottom: "1px solid #f8fafc" }}>{r}</div>))}
+              {CLOSE_REASONS.map((r) => r.startsWith("§") ? (<div key={r} style={GROUP_HDR}>{r.slice(1)}</div>) : (<div key={r} onClick={() => (closeMode === "bulk" ? doCloseBulk(r) : doCloseOne(r))} style={{ padding: "10px 16px", cursor: "pointer", fontSize: 13.5, borderBottom: "1px solid #f8fafc" }}>{r}</div>))}
               <div onClick={() => (closeMode === "bulk" ? doCloseBulk("") : doCloseOne(""))} style={{ padding: "10px 16px", cursor: "pointer", fontSize: 13, color: "#94a3b8" }}>{t("Завершити без причини","Завершити без причини")}</div>
             </div>
             <div style={{ padding: "8px 16px", textAlign: "right", borderTop: "1px solid #f1f5f9" }}><button className="btn btn-light" style={{ fontSize: 13 }} onClick={() => setCloseMode(null)}>{t("Скасувати","Скасувати")}</button></div>

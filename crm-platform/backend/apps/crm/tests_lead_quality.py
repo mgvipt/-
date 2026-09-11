@@ -21,6 +21,7 @@ class LeadQualityTests(TestCase):
         self.assertEqual(from_close_reason("Нецільовий: постачальник / вакансія"), ("nontarget", "supplier_job"))
         self.assertEqual(from_close_reason("Не звернення (коментар, спілкування)"), ("comment", ""))
         self.assertEqual(from_close_reason("Дорого / бюджет"), ("target", ""))
+        self.assertEqual(from_close_reason("Не відповів після дожимів"), ("noreply", ""))
         self.assertIsNone(from_close_reason(""))
 
     def test_close_marks_target_only_if_empty(self):

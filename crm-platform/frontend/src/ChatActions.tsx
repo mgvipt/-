@@ -4,17 +4,8 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { Avatar } from "./ui";
 import { Icon } from "./Icon";
-import LeadQuality from "./LeadQuality";
+import { CLOSE_REASONS, GROUP_HDR } from "./closeReasons";
 
-const CLOSE_REASONS = [
-  "Хочу пізніше (відкласти)", "Не відповідає (ігнор)", "Дорого / бюджет", "«Подумаю» / на днях",
-  "Не наважився на пробник", "Немає в наявності / довгі терміни",
-  "Купив у конкурента", "Не підійшов матеріал / продукт",
-  "Немає обʼєкта зараз / просто дивився",
-  "Не актуально",
-  "Питання вирішено / відповіли", "Не звернення (коментар, спілкування)",
-  "Нецільовий: спам / бот", "Нецільовий: не наш товар", "Нецільовий: постачальник / вакансія", "Нецільовий: помилився адресою",
-];
 
 export default function ChatActions({ convId, onClosed, onChanged }: { convId: number; onClosed?: () => void; onChanged?: (c: any) => void }) {
   const [emps, setEmps] = useState<{ id: number; full_name: string }[]>([]);
@@ -52,7 +43,7 @@ export default function ChatActions({ convId, onClosed, onChanged }: { convId: n
         <div style={{ position: "absolute", top: 32, left: 0, width: 250, maxHeight: 300, overflowY: "auto", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 12px 30px rgba(0,0,0,.16)", zIndex: 41 }}>
           <div style={{ padding: "8px 12px", fontSize: 12, fontWeight: 700, color: "#475569", borderBottom: "1px solid #f1f5f9", position: "sticky", top: 0, background: "#fff" }}>{picker === "close" ? "Причина завершення:" : picker === "transfer" ? "Переадресувати на:" : "Додати менеджера:"}</div>
           {picker === "close" ? (<>
-            {CLOSE_REASONS.map((r) => (<div key={r} onClick={() => close(r)} style={{ padding: "8px 12px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f8fafc" }}>{r}</div>))}
+            {CLOSE_REASONS.map((r) => r.startsWith("§") ? (<div key={r} style={GROUP_HDR}>{r.slice(1)}</div>) : (<div key={r} onClick={() => close(r)} style={{ padding: "8px 12px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f8fafc" }}>{r}</div>))}
             <div onClick={() => close("")} style={{ padding: "8px 12px", cursor: "pointer", fontSize: 12.5, color: "#94a3b8", borderTop: "1px solid #eef2f7" }}>Завершити без причини</div>
           </>) : (<>
             {emps.map((e) => (<div key={e.id} onClick={() => pick(e.id)} style={{ padding: "7px 12px", cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid #f8fafc" }}><Avatar name={e.full_name} cls="av-md" />{e.full_name}</div>))}
@@ -61,7 +52,6 @@ export default function ChatActions({ convId, onClosed, onChanged }: { convId: n
         </div>
       </>)}
     </div>
-    <LeadQuality convId={convId} />
     </>
   );
 }
