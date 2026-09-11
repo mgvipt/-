@@ -112,10 +112,24 @@ export default function Inbox() {
     if (search.trim()) sp.set("search", search.trim());
     return "?" + sp.toString();
   }
+  // 11.09: «Всі» вантажить сторінку 50 від свіжих — у менеджера з багатьма своїми чатами вільні
+  // (непризначені) не влазили в неї (Ілона бачила 3 з 33, Кирил 2). Вільний пул тягнемо ОКРЕМО
+  // і ЦІЛКОМ з тими ж фільтрами (канал/дата/пріоритет); свої чати вантажаться як раніше.
+  async function freePool(): Promise<Conversation[]> {
+    if (scope !== "all" || mgrFilter || search.trim()) return [];
+    const sp = new URLSearchParams(listQuery().slice(1));
+    sp.set("scope", "unassigned"); sp.set("page_size", "300");
+    try { return (await api.get<Paginated<Conversation>>(`/api/conversations/?${sp.toString()}`)).results; } catch { return []; }
+  }
+  // Вільні, яких нема на сторінці, — в кінець: вони старші за всю сторінку (сортування від свіжих).
+  function withFree(page: Conversation[], free: Conversation[]): Conversation[] {
+    const ids = new Set(page.map((x) => x.id));
+    return [...page, ...free.filter((x) => !ids.has(x.id))];
+  }
   async function loadConvs() {
     const q = listQuery();
-    const d = await api.get<Paginated<Conversation>>(`/api/conversations/${q}`);
-    setConvs(d.results); setNextUrl((d as any).next || null);
+    const [d, free] = await Promise.all([api.get<Paginated<Conversation>>(`/api/conversations/${q}`), freePool()]);
+    setConvs(withFree(d.results, free)); setNextUrl((d as any).next || null);
     // НЕ відкривати «перший-ліпший» чат, коли прийшли за конкретним клієнтом (?contact= / ?c=)
     if (!activeRef.current && d.results[0] && !params.get("contact") && !params.get("c")) openConv(d.results[0]);
   }
@@ -128,7 +142,8 @@ export default function Inbox() {
   }
   async function refreshList() {
     const q = listQuery();
-    const d = await api.get<Paginated<Conversation>>(`/api/conversations/${q}`);
+    const [page, free] = await Promise.all([api.get<Paginated<Conversation>>(`/api/conversations/${q}`), freePool()]);
+    const d = { ...page, results: withFree(page.results, free) };  // вільний пул теж оновлюється на місці
     setConvs((cs) => {
       const fresh = new Map<number, Conversation>(d.results.map((r) => [r.id, r]));
       // Оновлюємо НА МІСЦІ (без пересортування → список не стрибає, менеджер не втрачає діалог).
