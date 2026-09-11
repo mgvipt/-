@@ -12,6 +12,7 @@ import { linkify, dayLabel, metaWindow, SNDR_MAP } from "../chatUtils";
 import { Icon } from "../Icon";
 import { TaskQuickModal } from "../TaskQuickModal";
 import ConversationSourceCard from "../ConversationSourceCard";
+import LeadQuality from "../LeadQuality";
 import { ReplyContext, ReactionBadges, MessageStatusLine, CorrectionAction, messagesHaveSameVisibleState, isContextAttachment } from "../MessageContext";
 import { msgSoundOn, setMsgSoundOn, teamSoundOn, setTeamSoundOn } from "../sounds";
 import { MediaLibraryPicker } from "./MediaLibraryPicker";
@@ -303,6 +304,10 @@ export default function Inbox() {
   "Не актуально",
   "Питання вирішено / відповіли",
   "Не звернення (коментар, спілкування)",
+  "Нецільовий: спам / бот",
+  "Нецільовий: не наш товар",
+  "Нецільовий: постачальник / вакансія",
+  "Нецільовий: помилився адресою",
 ];
   function toggleSel(id: number) { setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
   function selectAllVisible() { setSelected(new Set(convs.map((c) => c.id))); }
@@ -585,6 +590,7 @@ export default function Inbox() {
                 ))}
               </div>
             )}
+            <div style={{ padding: "6px 14px 0", background: "#fff", borderBottom: "1px solid #f1f5f9" }}><LeadQuality convId={active.id} /></div>
             <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
               <ConversationSourceCard card={(active as any)?.source_card} />
               {adCtx && (adCtx.ad_title || adCtx.ad_thumb) && (

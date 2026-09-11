@@ -40,6 +40,7 @@ CHECKS = [
     ("Список угод (менеджер)", "manager", "/api/deals/?page_size=5", {200}, []),
     ("Список контактів", "owner", "/api/contacts/?page_size=5", {200}, []),
     ("Картка контакту (останній)", "owner", "CONTACT_DETAIL", {200}, []),
+    ("Якість звернення (контакт)", "owner", "CONTACT_LEAD_QUALITY", {200}, ["lead_id", "choices"]),
     ("Задачі", "owner", "/api/tasks/?page_size=5", {200}, []),
     ("Дублікати", "owner", "/api/duplicates/", {200}, []),
     ("Дублікати: номер переписки", "owner", "/api/duplicates/?by=chat", {200}, []),
@@ -90,6 +91,9 @@ def resolve_dynamic(url):
     if url == "CONTACT_DETAIL":
         contact = Contact.objects.order_by("-id").first()
         return "/api/contacts/%s/" % contact.pk if contact else None
+    if url == "CONTACT_LEAD_QUALITY":
+        contact = Contact.objects.order_by("-id").first()
+        return "/api/contacts/%s/lead-quality/" % contact.pk if contact else None
     return url
 
 

@@ -62,6 +62,12 @@ class ContactViewSet(viewsets.ModelViewSet):
     queryset = Contact.objects.all()
     serializer_class = ContactSerializer
 
+    @action(detail=True, methods=["get", "post"], url_path="lead-quality")
+    def lead_quality(self, request, pk=None):
+        """Якість звернення (останній лід клієнта): GET — стан, POST {quality, reason} — відмітити."""
+        from .lead_quality import api_state_or_set
+        return api_state_or_set(request, self.get_object().id)
+
     @action(detail=True, methods=["get"], url_path="finance")
     def finance(self, request, pk=None):
         """Гроші по клієнту: доходи/витрати/аванси + останні операції журналу."""

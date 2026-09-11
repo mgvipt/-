@@ -447,6 +447,7 @@ def _close_contact_leads(contact_id, reason=""):
 # Причина завершення чату → програшна стадія угоди (такі стадії є у воронках 15/16).
 # Причини без відповідника («Хочу пізніше», «Питання вирішено», без причини) угоди НЕ чіпають.
 _DEAL_LOST_BY_REASON = [
+    ("нецільов", "Спам"),
     ("ігнор", "Игнор"),
     ("не звернення", "Спам"),
     ("купив у конкурента", "Уже купил"),
@@ -458,6 +459,9 @@ _DEAL_LOST_BY_REASON = [
     ("не актуально", "НЕ АКТУАЛЬНО"),
     ("подумаю", "Отказался назвать причину"),
 ]
+
+
+from apps.crm.lead_quality import safe_mark_on_close  # noqa: E402
 
 
 def _close_contact_deals(contact_id, reason=""):
@@ -749,6 +753,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                          ("причина: %s" % reason) if reason else "без причини", request.user, _who)
             _close_contact_leads(r["contact_id"], reason)
             _close_contact_deals(r["contact_id"], reason)
+            safe_mark_on_close(r["contact_id"], reason, request.user)
         return Response({"closed": len(rows)})
 
     @action(detail=True, methods=["post"])
@@ -765,6 +770,12 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         # хто зараз відповідає в діалозі (assigned_to), права не чіпаємо.
         return Response(ConversationSerializer(conv).data)
 
+    @action(detail=True, methods=["get", "post"], url_path="lead-quality")
+    def lead_quality(self, request, pk=None):
+        """Якість звернення для цього чату (останній лід контакту): GET — стан, POST — відмітити."""
+        from apps.crm.lead_quality import api_state_or_set
+        return api_state_or_set(request, self.get_object().contact_id)
+
     @action(detail=True, methods=["post"])
     def close(self, request, pk=None):
         """Завершити діалог. Наступний лист клієнта створить НОВИЙ діалог + лід.
@@ -779,6 +790,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                      ("причина: %s" % reason) if reason else "без причини", request.user, _who)
         _close_contact_leads(conv.contact_id, reason)
         _close_contact_deals(conv.contact_id, reason)
+        safe_mark_on_close(conv.contact_id, reason, request.user)
         return Response(ConversationSerializer(conv).data)
 
     @action(detail=True, methods=["post"])

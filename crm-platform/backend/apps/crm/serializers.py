@@ -193,8 +193,9 @@ class LeadSerializer(serializers.ModelSerializer):
         model = Lead
         fields = ["id", "title", "contact", "contact_name", "funnel", "stage",
                   "source", "amount", "is_seen", "qualification", "card_fields", "meta_attribution", "meta_ad", "contact_social_link", "contact_phone", "owner", "owner_name", "conversation_id",
+                  "quality", "quality_reason", "quality_at",
                   "created_at", "updated_at"]
-        read_only_fields = ["meta_attribution"]
+        read_only_fields = ["meta_attribution", "quality", "quality_reason", "quality_at"]
 
 
 class DealSerializer(serializers.ModelSerializer):

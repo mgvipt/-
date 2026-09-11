@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { Avatar } from "./ui";
 import { Icon } from "./Icon";
+import LeadQuality from "./LeadQuality";
 
 const CLOSE_REASONS = [
   "Хочу пізніше (відкласти)", "Не відповідає (ігнор)", "Дорого / бюджет", "«Подумаю» / на днях",
@@ -12,6 +13,7 @@ const CLOSE_REASONS = [
   "Немає обʼєкта зараз / просто дивився",
   "Не актуально",
   "Питання вирішено / відповіли", "Не звернення (коментар, спілкування)",
+  "Нецільовий: спам / бот", "Нецільовий: не наш товар", "Нецільовий: постачальник / вакансія", "Нецільовий: помилився адресою",
 ];
 
 export default function ChatActions({ convId, onClosed, onChanged }: { convId: number; onClosed?: () => void; onChanged?: (c: any) => void }) {
@@ -59,6 +61,7 @@ export default function ChatActions({ convId, onClosed, onChanged }: { convId: n
         </div>
       </>)}
     </div>
+    <LeadQuality convId={convId} />
     </>
   );
 }

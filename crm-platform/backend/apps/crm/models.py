@@ -176,6 +176,16 @@ class Lead(TimestampedOwned):
         help_text="Перевірена рекламна атрибуція Meta (тип джерела та стабільні ID реклами/форми)",
     )
 
+    # Якість звернення (для конверсії): ставиться в чаті та картках — див. apps/crm/lead_quality.py
+    QUALITY = [("target", "Цільовий"), ("nontarget", "Нецільовий"),
+               ("comment", "Коментар без запиту"), ("noreply", "Не відповів")]
+    quality = models.CharField(max_length=16, blank=True, default="", choices=QUALITY, db_index=True)
+    quality_reason = models.CharField(max_length=24, blank=True, default="",
+                                      help_text="Причина нецільового: spam/not_our/supplier_job/wrong/other")
+    quality_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                   on_delete=models.SET_NULL, related_name="+")
+    quality_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["-created_at"]
 
