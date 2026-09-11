@@ -233,6 +233,35 @@ def _tt_exists(username):
     return ok
 
 
+def _meta_ig_twin(username, last_ts, window_h=3):
+    """Чи це Instagram-клієнт, якого ВЖЕ веде Meta · instagram (11.09).
+
+    ChatPlace не віддає платформу чату, а ніки в Instagram і TikTok часто збігаються:
+    тезка в TikTok ≠ наш клієнт. Тому oembed «акаунт існує» робив IG-клієнтів тіктокерами
+    (23 з 52 чатів «ChatPlace · TikTok» за 30 днів мали двійника в Meta, створеного в ту ж хвилину).
+    Ознака двійника = ТОЧНИЙ нік (не частковий збіг) + Meta-діалог активний у межах window_h
+    годин від цього ChatPlace-чату. Без часу чату не ризикуємо — справжнього тіктокера не губимо.
+    """
+    from django.db.models import Q
+    from .models import Channel as _Ch, Conversation as _Cv
+    un = str(username or "").lstrip("@").strip().lower()
+    try:
+        ts = int(last_ts or 0)
+    except (TypeError, ValueError):
+        ts = 0
+    if not un or not ts:
+        return False
+    mig = _Ch.objects.filter(config__meta=True, kind="instagram").first()
+    if not mig:
+        return False
+    center = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+    delta = datetime.timedelta(hours=window_h)
+    return (_Cv.objects.filter(channel=mig,
+                               last_message_at__gte=center - delta, last_message_at__lte=center + delta)
+            .filter(Q(contact__nickname__iexact=un) | Q(contact__nickname__iexact="@" + un))
+            .exists())
+
+
 def sync_chats(max_chats=40, per_chat=40):
     """Підтягнути останні чати + повідомлення з ChatPlace у inbox CRM."""
     from .models import Channel, Conversation, Message
@@ -254,7 +283,10 @@ def sync_chats(max_chats=40, per_chat=40):
         # TikTok визначаємо НАДІЙНО: імʼя-@username І реальний TikTok-акаунт існує (oembed).
         # Раніше брали лише '@' — але у частини IG-клієнтів теж імена з '@' (хибний TikTok).
         _cand = raw_name.lstrip("@").strip() if raw_name.startswith("@") else ""
-        is_tt = bool(_cand) and (_tt_exists(_cand) is True)
+        # 11.09: спершу своя база — якщо цього клієнта вже веде Meta · instagram (точний нік +
+        # поруч у часі), це Instagram, а не тезка з TikTok. oembed тільки коли двійника нема.
+        is_tt = (bool(_cand) and not _meta_ig_twin(_cand, it.get("lastMessageAt"))
+                 and (_tt_exists(_cand) is True))
         platform = "tiktok" if is_tt else "instagram"
         ch = tt_ch if is_tt else ig_ch
         name = raw_name or "Instagram"
