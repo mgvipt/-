@@ -936,7 +936,11 @@ def _issue_checkbox_for_deal(deal, user=None, notify=True):
     from decimal import Decimal as _D
     if not (_s.CHECKBOX_LICENSE_KEY and _s.CHECKBOX_PASSWORD):
         return None
-    pay = _P.objects.filter(deal=deal, is_paid=True, checkbox_receipt_id="").order_by("id").first()
+    # «з авансу» і «термінал» НЕ фіскалізуємо: аванс — не нові гроші (їх прийняли й пробили раніше),
+    # термінал банку друкує свій чек. Дзеркально до accept_payment (там ці два способи теж пропускаються).
+    # Без цього авто-чек наступного дня підбирав оплату з авансу і пробивав її як «Картка» (#66651, 12.09).
+    _NOFISC = ("advance", "terminal")
+    pay = _P.objects.filter(deal=deal, is_paid=True, checkbox_receipt_id="").exclude(provider__in=_NOFISC).order_by("id").first()
     if not pay:
         # наложка НП: клієнт ВЖЕ розрахувався на відділенні (фіскальний момент настав),
         # хоча виплата від НоваПей ще в дорозі (is_paid=False до надходження на рахунок)
@@ -956,14 +960,17 @@ def _issue_checkbox_for_deal(deal, user=None, notify=True):
                            "price": int(round(float(deal.amount or 0) * 100))}, "quantity": 1000}]
     goods_total = sum(g["good"]["price"] * g["quantity"] // 1000 for g in goods)
     from django.db.models import Q as _Qcb
-    cum = sum((p.amount for p in _P.objects.filter(deal=deal, id__lte=pay.id).filter(_Qcb(is_paid=True) | _Qcb(id=pay.id))), _D("0"))
+    cum = sum((p.amount for p in _P.objects.filter(deal=deal, id__lte=pay.id).exclude(provider__in=_NOFISC).filter(_Qcb(is_paid=True) | _Qcb(id=pay.id))), _D("0"))
     cum_kop = int(round(float(cum) * 100))
     this_kop = int(round(float(pay.amount) * 100))
     if this_kop <= 0:
         return None
     pm = "CASH" if pay.provider in ("cash", "np") else "CASHLESS"  # np_cod = переказ НоваПей → CASHLESS
-    pay_label = {"liqpay": "Інтернет еквайринг", "terminal": "Картка", "card": "Картка",
-                 "np_cod": "Накладений платіж Нова Пошта", "reqs": "Оплата за реквізитами"}.get(pay.provider)
+    pay_label = {"liqpay": "Інтернет еквайринг",
+                 "np_cod": "Накладений платіж Нова Пошта", "reqs": "Оплата за реквізитами",
+                 "requisites": "Оплата за реквізитами"}.get(pay.provider)
+    if not pay_label and pm == "CASHLESS":
+        pay_label = "Безготівковий розрахунок"   # без підпису Checkbox сам пише «Картка», а карткою не платили
     relation = deal.checkbox_relation_id or None
     _pt = (deal.pay_type or "").lower()
     _prepay_type = any(x in _pt for x in ["передопл", "предопл", "prepay", "50%", "бронь", "аванс", "післяпл", "послеопл", "наклад", "np", "cod"])
