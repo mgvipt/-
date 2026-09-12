@@ -8,7 +8,7 @@ type Asset = {
   id: number; title: string; kind: "image" | "video" | "catalog"; section: "colors" | "quick";
   material: string; color_code: string; tags: string; url: string; preview_url?: string;
 };
-type Reply = { id: number; title: string; text: string; asset_ids: number[] };
+type Reply = { id: number; title: string; text: string; asset_ids: number[]; category?: string; when_to_use?: string };
 type MaterialSummary = { name: string; codes: number; catalog_pages: number; preview_url: string };
 type Screen = "materials" | "material" | "color";
 const SAND_EFFECTS = ["Galateya", "Eleganti", "Gaia Gloss", "Mio Gloss"] as const;
@@ -72,6 +72,9 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
   function toggle(id: number) { setPicked((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]); }
   function openMaterial(name: string) { setMaterial(name); setColor(""); setQuery(""); setScreen("material"); loadPicker(name); }
   function openColor(code: string) { setColor(code); setQuery(""); setScreen("color"); loadPicker(material, code); }
+  // Швидкі відповіді групуємо за категорією (заголовок групи — окремий рядок).
+  const qItems: any[] = [];
+  { let last = "\u0000"; for (const r of replies) { const c = r.category || ""; if (c !== last) { if (c) qItems.push({ __h: c }); last = c; } qItems.push(r); } }
   async function send(replyId?: number) { setBusy(true); setError(""); try { const m = await api.post<ChatMessage>(`/api/conversations/${conversationId}/send-library/`, replyId ? { reply_id: replyId } : { item_ids: picked }); onSent(m); onClose(); } catch (e: any) { setError(e?.response?.data?.detail || "Не вдалося надіслати"); } finally { setBusy(false); } }
   const card = (a: Asset) => <button key={a.id} onClick={() => toggle(a.id)} style={{ border: picked.includes(a.id) ? "2px solid var(--brand)" : "1px solid #dbe3ee", background: "#fff", padding: 5, borderRadius: 8, textAlign: "left", cursor: "pointer" }}>
     {(a.preview_url || a.url) && a.kind !== "video" && <img src={a.preview_url || a.url} loading="lazy" decoding="async" style={{ width: "100%", height: 72, objectFit: "cover", borderRadius: 5 }} />}
@@ -90,7 +93,7 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
       placeholder={tab === "quick" ? "Пошук швидкої відповіді" : (screen === "materials" ? "Пошук матеріалу" : "Знайти назву або код кольору")}
       style={{ width: "100%", boxSizing: "border-box", padding: "7px 9px", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 13, marginBottom: 8, flexShrink: 0 }} />
     <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-    {tab === "quick" && <div style={{ display: "grid", gap: 6, marginBottom: 8 }}>{replies.map((r) => <button key={r.id} className="btn" style={{ justifyContent: "flex-start", textAlign: "left", fontSize: 12 }} disabled={busy} onClick={() => {
+    {tab === "quick" && <div style={{ display: "grid", gap: 6, marginBottom: 8 }}>{qItems.map((r: any) => r.__h ? <div key={"h" + r.__h} style={{ fontSize: 10.5, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", margin: "6px 0 0" }}>{r.__h}</div> : <button key={r.id} title={r.when_to_use || ""} className="btn" style={{ justifyContent: "flex-start", textAlign: "left", fontSize: 12 }} disabled={busy} onClick={() => {
       const hasAssets = (r.asset_ids || []).length > 0;
       if (!hasAssets && onInsertText) { onInsertText(fillName(r.text || "")); onClose(); return; }
       send(r.id);

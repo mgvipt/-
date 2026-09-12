@@ -62,7 +62,8 @@ class MediaLibraryView(APIView):
         if request.query_params.get("view") == "picker":
             material = (request.query_params.get("material") or "").strip()
             color = (request.query_params.get("color") or "").strip()
-            reply_data = [{"id": q.id, "title": q.title, "text": q.text,
+            reply_data = [{"id": q.id, "title": q.title, "text": q.text, "category": q.category,
+                           "when_to_use": q.when_to_use,
                            "asset_ids": list(q.assets.values_list("id", flat=True))} for q in replies]
             if not material:
                 summaries = []
@@ -93,7 +94,8 @@ class MediaLibraryView(APIView):
                              "materials": [], "replies": reply_data})
         return Response({
             "items": [_library_item_data(request, x) for x in items],
-            "replies": [{"id": q.id, "title": q.title, "text": q.text,
+            "replies": [{"id": q.id, "title": q.title, "text": q.text, "category": q.category,
+                         "when_to_use": q.when_to_use,
                          "asset_ids": list(q.assets.values_list("id", flat=True))} for q in replies],
         })
 
@@ -121,7 +123,9 @@ class MediaLibraryView(APIView):
             return Response(_library_item_data(request, item), status=status.HTTP_201_CREATED)
         if action_name == "reply":
             q = QuickReply.objects.create(title=(request.data.get("title") or "Швидка відповідь")[:120],
-                                          text=request.data.get("text") or "")
+                                          text=request.data.get("text") or "",
+                                          category=(request.data.get("category") or "")[:60],
+                                          when_to_use=request.data.get("when_to_use") or "")
             q.assets.set(MediaLibraryItem.objects.filter(id__in=request.data.get("asset_ids", []), is_active=True))
             return Response({"id": q.id, "title": q.title, "text": q.text,
                              "asset_ids": list(q.assets.values_list("id", flat=True))}, status=status.HTTP_201_CREATED)
@@ -146,7 +150,12 @@ class MediaLibraryView(APIView):
             q = QuickReply.objects.filter(id=request.data.get("id")).first()
             if not q:
                 return Response({"detail": "Відповідь не знайдено"}, status=status.HTTP_404_NOT_FOUND)
-            q.title = (request.data.get("title") or q.title)[:120]; q.text = request.data.get("text") or ""; q.save()
+            q.title = (request.data.get("title") or q.title)[:120]; q.text = request.data.get("text") or ""
+            if "category" in request.data:
+                q.category = (request.data.get("category") or "")[:60]
+            if "when_to_use" in request.data:
+                q.when_to_use = request.data.get("when_to_use") or ""
+            q.save()
             q.assets.set(MediaLibraryItem.objects.filter(id__in=request.data.get("asset_ids", []), is_active=True))
             return Response({"id": q.id, "title": q.title, "text": q.text, "asset_ids": list(q.assets.values_list("id", flat=True))})
         return Response({"detail": "Невідома дія"}, status=status.HTTP_400_BAD_REQUEST)
@@ -463,6 +472,19 @@ _DEAL_LOST_BY_REASON = [
 
 
 from apps.crm.lead_quality import safe_mark_on_close  # noqa: E402
+
+
+# Незаповнені поля шаблонів швидких відповідей ([сума], [матеріал]…) не повинні піти клієнту.
+import re as _re_ph  # noqa: E402
+_UNFILLED_RE = _re_ph.compile(
+    r"\[(?:ім['’]я|матеріал|м²|кімната|сума|колір|ціна[^\]]{0,25}|посилання[^\]]{0,25}|причина|"
+    r"чоловіка/майстра|розміри|м² на кг|інструменти|бюджет|дешевший матеріал|склад|сума передоплати|"
+    r"наступна кімната)\]", _re_ph.I)
+
+
+def _unfilled_placeholder(text):
+    m = _UNFILLED_RE.search(text or "")
+    return m.group(0) if m else None
 
 
 def _close_contact_deals(contact_id, reason=""):
@@ -1176,6 +1198,10 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             msg = Message.objects.create(conversation=conv, direction="out", text=text, internal=True,
                                          sender=u, sender_name=(u.get_full_name() or u.username))
             return Response(MessageSerializer(msg).data, status=status.HTTP_201_CREATED)
+        _ph = _unfilled_placeholder(text)
+        if _ph:
+            return Response({"detail": "У тексті лишилось незаповнене поле %s — впишіть значення перед відправкою" % _ph},
+                            status=status.HTTP_400_BAD_REQUEST)
         try:
             msg = send_message(conv, text, user=request.user)
         except Exception as e:  # сеть/токен недоступны
@@ -1482,6 +1508,10 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             if not reply:
                 return Response({"detail": "Швидку відповідь не знайдено"}, status=status.HTTP_404_NOT_FOUND)
             text = text or reply.text
+            _ph = _unfilled_placeholder(text)
+            if _ph:
+                return Response({"detail": "У шаблоні є незаповнене поле %s — вставте відповідь у поле вводу й заповніть" % _ph},
+                                status=status.HTTP_400_BAD_REQUEST)
             items.extend(list(reply.assets.filter(is_active=True).select_related("file")))
         if not items and not text:
             return Response({"detail": "Оберіть матеріал або відповідь"}, status=status.HTTP_400_BAD_REQUEST)

@@ -158,6 +158,9 @@ class QuickReply(models.Model):
     assets = models.ManyToManyField(MediaLibraryItem, blank=True, related_name="quick_replies")
     is_active = models.BooleanField(default=True)
     sort = models.PositiveIntegerField(default=0)
+    category = models.CharField(max_length=60, blank=True, default="", db_index=True,
+                                help_text="Група в списку: «Дожими і повернення з ігнору», «Заперечення»…")
+    when_to_use = models.TextField(blank=True, default="", help_text="Коли використовувати — підказка менеджеру")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
