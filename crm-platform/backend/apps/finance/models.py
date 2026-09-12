@@ -2,6 +2,7 @@ from datetime import date as _date
 from django.conf import settings
 from django.db import models
 from django.db.models import Sum
+from django.utils import timezone
 
 
 class Account(models.Model):
@@ -74,7 +75,7 @@ class Transaction(models.Model):
     amount_uah = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="Сума у гривні (amount × rate) — для аналітики")
     transfer_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True,
                                           help_text="Зараховано на рахунок-одержувач у ЙОГО валюті (переказ з конвертацією, напр. грн→USD); пусто = amount")
-    date = models.DateField(default=_date.today, db_index=True)
+    date = models.DateField(default=timezone.localdate, db_index=True)  # київська дата (не UTC контейнера)
     op_time = models.TimeField(null=True, blank=True, help_text="Час операції (з банку або момент внесення)")
     import_batch = models.CharField(max_length=48, blank=True, default="", db_index=True,
                                     help_text="Партія імпорту (банк/виписка) — для відкату помилкового завантаження")

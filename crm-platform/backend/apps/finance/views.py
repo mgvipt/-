@@ -148,6 +148,74 @@ def _tx_audit_log(request, t, before, action="Зміна операції"):
         pass
 
 
+# ── Закриті дні («Закрити день»): блок грошових полів для тих, у кого немає права ──
+_DAY_PROTECTED = ("amount", "date", "account", "transfer_account", "transfer_amount", "direction", "currency", "rate")
+
+
+def _can_edit_closed_day(u):
+    return u.is_superuser or u.has_perm_code("finance.day.edit_closed") or u.has_perm_code("finance.period.close")
+
+
+def _day_cu():
+    from .day_close import day_closed_until
+    return day_closed_until()
+
+
+def _day_locked(request, d):
+    """Операція з датою d у закритому дні, а в користувача немає права змінювати закриті дні."""
+    if not d or _can_edit_closed_day(request.user):
+        return False
+    cu = _day_cu()
+    return bool(cu and d <= cu)
+
+
+def _guard_day(request, *, tx=None, new=None, create_date=None, delete=False):
+    """Закритий день: без права не можна міняти суму/дату/рахунок/тип/валюту, видаляти, переносити дату
+    В закритий день і створювати операції минулим закритим числом. Категорію, коментар, контрагента,
+    угоду — можна. Сьогоднішні нові платежі після закриття дня — можна."""
+    u = request.user
+    if _can_edit_closed_day(u):
+        return
+    cu = _day_cu()
+    if not cu:
+        return
+    from rest_framework.exceptions import PermissionDenied as _PD
+    msg = ("День %s закрито (знімок платежів). Суму, дату, рахунок і тип змінює лише власник або бухгалтер."
+           % cu.strftime("%d.%m"))
+    if create_date is not None:
+        if create_date <= cu and create_date < _today():
+            raise _PD(msg)
+        return
+    if tx is None:
+        return
+    if delete:
+        if tx.date <= cu:
+            raise _PD(msg)
+        return
+    new = new or {}
+    nd = new.get("date")
+    if nd and nd != tx.date and nd <= cu:
+        raise _PD(msg)
+    if tx.date > cu:
+        return
+    for k in _DAY_PROTECTED:
+        if k not in new:
+            continue
+        cur = getattr(tx, k + "_id") if k in ("account", "transfer_account") else getattr(tx, k)
+        nv = getattr(new[k], "pk", new[k])
+        if nv != cur:
+            raise _PD(msg)
+
+
+def _period_open_q(request):
+    """Фільтр «лише відкритий період» для масових правок людей без права закривати період."""
+    u = request.user
+    if u.is_superuser or u.has_perm_code("finance.period.close"):
+        return {}
+    cu = _closed_until()
+    return {"date__gt": cu} if cu else {}
+
+
 def _tx_delete_log(request, t):
     try:
         from apps.crm.models import log_activity
@@ -264,6 +332,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         _fin_guard(self.request, "finance.tx.edit", "Журнал: лише перегляд — нема права створювати операції")
         _guard_period(self.request, serializer.validated_data.get("date"))
+        _guard_day(self.request, create_date=serializer.validated_data.get("date") or _today())
         serializer.save()
         self._apply_splits(serializer.instance, self.request.data)
         try:
@@ -278,6 +347,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         nd = serializer.validated_data.get("date")
         if nd:
             _guard_period(self.request, nd)
+        _guard_day(self.request, tx=serializer.instance, new=serializer.validated_data)
         _audit_before = _tx_audit_state(serializer.instance)
         serializer.save()
         _tx_audit_log(self.request, serializer.instance, _audit_before)
@@ -291,6 +361,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         _fin_guard(self.request, "finance.tx.edit", "Журнал: лише перегляд — нема права видаляти операції")
         _guard_period(self.request, instance.date)
+        _guard_day(self.request, tx=instance, delete=True)
         _tx_delete_log(self.request, instance)
         # Якщо операція повʼязана з платежем угоди (crm.Payment) — видаляємо і його,
         # щоб у картці угоди не лишався «привид» платежу з бейджем після видалення з журналу.
@@ -400,8 +471,13 @@ class TransactionViewSet(viewsets.ModelViewSet):
         if not ids or not updates:
             return Response({"detail": "ids і set обовʼязкові"}, status=400)
         done = 0
+        locked = 0
+        _money_keys = {"account", "currency"} & set(updates)
         for t in Transaction.objects.filter(id__in=ids[:500]).select_related("category"):
             _guard_period(request, t.date)
+            if _money_keys and _day_locked(request, t.date):
+                locked += 1
+                continue
             for k, v in updates.items():
                 if k == "category":
                     t.category_id = int(v) if v else None
@@ -439,7 +515,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
                     _sc.default_purchase_category = t.category_id
                     _sc.save(update_fields=["default_purchase_category"])
             done += 1
-        return Response({"updated": done})
+        return Response({"updated": done, "locked_skipped": locked})
 
     @action(detail=False, methods=["post"], url_path="counterparty-rename")
     def counterparty_rename(self, request):
@@ -449,7 +525,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         new_n = (request.data.get("new") or "").strip()[:160]
         if not old_n or not new_n:
             return Response({"detail": "old і new обовʼязкові"}, status=400)
-        n = Transaction.objects.filter(counterparty=old_n).update(counterparty=new_n)
+        n = Transaction.objects.filter(counterparty=old_n, **_period_open_q(request)).update(counterparty=new_n)
         return Response({"updated": n})
 
     @action(detail=False, methods=["post"], url_path="counterparty-delete")
@@ -459,7 +535,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         old_n = (request.data.get("name") or "").strip()
         if not old_n:
             return Response({"detail": "name обовʼязковий"}, status=400)
-        n = Transaction.objects.filter(counterparty=old_n).update(counterparty="")
+        n = Transaction.objects.filter(counterparty=old_n, **_period_open_q(request)).update(counterparty="")
         return Response({"updated": n})
 
     @action(detail=False, methods=["get"], url_path="triage")
@@ -553,6 +629,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 locked += 1
                 continue
             if it.get("to_transfer"):
+                if _day_locked(request, t.date):
+                    locked += 1
+                    continue
                 t.direction = "transfer"
                 t.category = None
                 t.fin_article = None
@@ -589,8 +668,13 @@ class TransactionViewSet(viewsets.ModelViewSet):
             st.is_active = True
             st.save()
         cu = _closed_until()
+        dcu = _day_cu()
+        u = request.user
         return Response({"closed_until": cu.isoformat() if cu else None,
-                         "can_close": request.user.is_superuser or request.user.has_perm_code("finance.period.close")})
+                         "can_close": u.is_superuser or u.has_perm_code("finance.period.close"),
+                         "day_closed_until": dcu.isoformat() if dcu else None,
+                         "can_close_day": u.is_superuser or u.has_perm_code("finance.day.close"),
+                         "can_edit_closed_day": _can_edit_closed_day(u)})
 
     @action(detail=False, methods=["post"], url_path="quick-expense")
     def quick_expense(self, request):
@@ -667,6 +751,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
             if not b:
                 return Response({"detail": "Вкажіть batch"}, status=400)
             qs = Transaction.objects.filter(import_batch=b)
+            _cu_b = _closed_until()
+            if _cu_b and not (u.is_superuser or u.has_perm_code("finance.period.close")) and qs.filter(date__lte=_cu_b).exists():
+                return Response({"detail": "У партії є операції закритого періоду (до %s) — відкат лише для бухгалтера" % _cu_b.isoformat()}, status=403)
             n = qs.count()
             qs.delete()
             return Response({"ok": True, "rolled_back": n, "batch": b})
@@ -868,6 +955,8 @@ class TransactionViewSet(viewsets.ModelViewSet):
                         .order_by("date").values_list("date", flat=True).first())
             bank_since = first_pb
         created = dup = errs = skipped_bank = 0
+        skipped_closed = 0
+        _cu_imp = None if (request.user.is_superuser or request.user.has_perm_code("finance.period.close")) else _closed_until()
         preview = []
         for r in rows[1:]:
             if not any((str(c) or "").strip() for c in r):
@@ -902,6 +991,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
             if bank_since and dte >= bank_since:
                 skipped_bank += 1
                 continue
+            if _cu_imp and dte <= _cu_imp:
+                skipped_closed += 1
+                continue
             if commit:
                 _rr = apply_bank_rules(direction, osnd, cp, acc.name if acc else "")
                 cat, fdir, fart, cp2 = _rr["category"], _rr["fin_direction"], _rr["fin_article"], _rr["counterparty"]
@@ -914,7 +1006,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
             if len(preview) < 8:
                 preview.append({"date": dte.isoformat(), "dir": direction, "amount": amt, "osnd": osnd[:60]})
         return Response({"created": created, "duplicates": dup, "errors": errs,
-                         "skipped_bank": skipped_bank,
+                         "skipped_bank": skipped_bank, "skipped_closed": skipped_closed,
                          "bank_since": bank_since.isoformat() if bank_since else None,
                          "committed": commit, "preview": preview, "account": acc.name if acc else None,
                          "batch": st_batch if commit else None})
@@ -1062,6 +1154,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
     def attach(self, request, pk=None):
         """Прикріпити фото/скан чека (multipart, поле file). Макс 10 МБ."""
         tx = self.get_object()
+        _guard_period(request, tx.date)
         f = request.FILES.get("file")
         if not f:
             return Response({"detail": "немає файлу"}, status=status.HTTP_400_BAD_REQUEST)
@@ -1898,7 +1991,8 @@ class PlannedPaymentViewSet(viewsets.ModelViewSet):
         _mk = "→ борг #%d" % pp.id
         if _mk not in (tx.comment or ""):
             tx.comment = ((tx.comment or "") + (" · " if tx.comment else "") + _mk)[:255]; _upd.append("comment")
-        if _upd:
+        _cu_l = _closed_until()
+        if _upd and not (_cu_l and tx.date <= _cu_l):
             tx.save(update_fields=_upd)
         return Response({**self.get_serializer(pp).data, "linked_amount": float(amt), "linked_tx": tx.id})
 

@@ -30,7 +30,9 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
   const [asDebt, setAsDebt] = useState(false);   // false = сразу в журнал (оплачено); true = долг (кредиторка/дебиторка)
   const [recvLoan, setRecvLoan] = useState(false);  // для дебиторки (нам винні): false=продаж (буд. дохід), true=позика (свои деньги в долг, НЕ дохід)
   const [transitClient, setTransitClient] = useState(false);  // расход: материалы клиента из ЧУЖОГО магазина → авто-дебиторка клиента (транзит)
-  const [transitPrice, setTransitPrice] = useState("");        // цена клиенту за транзит (пусто = сумма закупки, без наценки)
+  const [transitPrice, setTransitPrice] = useState("");
+  const [dayLock, setDayLock] = useState<{ until: string | null; can: boolean } | null>(null);
+  useEffect(() => { api.get<any>("/api/transactions/period-lock/").then((r) => setDayLock({ until: r.day_closed_until || null, can: !!r.can_edit_closed_day })).catch(() => {}); }, []);        // цена клиенту за транзит (пусто = сумма закупки, без наценки)
   // Транзит-материалы: создаём дебиторку клиента, ПРИВЯЗАННУЮ к источнику (транзакции или кредиторке магазина),
   // чтобы при удалении источника дебиторка удалялась каскадом (не висела сиротой). src = {tx?} | {planned?}
   async function _maybeTransitDebt(src?: { tx?: number; planned?: number }) {
@@ -101,7 +103,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
         // транзит: расход-кредиторка магазину + галочка → дебиторка клиента, ПРИВЯЗАННАЯ к этой кредиторке (удалишь её — дебиторка уйдёт каскадом)
         await _maybeTransitDebt({ planned: _cred?.id });
         onSaved(); return;
-      } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось сохранить", "Не вдалося зберегти")); setBusy(false); return; }
+      } catch (e: any) { alert(e?.data?.detail || e?.response?.data?.detail || t("Не удалось сохранить", "Не вдалося зберегти")); setBusy(false); return; }
     }
     let body: any;
     if (f.direction === "transfer") {
@@ -137,14 +139,14 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
       // транзит: расход оплачен магазину + галочка → дебиторка клиента, ПРИВЯЗАННАЯ к этой транзакции (удалишь операцию — дебиторка уйдёт каскадом)
       await _maybeTransitDebt({ tx: _created?.id });
       onSaved();
-    } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось сохранить", "Не вдалося зберегти")); setBusy(false); }
+    } catch (e: any) { alert(e?.data?.detail || e?.response?.data?.detail || t("Не удалось сохранить", "Не вдалося зберегти")); setBusy(false); }
   }
   async function del() {
     if (!f || !f.id || busy) return;
     if (!confirm(t("Удалить операцию? Это повлияет на остатки и аналитику.", "Видалити операцію? Це вплине на залишки й аналітику."))) return;
     setBusy(true);
     try { await api.del(`/api/transactions/${f.id}/`); onSaved(); }
-    catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось удалить", "Не вдалося видалити")); setBusy(false); }
+    catch (e: any) { alert(e?.data?.detail || e?.response?.data?.detail || t("Не удалось удалить", "Не вдалося видалити")); setBusy(false); }
   }
   async function toTransfer() {
     if (!f || !f.id || !convAcc || busy) return;
@@ -155,7 +157,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
       else { body.account = convAcc; body.transfer_account = f.account; }
       await api.patch(`/api/transactions/${f.id}/`, body);
       onSaved();
-    } catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось", "Не вдалося")); setBusy(false); }
+    } catch (e: any) { alert(e?.data?.detail || e?.response?.data?.detail || t("Не удалось", "Не вдалося")); setBusy(false); }
   }
 
   const inp: React.CSSProperties = { height: 36, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", width: "100%", marginBottom: 10, fontSize: 13, boxSizing: "border-box" };
@@ -338,6 +340,11 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
               </div>
             ) : null}
 
+            {f.id && dayLock && dayLock.until && !dayLock.can && f.date && String(f.date) <= dayLock.until ? (
+              <div style={{ margin: "4px 0 10px", padding: "8px 10px", borderRadius: 10, background: "#eff6ff", border: "1px solid #bfdbfe", fontSize: 12.5, color: "#1e3a8a" }}>
+                🔒 {t("День закрыт снимком: сумму, дату, счёт и тип меняет только владелец или бухгалтер. Категорию, комментарий, контрагента и сделку — можно.", "День закрито знімком: суму, дату, рахунок і тип змінює лише власник або бухгалтер. Категорію, коментар, контрагента й угоду — можна.")}
+              </div>
+            ) : null}
             {f.id ? <TxHistory txId={f.id} /> : null}
             {f.id ? <div style={{ margin: "6px 0 10px" }}><label className="label">📎 {t("Чек / документы", "Чек / документи")}</label><Attachments txId={f.id} /></div>
               : <div className="muted" style={{ fontSize: 11, margin: "0 0 10px" }}>📎 {t("Сохрани операцию — тогда сможешь прикрепить фото/скан чека.", "Збережи операцію — тоді зможеш прикріпити фото/скан чека.")}</div>}

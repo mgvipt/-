@@ -60,6 +60,7 @@ CHECKS = [
     ("Фінанси: P&L", "owner", "/api/finance/pnl/", {200}, []),
     ("Фінанси: знімки дня", "owner", "/api/day-snapshots/", {200}, ["results", "can_close_day"]),
     ("Фінанси: знімки дня (менеджер з журналом)", "manager", "/api/day-snapshots/", {200}, ["results"]),
+    ("Фінанси: стан закриття дня/періоду", "manager", "/api/transactions/period-lock/", {200}, ["closed_until", "day_closed_until"]),
     ("Фінанси: рахунки", "owner", "/api/accounts/", {200}, []),
     ("КПІ менеджерів", "owner", "/api/finance/salary/", {200}, []),
     ("КПІ: свої цифри (менеджер)", "manager", "/api/finance/salary/", {200, 403}, []),

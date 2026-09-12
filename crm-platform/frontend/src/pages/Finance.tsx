@@ -761,7 +761,7 @@ function Journal() {
   const { can: canJ } = useAuth();
   const canTx = canJ("finance.tx.edit") || canJ("roles.manage");
   const canTotal = canJ("finance.balance.total") || canJ("roles.manage");
-  const [lock, setLock] = useState<{ closed_until: string | null; can_close: boolean }>({ closed_until: null, can_close: false });
+  const [lock, setLock] = useState<{ closed_until: string | null; can_close: boolean; day_closed_until?: string | null }>({ closed_until: null, can_close: false });
   useEffect(() => { api.get<any>("/api/transactions/period-lock/").then(setLock).catch(() => {}); }, []);
   async function setPeriodLock() {
     const v = prompt(t("Закрыть период ДО даты (включительно), формат ГГГГ-ММ-ДД. Пусто — снять закрытие.", "Закрити період ДО дати (включно), формат РРРР-ММ-ДД. Порожньо — зняти закриття."), lock.closed_until || "");
@@ -1185,6 +1185,7 @@ function Journal() {
         {canTx && <button className="btn btn-light" title={t("Добавить расход","Додати витрату")} onClick={() => openNew("out")}>− {t("Расход","Витрата")}</button>}
         {canTx && <button className="btn btn-light" title={t("Перевод между счетами — не считается ни в доход, ни в расход","Переказ між рахунками — не рахується ні в дохід, ні у витрати")} onClick={() => openNew("transfer")}>⇄ {t("Перевод","Переказ")}</button>}
         {isMobile && <div style={{ flexBasis: "100%", height: 0 }} />}
+        {lock.day_closed_until && <span title={t("Дни до этой даты закрыты снимком: сумму, дату и счёт меняет только владелец или бухгалтер","Дні до цієї дати закрито знімком: суму, дату й рахунок змінює лише власник або бухгалтер")} style={{ fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 8, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", whiteSpace: "nowrap" }}>📸 {t("Закрыто до","Закрито до")} {lock.day_closed_until.split("-").reverse().join(".")}</span>}
         {!isMobile && (lock.closed_until || lock.can_close) && (
           <span onClick={lock.can_close ? setPeriodLock : undefined} title={lock.can_close ? t("Изменить закрытие периода", "Змінити закриття періоду") : t("Период закрыт бухгалтерией", "Період закрито бухгалтерією")}
             style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 8, cursor: lock.can_close ? "pointer" : "default",
