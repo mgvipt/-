@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "apps.telephony",
     "apps.gamification",
     "apps.tiktok_insights",
+    "apps.reviews",  # відгуки покупців (12.09.2026)
 ]
 
 MIDDLEWARE = [

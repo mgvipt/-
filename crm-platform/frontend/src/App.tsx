@@ -23,6 +23,7 @@ import MetaMarketing from "./pages/MetaMarketing";
 import AiCosts from "./pages/AiCosts";
 import AiCenter from "./pages/AiCenter";
 import WhatsNew from "./pages/WhatsNew";
+import Reviews from "./pages/Reviews";
 import Phone from "./pages/Phone";
 import Employees from "./pages/Employees";
 import InviteAccept from "./InviteAccept";
@@ -79,6 +80,7 @@ function Shell() {
           <Route path="/marketing/meta" element={<MetaMarketing />} />
           <Route path="/ai-costs" element={<AiCenter />} />
           <Route path="/whats-new" element={<WhatsNew />} />
+          <Route path="/reviews" element={<Reviews />} />
           <Route path="*" element={<Navigate to="/leads" replace />} />
         </Route>
       </Routes>

@@ -145,6 +145,16 @@ PERMISSION_GROUPS.append((
     ],
 ))
 
+# ── Відгуки покупців (додано 2026-09-12) ──
+PERMISSION_GROUPS.append((
+    "Відгуки",
+    [
+        ("reviews.view", "Розділ «Відгуки»", "Бачити відгуки покупців з сайту і журнал просьб про відгук"),
+        ("reviews.moderate", "Модерувати відгуки",
+         "Публікувати, приховувати, відповідати від Wallcov. За замовчуванням — лише власник"),
+    ],
+))
+
 PERMISSION_CHOICES = [(c, l) for _g, _it in PERMISSION_GROUPS for c, l, _h in _it]
 LEGACY_PERMISSIONS = ["lead.view.own", "deal.view.own", "conversation.view.own"]
 

@@ -52,6 +52,13 @@ CHECKS = [
     ("Лендинг: менеджер бачить чати каналу web", "manager", "/api/conversations/?channel=10&page_size=5", {200}, []),
     ("Лендинг dekoratyvna: менеджер бачить угоди воронки", "manager", "FUNNEL_DEALS:Лендинг · dekoratyvna-shtukaturka.com.ua", {200}, []),
     ("Заявки магазину: маршрут живий (лише підписаний POST)", "owner", "/api/integrations/shop/leads/", {405}, []),
+    # ── Відгуки покупців ──
+    ("Відгуки: на перевірці (власник)", "owner", "/api/reviews/?status=pending", {200}, ["results", "counts"]),
+    ("Відгуки: журнал просьб (відправка вимкнена)", "owner", "/api/reviews/requests/", {200}, ["results", "send_enabled"]),
+    ("Відгуки: правила", "owner", "/api/reviews/settings/", {200}, ["send_enabled", "google_review_url"]),
+    ("Відгуки: менеджер без права — закрито", "manager", "/api/reviews/", {200, 403}, []),
+    ("Відгуки магазину: маршрут живий (лише підписаний POST)", "owner", "/api/integrations/shop/reviews/invite/", {405}, []),
+    ("Відгуки: фото без підпису закрите", "owner", "/api/reviews/photo/not-a-token/", {404}, []),
     ("Інбокс-пінг", "owner", "/api/inbox/ping/", {200}, []),
     ("Контакт-центр", "owner", "/api/contact-center/", {200}, []),
     # ── Гроші (найдорожче) ──

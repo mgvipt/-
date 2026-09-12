@@ -7,6 +7,7 @@ from apps.accounts import views as acc_views
 from apps.inbox import views as inbox_views
 from apps.inbox.webchat import WebChatView
 from apps.inbox.site_leads import ShopLeadWebhookView
+from apps.reviews import api_shop as review_shop, views as review_views
 from apps.inbox import tiktok as tiktok_views
 from apps.tiktok_insights import views as tti_views
 from apps.warehouse import views as wh_views
@@ -244,4 +245,17 @@ urlpatterns = [
     path("api/integrations/shop/orders/", intg_views.ShopOrderWebhookView.as_view()),
     # заявки з форм магазину (статті «Отримати розрахунок», квіз) — підписаний запит, воронка 23
     path("api/integrations/shop/leads/", ShopLeadWebhookView.as_view()),
+    # відгуки покупців: API магазину (підписаний, лише POST) + розділ «Відгуки» в CRM
+    path("api/integrations/shop/reviews/ping/", review_shop.ShopReviewPingView.as_view()),
+    path("api/integrations/shop/reviews/invite/", review_shop.ShopReviewInviteView.as_view()),
+    path("api/integrations/shop/reviews/submit/", review_shop.ShopReviewSubmitView.as_view()),
+    path("api/integrations/shop/reviews/published/", review_shop.ShopReviewPublishedView.as_view()),
+    path("api/reviews/", review_views.ReviewListView.as_view()),
+    path("api/reviews/<int:pk>/", review_views.ReviewDetailView.as_view()),
+    path("api/reviews/<int:pk>/moderate/", review_views.ReviewModerateView.as_view()),
+    path("api/reviews/requests/", review_views.ReviewRequestListView.as_view()),
+    path("api/reviews/requests/refresh/", review_views.ReviewRefreshView.as_view()),
+    path("api/reviews/settings/", review_views.ReviewSettingsView.as_view()),
+    path("api/reviews/opt-out/", review_views.ReviewOptOutView.as_view()),
+    path("api/reviews/photo/<str:token>/", review_views.ReviewPhotoView.as_view()),
 ]
