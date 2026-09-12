@@ -71,8 +71,8 @@ def np_streets(settlement_ref: str, q: str, limit=30) -> dict:
 
 
 def np_packlist() -> dict:
-    """Список платних упаковок НП (InternetDocument.getPackList)."""
-    return _np_call("InternetDocument", "getPackList", {})
+    """Список платних упаковок НП (Common.getPackList; у InternetDocument такого методу немає)."""
+    return _np_call("Common", "getPackList", {})
 
 
 # ---------------- Checkbox (фискализация) ----------------
