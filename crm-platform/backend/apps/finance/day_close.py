@@ -1,16 +1,40 @@
-"""«Закрити день»: знімок усіх операцій журналу за день — замість скріна в Telegram о 18:00.
+"""«Закрити день»: знімок усіх операцій журналу за день — замість скріна в Telegram.
 
-Знімок заморожує значення (суми, рахунки, назви), а diff() показує, що змінилось після нього:
-змінено гроші, видалено, перенесено дату, додано після знімка. Блокування правок закритих днів —
-окремий крок (P2, права finance.day.close / finance.day.edit_closed вже заведені).
+Хто закриває: відповідальний за гроші дня (право finance.day.close; зараз — Ілона) наприкінці зміни:
+перевіряє залишки на рахунках (у касі — рахує готівку і вписує факт) і натискає «Закрити день».
+Якщо ніхто не закрив — автознімок у налаштований час (за замовчуванням 19:00 за Києвом).
+Знімок заморожує значення (суми, рахунки, назви, залишки), а diff() показує, що змінилось після нього.
+Блокування правок закритих днів — окремий крок (права finance.day.close / finance.day.edit_closed).
 """
 from django.db import transaction as dbtx
 from django.db.models import Q
 
-from .models import DaySnapshot, Transaction
+from .models import Account, DaySnapshot, Transaction
 
 MONEY = ("amount", "currency", "rate", "direction", "account_id", "transfer_account_id", "transfer_amount")
 SOFT = ("category_id", "counterparty", "comment", "deal_id", "contact_id")
+DEFAULT_AUTO_TIME = "19:00"
+
+
+def settings_get():
+    """Налаштування закриття дня (без окремої таблиці): IntegrationSettings provider=finance_day_close."""
+    from apps.integrations.models import IntegrationSettings
+    st = IntegrationSettings.objects.filter(provider="finance_day_close").first()
+    cfg = dict((st.config or {}) if st else {})
+    cfg.setdefault("auto_time", DEFAULT_AUTO_TIME)
+    cfg.setdefault("auto_weekends", True)
+    return cfg
+
+
+def settings_set(**kw):
+    from apps.integrations.models import IntegrationSettings
+    st, _ = IntegrationSettings.objects.get_or_create(provider="finance_day_close", defaults={"config": {}})
+    cfg = dict(st.config or {})
+    cfg.update({k: v for k, v in kw.items() if v is not None})
+    st.config = cfg
+    st.is_active = True
+    st.save()
+    return settings_get()
 
 
 def _src(t):
@@ -55,7 +79,7 @@ def _day_qs(d):
 
 
 def totals_of(rows):
-    """Підсумки по рахунках (у валюті рахунку) і загалом у гривні."""
+    """Рух за день по рахунках (у валюті рахунку) і загалом у гривні."""
     tot = {}
 
     def acc(aid, name):
@@ -84,26 +108,47 @@ def totals_of(rows):
         "n": len(rows)}}
 
 
+def balances_now():
+    """Залишки всіх активних рахунків за системою зараз (для перевірки грошей при закритті дня)."""
+    return [{"id": a.id, "name": a.name, "kind": a.kind, "system": round(float(a.balance()), 2)}
+            for a in Account.objects.filter(is_active=True).order_by("sort_order", "id")]
+
+
 def active_snapshot(d):
     return DaySnapshot.objects.filter(date=d, reopened_at__isnull=True).order_by("-version").first()
 
 
 def day_closed_until():
-    """Остання дата, закрита активним знімком (для блокування в P2)."""
+    """Остання дата, закрита активним знімком (для блокування правок)."""
     s = DaySnapshot.objects.filter(reopened_at__isnull=True).order_by("-date").first()
     return s.date if s else None
 
 
-def close_day(d, user=None, kind="manual", note=""):
-    """Зробити знімок дня. Ідемпотентно: активний знімок уже є і це не перезнімок → повертає його."""
+def close_day(d, user=None, kind="manual", note="", facts=None):
+    """Зробити знімок дня. Ідемпотентно: активний знімок уже є і це не перезнімок → повертає його.
+    facts — {id рахунку: фактичний залишок}, який вписав відповідальний (готівка в касі тощо)."""
     real_user = user if (user is not None and getattr(user, "is_authenticated", False)) else None
     with dbtx.atomic():
         last = DaySnapshot.objects.select_for_update().filter(date=d).order_by("-version").first()
         if last and last.reopened_at is None and kind != "reclose":
             return last, False
         rows = [row_of(t) for t in _day_qs(d)]
+        totals = totals_of(rows)
+        bal = balances_now()
+        clean_facts = {}
+        for k, v in (facts or {}).items():
+            try:
+                if v not in (None, ""):
+                    clean_facts[str(int(k))] = round(float(str(v).replace(",", ".").replace(" ", "")), 2)
+            except (TypeError, ValueError):
+                continue
+        for b in bal:
+            f = clean_facts.get(str(b["id"]))
+            b["fact"] = f
+            b["diff"] = round(f - b["system"], 2) if f is not None else None
+        totals["balances"] = bal
         s = DaySnapshot.objects.create(date=d, version=(last.version + 1) if last else 1, kind=kind,
-                                       closed_by=real_user, rows=rows, totals=totals_of(rows), note=(note or "")[:255])
+                                       closed_by=real_user, rows=rows, totals=totals, note=(note or "")[:255])
         return s, True
 
 

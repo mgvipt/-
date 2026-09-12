@@ -302,6 +302,15 @@ class TransactionViewSet(viewsets.ModelViewSet):
             except Exception:
                 pass
 
+    @action(detail=True, methods=["get"], url_path="history")
+    def history(self, request, pk=None):
+        """Історія змін операції (було → стало): хто, коли, що змінив або видалив."""
+        from apps.crm.models import ActivityLog
+        tx = self.get_object()
+        rows = ActivityLog.objects.filter(kind="finance", object_id=tx.id).order_by("-created_at")[:100]
+        return Response({"history": [{"at": a.created_at.isoformat(), "actor": a.actor, "action": a.action,
+                                      "detail": a.detail} for a in rows]})
+
     @action(detail=False, methods=["post"], url_path="rule-suggest")
     def rule_suggest(self, request):
         """Підказка для автоправила з вибраних операцій. {ids, set?} →
@@ -3584,6 +3593,8 @@ class DaySnapshotViewSet(viewsets.ReadOnlyModelViewSet):
             "closed_until": cu.isoformat() if cu else None,
             "can_close_day": self._can("finance.day.close"),
             "can_edit_closed_day": self._can("finance.day.edit_closed") or self._can("finance.period.close"),
+            **{k: v for k, v in __import__("apps.finance.day_close", fromlist=["settings_get"]).settings_get().items()
+               if k in ("auto_time", "auto_weekends")},
         })
 
     def retrieve(self, request, *args, **kwargs):
@@ -3611,8 +3622,36 @@ class DaySnapshotViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"detail": "Невірна дата"}, status=400)
         if d > _today():
             return Response({"detail": "Не можна закрити майбутній день"}, status=400)
-        s, created = close_day(d, request.user, "manual")
+        facts = request.data.get("facts") or {}
+        s, created = close_day(d, request.user, "manual", facts=facts if isinstance(facts, dict) else {})
         return Response({**self._head(s), "created": created})
+
+    @action(detail=False, methods=["get"])
+    def balances(self, request):
+        """Залишки рахунків за системою зараз — для перевірки грошей перед «Закрити день»."""
+        self._check_view()
+        from .day_close import balances_now
+        return Response({"accounts": balances_now()})
+
+    @action(detail=False, methods=["get", "post"], url_path="settings")
+    def day_settings(self, request):
+        """Налаштування: час автознімка (за Києвом), чи робити у вихідні."""
+        self._check_view()
+        from .day_close import settings_get, settings_set
+        if request.method == "POST":
+            if not (self._can("finance.day.edit_closed") or self._can("finance.period.close") or self._can("roles.manage")):
+                return Response({"detail": "Немає права змінювати налаштування"}, status=403)
+            at = (request.data.get("auto_time") or "").strip()
+            if at:
+                try:
+                    hh, mm = (int(x) for x in at.split(":"))
+                    assert 0 <= hh <= 23 and 0 <= mm <= 59
+                except (ValueError, AssertionError):
+                    return Response({"detail": "Час у форматі ГГ:ХХ, наприклад 19:00"}, status=400)
+                at = "%02d:%02d" % (hh, mm)
+            wk = request.data.get("auto_weekends")
+            return Response(settings_set(auto_time=at or None, auto_weekends=(bool(wk) if wk is not None else None)))
+        return Response(settings_get())
 
     @action(detail=True, methods=["post"])
     def reclose(self, request, pk=None):

@@ -338,6 +338,7 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
               </div>
             ) : null}
 
+            {f.id ? <TxHistory txId={f.id} /> : null}
             {f.id ? <div style={{ margin: "6px 0 10px" }}><label className="label">📎 {t("Чек / документы", "Чек / документи")}</label><Attachments txId={f.id} /></div>
               : <div className="muted" style={{ fontSize: 11, margin: "0 0 10px" }}>📎 {t("Сохрани операцию — тогда сможешь прикрепить фото/скан чека.", "Збережи операцію — тоді зможеш прикріпити фото/скан чека.")}</div>}
 
@@ -365,4 +366,26 @@ export default function TxCardModal({ txId, initDirection, initContact, initCont
       </div>
     </div>
   ), document.body);
+}
+
+/* Історія змін операції (було → стало) — пишеться при кожній правці/видаленні з 11.09.2026. */
+function TxHistory({ txId }: { txId: number }) {
+  const { t } = useLang();
+  const [h, setH] = useState<any[] | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => { setH(null); api.get<any>(`/api/transactions/${txId}/history/`).then((r) => setH(r.history || [])).catch(() => setH([])); }, [txId]);
+  if (!h || h.length === 0) return null;
+  return (
+    <div style={{ margin: "4px 0 10px", border: "1px solid #e2e8f0", borderRadius: 10, padding: "8px 10px", background: "#f8fafc" }}>
+      <div onClick={() => setOpen(!open)} style={{ cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#475569" }}>
+        🕓 {t("История изменений", "Історія змін")} ({h.length}) {open ? "▾" : "▸"}
+      </div>
+      {open && h.map((x: any, i: number) => (
+        <div key={i} style={{ fontSize: 12, marginTop: 4, lineHeight: 1.4 }}>
+          <span className="muted">{new Date(x.at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+          {" · "}<b>{x.actor}</b>{" · "}{x.action}: {x.detail}
+        </div>
+      ))}
+    </div>
+  );
 }
