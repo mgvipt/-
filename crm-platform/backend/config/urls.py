@@ -6,6 +6,7 @@ from apps.crm import views as crm_views
 from apps.accounts import views as acc_views
 from apps.inbox import views as inbox_views
 from apps.inbox.webchat import WebChatView
+from apps.inbox.site_leads import ShopLeadWebhookView
 from apps.inbox import tiktok as tiktok_views
 from apps.tiktok_insights import views as tti_views
 from apps.warehouse import views as wh_views
@@ -241,4 +242,6 @@ urlpatterns = [
     path("api/integrations/liqpay/link/", intg_views.LiqpayLinkView.as_view()),
     path("api/integrations/novaposhta/track/", intg_views.NovaPoshtaTrackView.as_view()),
     path("api/integrations/shop/orders/", intg_views.ShopOrderWebhookView.as_view()),
+    # заявки з форм магазину (статті «Отримати розрахунок», квіз) — підписаний запит, воронка 23
+    path("api/integrations/shop/leads/", ShopLeadWebhookView.as_view()),
 ]

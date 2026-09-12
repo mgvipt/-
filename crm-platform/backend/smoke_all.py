@@ -50,6 +50,8 @@ CHECKS = [
     ("Список чатів (менеджер)", "manager", "/api/conversations/?page_size=5", {200}, []),
     ("Лендинг: менеджер бачить угоди воронки 22", "manager", "/api/deals/?funnel=22&page_size=5", {200}, []),
     ("Лендинг: менеджер бачить чати каналу web", "manager", "/api/conversations/?channel=10&page_size=5", {200}, []),
+    ("Лендинг dekoratyvna: менеджер бачить угоди воронки", "manager", "FUNNEL_DEALS:Лендинг · dekoratyvna-shtukaturka.com.ua", {200}, []),
+    ("Заявки магазину: маршрут живий (лише підписаний POST)", "owner", "/api/integrations/shop/leads/", {405}, []),
     ("Інбокс-пінг", "owner", "/api/inbox/ping/", {200}, []),
     ("Контакт-центр", "owner", "/api/contact-center/", {200}, []),
     # ── Гроші (найдорожче) ──
@@ -88,6 +90,10 @@ CHECKS = [
 
 def resolve_dynamic(url):
     from apps.crm.models import Contact, Deal
+    if url.startswith("FUNNEL_DEALS:"):
+        from apps.crm.models import Funnel
+        funnel = Funnel.objects.filter(name=url.split(":", 1)[1]).first()
+        return "/api/deals/?funnel=%s&page_size=5" % funnel.pk if funnel else None
     if url == "DEAL_DETAIL":
         deal = Deal.objects.order_by("-id").first()
         return "/api/deals/%s/" % deal.pk if deal else None

@@ -17,15 +17,26 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.crm.models import Contact, Deal, Funnel
+from .landing_intake import LANDINGS
 from .models import Channel, Conversation, Message
 from .services import _phone_variants
 
 
 LANDING_ID = "wallcovdliastin.com.ua"
-ALLOWED_ORIGINS = {
-    "https://wallcov-dlia-stin.olegwallcov.chatgpt.site",
-    "https://wallcovdliastin.com.ua",
-    "https://www.wallcovdliastin.com.ua",
+# Origin сторінки → сайт (landing_id). Заявка йде у воронку сайту з landing_intake.LANDINGS.
+# Новий сайт (або його превʼю-адреса) додається сюди свідомо.
+LANDING_ORIGINS = {
+    "https://wallcov-dlia-stin.olegwallcov.chatgpt.site": LANDING_ID,
+    "https://wallcovdliastin.com.ua": LANDING_ID,
+    "https://www.wallcovdliastin.com.ua": LANDING_ID,
+    "https://dekoratyvna-shtukaturka.com.ua": "dekoratyvna-shtukaturka.com.ua",
+    "https://www.dekoratyvna-shtukaturka.com.ua": "dekoratyvna-shtukaturka.com.ua",
+}
+ALLOWED_ORIGINS = set(LANDING_ORIGINS)
+WEB_LANDINGS = set(LANDING_ORIGINS.values())  # сайти з віджетом (магазин — лише підписаний запит)
+GREETINGS = {
+    LANDING_ID: "Вітаю! Я Юля з Wallcov. Допоможу підібрати шовк або вельвет і порахувати матеріал. Для якої кімнати обираєте покриття?",
+    "dekoratyvna-shtukaturka.com.ua": "Вітаю! Я Юля з Wallcov. Допоможу підібрати декоративне покриття і порахувати матеріал. Для якої кімнати обираєте покриття?",
 }
 PRODUCTS = {
     "sirena": {"label": "Шовк · Сирена", "price_from": Decimal("189.75"), "price_to": Decimal("189.75")},
@@ -54,17 +65,42 @@ def _messages(conv: Conversation):
     ]
 
 
+def _conv_landing(conv: Conversation) -> str:
+    """Сайт чату — з префікса external_chat_id («<сайт>:<відвідувач>»). Старі чати — wallcovdliastin."""
+    prefix = str(conv.external_chat_id or "").split(":", 1)[0]
+    return prefix if prefix in LANDINGS else LANDING_ID
+
+
+def _origin_landing(request):
+    return LANDING_ORIGINS.get((request.headers.get("Origin") or "").rstrip("/"))
+
+
+def _landing_for(request) -> str:
+    """Сайт нового чату: за Origin; landing_id у тілі — лише підтвердження (не може підмінити Origin)."""
+    by_origin = _origin_landing(request)
+    asked = str(request.data.get("landing_id") or "").strip().lower()
+    if asked and asked not in WEB_LANDINGS:
+        raise ValueError("Невідомий сайт")
+    if by_origin and asked and asked != by_origin:
+        raise ValueError("Сайт не збігається з адресою сторінки")
+    return by_origin or asked or LANDING_ID
+
+
 def _token(conv: Conversation) -> str:
-    return signing.dumps({"conversation_id": conv.id, "landing_id": LANDING_ID}, salt=TOKEN_SALT, compress=True)
+    return signing.dumps({"conversation_id": conv.id, "landing_id": _conv_landing(conv)}, salt=TOKEN_SALT, compress=True)
 
 
-def _conversation(raw_token: str) -> Conversation:
+def _conversation(raw_token: str, origin_landing=None) -> Conversation:
     payload = signing.loads(raw_token, salt=TOKEN_SALT, max_age=60 * 60 * 24 * 14)
-    if payload.get("landing_id") != LANDING_ID:
+    landing = payload.get("landing_id")
+    if landing not in WEB_LANDINGS or (origin_landing and origin_landing != landing):
         raise signing.BadSignature("wrong landing")
-    return Conversation.objects.select_related("contact", "assigned_to", "channel").get(
+    conv = Conversation.objects.select_related("contact", "assigned_to", "channel").get(
         pk=payload["conversation_id"], channel__config__web_chat=True
     )
+    if _conv_landing(conv) != landing:
+        raise signing.BadSignature("wrong landing")
+    return conv
 
 
 def _rate_ok(request, suffix: str, limit: int = 12) -> bool:
@@ -77,7 +113,7 @@ def _rate_ok(request, suffix: str, limit: int = 12) -> bool:
     if raw:
         try:
             payload = signing.loads(raw, salt=TOKEN_SALT, max_age=60 * 60 * 24 * 14)
-            if payload.get("landing_id") == LANDING_ID:
+            if payload.get("landing_id") in WEB_LANDINGS:
                 identity = "conversation:" + str(payload["conversation_id"])
         except (signing.BadSignature, KeyError, TypeError):
             pass
@@ -167,6 +203,9 @@ class WebChatView(APIView):
             return self._cors(request, Response({"detail": "unknown action"}, status=400))
         if not _rate_ok(request, action):
             return self._cors(request, Response({"detail": "Забагато запитів. Спробуйте за хвилину."}, status=429))
+        if action == "lead" and str(request.data.get("website") or "").strip():
+            # Ханіпот: приховане поле «website» заповнюють лише боти.
+            return self._cors(request, Response({"detail": "Заявку не прийнято. Зателефонуйте нам."}, status=400))
         try:
             handler = getattr(self, "_action_" + action)
         except AttributeError:
@@ -185,17 +224,18 @@ class WebChatView(APIView):
             name="Web Chat · Wallcov",
             defaults={"config": {"web_chat": True, "ai": "juliya"}, "is_active": True},
         )
+        landing = _landing_for(request)
         visitor = re.sub(r"[^a-zA-Z0-9_-]", "", str(request.data.get("visitor_id") or ""))[:64]
-        external_chat_id = "%s:%s" % (LANDING_ID, visitor or secrets.token_urlsafe(16))
+        external_chat_id = "%s:%s" % (landing, visitor or secrets.token_urlsafe(16))
         conv = Conversation.objects.create(
             channel=channel,
             external_chat_id=external_chat_id,
-            title="[%s] Гість сайту" % LANDING_ID,
+            title="[%s] Гість сайту" % landing,
         )
         greeting = Message.objects.create(
             conversation=conv,
             direction="out",
-            text="Вітаю! Я Юля з Wallcov. Допоможу підібрати шовк або вельвет і порахувати матеріал. Для якої кімнати обираєте покриття?",
+            text=GREETINGS.get(landing, GREETINGS[LANDING_ID]),
             external_id="web-greeting:%s" % conv.id,
             sender_name="Юля · Wallcov",
         )
@@ -204,11 +244,11 @@ class WebChatView(APIView):
         return Response({"token": _token(conv), "conversation_id": conv.id, "messages": _messages(conv)})
 
     def _action_poll(self, request):
-        conv = _conversation(str(request.data.get("token") or ""))
+        conv = _conversation(str(request.data.get("token") or ""), _origin_landing(request))
         return Response({"messages": _messages(conv), "manager_active": bool(conv.assigned_to_id)})
 
     def _action_message(self, request):
-        conv = _conversation(str(request.data.get("token") or ""))
+        conv = _conversation(str(request.data.get("token") or ""), _origin_landing(request))
         text = str(request.data.get("text") or "").strip()
         if not text or len(text) > 1200:
             raise ValueError("Повідомлення має містити від 1 до 1200 символів")
@@ -228,13 +268,13 @@ class WebChatView(APIView):
 
     def _action_lead(self, request):
         from .landing_intake import receive
-        conv = _conversation(str(request.data.get("token") or ""))
-        result = receive(conv, request.data)
+        conv = _conversation(str(request.data.get("token") or ""), _origin_landing(request))
+        result = receive(conv, request.data, landing_id=_conv_landing(conv))
         saved_conv = Conversation.objects.get(pk=result["conversation_id"])
         result.update(token=_token(saved_conv), messages=_messages(saved_conv))
         return Response(result)
 
     def _action_photo(self, request):
         from .landing_intake import attach_photos
-        conv = _conversation(str(request.data.get("token") or ""))
+        conv = _conversation(str(request.data.get("token") or ""), _origin_landing(request))
         return Response(attach_photos(conv, request.data))
