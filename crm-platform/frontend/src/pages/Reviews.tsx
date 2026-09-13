@@ -486,7 +486,7 @@ export default function Reviews() {
   }, [tab, isReviewTab]);
   useEffect(() => { load(); }, [load]);
   return (
-    <div className="fade" style={{ padding: 16, maxWidth: 1100 }}>
+    <div className="scroll fade" style={{ padding: 16 }}><div style={{ maxWidth: 1100 }}>
       <h2 style={{ margin: "0 0 4px" }}>⭐ Відгуки покупців</h2>
       <div className="muted" style={{ marginBottom: 12 }}>
         Відгуки з форми на сайті wallcov.com.ua. На сайті зʼявляються лише після «Опублікувати».
@@ -506,6 +506,6 @@ export default function Reviews() {
       {tab === "journal" && <Journal />}
       {tab === "texts" && <TextsPanel />}
       {tab === "rules" && <RulesPanel />}
-    </div>
+    </div></div>
   );
 }
