@@ -6,7 +6,10 @@
 - канал: месенджер, де вже є діалог (e-chat WhatsApp / Viber / Telegram); Instagram / Facebook / TikTok —
   лише у 24-годинному вікні; інакше пишемо першими за телефоном через e-chat (WhatsApp → Viber → Telegram);
 - одне нагадування через 5 днів; не більше 1 просьби на клієнта за 60 днів; «стоп» = відписка;
-- ВІДПРАВКА ВИМКНЕНА (send_enabled=False, тексти не затверджені): прогін лише веде журнал «відправили б».
+- ВІДПРАВКА ВИМКНЕНА (send_enabled=False): прогін лише веде журнал «відправили б».
+- 13.09.2026: тексти В1 / Т1 / нагадування затверджені Олегом; тестовий режим (test_mode) — просьби (авто і кнопка
+  «⭐ Попросити відгук») лише контактам зі списку; дата старту відсікає посилки, отримані раніше, навіть якщо
+  просьба вже в журналі; відповідь клієнта на просьбу не запускає ІІ-агента (is_review_reply).
 Клієнта визначаємо лише через угоду → її контакт (ніколи за іменем).
 """
 import base64
@@ -47,6 +50,9 @@ ROOMS = {"living", "bedroom", "kitchen", "bathroom", "hallway", "kids", "commerc
 APPLIED = {"self", "master", "unknown"}
 MAX_PHOTOS = 5
 ANON_NAME = "Покупець Wallcov"
+REVIEW_LINK_MARK = "/vidguk/"
+NAME_KEYS = ("{імʼя}", "{ім'я}")
+PREVIEW_CODE = "•" * 12
 
 
 class ReviewError(Exception):
@@ -117,6 +123,47 @@ def test_category_ids():
     return ids
 
 
+def service_category_ids():
+    """Інструменти, витратні матеріали й тара — не «матеріал» для тексту просьби (разом з підкатегоріями).
+    Назви порівнюємо в Python: SQLite (тести) не шукає кирилицю без урахування регістру."""
+    from apps.warehouse.models import ProductCategory
+    rows = list(ProductCategory.objects.values_list("id", "name", "parent_id"))
+    ids = {cid for cid, name, _ in rows
+           if any(key in (name or "").lower() for key in ("інструмент", "инструмент", "витратн"))
+           or (name or "").strip().lower() == "тара"}
+    grown = True
+    while grown:
+        grown = False
+        for cid, _, parent in rows:
+            if parent in ids and cid not in ids:
+                ids.add(cid)
+                grown = True
+    return ids
+
+
+def short_material(name):
+    """Коротка назва для тексту: «Galateya Silver (Lui 0188). декоративна…» → «Galateya Silver»,
+    «Sirena Silk — тестовий набір "Мокрий шовк"…» → «Sirena Silk»."""
+    full = re.sub(r"\s+", " ", name or "").strip()
+    short = re.split(r"\s[—–-]\s|[(\"«.,]", full, maxsplit=1)[0].strip()
+    return (short or full)[:40]
+
+
+def material_name(req):
+    """{матеріал}: найбільша сума серед матеріалів угоди (без інструментів і тари), коротка назва."""
+    if not req.deal_id:
+        return ""
+    service = service_category_ids()
+    best = None
+    for item in req.deal.items.select_related("product"):
+        if not item.product_id or item.product.category_id in service:
+            continue
+        total = item.quantity * item.price
+        if best is None or total > best[0]:
+            best = (total, item.product.name)
+    return short_material(best[1]) if best else ""
+
+
 def classify(deal, cfg, test_cats):
     if deal.funnel_id in (cfg.test_funnel_ids or []):
         return "test"
@@ -127,16 +174,18 @@ def classify(deal, cfg, test_cats):
 
 
 def products_for(req):
-    """Товари угоди для форми: лише позиції з номенклатури, головна — найбільша сума."""
+    """Товари угоди для форми: лише позиції з номенклатури, головна — найбільша сума серед матеріалів
+    (інструменти й тара — в кінці списку і головними стають, лише коли матеріалів немає)."""
     if not req.deal_id:
         return []
+    service = service_category_ids()
     rows = []
     for item in req.deal.items.select_related("product").order_by("id"):
         if not item.product_id:
             continue
-        rows.append((item.quantity * item.price, item.product))
+        rows.append((item.product.category_id in service, -(item.quantity * item.price), item.product))
     seen, out = set(), []
-    for total, product in sorted(rows, key=lambda r: -r[0]):
+    for _service, _neg_total, product in sorted(rows, key=lambda r: (r[0], r[1])):
         if product.id in seen:
             continue
         seen.add(product.id)
@@ -179,9 +228,35 @@ def choose_channel(contact, now):
 
 # ── прогін: знайти, перевірити, записати в журнал (або надіслати, коли дозволять) ──
 
-def live_allowed(cfg):
+def texts_ready(cfg):
+    """Тексти затверджені і в кожному є {посилання}."""
     texts = (cfg.text_main, cfg.text_test, cfg.text_remind)
-    return bool(cfg.send_enabled and cfg.texts_approved and all("{посилання}" in (t or "") for t in texts))
+    return bool(cfg.texts_approved and all("{посилання}" in (t or "") for t in texts))
+
+
+def live_allowed(cfg):
+    return bool(cfg.send_enabled and texts_ready(cfg))
+
+
+def contact_allowed(cfg, contact_id):
+    """Тестовий режим (за замовчуванням увімкнений): лише контакти зі списку; порожній список — нікому.
+    Поза тестовим режимом — усім (решта правил лишаються)."""
+    if cfg.test_mode:
+        return contact_id in (cfg.allowlist_contact_ids or [])
+    return True
+
+
+def is_review_reply(contact_id, now=None, days=60):
+    """Клієнт відповідає на нашу просьбу про відгук: останнє НАШЕ (не службове) повідомлення в чатах клієнта
+    за `days` днів — з посиланням на відгук. Тоді ІІ-агент не чіпає ліди й угоди клієнта: «дякую» на просьбу —
+    не продаж і не привід відкривати чи рухати угоду. Щойно менеджер напише щось інше — агент працює як завжди."""
+    if not contact_id:
+        return False
+    now = now or timezone.now()
+    last_out = (Message.objects.filter(conversation__contact_id=contact_id, direction="out", internal=False,
+                                       created_at__gte=now - timedelta(days=days))
+                .order_by("-created_at", "-id").values_list("text", flat=True).first())
+    return bool(last_out and REVIEW_LINK_MARK in last_out)
 
 
 def discover(cfg, now, stats):
@@ -212,12 +287,17 @@ def discover(cfg, now, stats):
         stats["new_" + req.status] += 1
 
 
-def evaluate(req, cfg, now):
-    """→ (status, reason, plan). status: ok / waiting / skipped / cancelled / opted_out."""
+def evaluate(req, cfg, now, live=False):
+    """→ (status, reason, plan). status: ok / waiting / skipped / cancelled / opted_out.
+    live=False (журнал): «відправили б» теж рахуємо як просьбу — імітуємо правило 60 днів."""
     deal = Deal.objects.select_related("stage", "funnel", "owner").filter(pk=req.deal_id).first() if req.deal_id else None
     contact = req.contact
     if not deal or not contact:
         return "cancelled", "угоду або клієнта видалено", None
+    if req.kind in ("main", "test") and cfg.start_date and (
+            not req.received_at or timezone.localtime(req.received_at).date() < cfg.start_date):
+        # дата старту: старі посилки не просимо, навіть якщо просьба вже стоїть у журналі (13.09)
+        return "skipped", "посилку отримано до дати старту відгуків (%s)" % cfg.start_date.strftime("%d.%m.%Y"), None
     stage_name = (deal.stage.name or "").lower()
     if deal.stage.is_lost or "поверн" in stage_name or "скасов" in stage_name:
         return "cancelled", "угоду скасовано або повернено", None
@@ -227,9 +307,11 @@ def evaluate(req, cfg, now):
     if bad:
         return "skipped", "не покупець (%s)" % ", ".join(sorted(bad)), None
     since = now - timedelta(days=cfg.repeat_block_days)
+    asked = Q(status__in=("sent", "reminded", "submitted"), sent_at__gte=since)
+    if not live:
+        asked |= Q(status="would_send", journal_at__gte=since)
     other = (ReviewRequest.objects.filter(contact_id=contact.id).exclude(pk=req.pk)
-             .filter(Q(status__in=("sent", "reminded", "submitted"), sent_at__gte=since)
-                     | Q(status="would_send", journal_at__gte=since)).order_by("-id").first())
+             .filter(asked).order_by("-id").first())
     if other:
         return "skipped", "клієнта вже просили за останні %s днів (угода #%s)" % (cfg.repeat_block_days, other.deal_id), None
     if req.kind == "test":
@@ -261,17 +343,32 @@ def _set_plan(req, plan):
     req.conversation = plan.get("conversation")
 
 
-def render(template, req):
+def _drop_name(text):
+    """Імені немає: «Доброго дня, {імʼя}!» → «Доброго дня!», «{імʼя}, нагадаю» → «Нагадаю»."""
+    for key in NAME_KEYS:
+        mark = re.escape(key)
+        text = re.sub(r",\s*" + mark, "", text)
+        text = re.sub(r"(^|\n)[ \t]*" + mark + r"[ \t]*,?[ \t]*(\w)", lambda m: m.group(1) + m.group(2).upper(), text)
+        text = text.replace(key, "")
+    return text
+
+
+def render(template, req, kind=None):
+    """Текст просьби. {менеджер} — ім'я відповідального за угоду (як у повідомленнях НП), інакше «команда Wallcov»;
+    {матеріал} — коротка назва головного матеріалу (без інструментів); без імені клієнта речення без звертання."""
     contact, deal = req.contact, req.deal
-    name = ((contact.first_name if contact else "") or "").strip() or "вітаємо"
-    manager = ((deal.owner.first_name if deal and deal.owner_id else "") or "").strip() or "команда Wallcov"
-    products = products_for(req)
-    material = products[0]["name"] if products else "покриття"
-    text = template
-    for key, value in (("{імʼя}", name), ("{ім'я}", name), ("{менеджер}", manager), ("{матеріал}", material),
+    kind = kind or req.kind
+    name = ((contact.first_name if contact else "") or "").strip()
+    owner_name = ((deal.owner.first_name if deal and deal.owner_id else "") or "").strip()
+    material = material_name(req) or ("" if kind == "test" else "покриття")
+    text = template if name else _drop_name(template)
+    if not owner_name:
+        text = text.replace("{менеджер} з Wallcov", "команда Wallcov")  # не «команда Wallcov з Wallcov»
+    manager = owner_name or "команда Wallcov"
+    for key, value in ((NAME_KEYS[0], name), (NAME_KEYS[1], name), ("{менеджер}", manager), ("{матеріал}", material),
                        ("{посилання}", review_link(req.code))):
         text = text.replace(key, value)
-    return text
+    return re.sub(r"[ \t]{2,}", " ", text).strip()
 
 
 def _conversation_for_new(req, channel):
@@ -328,6 +425,8 @@ def _reminders(cfg, now, stats):
         conv = req.conversation
         if not conv or ReviewOptOut.objects.filter(contact_id=req.contact_id).exists():
             continue
+        if not contact_allowed(cfg, req.contact_id):
+            continue  # тестовий режим: нагадуємо лише тестовим контактам
         if conv.channel.kind in WINDOW_KINDS:
             last_in = conv.messages.filter(direction="in").order_by("-created_at").values_list("created_at", flat=True).first()
             if not last_in or now - last_in > timedelta(hours=23):
@@ -367,11 +466,11 @@ def run_sweep(now=None, force_dry=False):
     due = (ReviewRequest.objects.filter(status__in=("scheduled", "waiting"), due_at__lte=now, is_test=False)
            .select_related("contact", "deal").order_by("due_at")[:300])
     for req in due:
-        status, reason, plan = evaluate(req, cfg, now)
+        status, reason, plan = evaluate(req, cfg, now, live=live)
         req.checked_at = now
         if status == "ok":
             _set_plan(req, plan)
-            allowlisted = not cfg.allowlist_contact_ids or req.contact_id in cfg.allowlist_contact_ids
+            allowlisted = contact_allowed(cfg, req.contact_id)
             if live and allowlisted and in_hours and sent < cfg.per_run_cap:
                 try:
                     _send_request(req, plan, cfg, now)
@@ -390,7 +489,12 @@ def run_sweep(now=None, force_dry=False):
                 req.reason = "надішлемо в години розсилки (%s–%s)" % (cfg.send_from.strftime("%H:%M"), cfg.send_to.strftime("%H:%M"))
                 stats["waiting"] += 1
             else:
-                why = "не в списку тестових клієнтів" if live else "відправка вимкнена — тексти ще не затверджені"
+                if live:
+                    why = "тестовий режим — клієнта немає в списку тестових"
+                elif texts_ready(cfg):
+                    why = "автоматична відправка вимкнена"
+                else:
+                    why = "відправка вимкнена — тексти ще не затверджені"
                 req.status, req.journal_at = "would_send", now
                 req.reason = ("Надіслали б: %s (%s)" % (plan["label"], why))[:300]
                 stats["would_send"] += 1
@@ -420,6 +524,120 @@ def run_sweep(now=None, force_dry=False):
                          .update(status="expired", reason="минув термін посилання", updated_at=now))
     stats["live"] = int(live)
     return dict(stats)
+
+
+# ── кнопка «⭐ Попросити відгук» (вручну: чат / картка угоди) ─────────────
+
+def deal_for_conversation(conv):
+    """Угода для кнопки в чаті: клієнт — лише через контакт цього чату (ніколи за іменем); остання не програшна
+    угода з ТТН, інакше остання не програшна."""
+    if not conv or not conv.contact_id:
+        return None
+    qs = (Deal.objects.filter(contact_id=conv.contact_id).exclude(stage__is_lost=True)
+          .select_related("stage", "owner", "contact", "funnel"))
+    return qs.exclude(ttn="").order_by("-id").first() or qs.order_by("-id").first()
+
+
+def _manual_plan(conv, now):
+    """Канал для кнопки в конкретному чаті → (plan, причина відмови)."""
+    kind = conv.channel.kind
+    if kind == "web" or str(conv.external_chat_id or "").startswith("comment:"):
+        return None, "У цей чат просьбу не надсилаємо (веб-чат або коментар) — відкрийте месенджер клієнта"
+    if kind in WINDOW_KINDS:
+        last_in = conv.messages.filter(direction="in").order_by("-created_at").values_list("created_at", flat=True).first()
+        if not last_in or now - last_in > timedelta(hours=23):
+            return None, ("%s: клієнт писав понад 24 години тому — повідомлення не дійде. "
+                          "Натисніть кнопку, коли клієнт напише" % _label(kind))
+        return {"kind": "window", "conversation": conv, "channel": conv.channel,
+                "label": "%s — цей чат (вікно 24 год відкрите)" % _label(kind)}, ""
+    return {"kind": "dialog", "conversation": conv, "channel": conv.channel, "label": "%s — цей чат" % _label(kind)}, ""
+
+
+def manual_ask(deal, conv=None, user=None, send=False, now=None):
+    """Кнопка «⭐ Попросити відгук». send=False — лише показати точний текст і канал (нічого не створює);
+    send=True — надіслати від імені менеджера. Запобіжники ті самі, що в автоматиці: тестовий режим, «не просити»,
+    1 просьба на N днів, вікно Instagram. Не залежить від send_enabled: це ручна дія менеджера. → dict для фронтенду."""
+    now = now or timezone.now()
+    cfg = ReviewSettings.get()
+    contact = deal.contact if deal and deal.contact_id else None
+    out = {"ok": False, "can_send": False, "sent": False, "reason": "", "text": "", "channel_label": "",
+           "deal_id": deal.id if deal else None, "deal_title": deal.title if deal else "",
+           "conversation_id": conv.id if conv else None, "test_mode": cfg.test_mode}
+
+    def refuse(reason):
+        out["reason"] = reason
+        return out
+
+    if contact is None:
+        return refuse("В угоді немає клієнта — просьбу не привʼязати")
+    if not texts_ready(cfg):
+        return refuse("Тексти просьби ще не затверджені (Відгуки → Тексти і запуск)")
+    if not contact_allowed(cfg, contact.id):
+        return refuse("Поки йде перевірка, кнопка працює лише для тестових контактів (Відгуки → Тексти і запуск)")
+    if ReviewOptOut.objects.filter(contact_id=contact.id).exists():
+        return refuse("Клієнт просив не надсилати йому просьби про відгук")
+    bad = NOT_CLIENT_KINDS & set(contact.kinds or [])
+    if bad and contact.id not in (cfg.allowlist_contact_ids or []):
+        return refuse("Це не покупець (%s)" % ", ".join(sorted(bad)))
+    stage_name = ((deal.stage.name if deal.stage_id else "") or "").lower()
+    if deal.stage_id and (deal.stage.is_lost or "поверн" in stage_name or "скасов" in stage_name):
+        return refuse("Угоду скасовано або повернено")
+    since = now - timedelta(days=cfg.repeat_block_days)
+    prev = (ReviewRequest.objects.filter(contact_id=contact.id, status__in=("sent", "reminded", "submitted"),
+                                         sent_at__gte=since).order_by("-sent_at").first())
+    if prev:
+        return refuse("Клієнта вже просили %s (угода #%s) — не частіше 1 разу на %s днів"
+                      % (timezone.localtime(prev.sent_at).strftime("%d.%m"), prev.deal_id, cfg.repeat_block_days))
+    if Message.objects.filter(conversation__contact_id=contact.id, direction="out", text__contains=REVIEW_LINK_MARK,
+                              created_at__gte=since).exists():
+        return refuse("У чаті клієнта вже є посилання на відгук за останні %s днів" % cfg.repeat_block_days)
+    if conv is not None:
+        if conv.contact_id != contact.id:
+            return refuse("Цей чат належить іншому клієнту, ніж угода #%s" % deal.id)
+        plan, why = _manual_plan(conv, now)
+        if plan is None:
+            return refuse(why)
+    else:
+        plan = choose_channel(contact, now)
+        if plan["kind"] in ("wait_window", "none"):
+            return refuse("Немає куди надіслати: " + plan["label"])
+    kind = classify(deal, cfg, test_category_ids())
+    template = cfg.text_test if kind == "test" else cfg.text_main
+    req = ReviewRequest(deal=deal, contact=contact, kind="manual", code=PREVIEW_CODE)
+    out.update(channel_label=plan["label"], kind=kind, text=render(template, req, kind),
+               conversation_id=plan["conversation"].id if plan.get("conversation") else None)
+    if not send:
+        out.update(ok=True, can_send=True, reason="Перевірте текст і канал — повідомлення піде лише після «Надіслати»")
+        return out
+    from apps.inbox.services import send_message
+    author = user if user is not None and user.is_authenticated else None
+    who = (author.get_full_name() or author.username) if author else "менеджер"
+    req.code = new_code()
+    req.status, req.sent_at = "sent", now
+    req.received_at = received_at_for(deal)
+    req.expires_at = now + timedelta(days=cfg.expire_days)
+    req.created_by = author
+    req.channel_plan = "manual"
+    req.channel_label = plan["label"][:120]
+    req.reason = ("вручну: %s натиснув(ла) «Попросити відгук»" % who)[:300]
+    conv_to = plan.get("conversation") or _conversation_for_new(req, plan["channel"])
+    req.conversation, req.channel = conv_to, conv_to.channel
+    req.save()
+    text = render(template, req, kind)
+    try:
+        req.message = send_message(conv_to, text, user=author)
+    except Exception as exc:  # noqa: BLE001 — просьбу скасовуємо, посилання не діє
+        req.status, req.last_error = "cancelled", str(exc)[:300]
+        req.reason = "не вдалося надіслати — посилання скасовано"
+        req.save(update_fields=["status", "last_error", "reason", "updated_at"])
+        return refuse("Не вдалося надіслати: %s" % str(exc)[:200])
+    req.save(update_fields=["message", "updated_at"])
+    (ReviewRequest.objects.filter(deal=deal, kind__in=("main", "test"), status__in=("scheduled", "waiting", "would_send"))
+     .update(status="cancelled", reason="менеджер уже попросив відгук вручну", updated_at=now))
+    log_activity("deal", deal.id, "Відгук: просьба надіслана вручну", plan["label"], author)
+    out.update(ok=True, can_send=False, sent=True, text=text, conversation_id=conv_to.id, request_id=req.id,
+               reason="Надіслано. Відгук клієнта зʼявиться в розділі «Відгуки → На перевірці»")
+    return out
 
 
 # ── магазин: приглашення, відгук, стрічка ─────────────────────────────────

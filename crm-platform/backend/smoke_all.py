@@ -59,6 +59,8 @@ CHECKS = [
     ("Відгуки: менеджер без права — закрито", "manager", "/api/reviews/", {200, 403}, []),
     ("Відгуки магазину: маршрут живий (лише підписаний POST)", "owner", "/api/integrations/shop/reviews/invite/", {405}, []),
     ("Відгуки: фото без підпису закрите", "owner", "/api/reviews/photo/not-a-token/", {404}, []),
+    ("Відгуки: тексти, історія, тестовий режим", "owner", "/api/reviews/settings/", {200}, ["text_versions", "test_mode", "allowlist_contacts"]),
+    ("Відгуки: «не просити» у картці клієнта", "manager", "CONTACT_REVIEW_OPTOUT", {200}, ["opt_out", "can_remove"]),
     ("Інбокс-пінг", "owner", "/api/inbox/ping/", {200}, []),
     ("Контакт-центр", "owner", "/api/contact-center/", {200}, []),
     # ── Гроші (найдорожче) ──
@@ -110,6 +112,9 @@ def resolve_dynamic(url):
     if url == "CONTACT_LEAD_QUALITY":
         contact = Contact.objects.order_by("-id").first()
         return "/api/contacts/%s/lead-quality/" % contact.pk if contact else None
+    if url == "CONTACT_REVIEW_OPTOUT":
+        contact = Contact.objects.order_by("-id").first()
+        return "/api/reviews/opt-out/?contact_id=%s" % contact.pk if contact else None
     return url
 
 

@@ -1,7 +1,10 @@
 """Розділ «Відгуки» в CRM: модерація (Олег), журнал просьб «кому б відправили», правила, фото.
 
 Права: переглядати — власник або reviews.view / reviews.moderate; модерувати — власник або reviews.moderate;
-змінювати правила — лише власник. Увімкнути відправку клієнтам через API неможливо (тексти не затверджені).
+змінювати правила й тексти, затверджувати тексти — лише власник (історія текстів — ReviewTextVersion).
+Увімкнути автоматичну відправку чи вимкнути тестовий режим через API неможливо — лише розробник після тесту.
+Кнопка «⭐ Попросити відгук» (POST /api/reviews/requests/) — будь-який співробітник; у тестовому режимі — лише
+тестовим контактам. «Не просити відгуки» ставить будь-хто, знімає — власник / модератор.
 """
 from django.core import signing
 from django.db.models import Count, F
@@ -14,9 +17,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.crm.models import Contact, log_activity
-from .models import Review, ReviewOptOut, ReviewPhoto, ReviewRequest, ReviewSettings
-from .services import PHOTO_SALT, live_allowed, public_name, review_link, run_sweep
+from apps.crm.models import Contact, Deal, log_activity
+from apps.inbox.models import Conversation
+from .models import Review, ReviewOptOut, ReviewPhoto, ReviewRequest, ReviewSettings, ReviewTextVersion
+from .services import (PHOTO_SALT, deal_for_conversation, live_allowed, manual_ask, public_name, review_link,
+                       run_sweep, texts_ready)
 
 ACTIONS = {"publish": "опубліковано", "hide": "приховано", "reply": "відповідь Wallcov", "feature": "закріплено на головній",
            "unfeature": "знято з головної", "edit_text": "приховано особисті дані в тексті",
@@ -25,7 +30,7 @@ INT_FIELDS = {"delay_main_days": (1, 90), "delay_test_days": (1, 90), "remind_af
               "repeat_block_days": (1, 365), "expire_days": (7, 365), "window_wait_days": (1, 90),
               "manager_quiet_hours": (0, 240), "per_run_cap": (1, 200)}
 TEXT_FIELDS = ("text_main", "text_test", "text_remind")
-LOCKED_FIELDS = ("send_enabled", "texts_approved")
+LOCKED_FIELDS = ("send_enabled", "texts_approved", "test_mode")  # затвердження — лише через approve_texts
 
 
 def can_view(user):
@@ -39,6 +44,20 @@ def can_moderate(user):
 
 def _iso(value):
     return timezone.localtime(value).isoformat() if value else None
+
+
+def _int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def text_versions(limit=40):
+    return [{"id": v.id, "field": v.field, "field_display": v.get_field_display(), "text": v.text,
+             "approved": v.approved, "note": v.note, "created_at": _iso(v.created_at),
+             "changed_by": (v.changed_by.get_full_name() or v.changed_by.username) if v.changed_by_id else ""}
+            for v in ReviewTextVersion.objects.select_related("changed_by")[:limit]]
 
 
 def _page(request):
@@ -100,6 +119,11 @@ def settings_dict(cfg):
         "send_from": cfg.send_from.strftime("%H:%M"), "send_to": cfg.send_to.strftime("%H:%M"),
         "test_funnel_ids": cfg.test_funnel_ids, "excluded_funnel_ids": cfg.excluded_funnel_ids,
         "allowlist_contact_ids": cfg.allowlist_contact_ids,
+        "allowlist_contacts": [{"id": c.id, "name": str(c)}
+                               for c in Contact.objects.filter(id__in=cfg.allowlist_contact_ids or []).order_by("id")],
+        "test_mode": cfg.test_mode, "texts_ready": texts_ready(cfg),
+        "texts_approved_at": _iso(cfg.texts_approved_at), "texts_approved_note": cfg.texts_approved_note,
+        "text_versions": text_versions(),
         **{name: getattr(cfg, name) for name in TEXT_FIELDS},
         "google_review_url": cfg.google_review_url, "link_example": review_link("Ab3xK9mPq2Rt"),
     }
@@ -198,8 +222,30 @@ class ReviewRequestListView(APIView):
         counts = dict(ReviewRequest.objects.values_list("status").annotate(n=Count("id")))
         return Response({"results": [request_row(r, request.user) for r in qs[(page - 1) * size: page * size]],
                          "count": qs.count(), "counts": counts, "send_enabled": cfg.send_enabled,
-                         "texts_approved": cfg.texts_approved, "live": live_allowed(cfg),
+                         "texts_approved": cfg.texts_approved, "live": live_allowed(cfg), "test_mode": cfg.test_mode,
                          "can_moderate": can_moderate(request.user)})
+
+    def post(self, request):
+        """Кнопка «⭐ Попросити відгук» (чат / картка угоди). confirm=false — показати текст і канал, нічого не
+        створюючи; confirm=true — надіслати. У тестовому режимі — лише тестовим контактам."""
+        data = request.data
+        conv = None
+        conv_id, deal_id = _int(data.get("conversation_id")), _int(data.get("deal_id"))
+        if conv_id:
+            conv = get_object_or_404(Conversation.objects.select_related("channel", "contact"), pk=conv_id)
+        if deal_id:
+            deal = get_object_or_404(Deal.objects.select_related("stage", "owner", "contact", "funnel"), pk=deal_id)
+        else:
+            deal = deal_for_conversation(conv)
+        if deal is None:
+            return Response({"ok": False, "can_send": False, "sent": False, "text": "", "channel_label": "",
+                             "deal_id": None, "conversation_id": conv.id if conv else None,
+                             "reason": "У клієнта цього чату немає угоди — натисніть кнопку в картці угоди"})
+        confirm = data.get("confirm") is True
+        result = manual_ask(deal, conv, user=request.user, send=confirm)
+        if confirm and not result["sent"]:
+            return Response(dict(result, detail=result["reason"]), status=400)
+        return Response(result)
 
 
 class ReviewRefreshView(APIView):
@@ -242,9 +288,28 @@ class ReviewSettingsView(APIView):
             if value is None:
                 return Response({"detail": "start_date — дата РРРР-ММ-ДД"}, status=400)
             cfg.start_date = value
+        changed = []
         for name in TEXT_FIELDS:
             if name in data:
-                cfg.__dict__[name] = str(data[name] or "")[:2000]
+                value = str(data[name] or "").strip()[:2000]
+                if "{посилання}" not in value:
+                    return Response({"detail": "У кожному тексті має бути {посилання} — інакше клієнт не отримає форму"},
+                                    status=400)
+                if value != getattr(cfg, name):
+                    setattr(cfg, name, value)
+                    changed.append(name)
+        approve = data.get("approve_texts") is True
+        now = timezone.now()
+        who = request.user.get_full_name() or request.user.username
+        stamp = timezone.localtime(now).strftime("%d.%m.%Y %H:%M")
+        if approve:
+            if not all("{посилання}" in (getattr(cfg, n) or "") for n in TEXT_FIELDS):
+                return Response({"detail": "Спершу заповніть усі три тексти з {посилання}"}, status=400)
+            cfg.texts_approved, cfg.texts_approved_at = True, now
+            cfg.texts_approved_note = ("Затвердив(ла) %s %s" % (who, stamp))[:200]
+        elif changed and cfg.texts_approved:
+            cfg.texts_approved = False
+            cfg.texts_approved_note = ("Текст змінено %s (%s) — потрібне повторне затвердження" % (stamp, who))[:200]
         if "google_review_url" in data:
             url = str(data["google_review_url"] or "").strip()
             if not url.startswith("https://"):
@@ -254,8 +319,19 @@ class ReviewSettingsView(APIView):
             ids = data["allowlist_contact_ids"]
             if not isinstance(ids, list) or any(isinstance(i, bool) or not isinstance(i, int) for i in ids):
                 return Response({"detail": "allowlist_contact_ids — список id контактів"}, status=400)
+            ids = list(dict.fromkeys(ids))
+            if len(ids) > 20:
+                return Response({"detail": "Тестових контактів — не більше 20"}, status=400)
+            missing = sorted(set(ids) - set(Contact.objects.filter(id__in=ids).values_list("id", flat=True)))
+            if missing:
+                return Response({"detail": "Клієнта з ID %s не знайдено" % missing[0]}, status=400)
             cfg.allowlist_contact_ids = ids
         cfg.save()
+        for name in TEXT_FIELDS:
+            if name in changed or approve:
+                ReviewTextVersion.objects.create(field=name, text=getattr(cfg, name), approved=approve,
+                                                 note="затверджено" if approve else "змінено в CRM",
+                                                 changed_by=request.user)
         return Response(settings_dict(cfg))
 
 
@@ -263,11 +339,23 @@ class ReviewOptOutView(APIView):
     """Вручну: «не просити відгуки» у клієнта (або зняти позначку)."""
     permission_classes = [IsAuthenticated]
 
+    def get(self, request):
+        contact_id = _int(request.query_params.get("contact_id"))
+        if contact_id is None:
+            return Response({"detail": "contact_id — число"}, status=400)
+        contact = get_object_or_404(Contact, pk=contact_id)
+        row = ReviewOptOut.objects.filter(contact=contact).first()
+        return Response({"contact_id": contact.id, "opt_out": row is not None,
+                         "reason": row.get_reason_display() if row else "",
+                         "created_at": _iso(row.created_at) if row else None, "can_remove": can_moderate(request.user)})
+
     def post(self, request):
-        if not can_moderate(request.user):
-            return Response({"detail": "Немає прав"}, status=403)
-        contact = get_object_or_404(Contact, pk=request.data.get("contact_id") or 0)
+        # «Не просити» може поставити будь-хто (це лише зменшує повідомлення); зняти — власник або модератор.
+        contact = get_object_or_404(Contact, pk=_int(request.data.get("contact_id")) or 0)
         if request.data.get("opt_out") is False:
+            if not can_moderate(request.user):
+                return Response({"detail": "Зняти «не просити відгуки» може лише власник або відповідальний за відгуки"},
+                                status=403)
             ReviewOptOut.objects.filter(contact=contact).delete()
         else:
             ReviewOptOut.objects.get_or_create(contact=contact, defaults={"reason": "manual", "created_by": request.user})

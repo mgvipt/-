@@ -10,17 +10,18 @@ import uuid
 from datetime import time as dtime, timedelta
 from unittest.mock import patch
 
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from PIL import Image
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
-from apps.crm.models import ActivityLog, Contact, Deal, DealItem, Funnel, Stage, Task
+from apps.crm.models import ActivityLog, AgentConfig, Contact, Deal, DealItem, Funnel, Lead, Stage, Task
 from apps.inbox.models import Channel, Conversation, Message
-from apps.warehouse.models import Product
-from .models import Review, ReviewOptOut, ReviewPhoto, ReviewRequest, ReviewSettings
-from .services import new_code, review_link, run_sweep
+from apps.warehouse.models import Product, ProductCategory
+from .models import Review, ReviewOptOut, ReviewPhoto, ReviewRequest, ReviewSettings, ReviewTextVersion
+from .services import is_review_reply, new_code, render, review_link, run_sweep, short_material
 
 SECRET = "test-only-secret"
 
@@ -382,3 +383,232 @@ class ShopApiTests(_Base):
         self.sweep()
         self.req.refresh_from_db()
         self.assertEqual(self.req.status, "test")
+
+
+# ── 13.09.2026: затверджені тексти, безпечний запуск, кнопка, правило для ІІ-агента ──
+
+APPROVED = {
+    "text_main": (
+        "Доброго дня, {імʼя}! 👋 Це {менеджер} з Wallcov.\n"
+        "Ваше замовлення вже у вас — дуже сподіваємось, що {матеріал} виглядає саме так, як ви мріяли.\n"
+        "Якщо буде хвилинка, поділіться враженнями — це допоможе іншим наважитись на свою стіну: {посилання}\n"
+        "Це займе 1–2 хвилини. А якщо ще не наносили — нічого страшного, посилання діє 60 днів 🙂"),
+    "text_test": (
+        "Доброго дня, {імʼя}! 👋 Тест-набір {матеріал} вже у вас. Як вам матеріал — вдалося спробувати?\n"
+        "Якщо є хвилинка, поставте оцінку і напишіть пару слів: {посилання}\n"
+        "Будь-яке враження корисне — і для нас, і для тих, хто тільки обирає 🙂"),
+    "text_remind": (
+        "{імʼя}, нагадаю про посилання для відгуку — раптом загубилось серед повідомлень 🙂 {посилання}\n"
+        "Якщо зараз не до того — просто проігноруйте, більше не турбуватимемо."),
+}
+
+
+def _approve(cfg, **kw):
+    cfg.texts_approved = True
+    cfg.text_main, cfg.text_test, cfg.text_remind = APPROVED["text_main"], APPROVED["text_test"], APPROVED["text_remind"]
+    cfg.send_from, cfg.send_to = dtime(0, 0), dtime(23, 59, 59)
+    for key, value in kw.items():
+        setattr(cfg, key, value)
+    cfg.save()
+
+
+def _fake_sender(sent):
+    def fake_send(conv, text, user=None):
+        sent.append((conv.id, text, user))
+        return Message.objects.create(conversation=conv, direction="out", text=text, sender=user)
+    return fake_send
+
+
+class TextsAndLaunchTests(_Base):
+    def setUp(self):
+        super().setUp()
+        self.owner = User.objects.create_user(username="test-owner-texts", is_superuser=True)
+        self.api = APIClient()
+        self.api.force_authenticate(self.owner)
+
+    def test_owner_saves_and_approves_texts_with_history(self):
+        body = self.api.patch("/api/reviews/settings/", dict(APPROVED, approve_texts=True), format="json").json()
+        self.assertTrue(body["texts_approved"] and body["texts_ready"])
+        self.assertEqual((body["send_enabled"], body["test_mode"], body["live"]), (False, True, False))
+        self.assertEqual(ReviewTextVersion.objects.filter(approved=True).count(), 3)
+        body = self.api.patch("/api/reviews/settings/", {"text_remind": APPROVED["text_remind"] + " 🙏"},
+                              format="json").json()
+        self.assertFalse(body["texts_approved"])
+        self.assertIn("повторне затвердження", body["texts_approved_note"])
+        self.assertEqual((body["text_versions"][0]["field"], body["text_versions"][0]["approved"]), ("text_remind", False))
+        self.assertEqual(ReviewTextVersion.objects.count(), 4)
+
+    def test_text_without_link_locked_flags_and_rights(self):
+        self.assertEqual(self.api.patch("/api/reviews/settings/", {"text_main": "Без посилання"}, format="json").status_code, 400)
+        for key, value in (("send_enabled", True), ("test_mode", False), ("texts_approved", True)):
+            self.assertEqual(self.api.patch("/api/reviews/settings/", {key: value}, format="json").status_code, 400)
+        cfg = ReviewSettings.get()
+        self.assertEqual((cfg.send_enabled, cfg.test_mode, cfg.texts_approved), (False, True, False))
+        manager = APIClient()
+        manager.force_authenticate(self.manager)
+        self.assertEqual(manager.patch("/api/reviews/settings/", dict(APPROVED, approve_texts=True), format="json").status_code, 403)
+        self.assertEqual(self.api.patch("/api/reviews/settings/", {"allowlist_contact_ids": [99999999]},
+                                        format="json").status_code, 400)
+        c = self.contact()
+        body = self.api.patch("/api/reviews/settings/", {"allowlist_contact_ids": [c.id]}, format="json").json()
+        self.assertEqual(body["allowlist_contacts"], [{"id": c.id, "name": str(c)}])
+
+    def test_start_date_blocks_old_parcels_even_when_sending_is_on(self):
+        c = self.contact()
+        d = self.deal(c, days=11)
+        viber = self.conv(c, self.viber)
+        self.msg(viber, "in", 48)
+        self.msg(viber, "out", 47)
+        self.sweep()
+        ReviewRequest.objects.filter(deal=d).update(status="scheduled")  # просьба з журналу, створена до зміни дати
+        _approve(ReviewSettings.get(), send_enabled=True, allowlist_contact_ids=[c.id],
+                 start_date=timezone.localtime(self.now).date())
+        sent = []
+        with patch("apps.inbox.services.send_message", side_effect=_fake_sender(sent)):
+            run_sweep(now=self.now)
+        req = ReviewRequest.objects.get(deal=d)
+        self.assertEqual(sent, [])
+        self.assertEqual(req.status, "skipped")
+        self.assertIn("до дати старту", req.reason)
+
+    def test_test_mode_with_empty_list_sends_to_nobody(self):
+        c = self.contact()
+        d = self.deal(c)
+        viber = self.conv(c, self.viber)
+        self.msg(viber, "in", 48)
+        self.msg(viber, "out", 47)
+        _approve(ReviewSettings.get(), send_enabled=True, allowlist_contact_ids=[])
+        sent = []
+        with patch("apps.inbox.services.send_message", side_effect=_fake_sender(sent)):
+            run_sweep(now=self.now)
+        req = ReviewRequest.objects.get(deal=d)
+        self.assertEqual(sent, [])
+        self.assertEqual(req.status, "would_send")
+        self.assertIn("тестовий режим", req.reason)
+
+    def test_render_signature_short_material_and_no_name(self):
+        tools = ProductCategory.objects.create(name="1.6. ІНСТРУМЕНТИ")
+        coat = ProductCategory.objects.create(name="1.3.1. WALLCOV Фактурні декоративні покриття та фарби")
+        trowel = Product.objects.create(name="Кельма венец. нерж.сталь 200х80", category=tools)
+        silk = Product.objects.create(name="Galateya Silver (Lui 0188). декоративна фарба", category=coat)
+        owner = User.objects.create_user(username="test-owner-deal", first_name="Кирил")
+        c = self.contact()
+        d = self.deal(c)
+        Deal.objects.filter(pk=d.pk).update(owner=owner)
+        d.refresh_from_db()
+        DealItem.objects.create(deal=d, product=trowel, quantity=5, price=400)
+        DealItem.objects.create(deal=d, product=silk, quantity=1, price=1000)
+        req = ReviewRequest(deal=d, contact=c, kind="main", code="Ab3xK9mPq2Rt")
+        text = render(APPROVED["text_main"], req)
+        self.assertTrue(text.startswith("Доброго дня, Олена! 👋 Це Кирил з Wallcov."))
+        self.assertIn("що Galateya Silver виглядає", text)
+        self.assertIn(review_link("Ab3xK9mPq2Rt"), text)
+        self.assertNotIn("{", text)
+        Deal.objects.filter(pk=d.pk).update(owner=None)
+        req.deal = Deal.objects.get(pk=d.pk)
+        no_owner = render(APPROVED["text_main"], req)
+        self.assertIn("Це команда Wallcov.", no_owner)
+        self.assertNotIn("з Wallcov з", no_owner)
+        c.first_name = ""
+        c.save()
+        self.assertTrue(render(APPROVED["text_remind"], req).startswith("Нагадаю про посилання"))
+        self.assertTrue(render(APPROVED["text_test"], req, "test").startswith("Доброго дня! 👋 Тест-набір Galateya Silver вже у вас."))
+        self.assertEqual(short_material('Sirena Silk — тестовий набір "Мокрий шовк" (без дощечки)'), "Sirena Silk")
+
+
+class ManualAskTests(_Base):
+    def setUp(self):
+        super().setUp()
+        _approve(ReviewSettings.get())  # тексти затверджені, автоматична відправка вимкнена, тестовий режим
+        self.c = self.contact()
+        self.d = self.deal(self.c)
+        self.viber_conv = self.conv(self.c, self.viber)
+        self.msg(self.viber_conv, "in", 30)
+        self.msg(self.viber_conv, "out", 29)
+        self.api = APIClient()
+        self.api.force_authenticate(self.manager)
+
+    def ask(self, **kw):
+        return self.api.post("/api/reviews/requests/", kw, format="json")
+
+    def allow(self):
+        cfg = ReviewSettings.get()
+        cfg.allowlist_contact_ids = [self.c.id]
+        cfg.save()
+
+    def test_preview_creates_nothing_and_test_mode_blocks_others(self):
+        with patch("apps.inbox.services.send_message", side_effect=AssertionError("no sending in tests")):
+            body = self.ask(deal_id=self.d.id).json()
+            self.assertFalse(body["can_send"])
+            self.assertIn("тестових контактів", body["reason"])
+            self.assertEqual(self.ask(deal_id=self.d.id, confirm=True).status_code, 400)
+            self.allow()
+            body = self.ask(conversation_id=self.viber_conv.id).json()
+        self.assertTrue(body["can_send"])
+        self.assertEqual((body["deal_id"], body["conversation_id"]), (self.d.id, self.viber_conv.id))
+        self.assertIn("Viber — цей чат", body["channel_label"])
+        self.assertTrue(body["text"].startswith("Доброго дня, Олена!"))
+        self.assertEqual(ReviewRequest.objects.count(), 0)
+        self.assertEqual(Message.objects.count(), 2)
+
+    def test_allowlisted_sends_once_and_cancels_auto_request(self):
+        self.allow()
+        self.sweep()
+        auto = ReviewRequest.objects.get(deal=self.d, kind="main")
+        self.assertEqual(auto.status, "would_send")
+        sent = []
+        with patch("apps.inbox.services.send_message", side_effect=_fake_sender(sent)):
+            first = self.ask(deal_id=self.d.id, conversation_id=self.viber_conv.id, confirm=True)
+            again = self.ask(deal_id=self.d.id, confirm=True)
+        self.assertEqual((first.status_code, again.status_code), (200, 400))
+        self.assertEqual(len(sent), 1)
+        req = ReviewRequest.objects.get(kind="manual")
+        self.assertEqual((req.status, req.conversation_id, req.created_by_id), ("sent", self.viber_conv.id, self.manager.id))
+        self.assertIn(review_link(req.code), sent[0][1])
+        self.assertEqual(sent[0][2].pk, self.manager.pk)
+        auto.refresh_from_db()
+        self.assertEqual(auto.status, "cancelled")
+        self.assertTrue(is_review_reply(self.c.id))
+
+    def test_instagram_closed_window_and_opt_out(self):
+        self.allow()
+        ig = self.conv(self.c, self.ig, ext="ig-test-only")
+        self.msg(ig, "in", 30)
+        body = self.ask(conversation_id=ig.id).json()
+        self.assertFalse(body["can_send"])
+        self.assertIn("понад 24 години", body["reason"])
+        self.msg(ig, "in", 1)
+        self.assertTrue(self.ask(conversation_id=ig.id).json()["can_send"])
+        self.assertEqual(self.api.post("/api/reviews/opt-out/", {"contact_id": self.c.id, "opt_out": True},
+                                       format="json").status_code, 200)
+        state = self.api.get("/api/reviews/opt-out/?contact_id=%s" % self.c.id).json()
+        self.assertEqual((state["opt_out"], state["can_remove"]), (True, False))
+        self.assertIn("не надсилати", self.ask(deal_id=self.d.id).json()["reason"])
+        self.assertEqual(self.api.post("/api/reviews/opt-out/", {"contact_id": self.c.id, "opt_out": False},
+                                       format="json").status_code, 403)
+        self.assertTrue(ReviewOptOut.objects.filter(contact=self.c).exists())
+
+
+class AgentReviewReplyTests(_Base):
+    def test_agent_sweep_skips_thank_you_to_review_request(self):
+        agent_cfg = AgentConfig.get()
+        agent_cfg.enabled, agent_cfg.auto_on_reply = True, True
+        agent_cfg.save()
+        leads = Funnel.objects.create(name="Лиды (тест)", is_lead_funnel=True)
+        stage = Stage.objects.create(funnel=leads, name="Лід отриманий", order=0)
+        c = self.contact()
+        Lead.objects.create(title="test only", contact=c, funnel=leads, stage=stage)
+        Deal.objects.create(title="test only", contact=c, funnel=self.main, stage=self.recv, amount=1)
+        viber = self.conv(c, self.viber)
+        self.msg(viber, "out", 3, text="Доброго дня! Поділіться враженнями: " + review_link("Ab3xK9mPq2Rt"))
+        self.msg(viber, "in", 1, text="Дякую!")
+        Conversation.objects.filter(pk=viber.pk).update(last_message_at=timezone.now() - timedelta(hours=1))
+        with patch("apps.crm.management.commands.run_agent_sweep.run_agent") as agent:
+            call_command("run_agent_sweep", stdout=io.StringIO())
+        agent.assert_not_called()
+        self.msg(viber, "out", 0.5, sender=self.manager, text="Будь ласка! Чим ще допомогти?")
+        self.msg(viber, "in", 0.2, text="Хочу ще Galateya на кухню")
+        Conversation.objects.filter(pk=viber.pk).update(last_message_at=timezone.now() - timedelta(minutes=5))
+        with patch("apps.crm.management.commands.run_agent_sweep.run_agent") as agent:
+            call_command("run_agent_sweep", stdout=io.StringIO())
+        self.assertEqual(agent.call_count, 2)  # і лід, і угода — як завжди, коли розмова вже не про відгук

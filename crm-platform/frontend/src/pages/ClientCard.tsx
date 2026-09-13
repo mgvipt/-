@@ -7,6 +7,7 @@ import { Avatar, SourceChip, SOURCES } from "../ui";
 import OwnerSelect from "../OwnerSelect";
 import CallButton from "../CallButton";
 import LeadQuality from "../LeadQuality";
+import { ReviewOptOutToggle } from "../ReviewButtons";
 import { useLang } from "../i18n";
 import TxCardModal from "../TxCardModal";
 import { useAuth } from "../auth";
@@ -185,6 +186,7 @@ export default function ClientCard() {
         <span className="muted" title={t("Сумма выигранных сделок — сколько клиент купил у нас. Это НЕ расходы по объекту (те в блоке «Финансы клиента»).","Сума виграних угод — скільки клієнт купив у нас. Це НЕ витрати по обʼєкту (ті у блоці «Фінанси клієнта»).")}>{t("Купил в нашем магазине (сделки)","Купив у нашому магазині (угоди)")}: <b style={{ color: "#16a34a" }}>{money(c.total_spent)}</b></span>
       </div>
       <div style={{ margin: "4px 0 6px" }}><LeadQuality contactId={c.id} /></div>
+      <div style={{ margin: "0 0 8px" }}><ReviewOptOutToggle contactId={c.id} /></div>
 
       <div className="grid2">
         <div>

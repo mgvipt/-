@@ -1,10 +1,12 @@
 /* Розділ «Відгуки» (12.09.2026): модерація відгуків покупців з сайту + журнал просьб «кому б відправили».
- * Відправка просьб клієнтам ВИМКНЕНА, доки Олег не затвердить тексти. Дані: /api/reviews/*.
+ * Автоматична відправка просьб ВИМКНЕНА (вмикає розробник). Дані: /api/reviews/*.
+ * 13.09.2026: тексти затверджені Олегом; вкладка «Тексти і запуск» — тексти, історія змін, тестові контакти, дата старту.
  * Усі компоненти — на рівні модуля (не всередині інших), щоб поля вводу не втрачали фокус. */
 import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { useAuth } from "../auth";
 
 type Photo = { id: number; url: string; thumb_url: string; is_public: boolean };
 type Product = { crm_product_id: number; name: string; shop_slug: string | null; is_primary: boolean };
@@ -24,18 +26,28 @@ type ReqRow = {
 };
 type ReqList = {
   results: ReqRow[]; count: number; counts: Record<string, number>; send_enabled: boolean; live: boolean;
-  can_moderate: boolean;
+  can_moderate: boolean; texts_approved?: boolean; test_mode?: boolean;
 };
 type Rules = {
   send_enabled: boolean; texts_approved: boolean; live: boolean; start_date: string | null;
   delay_main_days: number; delay_test_days: number; remind_after_days: number; repeat_block_days: number;
   expire_days: number; window_wait_days: number; manager_quiet_hours: number; send_from: string; send_to: string;
-  google_review_url: string; link_example: string;
+  google_review_url: string; link_example: string; test_mode?: boolean;
+};
+type TextVersion = {
+  id: number; field: string; field_display: string; text: string; approved: boolean; note: string;
+  changed_by: string; created_at: string;
+};
+type TextsDraft = { text_main: string; text_test: string; text_remind: string };
+type Launch = TextsDraft & {
+  send_enabled: boolean; texts_approved: boolean; texts_ready: boolean; live: boolean; test_mode: boolean;
+  start_date: string | null; texts_approved_at: string | null; texts_approved_note: string;
+  allowlist_contact_ids: number[]; allowlist_contacts: { id: number; name: string }[]; text_versions: TextVersion[];
 };
 
 const TABS: [string, string][] = [
   ["pending", "На перевірці"], ["published", "Опубліковані"], ["hidden", "Приховані"],
-  ["journal", "Журнал просьб"], ["rules", "Як це працює"],
+  ["journal", "Журнал просьб"], ["texts", "Тексти і запуск"], ["rules", "Як це працює"],
 ];
 const ROOMS: Record<string, string> = {
   living: "вітальня", bedroom: "спальня", kitchen: "кухня", bathroom: "ванна", hallway: "коридор",
@@ -50,6 +62,23 @@ const REQ_COLOR: Record<string, string> = {
   would_send: "#2563eb", waiting: "#d97706", scheduled: "#64748b", skipped: "#94a3b8", cancelled: "#94a3b8",
   opted_out: "#dc2626", sent: "#16a34a", reminded: "#16a34a", submitted: "#059669", expired: "#94a3b8", test: "#7c3aed",
 };
+const TEXT_FIELDS: [keyof TextsDraft, string, string][] = [
+  ["text_main", "Основне замовлення (В1)", "через 10 днів після «Отримано»"],
+  ["text_test", "Тест-набір (Т1)", "через 5 днів після «Отримано»"],
+  ["text_remind", "Нагадування", "одне, через 5 днів, якщо відгуку ще немає"],
+];
+const SAMPLE: [string, string][] = [
+  ["{імʼя}", "Олена"], ["{ім'я}", "Олена"], ["{менеджер}", "Кирилл"], ["{матеріал}", "Galateya Silver"],
+  ["{посилання}", "https://wallcov.com.ua/vidguk/Ab3xK9mPq2Rt"],
+];
+const TEXTAREA: CSSProperties = {
+  width: "100%", boxSizing: "border-box", padding: 8, borderRadius: 8, border: "1px solid #cbd5e1",
+  fontFamily: "inherit", fontSize: 14, marginTop: 4,
+};
+const PREVIEW: CSSProperties = {
+  whiteSpace: "pre-wrap", fontSize: 13.5, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10,
+  padding: "8px 10px",
+};
 const TH: CSSProperties = { padding: "8px 10px", fontWeight: 600, color: "#475569", whiteSpace: "nowrap" };
 const TD: CSSProperties = { padding: "8px 10px", verticalAlign: "top" };
 
@@ -63,6 +92,10 @@ function fmt(d: string | null): string {
 function errText(e: unknown): string {
   const data = (e as { data?: { detail?: string } } | null)?.data;
   return data?.detail || "Не вдалося виконати дію";
+}
+
+function sample(text: string): string {
+  return SAMPLE.reduce((acc, [key, value]) => acc.split(key).join(value), text);
 }
 
 function Stars({ n }: { n: number }) {
@@ -198,10 +231,14 @@ function Journal() {
   return (
     <div>
       <div className="panel" style={{ background: "linear-gradient(135deg,#fffbeb,#fef3c7)", border: "1px solid #fcd34d" }}>
-        <b style={{ fontSize: 15 }}>🔒 Відправка просьб клієнтам вимкнена</b>
+        <b style={{ fontSize: 15 }}>
+          {data?.live ? (data?.test_mode ? "🧪 Відправка увімкнена лише для тестових контактів" : "✅ Відправка увімкнена")
+            : "🔒 Автоматична відправка просьб вимкнена"}
+        </b>
         <div style={{ fontSize: 13, marginTop: 4 }}>
-          Тексти ще не затверджені. CRM нікому нічого не пише — тут лише список, кому і яким каналом вона{" "}
-          <b>відправила б</b> просьбу про відгук, і чому когось пропускає.
+          {data?.texts_approved ? "Тексти затверджені (вкладка «Тексти і запуск»). " : "Тексти ще не затверджені. "}
+          {data?.live ? "Просьби йдуть за правилами нижче." : <>CRM сама нікому не пише — тут лише список, кому і яким
+            каналом вона <b>відправила б</b> просьбу про відгук, і чому когось пропускає.</>}
         </div>
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
@@ -276,14 +313,161 @@ function RulesPanel() {
           <code>{s.link_example}</code>.</li>
         <li>Відгук з сайту потрапляє сюди «На перевірку». Публікуємо чесні відгуки без спаму й образ; 1–3★ — одразу задача
           менеджеру. Бонусів за відгук немає.</li>
+        <li>Кнопка <b>«⭐ Попросити відгук»</b> у чаті й картці угоди: менеджер бачить точний текст і куди він піде,
+          надсилає лише після «Надіслати». Відповідь клієнта («дякую») на просьбу не запускає ІІ-агента і не рухає угоду.</li>
         <li>Після відгуку клієнт бачить посилання на Google:{" "}
           <a href={s.google_review_url} target="_blank" rel="noreferrer">{s.google_review_url}</a>.</li>
       </ol>
       <div style={{ marginTop: 8, padding: 12, borderRadius: 10, background: s.live ? "#ecfdf5" : "#fff7ed",
         border: `1px solid ${s.live ? "#6ee7b7" : "#fdba74"}` }}>
         {s.live
-          ? "✅ Відправка увімкнена."
-          : "🔒 Відправка вимкнена: тексти просьб ще не затверджені. Увімкнути може лише розробник після вашого «так» і перевірки на вашому акаунті."}
+          ? (s.test_mode ? "🧪 Відправка увімкнена лише для тестових контактів." : "✅ Відправка увімкнена.")
+          : (s.texts_approved
+            ? "🔒 Тексти затверджені, але автоматична відправка вимкнена. Увімкнути може лише розробник після перевірки на вашому контакті (вкладка «Тексти і запуск»)."
+            : "🔒 Відправка вимкнена: тексти просьб ще не затверджені.")}
+      </div>
+    </div>
+  );
+}
+
+function TextsPanel() {
+  const { me } = useAuth();
+  const owner = !!me?.is_superuser;
+  const [s, setS] = useState<Launch | null>(null);
+  const [draft, setDraft] = useState<TextsDraft>({ text_main: "", text_test: "", text_remind: "" });
+  const [start, setStart] = useState("");
+  const [addId, setAddId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState("");
+  const apply = (d: Launch) => {
+    setS(d);
+    setDraft({ text_main: d.text_main, text_test: d.text_test, text_remind: d.text_remind });
+    setStart(d.start_date || "");
+  };
+  useEffect(() => { api.get<Launch>("/api/reviews/settings/").then(apply).catch((e) => setErr(errText(e))); }, []);
+  const save = async (body: Record<string, unknown>, okText: string) => {
+    setBusy(true);
+    setErr("");
+    setNote("");
+    try {
+      apply(await api.patch<Launch>("/api/reviews/settings/", body));
+      setNote(okText);
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!s) return err ? <div className="panel" style={{ color: "#dc2626" }}>{err}</div> : <div className="muted">Завантаження…</div>;
+  const changed: Record<string, string> = {};
+  TEXT_FIELDS.forEach(([k]) => { if (draft[k] !== s[k]) changed[k] = draft[k]; });
+  const dirty = Object.keys(changed).length > 0;
+  const addContact = () => {
+    const id = Number(addId);
+    if (!Number.isInteger(id) || id <= 0) { setErr("ID клієнта — число з адреси картки клієнта"); return; }
+    save({ allowlist_contact_ids: [...s.allowlist_contact_ids, id] }, "Тестовий контакт додано");
+    setAddId("");
+  };
+  const removeContact = (id: number) =>
+    save({ allowlist_contact_ids: s.allowlist_contact_ids.filter((x) => x !== id) }, "Контакт прибрано зі списку");
+  return (
+    <div>
+      {note && <div className="panel" style={{ color: "#16a34a", padding: "8px 12px" }}>✓ {note}</div>}
+      {err && <div className="panel" style={{ color: "#dc2626", padding: "8px 12px" }}>{err}</div>}
+      <div className="panel" style={{ fontSize: 14, lineHeight: 1.7 }}>
+        <h3 style={{ marginTop: 0 }}>Запуск</h3>
+        <div>{s.texts_approved ? "✅" : "⚠️"} <b>Тексти:</b> {s.texts_approved ? "затверджені" : "не затверджені"}
+          {s.texts_approved_note ? ` — ${s.texts_approved_note}` : ""}</div>
+        <div>{s.send_enabled ? "✅" : "🔒"} <b>Автоматична відправка:</b>{" "}
+          {s.send_enabled ? "увімкнена" : "вимкнена — вмикає розробник лише після перевірки на вашому контакті"}</div>
+        <div>🧪 <b>Тестовий режим:</b>{" "}
+          {s.test_mode ? "так — просьби (автоматичні й кнопка «⭐ Попросити відгук») отримують лише тестові контакти нижче"
+            : "ні — усі клієнти за правилами"}</div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
+          <b>Дата старту:</b>
+          <input type="date" value={start} disabled={!owner || busy} onChange={(e) => setStart(e.target.value)} style={{ height: 30 }} />
+          {owner && start !== (s.start_date || "") && (
+            <button className="btn btn-primary" disabled={busy || !start} onClick={() => save({ start_date: start }, "Дату старту збережено")}>Зберегти дату</button>
+          )}
+          <span className="muted" style={{ fontSize: 12 }}>просимо лише за посилками, отриманими в цей день і пізніше — старі клієнти з журналу повідомлень не отримають</span>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <b>Тестові контакти</b> <span className="muted" style={{ fontSize: 12 }}>(поки йде перевірка, просьбу отримують лише вони)</span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "6px 0" }}>
+            {s.allowlist_contacts.map((c) => (
+              <span key={c.id} className="chip" style={{ background: "#7c3aed" }}>
+                <Link to={`/clients/${c.id}`} style={{ color: "#fff" }}>{c.name || "Клієнт"} · #{c.id}</Link>
+                {owner && (
+                  <button onClick={() => removeContact(c.id)} disabled={busy} title="Прибрати зі списку"
+                    style={{ marginLeft: 6, background: "none", border: 0, color: "#fff", cursor: "pointer" }}>✕</button>
+                )}
+              </span>
+            ))}
+            {s.allowlist_contacts.length === 0 && <span className="muted">Список порожній — CRM нікому не надсилає просьби.</span>}
+          </div>
+          {owner && (
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <input value={addId} onChange={(e) => setAddId(e.target.value.replace(/\D/g, ""))} placeholder="ID клієнта" style={{ width: 120, height: 30 }} />
+              <button className="btn btn-light" disabled={busy || !addId} onClick={addContact}>Додати</button>
+              <span className="muted" style={{ fontSize: 12 }}>ID — число в адресі картки клієнта: …/clients/<b>12345</b></span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="panel">
+        <h3 style={{ marginTop: 0 }}>Тексти просьби</h3>
+        <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+          Підстановки: <code>{"{імʼя}"}</code> — імʼя клієнта (якщо невідоме — без звертання), <code>{"{менеджер}"}</code> — імʼя
+          відповідального за угоду (якщо немає — «команда Wallcov»), <code>{"{матеріал}"}</code> — головний матеріал замовлення,{" "}
+          <code>{"{посилання}"}</code> — особисте посилання на форму відгуку (обовʼязково в кожному тексті).
+        </div>
+        {TEXT_FIELDS.map(([k, label, when]) => (
+          <div key={k} style={{ marginBottom: 14 }}>
+            <div><b>{label}</b> <span className="muted" style={{ fontSize: 12 }}>— {when}</span></div>
+            <textarea value={draft[k]} readOnly={!owner} rows={5} style={TEXTAREA}
+              onChange={(e) => setDraft({ ...draft, [k]: e.target.value })} />
+            <div className="muted" style={{ fontSize: 12, margin: "4px 0 2px" }}>Так побачить клієнт (приклад):</div>
+            <div style={PREVIEW}>{sample(draft[k]) || "—"}</div>
+          </div>
+        ))}
+        {owner && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn btn-primary" disabled={busy || !dirty}
+              onClick={() => save(changed, "Тексти збережено. Після змін їх треба затвердити знову")}>Зберегти тексти</button>
+            {(!s.texts_approved || dirty) && (
+              <button className="btn btn-green" disabled={busy}
+                onClick={() => save({ ...changed, approve_texts: true }, "Тексти затверджено")}>✓ Затвердити тексти</button>
+            )}
+          </div>
+        )}
+        {!owner && <div className="muted" style={{ fontSize: 12 }}>Змінювати тексти може лише власник.</div>}
+      </div>
+      <div className="panel" style={{ padding: 0, overflowX: "auto" }}>
+        <div style={{ padding: "10px 12px", fontWeight: 600 }}>Історія змін текстів</div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: "#f8fafc", textAlign: "left" }}>
+              <th style={TH}>Коли</th><th style={TH}>Хто</th><th style={TH}>Текст</th><th style={TH}>Статус</th>
+            </tr>
+          </thead>
+          <tbody>
+            {s.text_versions.map((v) => (
+              <tr key={v.id} style={{ borderTop: "1px solid #eef2f7" }}>
+                <td style={TD}>{fmt(v.created_at)}</td>
+                <td style={TD}>{v.changed_by || "—"}</td>
+                <td style={TD}><b>{v.field_display}</b><div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>{v.text}</div></td>
+                <td style={TD}>
+                  <Badge text={v.approved ? "затверджено" : "змінено"} color={v.approved ? "#16a34a" : "#d97706"} />
+                  {v.note && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{v.note}</div>}
+                </td>
+              </tr>
+            ))}
+            {s.text_versions.length === 0 && (
+              <tr><td style={TD} colSpan={4}><span className="muted">Змін ще не було.</span></td></tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -320,6 +504,7 @@ export default function Reviews() {
         <ReviewCard key={r.id} r={r} canModerate={data.can_moderate} onChanged={load} />
       ))}
       {tab === "journal" && <Journal />}
+      {tab === "texts" && <TextsPanel />}
       {tab === "rules" && <RulesPanel />}
     </div>
   );

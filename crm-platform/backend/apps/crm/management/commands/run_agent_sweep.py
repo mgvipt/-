@@ -4,6 +4,7 @@ from datetime import timedelta
 from apps.crm.models import Lead, Deal, AgentConfig, AgentRun, Task
 from apps.inbox.models import Conversation
 from apps.crm.agent import run_agent
+from apps.reviews.services import is_review_reply
 
 
 class Command(BaseCommand):
@@ -39,6 +40,8 @@ class Command(BaseCommand):
                 recent_run = lastrun and (now - lastrun.created_at) < timedelta(days=3)
                 if not has_followup and not recent_run:
                     run_it = True
+            if run_it and is_review_reply(lead.contact_id, now):
+                run_it = False  # клієнт відповідає на просьбу про відгук («дякую») — не продаж, агент не чіпає (13.09)
             if run_it:
                 try:
                     run_agent(lead, "lead", trigger="sweep", user=None)
@@ -61,6 +64,8 @@ class Command(BaseCommand):
             dlast = AgentRun.objects.filter(deal=deal).order_by("-created_at").first()
             if dlast and dlast.created_at >= dconv.last_message_at:
                 continue
+            if is_review_reply(deal.contact_id, now):
+                continue  # відповідь на просьбу про відгук — агент угоду не рухає (13.09)
             try:
                 run_agent(deal, "deal", trigger="sweep", user=None); done += 1
             except Exception as e:

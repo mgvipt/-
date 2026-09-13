@@ -2,7 +2,9 @@
 
 Головна копія — CRM: просьба (ReviewRequest) → відгук з форми магазину (Review + фото) →
 модерація Олегом → публікація на wallcov.com.ua (магазин забирає стрічку опублікованих).
-Відправка просьб клієнтам ВИМКНЕНА (ReviewSettings.send_enabled=False), доки Олег не затвердить тексти.
+Відправка просьб клієнтам ВИМКНЕНА (ReviewSettings.send_enabled=False).
+13.09.2026: тексти В1 / Т1 / нагадування затверджені Олегом; тестовий режим (test_mode) — просьби лише контактам
+зі списку; історія змін текстів — ReviewTextVersion.
 """
 from datetime import date, time
 
@@ -30,10 +32,13 @@ class ReviewSettings(models.Model):
     per_run_cap = models.PositiveSmallIntegerField(default=20)
     test_funnel_ids = models.JSONField(default=list, blank=True, help_text="Воронки тест-наборів")
     excluded_funnel_ids = models.JSONField(default=list, blank=True, help_text="Воронки, де не просимо (тести, найм, ліди)")
-    allowlist_contact_ids = models.JSONField(default=list, blank=True, help_text="Якщо не порожньо — надсилати лише цим контактам (тест)")
+    allowlist_contact_ids = models.JSONField(default=list, blank=True, help_text="Тестові контакти: у тестовому режимі просьби отримують лише вони")
+    test_mode = models.BooleanField(default=True, help_text="Лише тестові контакти: просьби (авто і кнопка) — тільки клієнтам зі списку. Вимикає розробник")
     text_main = models.TextField(blank=True, default="")
     text_test = models.TextField(blank=True, default="")
     text_remind = models.TextField(blank=True, default="")
+    texts_approved_at = models.DateTimeField(null=True, blank=True)
+    texts_approved_note = models.CharField(max_length=200, blank=True, default="", help_text="Хто і коли затвердив тексти (або чому затвердження знято)")
     google_review_url = models.URLField(max_length=300, default=GOOGLE_REVIEW_URL)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -179,3 +184,17 @@ class ReviewOptOut(models.Model):
     note = models.CharField(max_length=200, blank=True, default="")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class ReviewTextVersion(models.Model):
+    """Історія текстів просьби: кожне збереження і кожне затвердження — окремий рядок (хто, коли, повний текст)."""
+    FIELDS = [("text_main", "Основне замовлення"), ("text_test", "Тест-набір"), ("text_remind", "Нагадування")]
+    field = models.CharField(max_length=20, choices=FIELDS)
+    text = models.TextField(blank=True, default="")
+    approved = models.BooleanField(default=False)
+    note = models.CharField(max_length=200, blank=True, default="")
+    changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]

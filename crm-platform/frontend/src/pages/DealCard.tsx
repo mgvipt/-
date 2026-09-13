@@ -40,6 +40,7 @@ import CallButton from "../CallButton";
 import KpDoc from "../KpDoc";
 import { useLang } from "../i18n";
 import LeadQuality from "../LeadQuality";
+import { AskReviewButton } from "../ReviewButtons";
 import VykraskaDoc from "../VykraskaDoc";
 import { SocialLink } from "../social";
 import { SalesAnalystPanel } from "../SalesAnalyst";
@@ -782,6 +783,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
         <button className="btn" style={{ padding: "0 10px" }} title={t("Печать бланка выкраски","Друк бланка викраски")} onClick={() => setVkOpen(true)}><Icon n="palette" size={16} /></button>
         <div style={{ width: 1, height: 24, background: "#cbd5e1", margin: "0 6px" }} />
         <button className="btn" onClick={() => setTaskOpen(true)} title={t("Поставить задачу по сделке","Поставити задачу по угоді")}><Icon n="check" size={15} /> {t("Задача","+ Задача")}</button>
+        {deal.contact_id && <AskReviewButton dealId={deal.id} />}
         {deal.contact_id && (
           <div id={`deal-reply-channel-${deal.id}`} data-testid="deal-reply-channel-target"
             style={{ marginLeft: "auto", minWidth: 260, maxWidth: 380, flex: "0 1 380px" }} />
