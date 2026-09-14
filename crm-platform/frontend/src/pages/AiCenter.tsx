@@ -6,6 +6,7 @@ import { useLang } from "../i18n";
 import { Icon } from "../Icon";
 import AiCosts from "./AiCosts";
 import SettingsAgent from "./SettingsAgent";
+import KnowledgeBase from "./KnowledgeBase";
 
 type KbEntry = { id: number; question: string; answer: string; specific_rules: string; source: string; client_chat_count: number; tags: string; enabled: boolean };
 type KbQ = { id: number; question: string; status: string; source: string; times_asked: number; answer_preview: string };
@@ -152,7 +153,8 @@ function KbQuestions() {
 
 const TABS: [string, string, string][] = [
   ["costs", "Витрати", "Витрати"],
-  ["kb", "База знань", "База знань"],
+  ["knowledge", "База знаний ✓", "База знань ✓"],
+  ["kb", "Старая база (архив)", "Стара база (архів)"],
   ["q", "Невідомі питання", "Невідомі питання"],
   ["settings", "Налаштування", "Налаштування"],
 ];
@@ -172,6 +174,7 @@ export default function AiCenter() {
         </div>
       </div>
       {tab === "costs" && <AiCosts />}
+      {tab === "knowledge" && <KnowledgeBase />}
       {tab === "kb" && <KbBase />}
       {tab === "q" && <KbQuestions />}
       {tab === "settings" && <SettingsAgent />}

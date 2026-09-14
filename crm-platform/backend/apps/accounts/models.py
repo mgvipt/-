@@ -168,6 +168,18 @@ PERMISSION_GROUPS.append((
     ],
 ))
 
+# ── База знань ІІ-агентів, AI ЦЕНТР (додано 2026-09-14) ──
+PERMISSION_GROUPS.append((
+    "База знань ІІ",
+    [
+        ("knowledge.view", "Бачити базу знань ІІ", "Переглядати записи бази знань і що бачить кожен ІІ-агент"),
+        ("knowledge.edit", "Додавати й правити чернетки",
+         "Додавати нові знання і пропонувати правки. Агенти читають лише затверджене"),
+        ("knowledge.approve", "Затверджувати знання",
+         "Затверджувати, змінювати затверджене, переносити в архів. За замовчуванням — лише власник"),
+    ],
+))
+
 PERMISSION_CHOICES = [(c, l) for _g, _it in PERMISSION_GROUPS for c, l, _h in _it]
 LEGACY_PERMISSIONS = ["lead.view.own", "deal.view.own", "conversation.view.own"]
 

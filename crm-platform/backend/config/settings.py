@@ -18,6 +18,10 @@ WALLCOV_IPN = os.environ.get("WALLCOV_IPN", "")
 CHECKBOX_API_BASE = os.environ.get("CHECKBOX_API_BASE", "https://api.checkbox.in.ua")
 CHECKBOX_PASSWORD = os.environ.get("CHECKBOX_PASSWORD", "")
 CHECKBOX_LICENSE_KEY = os.environ.get("CHECKBOX_LICENSE_KEY", "")
+# Веб-чат «Юля»: адреса продавця kb-wallcov-api (Hetzner) через VPN, напр. http://10.8.0.1:8001/seller.
+# Порожньо = ІІ у веб-чаті вимкнено, відвідувач одразу отримує «передала менеджеру» (14.09.2026).
+WEBCHAT_SELLER_URL = os.environ.get("WEBCHAT_SELLER_URL", "")
+WEBCHAT_SELLER_TOKEN = os.environ.get("WEBCHAT_SELLER_TOKEN", "")
 DEBUG = os.environ.get("DEBUG", "1") == "1"
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "*").split(",")
 
@@ -44,6 +48,7 @@ INSTALLED_APPS = [
     "apps.gamification",
     "apps.tiktok_insights",
     "apps.reviews",  # відгуки покупців (12.09.2026)
+    "apps.knowledge",  # єдина база знань ІІ-агентів, AI ЦЕНТР (14.09.2026)
     "apps.dealecon",  # економіка угоди: доставка, комісія, пакування, майстри, повернення (14.09.2026)
     "apps.partners",  # партнерська програма (14.09.2026)
     "apps.missed_calls",  # черга пропущених дзвінків (14.09.2026)

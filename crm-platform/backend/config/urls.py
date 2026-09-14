@@ -68,6 +68,7 @@ urlpatterns = [
     path("api/product-source/", ProductReadCatalog.as_view()),
     path("api/products/<int:pk>/facts/", ProductFacts.as_view()),
     path("admin/", admin.site.urls),
+    path("api/knowledge/", include("apps.knowledge.urls")),  # єдина база знань ІІ (AI ЦЕНТР, 14.09.2026)
     path("api/", include(router.urls)),
     path("api/meta-attr/", include("apps.meta_attr.urls")),  # бейдж «звідки клієнт» + фрази (14.09.2026)
     path("api/zamer/", ZamerView.as_view()),  # приёмник замера из iOS-приложения

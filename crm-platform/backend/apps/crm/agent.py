@@ -102,6 +102,16 @@ def build_system(entity, kind):
         if prods:
             parts.append("## \u0414\u043e\u0441\u0442\u0443\u043f\u043d\u0456 \u0442\u0435\u0441\u0442-\u043d\u0430\u0431\u043e\u0440\u0438 (\u043d\u0430\u0437\u0432\u0430 \u0422\u041e\u0427\u041d\u041e \u0434\u043b\u044f make_offer):\n" + "\n".join("- %s \u2014 %s \u0433\u0440\u043d" % (n, p) for n, p in prods))
             parts.append("## \u041a\u041e\u041b\u0418 \u043a\u043b\u0456\u0454\u043d\u0442 \u044f\u0432\u043d\u043e \u043e\u0431\u0440\u0430\u0432 \u0442\u0435\u0441\u0442-\u043d\u0430\u0431\u0456\u0440 \u2014 \u0412\u0406\u0414\u0420\u0410\u0417\u0423 \u0432\u0438\u043a\u043b\u0438\u0447 make_offer \u0437 \u0442\u043e\u0447\u043d\u043e\u044e \u043d\u0430\u0437\u0432\u043e\u044e. \u042f\u043a\u0449\u043e \u0449\u0435 \u043d\u0435 \u043e\u0431\u0440\u0430\u0432 \u2014 \u0443\u0442\u043e\u0447\u043d\u0438, \u043e\u0444\u0444\u0435\u0440 \u043d\u0435 \u0440\u043e\u0431\u0438.")
+    # Єдина база знань AI ЦЕНТРУ (14.09): лише затверджене Олегом з позначкою «Агент воронки».
+    # Порожньо → агент працює як раніше (глобальні правила вище). Обмеження 3000 симв.: агент
+    # запускається ~12 тис. разів на місяць, кожна зайва тисяча токенів — гроші.
+    try:
+        from apps.knowledge.reader import context_for as _kb_context
+        _kb = _kb_context("funnel_agent", limit=15, max_chars=3000, with_prices=False)
+    except Exception:
+        _kb = ""
+    if _kb:
+        parts.append("## База знань Wallcov (затверджено Олегом)\n" + _kb)
     cfg = AgentConfig.get()
     if cfg.system_extra:
         parts.append("## Додатково: " + cfg.system_extra)

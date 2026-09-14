@@ -139,24 +139,31 @@ def _ai_reply(conv: Conversation, incoming: Message, client_name: str = ""):
     history = []
     for row in conv.messages.filter(internal=False).exclude(pk=incoming.pk).order_by("id").reverse()[:12][::-1]:
         history.append({"role": "user" if row.direction == "in" else "assistant", "text": row.text})
-    body = json.dumps({
-        "client_text": incoming.text,
-        "client_name": client_name,
-        "channel": "web_chat",
-        "history": history,
-    }, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
-        "http://172.17.0.1:8001/seller",
-        data=body,
-        headers={"Content-Type": "application/json", "User-Agent": "WallcovCRM-WebChat/1.0"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=45) as response:  # noqa: S310 - internal service
-            data = json.loads(response.read().decode("utf-8"))
-        confidence = float(data.get("confidence") or 0)
-        answer = (data.get("answer") or "").strip()
-    except Exception:
-        confidence, answer = 0, ""
+    # 14.09: адреса продавця — з налаштування WEBCHAT_SELLER_URL (.env). Раніше тут був жорсткий
+    # http://172.17.0.1:8001/seller, але сервіс kb-wallcov-api живе на Hetzner, а CRM — на Netcup:
+    # запит ішов «в нікуди», відвідувач чекав до 45 с і завжди отримував заглушку. Порожньо → одразу заглушка.
+    from django.conf import settings as _settings
+    seller_url = (getattr(_settings, "WEBCHAT_SELLER_URL", "") or "").strip()
+    confidence, answer = 0, ""
+    if seller_url:
+        body = json.dumps({
+            "client_text": incoming.text,
+            "client_name": client_name,
+            "channel": "web_chat",
+            "history": history,
+        }, ensure_ascii=False).encode("utf-8")
+        headers = {"Content-Type": "application/json", "User-Agent": "WallcovCRM-WebChat/1.0"}
+        token = (getattr(_settings, "WEBCHAT_SELLER_TOKEN", "") or "").strip()
+        if token:
+            headers["X-Api-Token"] = token
+        req = urllib.request.Request(seller_url, data=body, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:  # noqa: S310 - internal service (VPN)
+                data = json.loads(response.read().decode("utf-8"))
+            confidence = float(data.get("confidence") or 0)
+            answer = (data.get("answer") or "").strip()
+        except Exception:
+            confidence, answer = 0, ""
     if confidence < 0.65 or not answer:
         answer = "Дякую! Я передала питання менеджеру Wallcov — він підключиться до цього чату. Залиште номер, щоб ми не втратили зв’язок."
     return Message.objects.create(
