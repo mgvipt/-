@@ -2,6 +2,7 @@
  * Реєструється як SIP-розширення, дзвонить і приймає. Плаваючий віджет. */
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { api } from "./api";
 import { useLang } from "./i18n";
 import { Icon } from "./Icon";
@@ -35,6 +36,59 @@ export default function WebPhone() {
   const sessRef = useRef<any>(null);
   const pcRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // ── 14.09.2026 «Пропущені»: лічильник у віджеті + системне сповіщення про новий пропущений.
+  // Це лише ПІДКАЗКА: SIP/звук/сесії цей блок НЕ чіпає (правило «єдиний модуль» — логіка дзвінка нижче).
+  // Без «лідера» вкладок (див. memory incident_webphone_leader_flapping): кожна вкладка опитує сама,
+  // а дубль сповіщення відсікає номер останнього показаного в localStorage + однаковий tag
+  // (браузер замінює сповіщення з тим самим tag, а не множить).
+  const nav = useNavigate();
+  const [missed, setMissed] = useState<any>(null);
+  useEffect(() => {
+    let stop = false;
+    const lsNum = (k: string): number | null => { try { const v = localStorage.getItem(k); return v == null ? null : (Number(v) || 0); } catch { return null; } };
+    const lsSet = (k: string, v: number) => { try { localStorage.setItem(k, String(v)); } catch { /* */ } };
+    const notify = (title: string, body: string, tag: string) => {
+      try {
+        if (!("Notification" in window) || Notification.permission !== "granted") return;
+        const n = new Notification(title, { body, tag });
+        n.onclick = () => { try { window.focus(); } catch { /* */ } nav("/phone?tab=missed"); n.close(); };
+      } catch { /* */ }
+    };
+    const poll = async () => {
+      try {
+        const d = await api.get<any>("/api/telephony/missed/summary/");
+        if (stop) return;
+        if (!d || !d.enabled) { setMissed(null); return; }
+        setMissed((p: any) => (JSON.stringify(p) === JSON.stringify(d) ? p : d));
+        const s1 = lsNum("wallcov_missed_seen");
+        if (s1 === null) lsSet("wallcov_missed_seen", d.max_id || 0);
+        else if ((d.max_id || 0) > s1) {
+          lsSet("wallcov_missed_seen", d.max_id);
+          (d.new || []).filter((x: any) => x.id > s1).slice(0, 3).forEach((x: any) =>
+            notify(t("Пропущенный звонок", "Пропущений дзвінок"), `${x.name || x.number} · ${x.line || ""}\n${t("Перезвоните в течение", "Передзвоніть протягом")} ${d.sla_minutes || 15} ${t("мин", "хв")}`, "wallcov-missed-" + x.id));
+        }
+        const s2 = lsNum("wallcov_missed_esc_seen");
+        if (s2 === null) lsSet("wallcov_missed_esc_seen", d.esc_last || 0);
+        else if ((d.esc_last || 0) > s2) {
+          lsSet("wallcov_missed_esc_seen", d.esc_last);
+          (d.esc_new || []).filter((x: any) => x.esc_ts > s2).slice(0, 3).forEach((x: any) =>
+            notify(t("Не перезвонили больше часа", "Не передзвонили понад годину"), `${x.name || x.number} · ${x.assignee_name || t("не назначен", "не призначено")}`, "wallcov-missed-esc-" + x.id));
+        }
+      } catch { /* мовчки: телефон працює як раніше */ }
+    };
+    poll();
+    const tm = setInterval(poll, 30000);
+    return () => { stop = true; clearInterval(tm); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const missedN = missed ? (missed.mine || 0) + (missed.unassigned || 0) : 0;
+  const missedBadge = missed && (missedN > 0 || (missed.escalated || 0) > 0) ? (
+    <button onClick={() => nav("/phone?tab=missed")} title={t("Пропущенные — нужно перезвонить", "Пропущені — треба передзвонити")}
+      style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", marginTop: 8, cursor: "pointer", border: "none", borderRadius: 8, padding: "6px 9px", fontSize: 12, fontWeight: 700, color: "#fff", background: (missed.overdue || 0) > 0 || (missed.escalated || 0) > 0 ? "#dc2626" : "#d97706" }}>
+      <Icon n="📵" size={14} /> {t("Перезвонить", "Передзвонити")}: {missedN}
+      {(missed.escalated || 0) > 0 && <span style={{ marginLeft: "auto" }} title={t("Просрочено больше часа", "Прострочено понад годину")}>⚠ {missed.escalated}</span>}
+    </button>
+  ) : null;
   // ── 21.08.2026: телефон реєструється у КОЖНІЙ вкладці/на КОЖНОМУ пристрої (без «лідера»).
   // Раніше реєструвалась лише одна вкладка-«лідер» (localStorage heartbeat 3с/TTL 7с). У ФОНОВИХ вкладках
   // Chrome пускає таймери раз на хвилину → heartbeat протухав → вкладки щохвилини відбирали телефон одна в
@@ -188,7 +242,7 @@ export default function WebPhone() {
   const label = ({ off: t("выключено","вимкнено"), connecting: t("подключение…","підключення…"), ready: t("готов","готовий"), incoming: t("входящий звонок","вхідний дзвінок"), calling: t("набор…","набір…"), incall: t("разговор","розмова"), error: t("ошибка","помилка") } as any)[st];
   const busy = st === "calling" || st === "incall";   // incoming показує ЦЕНТРАЛЬНЕ вікно, віджет не дублює
 
-  if (!enabled) return <audio ref={audioRef} autoPlay playsInline />;
+  if (!enabled) return <><audio ref={audioRef} autoPlay playsInline />{missedBadge && <div style={{ margin: "0 10px 8px" }}>{missedBadge}</div>}</>;
 
   const content = (
       <div style={{
@@ -202,6 +256,7 @@ export default function WebPhone() {
           <b style={{ fontSize: 13, whiteSpace: "nowrap" }}><Icon n="📞" size={15} /> {t("Телефон","Телефон")}</b>
           <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>{label}</span>
         </div>
+        {!busy && missedBadge}
 
         {busy && <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>{peer || "—"}</div>}
 

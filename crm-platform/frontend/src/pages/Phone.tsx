@@ -6,6 +6,7 @@ import { useAuth } from "../auth";
 import { api, Paginated } from "../api";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
+import MissedCallsSection from "./PhoneMissed";
 
 interface Call {
   id: number; direction: string; direction_display: string;
@@ -228,6 +229,8 @@ export default function Phone() {
     <div className="scroll pad fade">
       <h2 style={{ margin: "0 0 4px" }}><Icon n="📞" size={22} /> {t("Телефония","Телефонія")}</h2>
       <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>{t("Собственный SIP-шлюз на нашем сервере (независимо от Битрикса). Звонки и записи — наши.","Власний SIP-шлюз на нашому сервері (незалежно від Бітрикса). Дзвінки і записи — наші.")}</div>
+
+      <MissedCallsSection />
 
       {canCalls && stats && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px,1fr))", gap: 12, marginBottom: 16 }}>

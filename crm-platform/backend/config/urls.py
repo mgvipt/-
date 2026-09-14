@@ -231,6 +231,7 @@ urlpatterns = [
     path("api/telephony/queue/", tel_views.CallQueueView.as_view()),
     path("api/telephony/ring-plan/", tel_views.RingPlanView.as_view()),
     path("api/telephony/ring-now/", tel_views.RingNowView.as_view()),
+    path("api/telephony/missed/", include("apps.missed_calls.urls")),  # черга «Пропущені» (14.09.2026)
     path("api/integrations/settings/", intg_views.IntegrationSettingsView.as_view()),
     path("api/integrations/email-invoices/test/", intg_views.EmailInvoicesTestView.as_view()),
     path("api/integrations/email-invoices/poll/", intg_views.EmailInvoicesPollView.as_view()),
