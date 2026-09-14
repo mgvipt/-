@@ -215,6 +215,11 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const loc = useLocation();
   const [showReceipt, setShowReceipt] = useState(false);
   const { can } = useAuth();
+  // Способи оплати за правами ролі: жодного «Спосіб оплати» не позначено — доступні всі (як раніше).
+  // Той самий список на сервері: PAY_METHOD_PERMS у crm/views.py — міняти дзеркально.
+  const PAY_METHOD_CODES: Record<string, string> = { cash: "payment.method.cash", liqpay: "payment.method.liqpay", requisites: "payment.method.requisites", np: "payment.method.np", installment: "payment.method.installment", terminal: "payment.method.terminal", credit: "payment.method.credit", advance: "payment.method.advance" };
+  const payMethodsLimited = Object.values(PAY_METHOD_CODES).some((c) => can(c));
+  const payMethodOk = (k: string) => !payMethodsLimited || !PAY_METHOD_CODES[k] || can(PAY_METHOD_CODES[k]);
   const [taskOpen, setTaskOpen] = useState(false);
   const [gearOpen, setGearOpen] = useState(false);
   const gItem: any = { display: "flex", alignItems: "center", gap: 8, padding: "9px 13px", fontSize: 13.5, cursor: "pointer", borderBottom: "1px solid #f6f8fb" };
@@ -251,6 +256,14 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
       api.get<any>(`/api/contacts/${deal.contact_id}/finance/`).then((d: any) => setAdvAvail(Number(d?.advance || 0))).catch(() => setAdvAvail(null));
     }
   }, [payOpen, payType, deal?.contact_id]);
+  // відкрили вікно оплати, а вибраний спосіб заборонений правами — ставимо перший дозволений
+  useEffect(() => {
+    if (payOpen && !payMethodOk(payType)) {
+      const first = ["liqpay", "requisites", "np", "installment", "cash", "terminal", "credit", "advance"].find(payMethodOk);
+      if (first) setPayType(first);
+    }
+    // eslint-disable-next-line
+  }, [payOpen]);
   const [debtList, setDebtList] = useState<any[]>([]);
   const [selDebts, setSelDebts] = useState<number[]>([]);
   useEffect(() => {
@@ -1463,7 +1476,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <h3 style={{ marginTop: 0 }}>{t("Принять оплату","Прийняти оплату")}</h3>
             <label className="label" style={{ marginBottom: 6 }}>{t("Способ оплаты","Спосіб оплати")}</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 14 }}>
-              {([["cash", t("💵 Наличные","💵 Готівка")], ["liqpay", t("💳 LiqPay (оплата картой онлайн)","💳 LiqPay (оплата картою онлайн)")], ["terminal", t("💳 Терминал · карта/телефон NFC","💳 Термінал · картка/телефон NFC")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]].concat(salonFunnel ? [["credit", t("🤝 Товарный кредит (отгрузка в долг)","🤝 Товарний кредит (відвантаження в борг)")]] : []).concat(deal.contact_id ? [["advance", t("🏦 Из аванса клиента","🏦 З авансу клієнта")]] : []) as [string,string][]).map(([k, label]) => (
+              {([["cash", t("💵 Наличные","💵 Готівка")], ["liqpay", t("💳 LiqPay (оплата картой онлайн)","💳 LiqPay (оплата картою онлайн)")], ["terminal", t("💳 Терминал · карта/телефон NFC","💳 Термінал · картка/телефон NFC")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]].concat(salonFunnel ? [["credit", t("🤝 Товарный кредит (отгрузка в долг)","🤝 Товарний кредит (відвантаження в борг)")]] : []).concat(deal.contact_id ? [["advance", t("🏦 Из аванса клиента","🏦 З авансу клієнта")]] : []) as [string,string][]).filter(([k]) => payMethodOk(k)).map(([k, label]) => (
                 <button key={k} onClick={() => setPayType(k)} style={{ fontSize: 12, padding: "8px 8px", borderRadius: 8, cursor: "pointer", textAlign: "left", border: "1px solid " + (payType === k ? "var(--brand,#2563eb)" : "#e2e8f0"), background: payType === k ? "#eff6ff" : "#fff", color: payType === k ? "#1d4ed8" : "#475569", fontWeight: payType === k ? 600 : 400 }}>{label}</button>
               ))}
             </div>

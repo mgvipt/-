@@ -1723,6 +1723,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         g = self._guard(deal, money=True)
         if g:
             return g
+        if pay_method_denied(request.user, "credit"):
+            return Response({"detail": "Цей спосіб оплати вам недоступний (права ролі)."}, status=status.HTTP_403_FORBIDDEN)
         _paidc = sum((p.amount for p in deal.payments.filter(is_paid=True)), Decimal("0"))
         _remc = (deal.amount or Decimal("0")) - _paidc
         amount = Decimal(str(request.data.get("amount") or (_remc if _remc > 0 else deal.amount) or 0))
@@ -1776,6 +1778,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         if amount <= 0:  # #15 від'ємна/нульова оплата — заборонено
             return Response({"detail": "Сума оплати має бути більше 0."}, status=status.HTTP_400_BAD_REQUEST)
         provider = request.data.get("provider", "cash")
+        if pay_method_denied(request.user, provider):
+            return Response({"detail": "Цей спосіб оплати вам недоступний (права ролі)."}, status=status.HTTP_403_FORBIDDEN)
         account = Account.objects.filter(pk=request.data.get("account")).first()
         if provider == "advance":
             _cc = deal.contact
@@ -1997,6 +2001,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         g = self._guard(deal, money=True)
         if g: return g
         kind = request.data.get("kind", "liqpay")
+        if pay_method_denied(request.user, kind):
+            return Response({"detail": "Цей спосіб оплати вам недоступний (права ролі)."}, status=status.HTTP_403_FORBIDDEN)
         amount = Decimal(str(request.data.get("amount") or deal.amount or 0))
         if amount <= 0:  # #9 не можна нульове/від'ємне посилання
             return Response({"detail": "Сума посилання має бути більше 0."}, status=status.HTTP_400_BAD_REQUEST)
@@ -5059,6 +5065,30 @@ def _advance_after_payment(deal, reason, actor="Автоматизація", cre
     if target:
         return _advance_deal_stage(deal, target.order, reason, actor, create_wh=create_wh)
     return _advance_deal_stage(deal, 3, reason, actor, create_wh=create_wh)
+
+
+PAY_METHOD_PERMS = {"cash": "payment.method.cash", "liqpay": "payment.method.liqpay",
+                    "requisites": "payment.method.requisites", "reqs": "payment.method.requisites",
+                    "np": "payment.method.np", "np_cod": "payment.method.np",
+                    "installment": "payment.method.installment", "terminal": "payment.method.terminal",
+                    "credit": "payment.method.credit", "advance": "payment.method.advance"}
+
+
+def pay_method_denied(user, method):
+    """Способи оплати за правами ролі. Якщо користувачу НЕ дано жодного «Спосіб оплати» —
+    доступні всі (як було до 14.09). Дано хоча б один — дозволені лише позначені.
+    Той самий список у DealCard.tsx (PAY_METHOD_CODES) — міняти дзеркально."""
+    if not user or getattr(user, "is_superuser", False):
+        return False
+    code = PAY_METHOD_PERMS.get(str(method or ""))
+    if not code:
+        return False
+    try:
+        eff = user.effective_permissions()
+    except Exception:
+        return False
+    mine = {c for c in set(PAY_METHOD_PERMS.values()) if c in eff}
+    return bool(mine) and code not in mine
 
 
 def walk_deal_to_won(deal, reason, actor="Автоматизація"):
