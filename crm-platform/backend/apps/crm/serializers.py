@@ -340,7 +340,15 @@ class DealDetailSerializer(DealSerializer):
         return round(revenue - cogs, 2)
 
     def get_bonus(self, obj):
-        # Бонус менеджера з цієї угоди = % обороту + % маржі (ставки з Фінмоделі, синхронно).
+        # Бонус менеджера з цієї угоди — за його схемою в «Ставки співробітників» (14.09, одне місце ставок);
+        # немає схеми — стара формула з Фінмоделі.
+        try:
+            from apps.payroll.engine import deal_bonus_preview
+            b = deal_bonus_preview(obj)
+            if b is not None:
+                return b
+        except Exception:
+            pass
         from apps.finance.services import deal_manager_bonus
         return deal_manager_bonus(obj.amount, self.get_margin(obj))
 

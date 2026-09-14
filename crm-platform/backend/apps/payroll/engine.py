@@ -1,0 +1,588 @@
+"""Один розрахунок: ЗП за місяць, вартість людини для компанії, точка беззбитковості за ATM (план v9, 14.09.2026).
+
+Звідки цифри:
+- ставки — PayScheme/PayComponent (Налаштування → Ставки співробітників);
+- гроші — журнал (Transaction «in», без переказів), угоди й їхні товари (маржа = товари − собівартість);
+- інші фонди точки беззбитковості — Фінмодель (крім статей, замінених ставками: policy.replaced_articles).
+Точка беззбитковості за ATM, знизу вгору: Маржа = (фонди СКД + тверді фонди маржі) ÷ (1 − Σ% фондів маржі);
+Виручка = Маржа ÷ (1 − Σ% фондів виручки). Суми в схемах — «на руки»; вартість для компанії рахуємо з податками.
+"""
+import calendar
+import copy
+from datetime import date, timedelta
+
+from django.db.models import Min, Q, Sum
+from django.utils import timezone
+
+DEFAULT_POLICY = {
+    "funnels": {"online": [15, 16], "salon": [5], "diamond": [6], "test": [16], "main": [15, 5]},
+    "objects_direction_id": 11,
+    "margin_estimate_pct": {"15": 58, "16": 60, "5": 38, "6": 40},
+    "no_deal_margin_pct": 40,
+    "lookback_days": 90,
+    "taxes": {"pdfo": 18, "vz": 5, "esv": 22, "fop_tax": 5, "fop_esv": 1902, "fop_compensate": True},
+    "dividends_pct": 0,
+    "replaced_articles": [46, 55, 59],
+    "conv_coef": {"enabled": False, "min": 0.8, "max": 1.2, "dead_zone": 0.10},
+    "cap": {"pct_of_margin": 17, "check": "quarter"},
+    "guarantee": {"amount": 15000, "months": 2},
+}
+GUARANTEE_CONDITIONS = [
+    "Вихід за табелем: без прогулів, не менше 90% робочих днів місяця",
+    "Навчання: до кінця 2-го тижня — тест по продукту (від 80%), до кінця 3-го — по CRM і правилах відповіді",
+    "Швидкість: у робочий час відповідь клієнту до 15 хв у 80% чатів і більше",
+    "Кожен закритий чат — з позначкою якості й причиною; жодного чату, закритого без відповіді клієнту",
+    "Дожими за правилом: 1-й через 2 дні особисто, 2-й теплим через 4–5 днів",
+    "З 3-го тижня: прорахунок по площі кожному, хто назвав площу або надіслав фото — не менше 20 на тиждень",
+    "2-й місяць: продажі не менше 50% плану новачка",
+    "Перевірка на 4-му тижні: не виконано 2 умови і більше — з наступного місяця гарантія не діє, платимо за схемою",
+]
+
+
+def _merge(a, b):
+    for k, v in (b or {}).items():
+        if isinstance(v, dict) and isinstance(a.get(k), dict):
+            _merge(a[k], v)
+        else:
+            a[k] = v
+    return a
+
+
+def policy():
+    from .models import PayPolicy
+    out = copy.deepcopy(DEFAULT_POLICY)
+    p = PayPolicy.objects.filter(pk=1).first()
+    return _merge(out, p.params if p else {})
+
+
+def period_bounds(period):
+    y, m = int(period[:4]), int(period[5:7])
+    return date(y, m, 1), date(y, m, calendar.monthrange(y, m)[1])
+
+
+def add_months(d, n):
+    y, m = d.year + (d.month - 1 + n) // 12, (d.month - 1 + n) % 12 + 1
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+
+
+def workdays(d1, d2):
+    n, d = 0, d1
+    while d <= d2:
+        n += d.weekday() < 5
+        d += timedelta(days=1)
+    return n
+
+
+def active_scheme(user, on, purpose="official"):
+    from .models import PayScheme
+    return (PayScheme.objects.filter(user=user, purpose=purpose, status="active", valid_from__lte=on)
+            .filter(Q(valid_to__isnull=True) | Q(valid_to__gte=on)).order_by("-valid_from", "-id").first())
+
+
+def employer_cost(net, employment, pol=None):
+    """Скільки компанії коштує сума «на руки». Трудовий: ПДФО 18% + військовий збір 5% утримуються з нарахованої,
+    зверху ЄСВ 22% (20 000 на руки → ≈31 700). ФОП 3 гр. з компенсацією: 5% податку + ЄСВ 1 902 (20 000 → ≈22 950)."""
+    t = (pol or policy())["taxes"]
+    net = float(net or 0)
+    if net <= 0:
+        return 0.0
+    if employment == "labor":
+        return net / (1 - (t["pdfo"] + t["vz"]) / 100) * (1 + t["esv"] / 100)
+    if employment == "fop" and t.get("fop_compensate"):
+        return net / (1 - t["fop_tax"] / 100) + t["fop_esv"]
+    return net
+
+
+def _pct_ratio(employment, pol):
+    """Множник для процентних частин (без фіксованого ЄСВ ФОП)."""
+    t = pol["taxes"]
+    if employment == "labor":
+        return 1 / (1 - (t["pdfo"] + t["vz"]) / 100) * (1 + t["esv"] / 100)
+    if employment == "fop" and t.get("fop_compensate"):
+        return 1 / (1 - t["fop_tax"] / 100)
+    return 1.0
+
+
+# ─────────────────────────── факти ───────────────────────────
+
+def deal_margin(deal, pol):
+    """(частка маржі в сумі, оцінка?) — товари − собівартість; нуль у рядку → поточна собівартість товару;
+    без товарів — норматив воронки (оцінка). Доставка/комісія — окремий крок «економіка угоди»."""
+    items = list(deal.items.select_related("product").all())
+    if items:
+        sales = sum(float(i.total or 0) for i in items)
+        if sales > 0:
+            cost, est = 0.0, False
+            for i in items:
+                c = float(i.cost or 0) if (i.cost or 0) > 0 else float(getattr(i.product, "cost", 0) or 0)
+                if c <= 0:
+                    est = True
+                cost += float(i.quantity or 0) * c
+            return max(0.0, (sales - cost) / sales), est
+    return pol["margin_estimate_pct"].get(str(deal.funnel_id), 50) / 100.0, True
+
+
+def _income(d1, d2, **flt):
+    from apps.finance.models import Transaction
+    return Transaction.objects.filter(direction="in", transfer_account__isnull=True, date__gte=d1, date__lte=d2, **flt)
+
+
+def shares(pol=None, today=None):
+    """Частки виручки й маржі за останні N днів — для процентних частин ставок у точці беззбитковості."""
+    pol = pol or policy()
+    today = today or timezone.localdate()
+    d1 = today - timedelta(days=int(pol["lookback_days"]))
+    rev_total = margin_total = 0.0
+    by_funnel_rev, by_funnel_margin, cache = {}, {}, {}
+    objects_rev = 0.0
+    for t in _income(d1, today).select_related("deal"):
+        amt = float(t.amount_uah or 0)
+        rev_total += amt
+        if t.deal_id:
+            if t.deal_id not in cache:
+                cache[t.deal_id] = deal_margin(t.deal, pol)[0]
+            m = amt * cache[t.deal_id]
+            f = t.deal.funnel_id
+            by_funnel_rev[f] = by_funnel_rev.get(f, 0) + amt
+            by_funnel_margin[f] = by_funnel_margin.get(f, 0) + m
+        else:
+            m = amt * pol["no_deal_margin_pct"] / 100.0
+            if t.fin_direction_id == pol["objects_direction_id"]:
+                objects_rev += amt
+        margin_total += m
+    months = max(1.0, int(pol["lookback_days"]) / 30.0)
+    return {"rev_total": rev_total, "margin_total": margin_total, "by_funnel_rev": by_funnel_rev,
+            "by_funnel_margin": by_funnel_margin, "objects_rev": objects_rev, "months": months,
+            "margin_pct": (margin_total / rev_total) if rev_total else 0.0, "deals": len(cache), "from": d1, "to": today}
+
+
+# ─────────────────────────── ЗП за місяць ───────────────────────────
+
+def _line(comp, amount, basis=None, rate=None, detail="", estimate=False, warn=""):
+    return {"component": comp.id if comp else None, "kind": comp.kind if comp else "insurance",
+            "title": (comp.title or comp.get_kind_display()) if comp else "Страховочний місяць",
+            "basis": round(basis) if isinstance(basis, (int, float)) else basis, "rate": rate,
+            "amount": round(float(amount or 0)), "detail": detail, "estimate": estimate, "warn": warn}
+
+
+def _prorate(sc, d1, d2):
+    """Частка місяця, коли схема діяла (новачок вийшов 14-го → оплата за робочі дні з 14-го)."""
+    start = max(d1, sc.valid_from)
+    end = min(d2, sc.valid_to) if sc.valid_to else d2
+    full = workdays(d1, d2) or 1
+    return (workdays(start, end) / full) if start <= end else 0.0
+
+
+def _c_base(sc, comp, user, d1, d2, pol):
+    from apps.finance.models import WorkDay
+    amt = float(comp.params.get("amount") or 0)
+    norm = workdays(d1, d2) or 1
+    wd = WorkDay.objects.filter(user=user, date__gte=max(d1, sc.valid_from), date__lte=d2)
+    if user and wd.exists():
+        worked = wd.filter(status__in=["worked", "overtime"]).count()
+        over = wd.filter(status="overtime").count()
+        a = amt * min(worked, norm) / norm + over * amt / norm
+        return _line(comp, a, amt, None, f"{worked} з {norm} роб. днів" + (f", +{over} вихідних" if over else ""))
+    k = _prorate(sc, d1, d2)
+    return _line(comp, amt * k, amt, None, "повний місяць" if k >= 0.999 else f"{round(k * 100)}% місяця (з {sc.valid_from:%d.%m})",
+                 warn="табель не заповнено — пораховано по календарю" if user else "")
+
+
+def _c_fixed(sc, comp, d1, d2):
+    amt = float(comp.params.get("amount") or 0)
+    k = _prorate(sc, d1, d2)
+    return _line(comp, amt * k, amt, None, "" if k >= 0.999 else f"{round(k * 100)}% місяця",
+                 warn="ставку не задано — вкажіть суму" if amt <= 0 else "")
+
+
+def _c_standard(comp, period):
+    mx = float(comp.params.get("max") or 0)
+    sc = (comp.params.get("scores") or {}).get(period)
+    score = float(sc) if sc is not None else 1.0
+    return _line(comp, mx * score, mx, f"{round(score * 100)}%", "оцінка стандарту за місяць",
+                 warn="" if sc is not None else "оцінку стандарту не виставлено — узято 100%"), score
+
+
+def _plan(user, period):
+    from apps.finance.models import ManagerPlan
+    p = ManagerPlan.objects.filter(user=user, period=period).first()
+    return float(p.target_revenue) if p and p.target_revenue else 0.0
+
+
+def _c_margin(comp, user, period, d1, d2, pol, std_score):
+    p = comp.params
+    funnels = p.get("funnels") or pol["funnels"]["online"]
+    rev = margin = 0.0
+    est, cache, deals = 0, {}, set()
+    for t in _income(d1, d2, deal__owner=user, deal__funnel_id__in=funnels).select_related("deal"):
+        if t.deal_id not in cache:
+            cache[t.deal_id] = deal_margin(t.deal, pol)
+        r, e = cache[t.deal_id]
+        amt = float(t.amount_uah or 0)
+        rev += amt
+        margin += amt * r
+        est += 1 if e else 0
+        deals.add(t.deal_id)
+    to_pct = float(p.get("pct_to_plan", 10))
+    over_pct = float(p.get("pct_over_plan", to_pct))
+    plan = _plan(user, period)
+    over_share = max(0.0, rev - plan) / rev if (plan and rev) else 0.0
+    gate = std_score >= float(p.get("gate_standard_min", 0.75))
+    amount = margin * (1 - over_share) * to_pct / 100 + margin * over_share * (over_pct if gate else to_pct) / 100
+    coef = 1.0
+    notes = []
+    if not pol["conv_coef"].get("enabled"):
+        notes.append("коефіцієнт конверсії = 1,0 (вмикається, коли назбирається 2 міс. позначок якості)")
+    if not plan:
+        notes.append(f"план не встановлено — все за ставкою {to_pct:g}%")
+    elif over_share > 0 and not gate:
+        notes.append(f"понад план {over_pct:g}% не нараховано: стандарт нижче {round(float(p.get('gate_standard_min', 0.75)) * 100)}%")
+    det = f"оплати {round(rev):,} ₴ по {len(deals)} угодах, маржа {round(margin):,} ₴".replace(",", " ")
+    if plan:
+        det += f"; план {round(plan):,} ₴".replace(",", " ")
+    return _line(comp, amount * coef, margin, f"{to_pct:g}% / {over_pct:g}%", det + ("; " + "; ".join(notes) if notes else ""),
+                 estimate=est > 0, warn=f"{est} оплат по угодах без собівартості — маржа оцінкою" if est else "")
+
+
+def _c_revenue(comp, user, period, d1, d2, pol):
+    from .models import ObjectAct
+    p = comp.params
+    pct = float(p.get("pct") or 0)
+    basis = p.get("basis", "funnels")
+    if basis == "object_acts":
+        acts = ObjectAct.objects.filter(status="closed", payroll_period=period, manager=user)
+        base = float(acts.aggregate(s=Sum("amount_total"))["s"] or 0)
+        amt = float(acts.aggregate(s=Sum("commission_amount"))["s"] or 0) or base * pct / 100
+        return _line(comp, amt, base, f"{pct:g}%", f"закриті акти за місяць: {acts.count()}",
+                     warn="" if acts.exists() else "актів, закритих цього місяця, немає")
+    if basis == "objects_income":
+        base = float(_income(d1, d2, fin_direction_id=pol["objects_direction_id"], deal__isnull=True)
+                     .aggregate(s=Sum("amount_uah"))["s"] or 0)
+        return _line(comp, base * pct / 100, base, f"{pct:g}%", "приходи напрямку «Обʼєкти» без угод", estimate=True)
+    flt = {}
+    if basis == "own_payments" or p.get("own_only", True):
+        flt["deal__owner"] = user
+    if basis == "funnels":
+        flt["deal__funnel_id__in"] = p.get("funnels") or []
+    else:
+        flt["deal__isnull"] = False
+    base = float(_income(d1, d2, **flt).aggregate(s=Sum("amount_uah"))["s"] or 0)
+    return _line(comp, base * pct / 100, base, f"{pct:g}%", "оплати за місяць")
+
+
+def _first_pay():
+    from apps.finance.models import Transaction
+    return (Transaction.objects.filter(direction="in", transfer_account__isnull=True, deal__isnull=False)
+            .values("deal_id").annotate(first=Min("date"), total=Sum("amount_uah")))
+
+
+def _c_event(comp, user, d1, d2, pol):
+    """Бонус «тест-набір → основне»: перше оплачене основне замовлення клієнта після оплаченого тест-набору;
+    місяць — місяць оплати основного; кому — власнику основної угоди; раз на клієнта."""
+    from apps.crm.models import Deal
+    p = comp.params
+    tiers = p.get("tiers") or {"fast_days": 30, "min_order": 3000, "fast": 300, "slow": 200, "small": 100}
+    test_f = pol["funnels"]["test"]
+    main_f = pol["funnels"]["main"]
+    fp = {r["deal_id"]: r for r in _first_pay()}
+    mine = Deal.objects.filter(owner=user, funnel_id__in=main_f, id__in=[i for i, r in fp.items() if d1 <= r["first"] <= d2])
+    total, n, rows = 0, 0, []
+    for d in mine.select_related("contact"):
+        if not d.contact_id:
+            continue
+        first_main = fp[d.id]["first"]
+        tests = [fp[x]["first"] for x in Deal.objects.filter(contact_id=d.contact_id, funnel_id__in=test_f).values_list("id", flat=True)
+                 if x in fp and fp[x]["first"] <= first_main]
+        if not tests:
+            continue
+        earlier_main = [x for x in Deal.objects.filter(contact_id=d.contact_id, funnel_id__in=main_f).exclude(id=d.id)
+                        .values_list("id", flat=True) if x in fp and min(tests) <= fp[x]["first"] < first_main]
+        if earlier_main:
+            continue
+        days = (first_main - min(tests)).days
+        order = float(fp[d.id]["total"] or d.amount or 0)
+        b = tiers["small"] if order < tiers["min_order"] else (tiers["fast"] if days <= tiers["fast_days"] else tiers["slow"])
+        total += b
+        n += 1
+        rows.append(d.id)
+    return _line(comp, total, n, "300 / 200 / 100 ₴", f"основних після тест-набору: {n}" + (f" (угоди {', '.join(map(str, rows[:8]))})" if rows else ""))
+
+
+def _c_piece(comp, user, d1, d2):
+    from apps.warehouse.models import WarehousePayrollEntry
+    s = float(WarehousePayrollEntry.objects.filter(employee=user, work_date__gte=d1, work_date__lte=d2, status="confirmed")
+              .aggregate(s=Sum("amount"))["s"] or 0)
+    return _line(comp, s, None, None, "відрядні записи складу (вага, пакування, тонування, день)")
+
+
+def guarantee_window(comp):
+    p = comp.params
+    start = date.fromisoformat(p["start"]) if p.get("start") else None
+    if not start:
+        return None, None
+    return start, add_months(start, int(p.get("months", 2))) - timedelta(days=1)
+
+
+def calc(user, period, scheme=None, purpose="official", _nested=False):
+    pol = policy()
+    d1, d2 = period_bounds(period)
+    sc = scheme or active_scheme(user, d2, purpose)
+    who = (user.get_full_name() or user.username) if user else ""
+    if not sc:
+        return {"user_id": user.id if user else None, "user_name": who, "period": period, "scheme": None,
+                "lines": [], "total": 0, "company_cost": 0, "warnings": ["ставку не задано — Налаштування → Ставки співробітників"]}
+    comps = list(sc.components.filter(active=True))
+    lines, std_score = [], 1.0
+    for c in comps:
+        if c.kind == "base_by_days":
+            lines.append(_c_base(sc, c, user, d1, d2, pol))
+        elif c.kind == "fixed_monthly":
+            lines.append(_c_fixed(sc, c, d1, d2))
+        elif c.kind == "standard":
+            ln, std_score = _c_standard(c, period)
+            lines.append(ln)
+    for c in comps:
+        if c.kind == "margin_share" and user:
+            lines.append(_c_margin(c, user, period, d1, d2, pol, std_score))
+        elif c.kind == "revenue_share" and user:
+            lines.append(_c_revenue(c, user, period, d1, d2, pol))
+        elif c.kind == "event_bonus" and user:
+            lines.append(_c_event(c, user, d1, d2, pol))
+        elif c.kind == "piece_rate" and user:
+            lines.append(_c_piece(c, user, d1, d2))
+    subtotal = sum(l["amount"] for l in lines)
+    for c in comps:
+        if c.kind != "guarantee":
+            continue
+        g_start, g_end = guarantee_window(c)
+        if not g_start or d2 < g_start or d1 > g_end:
+            continue
+        g_amt = float(c.params.get("amount") or pol["guarantee"]["amount"])
+        s, e = max(d1, g_start), min(d2, g_end)
+        k = workdays(s, e) / (workdays(d1, d2) or 1)
+        target = g_amt * k
+        topup = max(0.0, target - subtotal)
+        chk = (c.params.get("checks") or {}).get(period) or {}
+        if chk.get("ok"):
+            lines.append(_line(c, topup, round(target), None, f"доплата до гарантії {round(target):,} ₴ (умови виконано)".replace(",", " ")))
+        else:
+            lines.append(_line(c, 0, round(target), None,
+                               f"доплата до гарантії: +{round(topup):,} ₴ — лише після підтвердження умов".replace(",", " "),
+                               warn="умови гарантії за місяць не підтверджено" if topup > 0 else ""))
+    total = sum(l["amount"] for l in lines)
+    legacy = None
+    if purpose == "official" and not _nested and user:
+        lsc = active_scheme(user, d1, "legacy")
+        if lsc:
+            legacy = calc(user, period, scheme=lsc, purpose="legacy", _nested=True)
+            first = (sc.valid_from.year, sc.valid_from.month) == (d1.year, d1.month)
+            if (sc.options or {}).get("insurance_first_month") and first and legacy["total"] > total:
+                lines.append(_line(None, legacy["total"] - total, legacy["total"], None,
+                                   "перший місяць нової схеми: платимо більшу з двох (стара дала б більше)"))
+                total = sum(l["amount"] for l in lines)
+    return {"user_id": user.id if user else None, "user_name": who, "period": period,
+            "scheme": {"id": sc.id, "position": sc.position, "title": sc.title, "valid_from": sc.valid_from.isoformat(),
+                       "employment": sc.employment, "employment_label": sc.get_employment_display()},
+            "lines": lines, "total": round(total), "company_cost": round(employer_cost(total, sc.employment, pol)),
+            "warnings": [l["warn"] for l in lines if l.get("warn")],
+            "legacy": {"total": legacy["total"], "lines": legacy["lines"], "title": legacy["scheme"]["title"]} if legacy and legacy.get("scheme") else None}
+
+
+def staff_on(on, purpose="official"):
+    """Діючі схеми на дату: по одній на співробітника + посади без акаунта (не вакансії)."""
+    from .models import PayScheme
+    qs = (PayScheme.objects.filter(purpose=purpose, status="active", valid_from__lte=on)
+          .filter(Q(valid_to__isnull=True) | Q(valid_to__gte=on)).select_related("user").order_by("-valid_from", "-id"))
+    seen, out = set(), []
+    for s in qs:
+        key = ("u", s.user_id) if s.user_id else ("p", s.id)
+        if s.is_vacancy or key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+    return out
+
+
+def calc_team(period):
+    d1, d2 = period_bounds(period)
+    rows = [calc(s.user, period) for s in staff_on(d2) if s.user_id]
+    rows.sort(key=lambda r: -r["total"])
+    return {"period": period, "rows": rows, "total": sum(r["total"] for r in rows),
+            "company_cost": sum(r["company_cost"] for r in rows)}
+
+
+# ─────────────────────────── вартість людини і точка беззбитковості ───────────────────────────
+
+def scheme_cost(sc, pol=None, sh=None, on=None):
+    """Скільки схема коштує компанії на місяць: тверда частина (₴) і процентні частини (% маржі / % виручки)."""
+    pol = pol or policy()
+    sh = sh or shares(pol)
+    on = on or timezone.localdate()
+    fixed_net, m_pct, r_pct, parts = 0.0, 0.0, 0.0, []
+    guarantee = 0.0
+    for c in sc.components.filter(active=True):
+        p = c.params or {}
+        if c.kind in ("base_by_days", "fixed_monthly"):
+            fixed_net += float(p.get("amount") or 0)
+            parts.append((c.title or c.get_kind_display(), float(p.get("amount") or 0), "₴"))
+        elif c.kind == "standard":
+            fixed_net += float(p.get("max") or 0)
+            parts.append((c.title or "Стандарт (максимум)", float(p.get("max") or 0), "₴"))
+        elif c.kind == "guarantee":
+            g_start, g_end = guarantee_window(c)
+            ref = sc.planned_start if sc.is_vacancy and sc.planned_start else on
+            if sc.is_vacancy or (g_start and g_start <= ref <= g_end):
+                guarantee = float(p.get("amount") or pol["guarantee"]["amount"])
+        elif c.kind == "margin_share":
+            funnels = p.get("funnels") or pol["funnels"]["online"]
+            share = (sum(sh["by_funnel_margin"].get(f, 0) for f in funnels) / sh["margin_total"]) if sh["margin_total"] else 0
+            if sc.is_vacancy:
+                share = 0.0  # нова людина: % платиться з нових продажів — у точці беззбитковості лише тверда частина
+            add = float(p.get("pct_to_plan", 10)) / 100 * share
+            m_pct += add
+            parts.append((c.title or "% з маржі", round(add * 100, 2), "% маржі"))
+        elif c.kind == "revenue_share":
+            pct = float(p.get("pct") or 0) / 100
+            if p.get("basis") in ("object_acts", "objects_income"):
+                share = sh["objects_rev"] / sh["rev_total"] if sh["rev_total"] else 0
+            elif p.get("basis") == "own_payments":
+                share = 0.5
+            else:
+                share = (sum(sh["by_funnel_rev"].get(f, 0) for f in (p.get("funnels") or [])) / sh["rev_total"]) if sh["rev_total"] else 0
+            add = pct * share
+            r_pct += add
+            parts.append((c.title or "% з обороту", round(add * 100, 2), "% виручки"))
+        elif c.kind == "piece_rate" and sc.user_id and sh["rev_total"]:
+            from apps.warehouse.models import WarehousePayrollEntry
+            s = float(WarehousePayrollEntry.objects.filter(employee_id=sc.user_id, work_date__gte=sh["from"],
+                                                           work_date__lte=sh["to"], status="confirmed")
+                      .aggregate(x=Sum("amount"))["x"] or 0)
+            add = s / sh["rev_total"]
+            r_pct += add
+            parts.append((c.title or "Відрядно", round(add * 100, 2), "% виручки"))
+    fixed_net = max(fixed_net, guarantee)
+    ratio = _pct_ratio(sc.employment, pol)
+    return {"fixed_net": round(fixed_net), "fixed_cost": round(employer_cost(fixed_net, sc.employment, pol)),
+            "margin_pct": m_pct * ratio, "revenue_pct": r_pct * ratio, "taxes_ratio": round(ratio, 3),
+            "guarantee": guarantee, "parts": parts}
+
+
+def breakeven_atm(extra_ids=(), without_ids=(), today=None):
+    """Точка беззбитковості за ATM: фінмодель (крім замінених статей) + ставки співробітників (+ вакансії «що якщо»)."""
+    from apps.finance.models import FinModelArticle
+    from .models import PayScheme
+    pol = policy()
+    today = today or timezone.localdate()
+    sh = shares(pol, today)
+    replaced = set(int(x) for x in pol.get("replaced_articles") or [])
+    rev_funds, m_fixed, skd, replaced_rows = [], [], [], []
+    for a in FinModelArticle.objects.filter(active=True).order_by("category", "sort_order", "id"):
+        v = float(a.value or 0)
+        row = {"id": a.id, "name": a.name, "value": v, "source": "фінмодель"}
+        if a.id in replaced:
+            replaced_rows.append({**row, "category": a.get_category_display()})
+            continue
+        if a.category == "revenue_fund" and a.value_type == "percent":
+            rev_funds.append({**row, "unit": "%"})
+        elif a.category in ("fixed", "variable", "upr_cat2") and a.value_type in ("fixed_sum_per_month", "auto_meta_ads"):
+            m_fixed.append({**row, "unit": "₴"})
+        elif a.category == "payment_fee" and a.value_type == "fixed_per_deal":
+            per_month = sh["deals"] / sh["months"]
+            m_fixed.append({**row, "value": round(v * per_month), "unit": "₴", "name": f"{a.name} (× {round(per_month)} угод/міс)"})
+        elif a.category in ("skd", "upr_cat3") and a.value_type == "fixed_sum_per_month":
+            skd.append({**row, "unit": "₴"})
+    staff, vacancies = [], []
+    for s in staff_on(today):
+        if s.id in without_ids:
+            continue
+        staff.append(s)
+    for v in PayScheme.objects.filter(is_vacancy=True, status="active", purpose="official").order_by("planned_start", "id"):
+        vacancies.append(v)
+        if (v.in_plan or v.id in extra_ids) and v.id not in without_ids:
+            staff.append(v)
+    pay_rows = []
+    pay_fixed = pay_m = pay_r = 0.0
+    for s in staff:
+        c = scheme_cost(s, pol, sh, today)
+        pay_fixed += c["fixed_cost"]
+        pay_m += c["margin_pct"]
+        pay_r += c["revenue_pct"]
+        pay_rows.append({"scheme_id": s.id, "name": (s.user.get_full_name() or s.user.username) if s.user_id else s.position,
+                         "position": s.position, "employment": s.get_employment_display(), "is_vacancy": s.is_vacancy, **c})
+    div = float(pol.get("dividends_pct") or 0) / 100
+    rev_pct = sum(r["value"] for r in rev_funds) / 100 + pay_r
+    m_pct = pay_m + div
+    fixed = sum(r["value"] for r in m_fixed) + pay_fixed
+    skd_sum = sum(r["value"] for r in skd)
+
+    def tb(fx, mp, rp):
+        if mp >= 1 or rp >= 1:
+            return None, None
+        m = (skd_sum + fx) / (1 - mp)
+        return m, m / (1 - rp)
+
+    margin_need, be = tb(fixed, m_pct, rev_pct)
+    k = 1 / ((1 - m_pct) * (1 - rev_pct)) if m_pct < 1 and rev_pct < 1 else None
+    vac_rows = []
+    for v in vacancies:
+        c = scheme_cost(v, pol, sh, today)
+        included = (v.in_plan or v.id in extra_ids) and v.id not in without_ids
+        if included:
+            _, be2 = tb(fixed - c["fixed_cost"], m_pct - c["margin_pct"], rev_pct - c["revenue_pct"])
+            delta = (be - be2) if (be and be2) else None
+        else:
+            _, be2 = tb(fixed + c["fixed_cost"], m_pct + c["margin_pct"], rev_pct + c["revenue_pct"])
+            delta = (be2 - be) if (be and be2) else None
+        vac_rows.append({"scheme_id": v.id, "position": v.position, "planned_start": v.planned_start.isoformat() if v.planned_start else None,
+                         "employment": v.get_employment_display(), "included": included, "fixed_cost": c["fixed_cost"],
+                         "fixed_net": c["fixed_net"], "delta_breakeven": round(delta) if delta else None,
+                         "payback_revenue": round(c["fixed_cost"] * k) if k else None})
+    d1 = today.replace(day=1)
+    rev_month = float(_income(d1, today).aggregate(s=Sum("amount_uah"))["s"] or 0)
+    pm_end = d1 - timedelta(days=1)
+    rev_prev = float(_income(pm_end.replace(day=1), pm_end).aggregate(s=Sum("amount_uah"))["s"] or 0)
+    return {
+        "breakeven": round(be) if be else None, "margin_needed": round(margin_need) if margin_need else None,
+        "k_fixed": round(k, 2) if k else None,
+        "rev_funds_pct": round(rev_pct * 100, 2), "margin_funds_pct": round(m_pct * 100, 2),
+        "fixed_total": round(fixed), "skd_total": round(skd_sum), "payroll_fixed": round(pay_fixed),
+        "levels": {
+            "revenue": rev_funds + [{"name": "Ставки: % з обороту, відрядно (склад)", "value": round(pay_r * 100, 2), "unit": "%", "source": "ставки"}],
+            "margin_pct": [{"name": "Ставки: % з маржі продавців", "value": round(pay_m * 100, 2), "unit": "%", "source": "ставки"},
+                           {"name": "Дивіденди власника", "value": round(div * 100, 2), "unit": "%", "source": "правила"}],
+            "margin_fixed": m_fixed + [{"name": "Ставки: тверді частини з податками", "value": round(pay_fixed), "unit": "₴", "source": "ставки"}],
+            "skd": skd,
+        },
+        "payroll": pay_rows, "vacancies": vac_rows, "replaced_articles": replaced_rows,
+        "shares": {"from": sh["from"].isoformat(), "to": sh["to"].isoformat(), "margin_pct": round(sh["margin_pct"] * 100, 1),
+                   "rev_month_avg": round(sh["rev_total"] / sh["months"])},
+        "revenue_month": round(rev_month), "revenue_prev_month": round(rev_prev),
+        "progress": round(rev_month / be * 100, 1) if be else None,
+        "policy": {"dividends_pct": pol.get("dividends_pct"), "taxes": pol["taxes"]},
+    }
+
+
+def deal_bonus_preview(deal):
+    """Бонус менеджера з угоди за його схемою (картка угоди). None — схеми немає (тоді стара формула)."""
+    if not deal.owner_id:
+        return None
+    sc = active_scheme(deal.owner, timezone.localdate())
+    if not sc:
+        return None
+    pol = policy()
+    r, est = deal_margin(deal, pol)
+    amount = float(deal.amount or 0)
+    m_pct = r_pct = 0.0
+    for c in sc.components.filter(active=True, kind__in=["margin_share", "revenue_share"]):
+        p = c.params or {}
+        if c.kind == "margin_share" and deal.funnel_id in (p.get("funnels") or pol["funnels"]["online"]):
+            m_pct += float(p.get("pct_to_plan", 10))
+        if c.kind == "revenue_share" and p.get("basis", "funnels") == "funnels" and deal.funnel_id in (p.get("funnels") or []):
+            r_pct += float(p.get("pct") or 0)
+        if c.kind == "revenue_share" and p.get("basis") == "own_payments":
+            r_pct += float(p.get("pct") or 0)
+    margin = amount * r
+    from_m, from_r = margin * m_pct / 100, amount * r_pct / 100
+    return {"total": round(from_m + from_r, 2), "from_revenue": round(from_r, 2), "from_margin": round(from_m, 2),
+            "revenue_pct": r_pct, "margin_pct": m_pct, "scheme": sc.title or sc.position, "estimate": est,
+            "note": "до плану; понад план і коефіцієнт конверсії — у ЗП за місяць"}

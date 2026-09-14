@@ -5,6 +5,8 @@
  * ========================================================================== */
 import { Fragment, useEffect, useState, useRef } from "react";
 import { api } from "../api";
+import BreakevenAtm from "./BreakevenAtm";
+import PayrollTeam from "./PayrollTeam";
 import DealCard from "./DealCard";
 import TxCardModal from "../TxCardModal";
 import DaySnapshots from "./finance/DaySnapshots";
@@ -1827,6 +1829,8 @@ function Breakeven() {
   ];
   return (
     <>
+      <BreakevenAtm />
+      <div className="muted" style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", margin: "4px 0 8px" }}>{tr("Старая формула CRM (для сравнения)","Стара формула CRM (для порівняння)")}</div>
       <div className="note" style={{ marginBottom: 10 }}><Icon n="🎯" size={14} /> {tr("Точка безубыточности считается ОТ ФИНМОДЕЛИ (нормативы затрат и маржи), снизу вверх. Прогресс — факт текущего месяца.","Точка беззбитковості рахується ВІД ФІНМОДЕЛІ (нормативи витрат і маржі), знизу вгору. Прогрес — факт поточного місяця.")}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 12, marginBottom: 14 }}>
         {cards.map(([t, v]) => <div key={t} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{t}</div><div style={{ fontSize: 20, fontWeight: 700 }}>{v}</div></div>)}
@@ -3514,6 +3518,8 @@ function Salary() {
   const tierLabel = (m: number) => m >= 1.3 ? t("перевыполнение ×1.3","перевиконання ×1.3") : m >= 1 ? t("полные премии ×1.0","повні премії ×1.0") : m >= 0.8 ? t("почти план ×0.8","майже план ×0.8") : m >= 0.5 ? t("половина ×0.5","половина ×0.5") : t("старт ×0.3","старт ×0.3");
   return (
     <>
+      <PayrollTeam period={period} />
+      <div className="muted" style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", margin: "4px 0 6px" }}>{t("Старая формула CRM (справочно, по ней не платили)","Стара формула CRM (довідково, за нею не платили)")}</div>
       <div className="note"><Icon n="💰" size={14} /> {t("ЗП считается","ЗП рахується")} <b>{t("без жёсткого GATE","без жорсткого GATE")}</b>: {t("премии открываются поэтапно с 70% плана (×0.3→×1.3). Ставки меняются во вкладке «Финмодель → ЗП». Планы — во вкладке «Планы».","премії відкриваються поетапно з 70% плану (×0.3→×1.3). Ставки змінюються у вкладці «Фінмодель → ЗП». Плани — у вкладці «Плани».")}</div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "12px 0" }}>
         <span className="muted" style={{ fontSize: 13 }}>{t("Месяц","Місяць")}:</span>

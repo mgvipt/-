@@ -250,6 +250,7 @@ urlpatterns = [
     path("api/integrations/shop/reviews/invite/", review_shop.ShopReviewInviteView.as_view()),
     path("api/integrations/shop/reviews/submit/", review_shop.ShopReviewSubmitView.as_view()),
     path("api/integrations/shop/reviews/published/", review_shop.ShopReviewPublishedView.as_view()),
+    path("api/payroll/", include("apps.payroll.urls")),  # ставки співробітників (14.09.2026)
     path("api/reviews/", review_views.ReviewListView.as_view()),
     path("api/reviews/<int:pk>/", review_views.ReviewDetailView.as_view()),
     path("api/reviews/<int:pk>/moderate/", review_views.ReviewModerateView.as_view()),

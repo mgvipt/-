@@ -7,6 +7,7 @@ import SettingsAutomations from "./SettingsAutomations";
 import SoundSettings from "./SoundSettings";
 import SettingsAgent from "./SettingsAgent";
 import CalculatorSettings from "./CalculatorSettings";
+import PayRates from "./PayRates";
 import { Icon } from "../Icon";
 
 interface Prov { provider: string; fields: string[]; values: Record<string, string>; is_active: boolean; }
@@ -37,6 +38,7 @@ export default function Settings() {
     ["sounds", <><Icon n="bell" size={15} /> {t("Звуки", "Звуки")}</>, "settings.sounds"],
     ["open-lines", <><Icon n="chat" size={15} /> {t("Открытые линии", "Відкриті лінії")}</>, "roles.manage"],
     ["calculator", <><Icon n="calculator" size={15} /> {t("Калькулятор", "Калькулятор")}</>, "calc.settings.manage"],
+    ["payrates", <><Icon n="💼" size={15} /> {t("Ставки сотрудников", "Ставки співробітників")}</>, "payroll.rates.view"],
     ["language", <><Icon n="🌐" size={15} /> {t("Язык", "Мова")}</>, ""],
     ["integrations", <><Icon n="🔌" size={15} /> {t("Интеграции", "Інтеграції")}</>, "roles.manage"],
   ];
@@ -85,6 +87,7 @@ export default function Settings() {
       {tab === "agent" && <SettingsAgent />}
       {tab === "sounds" && <SoundSettings />}
       {tab === "calculator" && <CalculatorSettings />}
+      {tab === "payrates" && <PayRates />}
       {tab === "open-lines" && <div style={{ display: "grid", gridTemplateColumns: "minmax(300px, 1fr) minmax(300px, 1fr)", gap: 14 }}>
         <div className="panel" style={{ margin: 0 }}><b>🎨 {t("Библиотека цветов и медиа", "Бібліотека кольорів і медіа")}</b><div className="muted" style={{ fontSize: 12, margin: "5px 0 10px" }}>{t("Загрузите страницу каталога, фото или видео. Менеджер найдёт материал по коду в скрепке чата.", "Завантажте сторінку каталогу, фото або відео. Менеджер знайде матеріал за кодом у скріпці чату.")}</div>
           <select value={assetSection} onChange={(e) => setAssetSection(e.target.value)} style={{ width: "100%", marginBottom: 7 }}><option value="colors">Кольори / каталог</option><option value="quick">Швидка відповідь</option></select>

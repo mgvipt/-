@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "apps.gamification",
     "apps.tiktok_insights",
     "apps.reviews",  # відгуки покупців (12.09.2026)
+    "apps.payroll",  # ставки співробітників — одне місце для ЗП і точки беззбитковості (14.09.2026)
 ]
 
 MIDDLEWARE = [
