@@ -1434,24 +1434,32 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                 from .services import novapay_account as _npacc
                 from datetime import timedelta as _tdnp
 
-                def _np_pick_set(target, cands, fee=0.013, tol=1.0, max_n=6):
-                    """Точний підбір набору наложок під суму виплати (перебір комбінацій).
+                def _np_pick_set(target, cands, max_fee=0.03, tol=1.5, max_n=6):
+                    """Підбір набору наложок під суму виплати НоваПей.
+                    Комісія НоваПей НЕ фіксована (1,3%–~1,9% залежно від суми) — тому матчимо
+                    по ДІАПАЗОНУ: виплата = Σномінал − комісія, де 0 ≤ комісія ≤ max_fee×Σномінал
+                    (+допуск на округлення). Реальна комісія береться ФАКТОМ (Σномінал − виплата),
+                    а не вгадується фіксованим %. Менший набір і менша комісія — пріоритетніші.
                     target — нетто з банку; cands — [(id, Decimal номінал)]. Повертає list ids або None."""
                     import itertools
-                    net = [(cid, round(float(a) - float(a) * fee, 2)) for cid, a in cands]
-                    n = len(net)
+                    t = float(target)
+                    items = [(cid, float(a)) for cid, a in cands]
+                    n = len(items)
                     if n == 0:
                         return None
-                    best = None
+                    best = None  # ((r, abs(comm)), ids)
                     for r in range(1, min(max_n, n) + 1):
-                        for combo in itertools.combinations(net, r):
-                            s = round(sum(x[1] for x in combo), 2)
-                            d = abs(s - float(target))
-                            if d <= tol * max(1, r):  # допуск ±1 грн на кожну наложку (округлення)
-                                if best is None or d < best[0]:
-                                    best = (d, [x[0] for x in combo])
+                        for combo in itertools.combinations(items, r):
+                            S = round(sum(x[1] for x in combo), 2)
+                            comm = round(S - t, 2)               # утримана комісія НоваПей (факт)
+                            if comm < -tol * r:                  # виплата більша за номінал — це не наложка
+                                continue
+                            if comm <= S * max_fee + tol * r:    # комісія в межах 0..max_fee — правдоподібно
+                                key = (r, abs(comm))
+                                if best is None or key < best[0]:
+                                    best = (key, [x[0] for x in combo])
                         if best is not None:
-                            break  # менший набір завжди кращий за більший з тим самим допуском
+                            break  # менший набір завжди кращий
                     return best[1] if best else None
 
                 _win = dte - _tdnp(days=45)
