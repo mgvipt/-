@@ -131,6 +131,7 @@ function CalcPreview({ scheme, canEdit, onMarked }: { scheme: Scheme; canEdit: b
             {l.detail && <div className="muted" style={{ fontSize: 11.5 }}>{l.detail}</div>}
             {l.warn && <div style={{ fontSize: 11.5, color: "#92400e" }}>⚠ {l.warn}</div>}</span>
           <b style={{ whiteSpace: "nowrap" }}>{money(l.amount)}</b></div>)}
+        {r.preview && <div style={{ fontSize: 12, marginTop: 5, color: "#1d4ed8" }}>Приклад: так нарахувалось би за цією схемою в місяці, коли вона ще не діяла (на реальних оплатах і табелі того місяця).</div>}
         {r.legacy && <div className="muted" style={{ fontSize: 12, marginTop: 5 }}>За старою схемою («{r.legacy.title}») за цей місяць вийшло б {money(r.legacy.total)}.</div>}
       </div>}
   </div>;

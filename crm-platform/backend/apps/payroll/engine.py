@@ -134,6 +134,7 @@ def shares(pol=None, today=None):
     d1 = today - timedelta(days=int(pol["lookback_days"]))
     rev_total = margin_total = 0.0
     by_funnel_rev, by_funnel_margin, cache = {}, {}, {}
+    by_owner_rev, by_owner_margin = {}, {}  # (власник, воронка) — % продавця лише з ЙОГО угод
     objects_rev = 0.0
     for t in _income(d1, today).select_related("deal"):
         amt = float(t.amount_uah or 0)
@@ -145,6 +146,9 @@ def shares(pol=None, today=None):
             f = t.deal.funnel_id
             by_funnel_rev[f] = by_funnel_rev.get(f, 0) + amt
             by_funnel_margin[f] = by_funnel_margin.get(f, 0) + m
+            key = (t.deal.owner_id, f)
+            by_owner_rev[key] = by_owner_rev.get(key, 0) + amt
+            by_owner_margin[key] = by_owner_margin.get(key, 0) + m
         else:
             m = amt * pol["no_deal_margin_pct"] / 100.0
             if t.fin_direction_id == pol["objects_direction_id"]:
@@ -152,7 +156,8 @@ def shares(pol=None, today=None):
         margin_total += m
     months = max(1.0, int(pol["lookback_days"]) / 30.0)
     return {"rev_total": rev_total, "margin_total": margin_total, "by_funnel_rev": by_funnel_rev,
-            "by_funnel_margin": by_funnel_margin, "objects_rev": objects_rev, "months": months,
+            "by_funnel_margin": by_funnel_margin, "by_owner_rev": by_owner_rev, "by_owner_margin": by_owner_margin,
+            "objects_rev": objects_rev, "months": months,
             "margin_pct": (margin_total / rev_total) if rev_total else 0.0, "deals": len(cache), "from": d1, "to": today}
 
 
@@ -166,7 +171,10 @@ def _line(comp, amount, basis=None, rate=None, detail="", estimate=False, warn="
 
 
 def _prorate(sc, d1, d2):
-    """Частка місяця, коли схема діяла (новачок вийшов 14-го → оплата за робочі дні з 14-го)."""
+    """Частка місяця, коли схема діяла (новачок вийшов 14-го → оплата за робочі дні з 14-го).
+    Режим «приклад» (схема на місяць поза її дією) — повний місяць."""
+    if getattr(sc, "_preview", False):
+        return 1.0
     start = max(d1, sc.valid_from)
     end = min(d2, sc.valid_to) if sc.valid_to else d2
     full = workdays(d1, d2) or 1
@@ -177,7 +185,7 @@ def _c_base(sc, comp, user, d1, d2, pol):
     from apps.finance.models import WorkDay
     amt = float(comp.params.get("amount") or 0)
     norm = workdays(d1, d2) or 1
-    wd = WorkDay.objects.filter(user=user, date__gte=max(d1, sc.valid_from), date__lte=d2)
+    wd = WorkDay.objects.filter(user=user, date__gte=(d1 if getattr(sc, "_preview", False) else max(d1, sc.valid_from)), date__lte=d2)
     if user and wd.exists():
         worked = wd.filter(status__in=["worked", "overtime"]).count()
         over = wd.filter(status="overtime").count()
@@ -327,6 +335,9 @@ def calc(user, period, scheme=None, purpose="official", _nested=False):
     pol = policy()
     d1, d2 = period_bounds(period)
     sc = scheme or active_scheme(user, d2, purpose)
+    if sc is not None and scheme is not None:
+        # «приклад»: схему рахують на місяць, коли вона ще/вже не діяла (Олег: «показати на наявних даних, як буде»)
+        sc._preview = not (sc.valid_from <= d2 and (sc.valid_to is None or sc.valid_to >= d1))
     who = (user.get_full_name() or user.username) if user else ""
     if not sc:
         return {"user_id": user.id if user else None, "user_name": who, "period": period, "scheme": None,
@@ -383,6 +394,7 @@ def calc(user, period, scheme=None, purpose="official", _nested=False):
     return {"user_id": user.id if user else None, "user_name": who, "period": period,
             "scheme": {"id": sc.id, "position": sc.position, "title": sc.title, "valid_from": sc.valid_from.isoformat(),
                        "employment": sc.employment, "employment_label": sc.get_employment_display()},
+            "preview": bool(getattr(sc, "_preview", False)),
             "lines": lines, "total": round(total), "company_cost": round(employer_cost(total, sc.employment, pol)),
             "warnings": [l["warn"] for l in lines if l.get("warn")],
             "legacy": {"total": legacy["total"], "lines": legacy["lines"], "title": legacy["scheme"]["title"]} if legacy and legacy.get("scheme") else None}
@@ -435,9 +447,10 @@ def scheme_cost(sc, pol=None, sh=None, on=None):
                 guarantee = float(p.get("amount") or pol["guarantee"]["amount"])
         elif c.kind == "margin_share":
             funnels = p.get("funnels") or pol["funnels"]["online"]
-            share = (sum(sh["by_funnel_margin"].get(f, 0) for f in funnels) / sh["margin_total"]) if sh["margin_total"] else 0
-            if sc.is_vacancy:
-                share = 0.0  # нова людина: % платиться з нових продажів — у точці беззбитковості лише тверда частина
+            # % продавця — лише з маржі ЙОГО угод (частка за останні N днів); нова людина / вакансія = 0:
+            # її % платиться з нових продажів, у точці беззбитковості — лише тверда частина
+            own = sum(sh["by_owner_margin"].get((sc.user_id, f), 0) for f in funnels) if sc.user_id else 0.0
+            share = (own / sh["margin_total"]) if (sh["margin_total"] and not sc.is_vacancy) else 0.0
             add = float(p.get("pct_to_plan", 10)) / 100 * share
             m_pct += add
             parts.append((c.title or "% з маржі", round(add * 100, 2), "% маржі"))
@@ -446,7 +459,11 @@ def scheme_cost(sc, pol=None, sh=None, on=None):
             if p.get("basis") in ("object_acts", "objects_income"):
                 share = sh["objects_rev"] / sh["rev_total"] if sh["rev_total"] else 0
             elif p.get("basis") == "own_payments":
-                share = 0.5
+                own = sum(v for (o, _f), v in sh["by_owner_rev"].items() if o == sc.user_id) if sc.user_id else 0.0
+                share = own / sh["rev_total"] if sh["rev_total"] else 0
+            elif p.get("own_only", True) and sc.user_id:
+                own = sum(sh["by_owner_rev"].get((sc.user_id, f), 0) for f in (p.get("funnels") or []))
+                share = own / sh["rev_total"] if sh["rev_total"] else 0
             else:
                 share = (sum(sh["by_funnel_rev"].get(f, 0) for f in (p.get("funnels") or [])) / sh["rev_total"]) if sh["rev_total"] else 0
             add = pct * share
