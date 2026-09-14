@@ -386,6 +386,8 @@ class ZamerView(APIView):
                 title=f"Замер · {contact}"[:255], contact=contact,
                 funnel=funnel, stage=first_stage, source="other", owner=request.user,
             )
+            from apps.meta_attr.services import inherit_meta_attribution
+            inherit_meta_attribution(deal)  # мітка реклами (клік ≤30 днів)
 
         # Для legacy-контракта отдельный UUID на сделку, иначе все старые
         # замеры пользователя попадали бы в один проект ``legacy``.

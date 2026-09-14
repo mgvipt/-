@@ -18,6 +18,7 @@ PAGE_ID = os.environ.get("META_PAGE_ID", "")
 # Наші власні ідентифікатори — щоб відрізнити відповідь ШІ Юлі / менеджера (наш акаунт)
 # від повідомлення клієнта у коментарях та Direct.
 _OUR_IDS = {x for x in (IG_ID, PAGE_ID) if x}
+from apps.meta_attr import services as _ma  # noqa: E402  мітки реклами Meta (14.09.2026)
 
 
 def _is_us(author_id):
@@ -408,7 +409,7 @@ def _new_meta_lead(conv, kind, sender_id, name="", username="", attribution=None
             src = "instagram" if kind == "instagram" else "facebook"
             Lead.objects.create(title=_contact_lead_title(conv.contact, sender_id),
                                 contact=conv.contact, funnel=f, stage=st, source=src, is_seen=False,
-                                meta_attribution=(attribution or {}))
+                                meta_attribution=_ma.stamp_new(attribution or {}))
     except Exception:
         pass
 
@@ -448,22 +449,15 @@ def _apply_ad_attribution(channel, kind, sender_id, ref_obj, ev, msg):
         # діалогу ще нема (referral прилетів першим) — створюємо, щоб не втратити клік
         conv, _ = Conversation.objects.get_or_create(
             channel=channel, external_chat_id=ext, defaults={"title": kind})
+    # 14.09.2026 (meta-attr): мітка з датою кліку; лише ВІДКРИТІ ліди/угоди, створені не раніше
+    # ніж за 1 день до кліку; закриті угоди не чіпаємо; є відкрита справа → без нового ліда.
+    attr = _ma.stamp_exact(attr, method="referral", ev=ev)
+    _ma.remember_click(conv, attr)
     if not conv.contact_id:
         _new_meta_lead(conv, kind, sender_id, attribution=attr)
         return True
-    contact = conv.contact
-    lead = Lead.objects.filter(contact=contact).order_by("-id").first()
-    if not lead:
+    if _ma.apply_exact_click(conv.contact, attr) == "need_lead":
         _new_meta_lead(conv, kind, sender_id, attribution=attr)
-        return True
-    if (lead.meta_attribution or {}).get("source_kind") != "paid_ad":
-        lead.meta_attribution = attr
-        lead.save(update_fields=["meta_attribution"])
-        # перенести мітку на угоди контакта, у яких її ще немає
-        for d in Deal.objects.filter(contact=contact):
-            if (d.meta_attribution or {}).get("source_kind") != "paid_ad":
-                d.meta_attribution = attr
-                d.save(update_fields=["meta_attribution"])
     return True
 
 
@@ -516,7 +510,7 @@ def _handle_leadgen(value):
     if f and st:
         Lead.objects.create(title=(full or phone or "Лід-форма")[:255],
                             contact=ct, funnel=f, stage=st, source="facebook", is_seen=False,
-                            meta_attribution=attr)
+                            meta_attribution=_ma.stamp_new(attr))
     return True
 
 
@@ -822,6 +816,7 @@ def handle_webhook(payload: dict):
     n_msg = 0
     for entry in payload.get("entry", []):
         kind = _kind(obj)
+        _ma.log_webhook_entry(obj, kind, entry)  # сирий лог подій з даними реклами (30 днів)
         ch, _ = Channel.objects.get_or_create(name=f"Meta · {kind}", defaults={"kind": kind, "config": {"meta": True, "platform": obj}})
         # 1) Direct / Messenger. Conversation Routing може передавати події
         # застосунку, який не володіє потоком, у верхньорівневому standby.
@@ -869,7 +864,8 @@ def handle_webhook(payload: dict):
                 if created or not conv.contact_id:
                     _new_meta_lead(
                         conv, kind, sender,
-                        attribution=_meta_attribution(kind, ev, msg, source_context="direct"),
+                        attribution=_ma.first_text_guess(
+                            _meta_attribution(kind, ev, msg, source_context="direct"), kind, ev, msg),
                     )
                 else:
                     # Старий чат міг створитися до появи профільного lookup. Нове повідомлення

@@ -706,6 +706,8 @@ def convert_lead_to_deal(lead, funnel, user, actor):
             amount=lead.amount, source=lead.source, owner=lead.owner,
             qualification=lead.qualification, card_fields=lead.card_fields,
             meta_attribution=lead.meta_attribution)
+        from apps.meta_attr.services import inherit_meta_attribution
+        inherit_meta_attribution(deal)  # у ліда мітки нема → з чату/іншого ліда (клік ≤30 днів)
     log_activity("deal", deal.id, "Створено з ліда (лід видалено)",
                  "Воронка %s · лід #%s · контакт #%s" % (funnel.name, lead.id, contact.id), user, actor)
     # перенести задачі + AI-прогони ліда на сделку (не сиротити при каскаді)
@@ -1357,6 +1359,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             title="Дозамовлення до #%s" % root.id, contact=root.contact, funnel=root.funnel,
             stage=first, owner=(request.user if request.user.is_authenticated else root.owner),
             source=root.source, parent_deal=root)
+        from apps.meta_attr.services import inherit_meta_attribution
+        inherit_meta_attribution(nd)  # мітка реклами (клік ≤30 днів)
         from .models import log_activity
         log_activity("deal", root.id, "Дозамовлення", "Створено звʼязану сделку #%s (одна посилка)" % nd.id, request.user, "")
         return Response({"id": nd.id})
@@ -3801,6 +3805,7 @@ class MetaMarketingView(APIView):
             "exact_paid_leads": 0, "exact_paid_deals": 0,
             "organic_leads": 0, "organic_deals": 0,
             "unassigned_leads": 0, "unassigned_deals": 0,
+            "likely_paid_leads": 0, "likely_paid_deals": 0,
         })
 
         def is_meta_origin(item):
@@ -3809,6 +3814,8 @@ class MetaMarketingView(APIView):
         def attribution_class(item):
             if has_verified_meta_attribution(item):
                 return "exact_paid"
+            if (getattr(item, "meta_attribution", None) or {}).get("class") == "meta_ad_likely":
+                return "likely_paid"  # 14.09.2026: «ймовірно з реклами» — окремо від точної
             attr = normalized_meta_attribution(item)
             if attr.get("source_kind") == "organic":
                 return "organic"
@@ -4333,6 +4340,13 @@ class MetaMarketingView(APIView):
         ]
         exact_ad_revenue = sum((payment.amount for payment in exact_ad_payments), Decimal("0"))
         exact_ad_cost = sum((allocated_cost(payment) for payment in exact_ad_payments), Decimal("0"))
+        # 14.09.2026: «ймовірно з реклами» (текст кнопки) рахуємо ОКРЕМО — у точний ROAS і Meta не йде
+        likely_ad_payments = [
+            payment for payment in period_payments
+            if not has_verified_meta_attribution(sales_deals[payment.deal_id])
+            and (sales_deals[payment.deal_id].meta_attribution or {}).get("class") == "meta_ad_likely"
+        ]
+        likely_ad_revenue = sum((payment.amount for payment in likely_ad_payments), Decimal("0"))
 
         days = []
         cursor = date_from
@@ -4490,6 +4504,8 @@ class MetaMarketingView(APIView):
             "exact_ad_sales": len({payment.deal_id for payment in exact_ad_payments}),
             "exact_ad_revenue": round(float(exact_ad_revenue), 2),
             "exact_ad_gross_profit": round(float(exact_ad_gross_profit), 2),
+            "likely_ad_sales": len({payment.deal_id for payment in likely_ad_payments}),
+            "likely_ad_revenue": round(float(likely_ad_revenue), 2),
             "ad_spend_uah": spend_uah,
             "blended_roas": round(float(period_revenue) / spend_uah, 2) if spend_uah else None,
             "exact_ad_roas": (round(float(exact_ad_revenue) / spend_uah, 2) if (spend_uah and exact_ad_revenue) else None),  # немає підтверджених продажів → «—», не хибний «0»
@@ -4679,6 +4695,8 @@ class MetaMarketingView(APIView):
                 "meta_origin_leads": len(meta_origin_leads),
                 "meta_origin_deals": len(meta_origin_deals),
                 "meta_unassigned_leads": sum(1 for item in meta_origin_leads if attribution_class(item) == "unassigned"),
+                "meta_likely_leads": sum(1 for item in meta_origin_leads if attribution_class(item) == "likely_paid"),
+                "meta_likely_deals": sum(1 for item in meta_origin_deals if attribution_class(item) == "likely_paid"),
             },
             "by_platform": [{"platform": key, **value} for key, value in sorted(by_platform.items())],
             "by_source_kind": [{"source_kind": key, **value} for key, value in sorted(by_source.items())],

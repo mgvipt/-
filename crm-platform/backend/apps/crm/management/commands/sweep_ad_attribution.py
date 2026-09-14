@@ -11,6 +11,7 @@
 """
 from django.core.management.base import BaseCommand
 from apps.crm.models import Lead, Deal, Contact
+from apps.meta_attr.services import attr_with_click_time as _ma_click, deal_accepts_click as _ma_deal_ok
 
 
 class Command(BaseCommand):
@@ -30,7 +31,7 @@ class Command(BaseCommand):
             u = (c.nickname or "").strip().lstrip("@").lower()
             if not u:
                 continue
-            attr = l.meta_attribution or {}
+            attr = _ma_click(l)  # + attributed_at (час кліку) для правила «не заднім числом»
             cur = best.get(u)
             if cur is None or (attr.get("ad_id") and not (cur.get("ad_id"))):
                 best[u] = attr
@@ -44,8 +45,9 @@ class Command(BaseCommand):
             # сделки цих контактів без мітки paid_ad
             deals = Deal.objects.filter(contact_id__in=contacts)
             hit = False
-            for d in deals:
-                if (d.meta_attribution or {}).get("source_kind") != "paid_ad":
+            for d in deals.select_related("stage"):
+                # 14.09.2026: лише відкриті угоди, створені не раніше ніж за 1 день до кліку
+                if (d.meta_attribution or {}).get("source_kind") != "paid_ad" and _ma_deal_ok(d, attr):
                     hit = True
                     tagged_deals += 1
                     if apply:

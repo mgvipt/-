@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Card, Funnel, Paginated } from "../api";
 import { Avatar, SourceChip } from "../ui";
+import MetaAttrBadge from "../MetaAttrBadge";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
 
@@ -126,6 +127,7 @@ export default function Board({ endpoint, funnel, query, visibleStages }: { endp
                     <div className="price">{Number(c.amount).toLocaleString("ru")} грн.</div>
                     {(c as any).created_at && <div className="muted" style={{ fontSize: 10.5, marginBottom: 5 }}><Icon n="🕓" size={12} /> {new Date((c as any).created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>}
                     <SourceChip source={c.source} />
+                    {isLead && <MetaAttrBadge attr={(c as any).meta_attribution} source={c.source} compact style={{ marginLeft: 4 }} />}
                     {c.owner_name && (
                       <div className="owner"><Avatar name={c.owner_name} />{c.owner_name}</div>
                     )}

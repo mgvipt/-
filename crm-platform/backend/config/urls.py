@@ -68,6 +68,7 @@ urlpatterns = [
     path("api/products/<int:pk>/facts/", ProductFacts.as_view()),
     path("admin/", admin.site.urls),
     path("api/", include(router.urls)),
+    path("api/meta-attr/", include("apps.meta_attr.urls")),  # бейдж «звідки клієнт» + фрази (14.09.2026)
     path("api/zamer/", ZamerView.as_view()),  # приёмник замера из iOS-приложения
     path("api/zamer/register/", ClientRegisterZamerView.as_view()),  # клиент из приложения -> лид
     path("api/zamer/reviews/", ZamerStageReviewView.as_view()),  # клиентские заявки на проверку

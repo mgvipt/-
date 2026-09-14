@@ -1262,8 +1262,8 @@ export default function MetaMarketing() {
           <SectionTitle title={t("Все обращения Meta в CRM", "Усі звернення Meta в CRM")} note={t("Не пропускает лиды без рекламного ID", "Не пропускає ліди без рекламного ID")} />
           {table([
             t("Воронка CRM", "Воронка CRM"), t("Стадия CRM", "Стадія CRM"), t("Лиды", "Ліди"), t("Сделки", "Угоди"),
-            t("Точный ID рекламы", "Точний ID реклами"), t("Органика", "Органіка"), t("Источник не определён", "Джерело не визначене")],
-            (data.all_meta_stages || []).map((r: any) => [r.funnel, r.stage, r.leads, r.deals, r.exact_paid_leads, r.organic_leads, r.unassigned_leads]),
+            t("Точный ID рекламы", "Точний ID реклами"), t("Вероятно с рекламы", "Ймовірно з реклами"), t("Органика", "Органіка"), t("Источник не определён", "Джерело не визначене")],
+            (data.all_meta_stages || []).map((r: any) => [r.funnel, r.stage, r.leads, r.deals, r.exact_paid_leads, r.likely_paid_leads || 0, r.organic_leads, r.unassigned_leads]),
             t("Обращений Meta за период нет", "Звернень Meta за період немає"), 1050)}
           <SectionTitle title={t("Только подтверждённая реклама", "Лише підтверджена реклама")} note={t("Консервативная воронка для точной атрибуции", "Консервативна воронка для точної атрибуції")} />
           {table([
@@ -1295,6 +1295,7 @@ export default function MetaMarketing() {
               <div><b>{r.object_type === "lead" ? t("Лид", "Лід") : t("Сделка", "Угода")} #{r.id}</b><div className="muted" style={{ fontSize: 10 }}>{r.title}</div></div>,
               r.platform || "—",
               r.attribution_status === "exact_paid" ? <b style={{ color: "#15803d" }}>{t("Реклама подтверждена", "Реклама підтверджена")}</b>
+                : r.attribution_status === "likely_paid" ? <span style={{ color: "#b45309" }}>{t("Вероятно с рекламы (текст кнопки)", "Ймовірно з реклами (текст кнопки)")}</span>
                 : r.attribution_status === "organic" ? <span style={{ color: "#7c3aed" }}>{t("Органика", "Органіка")}</span>
                   : <span style={{ color: "#d97706" }}>{t("Источник объявления не определён", "Джерело оголошення не визначене")}</span>,
               r.meta_identifier || "—", r.funnel, r.stage, dateTime(r.created_at),

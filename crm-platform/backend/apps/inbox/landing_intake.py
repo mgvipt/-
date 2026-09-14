@@ -329,6 +329,8 @@ def receive(conv, data, landing_id=LANDING_ID, notify_client=True):
     deal = Deal.objects.create(title=("Пробний набір" if intent == "sample" else "Підбір покриття") + " · " + (snapshot["name"][:80] or phone),
         contact=contact, funnel=funnel, stage=stage, owner=owner, source="site", amount=Decimal(qualification["estimate_from"]),
         area_m2=area, qualification=qualification, is_seen=False)
+    from apps.meta_attr.services import inherit_meta_attribution
+    inherit_meta_attribution(deal)  # мітка реклами Meta (клік ≤30 днів)
     receipt.deal = deal
     site_tag = "" if legacy else " (%s)" % landing_id
     receipt.task = Task.objects.create(kind="manager", title="Прийняти звернення з сайту #%s%s" % (deal.id, site_tag),

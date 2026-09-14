@@ -11,6 +11,7 @@ import CardFields from "../CardFields";
 import ActivityLog from "../ActivityLog";
 import { useLang } from "../i18n";
 import LeadQuality from "../LeadQuality";
+import MetaAttrBadge from "../MetaAttrBadge";
 import { SocialLink } from "../social";
 import { SalesAnalystPanel } from "../SalesAnalyst";
 import { Icon } from "../Icon";
@@ -187,6 +188,7 @@ export default function LeadCard() {
               </select>
             </div>
             <div style={{ marginTop: 8 }}><LeadQuality contactId={lead.contact} /></div>
+            <div style={{ marginTop: 2 }}><MetaAttrBadge attr={(lead as any).meta_attribution} ad={(lead as any).meta_ad} source={lead.source} /></div>
           </div>
           <SalesAnalystPanel kind="leads" id={lead.id} />
           <CardFields leadId={lead.id} initial={lead.card_fields} />

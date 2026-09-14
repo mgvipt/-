@@ -747,10 +747,14 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         conv = self.get_object()
         if not conv.contact_id:
             return Response({})
-        from apps.crm.models import Lead
-        for l in (Lead.objects.filter(contact_id=conv.contact_id)
-                  .exclude(meta_attribution={}).exclude(meta_attribution__isnull=True)
-                  .order_by("-id")[:8]):
+        from apps.crm.models import Lead, Deal
+        from itertools import chain
+        # 14.09.2026 (meta-attr): сконвертований лід видаляється, мітка живе на угоді → читаємо і угоди
+        for l in chain(
+                Lead.objects.filter(contact_id=conv.contact_id)
+                .exclude(meta_attribution={}).exclude(meta_attribution__isnull=True).order_by("-id")[:8],
+                Deal.objects.filter(contact_id=conv.contact_id)
+                .exclude(meta_attribution={}).exclude(meta_attribution__isnull=True).order_by("-id")[:8]):
             a = l.meta_attribution or {}
             if a.get("source_kind") == "paid_ad" and (a.get("ad_title") or a.get("ad_thumb")):
                 return Response({
@@ -1145,6 +1149,8 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             title=(str(contact) or conv.title or "Сделка з чату"), contact=contact, funnel=funnel, stage=stage,
             amount=0, source=(conv.channel.kind if conv.channel_id else "chat"),
             owner=(conv.assigned_to or (request.user if request.user.is_authenticated else None)))
+        from apps.meta_attr.services import inherit_meta_attribution
+        inherit_meta_attribution(deal)  # мітка реклами з ліда/чату клієнта (клік ≤30 днів)
         return Response({"deal_id": deal.id, "created": True})
 
     @action(detail=True, methods=["post"], url_path="mark-unread")

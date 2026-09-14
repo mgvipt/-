@@ -400,6 +400,8 @@ class Command(BaseCommand):
             np_data=_np_clean,
             card_fields=_marker,
         )
+        from apps.meta_attr.services import inherit_meta_attribution
+        inherit_meta_attribution(deal)  # мітка реклами (клік ≤30 днів)
         DealItem.objects.create(
             deal=deal,
             product=product,

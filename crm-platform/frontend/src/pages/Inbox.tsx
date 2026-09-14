@@ -13,6 +13,7 @@ import { Icon } from "../Icon";
 import { TaskQuickModal } from "../TaskQuickModal";
 import ConversationSourceCard from "../ConversationSourceCard";
 import LeadQuality from "../LeadQuality";
+import MetaAttrBadge from "../MetaAttrBadge";
 import { AskReviewButton } from "../ReviewButtons";
 import { CLOSE_REASONS, GROUP_HDR } from "../closeReasons";
 import { ReplyContext, ReactionBadges, MessageStatusLine, CorrectionAction, messagesHaveSameVisibleState, isContextAttachment } from "../MessageContext";
@@ -574,7 +575,7 @@ export default function Inbox() {
                 ))}
               </div>
             )}
-            <div style={{ padding: "6px 14px 0", background: "#fff", borderBottom: "1px solid #f1f5f9", display: "flex", gap: 8, alignItems: "flex-start" }}><div style={{ flex: 1, minWidth: 0 }}><LeadQuality convId={active.id} /></div><AskReviewButton convId={active.id} style={{ height: 26, fontSize: 11.5, flex: "none", marginBottom: 6 }} /></div>
+            <div style={{ padding: "6px 14px 0", background: "#fff", borderBottom: "1px solid #f1f5f9", display: "flex", gap: 8, alignItems: "flex-start" }}><div style={{ flex: 1, minWidth: 0 }}><LeadQuality convId={active.id} /></div><MetaAttrBadge convId={active.id} hideExact={!!adCtx} style={{ flex: "none", marginBottom: 6 }} /><AskReviewButton convId={active.id} style={{ height: 26, fontSize: 11.5, flex: "none", marginBottom: 6 }} /></div>
             <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
               <ConversationSourceCard card={(active as any)?.source_card} />
               {adCtx && (adCtx.ad_title || adCtx.ad_thumb) && (

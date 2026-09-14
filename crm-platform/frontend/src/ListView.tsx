@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "./api";
 import { useLang } from "./i18n";
 import { useAuth } from "./auth";
+import MetaAttrBadge from "./MetaAttrBadge";
 
 export default function ListView({ endpoint, funnel, query, onChanged }: { endpoint: string; funnel: any; query?: string; onChanged?: () => void }) {
   const [rows, setRows] = useState<any[]>([]);
@@ -58,7 +59,7 @@ export default function ListView({ endpoint, funnel, query, onChanged }: { endpo
               <tr key={r.id} onClick={() => nav(`/${path}/${r.id}`)} style={{ cursor: "pointer", background: sel.has(r.id) ? "#fef2f2" : undefined }}>
                 {canDel && <td onClick={(e) => toggle(r.id, e)} style={{ textAlign: "center" }}><input type="checkbox" readOnly checked={sel.has(r.id)} style={{ pointerEvents: "none" }} /></td>}
                 <td className="muted">#{r.id}</td>
-                <td><b>{r.title}</b></td>
+                <td><b>{r.title}</b>{path === "leads" && <> <MetaAttrBadge attr={r.meta_attribution} source={r.source} compact /></>}</td>
                 <td>{r.contact_name || "—"}</td>
                 <td>{st && <span className="chip" style={{ background: st.color }}>{st.name}</span>}</td>
                 <td style={{ textAlign: "right" }}>{Number(r.amount || 0).toLocaleString("uk-UA")} ₴</td>

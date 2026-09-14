@@ -40,6 +40,7 @@ import CallButton from "../CallButton";
 import KpDoc from "../KpDoc";
 import { useLang } from "../i18n";
 import LeadQuality from "../LeadQuality";
+import MetaAttrBadge from "../MetaAttrBadge";
 import { AskReviewButton } from "../ReviewButtons";
 import VykraskaDoc from "../VykraskaDoc";
 import { SocialLink } from "../social";
@@ -838,6 +839,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                     {Object.keys(SOURCES).map((k) => <option key={k} value={k}>{(SOURCES as any)[k][0]}</option>)}
                   </select>
                 </div>
+                <div style={{ marginTop: 10 }}><MetaAttrBadge attr={(deal as any).meta_attribution} source={deal.source} hideExact={!!(deal as any).meta_ad} /></div>
                 {(deal as any).meta_ad && (() => {
                   const ad = (deal as any).meta_ad;
                   return (
