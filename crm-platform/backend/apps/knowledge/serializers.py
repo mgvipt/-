@@ -28,7 +28,7 @@ class KnowledgeItemSerializer(serializers.ModelSerializer):
                   "title", "text", "internal_note", "products", "product_names", "source", "source_display",
                   "source_ref", "external_ids", "evidence", "replaces", "priority", "popularity", "version",
                   "approved_by_name", "approved_at", "approval_note", "created_by_name", "updated_by_name",
-                  "created_at", "updated_at", "flagged"]
+                  "created_at", "updated_at", "flagged", "precheck"]
         read_only_fields = ["status", "source", "source_ref", "external_ids", "evidence", "replaces", "popularity",
                             "version", "approved_at", "approval_note", "created_at", "updated_at"]
 
@@ -46,6 +46,17 @@ class KnowledgeItemSerializer(serializers.ModelSerializer):
 
     def get_flagged(self, obj):
         return "⚠️" in (obj.internal_note or "")
+
+    precheck = serializers.SerializerMethodField()
+
+    def get_precheck(self, obj):
+        """Мітка попередньої перевірки (ai-kb2); stale — запис змінили після перевірки."""
+        try:
+            c = obj.precheck
+        except Exception:
+            return None
+        return {"label": c.label, "label_display": c.get_label_display(), "reason": c.reason, "ref": c.ref_item_id,
+                "stale": c.item_version != obj.version, "source": c.source, "checked_at": c.checked_at}
 
     def validate_audience(self, value):
         if not isinstance(value, list):

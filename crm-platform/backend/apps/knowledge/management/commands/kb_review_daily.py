@@ -1,7 +1,7 @@
 """Щоденний рецензент закритих чатів (команда агентів, фаза 1). ЗА ЗАМОВЧУВАННЯМ ВИМКНЕНИЙ.
 
     python manage.py kb_review_daily --dry                  # без ІІ і без запису: які чати, що знайшла перевірка кодом, скільки коштувало б
-    python manage.py kb_review_daily                        # працює, лише якщо Олег увімкнув (AI ЦЕНТР → Команда агентів)
+    python manage.py kb_review_daily                        # ІІ НЕ викликає (14.09): лише кнопка «Запустити перевірку» в AI ЦЕНТРІ
     --date 2026-09-13   день (за замовчуванням — вчора)
     --sample 20         скільки чатів
     --conversation ID   один конкретний чат (для перевірки на тестовому діалозі)
@@ -28,8 +28,11 @@ class Command(BaseCommand):
     def handle(self, *a, **o):
         cfg = KnowledgeSettings.get()
         dry = o["dry"]
-        if not dry and not cfg.reviewer_enabled:
-            self.stdout.write("Рецензент ВИМКНЕНИЙ (AI ЦЕНТР → База знань → Команда агентів). Нічого не зроблено, $0.")
+        if not dry:
+            # 14.09 (ai-kb2, рішення Олега): контролер працює ЛИШЕ за запуском з інтерфейсу — AI ЦЕНТР → База знань ✓ →
+            # «Контролер» → «Запустити перевірку». Розкладу немає: навіть якщо цю команду додадуть у cron, ІІ не викликається.
+            self.stdout.write("Автозапуск контролера ВИМКНЕНИЙ: перевірка з ІІ — лише кнопкою «Запустити перевірку» в AI ЦЕНТРІ "
+                              "(База знань ✓ → Контролер). Нічого не зроблено, $0. Безкоштовна перевірка кодом: --dry")
             return
         day = date.fromisoformat(o["date"]) if o["date"] else None
         r = run(day=day, sample=o["sample"] or None, dry=dry, conversation_id=o["conversation"] or None)

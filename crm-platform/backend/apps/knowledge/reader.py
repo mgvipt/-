@@ -11,6 +11,8 @@
     затвердженими записами цієї теми (якщо вони є). Тема без затверджених записів — старий текст.
 """
 import re
+import threading
+from contextlib import contextmanager
 
 from django.db import connection
 
@@ -33,10 +35,29 @@ def _stems(text):
     return {w[:5] for w in words if len(w) >= 4 and w[:5] not in _STOP}
 
 
+_TEST = threading.local()
+
+
+@contextmanager
+def test_pool(items):
+    """ЛИШЕ для «Тестового чату» (ai-kb2, 14.09): у межах ОДНОГО запиту (цей потік) читач бачить переданий
+    набір записів — напр. «затверджене + чернетки» або одну тему, — щоб Олег перевірив чернетки ДО затвердження
+    на тих самих промптах, що й справжні агенти. Інші запити (справжні агенти) цього не бачать."""
+    prev = getattr(_TEST, "items", None)
+    _TEST.items = list(items)
+    try:
+        yield
+    finally:
+        _TEST.items = prev
+
+
 def approved_for(agent):
     """Затверджені записи для агента (з товарами), у порядку пріоритету."""
     if agent not in AGENT_CODES:
         return []
+    pool = getattr(_TEST, "items", None)
+    if pool is not None:
+        return [i for i in pool if agent in (i.audience or [])]
     qs = KnowledgeItem.objects.filter(status="approved").prefetch_related("products")
     if connection.vendor == "postgresql":
         qs = qs.filter(audience__contains=[agent])

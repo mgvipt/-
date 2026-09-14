@@ -1,13 +1,20 @@
 /* AI ЦЕНТР → «База знань ✓» — ЄДИНА база знань для всіх ІІ-агентів CRM (14.09.2026).
    Агенти читають лише «Затверджено». Нове додається чернеткою → затверджує власник (право knowledge.approve).
-   Вкладки: Записи · Що бачить агент · Команда агентів. */
+   Вкладки: Записи · Тестовий чат (+ «Що бачить агент») · Перевірка чернеток · Контролер · Публікація в Юлю · Команда агентів
+   (ai-kb2, 14.09: усе, що витрачає гроші на ІІ, — лише за кнопкою, з оцінкою вартості). */
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import KnowledgeTestChat from "./KnowledgeTestChat";
+import { CheckChip, ControllerPanel, LABEL_FILTERS, PrecheckPanel, PublishPanel, WebchatCard, type Precheck } from "./KnowledgeTools";
 
 type Choice = { value: string; label: string };
 type Role = { agent: string; name: string; does: string; reads: string; checked_by: string };
-type KSettings = { reviewer_enabled: boolean; reviewer_model: string; reviewer_sample: number; reviewer_models: string[] };
+type KSettings = {
+  reviewer_enabled: boolean; reviewer_model: string; reviewer_sample: number; reviewer_models: string[];
+  webchat_ai_enabled: boolean; webchat_model: string; webchat_items: number;
+  webchat_estimate?: { model: string; per_reply_usd: number; models: string[] };
+};
 type Meta = {
   kinds: Choice[]; topics: Choice[]; audiences: Choice[]; statuses: Choice[]; sources: Choice[];
   counts: Record<string, number>; flagged_drafts: number; reviewer_drafts: number;
@@ -20,7 +27,7 @@ type Item = {
   evidence: { conversation_id?: number; conversation_ids?: number[]; problem?: string; quote?: string };
   replaces: number | null; priority: number; popularity: number; version: number;
   approved_by_name: string; approved_at: string | null; approval_note: string; updated_by_name: string;
-  updated_at: string; flagged: boolean;
+  updated_at: string; flagged: boolean; precheck?: Precheck | null;
 };
 type Version = { id: number; version: number; action_display: string; snapshot: { title?: string; text?: string; status?: string }; note: string; changed_by_name: string; created_at: string };
 type Form = { kind: string; topic: string; audience: string[]; title: string; text: string; internal_note: string; priority: number; products: string };
@@ -100,6 +107,7 @@ function ItemCard({ it, meta, selected, onSelect, onAct, onEdit, onPropose, hist
               <span style={chip("#e0e7ff", "#3730a3")}>{it.kind_display}</span>
               <span style={chip("#f1f5f9", "#334155")}>{it.topic_display}</span>
               {it.flagged && <span style={chip("#fee2e2", "#b91c1c")}>⚠️ перевірити</span>}
+              <CheckChip c={it.precheck} />
               {it.replaces && <span style={chip("#fef3c7", "#92400e")}>правка до #{it.replaces}</span>}
               {it.popularity > 0 && <span style={chip("#e0f2fe", "#0369a1")}>👥 {it.popularity}</span>}
               <span style={{ fontSize: 11, color: "#94a3b8" }}>{it.source_display} · в.{it.version}</span>
@@ -120,6 +128,7 @@ function ItemCard({ it, meta, selected, onSelect, onAct, onEdit, onPropose, hist
       <div style={{ marginTop: 6, fontSize: 11.5, color: "#64748b" }}>Агенти: {it.audience.length ? it.audience.map(audLabel).join(" · ") : <b style={{ color: "#b91c1c" }}>жоден (запис ніхто не читає)</b>}</div>
       {it.product_names.length > 0 && <div style={{ fontSize: 11.5, color: "#64748b" }}>Товари (ціни з каталогу): {it.product_names.join("; ")}</div>}
       {it.internal_note && <div style={{ marginTop: 4, fontSize: 12, color: it.flagged ? "#b91c1c" : "#64748b", whiteSpace: "pre-wrap" }}>{it.internal_note}</div>}
+      {it.precheck && it.precheck.label !== "ready" && it.precheck.reason && <div style={{ marginTop: 4, fontSize: 12, color: "#92400e" }}>Попередня перевірка: {it.precheck.reason}</div>}
       {convIds.length > 0 && (
         <div style={{ marginTop: 4, fontSize: 12 }}>Діалоги: {convIds.slice(0, 12).map((c) => <Link key={c} to={`/inbox?c=${c}`} style={{ marginRight: 8 }}>№{c}</Link>)}</div>
       )}
@@ -141,7 +150,7 @@ function ItemCard({ it, meta, selected, onSelect, onAct, onEdit, onPropose, hist
 }
 
 function Cards({ meta, reloadMeta }: { meta: Meta; reloadMeta: () => void }) {
-  const [f, setF] = useState({ status: "draft", kind: "", topic: "", audience: "", search: "", flagged: false, source: "" });
+  const [f, setF] = useState({ status: "draft", kind: "", topic: "", audience: "", search: "", flagged: false, source: "", label: "" });
   const [rows, setRows] = useState<Item[]>([]);
   const [count, setCount] = useState(0);
   const [page, setPage] = useState(1);
@@ -155,7 +164,7 @@ function Cards({ meta, reloadMeta }: { meta: Meta; reloadMeta: () => void }) {
   const load = useCallback(async (pg: number) => {
     setLoading(true);
     const qs = new URLSearchParams({ page: String(pg), page_size: "30" });
-    (["status", "kind", "topic", "audience", "search", "source"] as const).forEach((k) => { if (f[k]) qs.set(k, f[k]); });
+    (["status", "kind", "topic", "audience", "search", "source", "label"] as const).forEach((k) => { if (f[k]) qs.set(k, f[k]); });
     if (f.flagged) qs.set("flagged", "1");
     try {
       const d = await api.get<{ results: Item[]; count: number }>(`/api/knowledge/items/?${qs.toString()}`);
@@ -210,6 +219,7 @@ function Cards({ meta, reloadMeta }: { meta: Meta; reloadMeta: () => void }) {
         <select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })} style={sel}><option value="">Усі типи</option>{meta.kinds.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
         <select value={f.audience} onChange={(e) => setF({ ...f, audience: e.target.value })} style={sel}><option value="">Усі агенти</option>{meta.audiences.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
         <select value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })} style={sel}><option value="">Усі джерела</option>{meta.sources.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
+        <select value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} style={sel}><option value="">Будь-яка мітка перевірки</option>{LABEL_FILTERS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
         <label style={{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 4 }}><input type="checkbox" checked={f.flagged} onChange={(e) => setF({ ...f, flagged: e.target.checked })} /> ⚠️ лише «перевірити» ({meta.flagged_drafts})</label>
         {meta.can_edit && <button className="btn btn-primary" onClick={() => startEdit(null, "new")}>+ Додати</button>}
         {meta.can_approve && selected.length > 0 && <button className="btn btn-green" onClick={bulkApprove}>✓ Затвердити вибрані ({selected.length})</button>}
@@ -273,18 +283,11 @@ function Team({ meta, reloadMeta }: { meta: Meta; reloadMeta: () => void }) {
           <tbody>{meta.roles.map((r) => <tr key={r.agent}><td style={{ ...td, fontWeight: 600 }}>{r.name}</td><td style={td}>{r.does}</td><td style={td}>{r.reads}</td><td style={td}>{r.checked_by}</td></tr>)}</tbody>
         </table>
       </div>
+      <WebchatCard s={s} isOwner={meta.is_owner} onSaved={(ns) => { setS({ ...s, ...ns }); reloadMeta(); }} />
       <div style={{ ...card, marginTop: 12 }}>
-        <b>Рецензент закритих чатів</b> — щодня бере вибірку закритих чатів, шукає суперечності з базою, пропущені кроки продажу і питання без відповіді.
-        Пропозиції падають сюди чернетками (з посиланням на діалог) — затверджуєте ви. Пропозицій зараз: <b>{meta.reviewer_drafts}</b>.
-        <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>Витрати ІІ: ≈ $5–8 на місяць при 20 чатах на день (Claude Haiku). Потрібен ще рядок розкладу на сервері (див. інструкцію).</div>
-        {meta.is_owner ? (
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
-            <label style={{ display: "flex", gap: 5, alignItems: "center" }}><input type="checkbox" checked={s.reviewer_enabled} onChange={(e) => setS({ ...s, reviewer_enabled: e.target.checked })} /> Увімкнено</label>
-            <label style={{ fontSize: 12.5 }}>Чатів на день <input type="number" min={1} max={100} value={s.reviewer_sample} onChange={(e) => setS({ ...s, reviewer_sample: Number(e.target.value) || 20 })} style={{ ...inp, width: 70 }} /></label>
-            <select value={s.reviewer_model} onChange={(e) => setS({ ...s, reviewer_model: e.target.value })} style={sel}>{s.reviewer_models.map((m) => <option key={m} value={m}>{m}</option>)}</select>
-            <button className="btn btn-primary" disabled={saving} onClick={save}>Зберегти</button>
-          </div>
-        ) : <div style={{ marginTop: 6, fontSize: 12.5 }}>Стан: <b>{s.reviewer_enabled ? "увімкнено" : "вимкнено"}</b> (змінює лише власник)</div>}
+        <b>Контролер закритих чатів — лише за запуском.</b> Розкладу немає: перевірка з ІІ запускається тільки кнопкою
+        «Запустити перевірку» у вкладці «Контролер» (власник), з оцінкою вартості до запуску. Знахідки падають сюди
+        чернетками з посиланням на діалог — затверджуєте ви. Пропозицій зараз: <b>{meta.reviewer_drafts}</b>.
       </div>
     </div>
   );
@@ -293,7 +296,7 @@ function Team({ meta, reloadMeta }: { meta: Meta; reloadMeta: () => void }) {
 export default function KnowledgeBase() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [err, setErr] = useState("");
-  const [sub, setSub] = useState<"cards" | "preview" | "team">("cards");
+  const [sub, setSub] = useState<"cards" | "preview" | "precheck" | "controller" | "publish" | "team">("cards");
   const reloadMeta = useCallback(() => { api.get<Meta>("/api/knowledge/meta/").then(setMeta).catch((e) => setErr(errText(e))); }, []);
   useEffect(() => { reloadMeta(); }, [reloadMeta]);
   if (err && !meta) return <div style={{ maxWidth: 1100, margin: "12px auto", color: "#b91c1c", fontSize: 13 }}>Немає доступу до бази знань: {err}</div>;
@@ -309,10 +312,22 @@ export default function KnowledgeBase() {
         Затверджено: <b>{meta.counts.approved || 0}</b> · чернеток: <b>{meta.counts.draft || 0}</b> · архів: <b>{meta.counts.archived || 0}</b>
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {subBtn("cards", "Записи")}{subBtn("preview", "Що бачить агент")}{subBtn("team", "Команда агентів")}
+        {subBtn("cards", "Записи")}{subBtn("preview", "Тестовий чат")}{subBtn("precheck", "Перевірка чернеток")}
+        {subBtn("controller", "Контролер")}{subBtn("publish", "Публікація в Юлю")}{subBtn("team", "Команда агентів")}
       </div>
       {sub === "cards" && <Cards meta={meta} reloadMeta={reloadMeta} />}
-      {sub === "preview" && <Preview meta={meta} />}
+      {sub === "preview" && (
+        <div>
+          <KnowledgeTestChat topics={meta.topics} />
+          <details style={{ marginTop: 14 }}>
+            <summary style={{ cursor: "pointer", fontSize: 13, color: "#475569" }}>Що бачить агент — точний блок знань без виклику ІІ ($0)</summary>
+            <Preview meta={meta} />
+          </details>
+        </div>
+      )}
+      {sub === "precheck" && <PrecheckPanel topics={meta.topics} canApprove={meta.can_approve} />}
+      {sub === "controller" && <ControllerPanel />}
+      {sub === "publish" && <PublishPanel isOwner={meta.is_owner} />}
       {sub === "team" && <Team meta={meta} reloadMeta={reloadMeta} />}
     </div>
   );

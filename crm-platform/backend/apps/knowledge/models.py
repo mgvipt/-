@@ -40,6 +40,7 @@ class KnowledgeItem(models.Model):
     AGENTS = [
         ("yulia_ig", "Юля Instagram (ChatPlace)"),
         ("yulia_tiktok", "Юля TikTok (ChatPlace)"),
+        ("yulia_web", "Сайт — веб-чат (ІІ CRM)"),
         ("funnel_agent", "Агент воронки CRM"),
         ("rop_hint", "AI-РОП підказка"),
         ("compose_assist", "Помічник ✨"),
@@ -130,6 +131,9 @@ class KnowledgeSettings(models.Model):
     reviewer_enabled = models.BooleanField(default=False, help_text="Щоденний рецензент закритих чатів (Claude)")
     reviewer_model = models.CharField(max_length=40, default="claude-haiku-4-5")
     reviewer_sample = models.PositiveIntegerField(default=20, help_text="Скільки закритих чатів за день перевіряти")
+    # 14.09 (ai-kb2): веб-чат на сайті відповідає з бази знань. ВИМКНЕНО, вмикає лише власник.
+    webchat_ai_enabled = models.BooleanField(default=False, help_text="ІІ відповідає у веб-чаті (лише затверджене «Сайт»)")
+    webchat_model = models.CharField(max_length=40, default="claude-haiku-4-5")
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
                                    related_name="+")
     updated_at = models.DateTimeField(auto_now=True)
@@ -169,3 +173,53 @@ def log_version(item, action, user=None, note=""):
     return KnowledgeVersion.objects.create(
         item=item, version=item.version, action=action, snapshot=snapshot(item), note=(note or "")[:300],
         changed_by=user if (user and getattr(user, "is_authenticated", False)) else None)
+
+
+class KnowledgeRun(models.Model):
+    """Запуск за кнопкою Олега (14.09, ai-kb2): попередня перевірка чернеток, контролер закритих чатів,
+    публікація в Юлю. Нічого не запускається за розкладом. Тут — прогрес, оцінка й фактична вартість,
+    результат і (для публікації) бекап бази ChatPlace перед записом."""
+    KINDS = [
+        ("precheck", "Попередня перевірка чернеток"),
+        ("controller", "Контролер закритих чатів"),
+        ("publish", "Публікація в Юлю (ChatPlace)"),
+    ]
+    STATUS = [("running", "Виконується"), ("done", "Готово"), ("error", "Помилка")]
+    kind = models.CharField(max_length=12, choices=KINDS, db_index=True)
+    status = models.CharField(max_length=10, choices=STATUS, default="running", db_index=True)
+    params = models.JSONField(default=dict, blank=True)
+    total = models.PositiveIntegerField(default=0)
+    done = models.PositiveIntegerField(default=0)
+    est_cost_usd = models.FloatField(default=0)
+    cost_usd = models.FloatField(default=0)
+    result = models.JSONField(default=dict, blank=True)
+    backup = models.JSONField(default=list, blank=True, help_text="Публікація: база ChatPlace до запису")
+    error = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-id"]
+
+
+class KnowledgeCheck(models.Model):
+    """Мітка попередньої перевірки чернетки (одна на запис). Нічого не затверджує.
+    Якщо запис змінили після перевірки (item_version ≠ version) — мітка «застаріла»."""
+    LABELS = [
+        ("ready", "Готово до затвердження"),
+        ("fix", "Потрібна правка"),
+        ("dup", "Дубль"),
+        ("conflict", "Суперечить затвердженому або каталогу CRM"),
+    ]
+    item = models.OneToOneField(KnowledgeItem, on_delete=models.CASCADE, related_name="precheck")
+    label = models.CharField(max_length=10, choices=LABELS, db_index=True)
+    reason = models.CharField(max_length=300, blank=True, default="")
+    ref_item_id = models.IntegerField(null=True, blank=True, help_text="Дубль / суперечність з записом №")
+    item_version = models.PositiveIntegerField(default=1)
+    source = models.CharField(max_length=6, default="ai", help_text="code — перевірка кодом ($0); ai — Claude")
+    model = models.CharField(max_length=40, blank=True, default="")
+    run = models.ForeignKey(KnowledgeRun, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    checked_at = models.DateTimeField(auto_now=True)

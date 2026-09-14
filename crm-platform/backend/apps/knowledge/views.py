@@ -7,7 +7,7 @@
   вмикати рецензента (витрачає гроші на ІІ) — лише власник (superuser).
 """
 from django.db import connection, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -26,10 +26,13 @@ ORDERINGS = {"-popularity": ["-popularity", "id"], "-updated_at": ["-updated_at"
 # Хто що читає і хто кого перевіряє (показується у вкладці «Команда агентів»)
 ROLES = [
     {"agent": "yulia_ig", "name": "Юля Instagram (ChatPlace)", "does": "Відповідає клієнтам у Direct, веде до тест-набору й оплати",
-     "reads": "Копію затверджених «Питання-відповідь/Факт/Шаблон» з позначкою «Юля IG» — публікує Олег (kb_publish_chatplace)",
-     "checked_by": "Рецензент (щодня, вибірка) · Олег при кожній публікації"},
+     "reads": "Копію затверджених «Питання-відповідь/Факт/Шаблон» з позначкою «Юля IG» — публікує Олег кнопкою «Опублікувати в Юлю»",
+     "checked_by": "Контролер (за запуском Олега) · Олег при кожній публікації · «Тестовий чат»"},
     {"agent": "yulia_tiktok", "name": "Юля TikTok (ChatPlace)", "does": "Те саме в TikTok",
-     "reads": "Той самий набір, що IG (позначка «Юля TikTok»)", "checked_by": "Рецензент · Олег при публікації"},
+     "reads": "Той самий набір, що IG (позначка «Юля TikTok»)", "checked_by": "Контролер · Олег при публікації"},
+    {"agent": "yulia_web", "name": "Сайт — веб-чат (ІІ CRM)", "does": "Відповідає відвідувачам сайту; замовлення, оплата, сумнів → менеджер. ВИМКНЕНО, поки Олег не ввімкне",
+     "reads": "Лише затверджене з позначкою «Сайт» + ціни каталогу CRM; знижки — лише за затвердженим правилом",
+     "checked_by": "Запобіжник цифр і знижок (кодом) · «Тестовий чат» · менеджер бачить нотатку з причиною"},
     {"agent": "funnel_agent", "name": "Агент воронки CRM", "does": "Анкета, стадія (максимум «Розрахунок здійснено»), тест-набір + LiqPay",
      "reads": "Глобальні правила + затверджене з позначкою «Агент воронки» + каталог тест-наборів",
      "checked_by": "Рецензент · Олег (пороги, вимикач)"},
@@ -39,9 +42,9 @@ ROLES = [
     {"agent": "compose_assist", "name": "Помічник ✨", "does": "Покращує/перекладає чернетку менеджера, нічого не надсилає",
      "reads": "Затверджене «Помічник ✨» по темах; тема без затвердженого — вбудований текст",
      "checked_by": "Менеджер · Рецензент"},
-    {"agent": "analyst", "name": "Рецензент (новий)", "does": "Щодня читає вибірку закритих чатів і шукає суперечності, пропущені кроки, питання без відповіді",
-     "reads": "Затверджене «Аналітик» + рішення Олега + закриті чати дня",
-     "checked_by": "Олег: кожна пропозиція — чернетка, затверджує або видаляє він"},
+    {"agent": "analyst", "name": "Контролер (лише за запуском)", "does": "Коли Олег натисне «Запустити перевірку»: закриті чати за вчора / 7 днів / N останніх — суперечності, пропущені кроки, питання без відповіді. Розкладу немає",
+     "reads": "Затверджене «Аналітик» + рішення Олега + вибрані закриті чати",
+     "checked_by": "Олег: кожна пропозиція — чернетка з посиланням на діалог, затверджує або видаляє він"},
 ]
 
 
@@ -88,7 +91,7 @@ def approve_item(item, user, note=""):
 class KnowledgeItemViewSet(viewsets.ModelViewSet):
     serializer_class = KnowledgeItemSerializer
     permission_classes = [IsAuthenticated]
-    queryset = (KnowledgeItem.objects.select_related("approved_by", "created_by", "updated_by")
+    queryset = (KnowledgeItem.objects.select_related("approved_by", "created_by", "updated_by", "precheck")
                 .prefetch_related("products"))
 
     def check_permissions(self, request):
@@ -110,6 +113,13 @@ class KnowledgeItemViewSet(viewsets.ModelViewSet):
             qs = qs.filter(internal_note__contains="⚠️")
         if p.get("replaces"):
             qs = qs.filter(replaces_id=p.get("replaces"))
+        lb = (p.get("label") or "").strip()  # мітка попередньої перевірки (ai-kb2)
+        if lb == "none":
+            qs = qs.filter(precheck__isnull=True)
+        elif lb == "stale":
+            qs = qs.filter(precheck__isnull=False).exclude(precheck__item_version=F("version"))
+        elif lb:
+            qs = qs.filter(precheck__label=lb, precheck__item_version=F("version"))
         q = (p.get("search") or "").strip()
         if q:
             cond = Q(title__icontains=q) | Q(text__icontains=q) | Q(internal_note__icontains=q)
@@ -234,8 +244,13 @@ def _choices(pairs):
 
 
 def settings_dict(cfg):
+    from .reader import approved_for
+    from .views_v2 import webchat_estimate
     return {"reviewer_enabled": cfg.reviewer_enabled, "reviewer_model": cfg.reviewer_model,
-            "reviewer_sample": cfg.reviewer_sample, "reviewer_models": REVIEWER_MODELS}
+            "reviewer_sample": cfg.reviewer_sample, "reviewer_models": REVIEWER_MODELS,
+            "controller_scheduled": False, "webchat_ai_enabled": cfg.webchat_ai_enabled,
+            "webchat_model": cfg.webchat_model, "webchat_items": len(approved_for("yulia_web")),
+            "webchat_estimate": webchat_estimate()}
 
 
 class MetaView(APIView):
@@ -273,6 +288,8 @@ def agent_view(agent, query=None):
         rows = desired("ig" if agent == "yulia_ig" else "tt")
         head = "До ChatPlace піде %d записів (після публікації Олегом):" % len(rows)
         return head + "\n\n" + "\n\n".join("П: %s\nВ: %s" % (q, a) for _i, q, a in rows[:80])
+    if agent == "yulia_web":
+        return context_for("yulia_web", query, limit=15, max_chars=6000)
     if agent == "analyst":
         from .reviewer import knowledge_for_review
         return knowledge_for_review(query)
@@ -319,6 +336,12 @@ class SettingsView(APIView):
                 cfg.reviewer_sample = max(1, min(100, int(d.get("reviewer_sample"))))
             except (TypeError, ValueError):
                 return Response({"detail": "Кількість чатів — число 1–100"}, status=400)
+        if "webchat_ai_enabled" in d:  # ai-kb2: веб-чат відповідає з бази знань (лише власник, див. вище)
+            cfg.webchat_ai_enabled = bool(d.get("webchat_ai_enabled"))
+        if "webchat_model" in d:
+            if d.get("webchat_model") not in REVIEWER_MODELS:
+                return Response({"detail": "Модель: " + ", ".join(REVIEWER_MODELS)}, status=400)
+            cfg.webchat_model = d["webchat_model"]
         cfg.updated_by = request.user
         cfg.save()
         return Response(settings_dict(cfg))

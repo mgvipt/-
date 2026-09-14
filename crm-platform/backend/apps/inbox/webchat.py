@@ -136,6 +136,14 @@ def _ai_reply(conv: Conversation, incoming: Message, client_name: str = ""):
     ).exists()
     if manager_active:
         return None
+    # 14.09 (ai-kb2): «ІІ відповідає у веб-чаті» з єдиної бази знань (AI ЦЕНТР → База знань ✓; вмикає лише власник).
+    # Вимкнено (за замовчуванням) або будь-яка помилка → усе нижче рівно як раніше.
+    try:
+        from apps.knowledge.webchat_ai import enabled as _kb_web_on, reply as _kb_web_reply
+        if _kb_web_on():
+            return _kb_web_reply(conv, incoming)
+    except Exception:
+        pass
     history = []
     for row in conv.messages.filter(internal=False).exclude(pk=incoming.pk).order_by("id").reverse()[:12][::-1]:
         history.append({"role": "user" if row.direction == "in" else "assistant", "text": row.text})

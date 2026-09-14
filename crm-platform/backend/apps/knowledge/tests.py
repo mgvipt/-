@@ -308,17 +308,19 @@ class ReviewerTests(TestCase):
         self.assertFalse(KnowledgeItem.objects.filter(source="reviewer").exists())
 
     def test_enabled_creates_only_drafts_with_dialog_link(self):
-        cfg = KnowledgeSettings.get()
-        cfg.reviewer_enabled = True
-        cfg.save()
+        # 14.09 (ai-kb2): ІІ-перевірка — лише ручний запуск Олега (runs.run_controller), команда ІІ не викликає.
+        from . import runs
+        from .models import KnowledgeRun
         fake = {"findings": [{"type": "contradiction", "who": "ai", "quote": "вже є все потрібне",
                               "problem": "Інструмент не входить", "topic": "test_sets",
                               "suggested_title": "Чи є інструмент у тест-наборі?",
                               "suggested_text": "Ні, інструмент купується окремо."}]}
-        with patch("apps.crm.ai.claude_json", return_value=fake) as cj:
-            call_command("kb_review_daily", "--date", self.day.isoformat(), stdout=io.StringIO())
+        with patch("apps.crm.ai.claude_json", return_value=fake) as cj, patch.object(runs, "RUN_INLINE", True):
+            runs.spawn(KnowledgeRun.objects.create(kind="controller", params={"conversation_ids": [self.conv.id]}),
+                       runs.run_controller)
             self.assertEqual(cj.call_count, 1)
-            call_command("kb_review_daily", "--date", self.day.isoformat(), stdout=io.StringIO())
+            runs.spawn(KnowledgeRun.objects.create(kind="controller", params={"conversation_ids": [self.conv.id]}),
+                       runs.run_controller)
             self.assertEqual(cj.call_count, 1)  # той самий чат удруге не оплачуємо
         drafts = KnowledgeItem.objects.filter(source="reviewer")
         self.assertTrue(drafts.exists())
