@@ -1,7 +1,8 @@
 """API економіки угоди.
-GET  /api/deal-economics/<deal_id>/            — картка (право product.cost.view + угода у видимості користувача)
+GET  /api/deal-economics/<deal_id>/            — картка (право deal.economics.view + угода у видимості користувача;
+                                                  з 14.09 окреме право замість product.cost.view)
 GET  /api/deal-economics/<deal_id>/?recompute=1 — перерахувати і зберегти (лише власник)
-GET  /api/deal-economics/settings/             — норми оцінок (product.cost.view)
+GET  /api/deal-economics/settings/             — норми оцінок + фонд «Упаковка (матеріали)» з Фінмоделі (deal.economics.view)
 PATCH /api/deal-economics/settings/            — змінити норми (лише власник)
 """
 from datetime import date
@@ -11,13 +12,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .services import COST_KEYS, DEFAULTS, NUM_FIELDS, get_settings, recompute, tables_ready
+from .services import COST_KEYS, DEFAULTS, NUM_FIELDS, get_settings, pack_fund, recompute, tables_ready
 
 LINES = ("revenue",) + COST_KEYS
 
 
 def _can_cost(u):
-    return bool(u and u.is_authenticated and (u.is_superuser or (hasattr(u, "has_perm_code") and u.has_perm_code("product.cost.view"))))
+    # 14.09 (margin-perms): блок «Економіка угоди» — окреме право deal.economics.view (раніше product.cost.view)
+    return bool(u and u.is_authenticated and (u.is_superuser or (hasattr(u, "has_perm_code") and u.has_perm_code("deal.economics.view"))))
 
 
 def _is_owner(u):
@@ -63,7 +65,7 @@ class DealEconomicsView(APIView):
 
     def get(self, request, deal_id):
         if not _can_cost(request.user):
-            return Response({"detail": "Потрібне право «Бачити собівартість»"}, status=403)
+            return Response({"detail": "Потрібне право «Бачити блок «Економіка угоди»»"}, status=403)
         deal = _visible_deal(request, deal_id)
         if deal is None:
             return Response({"detail": "Угоду не знайдено"}, status=404)
@@ -91,6 +93,11 @@ def _settings_out(cfg):
     for k in DEFAULTS:
         v = cfg[k]
         out[k] = v.isoformat() if isinstance(v, date) else float(v)
+    # 14.09: матеріали пакування рахуються від фонду Олега (Фінмодель); норма ₴ за відправлення — лише запасна
+    fund = pack_fund()
+    out["pack_material_fund_pct"] = float(fund["pct"]) if fund else None
+    out["pack_material_fund_name"] = fund["name"] if fund else ""
+    out["pack_material_fund_id"] = fund["id"] if fund else None
     return out
 
 
@@ -99,7 +106,7 @@ class DealEconSettingsView(APIView):
 
     def get(self, request):
         if not _can_cost(request.user):
-            return Response({"detail": "Потрібне право «Бачити собівартість»"}, status=403)
+            return Response({"detail": "Потрібне право «Бачити блок «Економіка угоди»»"}, status=403)
         out = _settings_out(get_settings())
         out["can_edit"] = _is_owner(request.user)
         return Response(out)

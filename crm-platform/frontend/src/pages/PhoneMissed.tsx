@@ -131,7 +131,7 @@ export default function MissedCallsSection() {
                     ? <a onClick={() => nav(`/clients/${it.contact}`)} style={{ color: "var(--brand,#C67D5F)", cursor: "pointer" }}>{it.contact_name || it.number}</a>
                     : <span>{it.number} <span className="muted" style={{ fontWeight: 500, fontSize: 11.5 }}>· {t("новый номер", "новий номер")}</span></span>}
                   {it.calls_count > 1 && <span style={{ marginLeft: 6, fontSize: 11, background: "#fee2e2", color: RED, borderRadius: 6, padding: "1px 6px" }}>×{it.calls_count}</span>}
-                  {it.escalated && it.status === "open" && <span title={t("Руководитель уже уведомлён", "Керівника вже повідомлено")} style={{ marginLeft: 6, fontSize: 11 }}>⚠</span>}
+                  {it.escalated && it.status === "open" && <span title={t("Руководитель уже уведомлён", "Керівника вже повідомлено")} style={{ marginLeft: 6, fontSize: 11, color: "#d97706" }}><Icon n="⚠" size={12} /></span>}
                 </div>
                 <div className="muted" style={{ fontSize: 11.5 }}>{it.contact ? it.number + " · " : ""}{when(it.first_missed_at)}</div>
                 {it.line && <div style={{ fontSize: 10.5, color: "#7c5cff", marginTop: 1 }}><Icon n="📡" size={12} /> {it.line}</div>}
@@ -217,7 +217,7 @@ function MissedReport({ t }: { t: T }) {
   return (
     <div className="panel" style={{ margin: "0 0 16px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-        <div className="label" style={{ margin: 0 }}>📊 {t("Отчёт по пропущенным", "Звіт по пропущених")}</div>
+        <div className="label" style={{ margin: 0 }}><Icon n="📊" size={15} /> {t("Отчёт по пропущенным", "Звіт по пропущених")}</div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", fontSize: 12.5 }}>
           <input type="date" value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} style={{ height: 30, borderRadius: 7, border: "1px solid #cbd5e1" }} />
           —
@@ -260,7 +260,7 @@ function MissedSettings({ t, colleagues, onSaved }: { t: T; colleagues: Colleagu
   return (
     <div className="panel" style={{ margin: "0 0 16px" }}>
       <div style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }} onClick={() => setOpen((o) => !o)}>
-        <div className="label" style={{ margin: 0 }}>⚙ {t("Настройки пропущенных", "Налаштування пропущених")}</div>
+        <div className="label" style={{ margin: 0 }}><Icon n="⚙" size={15} /> {t("Настройки пропущенных", "Налаштування пропущених")}</div>
         <span className="muted" style={{ fontSize: 12 }}>{open ? "▲" : "▼"}</span>
       </div>
       {open && s && (

@@ -20,7 +20,9 @@ from decimal import ROUND_HALF_UP, Decimal
 from django.db import connection, transaction
 from django.utils import timezone
 
-from .models import FORMULA_VERSION
+# v2 (14.09, margin-perms): матеріали пакування = % фонду «Упаковка (матеріали)» × виручка товарів (v1: 22 ₴/відправлення).
+# models.FORMULA_VERSION лишається 1 — це лише default поля version (без міграції).
+FORMULA_VERSION = 2
 
 log = logging.getLogger(__name__)
 
@@ -129,6 +131,25 @@ def get_settings():
     return cfg
 
 
+_PACK_FUND_RE = re.compile(r"упаков|пакуван", re.I)
+_PACK_MAT_RE = re.compile(r"матеріал|материал", re.I)
+
+
+def pack_fund():
+    """Фонд Олега «Упаковка (матеріали)» — Фінмодель → фонди виручки (на 14.09: #45, 1,92%, напрям «ДЕКОР_Товари»).
+    Читається ЖИВИМ при кожному розрахунку: змінили % у Фінмоделі → змінилась економіка угоди.
+    Пошук за назвою (упаков… + матеріал…), не за id — працює і в тестовій базі.
+    None — такого фонду немає (тоді стара норма ₴ за відправлення)."""
+    from apps.finance.models import FinModelArticle
+    rows = (FinModelArticle.objects.filter(category="revenue_fund", active=True, value_type="percent")
+            .order_by("id").values("id", "name", "value", "fin_direction_id"))
+    for r in rows:
+        n = r["name"] or ""
+        if _PACK_FUND_RE.search(n) and _PACK_MAT_RE.search(n):
+            return {"id": r["id"], "name": n, "pct": _d(r["value"]), "direction_id": r["fin_direction_id"]}
+    return None
+
+
 def build_ctx(cfg=None):
     """Норми + категорії журналу (за НАЗВАМИ, не за id — працює і в тестовій базі)."""
     from apps.finance.models import Category
@@ -150,7 +171,7 @@ def build_ctx(cfg=None):
             cats["transport"].add(r["id"])
         if n.startswith("возврат товара") or n.startswith("возврат денег"):
             cats["returns"].add(r["id"])
-    return {"cfg": cfg or get_settings(), "cats": cats}
+    return {"cfg": cfg or get_settings(), "cats": cats, "pack_fund": pack_fund()}
 
 
 # ───────────────────────── Нова Пошта ─────────────────────────
@@ -416,14 +437,31 @@ def _commission(deal, pays, txs, ctx):
     return total, src, flags
 
 
-def _packaging(deal, sibs, ctx):
+def _packaging(deal, sibs, ctx, base=None):
+    """Пакування = робота складу (ФАКТ: відрядні записи ЦІЄЇ угоди — упаковка, вага, тонування; ставки складу)
+    + пакувальні матеріали (ОЦІНКА, 14.09: % фонду Олега «Упаковка (матеріали)» × виручка товарів угоди;
+    послуги/роботи без товару матеріалів не мають). Фонду у Фінмоделі немає — стара норма ₴ за відправлення."""
     from apps.warehouse.models import WarehousePayrollEntry
     labor = {k: D0 for k in PAYROLL_OPS}
     for op, amt in (WarehousePayrollEntry.objects.filter(deal_id=deal.pk, op_type__in=PAYROLL_OPS)
                     .exclude(status__in=PAYROLL_BAD_STATUS).values_list("op_type", "amount")):
         labor[op] += _d(amt)
     lab = sum(labor.values(), D0)
-    mat = _d(ctx["cfg"]["pack_material_per_shipment"]) if _is_primary_shipment(deal, sibs) else D0
+    fund = ctx["pack_fund"] if "pack_fund" in ctx else pack_fund()
+    if fund is not None:
+        base = max(_d(base), D0)
+        pct = _d(fund["pct"])
+        mat = base * pct / 100
+        mat_uk = "матеріали %s ₴ = %s%% фонду «%s» × %s ₴ виручки товарів" % (_fmt(mat), _fmt(pct), fund["name"], _fmt(base))
+        mat_ru = "материалы %s ₴ = %s%% фонда «%s» × %s ₴ выручки товаров" % (_fmt(mat), _fmt(pct), fund["name"], _fmt(base))
+        empty = ("не пакували / товарів немає", "не упаковывали / товаров нет")
+        extra = {"material_src": "fund", "fund": fund["name"], "fund_id": str(fund["id"]), "fund_pct": pct, "base": base}
+    else:
+        mat = _d(ctx["cfg"]["pack_material_per_shipment"]) if _is_primary_shipment(deal, sibs) else D0
+        mat_uk = "матеріали %s ₴ (норма за відправлення: фонду «Упаковка (матеріали)» у Фінмоделі немає)" % _fmt(mat)
+        mat_ru = "материалы %s ₴ (норма за отправку: фонда «Упаковка (материалы)» в Финмодели нет)" % _fmt(mat)
+        empty = ("не пакували / посилка оплачена в основній угоді", "не упаковывали / посылка в основной сделке")
+        extra = {"material_src": "norm"}
     kinds = (["fact"] if lab > 0 else []) + (["estimate"] if mat > 0 else [])
     kind = _merge_kinds(kinds)
     uk, ru = [], []
@@ -431,12 +469,12 @@ def _packaging(deal, sibs, ctx):
         uk.append("робота складу %s ₴" % _fmt(lab))
         ru.append("работа склада %s ₴" % _fmt(lab))
     if mat > 0:
-        uk.append("матеріали %s ₴ (норма за відправлення)" % _fmt(mat))
-        ru.append("материалы %s ₴ (норма за отправку)" % _fmt(mat))
+        uk.append(mat_uk)
+        ru.append(mat_ru)
     if not uk:
-        uk, ru = ["не пакували / посилка оплачена в основній угоді"], ["не упаковывали / посылка в основной сделке"]
+        uk, ru = [empty[0]], [empty[1]]
     return lab + mat, _src(kind, " · ".join(uk), " · ".join(ru), packing=labor["packing"],
-                           shipment_weight=labor["shipment_weight"], tinting=labor["tinting"], material=mat)
+                           shipment_weight=labor["shipment_weight"], tinting=labor["tinting"], material=mat, **extra)
 
 
 def _master(txs, svc_plan, ctx):
@@ -492,7 +530,7 @@ def compute(deal, ctx=None, np_hint=None):
 
     # 1. Виручка і собівартість (як у картці: знімок собівартості, fallback — поточна собівартість товару)
     items = list(deal.items.select_related("product").all())
-    revenue = goods = svc_plan = D0
+    revenue = goods = svc_plan = svc_rev = D0
     fb_n, fb_sum, zero_n, zero_rev = 0, D0, 0, D0
     for it in items:
         p = it.product
@@ -523,6 +561,7 @@ def compute(deal, ctx=None, np_hint=None):
             zero_rev += total
         if p is not None and not p.track_stock:
             svc_plan += line          # послуга/робота — частка майстра (план), йде в «Роботи майстра»
+            svc_rev += total          # виручка послуг — без пакувальних матеріалів (фонд #45 — напрям «ДЕКОР_Товари»)
         else:
             goods += line
     if not items:
@@ -554,7 +593,7 @@ def compute(deal, ctx=None, np_hint=None):
     flags += fl
     commission, sources["commission"], fl = _commission(deal, pays, txs, ctx)
     flags += fl
-    packaging, sources["packaging"] = _packaging(deal, sibs, ctx)
+    packaging, sources["packaging"] = _packaging(deal, sibs, ctx, revenue - svc_rev)
     master, sources["master_works"] = _master(txs, svc_plan, ctx)
     returns, sources["returns"] = _returns(txs, pays, ctx)
 

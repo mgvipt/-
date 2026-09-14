@@ -99,23 +99,35 @@ def _sales_total(user, period):
 
 
 def quarter_check(period):
-    """Лише для останнього місяця кварталу (березень, червень, вересень, грудень): ЗП продажників за квартал ÷ маржа компанії."""
+    """Лише для останнього місяця кварталу (березень, червень, вересень, грудень): ЗП продажників за квартал ÷ маржа компанії.
+    Кеш 5 хв — вкладка ЗП/KPI відкривається швидше."""
     y, m = int(period[:4]), int(period[5:7])
     if m % 3:
         return None
+    from django.core.cache import cache
+    key = "payroll:quarter:%s" % period
+    hit = cache.get(key)
+    if hit:
+        return hit
+    res = _quarter_check(period, y, m)
+    cache.set(key, res, 300)
+    return res
+
+
+def _quarter_check(period, y, m):
     pol = engine.policy()
     months = ["%d-%02d" % (y, mm) for mm in (m - 2, m - 1, m)]
     users = {s.user for s in PayScheme.objects.filter(department=SALES_DEPT, user__isnull=False).select_related("user")}
     pay = sum(_sales_total(u, per) for u in users for per in months)
     q1, _ = engine.period_bounds(months[0])
     _, q2 = engine.period_bounds(months[-1])
-    margin, cache = 0.0, {}
-    for t in engine._income(q1, q2).select_related("deal"):
+    txs = list(engine._income(q1, q2))
+    mm = engine.margin_map([t.deal_id for t in txs], pol)
+    margin = 0.0
+    for t in txs:
         amt = float(t.amount_uah or 0)
         if t.deal_id:
-            if t.deal_id not in cache:
-                cache[t.deal_id] = engine.deal_margin(t.deal, pol)[0]
-            margin += amt * cache[t.deal_id]
+            margin += amt * mm.get(t.deal_id, (0.5, True))[0]
         else:
             margin += amt * pol["no_deal_margin_pct"] / 100.0
     cap = float(pol["cap"]["pct_of_margin"])

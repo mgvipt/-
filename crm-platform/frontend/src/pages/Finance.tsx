@@ -1829,8 +1829,6 @@ function Breakeven() {
   ];
   return (
     <>
-      <BreakevenAtm />
-      <div className="muted" style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", margin: "4px 0 8px" }}>{tr("Старая формула CRM (для сравнения)","Стара формула CRM (для порівняння)")}</div>
       <div className="note" style={{ marginBottom: 10 }}><Icon n="🎯" size={14} /> {tr("Точка безубыточности считается ОТ ФИНМОДЕЛИ (нормативы затрат и маржи), снизу вверх. Прогресс — факт текущего месяца.","Точка беззбитковості рахується ВІД ФІНМОДЕЛІ (нормативи витрат і маржі), знизу вгору. Прогрес — факт поточного місяця.")}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 12, marginBottom: 14 }}>
         {cards.map(([t, v]) => <div key={t} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{t}</div><div style={{ fontSize: 20, fontWeight: 700 }}>{v}</div></div>)}
@@ -1855,6 +1853,7 @@ function Breakeven() {
         <div className="row" style={{ padding: "7px 0", borderBottom: "1px solid #f1f5f9" }}><span className="muted">{tr("Нужно делать / день до ТБ","Треба робити / день до ТБ")}</span><b style={{ color: "#d97706" }}>{money(d.required_daily)}</b></div>
         <div className="row" style={{ padding: "7px 0" }}><span className="muted">{tr("Дней осталось","Днів залишилось")}</span><b>{d.days_left}</b></div>
       </div>
+      <BreakevenAtm />
     </>
   );
 }

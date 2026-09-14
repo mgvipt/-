@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { Icon } from "../Icon";
 import KnowledgeTestChat from "./KnowledgeTestChat";
 import { CheckChip, ControllerPanel, LABEL_FILTERS, PrecheckPanel, PublishPanel, WebchatCard, type Precheck } from "./KnowledgeTools";
 
@@ -106,10 +107,10 @@ function ItemCard({ it, meta, selected, onSelect, onAct, onEdit, onPropose, hist
               <span style={chip(STATUS_COLOR[it.status] || "#64748b")}>{it.status_display}</span>
               <span style={chip("#e0e7ff", "#3730a3")}>{it.kind_display}</span>
               <span style={chip("#f1f5f9", "#334155")}>{it.topic_display}</span>
-              {it.flagged && <span style={chip("#fee2e2", "#b91c1c")}>⚠️ перевірити</span>}
+              {it.flagged && <span style={chip("#fee2e2", "#b91c1c")}><Icon n="⚠" size={11} /> перевірити</span>}
               <CheckChip c={it.precheck} />
               {it.replaces && <span style={chip("#fef3c7", "#92400e")}>правка до #{it.replaces}</span>}
-              {it.popularity > 0 && <span style={chip("#e0f2fe", "#0369a1")}>👥 {it.popularity}</span>}
+              {it.popularity > 0 && <span style={chip("#e0f2fe", "#0369a1")}><Icon n="👥" size={11} /> {it.popularity}</span>}
               <span style={{ fontSize: 11, color: "#94a3b8" }}>{it.source_display} · в.{it.version}</span>
             </div>
           </div>
@@ -220,7 +221,7 @@ function Cards({ meta, reloadMeta }: { meta: Meta; reloadMeta: () => void }) {
         <select value={f.audience} onChange={(e) => setF({ ...f, audience: e.target.value })} style={sel}><option value="">Усі агенти</option>{meta.audiences.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
         <select value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })} style={sel}><option value="">Усі джерела</option>{meta.sources.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
         <select value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} style={sel}><option value="">Будь-яка мітка перевірки</option>{LABEL_FILTERS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
-        <label style={{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 4 }}><input type="checkbox" checked={f.flagged} onChange={(e) => setF({ ...f, flagged: e.target.checked })} /> ⚠️ лише «перевірити» ({meta.flagged_drafts})</label>
+        <label style={{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 4 }}><input type="checkbox" checked={f.flagged} onChange={(e) => setF({ ...f, flagged: e.target.checked })} /> <Icon n="⚠" size={12} /> лише «перевірити» ({meta.flagged_drafts})</label>
         {meta.can_edit && <button className="btn btn-primary" onClick={() => startEdit(null, "new")}>+ Додати</button>}
         {meta.can_approve && selected.length > 0 && <button className="btn btn-green" onClick={bulkApprove}>✓ Затвердити вибрані ({selected.length})</button>}
       </div>

@@ -4,10 +4,12 @@
  *   🌿 Органіка                        — Meta прислала повідомлення без даних реклами;
  *   ❔ Невідомо                        — даних немає (напр. чат ChatPlace до 22.08).
  * attr — meta_attribution ліда/угоди (рахуємо на місці, без запиту);
- * contactId / convId — запит /api/meta-attr/… (клієнт/чат: і ліди, і угоди, і чати). */
+ * contactId / convId — запит /api/meta-attr/… (клієнт/чат: і ліди, і угоди, і чати).
+ * Значки — іконки CRM з Icon.tsx (ціль / жовте коло / листок / знак питання), не смайли (14.09). */
 import { useEffect, useState, CSSProperties } from "react";
 import { api } from "./api";
 import { useLang } from "./i18n";
+import { Icon } from "./Icon";
 
 type Summary = { class: string; ad?: any; phrase?: string; attributed_at?: string; method?: string };
 
@@ -45,7 +47,7 @@ export default function MetaAttrBadge({ attr, ad, source, contactId, convId, hid
   const adName = s.ad ? (s.ad.title || s.ad.ad_name || s.ad.campaign || s.ad.ad_id || "") : ((attr && (attr.ad_title || attr.ad_id)) || "");
   const when = s.attributed_at ? new Date(s.attributed_at).toLocaleDateString("uk-UA") : "";
   const phrase = s.phrase || "";
-  const V: Record<string, { icon: string; text: string; short: string; bg: string; fg: string; bd: string; tip: string }> = {
+  const V: Record<string, { icon: string; fill?: string; text: string; short: string; bg: string; fg: string; bd: string; tip: string }> = {
     meta_ad: {
       icon: "🎯",
       text: adName ? t(`С рекламы Meta (объявление «${adName}»)`, `З реклами Meta (оголошення «${adName}»)`) : t("С рекламы Meta", "З реклами Meta"),
@@ -53,7 +55,7 @@ export default function MetaAttrBadge({ attr, ad, source, contactId, convId, hid
       tip: t("Meta передала метку объявления — клиент точно с рекламы", "Meta передала мітку оголошення — клієнт точно з реклами") + (adName ? ` · ${adName}` : "") + (when ? ` · ${when}` : ""),
     },
     meta_ad_likely: {
-      icon: "🟡", text: t("Вероятно с рекламы", "Ймовірно з реклами"), short: t("Вероятно реклама", "Ймовірно реклама"),
+      icon: "🟡", fill: "#facc15", text: t("Вероятно с рекламы", "Ймовірно з реклами"), short: t("Вероятно реклама", "Ймовірно реклама"),
       bg: "#fffbeb", fg: "#b45309", bd: "#fde68a",
       tip: (phrase ? t(`Первое сообщение «${phrase}» — текст кнопки из рекламы. `, `Перше повідомлення «${phrase}» — текст кнопки з реклами. `) : "")
         + t("Meta метку не передала, поэтому это вывод, а не подтверждение. В Meta не отправляется.", "Meta мітку не передала, тому це висновок, а не підтвердження. У Meta не відправляється.")
@@ -75,6 +77,6 @@ export default function MetaAttrBadge({ attr, ad, source, contactId, convId, hid
       fontSize: compact ? 10.5 : 12, fontWeight: 700, lineHeight: 1.3, padding: compact ? "1px 7px" : "3px 9px",
       borderRadius: 20, background: v.bg, color: v.fg, border: `1px solid ${v.bd}`,
       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", ...(style || {}),
-    }}>{v.icon} {compact ? v.short : v.text}</span>
+    }}><Icon n={v.icon} size={compact ? 11 : 13} {...(v.fill ? { fill: v.fill } : {})} /> {compact ? v.short : v.text}</span>
   );
 }

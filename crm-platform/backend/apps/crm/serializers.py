@@ -328,7 +328,28 @@ class DealDetailSerializer(DealSerializer):
     def get_paid(self, obj):
         return float(sum(p.amount for p in obj.payments.all() if p.is_paid))
 
+    def _can_see_margin(self):
+        """14.09 (margin-perms): суму і % маржі бачить лише право deal.margin.view (власник/суперюзер — завжди).
+        Без request у контексті (внутрішні виклики сервера) — як раніше."""
+        ok = getattr(self, "_margin_ok_cache", None)
+        if ok is None:
+            req = (getattr(self, "context", None) or {}).get("request")
+            u = getattr(req, "user", None) if req is not None else None
+            if req is None or u is None:
+                ok = True
+            else:
+                ok = bool(getattr(u, "is_superuser", False)
+                          or (hasattr(u, "has_perm_code") and u.has_perm_code("deal.margin.view")))
+            self._margin_ok_cache = ok
+        return ok
+
     def get_margin(self, obj):
+        # 14.09: без права deal.margin.view — null (сума маржі не йде в браузер менеджера)
+        if not self._can_see_margin():
+            return None
+        return self._margin_value(obj)
+
+    def _margin_value(self, obj):
         # «Економіка угоди» (14.09): товари − собівартість − доставка за наш рахунок − комісія − пакування − майстри − повернення.
         # Одна маржа для картки, бонусу менеджера і ЗП; поки рядка немає — стара формула нижче.
         try:
@@ -349,6 +370,14 @@ class DealDetailSerializer(DealSerializer):
         return round(revenue - cogs, 2)
 
     def get_bonus(self, obj):
+        b = self._bonus_value(obj)
+        if isinstance(b, dict) and not self._can_see_margin():
+            # 14.09 (margin-perms): без права на маржу — лише «скільки заробляю»; частку з маржі і % з маржі
+            # не віддаємо (з них маржа вираховується назад)
+            b = {k: v for k, v in b.items() if k not in ("from_margin", "margin_pct")}
+        return b
+
+    def _bonus_value(self, obj):
         # Бонус менеджера з цієї угоди — за його схемою в «Ставки співробітників» (14.09, одне місце ставок);
         # немає схеми — стара формула з Фінмоделі.
         try:
@@ -359,7 +388,7 @@ class DealDetailSerializer(DealSerializer):
         except Exception:
             pass
         from apps.finance.services import deal_manager_bonus
-        return deal_manager_bonus(obj.amount, self.get_margin(obj))
+        return deal_manager_bonus(obj.amount, self._margin_value(obj))
 
     def get_days_in_stage(self, obj):
         from django.utils import timezone

@@ -4,6 +4,7 @@
    Розмова живе лише в цій вкладці: не зберігається як чат і нікому не надсилається. «Почати заново» — очищає. */
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { Icon } from "../Icon";
 import { errText, usd } from "./KnowledgeTools";
 
 type Choice = { value: string; label: string };
@@ -84,11 +85,11 @@ function AgentBubble({ m, onPeek }: { m: Msg; onPeek: (id: number) => void }) {
         <div style={{ marginTop: 3, paddingLeft: 4 }}>
           {r.handoff && (
             <div style={{ fontSize: 12, color: "#b45309", marginTop: 2 }}>
-              🙋 Передала б менеджеру: {r.handoff_reason}
+              <Icon n="user" size={12} /> Передала б менеджеру: {r.handoff_reason}
               {r.draft_reply && <div style={{ color: "#64748b", whiteSpace: "pre-wrap" }}>ІІ хотів відповісти: «{r.draft_reply}»</div>}
             </div>
           )}
-          {r.extra?.context && <div style={{ fontSize: 12, color: "#334155" }}>🎯 {r.extra.context}</div>}
+          {r.extra?.context && <div style={{ fontSize: 12, color: "#334155" }}><Icon n="🎯" size={12} /> {r.extra.context}</div>}
           {(r.extra?.points || []).map((p, i) => <div key={i} style={{ fontSize: 12, color: "#475569" }}>• {p}</div>)}
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginTop: 3 }}>
             <span style={small}>Записи бази ({r.used_items.length}):</span>

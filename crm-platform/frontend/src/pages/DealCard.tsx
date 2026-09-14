@@ -1043,16 +1043,23 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             </div>
           </div>
 
-          {/* 10.5 Маржа + бонус менеджера (для руководителя) */}
+          {/* 10.5 Маржа + бонус менеджера. 14.09 (margin-perms): суму і % маржі — лише з правом deal.margin.view;
+              без нього — тільки «Ваш заробіток з угоди» (бекенд віддає margin=null і бонус без частки з маржі) */}
+          {can("deal.margin.view") ? (
           <div className="panel">
             <div className="label">{t("Маржа (видит РОП / руководитель)","Маржа (бачить РОП / керівник)")}</div>
             <div className="row"><span className="muted">{t("Маржа","Маржа")}</span><b>{fmt(deal.margin || 0)} ₴{deal.margin && Number(deal.amount) ? ` · ${Math.round((deal.margin / Number(deal.amount)) * 100)}%` : ""}</b></div>
             <div className="row" title={deal.bonus ? t(`${deal.bonus.revenue_pct}% с оборота + ${deal.bonus.margin_pct}% с маржи. Ставки меняются в Финмодели → ЗП.`, `${deal.bonus.revenue_pct}% з обороту + ${deal.bonus.margin_pct}% з маржі. Ставки міняються у Фінмоделі → ЗП.`) : ""}><span className="muted"><Icon n="💰" size={14} /> {t("Бонус менеджера со сделки","Бонус менеджера з угоди")}</span><b style={{ color: "#1d4ed8" }}>{fmt(deal.bonus?.total || 0)} ₴</b></div>
             {deal.bonus && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{deal.bonus.revenue_pct}{t("% оборота = ","% обороту = ")}{fmt(deal.bonus.from_revenue)} ₴ + {deal.bonus.margin_pct}{t("% маржи = ","% маржі = ")}{fmt(deal.bonus.from_margin)} ₴</div>}
           </div>
+          ) : (
+          <div className="panel">
+            <div className="row" title={t("Бонус ответственного менеджера со сделки по его ставкам. Итог месяца — в ЗП.", "Бонус відповідального менеджера з угоди за його ставками. Підсумок місяця — у ЗП.")}><span className="muted"><Icon n="💰" size={14} /> {t("Ваш заработок со сделки","Ваш заробіток з угоди")}</span><b style={{ color: "#1d4ed8" }}>{fmt(deal.bonus?.total || 0)} ₴</b></div>
+          </div>
+          )}
 
           {/* 10.5b Економіка угоди (14.09.2026): факт / оцінка по кожному компоненту */}
-          {can("product.cost.view") && <DealEconomicsBlock dealId={deal.id} refreshKey={`${deal.amount}|${deal.ttn || ""}|${(deal as any).paid ?? ""}|${(deal.items || []).length}`} />}
+          {can("deal.economics.view") && <DealEconomicsBlock dealId={deal.id} refreshKey={`${deal.amount}|${deal.ttn || ""}|${(deal as any).paid ?? ""}|${(deal.items || []).length}`} />}
 
           {/* 10.6 Ответственный */}
           <div className="panel">

@@ -41,6 +41,8 @@ const MAP: Record<string, any> = {
   "🔔": Bell, "➕": Plus, "🎉": PartyPopper, "🥳": PartyPopper, "🔝": TrendingUp, "📲": Smartphone, "💸": Coins,
   "🤩": Star, "🏆": Trophy, "🎓": GraduationCap, "📍": MapPin, "🟢": Circle, "🟡": Circle, "🔴": Circle, "🟦": Square,
   "🟣": Circle, "🟩": Square, "🟨": Square, "🟧": Square, "🟥": Square, "👍": ThumbsUp, "✅": Check, "🤔": HelpCircle,
+  // 14.09 (margin-perms): знак питання, лупа, калькулятор, повтор, будильник — бейдж «звідки клієнт» і скрипт відповідей
+  "❔": HelpCircle, "❓": HelpCircle, "🔎": Search, "🧮": Calculator, "🔁": RefreshCw, "⏰": Clock,
 };
 
 export function Icon({ n, size = 16, strokeWidth = 2, style, ...rest }: { n: string; size?: number; strokeWidth?: number; style?: any; [k: string]: any }) {

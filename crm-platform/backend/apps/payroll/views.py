@@ -69,7 +69,8 @@ class SchemesView(APIView):
         return Response({"schemes": items, "users": users, "kinds": [{"kind": k, "label": v} for k, v in PayComponent.KIND],
                          "guarantee_conditions": engine.GUARANTEE_CONDITIONS,
                          "can_edit": _can(request.user, "payroll.rates.edit"),
-                         "can_close_acts": _can(request.user, "objects.act.close")})
+                         "can_close_acts": _can(request.user, "objects.act.close"),
+                         "funds": _fot_funds(), "fund_by_dept": engine.FUND_BY_DEPT})
 
     def post(self, request):
         if not _can(request.user, "payroll.rates.edit"):
@@ -88,6 +89,14 @@ class SchemesView(APIView):
             _save_components(s, d.get("components") or [])
             PayRateLog.objects.create(scheme=s, action="create", after=_snapshot(s), user=request.user)
         return Response(_scheme_json(s, with_cost=True))
+
+
+def _fot_funds():
+    """Фонди маржі в ₴ з «Планування» — куди може йти тверда частина ставки (лише для порівняння «фонд / ставки»)."""
+    from apps.finance.models import FinModelArticle
+    return [{"id": a.id, "name": a.name, "value": float(a.value)} for a in
+            FinModelArticle.objects.filter(active=True, parent__isnull=True, category__in=["fixed", "variable"],
+                                           value_type="fixed_sum_per_month").order_by("category", "sort_order", "id")]
 
 
 def _save_components(s, comps):
@@ -247,8 +256,10 @@ class BreakevenView(APIView):
             return tuple(int(x) for x in (request.query_params.get(k) or "").split(",") if x.strip().isdigit())
         data = engine.breakeven_atm(extra_ids=ids("with"), without_ids=ids("without"))
         if not _can(request.user, "payroll.rates.view"):  # без права на ставки — без імен і сум по людях
-            data["payroll"] = []
-            data["vacancies"] = [{k: v for k, v in r.items() if k in ("position", "included", "delta_breakeven")} for r in data["vacancies"]]
+            data["fot"] = []
+            data["vacancies"] = [{k: v for k, v in r.items() if k in ("scheme_id", "position", "included", "delta_breakeven")} for r in data["vacancies"]]
+        data["can_edit"] = _can(request.user, "payroll.rates.edit")
+        data["can_sync"] = data["can_edit"] and _can(request.user, "finance.model.edit")
         return Response(data)
 
 
@@ -321,8 +332,14 @@ class ActsView(APIView):
     def get(self, request):
         if not (_can(request.user, "payroll.rates.view") or _can(request.user, "objects.act.close")):
             return _deny()
-        return Response({"results": [_act_json(a) for a in ObjectAct.objects.select_related("contact", "manager", "closed_by")[:300]],
-                         "can_close": _can(request.user, "objects.act.close")})
+        qs = ObjectAct.objects.select_related("contact", "manager", "closed_by")
+        if request.query_params.get("contact"):
+            qs = qs.filter(contact_id=request.query_params["contact"])
+        User = get_user_model()
+        mgrs = [{"id": u.id, "name": u.get_full_name() or u.username}
+                for u in User.objects.filter(is_active=True, pay_schemes__department="Продажі").distinct().order_by("first_name")]
+        return Response({"results": [_act_json(a) for a in qs[:300]], "managers": mgrs,
+                         "can_close": _can(request.user, "objects.act.close"), "can_add": _can(request.user, "payroll.rates.edit")})
 
     def post(self, request):
         if not _can(request.user, "payroll.rates.edit"):
@@ -435,3 +452,31 @@ class RunActionView(APIView):
             return Response({"detail": "Невідома дія"}, status=400)
         r.refresh_from_db()
         return Response(_runs.run_json(r))
+
+
+
+class FundSyncView(APIView):
+    """POST {fund_id} — «Підставити зі ставок»: значення фонду у Фінмоделі/Плануванні = сума за ставками.
+    Лише власник (payroll.rates.edit + finance.model.edit). Структуру фондів не змінює — лише число, з історією."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not (_can(request.user, "payroll.rates.edit") and _can(request.user, "finance.model.edit")):
+            return _deny("Змінювати фонди може лише власник")
+        from apps.finance.models import FinModelArticle
+        try:
+            fid = int(request.data.get("fund_id"))
+        except (TypeError, ValueError):
+            return Response({"detail": "fund_id"}, status=400)
+        row = next((r for r in engine.breakeven_atm()["fot"] if r["fund_id"] == fid), None)
+        a = FinModelArticle.objects.filter(pk=fid).first()
+        if not row or not a:
+            return Response({"detail": "Фонд не знайдено серед ФОТ"}, status=404)
+        if not row.get("syncable"):
+            return Response({"detail": "У цьому фонді не лише зарплати — змініть його в «Плануванні» вручну"}, status=400)
+        before = float(a.value)
+        a.value = row["suggested"]
+        a.save(update_fields=["value"])
+        PayRateLog.objects.create(action="fund_sync", before={"fund": a.name, "value": before}, after={"fund": a.name, "value": row["suggested"]},
+                                  user=request.user, note=f"Фонд «{a.name}»: {before} → {row['suggested']} (зі ставок)")
+        return Response({"fund_id": fid, "before": before, "value": row["suggested"]})

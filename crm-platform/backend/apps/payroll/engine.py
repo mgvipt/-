@@ -105,18 +105,9 @@ def _pct_ratio(employment, pol):
 
 # ─────────────────────────── факти ───────────────────────────
 
-def deal_margin(deal, pol):
-    """(частка маржі в сумі, оцінка?) — товари − собівартість; нуль у рядку → поточна собівартість товару;
-    без товарів — норматив воронки (оцінка). Є «економіка угоди» (apps.dealecon) — беремо її маржу:
-    там уже вирахувані доставка за наш рахунок, комісія, пакування, роботи майстра, повернення."""
-    try:
-        from apps.dealecon.models import DealEconomics
-        row = DealEconomics.objects.filter(deal_id=deal.id).first()
-        if row is not None and float(getattr(row, "revenue", 0) or 0) > 0:
-            return max(0.0, float(getattr(row, "margin_pct", 0) or 0) / 100.0), bool(getattr(row, "is_estimate", True))
-    except Exception:
-        pass
-    items = list(deal.items.select_related("product").all())
+def _items_margin(deal, pol):
+    """Товари − собівартість (нуль у рядку → поточна собівартість товару); без товарів — норматив воронки (оцінка)."""
+    items = list(deal.items.all())
     if items:
         sales = sum(float(i.total or 0) for i in items)
         if sales > 0:
@@ -130,43 +121,76 @@ def deal_margin(deal, pol):
     return pol["margin_estimate_pct"].get(str(deal.funnel_id), 50) / 100.0, True
 
 
+def margin_map(deal_ids, pol=None):
+    """Маржа багатьох угод одним махом: «економіка угоди» (apps.dealecon: уже мінус доставка, комісія, пакування, майстри),
+    інакше товари − собівартість. Два запити замість сотень — вкладки ЗП і Плани гальмували."""
+    pol = pol or policy()
+    ids = {i for i in deal_ids if i}
+    out = {}
+    if not ids:
+        return out
+    try:
+        from apps.dealecon.models import DealEconomics
+        for r in DealEconomics.objects.filter(deal_id__in=ids).only("deal_id", "revenue", "margin_pct", "is_estimate"):
+            if float(r.revenue or 0) > 0:
+                out[r.deal_id] = (max(0.0, float(r.margin_pct or 0) / 100.0), bool(r.is_estimate))
+    except Exception:
+        pass
+    rest = ids - set(out)
+    if rest:
+        from apps.crm.models import Deal
+        for d in Deal.objects.filter(id__in=rest).prefetch_related("items__product"):
+            out[d.id] = _items_margin(d, pol)
+    return out
+
+
+def deal_margin(deal, pol):
+    """(частка маржі в сумі, оцінка?) для однієї угоди — те саме джерело, що margin_map."""
+    return margin_map([deal.id], pol).get(deal.id) or _items_margin(deal, pol)
+
+
 def _income(d1, d2, **flt):
     from apps.finance.models import Transaction
     return Transaction.objects.filter(direction="in", transfer_account__isnull=True, date__gte=d1, date__lte=d2, **flt)
 
 
 def shares(pol=None, today=None):
-    """Частки виручки й маржі за останні N днів — для процентних частин ставок у точці беззбитковості."""
+    """Частки виручки й маржі за останні N днів — для процентних частин ставок. Кеш 5 хв."""
+    from django.core.cache import cache
     pol = pol or policy()
     today = today or timezone.localdate()
+    key = "payroll:shares:%s:%s" % (today.isoformat(), pol["lookback_days"])
+    hit = cache.get(key)
+    if hit:
+        return hit
     d1 = today - timedelta(days=int(pol["lookback_days"]))
-    rev_total = margin_total = 0.0
-    by_funnel_rev, by_funnel_margin, cache = {}, {}, {}
-    by_owner_rev, by_owner_margin = {}, {}  # (власник, воронка) — % продавця лише з ЙОГО угод
-    objects_rev = 0.0
-    for t in _income(d1, today).select_related("deal"):
+    txs = list(_income(d1, today).select_related("deal"))
+    mm = margin_map([t.deal_id for t in txs], pol)
+    rev_total = margin_total = objects_rev = 0.0
+    by_funnel_rev, by_funnel_margin, by_owner_rev, by_owner_margin = {}, {}, {}, {}
+    for t in txs:
         amt = float(t.amount_uah or 0)
         rev_total += amt
         if t.deal_id:
-            if t.deal_id not in cache:
-                cache[t.deal_id] = deal_margin(t.deal, pol)[0]
-            m = amt * cache[t.deal_id]
+            m = amt * mm.get(t.deal_id, (0.5, True))[0]
             f = t.deal.funnel_id
             by_funnel_rev[f] = by_funnel_rev.get(f, 0) + amt
             by_funnel_margin[f] = by_funnel_margin.get(f, 0) + m
-            key = (t.deal.owner_id, f)
-            by_owner_rev[key] = by_owner_rev.get(key, 0) + amt
-            by_owner_margin[key] = by_owner_margin.get(key, 0) + m
+            key2 = (t.deal.owner_id, f)
+            by_owner_rev[key2] = by_owner_rev.get(key2, 0) + amt
+            by_owner_margin[key2] = by_owner_margin.get(key2, 0) + m
         else:
             m = amt * pol["no_deal_margin_pct"] / 100.0
             if t.fin_direction_id == pol["objects_direction_id"]:
                 objects_rev += amt
         margin_total += m
     months = max(1.0, int(pol["lookback_days"]) / 30.0)
-    return {"rev_total": rev_total, "margin_total": margin_total, "by_funnel_rev": by_funnel_rev,
-            "by_funnel_margin": by_funnel_margin, "by_owner_rev": by_owner_rev, "by_owner_margin": by_owner_margin,
-            "objects_rev": objects_rev, "months": months,
-            "margin_pct": (margin_total / rev_total) if rev_total else 0.0, "deals": len(cache), "from": d1, "to": today}
+    res = {"rev_total": rev_total, "margin_total": margin_total, "by_funnel_rev": by_funnel_rev,
+           "by_funnel_margin": by_funnel_margin, "by_owner_rev": by_owner_rev, "by_owner_margin": by_owner_margin,
+           "objects_rev": objects_rev, "months": months,
+           "margin_pct": (margin_total / rev_total) if rev_total else 0.0, "deals": len(mm), "from": d1, "to": today}
+    cache.set(key, res, 300)
+    return res
 
 
 # ─────────────────────────── ЗП за місяць ───────────────────────────
@@ -230,10 +254,10 @@ def _c_margin(comp, user, period, d1, d2, pol, std_score):
     funnels = p.get("funnels") or pol["funnels"]["online"]
     rev = margin = 0.0
     est, cache, deals = 0, {}, set()
-    for t in _income(d1, d2, deal__owner=user, deal__funnel_id__in=funnels).select_related("deal"):
-        if t.deal_id not in cache:
-            cache[t.deal_id] = deal_margin(t.deal, pol)
-        r, e = cache[t.deal_id]
+    txs = list(_income(d1, d2, deal__owner=user, deal__funnel_id__in=funnels))
+    cache.update(margin_map([t.deal_id for t in txs], pol))
+    for t in txs:
+        r, e = cache.get(t.deal_id, (0.5, True))
         amt = float(t.amount_uah or 0)
         rev += amt
         margin += amt * r
@@ -439,6 +463,7 @@ def scheme_cost(sc, pol=None, sh=None, on=None):
     sh = sh or shares(pol)
     on = on or timezone.localdate()
     fixed_net, m_pct, r_pct, parts = 0.0, 0.0, 0.0, []
+    piece_pct = 0.0
     guarantee = 0.0
     for c in sc.components.filter(active=True):
         p = c.params or {}
@@ -484,106 +509,121 @@ def scheme_cost(sc, pol=None, sh=None, on=None):
                       .aggregate(x=Sum("amount"))["x"] or 0)
             add = s / sh["rev_total"]
             r_pct += add
+            piece_pct += add
             parts.append((c.title or "Відрядно", round(add * 100, 2), "% виручки"))
     fixed_net = max(fixed_net, guarantee)
     ratio = _pct_ratio(sc.employment, pol)
     return {"fixed_net": round(fixed_net), "fixed_cost": round(employer_cost(fixed_net, sc.employment, pol)),
-            "margin_pct": m_pct * ratio, "revenue_pct": r_pct * ratio, "taxes_ratio": round(ratio, 3),
+            "margin_pct": m_pct * ratio, "revenue_pct": r_pct * ratio, "piece_pct": piece_pct * ratio, "taxes_ratio": round(ratio, 3),
             "guarantee": guarantee, "parts": parts}
 
 
+FUND_BY_DEPT = {"Продажі": 59, "Склад": 59, "Офіс": 59, "Маркетинг": 53}  # тверда частина → фонд Олега
+PCT_FUND = 46     # «ФОТ % продажу (комісія менеджера)» — % з виручки
+PIECE_FUND = 55   # «ФОТ упаковка/тонування/відгрузка» — ₴/міс
+GROUP_LABELS = {"revenue": "Фонди виручки (ФВ)", "margin": "Фонди маржі (ФМ)", "skd": "Фонди СКД (ФСКД)",
+                "upr": "Управлінські (УПР)", "other": "Інше"}
+
+
+def fund_of(sc):
+    """У який фонд «Планування» йде тверда частина цієї людини/вакансії (options.fund_article_id або за відділом)."""
+    o = (sc.options or {}).get("fund_article_id")
+    return int(o) if o else FUND_BY_DEPT.get(sc.department, 59)
+
+
 def breakeven_atm(extra_ids=(), without_ids=(), today=None):
-    """Точка беззбитковості за ATM: фінмодель (крім замінених статей) + ставки співробітників (+ вакансії «що якщо»)."""
-    from apps.finance.models import FinModelArticle
+    """Точка беззбитковості — ОДНА для всієї CRM: її рахують Фінанси (compute_breakeven) з фондів, розставлених у «Плануванні».
+    Тут лише розшифровка по групах фондів, порівняння «ФОТ у фонді / за ставками» і вакансії «що якщо».
+    Ставки фонди НЕ підміняють: значення фонду міняє лише Олег (кнопка «Підставити зі ставок»)."""
+    from apps.finance.models import FinModelArticle, WorkDay  # noqa: F401
+    from apps.finance.services import _fin_articles, compute_breakeven
     from .models import PayScheme
     pol = policy()
     today = today or timezone.localdate()
-    sh = shares(pol, today)
-    replaced = set(int(x) for x in pol.get("replaced_articles") or [])
-    rev_funds, m_fixed, skd, replaced_rows = [], [], [], []
-    for a in FinModelArticle.objects.filter(active=True).order_by("category", "sort_order", "id"):
+    d1 = today.replace(day=1)
+    d2 = date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
+    be = compute_breakeven(d1, d2)
+    mpct = float(be.get("margin_pct") or 0)
+    k = (100.0 / mpct) if mpct > 0 else None
+    arts = _fin_articles()
+    # групи — рівно як у «Плануванні» (FinModelArticle.fund_group); у ТБ входить те саме, що рахує compute_breakeven
+    levels = {"revenue": [], "margin": [], "skd": [], "upr": [], "other": []}
+    fund_sum = 0.0
+    monthly_types = ("fixed_sum_per_month", "auto_meta_ads")
+    for a in sorted(arts, key=lambda x: (x.category, x.sort_order, x.id)):
         v = float(a.value or 0)
-        row = {"id": a.id, "name": a.name, "value": v, "source": "фінмодель"}
-        if a.id in replaced:
-            replaced_rows.append({**row, "category": a.get_category_display()})
-            continue
-        if a.category == "revenue_fund" and a.value_type == "percent":
-            rev_funds.append({**row, "unit": "%"})
-        elif a.category in ("fixed", "variable", "upr_cat2") and a.value_type in ("fixed_sum_per_month", "auto_meta_ads"):
-            m_fixed.append({**row, "unit": "₴"})
-        elif a.category == "payment_fee" and a.value_type == "fixed_per_deal":
-            per_month = sh["deals"] / sh["months"]
-            m_fixed.append({**row, "value": round(v * per_month), "unit": "₴", "name": f"{a.name} (× {round(per_month)} угод/міс)"})
-        elif a.category in ("skd", "upr_cat3") and a.value_type == "fixed_sum_per_month":
-            skd.append({**row, "unit": "₴"})
-    staff, vacancies = [], []
+        row = {"id": a.id, "name": a.name, "value": v, "auto": a.value_type == "auto_meta_ads"}
+        if a.category in ("revenue_fund", "payment_fee") and a.value_type == "percent":
+            levels["revenue"].append({**row, "unit": "%"})
+        elif a.category in ("fixed", "variable") and a.value_type in monthly_types:
+            levels["margin"].append({**row, "unit": "₴", "kind": "постійні" if a.category == "fixed" else "змінні"})
+            fund_sum += v
+        elif a.category == "skd" and a.value_type in monthly_types:
+            levels["skd"].append({**row, "unit": "₴"})
+            fund_sum += v
+        elif a.category == "upr_cat2" and a.value_type in monthly_types:
+            levels["upr"].append({**row, "unit": "₴"})
+            fund_sum += v
+    per_deal = round(float(be.get("monthly_costs") or 0) - fund_sum)
+    if per_deal:
+        levels["other"].append({"id": 50, "name": "AI-витрати на угоду × угоди місяця", "value": per_deal, "unit": "₴"})
+    # ФОТ: що у фондах і що виходить за ставками
+    sh = shares(pol, today)
+    art_by_id = {a.id: a for a in arts}
+    by_fund, pct_rev = {}, 0.0
     for s in staff_on(today):
-        if s.id in without_ids:
-            continue
-        staff.append(s)
-    for v in PayScheme.objects.filter(is_vacancy=True, status="active", purpose="official").order_by("planned_start", "id"):
-        vacancies.append(v)
-        if (v.in_plan or v.id in extra_ids) and v.id not in without_ids:
-            staff.append(v)
-    pay_rows = []
-    pay_fixed = pay_m = pay_r = 0.0
-    for s in staff:
         c = scheme_cost(s, pol, sh, today)
-        pay_fixed += c["fixed_cost"]
-        pay_m += c["margin_pct"]
-        pay_r += c["revenue_pct"]
-        pay_rows.append({"scheme_id": s.id, "name": (s.user.get_full_name() or s.user.username) if s.user_id else s.position,
-                         "position": s.position, "employment": s.get_employment_display(), "is_vacancy": s.is_vacancy, **c})
-    div = float(pol.get("dividends_pct") or 0) / 100
-    rev_pct = sum(r["value"] for r in rev_funds) / 100 + pay_r
-    m_pct = pay_m + div
-    fixed = sum(r["value"] for r in m_fixed) + pay_fixed
-    skd_sum = sum(r["value"] for r in skd)
-
-    def tb(fx, mp, rp):
-        if mp >= 1 or rp >= 1:
-            return None, None
-        m = (skd_sum + fx) / (1 - mp)
-        return m, m / (1 - rp)
-
-    margin_need, be = tb(fixed, m_pct, rev_pct)
-    k = 1 / ((1 - m_pct) * (1 - rev_pct)) if m_pct < 1 and rev_pct < 1 else None
-    vac_rows = []
-    for v in vacancies:
+        f = fund_of(s)
+        r = by_fund.setdefault(f, {"sum": 0.0, "people": []})
+        r["sum"] += c["fixed_cost"]
+        if c["fixed_cost"]:
+            r["people"].append({"name": (s.user.get_full_name() or s.user.username) if s.user_id else s.position, "amount": c["fixed_cost"]})
+        pct_rev += c["margin_pct"] * sh["margin_pct"] + c["revenue_pct"] - c.get("piece_pct", 0)
+    piece_month = 0.0
+    try:
+        from apps.warehouse.models import WarehousePayrollEntry
+        piece_month = float(WarehousePayrollEntry.objects.filter(work_date__gte=sh["from"], work_date__lte=sh["to"], status="confirmed")
+                            .aggregate(x=Sum("amount"))["x"] or 0) / sh["months"]
+    except Exception:
+        pass
+    fot = []
+    for fid in sorted(set(by_fund) | {PCT_FUND, PIECE_FUND}):
+        a = art_by_id.get(fid)
+        if not a:
+            continue
+        if fid == PCT_FUND:
+            sug, unit, people = round(pct_rev * 100, 2), "%", []
+        elif fid == PIECE_FUND:
+            sug, unit, people = round(piece_month), "₴", []
+        else:
+            sug, unit, people = round(by_fund[fid]["sum"]), "₴", by_fund[fid]["people"]
+        cur = float(a.value or 0)
+        fot.append({"fund_id": fid, "name": a.name, "unit": unit, "value": cur, "suggested": sug,
+                    "diff": round(sug - cur, 2), "people": people,
+                    # «Маркетинг СММ» містить і контент/рекламу, не лише людей — тільки порівняння, без кнопки
+                    "syncable": a.name.strip().upper().startswith("ФОТ")})
+    # вакансії «що якщо»: тверда частина з податками → у свій фонд → ТБ зростає на суму × k
+    vac, add = [], 0.0
+    for v in PayScheme.objects.filter(is_vacancy=True, status="active", purpose="official").order_by("planned_start", "id"):
         c = scheme_cost(v, pol, sh, today)
         included = (v.in_plan or v.id in extra_ids) and v.id not in without_ids
-        if included:
-            _, be2 = tb(fixed - c["fixed_cost"], m_pct - c["margin_pct"], rev_pct - c["revenue_pct"])
-            delta = (be - be2) if (be and be2) else None
-        else:
-            _, be2 = tb(fixed + c["fixed_cost"], m_pct + c["margin_pct"], rev_pct + c["revenue_pct"])
-            delta = (be2 - be) if (be and be2) else None
-        vac_rows.append({"scheme_id": v.id, "position": v.position, "planned_start": v.planned_start.isoformat() if v.planned_start else None,
-                         "employment": v.get_employment_display(), "included": included, "fixed_cost": c["fixed_cost"],
-                         "fixed_net": c["fixed_net"], "delta_breakeven": round(delta) if delta else None,
-                         "payback_revenue": round(c["fixed_cost"] * k) if k else None})
-    d1 = today.replace(day=1)
-    rev_month = float(_income(d1, today).aggregate(s=Sum("amount_uah"))["s"] or 0)
-    pm_end = d1 - timedelta(days=1)
-    rev_prev = float(_income(pm_end.replace(day=1), pm_end).aggregate(s=Sum("amount_uah"))["s"] or 0)
+        delta = round(c["fixed_cost"] * k) if k else None
+        if included and delta:
+            add += delta
+        a = art_by_id.get(fund_of(v))
+        vac.append({"scheme_id": v.id, "position": v.position, "planned_start": v.planned_start.isoformat() if v.planned_start else None,
+                    "employment": v.get_employment_display(), "included": included, "fixed_net": c["fixed_net"],
+                    "fixed_cost": c["fixed_cost"], "fund": a.name if a else "", "delta_breakeven": delta, "payback_revenue": delta})
+    base = float(be.get("breakeven") or 0)
     return {
-        "breakeven": round(be) if be else None, "margin_needed": round(margin_need) if margin_need else None,
-        "k_fixed": round(k, 2) if k else None,
-        "rev_funds_pct": round(rev_pct * 100, 2), "margin_funds_pct": round(m_pct * 100, 2),
-        "fixed_total": round(fixed), "skd_total": round(skd_sum), "payroll_fixed": round(pay_fixed),
-        "levels": {
-            "revenue": rev_funds + [{"name": "Ставки: % з обороту, відрядно (склад)", "value": round(pay_r * 100, 2), "unit": "%", "source": "ставки"}],
-            "margin_pct": [{"name": "Ставки: % з маржі продавців", "value": round(pay_m * 100, 2), "unit": "%", "source": "ставки"},
-                           {"name": "Дивіденди власника", "value": round(div * 100, 2), "unit": "%", "source": "правила"}],
-            "margin_fixed": m_fixed + [{"name": "Ставки: тверді частини з податками", "value": round(pay_fixed), "unit": "₴", "source": "ставки"}],
-            "skd": skd,
-        },
-        "payroll": pay_rows, "vacancies": vac_rows, "replaced_articles": replaced_rows,
-        "shares": {"from": sh["from"].isoformat(), "to": sh["to"].isoformat(), "margin_pct": round(sh["margin_pct"] * 100, 1),
-                   "rev_month_avg": round(sh["rev_total"] / sh["months"])},
-        "revenue_month": round(rev_month), "revenue_prev_month": round(rev_prev),
-        "progress": round(rev_month / be * 100, 1) if be else None,
-        "policy": {"dividends_pct": pol.get("dividends_pct"), "taxes": pol["taxes"]},
+        "breakeven": round(base), "breakeven_with": round(base + add), "with_delta": round(add),
+        "k_fixed": round(k, 2) if k else None, "margin_pct": mpct, "rev_funds_pct": be.get("rev_funds_pct"),
+        "monthly_costs": be.get("monthly_costs"), "margin_needed": round(base * mpct / 100) if mpct else None,
+        "revenue_month": be.get("revenue"), "progress": be.get("progress"),
+        "levels": levels, "group_labels": GROUP_LABELS,
+        "formula": "ТБ = (фонди маржі + фонди СКД) ÷ маржинальність %d%%" % round(mpct) if mpct else "",
+        "fot": fot, "vacancies": vac,
+        "shares": {"from": sh["from"].isoformat(), "to": sh["to"].isoformat(), "margin_pct": round(sh["margin_pct"] * 100, 1)},
     }
 
 

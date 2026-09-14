@@ -248,7 +248,7 @@ class ApiTests(_Base):
         self.d = self.deal(1000)
         self.item(self.d, self.goods, 1, 1000, 400)
         self.mgr = User.objects.create_user(username="mgr", password="x")
-        self.mgr.extra_permissions = ["product.cost.view", "deal.view.all"]
+        self.mgr.extra_permissions = ["deal.economics.view", "deal.view.all"]   # 14.09: окреме право (було product.cost.view)
         self.mgr.save()
         self.plain = User.objects.create_user(username="plain", password="x")
         self.plain.extra_permissions = ["deal.view.all"]
@@ -281,7 +281,7 @@ class ApiTests(_Base):
 
     def test_foreign_deal_hidden_by_scope(self):
         m = User.objects.create_user(username="own", password="x")
-        m.extra_permissions = ["product.cost.view"]
+        m.extra_permissions = ["deal.economics.view"]
         m.save()
         self.assertEqual(self.get(m, self.url).status_code, 404)
 

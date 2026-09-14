@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "../Icon";
 
 /* Швидкі відповіді як «скрипт продажів» (14.09, запит Олега): велике вікно, зліва — етапи розмови
  * в порядку скрипта, зверху — карта розмови (куди вести клієнта далі), посередині — відповіді етапу
@@ -94,7 +95,7 @@ export function QuickRepliesScript({ replies, fillName, busy, error, onClose, on
     const on = !q && s.key === cur.key;
     return <button key={s.key || "_other"} type="button" onClick={() => pickStage(s.key)}
       style={{ border: `1px solid ${on ? "#2E6FB0" : "#dbe3ee"}`, background: on ? "#e6eef8" : "#fff", color: "#1b2230", borderRadius: 999, padding: "4px 10px", fontSize: 12, fontWeight: on ? 700 : 500, whiteSpace: "nowrap", cursor: "pointer" }}>
-      {s.icon} {s.label} <span style={{ color: "#7b8496", fontWeight: 500 }}>{count(s.key)}</span>
+      <Icon n={s.icon} size={13} /> {s.label} <span style={{ color: "#7b8496", fontWeight: 500 }}>{count(s.key)}</span>
     </button>;
   };
   const flow = stages.filter((s) => s.key !== "Дожими і повернення з ігнору" && s.key !== "Тест → основне замовлення" && s.key !== "");
@@ -105,10 +106,10 @@ export function QuickRepliesScript({ replies, fillName, busy, error, onClose, on
     <div style={{ width: "min(1080px, 100%)", height: narrow ? "96vh" : "min(720px, 92vh)", background: "#fff", borderRadius: 14, boxShadow: "0 24px 64px rgba(15,23,42,.3)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* шапка */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "1px solid #e2e8f0", flexWrap: "wrap" }}>
-        <b style={{ fontSize: 15 }}>⚡ Швидкі відповіді — скрипт продажів</b>
+        <b style={{ fontSize: 15 }}><Icon n="⚡" size={15} /> Швидкі відповіді — скрипт продажів</b>
         <input value={q} onChange={(e) => { setQ(e.target.value); setSelId(null); }} autoFocus placeholder="Пошук по всіх етапах: «дорого», «доставка», «тест»…"
           style={{ flex: "1 1 220px", minWidth: 180, height: 32, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13 }} />
-        <button className="btn btn-light" type="button" onClick={onBack} style={{ fontSize: 12 }}>🎨 Матеріали</button>
+        <button className="btn btn-light" type="button" onClick={onBack} style={{ fontSize: 12 }}><Icon n="🎨" size={13} /> Матеріали</button>
         <button className="btn" type="button" onClick={onClose} aria-label="Закрити" style={{ padding: "2px 9px" }}>×</button>
       </div>
       {/* карта розмови */}
@@ -124,7 +125,7 @@ export function QuickRepliesScript({ replies, fillName, busy, error, onClose, on
       <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: narrow ? "1fr" : "minmax(0, 1fr) minmax(0, 1.15fr)", gridTemplateRows: narrow ? "minmax(0, 1fr) auto" : "1fr" }}>
         <div ref={listRef} style={{ overflowY: "auto", padding: "10px 12px", borderRight: narrow ? "none" : "1px solid #eef2f7" }}>
           {!q && <div style={{ background: "#f1f5f9", borderRadius: 8, padding: "8px 10px", fontSize: 12.5, lineHeight: 1.45, marginBottom: 8 }}>
-            <b>{cur.icon} {cur.label}.</b> {cur.goal}
+            <b><Icon n={cur.icon} size={14} /> {cur.label}.</b> {cur.goal}
             {cur.next && <div style={{ marginTop: 4 }}>Далі: <button type="button" onClick={() => pickStage(cur.next)} style={{ border: 0, background: "none", color: "#2E6FB0", cursor: "pointer", padding: 0, fontSize: 12.5, fontWeight: 600 }}>{cur.next} →</button></div>}
           </div>}
           {q && <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Знайдено: {list.length}</div>}
@@ -135,7 +136,7 @@ export function QuickRepliesScript({ replies, fillName, busy, error, onClose, on
               style={{ display: "block", width: "100%", textAlign: "left", border: `1px solid ${on ? "#2E6FB0" : "#e2e8f0"}`, background: on ? "#f3f8fe" : "#fff", borderRadius: 9, padding: "8px 10px", marginBottom: 6, cursor: "pointer" }}>
               <div style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
                 <b style={{ fontSize: 13 }}>{r.title}</b>
-                {(r.asset_ids || []).length > 0 && <span title="з фото/відео" style={{ fontSize: 11 }}>🖼</span>}
+                {(r.asset_ids || []).length > 0 && <span title="з фото/відео" style={{ fontSize: 11, color: "#64748b" }}><Icon n="🖼" size={12} /></span>}
                 {q && <span className="muted" style={{ fontSize: 11, marginLeft: "auto", whiteSpace: "nowrap" }}>{(stages.find((s) => s.key === (r.category || "")) || OTHER).label}</span>}
               </div>
               {r.when_to_use && <div style={{ fontSize: 11.5, color: "#2E6FB0", marginTop: 2 }}>Коли: {r.when_to_use}</div>}

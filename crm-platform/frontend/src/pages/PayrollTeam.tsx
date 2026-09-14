@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { Icon } from "../Icon";
 
 /* ЗП за ставками співробітників (14.09) — одне джерело: Налаштування → Ставки співробітників.
  * Відомість місяця: «Затвердити місяць» заморожує суму (зміна ставок потім її не чіпає — лише «зараз вийшло б …»),
@@ -14,7 +15,7 @@ function Lines({ lines }: { lines: any[] }) {
     <div key={i} style={{ display: "flex", gap: 8, padding: "3px 0", borderBottom: "1px dashed #f1f5f9" }}>
       <span style={{ flex: 1, minWidth: 0 }}>{l.title}{l.rate ? <span className="muted"> · {l.rate}</span> : null}
         {l.detail && <div className="muted" style={{ fontSize: 11.5 }}>{l.detail}</div>}
-        {l.warn && <div style={{ fontSize: 11.5, color: "#92400e" }}>⚠ {l.warn}</div>}</span>
+        {l.warn && <div style={{ fontSize: 11.5, color: "#92400e" }}><Icon n="warn" size={12} /> {l.warn}</div>}</span>
       <b style={{ whiteSpace: "nowrap" }}>{money(l.amount)}</b>
     </div>))}</>;
 }
@@ -74,13 +75,13 @@ function Row({ r, period, canApprove, onChange }: { r: any; period: string; canA
   return (
     <div style={{ borderTop: "1px solid #eef2f7", padding: "7px 0" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", flexWrap: "wrap" }} onClick={() => setOpen(!open)}>
-        <span style={{ width: 14 }}>{open ? "▾" : "▸"}</span>
+        <Icon n="chevron-down" size={14} style={{ transform: open ? "none" : "rotate(-90deg)", transition: "transform .15s", color: "#64748b" }} />
         <b style={{ flex: 1, minWidth: 160 }}>{r.user_name}<span className="muted" style={{ fontWeight: 400, fontSize: 12 }}> · {r.scheme?.position || "ставку не задано"}</span></b>
         {run
-          ? <span style={{ fontSize: 11, color: "#15803d", background: "#dcfce7", borderRadius: 999, padding: "1px 8px" }}>🔒 затверджено{run.remaining > 0 ? ` · залишок ${money(run.remaining)}` : run.total > 0 ? " · виплачено" : ""}</span>
+          ? <span style={{ fontSize: 11, color: "#15803d", background: "#dcfce7", borderRadius: 999, padding: "1px 8px" }}><Icon n="lock" size={11} /> затверджено{run.remaining > 0 ? ` · залишок ${money(run.remaining)}` : run.total > 0 ? " · виплачено" : ""}</span>
           : <span style={{ fontSize: 11, color: "#475569", background: "#f1f5f9", borderRadius: 999, padding: "1px 8px" }}>рахується наживо</span>}
         {run && run.live_diff ? <span style={{ fontSize: 11, color: "#92400e", background: "#fef3c7", borderRadius: 999, padding: "1px 8px" }} title="Ставки чи факти змінились після затвердження">зараз вийшло б {money(run.live_total)}</span> : null}
-        {!run && r.warnings?.length > 0 && <span title={r.warnings.join("\n")} style={{ fontSize: 11, color: "#92400e", background: "#fef3c7", borderRadius: 999, padding: "1px 7px" }}>⚠ {r.warnings.length}</span>}
+        {!run && r.warnings?.length > 0 && <span title={r.warnings.join("\n")} style={{ fontSize: 11, color: "#92400e", background: "#fef3c7", borderRadius: 999, padding: "1px 7px" }}><Icon n="warn" size={11} /> {r.warnings.length}</span>}
         <b style={{ fontSize: 15, fontVariantNumeric: "tabular-nums" }}>{money(shown)}</b>
       </div>
       {open && (
@@ -113,14 +114,14 @@ export default function PayrollTeam({ period }: { period: string }) {
   return (
     <div className="panel" style={{ margin: "0 0 14px", border: "2px solid #2E6FB0" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <b style={{ fontSize: 15 }}>💼 ЗП за ставками співробітників</b>
+        <b style={{ fontSize: 15 }}><Icon n="💼" size={15} /> ЗП за ставками співробітників</b>
         <span className="muted" style={{ fontSize: 12 }}>ставки — Налаштування → Ставки співробітників; «Затвердити місяць» фіксує суму, «Привʼязати виплату» — що вже виплачено</span>
         <span style={{ flex: 1 }} />
         {d && <span style={{ fontSize: 13 }}>Разом <b>{money(d.total)}</b> · виплачено <b>{money(d.paid)}</b> · затверджено {d.approved} з {d.rows.length}</span>}
       </div>
       {q && (
         <div style={{ marginTop: 6, fontSize: 12.5, borderRadius: 8, padding: "6px 10px", background: q.ok ? "#f0fdf4" : "#fef3c7" }}>
-          {q.ok ? "✓" : "⚠"} Квартал {q.months[0].slice(5)}–{q.months[2].slice(5)}.{q.months[2].slice(0, 4)}: ЗП продажників {money(q.sales_pay)} = <b>{q.pct}%</b> маржі компанії ({money(q.margin)}), межа {q.cap}%.
+          <Icon n={q.ok ? "check" : "warn"} size={13} /> Квартал {q.months[0].slice(5)}–{q.months[2].slice(5)}.{q.months[2].slice(0, 4)}: ЗП продажників {money(q.sales_pay)} = <b>{q.pct}%</b> маржі компанії ({money(q.margin)}), межа {q.cap}%.
           <span className="muted"> {q.ok ? "У межах." : "Вище межі: розібрати причини і поправити ставки з наступного кварталу — ЗП за місяць не ріжемо."}</span>
         </div>
       )}

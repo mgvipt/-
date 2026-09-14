@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
-import BreakevenAtm from "./BreakevenAtm";
+import { Icon } from "../Icon";
 
 /* Налаштування → Ставки співробітників (14.09, рішення Олега «все з одного місця»).
  * Тут задаються оклади, % з маржі, % з обороту, гарантія новачку, відрядна оплата, акти обʼєктів.
- * Звідси беруть: ЗП (Фінанси → ЗП/KPI), точка беззбитковості за ATM, бонус у картці угоди.
+ * Звідси беруть: ЗП (Фінанси → ЗП/KPI) і бонус у картці угоди. Точка беззбитковості — Фінанси (фонди «Планування»),
+ * акти обʼєктів — картка клієнта (ObjectActsBlock). Редактор: зліва частини оплати по розділах, справа — скільки коштує і розрахунок.
  * Зміна з наступного місяця = нова версія; минулі місяці не перераховуються. */
 
 type Comp = { id?: number; kind: string; kind_label?: string; title: string; params: any; active?: boolean };
@@ -45,11 +46,25 @@ function Num({ value, onChange, suffix, width = 90, disabled }: { value: any; on
   </span>;
 }
 
+// службові воронки (найм, технічна, база клієнтів) — не для ставок; показуються лише якщо вже обрані
+const SERVICE_FUNNEL = /найм|техническ|технічн|база клиент|база клієнт/i;
+const chip: React.CSSProperties = { fontSize: 11.5, background: "#eef2ff", color: "#3730a3", borderRadius: 999, padding: "1px 8px", whiteSpace: "nowrap" };
+
 function FunnelPick({ value, funnels, onChange, disabled }: { value: number[]; funnels: any[]; onChange: (v: number[]) => void; disabled?: boolean }) {
-  return <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8 }}>
-    {funnels.map((f) => <label key={f.id} style={{ fontSize: 12, display: "inline-flex", gap: 4, alignItems: "center" }}>
-      <input type="checkbox" disabled={disabled} checked={(value || []).includes(f.id)} onChange={() => onChange((value || []).includes(f.id) ? value.filter((x) => x !== f.id) : [...(value || []), f.id])} />{f.name}
-    </label>)}
+  const [edit, setEdit] = useState(false);
+  const v = value || [];
+  const picked = funnels.filter((f) => v.includes(f.id));
+  const unknown = v.filter((id) => !funnels.some((f) => f.id === id));
+  return <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
+    {picked.map((f) => <span key={f.id} style={chip}>{f.name}</span>)}
+    {unknown.map((id) => <span key={id} style={chip}>воронка #{id}</span>)}
+    {v.length === 0 && <span className="muted" style={{ fontSize: 12 }}>не обрано</span>}
+    {!disabled && <button className="btn btn-light" style={{ fontSize: 11.5, height: 22, padding: "0 7px" }} onClick={() => setEdit(!edit)}>{edit ? "готово" : "змінити"}</button>}
+    {edit && <span style={{ flexBasis: "100%", display: "flex", flexWrap: "wrap", gap: 10, background: "#f8fafc", borderRadius: 8, padding: "6px 8px", marginTop: 3 }}>
+      {funnels.filter((f) => !SERVICE_FUNNEL.test(f.name) || v.includes(f.id)).map((f) => <label key={f.id} style={{ fontSize: 12, display: "inline-flex", gap: 4, alignItems: "center" }}>
+        <input type="checkbox" checked={v.includes(f.id)} onChange={() => onChange(v.includes(f.id) ? v.filter((x) => x !== f.id) : [...v, f.id])} />{f.name}
+      </label>)}
+    </span>}
   </span>;
 }
 
@@ -129,7 +144,7 @@ function CalcPreview({ scheme, canEdit, onMarked }: { scheme: Scheme; canEdit: b
         {r.lines.map((l: any, i: number) => <div key={i} style={{ display: "flex", gap: 8, fontSize: 12.5, padding: "4px 0", borderBottom: "1px dashed #eef2f7" }}>
           <span style={{ flex: 1, minWidth: 0 }}>{l.title}{l.rate ? <span className="muted"> · {l.rate}</span> : null}
             {l.detail && <div className="muted" style={{ fontSize: 11.5 }}>{l.detail}</div>}
-            {l.warn && <div style={{ fontSize: 11.5, color: "#92400e" }}>⚠ {l.warn}</div>}</span>
+            {l.warn && <div style={{ fontSize: 11.5, color: "#92400e" }}><Icon n="warn" size={12} /> {l.warn}</div>}</span>
           <b style={{ whiteSpace: "nowrap" }}>{money(l.amount)}</b></div>)}
         {r.preview && <div style={{ fontSize: 12, marginTop: 5, color: "#1d4ed8" }}>Приклад: так нарахувалось би за цією схемою в місяці, коли вона ще не діяла (на реальних оплатах і табелі того місяця).</div>}
         {r.legacy && <div className="muted" style={{ fontSize: 12, marginTop: 5 }}>За старою схемою («{r.legacy.title}») за цей місяць вийшло б {money(r.legacy.total)}.</div>}
@@ -137,8 +152,17 @@ function CalcPreview({ scheme, canEdit, onMarked }: { scheme: Scheme; canEdit: b
   </div>;
 }
 
-function SchemeEditor({ scheme, funnels, users, kinds, conds, canEdit, k, onSaved }: {
-  scheme: Scheme; funnels: any[]; users: any[]; kinds: any[]; conds: string[]; canEdit: boolean; k: number | null; onSaved: (id?: number) => void;
+const SECTIONS: { key: string; title: string; hint: string; kinds: string[]; icon: string }[] = [
+  { key: "fixed", title: "Тверда частина", hint: "Щомісяця, незалежно від продажів. Саме вона порівнюється з фондом у «Плануванні».", kinds: ["base_by_days", "fixed_monthly", "standard", "guarantee"], icon: "wallet" },
+  { key: "sales", title: "Від продажів", hint: "% з маржі або з обороту — платиться з грошей, які людина принесла.", kinds: ["margin_share", "revenue_share"], icon: "trending-up" },
+  { key: "bonus", title: "Бонуси за подію", hint: "Разові виплати: тест-набір → основне замовлення.", kinds: ["event_bonus"], icon: "gift" },
+  { key: "piece", title: "Склад — відрядно", hint: "За вагу, пакування, тонування, робочий день — із записів складу.", kinds: ["piece_rate"], icon: "package" },
+];
+const sectionOf = (kind: string) => SECTIONS.find((x) => x.kinds.includes(kind))?.key || "fixed";
+const lbl: React.CSSProperties = { fontSize: 12, color: "#475569" };
+
+function SchemeEditor({ scheme, funnels, users, kinds, conds, funds, fundByDept, canEdit, k, onSaved }: {
+  scheme: Scheme; funnels: any[]; users: any[]; kinds: any[]; conds: string[]; funds: any[]; fundByDept: Record<string, number>; canEdit: boolean; k: number | null; onSaved: (id?: number) => void;
 }) {
   const [s, setS] = useState<Scheme>(scheme);
   const [from, setFrom] = useState(scheme.valid_from.slice(0, 7));
@@ -148,6 +172,7 @@ function SchemeEditor({ scheme, funnels, users, kinds, conds, canEdit, k, onSave
   useEffect(() => { setS(scheme); setFrom(scheme.valid_from.slice(0, 7)); setMsg(""); setFillUser(""); }, [scheme.id, scheme.valid_from, scheme.status]);
   const newVersion = !s.is_vacancy && from > scheme.valid_from.slice(0, 7);
   const setComp = (i: number, c: Comp) => setS({ ...s, components: s.components.map((x, j) => (j === i ? c : x)) });
+  const addComp = (kind: string) => setS({ ...s, components: [...s.components, { kind, title: kinds.find((x) => x.kind === kind)?.label || "", params: kind === "guarantee" ? { amount: 15000, months: 2, start: s.planned_start || s.valid_from } : {} }] });
   async function save() {
     setBusy(true); setMsg("");
     try {
@@ -166,54 +191,73 @@ function SchemeEditor({ scheme, funnels, users, kinds, conds, canEdit, k, onSave
   }
   const cost = scheme.cost;
   const ro = !canEdit;
-  return <div>
-    <div style={box}>
-      <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-        <b style={{ fontSize: 15 }}>{s.user_name || (s.is_vacancy ? "Вакансія" : s.position)}</b>
-        <span className="muted" style={{ fontSize: 12 }}>{s.purpose === "legacy" ? "як платили раніше (для порівняння)" : s.is_vacancy ? "вакансія — «що якщо»" : `діє з ${dm(scheme.valid_from)}${scheme.valid_to ? ` до ${dm(scheme.valid_to)}` : ""}`}</span>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginTop: 8, fontSize: 12.5 }}>
-        <label>Посада<br /><input value={s.position} disabled={ro} onChange={(e) => setS({ ...s, position: e.target.value })} style={{ ...inp, width: "100%" }} /></label>
-        <label>Відділ<br /><select value={s.department} disabled={ro} onChange={(e) => setS({ ...s, department: e.target.value })} style={{ ...inp, width: "100%" }}>{["", ...DEPTS].map((d) => <option key={d} value={d}>{d || "—"}</option>)}</select></label>
-        <label>Оформлення<br /><select value={s.employment} disabled={ro} onChange={(e) => setS({ ...s, employment: e.target.value })} style={{ ...inp, width: "100%" }}>{EMPL.map(([k2, l]) => <option key={k2} value={k2}>{l}</option>)}</select></label>
-        {!s.is_vacancy && <label>Діє з місяця<br /><input type="month" value={from} disabled={ro} onChange={(e) => setFrom(e.target.value)} style={{ ...inp, width: "100%" }} /></label>}
-        {s.is_vacancy && <label>Плановий вихід<br /><input type="date" value={s.planned_start || ""} disabled={ro} onChange={(e) => setS({ ...s, planned_start: e.target.value })} style={{ ...inp, width: "100%" }} /></label>}
-      </div>
-      {s.is_vacancy && <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 8, fontSize: 12.5 }}>
-        <label><input type="checkbox" disabled={ro} checked={s.in_plan} onChange={(e) => setS({ ...s, in_plan: e.target.checked })} /> Враховувати в точці беззбитковості</label>
-        {canEdit && <label>Людина вийшла: <select value={fillUser} onChange={(e) => setFillUser(e.target.value)} style={inp}><option value="">—</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>}
-      </div>}
-      {newVersion && <div style={{ fontSize: 12, color: "#1d4ed8", marginTop: 6 }}>Зберегти створить НОВУ версію з {dm(from + "-01")}; до цього місяця діятиме поточна — минулі місяці не перераховуються.</div>}
-      {cost && s.purpose === "official" && <div style={{ display: "flex", flexWrap: "wrap", gap: 14, fontSize: 12.5, marginTop: 8, background: "#f8fafc", borderRadius: 8, padding: "6px 8px" }}>
-        <span>Тверда частина «на руки»: <b>{money(cost.fixed_net)}</b></span>
-        <span>Коштує компанії з податками: <b>{money(cost.fixed_cost)}</b>{cost.taxes_ratio > 1 ? <span className="muted"> (×{cost.taxes_ratio})</span> : null}</span>
-        {k && <span>Точка беззбитковості: <b>+{money(cost.fixed_cost * k)}</b> виручки / міс</span>}
-        {k && <span className="muted">Щоб окупитися, людина має принести ≈ {money(cost.fixed_cost * k)} нової виручки на місяць</span>}
-      </div>}
-    </div>
-    <div style={{ ...box, marginTop: 10 }}>
-      <b style={{ fontSize: 13.5 }}>З чого складається оплата</b>
-      {s.components.map((c, i) => <div key={c.id ?? `n${i}`} style={{ borderTop: "1px solid #eef2f7", paddingTop: 7, marginTop: 7 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span className="muted" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>{kinds.find((x) => x.kind === c.kind)?.label || c.kind}</span>
-          <input value={c.title} disabled={ro} onChange={(e) => setComp(i, { ...c, title: e.target.value })} style={{ ...inp, flex: 1, minWidth: 120 }} />
-          {canEdit && <button className="btn btn-light" style={{ fontSize: 12, padding: "0 8px" }} onClick={() => setS({ ...s, components: s.components.filter((_, j) => j !== i) })}>✕</button>}
+  const fundId = Number(s.options?.fund_article_id) || fundByDept[s.department] || 59;
+  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))", gap: 12, alignItems: "start" }}>
+    <div style={{ display: "grid", gap: 10, minWidth: 0 }}>
+      <div style={box}>
+        <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+          <b style={{ fontSize: 15 }}>{s.user_name || (s.is_vacancy ? "Вакансія" : s.position)}</b>
+          <span className="muted" style={{ fontSize: 12 }}>{s.purpose === "legacy" ? "як платили раніше (для порівняння)" : s.is_vacancy ? "вакансія — «що якщо»" : `діє з ${dm(scheme.valid_from)}${scheme.valid_to ? ` до ${dm(scheme.valid_to)}` : ""}`}</span>
         </div>
-        <ParamsEditor comp={c} funnels={funnels} conds={conds} disabled={ro} onChange={(p) => setComp(i, { ...c, params: p })} />
-      </div>)}
-      {canEdit && <div style={{ marginTop: 8 }}>
-        <select value="" onChange={(e) => { if (e.target.value) setS({ ...s, components: [...s.components, { kind: e.target.value, title: kinds.find((x) => x.kind === e.target.value)?.label || "", params: e.target.value === "guarantee" ? { amount: 15000, months: 2, start: s.planned_start || s.valid_from } : {} }] }); }} style={inp}>
-          <option value="">+ Додати частину оплати…</option>{kinds.map((x) => <option key={x.kind} value={x.kind}>{x.label}</option>)}
-        </select>
-      </div>}
-      <label style={{ display: "block", fontSize: 12.5, marginTop: 8 }}>Примітка<textarea value={s.note} disabled={ro} onChange={(e) => setS({ ...s, note: e.target.value })} rows={2} style={{ width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 6, padding: 6, fontSize: 12.5 }} /></label>
-      {canEdit && <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? "…" : newVersion ? "Зберегти як нову версію" : "Зберегти"}</button>
-        <button className="btn btn-light" onClick={archive}>В архів</button>
-        {msg && <span style={{ fontSize: 12.5 }}>{msg}</span>}
-      </div>}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginTop: 8 }}>
+          <label style={lbl}>Посада<br /><input value={s.position} disabled={ro} onChange={(e) => setS({ ...s, position: e.target.value })} style={{ ...inp, width: "100%" }} /></label>
+          <label style={lbl}>Відділ<br /><select value={s.department} disabled={ro} onChange={(e) => setS({ ...s, department: e.target.value })} style={{ ...inp, width: "100%" }}>{["", ...DEPTS].map((d) => <option key={d} value={d}>{d || "—"}</option>)}</select></label>
+          <label style={lbl}>Оформлення<br /><select value={s.employment} disabled={ro} onChange={(e) => setS({ ...s, employment: e.target.value })} style={{ ...inp, width: "100%" }}>{EMPL.map(([k2, l]) => <option key={k2} value={k2}>{l}</option>)}</select></label>
+          {!s.is_vacancy && <label style={lbl}>Діє з місяця<br /><input type="month" value={from} disabled={ro} onChange={(e) => setFrom(e.target.value)} style={{ ...inp, width: "100%" }} /></label>}
+          {s.is_vacancy && <label style={lbl}>Плановий вихід<br /><input type="date" value={s.planned_start || ""} disabled={ro} onChange={(e) => setS({ ...s, planned_start: e.target.value })} style={{ ...inp, width: "100%" }} /></label>}
+          {s.purpose === "official" && funds.length > 0 && <label style={lbl} title="Куди йде тверда частина при порівнянні «у фонді / за ставками» (Фінанси → Точка беззбитковості). Сам фонд не змінюється.">Фонд у «Плануванні»<br />
+            <select value={fundId} disabled={ro} onChange={(e) => setS({ ...s, options: { ...(s.options || {}), fund_article_id: Number(e.target.value) } })} style={{ ...inp, width: "100%" }}>
+              {funds.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}
+        </div>
+        {s.is_vacancy && <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 8, fontSize: 12.5 }}>
+          <label><input type="checkbox" disabled={ro} checked={s.in_plan} onChange={(e) => setS({ ...s, in_plan: e.target.checked })} /> Завжди враховувати в «що якщо»</label>
+          {canEdit && <label>Людина вийшла: <select value={fillUser} onChange={(e) => setFillUser(e.target.value)} style={inp}><option value="">—</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>}
+        </div>}
+        {newVersion && <div style={{ fontSize: 12, color: "#1d4ed8", marginTop: 6 }}>Зберегти створить НОВУ версію з {dm(from + "-01")}; до цього місяця діятиме поточна — минулі місяці не перераховуються.</div>}
+      </div>
+      {SECTIONS.map((sec) => {
+        const items = s.components.map((c, i) => ({ c, i })).filter(({ c }) => sectionOf(c.kind) === sec.key);
+        const secKinds = kinds.filter((x) => sec.kinds.includes(x.kind));
+        if (!items.length && (ro || sec.key === "piece" && s.department !== "Склад")) return null;
+        return <div key={sec.key} style={box}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <Icon n={sec.icon} size={15} style={{ color: "#2E6FB0" }} />
+            <b style={{ fontSize: 13.5, flex: 1 }}>{sec.title}</b>
+            {items.length === 0 && <span className="muted" style={{ fontSize: 12 }}>немає</span>}
+          </div>
+          <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>{sec.hint}</div>
+          {items.map(({ c, i }) => <div key={c.id ?? `n${i}`} style={{ borderTop: "1px solid #eef2f7", paddingTop: 7, marginTop: 7 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input value={c.title} disabled={ro} onChange={(e) => setComp(i, { ...c, title: e.target.value })} style={{ ...inp, flex: 1, minWidth: 120, fontWeight: 600 }} />
+              <span className="muted" style={{ fontSize: 11, whiteSpace: "nowrap" }}>{kinds.find((x) => x.kind === c.kind)?.label || c.kind}</span>
+              {canEdit && <button className="btn btn-light" title="Прибрати цю частину" style={{ fontSize: 12, padding: "0 7px", height: 28 }} onClick={() => setS({ ...s, components: s.components.filter((_, j) => j !== i) })}><Icon n="x" size={13} /></button>}
+            </div>
+            <ParamsEditor comp={c} funnels={funnels} conds={conds} disabled={ro} onChange={(pp) => setComp(i, { ...c, params: pp })} />
+          </div>)}
+          {canEdit && secKinds.length > 0 && <select value="" onChange={(e) => { if (e.target.value) addComp(e.target.value); }} style={{ ...inp, marginTop: 8, fontSize: 12 }}>
+            <option value="">+ Додати в «{sec.title}»…</option>{secKinds.map((x) => <option key={x.kind} value={x.kind}>{x.label}</option>)}
+          </select>}
+        </div>;
+      })}
+      <div style={box}>
+        <label style={{ display: "block", fontSize: 12.5 }}>Примітка<textarea value={s.note} disabled={ro} onChange={(e) => setS({ ...s, note: e.target.value })} rows={2} style={{ width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 6, padding: 6, fontSize: 12.5 }} /></label>
+        {canEdit && <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? "…" : newVersion ? "Зберегти як нову версію" : "Зберегти"}</button>
+          <button className="btn btn-light" onClick={archive}>В архів</button>
+          {msg && <span style={{ fontSize: 12.5 }}>{msg}</span>}
+        </div>}
+      </div>
     </div>
-    <CalcPreview scheme={scheme} canEdit={canEdit} onMarked={() => onSaved(scheme.id)} />
+    <div style={{ position: "sticky", top: 8, display: "grid", gap: 10, minWidth: 0 }}>
+      {cost && s.purpose === "official" && <div style={box}>
+        <b style={{ fontSize: 13.5 }}>Скільки коштує на місяць</b>
+        <div style={{ display: "flex", fontSize: 12.5, padding: "5px 0", borderBottom: "1px solid #f1f5f9" }}><span style={{ flex: 1 }}>Тверда частина «на руки»</span><b>{money(cost.fixed_net)}</b></div>
+        <div style={{ display: "flex", fontSize: 12.5, padding: "5px 0", borderBottom: "1px solid #f1f5f9" }}><span style={{ flex: 1 }}>Компанії з податками{cost.taxes_ratio > 1 ? <span className="muted"> (×{cost.taxes_ratio})</span> : null}</span><b>{money(cost.fixed_cost)}</b></div>
+        {k && <div style={{ display: "flex", fontSize: 12.5, padding: "5px 0" }}><span style={{ flex: 1 }}>Щоб окупитися, треба нової виручки</span><b>{money(cost.fixed_cost * k)} / міс</b></div>}
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>% з продажів сюди не входить — він платиться з грошей, які людина принесла.</div>
+      </div>}
+      <CalcPreview scheme={scheme} canEdit={canEdit} onMarked={() => onSaved(scheme.id)} />
+    </div>
   </div>;
 }
 
@@ -258,57 +302,6 @@ function NewScheme({ users, onCreated, onCancel }: { users: any[]; onCreated: (i
   </div>;
 }
 
-function ActsTab({ users, canEdit }: { users: any[]; canEdit: boolean }) {
-  const [d, setD] = useState<any>(null);
-  const [f, setF] = useState<any>({ title: "", number: "", act_date: new Date().toISOString().slice(0, 10), amount_total: "", manager_id: "", contact_id: null, contact_name: "" });
-  const [q, setQ] = useState("");
-  const [found, setFound] = useState<any[]>([]);
-  const [err, setErr] = useState("");
-  const load = () => api.get<any>("/api/payroll/acts/").then(setD).catch(() => setD({ results: [], error: true }));
-  useEffect(() => { load(); }, []);
-  useEffect(() => {
-    if (q.trim().length < 2) { setFound([]); return; }
-    const tm = setTimeout(() => api.get<any>(`/api/contacts/?search=${encodeURIComponent(q.trim())}&page_size=8`).then((r) => setFound(r.results || r || [])).catch(() => setFound([])), 300);
-    return () => clearTimeout(tm);
-  }, [q]);
-  async function add() {
-    setErr("");
-    try { await api.post("/api/payroll/acts/", { ...f, manager_id: Number(f.manager_id) || null }); setF({ ...f, title: "", number: "", amount_total: "", contact_id: null, contact_name: "" }); setQ(""); load(); }
-    catch (e: any) { setErr(e?.data?.detail || "Не вдалося внести акт"); }
-  }
-  async function close(id: number) { if (window.confirm("Підтвердити і закрити акт? Менеджеру нарахується % у ЗП цього місяця.")) { await api.post(`/api/payroll/acts/${id}/close/`, {}); load(); } }
-  const cname = (c: any) => c.name || [c.first_name, c.last_name].filter(Boolean).join(" ") || `#${c.id}`;
-  return <div>
-    <div className="note" style={{ marginBottom: 10 }}>Акт обʼєкта: менеджеру обʼєкта — <b>2% від усієї суми акту</b>, нараховується в місяць, коли ви натиснули «Закрити акт». Закривати акти можете лише ви.</div>
-    {canEdit && <div style={{ ...box, marginBottom: 10 }}>
-      <b style={{ fontSize: 13.5 }}>Внести акт</b>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 8, marginTop: 6, fontSize: 12.5 }}>
-        <label>Обʼєкт / назва<br /><input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Іваненко, 1-й поверх" style={{ ...inp, width: "100%" }} /></label>
-        <label>№ акту<br /><input value={f.number} onChange={(e) => setF({ ...f, number: e.target.value })} style={{ ...inp, width: "100%" }} /></label>
-        <label>Дата акту<br /><input type="date" value={f.act_date} onChange={(e) => setF({ ...f, act_date: e.target.value })} style={{ ...inp, width: "100%" }} /></label>
-        <label>Сума акту, ₴<br /><input value={f.amount_total} onChange={(e) => setF({ ...f, amount_total: e.target.value })} inputMode="decimal" style={{ ...inp, width: "100%" }} /></label>
-        <label>Менеджер обʼєкта<br /><select value={f.manager_id} onChange={(e) => setF({ ...f, manager_id: e.target.value })} style={{ ...inp, width: "100%" }}><option value="">—</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
-        <label style={{ position: "relative" }}>Клієнт (необовʼязково)<br /><input value={f.contact_id ? f.contact_name : q} onChange={(e) => { setQ(e.target.value); setF({ ...f, contact_id: null, contact_name: "" }); }} placeholder="пошук за імʼям/телефоном" style={{ ...inp, width: "100%" }} />
-          {found.length > 0 && !f.contact_id && <div style={{ position: "absolute", zIndex: 5, background: "#fff", border: "1px solid #cbd5e1", borderRadius: 6, width: "100%", maxHeight: 180, overflowY: "auto" }}>
-            {found.map((c) => <div key={c.id} onClick={() => { setF({ ...f, contact_id: c.id, contact_name: cname(c) }); setFound([]); }} style={{ padding: "5px 8px", cursor: "pointer", fontSize: 12.5 }}>{cname(c)}</div>)}</div>}
-        </label>
-      </div>
-      {err && <div style={{ color: "#b91c1c", fontSize: 12.5, marginTop: 6 }}>{err}</div>}
-      <button className="btn btn-primary" style={{ marginTop: 8 }} disabled={!f.title || !f.amount_total} onClick={add}>Внести акт</button>
-    </div>}
-    {!d ? <div className="muted">Завантаження…</div> : d.results.length === 0 ? <div className="muted" style={{ fontSize: 12.5 }}>Актів ще немає.</div> :
-      <div style={{ overflowX: "auto" }}><table style={{ width: "100%", fontSize: 12.5, borderCollapse: "collapse" }}>
-        <thead><tr style={{ textAlign: "left", color: "#64748b" }}><th style={{ padding: 5 }}>Дата</th><th>Обʼєкт</th><th>Менеджер</th><th style={{ textAlign: "right" }}>Сума</th><th style={{ textAlign: "right" }}>%</th><th>Статус</th><th /></tr></thead>
-        <tbody>{d.results.map((a: any) => <tr key={a.id} style={{ borderTop: "1px solid #f1f5f9" }}>
-          <td style={{ padding: 5 }}>{dm(a.act_date)}</td><td>{a.title}{a.number ? ` · №${a.number}` : ""}{a.contact_name ? <div className="muted" style={{ fontSize: 11 }}>{a.contact_name}</div> : null}</td>
-          <td>{a.manager_name || "—"}</td><td style={{ textAlign: "right" }}>{money(a.amount_total)}</td>
-          <td style={{ textAlign: "right" }}>{a.commission_amount != null ? `${money(a.commission_amount)} (${a.commission_pct}%)` : "—"}</td>
-          <td>{a.status_label}{a.closed_by ? <div className="muted" style={{ fontSize: 11 }}>{a.closed_by}, ЗП {a.payroll_period}</div> : null}</td>
-          <td>{a.status !== "closed" && d.can_close && <button className="btn btn-light" style={{ fontSize: 12 }} onClick={() => close(a.id)}>Закрити акт</button>}</td>
-        </tr>)}</tbody></table></div>}
-  </div>;
-}
-
 function PolicyTab({ canEdit }: { canEdit: boolean }) {
   const [d, setD] = useState<any>(null);
   const [p, setP] = useState<any>(null);
@@ -316,13 +309,10 @@ function PolicyTab({ canEdit }: { canEdit: boolean }) {
   useEffect(() => { api.get<any>("/api/payroll/policy/").then((r) => { setD(r); setP(r.params); }); }, []);
   if (!d || !p) return <div className="muted">Завантаження…</div>;
   const set = (path: string[], v: any) => { const n = JSON.parse(JSON.stringify(p)); let o = n; path.slice(0, -1).forEach((k) => { o[k] = o[k] || {}; o = o[k]; }); o[path[path.length - 1]] = v; setP(n); };
-  const rep: number[] = p.replaced_articles || [];
   async function save() { setMsg(""); try { const r = await api.post<any>("/api/payroll/policy/", { params: p }); setP(r.params); setMsg("Збережено"); } catch (e: any) { setMsg(e?.data?.detail || "Помилка"); } }
   const row: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", fontSize: 12.5, padding: "6px 0", borderBottom: "1px solid #f1f5f9" };
   const ro = !canEdit;
   return <div style={box}>
-    <div style={row}><b style={{ width: 260 }}>Дивіденди власника</b><Num value={p.dividends_pct} onChange={(v) => set(["dividends_pct"], v)} suffix="% маржі" width={60} disabled={ro} />
-      <span className="muted">За ATM — першими з маржі. Це гроші власника, не «дивіденди майстрам» (оплата майстрам — фонд виручки).</span></div>
     <div style={row}><b style={{ width: 260 }}>Податки на ЗП (трудовий договір)</b>ПДФО <Num value={p.taxes.pdfo} onChange={(v) => set(["taxes", "pdfo"], v)} suffix="%" width={50} disabled={ro} /> військовий збір <Num value={p.taxes.vz} onChange={(v) => set(["taxes", "vz"], v)} suffix="%" width={50} disabled={ro} /> ЄСВ зверху <Num value={p.taxes.esv} onChange={(v) => set(["taxes", "esv"], v)} suffix="%" width={50} disabled={ro} /></div>
     <div style={row}><b style={{ width: 260 }}>ФОП 3 гр.</b>податок <Num value={p.taxes.fop_tax} onChange={(v) => set(["taxes", "fop_tax"], v)} suffix="%" width={50} disabled={ro} /> ЄСВ <Num value={p.taxes.fop_esv} onChange={(v) => set(["taxes", "fop_esv"], v)} suffix="₴/міс" width={70} disabled={ro} />
       <label><input type="checkbox" disabled={ro} checked={!!p.taxes.fop_compensate} onChange={(e) => set(["taxes", "fop_compensate"], e.target.checked)} /> компенсуємо податки ФОП</label></div>
@@ -330,10 +320,7 @@ function PolicyTab({ canEdit }: { canEdit: boolean }) {
     <div style={row}><b style={{ width: 260 }}>Зарплата продажників ≤ % маржі</b><Num value={p.cap.pct_of_margin} onChange={(v) => set(["cap", "pct_of_margin"], v)} suffix="%" width={50} disabled={ro} /><span className="muted">перевіряємо раз на квартал, ЗП за місяць не ріжемо</span></div>
     <div style={row}><b style={{ width: 260 }}>Коефіцієнт конверсії 0,8–1,2</b><label><input type="checkbox" disabled={ro} checked={!!p.conv_coef.enabled} onChange={(e) => set(["conv_coef", "enabled"], e.target.checked)} /> увімкнено</label>
       <span className="muted">вмикати, коли назбирається 2 місяці позначок якості звернень (з 11.09)</span></div>
-    <div style={row}><b style={{ width: 260 }}>Частки для точки беззбитковості</b>за останні <Num value={p.lookback_days} onChange={(v) => set(["lookback_days"], v)} suffix="днів" width={55} disabled={ro} /></div>
-    <div style={{ ...row, alignItems: "flex-start" }}><b style={{ width: 260 }}>Статті фінмоделі, замінені ставками</b>
-      <span style={{ flex: 1 }}>{d.articles.map((a: any) => <label key={a.id} style={{ display: "block" }}><input type="checkbox" disabled={ro} checked={rep.includes(a.id)} onChange={() => set(["replaced_articles"], rep.includes(a.id) ? rep.filter((x) => x !== a.id) : [...rep, a.id])} /> {a.name} <span className="muted">({a.category}, {a.value})</span></label>)}
-        <div className="muted" style={{ fontSize: 11.5 }}>Відмічені статті не рахуються в точці беззбитковості — замість них ставки співробітників, щоб зарплата не рахувалась двічі.</div></span></div>
+    <div style={row}><b style={{ width: 260 }}>Середні частки продажів (для порівняння фондів)</b>за останні <Num value={p.lookback_days} onChange={(v) => set(["lookback_days"], v)} suffix="днів" width={55} disabled={ro} /></div>
     {canEdit && <div style={{ marginTop: 8 }}><button className="btn btn-primary" onClick={save}>Зберегти правила</button> <span style={{ fontSize: 12.5 }}>{msg}</span></div>}
   </div>;
 }
@@ -375,17 +362,16 @@ export default function PayRates() {
   if (err) return <div className="panel">{err}</div>;
   if (!d) return <div className="spin">Завантаження ставок…</div>;
   const cur: Scheme | undefined = (d.schemes || []).find((s: Scheme) => s.id === sel);
-  const TABS: [string, string][] = [["staff", "👥 Співробітники і вакансії"], ["be", "🎯 Точка беззбитковості"], ["acts", "🏗 Акти обʼєктів"], ["policy", "⚙️ Правила компанії"], ["log", "🕑 Історія змін"]];
+  const TABS: [string, string, string][] = [["staff", "Співробітники і вакансії", "users"], ["policy", "Правила компанії", "settings"], ["log", "Історія змін", "clock"]];
   return <div>
     <div className="note" style={{ marginBottom: 10 }}>
-      💼 <b>Ставки співробітників — одне місце для всіх зарплат.</b> Звідси рахуються ЗП (Фінанси → ЗП/KPI), точка беззбитковості і бонус у картці угоди.
+      <Icon n="💼" size={14} /> <b>Ставки співробітників — одне місце для всіх зарплат.</b> Звідси рахуються ЗП (Фінанси → ЗП/KPI) і бонус у картці угоди.
+      Точка беззбитковості — Фінанси → Точка беззбитковості (фонди «Планування»); акти обʼєктів — у картці клієнта.
       Змінили ставку з наступного місяця — створюється нова версія, минулі місяці не перераховуються. Суми — «на руки»; скільки людина коштує компанії з податками, CRM рахує сама.
     </div>
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-      {TABS.map(([key, label]) => <button key={key} className="btn" onClick={() => setTab(key)} style={{ fontSize: 13, background: tab === key ? "#e0edff" : undefined, fontWeight: tab === key ? 700 : 500 }}>{label}</button>)}
+      {TABS.map(([key, label, ic]) => <button key={key} className="btn" onClick={() => setTab(key)} style={{ fontSize: 13, background: tab === key ? "#e0edff" : undefined, fontWeight: tab === key ? 700 : 500 }}><Icon n={ic} size={14} /> {label}</button>)}
     </div>
-    {tab === "be" && <BreakevenAtm />}
-    {tab === "acts" && <ActsTab users={d.users} canEdit={d.can_edit} />}
     {tab === "policy" && <PolicyTab canEdit={d.can_edit} />}
     {tab === "log" && <LogTab />}
     {tab === "staff" && <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 320px) minmax(0, 1fr)", gap: 12, alignItems: "start" }}>
@@ -400,13 +386,13 @@ export default function PayRates() {
           {items.map((s) => <div key={s.id} onClick={() => { setSel(s.id); setAdding(false); }}
             style={{ padding: "6px 8px", borderRadius: 8, cursor: "pointer", background: sel === s.id ? "#eff6ff" : "transparent", border: s.is_vacancy ? "1px dashed #94a3b8" : "1px solid transparent", marginBottom: 3 }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>{s.user_name || s.position}{s.purpose === "legacy" && <span className="muted" style={{ fontWeight: 400, fontSize: 11 }}> · раніше</span>}</div>
-            <div className="muted" style={{ fontSize: 11.5 }}>{s.user_name ? s.position + " · " : ""}{s.employment_label}{s.cost ? ` · ${money(s.cost.fixed_net)} тверда` : ""}{s.is_vacancy ? (s.in_plan ? " · у точці беззбитковості" : " · не враховано") : ""}</div>
+            <div className="muted" style={{ fontSize: 11.5 }}>{s.user_name ? s.position + " · " : ""}{s.employment_label}{s.cost ? ` · ${money(s.cost.fixed_net)} тверда` : ""}{s.is_vacancy ? " · вакансія" : ""}</div>
           </div>)}
         </div>)}
       </div>
       <div>
         {adding && <NewScheme users={d.users} onCancel={() => setAdding(false)} onCreated={(id) => { setAdding(false); load(id); }} />}
-        {!adding && cur && <SchemeEditor scheme={cur} funnels={funnels} users={d.users} kinds={d.kinds} conds={d.guarantee_conditions} canEdit={d.can_edit} k={k} onSaved={(id) => load(id || undefined)} />}
+        {!adding && cur && <SchemeEditor scheme={cur} funnels={funnels} users={d.users} kinds={d.kinds} conds={d.guarantee_conditions} funds={d.funds || []} fundByDept={d.fund_by_dept || {}} canEdit={d.can_edit} k={k} onSaved={(id) => load(id || undefined)} />}
         {!adding && !cur && <div className="muted" style={{ ...box, fontSize: 12.5 }}>Оберіть співробітника або вакансію зліва.</div>}
       </div>
     </div>}

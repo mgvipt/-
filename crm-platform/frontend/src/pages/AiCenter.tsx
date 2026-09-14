@@ -68,7 +68,7 @@ function KbBase() {
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
               <div style={{ fontWeight: 600, fontSize: 13.5, color: "#0f172a" }}>{r.question}</div>
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-                {r.client_chat_count > 0 && <span title={t("Как часто спрашивают", "Як часто питають")} style={{ fontSize: 11, color: "#0369a1", background: "#e0f2fe", borderRadius: 10, padding: "1px 7px" }}>👥 {r.client_chat_count}</span>}
+                {r.client_chat_count > 0 && <span title={t("Как часто спрашивают", "Як часто питають")} style={{ fontSize: 11, color: "#0369a1", background: "#e0f2fe", borderRadius: 10, padding: "1px 7px" }}><Icon n="👥" size={11} /> {r.client_chat_count}</span>}
                 <span style={{ fontSize: 10, color: "#94a3b8" }}>{r.source}</span>
                 <button className="btn" style={{ padding: "2px 6px" }} title={t("Удалить", "Видалити")} onClick={() => del(r.id)}><Icon n="trash" size={13} /></button>
               </div>
@@ -143,7 +143,7 @@ function KbQuestions() {
                 </div>
               </div>
             )}
-            {st === "answered" && r.answer_preview && <div style={{ marginTop: 6, fontSize: 12.5, color: "#15803d" }}>✅ {r.answer_preview}…</div>}
+            {st === "answered" && r.answer_preview && <div style={{ marginTop: 6, fontSize: 12.5, color: "#15803d" }}><Icon n="✅" size={13} /> {r.answer_preview}…</div>}
           </div>
         ))}
       </div>
@@ -166,7 +166,7 @@ export default function AiCenter() {
   return (
     <div style={{ padding: "12px 8px" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto 6px" }}>
-        <h2 style={{ margin: "0 0 10px", fontSize: 20, fontWeight: 800, color: "#0f172a" }}>🧠 AI ЦЕНТР</h2>
+        <h2 style={{ margin: "0 0 10px", fontSize: 20, fontWeight: 800, color: "#0f172a" }}><Icon n="🧠" size={20} /> AI ЦЕНТР</h2>
         <div style={{ display: "flex", gap: 6, borderBottom: "1px solid #e2e8f0", flexWrap: "wrap" }}>
           {TABS.map(([k, ru, ua]) => (
             <button key={k} onClick={() => setTab(k)} style={{ border: "none", background: "none", cursor: "pointer", padding: "8px 14px", fontSize: 13.5, fontWeight: tab === k ? 700 : 500, color: tab === k ? "var(--brand)" : "#64748b", borderBottom: "2px solid " + (tab === k ? "var(--brand)" : "transparent"), marginBottom: -1 }}>{t(ru, ua)}</button>

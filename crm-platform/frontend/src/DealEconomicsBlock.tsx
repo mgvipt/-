@@ -2,7 +2,8 @@
  * Виручка − собівартість − доставка НП (якщо платимо ми) − комісія оплати − пакування
  * − роботи майстра − повернення = маржа ₴ і %.
  * Біля кожного рядка: «факт» (документ: журнал, НП, склад) або «оцінка» (норма / ставка).
- * Показується лише з правом product.cost.view (бекенд теж перевіряє). Власник: «Перерахувати» і норми.
+ * Показується лише з правом deal.economics.view (14.09; бекенд теж перевіряє). Власник: «Перерахувати» і норми.
+ * Матеріали пакування — % фонду «Упаковка (матеріали)» з Фінмоделі; норма ₴ за відправлення — лише запасна.
  */
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
@@ -17,7 +18,10 @@ interface Econ {
   lines: Line[]; flags: Flag[]; locked: boolean; saved: boolean; computed_at: string | null;
   can_recompute: boolean; can_edit_settings: boolean;
 }
-interface Norms { pack_material_per_shipment: number; liqpay_rate_pct: number; novapay_rate_pct: number; [k: string]: unknown }
+interface Norms {
+  pack_material_per_shipment: number; liqpay_rate_pct: number; novapay_rate_pct: number;
+  pack_material_fund_pct?: number | null; pack_material_fund_name?: string; [k: string]: unknown;
+}
 
 const LABEL: Record<string, [string, string]> = {
   revenue: ["Выручка", "Виручка"],
@@ -138,11 +142,19 @@ export default function DealEconomicsBlock({ dealId, refreshKey }: { dealId: num
       )}
       {normsOpen && norms && (
         <div style={{ marginTop: 6, fontSize: 12, display: "grid", gap: 4 }}>
+          {norms.pack_material_fund_pct != null ? (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}
+              title={t("Меняется в Финансы → Финмодель → фонды выручки", "Змінюється у Фінанси → Фінмодель → фонди виручки")}>
+              <span className="muted">{t("Материалы упаковки", "Матеріали пакування")}</span>
+              <b style={{ fontSize: 12, textAlign: "right" }}>{Number(norms.pack_material_fund_pct).toLocaleString("ru", { maximumFractionDigits: 2 })}% {t("фонда", "фонду")} «{norms.pack_material_fund_name}» × {t("выручка товаров", "виручка товарів")}</b>
+            </div>
+          ) : (
           <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
             <span className="muted">{t("Материалы упаковки, ₴ за отправку", "Матеріали пакування, ₴ за відправлення")}</span>
             <input style={numInput} type="number" step="0.5" value={String(norms.pack_material_per_shipment)}
               onChange={(e) => setNorms({ ...norms, pack_material_per_shipment: Number(e.target.value) })} />
           </label>
+          )}
           <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
             <span className="muted">LiqPay, %</span>
             <input style={numInput} type="number" step="0.01" value={String(norms.liqpay_rate_pct)}

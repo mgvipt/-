@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -17,6 +18,7 @@ HOST = "crm.wallcovdec.com.ua"
 
 class PayrollEngineTests(TestCase):
     def setUp(self):
+        cache.clear()  # частки й квартал кешуються на 5 хв
         U = get_user_model()
         self.owner = U.objects.create_superuser("pr-owner", "pro@example.test", "x")
         self.mgr = U.objects.create_user("pr-mgr", "prm@example.test", "x", first_name="Тест", last_name="Менеджер")
@@ -85,11 +87,32 @@ class PayrollEngineTests(TestCase):
         v = PayScheme.objects.create(position="Вакансія", valid_from=date(2026, 11, 1), is_vacancy=True, in_plan=False,
                                      employment="none", planned_start=date(2026, 11, 1))
         PayComponent.objects.create(scheme=v, kind="fixed_monthly", params={"amount": 10000})
-        base = engine.breakeven_atm()
-        self.assertEqual(base["breakeven"], 40000)  # 20 000 / (1 − 0,5)
+        base = engine.breakeven_atm(today=date(2026, 9, 14))
+        self.assertEqual(base["breakeven"], 40000)  # (20 000) / (1 − 0,5) — те саме число, що у Фінансах
         self.assertEqual(base["vacancies"][0]["delta_breakeven"], 20000)
-        with_v = engine.breakeven_atm(extra_ids=(v.id,))
-        self.assertEqual(with_v["breakeven"], 60000)
+        self.assertEqual(base["breakeven_with"], 40000)
+        with_v = engine.breakeven_atm(extra_ids=(v.id,), today=date(2026, 9, 14))
+        self.assertEqual(with_v["breakeven"], 40000)
+        self.assertEqual(with_v["breakeven_with"], 60000)
+        from apps.finance.services import compute_breakeven
+        self.assertEqual(compute_breakeven(date(2026, 9, 1), date(2026, 9, 30))["breakeven"], base["breakeven"])
+
+    def test_fund_changes_only_by_owner_click(self):
+        FinModelArticle.objects.all().update(active=False)
+        f = FinModelArticle.objects.create(category="fixed", name="ФОТ офіс тест", value=Decimal("1000"), value_type="fixed_sum_per_month")
+        s = self._scheme(department="Продажі", options={"fund_article_id": f.id})
+        PayComponent.objects.create(scheme=s, kind="fixed_monthly", params={"amount": 7000})
+        row = next(r for r in engine.breakeven_atm()["fot"] if r["fund_id"] == f.id)
+        self.assertEqual(row["suggested"], 7000)
+        f.refresh_from_db()
+        self.assertEqual(float(f.value), 1000)  # розрахунок фонд не чіпає
+        c = APIClient()
+        c.force_authenticate(self.mgr)
+        self.assertEqual(c.post("/api/payroll/funds/sync/", {"fund_id": f.id}, format="json", HTTP_HOST=HOST).status_code, 403)
+        c.force_authenticate(self.owner)
+        self.assertEqual(c.post("/api/payroll/funds/sync/", {"fund_id": f.id}, format="json", HTTP_HOST=HOST).status_code, 200)
+        f.refresh_from_db()
+        self.assertEqual(float(f.value), 7000)
 
     def test_act_close_owner_only_and_idempotent(self):
         s = self._scheme()
@@ -116,6 +139,7 @@ class PayrollEngineTests(TestCase):
 class PayrollRunTests(TestCase):
     """Відомість: затверджений місяць не змінюється від нових ставок; перевідкрити → версія 2; привʼязка виплат; права."""
     def setUp(self):
+        cache.clear()  # частки й квартал кешуються на 5 хв
         U = get_user_model()
         self.owner = U.objects.create_superuser("run-owner", "ro@example.test", "x")
         self.mgr = U.objects.create_user("run-mgr", "rm@example.test", "x", first_name="Тест", last_name="Відомість")
