@@ -329,6 +329,15 @@ class DealDetailSerializer(DealSerializer):
         return float(sum(p.amount for p in obj.payments.all() if p.is_paid))
 
     def get_margin(self, obj):
+        # «Економіка угоди» (14.09): товари − собівартість − доставка за наш рахунок − комісія − пакування − майстри − повернення.
+        # Одна маржа для картки, бонусу менеджера і ЗП; поки рядка немає — стара формула нижче.
+        try:
+            from apps.dealecon.models import DealEconomics
+            _row = DealEconomics.objects.filter(deal_id=obj.id).first()
+            if _row is not None and getattr(_row, "margin", None) is not None and float(getattr(_row, "revenue", 0) or 0) > 0:
+                return round(float(_row.margin), 2)
+        except Exception:
+            pass
         # Маржа = выручка по строкам − себестоимость (cost товара). Без товаров — оценка 35%.
         items = list(obj.items.all())
         if not items:

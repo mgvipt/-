@@ -107,7 +107,15 @@ def _pct_ratio(employment, pol):
 
 def deal_margin(deal, pol):
     """(частка маржі в сумі, оцінка?) — товари − собівартість; нуль у рядку → поточна собівартість товару;
-    без товарів — норматив воронки (оцінка). Доставка/комісія — окремий крок «економіка угоди»."""
+    без товарів — норматив воронки (оцінка). Є «економіка угоди» (apps.dealecon) — беремо її маржу:
+    там уже вирахувані доставка за наш рахунок, комісія, пакування, роботи майстра, повернення."""
+    try:
+        from apps.dealecon.models import DealEconomics
+        row = DealEconomics.objects.filter(deal_id=deal.id).first()
+        if row is not None and float(getattr(row, "revenue", 0) or 0) > 0:
+            return max(0.0, float(getattr(row, "margin_pct", 0) or 0) / 100.0), bool(getattr(row, "is_estimate", True))
+    except Exception:
+        pass
     items = list(deal.items.select_related("product").all())
     if items:
         sales = sum(float(i.total or 0) for i in items)

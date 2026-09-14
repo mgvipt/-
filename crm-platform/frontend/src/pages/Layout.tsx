@@ -23,6 +23,7 @@ const NAV: [string, string, string, string, string | null][] = [
   ["/wh", "Отгрузка", "Відвантаження", "truck", "warehouse.view"],
   ["/clients", "Клиенты", "Клієнти", "users", "contact.view"],
   ["/reviews", "Отзывы", "Відгуки", "⭐", "reviews.view"],
+  ["/partners", "Партнеры", "Партнери", "💼", "partners.view"],
   ["/development", "Развитие", "Розвиток", "trophy", "development.view"],
   ["/finance", "Финансы", "Фінанси", "wallet", "finance.view"],
   ["/analytics", "Аналитика", "Аналітика", "chart", "analytics.view"],

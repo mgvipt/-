@@ -9,6 +9,7 @@ import CallButton from "../CallButton";
 import LeadQuality from "../LeadQuality";
 import MetaAttrBadge from "../MetaAttrBadge";
 import { ReviewOptOutToggle } from "../ReviewButtons";
+import PartnerBlock from "../PartnerBlock";
 import { useLang } from "../i18n";
 import TxCardModal from "../TxCardModal";
 import { useAuth } from "../auth";
@@ -189,6 +190,7 @@ export default function ClientCard() {
       <div style={{ margin: "4px 0 6px" }}><LeadQuality contactId={c.id} /></div>
       <div style={{ margin: "0 0 6px" }}><MetaAttrBadge contactId={c.id} /></div>
       <div style={{ margin: "0 0 8px" }}><ReviewOptOutToggle contactId={c.id} /></div>
+      <div style={{ margin: "0 0 8px" }}><PartnerBlock contactId={c.id} /></div>
 
       <div className="grid2">
         <div>

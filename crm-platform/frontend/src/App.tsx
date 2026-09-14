@@ -24,6 +24,7 @@ import AiCosts from "./pages/AiCosts";
 import AiCenter from "./pages/AiCenter";
 import WhatsNew from "./pages/WhatsNew";
 import Reviews from "./pages/Reviews";
+import Partners from "./pages/Partners";
 import Phone from "./pages/Phone";
 import Employees from "./pages/Employees";
 import InviteAccept from "./InviteAccept";
@@ -81,6 +82,7 @@ function Shell() {
           <Route path="/ai-costs" element={<AiCenter />} />
           <Route path="/whats-new" element={<WhatsNew />} />
           <Route path="/reviews" element={<Reviews />} />
+          <Route path="/partners" element={<Guard perm="partners.view"><Partners /></Guard>} />
           <Route path="*" element={<Navigate to="/leads" replace />} />
         </Route>
       </Routes>

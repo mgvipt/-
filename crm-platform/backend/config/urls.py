@@ -64,6 +64,7 @@ router.register("workdays", fin_views.WorkDayViewSet)
 router.register("calls", tel_views.CallViewSet)
 
 urlpatterns = [
+    path("api/deal-economics/", include("apps.dealecon.urls")),  # економіка угоди (14.09.2026)
     path("api/product-source/", ProductReadCatalog.as_view()),
     path("api/products/<int:pk>/facts/", ProductFacts.as_view()),
     path("admin/", admin.site.urls),
@@ -261,4 +262,5 @@ urlpatterns = [
     path("api/reviews/settings/", review_views.ReviewSettingsView.as_view()),
     path("api/reviews/opt-out/", review_views.ReviewOptOutView.as_view()),
     path("api/reviews/photo/<str:token>/", review_views.ReviewPhotoView.as_view()),
+    path("api/partners/", include("apps.partners.urls")),  # партнерська програма (14.09.2026)
 ]

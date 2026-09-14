@@ -130,6 +130,11 @@ class Command(BaseCommand):
                 if not rows or not d.stage_id:
                     continue
                 row = rows[0]
+                try:  # економіка угоди (14.09): платник/вартість НП → np_data["np_cost"] (лише новий ключ)
+                    from apps.dealecon.services import store_np_cost as _de_np_cost
+                    _de_np_cost(d, row)
+                except Exception:
+                    pass
                 code = str(row.get("StatusCode") or "")
                 npstatus = row.get("Status") or ""
                 if code in ("7", "8"):

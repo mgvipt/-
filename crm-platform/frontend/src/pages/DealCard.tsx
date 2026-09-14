@@ -42,12 +42,14 @@ import { useLang } from "../i18n";
 import LeadQuality from "../LeadQuality";
 import MetaAttrBadge from "../MetaAttrBadge";
 import { AskReviewButton } from "../ReviewButtons";
+import PartnerDealMargin from "../PartnerDealMargin";
 import VykraskaDoc from "../VykraskaDoc";
 import { SocialLink } from "../social";
 import { SalesAnalystPanel } from "../SalesAnalyst";
 import { Icon } from "../Icon";
 import NPDelivery from "./NPDelivery";
 import DealEstimatePanel from "./DealEstimatePanel";
+import DealEconomicsBlock from "../DealEconomicsBlock";
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
@@ -1036,6 +1038,9 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             {deal.bonus && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{deal.bonus.revenue_pct}{t("% оборота = ","% обороту = ")}{fmt(deal.bonus.from_revenue)} ₴ + {deal.bonus.margin_pct}{t("% маржи = ","% маржі = ")}{fmt(deal.bonus.from_margin)} ₴</div>}
           </div>
 
+          {/* 10.5b Економіка угоди (14.09.2026): факт / оцінка по кожному компоненту */}
+          {can("product.cost.view") && <DealEconomicsBlock dealId={deal.id} refreshKey={`${deal.amount}|${deal.ttn || ""}|${(deal as any).paid ?? ""}|${(deal.items || []).length}`} />}
+
           {/* 10.6 Ответственный */}
           <div className="panel">
             <div className="label">{t("Ответственный","Відповідальний")}</div>
@@ -1230,6 +1235,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   ); }); })()}</tbody>
                 </table>
                 </div>
+                <PartnerDealMargin dealId={deal.id} reloadKey={deal.items.map((i: any) => [i.id, i.quantity, i.price, i.discount_pct, i.discount_amount].join(":")).join("|")} />
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
                   <div style={{ minWidth: 290 }}>
                     <div style={rowTot}><span className="muted">{t("Сумма без скидки","Сума без знижки")}</span><b>{fmt(deal.items.reduce((s: number, i: any) => s + Number(i.total) + Number(i.discount_sum || 0), 0))} ₴</b></div>
