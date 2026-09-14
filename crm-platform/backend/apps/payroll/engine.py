@@ -587,6 +587,18 @@ def calc(user, period, scheme=None, purpose="official", _nested=False):
                 lines.append(_line(None, legacy["total"] - total, legacy["total"], None,
                                    "перший місяць нової схеми: платимо більшу з двох (стара дала б більше)"))
                 total = sum(l["amount"] for l in lines)
+    # ── Біржа задач (bounty, 14.09): прийняті задачі місяця — окремий рядок «Задачі з біржі». Стоїть після гарантії
+    # і страхового місяця: заробіток з біржі не зменшує доплат. Немає застосунку / не увімкнено / не мігровано —
+    # ЗП рахується рівно як раніше.
+    if purpose == "official" and user:
+        try:
+            from apps.bounty.payroll import payroll_line as _bounty_line
+        except ImportError:
+            _bounty_line = None
+        _bl = _bounty_line(user, period) if _bounty_line else None
+        if _bl:
+            lines.append(_bl)
+            total = sum(l["amount"] for l in lines)
     return {"user_id": user.id if user else None, "user_name": who, "period": period,
             "scheme": {"id": sc.id, "position": sc.position, "title": sc.title, "valid_from": sc.valid_from.isoformat(),
                        "employment": sc.employment, "employment_label": sc.get_employment_display()},

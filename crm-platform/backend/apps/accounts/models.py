@@ -536,3 +536,18 @@ PERMISSION_GROUPS.append((
 ))
 PERMISSION_CHOICES.extend(
     (c, l) for c, l, _h in PERMISSION_GROUPS[-1][1] if c not in {x for x, _ in PERMISSION_CHOICES})
+
+# ── Біржа задач (додано 2026-09-14, bounty) ──
+PERMISSION_GROUPS.append((
+    "Біржа задач",
+    [
+        ("bounty.view", "Біржа задач: бачити і брати задачі",
+         "Є в УСІХ активних співробітників за замовчуванням (навіть без галочки). "
+         "Забрати в людини — «Заборонені права» → це право"),
+        ("bounty.manage", "Керувати біржею задач",
+         "Прайс (додати / змінити / видалити / увімкнути), приймати будь-які задачі, сума понад ліміт, "
+         "підсумки всієї команди. За замовчуванням — лише власник"),
+    ],
+))
+PERMISSION_CHOICES.extend(
+    (c, l) for c, l, _h in PERMISSION_GROUPS[-1][1] if c not in {x for x, _ in PERMISSION_CHOICES})
