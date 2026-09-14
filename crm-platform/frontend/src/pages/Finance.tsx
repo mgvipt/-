@@ -3729,14 +3729,130 @@ const FUND_GROUPS: { key: string; label: React.ReactNode; color: string; cats: s
   { key: "salary", label: <><Icon n="💰" size={13} /> ЗП / KPI МЕНЕДЖЕРА (ставки)</>, color: "#d97706", cats: ["salary"] },
 ];
 
+/* ─── ФІНМОДЕЛЬ (виправлено 14.09.2026, fm-link) ─────────────────────────────
+ * Було: рядок статті («Row») оголошувався ВСЕРЕДИНІ FinModel, тож при кожному перемальовуванні вкладки всі поля
+ * створювались заново зі СТАРИМ числом (після збереження стан сторінки не оновлювався), а вихід із поля знову
+ * зберігав те, що в полі. Тому «Оренда салону» поверталась до 20 003. Тепер: рядок — окремий компонент; число
+ * зберігається лише якщо змінилось; відповідь сервера одразу потрапляє у стан; помилку видно; «20 003,50»
+ * розуміємо; коліщатко миші число не крутить (text + inputMode="decimal"); перетягувати — лише за значок ⠿.
+ * Під кожною статтею — «Де налаштовується» (з API: configured_in); число, звʼязане зі Ставками, — з замком. */
+const FM_WHERE_RATES = "Налаштування → Ставки співробітників (автоматично)";
+function fmWhere(a: any): string {
+  if (a.configured_in) return String(a.configured_in);
+  if (a.linked) return FM_WHERE_RATES;
+  if (a.value_type === "auto_meta_ads") return "Автоматично з Meta Ads";
+  if (a.category === "warehouse_rate") return "Налаштування → Ставки співробітників → Склад — відрядно (ті самі ставки)";
+  if (a.category === "salary") return "застарілі ставки старої формули (не впливають на ЗП за ставками)";
+  if (a.category === "payment_fee" && a.value_type === "fixed_per_deal") return "тут, ₴ за угоду";
+  return "тут, у Фінмоделі";
+}
+/* «20 003», «20 003,50», «20003.00» → число; порожньо / не число → null */
+function fmParseNum(s: string): number | null {
+  const x = String(s ?? "").replace(/\s/g, "").replace(",", ".");  // \s ловить і нерозривні пробіли з «20 003»
+  if (!x) return null;
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
+/* число для поля: 20003.00 → «20 003», 1.68 → «1,68» */
+function fmFmt(v: any): string {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toLocaleString("uk-UA", { maximumFractionDigits: 2 }) : String(v ?? "");
+}
+type FmT = (ru: string, uk: string) => string;
+type FmMsg = { ok: boolean; text: string };
+
+function FinModelValue({ a, t, onSave, onMsg }: { a: any; t: FmT; onSave: (id: number, patch: any) => Promise<boolean>; onMsg: (m: FmMsg) => void }) {
+  const [draft, setDraft] = useState(fmFmt(a.value));
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const cancel = useRef(false);
+  useEffect(() => { if (!editing) setDraft(fmFmt(a.value)); }, [a.value, editing]);
+  const box: React.CSSProperties = { width: 96, height: 28, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px", textAlign: "right", boxSizing: "border-box" };
+  if (a.linked) {
+    return (
+      <span title={t("Число подтягивается автоматически из «Ставок сотрудников». Меняйте ставки или выключите «Автоматически из Ставок» во вкладке Точка безубыточности.", "Число підтягується автоматично зі «Ставок співробітників». Змінюйте ставки або вимкніть «Автоматично зі Ставок» у вкладці Точка беззбитковості.")}
+        style={{ ...box, display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 4, borderStyle: "dashed", background: "#f8fafc", color: "#475569" }}>
+        <Icon n="lock" size={12} />{fmFmt(a.value)}
+      </span>
+    );
+  }
+  async function commit() {
+    if (cancel.current) { cancel.current = false; setDraft(fmFmt(a.value)); setEditing(false); return; }
+    const n = fmParseNum(draft);
+    if (n === null) {
+      onMsg({ ok: false, text: `${t("Не число", "Не число")}: «${draft}» — ${t("оставлено", "залишено")} ${fmFmt(a.value)}` });
+      setDraft(fmFmt(a.value)); setEditing(false); return;
+    }
+    if (Math.abs(n - Number(a.value)) < 0.005) { setDraft(fmFmt(a.value)); setEditing(false); return; }  // не змінилось — нічого не зберігаємо
+    setBusy(true);
+    const ok = await onSave(a.id, { value: n });
+    setBusy(false);
+    if (!ok) setDraft(fmFmt(a.value));
+    setEditing(false);
+  }
+  return (
+    <input type="text" inputMode="decimal" value={draft} disabled={busy}
+      title={t("Значение: % или сумма в гривнах (тип справа). Влияет на P&L и точку безубыточности. Можно писать «20 003» или «20 003,50».", "Значення: % або сума в гривнях (тип праворуч). Впливає на P&L і точку беззбитковості. Можна писати «20 003» або «20 003,50».")}
+      onFocus={() => setEditing(true)} onChange={(e) => setDraft(e.target.value)} onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { cancel.current = true; (e.target as HTMLInputElement).blur(); } }}
+      style={{ ...box, opacity: busy ? 0.6 : 1 }} />
+  );
+}
+
+function FinModelRow({ a, sub, dragging, t, onSave, onAdd, onDel, onDragStart, onDragEnd, onMsg }: {
+  a: any; sub?: boolean; dragging: boolean; t: FmT;
+  onSave: (id: number, patch: any) => Promise<boolean>; onAdd: (category: string, parent?: number) => void; onDel: (id: number) => void;
+  onDragStart: () => void; onDragEnd: () => void; onMsg: (m: FmMsg) => void;
+}) {
+  const nav = useNavigate();
+  const toRates = !!a.linked || a.category === "warehouse_rate";
+  return (
+    <div style={{ padding: "6px 0", borderBottom: "1px solid #f1f5f9", paddingLeft: sub ? 22 : 0, opacity: dragging ? 0.4 : 1 }}>
+      <div className="row" style={{ alignItems: "center" }}>
+        {!sub && <span draggable onDragStart={onDragStart} onDragEnd={onDragEnd} title={t("Перетащи мышкой в другую категорию","Перетягни мишкою в іншу категорію")} style={{ color: "#cbd5e1", cursor: "grab", marginRight: 4, userSelect: "none" }}>⠿</span>}
+        {sub && <span style={{ color: "#cbd5e1", marginRight: 4 }}>↳</span>}
+        <input defaultValue={a.name} title={t("Название статьи / фонда — кликни, чтобы переименовать","Назва статті / фонду — клікни, щоб перейменувати")}
+          onBlur={(e) => { const v = e.target.value.trim(); if (!v) { e.target.value = a.name; return; } if (v !== a.name) onSave(a.id, { name: v }); }}
+          style={{ flex: 1, height: 28, border: "1px solid transparent", borderRadius: 6, padding: "0 6px", fontWeight: sub ? 400 : 500, background: "transparent" }} />
+        <button title={a.is_envelope ? t("Это конверт: держит деньги для планирования. Кликни, чтобы выключить.","Це конверт: тримає гроші для планування. Клікни, щоб вимкнути.") : t("Сделать конвертом — тогда в него можно класть деньги во вкладке «Планирование»","Зробити конвертом — тоді в нього можна класти гроші у вкладці «Планування»")} onClick={() => onSave(a.id, { is_envelope: !a.is_envelope })}
+          style={{ width: 28, height: 26, borderRadius: 6, marginRight: 6, cursor: "pointer", border: "1px solid " + (a.is_envelope ? "#0ea5e9" : "#e2e8f0"), background: a.is_envelope ? "#e0f2fe" : "#fff" }}><Icon n="✉️" size={15} /></button>
+        <FinModelValue a={a} t={t} onSave={onSave} onMsg={onMsg} />
+        <span className="muted" style={{ width: 64, fontSize: 12, paddingLeft: 4 }} title={t("Единица: % от суммы, грн/месяц, грн/сделку и т.д.","Одиниця: % від суми, грн/місяць, грн/угоду тощо")}>{a.unit || a.value_type_display}</span>
+        {!sub && <span title={t("Добавить подфонд (под-конверт внутри этого фонда)","Додати підфонд (під-конверт усередині цього фонду)")} style={{ color: "#0ea5e9", cursor: "pointer", paddingLeft: 6, fontWeight: 700 }} onClick={() => onAdd(a.category, a.id)}>＋</span>}
+        <span title={t("Удалить статью","Видалити статтю")} style={{ color: "#ef4444", cursor: "pointer", paddingLeft: 8 }} onClick={() => onDel(a.id)}>✕</span>
+      </div>
+      <div className="muted" style={{ fontSize: 11, marginTop: 1, paddingLeft: sub ? 18 : 16, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+        <Icon n={a.linked ? "lock" : "info"} size={11} />
+        <span>{t("Где настраивается:", "Де налаштовується:")} {fmWhere(a)}</span>
+        {toRates && <a href="/settings" onClick={(e) => { e.preventDefault(); nav("/settings"); }} title={t("Открыть Настройки → Ставки сотрудников","Відкрити Налаштування → Ставки співробітників")} style={{ color: "#0284c7", display: "inline-flex", alignItems: "center", gap: 2, textDecoration: "none" }}><Icon n="link" size={11} />{t("открыть","відкрити")}</a>}
+      </div>
+    </div>
+  );
+}
+
 function FinModel() {
   const { t } = useLang();
   const [arts, setArts] = useState<any[]>([]);
   const [dragId, setDragId] = useState<number | null>(null);
   const [overCat, setOverCat] = useState<string | null>(null);
+  const [msg, setMsg] = useState<FmMsg | null>(null);
   const load = () => api.get<any>("/api/finmodel-articles/?page_size=200").then((r) => setArts(r.results || r));
   useEffect(() => { load(); }, []);
-  async function save(id: number, patch: any) { await api.patch(`/api/finmodel-articles/${id}/`, patch); }
+  // зберегти → відповідь сервера одразу у стан сторінки (раніше стан лишався старим — див. коментар над fmWhere)
+  async function save(id: number, patch: any): Promise<boolean> {
+    try {
+      const upd = await api.patch<any>(`/api/finmodel-articles/${id}/`, patch);
+      if (upd && upd.id) setArts((xs) => xs.map((x) => (x.id === upd.id ? { ...x, ...upd } : x)));
+      if (upd && "value" in patch) setMsg({ ok: true, text: `${t("Сохранено","Збережено")}: «${upd.name}» = ${fmFmt(upd.value)} ${upd.unit || ""}`.trim() });
+      return true;
+    } catch (e: any) {
+      const d = e?.data || {};
+      const first = (v: any) => (Array.isArray(v) ? v[0] : v);
+      const why = first(d.value) || d.detail || first(d.name) || first(d.category) || (e?.status ? `${t("ошибка","помилка")} ${e.status}` : t("нет связи с сервером","немає звʼязку з сервером"));
+      setMsg({ ok: false, text: `${t("Не сохранено","Не збережено")}: ${why}` });
+      return false;
+    }
+  }
   async function add(category: string, parent?: number) {
     await api.post("/api/finmodel-articles/", { category, parent: parent ?? null, name: parent ? t("Новый подфонд","Новий підфонд") : t("Новая статья","Нова стаття"), value: 0,
       value_type: category === "revenue_fund" || category === "variable" ? "percent" : "fixed_sum_per_month", is_envelope: !!parent });
@@ -3752,25 +3868,16 @@ function FinModel() {
     setDragId(null); setOverCat(null); load();
   }
 
-  const Row = ({ a, sub }: { a: any; sub?: boolean }) => (
-    <div className="row" draggable={!sub} onDragStart={() => !sub && setDragId(a.id)} onDragEnd={() => setDragId(null)}
-      style={{ padding: "7px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center", paddingLeft: sub ? 22 : 0, opacity: dragId === a.id ? 0.4 : 1 }}>
-      {!sub && <span title={t("Перетащи мышкой в другую категорию","Перетягни мишкою в іншу категорію")} style={{ color: "#cbd5e1", cursor: "grab", marginRight: 4, userSelect: "none" }}>⠿</span>}
-      {sub && <span style={{ color: "#cbd5e1", marginRight: 4 }}>↳</span>}
-      <input defaultValue={a.name} title={t("Название статьи / фонда — кликни, чтобы переименовать","Назва статті / фонду — клікни, щоб перейменувати")} onBlur={(e) => save(a.id, { name: e.target.value })}
-        style={{ flex: 1, height: 28, border: "1px solid transparent", borderRadius: 6, padding: "0 6px", fontWeight: sub ? 400 : 500, background: "transparent" }} />
-      <button title={a.is_envelope ? t("Это конверт: держит деньги для планирования. Кликни, чтобы выключить.","Це конверт: тримає гроші для планування. Клікни, щоб вимкнути.") : t("Сделать конвертом — тогда в него можно класть деньги во вкладке «Планирование»","Зробити конвертом — тоді в нього можна класти гроші у вкладці «Планування»")} onClick={() => save(a.id, { is_envelope: !a.is_envelope }).then(load)}
-        style={{ width: 28, height: 26, borderRadius: 6, marginRight: 6, cursor: "pointer", border: "1px solid " + (a.is_envelope ? "#0ea5e9" : "#e2e8f0"), background: a.is_envelope ? "#e0f2fe" : "#fff" }}><Icon n="✉️" size={15} /></button>
-      <input type="number" defaultValue={a.value} title={t("Значение: % или сумма в гривнах (тип справа). Влияет на P&L и точку безубыточности.","Значення: % або сума в гривнях (тип праворуч). Впливає на P&L і точку беззбитковості.")} onBlur={(e) => save(a.id, { value: Number(e.target.value) })} style={{ width: 96, height: 28, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px", textAlign: "right" }} />
-      <span className="muted" style={{ width: 64, fontSize: 12 }} title={t("Единица: % от суммы, грн/месяц, грн/сделку и т.д.","Одиниця: % від суми, грн/місяць, грн/угоду тощо")}>{a.unit || a.value_type_display}</span>
-      {!sub && <span title={t("Добавить подфонд (под-конверт внутри этого фонда)","Додати підфонд (під-конверт усередині цього фонду)")} style={{ color: "#0ea5e9", cursor: "pointer", paddingLeft: 6, fontWeight: 700 }} onClick={() => add(a.category, a.id)}>＋</span>}
-      <span title={t("Удалить статью","Видалити статтю")} style={{ color: "#ef4444", cursor: "pointer", paddingLeft: 8 }} onClick={() => del(a.id)}>✕</span>
-    </div>
-  );
-
   return (
     <>
-      <div className="note"><Icon n="⚙️" size={14} /> <b>{t("Финмодель","Фінмодель")}</b> {t("— сердце расчётов: отсюда считаются P&L и Точка безубыточности. Порядок фондов:","— серце розрахунків: звідси рахуються P&L і Точка беззбитковості. Порядок фондів:")} <b>{t("ФВ (выручки) → ФМ (маржи) → ФСКД (скорректированного дохода)","ФВ (виручки) → ФМ (маржі) → ФСКД (скоригованого доходу)")}</b>. {t("✉️ = конверт (держит деньги для планирования). ＋ — добавить подфонд.","✉️ = конверт (тримає гроші для планування). ＋ — додати підфонд.")} <b>{t("⠿ Перетащи статью мышкой в другую категорию","⠿ Перетягни статтю мишкою в іншу категорію")}</b>{t(", чтобы переложить фонд. Наведи на любое поле — подскажет, что это.",", щоб перекласти фонд. Наведи на будь-яке поле — підкаже, що це.")}</div>
+      <div className="note"><Icon n="⚙️" size={14} /> <b>{t("Финмодель","Фінмодель")}</b> {t("— сердце расчётов: отсюда считаются P&L и Точка безубыточности. Порядок фондов:","— серце розрахунків: звідси рахуються P&L і Точка беззбитковості. Порядок фондів:")} <b>{t("ФВ (выручки) → ФМ (маржи) → ФСКД (скорректированного дохода)","ФВ (виручки) → ФМ (маржі) → ФСКД (скоригованого доходу)")}</b>. {t("✉️ = конверт (держит деньги для планирования). ＋ — добавить подфонд.","✉️ = конверт (тримає гроші для планування). ＋ — додати підфонд.")} <b>{t("⠿ Перетащи статью мышкой (за значок ⠿) в другую категорию","⠿ Перетягни статтю мишкою (за значок ⠿) в іншу категорію")}</b>{t(", чтобы переложить фонд. Наведи на любое поле — подскажет, что это.",", щоб перекласти фонд. Наведи на будь-яке поле — підкаже, що це.")}</div>
+      <div className="muted" style={{ fontSize: 12, margin: "6px 0 0", display: "flex", alignItems: "center", gap: 5 }}><Icon n="info" size={12} /><span>{t("Под каждой статьёй — где она настраивается. Число с замком подтягивается автоматически из «Ставок сотрудников» (включается во вкладке Точка безубыточности → «Автоматически из Ставок»).","Під кожною статтею — де вона налаштовується. Число з замком підтягується автоматично зі «Ставок співробітників» (вмикається у вкладці Точка беззбитковості → «Автоматично зі Ставок»).")}</span></div>
+      {msg && (
+        <div className="note" style={{ margin: "8px 0 0", display: "flex", alignItems: "center", gap: 6, ...(msg.ok ? {} : { background: "#fef2f2", borderColor: "#fecaca", color: "#991b1b" }) }}>
+          <Icon n={msg.ok ? "check" : "warn"} size={13} /><span style={{ flex: 1 }}>{msg.text}</span>
+          <button className="btn btn-light" style={{ fontSize: 11, padding: "1px 8px" }} onClick={() => setMsg(null)}>OK</button>
+        </div>
+      )}
       {FUND_GROUPS.map((g) => {
         const groupArts = arts.filter((a) => g.cats.includes(a.category));
         if (!groupArts.length && g.key !== "revenue" && g.key !== "margin") return null;
@@ -3792,8 +3899,12 @@ function FinModel() {
                   </div>
                   {tops.map((a) => (
                     <div key={a.id}>
-                      <Row a={a} />
-                      {arts.filter((x) => x.parent === a.id).map((x) => <Row key={x.id} a={x} sub />)}
+                      <FinModelRow a={a} t={t} dragging={dragId === a.id} onSave={save} onAdd={add} onDel={del} onMsg={setMsg}
+                        onDragStart={() => setDragId(a.id)} onDragEnd={() => setDragId(null)} />
+                      {arts.filter((x) => x.parent === a.id).map((x) => (
+                        <FinModelRow key={x.id} a={x} sub t={t} dragging={false} onSave={save} onAdd={add} onDel={del} onMsg={setMsg}
+                          onDragStart={() => {}} onDragEnd={() => {}} />
+                      ))}
                     </div>
                   ))}
                 </div>

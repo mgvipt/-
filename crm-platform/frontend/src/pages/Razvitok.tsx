@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
+import MyPayroll, { PlanRules } from "../MyPayroll";  // 14.09 my-kpi: моя ЗП і KPI + «Як виконати план і умови ЗП»
 
 const C = { green: "#16a34a", amber: "#ca8a04", red: "#dc2626", terra: "#C67D5F" };
 const thr = (v: number | null | undefined) => (v == null ? "#94a3b8" : v >= 70 ? C.green : v >= 50 ? C.amber : C.red);
@@ -83,6 +84,9 @@ export default function Razvitok() {
       <h2 style={{ margin: "0 0 2px", fontSize: 22, display: "flex", alignItems: "center", gap: 8 }}><Icon n="trophy" size={20} /> {t("Развитие", "Розвиток")}</h2>
       <div className="muted" style={{ fontSize: 12.5, marginBottom: 12 }}>{t("Уровень, баллы за качество диалогов, прогресс навыков и что делать дальше. Баллы — для роста, не для штрафов.", "Рівень, бали за якість діалогів, прогрес навичок і що робити далі. Бали — для росту, не для штрафів.")}</div>
 
+      {/* 14.09 (my-kpi): моя ЗП і KPI — лише свої дані; кнопка «Як виконати план» веде до секції #plan нижче */}
+      <MyPayroll />
+
       {/* ── Шапка: вибір менеджера + період ── */}
       <div style={{ position: "sticky", top: 0, zIndex: 20, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "rgba(255,255,255,.7)", backdropFilter: "blur(6px)", borderRadius: 12, padding: "8px 10px", marginBottom: 14, border: "1px solid #e8edf3" }}>
         {isOwner && lb && (
@@ -145,6 +149,8 @@ export default function Razvitok() {
           )}
         </>
       )}
+      {/* 14.09 (my-kpi): «Як виконати план і умови ЗП» з власної схеми того, хто дивиться (id="plan") */}
+      <PlanRules />
       {!lb && <div className="spin">{t("Загрузка…", "Завантаження…")}</div>}
     </div>
   );

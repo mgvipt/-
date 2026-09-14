@@ -1,4 +1,5 @@
 """Склад Фаза-1: endpoints роботи кладовщика + движок ЗП + обід (на WorkSession.pause)."""
+import calendar
 import datetime
 from decimal import Decimal
 from django.db import transaction
@@ -45,6 +46,53 @@ def _deal_weight(deal):
             continue  # своя позиція без номенклатури — ваги не має
         w += (it.product.weight_kg or Decimal("0")) * it.quantity
     return w
+
+
+# ── 14.09.2026 (wh-accrual): тонування з рядка «Послуга тонування», тестові набори, товари без ваги ──
+TINT_SERVICE_PREFIX = "послуга тонування"  # товар-послуга в угоді (у CRM: id 1311, B24-35270)
+TEST_SET_WORD = "тестов"                   # «Тестовий/тестовый набір» у назві товару
+
+
+def _is_tint_service(p):
+    return bool(p is not None and (p.name or "").strip().lower().startswith(TINT_SERVICE_PREFIX))
+
+
+def _is_test_set(p):
+    """Тестовий набір = товар-НАБІР (має компоненти, розділ «НАБОРИ») або «тестов…» у назві."""
+    if p is None or _is_tint_service(p):
+        return False
+    if TEST_SET_WORD in (p.name or "").lower():
+        return True
+    return p.components.exists()
+
+
+def _num(x):
+    x = Decimal(x or 0)
+    return str(x.quantize(Decimal("1"))) if x == x.to_integral_value() else str(x)
+
+
+def _deal_accrual_facts(deal):
+    """Факти угоди для нарахувань складу (лише читання):
+    tint_base — сума рядків «Послуга тонування» (зі знижкою рядка); test_sets — к-сть тестових наборів;
+    weightless — фізичні товари без ваги (не тест-набори і не послуги): за них не буде оплати за кг/упаковку."""
+    tint_base = Decimal("0"); tint_lines = 0; test_sets = Decimal("0"); weightless = {}
+    for it in deal.items.select_related("product"):
+        p = it.product
+        if p is None:
+            continue  # своя позиція без номенклатури
+        if _is_tint_service(p):
+            tint_base += Decimal(it.total or 0); tint_lines += 1
+            continue
+        if _is_test_set(p):
+            test_sets += it.quantity or Decimal("0")
+            continue
+        if not p.track_stock:
+            continue  # послуга/робота — вага не потрібна
+        if not (p.weight_kg and p.weight_kg > 0):
+            row = weightless.setdefault(p.id, {"product_id": p.id, "name": p.name, "unit": p.unit or "", "qty": Decimal("0")})
+            row["qty"] += it.quantity or Decimal("0")
+    return {"tint_base": tint_base, "tint_lines": tint_lines, "test_sets": test_sets,
+            "weightless": [dict(r, qty=str(r["qty"])) for r in weightless.values()]}
 
 
 def _job_dict(job, full=False):
@@ -98,7 +146,15 @@ def _job_dict(job, full=False):
     if full:
         d["items"] = [{"name": (it.product.name if it.product_id else ((it.custom_name or "Позиція") + " · не зі складу")), "qty": str(it.quantity),
                        "weight_kg": str((it.product.weight_kg or 0) if it.product_id else 0)} for it in deal.items.all()]
-        d["weight_kg"] = str(_deal_weight(deal))
+        _w = _deal_weight(deal)
+        d["weight_kg"] = str(_w)
+        # 14.09 (wh-accrual): товари без ваги → оплата за кг/упаковку не нарахується; склад бачить список ДО відправки
+        try:
+            _wl = _deal_accrual_facts(deal)["weightless"]
+        except Exception:
+            _wl = []
+        d["weightless"] = _wl
+        d["weightless_zero_total"] = bool(_wl) and _w <= 0
         d["photos"] = [{"id": p.id, "kind": p.kind, "url": "/api/warehouse/jobs/%d/photo/?id=%d" % (job.id, p.id)} for p in job.photos.all()]
         d["needs"] = {k: v for k, v in (deal.qualification or {}).items() if k != "kits" and not str(k).startswith("_")}
         d["ref_photos"] = deal.ref_photos or []
@@ -395,33 +451,84 @@ def ship(request, pk):
             _finalize(_sub, request.user, pay_packing=False)
         except Exception:
             pass
-    return Response(_job_dict(job, full=True))
+    out = _job_dict(job, full=True)
+    # 14.09 (wh-accrual): що нараховано за це відвантаження (лише своє — «Відправлено» тисне тільки виконавець)
+    out["accrued"] = [{"op": e.op_type, "label": e.get_op_type_display(), "amount": str(e.amount), "note": e.note}
+                      for e in WarehousePayrollEntry.objects.filter(job=job, employee=request.user).order_by("id")]
+    return Response(out)
+
+
+def _test_set_rate():
+    """Ставка «Оплата складу за збірку тестового набору» (Фінмодель, code=bundle_assembly) — ЖИВЕ значення:
+    Олег змінює суму у Фінмоделі → наступні відвантаження рахуються по новій (старі записи не змінюються).
+    Та сама стаття вже входить у собівартість набору, тому «Економіка угоди» її окремо НЕ додає.
+    Статтю вимкнено або її немає → 0 (не нараховуємо). Лише читання."""
+    from apps.finance.models import FinModelArticle
+    a = FinModelArticle.objects.filter(code="bundle_assembly").first()
+    if not a or not a.active:
+        return Decimal("0")
+    try:
+        return Decimal(str(a.value or 0))
+    except Exception:
+        return Decimal("0")
+
+
+def _accrual_plan(job, pay_packing=True):
+    """14.09 (wh-accrual): ЄДИНА формула нарахувань складу за відвантаження (без запису в БД).
+    Повертає (rows, meta); rows = [(op_type, сума, поля запису)].
+      вага        — кг × WH_RATE_KG (як і раніше);
+      упаковка    — місця ≤5/≤10/≤20 кг × WH_PACK_* (як і раніше; лише ручне пакування основної посилки);
+      тонування   — WH_TINT_PCT % від суми рядка «Послуга тонування» (позначка не потрібна); якщо такого
+                    рядка немає — як раніше, за ручною позначкою наборів. Обидва разом НІКОЛИ не рахуються;
+      тест-набори — ставка bundle_assembly × кількість тестових наборів в угоді."""
+    deal = job.deal
+    weight = _deal_weight(deal)
+    fx = _deal_accrual_facts(deal)
+    kits = (deal.qualification or {}).get("kits", []) or []
+    total_kits = len(kits); tinted = len(job.tinted_kits or [])
+    if fx["tint_base"] > 0:
+        tint_base = fx["tint_base"]; tint_source = "service_line"; tint_count = max(tinted, fx["tint_lines"])
+    else:
+        amount = deal.amount or Decimal("0")
+        tint_base = (amount * Decimal(tinted) / Decimal(total_kits)) if total_kits else Decimal("0")
+        tint_source = "manual" if tint_base > 0 else ""; tint_count = tinted
+    tiers = _packing_tiers(weight) if (job.packed and pay_packing) else {"T5": 0, "T10": 0, "T20": 0}
+    r_kg = _rate("WH_RATE_KG", 1.5); r5 = _rate("WH_PACK_5", 8); r10 = _rate("WH_PACK_10", 13)
+    r20 = _rate("WH_PACK_20", 20); rtint = _rate("WH_TINT_PCT", 20) / Decimal("100")
+    rows = []
+    if weight > 0:
+        rows.append(("shipment_weight", weight * r_kg, {"quantity_kg": weight, "rate_applied": r_kg, "note": "%s кг" % weight}))
+    for tier, cnt, rate in [("T5", tiers["T5"], r5), ("T10", tiers["T10"], r10), ("T20", tiers["T20"], r20)]:
+        if cnt > 0:
+            rows.append(("packing", rate * cnt, {"pack_tier": tier, "rate_applied": rate, "note": "%d шт" % cnt}))
+    if tint_base > 0:
+        tb = tint_base.quantize(Decimal("0.01"))
+        note = ("Послуга тонування: %s ₴" % tb) if tint_source == "service_line" else ("позначка: %d з %d наборів" % (tinted, total_kits))
+        rows.append(("tinting", tint_base * rtint, {"base_value": tb, "rate_applied": rtint, "note": note}))
+    if fx["test_sets"] > 0:
+        r_ts = _test_set_rate()
+        if r_ts > 0:
+            rows.append(("test_set", r_ts * fx["test_sets"],
+                         {"rate_applied": r_ts, "note": "%s шт × %s ₴" % (_num(fx["test_sets"]), _num(r_ts))}))
+    meta = {"weight": weight, "tiers": tiers, "tint_base": tint_base, "tint_source": tint_source,
+            "tint_count": tint_count, "test_sets": fx["test_sets"], "weightless": fx["weightless"]}
+    return rows, meta
 
 
 def _finalize(job, user, pay_packing=True):
     today = timezone.now().date(); deal = job.deal
-    weight = _deal_weight(deal); job.shipped_weight_kg = weight
-    kits = (deal.qualification or {}).get("kits", []) or []
-    total_kits = len(kits); tinted = len(job.tinted_kits or [])
-    job.tintings_count = tinted
-    amount = deal.amount or Decimal("0")
-    job.tintings_base = (amount * Decimal(tinted) / Decimal(total_kits)) if total_kits else Decimal("0")
-    tiers = _packing_tiers(weight) if (job.packed and pay_packing) else {"T5": 0, "T10": 0, "T20": 0}
+    rows, meta = _accrual_plan(job, pay_packing)  # 14.09 (wh-accrual): одна формула для запису і перегляду
+    weight = meta["weight"]; tiers = meta["tiers"]
+    job.shipped_weight_kg = weight
+    job.tintings_count = meta["tint_count"]
+    job.tintings_base = meta["tint_base"].quantize(Decimal("0.01"))
     job.pack_le5_count = tiers["T5"]; job.pack_le10_count = tiers["T10"]; job.pack_le20_count = tiers["T20"]
-    r_kg = _rate("WH_RATE_KG", 1.5); r5 = _rate("WH_PACK_5", 8); r10 = _rate("WH_PACK_10", 13)
-    r20 = _rate("WH_PACK_20", 20); rtint = _rate("WH_TINT_PCT", 20) / Decimal("100")
-
-    def add(op, amt, **kw):
+    for op, amt, kw in rows:
         WarehousePayrollEntry.objects.create(employee=user, work_date=today, job=job, deal=deal,
                                              op_type=op, amount=amt.quantize(Decimal("0.01")), **kw)
-    if weight > 0:
-        add("shipment_weight", weight * r_kg, quantity_kg=weight, rate_applied=r_kg, note="%s кг" % weight)
-    for tier, cnt, rate in [("T5", tiers["T5"], r5), ("T10", tiers["T10"], r10), ("T20", tiers["T20"], r20)]:
-        if cnt > 0:
-            add("packing", rate * cnt, pack_tier=tier, rate_applied=rate, note="%d шт" % cnt)
-    if job.tintings_base > 0:
-        add("tinting", job.tintings_base * rtint, base_value=job.tintings_base, rate_applied=rtint)
-    job.done_snapshot = {"weight": str(weight), "tiers": tiers, "tint_base": str(job.tintings_base)}
+    job.done_snapshot = {"weight": str(weight), "tiers": tiers, "tint_base": str(job.tintings_base),
+                         "tint_source": meta["tint_source"], "test_sets": str(meta["test_sets"]),
+                         "weightless": [w["product_id"] for w in meta["weightless"]]}
     job.status = "shipped"; job.shipped_at = timezone.now(); job.save()
     from .services import realize_deal
     realize_deal(deal, user)  # спільне списання по собівартості + COGS, ідемпотентно (без подвійного списання)
@@ -434,12 +541,14 @@ def _finalize(job, user, pay_packing=True):
 @permission_classes([IsAuthenticated])
 def my_salary(request):
     period = request.GET.get("period", "month")
+    if period == "calendar":
+        return _my_calendar_month(request)  # 14.09 (wh-accrual): календарний місяць (поточний / попередній)
     days = {"week": 7, "month": 30, "quarter": 90, "all": 3650}.get(period, 30)
     since = timezone.now().date() - datetime.timedelta(days=days)
     qs = WarehousePayrollEntry.objects.filter(employee=request.user, work_date__gte=since, status="confirmed")
     total = qs.aggregate(s=Sum("amount"))["s"] or 0
     lines = []
-    for op in ["workday", "shipment_weight", "packing", "tinting", "bonus_initiative", "bonus_cleanliness", "error", "wrong_material"]:
+    for op in ["workday", "shipment_weight", "packing", "tinting", "test_set", "bonus_initiative", "bonus_cleanliness", "error", "wrong_material"]:
         r = qs.filter(op_type=op).aggregate(s=Sum("amount"), n=Count("id"))
         if r["n"]:
             lines.append({"op": op, "amount": str(r["s"] or 0), "count": r["n"]})
@@ -447,6 +556,70 @@ def my_salary(request):
     tintings = qs.filter(op_type="tinting").count()
     return Response({"total": str(total), "lines": lines, "period": period,
                      "shipments": shipments, "tintings": tintings})
+
+
+# ── 14.09.2026 (wh-accrual): ЗП складу за календарний місяць ──
+MONTHS_UK = ["січень", "лютий", "березень", "квітень", "травень", "червень",
+             "липень", "серпень", "вересень", "жовтень", "листопад", "грудень"]
+PIECE_OPS = [("workday", "Робочі дні (ставка за день)"), ("shipment_weight", "Вага відвантаження"),
+             ("packing", "Упаковка"), ("tinting", "Тонування"), ("test_set", "Збірка тестових наборів"),
+             ("bonus_initiative", "Бонус за ідеї"), ("bonus_cleanliness", "Бонус за чистоту"),
+             ("error", "Утримання: помилки"), ("wrong_material", "Утримання: невірний матеріал")]
+DEDUCTION_OPS = ("error", "wrong_material")
+
+
+def _my_calendar_month(request):
+    """ЗП за КАЛЕНДАРНИЙ місяць (which=current|prev) — ТІЛЬКИ свої дані (request.user; параметр людини
+    не приймається). Ставка — з модуля «Ставки співробітників» (apps.payroll.engine.calc, лише читання);
+    відрядно — записи складу за типами. «Разом» = як рахує модуль ЗП (якщо схеми немає — лише відрядні)."""
+    u = request.user
+    which = (request.GET.get("which") or "current").strip()
+    if which not in ("current", "prev"):
+        return Response({"detail": "Доступні лише поточний і попередній місяць"}, status=400)
+    first = timezone.localdate().replace(day=1)
+    if which == "prev":
+        first = (first - datetime.timedelta(days=1)).replace(day=1)
+    last = first.replace(day=calendar.monthrange(first.year, first.month)[1])
+    period = "%04d-%02d" % (first.year, first.month)
+    qs = WarehousePayrollEntry.objects.filter(employee=u, work_date__gte=first, work_date__lte=last, status="confirmed")
+    piece = []
+    for op, label in PIECE_OPS:
+        r = qs.filter(op_type=op).aggregate(s=Sum("amount"), n=Count("id"))
+        if r["n"]:
+            piece.append({"op": op, "label": label, "amount": str(r["s"] or 0), "count": r["n"],
+                          "deduction": op in DEDUCTION_OPS})
+    rest = qs.exclude(op_type__in=[op for op, _l in PIECE_OPS]).aggregate(s=Sum("amount"), n=Count("id"))
+    if rest["n"]:
+        piece.append({"op": "other", "label": "Інше", "amount": str(rest["s"] or 0), "count": rest["n"], "deduction": False})
+    piece_total = qs.aggregate(s=Sum("amount"))["s"] or Decimal("0")
+    scheme, base_lines, warnings, total, piece_in_scheme = None, [], [], None, False
+    try:
+        from apps.payroll import engine
+        res = engine.calc(u, period)
+        sc = res.get("scheme")
+        if sc:
+            scheme = {"title": sc.get("title") or "", "position": sc.get("position") or ""}
+            total = res.get("total")
+        for ln in res.get("lines") or []:
+            if ln.get("kind") == "piece_rate":
+                piece_in_scheme = True  # = сума записів складу нижче; окремо не показуємо (без подвійного)
+                continue
+            base_lines.append({"title": ln.get("title") or "", "amount": ln.get("amount") or 0,
+                               "detail": ln.get("detail") or ""})
+        warnings = [w for w in (res.get("warnings") or []) if w]
+    except Exception:
+        warnings.append("Ставку зі схеми ЗП не вдалося прочитати — показано лише відрядні записи складу")
+    if scheme and not piece_in_scheme and piece:
+        warnings.append("У вашій схемі ЗП немає відрядної частини — записи складу показано довідково, у «Разом» не входять")
+    if total is None:
+        total = float(piece_total)
+    shipments = WarehouseJob.objects.filter(assignee=u, status="shipped", shipped_at__date__gte=first,
+                                            shipped_at__date__lte=last).count()
+    return Response({"which": which, "period": period, "label": "%s %d" % (MONTHS_UK[first.month - 1], first.year),
+                     "from": first.isoformat(), "to": last.isoformat(), "scheme": scheme,
+                     "base_lines": base_lines, "base_total": sum(float(l["amount"] or 0) for l in base_lines),
+                     "piece": piece, "piece_total": str(piece_total), "piece_in_scheme": piece_in_scheme,
+                     "total": total, "warnings": warnings, "shipments": shipments})
 
 
 @api_view(["GET"])
@@ -611,7 +784,7 @@ def dashboard(request):
     U = get_user_model()
     emp_ids = set(WarehousePayrollEntry.objects.filter(work_date__gte=since).values_list("employee_id", flat=True))
     emp_ids |= set(WarehouseJob.objects.filter(status="shipped", shipped_at__date__gte=since, assignee__isnull=False).values_list("assignee_id", flat=True))
-    OPS = ["workday", "shipment_weight", "packing", "tinting", "bonus_initiative", "error", "wrong_material"]
+    OPS = ["workday", "shipment_weight", "packing", "tinting", "test_set", "bonus_initiative", "error", "wrong_material"]
     rows = []
     for uid in emp_ids:
         u = U.objects.filter(id=uid).first()

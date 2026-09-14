@@ -70,6 +70,9 @@ class SchemesView(APIView):
                          "guarantee_conditions": engine.GUARANTEE_CONDITIONS,
                          "can_edit": _can(request.user, "payroll.rates.edit"),
                          "can_close_acts": _can(request.user, "objects.act.close"),
+                         # 14.09 (payrates-ux): ставки складу — ті самі статті Фінмоделі; змінювати — право фінмоделі
+                         "warehouse_rates": engine.warehouse_rates(),
+                         "can_edit_wh_rates": _can(request.user, "finance.manage") and _can(request.user, "finance.model.edit"),
                          "funds": _fot_funds(), "fund_by_dept": engine.FUND_BY_DEPT})
 
     def post(self, request):
@@ -88,6 +91,8 @@ class SchemesView(APIView):
                 note=d.get("note") or "", created_by=request.user)
             _save_components(s, d.get("components") or [])
             PayRateLog.objects.create(scheme=s, action="create", after=_snapshot(s), user=request.user)
+        from .fund_link import after_rates_change  # fm-link 14.09: звʼязані фонди Фінмоделі = сума за ставками
+        transaction.on_commit(lambda: after_rates_change(request.user))  # після запису; збій не ламає збереження
         return Response(_scheme_json(s, with_cost=True))
 
 
@@ -145,6 +150,8 @@ class SchemeSaveView(APIView):
                 s.save(update_fields=["valid_to", "updated_at"])
                 PayRateLog.objects.create(scheme=new, action="new_version", before=before, after=_snapshot(new), user=request.user,
                                           note=f"нова версія з {vf:%d.%m.%Y}; попередня діє до {s.valid_to:%d.%m.%Y}")
+                from .fund_link import after_rates_change  # fm-link 14.09: звʼязані фонди Фінмоделі = сума за ставками
+                transaction.on_commit(lambda: after_rates_change(request.user))  # після запису; збій не ламає збереження
                 return Response(_scheme_json(new, with_cost=True))
             for f in ("position", "department", "title", "employment", "note"):
                 if f in d:
@@ -169,6 +176,8 @@ class SchemeSaveView(APIView):
             if "components" in d:
                 _save_components(s, d.get("components") or [])
             PayRateLog.objects.create(scheme=s, action="update", before=before, after=_snapshot(s), user=request.user)
+        from .fund_link import after_rates_change  # fm-link 14.09: звʼязані фонди Фінмоделі = сума за ставками
+        transaction.on_commit(lambda: after_rates_change(request.user))  # після запису; збій не ламає збереження
         return Response(_scheme_json(s, with_cost=True))
 
 
@@ -185,6 +194,8 @@ class SchemeArchiveView(APIView):
         s.status = "archived"
         s.save(update_fields=["status", "updated_at"])
         PayRateLog.objects.create(scheme=s, action="archive", before=before, user=request.user)
+        from .fund_link import after_rates_change  # fm-link 14.09: звʼязані фонди Фінмоделі = сума за ставками
+        transaction.on_commit(lambda: after_rates_change(request.user))  # після запису; збій не ламає збереження
         return Response({"ok": True})
 
 

@@ -721,6 +721,14 @@ export default function MetaMarketing() {
     er: (() => { const arr = organic.filter((r: any) => r.engagement_rate != null); return arr.length ? arr.reduce((a: number, r: any) => a + r.engagement_rate, 0) / arr.length : 0; })(),
   };
   const daily = data?.daily || [];
+  // 14.09 (meta-creatives): продажі по кожному креативу — окремий легкий запит, лише у вкладці «Креативи»
+  const [creativeSales, setCreativeSales] = useState<any>(null);
+  useEffect(() => {
+    if (section !== "meta" || tab !== "creatives") return;
+    setCreativeSales(null);
+    api.get<any>(`/api/meta-attr/creative-sales/?from=${from}&to=${to}`)
+      .then(setCreativeSales).catch(() => setCreativeSales({ error: true }));
+  }, [section, tab, from, to, refreshKey]);
 
   /* UI v3 «таблиця показників»: назва ліворуч — значення праворуч, у кілька колонок.
      Максимально компактно: усе видно без прокрутки. Пояснення — тултип Tip на наведення (ⓘ),
@@ -1211,8 +1219,9 @@ export default function MetaMarketing() {
               • <b>{t("Наш «лид» = «Диалоги Meta»", "Наш «лід» = «Діалоги Meta»")}</b>: {t("каждый написавший становится лидом в CRM. А в обратную сторону CRM сама сообщает Meta статусы («лид», «оплачено», «размещен заказ», «отправлено») — они видны ярлыками в переписках Direct и учат рекламу находить платящих клиентов, а не просто болтунов.", "кожен, хто написав, стає лідом у CRM. А назад CRM сама повідомляє Meta статуси («лід», «оплачено», «розміщено замовлення», «відправлено») — вони видні ярликами у Direct і вчать рекламу знаходити платників.")}
             </div>
           </div>
+          <CreativeSalesSummary data={creativeSales} ads={paid.ads || []} t={t} />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: 12 }}>
-            {(paid.ads || []).map((r: any) => <AdCard key={r.id} row={r} t={t} />)}
+            {(paid.ads || []).map((r: any) => <AdCard key={r.id} row={r} t={t} sales={creativeSales} />)}
             {!(paid.ads || []).length && <Empty text={t("Объявлений за период нет", "Оголошень за період немає")} />}
           </div>
         </>}
@@ -1786,7 +1795,7 @@ function Thumb({ src, alt }: { src?: string; alt: string }) {
     <div style={{ width: 82, height: 82, borderRadius: 10, background: "#e2e8f0", display: "grid", placeItems: "center", fontSize: 28, flex: "0 0 82px" }}>🖼️</div>;
 }
 
-function AdCard({ row, t }: { row: any; t: (ru: string, ua: string) => string }) {
+function AdCard({ row, t, sales }: { row: any; t: (ru: string, ua: string) => string; sales?: any }) {
   return <div className="panel" style={{ padding: 13 }}>
     <div style={{ display: "flex", gap: 11 }}>
       <Thumb src={row.thumbnail_url} alt={row.name || "Meta ad"} />
@@ -1811,6 +1820,131 @@ function AdCard({ row, t }: { row: any; t: (ru: string, ua: string) => string })
       <Metric label={t("Цена диалога", "Ціна діалогу")} value={row.cost_per_message == null ? "—" : moneyUsd(row.cost_per_message)} tone={toneCostMsg(row.cost_per_message)}
         tip={t("Сколько стоила одна начатая переписка: расход ÷ диалоги. Чем дешевле — тем выгоднее объявление. Сравнивай креативы между собой: тот, у кого диалог дешевле при таком же качестве лидов, — на него и переносить бюджет.", "Скільки коштувало одне розпочате листування: витрати ÷ діалоги. Порівнюй креативи між собою: де діалог дешевший за тієї ж якості лідів — туди й переносити бюджет.")} />
     </div>
+    {sales !== undefined && <CreativeSalesBlock row={row} data={sales} t={t} />}
+  </div>;
+}
+
+/* 14.09 (meta-creatives): продажі з креативу. У картці — лише ТОЧНА мітка Meta з ID оголошення.
+   «Ймовірно з реклами» (текст кнопки) ID оголошення не має — показуємо окремо, над картками. */
+type McT = (ru: string, ua: string) => string;
+const mcCell: any = { padding: "6px 8px", borderTop: "1px solid var(--rd-border)", verticalAlign: "top", whiteSpace: "nowrap" };
+const mcNumBtn: any = { padding: "0 6px", minHeight: 0, fontSize: 13, fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 3 };
+
+function CreativeSalesBlock({ row, data, t }: { row: any; data: any; t: McT }) {
+  const [open, setOpen] = useState<"" | "all" | "paid">("");
+  const head = <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "var(--rd-text2)" }}>
+    <Icon n="bag" size={13} /> {t("Продажи с этого объявления", "Продажі з цього оголошення")}
+  </div>;
+  const wrap = (body: ReactNode) => <div style={{ marginTop: 10, borderTop: "1px solid var(--rd-border)", paddingTop: 9 }}>{head}{body}</div>;
+  if (!data) return wrap(<div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{t("Считаем…", "Рахуємо…")}</div>);
+  if (data.error) return wrap(<div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{t("Не удалось загрузить продажи", "Не вдалося завантажити продажі")}</div>);
+  const s = (data.by_ad || {})[String(row.ad_id || row.id)] || null;
+  const money = !!data.show_money;
+  const spendUah = Number(row.spend_uah) || 0;
+  if (!s) return wrap(<div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+    {t("За период нет обращений с точной меткой этого объявления", "За період немає звернень з точною міткою цього оголошення")}
+    {money && spendUah > 0 ? " · " + t("выручка на 1 ₴ рекламы: 0", "виручка на 1 ₴ реклами: 0") : ""}
+  </div>);
+  const clickable = (n: number, kind: "all" | "paid") => data.can_open_deals && n > 0
+    ? <button type="button" className="btn btn-light" style={mcNumBtn} onClick={() => setOpen(open === kind ? "" : kind)}>{count(n)} <Icon n="chevron-down" size={12} /></button>
+    : count(n);
+  return wrap(<>
+    <div style={metricGrid}>
+      <Metric label={t("Обращений", "Звернень")} value={count(s.leads)}
+        tip={t("Сколько разных людей написали именно с этого объявления (точная метка Meta) за период — лиды и сделки вместе, один человек считается один раз.", "Скільки різних людей написали саме з цього оголошення (точна мітка Meta) за період — ліди й угоди разом, одна людина рахується один раз.")} />
+      <Metric label={t("Сделок", "Угод")} value={clickable(s.deals, "all")}
+        tip={t("Сделки, созданные за период, с точной меткой этого объявления. Нажми на число — появится список.", "Угоди, створені за період, з точною міткою цього оголошення. Натисни на число — зʼявиться список.")} />
+      <Metric label={t("Оплаченных", "Оплачених")} value={clickable(s.paid, "paid")} accent={s.paid > 0}
+        tip={t("Из них оплаченные: успешная стадия или есть поступление денег в журнале.", "З них оплачені: успішна стадія або є надходження грошей у журналі.")} />
+      {money && <Metric label={t("Выручка", "Виручка")} value={moneyUah(s.revenue)} accent={Number(s.revenue) > 0}
+        tip={t("Все поступления денег в журнале по этим сделкам (даже если оплатили уже после периода).", "Усі надходження грошей у журналі по цих угодах (навіть якщо оплатили вже після періоду).")} />}
+      {money && <Metric label={t("Выручка на 1 ₴ рекламы", "Виручка на 1 ₴ реклами")} value={s.revenue_per_uah == null ? "—" : `${Number(s.revenue_per_uah).toFixed(2)} ₴`}
+        tip={t("Выручка ÷ расход на это объявление за тот же период (в гривне по курсу НБУ). 2.00 = на каждую гривну рекламы вернулось 2 гривны выручки (это не прибыль). «—» — нет расхода или курса за какой-то день.", "Виручка ÷ витрати на це оголошення за той самий період (у гривні за курсом НБУ). 2.00 = на кожну гривню реклами повернулось 2 гривні виручки (це не прибуток). «—» — немає витрат або курсу за якийсь день.")} />}
+    </div>
+    {open && <CreativeDealsList deals={(s.deals_list || []).filter((d: any) => open === "all" || d.paid)} hidden={s.deals_hidden || 0}
+      limited={!!data.deals_limited_to_own} money={money} t={t} onClose={() => setOpen("")} />}
+  </>);
+}
+
+function CreativeDealsList({ deals, hidden, limited, money, t, onClose }: { deals: any[]; hidden: number; limited: boolean; money: boolean; t: McT; onClose: () => void }) {
+  return <div style={{ marginTop: 8, border: "1px solid var(--rd-border)", borderRadius: 8, background: "var(--rd-card)" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 8px" }}>
+      <b style={{ fontSize: 11 }}>{t("Сделки", "Угоди")} ({deals.length})</b>
+      <button type="button" className="btn btn-light" style={mcNumBtn} onClick={onClose} aria-label={t("Закрыть", "Закрити")}><Icon n="x" size={12} /></button>
+    </div>
+    <div style={{ overflowX: "auto", maxHeight: 260, overflowY: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+        <tbody>
+          {deals.map((d: any) => <tr key={d.id}>
+            <td style={mcCell}><a href={`/deals/${d.id}`} style={{ color: "var(--rd-primary)", fontWeight: 700, textDecoration: "none" }}>#{d.id}</a> <span className="muted">{d.created_at}</span></td>
+            <td style={{ ...mcCell, whiteSpace: "normal", minWidth: 120 }}>{d.title || "—"}<div className="muted" style={{ fontSize: 10 }}>{d.stage}</div></td>
+            <td style={mcCell}>{d.paid ? <b style={{ color: "var(--rd-success)" }}>{t("оплачена", "оплачена")}</b> : <span className="muted">{t("без оплаты", "без оплати")}</span>}</td>
+            {money && <td style={{ ...mcCell, textAlign: "right" }}>{moneyUah(d.revenue)}</td>}
+          </tr>)}
+          {!deals.length && <tr><td style={mcCell} className="muted">{t("Нет сделок, доступных вам", "Немає угод, доступних вам")}</td></tr>}
+        </tbody>
+      </table>
+    </div>
+    {hidden > 0 && <div className="muted" style={{ fontSize: 10, padding: "5px 8px" }}>
+      {limited ? t("Показаны только ваши сделки; остальные — других менеджеров: ", "Показано лише ваші угоди; решта — інших менеджерів: ") : t("Ещё не показано: ", "Ще не показано: ")}{count(hidden)}
+    </div>}
+  </div>;
+}
+
+function CreativeSalesTable({ rows, first, keyOf, nameOf, data, t }: { rows: any[]; first: string; keyOf: (r: any) => string; nameOf: (r: any) => ReactNode; data: any; t: McT }) {
+  const [openKey, setOpenKey] = useState("");
+  const money = !!data.show_money;
+  const heads = [first, t("Обращений", "Звернень"), t("Сделок", "Угод"), t("Оплаченных", "Оплачених"), ...(money ? [t("Выручка", "Виручка")] : [])];
+  return <div style={{ overflowX: "auto", marginTop: 6 }}>
+    <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse" }}>
+      <thead><tr>{heads.map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+      <tbody>{rows.map((r: any) => {
+        const k = keyOf(r);
+        return <Fragment key={k}>
+          <tr>
+            <td style={{ ...td, whiteSpace: "normal" }}>{nameOf(r)}</td>
+            <td style={td}>{count(r.leads)}</td>
+            <td style={td}>{data.can_open_deals && r.deals > 0
+              ? <button type="button" className="btn btn-light" style={mcNumBtn} onClick={() => setOpenKey(openKey === k ? "" : k)}>{count(r.deals)} <Icon n="chevron-down" size={12} /></button>
+              : count(r.deals)}</td>
+            <td style={td}>{count(r.paid)}</td>
+            {money && <td style={td}>{moneyUah(r.revenue)}</td>}
+          </tr>
+          {openKey === k && <tr><td colSpan={heads.length} style={td}>
+            <CreativeDealsList deals={r.deals_list || []} hidden={r.deals_hidden || 0} limited={!!data.deals_limited_to_own} money={money} t={t} onClose={() => setOpenKey("")} />
+          </td></tr>}
+        </Fragment>;
+      })}</tbody>
+    </table>
+  </div>;
+}
+
+function CreativeSalesSummary({ data, ads, t }: { data: any; ads: any[]; t: McT }) {
+  if (!data || data.error) return null;
+  const money = !!data.show_money;
+  const ex = data.totals?.exact || {};
+  const lk = data.totals?.likely || {};
+  const shown = new Set(ads.map((r: any) => String(r.ad_id || r.id)));
+  const missing = Object.values(data.by_ad || {}).filter((s: any) => !shown.has(String(s.ad_id)));
+  const phrases: any[] = data.likely_by_phrase || [];
+  const line = (g: any) => <>{count(g.deals)} {t("сделок", "угод")}, {count(g.paid)} {t("оплаченных", "оплачених")}{money ? <>, <b>{moneyUah(g.revenue)}</b></> : null}</>;
+  return <div className="panel" style={{ padding: 12, marginBottom: 12 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 800, marginBottom: 6 }}>
+      <Icon n="bag" size={15} /> {t("Продажи с креативов за период", "Продажі з креативів за період")}
+    </div>
+    <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+      <div><b>{t("Точно с объявления", "Точно з оголошення")}</b> <span className="muted">({t("Meta передала ID объявления", "Meta передала ID оголошення")})</span>: {line(ex)}. {t("Эти цифры — в карточках ниже.", "Ці цифри — у картках нижче.")}</div>
+      <div><b>{t("Вероятно с рекламы", "Ймовірно з реклами")}</b> <span className="muted">({t("первое сообщение = текст кнопки из рекламы, ID объявления нет", "перше повідомлення = текст кнопки з реклами, ID оголошення немає")})</span>: {line(lk)}. {t("К конкретному объявлению НЕ приписываем.", "До конкретного оголошення НЕ приписуємо.")}</div>
+      <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{t("Считаем сделки, созданные в выбранный период; деньги — все поступления по ним в журнале (даже если оплатили позже). Оплаченная = успешная стадия или есть поступление денег.", "Рахуємо угоди, створені в обраний період; гроші — усі надходження по них у журналі (навіть якщо оплатили пізніше). Оплачена = успішна стадія або є надходження грошей.")}</div>
+    </div>
+    {phrases.length > 0 && <details style={{ marginTop: 8 }}>
+      <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{t("Вероятно с рекламы — по тексту кнопки", "Ймовірно з реклами — за текстом кнопки")} ({phrases.length})</summary>
+      <CreativeSalesTable rows={phrases} first={t("Текст кнопки", "Текст кнопки")} keyOf={(r) => "p:" + r.phrase} nameOf={(r) => r.phrase} data={data} t={t} />
+    </details>}
+    {missing.length > 0 && <details style={{ marginTop: 8 }}>
+      <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{t("Продажи с объявлений без карточки в этом периоде (реклама уже не крутилась)", "Продажі з оголошень без картки в цьому періоді (реклама вже не крутилась)")} ({missing.length})</summary>
+      <CreativeSalesTable rows={missing} first={t("Объявление", "Оголошення")} keyOf={(r) => "a:" + r.ad_id} nameOf={(r) => <>{r.title || r.ad_id}<div className="muted" style={{ fontSize: 10 }}>{r.campaign_name || ""} · ID {r.ad_id}</div></>} data={data} t={t} />
+    </details>}
   </div>;
 }
 

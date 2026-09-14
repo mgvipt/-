@@ -88,8 +88,12 @@ export default function BreakevenAtm() {
   const [hidden, setHidden] = useState(false);
   const [adding, setAdding] = useState(false);
   const [msg, setMsg] = useState("");
+  // fm-link 14.09: фонди «Автоматично зі Ставок» (звʼязані). Без права на ставки — порожньо, таблиця як була.
+  const [linked, setLinked] = useState<number[]>([]);
+  const [linkBusy, setLinkBusy] = useState<number | null>(null);
   const q = [withIds.length ? `with=${withIds.join(",")}` : "", withoutIds.length ? `without=${withoutIds.join(",")}` : ""].filter(Boolean).join("&");
-  const load = () => api.get<any>(`/api/payroll/breakeven/${q ? `?${q}` : ""}`).then(setD).catch(() => setHidden(true));
+  const loadLinks = () => api.get<any>("/api/payroll/funds/links/").then((x) => setLinked(x?.linked || [])).catch(() => setLinked([]));
+  const load = () => { loadLinks(); return api.get<any>(`/api/payroll/breakeven/${q ? `?${q}` : ""}`).then(setD).catch(() => setHidden(true)); };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [q]);
   if (hidden) return null;
   if (!d) return <div className="muted" style={{ fontSize: 12.5, margin: "10px 0" }}>Рахуємо розшифровку…</div>;
@@ -106,6 +110,24 @@ export default function BreakevenAtm() {
     setMsg("");
     try { await api.post("/api/payroll/funds/sync/", { fund_id: r.fund_id }); setMsg(`Фонд «${r.name}» оновлено: ${will}.`); load(); }
     catch (e: any) { setMsg(e?.data?.detail || "Не вдалося оновити фонд"); }
+  }
+  // fm-link 14.09: «Автоматично зі Ставок» — фонд завжди = сума за ставками (оновлюється сам при зміні ставок і щоночі)
+  async function setLink(r: any, on: boolean) {
+    const u = (x: any) => (r.unit === "%" ? pct(x) : money(x));
+    const text = on
+      ? `Фонд «${r.name}» буде автоматично дорівнювати сумі за ставками.\nЗараз: ${u(r.value)} → стане ${u(r.suggested)}. Далі число оновлюватиметься саме, коли ви змінюєте ставки.\nУ Фінмоделі це число стане лише для читання (з замком). Увімкнути?`
+      : `Вимкнути автоматичне оновлення фонду «${r.name}»?\nЧисло залишиться ${u(r.value)}, далі його можна міняти у Фінмоделі вручну.`;
+    if (!window.confirm(text)) return;
+    setMsg(""); setLinkBusy(r.fund_id);
+    try {
+      const x = await api.post<any>("/api/payroll/funds/links/", { fund_id: r.fund_id, linked: on });
+      const ch = (x?.changed || [])[0];
+      setMsg(on
+        ? (ch ? `Фонд «${r.name}» звʼязано зі Ставками: ${u(ch.before)} → ${u(ch.after)}.` : `Фонд «${r.name}» звʼязано зі Ставками (число вже збігалось).`)
+        : `Фонд «${r.name}» більше не оновлюється автоматично — змінюйте його у Фінмоделі.`);
+      load();
+    } catch (e: any) { setMsg(e?.data?.detail || "Не вдалося змінити звʼязок"); }
+    setLinkBusy(null);
   }
   async function archive(v: any) {
     if (!window.confirm(`Прибрати вакансію «${v.position}»?`)) return;
@@ -137,7 +159,7 @@ export default function BreakevenAtm() {
           <b style={{ fontSize: 13.5 }}><Icon n="users" size={14} /> Зарплати: у фонді і за ставками</b>
           <div className="muted" style={{ fontSize: 11.5, margin: "2px 0 6px" }}>
             У ТБ йде сума з фонду. Праворуч — скільки виходить за «Ставками співробітників» (тверда частина з податками; % продажників — середнє за {d.shares?.from?.slice(8, 10)}.{d.shares?.from?.slice(5, 7)}–{d.shares?.to?.slice(8, 10)}.{d.shares?.to?.slice(5, 7)}).
-            Фонд змінюється лише коли ви натиснете «Підставити».
+            Фонд змінюється, коли ви натиснете «Підставити», — або сам, якщо увімкнено «Автоматично зі Ставок» (тоді при кожній зміні ставок і щоночі; у Фінмоделі таке число з замком).
           </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", fontSize: 12.5, borderCollapse: "collapse" }}>
@@ -145,16 +167,26 @@ export default function BreakevenAtm() {
               <tbody>{d.fot.map((r: any) => {
                 const f = (x: any) => (r.unit === "%" ? pct(x) : money(x));
                 const same = Math.abs(Number(r.diff || 0)) < (r.unit === "%" ? 0.01 : 1);
+                const isLinked = linked.includes(r.fund_id);
                 return (
                   <tr key={r.fund_id} style={{ borderTop: "1px solid #f1f5f9", verticalAlign: "top" }}>
                     <td style={{ padding: "5px 6px" }}>{r.name}
+                      {isLinked && <span title="Число у Фінмоделі оновлюється автоматично зі Ставок" style={{ marginLeft: 6, fontSize: 10.5, padding: "1px 6px", borderRadius: 8, background: "#e0f2fe", color: "#0369a1", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 3 }}><Icon n="link" size={10} />звʼязано</span>}
                       {r.people?.length > 0 && <div className="muted" style={{ fontSize: 11 }}>{r.people.map((p: any) => `${p.name} ${money(p.amount)}`).join(" · ")}</div>}
                       {!r.syncable && <div className="muted" style={{ fontSize: 11 }}>у фонді не лише зарплати — тільки порівняння</div>}
                       {r.fund_id === 55 && <div className="muted" style={{ fontSize: 11 }}>відрядна склад: лише підтверджені записи складу (денна ставка й тонування ще не всі вносяться)</div>}</td>
                     <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{f(r.value)}</td>
                     <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{f(r.suggested)}</td>
                     <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: same ? "#15803d" : "#b45309" }}>{same ? "збігається" : `${Number(r.diff) > 0 ? "+" : ""}${f(r.diff)}`}</td>
-                    <td style={{ textAlign: "right" }}>{!same && r.syncable && d.can_sync && <button className="btn btn-light" style={{ fontSize: 12, height: 26 }} onClick={() => sync(r)}>Підставити</button>}</td>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      {!same && r.syncable && d.can_sync && <button className="btn btn-light" style={{ fontSize: 12, height: 26 }} onClick={() => sync(r)}>Підставити</button>}
+                      {r.syncable && d.can_sync && (
+                        <label title={isLinked ? "Вимкнути: фонд знову змінюється у Фінмоделі вручну" : "Фонд завжди = сума за ставками; оновлюється сам при кожній зміні ставок"}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, marginLeft: 8, cursor: "pointer", verticalAlign: "middle" }}>
+                          <input type="checkbox" checked={isLinked} disabled={linkBusy === r.fund_id} onChange={() => setLink(r, !isLinked)} />Автоматично зі Ставок
+                        </label>
+                      )}
+                    </td>
                   </tr>);
               })}</tbody>
             </table>

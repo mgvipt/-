@@ -133,12 +133,44 @@ class FinModelArticleSerializer(serializers.ModelSerializer):
     value_type_display = serializers.CharField(source="get_value_type_display", read_only=True)
     fund_group = serializers.CharField(read_only=True)
     margin_kind = serializers.CharField(read_only=True)
+    # fm-link 14.09: де реально налаштовується число статті і чи воно звʼязане зі «Ставками співробітників»
+    linked = serializers.SerializerMethodField()
+    configured_in = serializers.SerializerMethodField()
 
     class Meta:
         model = FinModelArticle
         fields = ["id", "category", "category_display", "name", "value", "fin_direction",
                   "value_type", "value_type_display", "unit", "sort_order", "active",
-                  "parent", "is_envelope", "fund_group", "margin_kind"]
+                  "parent", "is_envelope", "fund_group", "margin_kind", "linked", "configured_in"]
+
+    def _fm_linked(self):
+        ids = getattr(self, "_fm_linked_cache", None)
+        if ids is None:
+            try:
+                from apps.payroll.fund_link import linked_ids
+                ids = set(linked_ids())
+            except Exception:
+                ids = set()
+            self._fm_linked_cache = ids
+        return ids
+
+    def get_linked(self, obj):
+        return obj.id in self._fm_linked()
+
+    def get_configured_in(self, obj):
+        try:
+            from apps.payroll.fund_link import configured_in
+            return configured_in(obj, linked=obj.id in self._fm_linked())
+        except Exception:
+            return "тут, у Фінмоделі"
+
+    def to_internal_value(self, data):
+        # «20 003» / «20 003,50» — як пишуть люди → 20003.50
+        v = data.get("value") if hasattr(data, "get") else None
+        if isinstance(v, str):
+            data = data.copy()
+            data["value"] = "".join(v.split()).replace(",", ".")  # split() прибирає і нерозривні пробіли
+        return super().to_internal_value(data)
 
 
 class FinDirectionSerializer(serializers.ModelSerializer):

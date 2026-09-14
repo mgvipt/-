@@ -313,7 +313,8 @@ class WarehousePayrollEntry(models.Model):
     """Аудит-рядок ЗП: одна дія = один рядок зі снімком ставки. ЗП = SUM(amount)."""
     OP = [("shipment_weight", "Вага відвантаження"), ("packing", "Упаковка"), ("tinting", "Тонування"),
           ("workday", "Робочий день"), ("error", "Помилка"), ("wrong_material", "Невірний матеріал"),
-          ("bonus_initiative", "Бонус-ідея"), ("bonus_cleanliness", "Бонус-чистота")]
+          ("bonus_initiative", "Бонус-ідея"), ("bonus_cleanliness", "Бонус-чистота"),
+          ("test_set", "Збірка тестового набору")]  # 14.09 (wh-accrual); міграція 0023 — лише choices
     employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="wh_payroll")
     work_date = models.DateField(db_index=True)
     job = models.ForeignKey(WarehouseJob, null=True, blank=True, on_delete=models.SET_NULL, related_name="payroll")

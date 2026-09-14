@@ -363,6 +363,7 @@ function TaskCard({ t, jobId, onBack }: any) {
   const [busy, setBusy] = useState(false);
   const [packedLocal, setPackedLocal] = useState(false);
   const [msg, setMsg] = useState("");
+  const [weightAsk, setWeightAsk] = useState(false);
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2600); };
   const load = () => api.get<any>(`/api/warehouse/jobs/${jobId}/`).then(setJ).catch(() => {});
   const { can: canFn } = useAuth();
@@ -377,7 +378,9 @@ function TaskCard({ t, jobId, onBack }: any) {
   const toggleTint = (i: number) => api.post<any>(`/api/warehouse/jobs/${jobId}/tinting/`, { kit: i }).then(setJ).catch(() => {});
   const setPacked = (p: boolean) => api.post<any>(`/api/warehouse/jobs/${jobId}/packing/`, { packed: p }).then((jj: any) => { setJ(jj); setPackedLocal(true); }).catch(() => {});
   const upload = (kind: string, file: File) => { (api as any).upload(`/api/warehouse/jobs/${jobId}/photo/?kind=${kind}`, file).then(load).catch(() => {}); };
-  const ship = () => { setBusy(true); api.post<any>(`/api/warehouse/jobs/${jobId}/ship/`, {}).then(() => { alert(t("Готово — отправлено!", "Готово — відправлено!")); onBack(); }).catch((e: any) => { alert(e?.response?.data?.detail || t("Сделай 2 фото", "Зроби 2 фото")); load(); }).finally(() => setBusy(false)); };
+  const doShip = () => { setWeightAsk(false); setBusy(true); api.post<any>(`/api/warehouse/jobs/${jobId}/ship/`, {}).then((r: any) => { const s = ((r && r.accrued) || []).reduce((a: number, e: any) => a + Number(e.amount || 0), 0); alert(t("Готово — отправлено!", "Готово — відправлено!") + (s ? " " + t("Начислено", "Нараховано") + ": " + f(s) + " ₴" : "")); onBack(); }).catch((e: any) => { alert(e?.response?.data?.detail || t("Сделай 2 фото", "Зроби 2 фото")); load(); }).finally(() => setBusy(false)); };
+  // 14.09 (wh-accrual): товари без ваги → попередження перед відправкою (відправку НЕ блокуємо)
+  const ship = () => { if ((j.weightless || []).length > 0) { setWeightAsk(true); return; } doShip(); };
 
   const tinted = new Set(j.tinted_kits || []);
   const kits = j.kits || [];
@@ -486,6 +489,7 @@ function TaskCard({ t, jobId, onBack }: any) {
 
       <Step n="2" title={t("Пакування", "Пакування")} done={packDone} locked={!tintDone} hint={t("Сначала затонируй все наборы", "Спочатку затонуй усі набори")}>
         <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>{t("Вес считается сам.", "Вага рахується сама.")} {t("Вес", "Вага")}: <b>{j.weight_kg} кг</b></div>
+        {(j.weightless || []).length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "6px 9px", marginBottom: 8 }}><Icon n="warn" size={14} /> {t("Без веса товаров", "Товарів без ваги")}: <b>{j.weightless.length}</b> — {t("оплата за кг/упаковку по ним не начислится", "оплата за кг/упаковку за них не нарахується")}</div>}
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn" onClick={() => setPacked(true)} style={{ flex: 1, height: 46, background: (packDone && j.packed) ? C.green : "#f1f5f9", color: (packDone && j.packed) ? "#fff" : C.slate, fontWeight: 600 }}>{t("Ручная упаковка", "Ручне пакування")}</button>
           <button className="btn" onClick={() => setPacked(false)} style={{ flex: 1, height: 46, background: (packDone && !j.packed) ? C.amber : "#f1f5f9", color: (packDone && !j.packed) ? "#fff" : C.slate, fontWeight: 600 }}>{t("НП контейнер", "НП контейнер")}</button>
@@ -513,7 +517,85 @@ function TaskCard({ t, jobId, onBack }: any) {
       </Step>
 
       <button className="btn btn-light" style={{ width: "100%", marginBottom: 10, color: C.red }} onClick={() => { const dd = prompt(t("Что не так? (ошибка/брак)", "Що не так? (помилка/брак)")); if (dd) api.post("/api/warehouse/errors/", { job: jobId, deal: j.deal_id, source: "manual_staff", kind: "other", description: dd }).then(() => alert(t("Записано, проверит руководитель", "Записано, перевірить керівник"))).catch(() => {}); }}>⚠ {t("Сообщить об ошибке", "Повідомити про помилку")}</button>
+      {weightAsk && <WeightlessWarn j={j} t={t} busy={busy} onCancel={() => setWeightAsk(false)} onConfirm={doShip} />}
       <button className="btn" onClick={ship} disabled={busy || !photosDone} style={{ width: "100%", height: 58, fontSize: 17, fontWeight: 700, background: photosDone ? C.green : "#cbd5e1", color: "#fff", marginBottom: 30 }}>{busy ? "…" : "✅ " + t("Готово — отправлено", "Готово — відправлено")}</button>
+    </div>
+  );
+}
+
+// 14.09 (wh-accrual): попередження перед «Готово — відправлено», якщо в товарів не вказана вага.
+function WeightlessWarn({ j, t, busy, onCancel, onConfirm }: any) {
+  const list: any[] = j.weightless || [];
+  const zero = !!j.weightless_zero_total;
+  return createPortal(
+    <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} className="panel" style={{ maxWidth: 520, width: "100%", maxHeight: "86vh", overflowY: "auto", margin: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800, fontSize: 15, color: "#b45309", marginBottom: 8 }}><Icon n="warn" size={18} /> {t("Не указан вес товаров", "Не вказана вага товарів")}</div>
+        <div style={{ fontSize: 13.5, lineHeight: 1.5, marginBottom: 10 }}>
+          {zero ? t("У товаров не указан вес — оплата за кг и упаковку не начислится.", "У товарів не вказана вага — оплата за кг і упаковку не нарахується.")
+                : t("У части товаров не указан вес — оплата за кг и упаковку будет меньше.", "У частини товарів не вказана вага — оплата за кг і упаковку буде меншою.")} {t("Укажите вес:", "Вкажіть вагу:")}
+        </div>
+        {list.map((p: any) => (
+          <a key={p.product_id} href={"/warehouse?product=" + p.product_id} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderBottom: "1px solid #f1f5f9", fontSize: 13, color: "#1d4ed8", textDecoration: "none" }}>
+            <Icon n="link" size={13} />
+            <span style={{ flex: 1, minWidth: 0 }}>{p.name}</span>
+            <span className="muted" style={{ whiteSpace: "nowrap" }}>× {Number(p.qty)} {p.unit || ""}</span>
+          </a>
+        ))}
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.45 }}>{t("Вес указывают в карточке товара (поле «Вес нетто, кг»). Нет доступа — передай список руководителю.", "Вагу вказують у картці товару (поле «Вага нетто, кг»). Немає доступу — передай список керівнику.")}</div>
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <button className="btn btn-light" style={{ flex: 1, height: 46 }} onClick={onCancel}>{t("Отмена", "Скасувати")}</button>
+          <button className="btn" disabled={busy} style={{ flex: 1, height: 46, background: C.green, color: "#fff", fontWeight: 700 }} onClick={onConfirm}>{t("Всё равно отправить", "Все одно відправити")}</button>
+        </div>
+      </div>
+    </div>, document.body);
+}
+
+function SalaryModeSwitch({ t, mode, setMode }: any) {
+  return (
+    <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+      <button className={"btn" + (mode === "period" ? " btn-primary" : " btn-light")} style={{ flex: 1, fontSize: 13, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={() => setMode("period")}><Icon n="clock" size={14} /> {t("Последние дни", "Останні дні")}</button>
+      <button className={"btn" + (mode === "calendar" ? " btn-primary" : " btn-light")} style={{ flex: 1, fontSize: 13, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={() => setMode("calendar")}><Icon n="calendar" size={14} /> {t("Календарный месяц", "Календарний місяць")}</button>
+    </div>
+  );
+}
+
+// 14.09 (wh-accrual): календарний місяць (поточний / минулий) — ставка зі схеми ЗП + відрядні записи складу. Лише свої дані.
+function MonthSalaryView({ t }: any) {
+  const [which, setWhich] = useState<"current" | "prev">("current");
+  const [d, setD] = useState<any>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => { setD(null); setErr(""); api.get<any>(`/api/warehouse/my-salary/?period=calendar&which=${which}`).then(setD).catch((e: any) => setErr(e?.response?.data?.detail || t("Не удалось загрузить", "Не вдалося завантажити"))); /* eslint-disable-next-line */ }, [which]);
+  const row = { display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 0", borderBottom: "1px solid #f1f5f9" };
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 4, marginBottom: 12, background: "#f1f5f9", borderRadius: 9, padding: 3 }}>
+        {([["current", "Текущий месяц", "Поточний місяць"], ["prev", "Прошлый месяц", "Минулий місяць"]] as any[]).map(([k, ru, uk]) => (
+          <button key={k} onClick={() => setWhich(k)} style={{ flex: 1, fontSize: 12.5, padding: "7px", borderRadius: 7, border: "none", cursor: "pointer", background: which === k ? C.terra : "transparent", color: which === k ? "#fff" : C.slate, fontWeight: 600 }}>{t(ru, uk)}</button>
+        ))}
+      </div>
+      {err ? <div className="note">{err}</div> : !d ? <div className="spin">…</div> : <>
+        <div className="panel" style={{ textAlign: "center", padding: "22px", background: "linear-gradient(135deg,#ecfdf5,#fff)" }}>
+          <div className="muted" style={{ fontSize: 13 }}>{t("Итого за", "Разом за")} {d.label}</div>
+          <div style={{ fontSize: 48, fontWeight: 800, color: C.green }}>{f(d.total)} ₴</div>
+          {d.scheme ? <div className="muted" style={{ fontSize: 12 }}>{d.scheme.position}{d.scheme.title ? " · " + d.scheme.title : ""}</div> : null}
+        </div>
+        <div className="panel">
+          <div className="label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Icon n="wallet" size={15} /> {t("Ставка", "Ставка")}</div>
+          {(d.base_lines || []).map((l: any, i: number) => (
+            <div key={i} style={row}><span style={{ fontSize: 13.5 }}>{l.title}{l.detail ? <span className="muted"> · {l.detail}</span> : null}</span><b>{f(l.amount)} ₴</b></div>
+          ))}
+          {(d.base_lines || []).length === 0 && <div className="muted" style={{ fontSize: 13, padding: "6px 0" }}>{t("Ставка не задана", "Ставку не задано")}</div>}
+          <div className="label" style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 6 }}><Icon n="package" size={15} /> {t("Сдельно (склад)", "Відрядно (склад)")}</div>
+          {(d.piece || []).map((p: any) => (
+            <div key={p.op} style={row}><span style={{ fontSize: 13.5 }}>{p.label} <span className="muted">×{p.count}</span></span><b style={{ color: Number(p.amount) < 0 ? C.red : "#0f172a" }}>{f(p.amount)} ₴</b></div>
+          ))}
+          {(d.piece || []).length === 0 && <div className="muted" style={{ fontSize: 13, padding: "6px 0" }}>{t("Пока пусто", "Поки порожньо")}</div>}
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0 0", fontWeight: 700 }}><span>{t("Сдельно всего", "Відрядно разом")}</span><span>{f(d.piece_total)} ₴</span></div>
+        </div>
+        {(d.warnings || []).map((w: string, i: number) => <div key={i} className="note" style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, marginBottom: 6 }}><Icon n="info" size={14} /> {w}</div>)}
+        <div className="muted" style={{ fontSize: 11, textAlign: "center", marginTop: 8 }}>{d.from} — {d.to} · {t("отгрузок", "відвантажень")}: {d.shipments} · {t("Ставки — в финмодели и «Ставках сотрудников»", "Ставки — у фінмоделі та «Ставках співробітників»")}</div>
+      </>}
     </div>
   );
 }
@@ -521,13 +603,16 @@ function TaskCard({ t, jobId, onBack }: any) {
 function SalaryView({ t }: any) {
   const [d, setD] = useState<any>(null);
   const [period, setPeriod] = useState("month");
+  const [mode, setMode] = useState<"period" | "calendar">("period");
   useEffect(() => { api.get<any>(`/api/warehouse/my-salary/?period=${period}`).then(setD).catch(() => {}); }, [period]);
-  const LBL: any = { workday: ["Дни (ставка)", "Дні (ставка)"], shipment_weight: ["Вес отгрузки", "Вага відвантаження"], packing: ["Пакування", "Пакування"], tinting: ["Тонировка", "Тонування"], bonus_initiative: ["Бонус-идея", "Бонус-ідея"], bonus_cleanliness: ["Бонус-чистота", "Бонус-чистота"], error: ["Ошибки", "Помилки"], wrong_material: ["Не тот материал", "Не той матеріал"] };
+  const LBL: any = { workday: ["Дни (ставка)", "Дні (ставка)"], shipment_weight: ["Вес отгрузки", "Вага відвантаження"], packing: ["Пакування", "Пакування"], tinting: ["Тонировка", "Тонування"], test_set: ["Сборка тест-наборов", "Збірка тест-наборів"], bonus_initiative: ["Бонус-идея", "Бонус-ідея"], bonus_cleanliness: ["Бонус-чистота", "Бонус-чистота"], error: ["Ошибки", "Помилки"], wrong_material: ["Не тот материал", "Не той матеріал"] };
+  if (mode === "calendar") return <div><SalaryModeSwitch t={t} mode={mode} setMode={setMode} /><MonthSalaryView t={t} /></div>;
   if (!d) return <div className="spin">…</div>;
   return (
     <div>
+      <SalaryModeSwitch t={t} mode={mode} setMode={setMode} />
       <div style={{ display: "flex", gap: 4, marginBottom: 12, background: "#f1f5f9", borderRadius: 9, padding: 3 }}>
-        {([["week", "Неделя", "Тиждень"], ["month", "Месяц", "Місяць"], ["quarter", "Квартал", "Квартал"], ["all", "Всё", "Все"]] as any[]).map(([p, ru, uk]) => (
+        {([["week", "Неделя", "Тиждень"], ["month", "30 дней", "30 днів"], ["quarter", "Квартал", "Квартал"], ["all", "Всё", "Все"]] as any[]).map(([p, ru, uk]) => (
           <button key={p} onClick={() => setPeriod(p)} style={{ flex: 1, fontSize: 12.5, padding: "7px", borderRadius: 7, border: "none", cursor: "pointer", background: period === p ? C.terra : "transparent", color: period === p ? "#fff" : C.slate, fontWeight: 600 }}>{t(ru, uk)}</button>
         ))}
       </div>
@@ -593,11 +678,11 @@ function DashboardView({ t }: any) {
   const [period, setPeriod] = useState("month");
   useEffect(() => { api.get<any>(`/api/warehouse/dashboard/?period=${period}`).then(setD).catch(() => {}); }, [period]);
   if (!d) return <div className="spin">…</div>;
-  const cols: any[] = [["workday", t("Ставка", "Ставка")], ["shipment_weight", t("Вес₴", "Вага₴")], ["packing", t("Упак.", "Упак.")], ["tinting", t("Тонир.", "Тонув.")], ["bonus_initiative", t("Бонус", "Бонус")]];
+  const cols: any[] = [["workday", t("Ставка", "Ставка")], ["shipment_weight", t("Вес₴", "Вага₴")], ["packing", t("Упак.", "Упак.")], ["tinting", t("Тонир.", "Тонув.")], ["test_set", t("Тест-наб.", "Тест-наб.")], ["bonus_initiative", t("Бонус", "Бонус")]];
   return (
     <div>
       <div style={{ display: "flex", gap: 4, marginBottom: 12, background: "#f1f5f9", borderRadius: 9, padding: 3, maxWidth: 440 }}>
-        {([["week", "Неделя", "Тиждень"], ["month", "Месяц", "Місяць"], ["quarter", "Квартал", "Квартал"], ["all", "Всё", "Все"]] as any[]).map(([p, ru, uk]) => <button key={p} onClick={() => setPeriod(p)} style={{ flex: 1, fontSize: 12.5, padding: "7px", borderRadius: 7, border: "none", cursor: "pointer", background: period === p ? C.terra : "transparent", color: period === p ? "#fff" : C.slate, fontWeight: 600 }}>{t(ru, uk)}</button>)}
+        {([["week", "Неделя", "Тиждень"], ["month", "30 дней", "30 днів"], ["quarter", "Квартал", "Квартал"], ["all", "Всё", "Все"]] as any[]).map(([p, ru, uk]) => <button key={p} onClick={() => setPeriod(p)} style={{ flex: 1, fontSize: 12.5, padding: "7px", borderRadius: 7, border: "none", cursor: "pointer", background: period === p ? C.terra : "transparent", color: period === p ? "#fff" : C.slate, fontWeight: 600 }}>{t(ru, uk)}</button>)}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12, marginBottom: 14 }}>
         {([["offline", "🏪", t("Офлайн (покрытия/салон)", "Офлайн (покриття/салон)"), C.terra], ["online", "🌐", t("Онлайн (тест+основной)", "Онлайн (тест+основний)"), C.blue]] as any[]).map(([k, e, lbl, col]) => {
@@ -635,7 +720,7 @@ function DashboardView({ t }: any) {
                 <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, color: C.green }}>{f(r.total)} ₴</td>
               </tr>
             ))}
-            {d.rows.length === 0 && <tr><td colSpan={10} style={{ padding: 16, color: "#94a3b8" }}>{t("Нет данных за период", "Немає даних за період")}</td></tr>}
+            {d.rows.length === 0 && <tr><td colSpan={11} style={{ padding: 16, color: "#94a3b8" }}>{t("Нет данных за период", "Немає даних за період")}</td></tr>}
           </tbody>
           {d.rows.length > 0 && <tfoot><tr style={{ borderTop: "2px solid #e2e8f0", fontWeight: 700, background: "#f8fafc" }}>
             <td style={{ padding: "10px 12px" }}>{t("КОМАНДА", "КОМАНДА")} ({d.team.people})</td>

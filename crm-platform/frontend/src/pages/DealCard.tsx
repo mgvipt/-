@@ -50,6 +50,7 @@ import { Icon } from "../Icon";
 import NPDelivery from "./NPDelivery";
 import DealEstimatePanel from "./DealEstimatePanel";
 import DealEconomicsBlock from "../DealEconomicsBlock";
+import DealKpiBlock from "../DealKpiBlock";  // 14.09 my-kpi: заробіток і KPI по угоді (без маржі) для менеджера
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
@@ -1053,9 +1054,10 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             {deal.bonus && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{deal.bonus.revenue_pct}{t("% оборота = ","% обороту = ")}{fmt(deal.bonus.from_revenue)} ₴ + {deal.bonus.margin_pct}{t("% маржи = ","% маржі = ")}{fmt(deal.bonus.from_margin)} ₴</div>}
           </div>
           ) : (
-          <div className="panel">
-            <div className="row" title={t("Бонус ответственного менеджера со сделки по его ставкам. Итог месяца — в ЗП.", "Бонус відповідального менеджера з угоди за його ставками. Підсумок місяця — у ЗП.")}><span className="muted"><Icon n="💰" size={14} /> {t("Ваш заработок со сделки","Ваш заробіток з угоди")}</span><b style={{ color: "#1d4ed8" }}>{fmt(deal.bonus?.total || 0)} ₴</b></div>
-          </div>
+          /* 14.09 (my-kpi): замість одного рядка — «Ваш заробіток з угоди зараз / можна до, якщо виконати KPI» і чек-лист
+             саме цієї угоди (тест-набір / основне). Маржі тут немає; якщо API недоступне — блок покаже старий рядок */
+          <DealKpiBlock dealId={deal.id} fallbackTotal={Number(deal.bonus?.total || 0)}
+            refreshKey={`${deal.amount}|${(deal as any).stage ?? ""}|${deal.ttn || ""}|${(deal as any).paid ?? ""}|${(deal.items || []).length}`} />
           )}
 
           {/* 10.5b Економіка угоди (14.09.2026): факт / оцінка по кожному компоненту */}

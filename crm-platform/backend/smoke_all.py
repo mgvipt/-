@@ -104,12 +104,21 @@ CHECKS = [
     ("Meta-мітки: фрази «ймовірно з реклами»", "owner", "/api/meta-attr/phrases/", {200}, ["emoji_words", "phrases", "prefixes"]),
     ("Meta-мітки: бейдж клієнта (менеджер)", "manager", "/api/meta-attr/contact/1/", {200, 404}, []),
     ("Meta-мітки: бейдж чату (менеджер)", "manager", "/api/meta-attr/conversation/1/", {200, 404}, []),
+    ("Маркетинг: продажі по креативах", "owner", "/api/meta-attr/creative-sales/", {200}, ["by_ad", "likely_by_phrase", "totals"]),
     ("Ставки співробітників (власник)", "owner", "/api/payroll/schemes/", {200}, ["schemes"]),
     ("Ставки співробітників (менеджер — ні)", "manager", "/api/payroll/schemes/", {403}, []),
     ("ЗП за ставками", "owner", "/api/payroll/calc/?period=2026-08", {200}, ["rows"]),
     ("Точка беззбитковості: розшифровка фондів, ФОТ, вакансії", "owner", "/api/payroll/breakeven/", {200}, ["breakeven", "levels", "fot", "vacancies", "breakeven_with"]),
     ("Акти обʼєктів у картці клієнта", "owner", "/api/payroll/acts/?contact=1", {200}, ["results", "managers", "can_close"]),
     ("ЗП: відомість місяця", "owner", "/api/payroll/runs/?period=2026-09", {200}, ["rows", "quarter"]),
+    ("Фонди зі Ставок: звʼязки (власник)", "owner", "/api/payroll/funds/links/", {200}, ["linked", "funds", "can_edit"]),
+    ("Фонди зі Ставок: звʼязки (менеджер — ні)", "manager", "/api/payroll/funds/links/", {403}, []),
+    ("Фінмодель: «де налаштовується» у статті", "owner", "/api/finmodel-articles/57/", {200}, ["configured_in", "linked"]),
+    ("Ставки співробітників: ставки складу і розшифровка", "owner", "/api/payroll/schemes/", {200}, ["warehouse_rates", "can_edit_wh_rates", "schemes"]),
+    ("Моя ЗП і KPI (менеджер, лише свої)", "manager", "/api/payroll/my/", {200}, ["has_scheme", "lines", "periods"]),
+    ("Моя ЗП: чужий id — 403", "manager", "/api/payroll/my/?user=1", {403}, []),
+    ("Як виконати план — правила зі схеми", "manager", "/api/payroll/my/?only=rules", {200}, ["rules"]),
+    ("KPI угоди без маржі", "owner", "DEAL_KPI", {200}, ["checks", "kind"]),
     ("Фінанси: стан закриття дня/періоду", "manager", "/api/transactions/period-lock/", {200}, ["closed_until", "day_closed_until"]),
     ("Фінанси: рахунки", "owner", "/api/accounts/", {200}, []),
     ("КПІ менеджерів", "owner", "/api/finance/salary/", {200}, []),
@@ -125,6 +134,7 @@ CHECKS = [
     # ── Склад ──
     ("Склад: товари", "owner", "/api/products/?page_size=5", {200}, []),
     ("Склад: дашборд", "owner", "/api/warehouse/dashboard/", {200}, []),
+    ("Склад: моя ЗП за календарний місяць", "owner", "/api/warehouse/my-salary/?period=calendar&which=current", {200}, ["total", "piece", "base_lines"]),
     ("Склад: черга робіт", "owner", "/api/warehouse/queue/", {200}, []),
     ("Склад: інвентаризаційна відомість", "owner",
      "/api/warehouse/inventory-sheet/?from=2026-07-31&to=2026-09-02&page_size=5", {200}, ["rows"]),
@@ -137,6 +147,10 @@ CHECKS = [
 
 
 def resolve_dynamic(url):
+    if url == "DEAL_KPI":
+        from apps.crm.models import Deal
+        deal = Deal.objects.order_by("-id").first()
+        return "/api/payroll/deal-kpi/%s/" % deal.pk if deal else None
     from apps.crm.models import Contact, Deal
     if url.startswith("FUNNEL_DEALS:"):
         from apps.crm.models import Funnel

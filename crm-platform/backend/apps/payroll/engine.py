@@ -103,6 +103,170 @@ def _pct_ratio(employment, pol):
     return 1.0
 
 
+# ───────── підказки «звідки ця сума» (14.09, payrates-ux: «незрозуміло, чому в Лаптева 23 766») ─────────
+# Лише пояснення: числа fixed_net / fixed_cost рахуються як і раніше (employer_cost), тут вони розкладаються на кроки.
+
+def _n(v):
+    """15000 → «15 000»."""
+    return f"{round(float(v or 0)):,}".replace(",", " ")
+
+
+def _p(v):
+    """18 → «18», 1.5 → «1,5»."""
+    return f"{float(v or 0):g}".replace(".", ",")
+
+
+def _dmy(d):
+    return d.strftime("%d.%m.%Y") if d else ""
+
+
+def cost_breakdown(net, employment, pol=None):
+    """«На руки» → «компанії коштує» по кроках. Підсумок = round(employer_cost) — те саме число, що fixed_cost.
+    Кожен крок округлено до гривні так, щоб кроки сходилися з підсумком (різниця копійок — в останньому кроці)."""
+    pol = pol or policy()
+    t = pol["taxes"]
+    net = float(net or 0)
+    total = round(employer_cost(net, employment, pol))
+    net_r = round(net)
+    if net <= 0:
+        return {"steps": [], "text": "Тверду частину не задано — компанії вона нічого не коштує.", "total": 0}
+    if employment == "labor":
+        gross = net / (1 - (t["pdfo"] + t["vz"]) / 100)
+        gross_r = round(gross)
+        vz = round(gross * t["vz"] / 100)
+        pdfo = gross_r - net_r - vz
+        esv = total - gross_r
+        steps = [
+            {"label": "На руки людині", "amount": net_r},
+            {"label": "Нараховано (до утримань)", "amount": gross_r,
+             "hint": f"{_n(net_r)} ÷ (1 − {_p(t['pdfo'])}% − {_p(t['vz'])}%): з нарахованої суми податки утримуються, щоб на руки лишилось {_n(net_r)}"},
+            {"label": f"ПДФО {_p(t['pdfo'])}% — утримується з людини", "amount": pdfo, "sub": True},
+            {"label": f"Військовий збір {_p(t['vz'])}% — утримується з людини", "amount": vz, "sub": True},
+            {"label": f"ЄСВ {_p(t['esv'])}% — компанія платить зверху", "amount": esv, "plus": True},
+            {"label": "Компанії коштує", "amount": total, "total": True},
+        ]
+        text = (f"На руки {_n(net_r)} → нараховано {_n(gross_r)} (ПДФО {_p(t['pdfo'])}% = {_n(pdfo)} і військовий збір "
+                f"{_p(t['vz'])}% = {_n(vz)} утримуються з людини) → ЄСВ {_p(t['esv'])}% зверху = {_n(esv)} → компанії {_n(total)} ₴")
+    elif employment == "fop" and t.get("fop_compensate"):
+        before = net / (1 - t["fop_tax"] / 100)
+        before_r = round(before)
+        tax = before_r - net_r
+        esv = total - before_r
+        steps = [
+            {"label": "На руки людині", "amount": net_r},
+            {"label": "Платимо ФОПу", "amount": before_r,
+             "hint": f"{_n(net_r)} ÷ (1 − {_p(t['fop_tax'])}%): щоб після єдиного податку лишилось {_n(net_r)}"},
+            {"label": f"Єдиний податок {_p(t['fop_tax'])}% — ФОП сплачує з цієї суми", "amount": tax, "sub": True},
+            {"label": "ЄСВ ФОП за місяць — компенсуємо зверху", "amount": esv, "plus": True},
+            {"label": "Компанії коштує", "amount": total, "total": True},
+        ]
+        text = (f"На руки {_n(net_r)} → платимо ФОПу {_n(before_r)}, щоб після єдиного податку {_p(t['fop_tax'])}% "
+                f"({_n(tax)}) лишилось {_n(net_r)} → + ЄСВ ФОП {_n(esv)} ₴/міс (компенсуємо) → компанії {_n(total)} ₴")
+    elif employment == "fop":
+        steps = [{"label": "На руки людині", "amount": net_r}, {"label": "Компанії коштує", "amount": total, "total": True}]
+        text = (f"ФОП сам сплачує податок {_p(t['fop_tax'])}% і ЄСВ {_n(t['fop_esv'])} ₴ зі своїх — компанія не компенсує "
+                f"(вкладка «Правила компанії») → компанії коштує рівно сума на руки: {_n(total)} ₴")
+    else:
+        steps = [{"label": "На руки людині", "amount": net_r}, {"label": "Компанії коштує", "amount": total, "total": True}]
+        text = f"Без оформлення — податків немає → компанії коштує рівно сума на руки: {_n(total)} ₴"
+    return {"steps": steps, "text": text, "total": total}
+
+
+_FIXED_SHORT = {"base_by_days": "оклад за вихід", "fixed_monthly": "ставка", "standard": "стандарт до"}
+
+
+def _cost_explain(sc, pol, on, fixed_sum, guarantee, out):
+    """Чому тверда частина саме така (з чого складається, чи діє гарантія) + розшифровка податків.
+    Та сама логіка, що в scheme_cost; повертає лише нові поля."""
+    items, g = [], None
+    for c in sc.components.filter(active=True):
+        p = c.params or {}
+        if c.kind in ("base_by_days", "fixed_monthly"):
+            items.append({"kind": c.kind, "title": c.title or c.get_kind_display(), "amount": round(float(p.get("amount") or 0))})
+        elif c.kind == "standard":
+            items.append({"kind": c.kind, "title": c.title or "Стандарт (максимум)", "amount": round(float(p.get("max") or 0))})
+        elif c.kind == "guarantee":
+            g_start, g_end = guarantee_window(c)
+            ref = sc.planned_start if sc.is_vacancy and sc.planned_start else on
+            active = bool(sc.is_vacancy or (g_start and g_start <= ref <= g_end))
+            if sc.is_vacancy:
+                status = "vacancy"
+            elif not g_start:
+                status = "no_start"
+            elif active:
+                status = "active"
+            elif ref < g_start:
+                status = "not_started"
+            else:
+                status = "ended"
+            info = {"amount": round(float(p.get("amount") or pol["guarantee"]["amount"])), "months": int(p.get("months", 2)),
+                    "start": g_start.isoformat() if g_start else None, "end": g_end.isoformat() if g_end else None,
+                    "active": active, "status": status}
+            if active or g is None:
+                g = info
+    fixed_net = out["fixed_net"]
+    base = " + ".join(f"{_FIXED_SHORT.get(i['kind'], 'ставка')} {_n(i['amount'])}" for i in items)
+    if len(items) > 1:
+        base += f" = {_n(fixed_sum)}"
+    if not items and not g:
+        text = "Твердої частини немає — лише % з продажів / відрядно."
+    elif g and g["active"]:
+        when = (f"на перші {g['months']} міс. після виходу" if g["status"] == "vacancy"
+                else f"до {_dmy(date.fromisoformat(g['end']))}")
+        if not items:
+            text = f"Діє гарантія {_n(g['amount'])} {when} → {_n(fixed_net)} ₴"
+        elif guarantee > fixed_sum:
+            text = f"{base}, але діє гарантія {_n(g['amount'])} {when} → береться більша сума: {_n(fixed_net)} ₴"
+        else:
+            text = f"{base}; гарантія {_n(g['amount'])} ({when}) не більша → береться {_n(fixed_net)} ₴"
+    elif g:
+        why = {"ended": f"закінчилась {_dmy(date.fromisoformat(g['end'])) if g['end'] else ''}",
+               "not_started": f"почнеться {_dmy(date.fromisoformat(g['start'])) if g['start'] else ''}",
+               "no_start": "без дати початку"}.get(g["status"], "")
+        text = f"{base or '0'} ₴ (гарантія {_n(g['amount'])} {why} — зараз не враховується)"
+    else:
+        text = f"{base} ₴"
+    notes = []
+    if any(i["kind"] == "standard" for i in items):
+        notes.append("Стандарт узято за максимумом (оцінка 100%) — рахуємо найдорожчий місяць.")
+    if any(i["kind"] == "base_by_days" for i in items):
+        notes.append("Оклад за вихід — за повний місяць; якщо днів у табелі менше, у «Розрахунку за місяць» буде менше.")
+    if g and g["status"] == "vacancy":
+        notes.append("Вакансія: гарантію новачку рахуємо з першого місяця після виходу.")
+    if g and g["active"] and guarantee > fixed_sum:
+        notes.append("Гарантію тут враховано як виплачену (найдорожчий випадок). Насправді доплата до гарантії йде лише в місяці, "
+                     "коли ви відмітили «умови виконано».")
+    bd = cost_breakdown(max(float(fixed_sum or 0), float(guarantee or 0)), sc.employment, pol)
+    return {"fixed_items": items, "fixed_sum": round(fixed_sum), "guarantee_info": g, "fixed_explain": text,
+            "fixed_notes": notes, "breakdown": bd["steps"], "breakdown_text": bd["text"]}
+
+
+# Ставки складу — ТІ САМІ статті Фінмоделі (категорія «Ставки складу»), які читає склад (wh_views._rate, bundle_assembly_fee).
+# Тут лише підпис одиниці й чи нараховується автоматично; копій ставок немає.
+WH_RATE_INFO = {
+    "WH_RATE_KG": ("₴/кг", "yes", "так — при відвантаженні, з ваги замовлення"),
+    "WH_PACK_5": ("₴/посилка", "yes", "так — при відвантаженні, якщо комірник відмітив «упаковано»"),
+    "WH_PACK_10": ("₴/посилка", "yes", "так — при відвантаженні, якщо комірник відмітив «упаковано»"),
+    "WH_PACK_20": ("₴/посилка", "yes", "так — при відвантаженні, якщо комірник відмітив «упаковано» (понад 20 кг — кілька посилок)"),
+    "WH_TINT_PCT": ("% від суми тонованих наборів", "mark", "так — лише коли комірник відмітив тоновані набори"),
+    "WH_RATE_DAY": ("₴/день", "day", "лише кнопкою «Завершити день» (мінус за перебір обіду)"),
+    "bundle_assembly": ("₴/набір", "no", "ні — з наступного оновлення; зараз ставка входить лише в собівартість тестового набору"),
+}
+_WH_ORDER = list(WH_RATE_INFO)
+
+
+def warehouse_rates():
+    """Ставки складу для «Налаштування → Ставки співробітників» (читання; змінюються через /api/finmodel-articles/<id>/)."""
+    from apps.finance.models import FinModelArticle
+    arts = FinModelArticle.objects.filter(category="warehouse_rate", active=True, parent__isnull=True)
+    out = []
+    for a in sorted(arts, key=lambda x: (_WH_ORDER.index(x.code) if x.code in _WH_ORDER else 99, x.sort_order, x.id)):
+        unit, auto, note = WH_RATE_INFO.get(a.code, (a.unit or ("%" if a.value_type == "percent" else "₴"), "", "—"))
+        out.append({"id": a.id, "code": a.code, "name": a.name, "value": float(a.value or 0), "unit": unit,
+                    "auto": auto, "auto_note": note})
+    return out
+
+
 # ─────────────────────────── факти ───────────────────────────
 
 def _items_margin(deal, pol):
@@ -511,11 +675,15 @@ def scheme_cost(sc, pol=None, sh=None, on=None):
             r_pct += add
             piece_pct += add
             parts.append((c.title or "Відрядно", round(add * 100, 2), "% виручки"))
+    fixed_sum = fixed_net
     fixed_net = max(fixed_net, guarantee)
     ratio = _pct_ratio(sc.employment, pol)
-    return {"fixed_net": round(fixed_net), "fixed_cost": round(employer_cost(fixed_net, sc.employment, pol)),
-            "margin_pct": m_pct * ratio, "revenue_pct": r_pct * ratio, "piece_pct": piece_pct * ratio, "taxes_ratio": round(ratio, 3),
-            "guarantee": guarantee, "parts": parts}
+    out = {"fixed_net": round(fixed_net), "fixed_cost": round(employer_cost(fixed_net, sc.employment, pol)),
+           "margin_pct": m_pct * ratio, "revenue_pct": r_pct * ratio, "piece_pct": piece_pct * ratio, "taxes_ratio": round(ratio, 3),
+           "guarantee": guarantee, "parts": parts}
+    # 14.09 (payrates-ux): підказки «чому саме ця сума» — лише нові поля, числа вище не змінюються
+    out.update(_cost_explain(sc, pol, on, fixed_sum, guarantee, out))
+    return out
 
 
 FUND_BY_DEPT = {"Продажі": 59, "Склад": 59, "Офіс": 59, "Маркетинг": 53}  # тверда частина → фонд Олега

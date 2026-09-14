@@ -80,6 +80,19 @@ class FinModelArticleViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         _fin_guard(self.request, "finance.model.edit", "Фінмодель: лише перегляд (нема права редагувати)")
+        # fm-link 14.09: число фонду, звʼязаного зі «Ставками співробітників», тут не міняється (щоб два місця не «бились»)
+        _new_v = serializer.validated_data.get("value")
+        if _new_v is not None and serializer.instance is not None and _new_v != serializer.instance.value:
+            try:
+                from apps.payroll.fund_link import linked_ids as _fm_linked_ids
+                _is_linked = serializer.instance.id in _fm_linked_ids()
+            except Exception:
+                _is_linked = False
+            if _is_linked:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError({"value": ["Це число підтягується автоматично зі «Ставок співробітників». "
+                                                 "Змініть ставки (Налаштування → Ставки співробітників) або вимкніть "
+                                                 "«Автоматично зі Ставок» у Фінанси → Точка беззбитковості."]})
         obj = serializer.save()
         if obj.code == "bundle_assembly":
             # ставка збірки набору змінилась → перерахувати собівартість усіх наборів
