@@ -2,6 +2,8 @@
 та створює задачі співробітникам за глобальними правилами (GlobalRule).
 Кожна дія — у Історію змін (actor «AI-агент») + аудит AgentRun."""
 import json, os, urllib.request
+from contextlib import nullcontext
+from django.db import transaction
 from django.utils import timezone
 from datetime import timedelta
 from .models import GlobalRule, Task, AgentRun, AgentConfig, log_activity
@@ -158,11 +160,23 @@ def _move_stage(entity, kind, to_name, reason, user, autonomous):
         if target.order > AGENT_MAX_DEAL_STAGE:
             return {"ok": False, "msg": "стадія «%s» — складська/логістична/оплата, її рухає склад (взяття задачі), НП-автоматика та реальна оплата, не агент" % target.name}
     old = entity.stage.name
-    entity.stage = target
-    flds = ["stage"]
-    if hasattr(entity, "stage_changed_at"):
-        entity.stage_changed_at = timezone.now(); flds.append("stage_changed_at")
-    entity.save(update_fields=flds)
+    # Лід: агент кілька секунд чекає Claude над знімком ліда, завантаженим ДО цього. За цей
+    # час менеджер міг завершити чат (лід → «Не вдалося зв.» / «Хочу пізніше»). Перечитуємо
+    # стадію з бази під блокуванням рядка: змінилась або лід закритий — нічого не рухаємо.
+    # Кейс 11.09: 15 лідів з 01.08 повернулись у роботу через 2–48 с після закриття чату
+    # (341, 5252, 5461, 5577…). Сделки цим не зачеплені.
+    with (transaction.atomic() if kind == "lead" else nullcontext()):
+        if kind == "lead":
+            cur = (type(entity).objects.select_for_update().select_related("stage")
+                   .filter(pk=entity.pk).first())
+            if cur is None or cur.stage_id != entity.stage_id or cur.stage.is_lost or cur.stage.is_won:
+                return {"ok": False, "msg": "поки агент аналізував, стадію змінили (зараз «%s») — не чіпаю"
+                        % (cur.stage.name if cur else "лід видалено")}
+        entity.stage = target
+        flds = ["stage"]
+        if hasattr(entity, "stage_changed_at"):
+            entity.stage_changed_at = timezone.now(); flds.append("stage_changed_at")
+        entity.save(update_fields=flds)
     log_activity(kind, entity.id, "AI-агент: стадія", "%s → %s (%s)" % (old, target.name, reason), user, "AI-агент")
     return {"ok": True, "moved_to": target.name}
 
@@ -187,15 +201,22 @@ def _create_task(entity, kind, inp, user, autonomous):
 
 def _fill_needs(entity, inp, kind, user):
     """Заповнити lead.qualification з діалогу — ТІЛЬКИ порожні поля (не затирати ручний ввід)."""
-    q = dict(entity.qualification or {})
-    filled = []
-    for k, v in (inp or {}).items():
-        if v and not q.get(k):
-            q[k] = v
-            filled.append(k)
+    with (transaction.atomic() if kind == "lead" else nullcontext()):
+        if kind == "lead":
+            # анкету беремо свіжу з бази: поки агент думав, закриття чату могло дописати
+            # close_reason/_reached_stage_* — старий знімок їх стирав (лід 5577, 09.09)
+            entity.qualification = (type(entity).objects.select_for_update().filter(pk=entity.pk)
+                                    .values_list("qualification", flat=True).first()) or {}
+        q = dict(entity.qualification or {})
+        filled = []
+        for k, v in (inp or {}).items():
+            if v and not q.get(k):
+                q[k] = v
+                filled.append(k)
+        if filled:
+            entity.qualification = q
+            entity.save(update_fields=["qualification"])
     if filled:
-        entity.qualification = q
-        entity.save(update_fields=["qualification"])
         log_activity(kind, entity.id, "AI-агент: анкета потреби", "заповнено: " + ", ".join(filled), user, "AI-агент")
     return {"ok": True, "filled": filled}
 

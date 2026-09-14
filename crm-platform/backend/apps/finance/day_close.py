@@ -108,9 +108,39 @@ def totals_of(rows):
         "n": len(rows)}}
 
 
+def required_fact_ids():
+    """Рахунки, де при ручному «Закрити день» факт обовʼязковий (рішення Олега 14.09: каса салону «без чека»
+    і фонд опер. готівки на закупку товару). Список живе в налаштуваннях finance_day_close.required_fact_accounts."""
+    out = []
+    for x in settings_get().get("required_fact_accounts") or []:
+        try:
+            out.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _fact_num(v):
+    try:
+        return None if v in (None, "") else float(str(v).replace(",", ".").replace(" ", ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def missing_required_facts(facts):
+    """Назви обовʼязкових активних рахунків, для яких не вписано факт (порожньо/не число)."""
+    facts = facts or {}
+    req = required_fact_ids()
+    if not req:
+        return []
+    return [a.name for a in Account.objects.filter(is_active=True, id__in=req).order_by("sort_order", "id")
+            if _fact_num(facts.get(str(a.id), facts.get(a.id))) is None]
+
+
 def balances_now():
     """Залишки всіх активних рахунків за системою зараз (для перевірки грошей при закритті дня)."""
-    return [{"id": a.id, "name": a.name, "kind": a.kind, "system": round(float(a.balance()), 2)}
+    req = set(required_fact_ids())
+    return [{"id": a.id, "name": a.name, "kind": a.kind, "system": round(float(a.balance()), 2), "required": a.id in req}
             for a in Account.objects.filter(is_active=True).order_by("sort_order", "id")]
 
 

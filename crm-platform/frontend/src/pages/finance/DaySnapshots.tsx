@@ -58,30 +58,32 @@ function CloseDialog({ day, onDone, onCancel }: { day: string; onDone: (id: numb
     try { const r = await api.post<any>("/api/day-snapshots/close/", { date: day, facts }); onDone(r.id); }
     catch (e: any) { setErr(e?.data?.detail || e?.response?.data?.detail || t("Ошибка", "Помилка")); setBusy(false); }
   }
+  const missing = (accs || []).filter((a) => a.required && String(facts[String(a.id)] ?? "").trim() === "");
   return (
     <div style={{ border: "2px solid #2E6FB0", borderRadius: 12, padding: 12, margin: "8px 0", background: "#f8fbff" }}>
       <b>{t("Закрыть день", "Закрити день")} {dm(day)}</b>
       <div className="muted" style={{ fontSize: 12, margin: "4px 0 8px", lineHeight: 1.4 }}>
-        {t("Проверьте остатки. В кассе пересчитайте наличные и впишите факт — расхождение попадёт в снимок. Остальные счета — по желанию.",
-           "Перевірте залишки. У касі перерахуйте готівку і впишіть факт — розбіжність потрапить у знімок. Інші рахунки — за бажанням.")}
+        {t("Проверьте остатки. Пересчитайте наличные и впишите факт — по счетам со звёздочкой * это обязательно (касса салона без чека, фонд опер. наличных на закупку). Расхождение попадёт в снимок. Остальные счета — по желанию.",
+           "Перевірте залишки. Перерахуйте готівку і впишіть факт — по рахунках із зірочкою * це обовʼязково (каса салону без чека, фонд опер. готівки на закупку). Розбіжність потрапить у знімок. Інші рахунки — за бажанням.")}
       </div>
       {!accs && !err && <div className="muted" style={{ fontSize: 12 }}>{t("Загрузка…", "Завантаження…")}</div>}
       {accs && accs.map((a) => {
         const f = facts[String(a.id)]; const d = f !== undefined && f !== "" ? Number(String(f).replace(",", ".")) - a.system : null;
         return (
           <div key={a.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 90px 100px", gap: 6, alignItems: "center", padding: "4px 0", borderBottom: "1px solid #eef2f7" }}>
-            <span style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis" }}>{a.kind === "cash" ? "💵 " : ""}{a.name}</span>
+            <span style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis" }}>{a.kind === "cash" ? "💵 " : ""}{a.name}{a.required && <b style={{ color: "#b91c1c" }} title={t("Обязательно вписать факт", "Обовʼязково вписати факт")}> *</b>}</span>
             <span style={{ fontSize: 12.5, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(a.system)}</span>
             <span>
               <input inputMode="decimal" placeholder={t("факт", "факт")} value={f ?? ""} onChange={(e) => setFacts({ ...facts, [String(a.id)]: e.target.value })}
-                style={{ width: "100%", height: 28, border: `1px solid ${d != null && Math.abs(d) > 0.009 ? "#f59e0b" : "#cbd5e1"}`, borderRadius: 6, padding: "0 6px", textAlign: "right" }} />
+                style={{ width: "100%", height: 28, border: `1px solid ${a.required && String(f ?? "").trim() === "" ? "#ef4444" : d != null && Math.abs(d) > 0.009 ? "#f59e0b" : "#cbd5e1"}`, borderRadius: 6, padding: "0 6px", textAlign: "right" }} />
             </span>
           </div>
         );
       })}
+      {missing.length > 0 && <div style={{ color: "#b91c1c", fontSize: 12, marginTop: 6 }}>{t("Впишите факт:", "Впишіть факт:")} {missing.map((a) => a.name).join(", ")}</div>}
       {err && <div style={{ color: "#b91c1c", fontSize: 12, marginTop: 6 }}>{err}</div>}
       <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-        <button className="btn btn-primary" disabled={busy} onClick={go}>{busy ? "…" : t("Закрыть день", "Закрити день")}</button>
+        <button className="btn btn-primary" disabled={busy || missing.length > 0} onClick={go}>{busy ? "…" : t("Закрыть день", "Закрити день")}</button>
         <button className="btn btn-light" onClick={onCancel}>{t("Отмена", "Скасувати")}</button>
       </div>
     </div>

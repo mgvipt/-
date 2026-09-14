@@ -3696,7 +3696,7 @@ class DaySnapshotViewSet(viewsets.ReadOnlyModelViewSet):
             "can_close_day": self._can("finance.day.close"),
             "can_edit_closed_day": self._can("finance.day.edit_closed") or self._can("finance.period.close"),
             **{k: v for k, v in __import__("apps.finance.day_close", fromlist=["settings_get"]).settings_get().items()
-               if k in ("auto_time", "auto_weekends")},
+               if k in ("auto_time", "auto_weekends", "required_fact_accounts")},
         })
 
     def retrieve(self, request, *args, **kwargs):
@@ -3725,7 +3725,13 @@ class DaySnapshotViewSet(viewsets.ReadOnlyModelViewSet):
         if d > _today():
             return Response({"detail": "Не можна закрити майбутній день"}, status=400)
         facts = request.data.get("facts") or {}
-        s, created = close_day(d, request.user, "manual", facts=facts if isinstance(facts, dict) else {})
+        facts = facts if isinstance(facts, dict) else {}
+        from .day_close import missing_required_facts
+        if not DaySnapshot.objects.filter(date=d, reopened_at__isnull=True).exists():
+            miss = missing_required_facts(facts)
+            if miss:
+                return Response({"detail": "Впишіть фактичний залишок: " + ", ".join(miss), "missing": miss}, status=400)
+        s, created = close_day(d, request.user, "manual", facts=facts)
         return Response({**self._head(s), "created": created})
 
     @action(detail=False, methods=["get"])
@@ -3737,7 +3743,7 @@ class DaySnapshotViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get", "post"], url_path="settings")
     def day_settings(self, request):
-        """Налаштування: час автознімка (за Києвом), чи робити у вихідні."""
+        """Налаштування: час автознімка (за Києвом), чи робити у вихідні, де факт обовʼязковий (required_fact_accounts)."""
         self._check_view()
         from .day_close import settings_get, settings_set
         if request.method == "POST":
@@ -3752,7 +3758,14 @@ class DaySnapshotViewSet(viewsets.ReadOnlyModelViewSet):
                     return Response({"detail": "Час у форматі ГГ:ХХ, наприклад 19:00"}, status=400)
                 at = "%02d:%02d" % (hh, mm)
             wk = request.data.get("auto_weekends")
-            return Response(settings_set(auto_time=at or None, auto_weekends=(bool(wk) if wk is not None else None)))
+            req = request.data.get("required_fact_accounts")
+            if req is not None:
+                try:
+                    req = [int(x) for x in req]
+                except (TypeError, ValueError):
+                    return Response({"detail": "required_fact_accounts — список id рахунків"}, status=400)
+            return Response(settings_set(auto_time=at or None, auto_weekends=(bool(wk) if wk is not None else None),
+                                         required_fact_accounts=req))
         return Response(settings_get())
 
     @action(detail=True, methods=["post"])

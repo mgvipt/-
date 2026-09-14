@@ -119,3 +119,37 @@ class DayCloseTests(TestCase):
         with patch(target, return_value=datetime(2026, 9, 10, 19, 15, tzinfo=kyiv)):
             call_command("day_close_snapshot", stdout=StringIO())
         self.assertFalse(DaySnapshot.objects.filter(date=D).exists())
+
+
+class DayCloseRequiredFactsTests(TestCase):
+    """14.09: по касі салону без чека і фонду опер. готівки факт при ручному закритті обовʼязковий."""
+    def setUp(self):
+        self.cash = Account.objects.create(name="Каса салону тест", kind="cash")
+        self.bank = Account.objects.create(name="Банк тест")
+        self.admin = get_user_model().objects.create_superuser("dc-req", "dcr@example.test", "x")
+        settings_set(required_fact_accounts=[self.cash.id])
+        self.c = APIClient()
+        self.c.force_authenticate(self.admin)
+
+    def test_required_facts_block_manual_close(self):
+        r = self.c.get("/api/day-snapshots/balances/", HTTP_HOST=HOST)
+        req = {a["id"]: a["required"] for a in r.json()["accounts"]}
+        self.assertTrue(req[self.cash.id])
+        self.assertFalse(req[self.bank.id])
+        r = self.c.post("/api/day-snapshots/close/", {"date": D.isoformat(), "facts": {}}, format="json", HTTP_HOST=HOST)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Каса салону тест", r.json()["detail"])
+        self.assertFalse(DaySnapshot.objects.filter(date=D).exists())
+        r = self.c.post("/api/day-snapshots/close/", {"date": D.isoformat(), "facts": {str(self.cash.id): "0"}},
+                        format="json", HTTP_HOST=HOST)
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(DaySnapshot.objects.filter(date=D).exists())
+
+    def test_auto_snapshot_does_not_need_facts(self):
+        s, created = close_day(D, None, "auto")
+        self.assertTrue(created)
+
+    def test_settings_list_saved(self):
+        r = self.c.post("/api/day-snapshots/settings/", {"required_fact_accounts": [self.bank.id]}, format="json", HTTP_HOST=HOST)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["required_fact_accounts"], [self.bank.id])

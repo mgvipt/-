@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, ChatMessage } from "../api";
 import { ProductLibrary } from "./ProductLibrary";
 import { CezarLibrary } from "./CezarLibrary";
+import { QuickRepliesScript } from "./QuickRepliesScript";
 import { silkColorName, formatSilkColor, matchesSilkColor } from "../silk-color-names";
 
 type Asset = {
@@ -72,9 +73,6 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
   function toggle(id: number) { setPicked((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]); }
   function openMaterial(name: string) { setMaterial(name); setColor(""); setQuery(""); setScreen("material"); loadPicker(name); }
   function openColor(code: string) { setColor(code); setQuery(""); setScreen("color"); loadPicker(material, code); }
-  // Швидкі відповіді групуємо за категорією (заголовок групи — окремий рядок).
-  const qItems: any[] = [];
-  { let last = "\u0000"; for (const r of replies) { const c = r.category || ""; if (c !== last) { if (c) qItems.push({ __h: c }); last = c; } qItems.push(r); } }
   async function send(replyId?: number) { setBusy(true); setError(""); try { const m = await api.post<ChatMessage>(`/api/conversations/${conversationId}/send-library/`, replyId ? { reply_id: replyId } : { item_ids: picked }); onSent(m); onClose(); } catch (e: any) { setError(e?.response?.data?.detail || "Не вдалося надіслати"); } finally { setBusy(false); } }
   const card = (a: Asset) => <button key={a.id} onClick={() => toggle(a.id)} style={{ border: picked.includes(a.id) ? "2px solid var(--brand)" : "1px solid #dbe3ee", background: "#fff", padding: 5, borderRadius: 8, textAlign: "left", cursor: "pointer" }}>
     {(a.preview_url || a.url) && a.kind !== "video" && <img src={a.preview_url || a.url} loading="lazy" decoding="async" style={{ width: "100%", height: 72, objectFit: "cover", borderRadius: 5 }} />}
@@ -82,22 +80,23 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
   </button>;
   const back = () => { if (screen === "color") { setScreen("material"); setColor(""); loadPicker(material); } else { setScreen("materials"); setMaterial(""); loadPicker(); } setQuery(""); };
 
+  // Швидкі відповіді — велике вікно-«скрипт продажів» з етапами розмови (14.09).
+  if (tab === "quick") return <QuickRepliesScript replies={replies} fillName={fillName} busy={busy} error={error}
+    onClose={onClose} onBack={() => setTab("colors")}
+    onInsert={onInsertText ? (txt) => { onInsertText(txt); onClose(); } : undefined}
+    onSend={(id) => send(id)} />;
+
   if (tab === "colors" && ["Фарби", "Підготовка та витратні матеріали"].includes(material)) return <ProductLibrary material={material} conversationId={conversationId} onSent={onSent} onClose={onClose} onBack={() => { setMaterial(""); setScreen("materials"); loadPicker(); }} />;
 
   if (tab === "colors" && material === "Плінтуси Cezar") return <CezarLibrary conversationId={conversationId} onSent={onSent} onClose={onClose} onBack={() => { setMaterial(""); setScreen("materials"); loadPicker(); }} />;
 
   return <div style={{ position: "absolute", zIndex: 50, left: 0, bottom: 46, width: 390, maxWidth: "calc(100vw - 24px)", maxHeight: 470, display: "flex", flexDirection: "column", overflow: "hidden", background: "#fff", border: "1px solid #cbd5e1", borderRadius: 12, padding: 10, boxShadow: "0 12px 32px rgba(15,23,42,.2)" }}>
     <div style={{ display: "flex", gap: 6, marginBottom: 8 }}><b style={{ fontSize: 13 }}>Бібліотека</b><span style={{ flex: 1 }} /><button className="btn" style={{ padding: "1px 7px" }} onClick={onClose}>×</button></div>
-    <div style={{ display: "flex", gap: 6, marginBottom: 8 }}><button className="btn" onClick={() => { setTab("colors"); setScreen("materials"); setMaterial(""); setColor(""); setQuery(""); loadPicker(); }} style={{ fontSize: 12, background: tab === "colors" ? "#e0edff" : undefined }}>🎨 Матеріали</button><button className="btn" onClick={() => { setTab("quick"); setQuery(""); }} style={{ fontSize: 12, background: tab === "quick" ? "#e0edff" : undefined }}>⚡ Швидкі відповіді</button></div>
+    <div style={{ display: "flex", gap: 6, marginBottom: 8 }}><button className="btn" onClick={() => { setTab("colors"); setScreen("materials"); setMaterial(""); setColor(""); setQuery(""); loadPicker(); }} style={{ fontSize: 12, background: tab === "colors" ? "#e0edff" : undefined }}>🎨 Матеріали</button><button className="btn" onClick={() => { setTab("quick"); setQuery(""); }} style={{ fontSize: 12 }}>⚡ Швидкі відповіді</button></div>
     <input value={query} onChange={(e) => setQuery(e.target.value)} autoFocus
-      placeholder={tab === "quick" ? "Пошук швидкої відповіді" : (screen === "materials" ? "Пошук матеріалу" : "Знайти назву або код кольору")}
+      placeholder={screen === "materials" ? "Пошук матеріалу" : "Знайти назву або код кольору"}
       style={{ width: "100%", boxSizing: "border-box", padding: "7px 9px", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 13, marginBottom: 8, flexShrink: 0 }} />
     <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-    {tab === "quick" && <div style={{ display: "grid", gap: 6, marginBottom: 8 }}>{qItems.map((r: any) => r.__h ? <div key={"h" + r.__h} style={{ fontSize: 10.5, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em", margin: "6px 0 0" }}>{r.__h}</div> : <button key={r.id} title={r.when_to_use || ""} className="btn" style={{ justifyContent: "flex-start", textAlign: "left", fontSize: 12 }} disabled={busy} onClick={() => {
-      const hasAssets = (r.asset_ids || []).length > 0;
-      if (!hasAssets && onInsertText) { onInsertText(fillName(r.text || "")); onClose(); return; }
-      send(r.id);
-    }}><b>{r.title}</b>{r.text ? <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}> — {r.text}</span> : ""}</button>)}</div>}
     {tab === "colors" && <>
       {screen !== "materials" && <button className="btn" onClick={back} style={{ fontSize: 12, marginBottom: 8 }}>← {screen === "color" ? material : "Усі матеріали"}</button>}
       {screen === "materials" && <><div className="muted" style={{ fontSize: 12, marginBottom: 7 }}>Спочатку оберіть матеріал — далі побачите лише кольори-образки. Відео та інтер'єри відкриваються всередині кольору.</div><div style={{ display: "grid", gap: 7 }}>{materials.map((entry) => <button key={entry.name} onClick={() => openMaterial(entry.name)} className="btn" style={{ display: "flex", alignItems: "center", gap: 8, textAlign: "left" }}>{entry.preview_url && <img src={entry.preview_url} loading="lazy" decoding="async" style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 6 }} />}<span><b>{entry.name}</b><br /><span className="muted" style={{ fontSize: 11 }}>{["Фарби", "Підготовка та витратні матеріали"].includes(entry.name) ? `${entry.codes} товарів · фото й актуальна ціна` : entry.name === "Плінтуси Cezar" ? `${entry.codes} моделей і довжин` : `${entry.codes} кольорів · ${entry.catalog_pages} сторінок каталогу`}</span></span><span style={{ marginLeft: "auto" }}>›</span></button>)}</div></>}

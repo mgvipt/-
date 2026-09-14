@@ -27,6 +27,10 @@ class Command(BaseCommand):
             conv = Conversation.objects.filter(contact_id=lead.contact_id).order_by("-last_message_at").first()
             if not conv or not conv.last_message_at:
                 continue
+            # менеджер завершив чат → лід закрито/відкладено разом з ним; агент його не чіпає,
+            # поки клієнт не напише знову (нове повідомлення відкриває чат). Кейс 11.09, рішення Олега 14.09.
+            if conv.status == "closed":
+                continue
             lastrun = AgentRun.objects.filter(lead=lead).order_by("-created_at").first()
             age = now - conv.last_message_at
             run_it = False
@@ -43,6 +47,11 @@ class Command(BaseCommand):
             if run_it and is_review_reply(lead.contact_id, now):
                 run_it = False  # клієнт відповідає на просьбу про відгук («дякую») — не продаж, агент не чіпає (13.09)
             if run_it:
+                # список лідів завантажено на старті (до 25 викликів Claude тому) —
+                # якщо лід уже закрили, не витрачаємо на нього виклик
+                lead.refresh_from_db(fields=["stage"])
+                if lead.stage.is_lost or lead.stage.is_won:
+                    continue
                 try:
                     run_agent(lead, "lead", trigger="sweep", user=None)
                     done += 1
@@ -59,6 +68,8 @@ class Command(BaseCommand):
             dconv = _Cv.objects.filter(contact_id=deal.contact_id).order_by("-last_message_at").first()
             if not dconv or not dconv.last_message_at:
                 continue
+            if dconv.status == "closed":
+                continue  # чат завершено — агент угоду не рухає, доки клієнт не напише (14.09)
             if (now - dconv.last_message_at) > timedelta(days=2):
                 continue
             dlast = AgentRun.objects.filter(deal=deal).order_by("-created_at").first()
