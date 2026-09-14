@@ -13,4 +13,7 @@ urlpatterns = [
     path("log/", views.LogView.as_view()),
     path("acts/", views.ActsView.as_view()),
     path("acts/<int:pk>/close/", views.ActCloseView.as_view()),
+    path("runs/", views.RunsView.as_view()),
+    path("runs/approve/", views.RunApproveView.as_view()),
+    path("runs/<int:pk>/<str:act>/", views.RunActionView.as_view()),
 ]

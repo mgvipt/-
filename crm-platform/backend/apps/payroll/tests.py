@@ -111,3 +111,58 @@ class PayrollEngineTests(TestCase):
         c.force_authenticate(self.mgr)
         self.assertEqual(c.get("/api/payroll/schemes/", HTTP_HOST=HOST).status_code, 403)
         self.assertEqual(c.get("/api/payroll/calc/?period=2026-09", HTTP_HOST=HOST).status_code, 403)
+
+
+class PayrollRunTests(TestCase):
+    """Відомість: затверджений місяць не змінюється від нових ставок; перевідкрити → версія 2; привʼязка виплат; права."""
+    def setUp(self):
+        U = get_user_model()
+        self.owner = U.objects.create_superuser("run-owner", "ro@example.test", "x")
+        self.mgr = U.objects.create_user("run-mgr", "rm@example.test", "x", first_name="Тест", last_name="Відомість")
+        from apps.payroll.models import PayPolicy
+        from apps.finance.models import Category
+        self.cat = Category.objects.create(name="ЗП оклади тест", direction="out")
+        PayPolicy.objects.update_or_create(pk=1, defaults={"params": {"replaced_articles": [], "payout_categories": [self.cat.id]}})
+        self.acc = Account.objects.create(name="Каса ЗП тест", kind="cash")
+        self.s = PayScheme.objects.create(user=self.mgr, position="Менеджер", valid_from=date(2026, 8, 1), employment="none")
+        self.c = PayComponent.objects.create(scheme=self.s, kind="fixed_monthly", params={"amount": 10000})
+        self.api = APIClient()
+        self.api.force_authenticate(self.owner)
+
+    def test_approve_freezes_and_reopen_versions(self):
+        r = self.api.post("/api/payroll/runs/approve/", {"period": "2026-08", "user_id": self.mgr.id}, format="json", HTTP_HOST=HOST)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["total"], 10000)
+        self.c.params = {"amount": 12000}
+        self.c.save()
+        team = self.api.get("/api/payroll/runs/?period=2026-08", HTTP_HOST=HOST).json()
+        row = [x for x in team["rows"] if x["user_id"] == self.mgr.id][0]
+        self.assertEqual(row["run"]["total"], 10000)
+        self.assertEqual(row["run"]["live_total"], 12000)
+        again = self.api.post("/api/payroll/runs/approve/", {"period": "2026-08", "user_id": self.mgr.id}, format="json", HTTP_HOST=HOST)
+        self.assertEqual(again.status_code, 400)
+        rid = r.json()["id"]
+        self.api.post(f"/api/payroll/runs/{rid}/reopen/", {}, format="json", HTTP_HOST=HOST)
+        r2 = self.api.post("/api/payroll/runs/approve/", {"period": "2026-08", "user_id": self.mgr.id}, format="json", HTTP_HOST=HOST).json()
+        self.assertEqual((r2["version"], r2["total"]), (2, 12000))
+
+    def test_link_payouts(self):
+        r = self.api.post("/api/payroll/runs/approve/", {"period": "2026-08", "user_id": self.mgr.id}, format="json", HTTP_HOST=HOST).json()
+        t = Transaction.objects.create(direction="out", amount=Decimal("6000"), amount_uah=Decimal("6000"), date=date(2026, 9, 3),
+                                       account=self.acc, category=self.cat, counterparty="Тест Відомість")
+        cands = self.api.get(f"/api/payroll/runs/{r['id']}/candidates/", HTTP_HOST=HOST).json()["results"]
+        self.assertEqual([c["id"] for c in cands], [t.id])
+        out = self.api.post(f"/api/payroll/runs/{r['id']}/link/", {"transaction_ids": [t.id]}, format="json", HTTP_HOST=HOST).json()
+        self.assertEqual((out["paid"], out["remaining"]), (6000, 4000))
+        self.assertEqual(self.api.get(f"/api/payroll/runs/{r['id']}/candidates/", HTTP_HOST=HOST).json()["results"], [])
+
+    def test_quarter_check_only_quarter_end(self):
+        from apps.payroll import runs
+        self.assertIsNone(runs.quarter_check("2026-08"))
+        q = runs.quarter_check("2026-09")
+        self.assertIn("pct", q)
+
+    def test_manager_cannot_approve(self):
+        c = APIClient()
+        c.force_authenticate(self.mgr)
+        self.assertEqual(c.post("/api/payroll/runs/approve/", {"period": "2026-08", "user_id": self.mgr.id}, format="json", HTTP_HOST=HOST).status_code, 403)

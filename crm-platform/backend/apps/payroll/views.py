@@ -361,3 +361,77 @@ class ActCloseView(APIView):
                 a.payroll_period = timezone.localdate().strftime("%Y-%m")
                 a.save()
         return Response(_act_json(a))
+
+
+# ─────────────────────────── відомість місяця ───────────────────────────
+from . import runs as _runs  # noqa: E402
+from .models import PayrollRun  # noqa: E402
+
+
+class RunsView(APIView):
+    """GET ?period=YYYY-MM — команда: розрахунок наживо + затверджена відомість (якщо є), виплати, перевірка кварталу."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not _can(request.user, "payroll.rates.view"):
+            return _deny()
+        period = (request.query_params.get("period") or timezone.localdate().strftime("%Y-%m"))[:7]
+        data = _runs.team(period)
+        data["can_approve"] = _can(request.user, "payroll.rates.edit")
+        return Response(data)
+
+
+class RunApproveView(APIView):
+    """POST {period, user_id, note} — затвердити місяць: розрахунок заморожується."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not _can(request.user, "payroll.rates.edit"):
+            return _deny("Затверджувати відомість може лише власник")
+        u = get_user_model().objects.filter(pk=request.data.get("user_id")).first()
+        period = (request.data.get("period") or "")[:7]
+        if not u or len(period) != 7:
+            return Response({"detail": "Невірні дані"}, status=400)
+        try:
+            r = _runs.approve(u, period, by=request.user, note=request.data.get("note") or "")
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=400)
+        PayRateLog.objects.create(scheme=r.scheme, action="run_approve", after={"period": period, "total": float(r.total)},
+                                  user=request.user, note=f"Відомість {period}: {u.get_full_name() or u.username} — {r.total} ₴")
+        return Response(_runs.run_json(r))
+
+
+class RunActionView(APIView):
+    """POST /runs/<id>/reopen/ | /runs/<id>/link/ {transaction_ids} | /runs/<id>/unlink/ {payout_ids}; GET /runs/<id>/candidates/."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk, act):
+        if not _can(request.user, "payroll.rates.view"):
+            return _deny()
+        r = PayrollRun.objects.filter(pk=pk).first()
+        if not r or act != "candidates":
+            return Response({"detail": "Не знайдено"}, status=404)
+        return Response({"results": _runs.payout_candidates(r)})
+
+    def post(self, request, pk, act):
+        if not _can(request.user, "payroll.rates.edit"):
+            return _deny("Лише власник")
+        r = PayrollRun.objects.filter(pk=pk).select_related("user").first()
+        if not r:
+            return Response({"detail": "Відомість не знайдено"}, status=404)
+        if act == "reopen":
+            _runs.reopen(r, by=request.user)
+            PayRateLog.objects.create(scheme=r.scheme, action="run_reopen", user=request.user,
+                                      note=f"Відомість {r.period}: {r.user.get_full_name() or r.user.username} перевідкрито")
+        elif act == "link":
+            ids = [int(x) for x in (request.data.get("transaction_ids") or []) if str(x).isdigit()]
+            n = _runs.link(r, ids, by=request.user)
+            PayRateLog.objects.create(scheme=r.scheme, action="run_link", user=request.user, note=f"Відомість {r.period}: привʼязано виплат {n}")
+        elif act == "unlink":
+            ids = [int(x) for x in (request.data.get("payout_ids") or []) if str(x).isdigit()]
+            from .models import PayrollPayout
+            PayrollPayout.objects.filter(id__in=ids, run__user_id=r.user_id, run__period=r.period).delete()
+        else:
+            return Response({"detail": "Невідома дія"}, status=400)
+        r.refresh_from_db()
+        return Response(_runs.run_json(r))

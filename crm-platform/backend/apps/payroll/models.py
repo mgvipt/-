@@ -6,6 +6,7 @@
 """
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class PayScheme(models.Model):
@@ -113,3 +114,39 @@ class ObjectAct(models.Model):
 
     class Meta:
         ordering = ["-act_date", "-id"]
+
+
+class PayrollRun(models.Model):
+    """Відомість місяця на людину — «знімок», як «Знімок дня». Затверджений місяць не змінюється,
+    навіть якщо потім поміняти ставки: CRM лише покаже «зараз вийшло б …»."""
+    STATUS = [("approved", "Затверджено"), ("reopened", "Перевідкрито")]
+    period = models.CharField(max_length=7, db_index=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="payroll_runs")
+    scheme = models.ForeignKey(PayScheme, null=True, blank=True, on_delete=models.SET_NULL, related_name="runs")
+    version = models.PositiveSmallIntegerField(default=1)
+    status = models.CharField(max_length=10, choices=STATUS, default="approved")
+    lines = models.JSONField(default=list, blank=True)
+    inputs = models.JSONField(default=dict, blank=True)
+    total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    company_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    note = models.CharField(max_length=255, blank=True, default="")
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    approved_at = models.DateTimeField(default=timezone.now)
+    reopened_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    reopened_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-period", "user_id", "-version"]
+        unique_together = [("period", "user", "version")]
+
+
+class PayrollPayout(models.Model):
+    """Звʼязок відомості з фактичною виплатою в журналі. Гроші не переносимо і не створюємо — лише привʼязка."""
+    run = models.ForeignKey(PayrollRun, on_delete=models.CASCADE, related_name="payouts")
+    transaction = models.ForeignKey("finance.Transaction", on_delete=models.PROTECT, related_name="payroll_payouts")
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    linked_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    linked_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("run", "transaction")]

@@ -102,6 +102,7 @@ CHECKS = [
     ("ЗП за ставками", "owner", "/api/payroll/calc/?period=2026-08", {200}, ["rows"]),
     ("Точка беззбитковості за ATM", "owner", "/api/payroll/breakeven/", {200}, ["breakeven", "levels"]),
     ("Акти обʼєктів", "owner", "/api/payroll/acts/", {200}, ["results"]),
+    ("ЗП: відомість місяця", "owner", "/api/payroll/runs/?period=2026-09", {200}, ["rows", "quarter"]),
     ("Фінанси: стан закриття дня/періоду", "manager", "/api/transactions/period-lock/", {200}, ["closed_until", "day_closed_until"]),
     ("Фінанси: рахунки", "owner", "/api/accounts/", {200}, []),
     ("КПІ менеджерів", "owner", "/api/finance/salary/", {200}, []),
