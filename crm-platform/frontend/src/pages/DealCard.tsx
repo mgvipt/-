@@ -51,6 +51,7 @@ import NPDelivery from "./NPDelivery";
 import DealEstimatePanel from "./DealEstimatePanel";
 import DealEconomicsBlock from "../DealEconomicsBlock";
 import DealKpiBlock from "../DealKpiBlock";  // 14.09 my-kpi: заробіток і KPI по угоді (без маржі) для менеджера
+import DealReturnsBlock from "../DealReturnsBlock";  // 16.09 повернення товару: форма, список, гроші (лише бухгалтер/власник)
 
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 
@@ -1004,6 +1005,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                   setRefundErr(""); setRefundOpen(true);
                 }}>↩ {t("Вернуть деньги (LiqPay)","Повернути кошти (LiqPay)")}</button>
             )}
+            <DealReturnsBlock dealId={deal.id} refreshKey={`${deal.amount}|${deal.paid}|${(deal.items || []).length}`} onChanged={load} />
             {(deal.payments || []).length > 0 && (
               <div style={{ marginTop: 10, borderTop: "1px solid #f1f5f9", paddingTop: 8 }}>
                 <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("История платежей","Історія платежів")}</div>

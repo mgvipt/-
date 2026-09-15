@@ -148,6 +148,13 @@ class ContactViewSet(viewsets.ModelViewSet):
         # У списку операцій і в плитці «Дохід» byname-рядки ЛИШАЮТЬСЯ видимими.
         inc_linked = qs.filter(_linked, direction="in").aggregate(s=_Sum("amount_uah"))["s"] or 0
         adv = _Dadv(str(inc_linked or 0)) - _pay_consumed   # АВАНС = деньги КЛИЕНТА (Заплатил − Купил); НАШІ затрати exp сюди НЕ входять (це маржа)
+        # 16.09 (returns): гроші, уже повернені клієнту (журнал, категорії повернень, і кнопка LiqPay), та повернення
+        #   товару, що чекають рішення бухгалтера, — НЕ вільний аванс. ТА САМА функція в accept_payment (дзеркально).
+        try:
+            from apps.returns.services import advance_hold as _ret_hold
+            adv = adv - _ret_hold(c.id)
+        except ImportError:
+            pass
         # ⚠️ Погашення дебіторки БЕЗ сделки (транзит-матеріали з іншого магазину) — це НЕ вільні гроші:
         #    клієнт закрив борг за товар, який ми вже купили йому. Сделки нема → у _pay_consumed
         #    воно не потрапляє, і кожне «✓ Оплачено» у Дт/Кт роздувало аванс (Олег, 03.09).
@@ -1807,6 +1814,12 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 _a2 = Decimal(str(_dav.amount or 0))
                 _used += _p2 if _p2 < _a2 else _a2   # min(оплата, сума сделки)
             _avail = Decimal(str(_inc)) - _used   # деньги клиента = доход − Σmin(оплата,сумма); НАШИ затраты (exp) НЕ вычитаем
+            # 16.09 (returns): ДЗЕРКАЛЬНО до finance() — повернені клієнту гроші й повернення «чекає рішення» не є авансом
+            try:
+                from apps.returns.services import advance_hold as _ret_hold2
+                _avail = _avail - _ret_hold2(_cc.id)
+            except ImportError:
+                pass
             # ДЗЕРКАЛЬНО до finance(): погашені дебіторки без сделки (транзит-матеріали) не є вільним авансом
             from apps.finance.models import PlannedPayment as _PPav
             _settled_av = _PPav.objects.filter(contact=_cc, kind="receivable", deal__isnull=True).filter(

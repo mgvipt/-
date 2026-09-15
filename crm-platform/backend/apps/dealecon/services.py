@@ -513,13 +513,29 @@ def _master(txs, svc_plan, ctx):
     return D0, _src("none", "робіт немає", "работ нет")
 
 
-def _returns(txs, pays, ctx):
-    r = sum((_amt(t) for t in txs if t.category_id in ctx["cats"]["returns"]), D0)
+def _returns(txs, pays, ctx, deal=None):
+    # 16.09 (returns): повернення товару через CRM (apps.returns) уже зменшило позиції й суму угоди, тому гроші,
+    #   повернені за НЬОГО, вдруге не віднімаємо; натомість — собівартість браку / списаного (товар не повернувся на полицю).
+    extra = {"tx_ids": set(), "loss": D0}
+    if deal is not None:
+        try:
+            from apps.returns.services import econ_extra
+            extra = econ_extra(deal.pk)
+        except Exception:
+            log.exception("dealecon: returns extra failed for deal %s", getattr(deal, "pk", None))
+    r = sum((_amt(t) for t in txs if t.category_id in ctx["cats"]["returns"] and t.id not in extra["tx_ids"]), D0)
     neg = sum((-_d(p.amount) for p in pays if _d(p.amount) < 0), D0)
-    tot = r + neg
+    loss = _d(extra["loss"])
+    tot = r + neg + loss
     if tot > 0:
-        return tot, _src("fact", "повернуто клієнту %s ₴" % _fmt(tot), "возвращено клиенту %s ₴" % _fmt(tot),
-                         journal=r, negative_payments=neg)
+        uk, ru = [], []
+        if r + neg > 0:
+            uk.append("повернуто клієнту %s ₴" % _fmt(r + neg))
+            ru.append("возвращено клиенту %s ₴" % _fmt(r + neg))
+        if loss > 0:
+            uk.append("брак / списано після повернення %s ₴ (собівартість)" % _fmt(loss))
+            ru.append("брак / списано после возврата %s ₴ (себестоимость)" % _fmt(loss))
+        return tot, _src("fact", " · ".join(uk), " · ".join(ru), journal=r, negative_payments=neg, return_loss=loss)
     return D0, _src("none", "повернень немає", "возвратов нет")
 
 
@@ -608,7 +624,7 @@ def compute(deal, ctx=None, np_hint=None):
     flags += fl
     packaging, sources["packaging"] = _packaging(deal, sibs, ctx, revenue - svc_rev)
     master, sources["master_works"] = _master(txs, svc_plan, ctx)
-    returns, sources["returns"] = _returns(txs, pays, ctx)
+    returns, sources["returns"] = _returns(txs, pays, ctx, deal)
 
     vals = {"revenue": revenue, "cogs": goods, "delivery": delivery, "commission": commission,
             "packaging": packaging, "master_works": master, "returns": returns}

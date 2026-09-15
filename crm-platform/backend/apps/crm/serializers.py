@@ -326,7 +326,15 @@ class DealDetailSerializer(DealSerializer):
         return res
 
     def get_paid(self, obj):
-        return float(sum(p.amount for p in obj.payments.all() if p.is_paid))
+        # 16.09 (returns): мінус гроші, повернені клієнту операцією журналу за повернений товар (платежі угоди при цьому
+        #   не змінюються; кнопка LiqPay зменшує платіж сама — її вдруге не віднімаємо)
+        paid = sum(p.amount for p in obj.payments.all() if p.is_paid)
+        try:
+            from apps.returns.services import journal_refunded
+            paid -= journal_refunded(obj.pk)
+        except ImportError:
+            pass
+        return float(paid)
 
     def _can_see_margin(self):
         """14.09 (margin-perms): суму і % маржі бачить лише право deal.margin.view (власник/суперюзер — завжди).

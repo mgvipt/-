@@ -551,3 +551,16 @@ PERMISSION_GROUPS.append((
 ))
 PERMISSION_CHOICES.extend(
     (c, l) for c, l, _h in PERMISSION_GROUPS[-1][1] if c not in {x for x, _ in PERMISSION_CHOICES})
+
+# ── Повернення товару (додано 2026-09-16, returns) ──
+PERMISSION_GROUPS.append((
+    "Повернення товару",
+    [
+        ("deal.refund", "Повертати гроші клієнту за повернений товар",
+         "Кнопки «Повернути гроші» / «Вже повернуто через LiqPay» / «Зарахувати в наступне замовлення» у поверненні. "
+         "Оформити повернення ТОВАРУ можуть менеджери і склад, гроші — лише з цим правом. "
+         "Рішення Олега 16.09: лише відповідальний бухгалтер і власник"),
+    ],
+))
+PERMISSION_CHOICES.extend(
+    (c, l) for c, l, _h in PERMISSION_GROUPS[-1][1] if c not in {x for x, _ in PERMISSION_CHOICES})

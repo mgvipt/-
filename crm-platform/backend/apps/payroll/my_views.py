@@ -307,6 +307,7 @@ def _plan_out(u, period, comps, pol):
     if m:
         flt["deal__funnel_id__in"] = m["funnels"]
     fact = _n(engine._income(d1, d2, **flt).aggregate(s=Sum("amount_uah"))["s"])
+    fact -= _n(engine._refunds(d1, d2, **flt).aggregate(s=Sum("amount_uah"))["s"])  # 16.09 (returns): мінус повернення клієнтам
     target = _n(p.target_revenue) if p else 0.0
     out = {"fact": round(fact), "target": round(target),
            "min": round(_n(p.min_revenue)) if p else 0, "ambition": round(_n(p.ambition_revenue)) if p else 0,

@@ -166,13 +166,16 @@ def _d_margin(comp, user, period, d1, d2, pol, std_score):
     funnels = p.get("funnels") or pol["funnels"]["online"]
     txs = list(engine._income(d1, d2, deal__owner=user, deal__funnel_id__in=funnels)
                .select_related("deal", "deal__contact", "deal__funnel").order_by("date", "id"))
-    mm = engine.margin_map([t.deal_id for t in txs], pol)
-    econ, items = _margin_sources([t.deal_id for t in txs])
+    # 16.09 (returns): повернення клієнтам — рядки з мінусом, у тому ж порядку, що engine._c_margin (сума = рядку ЗП)
+    rf = list(engine._refunds(d1, d2, deal__owner=user, deal__funnel_id__in=funnels)
+              .select_related("deal", "deal__contact", "deal__funnel").order_by("date", "id"))
+    mm = engine.margin_map([t.deal_id for t in txs + rf], pol)
+    econ, items = _margin_sources([t.deal_id for t in txs + rf])
     rev = margin = 0.0
     raw, deals, est_n = [], set(), 0
-    for t in txs:
+    for t, sign in [(x, 1) for x in txs] + [(x, -1) for x in rf]:
         r, e = mm.get(t.deal_id, (0.5, True))
-        amt = float(t.amount_uah or 0)
+        amt = sign * float(t.amount_uah or 0)
         rev += amt
         margin += amt * r
         est_n += 1 if e else 0
@@ -189,12 +192,15 @@ def _d_margin(comp, user, period, d1, d2, pol, std_score):
     k = (1 - over_share) * to_pct / 100 + over_share * eff_over / 100
     rows = [{"date": t.date.isoformat(), "deal_id": t.deal_id, "client": _client(t.deal),
              "funnel": t.deal.funnel.name if t.deal_id and t.deal.funnel_id else "", "paid": _f(amt),
-             "margin_pct": _f(r * 100, 1), "margin": _f(amt * r), "source": _src(t.deal_id, e, econ, items),
+             "margin_pct": _f(r * 100, 1), "margin": _f(amt * r), "source": ("↩ повернення клієнту · " if amt < 0 else "") + _src(t.deal_id, e, econ, items),
              "estimate": bool(e), "pct": _f(k * 100, 3), "earn": _f(amt * r * k)} for t, amt, r, e in raw]
     m_to, m_over = margin * (1 - over_share), margin * over_share
     summary = [{"label": "Оплати за місяць", "value": f"{engine._n(rev)} ₴ · {len(txs)} оплат по {len(deals)} угодах"},
                {"label": "Маржа з цих оплат", "value": f"{engine._n(margin)} ₴"},
                {"label": "План місяця", "value": f"{engine._n(plan)} ₴" if plan else "не встановлено — усе за ставкою до плану"}]
+    if rf:
+        summary.insert(1, {"label": "Повернення клієнтам", "value": f"−{engine._n(sum(float(x.amount_uah or 0) for x in rf))} ₴ · "
+                                                                  f"{len(rf)} повернень (уже відняті від оплат і маржі)"})
     if plan:
         summary.append({"label": "Частка понад план", "value": f"{engine._p(round(over_share * 100, 1))}% оплат "
                                                              f"({engine._n(max(0.0, rev - plan))} ₴ понад {engine._n(plan)} ₴)"})
@@ -258,10 +264,12 @@ def _d_revenue(comp, user, period, d1, d2, pol):
     else:
         flt["deal__isnull"] = False
     txs = list(engine._income(d1, d2, **flt).select_related("deal", "deal__contact", "deal__funnel").order_by("date", "id"))
-    base = float(sum((t.amount_uah or Decimal("0")) for t in txs))
-    rows = [{"date": t.date.isoformat(), "deal_id": t.deal_id, "client": _client(t.deal),
-             "funnel": t.deal.funnel.name if t.deal_id and t.deal.funnel_id else "", "paid": _f(t.amount_uah),
-             "earn": _f(float(t.amount_uah or 0) * pct / 100)} for t in txs]
+    # 16.09 (returns): повернення клієнтам — мінус (= engine._c_revenue)
+    rf = list(engine._refunds(d1, d2, **flt).select_related("deal", "deal__contact", "deal__funnel").order_by("date", "id"))
+    base = float(sum((t.amount_uah or Decimal("0")) for t in txs)) - float(sum((t.amount_uah or Decimal("0")) for t in rf))
+    rows = [{"date": t.date.isoformat(), "deal_id": t.deal_id, "client": _client(t.deal) + (" · ↩ повернення" if sg < 0 else ""),
+             "funnel": t.deal.funnel.name if t.deal_id and t.deal.funnel_id else "", "paid": _f(sg * float(t.amount_uah or 0)),
+             "earn": _f(sg * float(t.amount_uah or 0) * pct / 100)} for t, sg in [(x, 1) for x in txs] + [(x, -1) for x in rf]]
     where = (f"у воронках: {_funnel_names(p.get('funnels') or [])}" if basis == "funnels" else "по угодах")
     whose = "по угодах людини " if "deal__owner" in flt else ""
     return _out(round(base * pct / 100), f"{engine._p(pct)}% з оплат за місяць {whose}{where}: {engine._n(base)} ₴ = {_n2(base * pct / 100)} ₴.",

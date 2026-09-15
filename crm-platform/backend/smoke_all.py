@@ -128,6 +128,10 @@ CHECKS = [
     ("Як виконати план — правила зі схеми", "manager", "/api/payroll/my/?only=rules", {200}, ["rules"]),
     ("Моя ЗП: як прорахувалось (менеджер, лише свої)", "manager", "/api/payroll/my/detail/", {200}, ["lines", "margin_hidden"]),
     ("Моя ЗП: як прорахувалось — чужий id 403", "manager", "/api/payroll/my/detail/?user=1", {403}, []),
+    # ── Повернення товару (16.09.2026) ──
+    ("Повернення: звіт", "owner", "/api/returns/report/", {200}, ["totals", "by_reason", "by_material", "by_person", "rows"]),
+    ("Повернення: блок у картці угоди (менеджер)", "manager", "/api/returns/deal/66545/", {200}, ["items", "returns", "can_money", "reasons"]),
+    ("Повернення: блок у картці угоди (owner)", "owner", "/api/returns/deal/66545/", {200}, ["items", "returns", "accounts", "liqpay_refunds"]),
     ("KPI угоди без маржі", "owner", "DEAL_KPI", {200}, ["checks", "kind"]),
     ("ЗП: як прорахувалось (власник)", "owner", "/api/payroll/calc-detail/?user=102&period=2026-09", {200}, ["lines", "all_match", "run"]),
     ("ЗП: як прорахувалось (менеджер — ні)", "manager", "/api/payroll/calc-detail/?user=102&period=2026-09", {403}, []),

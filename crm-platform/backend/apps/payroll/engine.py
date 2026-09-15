@@ -318,6 +318,26 @@ def _income(d1, d2, **flt):
     return Transaction.objects.filter(direction="in", transfer_account__isnull=True, date__gte=d1, date__lte=d2, **flt)
 
 
+REFUND_CATEGORY_PREFIXES = ("возврат товара", "возврат денег")  # як економіка угоди, партнери, apps.returns
+
+
+def _refunds(d1, d2, **flt):
+    """16.09 (returns): повернення коштів клієнтам по угодах — журнал, витрата в категоріях «Возврат товара…» /
+    «Возврат денег…», привʼязана до угоди (і кнопка LiqPay, і «Повернення коштів» з повернення товару).
+    ЗП — лише з грошей, що лишились у компанії: повернення віднімається від оплат у місяці повернення,
+    з тими самими фільтрами (угоди людини, воронки), що й _income."""
+    from apps.finance.models import Category, Transaction
+    flt = dict(flt)
+    if flt.pop("deal__isnull", False) is True:
+        return Transaction.objects.none()          # приходи без угод («Обʼєкти») — повернень по угодах там немає
+    cats = [r["id"] for r in Category.objects.values("id", "name")
+            if (r["name"] or "").strip().lower().startswith(REFUND_CATEGORY_PREFIXES)]
+    if not cats:
+        return Transaction.objects.none()
+    return Transaction.objects.filter(direction="out", transfer_account__isnull=True, deal__isnull=False,
+                                      category_id__in=cats, date__gte=d1, date__lte=d2, **flt)
+
+
 def shares(pol=None, today=None):
     """Частки виручки й маржі за останні N днів — для процентних частин ставок. Кеш 5 хв."""
     from django.core.cache import cache
@@ -329,11 +349,12 @@ def shares(pol=None, today=None):
         return hit
     d1 = today - timedelta(days=int(pol["lookback_days"]))
     txs = list(_income(d1, today).select_related("deal"))
-    mm = margin_map([t.deal_id for t in txs], pol)
+    rf = list(_refunds(d1, today).select_related("deal"))  # 16.09 (returns): повернення клієнтам — мінус
+    mm = margin_map([t.deal_id for t in txs + rf], pol)
     rev_total = margin_total = objects_rev = 0.0
     by_funnel_rev, by_funnel_margin, by_owner_rev, by_owner_margin = {}, {}, {}, {}
-    for t in txs:
-        amt = float(t.amount_uah or 0)
+    for t, sign in [(x, 1) for x in txs] + [(x, -1) for x in rf]:
+        amt = sign * float(t.amount_uah or 0)
         rev_total += amt
         if t.deal_id:
             m = amt * mm.get(t.deal_id, (0.5, True))[0]
@@ -420,10 +441,11 @@ def _c_margin(comp, user, period, d1, d2, pol, std_score):
     rev = margin = 0.0
     est, cache, deals = 0, {}, set()
     txs = list(_income(d1, d2, deal__owner=user, deal__funnel_id__in=funnels))
-    cache.update(margin_map([t.deal_id for t in txs], pol))
-    for t in txs:
+    rf = list(_refunds(d1, d2, deal__owner=user, deal__funnel_id__in=funnels))  # 16.09 (returns)
+    cache.update(margin_map([t.deal_id for t in txs + rf], pol))
+    for t, sign in [(x, 1) for x in txs] + [(x, -1) for x in rf]:
         r, e = cache.get(t.deal_id, (0.5, True))
-        amt = float(t.amount_uah or 0)
+        amt = sign * float(t.amount_uah or 0)
         rev += amt
         margin += amt * r
         est += 1 if e else 0
@@ -436,6 +458,8 @@ def _c_margin(comp, user, period, d1, d2, pol, std_score):
     amount = margin * (1 - over_share) * to_pct / 100 + margin * over_share * (over_pct if gate else to_pct) / 100
     coef = 1.0
     notes = []
+    if rf:
+        notes.append(f"мінус повернення клієнтам {round(sum(float(x.amount_uah or 0) for x in rf)):,} ₴".replace(",", " "))
     if not pol["conv_coef"].get("enabled"):
         notes.append("коефіцієнт конверсії = 1,0 (вмикається, коли назбирається 2 міс. позначок якості)")
     if not plan:
@@ -472,7 +496,10 @@ def _c_revenue(comp, user, period, d1, d2, pol):
     else:
         flt["deal__isnull"] = False
     base = float(_income(d1, d2, **flt).aggregate(s=Sum("amount_uah"))["s"] or 0)
-    return _line(comp, base * pct / 100, base, f"{pct:g}%", "оплати за місяць")
+    ref = float(_refunds(d1, d2, **flt).aggregate(s=Sum("amount_uah"))["s"] or 0)  # 16.09 (returns)
+    base -= ref
+    return _line(comp, base * pct / 100, base, f"{pct:g}%",
+                 "оплати за місяць" + (f" мінус повернення клієнтам {round(ref):,} ₴".replace(",", " ") if ref else ""))
 
 
 def _first_pay():

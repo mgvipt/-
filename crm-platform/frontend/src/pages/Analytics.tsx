@@ -12,6 +12,7 @@ import { Icon } from "../Icon";
 import MetaMarketing from "./MetaMarketing";
 import TiktokAnalytics from "./TiktokAnalytics";
 import { Cone } from "../FunnelCone";
+import ReturnsReport from "../ReturnsReport";  // 16.09: звіт «Повернення» (скільки, чому, по матеріалах, по людях)
 
 /* ─── ТИПЫ ─────────────────────────────────────────────────────────────── */
 interface SalesData {
@@ -39,7 +40,7 @@ export default function Analytics() {
   const canSales = can("analytics.view");
   const canMkt = can("marketing.view");
   const [section, setSection] = useState<"sales" | "marketing" | "tiktok">(canSales ? "sales" : "marketing");
-  const [tab, setTab] = useState<"sales" | "channels" | "stock" | "days" | "managers">("sales");
+  const [tab, setTab] = useState<"sales" | "channels" | "stock" | "days" | "managers" | "returns">("sales");
   return (
     <div className="scroll pad fade">
       <div style={{ display: "flex", gap: 8, marginBottom: 14, borderBottom: "2px solid #eef2f7", paddingBottom: 10, flexWrap: "wrap" }}>
@@ -55,12 +56,14 @@ export default function Analytics() {
           <button className={tab === "channels" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("channels")}><Icon n="📣" size={15} /> {t("Каналы","Канали")}</button>
           <button className={tab === "days" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("days")}><Icon n="calendar" size={15} /> {t("По дням","По днях")}</button>
           <button className={tab === "managers" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("managers")}><Icon n="users" size={15} /> {t("Менеджеры","Менеджери")}</button>
+          <button className={tab === "returns" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("returns")}>↩ {t("Возвраты","Повернення")}</button>
           {canStock && <button className={tab === "stock" ? "btn btn-primary" : "btn btn-light"} onClick={() => setTab("stock")}><Icon n="📦" size={15} /> {t("Склад","Склад")}</button>}
         </div>
         {tab === "sales" && <SalesTab />}
         {tab === "channels" && <ChannelsTab />}
         {tab === "days" && <DaysTab />}
         {tab === "managers" && <ManagersTab />}
+        {tab === "returns" && <ReturnsReport />}
         {tab === "stock" && canStock && <StockTab />}
         {tab === "stock" && !canStock && <div className="muted" style={{ padding: 30 }}>{t("Нет доступа к этому разделу","Немає доступу до цього розділу")}</div>}
       </>}

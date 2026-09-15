@@ -122,10 +122,11 @@ def _quarter_check(period, y, m):
     q1, _ = engine.period_bounds(months[0])
     _, q2 = engine.period_bounds(months[-1])
     txs = list(engine._income(q1, q2))
-    mm = engine.margin_map([t.deal_id for t in txs], pol)
+    rf = list(engine._refunds(q1, q2))  # 16.09 (returns): повернення клієнтам — мінус маржі
+    mm = engine.margin_map([t.deal_id for t in txs + rf], pol)
     margin = 0.0
-    for t in txs:
-        amt = float(t.amount_uah or 0)
+    for t, sign in [(x, 1) for x in txs] + [(x, -1) for x in rf]:
+        amt = sign * float(t.amount_uah or 0)
         if t.deal_id:
             margin += amt * mm.get(t.deal_id, (0.5, True))[0]
         else:
