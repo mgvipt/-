@@ -24,8 +24,7 @@ type Offer = {
   state?: string; used_qty?: number; my_qty?: number; left_qty?: number | null; my_claim_id?: number | null; busy_by?: Busy[];
 };
 type Std = { score: number | null; pct: number | null; period: string | null; ok: boolean; warning: string } | null;
-type Fund = { name: string; found: boolean; period: string; limit: number | null; used: number; reserved: number; left: number | null; enforced: boolean; warning: string;
-  base?: number; vacancies?: { position: string; amount: number }[] } | null;
+type Fund = { name: string; found: boolean; period: string; limit: number | null; used: number; reserved: number; left: number | null; enforced: boolean; warning: string } | null;
 type Opt = { key: string; label: string };
 type UserOpt = { id: number; name: string };
 type ArchivedOffer = { id: number; title: string; category_name: string; department: string };
@@ -974,9 +973,6 @@ function FundBlock({ fund }: { fund: NonNullable<Fund> }) {
           {fund.left != null ? ` · вільно ${money(fund.left)}` : ""}
         </span>
       </div>
-      {(fund.vacancies || []).length > 0 && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-        Ліміт = стаття «{fund.name}» {money(fund.base || 0)} + бюджет найму відкритих вакансій: {(fund.vacancies || []).map((v) => `${v.position} — ${money(v.amount)}`).join("; ")}.
-        Вакансію закрили — її бюджет зникає з ліміту (понад ліміт керівник може прийняти вручну).</div>}
       {fund.warning && <div style={{ ...WARN, marginTop: 6 }}>{fund.warning}. Ліміт задається у Фінмоделі: стаття «{fund.name}», ₴ на місяць.</div>}
     </div>
   );

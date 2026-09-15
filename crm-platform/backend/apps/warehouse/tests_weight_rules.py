@@ -25,10 +25,20 @@ class WeightRulesV2Tests(SimpleTestCase):
         self.assertEqual(p["weight"], Decimal("5.900"))
         self.assertEqual(p["tiers"], {"T5": 1, "T10": 1, "T20": 0})
 
-    def test_full_factory_bucket_not_packed(self):
+    def test_full_factory_bucket_packed_too(self):
+        # 16.09.2026 (Олег): усі відра пакуємо, крім «контейнер НП»
         p = WR.plan([it("Pattera Micro (FB 0101), 16кг. Декоративна", "кг", 22.5)])
         self.assertEqual(p["weight"], Decimal("22.500"))
-        self.assertEqual(p["tiers"], {"T5": 0, "T10": 1, "T20": 0})  # 1 відро 16 кг — не пакуємо; 6,5 кг → до 10
+        self.assertEqual(p["tiers"], {"T5": 0, "T10": 1, "T20": 1})  # відро 16 кг → до 20; розфасовка 6,5 кг → до 10
+        np = WR.plan([it("Pattera Micro (FB 0101), 16кг. Декоративна", "кг", 22.5)], packing=False)
+        self.assertEqual(np["tiers"], {"T5": 0, "T10": 0, "T20": 0})  # контейнер НП — упаковки немає
+
+    def test_kit_with_board_box_up_to_10(self):
+        p = WR.plan([it("Арт бетон в один шар — тестовий набір Pattera Fine(з дощечкою для нанесення без тонування)", is_kit=True),
+                     it("Валик Velurplus 10 см, ворс 4 мм")])
+        self.assertEqual(p["tiers"], {"T5": 0, "T10": 1, "T20": 0})
+        p2 = WR.plan([it("Арт бетон в один шар — тестовий набір Pattera Fine(без дощечки для нанесення без тонування)", is_kit=True)])
+        self.assertEqual(p2["tiers"], {"T5": 1, "T10": 0, "T20": 0})
 
     def test_card_weight_of_kg_product_is_not_multiplied(self):
         p = WR.plan([it("Sirena Silk Bianco", "кг", 3, card_w=5)])

@@ -158,7 +158,7 @@ def plan(items, salon=False, packing=True):
     tiers = {"T5": 0, "T10": 0, "T20": 0}
     how, weightless = [], []
     tools_kg = Decimal("0")
-    n_tools = n_small = n_kits = n_samples = containers = 0
+    n_tools = n_small = n_kits = n_samples = n_board = containers = 0
     do_pack = packing and not salon
 
     def add(t, why):
@@ -187,6 +187,9 @@ def plan(items, salon=False, packing=True):
             n_small += 1
         elif c["cls"] == "kit":
             n_kits += 1
+            low = (it.get("name") or "").lower()
+            if "дощечк" in low and "без дощечк" not in low:  # «з дощечкою»; «бе-з дощечки» — без
+                n_board += 1
         elif c["cls"] == "sample":
             n_samples += 1
         if not do_pack:
@@ -195,8 +198,10 @@ def plan(items, salon=False, packing=True):
             q, P = c["kg"], c["bucket"]
             full = int((q + Decimal("0.01")) / P) if (P and q >= P - Decimal("0.01")) else 0
             rest = q - full * (P or 0)
-            if full:
-                how.append(f"  {full} заводськ. відро(а) по {_g(P)} кг — не пакуємо")
+            # 16.09.2026 (Олег): цілі заводські відра теж пакуємо; без упаковки — лише «контейнер НП» (packed = ні)
+            for _ in range(full):
+                for t in split_tiers(P):
+                    add(t, f"заводське відро {_g(P)} кг")
             for t in split_tiers(rest):
                 add(t, f"розфасовка {_g(rest)} кг")
         elif c["cls"] in ("bottle", "piece"):
@@ -213,7 +218,11 @@ def plan(items, salon=False, packing=True):
         kg += clamped
         how.append(f"  інструменти/дрібниці разом {_g(tools_kg)} кг → рахуємо {_g(clamped)} кг (не менше 0,5, не більше 5)")
     if do_pack:
-        if n_tools or n_small:
+        if n_board:
+            # 16.09.2026 (Олег): тест-набір з дощечкою — коробка до 10 кг; інструменти й дрібниці — в ній же
+            tiers["T10"] += 1
+            how.append("  тест-набір з дощечкою — коробка до 10 кг" + (" (інструменти/дрібниці — в ній же)" if (n_tools or n_small) else ""))
+        elif n_tools or n_small:
             tiers["T5"] += 1
             how.append("  інструменти/дрібниці — одна коробка до 5 кг")
         elif (n_kits or n_samples) and not containers:
