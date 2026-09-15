@@ -36,6 +36,7 @@ export const SNDR_MAP: any = { ai_assistant: "Юля (AI)", operator: "Мене�
 // Вікно Instagram/Facebook 24г: чи можна писати першим
 export function metaWindow(active: any, msgs: any[]) {
   if (!active || !["instagram", "facebook"].includes(active.channel_kind || "")) return null;
+  if (active.source_card?.type === "comment") return null;  // fbcomment: у гілці коментарів 24г-вікна немає (див. CommentReplyBar)
   let li: any = null;
   for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].direction === "in") { li = msgs[i]; break; } }
   const hrs = li && li.created_at ? (Date.now() - new Date(li.created_at).getTime()) / 3600000 : 999;

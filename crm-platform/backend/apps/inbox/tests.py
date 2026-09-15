@@ -647,16 +647,26 @@ class MetaChatPlaceOutboundTests(TestCase):
             send_message(conv, "Не надсилати", user=self.user)
         self.assertEqual(conv.messages.count(), 0)
 
-    @patch("apps.inbox.adapters.MetaAdapter.send", return_value="comment-reply-id")
-    def test_comment_reply_stays_on_meta_route(self, meta_send):
+    @patch("apps.inbox.chatplace.send")
+    def test_comment_reply_stays_on_meta_route(self, cp_send):
+        # fbcomment 15.09: коментарі йдуть через meta_comments (IG — ребро /replies), не через ChatPlace
         from .services import send_message
 
         conv = Conversation.objects.create(
             channel=self.channel, contact=self.contact,
             external_chat_id="comment:instagram:post:user",
         )
-        msg = send_message(conv, "Публічна відповідь", user=self.user)
-        meta_send.assert_called_once_with(conv.external_chat_id, "Публічна відповідь")
+        Message.objects.create(conversation=conv, direction="in", text="Ціна?", external_id="igc-1")
+        calls = []
+
+        def fake_call(method, path, params=None, timeout=20):
+            calls.append((method, path))
+            return {"id": "igc-1"} if method == "GET" else {"id": "comment-reply-id"}
+
+        with patch("apps.inbox.meta_comments._call", side_effect=fake_call):
+            msg = send_message(conv, "Публічна відповідь", user=self.user)
+        cp_send.assert_not_called()
+        self.assertEqual(calls, [("GET", "igc-1"), ("POST", "igc-1/replies")])
         self.assertEqual(msg.external_id, "comment-reply-id")
 
     def test_meta_echo_relinks_exact_recent_manager_message(self):

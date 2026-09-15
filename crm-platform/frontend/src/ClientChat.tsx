@@ -9,6 +9,8 @@ import { Icon } from "./Icon";
 import { api, ChatMessage, Conversation, Paginated } from "./api";
 import ChatActions from "./ChatActions";
 import ConversationSourceCard from "./ConversationSourceCard";
+import { CommentReplyBar, CommentSendError, useCommentTarget } from "./CommentReplyBar";
+import type { CommentMode } from "./CommentReplyBar";
 import { ReplyContext, ReactionBadges, MessageStatusLine, CorrectionAction, messagesHaveSameVisibleState, isContextAttachment } from "./MessageContext";
 import { dayLabel, timeLabel, isNewDay, linkify, metaWindow } from "./chatUtils";
 
@@ -50,6 +52,12 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   const [aiLoad, setAiLoad] = useState(false);
   const [err, setErr] = useState("");
   const [loaded, setLoaded] = useState(false);
+  // fbcomment 15.09: чат-коментар Meta — публічно в гілці (типово) або приватно в Messenger (FB, на вибір менеджера)
+  const [commentMode, setCommentMode] = useState<CommentMode>("public");
+  const [errCanPublic, setErrCanPublic] = useState(false);
+  const commentInfo = useCommentTarget(conv?.id, (conv as any)?.channel_kind, msgs.length ? msgs[msgs.length - 1].id : 0);
+  useEffect(() => { setCommentMode("public"); setErrCanPublic(false); }, [conv?.id]);
+  useEffect(() => { if (commentMode === "private" && commentInfo && !commentInfo.can_private) setCommentMode("public"); }, [commentInfo, commentMode]);
   const [replyChannels, setReplyChannels] = useState<ReplyChannel[]>([]);
   const [switchingChannel, setSwitchingChannel] = useState(false);
   const [channelPickerTarget, setChannelPickerTarget] = useState<HTMLElement | null>(null);
@@ -141,9 +149,10 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   }, [conv]);
   useEffect(() => { const el = endRef.current?.parentElement as HTMLElement | undefined; if (el) el.scrollTop = el.scrollHeight; }, [msgs]);
 
-  async function send() {
+  async function send(modeOverride?: unknown) {
     if (!conv || (!text.trim() && pending.length === 0)) return;
-    setBusy(true); setErr("");
+    setBusy(true); setErr(""); setErrCanPublic(false);
+    const cMode: CommentMode = modeOverride === "public" || modeOverride === "private" ? modeOverride : commentMode;
     try {
       for (const att of pending) {
         const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send_media/`, { content_b64: att.dataURL, filename: att.name, kind: att.kind, internal });
@@ -151,10 +160,10 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
       }
       setPending([]);
       if (text.trim()) {
-        const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send/`, { text, internal, followup });
+        const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send/`, { text, internal, followup, ...(commentInfo?.is_comment && !internal ? { comment_mode: cMode } : {}) });
         setMsgs((p) => [...p, m]); setText(""); setCorrectionTarget(null); setFollowup(false);
       }
-    } catch (e: any) { setErr(e?.response?.data?.detail || "Не вдалося надіслати — чат має бути відкритий оператором"); }
+    } catch (e: any) { setErr(e?.response?.data?.detail || "Не вдалося надіслати — чат має бути відкритий оператором"); setErrCanPublic(!!e?.response?.data?.can_public && !!commentInfo?.is_comment); }
     setBusy(false);
   }
   async function startConversation() {
@@ -422,8 +431,9 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
         </div>
       )}
 
-      {err && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 6 }}>{err}</div>}
+      {err && (errCanPublic ? <CommentSendError err={err} canPublic onPublic={() => send("public")} busy={busy} style={{ marginTop: 6 }} /> : <div style={{ color: "#dc2626", fontSize: 12, marginTop: 6 }}>{err}</div>)}
 
+      {!internal && commentInfo && <div style={{ marginTop: 8 }}><CommentReplyBar info={commentInfo} mode={commentMode} onMode={setCommentMode} /></div>}
       {(() => { const w = metaWindow(conv, msgs); return w && w.closed ? <div style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11.5, fontWeight: 600, padding: "6px 10px", borderRadius: 6, marginTop: 8, lineHeight: 1.35 }}>⚠️ Вікно Instagram закрите (минуло {w.hrs}г). Повідомлення може НЕ дійти — дочекайся відповіді клієнта.</div> : null; })()}
       {/* ПОЛЕ ВІДПОВІДІ — теж регульоване */}
       {pending.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>

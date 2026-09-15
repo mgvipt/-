@@ -1192,6 +1192,13 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             conv.save(update_fields=["unread"])
         return Response(MessageSerializer(conv.messages.all(), many=True).data)
 
+    @action(detail=True, methods=["get"])
+    def comment_target(self, request, pk=None):
+        """fbcomment 15.09: куди піде відповідь у чаті-коментарі Meta (підказка НАД полем вводу).
+        Нічого не відправляє; для FB питає Meta лише «чи можна приватно» (читання)."""
+        from .meta_comments import describe
+        return Response(describe(self.get_object()))
+
     @action(detail=True, methods=["post"])
     def send(self, request, pk=None):
         conv = self.get_object()
@@ -1208,8 +1215,13 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         if _ph:
             return Response({"detail": "У тексті лишилось незаповнене поле %s — впишіть значення перед відправкою" % _ph},
                             status=status.HTTP_400_BAD_REQUEST)
+        from .meta_comments import CommentReplyError
+        _cmode = str(request.data.get("comment_mode") or "").strip() or None  # fbcomment: лише чати-коментарі Meta
         try:
-            msg = send_message(conv, text, user=request.user)
+            msg = send_message(conv, text, user=request.user, comment_mode=_cmode)
+        except CommentReplyError as e:  # fbcomment 15.09: зрозуміла причина + чи можна відповісти публічно в гілці
+            return Response({"detail": str(e), "code": e.code, "can_public": bool(e.can_public)},
+                            status=(status.HTTP_409_CONFLICT if e.blocked else status.HTTP_502_BAD_GATEWAY))
         except Exception as e:  # сеть/токен недоступны
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
         if request.data.get("followup") and msg and not getattr(msg, "is_followup", False):

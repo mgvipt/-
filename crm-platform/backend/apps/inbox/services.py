@@ -240,8 +240,9 @@ def _resolve_chatplace_chat_id(conv):
         return ""
 
 
-def send_message(conv: Conversation, text: str, user=None) -> Message:
-    """Отправить исходящее сообщение через адаптер канала и записать его."""
+def send_message(conv: Conversation, text: str, user=None, comment_mode=None) -> Message:
+    """Отправить исходящее сообщение через адаптер канала и записать его.
+    comment_mode (лише чати-коментарі Meta): "public" — у гілку (типово), "private" — приватно в Messenger (FB)."""
     cfg = conv.config or {}
     route = cfg.get("outbound_chatplace") or {}
     is_meta_instagram_direct = bool(
@@ -249,8 +250,12 @@ def send_message(conv: Conversation, text: str, user=None) -> Message:
         and (conv.channel.config or {}).get("meta")
         and not str(conv.external_chat_id or "").startswith("comment:")
     )
+    # fbcomment 15.09: чат-КОМЕНТАР Meta (FB/IG) — окремий шлях (meta_comments): куди відповідати перевіряємо ДО
+    # запису (друга приватна відповідь / видалений коментар / нема коментаря клієнта → зрозуміла помилка, нічого не створюємо).
+    from . import meta_comments as _mc
+    comment_plan = _mc.plan(conv, comment_mode) if _mc.is_meta_comment(conv) else None
     status = "sent"
-    if conv.channel.kind in ("instagram", "facebook"):
+    if conv.channel.kind in ("instagram", "facebook") and comment_plan is None:  # 24г-вікно — не для гілки коментарів
         last_in = Message.objects.filter(conversation=conv, direction="in").order_by("-created_at").first()
         if not last_in or (timezone.now() - last_in.created_at).total_seconds() > 24 * 3600:
             status = "window_risk"  # вікно Meta 24г закрите — ChatPlace прийняв, але IG міг не доставити
@@ -263,7 +268,11 @@ def send_message(conv: Conversation, text: str, user=None) -> Message:
         sender_name=(user.get_full_name() if user else "") or "", status=status,
     )
     try:
-        if is_meta_instagram_direct:
+        if comment_plan is not None:
+            ext_id, _cmark = _mc.deliver(conv, text, comment_plan, since=msg.created_at)
+            msg.attachments = [_cmark]  # куди пішло (публічно/приватно, на який коментар) — видно під повідомленням
+            msg.save(update_fields=["attachments"])
+        elif is_meta_instagram_direct:
             chat_id = str(route.get("chat_id") or "").strip()
             if not chat_id:
                 chat_id = _resolve_chatplace_chat_id(conv)
@@ -282,9 +291,13 @@ def send_message(conv: Conversation, text: str, user=None) -> Message:
         else:
             adapter = get_adapter(conv.channel)
             ext_id = adapter.send(conv.external_chat_id, text)
-    except Exception:
+    except Exception as _send_err:
         msg.status = "failed"
-        msg.save(update_fields=["status"])
+        _flds = ["status"]
+        if comment_plan is not None:  # fbcomment: причину видно під повідомленням (раніше — лише червоний ✕)
+            msg.attachments = list(msg.attachments or []) + [{"type": "send_error", "text": str(_send_err)[:500]}]
+            _flds.append("attachments")
+        msg.save(update_fields=_flds)
         raise
     if ext_id and not (msg.external_id or "").strip():
         msg.external_id = ext_id

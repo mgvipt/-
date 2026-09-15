@@ -12,6 +12,8 @@ import { linkify, dayLabel, metaWindow, SNDR_MAP } from "../chatUtils";
 import { Icon } from "../Icon";
 import { TaskQuickModal } from "../TaskQuickModal";
 import ConversationSourceCard from "../ConversationSourceCard";
+import { CommentReplyBar, CommentSendError, useCommentTarget } from "../CommentReplyBar";
+import type { CommentMode } from "../CommentReplyBar";
 import LeadQuality from "../LeadQuality";
 import MetaAttrBadge from "../MetaAttrBadge";
 import { AskReviewButton } from "../ReviewButtons";
@@ -51,6 +53,12 @@ export default function Inbox() {
   const [correctionTarget, setCorrectionTarget] = useState<{ id: number; text: string } | null>(null);
   const [sending, setSending] = useState(false);
   const [internalNote, setInternalNote] = useState(false);
+  // fbcomment 15.09: чат-коментар Meta — публічно в гілці (типово) або приватно в Messenger (FB, на вибір менеджера)
+  const [commentMode, setCommentMode] = useState<CommentMode>("public");
+  const [errCanPublic, setErrCanPublic] = useState(false);
+  const commentInfo = useCommentTarget(active?.id, active?.channel_kind, msgs.length ? msgs[msgs.length - 1].id : 0);
+  useEffect(() => { setCommentMode("public"); setErrCanPublic(false); }, [active?.id]);
+  useEffect(() => { if (commentMode === "private" && commentInfo && !commentInfo.can_private) setCommentMode("public"); }, [commentInfo, commentMode]);
   const [taskOpen, setTaskOpen] = useState(false);
   const [composerH, setComposerH] = useState<number | null>(null);
   const [pending, setPending] = useState<any[]>([]);
@@ -250,10 +258,11 @@ export default function Inbox() {
     } catch { setErr(t("Не удалось открыть карточку", "Не вдалося відкрити картку")); }
   }
 
-  async function send() {
+  async function send(modeOverride?: unknown) {
     if (!active) return;
     if (!text.trim() && pending.length === 0) return;
-    setSending(true); setErr("");
+    setSending(true); setErr(""); setErrCanPublic(false);
+    const cMode: CommentMode = modeOverride === "public" || modeOverride === "private" ? modeOverride : commentMode;
     try {
       for (const att of pending) {
         const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send_media/`, { content_b64: att.dataURL, filename: att.name, kind: att.kind, internal: internalNote });
@@ -261,11 +270,13 @@ export default function Inbox() {
       }
       setPending([]);
       if (text.trim()) {
-        const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send/`, { text, internal: internalNote });
+        const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send/`, { text, internal: internalNote, ...(commentInfo?.is_comment && !internalNote ? { comment_mode: cMode } : {}) });
         setMsgs((ms) => [...ms, m]); setText(""); setCorrectionTarget(null);
+        if (commentInfo?.is_comment && cMode !== commentMode) setCommentMode(cMode);
       }
     } catch (e: any) {
       setErr(e?.response?.data?.detail || t("Не удалось отправить (проверь токен бота / сеть).","Не вдалося надіслати (перевір токен бота / мережу)."));
+      setErrCanPublic(!!e?.response?.data?.can_public && !!commentInfo?.is_comment);
     } finally { setSending(false); }
   }
 
@@ -645,7 +656,7 @@ export default function Inbox() {
               ))}
               <div ref={endRef} />
             </div>
-            {err && <div className="err" style={{ padding: "0 16px" }}>{err}</div>}
+            {err && (errCanPublic ? <CommentSendError err={err} canPublic onPublic={() => send("public")} busy={sending} style={{ padding: "0 16px" }} /> : <div className="err" style={{ padding: "0 16px" }}>{err}</div>)}
             <div style={{ background: "#fff", borderTop: "1px solid #e2e8f0", padding: "0 12px 12px" }}>
               <div onMouseDown={startResizeComposer} title={t("Потяни вверх — увеличить поле ввода","Потягни вгору — збільшити поле введення")} style={{ height: 13, cursor: "ns-resize", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <div style={{ width: 44, height: 4, borderRadius: 4, background: "#cbd5e1" }} />
@@ -663,6 +674,7 @@ export default function Inbox() {
                 <div style={{ minWidth: 0, flex: 1 }}><b>{t("Исправление к:", "Виправлення до:")}</b> {correctionTarget.text.slice(0, 120)}{correctionTarget.text.length > 120 ? "…" : ""}<br /><span style={{ color: "#475569" }}>{t("Старое сообщение останется в истории. Клиенту уйдёт новое уточнение.", "Старе повідомлення залишиться в історії. Клієнту піде нове уточнення.")}</span></div>
                 <button type="button" onClick={() => setCorrectionTarget(null)} title={t("Отменить исправление", "Скасувати виправлення")} style={{ border: 0, background: "transparent", color: "#64748b", cursor: "pointer", padding: 0, fontWeight: 800 }}>✕</button>
               </div>}
+              {!internalNote && <CommentReplyBar info={commentInfo} mode={commentMode} onMode={setCommentMode} />}
               {(() => { const w = metaWindow(active, msgs); return w && w.closed ? <div style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11.5, fontWeight: 600, padding: "6px 10px", borderRadius: 6, marginBottom: 6, lineHeight: 1.35 }}>⚠️ {t("Окно Instagram закрыто (прошло " + w.hrs + "ч). Сообщение может НЕ дойти — дождись ответа клиента или напиши с другого канала.","Вікно Instagram закрите (минуло " + w.hrs + "г). Повідомлення може НЕ дійти — дочекайся відповіді клієнта або напиши з іншого каналу.")}</div> : null; })()}
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <input ref={fileRef} type="file" hidden onChange={sendFile} />

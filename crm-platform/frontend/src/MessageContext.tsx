@@ -143,6 +143,9 @@ export function MessageStatusLine({ message, time, customLabels }: {
   }
 
   const status = String(message?.status || "sent");
+  // fbcomment 15.09: у чатах-коментарях — куди пішла відповідь і ЧОМУ не пішла (раніше лише ✕)
+  const sendErr = (message?.attachments || []).find((a: any) => a?.type === "send_error");
+  const cReply = (message?.attachments || []).find((a: any) => a?.type === "comment_reply");
   const meta = status === "read"
     ? { icon: "✓✓", text: l.read, color: "#2563eb" }
     : status === "delivered"
@@ -153,8 +156,10 @@ export function MessageStatusLine({ message, time, customLabels }: {
           ? { icon: "⚠", text: l.windowRisk, color: "#b45309" }
           : { icon: "✓", text: l.sent, color: "#64748b" };
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5, marginTop: 3, fontSize: 10.5, color: meta.color }} title={meta.text}>
+    <>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5, marginTop: 3, fontSize: 10.5, color: meta.color }} title={sendErr && status === "failed" ? `${meta.text}: ${sendErr.text}` : meta.text}>
       <span style={{ opacity: .72 }}>{time}</span>
+      {cReply && <span style={{ opacity: .72, color: "#64748b" }}>· {cReply.mode === "private" ? "🔒 приватно в Messenger" : "у гілці коментаря"}</span>}
       {history && <span title={editedTitle} style={{ fontWeight: 600, cursor: previous ? "help" : "default" }}>· {l.edited}</span>}
       <span aria-label={meta.text} style={{
         display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -165,6 +170,8 @@ export function MessageStatusLine({ message, time, customLabels }: {
         color: meta.color,
       }}>{meta.icon}</span>
     </div>
+    {sendErr && status === "failed" && <div style={{ fontSize: 10.5, color: "#b91c1c", textAlign: "right", marginTop: 2, lineHeight: 1.3 }}>{String(sendErr.text || "")}</div>}
+    </>
   );
 }
 
@@ -200,5 +207,7 @@ export function CorrectionAction({ message, onStart, label, title }: {
 export function isContextAttachment(attachment: any): boolean {
   return attachment?.type === "reply_ref"
     || attachment?.type === "message_reaction"
-    || attachment?.type === "message_edit_history";
+    || attachment?.type === "message_edit_history"
+    || attachment?.type === "comment_reply"  // fbcomment: куди пішла відповідь у коментарі
+    || attachment?.type === "send_error";    // fbcomment: чому не надіслалось
 }

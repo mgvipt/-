@@ -182,16 +182,15 @@ class MetaAdapter(ChannelAdapter):
     def send(self, external_chat_id: str, text: str) -> str:
         from .meta import send_message, reply_comment
         if str(external_chat_id).startswith("comment:"):
-            # Відповідь на коментар — публічно, на ОСТАННІЙ коментар клієнта у цій зв'язці «клієнт+публікація»
-            from .models import Conversation, Message
+            # Відповідь на коментар — публічно, на ОСТАННІЙ коментар клієнта у цій зв'язці «клієнт+публікація».
+            # fbcomment 15.09: логіка в meta_comments (IG — ребро /replies і верхній коментар гілки; без коментаря
+            # клієнта — помилка, а не фальшиве «надіслано»). services.send_message іде туди напряму.
+            from .models import Conversation
+            from .meta_comments import adapter_send
             conv = Conversation.objects.filter(channel=self.channel, external_chat_id=external_chat_id).first()
-            last_in = (Message.objects.filter(conversation=conv, direction="in").order_by("-id").first()
-                       if conv else None)
-            comment_id = (last_in.external_id if last_in else "")
-            if not comment_id:
-                return ""
-            r = reply_comment(comment_id, text)
-            return str(r.get("id", ""))
+            if conv is None:
+                raise RuntimeError("Чат коментаря не знайдено")
+            return adapter_send(conv, text)
         r = send_message(external_chat_id, text, platform=self._platform())
         return str(r.get("message_id", ""))
 

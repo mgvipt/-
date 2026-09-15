@@ -41,7 +41,7 @@ export default function ConversationSourceCard({ card }: { card?: any }) {
               <Icon n="link" size={12} /> {openLabel}
             </a>
           )}
-          {card.parent_id && <span style={{ fontSize: 10.5, color: "#c2410c" }}>↳ відповідь у гілці</span>}
+          {card.parent_id && card.parent_id !== card.media_id && <span style={{ fontSize: 10.5, color: "#c2410c" }}>↳ відповідь у гілці</span>}
         </div>
       </div>
     </div>
