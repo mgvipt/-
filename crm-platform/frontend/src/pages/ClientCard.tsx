@@ -33,7 +33,7 @@ const amt2 = (n: number) => { const v = Math.round((Number(n) || 0) * 100) / 100
 const LOYALTY = ["", "Новий", "Активний", "VIP", "Сплячий"];
 const KINDS: [string, string][] = [
   ["client", "Клієнт"], ["supplier", "Постачальник"], ["master", "Майстер"],
-  ["staff", "Співробітник"], ["partner", "Партнер / Дизайнер"],
+  ["staff", "Співробітник"], ["partner", "Партнер"], ["designer", "Дизайнер"], ["builder", "Будівельник / прораб"],
 ];
 
 // Список полів {label,value} з власними назвами (email/телефони)

@@ -295,6 +295,28 @@ class UserViewSet(viewsets.ModelViewSet):
             moved["сделки"] = _rr_reassign(Deal.objects.filter(owner=u), "owner", pool)
             moved["лиды"] = _rr_reassign(Lead.objects.filter(owner=u), "owner", pool)
         u.apply_employment_status("dismissed")  # → is_active=False, is_superuser=False, dismissed_at=сьогодні
+        # 15.09.2026 (Олег): «Звільнити» закриває ставку з дати звільнення — ЗП лише за відпрацьований період
+        # (payroll._prorate рахує до valid_to включно); майбутні версії ставки — в архів. Затверджені місяці не змінюються.
+        try:
+            from apps.payroll.models import PayScheme, PayRateLog
+            d_end = u.dismissed_at
+            if d_end:
+                for sc in PayScheme.objects.filter(user=u, status="active", is_vacancy=False).filter(Q(valid_to__isnull=True) | Q(valid_to__gt=d_end)):
+                    before = {"valid_to": sc.valid_to.isoformat() if sc.valid_to else None, "status": sc.status}
+                    if sc.valid_from > d_end:
+                        sc.status = "archived"
+                        sc.save(update_fields=["status", "updated_at"])
+                        note = "Звільнення %s: майбутню версію ставки (з %s) — в архів" % (d_end.strftime("%d.%m.%Y"), sc.valid_from.strftime("%d.%m.%Y"))
+                    else:
+                        sc.valid_to = d_end
+                        sc.save(update_fields=["valid_to", "updated_at"])
+                        note = "Звільнення: ставку закрито з %s" % d_end.strftime("%d.%m.%Y")
+                    PayRateLog.objects.create(scheme=sc, action="update", before=before,
+                                              after={"valid_to": sc.valid_to.isoformat() if sc.valid_to else None, "status": sc.status},
+                                              user=actor, note=note[:255])
+                    moved["ставки"] = moved.get("ставки", 0) + 1
+        except Exception:
+            pass
         targets = [p.get_full_name() or p.username for p in pool]
         try:
             from apps.crm.models import log_activity

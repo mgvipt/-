@@ -184,7 +184,7 @@ export default function LeadCard() {
               <SourceChip source={lead.source} />
               <select value={lead.source} onChange={(e) => changeSource(e.target.value)} title={t("Откуда лид (ChatPlace не различает платформу — выбери вручную)","Звідки лід (ChatPlace не розрізняє платформу — обери вручну)")}
                 style={{ fontSize: 12, padding: "5px 8px", borderRadius: 7, border: "1px solid #e2e8f0", width: "100%", marginTop: 6 }}>
-                {([["instagram", "Instagram"], ["telegram", "Telegram"], ["tiktok", "TikTok"], ["facebook", "Facebook"], ["viber", "Viber"], ["call", t("Звонок","Дзвінок")], ["site", t("Сайт","Сайт")], ["wholesale", t("Опт / дилеры","Опт / дилери")], ["designers", t("Дизайнеры","Дизайнери")], ["other", t("Другое","Інше")]] as [string, string][]).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                {([["instagram", "Instagram"], ["telegram", "Telegram"], ["tiktok", "TikTok"], ["facebook", "Facebook"], ["viber", "Viber"], ["call", t("Звонок","Дзвінок")], ["site", t("Сайт","Сайт")], ["wholesale", t("Опт / дилеры","Опт / дилери")], ["designers", t("Дизайнеры","Дизайнери")], ["salon", t("Салон (офлайн)","Салон (офлайн)")], ["other", t("Другое","Інше")]] as [string, string][]).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </div>
             <div style={{ marginTop: 8 }}><LeadQuality contactId={lead.contact} /></div>

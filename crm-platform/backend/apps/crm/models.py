@@ -18,7 +18,9 @@ CONTACT_KINDS = [
     ("supplier", "Постачальник"),
     ("master", "Майстер"),
     ("staff", "Співробітник"),
-    ("partner", "Партнер / Дизайнер"),
+    ("partner", "Партнер"),
+    ("designer", "Дизайнер"),  # 15.09.2026 (Олег): дизайнер і будівельник — окремі типи контакту
+    ("builder", "Будівельник / прораб"),
 ]
 
 
@@ -161,6 +163,7 @@ class Lead(TimestampedOwned):
         ("google_business", "Google Бизнес"), ("other", "Другое"),
         ("site", "Сайт wallcovdec"), ("wholesale", "Опт / дилери"),
         ("designers", "Дизайнери / прораби"), ("tiktok", "TikTok"),
+        ("salon", "Салон (офлайн)"),  # 15.09.2026 (Олег): джерело «Салон» (міграція 9062)
     ]
     title = models.CharField(max_length=255)
     contact = models.ForeignKey(Contact, null=True, blank=True, on_delete=models.SET_NULL, related_name="leads")
