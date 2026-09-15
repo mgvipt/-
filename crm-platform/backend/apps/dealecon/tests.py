@@ -141,6 +141,20 @@ class ComputeTests(_Base):
         DealEconSettings.objects.create(pk=1, pack_material_per_shipment=Decimal("30"))
         self.assertEqual(compute(p)["packaging"], Decimal("58.00"))
 
+    def test_salon_without_ttn_no_packaging_material(self):
+        # 15.09.2026: видача в салоні без ТТН — лише фактична робота складу, матеріалів упаковки немає
+        fs = Funnel.objects.create(name="1.С/Покрытия для стен")
+        st = Stage.objects.create(funnel=fs, name="Нова", order=0)
+        d = Deal.objects.create(title="S", funnel=fs, stage=st, amount=Decimal("3000"))
+        self.item(d, self.goods, 10, 300, 100)
+        self.payroll(d, "shipment_weight", 15)
+        r = compute(d)
+        self.assertEqual(r["packaging"], Decimal("15.00"))
+        self.assertTrue(r["sources"]["packaging"]["parts"]["salon"])
+        d.ttn = "7001"
+        d.save()
+        self.assertEqual(compute(d)["packaging"], Decimal("37.00"))  # салон з ТТН — посилка, матеріали є
+
     def test_master_fact_replaces_plan_with_transport(self):
         d = self.deal(1700)
         self.item(d, self.svc, 1, 1700, 680)

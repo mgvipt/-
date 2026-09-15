@@ -68,6 +68,10 @@ def _packaging_parts(s):
             nuk, nru = "норма за відправлення", "норма за отправку"
         out.append({"key": "material", "label_uk": "Матеріали упаковки (коробки, скотч)", "label_ru": "Материалы упаковки (коробки, скотч)",
                     "amount": mat, "note_uk": nuk, "note_ru": nru, "counted": True})
+    if p.get("salon"):
+        out.append({"key": "material", "label_uk": "Матеріали упаковки", "label_ru": "Материалы упаковки", "amount": 0,
+                    "note_uk": "видача в салоні без ТТН — коробки не витрачались", "note_ru": "выдача в салоне без ТТН — коробки не тратились",
+                    "counted": False})
     ts = float(p.get("test_set") or 0)
     if ts:
         out.append({"key": "test_set", "label_uk": "Збірка тест-набору (ЗП складу)", "label_ru": "Сборка тест-набора (ЗП склада)",

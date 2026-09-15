@@ -465,6 +465,12 @@ def _packaging(deal, sibs, ctx, base=None):
         mat_ru = "материалы %s ₴ (норма за отправку: фонда «Упаковка (материалы)» в Финмодели нет)" % _fmt(mat)
         empty = ("не пакували / посилка оплачена в основній угоді", "не упаковывали / посылка в основной сделке")
         extra = {"material_src": "norm"}
+    # 15.09.2026 (Олег): видача в салоні без ТТН — коробки/скотч не витрачались; в економіці лише фактичні витрати
+    from apps.warehouse.weight_rules import is_salon
+    salon = is_salon(deal)
+    if salon:
+        mat = D0
+        extra["salon"] = True
     kinds = (["fact"] if lab > 0 else []) + (["estimate"] if mat > 0 else [])
     kind = _merge_kinds(kinds)
     uk, ru = [], []
@@ -474,6 +480,9 @@ def _packaging(deal, sibs, ctx, base=None):
     if mat > 0:
         uk.append(mat_uk)
         ru.append(mat_ru)
+    if salon:
+        uk.append("видача в салоні без ТТН — матеріали упаковки 0")
+        ru.append("выдача в салоне без ТТН — материалы упаковки 0")
     if not uk:
         uk, ru = [empty[0]], [empty[1]]
     return lab + mat, _src(kind, " · ".join(uk), " · ".join(ru), packing=labor["packing"],
