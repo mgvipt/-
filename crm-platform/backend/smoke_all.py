@@ -126,6 +126,8 @@ CHECKS = [
     ("Моя ЗП і KPI (менеджер, лише свої)", "manager", "/api/payroll/my/", {200}, ["has_scheme", "lines", "periods"]),
     ("Моя ЗП: чужий id — 403", "manager", "/api/payroll/my/?user=1", {403}, []),
     ("Як виконати план — правила зі схеми", "manager", "/api/payroll/my/?only=rules", {200}, ["rules"]),
+    ("Моя ЗП: як прорахувалось (менеджер, лише свої)", "manager", "/api/payroll/my/detail/", {200}, ["lines", "margin_hidden"]),
+    ("Моя ЗП: як прорахувалось — чужий id 403", "manager", "/api/payroll/my/detail/?user=1", {403}, []),
     ("KPI угоди без маржі", "owner", "DEAL_KPI", {200}, ["checks", "kind"]),
     ("ЗП: як прорахувалось (власник)", "owner", "/api/payroll/calc-detail/?user=102&period=2026-09", {200}, ["lines", "all_match", "run"]),
     ("ЗП: як прорахувалось (менеджер — ні)", "manager", "/api/payroll/calc-detail/?user=102&period=2026-09", {403}, []),

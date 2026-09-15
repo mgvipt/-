@@ -210,6 +210,7 @@ export default function BreakevenAtm() {
               <span>{v.position}<span className="muted">{v.planned_start ? ` · вихід ${v.planned_start.slice(8, 10)}.${v.planned_start.slice(5, 7)}` : ""}{v.employment ? ` · ${v.employment}` : ""}{v.fund ? ` · фонд «${v.fund}»` : ""}</span></span>
             </label>
             {v.fixed_net != null && <span className="muted">«на руки» {money(v.fixed_net)} · компанії {money(v.fixed_cost)}/міс</span>}
+            {v.hiring_once ? <span className="muted" title="Задачі найму в Біржі задач: Знайшов + Навчив + Рекомендований. Разова виплата; у ТБ кварталу — третина на місяць.">· найм через біржу {money(v.hiring_once)} разово (≈{money(v.hiring_month)}/міс у кварталі)</span> : null}
             <b style={{ whiteSpace: "nowrap", minWidth: 110, textAlign: "right" }}>{v.delta_breakeven ? `ТБ +${money(v.delta_breakeven)}` : "—"}</b>
             {d.can_edit && <button className="btn btn-light" title="Прибрати вакансію" style={{ fontSize: 11.5, height: 24, padding: "0 6px" }} onClick={() => archive(v)}><Icon n="x" size={12} /></button>}
           </div>

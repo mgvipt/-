@@ -795,17 +795,26 @@ def breakeven_atm(extra_ids=(), without_ids=(), today=None):
                     # «Маркетинг СММ» містить і контент/рекламу, не лише людей — тільки порівняння, без кнопки
                     "syncable": a.name.strip().upper().startswith("ФОТ") and not (fid == PIECE_FUND and unit == "%")})
     # вакансії «що якщо»: тверда частина з податками → у свій фонд → ТБ зростає на суму × k
+    # 15.09.2026 (Олег): найм через біржу — разова виплата на вакансію; ТБ кварталу — третина на місяць
+    try:
+        from apps.bounty import services as _bs
+        hb, hgrp = _bs.hiring_budget(), _bs.hiring_group
+    except Exception:
+        hb, hgrp = None, None
     vac, add = [], 0.0
     for v in PayScheme.objects.filter(is_vacancy=True, status="active", purpose="official").order_by("planned_start", "id"):
         c = scheme_cost(v, pol, sh, today)
+        hire = float(hb[hgrp(v.department)]) if hb else 0.0
+        hire_m = hire / 3
         included = (v.in_plan or v.id in extra_ids) and v.id not in without_ids
-        delta = round(c["fixed_cost"] * k) if k else None
+        delta = round((c["fixed_cost"] + hire_m) * k) if k else None
         if included and delta:
             add += delta
         a = art_by_id.get(fund_of(v))
         vac.append({"scheme_id": v.id, "position": v.position, "planned_start": v.planned_start.isoformat() if v.planned_start else None,
                     "employment": v.get_employment_display(), "included": included, "fixed_net": c["fixed_net"],
-                    "fixed_cost": c["fixed_cost"], "fund": a.name if a else "", "delta_breakeven": delta, "payback_revenue": delta})
+                    "fixed_cost": c["fixed_cost"], "fund": a.name if a else "", "delta_breakeven": delta, "payback_revenue": delta,
+                    "hiring_once": round(hire), "hiring_month": round(hire_m)})
     base = float(be.get("breakeven") or 0)
     return {
         "breakeven": round(base), "breakeven_with": round(base + add), "with_delta": round(add),

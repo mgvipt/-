@@ -131,7 +131,7 @@ def _margin_params(p, pol):
 
 
 def _line_out(l, can_margin):
-    out = {"kind": l.get("kind"), "title": l.get("title") or "", "amount": int(round(_n(l.get("amount")))),
+    out = {"kind": l.get("kind"), "component": l.get("component"), "title": l.get("title") or "", "amount": int(round(_n(l.get("amount")))),
            "rate": l.get("rate"), "detail": l.get("detail") or "", "warn": l.get("warn") or "",
            "estimate": bool(l.get("estimate"))}
     if l.get("kind") == "margin_share" and not can_margin:
@@ -516,6 +516,42 @@ class MyPayrollView(APIView):
         b["warehouse"] = _warehouse(u, d1, d2, only_if_any=not any(c.kind == "piece_rate" for c in comps))
         b["more"] = _more(b) if period == cur else []
         return Response(b)
+
+
+_MARGIN_COLS = {"margin_pct", "margin", "source"}
+
+
+def _hide_margin(line):
+    """15.09.2026: без права «маржа угоди» — лише заробіток по кожній оплаті; суми, відсоток і джерело маржі прибираємо."""
+    if line.get("kind") != "margin_share":
+        return line
+    line["columns"] = [c for c in line.get("columns") or [] if c.get("k") not in _MARGIN_COLS]
+    line["rows"] = [{k: v for k, v in r.items() if k not in _MARGIN_COLS} for r in line.get("rows") or []]
+    line["summary"] = [s for s in line.get("summary") or [] if "маржа" not in (str(s.get("label", "")) + " " + str(s.get("value", ""))).lower()]
+    line["warnings"] = [w for w in line.get("warnings") or [] if "маржа" not in str(w).lower()]
+    return line
+
+
+class MyDetailView(APIView):
+    """GET /api/payroll/my/detail/?period=YYYY-MM — «Як прорахувалось» для СЕБЕ (Розвиток → Моя ЗП і KPI), 15.09.2026.
+    Та сама розшифровка, що у Фінанси → ЗП/KPI; без права «маржа угоди» — заробіток по угодах без маржі."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        u = request.user
+        q = request.query_params
+        other = q.get("user") or q.get("user_id")
+        if other not in (None, "") and str(other) != str(u.id):
+            return Response({"detail": "Тут видно лише ваші власні дані"}, status=403)
+        period = (q.get("period") or timezone.localdate().strftime("%Y-%m"))[:7]
+        if not PERIOD_RE.match(period):
+            return Response({"detail": "Період — у форматі YYYY-MM"}, status=400)
+        from .detail_views import build
+        data = build(u, period)
+        data["margin_hidden"] = not _can(u, "deal.margin.view")
+        if data["margin_hidden"]:
+            data["lines"] = [_hide_margin(ln) for ln in data["lines"]]
+        return Response(data)
 
 
 # ─────────────────────────── KPI угоди ───────────────────────────

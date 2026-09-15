@@ -268,6 +268,36 @@ def fund_article():
         return None
 
 
+# 15.09.2026 (Олег): «Біржа задач» — змінна стаття; бюджет найму додається з кожною відкритою вакансією.
+# Ціни — з самих задач найму (Знайшов + Навчив + Рекомендований), щоб ліміт і ТБ ішли за тим, що погоджено в біржі.
+HIRE_CATEGORIES = ("Вакансії і пошук", "Відбір", "Адаптація і навчання")
+HIRE_GROUPS = (("sales", "продажі або салон"), ("ops", "склад або офіс"))
+
+
+def hiring_group(department):
+    """Продажі → «продажі або салон»; склад, офіс, маркетинг → «склад або офіс»."""
+    return "sales" if (department or "").strip().lower().startswith("продаж") else "ops"
+
+
+def hiring_budget():
+    """Максимум за одного нового співробітника по групах: сума активних задач найму з назвою «…: продажі або салон» / «…: склад або офіс»."""
+    out = {"sales": D0, "ops": D0}
+    for title, price in TaskOffer.objects.filter(active=True, archived=False, category__name__in=HIRE_CATEGORIES).values_list("title", "price"):
+        t = (title or "").strip().lower()
+        for g, marker in HIRE_GROUPS:
+            if t.endswith(marker):
+                out[g] += Decimal(str(price or 0))
+    return out
+
+
+def vacancy_hiring(budget=None):
+    """Відкриті вакансії («Ставки співробітників») → бюджет найму на кожну."""
+    from apps.payroll.models import PayScheme
+    b = budget if budget is not None else hiring_budget()
+    return [{"scheme_id": v.id, "position": v.position, "amount": b[hiring_group(v.department)]}
+            for v in PayScheme.objects.filter(is_vacancy=True, status="active").order_by("planned_start", "id")]
+
+
 def _estimate(price, qty, unit):
     return (price or D0) * (qty or D0) if unit != "pct" else D0
 
@@ -275,7 +305,12 @@ def _estimate(price, qty, unit):
 def fund_info(period=None):
     period = period or month_of()
     a = fund_article()
-    limit = Decimal(str(a.value or 0)) if (a and a.active) else D0
+    base = Decimal(str(a.value or 0)) if (a and a.active) else D0
+    try:  # 15.09.2026: до статті додається бюджет найму кожної відкритої вакансії
+        vac = vacancy_hiring()
+    except Exception:
+        vac = []
+    limit = base + sum((v["amount"] for v in vac), D0)
     used = TaskClaim.objects.filter(status="accepted", payroll_period=period).aggregate(s=Sum("amount"))["s"] or D0
     reserved = D0
     if period == month_of():
@@ -285,12 +320,13 @@ def fund_info(period=None):
     left = (limit - used - reserved) if enforced else None
     warn = ""
     if not a:
-        warn = f"У Фінмоделі немає статті «{FUND_NAME}» — ліміт фонду не діє"
+        warn = f"У Фінмоделі немає статті «{FUND_NAME}» — " + ("ліміт лише з бюджету найму вакансій" if enforced else "ліміт фонду не діє")
     elif not enforced:
         warn = f"Стаття «{FUND_NAME}» = 0 ₴ — ліміт фонду не діє"
     return {"name": FUND_NAME, "found": bool(a), "article_id": a.id if a else None, "period": period,
             "limit": money(limit) if enforced else None, "used": money(used), "reserved": money(reserved),
-            "left": money(left) if left is not None else None, "enforced": enforced, "warning": warn}
+            "left": money(left) if left is not None else None, "enforced": enforced, "warning": warn,
+            "base": money(base), "vacancies": [{"position": v["position"], "amount": money(v["amount"])} for v in vac]}
 
 
 def _run_approved(user, period):

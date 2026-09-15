@@ -11,9 +11,10 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "./api";
 import { useLang } from "./i18n";
 import { Icon } from "./Icon";
+import { LineDetail, matchDetail } from "./PayCalcDetail";
 
 type T = (ru: string, uk: string) => string;
-type Line = { kind: string; title: string; amount: number; rate?: string | null; detail: string; warn: string; estimate: boolean };
+type Line = { kind: string; component?: number | null; title: string; amount: number; rate?: string | null; detail: string; warn: string; estimate: boolean };
 type Part = { kind: string; title: string; plain: string };
 type Plan = { fact: number; target: number; min: number; ambition: number; pct: number | null; left: number | null; over: number; basis: string; to_pct?: number; over_pct?: number; gate_pct?: number; note?: string };
 type Std = { title: string; max: number; set: boolean; score_pct: number | null; amount: number | null };
@@ -46,19 +47,29 @@ export function goToPlan(navigate: (to: string) => void) {
   }
 }
 
-function LineRow({ l }: { l: Line }) {
+// 15.09.2026 (Олег): у кожного рядка — «Як прорахувалось», як у керівника в ЗП/KPI (угоди, оплати, записи; без маржі без права)
+function LineRow({ l, t, open, onToggle, busy, err, det, dl, frozen }: {
+  l: Line; t: T; open: boolean; onToggle: () => void; busy: boolean; err: string; det: any; dl: any; frozen: boolean;
+}) {
   return (
-    <div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "7px 0", borderBottom: "1px solid #f1f5f9" }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>{l.title}{l.rate ? <span className="muted" style={{ fontWeight: 400 }}> · {l.rate}</span> : null}</div>
-        {l.detail && <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.45 }}>{l.detail}</div>}
-        {l.warn && <div style={{ fontSize: 11.5, color: "#b45309", display: "flex", gap: 4, alignItems: "center" }}><Icon n="warn" size={12} /> {l.warn}</div>}
+    <div style={{ padding: "7px 0", borderBottom: "1px solid #f1f5f9" }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{l.title}{l.rate ? <span className="muted" style={{ fontWeight: 400 }}> · {l.rate}</span> : null}</div>
+          {l.detail && <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.45 }}>{l.detail}</div>}
+          {l.warn && <div style={{ fontSize: 11.5, color: "#b45309", display: "flex", gap: 4, alignItems: "center" }}><Icon n="warn" size={12} /> {l.warn}</div>}
+          <button type="button" className="btn btn-light" style={{ fontSize: 11, height: 22, padding: "0 8px", marginTop: 3, display: "inline-flex", alignItems: "center", gap: 4 }} onClick={onToggle}>
+            <Icon n="calculator" size={12} /> {open ? t("Скрыть расчёт", "Сховати розрахунок") : t("Как посчитано", "Як прорахувалось")}</button>
+        </div>
+        <b style={{ fontSize: 14, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: l.amount > 0 ? "#0f172a" : "#94a3b8" }}>{fmt(l.amount)} ₴</b>
       </div>
-      <b style={{ fontSize: 14, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: l.amount > 0 ? "#0f172a" : "#94a3b8" }}>{fmt(l.amount)} ₴</b>
+      {open && (busy && !det ? <div className="muted" style={{ fontSize: 12, padding: "4px 0" }}>{t("Считаем…", "Рахуємо…")}</div>
+        : err ? <div className="note" style={{ fontSize: 12 }}>{err}</div>
+          : dl ? <LineDetail dl={dl} frozenAmount={frozen ? l.amount : null} />
+            : det ? <div className="muted" style={{ fontSize: 12, padding: "4px 0" }}>{t("Этой строки сейчас нет в расчёте вживую.", "Цього рядка зараз немає в розрахунку наживо.")}</div> : null)}
     </div>
   );
 }
-
 function PlanBar({ p, t }: { p: Plan; t: T }) {
   const pct = Math.max(0, Math.min(100, p.pct || 0));
   return (
@@ -125,6 +136,19 @@ function OppRow({ o, t }: { o: Opp; t: T }) {
 
 function MyBody({ d, t, onPlan }: { d: My; t: T; onPlan: () => void }) {
   const [showScheme, setShowScheme] = useState(false);
+  const [det, setDet] = useState<any>(null);
+  const [detBusy, setDetBusy] = useState(false);
+  const [detErr, setDetErr] = useState("");
+  const [open, setOpen] = useState<Record<number, boolean>>({});
+  useEffect(() => { setDet(null); setDetErr(""); setOpen({}); }, [d.period]);
+  function toggle(i: number) {
+    setOpen((o) => ({ ...o, [i]: !o[i] }));
+    if (det || detBusy) return;
+    setDetBusy(true);
+    api.get<any>(`/api/payroll/my/detail/?period=${d.period}`).then(setDet)
+      .catch((e: any) => setDetErr(e?.data?.detail || e?.response?.data?.detail || t("Не удалось загрузить расчёт", "Не вдалося завантажити розрахунок")))
+      .finally(() => setDetBusy(false));
+  }
   if (!d.has_scheme) {
     return (
       <div style={{ marginTop: 10 }}>
@@ -153,7 +177,9 @@ function MyBody({ d, t, onPlan }: { d: My; t: T; onPlan: () => void }) {
         {d.scheme && <div className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{d.scheme.position}{d.scheme.title ? ` · ${d.scheme.title}` : ""}</div>}
       </div>
 
-      <div style={{ marginTop: 10 }}>{(d.lines || []).map((l, i) => <LineRow key={i} l={l} />)}</div>
+      <div style={{ marginTop: 10 }}>{(d.lines || []).map((l, i) => <LineRow key={i} l={l} t={t} open={!!open[i]} onToggle={() => toggle(i)}
+        busy={detBusy} err={detErr} det={det} dl={det?.lines ? matchDetail(det.lines, l, i) : null} frozen={d.source === "approved"} />)}</div>
+      {det?.margin_hidden && Object.values(open).some(Boolean) && <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>{t("Маржу сделок видит только руководитель — здесь ваш заработок по каждой оплате.", "Маржу угод бачить лише керівник — тут ваш заробіток по кожній оплаті.")}</div>}
 
       {d.plan && <PlanBar p={d.plan} t={t} />}
       {d.standard && (

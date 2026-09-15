@@ -20,6 +20,7 @@ urlpatterns = [
     path("funds/sync/", views.FundSyncView.as_view()),
     path("funds/links/", FundLinksView.as_view()),
     path("my/", my_views.MyPayrollView.as_view()),
+    path("my/detail/", my_views.MyDetailView.as_view()),
     path("deal-kpi/<int:deal_id>/", my_views.DealKpiView.as_view()),
     path("runs/approve/", views.RunApproveView.as_view()),
     path("calc-detail/", CalcDetailView.as_view()),
