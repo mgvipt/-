@@ -353,6 +353,20 @@ function StdCritMark({ comp, scheme, period, onSaved }: { comp: Comp; scheme: Sc
   </div>;
 }
 
+/** 15.09.2026 (Олег): у кожного — «рахувати за табелем: так / ні» (тверда ставка ↔ «За вихід (по табелю)»). */
+function toggleByDays(c: Comp, on: boolean): Comp {
+  const DAYS = "За вихід (по табелю)", FIX = "Ставка";
+  const title = on ? (!c.title || c.title === FIX || c.title.startsWith("Ставка (") ? DAYS : c.title)
+    : (!c.title || c.title === DAYS ? FIX : c.title);
+  return { ...c, kind: on ? "base_by_days" : "fixed_monthly", title };
+}
+
+function byDaysInfo(comps: Comp[]): string {
+  const f = comps.filter((c) => c.active !== false && (c.kind === "fixed_monthly" || c.kind === "base_by_days"));
+  if (!f.length) return "";
+  return f.some((c) => c.kind === "base_by_days") ? "так — ставка пропорційно відпрацьованим дням табеля" : "ні — ставка щомісяця повністю, табель не впливає";
+}
+
 /** Одна частина оплати в режимі «Змінити» — окремий рядок у рамці. */
 function CompEditRow({ comp, kindLabel, funnels, conds, onChange, onRemove }: {
   comp: Comp; kindLabel: string; funnels: any[]; conds: string[]; onChange: (c: Comp) => void; onRemove: () => void;
@@ -364,6 +378,10 @@ function CompEditRow({ comp, kindLabel, funnels, conds, onChange, onRemove }: {
     </div>
     <div style={formGrid}>
       <Field label="Назва частини"><input value={comp.title} onChange={(e) => onChange({ ...comp, title: e.target.value })} style={{ ...inp, width: "100%", maxWidth: 460, fontWeight: 600 }} /></Field>
+      {(comp.kind === "fixed_monthly" || comp.kind === "base_by_days") && <Field label="Рахувати за табелем"
+        hint={comp.kind === "base_by_days" ? "ставка пропорційно відпрацьованим дням; не вийшов — за день не нараховується" : "ставка щомісяця повністю, табель не впливає (напр. таргетолог, підрядник)"}>
+        <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={comp.kind === "base_by_days"} onChange={(e) => onChange(toggleByDays(comp, e.target.checked))} /> {comp.kind === "base_by_days" ? "так" : "ні"}</label>
+      </Field>}
       <ParamsFields comp={comp} funnels={funnels} conds={conds} onChange={(pp) => onChange({ ...comp, params: pp })} />
     </div>
   </div>;
@@ -681,6 +699,7 @@ function SchemeEditor({ scheme, funnels, users, kinds, conds, funds, fundByDept,
           <Field label="Посада">{scheme.position || "—"}</Field>
           <Field label="Відділ">{scheme.department || "—"}</Field>
           <Field label="Оформлення" hint={EMPL_HINT[scheme.employment]}><b>{scheme.employment_label}</b></Field>
+          {byDaysInfo(scheme.components) && <Field label="За табелем">{byDaysInfo(scheme.components)}</Field>}
           {!scheme.is_vacancy && <Field label="Діє з">{dm(scheme.valid_from)}{scheme.valid_to ? ` до ${dm(scheme.valid_to)}` : " — діє зараз"}</Field>}
           {scheme.is_vacancy && <Field label="Плановий вихід">{dm(scheme.planned_start) || "—"}</Field>}
           {scheme.is_vacancy && <Field label="У «що якщо»">{scheme.in_plan ? "завжди враховувати в точці беззбитковості" : "лише коли ввімкнете у Фінанси → Точка беззбитковості"}</Field>}
