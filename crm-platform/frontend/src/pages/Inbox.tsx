@@ -118,10 +118,13 @@ export default function Inbox() {
     if (beScope && beScope !== "all") sp.set("scope", beScope);
     if (chFilter.startsWith("meta_")) sp.set("channel_group", chFilter);
     else if (chFilter) sp.set("channel", chFilter);
-    if (period && period !== "all") sp.set("period", period);
-    if (prio) sp.set("priority", prio);
+    // 15.09 (chatsearch): під час пошуку дата і статус ШІ НЕ звужують результат (клієнт «зникав» через
+    // збережений фільтр «Сьогодні»). Канал і співробітник лишаються — під полем видно підказку «шукати всюди».
+    const sq = search.trim();
+    if (!sq && period && period !== "all") sp.set("period", period);
+    if (!sq && prio) sp.set("priority", prio);
     if (mgrFilter) sp.set("manager", mgrFilter);
-    if (search.trim()) sp.set("search", search.trim());
+    if (sq) sp.set("search", sq);
     return "?" + sp.toString();
   }
   // 11.09: «Всі» вантажить сторінку 50 від свіжих — у менеджера з багатьма своїми чатами вільні
@@ -138,9 +141,20 @@ export default function Inbox() {
     const ids = new Set(page.map((x) => x.id));
     return [...page, ...free.filter((x) => !ids.has(x.id))];
   }
+  // 15.09 (chatsearch): відповідь на старий запит (набрали «Заб» → «Забурко», змінили фільтр) не
+  // перезаписує новішу; «Шукаю…» / «Нічого не знайдено» замість «Поки немає діалогів».
+  const listSeq = useRef(0);
+  const [listLoading, setListLoading] = useState(false);
+  const [foundCount, setFoundCount] = useState<number | null>(null);
   async function loadConvs() {
     const q = listQuery();
-    const [d, free] = await Promise.all([api.get<Paginated<Conversation>>(`/api/conversations/${q}`), freePool()]);
+    const my = ++listSeq.current;
+    setListLoading(true);
+    const [d, free] = await Promise.all([api.get<Paginated<Conversation>>(`/api/conversations/${q}`), freePool()])
+      .catch((e) => { if (my === listSeq.current) setListLoading(false); throw e; });
+    if (my !== listSeq.current) return;
+    setListLoading(false);
+    setFoundCount(search.trim() ? ((d as any).count ?? d.results.length) : null);
     setConvs(withFree(d.results, free)); setNextUrl((d as any).next || null);
     // НЕ відкривати «перший-ліпший» чат, коли прийшли за конкретним клієнтом (?contact= / ?c=)
     if (!activeRef.current && d.results[0] && !params.get("contact") && !params.get("c")) openConv(d.results[0]);
@@ -148,13 +162,17 @@ export default function Inbox() {
   async function loadMore() {
     if (!nextUrl) return;
     const url = nextUrl.replace(/^https?:\/\/[^/]+/, "");
+    const my = listSeq.current;
     const d = await api.get<Paginated<Conversation>>(url);
+    if (my !== listSeq.current) return;  // пошук/фільтр змінився, поки вантажили — старе не домішуємо
     setConvs((cs) => { const ids = new Set(cs.map((x) => x.id)); return [...cs, ...d.results.filter((r) => !ids.has(r.id))]; });
     setNextUrl((d as any).next || null);
   }
   async function refreshList() {
     const q = listQuery();
+    const my = listSeq.current;
     const [page, free] = await Promise.all([api.get<Paginated<Conversation>>(`/api/conversations/${q}`), freePool()]);
+    if (my !== listSeq.current) return;  // поки оновлювали, змінився пошук/фільтр — списки не змішуємо
     const d = { ...page, results: withFree(page.results, free) };  // вільний пул теж оновлюється на місці
     setConvs((cs) => {
       const fresh = new Map<number, Conversation>(d.results.map((r) => [r.id, r]));
@@ -189,7 +207,9 @@ export default function Inbox() {
   useEffect(() => {
     const t = setInterval(() => refreshList(), 20000);
     return () => clearInterval(t);
-  }, [scope, chFilter, period, prio, mgrFilter]);
+    // 15.09 (chatsearch): + search — інакше таймер оновлював список СТАРИМ запитом і домішував у
+    // результати пошуку звичайні чати (через 20 с знайдений клієнт тонув серед 50 інших)
+  }, [scope, chFilter, period, prio, mgrFilter, search]);
   useEffect(() => {
     const contactId = params.get("contact");
     if (contactId) {
@@ -375,7 +395,16 @@ export default function Inbox() {
       <div style={{ background: "#fff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div style={{ padding: 12, borderBottom: "1px solid #e2e8f0", fontWeight: 600 }}>{t("Диалоги","Діалоги")}</div>
         <div style={{ padding: "8px 12px", borderBottom: "1px solid #f1f5f9" }}>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("🔍 Имя, телефон, ник…","🔍 Імʼя, телефон, нік…")} style={{ width: "100%", height: 28, border: "1px solid #e2e8f0", borderRadius: 8, padding: "0 10px", fontSize: 12, boxSizing: "border-box" }} />
+          <div style={{ position: "relative" }}>
+            <input value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setSearch(""); }} placeholder={t("🔍 Имя, фамилия, ник, телефон…","🔍 Імʼя, прізвище, нік, телефон…")} style={{ width: "100%", height: 28, border: "1px solid " + (search.trim() ? "var(--brand)" : "#e2e8f0"), borderRadius: 8, padding: "0 26px 0 10px", fontSize: 12, boxSizing: "border-box" }} />
+            {search && <button type="button" onClick={() => setSearch("")} title={t("Очистить поиск","Очистити пошук")} style={{ position: "absolute", right: 4, top: 4, width: 20, height: 20, border: "none", background: "transparent", color: "#94a3b8", cursor: "pointer", padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Icon n="x" size={13} /></button>}
+          </div>
+          {search.trim() && (
+            <div style={{ marginTop: 5, fontSize: 11, color: "#64748b", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <span>{listLoading ? t("Ищу…","Шукаю…") : t(`Найдено: ${foundCount ?? convs.length}`,`Знайдено: ${foundCount ?? convs.length}`)} · {t("во всех доступных чатах, включая закрытые","в усіх доступних чатах, включно із закритими")}</span>
+              {(chFilter || mgrFilter) && <button type="button" onClick={() => { setChFilter(""); setMgrFilter(""); }} title={t("Сейчас поиск только в выбранном канале / у выбранного сотрудника","Зараз пошук лише у вибраному каналі / у вибраного співробітника")} style={{ fontSize: 11, padding: "1px 7px", borderRadius: 6, border: "1px solid #fde68a", background: "#fffbeb", color: "#92400e", cursor: "pointer" }}>{t("Включён фильтр канала/сотрудника — искать везде","Увімкнено фільтр каналу/співробітника — шукати всюди")}</button>}
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", gap: 6, padding: "6px 12px", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
           <button onClick={() => setFiltersOpen((v) => !v)} title={t("Показать / скрыть фильтры: разделы, канал, статус, дата","Показати / сховати фільтри: розділи, канал, статус, дата")}
@@ -447,7 +476,9 @@ export default function Inbox() {
           </div>
         )}
         <div style={{ flex: 1, overflowY: "auto" }} onScroll={(e) => { const el = e.currentTarget; if (el.scrollHeight - el.scrollTop - el.clientHeight < 140) loadMore(); }}>
-          {convs.length === 0 && <div className="spin">{t("Пока нет диалогов.","Поки немає діалогів.")}</div>}
+          {convs.length === 0 && (listLoading
+            ? <div className="spin">{search.trim() ? t("Ищу…","Шукаю…") : t("Загрузка…","Завантаження…")}</div>
+            : <div className="spin">{search.trim() ? t(`Ничего не найдено по «${search.trim()}».`,`Нічого не знайдено за «${search.trim()}».`) : t("Пока нет диалогов.","Поки немає діалогів.")}</div>)}
           {(() => {
             const fmtAt = (d?: string) => d ? new Date(d).toLocaleString("uk", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
             const card = (c: Conversation) => (
@@ -465,6 +496,7 @@ export default function Inbox() {
                   <FitChips>
                     {/* канал — круглою іконкою ЗЛІВА; решта бейджів єдиної висоти 18px */}
                     <SourceChip source={c.channel_kind} />
+                    {c.status === "closed" && <span title={t("Диалог завершён — найден поиском","Діалог завершено — знайдено пошуком")} style={{ display: "inline-flex", alignItems: "center", height: 18, fontSize: 10, fontWeight: 600, color: "#64748b", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 20, padding: "0 8px", whiteSpace: "nowrap" }}>{t("Закрыт","Закритий")}</span>}
                     <span title={c.assigned_to ? t("Ответственный","Відповідальний") : t("Свободный — не назначен","Вільний — не призначено")} style={{ display: "inline-flex", alignItems: "center", height: 18, fontSize: 10, fontWeight: 600, color: c.assigned_to ? "#1d4ed8" : "#64748b", background: c.assigned_to ? "#dbeafe" : "#f1f5f9", borderRadius: 20, padding: "0 8px", whiteSpace: "nowrap" }}>{c.assigned_to ? "👤 " + c.assigned_to_name : t("Вільний","Вільний")}</span>
                     {(c as any).deal_stage && <span title={t("Стадия сделки","Стадія угоди")} style={{ display: "inline-flex", alignItems: "center", height: 18, fontSize: 10, fontWeight: 600, color: "#0369a1", background: "#e0f2fe", borderRadius: 20, padding: "0 8px", whiteSpace: "nowrap" }}>{(c as any).deal_stage}</span>}
                     {(c as any).priority && PRIO[(c as any).priority] && <span title={(c as any).priority_reason || PRIO[(c as any).priority].label} style={{ display: "inline-flex", alignItems: "center", gap: 3, height: 18, fontSize: 10, fontWeight: 700, color: PRIO[(c as any).priority].color, background: PRIO[(c as any).priority].bg, borderRadius: 20, padding: "0 8px", whiteSpace: "nowrap" }}><Icon n={PRIO[(c as any).priority].icon} size={10} /> {PRIO[(c as any).priority].label}</span>}
@@ -506,13 +538,16 @@ export default function Inbox() {
               list.forEach((c: any) => { const k = dk(c); if (k !== prev) { prev = k; out.push(<div key={"day-" + c.id} style={{ position: "sticky", top: 0, zIndex: 3, background: "#e2e8f0", padding: "5px 12px", fontSize: 11, fontWeight: 700, color: "#334155", borderTop: "1px solid #cbd5e1", borderBottom: "1px solid #cbd5e1", display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ textTransform: "capitalize" }}>{dayLabel(c.last_message_at, t)}</span><span style={{ background: "#94a3b8", color: "#fff", borderRadius: 20, padding: "1px 8px", fontSize: 10.5 }}>{cnt[k]}</span></div>); } out.push(card(c)); });
               return out;
             };
+            // 15.09 (chatsearch): під час пошуку показуємо ВСІ знайдені групи — вкладка «Потрібна відповідь» /
+            // «Чекаємо клієнта» раніше ховала знайдений чат (бекенд вкладку при пошуку вже ігнорує).
+            const sc = search.trim() ? "all" : scope;
             return (<>
-              {scope !== "need" && scope !== "waiting" && unassigned.length > 0 && hdr("bell", t(`Не назначены — свободные (${unassigned.length})`,`Непризначені — вільні (${unassigned.length})`), "#7c3aed")}
-              {scope !== "need" && scope !== "waiting" && withDays(unassigned)}
-              {scope !== "waiting" && need.length > 0 && hdr("circle", t(`Нужен ответ (${need.length})`,`Потрібна відповідь (${need.length})`), "#dc2626")}
-              {scope !== "waiting" && withDays(need)}
-              {scope !== "need" && work.length > 0 && hdr("check", t(`Ждём клиента (${work.length})`,`Чекаємо клієнта (${work.length})`), "#16a34a")}
-              {scope !== "need" && withDays(work)}
+              {sc !== "need" && sc !== "waiting" && unassigned.length > 0 && hdr("bell", t(`Не назначены — свободные (${unassigned.length})`,`Непризначені — вільні (${unassigned.length})`), "#7c3aed")}
+              {sc !== "need" && sc !== "waiting" && withDays(unassigned)}
+              {sc !== "waiting" && need.length > 0 && hdr("circle", t(`Нужен ответ (${need.length})`,`Потрібна відповідь (${need.length})`), "#dc2626")}
+              {sc !== "waiting" && withDays(need)}
+              {sc !== "need" && work.length > 0 && hdr("check", t(`Ждём клиента (${work.length})`,`Чекаємо клієнта (${work.length})`), "#16a34a")}
+              {sc !== "need" && withDays(work)}
             </>);
           })()}
           {nextUrl && <div onClick={() => loadMore()} style={{ padding: "10px 12px", textAlign: "center", fontSize: 12, color: "var(--brand)", cursor: "pointer", borderTop: "1px solid #f1f5f9" }}>{t("Загрузить ещё ↓","Завантажити ще ↓")}</div>}

@@ -1,29 +1,41 @@
-/* Глибокий пошук по CRM: сделки / ліди / клієнти. Випадашка під полем у шапці. */
+/* Глибокий пошук по CRM: клієнти / чати / угоди / ліди. Випадашка під полем у шапці.
+   15.09 (chatsearch): імʼя + прізвище у будь-якому порядку, нік, телефон у будь-якому вигляді, № угоди —
+   розбір рядка на бекенді (apps/crm/search_text.py). Група «Чати» відкриває переписку.
+   Відповідь на старий запит (набрали «Заб» → «Забурко») не перезаписує новішу. */
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "./api";
 import { useLang } from "./i18n";
 import { Icon } from "./Icon";
 
+type SearchRes = { deals: any[]; leads: any[]; clients: any[]; chats: any[]; error?: boolean };
+const EMPTY: SearchRes = { deals: [], leads: [], clients: [], chats: [] };
+function norm(d: any): SearchRes {
+  return { deals: d?.deals || [], leads: d?.leads || [], clients: d?.clients || [], chats: d?.chats || [] };
+}
+
 export default function GlobalSearch() {
   const nav = useNavigate();
   const { t } = useLang();
   const [q, setQ] = useState("");
-  const [res, setRes] = useState<any>(null);
+  const [res, setRes] = useState<SearchRes | null>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const seq = useRef(0);
   const [mopen, setMopen] = useState(false);
   const isMob = typeof window !== "undefined" && window.innerWidth <= 768;
 
   useEffect(() => {
-    if (q.trim().length < 2) { setRes(null); setLoading(false); return; }
+    const qq = q.trim();
+    if (qq.length < 2) { seq.current++; setRes(null); setLoading(false); return; }
     setLoading(true);
     const tm = setTimeout(() => {
-      api.get<any>(`/api/search/?q=${encodeURIComponent(q.trim())}`)
-        .then((d) => { setRes(d); setOpen(true); })
-        .catch(() => {})
-        .finally(() => setLoading(false));
+      const my = ++seq.current;
+      api.get<any>(`/api/search/?q=${encodeURIComponent(qq)}`)
+        .then((d) => { if (my === seq.current) { setRes(norm(d)); setOpen(true); } })
+        .catch(() => { if (my === seq.current) { setRes({ ...EMPTY, error: true }); setOpen(true); } })
+        .finally(() => { if (my === seq.current) setLoading(false); });
     }, 250);
     return () => clearTimeout(tm);
   }, [q]);
@@ -34,28 +46,38 @@ export default function GlobalSearch() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  function go(path: string) { setOpen(false); setQ(""); setRes(null); nav(path); }
-  const empty = res && !res.deals.length && !res.leads.length && !res.clients.length;
+  function go(path: string) { setOpen(false); setMopen(false); setQ(""); setRes(null); nav(path); }
+  const empty = !!res && !res.error && !res.deals.length && !res.leads.length && !res.clients.length && !res.chats.length;
+  const fmtD = (s?: string) => (s ? new Date(s).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" }) : "");
+  const withNick = (c: any) => (c.nickname && !String(c.name || "").toLowerCase().includes(String(c.nickname).toLowerCase()) ? `${c.name} (@${c.nickname})` : c.name);
 
   const resultsInner = (
     <>
       {loading && !res && <div className="muted" style={{ padding: 12, fontSize: 13 }}>{t("Поиск…", "Пошук…")}</div>}
-      {empty && <div className="muted" style={{ padding: 12, fontSize: 13 }}>{t("Ничего не найдено", "Нічого не знайдено")}</div>}
-      {res?.deals?.length > 0 && <Group title={<><Icon n="🤝" size={15} /> {t("Сделки", "Угоди")}</>} />}
-      {res?.deals?.map((d: any) => (
+      {loading && res && <div className="muted" style={{ padding: "4px 8px", fontSize: 11 }}>{t("Обновляю…", "Оновлюю…")}</div>}
+      {res?.error && <div style={{ padding: 12, fontSize: 13, color: "#b91c1c" }}>{t("Ошибка поиска — попробуйте ещё раз", "Помилка пошуку — спробуйте ще раз")}</div>}
+      {empty && !loading && <div className="muted" style={{ padding: 12, fontSize: 13 }}>{t(`Ничего не найдено по «${q.trim()}»`, `Нічого не знайдено за «${q.trim()}»`)}</div>}
+      {!!res?.clients.length && <Group title={<><Icon n="👥" size={15} /> {t("Клиенты", "Клієнти")}</>} />}
+      {res?.clients.map((c: any) => (
+        <Row key={"c" + c.id} onClick={() => go(`/clients/${c.id}`)} main={withNick(c)} sub={`${c.phone || ""}${c.deals ? (c.phone ? " · " : "") + t("сделок:", "угод:") + " " + c.deals : ""}`} />
+      ))}
+      {!!res?.chats.length && <Group title={<><Icon n="💬" size={15} /> {t("Чаты", "Чати")}</>} />}
+      {res?.chats.map((ch: any) => (
+        <Row key={"ch" + ch.id} onClick={() => go(`/inbox?c=${ch.id}`)} main={ch.name}
+          sub={[ch.channel, ch.assigned || t("свободный", "вільний"), ch.status === "closed" ? t("закрыт", "закритий") : ""].filter(Boolean).join(" · ")}
+          right={fmtD(ch.last_message_at)} />
+      ))}
+      {!!res?.deals.length && <Group title={<><Icon n="🤝" size={15} /> {t("Сделки", "Угоди")}</>} />}
+      {res?.deals.map((d: any) => (
         <Row key={"d" + d.id} onClick={() => go(`/deals/${d.id}`)} main={`#${d.id} · ${d.title}`} sub={`${d.client || ""}${d.stage ? " · " + d.stage : ""}`} right={d.amount ? `${Number(d.amount).toLocaleString("uk-UA")} ₴` : ""} />
       ))}
-      {res?.leads?.length > 0 && <Group title={<><Icon n="📋" size={15} /> {t("Лиды", "Ліди")}</>} />}
-      {res?.leads?.map((l: any) => (
+      {!!res?.leads.length && <Group title={<><Icon n="📋" size={15} /> {t("Лиды", "Ліди")}</>} />}
+      {res?.leads.map((l: any) => (
         <Row key={"l" + l.id} onClick={() => go(`/leads/${l.id}`)} main={`#${l.id} · ${l.title}`} sub={`${l.client || ""}${l.stage ? " · " + l.stage : ""}`} />
-      ))}
-      {res?.clients?.length > 0 && <Group title={<><Icon n="👥" size={15} /> {t("Клиенты", "Клієнти")}</>} />}
-      {res?.clients?.map((c: any) => (
-        <Row key={"c" + c.id} onClick={() => go(`/clients/${c.id}`)} main={c.name} sub={`${c.phone || ""}${c.deals ? " · " + t("угод:", "угод:") + " " + c.deals : ""}`} />
       ))}
     </>
   );
-  const inp = <input className="search" style={{ width: isMob ? "100%" : undefined }} value={q} onChange={(e) => setQ(e.target.value)} onFocus={() => res && setOpen(true)} placeholder={t("Поиск по CRM (сделки, лиды, клиенты)…", "Пошук по CRM (угоди, ліди, клієнти)…")} />;
+  const inp = <input className="search" style={{ width: isMob ? "100%" : undefined }} value={q} onChange={(e) => setQ(e.target.value)} onFocus={() => res && setOpen(true)} onKeyDown={(e) => { if (e.key === "Escape") { setOpen(false); setMopen(false); } }} placeholder={t("Поиск по CRM (клиенты, чаты, сделки, лиды)…", "Пошук по CRM (клієнти, чати, угоди, ліди)…")} />;
   if (isMob) return (
     <>
       <button className="btn btn-light" onClick={() => setMopen(true)} title={t("Поиск по CRM", "Пошук по CRM")} style={{ padding: "6px 9px" }}><Icon n="🔍" size={16} /></button>

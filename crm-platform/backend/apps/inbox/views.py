@@ -562,6 +562,34 @@ def _bg_chatplace_sync(conv_id):
             pass
 
 
+def conversations_visible_to(user, qs=None):
+    """БАЗОВИЙ ДОСТУП до чатів — ОДНЕ місце для списку «Чатів», відкриття чату (retrieve/messages/send)
+    і глобального пошуку в шапці (15.09 chatsearch). Повертає (qs, can_all).
+    - канали: лише відкриті лінії користувача (allowed_channel_ids; None = всі);
+    - «бачити всі чати» або РОП з «перевіряти чати» → будь-який чат дозволеного каналу;
+    - інакше — свої звʼязки + незайняті (спільний пул)."""
+    if qs is None:
+        qs = Conversation.objects.all()
+    allowed = user.allowed_channel_ids()
+    if allowed is not None:
+        qs = qs.filter(channel_id__in=allowed)
+    # RBAC: менеджер без права «все чаты» видит только свои —
+    # по ответственному чата ИЛИ по ответственному контакта.
+    # РОП з правом «перевіряти чати» теж бачить чужі чати (для фільтра по співробітнику).
+    can_all = user.can_see_all_conversations() or user.has_perm_code("conversation.supervise")
+    # БАЗОВИЙ ДОСТУП (для retrieve/messages/send/відкриття через картку):
+    # «бачити всі чати» (право відділу) → доступ до будь-якого; інакше — лише свої звʼязки
+    # (призначений / контакт мій / учасник / у контакта є мій лід чи сделка).
+    mine_q = (Q(assigned_to=user) | Q(contact__owner=user) | Q(participants=user)
+              | Q(contact__leads__owner=user) | Q(contact__deals__owner=user)
+              | Q(contact__deals__warehouse_jobs__assignee=user))  # склад: виконавець задачі бачить чат клієнта
+    if not can_all:
+        # Незайняті чати (нічиї) — СПІЛЬНИЙ ПУЛ: доступні всім, хто має доступ до каналу
+        # (бачить + може відкрити/відповісти/взяти). Призначені — лише свої (mine_q).
+        qs = qs.filter(mine_q | Q(assigned_to__isnull=True)).distinct()
+    return qs, can_all
+
+
 class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Conversation.objects.select_related("channel", "contact", "assigned_to").prefetch_related("participants")
     serializer_class = ConversationSerializer
@@ -571,9 +599,9 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user
-        allowed = user.allowed_channel_ids()
-        if allowed is not None:
-            qs = qs.filter(channel_id__in=allowed)
+        # Базовий доступ (канали + «свої/вільні» + «перевіряти чати») — conversations_visible_to() вище:
+        # одна функція для списку, відкриття чату і глобального пошуку в шапці (15.09 chatsearch).
+        qs, can_all = conversations_visible_to(user, qs)
         # Людський фільтр для Meta-ліній. Фізичні ChatPlace-канали лишаються
         # технічним транспортом Instagram Direct, але менеджеру не треба
         # знати їхні id або змішувати Direct із публічними коментарями.
@@ -591,20 +619,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                 qs = qs.filter(external_chat_id__startswith="comment:")
             else:
                 qs = qs.exclude(external_chat_id__startswith="comment:")
-        # RBAC: менеджер без права «все чаты» видит только свои —
-        # по ответственному чата ИЛИ по ответственному контакта.
-        # РОП з правом «перевіряти чати» теж бачить чужі чати (для фільтра по співробітнику).
-        can_all = user.can_see_all_conversations() or user.has_perm_code("conversation.supervise")
-        # БАЗОВИЙ ДОСТУП (для retrieve/messages/send/відкриття через картку):
-        # «бачити всі чати» (право відділу) → доступ до будь-якого; інакше — лише свої звʼязки
-        # (призначений / контакт мій / учасник / у контакта є мій лід чи сделка).
-        mine_q = (Q(assigned_to=user) | Q(contact__owner=user) | Q(participants=user)
-                  | Q(contact__leads__owner=user) | Q(contact__deals__owner=user)
-                  | Q(contact__deals__warehouse_jobs__assignee=user))  # склад: виконавець задачі бачить чат клієнта
-        if not can_all:
-            # Незайняті чати (нічиї) — СПІЛЬНИЙ ПУЛ: доступні всім, хто має доступ до каналу
-            # (бачить + може відкрити/відповісти/взяти). Призначені — лише свої (mine_q).
-            qs = qs.filter(mine_q | Q(assigned_to__isnull=True)).distinct()
+        # RBAC (без «всі чати» — лише свої + вільний пул) застосовано вище: conversations_visible_to().
         # КОМАНДНА ЧЕРГА — фільтри ТІЛЬКИ у СПИСКУ. Чат, взятий ІНШИМ співробітником,
         # зникає зі списку (його все одно можна відкрити через картку ліда/сделки = retrieve,
         # і «Закріпити» за собою — тоді він стане видимий у того, хто останнім узяв).
@@ -612,21 +627,14 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         # POSHUK: po imeni / niku / telefonu / posylannyu - po VSIH dostupnyh chatah
         # (ne obmezhuyuchys vkladkoyu "Moyi" i vklyuchno iz zakrytymy).
         _search = (self.request.query_params.get("search") or "").strip()
-        _searching = bool(_search)
+        # 15.09 (chatsearch): кілька слів у будь-якому порядку («Забурко Івана»), @нік / посилання,
+        # апострофи ' ʼ ’, латиниця (Ivana ↔ Івана), телефон у будь-якому вигляді, № чату / № угоди —
+        # спільний розбір apps/crm/search_text.py (той самий, що в глобальному пошуку в шапці).
+        from apps.crm.search_text import conversation_search_q
+        _sq = conversation_search_q(_search) if _search else None
+        _searching = _sq is not None
         if _searching:
-            import re as _re2
-            sq = (Q(title__icontains=_search) | Q(contact__first_name__icontains=_search)
-                  | Q(contact__last_name__icontains=_search) | Q(contact__nickname__icontains=_search)
-                  | Q(contact__social_link__icontains=_search) | Q(contact__phone__icontains=_search))
-            _dig = _re2.sub(r"\D", "", _search)
-            if len(_dig) >= 5:
-                _vars = {_dig, _dig.lstrip("0"), "380" + _dig.lstrip("0")}
-                if _dig.startswith("38"):
-                    _vars.add("0" + _dig[2:])
-                for _v in _vars:
-                    if _v:
-                        sq |= Q(contact__phone__icontains=_v)
-            qs = qs.filter(sq).distinct()
+            qs = qs.filter(_sq).distinct()
         _mgr_view = self.request.query_params.get("manager")
         if _mgr_view and _mgr_view.isdigit() and can_all:
             # РОП/керівник: чати ПІД ВІДПОВІДАЛЬНІСТЮ конкретного співробітника (перевірка
@@ -688,7 +696,8 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(last_message_at__date__gte=df)
         if dt:
             qs = qs.filter(last_message_at__date__lte=dt)
-        if self.request.query_params.get("status") is None and self.action == "list":
+        # Пошук шукає і в ЗАКРИТИХ чатах (так задумано в 52754279, але цей рядок їх відрізав) — 15.09 chatsearch.
+        if self.request.query_params.get("status") is None and self.action == "list" and not _searching:
             qs = qs.exclude(status="closed")
         return qs.distinct()
 

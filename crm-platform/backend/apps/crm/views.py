@@ -4985,17 +4985,29 @@ class StaffActivityView(APIView):
 
 
 class GlobalSearchView(APIView):
-    """Глибокий пошук по CRM: сделки, ліди, клієнти — за назвою/іменем/телефоном/ID.
-    Поважає права: менеджер не знайде чужі сделки/ліди/клієнтів."""
+    """Глибокий пошук по CRM (рядок у шапці): клієнти, чати, угоди, ліди.
+    15.09 (chatsearch): імʼя + прізвище у будь-якому порядку, нік / посилання на профіль, телефон у будь-якому
+    вигляді, email, № угоди / ліда / чату, ТТН; регістр, апострофи ' ʼ ’ і латиниця (Ivana ↔ Івана) не заважають.
+    Розбір рядка — apps/crm/search_text.py (той самий, що в пошуку «Чатів»).
+    Поважає права: менеджер не знайде чужі угоди/ліди/клієнтів; чати — рівно той доступ, що в «Чатах»
+    (apps.inbox.views.conversations_visible_to), і лише з правом «Доступ до розділу Чати» (inbox.view)."""
+    LIMIT = 8
 
     def get(self, request):
+        from django.db.models import Count
         from django.db.models import Q as _Q
         from .models import Contact
+        from .search_text import (parse_query, contact_search_q, conversation_search_q,
+                                  deal_search_q, lead_search_q)
+        empty = {"deals": [], "leads": [], "clients": [], "chats": []}
         q = (request.GET.get("q") or "").strip()
         if len(q) < 2:
-            return Response({"deals": [], "leads": [], "clients": []})
+            return Response(empty)
+        parsed = parse_query(q)
+        if parsed is None:
+            return Response(empty)
         u = request.user
-        digit = q.isdigit()
+        lim = self.LIMIT
 
         def dname(c):
             if not c:
@@ -5009,13 +5021,7 @@ class GlobalSearchView(APIView):
             deals = deals.filter(funnel_id__in=af)
         if not (u.is_superuser or u.can_see_all_deals()):
             deals = deals.filter(owner=u)
-        dq = (_Q(title__icontains=q) | _Q(b24_id__icontains=q) | _Q(ttn__icontains=q)
-              | _Q(checkbox_relation_id__icontains=q)
-              | _Q(contact__first_name__icontains=q) | _Q(contact__last_name__icontains=q)
-              | _Q(contact__phone__icontains=q))
-        if digit:
-            dq |= _Q(id=int(q))
-        deals = deals.filter(dq).distinct()[:8]
+        deals = list(deals.filter(deal_search_q(parsed)).distinct()[:lim])
 
         # ── ліди ──
         leads = Lead.objects.select_related("contact", "stage")
@@ -5023,27 +5029,43 @@ class GlobalSearchView(APIView):
             leads = leads.filter(funnel_id__in=af)
         if not (u.is_superuser or u.can_see_all_leads()):
             leads = leads.filter(owner=u)
-        lq = (_Q(title__icontains=q) | _Q(contact__first_name__icontains=q)
-              | _Q(contact__last_name__icontains=q) | _Q(contact__phone__icontains=q))
-        if digit:
-            lq |= _Q(id=int(q))
-        leads = leads.filter(lq).distinct()[:8]
+        leads = list(leads.filter(lead_search_q(parsed)).distinct()[:lim])
 
         # ── клієнти ──
         clients = Contact.objects.all()
         if not (u.is_superuser or u.can_see_all_clients()):
             clients = clients.filter(_Q(owner=u) | _Q(leads__owner=u) | _Q(deals__owner=u)).distinct()
-        cq = (_Q(first_name__icontains=q) | _Q(last_name__icontains=q)
-              | _Q(phone__icontains=q) | _Q(email__icontains=q))
-        clients = clients.filter(cq).distinct()[:8]
+        clients = list(clients.filter(contact_search_q(parsed)).distinct()[:lim])
+        n_deals = dict(Deal.objects.filter(contact_id__in=[c.id for c in clients]).order_by()
+                       .values_list("contact_id").annotate(n=Count("id")))
+
+        # ── чати ── (той самий доступ, що у «Чатах»; закриті теж — пошук по історії)
+        chats = []
+        if u.has_perm_code("inbox.view"):
+            from apps.inbox.models import Conversation
+            from apps.inbox.views import conversations_visible_to
+            cq, _can_all = conversations_visible_to(
+                u, Conversation.objects.select_related("channel", "contact", "assigned_to"))
+            for cv in cq.filter(conversation_search_q(parsed)).distinct()[:lim]:
+                c = cv.contact
+                nm = (str(c).strip() if c else "") or cv.title or ("Чат #%s" % cv.id)
+                nick = (c.nickname or "").strip() if c else ""
+                if nick and nick.lower() not in nm.lower():
+                    nm = "%s (@%s)" % (nm, nick)
+                au = cv.assigned_to
+                chats.append({"id": cv.id, "name": nm, "channel": cv.channel.name if cv.channel_id else "",
+                              "assigned": (au.get_full_name() or au.username) if au else "",
+                              "status": cv.status, "last_message_at": cv.last_message_at,
+                              "contact_id": cv.contact_id})
 
         return Response({
             "deals": [{"id": d.id, "title": d.title, "stage": d.stage.name if d.stage_id else "",
                        "amount": float(d.amount or 0), "client": dname(d.contact)} for d in deals],
             "leads": [{"id": l.id, "title": l.title, "stage": l.stage.name if l.stage_id else "",
                        "client": dname(l.contact)} for l in leads],
-            "clients": [{"id": c.id, "name": dname(c), "phone": c.phone or "",
-                         "deals": c.deals.count()} for c in clients],
+            "clients": [{"id": c.id, "name": dname(c), "phone": c.phone or "", "nickname": c.nickname or "",
+                         "deals": n_deals.get(c.id, 0)} for c in clients],
+            "chats": chats,
         })
 
 

@@ -34,6 +34,8 @@ CHECKS = [
     ("Мій профіль (owner)", "owner", "/api/me/", {200}, []),
     ("Мій профіль (менеджер)", "manager", "/api/me/", {200}, []),
     ("Глобальний пошук", "owner", "/api/search/?q=test", {200}, []),
+    ("Глобальний пошук: 2 слова + група чатів", "owner", "/api/search/?q=%D0%A2%D0%B5%D1%81%D1%82%20%D0%9A%D0%BB%D1%96%D1%94%D0%BD%D1%82", {200}, ["clients", "chats", "deals", "leads"]),
+    ("Пошук у чатах: 2 слова (менеджер)", "manager", "/api/conversations/?page_size=5&search=%D0%A2%D0%B5%D1%81%D1%82%20%D0%9A%D0%BB%D1%96%D1%94%D0%BD%D1%82", {200}, ["results"]),
     # ── CRM: угоди / контакти / задачі ──
     ("Список угод", "owner", "/api/deals/?page_size=5", {200}, []),
     ("Картка угоди (остання)", "owner", "DEAL_DETAIL", {200}, []),
