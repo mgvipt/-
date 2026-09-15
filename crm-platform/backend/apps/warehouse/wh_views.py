@@ -9,6 +9,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import WarehouseJob, WarehousePayrollEntry, WarehousePhoto, TareType
+from . import weight_rules as WR  # 15.09.2026: регламент ваги/упаковки v2 (план v15 «Вес и упаковка»)
 
 LUNCH_NORM_MIN = 60   # норма обіду
 DAY_HOURS = 8
@@ -117,12 +118,9 @@ def _packing_tiers(weight):
 
 
 def _deal_weight(deal):
-    w = Decimal("0")
-    for it in deal.items.all():
-        if not it.product_id:
-            continue  # своя позиція без номенклатури — ваги не має
-        w += (it.product.weight_kg or Decimal("0")) * it.quantity
-    return w
+    """15.09.2026: вага за регламентом v2 (одиниця «кг» = кількість; тест-набір 0,25 кг; інструменти — одна коробка…).
+    Раніше було «вага з картки × к-сть» — давало 5–8 кг за тест-набір і 0 кг за кг-товари з порожньою карткою."""
+    return WR.deal_plan(deal, packing=False)["weight"]
 
 
 # ── 14.09.2026 (wh-accrual): тонування з рядка «Послуга тонування», тестові набори, товари без ваги ──
@@ -163,13 +161,10 @@ def _deal_accrual_facts(deal):
         if _is_test_set(p):
             test_sets += it.quantity or Decimal("0")
             continue
-        if not p.track_stock:
-            continue  # послуга/робота — вага не потрібна
-        if not (p.weight_kg and p.weight_kg > 0):
-            row = weightless.setdefault(p.id, {"product_id": p.id, "name": p.name, "unit": p.unit or "", "qty": Decimal("0")})
-            row["qty"] += it.quantity or Decimal("0")
-    return {"tint_base": tint_base, "tint_lines": tint_lines, "test_sets": test_sets,
-            "weightless": [dict(r, qty=str(r["qty"])) for r in weightless.values()]}
+    # 15.09.2026 (регламент v2): «без ваги» — лише те, що правило не може зважити (великий товар без ваги в картці,
+    # своя позиція без номенклатури). Кг-товари, тест-набори, інструменти — вага за правилом.
+    wl = WR.deal_plan(deal, salon=False, packing=False)["weightless"]
+    return {"tint_base": tint_base, "tint_lines": tint_lines, "test_sets": test_sets, "weightless": wl}
 
 
 def _job_dict(job, full=False):
@@ -553,7 +548,9 @@ def _accrual_plan(job, pay_packing=True):
                     рядка немає — як раніше, за ручною позначкою наборів. Обидва разом НІКОЛИ не рахуються;
       тест-набори — ставка bundle_assembly × кількість тестових наборів в угоді."""
     deal = job.deal
-    weight = _deal_weight(deal)
+    salon = WR.is_salon(deal)
+    wp = WR.deal_plan(deal, salon=salon, packing=bool(job.packed and pay_packing))  # 15.09.2026: регламент v2
+    weight = wp["weight"]
     fx = _deal_accrual_facts(deal)
     kits = (deal.qualification or {}).get("kits", []) or []
     total_kits = len(kits); tinted = len(job.tinted_kits or [])
@@ -563,13 +560,13 @@ def _accrual_plan(job, pay_packing=True):
         amount = deal.amount or Decimal("0")
         tint_base = (amount * Decimal(tinted) / Decimal(total_kits)) if total_kits else Decimal("0")
         tint_source = "manual" if tint_base > 0 else ""; tint_count = tinted
-    tiers = _packing_tiers(weight) if (job.packed and pay_packing) else {"T5": 0, "T10": 0, "T20": 0}
+    tiers = wp["tiers"]  # 15.09.2026: місця за регламентом v2 (відра, розфасовка, тара, коробка дрібниць, посилка набору)
     _lr = live_rates()  # 15.09 (whpay): усі ставки одним запитом, лише з Фінмоделі (без чисел у коді)
     r_kg = _rate("WH_RATE_KG", _lr); r5 = _rate("WH_PACK_5", _lr); r10 = _rate("WH_PACK_10", _lr)
     r20 = _rate("WH_PACK_20", _lr); rtint = _rate("WH_TINT_PCT", _lr) / Decimal("100")
     rows = []
     if weight > 0:
-        rows.append(("shipment_weight", weight * r_kg, {"quantity_kg": weight, "rate_applied": r_kg, "note": "%s кг" % weight}))
+        rows.append(("shipment_weight", weight * r_kg, {"quantity_kg": weight, "rate_applied": r_kg, "note": "%s кг" % WR._g(weight)}))
     for tier, cnt, rate in [("T5", tiers["T5"], r5), ("T10", tiers["T10"], r10), ("T20", tiers["T20"], r20)]:
         if cnt > 0:
             rows.append(("packing", rate * cnt, {"pack_tier": tier, "rate_applied": rate, "note": "%d шт" % cnt}))
@@ -583,7 +580,8 @@ def _accrual_plan(job, pay_packing=True):
             rows.append(("test_set", r_ts * fx["test_sets"],
                          {"rate_applied": r_ts, "note": "%s шт × %s ₴" % (_num(fx["test_sets"]), _num(r_ts))}))
     meta = {"weight": weight, "tiers": tiers, "tint_base": tint_base, "tint_source": tint_source,
-            "tint_count": tint_count, "test_sets": fx["test_sets"], "weightless": fx["weightless"]}
+            "tint_count": tint_count, "test_sets": fx["test_sets"], "weightless": fx["weightless"],
+            "how": wp["how"], "salon": salon}
     return rows, meta
 
 
@@ -600,7 +598,8 @@ def _finalize(job, user, pay_packing=True):
                                              op_type=op, amount=amt.quantize(Decimal("0.01")), **kw)
     job.done_snapshot = {"weight": str(weight), "tiers": tiers, "tint_base": str(job.tintings_base),
                          "tint_source": meta["tint_source"], "test_sets": str(meta["test_sets"]),
-                         "weightless": [w["product_id"] for w in meta["weightless"]]}
+                         "weightless": [w["product_id"] for w in meta["weightless"]],
+                         "rule": "v2", "how": meta.get("how", [])[:40]}
     job.status = "shipped"; job.shipped_at = timezone.now(); job.save()
     from .services import realize_deal
     realize_deal(deal, user)  # спільне списання по собівартості + COGS, ідемпотентно (без подвійного списання)

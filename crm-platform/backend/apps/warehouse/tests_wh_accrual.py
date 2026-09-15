@@ -39,7 +39,8 @@ class _Base(TestCase):
         self.tint = Product.objects.create(name="Послуга тонування", track_stock=False, price=0)
         self.paint = Product.objects.create(name="Шовк 5 кг", weight_kg=Decimal("5"), price=Decimal("1000"),
                                             cost=Decimal("400"))
-        self.noweight = Product.objects.create(name="Second Layer (FL 1006)", price=Decimal("200"), cost=Decimal("50"))
+        # 15.09 (регламент v2): «без ваги» — великий штучний товар без ваги в картці (кг-товари і дрібниці важать за правилом)
+        self.noweight = Product.objects.create(name="Люк ревізійний 60×60", price=Decimal("200"), cost=Decimal("50"))
         comp = Product.objects.create(name="Pattera Fine (FF 0102)", cost=Decimal("100"))
         self.ts = Product.objects.create(name="Травертин «Набір Pattera» (з тонуванням)", price=Decimal("460"))
         ProductComponent.objects.create(bundle=self.ts, component=comp, quantity=Decimal("0.8"))  # набір без «тестов» у назві
@@ -71,7 +72,7 @@ class TintingTests(_Base):
         self.assertEqual(e.base_value, Decimal("900.00"))
         # вага і упаковка — як і раніше
         self.assertEqual(self.amounts(j, "shipment_weight"), [Decimal("15.00")])  # 10 кг × 1.5
-        self.assertEqual(self.amounts(j, "packing"), [Decimal("13.00")])          # одне місце ≤10 кг
+        self.assertEqual(self.amounts(j, "packing"), [Decimal("16.00")])          # регламент v2: 2 тари «Шовк 5 кг» × до 5 кг (8 ₴)
         j.refresh_from_db()
         self.assertEqual(j.done_snapshot["tint_source"], "service_line")
         self.assertEqual(j.tintings_base, Decimal("900.00"))
@@ -139,15 +140,16 @@ class WeightlessTests(_Base):
         self.assertEqual(r.status_code, 200)
         self.assertEqual([w["product_id"] for w in r.data["weightless"]], [self.noweight.id])
         self.assertEqual(r.data["weightless"][0]["qty"], "3.00")
-        self.assertTrue(r.data["weightless_zero_total"])
+        self.assertFalse(r.data["weightless_zero_total"])  # регламент v2: тест-набір важить 0,25 кг
         WarehousePhoto.objects.create(job=j, deal=d, employee=self.worker, kind="buckets", image="warehouse_photos/t_b.jpg")
         WarehousePhoto.objects.create(job=j, deal=d, employee=self.worker, kind="parcel", image="warehouse_photos/t_p.jpg")
         r = c.post("/api/warehouse/jobs/%d/ship/" % j.id, {}, format="json")
         self.assertEqual(r.status_code, 200)                                  # НЕ блокується
         self.assertEqual(r.data["status"], "shipped")
         self.assertEqual([w["product_id"] for w in r.data["weightless"]], [self.noweight.id])
-        self.assertFalse(WarehousePayrollEntry.objects.filter(job=j, op_type__in=["shipment_weight", "packing"]).exists())
-        self.assertEqual({a["op"] for a in r.data["accrued"]}, {"tinting", "test_set"})
+        self.assertEqual([e.quantity_kg for e in WarehousePayrollEntry.objects.filter(job=j, op_type="shipment_weight")],
+                         [Decimal("0.250")])  # регламент v2: лише тест-набір 0,25 кг; люк без ваги — 0
+        self.assertEqual({a["op"] for a in r.data["accrued"]}, {"tinting", "test_set", "shipment_weight", "packing"})  # v2: набір 0,25 кг + посилка до 5 кг
 
     def test_partial_weight_is_not_zero_total(self):
         d = self.deal(1000)

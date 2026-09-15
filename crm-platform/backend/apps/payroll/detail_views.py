@@ -369,6 +369,51 @@ def _piece_qty(e):
     return None
 
 
+def _piece_deal_groups(entries, labels):
+    """15.09.2026: відрядно по угодах — колонки за кожним пунктом оплати; рядок розкривається («як пораховано» + записи)."""
+    from apps.warehouse import weight_rules as WR
+    col_of = {"shipment_weight": "weight", "packing": "pack", "tinting": "tint", "test_set": "test_set"}
+    dg = {}
+    for e in entries:
+        key = ("j%s" % e.job_id) if e.job_id else ("e%s" % e.id)
+        deal = e.deal if e.deal_id else (e.job.deal if e.job_id else None)
+        g = dg.get(key)
+        if g is None:
+            g = dg[key] = {"key": key, "date": e.work_date.isoformat(), "deal_id": deal.id if deal else None,
+                           "client": _client(deal), "kg": 0.0, "weight": 0.0, "pack": 0.0, "pack_txt": [], "tint": 0.0,
+                           "test_set": 0.0, "other": 0.0, "total": 0.0, "entries": [], "how": [], "how_note": "",
+                           "_job": e.job if e.job_id else None}
+        a = float(e.amount or 0)
+        g[col_of.get(e.op_type, "other")] += a
+        g["total"] += a
+        if e.op_type == "shipment_weight":
+            g["kg"] += float(e.quantity_kg or 0)
+        if e.op_type == "packing":
+            q = _piece_qty(e) or 1
+            g["pack_txt"].append("%s × до %s" % (("%g" % q).replace(".", ","), TIER.get(e.pack_tier, e.pack_tier or "?")))
+        g["entries"].append({"op": labels.get(e.op_type, e.op_type), "rate": _piece_rate_txt(e), "qty": _piece_qty(e),
+                             "amount": _f(e.amount), "note": e.note or ""})
+    out = []
+    for g in dg.values():
+        job = g.pop("_job")
+        if job is not None:
+            how = (job.done_snapshot or {}).get("how")
+            if how:
+                g["how"] = list(how)
+            elif job.deal_id:
+                try:
+                    g["how"] = WR.deal_plan(job.deal, packing=bool(job.packed))["how"]
+                    g["how_note"] = "Запис зроблено за старим правилом; пояснення — як це рахується за регламентом v2."
+                except Exception:
+                    g["how"] = []
+        for k in ("weight", "pack", "tint", "test_set", "other", "total"):
+            g[k] = _f(g[k])
+        g["kg"] = _f(g["kg"], 3)
+        g["pack_txt"] = ", ".join(g["pack_txt"])
+        out.append(g)
+    return out
+
+
 def _d_piece(comp, comps, user, d1, d2):
     """= engine._c_piece: сума підтверджених записів складу за місяць (кожен — зі ставкою на день дії)."""
     from apps.warehouse import wh_views as whv
@@ -420,11 +465,13 @@ def _d_piece(comp, comps, user, d1, d2):
         pass
     expl = ("Відрядно — сума всіх підтверджених записів складу за місяць: вага відвантаження, упаковка, тонування, "
             f"тест-набори, робочі дні, премії мінус утримання. Записів: {len(entries)}, відвантажень: {n_all}.")
-    return _out(total, expl, columns=[_col("date", "Дата", "date"), _col("op", "За що"), _col("deal_id", "Угода", "deal"),
+    res = _out(total, expl, columns=[_col("date", "Дата", "date"), _col("op", "За що"), _col("deal_id", "Угода", "deal"),
                                       _col("client", "Клієнт"), _col("kg", "Кг", "num"), _col("qty", "К-сть", "num"),
                                       _col("rate", "Ставка"), _col("amount", "Сума", "money"), _col("note", "Примітка")],
                 rows=rows[:MAX_ROWS], groups=glist, warnings=warnings, notes=notes, links=links,
                 truncated=len(rows) > MAX_ROWS)
+    res["deal_groups"] = _piece_deal_groups(entries, labels)  # 15.09.2026: по угодах, колонки за пунктами оплати
+    return res
 
 
 # ─────────────────────────── гарантія / страховий місяць / інше ───────────────────────────

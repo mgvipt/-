@@ -38,19 +38,19 @@ class LiveRatesTests(TestCase):
         return r.data["rates"]
 
     def test_accrual_follows_live_article_values(self):
-        e = self.ship()                                                   # 10 кг × 1,5; одне місце ≤10 кг → 13
-        self.assertEqual((e["shipment_weight"].amount, e["packing"].amount), (Decimal("15.00"), Decimal("13.00")))
+        e = self.ship()                                                   # 10 кг × 1,5; регламент v2: 2 тари до 5 кг × 8 → 16
+        self.assertEqual((e["shipment_weight"].amount, e["packing"].amount), (Decimal("15.00"), Decimal("16.00")))
         set_rate("WH_RATE_KG", "2")                                      # змінили в «Ставках співробітників» / Фінмоделі
-        set_rate("WH_PACK_10", "15")
+        set_rate("WH_PACK_5", "10")
         e2 = self.ship()
-        self.assertEqual((e2["shipment_weight"].amount, e2["packing"].amount), (Decimal("20.00"), Decimal("15.00")))
+        self.assertEqual((e2["shipment_weight"].amount, e2["packing"].amount), (Decimal("20.00"), Decimal("20.00")))
         self.assertEqual(e2["shipment_weight"].rate_applied, Decimal("2"))
         e["shipment_weight"].refresh_from_db()
         self.assertEqual(e["shipment_weight"].amount, Decimal("15.00"))  # старий запис не переписано
 
     def test_disabled_or_missing_article_pays_zero_no_hidden_defaults(self):
         set_rate("WH_RATE_KG", "1.5", active=False)                      # вимкнено у Фінмоделі
-        FinModelArticle.objects.filter(code="WH_PACK_10").delete()        # статті немає
+        FinModelArticle.objects.filter(code="WH_PACK_5").delete()         # статті немає (регламент v2: тут місця до 5 кг)
         e = self.ship()
         self.assertEqual((e["shipment_weight"].amount, e["packing"].amount), (Decimal("0.00"), Decimal("0.00")))
         c = APIClient()
