@@ -12,9 +12,11 @@ import { useAuth } from "../auth";
 import RepackForm, { RepackDocModal } from "../RepackForm";
 import NPDelivery from "./NPDelivery";
 import ClientChat from "../ClientChat";
+import { DealGroups } from "../DealGroupsTable";
 
 const C = { terra: "#C67D5F", green: "#16a34a", amber: "#ca8a04", red: "#dc2626", blue: "#2563eb", slate: "#475569" };
-const f = (v: any) => Number(v || 0).toLocaleString("uk").replace(/,/g, " ");
+// 15.09.2026: копійки через кому («229,06»), тисячі — пробілом; раніше кома замінювалась пробілом і «229 06» читалось як тисячі
+const f = (v: any) => { const n = Number(v || 0); return n.toLocaleString("uk-UA", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 }); };
 const NEEDS_LBL: any = { underlay: "Підкладка", room: "Тип приміщення", area: "Площа стін, м²", prep: "Підготовка стін", term: "Терміни", city: "Місто / регіон", material: "Матеріал", color: "Колір / тонування", probe: "Пробник чи обʼєм", applier: "Хто наносить", budget: "Бюджет, ₴", pay: "Спосіб оплати", ship: "Доставка", contacted: "Контакт раніше", objections: "Опис / заперечення клієнта", room_type: "Тип приміщення", wall_area: "Площа стін, м²", terms: "Терміни" };
 const ST: any = { queued: ["#eff6ff", "#1d4ed8", "У черзі"], taken: ["#fff7ed", "#9a3412", "Взято"], tinting: ["#fef9c3", "#854d0e", "Тонується"], packing: ["#ede9fe", "#5b21b6", "Пакування"], awaiting_photos: ["#fef2f2", "#dc2626", "Потрібні фото"], shipped: ["#dcfce7", "#166534", "Відвантажено"] };
 
@@ -581,29 +583,39 @@ function WhRatesPanel({ t, r }: any) {
   );
 }
 
+// 15.09.2026 (Олег): «по яких угодах як нараховано» — та сама таблиця, що у Фінанси → ЗП/KPI → «Як прорахувалось»
+function DealsPanel({ t, d }: any) {
+  const g = d.deal_groups || [];
+  if (!g.length) return null;
+  return (
+    <div className="panel" style={{ marginTop: 10 }}>
+      <div className="label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Icon n="package" size={15} /> {t("По сделкам — как начислено", "По угодах — як нараховано")} <span className="muted" style={{ fontWeight: 400 }}>({g.length})</span></div>
+      <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>{t("Нажмите на строку — откроется, как посчитано по каждому товару.", "Натисніть на рядок — відкриється, як пораховано по кожному товару.")}</div>
+      <DealGroups groups={g} />
+      {d.deal_groups_truncated && <div className="muted" style={{ fontSize: 11.5 }}>{t("Показаны последние 300 сделок", "Показано останні 300 угод")}</div>}
+    </div>
+  );
+}
+
 function SalaryModeSwitch({ t, mode, setMode }: any) {
   return (
     <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-      <button className={"btn" + (mode === "period" ? " btn-primary" : " btn-light")} style={{ flex: 1, fontSize: 13, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={() => setMode("period")}><Icon n="clock" size={14} /> {t("Последние дни", "Останні дні")}</button>
-      <button className={"btn" + (mode === "calendar" ? " btn-primary" : " btn-light")} style={{ flex: 1, fontSize: 13, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={() => setMode("calendar")}><Icon n="calendar" size={14} /> {t("Календарный месяц", "Календарний місяць")}</button>
+      {/* 15.09.2026 (Олег: «очень много вкладок»): один рядок замість трьох — місяць (ставка + відрядно) або конкретний день */}
+      {([["current", "calendar", "Текущий месяц", "Поточний місяць"], ["prev", "calendar", "Прошлый месяц", "Минулий місяць"], ["day", "clock", "День", "День"]] as any[]).map(([k, ic, ru, uk]) => (
+        <button key={k} className={"btn" + (mode === k ? " btn-primary" : " btn-light")} style={{ flex: 1, fontSize: 13, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }} onClick={() => setMode(k)}><Icon n={ic} size={14} /> {t(ru, uk)}</button>
+      ))}
     </div>
   );
 }
 
 // 14.09 (wh-accrual): календарний місяць (поточний / минулий) — ставка зі схеми ЗП + відрядні записи складу. Лише свої дані.
-function MonthSalaryView({ t }: any) {
-  const [which, setWhich] = useState<"current" | "prev">("current");
+function MonthSalaryView({ t, which }: any) {
   const [d, setD] = useState<any>(null);
   const [err, setErr] = useState("");
   useEffect(() => { setD(null); setErr(""); api.get<any>(`/api/warehouse/my-salary/?period=calendar&which=${which}`).then(setD).catch((e: any) => setErr(e?.response?.data?.detail || t("Не удалось загрузить", "Не вдалося завантажити"))); /* eslint-disable-next-line */ }, [which]);
   const row = { display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 0", borderBottom: "1px solid #f1f5f9" };
   return (
     <div>
-      <div style={{ display: "flex", gap: 4, marginBottom: 12, background: "#f1f5f9", borderRadius: 9, padding: 3 }}>
-        {([["current", "Текущий месяц", "Поточний місяць"], ["prev", "Прошлый месяц", "Минулий місяць"]] as any[]).map(([k, ru, uk]) => (
-          <button key={k} onClick={() => setWhich(k)} style={{ flex: 1, fontSize: 12.5, padding: "7px", borderRadius: 7, border: "none", cursor: "pointer", background: which === k ? C.terra : "transparent", color: which === k ? "#fff" : C.slate, fontWeight: 600 }}>{t(ru, uk)}</button>
-        ))}
-      </div>
       {err ? <div className="note">{err}</div> : !d ? <div className="spin">…</div> : <>
         <div className="panel" style={{ textAlign: "center", padding: "22px", background: "linear-gradient(135deg,#ecfdf5,#fff)" }}>
           <div className="muted" style={{ fontSize: 13 }}>{t("Итого за", "Разом за")} {d.label}</div>
@@ -613,7 +625,11 @@ function MonthSalaryView({ t }: any) {
         <div className="panel">
           <div className="label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Icon n="wallet" size={15} /> {t("Ставка", "Ставка")}</div>
           {(d.base_lines || []).map((l: any, i: number) => (
-            <div key={i} style={row}><span style={{ fontSize: 13.5 }}>{l.title}{l.detail ? <span className="muted"> · {l.detail}</span> : null}</span><b>{f(l.amount)} ₴</b></div>
+            <div key={i} style={row}><span style={{ fontSize: 13.5 }}>{l.title}{l.basis
+              ? <div className="muted" style={{ fontSize: 12 }}>{l.kind === "base_by_days"
+                ? t(`${f(l.basis)} ₴ за полный месяц × ${l.detail} = ${f(l.amount)} ₴`, `${f(l.basis)} ₴ за повний місяць × ${l.detail} = ${f(l.amount)} ₴`)
+                : `${f(l.basis)} ₴ ${t("в месяц", "на місяць")}${l.detail ? " · " + l.detail : ""}`}</div>
+              : l.detail ? <span className="muted"> · {l.detail}</span> : null}</span><b style={{ whiteSpace: "nowrap" }}>{f(l.amount)} ₴</b></div>
           ))}
           {(d.base_lines || []).length === 0 && <div className="muted" style={{ fontSize: 13, padding: "6px 0" }}>{t("Ставка не задана", "Ставку не задано")}</div>}
           <div className="label" style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 6 }}><Icon n="package" size={15} /> {t("Сдельно (склад)", "Відрядно (склад)")}</div>
@@ -623,6 +639,7 @@ function MonthSalaryView({ t }: any) {
           {(d.piece || []).length === 0 && <div className="muted" style={{ fontSize: 13, padding: "6px 0" }}>{t("Пока пусто", "Поки порожньо")}</div>}
           <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0 0", fontWeight: 700 }}><span>{t("Сдельно всего", "Відрядно разом")}</span><span>{f(d.piece_total)} ₴</span></div>
         </div>
+        <DealsPanel t={t} d={d} />
         {(d.warnings || []).map((w: string, i: number) => <div key={i} className="note" style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, marginBottom: 6 }}><Icon n="info" size={14} /> {w}</div>)}
         <div className="muted" style={{ fontSize: 11, textAlign: "center", marginTop: 8 }}>{d.from} — {d.to} · {t("отгрузок", "відвантажень")}: {d.shipments}</div>
         <WhRatesPanel t={t} r={d.rates} />
@@ -650,22 +667,17 @@ function DayPicker({ t, day, setDay }: any) {
 
 function SalaryView({ t }: any) {
   const [d, setD] = useState<any>(null);
-  const [period, setPeriod] = useState("month");
+  const period = "day";  // 15.09.2026: лише конкретний день («Останні дні» прибрано)
   const [day, setDay] = useState(() => isoLocal(new Date()));  // 15.09 (wh-day)
-  const [mode, setMode] = useState<"period" | "calendar">("period");
+  const [mode, setMode] = useState<"current" | "prev" | "day">("current");
   useEffect(() => { api.get<any>(period === "day" ? `/api/warehouse/my-salary/?date=${day}` : `/api/warehouse/my-salary/?period=${period}`).then(setD).catch(() => {}); }, [period, day]);
   const LBL: any = { workday: ["Дни (ставка)", "Дні (ставка)"], shipment_weight: ["Вес отгрузки", "Вага відвантаження"], packing: ["Пакування", "Пакування"], tinting: ["Тонировка", "Тонування"], test_set: ["Сборка тест-наборов", "Збірка тест-наборів"], bonus_initiative: ["Бонус-идея", "Бонус-ідея"], bonus_cleanliness: ["Бонус-чистота", "Бонус-чистота"], error: ["Ошибки", "Помилки"], wrong_material: ["Не тот материал", "Не той матеріал"] };
-  if (mode === "calendar") return <div><SalaryModeSwitch t={t} mode={mode} setMode={setMode} /><MonthSalaryView t={t} /></div>;
+  if (mode !== "day") return <div><SalaryModeSwitch t={t} mode={mode} setMode={setMode} /><MonthSalaryView t={t} which={mode} /></div>;
   if (!d) return <div className="spin">…</div>;
   return (
     <div>
       <SalaryModeSwitch t={t} mode={mode} setMode={setMode} />
-      <div style={{ display: "flex", gap: 4, marginBottom: 12, background: "#f1f5f9", borderRadius: 9, padding: 3 }}>
-        {([["week", "Неделя", "Тиждень"], ["month", "30 дней", "30 днів"], ["quarter", "Квартал", "Квартал"], ["all", "Всё", "Все"], ["day", "День", "День"]] as any[]).map(([p, ru, uk]) => (
-          <button key={p} onClick={() => setPeriod(p)} style={{ flex: 1, fontSize: 12.5, padding: "7px", borderRadius: 7, border: "none", cursor: "pointer", background: period === p ? C.terra : "transparent", color: period === p ? "#fff" : C.slate, fontWeight: 600 }}>{t(ru, uk)}</button>
-        ))}
-      </div>
-      {period === "day" && <DayPicker t={t} day={day} setDay={setDay} />}
+      <DayPicker t={t} day={day} setDay={setDay} />
       <div className="panel" style={{ textAlign: "center", padding: "22px", background: "linear-gradient(135deg,#ecfdf5,#fff)" }}>
         <div className="muted" style={{ fontSize: 13 }}>{period === "day" ? t("Заработано за", "Зароблено за") + " " + (d.label || day) : t("Заработано за период", "Зароблено за період")}</div>
         <div style={{ fontSize: 48, fontWeight: 800, color: C.green }}>{f(d.total)} ₴</div>
@@ -679,11 +691,12 @@ function SalaryView({ t }: any) {
         ))}
         {(d.lines || []).length === 0 && <div className="muted" style={{ fontSize: 13 }}>{t("Пока пусто", "Поки порожньо")}</div>}
       </div>
+      <DealsPanel t={t} d={d} />
       <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
         <div className="panel" style={{ flex: 1, textAlign: "center", margin: 0 }}><div style={{ fontSize: 24, fontWeight: 800 }}>{d.shipments}</div><div className="muted" style={{ fontSize: 11 }}>{t("отгрузок", "відвантажень")}</div></div>
         <div className="panel" style={{ flex: 1, textAlign: "center", margin: 0 }}><div style={{ fontSize: 24, fontWeight: 800 }}>{d.tintings}</div><div className="muted" style={{ fontSize: 11 }}>{t("тонировок", "тонувань")}</div></div>
       </div>
-      <div className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.45 }}>{t("Здесь — только сдельные записи склада за период (по ставкам ниже). Ставка из схемы ЗП и полная сумма за месяц — «Календарный месяц».", "Тут — лише відрядні записи складу за період (за ставками нижче). Ставка зі схеми ЗП і повна сума за місяць — «Календарний місяць».")}</div>
+      <div className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.45 }}>{t("Здесь — только сдельные записи склада за выбранный день (по ставкам ниже). Ставка по табелю и полная сумма за месяц — «Календарный месяц».", "Тут — лише відрядні записи складу за обраний день (за ставками нижче). Ставка за табелем і повна сума за місяць — «Календарний місяць».")}</div>
       <WhRatesPanel t={t} r={d.rates} />
     </div>
   );

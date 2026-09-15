@@ -63,7 +63,8 @@ def rates_short(rates=None):
     lr = rates if rates is not None else live_rates()
     v = {c: _dec(_rate(c, lr)) for c in WH_RATE_CODES}
     return (f"Ставки складу зараз (Фінмодель): вага {v['WH_RATE_KG']} ₴/кг · упаковка {v['WH_PACK_5']} / {v['WH_PACK_10']} / "
-            f"{v['WH_PACK_20']} ₴ · тонування {v['WH_TINT_PCT']}% · тест-набір {v['bundle_assembly']} ₴ · день {v['WH_RATE_DAY']} ₴")
+            f"{v['WH_PACK_20']} ₴ · тонування {v['WH_TINT_PCT']}% · тест-набір {v['bundle_assembly']} ₴"
+            + (f" · день {v['WH_RATE_DAY']} ₴" if _rate("WH_RATE_DAY", lr) else ""))
 
 
 def _perm(u, code):
@@ -78,6 +79,8 @@ def rates_payload(user):
     items, warnings = [], []
     for code in WH_RATE_CODES:
         r = lr[code]
+        if code == "WH_RATE_DAY" and not r["active"]:
+            continue  # 15.09.2026 (Олег): ставка комірника — за табелем (блок «Ставка»); вимкнену ставку дня не показуємо
         name, unit, hint = WH_RATE_TEXT[code]
         items.append({"code": code, "id": r["id"], "name": r["name"] or name, "value": float(_rate(code, lr)),
                       "unit": unit, "hint": hint, "active": r["active"], "found": r["found"]})
@@ -650,7 +653,9 @@ def my_salary(request):
             lines.append({"op": op, "amount": str(r["s"] or 0), "count": r["n"]})
     shipments = WarehouseJob.objects.filter(assignee=request.user, status="shipped", shipped_at__date__gte=since, shipped_at__date__lte=until or _FAR).count()
     tintings = qs.filter(op_type="tinting").count()
+    dg, dg_cut = _deal_groups_for(qs)
     return Response({"total": str(total), "lines": lines, "period": period, "label": label,
+                     "deal_groups": dg, "deal_groups_truncated": dg_cut,
                      "from": since.isoformat(), "to": (until or timezone.localdate()).isoformat(),
                      "shipments": shipments, "tintings": tintings,
                      "rates": rates_payload(request.user)})  # 15.09 (whpay): ставки зараз — з Фінмоделі
@@ -664,6 +669,17 @@ PIECE_OPS = [("workday", "Робочі дні (ставка за день)"), ("
              ("bonus_initiative", "Бонус за ідеї"), ("bonus_cleanliness", "Бонус за чистоту"),
              ("error", "Утримання: помилки"), ("wrong_material", "Утримання: невірний матеріал")]
 DEDUCTION_OPS = ("error", "wrong_material")
+
+
+def _deal_groups_for(qs, limit=300):
+    """15.09.2026 (Олег): «по яких угодах як нараховано» — та сама розбивка, що у ЗП/KPI → «Як прорахувалось» (одна функція)."""
+    from apps.payroll.detail_views import _piece_deal_groups
+    labels = dict(PIECE_OPS)
+    labels.update({k: v for k, v in WarehousePayrollEntry.OP if k not in labels})
+    entries = list(qs.select_related("deal", "deal__contact", "job", "job__deal", "job__deal__contact").order_by("work_date", "id"))
+    groups = _piece_deal_groups(entries, labels)
+    groups.reverse()  # свіжі зверху
+    return groups[:limit], len(groups) > limit
 
 
 def _my_calendar_month(request):
@@ -703,7 +719,7 @@ def _my_calendar_month(request):
                 piece_in_scheme = True  # = сума записів складу нижче; окремо не показуємо (без подвійного)
                 continue
             base_lines.append({"title": ln.get("title") or "", "amount": ln.get("amount") or 0,
-                               "detail": ln.get("detail") or ""})
+                               "detail": ln.get("detail") or "", "kind": ln.get("kind") or "", "basis": ln.get("basis")})
         warnings = [w for w in (res.get("warnings") or []) if w]
     except Exception:
         warnings.append("Ставку зі схеми ЗП не вдалося прочитати — показано лише відрядні записи складу")
@@ -711,6 +727,10 @@ def _my_calendar_month(request):
         warnings.append("У вашій схемі ЗП немає відрядної частини — записи складу показано довідково, у «Разом» не входять")
     if total is None:
         total = float(piece_total)
+    elif piece_in_scheme:
+        # 15.09.2026: «Разом» = рядки ставки + відрядно з копійками — щоб сума сходилась з рядками нижче
+        total = round(sum(float(l["amount"] or 0) for l in base_lines) + float(piece_total), 2)
+    dg, dg_cut = _deal_groups_for(qs)
     shipments = WarehouseJob.objects.filter(assignee=u, status="shipped", shipped_at__date__gte=first,
                                             shipped_at__date__lte=last).count()
     return Response({"which": which, "period": period, "label": "%s %d" % (MONTHS_UK[first.month - 1], first.year),
@@ -718,6 +738,7 @@ def _my_calendar_month(request):
                      "base_lines": base_lines, "base_total": sum(float(l["amount"] or 0) for l in base_lines),
                      "piece": piece, "piece_total": str(piece_total), "piece_in_scheme": piece_in_scheme,
                      "total": total, "warnings": warnings, "shipments": shipments,
+                     "deal_groups": dg, "deal_groups_truncated": dg_cut,
                      "rates": rates_payload(u)})  # 15.09 (whpay)
 
 

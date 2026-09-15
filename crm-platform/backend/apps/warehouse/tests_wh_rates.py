@@ -89,3 +89,14 @@ class LiveRatesTests(TestCase):
         e = WarehousePayrollEntry.objects.get(employee=self.worker, op_type="workday")
         self.assertEqual((e.amount, e.rate_applied), (Decimal("400.00"), Decimal("400")))
         self.assertIn("день 400 ₴", wh_views.rates_short())
+
+    def test_disabled_day_rate_is_hidden(self):
+        # 15.09.2026: ставка комірника — за табелем; вимкнена «ставка за робочий день» у вкладці «ЗП» не показується
+        from apps.finance.models import FinModelArticle
+        FinModelArticle.objects.filter(code="WH_RATE_DAY").update(active=False)
+        c = APIClient()
+        c.force_authenticate(self.worker)
+        rt = self.rates(c)
+        self.assertNotIn("WH_RATE_DAY", [x["code"] for x in rt["items"]])
+        self.assertNotIn("робочий день", " ".join(rt["warnings"]))
+        self.assertNotIn("день", wh_views.rates_short())

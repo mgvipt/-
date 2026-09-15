@@ -188,6 +188,9 @@ class CalendarMonthTests(_Base):
         self.assertEqual([l["amount"] for l in r.data["base_lines"]], [8000])
         self.assertEqual(r.data["total"], 8110)                       # ставка + відрядні, без подвійного
         self.assertEqual(r.data["period"], first.strftime("%Y-%m"))
+        # 15.09.2026: «по угодах — як нараховано» — лише свої записи, сума = відрядно
+        self.assertEqual(len(r.data["deal_groups"]), 3)
+        self.assertEqual(round(sum(g["total"] for g in r.data["deal_groups"]), 2), 110.0)
 
         r2 = c.get("/api/warehouse/my-salary/?period=calendar&which=prev")
         self.assertEqual({p["op"] for p in r2.data["piece"]}, {"workday"})
@@ -210,3 +213,4 @@ class CalendarMonthTests(_Base):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["period"], "month")
         self.assertEqual([l["op"] for l in r.data["lines"]], ["test_set"])
+        self.assertEqual([g["test_set"] for g in r.data["deal_groups"]], [50.0])
