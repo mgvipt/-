@@ -45,6 +45,9 @@ SUPPORT_KEYS = ("primer", "грунт", "ґрунт", "protection", "second laye
                 "послуга тонування")
 TEST_FOCUS_DAYS = 30     # «тест-набори, оплачені за останні 30 днів, без основного замовлення»
 TEST_OLDER_DAYS = 180    # старші — лише лічильник «ще N клієнтів»
+# 16.09.2026 (Розвиток v2): поки в ManagerPlan немає плану на місяць — «понад план» ніде не обіцяємо
+NO_PLAN_TEXT = "План на місяць ще не встановлено"
+MY_PAY_HREF = "/my-pay#plan"   # сторінка «Моя ЗП» — у меню в усіх співробітників
 
 STANDARD_SALES = [
     "Швидкість: у робочий час відповідь клієнту до 15 хвилин — щонайменше у 80% чатів.",
@@ -130,6 +133,15 @@ def _margin_params(p, pol):
             "over": _n(p.get("pct_over_plan", to)), "gate": round(_n(p.get("gate_standard_min", 0.75)) * 100)}
 
 
+def _has_plan(u, period):
+    """Чи є в людини план продажів на місяць (Фінанси → Плани, ManagerPlan з ціллю > 0)."""
+    from apps.finance.models import ManagerPlan
+    if not u:
+        return False
+    p = ManagerPlan.objects.filter(user=u, period=period).first()
+    return bool(p and _n(p.target_revenue) > 0)
+
+
 def _line_out(l, can_margin):
     out = {"kind": l.get("kind"), "component": l.get("component"), "title": l.get("title") or "", "amount": int(round(_n(l.get("amount")))),
            "rate": l.get("rate"), "detail": l.get("detail") or "", "warn": l.get("warn") or "",
@@ -141,7 +153,7 @@ def _line_out(l, can_margin):
 
 # ─────────────────────────── схема простими словами і правила ───────────────────────────
 
-def _part_plain(c, pol):
+def _part_plain(c, pol, has_plan=True):
     p = c.params or {}
     k = c.kind
     if k == "base_by_days":
@@ -154,7 +166,13 @@ def _part_plain(c, pol):
         txt = standard_plain(c)
     elif k == "standard":
         txt = (f"Стандарт роботи: до {_fmt(p.get('max'))} ₴. Раз на місяць керівник ставить оцінку стандарту "
-               f"(0–100%) — стільки відсотків від {_fmt(p.get('max'))} ₴ ви й отримуєте.")
+               f"(0–100%) — стільки відсотків від {_fmt(p.get('max'))} ₴ ви й отримуєте. Нараховується за повний місяць; "
+               "поки оцінки немає, у сумі ЗП стоїть 100% — умовно, остаточно залежить від оцінки.")
+    elif k == "margin_share" and not has_plan:
+        m = _margin_params(p, pol)
+        txt = (f"{m['to']:g}% з маржі ваших оплачених угод (воронки: {_funnel_names(m['funnels'])}). "
+               f"{NO_PLAN_TEXT} — усе рахується за ставкою {m['to']:g}%. "
+               "Рахуються гроші, що прийшли цього місяця, а не сума угоди.")
     elif k == "margin_share":
         m = _margin_params(p, pol)
         txt = (f"{m['to']:g}% з маржі ваших оплачених угод (воронки: {_funnel_names(m['funnels'])}) до плану місяця; "
@@ -192,14 +210,14 @@ def _part_plain(c, pol):
     return {"kind": k, "title": c.title or c.get_kind_display(), "plain": txt}
 
 
-def _scheme_out(sc, pol):
+def _scheme_out(sc, pol, has_plan=True):
     if not sc:
         return None
     return {"position": sc.position, "title": sc.title, "valid_from": sc.valid_from.isoformat(),
-            "parts": [_part_plain(c, pol) for c in sc.components.filter(active=True)]}
+            "parts": [_part_plain(c, pol, has_plan) for c in sc.components.filter(active=True)]}
 
 
-def _rules(sc, pol):
+def _rules(sc, pol, has_plan=True):
     """«Як виконати план і умови ЗП» — з ВАШОЇ схеми: що потрібно для кожної частини і куди дивитись у CRM."""
     comps = list(sc.components.filter(active=True)) if sc else []
     kinds = {c.kind for c in comps}
@@ -225,22 +243,26 @@ def _rules(sc, pol):
             need = [f"Що входить у ваш стандарт: {c.title}."] if c.title else []
             need += STANDARD_SALES if sales else ["Деталі стандарту для вашої посади — у керівника."]
             need.append(f"Оцінку ставить керівник раз на місяць: 100% — повна сума до {_fmt(p.get('max'))} ₴. "
-                        "Поки оцінки немає, у розрахунку стоїть 100%.")
+                        "Стандарт нараховується за повний місяць. Поки оцінки немає, у сумі ЗП стоїть 100% — "
+                        "це умовні гроші: остаточна сума залежить від оцінки.")
             mc = next((x for x in comps if x.kind == "margin_share"), None)
-            if mc:
+            if mc and has_plan:
                 need.append(f"Оцінка стандарту від {_margin_params(mc.params, pol)['gate']}% відкриває підвищену ставку понад план.")
             out.append({"kind": k, "title": "Стандарт роботи", "need": need, "where": STANDARD_WHERE if sales else []})
         elif k == "margin_share":
             m = _margin_params(p, pol)
-            out.append({"kind": k, "title": "% з маржі продажів", "need": [
-                f"Рахуються лише гроші, що прийшли по ваших угодах (воронки: {_funnel_names(m['funnels'])}) цього місяця.",
-                f"До плану — {m['to']:g}%, з частини понад план — {m['over']:g}%.",
-                f"Щоб отримати {m['over']:g}% понад план, оцінка стандарту має бути не нижче {m['gate']}%.",
-                "Знижка зменшує ваш заробіток: кожна гривня знижки — мінус з вашої частки. Замість знижки пропонуйте "
-                "безкоштовну доставку від порогу, запас матеріалу або захисне покриття.",
-                "Без плану на місяць усе рахується за ставкою до плану."],
-                "where": ["Картка угоди → «Ваш заробіток з угоди»: скільки зараз і скільки можна.",
-                          "«Розвиток» → «Моя ЗП і KPI»: прогрес плану."]})
+            need = [f"Рахуються лише гроші, що прийшли по ваших угодах (воронки: {_funnel_names(m['funnels'])}) цього місяця."]
+            if has_plan:
+                need += [f"До плану — {m['to']:g}%, з частини понад план — {m['over']:g}%.",
+                         f"Щоб отримати {m['over']:g}% понад план, оцінка стандарту має бути не нижче {m['gate']}%."]
+            else:
+                need.append(f"{NO_PLAN_TEXT} — усе рахується за ставкою {m['to']:g}%. Підвищена ставка «понад план» "
+                            "зʼявиться, коли керівник поставить план.")
+            need.append("Знижка зменшує ваш заробіток: кожна гривня знижки — мінус з вашої частки. Замість знижки пропонуйте "
+                        "безкоштовну доставку від порогу, запас матеріалу або захисне покриття.")
+            out.append({"kind": k, "title": "% з маржі продажів", "need": need,
+                        "where": ["Картка угоди → «Ваш заробіток з угоди»: скільки зараз і скільки можна.",
+                                  "«Моя ЗП» (меню зліва): прогрес плану і «Що буде, якщо»."]})
         elif k == "revenue_share":
             b = p.get("basis", "funnels")
             need = [_part_plain(c, pol)["plain"]]
@@ -261,23 +283,25 @@ def _rules(sc, pol):
                 "Через 2–3 дні після того, як клієнт отримав набір, — напишіть або подзвоніть: «Як вам зразок? Вийшло нанести?»",
                 "Поставте задачу-нагадування в картці тест-набору (кнопка «+ Задача»), щоб клієнт не випав з фокусу.",
                 "Бонус — раз на клієнта; отримує відповідальний за основну угоду."],
-                "where": ["«Розвиток» → «Моя ЗП і KPI» → «Що ще можна заробити»: клієнти і строки.",
+                "where": ["«Моя ЗП» → «Що ще можна заробити»: клієнти і строки.",
                           "Картка тест-набору → «Ваш заробіток з угоди»."]})
         elif k == "guarantee":
             conds = list(p.get("conditions") or engine.GUARANTEE_CONDITIONS)
             out.append({"kind": k, "title": "Гарантія новачку",
                         "need": conds + ["Доплата до гарантії — лише коли керівник підтвердить умови за місяць."],
-                        "where": ["«Розвиток» → «Моя ЗП і KPI» → «Гарантія»: які умови вже підтверджено."]})
+                        "where": ["«Моя ЗП» → «Гарантія»: які умови вже підтверджено."]})
         elif k == "piece_rate":
             out.append({"kind": k, "title": "Відрядно (склад)", "need": [
                 "Кожна дія складу — окремий запис: вага відвантаження, пакування, тонування, збірка тест-наборів.",
                 "Помилка чи невірний матеріал — утримання; бонус за ідею чи чистоту — окремим записом.",
                 "Рахуються лише підтверджені записи."],
-                "where": ["«Відвантаження» — ваші задачі складу.", "«Розвиток» → «Моя ЗП і KPI» → записи за місяць по типах."]})
+                "where": ["«Відвантаження» — ваші задачі складу.", "«Моя ЗП» → записи за місяць по типах."]})
     if sales:
-        out.append({"kind": "plan", "title": "План місяця", "need": [
-            "План на місяць ставить керівник (мінімум, норма, амбіція).",
-            "Прогрес видно вгорі цієї сторінки — блок «Моя ЗП і KPI».",
+        head = (["План на місяць ставить керівник (мінімум, норма, амбіція).",
+                 "Прогрес видно вгорі — блок «Моя ЗП і KPI»."] if has_plan else
+                [f"{NO_PLAN_TEXT}. Коли керівник його поставить, тут зʼявиться прогрес і підвищена ставка понад план; "
+                 "до того все рахується за ставкою до плану."])
+        out.append({"kind": "plan", "title": "План місяця", "need": head + [
             "Кожен тест-набір — майбутнє основне замовлення: тримайте клієнта у фокусі.",
             "Прорахунок по площі — кожному, хто назвав площу або надіслав фото.",
             f"Замість знижки — безкоштовна доставка від порогу (тонкошарові від {_fmt(FREE_THIN_FROM)} ₴, "
@@ -421,8 +445,46 @@ def _warehouse(u, d1, d2, only_if_any=False):
     return {"rows": out, "total": round(sum(x["amount"] for x in out)), "from": d1.isoformat(), "to": d2.isoformat()}
 
 
+def _split_total(b):
+    """16.09.2026 (Розвиток v2): сума = «гарантовано» + «умовно». Умовно — неоцінений стандарт, що стоїть у сумі на 100%
+    (engine._c_standard). Затверджена відомість — остаточна, там умовного немає. Формули ЗП не змінюються."""
+    total = int(b.get("total") or 0)
+    st = b.get("standard") or {}
+    cond = int(st.get("amount") or 0) if (st and not st.get("set") and b.get("source") == "live") else 0
+    b["guaranteed"] = total - cond
+    b["conditional"] = ([{"code": "standard", "amount": cond,
+                          "label": "стандарт роботи, якщо оцінка буде 100% — ще не оцінено",
+                          "hint": f"Стандарт нараховується за повний місяць; остаточна сума залежить від оцінки керівника "
+                                  f"(наприклад, 80% → {_fmt(cond * 0.8)} ₴ замість {_fmt(cond)} ₴)."}] if cond else [])
+
+
+def _wh_points(u, period, comps):
+    """16.09.2026 (Розвиток v2): пункти стандарту складу для СЕБЕ — підказка CRM (wh_kpi.suggest_wh_standard, лише читання)
+    і позначки керівника. Показуємо, якщо в ставці стандарт із пунктами або відрядна складу."""
+    std = next((c for c in comps if c.kind == "standard" and engine.standard_criteria(c)), None)
+    if std is None and not any(c.kind == "piece_rate" for c in comps):
+        return None
+    try:
+        from .wh_kpi import suggest_wh_standard
+        s = suggest_wh_standard(u, period, std)
+    except Exception:
+        return None
+    pts = [{"n": p["n"], "title": p["title"], "who": "CRM рахує сама" if p["how_measured"] == "auto" else "відмічає керівник",
+            "target": p.get("target") or "", "value_text": p.get("value_text") or "", "ok": bool(p.get("mark")),
+            "no_data": p["how_measured"] == "auto" and p.get("pass") is None, "hint": p.get("hint") or "",
+            "details": [x for x in (p.get("details") or []) if not str(x).startswith("оприбутковує:")][:5]}
+           for p in s["points"]]
+    sc = ((std.params or {}).get("scores") or {}).get(period) if std is not None else None
+    return {"in_scheme": std is not None, "max": round(_n((std.params or {}).get("max"))) if std is not None else None,
+            "score_pct": round(_n(sc) * 100) if sc is not None else None, "suggested_pct": s["suggested_pct"],
+            "good": s["good"], "total": len(pts), "points": pts, "partial": s["partial"], "rule": s["rule"],
+            "note": ("Оцінку ставить керівник; CRM лише підказує. Поки оцінки немає, у ЗП стоїть 100% (умовно)."
+                     if std is not None else
+                     "Стандарт складу ще не входить у вашу ставку — пункти показано як орієнтир, на ЗП зараз не впливають.")}
+
+
 def _more(b):
-    """«Що ще можна заробити цього місяця» — лише з реальних даних."""
+    """«Що ще можна заробити цього місяця» — лише з реальних даних і лише гроші, яких ще НЕМАЄ в сумі."""
     out = []
     opps = b.get("opportunities") or []
     if opps:
@@ -440,10 +502,8 @@ def _more(b):
         else:
             out.append({"code": "plan_over", "title": f"План виконано, понад план — {_fmt(pl['over'])} ₴", "amount": None,
                         "hint": ("Кожна оплата понад план —" + rate.split("Понад план ставка", 1)[-1]).strip() if rate else ""})
-    st = b.get("standard") or {}
-    if st and not st.get("set"):
-        out.append({"code": "standard", "title": "Стандарт роботи ще не оцінено", "amount": st.get("max"),
-                    "hint": "Дотримуйтесь правил стандарту — оцінка дає до повної суми. Правила — у «Як виконати план» нижче."})
+    # 16.09.2026 (Розвиток v2): неоцінений стандарт УЖЕ стоїть у сумі на 100% (умовно) — сюди його не додаємо,
+    # щоб не рахувати двічі; він показаний окремо як «умовно» під сумою.
     g = b.get("guarantee") or {}
     if g.get("active") and not g.get("confirmed") and g.get("topup"):
         out.append({"code": "guarantee", "title": "Доплата до гарантії чекає підтвердження умов", "amount": g["topup"],
@@ -469,13 +529,14 @@ class MyPayrollView(APIView):
         pol = engine.policy()
         d1, d2 = engine.period_bounds(period)
         sc = engine.active_scheme(u, d2)
+        has_plan = _has_plan(u, period)
         b = {"period": period, "period_label": _label(period),
              "periods": [{"value": p, "label": _label(p)} for p in (cur, prev)],
-             "user_name": _who(u), "has_scheme": bool(sc), "is_current": period == cur,
-             "links": [{"href": "/development#plan", "label": "Як виконати план — Розвиток"}]}
+             "user_name": _who(u), "has_scheme": bool(sc), "is_current": period == cur, "has_plan": has_plan,
+             "links": [{"href": MY_PAY_HREF, "label": "Умови ЗП і план — Моя ЗП"}]}
         if q.get("only") == "rules":
-            b["scheme"] = _scheme_out(sc, pol)
-            b["rules"] = _rules(sc, pol)
+            b["scheme"] = _scheme_out(sc, pol, has_plan)
+            b["rules"] = _rules(sc, pol, has_plan)
             return Response(b)
         if not sc:
             b.update({"message": "Для вас ще не задано ставку на цей місяць — розрахунок зʼявиться, щойно керівник її внесе. "
@@ -504,11 +565,13 @@ class MyPayrollView(APIView):
                 seen.add(w)
                 warns.append(w)
         b["warnings"] = warns
-        b["scheme"] = _scheme_out(sc, pol)
+        b["scheme"] = _scheme_out(sc, pol, has_plan)
         comps = list(sc.components.filter(active=True))
         b["plan"] = _plan_out(u, period, comps, pol)
         b["standard"] = _standard_out(comps, period, lines)
         b["guarantee"] = _guarantee_out(comps, period, lines, pol)
+        _split_total(b)
+        b["wh_standard"] = _wh_points(u, period, comps)
         ev = next((c for c in comps if c.kind == "event_bonus"), None)
         if ev and period == cur:
             b["opportunities"], b["opp_older"] = _test_opportunities(u, ev, pol, today)
@@ -633,9 +696,9 @@ def _test_ctx(deal, pol, tiers):
             "deadline": first + timedelta(days=int(tiers["fast_days"])) if first else None}
 
 
-def _deal_earn(deal, sc, pol, items, kind, tctx, tiers):
-    """Скільки заробить відповідальний: зараз (як у ЗП, до плану) і «можна до» (понад план, без зайвої знижки,
-    бонус тест → основне). Лише суми ₴ — жодної маржі назовні."""
+def _deal_earn(deal, sc, pol, items, kind, tctx, tiers, has_plan=True):
+    """Скільки заробить відповідальний: зараз (як у ЗП, до плану) і «можна до» (понад план — лише якщо план на місяць
+    є; без зайвої знижки; бонус тест → основне). Лише суми ₴ — жодної маржі назовні."""
     prev = engine.deal_bonus_preview(deal)
     if prev is None:
         return None, 0.0
@@ -648,7 +711,7 @@ def _deal_earn(deal, sc, pol, items, kind, tctx, tiers):
     comps = list(sc.components.filter(active=True))
     mc = next((c for c in comps if c.kind == "margin_share" and deal.funnel_id in _margin_params(c.params, pol)["funnels"]), None)
     m = _margin_params(mc.params, pol) if mc else None
-    over_pct = m["over"] if m else to_pct
+    over_pct = m["over"] if (m and has_plan) else to_pct   # 16.09: без плану «понад план» не обіцяємо
     gross = max(sum(_n(i.base_sum) for i in items) if items else amount, amount)
 
     def bonus(x, mp):
@@ -670,8 +733,11 @@ def _deal_earn(deal, sc, pol, items, kind, tctx, tiers):
         parts.append({"code": "event", "label": f"бонус «тест → основне», якщо клієнт оплатить основне замовлення{dl}",
                       "amount": round(event)})
     mx = now + (bonus(gross, over_pct) - base) + event
+    note = "Попередньо: остаточна сума — у ЗП за місяць (план і стандарт рахуються за весь місяць)."
+    if m and not has_plan:
+        note += f" {NO_PLAN_TEXT} — «понад план» не рахуємо."
     return {"now": round(now), "max": round(max(mx, now)), "parts": parts, "estimate": bool(prev.get("estimate")),
-            "note": "Попередньо: остаточна сума — у ЗП за місяць (план і стандарт рахуються за весь місяць)."}, disc_add
+            "note": note, "has_plan": has_plan}, disc_add
 
 
 def _test_checks(deal, paid, amount, received, tctx, tiers, show_money, today):
@@ -873,8 +939,11 @@ def _plan_check(u, deal, pol, today, paid, amount):
     sc = engine.active_scheme(u, today)
     comps = list(sc.components.filter(active=True)) if sc else []
     p = _plan_out(u, today.strftime("%Y-%m"), comps, pol)
-    if not p or not p.get("target"):
+    if not p:
         return None
+    if not p.get("target"):
+        return _chk("plan", "info", NO_PLAN_TEXT, "Усе рахується за ставкою до плану; коли керівник поставить план — "
+                    "тут буде прогрес.", "«Моя ЗП» (меню зліва)")
     rate = (f"Понад план ставка {p['over_pct']:g}% замість {p['to_pct']:g}% (при оцінці стандарту від {p['gate_pct']}%)."
             if p.get("over_pct") and p.get("over_pct") != p.get("to_pct") else "")
     if p["left"]:
@@ -882,8 +951,8 @@ def _plan_check(u, deal, pol, today, paid, amount):
         rest = amount - paid
         if rest > 0.5:
             hint = (hint + " " if hint else "") + f"Ця угода — ще {_fmt(rest)} ₴ до плану, коли прийде оплата."
-        return _chk("plan", "info", f"План місяця: {p['pct']}% — лишилось {_fmt(p['left'])} ₴", hint, "«Розвиток» → «Моя ЗП і KPI»")
-    return _chk("plan", "done", f"План місяця виконано ({p['pct']}%)", rate, "«Розвиток» → «Моя ЗП і KPI»")
+        return _chk("plan", "info", f"План місяця: {p['pct']}% — лишилось {_fmt(p['left'])} ₴", hint, "«Моя ЗП» (меню зліва)")
+    return _chk("plan", "done", f"План місяця виконано ({p['pct']}%)", rate, "«Моя ЗП» (меню зліва)")
 
 
 FOCUS = {
@@ -923,7 +992,8 @@ class DealKpiView(APIView):
         tctx = _test_ctx(deal, pol, tiers or _tiers({})) if kind == "test" else {}
         earn, disc_loss = (None, 0.0)
         if show_money and sc:
-            earn, disc_loss = _deal_earn(deal, sc, pol, items, kind, tctx, tiers)
+            has_plan = _has_plan(deal.owner, today.strftime("%Y-%m"))  # 16.09: без плану «понад план» не обіцяємо
+            earn, disc_loss = _deal_earn(deal, sc, pol, items, kind, tctx, tiers, has_plan)
         received = _received_at(deal)
         if kind == "test":
             checks = _test_checks(deal, paid, amount, received, tctx, tiers, show_money, today)

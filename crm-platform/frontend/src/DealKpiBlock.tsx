@@ -111,7 +111,7 @@ export default function DealKpiBlock({ dealId, fallbackTotal, refreshKey }: { de
           {showDone && <div style={{ marginTop: 6 }}>{done.map((c) => <CheckRow key={c.code} c={c} />)}</div>}
         </>
       )}
-      <a href="/development#plan" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "#2563eb", marginTop: 8 }}><Icon n="bulb" size={12} /> {t("Как выполнить план — Развитие", "Як виконати план — Розвиток")}</a>
+      <a href="/my-pay#plan" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "#2563eb", marginTop: 8 }}><Icon n="bulb" size={12} /> {t("Условия ЗП и план — Моя ЗП", "Умови ЗП і план — Моя ЗП")}</a>
     </div>
   );
 }

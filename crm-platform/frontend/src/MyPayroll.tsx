@@ -12,6 +12,8 @@ import { api } from "./api";
 import { useLang } from "./i18n";
 import { Icon } from "./Icon";
 import { LineDetail, matchDetail } from "./PayCalcDetail";
+import InfoTip from "./InfoTip";  // 16.09 Розвиток v2: (i) — формула на реальних числах
+import WhatIf from "./WhatIf";  // 16.09 Розвиток v2: «Що буде, якщо…» за формулою ЗП
 
 type T = (ru: string, uk: string) => string;
 type Line = { kind: string; component?: number | null; title: string; amount: number; rate?: string | null; detail: string; warn: string; estimate: boolean };
@@ -25,26 +27,39 @@ type More = { code: string; title: string; amount: number | null; hint: string }
 type WhRow = { op: string; label: string; count: number; amount: number; kg: number | null };
 type Rule = { kind: string; title: string; need: string[]; where: string[] };
 type Scheme = { position: string; title: string; valid_from: string; parts: Part[] };
+// 16.09 Розвиток v2: «гарантовано / умовно» і пункти стандарту складу (лише свої)
+type CondPart = { code: string; amount: number; label: string; hint: string };
+type WhPt = { n: number; title: string; who: string; target: string; value_text: string; ok: boolean; no_data: boolean; hint: string; details: string[] };
+type WhStd = { in_scheme: boolean; max: number | null; score_pct: number | null; suggested_pct: number; good: number; total: number; points: WhPt[]; partial: boolean; rule: string; note: string };
 type My = {
   period: string; period_label: string; periods: { value: string; label: string }[]; user_name: string; has_scheme: boolean; is_current: boolean;
   message?: string; source?: "approved" | "live"; approved_at?: string | null; total?: number; live_total?: number; paid?: number; remaining?: number;
   lines?: Line[]; warnings?: string[]; scheme?: Scheme | null; plan?: Plan | null; standard?: Std | null; guarantee?: Guar | null;
   opportunities?: Opp[]; opp_older?: number; more?: More[]; warehouse?: { rows: WhRow[]; total: number } | null; rules?: Rule[];
+  guaranteed?: number; conditional?: CondPart[]; has_plan?: boolean; wh_standard?: WhStd | null;
 };
 
 const BLUE = "#1d4ed8";
 const fmt = (n: number | null | undefined) => Math.round(Number(n || 0)).toLocaleString("uk-UA");
 const dmy = (iso?: string | null) => (iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : "—");
 
-/** Перехід до секції «Як виконати план» (id="plan") на сторінці «Розвиток». */
+/** Перехід до секції «Умови ЗП і план» (id="plan"): на цій сторінці — прокрутка; інакше — «Моя ЗП» (є в меню в усіх). */
 export function goToPlan(navigate: (to: string) => void) {
   const el = document.getElementById("plan");
-  if (el && window.location.pathname === "/development") {
+  if (el) {
     el.scrollIntoView({ behavior: "smooth", block: "start" });
-    window.history.replaceState(null, "", "/development#plan");
+    window.history.replaceState(null, "", window.location.pathname + "#plan");
   } else {
-    navigate("/development#plan");
+    navigate("/my-pay#plan");
   }
+}
+
+/** (i) біля суми: «Разом = рядок + рядок + … = сума». */
+function totalFormula(d: My, t: T) {
+  const ls = (d.lines || []).filter((l) => l.amount);
+  if (!ls.length) return "";
+  return t("Итого = сумма строк ниже: ", "Разом = сума рядків нижче: ") + ls.map((l) => `${l.title} ${fmt(l.amount)}`).join(" + ") + ` = ${fmt(d.total)} ₴`
+    + ((d.conditional || []).length ? t(". Из них условно — стандарт, пока не оценён.", ". З них умовно — стандарт, поки не оцінено.") : "");
 }
 
 // 15.09.2026 (Олег): у кожного рядка — «Як прорахувалось», як у керівника в ЗП/KPI (угоди, оплати, записи; без маржі без права)
@@ -154,7 +169,7 @@ function MyBody({ d, t, onPlan }: { d: My; t: T; onPlan: () => void }) {
       <div style={{ marginTop: 10 }}>
         <div className="note" style={{ display: "flex", gap: 8, alignItems: "center" }}><Icon n="info" size={16} /> {d.message}</div>
         {d.warehouse && d.warehouse.rows.length > 0 && <WarehouseRows w={d.warehouse} t={t} />}
-        <button className="btn btn-light" style={{ marginTop: 10, fontSize: 12.5 }} onClick={onPlan}><Icon n="bulb" size={14} /> {t("Как выполнить план — Развитие", "Як виконати план — Розвиток")}</button>
+        <button className="btn btn-light" style={{ marginTop: 10, fontSize: 12.5 }} onClick={onPlan}><Icon n="bulb" size={14} /> {t("Условия ЗП и план", "Умови ЗП і план")}</button>
       </div>
     );
   }
@@ -164,12 +179,18 @@ function MyBody({ d, t, onPlan }: { d: My; t: T; onPlan: () => void }) {
     <div style={{ marginTop: 10 }}>
       <div style={{ display: "flex", alignItems: "flex-end", gap: 14, flexWrap: "wrap" }}>
         <div>
-          <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, color: BLUE, fontVariantNumeric: "tabular-nums" }}>{fmt(d.total)} ₴</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 2 }}><div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, color: BLUE, fontVariantNumeric: "tabular-nums" }}>{fmt(d.total)} ₴</div><InfoTip text={totalFormula(d, t)} /></div>
           <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
             {d.source === "approved"
               ? t(`Утверждено ${dmy(d.approved_at)}`, `Затверджено ${dmy(d.approved_at)}`) + (d.live_total != null && d.live_total !== d.total ? t(` · сейчас вышло бы ${fmt(d.live_total)} ₴`, ` · зараз вийшло б ${fmt(d.live_total)} ₴`) : "")
               : t("Расчёт вживую — может измениться до конца месяца", "Розрахунок наживо — може змінитися до кінця місяця")}
           </div>
+          {(d.conditional || []).length > 0 && (
+            <div style={{ fontSize: 12.5, marginTop: 5, lineHeight: 1.5 }}>
+              {t("гарантировано", "гарантовано")} <b>{fmt(d.guaranteed)} ₴</b>
+              {d.conditional!.map((c) => <span key={c.code}> · <span style={{ color: "#b45309", fontWeight: 600 }}>{t("условно", "умовно")} +{fmt(c.amount)} ₴</span> <span className="muted">({c.label})</span><InfoTip text={c.hint} /></span>)}
+            </div>
+          )}
         </div>
         {d.source === "approved" && (
           <div style={{ fontSize: 12.5 }}>{t("Выплачено", "Виплачено")} <b>{fmt(d.paid)} ₴</b> · {t("осталось", "лишилось")} <b>{fmt(d.remaining)} ₴</b></div>
@@ -184,7 +205,7 @@ function MyBody({ d, t, onPlan }: { d: My; t: T; onPlan: () => void }) {
       {d.plan && <PlanBar p={d.plan} t={t} />}
       {d.standard && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, marginTop: 10 }}>
-          <Icon n="award" size={14} /> {t("Стандарт работы", "Стандарт роботи")}: {d.standard.set ? <b>{d.standard.score_pct}%</b> : <span className="muted">{t("ещё не оценён (в расчёте 100%)", "ще не оцінено (у розрахунку 100%)")}</span>}
+          <Icon n="award" size={14} /> {t("Стандарт работы", "Стандарт роботи")}: {d.standard.set ? <b>{d.standard.score_pct}%</b> : <span className="muted">{t("ещё не оценён — в сумме 100% условно (за полный месяц, зависит от оценки)", "ще не оцінено — у сумі 100% умовно (за повний місяць, залежить від оцінки)")}</span>}
           <span className="muted">· {t("до", "до")} {fmt(d.standard.max)} ₴</span>
         </div>
       )}
@@ -209,9 +230,11 @@ function MyBody({ d, t, onPlan }: { d: My; t: T; onPlan: () => void }) {
       )}
 
       {d.warehouse && d.warehouse.rows.length > 0 && <WarehouseRows w={d.warehouse} t={t} />}
+      {d.wh_standard && <WhStdBox w={d.wh_standard} t={t} />}
+      {d.is_current && <WhatIf />}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-        <button className="btn btn-primary" style={{ fontSize: 12.5 }} onClick={onPlan}><Icon n="bulb" size={14} /> {t("Как выполнить план — Развитие", "Як виконати план — Розвиток")}</button>
+        <button className="btn btn-primary" style={{ fontSize: 12.5 }} onClick={onPlan}><Icon n="bulb" size={14} /> {t("Условия ЗП и план", "Умови ЗП і план")}</button>
         {d.scheme && <button className="btn btn-light" style={{ fontSize: 12.5 }} onClick={() => setShowScheme((v) => !v)}><Icon n="file" size={14} /> {t("Моя схема простыми словами", "Моя схема простими словами")}</button>}
       </div>
       {showScheme && d.scheme && <SchemeParts s={d.scheme} t={t} />}
@@ -234,6 +257,32 @@ function WarehouseRows({ w, t }: { w: { rows: WhRow[]; total: number }; t: T }) 
   );
 }
 
+// 16.09 Розвиток v2: пункти стандарту складу — підказка CRM + позначки керівника (лише свої)
+function WhStdBox({ w, t }: { w: WhStd; t: T }) {
+  return (
+    <div style={{ marginTop: 12, background: "#f8fafc", borderRadius: 10, padding: "10px 12px" }}>
+      <div style={{ fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <Icon n="award" size={14} /> {t("Стандарт склада", "Стандарт складу")}: {w.good} {t("из", "з")} {w.total} {t("пунктов", "пунктів")} → {t("CRM подсказывает", "CRM підказує")} {w.suggested_pct}%
+        {w.score_pct != null ? <span style={{ color: "#15803d" }}> · {t("оценка руководителя", "оцінка керівника")} {w.score_pct}%</span>
+          : w.in_scheme ? <span className="muted" style={{ fontWeight: 400 }}> · {t("ещё не оценено", "ще не оцінено")}</span> : null}
+        <InfoTip text={w.rule + (w.max ? ` ${t("Максимум", "Максимум")} ${fmt(w.max)} ₴ × ${t("оценка", "оцінка")}.` : "")} />
+      </div>
+      <div className="muted" style={{ fontSize: 11.5, margin: "2px 0 6px" }}>{w.note}{w.partial ? t(" Месяц ещё идёт — считаются завершённые дни.", " Місяць ще триває — рахуються завершені дні.") : ""}</div>
+      {w.points.map((p) => (
+        <div key={p.n} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "4px 0", borderTop: "1px solid #eef2f7" }}>
+          <span style={{ color: p.no_data ? "#94a3b8" : p.ok ? "#16a34a" : "#dc2626", marginTop: 1 }}><Icon n={p.no_data ? "clock" : p.ok ? "check" : "x"} size={13} /></span>
+          <div style={{ flex: 1, fontSize: 12.3, lineHeight: 1.45 }}>
+            <b>{p.n}.</b> {p.title} <span className="muted">· {p.who}</span>
+            {(p.value_text || p.target) && <div className="muted" style={{ fontSize: 11.5 }}>{p.value_text}{p.target ? ` · ${t("цель", "мета")}: ${p.target}` : ""}</div>}
+            {p.hint && <div className="muted" style={{ fontSize: 11.5 }}>{p.hint}</div>}
+            {p.details.length > 0 && <details style={{ fontSize: 11.5 }}><summary style={{ cursor: "pointer" }}>{t("Подробнее", "Детальніше")} ({p.details.length})</summary>{p.details.map((x, i) => <div key={i} className="muted">{x}</div>)}</details>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function SchemeParts({ s, t }: { s: Scheme; t: T }) {
   return (
     <div style={{ marginTop: 8, background: "#f8fafc", borderRadius: 10, padding: "10px 12px" }}>
@@ -246,10 +295,12 @@ function SchemeParts({ s, t }: { s: Scheme; t: T }) {
 }
 
 /** Блок «Моя ЗП і KPI» — вгорі сторінки «Розвиток» (і будь-де, де людина дивиться свої цифри). */
-export default function MyPayroll() {
+export default function MyPayroll({ period: extPeriod, hidePeriods }: { period?: string; hidePeriods?: boolean } = {}) {
   const { t } = useLang();
   const navigate = useNavigate();
-  const [period, setPeriod] = useState("");
+  const [period, setPeriod] = useState(extPeriod || "");
+  // 16.09 Розвиток v2: на сторінці «Розвиток» місяць обирається ОДНИМ перемикачем угорі сторінки
+  useEffect(() => { if (extPeriod && extPeriod !== period) setPeriod(extPeriod); }, [extPeriod]); // eslint-disable-line react-hooks/exhaustive-deps
   const [d, setD] = useState<My | null>(null);
   const [err, setErr] = useState("");
   const [open, setOpen] = useState<boolean>(() => { try { return localStorage.getItem("crm_mypay_open") !== "0"; } catch { return true; } });
@@ -271,7 +322,7 @@ export default function MyPayroll() {
         <div className="label" style={{ margin: 0, display: "flex", alignItems: "center", gap: 6 }}><Icon n="wallet" size={16} /> {t("Моя ЗП и KPI", "Моя ЗП і KPI")}</div>
         <span className="muted" style={{ fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 4 }}><Icon n="lock" size={12} /> {t("видно только вам", "видно лише вам")}</span>
         <div style={{ flex: 1 }} />
-        {(d?.periods || []).map((p) => (
+        {!hidePeriods && (d?.periods || []).map((p) => (
           <button key={p.value} className={"btn " + (period === p.value ? "btn-primary" : "btn-light")} style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => setPeriod(p.value)}>{p.label}</button>
         ))}
         <button className="btn btn-light" style={{ fontSize: 12, padding: "4px 8px" }} onClick={toggle} title={open ? t("Свернуть", "Згорнути") : t("Развернуть", "Розгорнути")}>

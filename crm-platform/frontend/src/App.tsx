@@ -11,6 +11,7 @@ import Inbox from "./pages/Inbox";
 import Tasks from "./pages/Tasks";
 import Duplicates from "./pages/Duplicates";
 import Razvitok from "./pages/Razvitok";
+import MyPay from "./pages/MyPay";  // 16.09 Розвиток v2: «Моя ЗП» для всіх
 import ContactCenter from "./pages/ContactCenter";
 import Warehouse from "./pages/Warehouse";
 import WarehouseWork from "./pages/WarehouseWork";
@@ -74,7 +75,8 @@ function Shell() {
           <Route path="/clients" element={<Guard perm="contact.view"><Clients /></Guard>} />
           <Route path="/clients/:id" element={<ClientCard />} />
           <Route path="/duplicates" element={<Duplicates />} />
-          <Route path="/development" element={<Razvitok />} />
+          <Route path="/development" element={<Guard perm="development.view"><Razvitok /></Guard>} />
+          <Route path="/my-pay" element={<MyPay />} />
           <Route path="/finance" element={<Finance />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/analytics" element={<Analytics />} />

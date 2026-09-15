@@ -170,6 +170,8 @@ class DealKpiTests(_Base):
 
     def test_hides_margin_fields_and_amount(self):
         self.scheme(self.mgr, self.margin_comp())
+        from apps.finance.models import ManagerPlan  # 16.09 Розвиток v2: «понад план» обіцяємо лише коли план на місяць є
+        ManagerPlan.objects.create(user=self.mgr, period=self.today.strftime("%Y-%m"), target_revenue=Decimal("50000"))
         d = self.main_deal(cost=3700)  # 10 000 − собівартість 3 700 → маржа 6 300 (63%)
         r = self.kpi(self.mgr, d)
         self.assertEqual(r.status_code, 200)

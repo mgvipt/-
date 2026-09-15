@@ -114,6 +114,9 @@ urlpatterns = [
     path("api/gamification/me/", gam_views.MeView.as_view()),
     path("api/gamification/leaderboard/", gam_views.LeaderboardView.as_view()),
     path("api/gamification/manager/<int:pk>/", gam_views.ManagerView.as_view()),
+    path("api/gamification/practice/", gam_views.PracticeView.as_view()),  # 16.09 Розвиток v2
+    path("api/gamification/settings/", gam_views.SettingsView.as_view()),  # 16.09 Розвиток v2
+    path("api/gamification/contests/", gam_views.ContestsView.as_view()),  # 16.09 Розвиток v2
     path("api/inbox/ping/", inbox_views.InboxPingView.as_view()),
     path("api/inbox/deal-badges/", inbox_views.DealBadgesView.as_view()),
     path("api/sounds/", inbox_views.SoundLibraryView.as_view()),

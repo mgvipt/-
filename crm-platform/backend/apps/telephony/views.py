@@ -290,11 +290,13 @@ class TranscribeView(APIView):
             try:
                 from apps.crm.sales_analyst import analyze_dialog
                 from apps.crm.models import DialogAnalysis
-                mgr_id = None
-                if call.deal_id and call.deal and call.deal.owner_id:
-                    mgr_id = call.deal.owner_id
-                elif call.manager_id:
-                    mgr_id = call.manager_id
+                # 16.09.2026 (Розвиток v2): розбір — ТОМУ, ХТО ГОВОРИВ (оператор call.manager або внутрішній номер
+                # call.extension = User.extension); АТС не передала оператора — власнику угоди з позначкою «owner».
+                from apps.gamification.rules import speaker_of as _speaker_of
+                mgr_id = _speaker_of(call)
+                _credit = "speaker" if mgr_id else None
+                if mgr_id is None and call.deal_id and call.deal and call.deal.owner_id:
+                    mgr_id, _credit = call.deal.owner_id, "owner"
                 msgs = []
                 for ln in txt.split(chr(10)):
                     ln = ln.strip()
@@ -306,11 +308,13 @@ class TranscribeView(APIView):
                     msgs = [{"direction": "note", "text": txt}]
                 r = analyze_dialog(msgs, context=f"\u0422\u0435\u043b\u0435\u0444\u043e\u043d\u043d\u0438\u0439 \u0434\u0437\u0432\u0456\u043d\u043e\u043a ({call.direction}), \u043b\u0456\u043d\u0456\u044f {call.line}", kind="\u0434\u0437\u0432\u0456\u043d\u043e\u043a")
                 if isinstance(r, dict) and not r.get("empty"):
-                    _da = DialogAnalysis.objects.create(
+                    _da = DialogAnalysis(
                         deal_id=call.deal_id, manager_id=mgr_id, kind="call",
                         overall_score=r.get("overall", 0) or 0, scores=r.get("scores", {}) or {},
                         strengths=r.get("strengths", ""), why_not_selling=r.get("why_not_selling", ""),
                         recommended_reply=r.get("recommended_reply", ""), coaching=r.get("coaching", ""))
+                    _da._rzv_credit = _credit  # сигнал бала розвитку бачить, кому зараховано (speaker / owner)
+                    _da.save()
                     if call.started_at:
                         from apps.gamification.models import XPEvent as _XP
                         DialogAnalysis.objects.filter(pk=_da.pk).update(created_at=call.started_at)

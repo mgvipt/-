@@ -128,6 +128,18 @@ CHECKS = [
     ("Як виконати план — правила зі схеми", "manager", "/api/payroll/my/?only=rules", {200}, ["rules"]),
     ("Моя ЗП: як прорахувалось (менеджер, лише свої)", "manager", "/api/payroll/my/detail/", {200}, ["lines", "margin_hidden"]),
     ("Моя ЗП: як прорахувалось — чужий id 403", "manager", "/api/payroll/my/detail/?user=1", {403}, []),
+    # ── Розвиток v2 (16.09.2026) ──
+    ("Моя ЗП: гарантовано / умовно", "manager", "/api/payroll/my/", {200}, ["guaranteed", "conditional", "has_plan"]),
+    ("Моя ЗП: що буде, якщо (лише свої)", "manager", "/api/payroll/my/whatif/?pay=10000&tests=2", {200}, ["available"]),
+    ("Моя ЗП: що буде, якщо — чужий id 403", "manager", "/api/payroll/my/whatif/?user=1", {403}, []),
+    ("Розвиток: ти проти себе (менеджер)", "manager", "/api/gamification/me/", {200}, ["points", "season", "quality", "periods"]),
+    ("Розвиток: порівняння команди закрите менеджеру", "manager", "/api/gamification/leaderboard/", {403}, []),
+    ("Розвиток: порівняння команди (власник)", "owner", "/api/gamification/leaderboard/", {200}, ["managers"]),
+    ("Розвиток: чужа сторінка закрита менеджеру", "manager", "/api/gamification/manager/3/", {403}, []),
+    ("Розвиток: справи тижня (свої)", "manager", "/api/gamification/practice/", {200}, ["marks"]),
+    ("Розвиток: налаштування (власник)", "owner", "/api/gamification/settings/", {200}, ["chat_sampling", "contests"]),
+    ("Розвиток: змагання тижня (власник)", "owner", "/api/gamification/contests/", {200}, ["rows", "winners"]),
+    ("Розвиток: змагання — менеджеру 403", "manager", "/api/gamification/contests/", {403}, []),
     # ── Повернення товару (16.09.2026) ──
     ("Повернення: звіт", "owner", "/api/returns/report/", {200}, ["totals", "by_reason", "by_material", "by_person", "rows"]),
     ("Повернення: блок у картці угоди (менеджер)", "manager", "/api/returns/deal/66545/", {200}, ["items", "returns", "can_money", "reasons"]),
