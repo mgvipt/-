@@ -201,7 +201,7 @@ class PayCostExplainTests(TestCase):
         self.assertTrue(row["cost"]["breakdown"])
         self.assertIn("fixed_explain", row["cost"])
         self.assertTrue(d["can_edit_wh_rates"])
-        self.assertEqual([(r["code"], r["auto"]) for r in d["warehouse_rates"]], [("WH_RATE_KG", "yes"), ("bundle_assembly", "no")])
+        self.assertEqual([(r["code"], r["auto"]) for r in d["warehouse_rates"]], [("WH_RATE_KG", "yes"), ("bundle_assembly", "yes")])
         # одне джерело: змінили статтю Фінмоделі (той самий PATCH, що робить сторінка) → ставки показують нове число
         r = c.patch(f"/api/finmodel-articles/{kg.id}/", {"value": "1.75"}, format="json", HTTP_HOST=HOST)
         self.assertEqual(r.status_code, 200)

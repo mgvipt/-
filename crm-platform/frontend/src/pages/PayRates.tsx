@@ -412,7 +412,7 @@ const SECTIONS: { key: string; title: string; hint: string; kinds: string[]; ico
   { key: "fixed", title: "Тверда частина", hint: "Щомісяця, незалежно від продажів. Саме вона порівнюється з фондом у «Плануванні».", kinds: ["base_by_days", "fixed_monthly", "standard", "guarantee"], icon: "wallet" },
   { key: "sales", title: "Від продажів", hint: "% з маржі або з обороту — платиться з грошей, які людина принесла.", kinds: ["margin_share", "revenue_share"], icon: "trending-up" },
   { key: "bonus", title: "Бонуси за подію", hint: "Разові виплати: тест-набір → основне замовлення.", kinds: ["event_bonus"], icon: "gift" },
-  { key: "piece", title: "Склад — відрядно", hint: "За вагу, пакування, тонування, робочий день — із записів складу.", kinds: ["piece_rate"], icon: "package" },
+  { key: "piece", title: "Склад — відрядно", hint: "За вагу, пакування, тонування, збірку тест-наборів — із записів складу.", kinds: ["piece_rate"], icon: "package" },
 ];
 const sectionOf = (kind: string) => SECTIONS.find((x) => x.kinds.includes(kind))?.key || "fixed";
 
@@ -453,7 +453,7 @@ function describe(c: Comp, funnels: any[], isVacancy: boolean, today: string): {
       return { how: `не менше ${money(p.amount)}/міс ${when}; доплачуємо різницю лише в місяці, коли власник відмітив «умови виконано»`, amount: money(p.amount) };
     }
     case "piece_rate":
-      return { how: "за вагу, упаковку, тонування і робочий день — із записів складу за спільними ставками (таблиця «Ставки складу»)", amount: "за ставками складу" };
+      return { how: "за вагу, упаковку, тонування і збірку тест-наборів — із записів складу за спільними ставками (таблиця «Ставки складу»)", amount: "за ставками складу" };
     default:
       return { how: c.kind_label || c.kind, amount: "" };
   }
@@ -509,7 +509,7 @@ function WarehouseRates({ rates, canEdit, onChanged }: { rates: WhRate[]; canEdi
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const by = (code: string) => rates.find((r) => r.code === code);
-  const kg = by("WH_RATE_KG"), p10 = by("WH_PACK_10"), tint = by("WH_TINT_PCT");
+  const kg = by("WH_RATE_KG"), p10 = by("WH_PACK_10"), tint = by("WH_TINT_PCT"), kit = by("bundle_assembly");
   function start() { setVals(Object.fromEntries(rates.map((r) => [r.id, String(r.value).replace(".", ",")]))); setMsg(""); setEdit(true); }
   async function save() {
     setBusy(true); setMsg("");
@@ -562,7 +562,8 @@ function WarehouseRates({ rates, canEdit, onChanged }: { rates: WhRate[]; canEdi
     {msg && <div style={{ fontSize: 12.5, marginTop: 6 }}>{msg}</div>}
     <div style={{ fontSize: 12, marginTop: 8, display: "grid", gap: 3 }}>
       {kg && p10 && <div>Приклад: посилка 7 кг = 7 × {pc(kg.value)} + {pc(p10.value)} = <b>{dec(7 * kg.value + p10.value)} ₴</b> <span className="muted">(вага × ставка за кг + упаковка до 10 кг)</span></div>}
-      {tint && <div>Приклад: тоновані набори на 2 000 ₴ → {pc(tint.value)}% = <b>{dec(2000 * tint.value / 100)} ₴</b></div>}
+      {tint && <div>Приклад: «Послуга тонування» на 2 000 ₴ → {pc(tint.value)}% = <b>{dec(2000 * tint.value / 100)} ₴</b></div>}
+      {kit && <div>Приклад: 3 тестові набори × {pc(kit.value)} ₴ = <b>{dec(3 * kit.value)} ₴</b></div>}
       <div className="muted">Ці ж ставки видно у Фінанси → Фінмодель («Інше / конфіг» → «Склад / ставки») — це одна й та сама ставка: змінили тут — змінилось і там, і для всіх комірників. Ставка за тестовий набір ще й входить у собівартість набору — після зміни собівартість наборів перераховується.</div>
       {!canEdit && <div className="muted">Змінювати ставки складу може лише той, хто має право редагувати Фінмодель.</div>}
     </div>
@@ -665,8 +666,10 @@ function SchemeEditor({ scheme, funnels, users, kinds, conds, funds, fundByDept,
   const showWh = cur.components.some((c) => c.kind === "piece_rate") || cur.department === "Склад";
   const status = scheme.purpose === "legacy" ? "як платили раніше (для порівняння)" : scheme.is_vacancy ? "вакансія — «що якщо»"
     : `діє з ${dm(scheme.valid_from)}${scheme.valid_to ? ` до ${dm(scheme.valid_to)}` : ""}`;
-  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))", gap: 12, alignItems: "start" }}>
-    <div style={{ display: "grid", gap: 10, minWidth: 0 }}>
+  // 15.09.2026: зліва — картка і таблиці (від 560 px), справа — «Скільки коштує» (~320 px); якщо тісно — права частина
+  // переходить униз. Раніше дві рівні колонки: таблиці ширші за колонку вилазили під праву картку.
+  return <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
+    <div style={{ flex: "999 1 560px", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 10, minWidth: 0 }}>
       <div style={box}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 9 }}>
           <b style={{ fontSize: 15 }}>{scheme.user_name || (scheme.is_vacancy ? scheme.position || "Вакансія" : scheme.position)}</b>
@@ -732,7 +735,7 @@ function SchemeEditor({ scheme, funnels, users, kinds, conds, funds, fundByDept,
         {msg && <span style={{ fontSize: 12.5, flexBasis: "100%" }}>{msg}</span>}
       </div>}
     </div>
-    <div style={{ position: "sticky", top: 8, display: "grid", gap: 10, minWidth: 0 }}>
+    <div style={{ flex: "1 1 320px", position: "sticky", top: 8, alignSelf: "flex-start", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 10, minWidth: 0 }}>
       {cost && scheme.purpose === "official" && <CostCard cost={cost} k={k} marginPct={marginPct} employmentLabel={scheme.employment_label} />}
       {editing && <div className="note" style={{ fontSize: 12 }}>Вартість справа — для збереженої версії; після «Зберегти» перерахується.</div>}
       <CalcPreview scheme={scheme} canEdit={canEdit} onMarked={() => onSaved(scheme.id)} />
@@ -896,7 +899,7 @@ export default function PayRates() {
           {vacancies.length === 0 && <div className="muted" style={{ fontSize: 12, padding: "2px 6px 6px" }}>Вакансій немає.</div>}
         </div>
       </div>
-      <div>
+      <div style={{ minWidth: 0 }}>
         {adding && <NewScheme users={d.users} onCancel={() => setAdding(false)} onCreated={(id) => { setAdding(false); load(id); }} />}
         {!adding && cur && <SchemeEditor scheme={cur} funnels={funnels} users={d.users} kinds={d.kinds} conds={d.guarantee_conditions} funds={d.funds || []} fundByDept={d.fund_by_dept || {}}
           canEdit={d.can_edit} k={k} marginPct={bm} whRates={d.warehouse_rates || []} canEditWh={!!d.can_edit_wh_rates}
