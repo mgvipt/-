@@ -631,11 +631,29 @@ function MonthSalaryView({ t }: any) {
   );
 }
 
+// 15.09 (wh-day): конкретний день замість «останніх N днів» — стрілки ‹ ›, календар і «Сьогодні»
+function isoLocal(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+
+function DayPicker({ t, day, setDay }: any) {
+  const today = isoLocal(new Date());
+  const shift = (n: number) => { const x = new Date(day + "T12:00:00"); x.setDate(x.getDate() + n); setDay(isoLocal(x)); };
+  const btn = { height: 32, minWidth: 34, fontSize: 15, padding: "0 10px" };
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+      <button className="btn btn-light" style={btn} onClick={() => shift(-1)} aria-label={t("Предыдущий день", "Попередній день")}>‹</button>
+      <input type="date" value={day} max={today} onChange={(e) => e.target.value && setDay(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px", fontSize: 13 }} />
+      <button className="btn btn-light" style={btn} disabled={day >= today} onClick={() => shift(1)} aria-label={t("Следующий день", "Наступний день")}>›</button>
+      {day !== today && <button className="btn btn-light" style={{ ...btn, fontSize: 12.5 }} onClick={() => setDay(today)}>{t("Сегодня", "Сьогодні")}</button>}
+    </div>
+  );
+}
+
 function SalaryView({ t }: any) {
   const [d, setD] = useState<any>(null);
   const [period, setPeriod] = useState("month");
+  const [day, setDay] = useState(() => isoLocal(new Date()));  // 15.09 (wh-day)
   const [mode, setMode] = useState<"period" | "calendar">("period");
-  useEffect(() => { api.get<any>(`/api/warehouse/my-salary/?period=${period}`).then(setD).catch(() => {}); }, [period]);
+  useEffect(() => { api.get<any>(period === "day" ? `/api/warehouse/my-salary/?date=${day}` : `/api/warehouse/my-salary/?period=${period}`).then(setD).catch(() => {}); }, [period, day]);
   const LBL: any = { workday: ["Дни (ставка)", "Дні (ставка)"], shipment_weight: ["Вес отгрузки", "Вага відвантаження"], packing: ["Пакування", "Пакування"], tinting: ["Тонировка", "Тонування"], test_set: ["Сборка тест-наборов", "Збірка тест-наборів"], bonus_initiative: ["Бонус-идея", "Бонус-ідея"], bonus_cleanliness: ["Бонус-чистота", "Бонус-чистота"], error: ["Ошибки", "Помилки"], wrong_material: ["Не тот материал", "Не той матеріал"] };
   if (mode === "calendar") return <div><SalaryModeSwitch t={t} mode={mode} setMode={setMode} /><MonthSalaryView t={t} /></div>;
   if (!d) return <div className="spin">…</div>;
@@ -643,12 +661,13 @@ function SalaryView({ t }: any) {
     <div>
       <SalaryModeSwitch t={t} mode={mode} setMode={setMode} />
       <div style={{ display: "flex", gap: 4, marginBottom: 12, background: "#f1f5f9", borderRadius: 9, padding: 3 }}>
-        {([["week", "Неделя", "Тиждень"], ["month", "30 дней", "30 днів"], ["quarter", "Квартал", "Квартал"], ["all", "Всё", "Все"]] as any[]).map(([p, ru, uk]) => (
+        {([["week", "Неделя", "Тиждень"], ["month", "30 дней", "30 днів"], ["quarter", "Квартал", "Квартал"], ["all", "Всё", "Все"], ["day", "День", "День"]] as any[]).map(([p, ru, uk]) => (
           <button key={p} onClick={() => setPeriod(p)} style={{ flex: 1, fontSize: 12.5, padding: "7px", borderRadius: 7, border: "none", cursor: "pointer", background: period === p ? C.terra : "transparent", color: period === p ? "#fff" : C.slate, fontWeight: 600 }}>{t(ru, uk)}</button>
         ))}
       </div>
+      {period === "day" && <DayPicker t={t} day={day} setDay={setDay} />}
       <div className="panel" style={{ textAlign: "center", padding: "22px", background: "linear-gradient(135deg,#ecfdf5,#fff)" }}>
-        <div className="muted" style={{ fontSize: 13 }}>{t("Заработано за период", "Зароблено за період")}</div>
+        <div className="muted" style={{ fontSize: 13 }}>{period === "day" ? t("Заработано за", "Зароблено за") + " " + (d.label || day) : t("Заработано за период", "Зароблено за період")}</div>
         <div style={{ fontSize: 48, fontWeight: 800, color: C.green }}>{f(d.total)} ₴</div>
       </div>
       <div className="panel">
@@ -709,14 +728,16 @@ function DashboardView({ t }: any) {
   const { can } = useAuth(); // 15.09 (whpay): посилання на Фінанси → ЗП/KPI — лише з правом на ставки
   const [d, setD] = useState<any>(null);
   const [period, setPeriod] = useState("month");
-  useEffect(() => { api.get<any>(`/api/warehouse/dashboard/?period=${period}`).then(setD).catch(() => {}); }, [period]);
+  const [day, setDay] = useState(() => isoLocal(new Date()));  // 15.09 (wh-day)
+  useEffect(() => { api.get<any>(period === "day" ? `/api/warehouse/dashboard/?date=${day}` : `/api/warehouse/dashboard/?period=${period}`).then(setD).catch(() => {}); }, [period, day]);
   if (!d) return <div className="spin">…</div>;
   const cols: any[] = [["workday", t("Ставка", "Ставка")], ["shipment_weight", t("Вес₴", "Вага₴")], ["packing", t("Упак.", "Упак.")], ["tinting", t("Тонир.", "Тонув.")], ["test_set", t("Тест-наб.", "Тест-наб.")], ["bonus_initiative", t("Бонус", "Бонус")]];
   return (
     <div>
       <div style={{ display: "flex", gap: 4, marginBottom: 12, background: "#f1f5f9", borderRadius: 9, padding: 3, maxWidth: 440 }}>
-        {([["week", "Неделя", "Тиждень"], ["month", "30 дней", "30 днів"], ["quarter", "Квартал", "Квартал"], ["all", "Всё", "Все"]] as any[]).map(([p, ru, uk]) => <button key={p} onClick={() => setPeriod(p)} style={{ flex: 1, fontSize: 12.5, padding: "7px", borderRadius: 7, border: "none", cursor: "pointer", background: period === p ? C.terra : "transparent", color: period === p ? "#fff" : C.slate, fontWeight: 600 }}>{t(ru, uk)}</button>)}
+        {([["week", "Неделя", "Тиждень"], ["month", "30 дней", "30 днів"], ["quarter", "Квартал", "Квартал"], ["all", "Всё", "Все"], ["day", "День", "День"]] as any[]).map(([p, ru, uk]) => <button key={p} onClick={() => setPeriod(p)} style={{ flex: 1, fontSize: 12.5, padding: "7px", borderRadius: 7, border: "none", cursor: "pointer", background: period === p ? C.terra : "transparent", color: period === p ? "#fff" : C.slate, fontWeight: 600 }}>{t(ru, uk)}</button>)}
       </div>
+      {period === "day" && <DayPicker t={t} day={day} setDay={setDay} />}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12, marginBottom: 14 }}>
         {([["offline", "🏪", t("Офлайн (покрытия/салон)", "Офлайн (покриття/салон)"), C.terra], ["online", "🌐", t("Онлайн (тест+основной)", "Онлайн (тест+основний)"), C.blue]] as any[]).map(([k, e, lbl, col]) => {
           const o = d.onoff[k] || { count: 0, weight: 0, value: 0 };

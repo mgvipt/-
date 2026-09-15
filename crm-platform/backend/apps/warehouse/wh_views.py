@@ -609,24 +609,50 @@ def _finalize(job, user, pay_packing=True):
     return job
 
 
+_FAR = datetime.date(2100, 1, 1)  # «без верхньої межі» для режиму «останні N днів»
+
+
+def _req_range(request):
+    """15.09 (wh-day): період звітів складу. ?date=РРРР-ММ-ДД — один день; ?from=&to= — свій проміжок;
+    інакше ?period=week|month|quarter|all — «останні N днів», як було (без верхньої межі).
+    Повертає (з, по або None, period, підпис)."""
+    def _d(s):
+        try:
+            return datetime.date.fromisoformat((s or "").strip()[:10])
+        except ValueError:
+            return None
+    day = _d(request.GET.get("date"))
+    if day:
+        return day, day, "day", day.strftime("%d.%m.%Y")
+    d1, d2 = _d(request.GET.get("from")), _d(request.GET.get("to"))
+    if d1 or d2:
+        d1, d2 = d1 or d2, d2 or timezone.localdate()
+        if d1 > d2:
+            d1, d2 = d2, d1
+        return d1, d2, "range", "%s — %s" % (d1.strftime("%d.%m.%Y"), d2.strftime("%d.%m.%Y"))
+    period = request.GET.get("period", "month")
+    days = {"week": 7, "month": 30, "quarter": 90, "all": 3650}.get(period, 30)
+    return timezone.now().date() - datetime.timedelta(days=days), None, period, ""
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def my_salary(request):
     period = request.GET.get("period", "month")
     if period == "calendar":
         return _my_calendar_month(request)  # 14.09 (wh-accrual): календарний місяць (поточний / попередній)
-    days = {"week": 7, "month": 30, "quarter": 90, "all": 3650}.get(period, 30)
-    since = timezone.now().date() - datetime.timedelta(days=days)
-    qs = WarehousePayrollEntry.objects.filter(employee=request.user, work_date__gte=since, status="confirmed")
+    since, until, period, label = _req_range(request)  # 15.09 (wh-day): один день / свій проміжок / останні N днів
+    qs = WarehousePayrollEntry.objects.filter(employee=request.user, work_date__gte=since, work_date__lte=until or _FAR, status="confirmed")
     total = qs.aggregate(s=Sum("amount"))["s"] or 0
     lines = []
     for op in ["workday", "shipment_weight", "packing", "tinting", "test_set", "bonus_initiative", "bonus_cleanliness", "error", "wrong_material"]:
         r = qs.filter(op_type=op).aggregate(s=Sum("amount"), n=Count("id"))
         if r["n"]:
             lines.append({"op": op, "amount": str(r["s"] or 0), "count": r["n"]})
-    shipments = WarehouseJob.objects.filter(assignee=request.user, status="shipped", shipped_at__date__gte=since).count()
+    shipments = WarehouseJob.objects.filter(assignee=request.user, status="shipped", shipped_at__date__gte=since, shipped_at__date__lte=until or _FAR).count()
     tintings = qs.filter(op_type="tinting").count()
-    return Response({"total": str(total), "lines": lines, "period": period,
+    return Response({"total": str(total), "lines": lines, "period": period, "label": label,
+                     "from": since.isoformat(), "to": (until or timezone.localdate()).isoformat(),
                      "shipments": shipments, "tintings": tintings,
                      "rates": rates_payload(request.user)})  # 15.09 (whpay): ставки зараз — з Фінмоделі
 
@@ -852,22 +878,21 @@ def dashboard(request):
     """Зведення складу для керівника: по співробітниках + команда + онлайн/офлайн + період."""
     from django.contrib.auth import get_user_model
     from django.db.models import Sum
-    period = request.GET.get("period", "month")
-    days = {"week": 7, "month": 30, "quarter": 90, "all": 3650}.get(period, 30)
-    since = timezone.now().date() - datetime.timedelta(days=days)
+    since, until, period, label = _req_range(request)  # 15.09 (wh-day): один день / свій проміжок / останні N днів
+    until_q = until or _FAR
     U = get_user_model()
-    emp_ids = set(WarehousePayrollEntry.objects.filter(work_date__gte=since).values_list("employee_id", flat=True))
-    emp_ids |= set(WarehouseJob.objects.filter(status="shipped", shipped_at__date__gte=since, assignee__isnull=False).values_list("assignee_id", flat=True))
+    emp_ids = set(WarehousePayrollEntry.objects.filter(work_date__gte=since, work_date__lte=until_q).values_list("employee_id", flat=True))
+    emp_ids |= set(WarehouseJob.objects.filter(status="shipped", shipped_at__date__gte=since, shipped_at__date__lte=until_q, assignee__isnull=False).values_list("assignee_id", flat=True))
     OPS = ["workday", "shipment_weight", "packing", "tinting", "test_set", "bonus_initiative", "error", "wrong_material"]
     rows = []
     for uid in emp_ids:
         u = U.objects.filter(id=uid).first()
         if not u:
             continue
-        pe = WarehousePayrollEntry.objects.filter(employee_id=uid, work_date__gte=since, status="confirmed")
+        pe = WarehousePayrollEntry.objects.filter(employee_id=uid, work_date__gte=since, work_date__lte=until_q, status="confirmed")
         total = pe.aggregate(s=Sum("amount"))["s"] or 0
         by = {op: float(pe.filter(op_type=op).aggregate(s=Sum("amount"))["s"] or 0) for op in OPS}
-        ship = WarehouseJob.objects.filter(assignee_id=uid, status="shipped", shipped_at__date__gte=since)
+        ship = WarehouseJob.objects.filter(assignee_id=uid, status="shipped", shipped_at__date__gte=since, shipped_at__date__lte=until_q)
         rows.append({"id": uid, "name": u.get_full_name() or u.username,
                      "shipments": ship.count(),
                      "weight": float(ship.aggregate(s=Sum("shipped_weight_kg"))["s"] or 0),
@@ -879,13 +904,14 @@ def dashboard(request):
             "weight": round(sum(r["weight"] for r in rows), 1), "tintings": sum(r["tintings"] for r in rows),
             "people": len(rows)}
     onoff = {"online": {"count": 0, "weight": 0.0, "value": 0.0}, "offline": {"count": 0, "weight": 0.0, "value": 0.0}}
-    for j in WarehouseJob.objects.filter(status="shipped", shipped_at__date__gte=since).select_related("deal", "deal__funnel"):
+    for j in WarehouseJob.objects.filter(status="shipped", shipped_at__date__gte=since, shipped_at__date__lte=until_q).select_related("deal", "deal__funnel"):
         fn = (j.deal.funnel.name if (j.deal and j.deal.funnel_id) else "").lower()
         ch = "offline" if any(x in fn for x in ["салон", "покрыт", "покритт"]) else "online"
         onoff[ch]["count"] += 1
         onoff[ch]["weight"] += float(j.shipped_weight_kg or 0)
         onoff[ch]["value"] += float(j.deal.amount or 0) if j.deal else 0
-    return Response({"period": period, "rows": rows, "team": team, "onoff": onoff, "ops": OPS,
+    return Response({"period": period, "label": label, "from": since.isoformat(),
+                     "to": (until or timezone.localdate()).isoformat(), "rows": rows, "team": team, "onoff": onoff, "ops": OPS,
                      "rates": rates_payload(request.user)})  # 15.09 (whpay)
 
 

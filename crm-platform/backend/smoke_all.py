@@ -128,6 +128,8 @@ CHECKS = [
     ("ЗП: як прорахувалось (менеджер — ні)", "manager", "/api/payroll/calc-detail/?user=102&period=2026-09", {403}, []),
     ("Склад: ставки зараз у вкладці ЗП", "owner", "/api/warehouse/my-salary/?period=month", {200}, ["rates", "total"]),
     ("Склад: ставки зараз у дашборді", "owner", "/api/warehouse/dashboard/?period=month", {200}, ["rates", "rows"]),
+    ("Склад: моя ЗП за один день", "owner", "/api/warehouse/my-salary/?date=2026-09-01", {200}, ["total", "label", "from", "to"]),
+    ("Склад: дашборд за один день", "owner", "/api/warehouse/dashboard/?date=2026-09-01", {200}, ["rows", "label", "from", "to"]),
     ("Звільнені: де показувати (власник)", "owner", "/api/users/visibility/", {200}, ["entities", "people"]),
     ("Звільнені: де показувати (менеджер — ні)", "manager", "/api/users/visibility/", {403}, []),
     ("Табель: активні + дозволені звільнені", "owner", "/api/users/?visible_in=timesheet&period=2026-09", {200}, []),

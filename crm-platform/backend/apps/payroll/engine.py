@@ -707,7 +707,7 @@ def scheme_cost(sc, pol=None, sh=None, on=None):
 
 FUND_BY_DEPT = {"Продажі": 59, "Склад": 59, "Офіс": 59, "Маркетинг": 53}  # тверда частина → фонд Олега
 PCT_FUND = 46     # «ФОТ % продажу (комісія менеджера)» — % з виручки
-PIECE_FUND = 55   # «ФОТ упаковка/тонування/відгрузка» — ₴/міс
+PIECE_FUND = 55   # «ФОТ упаковка/тонування/відгрузка» — з 15.09 фонд виручки (% з виручки); раніше ₴/міс
 GROUP_LABELS = {"revenue": "Фонди виручки (ФВ)", "margin": "Фонди маржі (ФМ)", "skd": "Фонди СКД (ФСКД)",
                 "upr": "Управлінські (УПР)", "other": "Інше"}
 
@@ -780,6 +780,11 @@ def breakeven_atm(extra_ids=(), without_ids=(), today=None):
             continue
         if fid == PCT_FUND:
             sug, unit, people = round(pct_rev * 100, 2), "%", []
+        elif fid == PIECE_FUND and a.value_type == "percent":
+            # 15.09 (wh-piece-fv): відрядна складу — фонд виручки, як % продажникам і логістика. «За ставками» =
+            # факт записів складу ÷ виручка того ж періоду; «Підставити» вимкнено (записи неповні) — % задає Олег у Фінмоделі.
+            rev = float(sh.get("rev_total") or 0)
+            sug, unit, people = (round(piece_month * sh["months"] / rev * 100, 2) if rev else 0.0), "%", []
         elif fid == PIECE_FUND:
             sug, unit, people = round(piece_month), "₴", []
         else:
@@ -788,7 +793,7 @@ def breakeven_atm(extra_ids=(), without_ids=(), today=None):
         fot.append({"fund_id": fid, "name": a.name, "unit": unit, "value": cur, "suggested": sug,
                     "diff": round(sug - cur, 2), "people": people,
                     # «Маркетинг СММ» містить і контент/рекламу, не лише людей — тільки порівняння, без кнопки
-                    "syncable": a.name.strip().upper().startswith("ФОТ")})
+                    "syncable": a.name.strip().upper().startswith("ФОТ") and not (fid == PIECE_FUND and unit == "%")})
     # вакансії «що якщо»: тверда частина з податками → у свій фонд → ТБ зростає на суму × k
     vac, add = [], 0.0
     for v in PayScheme.objects.filter(is_vacancy=True, status="active", purpose="official").order_by("planned_start", "id"):
