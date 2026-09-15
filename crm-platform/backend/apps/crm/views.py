@@ -2892,7 +2892,9 @@ class AnalyticsView(APIView):
         _channels.sort(key=lambda x: (-x["revenue"], -x["leads"]))
 
         # топ менеджеров
-        managers = list(deals.values("owner__first_name", "owner__last_name")
+        # staffvis 15.09: звільнених без дозволу «Аналітика продажів» у топі менеджерів не показуємо (цифри вище — без змін)
+        from apps.accounts.visibility import hidden_ids as _vis_hidden
+        managers = list(deals.exclude(owner_id__in=_vis_hidden("sales_analytics")).values("owner__first_name", "owner__last_name")
                         .annotate(deals=Count("id"), sum=Sum("amount")).order_by("-sum")[:5])
         return Response({
             "leads_total": leads_total, "deals_total": deals_total,
@@ -4852,6 +4854,9 @@ class StaffAnalyticsView(APIView):
             qs = qs.filter(employment_status=st)
         elif st != "all":
             qs = qs.filter(is_active=True)
+        if st in ("dismissed", "all"):  # staffvis 15.09: звільнені — лише з дозволом «Аналітика співробітників»
+            from apps.accounts.visibility import hidden_ids as _vis_hidden
+            qs = qs.exclude(id__in=_vis_hidden("staff_analytics", d_from))
         dept = request.GET.get("dept")
         if dept:
             qs = qs.filter(department_id=dept)
@@ -5896,6 +5901,10 @@ class ManagerActionsView(APIView):
                     r["replies_cp"] += c["n"]
             else:
                 unassigned_cp += c["n"]
+        # staffvis 15.09: рядки звільнених — лише з дозволом «Аналітика продажів» (зведення «ІІ / люди» рахує всіх)
+        from apps.accounts.visibility import hidden_ids as _vis_hidden
+        for _h in _vis_hidden("sales_analytics", d_from) & set(agg):
+            agg.pop(_h, None)
         names = {x.id: (x.get_full_name() or x.username) for x in User.objects.filter(id__in=list(agg.keys()))}
         rows = sorted(
             [{**v, "name": names.get(v["user_id"], "#%s" % v["user_id"])} for v in agg.values()],
@@ -6023,6 +6032,10 @@ class WeeklyReviewView(APIView):
             r["scores"].append(da["overall_score"])
             if da["why_not_selling"] and len(r["why"]) < 3:
                 r["why"].append(str(da["why_not_selling"])[:170])
+        # staffvis 15.09: звільнених без дозволу «Аналітика продажів» у розбір тижня не передаємо
+        from apps.accounts.visibility import hidden_ids as _vis_hidden
+        for _h in _vis_hidden("sales_analytics", d_from) & set(agg):
+            agg.pop(_h, None)
         names = {x.id: (x.get_full_name() or x.username) for x in User.objects.filter(id__in=list(agg.keys()))}
         data_for_ai = []
         for uid, r in agg.items():
@@ -6108,10 +6121,15 @@ class ManagerStagesView(APIView):
         for x in User.objects.filter(id__in=uids):
             names[x.id] = x.get_full_name() or x.username
         # рядки: менеджери (за активністю) + ІІ
+        # staffvis 15.09: рядки звільнених — лише з дозволом «Аналітика продажів» (% ІІ по статусах рахує всіх)
+        from apps.accounts.visibility import hidden_ids as _vis_hidden
+        _vis_hid = _vis_hidden("sales_analytics", d_from)
         out_rows = []
         for wk, per in agg.items():
             is_ai = wk == AI_KEY
             uid = None if is_ai else int(wk[1:])
+            if uid is not None and uid in _vis_hid:
+                continue
             total = sum(len(v) for v in per.values())
             out_rows.append({
                 "key": wk, "is_ai": is_ai,

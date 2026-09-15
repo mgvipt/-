@@ -2288,7 +2288,8 @@ function Timesheet() {
   const [uid, setUid] = useState<number | null>(null);
   const [ym, setYm] = useState(`${now.getFullYear()}-${pad(now.getMonth() + 1)}`);
   const [days, setDays] = useState<Record<string, string>>({});
-  useEffect(() => { api.get<any>("/api/users/").then((d) => { const us = d.results || d; setUsers(us); if (us[0]) setUid(us[0].id); }); }, []);
+  // staffvis 15.09: активні + звільнені, яких дозволено показувати в «Табелі» за цей місяць (Співробітники → Звільнені)
+  useEffect(() => { api.get<any>(`/api/users/?visible_in=timesheet&period=${ym}`).then((d) => { const us = d.results || d; setUsers(us); setUid((cur) => (cur && us.some((u: any) => u.id === cur)) ? cur : (us[0] ? us[0].id : null)); }); }, [ym]);
   const [y, mo] = ym.split("-").map(Number);
   const load = () => { if (!uid) return; api.get<any>(`/api/workdays/?user=${uid}&year=${y}&month=${mo}&page_size=40`).then((d) => { const r = d.results || d; const map: any = {}; r.forEach((w: any) => { map[w.date] = w.status; }); setDays(map); }); };
   useEffect(() => { load(); }, [uid, ym]);
@@ -3599,7 +3600,7 @@ function MPlans() {
   const [sal, setSal] = useState<any>(null);
   const [plans, setPlans] = useState<Record<number, any>>({});
   const load = () => {
-    api.get<any>(`/api/finance/salary/?period=${period}`).then(setSal);
+    api.get<any>(`/api/finance/salary/?period=${period}&for=plans`).then(setSal);  // staffvis 15.09: звільнені — за вибором «Плани»
     api.get<any>(`/api/manager-plans/?period=${period}&page_size=100`).then((d) => {
       const m: Record<number, any> = {}; (d.results || d).forEach((p: any) => { m[p.user] = p; }); setPlans(m);
     });

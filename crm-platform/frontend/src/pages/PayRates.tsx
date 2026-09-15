@@ -9,7 +9,11 @@ import { Icon } from "../Icon";
  * 14.09 (payrates-ux, «усе врозкид, незрозуміло, чому в Лаптева 23 766»): схема відкривається ЧИТАННЯМ — таблиця
  * «Частина оплати | Як рахується | Сума»; кнопка «Змінити» → рівна форма (підписи 180px). Справа — вартість з розшифровкою
  * (бекенд scheme_cost: breakdown / fixed_explain). Ставки складу — ті самі статті Фінмоделі (PATCH /api/finmodel-articles/<id>/).
- * Зміна з наступного місяця = нова версія; минулі місяці не перераховуються. */
+ * Зміна з наступного місяця = нова версія; минулі місяці не перераховуються.
+ * 15.09 (whkpi, «KPI складу ок, я затверджую»): у стандарту можуть бути пункти (params.criteria). У читанні — нумерований
+ * список «вимірює CRM / відмічає керівник»; у «Розрахунку за місяць» — підказка CRM по пунктах, які вона вимірює
+ * (GET /api/payroll/wh-kpi/), і галочки керівника по решті → оцінка; збереження — POST /api/payroll/wh-kpi/
+ * (без цього маршруту — лише оцінка через /components/<id>/mark/). Сума як і раніше = максимум × оцінка. */
 
 type Comp = { id?: number; kind: string; kind_label?: string; title: string; params: any; active?: boolean };
 type Step = { label: string; amount: number; hint?: string; sub?: boolean; plus?: boolean; total?: boolean };
@@ -25,6 +29,11 @@ type Scheme = {
   is_vacancy: boolean; in_plan: boolean; planned_start: string | null; options: any; note: string; components: Comp[]; cost?: Cost;
 };
 type WhRate = { id: number; code: string; name: string; value: number; unit: string; auto: string; auto_note: string };
+type Crit = { key: string; title: string; how_measured: string; target?: string; target_pct?: number };
+type SugPoint = { n: number; key: string; title: string; how_measured: string; target: string; value: number | null; value_text: string;
+  pass: boolean | null; details: string[]; hint?: string; mark: boolean; marked: boolean };
+type Sug = { period: string; from: string; to: string | null; partial: boolean; points: SugPoint[]; good: number; suggested_pct: number;
+  suggested_score: number; workdays: number; workdays_source: string; rule: string; criteria_source: string };
 
 const money = (n: any) => Math.round(Number(n || 0)).toLocaleString("uk-UA") + " ₴";
 const num = (n: any) => Math.round(Number(n || 0)).toLocaleString("uk-UA");
@@ -33,6 +42,22 @@ const pc = (v: any) => String(Number(v ?? 0)).replace(".", ",");
 const month = () => new Date().toISOString().slice(0, 7);
 const dm = (s: string | null) => (s ? `${s.slice(8, 10)}.${s.slice(5, 7)}.${s.slice(0, 4)}` : "");
 const DEPTS = ["Продажі", "Склад", "Маркетинг", "Офіс"];
+/* 15.09 (whkpi): 8 пунктів стандарту складу — копія backend apps/payroll/wh_kpi.py WH_STANDARD_CRITERIA (ключі мають збігатися).
+ * Пункти з ключами WH_AUTO_KEYS CRM рахує сама (1, 4, 5, 6), решту відмічає керівник. */
+const WH_AUTO_KEYS = ["ship_same_day", "weight_photo", "queue_clean", "receipt_same_day"];
+const WH_STD_CRITERIA: Crit[] = [
+  { key: "ship_same_day", title: "Відвантаження вчасно: оплачено до 14:00 — відправлено того ж дня", how_measured: "auto", target: "не менше 95% замовлень", target_pct: 95 },
+  { key: "no_picking_errors", title: "Нуль помилок комплектації (не той товар / колір / кількість)", how_measured: "manual", target: "0 підтверджених помилок; кожна знижує стандарт; утримання 50% — окремо, як і було" },
+  { key: "no_damage", title: "Нуль пошкоджень у дорозі через пакування (скарги / повернення «розбилось / протекло»)", how_measured: "manual", target: "0 випадків" },
+  { key: "weight_photo", title: "Вага і фото посилки в CRM у кожного відвантаження", how_measured: "auto", target: "100% відвантажень", target_pct: 100 },
+  { key: "queue_clean", title: "Черга порожня в кінці дня: задачі «Відвантажити» не старші доби", how_measured: "auto", target: "щодня — не менше 95% робочих днів", target_pct: 95 },
+  { key: "receipt_same_day", title: "Прихід — у день надходження: накладна оприбуткована, собівартість є", how_measured: "auto", target: "не менше 95% накладних того ж дня; собівартість — у кожному рядку", target_pct: 95 },
+  { key: "stock_accuracy", title: "Точність залишків: розбіжність при перерахунку полиці ≤ 1%; раз на тиждень вибіркова перевірка", how_measured: "manual", target: "розбіжність ≤ 1%, перевірка щотижня" },
+  { key: "order_timesheet", title: "Порядок і табель: без запізнень і прогулів, фото порядку на складі раз на тиждень", how_measured: "manual", target: "0 запізнень і прогулів, фото щотижня" },
+];
+const critOf = (c: Comp): Crit[] => (Array.isArray(c.params?.criteria) ? c.params.criteria : []).filter((x: any) => x && String(x.title || "").trim());
+const isAutoCrit = (x: Crit) => x.how_measured === "auto" && WH_AUTO_KEYS.includes(x.key);
+const clampPct = (v: number) => Math.max(0, Math.min(100, Math.round(Number.isFinite(v) ? v : 100)));
 const EMPL: [string, string][] = [["labor", "Трудовий договір"], ["fop", "ФОП"], ["none", "Без оформлення"]];
 const EMPL_HINT: Record<string, string> = {
   labor: "з нарахованої ЗП утримуються ПДФО і військовий збір, компанія платить ЄСВ зверху",
@@ -60,6 +85,10 @@ const TEMPLATES: Record<string, { label: string; comps: (start: string) => Comp[
   sales: { label: "Продажник (нова схема)", comps: () => SALES },
   newbie: { label: "Новачок з гарантією 15 000 ₴ на 2 міс.", comps: (start) => [...SALES, { kind: "guarantee", title: "Гарантія новачку 15 000 ₴ × 2 міс.", params: { amount: 15000, months: 2, start } }] },
   warehouse: { label: "Комірник: ставка + відрядно", comps: () => [{ kind: "fixed_monthly", title: "Ставка", params: { amount: 8000 } }, { kind: "piece_rate", title: "Відрядно (ставки складу)", params: {} }] },
+  warehouse_std: { label: "Комірник: за вихід + стандарт складу + відрядно", comps: () => [
+    { kind: "base_by_days", title: "За вихід (по табелю)", params: { amount: 5000 } },
+    { kind: "standard", title: "Стандарт складу (до 3 000 ₴, 8 пунктів)", params: { max: 3000, criteria: WH_STD_CRITERIA.map((x) => ({ ...x })) } },
+    { kind: "piece_rate", title: "Відрядно (ставки складу)", params: {} }] },
   fixed: { label: "Фіксована оплата", comps: () => [{ kind: "fixed_monthly", title: "Оплата за місяць", params: { amount: 0 } }] },
 };
 
@@ -143,7 +172,12 @@ function ParamsFields({ comp, funnels, conds, onChange }: { comp: Comp; funnels:
     case "fixed_monthly":
       return <Field label="Сума «на руки»" hint="щомісяця; у перший місяць — пропорційно робочим дням"><Num value={p.amount} onChange={(v) => set("amount", v)} suffix="₴ / міс" /></Field>;
     case "standard":
-      return <Field label="Максимум" hint="× оцінка стандарту за місяць (ставиться справа, у «Розрахунку за місяць»)"><Num value={p.max} onChange={(v) => set("max", v)} suffix="₴ / міс" /></Field>;
+      return <>
+        <Field label="Максимум" hint="× оцінка стандарту за місяць (ставиться справа, у «Розрахунку за місяць»)"><Num value={p.max} onChange={(v) => set("max", v)} suffix="₴ / міс" /></Field>
+        <Field label={<>Пункти стандарту<div className="muted" style={{ fontSize: 11 }}>пояснення і підказка CRM; сума = максимум × оцінка</div></>}>
+          <CritEdit value={Array.isArray(p.criteria) ? p.criteria : []} onChange={(v) => set("criteria", v)} />
+        </Field>
+      </>;
     case "margin_share":
       return <>
         <Field label="До плану"><Num value={p.pct_to_plan} onChange={(v) => set("pct_to_plan", v)} suffix="% з маржі" width={70} /></Field>
@@ -189,6 +223,136 @@ function ParamsFields({ comp, funnels, conds, onChange }: { comp: Comp; funnels:
   }
 }
 
+/** Позначка пункту стандарту: хто його перевіряє (15.09, whkpi). */
+function CritBadge({ auto }: { auto: boolean }) {
+  return <span style={{ fontSize: 10.5, fontWeight: 700, borderRadius: 999, padding: "1px 7px", whiteSpace: "nowrap", marginLeft: 5,
+    background: auto ? "#dcfce7" : "#f1f5f9", color: auto ? "#166534" : "#475569" }}>{auto ? "вимірює CRM" : "відмічає керівник"}</span>;
+}
+
+/** Пункти стандарту в режимі читання — нумерований список. */
+function CritView({ list }: { list: Crit[] }) {
+  if (!list.length) return null;
+  const auto = list.filter(isAutoCrit).length;
+  return <div style={{ marginTop: 5 }}>
+    <div className="muted" style={{ fontSize: 11.5 }}>{list.length} пунктів, кожен — 1/{list.length} оцінки: {auto} рахує CRM, {list.length - auto} відмічає керівник</div>
+    <ol style={{ margin: "4px 0 0", paddingLeft: 20, fontSize: 12, color: "#334155", display: "grid", gap: 3 }}>
+      {list.map((x, i) => <li key={x.key || i}>{x.title}{x.target ? <span className="muted"> — {x.target}</span> : null}<CritBadge auto={isAutoCrit(x)} /></li>)}
+    </ol>
+  </div>;
+}
+
+/** Пункти стандарту в режимі «Змінити»: назва і мета; пункти 1, 4, 5, 6 складу CRM рахує сама (їх ключі не змінюються). */
+function CritEdit({ value, onChange }: { value: Crit[]; onChange: (v: Crit[]) => void }) {
+  const set = (i: number, patch: Partial<Crit>) => onChange(value.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const nextKey = () => { let k = value.length + 1; while (value.some((x) => x.key === `c${k}`)) k++; return `c${k}`; };
+  const ta: React.CSSProperties = { width: "100%", boxSizing: "border-box", fontSize: 12.5, border: "1px solid #cbd5e1", borderRadius: 6, padding: "5px 8px", resize: "vertical", fontFamily: "inherit" };
+  return <div style={{ display: "grid", gap: 6, width: "100%" }}>
+    {value.length === 0 && <div className="muted" style={{ fontSize: 12 }}>Пунктів немає — оцінка стандарту ставиться одним числом.</div>}
+    <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 6 }}>
+      {value.map((x, i) => <li key={x.key || i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+        <span style={{ width: 22, textAlign: "right", fontSize: 12.5, color: "#64748b", paddingTop: 6, flexShrink: 0 }}>{i + 1}.</span>
+        <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 4 }}>
+          <textarea value={x.title || ""} rows={Math.max(1, Math.ceil((x.title || "").length / 75))} onChange={(e) => set(i, { title: e.target.value })} placeholder="Що саме має бути виконано…" style={ta} />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+            <input value={x.target || ""} onChange={(e) => set(i, { target: e.target.value })} placeholder="Мета, напр. «не менше 95%»" style={{ ...inp, flex: 1, minWidth: 160 }} />
+            {WH_AUTO_KEYS.includes(x.key)
+              ? <label style={{ display: "inline-flex", gap: 5, alignItems: "center", fontSize: 12 }}><input type="checkbox" checked={x.how_measured === "auto"} onChange={(e) => set(i, { how_measured: e.target.checked ? "auto" : "manual" })} /> CRM рахує сама</label>
+              : <span className="muted" style={{ fontSize: 11.5 }}>відмічає керівник</span>}
+          </div>
+        </div>
+        <button type="button" className="btn btn-light" title="Прибрати пункт" style={{ height: 28, padding: "0 7px" }} onClick={() => onChange(value.filter((_, j) => j !== i))}><Icon n="x" size={13} /></button>
+      </li>)}
+    </ol>
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      <button type="button" className="btn btn-light" style={{ fontSize: 12, height: 26 }} onClick={() => onChange([...value, { key: nextKey(), title: "", how_measured: "manual", target: "" }])}><Icon n="plus" size={13} /> Додати пункт</button>
+      {value.length === 0 && <button type="button" className="btn btn-light" style={{ fontSize: 12, height: 26 }} onClick={() => onChange(WH_STD_CRITERIA.map((x) => ({ ...x })))}><Icon n="package" size={13} /> Підставити 8 пунктів складу</button>}
+    </div>
+  </div>;
+}
+
+/** Оцінка стандарту з пунктами (склад): підказка CRM по пунктах, які вона вимірює, + галочки керівника по решті →
+ * «підказана оцінка». Сума як і раніше = максимум × оцінка; керівник може вписати будь-який %. */
+function StdCritMark({ comp, scheme, period, onSaved }: { comp: Comp; scheme: Scheme; period: string; onSaved: () => void }) {
+  const crit = critOf(comp);
+  const stored: Record<string, boolean> = (comp.params?.items || {})[period] || {};
+  const saved = (comp.params?.scores || {})[period];
+  const [sug, setSug] = useState<Sug | null | "none">(null);
+  const [items, setItems] = useState<Record<string, boolean>>({});
+  const [score, setScore] = useState("");
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const storedKey = JSON.stringify(stored);
+  useEffect(() => {
+    setItems(Object.fromEntries(crit.filter((x) => !isAutoCrit(x)).map((x) => [x.key, stored[x.key] !== false])));
+    setScore(saved != null ? String(Math.round(saved * 100)) : "");
+  }, [comp.id, period, saved, storedKey]);
+  useEffect(() => {
+    setSug(null); setMsg("");
+    api.get<Sug>(`/api/payroll/wh-kpi/?scheme=${scheme.id}&period=${period}`).then(setSug).catch(() => setSug("none"));
+  }, [scheme.id, period]);
+  const s = sug && sug !== "none" ? sug : null;
+  const pt = (key: string) => s?.points.find((p) => p.key === key);
+  const okOf = (x: Crit) => (isAutoCrit(x) ? pt(x.key)?.pass !== false : items[x.key] !== false);
+  const good = crit.filter(okOf).length;
+  const calcPct = crit.length ? Math.round((good / crit.length) * 100) : 100;
+  const autoNums = crit.map((x, i) => (isAutoCrit(x) ? String(i + 1) : "")).filter(Boolean).join(", ");
+  async function save(pct: number) {
+    setBusy(true); setMsg("");
+    const full = Object.fromEntries(crit.map((x) => [x.key, okOf(x)]));
+    try {
+      await api.post("/api/payroll/wh-kpi/", { component: comp.id, period, score: pct / 100, items: full });
+      setMsg(`Збережено: ${pct}%.`);
+    } catch (e: any) {
+      if (!(e?.status === 404 || String(e?.message || "").includes("404"))) { setMsg(e?.data?.detail || "Не вдалося зберегти"); setBusy(false); return; }
+      try {
+        await api.post(`/api/payroll/components/${comp.id}/mark/`, { period, score: pct / 100 });
+        setMsg(`Збережено оцінку ${pct}%; позначки пунктів не збережено — на сервері ще немає /api/payroll/wh-kpi/.`);
+      } catch (e2: any) { setMsg(e2?.data?.detail || "Не вдалося зберегти"); setBusy(false); return; }
+    }
+    setScore(String(pct)); setBusy(false); onSaved();
+  }
+  const verdict = (pass: boolean | null) => pass === null
+    ? <span className="muted" style={{ fontSize: 11.5 }}>немає даних — не знижує</span>
+    : <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontWeight: 700, color: pass ? "#166534" : "#b91c1c" }}><Icon n={pass ? "check" : "x"} size={13} />{pass ? "так" : "ні"}</span>;
+  return <div style={{ flexBasis: "100%", display: "grid", gap: 6 }}>
+    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      <span>Стандарт за {period}:</span>
+      <input value={score} placeholder={String(calcPct)} onChange={(e) => setScore(e.target.value)} style={{ ...inp, width: 55 }} />%
+      <button className="btn btn-light" style={{ fontSize: 11.5 }} disabled={busy} onClick={() => save(clampPct(score.trim() === "" ? calcPct : Number(score.replace(",", "."))))}>Зберегти</button>
+      <span className="muted" style={{ fontSize: 11.5 }}>{saved != null ? `збережено ${Math.round(saved * 100)}%` : "ще не виставлено — у розрахунку 100%"}</span>
+    </div>
+    {sug === null && <div className="muted" style={{ fontSize: 12 }}>Рахуємо підказку CRM…</div>}
+    {sug === "none" && <div className="muted" style={{ fontSize: 12 }}>Підказка CRM зараз недоступна — оцінку можна вписати вручну.</div>}
+    <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "7px 9px", display: "grid", gap: 5 }}>
+      {s && <div style={{ fontWeight: 600 }}>Підказка CRM: пункти {autoNums} за місяць{s.to ? ` (${dm(s.from)} – ${dm(s.to)}${s.partial ? ", місяць ще йде" : ""})` : " — завершених днів ще немає"}
+        <span className="muted" style={{ fontWeight: 400 }}> · робочих днів: {s.workdays} ({s.workdays_source})</span></div>}
+      {crit.map((x, i) => {
+        const p = pt(x.key);
+        if (isAutoCrit(x)) return <div key={x.key || i} style={{ fontSize: 12 }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "baseline" }}>
+            <span style={{ flex: 1, minWidth: 200 }}>{i + 1}. {x.title}{x.target ? <span className="muted"> — мета: {x.target}</span> : null}</span>
+            {p ? <><b>{p.value_text}</b>{verdict(p.pass)}</> : <span className="muted">{sug === null ? "…" : "—"}</span>}
+            {p && p.details.length > 0 && <button type="button" className="btn btn-light" style={{ fontSize: 11, height: 20, padding: "0 6px" }} onClick={() => setOpen({ ...open, [x.key]: !open[x.key] })}>{open[x.key] ? "сховати" : `деталі (${p.details.length})`}</button>}
+          </div>
+          {p && open[x.key] && <ul style={{ margin: "3px 0 0", paddingLeft: 22, color: "#475569", fontSize: 11.5, display: "grid", gap: 1 }}>{p.details.slice(0, 40).map((t, k) => <li key={k}>{t}</li>)}</ul>}
+        </div>;
+        return <label key={x.key || i} style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12 }}>
+          <input type="checkbox" checked={items[x.key] !== false} onChange={(e) => setItems({ ...items, [x.key]: e.target.checked })} style={{ marginTop: 2 }} />
+          <span style={{ flex: 1, minWidth: 0 }}>{i + 1}. {x.title}{x.target ? <span className="muted"> — мета: {x.target}</span> : null}<CritBadge auto={false} />
+            {p?.hint && <span className="muted" style={{ display: "block", fontSize: 11.5 }}>{p.hint}</span>}</span>
+        </label>;
+      })}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", borderTop: "1px solid #f1f5f9", paddingTop: 5 }}>
+        <span>Виконано {good} з {crit.length} → підказана оцінка <b>{calcPct}%</b></span>
+        <button type="button" className="btn btn-primary" style={{ fontSize: 12 }} disabled={busy} onClick={() => save(calcPct)}>Поставити підказану оцінку</button>
+      </div>
+      <div className="muted" style={{ fontSize: 11.5 }}>{s?.rule || "Кожен пункт — рівна частка оцінки. Пункти керівника — «так», поки галочку не знято."}</div>
+    </div>
+    {msg && <div style={{ fontSize: 12, color: "#166534" }}>{msg}</div>}
+  </div>;
+}
+
 /** Одна частина оплати в режимі «Змінити» — окремий рядок у рамці. */
 function CompEditRow({ comp, kindLabel, funnels, conds, onChange, onRemove }: {
   comp: Comp; kindLabel: string; funnels: any[]; conds: string[]; onChange: (c: Comp) => void; onRemove: () => void;
@@ -222,7 +386,9 @@ function CalcPreview({ scheme, canEdit, onMarked }: { scheme: Scheme; canEdit: b
     {canEdit && marks.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8, fontSize: 12.5, background: "#f8fafc", borderRadius: 8, padding: "6px 8px" }}>
       {marks.map((c) => {
         const cur = c.kind === "standard" ? (c.params?.scores || {})[period] : (c.params?.checks || {})[period];
-        return c.kind === "standard"
+        return c.kind === "standard" && critOf(c).length > 0
+          ? <StdCritMark key={c.id} comp={c} scheme={scheme} period={period} onSaved={() => { onMarked(); load(); }} />
+          : c.kind === "standard"
           ? <span key={c.id}>Стандарт за {period}: <input value={score[c.id!] ?? (cur != null ? Math.round(cur * 100) : "")} placeholder="100" onChange={(e) => setScore({ ...score, [c.id!]: e.target.value })} style={{ ...inp, width: 55 }} />%
             <button className="btn btn-light" style={{ fontSize: 11.5, marginLeft: 4 }} onClick={() => mark(c, { score: Number(score[c.id!] || 100) / 100 })}>Зберегти</button></span>
           : <label key={c.id} style={{ display: "inline-flex", gap: 5, alignItems: "center" }}><input type="checkbox" checked={!!cur?.ok} onChange={(e) => mark(c, { ok: e.target.checked })} />
@@ -260,6 +426,7 @@ function describe(c: Comp, funnels: any[], isVacancy: boolean, today: string): {
     case "fixed_monthly":
       return { how: `${money(p.amount)} на руки щомісяця (у перший місяць — пропорційно робочим дням)${Number(p.amount) > 0 ? "" : " — суму не задано"}`, amount: money(p.amount) };
     case "standard":
+      if (critOf(c).length) return { how: `до ${money(p.max)} × оцінка стандарту за місяць: ${critOf(c).length} пунктів (нижче), кожен — 1/${critOf(c).length}; оцінку ставить керівник у «Розрахунку за місяць», CRM підказує`, amount: `до ${money(p.max)}` };
       return { how: `до ${money(p.max)} × оцінка стандарту за місяць (ставиться в «Розрахунку за місяць»)`, amount: `до ${money(p.max)}` };
     case "margin_share": {
       const to = pc(p.pct_to_plan ?? 10), over = pc(p.pct_over_plan ?? p.pct_to_plan ?? 10);
@@ -323,7 +490,7 @@ function SummaryTable({ comps, kinds, funnels, conds, isVacancy }: { comps: Comp
             const d = describe(c, funnels, isVacancy, today);
             return <tr key={`${sec.key}-${c.id ?? i}`} style={{ opacity: c.active === false ? 0.55 : 1 }}>
               <td style={{ ...td, fontWeight: 600 }}>{c.active === false && <span className="muted" style={{ fontWeight: 400 }}>(вимкнено) </span>}{c.title || kinds.find((x) => x.kind === c.kind)?.label || c.kind}</td>
-              <td style={td}>{d.how}{c.kind === "guarantee" && <CondsView list={(c.params?.conditions || conds) as string[]} />}</td>
+              <td style={td}>{d.how}{c.kind === "guarantee" && <CondsView list={(c.params?.conditions || conds) as string[]} />}{c.kind === "standard" && <CritView list={critOf(c)} />}</td>
               <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap", fontWeight: 700 }}>{d.amount}</td>
             </tr>;
           }),
@@ -445,9 +612,10 @@ function withFreshMarks(comps: Comp[], fresh: Comp[]): Comp[] {
     let params = c.params || {};
     if (f) {
       params = { ...params };
-      for (const key of ["scores", "checks"]) if (f.params?.[key] !== undefined) params[key] = f.params[key];
+      for (const key of ["scores", "checks", "items"]) if (f.params?.[key] !== undefined) params[key] = f.params[key];
     }
     if (c.kind === "guarantee" && Array.isArray(params.conditions)) params = { ...params, conditions: params.conditions.filter((x: string) => String(x || "").trim()) };
+    if (c.kind === "standard" && Array.isArray(params.criteria)) params = { ...params, criteria: params.criteria.filter((x: any) => x && String(x.title || "").trim()) };
     return { ...c, params };
   });
 }

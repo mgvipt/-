@@ -5,19 +5,92 @@ import { Icon } from "../Icon";
 /* ЗП за ставками співробітників (14.09) — одне джерело: Налаштування → Ставки співробітників.
  * Відомість місяця: «Затвердити місяць» заморожує суму (зміна ставок потім її не чіпає — лише «зараз вийшло б …»),
  * «Привʼязати виплату» — відмітити фактичні виплати з журналу: нараховано / виплачено / залишок.
- * Показується у Фінанси → ЗП/KPI над старою формулою. Бачить лише той, у кого є право на ставки. */
+ * Показується у Фінанси → ЗП/KPI над старою формулою. Бачить лише той, у кого є право на ставки.
+ * 15.09 (whpay): «Як прорахувалось» біля кожного рядка — угоди, оплати, записи складу, з яких склалась сума
+ * (/api/payroll/calc-detail/, один запит на людину при першому відкритті; затверджений місяць — розшифровка наживо). */
 
 const money = (n: any) => Math.round(Number(n || 0)).toLocaleString("uk-UA") + " ₴";
 const dm = (s: string) => (s ? `${s.slice(8, 10)}.${s.slice(5, 7)}` : "");
+const money2 = (n: any) => Number(n || 0).toLocaleString("uk-UA", { maximumFractionDigits: 2 }) + " ₴";
+const num = (n: any) => Number(n || 0).toLocaleString("uk-UA", { maximumFractionDigits: 3 });
+const dmy = (s: string) => (s ? `${s.slice(8, 10)}.${s.slice(5, 7)}.${s.slice(0, 4)}` : "");
+const RIGHT = ["money", "pct", "num"];
 
-function Lines({ lines }: { lines: any[] }) {
-  return <>{lines.map((l: any, i: number) => (
-    <div key={i} style={{ display: "flex", gap: 8, padding: "3px 0", borderBottom: "1px dashed #f1f5f9" }}>
-      <span style={{ flex: 1, minWidth: 0 }}>{l.title}{l.rate ? <span className="muted"> · {l.rate}</span> : null}
-        {l.detail && <div className="muted" style={{ fontSize: 11.5 }}>{l.detail}</div>}
-        {l.warn && <div style={{ fontSize: 11.5, color: "#92400e" }}><Icon n="warn" size={12} /> {l.warn}</div>}</span>
-      <b style={{ whiteSpace: "nowrap" }}>{money(l.amount)}</b>
-    </div>))}</>;
+function cellView(c: any, v: any) {
+  if (v === null || v === undefined || v === "") return <span className="muted">—</span>;
+  if (c.t === "deal") return <a href={`/deals/${v}`} target="_blank" rel="noreferrer">#{v}</a>;
+  if (c.t === "money") return money2(v);
+  if (c.t === "pct") return `${num(v)}%`;
+  if (c.t === "num") return num(v);
+  if (c.t === "date") return dmy(String(v));
+  return String(v);
+}
+
+/** Рядок відомості → його рядок у розшифровці (для затвердженого місяця — за компонентом схеми). */
+function matchDetail(dls: any[], l: any, i: number) {
+  if (l.component != null) {
+    const x = dls.find((d: any) => d.component === l.component && d.kind === l.kind);
+    if (x) return x;
+  }
+  const same = dls.filter((d: any) => d.kind === l.kind);
+  if (same.length === 1) return same[0];
+  return dls[i] && dls[i].kind === l.kind ? dls[i] : null;
+}
+
+/** «Як прорахувалось»: пояснення, зведення, таблиця угод/оплат/записів (прокрутка), попередження, разом = сума рядка. */
+function LineDetail({ dl, frozenAmount }: { dl: any; frozenAmount: number | null }) {
+  const cols: any[] = dl.columns || [];
+  const rows: any[] = dl.rows || [];
+  return (
+    <div style={{ margin: "6px 0 8px", padding: "8px 10px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12.5 }}>
+      {dl.explain && <div style={{ marginBottom: 6, lineHeight: 1.45 }}>{dl.explain}</div>}
+      {(dl.summary || []).length > 0 && <div style={{ display: "grid", gap: 2, marginBottom: 6 }}>{dl.summary.map((s: any, i: number) => (
+        <div key={i} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><span className="muted" style={{ minWidth: 190 }}>{s.label}</span><span>{s.value}</span></div>))}</div>}
+      {(dl.groups || []).length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>{dl.groups.map((g: any) => (
+        <span key={g.op} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 999, padding: "2px 9px", fontSize: 12 }}>{g.label} ×{g.count}{g.kg ? ` · ${num(g.kg)} кг` : ""} · <b style={{ color: g.amount < 0 ? "#b91c1c" : undefined }}>{money2(g.amount)}</b></span>))}</div>}
+      {cols.length > 0 && rows.length > 0 && <div style={{ overflowX: "auto", maxHeight: 380, overflowY: "auto", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: Math.max(480, cols.length * 95) }}>
+          <thead><tr>{cols.map((c: any) => <th key={c.k} style={{ position: "sticky", top: 0, background: "#f1f5f9", textAlign: RIGHT.includes(c.t) ? "right" : "left", padding: "5px 7px", fontWeight: 600, whiteSpace: "nowrap" }}>{c.label}</th>)}</tr></thead>
+          <tbody>{rows.map((row: any, i: number) => <tr key={i} style={{ borderTop: "1px solid #f1f5f9", background: row.estimate ? "#fffbeb" : undefined }}>
+            {cols.map((c: any) => <td key={c.k} style={{ padding: "4px 7px", textAlign: RIGHT.includes(c.t) ? "right" : "left", whiteSpace: c.t === "text" ? "normal" : "nowrap", color: c.t === "money" && Number(row[c.k]) < 0 ? "#b91c1c" : undefined }}>{cellView(c, row[c.k])}</td>)}
+          </tr>)}</tbody>
+        </table>
+      </div>}
+      {cols.length > 0 && rows.length === 0 && <div className="muted">Записів за місяць немає.</div>}
+      {dl.truncated && <div className="muted" style={{ fontSize: 11.5 }}>Показано перші {rows.length} рядків; «Разом» — з усіх.</div>}
+      {(dl.warnings || []).map((w: string, i: number) => <div key={i} style={{ marginTop: 5, color: "#92400e" }}><Icon n="warn" size={12} /> {w}</div>)}
+      {(dl.links || []).length > 0 && <div style={{ marginTop: 3, display: "flex", flexWrap: "wrap", gap: "2px 10px", fontSize: 11.5, maxHeight: 110, overflowY: "auto" }}>{dl.links.map((x: any, i: number) => <a key={i} href={`/deals/${x.deal_id}`} target="_blank" rel="noreferrer">{x.label}</a>)}</div>}
+      {(dl.notes || []).map((n: string, i: number) => <div key={i} className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>{n}</div>)}
+      <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, fontWeight: 600, flexWrap: "wrap" }}>
+        <Icon n={dl.matches ? "check" : "warn"} size={13} style={{ color: dl.matches ? "#15803d" : "#b45309" }} />
+        Разом за розшифровкою: {dl.total === null || dl.total === undefined ? "—" : money(dl.total)}{dl.matches ? " = сума рядка" : ` · сума рядка ${money(dl.amount)}`}
+      </div>
+      {frozenAmount !== null && frozenAmount !== dl.amount && <div style={{ fontSize: 11.5, color: "#92400e", marginTop: 2 }}>Затверджено {money(frozenAmount)}; наживо зараз {money(dl.amount)} — розшифровка показує «наживо».</div>}
+    </div>
+  );
+}
+
+function Lines({ lines, det, busy, err, open, onToggle, frozen }: {
+  lines: any[]; det?: any; busy?: boolean; err?: string; open?: Record<number, boolean>; onToggle?: (i: number) => void; frozen?: boolean;
+}) {
+  return <>{lines.map((l: any, i: number) => {
+    const dl = det?.lines ? matchDetail(det.lines, l, i) : null;
+    return (
+      <div key={i} style={{ padding: "3px 0", borderBottom: "1px dashed #f1f5f9" }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <span style={{ flex: 1, minWidth: 0 }}>{l.title}{l.rate ? <span className="muted"> · {l.rate}</span> : null}
+            {l.detail && <div className="muted" style={{ fontSize: 11.5 }}>{l.detail}</div>}
+            {l.warn && <div style={{ fontSize: 11.5, color: "#92400e" }}><Icon n="warn" size={12} /> {l.warn}</div>}
+            {onToggle && <div><button type="button" className="btn btn-light" style={{ fontSize: 11, height: 22, padding: "0 8px", marginTop: 3, display: "inline-flex", alignItems: "center", gap: 4 }} onClick={() => onToggle(i)}>
+              <Icon n="calculator" size={12} /> {open?.[i] ? "Сховати розрахунок" : "Як прорахувалось"}</button></div>}</span>
+          <b style={{ whiteSpace: "nowrap" }}>{money(l.amount)}</b>
+        </div>
+        {open?.[i] && (busy && !det ? <div className="muted" style={{ fontSize: 12, padding: "4px 0" }}>Рахуємо розшифровку…</div>
+          : err ? <div className="note" style={{ fontSize: 12 }}>{err}</div>
+            : dl ? <LineDetail dl={dl} frozenAmount={frozen ? l.amount : null} />
+              : det ? <div className="muted" style={{ fontSize: 12, padding: "4px 0" }}>Цього рядка зараз немає в розрахунку наживо — розшифровки немає.</div> : null)}
+      </div>);
+  })}</>;
 }
 
 function Payouts({ run, canApprove, onChange }: { run: any; canApprove: boolean; onChange: () => void }) {
@@ -61,6 +134,20 @@ function Row({ r, period, canApprove, onChange }: { r: any; period: string; canA
   const [err, setErr] = useState("");
   const run = r.run;
   const shown = run ? run.total : r.total;
+  // 15.09 (whpay): «Як прорахувалось» — один запит на людину, при першому відкритті рядка; далі лише показ/приховування
+  const [det, setDet] = useState<any>(null);
+  const [detBusy, setDetBusy] = useState(false);
+  const [detErr, setDetErr] = useState("");
+  const [openL, setOpenL] = useState<Record<number, boolean>>({});
+  async function toggleLine(i: number) {
+    const willOpen = !openL[i];
+    setOpenL({ ...openL, [i]: willOpen });
+    if (!willOpen || det || detBusy) return;
+    setDetBusy(true); setDetErr("");
+    try { setDet(await api.get<any>(`/api/payroll/calc-detail/?user=${r.user_id}&period=${period}`)); }
+    catch (e: any) { setDetErr(e?.data?.detail || "Не вдалося завантажити розшифровку"); }
+    setDetBusy(false);
+  }
   async function approve() {
     if (!window.confirm(`Затвердити ЗП за ${period} — ${r.user_name}: ${money(r.total)}? Після цього сума не зміниться, навіть якщо поміняти ставки.`)) return;
     setBusy(true); setErr("");
@@ -86,7 +173,8 @@ function Row({ r, period, canApprove, onChange }: { r: any; period: string; canA
       </div>
       {open && (
         <div style={{ margin: "6px 0 0 22px", fontSize: 12.5 }}>
-          <Lines lines={run ? run.lines : r.lines} />
+          {run && Object.values(openL).some(Boolean) && <div className="note" style={{ fontSize: 12, margin: "2px 0 6px", display: "flex", alignItems: "center", gap: 6 }}><Icon n="lock" size={12} /> {det?.frozen_note || `Розшифровка наживо; затверджена сума — ${money(run.total)}`}</div>}
+          <Lines lines={run ? run.lines : r.lines} det={det} busy={detBusy} err={detErr} open={openL} onToggle={toggleLine} frozen={!!run} />
           <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
             Оформлення: {r.scheme?.employment_label || "—"} · компанії коштує ≈ {money(run ? run.company_cost : r.company_cost)}
             {r.legacy && <> · за старою схемою («{r.legacy.title}») вийшло б {money(r.legacy.total)}</>}

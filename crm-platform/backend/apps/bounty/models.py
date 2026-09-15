@@ -5,6 +5,10 @@
 (apps.payroll.engine.calc). Гроші — з окремого фонду «Біржа задач» (стаття Фінмоделі з такою назвою, ₴/міс).
 
 Нічого не вмикається само: усе, що заводить команда bounty_seed, неактивне з позначкою «ціна для обговорення».
+
+v2 (15.09.2026): у задачі — «Навіщо», «Кінцевий результат» і підзадачі з простою інструкцією до кожної; у взятій
+задачі — знімок підзадач на момент «Беру» і відмітки виконаних (здати можна будь-коли, перевіряючий бачить невідмічені).
+Новий відділ «Найм»; відділ «Салон» показується як «Офлайн-магазин (салон)» (ключ salon не змінюється).
 """
 from django.conf import settings
 from django.db import models
@@ -14,12 +18,14 @@ DEPARTMENTS = [
     ("marketing", "Маркетинг / SMM"),
     ("sales", "Продажі"),
     ("warehouse", "Склад"),
-    ("salon", "Салон"),
+    ("salon", "Офлайн-магазин (салон)"),
     ("objects", "Обʼєкти"),
     ("content", "Контент / сайт"),
     ("ai_crm", "ІІ і CRM"),
+    ("hr", "Найм"),
     ("office", "Офіс"),
 ]
+SUBTASKS_MAX = 12
 DEPARTMENT_LABELS = dict(DEPARTMENTS)
 
 
@@ -59,6 +65,11 @@ class TaskOffer(models.Model):
     title = models.CharField(max_length=200)
     how_to = models.TextField(blank=True, default="", help_text="Як виконати — кроки, кожен з нового рядка")
     done_criteria = models.TextField(blank=True, default="", help_text="Що вважається виконаним і який доказ")
+    why = models.CharField(max_length=255, blank=True, default="", help_text="Навіщо це бізнесу — один рядок")
+    expected_result = models.TextField(blank=True, default="",
+                                       help_text="Кінцевий результат, який можна виміряти («50 товарів мають вагу»)")
+    subtasks = models.JSONField(default=list, blank=True,
+                                help_text="Підзадачі: [{title, how}] — що зробити і як, по порядку")
     proof_type = models.CharField(max_length=6, choices=PROOF, default="any")
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0,
                                 help_text="₴ за одиницю; для «% з оплат» — відсоток")
@@ -121,6 +132,9 @@ class TaskClaim(models.Model):
     std_score = models.FloatField(null=True, blank=True, help_text="Основний стандарт людини на момент «Беру» (0–1)")
     std_warning = models.CharField(max_length=255, blank=True, default="")
     history = models.JSONField(default=list, blank=True)
+    subtasks = models.JSONField(default=list, blank=True,
+                                help_text="Знімок підзадач задачі на момент «Беру» — зміна прайсу не зсуває відмітки")
+    subtasks_done = models.JSONField(default=list, blank=True, help_text="Номери (з 0) виконаних підзадач")
 
     class Meta:
         ordering = ["-taken_at", "-id"]

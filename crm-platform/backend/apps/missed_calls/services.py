@@ -474,6 +474,10 @@ def report(date_from, date_to, now=None):
         row = engine.stats(lst, cal, now, cfg.escalate_minutes)
         row.update({"user_id": uid, "name": user_name(lst[0].assignee) if uid else "Не призначено"})
         rows_u.append(row)
+    # staffvis 15.09: рядки звільнених — лише з дозволом «Телефонія і звіти» (підсумок «total» рахує всі дзвінки)
+    from apps.accounts.visibility import hidden_ids as _vis_hidden
+    _hid = _vis_hidden("telephony", date_from)
+    rows_u = [r for r in rows_u if not (r["user_id"] and r["user_id"] in _hid)]
     rows_u.sort(key=lambda r: -r["items"])
     rows_l = []
     for _k, lst in by_line.items():

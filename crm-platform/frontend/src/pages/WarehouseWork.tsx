@@ -2,7 +2,7 @@
    Зміна (день+обід+ЗП, звʼязано з головною кнопкою «Почати робочий день») · Зарплата (період) · Контроль (керівник). */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
@@ -551,6 +551,36 @@ function WeightlessWarn({ j, t, busy, onCancel, onConfirm }: any) {
     </div>, document.body);
 }
 
+// 15.09 (whpay): ставки складу ЗАРАЗ — живі статті Фінмоделі (ті самі, що в «Ставках співробітників»). Лише показ.
+function WhRatesPanel({ t, r }: any) {
+  if (!r || !(r.items || []).length) return null;
+  const num = (v: any) => Number(v || 0).toLocaleString("uk", { maximumFractionDigits: 2 });
+  return (
+    <div className="panel" style={{ marginTop: 10 }}>
+      <div className="label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Icon n="settings" size={15} /> {t("Ставки склада сейчас", "Ставки складу зараз")}</div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 420 }}>
+          <tbody>{r.items.map((x: any) => (
+            <tr key={x.code} style={{ borderTop: "1px solid #f1f5f9" }}>
+              <td style={{ padding: "7px 8px 7px 0" }}>{x.name}<div className="muted" style={{ fontSize: 11.5 }}>{x.hint}</div></td>
+              <td style={{ padding: "7px 0", textAlign: "right", whiteSpace: "nowrap", color: x.active ? "#0f172a" : C.red }}>
+                <b>{num(x.value)}</b> <span className="muted">{x.unit}</span>
+                {!x.active && <div style={{ fontSize: 11 }}>{x.found ? t("выключено", "вимкнено") : t("нет в финмодели", "немає у фінмоделі")}</div>}
+              </td>
+            </tr>))}</tbody>
+        </table>
+      </div>
+      {r.example && <div style={{ fontSize: 12.5, marginTop: 8 }}>{r.example}</div>}
+      {r.lunch && <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{r.lunch}</div>}
+      {(r.warnings || []).map((w: string, i: number) => <div key={i} className="note" style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, marginTop: 6 }}><Icon n="warn" size={14} /> {w}</div>)}
+      <div className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.45 }}>{r.same_as}</div>
+      {r.can_edit
+        ? <Link to={r.edit_url || "/settings"} className="btn btn-light" style={{ marginTop: 8, fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 6 }}><Icon n="pencil" size={13} /> {t("Изменить ставки → Настройки → Ставки сотрудников", "Змінити ставки → Налаштування → Ставки співробітників")}</Link>
+        : <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>{t("Ставки меняет владелец: Настройки → Ставки сотрудников.", "Ставки змінює власник: Налаштування → Ставки співробітників.")}</div>}
+    </div>
+  );
+}
+
 function SalaryModeSwitch({ t, mode, setMode }: any) {
   return (
     <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
@@ -594,7 +624,8 @@ function MonthSalaryView({ t }: any) {
           <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0 0", fontWeight: 700 }}><span>{t("Сдельно всего", "Відрядно разом")}</span><span>{f(d.piece_total)} ₴</span></div>
         </div>
         {(d.warnings || []).map((w: string, i: number) => <div key={i} className="note" style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, marginBottom: 6 }}><Icon n="info" size={14} /> {w}</div>)}
-        <div className="muted" style={{ fontSize: 11, textAlign: "center", marginTop: 8 }}>{d.from} — {d.to} · {t("отгрузок", "відвантажень")}: {d.shipments} · {t("Ставки — в финмодели и «Ставках сотрудников»", "Ставки — у фінмоделі та «Ставках співробітників»")}</div>
+        <div className="muted" style={{ fontSize: 11, textAlign: "center", marginTop: 8 }}>{d.from} — {d.to} · {t("отгрузок", "відвантажень")}: {d.shipments}</div>
+        <WhRatesPanel t={t} r={d.rates} />
       </>}
     </div>
   );
@@ -633,7 +664,8 @@ function SalaryView({ t }: any) {
         <div className="panel" style={{ flex: 1, textAlign: "center", margin: 0 }}><div style={{ fontSize: 24, fontWeight: 800 }}>{d.shipments}</div><div className="muted" style={{ fontSize: 11 }}>{t("отгрузок", "відвантажень")}</div></div>
         <div className="panel" style={{ flex: 1, textAlign: "center", margin: 0 }}><div style={{ fontSize: 24, fontWeight: 800 }}>{d.tintings}</div><div className="muted" style={{ fontSize: 11 }}>{t("тонировок", "тонувань")}</div></div>
       </div>
-      <div className="muted" style={{ fontSize: 11, textAlign: "center", marginTop: 8 }}>{t("Ставки управляются в финмодели", "Ставки керуються у фінмоделі")}</div>
+      <div className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.45 }}>{t("Здесь — только сдельные записи склада за период (по ставкам ниже). Ставка из схемы ЗП и полная сумма за месяц — «Календарный месяц».", "Тут — лише відрядні записи складу за період (за ставками нижче). Ставка зі схеми ЗП і повна сума за місяць — «Календарний місяць».")}</div>
+      <WhRatesPanel t={t} r={d.rates} />
     </div>
   );
 }
@@ -674,6 +706,7 @@ function ShippedFilter({ staff, onOpen, t }: any) {
 }
 
 function DashboardView({ t }: any) {
+  const { can } = useAuth(); // 15.09 (whpay): посилання на Фінанси → ЗП/KPI — лише з правом на ставки
   const [d, setD] = useState<any>(null);
   const [period, setPeriod] = useState("month");
   useEffect(() => { api.get<any>(`/api/warehouse/dashboard/?period=${period}`).then(setD).catch(() => {}); }, [period]);
@@ -732,7 +765,9 @@ function DashboardView({ t }: any) {
           </tr></tfoot>}
         </table>
       </div>
-      <div className="muted" style={{ fontSize: 11, textAlign: "center", marginTop: 8 }}>{t("Только для руководителя. Ставки — в финмодели.", "Тільки для керівника. Ставки — у фінмоделі.")}</div>
+      <div className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.45 }}>{t("Только для руководителя. Здесь — только сдельные записи склада (по ставкам ниже); полная ЗП (ставка из схемы + сдельно) и расшифровка каждой записи — Финансы → ЗП/KPI.", "Тільки для керівника. Тут — лише відрядні записи складу (за ставками нижче); повна ЗП (ставка зі схеми + відрядно) і розшифровка кожного запису — Фінанси → ЗП/KPI.")}
+        {can("payroll.rates.view") && <> <Link to="/finance" onClick={() => { try { localStorage.setItem("fin_tab", "salary"); } catch (e) { /* noop */ } }}>{t("Открыть ЗП/KPI", "Відкрити ЗП/KPI")}</Link></>}</div>
+      <WhRatesPanel t={t} r={d.rates} />
     </div>
   );
 }

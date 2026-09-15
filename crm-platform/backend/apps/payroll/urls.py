@@ -2,6 +2,8 @@ from django.urls import path
 
 from . import my_views, views  # my_views: 14.09 моя ЗП і KPI
 from .fund_link import FundLinksView  # 14.09 фонди «Автоматично зі Ставок»
+from .detail_views import CalcDetailView  # 15.09 «Як прорахувалась ЗП»
+from .wh_kpi import WhKpiView  # 15.09 підказка CRM і позначки стандарту складу
 
 urlpatterns = [
     path("schemes/", views.SchemesView.as_view()),
@@ -20,5 +22,7 @@ urlpatterns = [
     path("my/", my_views.MyPayrollView.as_view()),
     path("deal-kpi/<int:deal_id>/", my_views.DealKpiView.as_view()),
     path("runs/approve/", views.RunApproveView.as_view()),
+    path("calc-detail/", CalcDetailView.as_view()),
+    path("wh-kpi/", WhKpiView.as_view()),
     path("runs/<int:pk>/<str:act>/", views.RunActionView.as_view()),
 ]

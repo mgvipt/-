@@ -149,6 +149,9 @@ def _part_plain(c, pol):
                "вихід у вихідний (перевиконання) — плюс денна ставка.")
     elif k == "fixed_monthly":
         txt = f"Фіксована оплата: {_fmt(p.get('amount'))} ₴ на місяць (неповний місяць — пропорційно)."
+    elif k == "standard" and engine.standard_criteria(c):
+        from .wh_kpi import standard_plain  # 15.09 (whkpi): стандарт із пунктами (склад)
+        txt = standard_plain(c)
     elif k == "standard":
         txt = (f"Стандарт роботи: до {_fmt(p.get('max'))} ₴. Раз на місяць керівник ставить оцінку стандарту "
                f"(0–100%) — стільки відсотків від {_fmt(p.get('max'))} ₴ ви й отримуєте.")
@@ -214,6 +217,10 @@ def _rules(sc, pol):
         elif k == "fixed_monthly":
             out.append({"kind": k, "title": c.title or "Фіксована оплата", "need": [
                 "Сума не залежить від продажів; неповний місяць — пропорційно дням роботи."], "where": []})
+        elif k == "standard" and engine.standard_criteria(c):
+            # 15.09 (whkpi): стандарт із пунктами (склад) — пункти простими словами і куди дивитись у CRM
+            from .wh_kpi import standard_rules
+            out.append(standard_rules(c))
         elif k == "standard":
             need = [f"Що входить у ваш стандарт: {c.title}."] if c.title else []
             need += STANDARD_SALES if sales else ["Деталі стандарту для вашої посади — у керівника."]

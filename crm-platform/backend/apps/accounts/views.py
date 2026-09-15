@@ -70,6 +70,14 @@ class UserViewSet(viewsets.ModelViewSet):
             # not mix public client registrations into staff lists.
             qs = qs.filter(account_kind=User.AccountKind.STAFF)
 
+        # staffvis 15.09: ?visible_in=<сутність>&period=YYYY-MM — активні + звільнені, яких дозволено показувати
+        # там (напр. «Табель»). Без параметра — усе як було.
+        vis_in = (self.request.query_params.get("visible_in") or "").strip()
+        if vis_in:
+            from . import visibility as _vis
+            if vis_in in _vis.ENTITY_KEYS:
+                ids = _vis.visible_dismissed_ids(vis_in, self.request.query_params.get("period"))
+                return qs.filter(Q(is_active=True) | Q(id__in=ids))
         st = (self.request.query_params.get("status") or "").strip().lower()
         if st in ("active", "inactive", "dismissed"):
             return qs.filter(employment_status=st)
@@ -200,6 +208,51 @@ class UserViewSet(viewsets.ModelViewSet):
             pass
         return Response({"ok": True, "employment_status": u.employment_status,
                          "is_active": u.is_active, "dismissed_at": u.dismissed_at})
+
+    @action(detail=False, methods=["get", "post"])
+    def visibility(self, request):
+        """Звільнені: де їх показувати (staffvis 15.09.2026). Лише адмін / roles.manage (як увесь розділ).
+        GET — звільнені з вибором по сутностях. POST {user_id, set: {сутність: true|false|null}} змінює ЛИШЕ
+        передані сутності однієї людини (новіші налаштування інших не затираються); {user_id, all: true|false|null} —
+        «усюди увімкнути / вимкнути / усе на Авто». Активних співробітників це не стосується."""
+        from . import visibility as vis
+        if request.method != "POST":
+            return Response(vis.overview())
+        d = request.data or {}
+        try:
+            uid = int(d.get("user_id"))
+        except (TypeError, ValueError):
+            return Response({"detail": "Не вказано співробітника"}, status=status.HTTP_400_BAD_REQUEST)
+        u = User.objects.filter(pk=uid, account_kind=User.AccountKind.STAFF).first()
+        if not u:
+            return Response({"detail": "Немає такого співробітника"}, status=status.HTTP_404_NOT_FOUND)
+        if u.employment_status != "dismissed":
+            return Response({"detail": "Ці налаштування діють лише для звільнених. Активних вони не стосуються."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if "all" in d:
+            v = d.get("all")
+            if not vis.valid_choice(v):
+                return Response({"detail": "Невірне значення"}, status=status.HTTP_400_BAD_REQUEST)
+            changes = {k: v for k in vis.ENTITY_KEYS}
+        else:
+            changes = d.get("set")
+            if not isinstance(changes, dict) or not changes:
+                return Response({"detail": "Нічого не змінено"}, status=status.HTTP_400_BAD_REQUEST)
+            bad = [k for k in changes if k not in vis.ENTITY_KEYS]
+            if bad:
+                return Response({"detail": "Невідомий розділ: %s" % ", ".join(map(str, bad))}, status=status.HTTP_400_BAD_REQUEST)
+            if not all(vis.valid_choice(v) for v in changes.values()):
+                return Response({"detail": "Невірне значення"}, status=status.HTTP_400_BAD_REQUEST)
+        before, after = vis.save_choices(u.id, changes, by=request.user)
+        if before != after:
+            try:
+                from apps.crm.models import log_activity
+                log_activity("contact", 0, "Видимість звільненого",
+                             "%s: %s → %s" % (u.get_full_name() or u.username, vis.describe(before), vis.describe(after)),
+                             request.user, "Адмін")
+            except Exception:
+                pass
+        return Response(vis.person_json(u))
 
     @action(detail=True, methods=["post"])
     def dismiss(self, request, pk=None):

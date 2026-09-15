@@ -2,20 +2,25 @@
  * Обʼєкти, Контент/сайт, ІІ і CRM, Офіс. «Беру» → доказ (посилання / фото / текст) → «Прийнято» або «На доробку»
  * → сума окремим рядком «Задачі з біржі» у ЗП того місяця. Гроші — з фонду «Біржа задач» (стаття Фінмоделі).
  * Правило «основний стандарт від 75%» — мʼяке: попередження, не блок.
- * Усі компоненти — на рівні модуля (поля не втрачають фокус), довгі списки — у прокручуваних контейнерах. */
+ * Усі компоненти — на рівні модуля (поля не втрачають фокус), довгі списки — у прокручуваних контейнерах.
+ * v2 (15.09.2026): у задачі — «Навіщо», «Кінцевий результат», підзадачі з «як зробити»; у взятій задачі — відмітки
+ * підзадач (прогрес «3/5»), здати можна будь-коли, перевіряючий бачить невідмічені; у «Прайсі» — редактор підзадач. */
 import { useCallback, useEffect, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { api } from "../api";
 import { Icon } from "../Icon";
 
 type Dept = { key: string; label: string; n_active: number; n_total: number };
 type Cat = { id: number; department: string; department_label: string; name: string; order: number; active: boolean };
 type Busy = { name: string; due_at: string | null; status: string };
+type Sub = { title: string; how: string };
+type ClaimSub = Sub & { i: number; done: boolean };
 type Offer = {
   id: number; category_id: number; category_name: string; department: string; title: string; how_to: string; done_criteria: string;
   proof_type: string; proof_label: string; price: number; unit: string; unit_label: string; unit_text: string;
   monthly_limit_qty: number; max_per_person: number; max_takers: number; due_days: number; checker_id: number | null; checker_name: string;
   active: boolean; archived: boolean; order: number; note: string;
+  why: string; expected_result: string; subtasks: Sub[];
   state?: string; used_qty?: number; my_qty?: number; left_qty?: number | null; my_claim_id?: number | null; busy_by?: Busy[];
 };
 type Std = { score: number | null; pct: number | null; period: string | null; ok: boolean; warning: string } | null;
@@ -37,6 +42,7 @@ type Claim = {
   overdue: boolean; proof_text: string; proof_url: string; proof_type: string; proof_label: string; done_criteria: string; how_to: string;
   files: CFile[]; reviewer_name: string; reviewed_at: string | null; comment: string; quality: number | null; payroll_period: string;
   std_warning: string; history: Hist[]; can_submit: boolean; can_review: boolean; can_cancel: boolean; can_force: boolean;
+  why: string; expected_result: string; subtasks: ClaimSub[]; subtasks_total: number; subtasks_done_count: number; can_check: boolean;
 };
 type PersonRow = {
   user_id: number; name: string; count: number; amount: number; avg_quality: number | null; reworks: number; on_time_pct: number | null;
@@ -91,6 +97,114 @@ function Steps({ text }: { text: string }) {
   const lines = text.split("\n").map((s) => s.trim()).filter(Boolean);
   if (!lines.length) return null;
   return <ol style={{ margin: "4px 0 0", paddingLeft: 20, fontSize: 12.5, lineHeight: 1.5 }}>{lines.map((l, i) => <li key={i}>{l}</li>)}</ol>;
+}
+
+const MAX_SUBS = 12;
+let SUB_SEQ = 0;
+const subKey = () => ++SUB_SEQ;
+type EditSub = Sub & { k: number };
+const leftSubs = (c: Claim) => (c.subtasks || []).filter((x) => !x.done);
+
+/* підзадачі в картці задачі біржі: номер, що зробити, як зробити */
+function SubList({ items }: { items: Sub[] }) {
+  if (!items.length) return null;
+  return (
+    <ol style={{ margin: "4px 0 0", paddingLeft: 20, fontSize: 12.5, lineHeight: 1.5 }}>
+      {items.map((x, i) => (
+        <li key={i} style={{ marginBottom: 3 }}>
+          <b>{x.title}</b>{x.how && <span className="muted"> — {x.how}</span>}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function Progress({ done, total }: { done: number; total: number }) {
+  if (!total) return null;
+  const full = done >= total;
+  return (
+    <span className="chip" title="Виконано підзадач" style={{ background: full ? "#dcfce7" : "#f1f5f9", color: full ? "#166534" : "#334155", fontWeight: 600 }}>
+      <Icon n="check-square" size={12} /> {done}/{total}
+    </span>
+  );
+}
+
+/* відмітки підзадач: виконавець ставить галочки, решта бачить, що відмічено */
+function SubChecklist({ c, onChanged }: { c: Claim; onChanged: () => void }) {
+  const [done, setDone] = useState<number[]>(() => (c.subtasks || []).filter((x) => x.done).map((x) => x.i));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const subs = c.subtasks || [];
+  if (!subs.length) return null;
+  const toggle = async (i: number) => {
+    const next = done.includes(i) ? done.filter((x) => x !== i) : [...done, i].sort((a, b) => a - b);
+    setBusy(true);
+    setErr("");
+    try {
+      await api.post(`/api/bounty/claims/${c.id}/subtasks/`, { done: next });
+      setDone(next);
+      onChanged();
+    } catch (e) { setErr(errText(e)); } finally { setBusy(false); }
+  };
+  const n = c.can_check ? done.length : subs.filter((x) => x.done).length;
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={LBL}>Підзадачі · виконано {n}/{subs.length}{c.can_check ? " — відмічайте те, що вже зроблено" : ""}</div>
+      {subs.map((x) => {
+        const on = c.can_check ? done.includes(x.i) : x.done;
+        return (
+          <label key={x.i} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, padding: "3px 0", cursor: c.can_check ? "pointer" : "default" }}>
+            {c.can_check
+              ? <input type="checkbox" checked={on} disabled={busy} onChange={() => toggle(x.i)} style={{ marginTop: 2 }} />
+              : <Icon n={on ? "check" : "circle"} size={14} style={{ color: on ? "#16a34a" : "#cbd5e1", marginTop: 1 }} />}
+            <span>
+              <b style={{ textDecoration: on ? "line-through" : "none", opacity: on ? 0.7 : 1 }}>{x.i + 1}. {x.title}</b>
+              {x.how && <span className="muted"> — {x.how}</span>}
+            </span>
+          </label>
+        );
+      })}
+      {err && <div style={ERRBOX}>{err}</div>}
+    </div>
+  );
+}
+
+/* редактор підзадач у «Прайсі»: додати / прибрати / вище / нижче */
+function SubtaskEditor({ subs, setSubs }: { subs: EditSub[]; setSubs: Dispatch<SetStateAction<EditSub[]>> }) {
+  const upd = (k: number, field: "title" | "how", v: string) => setSubs((p) => p.map((x) => (x.k === k ? { ...x, [field]: v } : x)));
+  const move = (i: number, d: number) => setSubs((p) => {
+    const j = i + d;
+    if (j < 0 || j >= p.length) return p;
+    const n = [...p];
+    [n[i], n[j]] = [n[j], n[i]];
+    return n;
+  });
+  const del = (k: number) => setSubs((p) => p.filter((x) => x.k !== k));
+  const add = () => setSubs((p) => [...p, { k: subKey(), title: "", how: "" }]);
+  return (
+    <div style={{ marginTop: 8 }}>
+      <span style={LBL}>Підзадачі — по порядку; до кожної одним реченням «як зробити» (до {MAX_SUBS})</span>
+      <div style={{ maxHeight: 360, overflowY: "auto" }}>
+        {subs.map((x, i) => (
+          <div key={x.k} style={{ ...ROW, marginBottom: 4, flexWrap: "nowrap" }}>
+            <span className="muted" style={{ width: 20, textAlign: "right", flexShrink: 0 }}>{i + 1}.</span>
+            <input style={{ ...INP, flex: "1 1 180px", minWidth: 0 }} placeholder="Що зробити" value={x.title} onChange={(e) => upd(x.k, "title", e.target.value)} />
+            <input style={{ ...INP, flex: "2 1 260px", minWidth: 0 }} placeholder="Як зробити — одним реченням" value={x.how} onChange={(e) => upd(x.k, "how", e.target.value)} />
+            <button className="btn btn-light" style={{ padding: "2px 6px" }} disabled={i === 0} title="Вище" onClick={() => move(i, -1)}>
+              <Icon n="chevron-down" size={13} style={{ transform: "rotate(180deg)" }} />
+            </button>
+            <button className="btn btn-light" style={{ padding: "2px 6px" }} disabled={i === subs.length - 1} title="Нижче" onClick={() => move(i, 1)}>
+              <Icon n="chevron-down" size={13} />
+            </button>
+            <button className="btn btn-light" style={{ padding: "2px 6px" }} title="Прибрати" onClick={() => del(x.k)}><Icon n="trash" size={13} /></button>
+          </div>
+        ))}
+      </div>
+      {subs.length < MAX_SUBS && (
+        <button className="btn btn-light" style={{ fontSize: 12, marginTop: 2 }} onClick={add}><Icon n="plus" size={12} /> Підзадача</button>
+      )}
+    </div>
+  );
 }
 
 /* ───────────── головний екран ───────────── */
@@ -155,7 +269,7 @@ function BoardTab({ board, onChanged }: { board: Board; onChanged: () => void })
   const needle = q.trim().toLowerCase();
   const cats = board.categories.filter((c) => c.department === cur && c.active);
   const shown = (catId: number) => live.filter((o) => o.category_id === catId
-    && (!needle || o.title.toLowerCase().includes(needle) || o.how_to.toLowerCase().includes(needle))
+    && (!needle || [o.title, o.how_to, o.expected_result || "", ...(o.subtasks || []).map((x) => x.title)].join(" ").toLowerCase().includes(needle))
     && (!onlyFree || o.state === "free" || o.state === "mine"));
   return (
     <>
@@ -211,6 +325,7 @@ function OfferCard({ o, std, onTaken }: { o: Offer; std: Std; onTaken: () => voi
   const limits: string[] = [];
   if (o.monthly_limit_qty) limits.push(`ліміт ${o.monthly_limit_qty}/міс` + (o.left_qty != null ? ` (залишилось ${num(o.left_qty)})` : ""));
   if (o.max_per_person) limits.push(`на людину ${o.max_per_person}/міс`);
+  if (o.subtasks?.length) limits.push(`підзадач: ${o.subtasks.length}`);
   limits.push(`термін ${o.due_days} дн.`);
   limits.push(`доказ: ${o.proof_label.toLowerCase()}`);
   limits.push(`приймає: ${o.checker_name || "власник"}`);
@@ -220,6 +335,9 @@ function OfferCard({ o, std, onTaken }: { o: Offer; std: Std; onTaken: () => voi
         <div style={{ flex: "1 1 320px", minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>{o.title}</div>
           <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{limits.join(" · ")}</div>
+          {o.expected_result && (
+            <div style={{ fontSize: 12.5, marginTop: 4 }}><Icon n="target" size={12} /> <b>Кінцевий результат:</b> {o.expected_result}</div>
+          )}
         </div>
         <div style={{ ...ROW, justifyContent: "flex-end" }}>
           <span className="chip" style={{ background: "#eef2ff", color: "#3730a3", fontWeight: 700 }}>{o.unit_text}</span>
@@ -241,12 +359,14 @@ function OfferCard({ o, std, onTaken }: { o: Offer; std: Std; onTaken: () => voi
         </div>
       )}
       <button className="btn btn-light" style={{ marginTop: 6, fontSize: 12, padding: "2px 8px" }} onClick={() => setOpen(!open)}>
-        <Icon n="chevron-down" size={12} style={{ transform: open ? "rotate(180deg)" : "none" }} /> {open ? "Сховати" : "Як виконати і що вважається виконаним"}
+        <Icon n="chevron-down" size={12} style={{ transform: open ? "rotate(180deg)" : "none" }} /> {open ? "Сховати" : "Навіщо, як зробити, підзадачі"}
       </button>
       {open && (
         <div style={{ marginTop: 6 }}>
-          {o.how_to && <><div style={LBL}>Як виконати</div><Steps text={o.how_to} /></>}
-          {o.done_criteria && <><div style={{ ...LBL, marginTop: 8 }}>Що вважається виконаним</div><div style={{ fontSize: 12.5 }}>{o.done_criteria}</div></>}
+          {o.why && <><div style={LBL}>Навіщо</div><div style={{ fontSize: 12.5 }}><Icon n="bulb" size={12} /> {o.why}</div></>}
+          {o.how_to && <><div style={{ ...LBL, marginTop: 8 }}>Як зробити</div><Steps text={o.how_to} /></>}
+          {!!o.subtasks?.length && <><div style={{ ...LBL, marginTop: 8 }}>Підзадачі ({o.subtasks.length})</div><SubList items={o.subtasks} /></>}
+          {o.done_criteria && <><div style={{ ...LBL, marginTop: 8 }}>Що вважається виконаним · доказ: {o.proof_label.toLowerCase()}</div><div style={{ fontSize: 12.5 }}>{o.done_criteria}</div></>}
         </div>
       )}
       {msg && <div style={{ ...(msg.ok ? OKBOX : WARN), marginTop: 6 }}>{msg.text}</div>}
@@ -308,6 +428,7 @@ function ClaimCard({ c, mode, onDone }: { c: Claim; mode: "mine" | "review" | "a
         </div>
         <div style={ROW}>
           <StatusChip status={c.status} label={c.status_label} />
+          <Progress done={c.subtasks_done_count} total={c.subtasks_total} />
           <b>{money_}</b>
           {c.status === "accepted" && <span className="muted" style={{ fontSize: 12 }}>у ЗП за {monthLabel(c.payroll_period)}</span>}
           {(c.status === "taken" || c.status === "rework") && c.due_at && (
@@ -316,6 +437,7 @@ function ClaimCard({ c, mode, onDone }: { c: Claim; mode: "mine" | "review" | "a
         </div>
       </div>
       {c.std_warning && mode !== "mine" && <div style={{ ...WARN, marginTop: 6 }}>{c.std_warning}</div>}
+      {c.expected_result && <div style={{ fontSize: 12.5, marginTop: 6 }}><Icon n="target" size={12} /> <b>Кінцевий результат:</b> {c.expected_result}</div>}
       {c.comment && (
         <div style={{ ...(c.status === "rework" ? WARN : { fontSize: 12.5 }), marginTop: 6 }}>
           <b>Коментар перевіряючого{c.reviewer_name ? ` (${c.reviewer_name})` : ""}:</b> {c.comment}
@@ -326,7 +448,9 @@ function ClaimCard({ c, mode, onDone }: { c: Claim; mode: "mine" | "review" | "a
       </button>
       {open && (
         <div style={{ marginTop: 6 }}>
-          {c.how_to && <><div style={LBL}>Як виконати</div><Steps text={c.how_to} /></>}
+          {c.why && <><div style={LBL}>Навіщо</div><div style={{ fontSize: 12.5 }}>{c.why}</div></>}
+          {c.how_to && <><div style={{ ...LBL, marginTop: 8 }}>Як зробити</div><Steps text={c.how_to} /></>}
+          {!(c.can_check && mode === "mine") && <SubChecklist c={c} onChanged={onDone} />}
           {c.done_criteria && <><div style={{ ...LBL, marginTop: 8 }}>Що вважається виконаним · доказ: {c.proof_label.toLowerCase()}</div><div style={{ fontSize: 12.5 }}>{c.done_criteria}</div></>}
           <ProofBlock c={c} onChanged={onDone} />
           {c.history.length > 0 && (
@@ -336,6 +460,7 @@ function ClaimCard({ c, mode, onDone }: { c: Claim; mode: "mine" | "review" | "a
           )}
         </div>
       )}
+      {c.can_check && mode === "mine" && <SubChecklist c={c} onChanged={onDone} />}
       {c.can_submit && mode === "mine" && <SubmitForm c={c} onDone={onDone} />}
       {c.can_review && mode !== "mine" && <ReviewForm c={c} onDone={onDone} />}
       {c.can_cancel && (
@@ -403,6 +528,9 @@ function SubmitForm({ c, onDone }: { c: Claim; onDone: () => void }) {
     try { await api.upload(`/api/bounty/claims/${c.id}/files/`, f); onDone(); } catch (e) { setMsg(uploadErr(e)); } finally { setBusy(false); }
   };
   const send = async () => {
+    const left = leftSubs(c);
+    if (left.length && !window.confirm(`Не відмічено підзадач: ${left.length} з ${c.subtasks_total}\n`
+      + left.map((x) => `• ${x.i + 1}. ${x.title}`).join("\n") + "\n\nВсе одно здати? Перевіряючий побачить, що не відмічено.")) return;
     setBusy(true);
     setMsg("");
     try {
@@ -413,6 +541,9 @@ function SubmitForm({ c, onDone }: { c: Claim; onDone: () => void }) {
   return (
     <div style={{ marginTop: 10, borderTop: "1px dashed #e2e8f0", paddingTop: 10 }}>
       <div className="label" style={{ marginBottom: 6 }}>Здати на перевірку</div>
+      {leftSubs(c).length > 0 && (
+        <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Не відмічено підзадач: {leftSubs(c).length} з {c.subtasks_total}. Здати можна, але перевіряючий це побачить.</div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
         <div>
           <span style={LBL}>Посилання на результат (папка, пост, відео)</span>
@@ -486,6 +617,11 @@ function ReviewForm({ c, onDone }: { c: Claim; onDone: () => void }) {
   return (
     <div style={{ marginTop: 10, borderTop: "1px dashed #e2e8f0", paddingTop: 10 }}>
       <div className="label" style={{ marginBottom: 6 }}>Перевірка</div>
+      {leftSubs(c).length > 0 && (
+        <div style={{ ...WARN, marginBottom: 8 }}>
+          <Icon n="warn" size={13} /> Виконавець не відмітив {leftSubs(c).length} з {c.subtasks_total} підзадач: {leftSubs(c).map((x) => `${x.i + 1}. ${x.title}`).join("; ")}
+        </div>
+      )}
       <div style={{ ...ROW, alignItems: "flex-end" }}>
         {perUnit && (
           <div><span style={LBL}>{c.unit === "hour" ? "Годин" : `Кількість (${c.unit_label || "шт"})`}</span><input style={{ ...INP, width: 90 }} value={qty} onChange={(e) => setQty(e.target.value)} /></div>
@@ -581,12 +717,14 @@ type Draft = Record<string, string | boolean>;
 const emptyDraft = (catId: number): Draft => ({
   category_id: String(catId), title: "", how_to: "", done_criteria: "", proof_type: "any", unit: "task", unit_label: "",
   price: "", monthly_limit_qty: "0", max_per_person: "0", max_takers: "1", due_days: "3", checker_id: "", active: false, note: "",
+  why: "", expected_result: "",
 });
 const draftOf = (o: Offer): Draft => ({
   category_id: String(o.category_id), title: o.title, how_to: o.how_to, done_criteria: o.done_criteria, proof_type: o.proof_type,
   unit: o.unit, unit_label: o.unit_label, price: String(o.price), monthly_limit_qty: String(o.monthly_limit_qty),
   max_per_person: String(o.max_per_person), max_takers: String(o.max_takers), due_days: String(o.due_days),
   checker_id: o.checker_id ? String(o.checker_id) : "", active: o.active, note: o.note,
+  why: o.why || "", expected_result: o.expected_result || "",
 });
 
 function CatalogTab({ board, onChanged }: { board: Board; onChanged: () => void }) {
@@ -710,7 +848,8 @@ function OfferRow({ o, first, last, onEdit, run }: {
     run(() => api.del(`/api/bounty/offers/${o.id}/`), "Задачу видалено");
   };
   const limits = [o.monthly_limit_qty ? `ліміт ${o.monthly_limit_qty}/міс` : "без ліміту", o.max_per_person ? `на людину ${o.max_per_person}` : "",
-    o.max_takers === 1 ? "одна людина" : o.max_takers ? `до ${o.max_takers} людей` : "будь-скільки людей", `приймає: ${o.checker_name || "власник"}`].filter(Boolean);
+    o.max_takers === 1 ? "одна людина" : o.max_takers ? `до ${o.max_takers} людей` : "будь-скільки людей",
+    o.subtasks?.length ? `підзадач: ${o.subtasks.length}` : "без підзадач", `приймає: ${o.checker_name || "власник"}`].filter(Boolean);
   return (
     <div style={{ ...ROW, padding: "6px 0", borderTop: "1px solid #f1f5f9" }}>
       <label title={o.active ? "Увімкнена — видно всім" : "Вимкнена — співробітники не бачать"} style={{ display: "flex", alignItems: "center" }}>
@@ -737,10 +876,12 @@ function OfferEditor({ offer, catId, board, onClose, run }: {
   offer: Offer | null; catId: number; board: Board; onClose: () => void; run: (fn: () => Promise<unknown>, ok?: string) => void;
 }) {
   const [f, setF] = useState<Draft>(() => (offer ? draftOf(offer) : emptyDraft(catId)));
+  const [subs, setSubs] = useState<EditSub[]>(() => (offer?.subtasks || []).map((x) => ({ ...x, k: subKey() })));
   const set = (k: string, v: string | boolean) => setF((p) => ({ ...p, [k]: v }));
   const s = (k: string) => String(f[k] ?? "");
   const save = () => {
-    const body = { ...f, checker_id: s("checker_id") || null, category_id: Number(s("category_id")) };
+    const body = { ...f, checker_id: s("checker_id") || null, category_id: Number(s("category_id")),
+      subtasks: subs.map((x) => ({ title: x.title, how: x.how })) };
     run(async () => {
       if (offer) await api.patch(`/api/bounty/offers/${offer.id}/`, body);
       else await api.post("/api/bounty/offers/", body);
@@ -792,11 +933,20 @@ function OfferEditor({ offer, catId, board, onClose, run }: {
         </div>
       </div>
       <div style={{ marginTop: 8 }}>
-        <span style={LBL}>Як виконати — кожен крок з нового рядка</span>
-        <textarea style={{ ...AREA, minHeight: 90 }} value={s("how_to")} onChange={(e) => set("how_to", e.target.value)} />
+        <span style={LBL}>Навіщо — один рядок (що це дає бізнесу)</span>
+        <input style={{ ...INP, width: "100%", boxSizing: "border-box" }} value={s("why")} onChange={(e) => set("why", e.target.value)} />
       </div>
       <div style={{ marginTop: 8 }}>
-        <span style={LBL}>Що вважається виконаним і який доказ</span>
+        <span style={LBL}>Кінцевий результат — що і скільки має бути зроблено (можна перевірити)</span>
+        <textarea style={{ ...AREA, minHeight: 50 }} value={s("expected_result")} onChange={(e) => set("expected_result", e.target.value)} />
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <span style={LBL}>Як зробити — загальні правила, кожне з нового рядка</span>
+        <textarea style={{ ...AREA, minHeight: 60 }} value={s("how_to")} onChange={(e) => set("how_to", e.target.value)} />
+      </div>
+      <SubtaskEditor subs={subs} setSubs={setSubs} />
+      <div style={{ marginTop: 8 }}>
+        <span style={LBL}>Що вважається виконаним і який доказ (для перевіряючого)</span>
         <textarea style={{ ...AREA, minHeight: 50 }} value={s("done_criteria")} onChange={(e) => set("done_criteria", e.target.value)} />
       </div>
       <div style={{ ...ROW, marginTop: 8 }}>
@@ -902,6 +1052,7 @@ function HelpTab({ minPct }: { minPct: number }) {
   const items = [
     "Біржа — це прайс додаткових задач з оплатою: що зробити, як, що вважається виконаним, скільки платимо і скільки разів на місяць.",
     "Тиснете «Беру» — задача ваша, зʼявляється термін. Якщо задачу виконує одна людина, інші бачать «Зайнято». Штучні задачі (відео, контакти, дощечки) можуть брати кілька людей.",
+    "У кожної задачі є «Кінцевий результат» і підзадачі з простою інструкцією. Узяли задачу — у «Мої задачі» відмічайте виконані підзадачі (видно прогрес «3/5»). Здати можна будь-коли, але перевіряючий побачить, що не відмічено.",
     "Виконали — «Мої задачі» → додаєте доказ (посилання, фото або короткий звіт) → «Здати».",
     "Власник або призначений перевіряючий тисне «Прийнято» або «На доробку» з коментарем. Свою задачу ніхто сам не приймає.",
     "Прийнята задача йде окремим рядком «Задачі з біржі» у вашу ЗП за цей місяць. Якщо ЗП за місяць уже затверджено — у наступний.",

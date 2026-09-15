@@ -14,13 +14,90 @@ LUNCH_NORM_MIN = 60   # норма обіду
 DAY_HOURS = 8
 
 
-def _rate(code, default):
+# ── 15.09.2026 (whpay): ставки складу — ЛИШЕ живі статті Фінмоделі (категорія «Ставки складу»; на проді id 89–95).
+# Ті самі числа показують Налаштування → Ставки співробітників і Фінанси → Фінмодель. Запасних чисел у коді немає:
+# статтю вимкнено або видалено → ставка 0 (не нараховуємо) і попередження у вкладці «ЗП».
+WH_RATE_CODES = ("WH_RATE_KG", "WH_PACK_5", "WH_PACK_10", "WH_PACK_20", "WH_TINT_PCT", "WH_RATE_DAY", "bundle_assembly")
+WH_RATE_TEXT = {  # code: (назва, якщо статті немає; одиниця; за що)
+    "WH_RATE_KG": ("Відвантаження: ставка за кг", "₴/кг", "вага відвантаження: кілограми замовлення × ставка"),
+    "WH_PACK_5": ("Упаковка до 5 кг", "₴/місце", "упаковка місця до 5 кг (якщо пакували самі)"),
+    "WH_PACK_10": ("Упаковка до 10 кг", "₴/місце", "упаковка місця до 10 кг"),
+    "WH_PACK_20": ("Упаковка до 20 кг", "₴/місце", "упаковка місця до 20 кг; важче — кілька місць"),
+    "WH_TINT_PCT": ("Тонування", "%", "% від суми рядка «Послуга тонування» в угоді (немає рядка — за позначкою наборів)"),
+    "WH_RATE_DAY": ("Ставка за робочий день", "₴/день", "кнопка «Завершити день»; мінус за обід понад норму"),
+    "bundle_assembly": ("Оплата складу за збірку тестового набору", "₴/набір",
+                        "збірка тестового набору (ця ж ставка входить у собівартість набору)"),
+}
+
+
+def live_rates():
+    """Ставки складу з Фінмоделі одним запитом: {code: {id, name, value (Decimal), active, found}}."""
     from apps.finance.models import FinModelArticle
-    a = FinModelArticle.objects.filter(code=code).first()
-    try:
-        return Decimal(str(a.value)) if a else Decimal(str(default))
-    except Exception:
-        return Decimal(str(default))
+    out = {c: {"id": None, "name": "", "value": Decimal("0"), "active": False, "found": False} for c in WH_RATE_CODES}
+    for a in FinModelArticle.objects.filter(code__in=WH_RATE_CODES).order_by("-active", "id"):
+        r = out[a.code]
+        if r["found"]:
+            continue
+        try:
+            v = Decimal(str(a.value or 0))
+        except Exception:
+            v = Decimal("0")
+        r.update(id=a.id, name=a.name, value=v, active=bool(a.active), found=True)
+    return out
+
+
+def _rate(code, rates=None):
+    """Жива ставка складу (Decimal). Статті немає або її вимкнено → 0: «за замовчуванням» нічого не нараховуємо."""
+    r = (rates if rates is not None else live_rates()).get(code)
+    return r["value"] if r and r["active"] else Decimal("0")
+
+
+def _dec(x):
+    """Decimal('1.50') → «1,5»; 300 → «300»."""
+    return ("%g" % float(x or 0)).replace(".", ",")
+
+
+def rates_short(rates=None):
+    """Один рядок «ставки зараз» — для розшифровки ЗП у Фінансах."""
+    lr = rates if rates is not None else live_rates()
+    v = {c: _dec(_rate(c, lr)) for c in WH_RATE_CODES}
+    return (f"Ставки складу зараз (Фінмодель): вага {v['WH_RATE_KG']} ₴/кг · упаковка {v['WH_PACK_5']} / {v['WH_PACK_10']} / "
+            f"{v['WH_PACK_20']} ₴ · тонування {v['WH_TINT_PCT']}% · тест-набір {v['bundle_assembly']} ₴ · день {v['WH_RATE_DAY']} ₴")
+
+
+def _perm(u, code):
+    return bool(u and getattr(u, "is_authenticated", False)
+                and (u.is_superuser or (hasattr(u, "has_perm_code") and u.has_perm_code(code))))
+
+
+def rates_payload(user):
+    """Ставки складу для вкладок «ЗП» і «Дашборд» (лише показ). Змінюють у Налаштування → Ставки співробітників
+    (там само, що й Фінмодель): кнопку бачить лише той, хто там може змінювати ставки складу."""
+    lr = live_rates()
+    items, warnings = [], []
+    for code in WH_RATE_CODES:
+        r = lr[code]
+        name, unit, hint = WH_RATE_TEXT[code]
+        items.append({"code": code, "id": r["id"], "name": r["name"] or name, "value": float(_rate(code, lr)),
+                      "unit": unit, "hint": hint, "active": r["active"], "found": r["found"]})
+        if not r["found"]:
+            warnings.append(f"Ставки «{name}» немає у Фінмоделі — за це зараз нічого не нараховується")
+        elif not r["active"]:
+            warnings.append(f"Ставку «{r['name']}» у Фінмоделі вимкнено — за це зараз нічого не нараховується")
+    kg, p10, tint, day = (_rate(c, lr) for c in ("WH_RATE_KG", "WH_PACK_10", "WH_TINT_PCT", "WH_RATE_DAY"))
+    ex = []
+    if kg or p10:
+        ex.append(f"посилка 7 кг = 7 × {_dec(kg)} + {_dec(p10)} = {_dec(7 * kg + p10)} ₴")
+    if tint:
+        ex.append(f"«Послуга тонування» на 1 000 ₴ → {_dec(tint)}% = {_dec(1000 * tint / 100)} ₴")
+    lunch = (f"Норма обіду — {LUNCH_NORM_MIN} хв; понад норму — мінус {_dec((day / DAY_HOURS).quantize(Decimal('0.01')))} ₴ "
+             f"за кожну годину (ставка дня {_dec(day)} ÷ {DAY_HOURS} год)." if day else "")
+    can_edit = _perm(user, "payroll.rates.view") and _perm(user, "finance.manage") and _perm(user, "finance.model.edit")
+    return {"items": items, "example": ("Приклад: " + "; ".join(ex) + ".") if ex else "", "lunch": lunch,
+            "warnings": warnings, "can_edit": can_edit, "edit_url": "/settings?tab=payrates",
+            "same_as": "Це ті самі числа, що у Фінанси → Фінмодель («Склад / ставки») і в Налаштування → Ставки "
+                       "співробітників: одна ставка на всіх. Змінили там — склад рахує по-новому з наступного "
+                       "відвантаження; уже нараховані записи не переписуються."}
 
 
 def _packing_tiers(weight):
@@ -458,19 +535,13 @@ def ship(request, pk):
     return Response(out)
 
 
-def _test_set_rate():
+def _test_set_rate(rates=None):
     """Ставка «Оплата складу за збірку тестового набору» (Фінмодель, code=bundle_assembly) — ЖИВЕ значення:
     Олег змінює суму у Фінмоделі → наступні відвантаження рахуються по новій (старі записи не змінюються).
     Та сама стаття вже входить у собівартість набору, тому «Економіка угоди» її окремо НЕ додає.
-    Статтю вимкнено або її немає → 0 (не нараховуємо). Лише читання."""
-    from apps.finance.models import FinModelArticle
-    a = FinModelArticle.objects.filter(code="bundle_assembly").first()
-    if not a or not a.active:
-        return Decimal("0")
-    try:
-        return Decimal(str(a.value or 0))
-    except Exception:
-        return Decimal("0")
+    Статтю вимкнено або її немає → 0 (не нараховуємо). Лише читання.
+    15.09.2026 (whpay): той самий хелпер живих ставок, що й для ваги, упаковки, тонування і дня."""
+    return _rate("bundle_assembly", rates)
 
 
 def _accrual_plan(job, pay_packing=True):
@@ -493,8 +564,9 @@ def _accrual_plan(job, pay_packing=True):
         tint_base = (amount * Decimal(tinted) / Decimal(total_kits)) if total_kits else Decimal("0")
         tint_source = "manual" if tint_base > 0 else ""; tint_count = tinted
     tiers = _packing_tiers(weight) if (job.packed and pay_packing) else {"T5": 0, "T10": 0, "T20": 0}
-    r_kg = _rate("WH_RATE_KG", 1.5); r5 = _rate("WH_PACK_5", 8); r10 = _rate("WH_PACK_10", 13)
-    r20 = _rate("WH_PACK_20", 20); rtint = _rate("WH_TINT_PCT", 20) / Decimal("100")
+    _lr = live_rates()  # 15.09 (whpay): усі ставки одним запитом, лише з Фінмоделі (без чисел у коді)
+    r_kg = _rate("WH_RATE_KG", _lr); r5 = _rate("WH_PACK_5", _lr); r10 = _rate("WH_PACK_10", _lr)
+    r20 = _rate("WH_PACK_20", _lr); rtint = _rate("WH_TINT_PCT", _lr) / Decimal("100")
     rows = []
     if weight > 0:
         rows.append(("shipment_weight", weight * r_kg, {"quantity_kg": weight, "rate_applied": r_kg, "note": "%s кг" % weight}))
@@ -506,7 +578,7 @@ def _accrual_plan(job, pay_packing=True):
         note = ("Послуга тонування: %s ₴" % tb) if tint_source == "service_line" else ("позначка: %d з %d наборів" % (tinted, total_kits))
         rows.append(("tinting", tint_base * rtint, {"base_value": tb, "rate_applied": rtint, "note": note}))
     if fx["test_sets"] > 0:
-        r_ts = _test_set_rate()
+        r_ts = _test_set_rate(_lr)
         if r_ts > 0:
             rows.append(("test_set", r_ts * fx["test_sets"],
                          {"rate_applied": r_ts, "note": "%s шт × %s ₴" % (_num(fx["test_sets"]), _num(r_ts))}))
@@ -555,7 +627,8 @@ def my_salary(request):
     shipments = WarehouseJob.objects.filter(assignee=request.user, status="shipped", shipped_at__date__gte=since).count()
     tintings = qs.filter(op_type="tinting").count()
     return Response({"total": str(total), "lines": lines, "period": period,
-                     "shipments": shipments, "tintings": tintings})
+                     "shipments": shipments, "tintings": tintings,
+                     "rates": rates_payload(request.user)})  # 15.09 (whpay): ставки зараз — з Фінмоделі
 
 
 # ── 14.09.2026 (wh-accrual): ЗП складу за календарний місяць ──
@@ -619,7 +692,8 @@ def _my_calendar_month(request):
                      "from": first.isoformat(), "to": last.isoformat(), "scheme": scheme,
                      "base_lines": base_lines, "base_total": sum(float(l["amount"] or 0) for l in base_lines),
                      "piece": piece, "piece_total": str(piece_total), "piece_in_scheme": piece_in_scheme,
-                     "total": total, "warnings": warnings, "shipments": shipments})
+                     "total": total, "warnings": warnings, "shipments": shipments,
+                     "rates": rates_payload(u)})  # 15.09 (whpay)
 
 
 @api_view(["GET"])
@@ -659,7 +733,7 @@ def day_close(request):
         sess.ended_at = timezone.now(); sess.save()
         lunch_min = sess.paused_seconds // 60
         excess = max(0, lunch_min - LUNCH_NORM_MIN)
-        day_rate = _rate("WH_RATE_DAY", 300)
+        day_rate = _rate("WH_RATE_DAY")  # 15.09 (whpay): лише Фінмодель; статтю вимкнено → 0
         penalty = (Decimal(excess) / Decimal(60)) * (day_rate / Decimal(DAY_HOURS))
         day_pay = max(Decimal("0"), day_rate - penalty)
         note = "обід %d хв" % lunch_min + ((" (-%s за перебір)" % penalty.quantize(Decimal("0.01"))) if excess else "")
@@ -811,7 +885,8 @@ def dashboard(request):
         onoff[ch]["count"] += 1
         onoff[ch]["weight"] += float(j.shipped_weight_kg or 0)
         onoff[ch]["value"] += float(j.deal.amount or 0) if j.deal else 0
-    return Response({"period": period, "rows": rows, "team": team, "onoff": onoff, "ops": OPS})
+    return Response({"period": period, "rows": rows, "team": team, "onoff": onoff, "ops": OPS,
+                     "rates": rates_payload(request.user)})  # 15.09 (whpay)
 
 
 @api_view(["POST"])

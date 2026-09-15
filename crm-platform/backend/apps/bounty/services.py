@@ -11,7 +11,11 @@
 
 Фонд: стаття Фінмоделі з назвою «Біржа задач» (₴/міс). Значення > 0 — ліміт місяця (прийняте + взяте в роботу);
 0 або статті немає — ліміт не діє, керівник бачить попередження. Статтю CRM сама НЕ створює.
+
+Підзадачі (v2, 15.09): у позиції прайсу — список [{title, how}]; при «Беру» знімок іде у взяту задачу (як ціна),
+виконавець відмічає зроблені. Здати можна будь-коли — в історії і в перевіряючого видно, що не відмічено.
 """
+import json
 import re
 from collections import defaultdict
 from datetime import timedelta
@@ -22,7 +26,7 @@ from django.db import transaction
 from django.db.models import Prefetch, Q, Sum
 from django.utils import timezone
 
-from .models import DEPARTMENT_LABELS, DEPARTMENTS, ClaimFile, TaskCategory, TaskClaim, TaskOffer
+from .models import DEPARTMENT_LABELS, DEPARTMENTS, SUBTASKS_MAX, ClaimFile, TaskCategory, TaskClaim, TaskOffer
 
 MIN_STANDARD = 0.75
 FUND_NAME = "Біржа задач"
@@ -125,6 +129,47 @@ def unit_text(unit, unit_label, price):
     if unit == "hour":
         return f"{fmt(price)} ₴ за годину"
     return f"{fmt(price)} ₴ за задачу"
+
+
+def clean_subtasks(v):
+    """Підзадачі з форми / сідера → [{title, how}]: порожні назви відкидаємо, довжини обрізаємо, не більше SUBTASKS_MAX."""
+    if v in (None, ""):
+        return []
+    if isinstance(v, str):
+        try:
+            v = json.loads(v)
+        except ValueError:
+            raise BountyError("Підзадачі: неправильний формат")
+    if not isinstance(v, (list, tuple)):
+        raise BountyError("Підзадачі: потрібен список")
+    out = []
+    for it in v:
+        if isinstance(it, str):
+            title, how = it, ""
+        elif isinstance(it, dict):
+            title, how = it.get("title"), it.get("how")
+        else:
+            raise BountyError("Підзадачі: неправильний формат")
+        title = str(title or "").strip()[:200]
+        if title:
+            out.append({"title": title, "how": str(how or "").strip()[:600]})
+    if len(out) > SUBTASKS_MAX:
+        raise BountyError(f"Підзадач — не більше {SUBTASKS_MAX}")
+    return out
+
+
+def _norm_subs(v):
+    try:
+        return clean_subtasks(v)
+    except BountyError:
+        return []
+
+
+def claim_subtasks(c):
+    """Підзадачі взятої задачі з відмітками: знімок на момент «Беру»; у взятих до v2 — поточні з прайсу."""
+    subs = _norm_subs(c.subtasks) or _norm_subs(c.offer.subtasks)
+    done = {i for i in (c.subtasks_done or []) if isinstance(i, int)}
+    return [{"i": i, "title": x["title"], "how": x["how"], "done": i in done} for i, x in enumerate(subs)]
 
 
 def _ev(user, act, note=""):
@@ -294,6 +339,7 @@ def usage(offer_ids, period=None):
 def offer_json(o, viewer=None, st=None):
     d = {"id": o.id, "category_id": o.category_id, "category_name": o.category.name, "department": o.category.department,
          "title": o.title, "how_to": o.how_to, "done_criteria": o.done_criteria,
+         "why": o.why, "expected_result": o.expected_result, "subtasks": _norm_subs(o.subtasks),
          "proof_type": o.proof_type, "proof_label": PROOF_LABELS.get(o.proof_type, o.proof_type),
          "price": money(o.price), "unit": o.unit, "unit_label": o.unit_label, "unit_text": unit_text(o.unit, o.unit_label, o.price),
          "monthly_limit_qty": o.monthly_limit_qty, "max_per_person": o.max_per_person, "max_takers": o.max_takers,
@@ -410,6 +456,7 @@ def take(offer_id, user, qty=None):
         offer=o, user=user, qty=q, price=o.price, unit=o.unit, status="taken", taken_at=now,
         due_at=now + timedelta(days=max(1, int(o.due_days or 1))),
         std_score=std.get("score"), std_warning=(std.get("warning") or "")[:255],
+        subtasks=_norm_subs(o.subtasks), subtasks_done=[],
         history=[_ev(user, "take", f"кількість {fmt(q)}" if o.unit in ("piece", "hour") else "")])
     return c, std.get("warning") or ""
 
@@ -440,8 +487,42 @@ def submit(claim_id, user, proof_text="", proof_url="", qty=None):
     c.proof_text, c.proof_url = text, url
     c.status = "submitted"
     c.submitted_at = timezone.now()
-    c.history = [*(c.history or []), _ev(user, "submit", f"кількість {fmt(c.qty)}" if c.unit in ("piece", "hour") else "")]
+    if not c.subtasks:
+        c.subtasks = _norm_subs(c.offer.subtasks)
+    parts = [f"кількість {fmt(c.qty)}"] if c.unit in ("piece", "hour") else []
+    subs = claim_subtasks(c)
+    if subs:
+        left = [str(x["i"] + 1) for x in subs if not x["done"]]
+        parts.append(f"підзадачі {len(subs) - len(left)}/{len(subs)}" + (f", не відмічено № {', '.join(left)}" if left else ""))
+    c.history = [*(c.history or []), _ev(user, "submit", "; ".join(parts))]
     c.save()
+    return c
+
+
+@transaction.atomic
+def set_subtasks(claim_id, user, done):
+    """Відмітки виконаних підзадач (повний список номерів з 0). Лише виконавець, лише поки задача в роботі."""
+    c = _lock_claim(claim_id)
+    if c.user_id != user.id:
+        raise BountyError("Відмічати підзадачі може лише той, хто взяв задачу", 403)
+    if c.status not in ("taken", "rework"):
+        raise BountyError(f"Задача в статусі «{STATUS_LABELS.get(c.status)}» — відмітки вже не змінюються", 409)
+    if not c.subtasks:
+        c.subtasks = _norm_subs(c.offer.subtasks)
+    n = len(c.subtasks)
+    if not isinstance(done, (list, tuple)):
+        raise BountyError("Підзадачі: потрібен список номерів")
+    idx = set()
+    for v in done:
+        try:
+            i = int(v)
+        except (TypeError, ValueError):
+            raise BountyError("Підзадачі: номер має бути числом")
+        if i < 0 or i >= n:
+            raise BountyError("Такої підзадачі немає")
+        idx.add(i)
+    c.subtasks_done = sorted(idx)
+    c.save(update_fields=["subtasks", "subtasks_done"])
     return c
 
 
@@ -560,8 +641,12 @@ def claim_json(c, viewer):
     now = timezone.now()
     own = c.user_id == viewer.id
     manage = can_manage(viewer)
+    subs = claim_subtasks(c)
     return {
         "id": c.id, "offer_id": o.id, "offer_title": o.title, "category_name": o.category.name,
+        "why": o.why, "expected_result": o.expected_result, "subtasks": subs, "subtasks_total": len(subs),
+        "subtasks_done_count": sum(1 for x in subs if x["done"]),
+        "can_check": own and c.status in ("taken", "rework") and bool(subs),
         "department": o.category.department, "department_label": DEPARTMENT_LABELS.get(o.category.department, ""),
         "unit": c.unit, "unit_label": o.unit_label, "unit_text": unit_text(c.unit, o.unit_label, c.price),
         "price": money(c.price), "qty": float(c.qty or 0), "base_amount": money(c.base_amount) if c.base_amount is not None else None,
@@ -675,7 +760,7 @@ def summary(viewer, period):
 
 # ─────────────────────────── прайс ───────────────────────────
 
-TEXT_LIMITS = {"how_to": 6000, "done_criteria": 3000, "note": 255, "unit_label": 40}
+TEXT_LIMITS = {"how_to": 6000, "done_criteria": 3000, "note": 255, "unit_label": 40, "why": 255, "expected_result": 3000}
 
 
 def apply_offer_fields(o, d, partial):
@@ -692,6 +777,8 @@ def apply_offer_fields(o, d, partial):
     for f, lim in TEXT_LIMITS.items():
         if f in d:
             setattr(o, f, str(d.get(f) or "")[:lim])
+    if "subtasks" in d:
+        o.subtasks = clean_subtasks(d.get("subtasks"))
     if "proof_type" in d:
         if d["proof_type"] not in PROOF_LABELS:
             raise BountyError("Невідомий тип доказу")

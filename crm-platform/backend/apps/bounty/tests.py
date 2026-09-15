@@ -396,11 +396,11 @@ class BountyTests(TestCase):
         self.assertIn("нічого не записано", out.getvalue())
         call_command("bounty_seed", stdout=StringIO())
         n = TaskOffer.objects.count()
-        self.assertGreaterEqual(n, 60)
+        self.assertGreaterEqual(n, 110)
         self.assertEqual(TaskOffer.objects.filter(active=True).count(), 0)
-        self.assertEqual(TaskOffer.objects.exclude(note="ціна для обговорення").count(), 0)
+        self.assertEqual(TaskOffer.objects.exclude(note__startswith="ціна для обговорення").count(), 0)
         self.assertEqual(set(TaskCategory.objects.values_list("department", flat=True)),
-                         {"marketing", "sales", "warehouse", "salon", "objects", "content", "ai_crm", "office"})
+                         {"marketing", "sales", "warehouse", "salon", "objects", "content", "ai_crm", "hr", "office"})
         gone = TaskOffer.objects.order_by("id").first()
         gone.archived = True
         gone.save()

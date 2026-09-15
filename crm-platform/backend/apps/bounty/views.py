@@ -206,7 +206,7 @@ class ClaimsView(_Base):
 
 
 class ClaimActionView(_Base):
-    """POST /claims/<id>/submit|accept|rework|cancel/"""
+    """POST /claims/<id>/submit|accept|rework|cancel|subtasks/  (subtasks: {"done": [0, 2]} — відмітки виконавця)"""
 
     def post(self, request, pk, act):
         u, d = request.user, request.data
@@ -222,6 +222,8 @@ class ClaimActionView(_Base):
             c = S.rework(pk, u, d.get("comment", ""))
         elif act == "cancel":
             c = S.cancel(pk, u, d.get("comment", ""))
+        elif act == "subtasks":
+            c = S.set_subtasks(pk, u, d.get("done"))
         else:
             raise S.BountyError("Невідома дія", 404)
         return Response(S.claim_json(S.claims_qs().get(pk=c.pk), u))

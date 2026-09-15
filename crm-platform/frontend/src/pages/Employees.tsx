@@ -3,6 +3,7 @@ import { Component, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useLang } from "../i18n";
 import { Icon } from "../Icon";
+import DismissedVisibility from "./DismissedVisibility";  // staffvis 15.09: «Звільнені» — де показувати
 
 interface Dept { id: number; name: string; parent: number | null; permissions: string[]; color: string; pos_x: number; pos_y: number; members_count: number; eff_permissions: string[]; idle_timeout_min?: number; }
 interface Emp { id: number; username: string; full_name: string; email: string; role: number | null; role_name: string; department: number | null; department_name: string; extra_permissions: string[]; denied_permissions: string[]; is_active: boolean; account_kind?: "client" | "staff"; employment_status?: string; dismissed_at?: string | null; date_joined?: string; photo?: string; position?: string; birthday?: string | null; about?: string; interests?: string; telegram?: string; phone?: string; on_shift?: boolean; shift_paused?: boolean; last_login?: string | null; }
@@ -347,7 +348,11 @@ export default function Employees() {
               ))}
               <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{listEmps.length} {t("чел.", "осіб")}</span>
             </div>
-            <div className="tablewrap" style={{ maxHeight: "calc(100vh - 280px)", overflowY: "auto" }}><table>
+            {listStatus === "dismissed" ? (
+              <DismissedVisibility emps={listEmps}
+                onReturn={(id) => { const e = listEmps.find((x) => x.id === id); if (e) setEmpStatus(e, "active"); }}
+                onOpen={(id) => { const e = listEmps.find((x) => x.id === id); if (e) setCardEmp(e); }} />
+            ) : <div className="tablewrap" style={{ maxHeight: "calc(100vh - 280px)", overflowY: "auto" }}><table>
               <thead><tr><th>{t("Сотрудник", "Співробітник")}</th><th>{t("Отдел", "Відділ")}</th><th>{t("Роль", "Роль")}</th><th>{t("Статус", "Статус")}</th><th>{t("Принят / Уволен", "Прийнятий / Звільнений")}</th><th>{t("Действие", "Дія")}</th></tr></thead>
               <tbody>{listEmps.map((e) => {
                 const st = e.employment_status || (e.is_active ? "active" : "dismissed");
@@ -384,7 +389,7 @@ export default function Employees() {
                   </td>
                 </tr>;
               })}</tbody>
-            </table></div>
+            </table></div>}
           </div>
         )}
         {tab === "registrations" && (

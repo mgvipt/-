@@ -3199,6 +3199,10 @@ class SalaryView(APIView):
             team = team.filter(employment_status=st)
         elif st == "active_only":
             team = team.filter(is_active=True)
+        # staffvis 15.09: звільнені — лише ті, кого дозволено показувати тут (Співробітники і права → Звільнені);
+        # ?for=plans — вкладка «Плани» (свій вибір), інакше «ЗП і KPI»
+        from apps.accounts.visibility import filter_users as _vis_filter
+        team = _vis_filter(team, "plans" if request.query_params.get("for") == "plans" else "payroll", period)
         rows = [compute_manager_salary(u, period) for u in team]
         rows.sort(key=lambda r: r["revenue"], reverse=True)
         # покриття цілі компанії

@@ -403,7 +403,8 @@ def _c_standard(comp, period):
     mx = float(comp.params.get("max") or 0)
     sc = (comp.params.get("scores") or {}).get(period)
     score = float(sc) if sc is not None else 1.0
-    return _line(comp, mx * score, mx, f"{round(score * 100)}%", "оцінка стандарту за місяць",
+    # 15.09 (whkpi): сума як і раніше = максимум × оцінка; пункти стандарту (params.criteria) — лише в підписі
+    return _line(comp, mx * score, mx, f"{round(score * 100)}%", _std_detail(comp, period),
                  warn="" if sc is not None else "оцінку стандарту не виставлено — узято 100%"), score
 
 
@@ -608,9 +609,13 @@ def calc(user, period, scheme=None, purpose="official", _nested=False):
             "legacy": {"total": legacy["total"], "lines": legacy["lines"], "title": legacy["scheme"]["title"]} if legacy and legacy.get("scheme") else None}
 
 
-def staff_on(on, purpose="official"):
-    """Діючі схеми на дату: по одній на співробітника + посади без акаунта (не вакансії)."""
+def staff_on(on, purpose="official", entity="payroll"):
+    """Діючі схеми на дату: по одній на співробітника + посади без акаунта (не вакансії).
+    staffvis 15.09: звільнених пропускаємо, якщо в сутності entity («payroll» — ЗП, «breakeven» — ФОТ у точці
+    беззбитковості) їх не дозволено показувати (Співробітники і права → Звільнені). Активних це не стосується."""
+    from apps.accounts.visibility import hidden_ids as _vis_hidden
     from .models import PayScheme
+    hidden = _vis_hidden(entity, on.replace(day=1))
     qs = (PayScheme.objects.filter(purpose=purpose, status="active", valid_from__lte=on)
           .filter(Q(valid_to__isnull=True) | Q(valid_to__gte=on)).select_related("user").order_by("-valid_from", "-id"))
     seen, out = set(), []
@@ -619,6 +624,8 @@ def staff_on(on, purpose="official"):
         if s.is_vacancy or key in seen:
             continue
         seen.add(key)
+        if s.user_id and s.user_id in hidden:  # staffvis 15.09
+            continue
         out.append(s)
     return out
 
@@ -751,7 +758,7 @@ def breakeven_atm(extra_ids=(), without_ids=(), today=None):
     sh = shares(pol, today)
     art_by_id = {a.id: a for a in arts}
     by_fund, pct_rev = {}, 0.0
-    for s in staff_on(today):
+    for s in staff_on(today, entity="breakeven"):  # staffvis 15.09: звільнені — лише з дозволом «Точка беззбитковості»
         c = scheme_cost(s, pol, sh, today)
         f = fund_of(s)
         r = by_fund.setdefault(f, {"sum": 0.0, "people": []})
@@ -831,3 +838,34 @@ def deal_bonus_preview(deal):
     return {"total": round(from_m + from_r, 2), "from_revenue": round(from_r, 2), "from_margin": round(from_m, 2),
             "revenue_pct": r_pct, "margin_pct": m_pct, "scheme": sc.title or sc.position, "estimate": est,
             "note": "до плану; понад план і коефіцієнт конверсії — у ЗП за місяць"}
+
+
+# ───────── стандарт із пунктами (15.09.2026, whkpi: «KPI складу ок, я затверджую») ─────────
+# Пункти стандарту (params.criteria) — лише пояснення і підказка CRM (apps.payroll.wh_kpi).
+# Сума, як і раніше, = максимум × оцінка місяця (params.scores[period]); позначки пунктів — params.items[period].
+
+def standard_criteria(comp):
+    """[{key, title, how_measured: auto|manual, target, …}] з params.criteria; порожньо — стандарт без пунктів (як у продажників)."""
+    out = []
+    raw = (getattr(comp, "params", None) or {}).get("criteria") or []
+    for i, c in enumerate(raw if isinstance(raw, list) else []):
+        if isinstance(c, str):
+            c = {"title": c}
+        if not isinstance(c, dict) or not str(c.get("title") or "").strip():
+            continue
+        out.append({**c, "key": str(c.get("key") or f"c{i + 1}"), "title": str(c["title"]).strip(),
+                    "how_measured": "auto" if c.get("how_measured") == "auto" else "manual",
+                    "target": str(c.get("target") or "")})
+    return out
+
+
+def _std_detail(comp, period):
+    """Підпис рядка «Стандарт» у розрахунку: без пунктів — як раніше; з пунктами — скільки їх і які не виконано."""
+    crit = standard_criteria(comp)
+    if not crit:
+        return "оцінка стандарту за місяць"
+    items = (comp.params or {}).get("items")
+    items = items.get(period) if isinstance(items, dict) else None
+    items = items if isinstance(items, dict) else {}
+    miss = [str(i + 1) for i, c in enumerate(crit) if items.get(c["key"]) is False]
+    return f"оцінка стандарту за місяць ({len(crit)} пунктів)" + (f"; не виконано: {', '.join(miss)}" if miss else "")
