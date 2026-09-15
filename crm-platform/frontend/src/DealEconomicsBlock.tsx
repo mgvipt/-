@@ -11,7 +11,8 @@ import { api } from "./api";
 import { useLang } from "./i18n";
 
 type Kind = "fact" | "estimate" | "mixed" | "none";
-interface Line { key: string; amount: number; kind: Kind; note_uk: string; note_ru: string }
+interface Part { key: string; label_uk: string; label_ru: string; amount: number; note_uk: string; note_ru: string; counted: boolean }
+interface Line { key: string; amount: number; kind: Kind; note_uk: string; note_ru: string; parts?: Part[] }
 interface Flag { code: string; uk: string; ru: string }
 interface Econ {
   deal_id: number; revenue: number; margin: number; margin_pct: number; is_estimate: boolean;
@@ -28,7 +29,7 @@ const LABEL: Record<string, [string, string]> = {
   cogs: ["Себестоимость товара", "Собівартість товару"],
   delivery: ["Доставка НП (платим мы)", "Доставка НП (платимо ми)"],
   commission: ["Комиссия оплаты", "Комісія оплати"],
-  packaging: ["Упаковка", "Пакування"],
+  packaging: ["Склад и упаковка", "Склад і пакування"],
   master_works: ["Работы мастера", "Роботи майстра"],
   returns: ["Возвраты", "Повернення"],
 };
@@ -92,7 +93,20 @@ export default function DealEconomicsBlock({ dealId, refreshKey }: { dealId: num
             <span style={{ ...badge, background: k.bg, color: k.fg }}>{t(k.ru, k.uk)}</span>
           </span>
         </div>
-        {!isRev && l.amount !== 0 && note && <div className="muted" style={{ fontSize: 11, lineHeight: 1.3, marginTop: -1 }}>{note}</div>}
+        {!isRev && l.amount !== 0 && note && !(l.parts && l.parts.length) && <div className="muted" style={{ fontSize: 11, lineHeight: 1.3, marginTop: -1 }}>{note}</div>}
+        {l.parts && l.parts.length > 0 && (
+          <div style={{ margin: "2px 0 4px 12px", borderLeft: "2px solid #e2e8f0", paddingLeft: 8 }}>
+            {l.parts.map((p) => (
+              <div key={p.key} style={{ marginBottom: 2 }}>
+                <div className="row" style={{ fontSize: 12, gap: 6, opacity: p.counted ? 1 : 0.7 }}>
+                  <span className="muted">{t(p.label_ru, p.label_uk)}</span>
+                  <span style={{ whiteSpace: "nowrap", color: p.counted ? "#9a3412" : "#64748b" }}>{p.counted ? "−" : ""}{money(p.amount)} ₴</span>
+                </div>
+                <div className="muted" style={{ fontSize: 10.5, lineHeight: 1.25 }}>{t(p.note_ru, p.note_uk)}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   };

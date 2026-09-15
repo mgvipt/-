@@ -447,6 +447,9 @@ def _packaging(deal, sibs, ctx, base=None):
                     .exclude(status__in=PAYROLL_BAD_STATUS).values_list("op_type", "amount")):
         labor[op] += _d(amt)
     lab = sum(labor.values(), D0)
+    # 15.09.2026: збірка тест-набору (50 ₴) — довідково; вона вже в собівартості набору, окремо не віднімаємо
+    ts = sum((_d(a) for a in WarehousePayrollEntry.objects.filter(deal_id=deal.pk, op_type="test_set")
+              .exclude(status__in=PAYROLL_BAD_STATUS).values_list("amount", flat=True)), D0)
     fund = ctx["pack_fund"] if "pack_fund" in ctx else pack_fund()
     if fund is not None:
         base = max(_d(base), D0)
@@ -474,7 +477,8 @@ def _packaging(deal, sibs, ctx, base=None):
     if not uk:
         uk, ru = [empty[0]], [empty[1]]
     return lab + mat, _src(kind, " · ".join(uk), " · ".join(ru), packing=labor["packing"],
-                           shipment_weight=labor["shipment_weight"], tinting=labor["tinting"], material=mat, **extra)
+                           shipment_weight=labor["shipment_weight"], tinting=labor["tinting"], material=mat,
+                           test_set=ts, **extra)
 
 
 def _master(txs, svc_plan, ctx):

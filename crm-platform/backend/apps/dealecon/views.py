@@ -44,6 +44,38 @@ def _visible_deal(request, deal_id):
     return _Scoped(request).get_queryset().filter(pk=deal_id).first()
 
 
+def _fmt2(x):
+    return ("%.2f" % float(x or 0)).rstrip("0").rstrip(".").replace(".", ",")
+
+
+def _packaging_parts(s):
+    """15.09.2026: рядок «Склад і пакування» по пунктах — щоб «робота складу» збігалась із ЗП/KPI, а матеріали було видно окремо."""
+    p = s.get("parts") or {}
+    rows = [("shipment_weight", "Вага відвантаження", "Вес отгрузки", "ЗП складу: кг × ставка", "ЗП склада: кг × ставка"),
+            ("packing", "Упаковка (місця)", "Упаковка (места)", "ЗП складу: місця до 5 / 10 / 20 кг", "ЗП склада: места до 5 / 10 / 20 кг"),
+            ("tinting", "Тонування", "Тонировка", "ЗП складу: % від «Послуга тонування»", "ЗП склада: % от «Послуга тонування»")]
+    out = []
+    for key, uk, ru, nuk, nru in rows:
+        v = float(p.get(key) or 0)
+        if v:
+            out.append({"key": key, "label_uk": uk, "label_ru": ru, "amount": v, "note_uk": nuk, "note_ru": nru, "counted": True})
+    mat = float(p.get("material") or 0)
+    if mat:
+        if p.get("material_src") == "fund":
+            nuk = "%s%% фонду «%s» × %s ₴ виручки товарів" % (_fmt2(p.get("fund_pct")), p.get("fund", ""), _fmt2(p.get("base")))
+            nru = "%s%% фонда «%s» × %s ₴ выручки товаров" % (_fmt2(p.get("fund_pct")), p.get("fund", ""), _fmt2(p.get("base")))
+        else:
+            nuk, nru = "норма за відправлення", "норма за отправку"
+        out.append({"key": "material", "label_uk": "Матеріали упаковки (коробки, скотч)", "label_ru": "Материалы упаковки (коробки, скотч)",
+                    "amount": mat, "note_uk": nuk, "note_ru": nru, "counted": True})
+    ts = float(p.get("test_set") or 0)
+    if ts:
+        out.append({"key": "test_set", "label_uk": "Збірка тест-набору (ЗП складу)", "label_ru": "Сборка тест-набора (ЗП склада)",
+                    "amount": ts, "note_uk": "уже в собівартості набору — тут не віднімаємо", "note_ru": "уже в себестоимости набора — здесь не вычитаем",
+                    "counted": False})
+    return out
+
+
 def payload(res, user):
     out = {k: float(res[k]) for k in NUM_FIELDS}
     out.update({"deal_id": res["deal_id"], "margin_pct": float(res["margin_pct"]), "is_estimate": bool(res["is_estimate"]),
@@ -54,8 +86,11 @@ def payload(res, user):
     lines = []
     for k in LINES:
         s = (res.get("sources") or {}).get(k) or {}
-        lines.append({"key": k, "amount": float(res[k]), "kind": s.get("kind", "none"),
-                      "note_uk": s.get("uk", ""), "note_ru": s.get("ru", "")})
+        ln = {"key": k, "amount": float(res[k]), "kind": s.get("kind", "none"),
+              "note_uk": s.get("uk", ""), "note_ru": s.get("ru", "")}
+        if k == "packaging":
+            ln["parts"] = _packaging_parts(s)
+        lines.append(ln)
     out["lines"] = lines
     return out
 

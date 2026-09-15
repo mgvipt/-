@@ -66,6 +66,14 @@ class WeightRulesV2Tests(SimpleTestCase):
         self.assertEqual(p["weight"], Decimal("0.090"))
         self.assertEqual(p["tiers"], {"T5": 1, "T10": 0, "T20": 0})
 
+    def test_primer_100ml_bottle_not_treated_as_toner(self):
+        # #66490: «Primer Deep 1 (UPr XZ 1001_100 )_Універсальний ґрунт… 100 мл» — 1 флакон = 0,1 кг, а не 1 мл
+        p = WR.plan([it("Primer Deep 1 (UPr XZ 1001_100 )_Універсальний ґрунт-концентрат 100 мл", qty=1),
+                     it("Травертин «Тестовий набір Pattera Fine»", is_kit=True)])
+        self.assertEqual(p["weight"], Decimal("0.350"))
+        p2 = WR.plan([it("Герметик Sikaflex 111 300 мл", qty=2)])
+        self.assertEqual(p2["weight"], Decimal("0.780"))  # 2 × 0,3 л × 1,3 кг/л
+
     def test_bottle_and_100ml(self):
         p = WR.plan([it("Protection D MAT +( DC-U 1009)", "л", 2), it("Primer Deep 1 (UPr XZ 1001_100 )", qty=3)])
         self.assertEqual(p["weight"], Decimal("2.300"))   # 2 л × 1,0 + 3 × 0,1

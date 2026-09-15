@@ -110,11 +110,13 @@ def classify(name, unit, qty, card_w=None, is_kit=False, is_tint=False, own=Fals
         return dict(r, cls="sample", note="викраски — вага не рахується")
     if is_kit or "набір" in n or "набор" in n:
         return dict(r, cls="kit", kg=KIT_KG * q, note=f"тест-набір {_g(KIT_KG)} кг × {_g(q)}")
-    if "тонер" in n or "toner" in n or u in ("мл", "ml") or re.search(r"\bмл\s*$", n):
-        # колоранти / тонер у мл: к-сть — це мілілітри (у картці часто одиниця «шт»); 1 мл ≈ 1,5 г
-        return dict(r, cls="small", kg=q * Decimal("0.0015"), note=f"{_g(q)} мл × 1,5 г")
     if "_100" in n or re.search(r"\b100\s*(мл|ml)\b", n):
+        # флакон 100 мл (Primer Deep 1 …_100) — 0,1 кг за шт; перевіряємо ДО правила «тонер у мл»
         return dict(r, cls="small", kg=Decimal("0.1") * q, note=f"{_g(q)} × 0,1 кг (100 мл)")
+    if "тонер" in n or "toner" in n or u in ("мл", "ml") or re.search(r"[^\d\s]\s+мл\s*$", n):
+        # колоранти / тонер у мл: к-сть — це мілілітри; 1 мл ≈ 1,5 г. «мл» без числа перед ним (…(Охра) мл),
+        # а не «300 мл» / «100 мл» у назві флакона — ті рахуються за обʼємом тари нижче
+        return dict(r, cls="small", kg=q * Decimal("0.0015"), note=f"{_g(q)} мл × 1,5 г")
     mk = re.search(r"(\d+[.,]?\d*)\s*(кг|kg)\b", n)
     ml = re.search(r"(\d+[.,]?\d*)\s*(мл|ml)\b", n)
     mlit = re.search(r"(\d+[.,]?\d*)\s*(л|l)\b", n)
