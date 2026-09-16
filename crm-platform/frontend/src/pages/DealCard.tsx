@@ -1247,9 +1247,9 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                             <select value={it.tint_mode || ""} onChange={(e) => setItemTint(it.id, e.target.value)}
                               title={t("Цвет из каталога уже входит в цену набора. Индивидуальный и насыщенный — доплата отдельной строкой","Колір з каталогу вже входить у ціну набору. Індивідуальний і насичений — доплата окремим рядком")}
                               style={{ height: 22, border: "1px solid #cbd5e1", borderRadius: 5, fontSize: 11, background: "#fff", color: it.tint_mode ? "#7c3aed" : "#64748b", fontWeight: it.tint_mode ? 700 : 400, maxWidth: 220 }}>
-                              <option value="">{it.tint_catalog ? t("по каталогу (в цене)", "за каталогом (у ціні)") : t("без тонировки", "без тонування")}</option>
-                              <option value="ind">{t("индивидуальный цвет (доплата)", "індивідуальний колір (доплата)")}</option>
-                              <option value="rich">{t("насыщенный цвет (доплата)", "насичений колір (доплата)")}</option>
+                              <option value="">{it.tint_catalog ? t("по каталогу (в цене набора)", "за каталогом (у ціні набору)") : t("без тонировки / по каталогу", "без тонування / за каталогом")}</option>
+                              <option value="ind">{t("индивидуальный (доплата клиента)", "індивідуальний (доплата клієнта)")}</option>
+                              <option value="rich">{t("индивидуальный насыщенный (доплата клиента)", "індивідуальний насичений (доплата клієнта)")}</option>
                             </select>
                           </div>
                         ) : null}
