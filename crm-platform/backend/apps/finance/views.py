@@ -1235,6 +1235,57 @@ def apply_bank_rules(direction, osnd, cp, acc_name="", count_hit=True):
     return out
 
 
+def _liqpay_status(payment_id):
+    """LiqPay API status по оплаті → {"fee": комісія LiqPay, "reserve": утриманий резерв, "amount": сума} або None."""
+    try:
+        from django.conf import settings as _s
+        from apps.crm.liqpay import api_request
+        pub, prv = getattr(_s, "LIQPAY_PUBLIC_KEY", ""), getattr(_s, "LIQPAY_PRIVATE_KEY", "")
+        if not (pub and prv and str(payment_id).isdigit()):
+            return None
+        r = api_request(pub, prv, {"action": "status", "payment_id": int(payment_id)}, timeout=15)
+        if (r or {}).get("status") not in ("success", "sandbox"):
+            return None
+        # commission_credit дублює receiver_commission (перевірено 16.09 на 3 оплатах) — беремо лише receiver_commission
+        return {"fee": float(r.get("receiver_commission") or 0), "reserve": float(r.get("reserve_amount") or 0),
+                "amount": float(r.get("amount") or 0)}
+    except Exception:
+        return None
+
+
+def _liqpay_commission(payment_id):
+    st = _liqpay_status(payment_id)
+    return st["fee"] if st else None
+
+
+def _liqpay_fee_for_credit(deal_id, net):
+    """Яка оплата угоди прийшла цим зарахуванням банку і скільки з неї взяв LiqPay.
+    Повертає (комісія | None, payment_id | None, джерело). payment_id=None і комісія=None → у угоди немає оплат LiqPay.
+    Резерв LiqPay (reserve_amount) — не комісія: гроші повернуться, лишаються на рахунку «LiqPay еквайринг»."""
+    import re as _re
+    from apps.crm.models import Payment as _Pay
+    pays = list(_Pay.objects.filter(deal_id=deal_id, provider="liqpay", is_paid=True).order_by("id"))
+    if not pays:
+        return None, None, ""
+    used = set()
+    for c in Transaction.objects.filter(deal_id=deal_id, direction="out", comment__contains="PAY#").values_list("comment", flat=True):
+        used.update(_re.findall(r"PAY#(\S+)", c or ""))
+    free = [p for p in pays if str(p.external_id) not in used]
+    cand = [p for p in free if 0 <= float(p.amount) - float(net) <= max(float(p.amount) * 0.03, 15)]
+    if cand:
+        pay = min(cand, key=lambda p: float(p.amount) - float(net))
+        fee = _liqpay_commission(pay.external_id)
+        if fee is not None:
+            return fee, str(pay.external_id), "LiqPay"
+        return float(pay.amount) - float(net), str(pay.external_id), "різниця"
+    # зарахування менше за оплату більше ніж на комісію — можливо, LiqPay утримав резерв: звіряємо з API
+    for p in free:
+        st = _liqpay_status(p.external_id)
+        if st and abs(float(p.amount) - st["fee"] - st["reserve"] - float(net)) <= 1:
+            return st["fee"], str(p.external_id), "LiqPay, резерв %.2f ₴ повернеться" % st["reserve"]
+    return None, "", "не знайдено оплату"
+
+
 def _fee_category():
     cat = Category.objects.filter(name__icontains="Комиссия Банка", direction="out").first()
     return cat or Category.objects.filter(name__icontains="Комис", direction="out").first()
@@ -1410,14 +1461,24 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                 from .services import liqpay_account as _liqacc
                 _liq = _liqacc()
                 feetag = "PBFEE#%s" % ref
-                fee = float(dealtx.amount_uah or dealtx.amount) - amt
-                if fee > 0.009 and not Transaction.objects.filter(comment__startswith=feetag).exists():
+                # 16.09.2026 (Олег: «главное, чтобы дальше не было»): комісія — ПО КОНКРЕТНІЙ оплаті і з самого LiqPay.
+                # Раніше: «перша оплата угоди − зарахування банку» → при двох оплатах або пачці виплат комісія була хибна.
+                fee, pay_ext, fee_src = _liqpay_fee_for_credit(did, amt)
+                if fee is None and pay_ext is None:
+                    # немає рядків Payment (стара угода) — стара формула, але лише якщо різниця схожа на комісію (≤ 3%)
+                    _d = float(dealtx.amount_uah or dealtx.amount) - amt
+                    if 0 < _d <= max(float(dealtx.amount_uah or dealtx.amount) * 0.03, 15):
+                        fee, fee_src = _d, "різниця"
+                if fee is not None and fee > 0.009 and not Transaction.objects.filter(comment__startswith=feetag).exists():
                     Transaction.objects.create(
                         direction="out", amount=round(fee, 2), amount_uah=round(fee, 2),
                         account=_liq, date=dte, op_time=op_t, deal_id=did, category=_fee_category(),
                         counterparty="LiqPay", import_batch=batch,
-                        comment=(feetag + " · Комісія еквайрингу по угоді #%s" % did)[:255])
+                        comment=(feetag + " · Комісія еквайрингу по угоді #%s" % did
+                                 + (" · PAY#%s" % pay_ext if pay_ext else "") + " (%s)" % fee_src)[:255])
                     created += 1
+                elif fee is None:
+                    reftag = reftag + " · ⚠ комісію не визначено — зарахування не збігається з жодною оплатою (пачка виплат?), потрібна звірка"
                 # зарахування банку = ПЕРЕКАЗ LiqPay → банківський рахунок (нетто), НЕ дохід
                 Transaction.objects.create(
                     direction="transfer", amount=amt, amount_uah=amt,
