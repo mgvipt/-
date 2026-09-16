@@ -16,7 +16,8 @@ export default function MyStats({ period }: { period?: string }) {
   const { t } = useLang();
   const { me } = useAuth();
   const [d, setD] = useState<any>(null);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false);       // список угод
+  const [shown, setShown] = useState(false);     // 16.09 (Олег): блок угорі й розкривається по кліку
   const per = period || new Date().toISOString().slice(0, 7);
   useEffect(() => {
     let alive = true;
@@ -46,7 +47,9 @@ export default function MyStats({ period }: { period?: string }) {
   ];
   return (
     <div className="card" style={{ padding: 12, marginTop: 10 }}>
-      <div className="label" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <div className="label" onClick={() => setShown(!shown)} title={t("Нажмите, чтобы раскрыть", "Натисніть, щоб розгорнути")}
+        style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", cursor: "pointer", marginBottom: shown ? 6 : 0 }}>
+        <span style={{ display: "inline-block", transform: shown ? "none" : "rotate(-90deg)", transition: "transform .15s", color: "#64748b" }}>▾</span>
         📊 {t("Моя статистика за месяц", "Моя статистика за місяць")}
         {d && <span className="muted" style={{ fontSize: 12.5, fontWeight: 400 }}>
           {t("Поступило", "Надійшло")}: <b style={{ color: "#16a34a" }}>{money(d.total)}</b>
@@ -55,7 +58,7 @@ export default function MyStats({ period }: { period?: string }) {
           {" · "}{d.deals} {t("сделок", "угод")}
         </span>}
       </div>
-      {!d ? <div className="muted" style={{ fontSize: 12.5 }}>{t("Считаем…", "Рахуємо…")}</div> : days.length === 0 ? (
+      {!shown ? null : !d ? <div className="muted" style={{ fontSize: 12.5 }}>{t("Считаем…", "Рахуємо…")}</div> : days.length === 0 ? (
         <div className="muted" style={{ fontSize: 12.5 }}>{t("За этот месяц оплат по вашим сделкам пока нет.", "За цей місяць оплат по ваших угодах поки немає.")}</div>
       ) : (
         <>

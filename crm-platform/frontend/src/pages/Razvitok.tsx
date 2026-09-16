@@ -162,8 +162,8 @@ export default function Razvitok() {
       {err && <div className="note">{err}</div>}
       {!mine && !err && <div className="spin">{t("Загрузка…", "Завантаження…")}</div>}
 
-      {mode === "me" && period && <MyPayroll period={period} hidePeriods />}
       {mode === "me" && <MyStats period={period} />}
+      {mode === "me" && period && <MyPayroll period={period} hidePeriods />}
       {mode === "other" && <div className="note" style={{ marginBottom: 12 }}>{t("Зарплату этого человека смотрите в «Финансы → ЗП/KPI».", "Зарплату цієї людини дивіться у «Фінанси → ЗП/KPI».")}</div>}
 
       {mode === "team" && mine?.is_team_viewer && (
