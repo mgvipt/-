@@ -6,6 +6,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.http import HttpResponse
 from django.db import transaction
 from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated  # 16.09.2026: своя статистика — будь-якому співробітнику
 from rest_framework.response import Response
 
 from apps.common.permissions import HasPermCode
@@ -2967,19 +2968,22 @@ def _sales_team():
 
 class ManagerDealsView(APIView):
     """Деталізація виручки менеджера: по яких сделках рахувались оплати за місяць.
-    GET /api/finance/salary/deals/?user=ID&period=YYYY-MM (та сама логіка що у compute_manager_salary)."""
-    permission_classes = [FinancePerm]
+    GET /api/finance/salary/deals/?user=ID&period=YYYY-MM (та сама логіка що у compute_manager_salary).
+    16.09.2026 (Олег: «статистика має бути у кожного»): СВОЮ статистику бачить будь-який співробітник,
+    чужу — лише власник / roles.manage / фінанси свого відділу (перевірка нижче)."""
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         from django.contrib.auth import get_user_model
-        uid = request.query_params.get("user")
+        uid = (request.query_params.get("user") or "").strip()
         period = request.query_params.get("period") or _today().strftime("%Y-%m")
-        u = get_user_model().objects.filter(id=uid).first()
+        u = request.user if uid in ("", "me") else get_user_model().objects.filter(id=uid).first()
         if not u:
             return Response({"rows": [], "total": 0, "deals": 0, "count": 0})
         me = request.user
         same_dept = getattr(u, "department_id", None) and u.department_id == getattr(me, "department_id", None)
-        if str(u.id) != str(me.id) and not (me.is_superuser or me.has_perm_code("roles.manage") or same_dept):
+        if str(u.id) != str(me.id) and not (me.is_superuser or me.has_perm_code("roles.manage")
+                                            or (me.has_perm_code("finance.view") and same_dept)):
             return Response({"detail": "Немає доступу до деталізації цього співробітника."}, status=403)
         y, mo = int(period[:4]), int(period[5:7])
         inc = (Transaction.objects.filter(direction="in", deal__owner=u, date__year=y, date__month=mo)

@@ -25,7 +25,7 @@ const NAV: [string, string, string, string, string | null][] = [
   ["/reviews", "Отзывы", "Відгуки", "⭐", "reviews.view"],
   ["/partners", "Партнеры", "Партнери", "💼", "partners.view"],
   ["/bounty", "Биржа задач", "Біржа задач", "target", null],
-  ["/my-pay", "Моя ЗП", "Моя ЗП", "wallet", null],  // 16.09 Розвиток v2: своя ЗП — у меню в усіх (і склад теж), лише свої дані
+  // 16.09 (Олег): окремого пункту «Моя ЗП» немає — зарплата і статистика живуть у «Розвитку» (складу видано право development.view)
   ["/development", "Развитие", "Розвиток", "trophy", "development.view"],
   ["/finance", "Финансы", "Фінанси", "wallet", "finance.view"],
   ["/analytics", "Аналитика", "Аналітика", "chart", "analytics.view"],

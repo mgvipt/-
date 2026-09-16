@@ -127,6 +127,7 @@ CHECKS = [
     ("Моя ЗП: чужий id — 403", "manager", "/api/payroll/my/?user=1", {403}, []),
     ("Як виконати план — правила зі схеми", "manager", "/api/payroll/my/?only=rules", {200}, ["rules"]),
     ("Моя ЗП: як прорахувалось (менеджер, лише свої)", "manager", "/api/payroll/my/detail/", {200}, ["lines", "margin_hidden"]),
+    ("Моя статистика (менеджер, свої дані)", "manager", "/api/finance/salary/deals/?user=me", {200}, ["by_day", "rows"]),
     ("Моя ЗП: як прорахувалось — чужий id 403", "manager", "/api/payroll/my/detail/?user=1", {403}, []),
     # ── Розвиток v2 (16.09.2026) ──
     ("Моя ЗП: гарантовано / умовно", "manager", "/api/payroll/my/", {200}, ["guaranteed", "conditional", "has_plan"]),
