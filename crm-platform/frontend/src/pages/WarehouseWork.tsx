@@ -2,6 +2,7 @@
    Зміна (день+обід+ЗП, звʼязано з головною кнопкою «Почати робочий день») · Зарплата (період) · Контроль (керівник). */
 import { useEffect, useState, Fragment } from "react";
 import { createPortal } from "react-dom";
+import { ThankButton } from "../ThanksBlock";  // 16.09.2026: подяка від керівника
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useLang } from "../i18n";
@@ -872,7 +873,7 @@ function ShipOwnerReport({ t, d }: any) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,300px),1fr))", gap: 10 }}>
         {rows.map((r: any) => { const x = r.detail || {}; const pk = x.pack || {}; return (
           <div key={r.id} className="panel" style={{ margin: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginBottom: 6 }}><span>{r.name}</span><span style={{ color: C.green }}>{f(r.total)} ₴</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, fontWeight: 700, marginBottom: 6 }}><span style={{ flex: 1 }}>{r.name}</span><ThankButton userId={r.id} name={r.name} /><span style={{ color: C.green }}>{f(r.total)} ₴</span></div>
             {line(t("Отгрузок: тестовых / основных", "Відвантажень: тестових / основних"), `${x.test_orders ?? 0} / ${x.main_orders ?? 0}`, 0)}
             {line(t("Вес", "Вага"), `${f(r.weight)} кг`, r.by.shipment_weight || 0)}
             {line(t("Упаковка до 5 / 10 / 20 кг", "Упаковка до 5 / 10 / 20 кг"), `${pk.T5 ?? 0} / ${pk.T10 ?? 0} / ${pk.T20 ?? 0} · ${t("контейнер НП", "контейнер НП")}: ${x.np_container ?? 0}`, r.by.packing || 0)}

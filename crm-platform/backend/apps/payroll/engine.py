@@ -405,9 +405,15 @@ def _c_base(sc, comp, user, d1, d2, pol):
     wd = WorkDay.objects.filter(user=user, date__gte=(d1 if getattr(sc, "_preview", False) else max(d1, sc.valid_from)), date__lte=d2)
     if user and wd.exists():
         worked = wd.filter(status__in=["worked", "overtime"]).count()
-        over = wd.filter(status="overtime").count()
-        a = amt * min(worked, norm) / norm + over * amt / norm
-        return _line(comp, a, amt, None, f"{worked} з {norm} роб. днів" + (f", +{over} вихідних" if over else ""))
+        # 16.09.2026 (Олег): лишній день понад норму місяця — за подвійною ставкою дня, не більше 1 дня на місяць
+        extra = min(1, max(0, worked - norm))
+        a = amt * min(worked, norm) / norm + extra * 2 * amt / norm
+        det = f"{worked} з {norm} роб. днів"
+        if extra:
+            det += f", +1 лишній день × 2 = {round(2 * amt / norm):,} ₴".replace(",", " ")
+        if worked - norm > 1:
+            det += f" (ще {worked - norm - 1} дн. понад норму — без оплати, лише 1 на місяць)"
+        return _line(comp, a, amt, None, det)
     k = _prorate(sc, d1, d2)
     return _line(comp, amt * k, amt, None, "повний місяць" if k >= 0.999 else f"{round(k * 100)}% місяця (з {sc.valid_from:%d.%m})",
                  warn="табель не заповнено — пораховано по календарю" if user else "")

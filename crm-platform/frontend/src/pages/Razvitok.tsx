@@ -11,6 +11,7 @@ import { Icon } from "../Icon";
 import InfoTip from "../InfoTip";
 import MyPayroll, { PlanRules } from "../MyPayroll";
 import MyStats from "../MyStats";  // 16.09 (Олег): статистика місяця — у кожного
+import { ThanksList } from "../ThanksBlock";  // 16.09.2026 (Олег): подяки від керівника
 
 type T = (ru: string, uk: string) => string;
 const C = { green: "#16a34a", amber: "#ca8a04", red: "#dc2626", terra: "#C67D5F", blue: "#1d4ed8" };
@@ -162,6 +163,7 @@ export default function Razvitok() {
       {err && <div className="note">{err}</div>}
       {!mine && !err && <div className="spin">{t("Загрузка…", "Завантаження…")}</div>}
 
+      {mode === "me" && <ThanksList />}
       {mode === "me" && <MyStats period={period} />}
       {mode === "me" && period && <MyPayroll period={period} hidePeriods />}
       {mode === "other" && <div className="note" style={{ marginBottom: 12 }}>{t("Зарплату этого человека смотрите в «Финансы → ЗП/KPI».", "Зарплату цієї людини дивіться у «Фінанси → ЗП/KPI».")}</div>}

@@ -125,7 +125,8 @@ class SellerDetailTests(_Base):
         r = self.detail(self.owner, self.mgr.id)
         b = next(l for l in r.data["lines"] if l["kind"] == "base_by_days")
         self.assertEqual(len(b["rows"]), 7)
-        self.assertEqual(b["total"], round(6000 * 6 / 21 + 6000 / 21))
+        # 16.09.2026 (Олег): доплата лише за день ПОНАД норму місяця (подвійно, до 1); вихід у вихідний — звичайний день табеля
+        self.assertEqual(b["total"], round(6000 * 6 / 21))
 
 
 class WarehouseDetailTests(_Base):

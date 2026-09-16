@@ -86,15 +86,15 @@ def _d_base(comp, sc, user, d1, d2):
     labels = dict(WorkDay.STATUS)
     if user and days:
         worked = sum(1 for x in days if x.status in ("worked", "overtime"))
-        over = sum(1 for x in days if x.status == "overtime")
-        a = amt * min(worked, norm) / norm + over * amt / norm
+        extra = min(1, max(0, worked - norm))   # 16.09.2026 (Олег): лишній день — подвійна ставка, не більше 1 на місяць
+        a = amt * min(worked, norm) / norm + extra * 2 * amt / norm
         by = {}
         for x in days:
             by[x.status] = by.get(x.status, 0) + 1
         expl = (f"Оклад {engine._n(amt)} ₴ — за {norm} робочих днів місяця. За табелем відпрацьовано {worked}"
-                + (f" (з них {over} — вихід у вихідний)" if over else "")
                 + f": {engine._n(amt)} × {min(worked, norm)} / {norm}"
-                + (f" + {over} × {engine._n(amt)} / {norm}" if over else "") + f" = {_n2(a)} ₴.")
+                + (f" + 1 лишній день × 2 × {engine._n(amt)} / {norm}" if extra else "") + f" = {_n2(a)} ₴."
+                + (" Лишній день понад норму оплачується подвійно, не більше 1 на місяць." if worked > norm else ""))
         rows = [{"date": x.date.isoformat(), "status": labels.get(x.status, x.status),
                  "paid": "так" if x.status in ("worked", "overtime") else "ні", "note": x.note or ""} for x in days]
         return _out(round(a), expl, [{"label": labels.get(k, k), "value": f"{v} дн."} for k, v in by.items()],

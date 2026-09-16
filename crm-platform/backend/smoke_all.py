@@ -35,6 +35,7 @@ CHECKS = [
     # 16.09.2026 (Олег): звіт власника — кожне відвантаження з фото накладної/коробки/архіву тонування
     ("Склад: звіт відвантажень з фото", "owner", "/api/warehouse/dashboard/?period=week", {200}, ["rows", "shipments"]),
     ("Склад: мите відро", "owner", "/api/warehouse/washed/", {200}, ["pairs"]),
+    ("Розвиток: подяки від керівника", "manager", "/api/gamification/thanks/?user=me", {200}, ["items"]),
     ("Склад: викраски з А3", "owner", "/api/warehouse/samples/", {200}, ["recipes"]),
     ("Інвентаризація: колонка повернень", "owner", "/api/warehouse/inventory-sheet/?page_size=5", {200}, ["rows"]),
     # ── базове ──

@@ -25,6 +25,7 @@ from apps.crm.zamer import (
     ZamerView,
 )
 from apps.gamification import views as gam_views
+from apps.gamification import thanks as gam_thanks
 from apps.telephony import views as tel_views
 
 router = DefaultRouter()
@@ -118,6 +119,7 @@ urlpatterns = [
     path("api/gamification/practice/", gam_views.PracticeView.as_view()),  # 16.09 Розвиток v2
     path("api/gamification/settings/", gam_views.SettingsView.as_view()),  # 16.09 Розвиток v2
     path("api/gamification/contests/", gam_views.ContestsView.as_view()),  # 16.09 Розвиток v2
+    path("api/gamification/thanks/", gam_thanks.ThanksView.as_view()),  # 16.09.2026: «Подяка від керівника»
     path("api/inbox/ping/", inbox_views.InboxPingView.as_view()),
     path("api/inbox/deal-badges/", inbox_views.DealBadgesView.as_view()),
     path("api/sounds/", inbox_views.SoundLibraryView.as_view()),
