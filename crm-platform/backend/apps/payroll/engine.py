@@ -25,7 +25,7 @@ DEFAULT_POLICY = {
     "replaced_articles": [46, 55, 59],
     "conv_coef": {"enabled": False, "min": 0.8, "max": 1.2, "dead_zone": 0.10},
     "cap": {"pct_of_margin": 17, "check": "quarter"},
-    "guarantee": {"amount": 15000, "months": 2},
+    "guarantee": {"amount": 15000, "months": 2, "plan_floor_pct": 50},  # 16.09.2026: з 2-го міс. — × % плану, не менше 50%
 }
 GUARANTEE_CONDITIONS = [
     "Вихід за табелем: без прогулів, не менше 90% робочих днів місяця",
@@ -34,7 +34,7 @@ GUARANTEE_CONDITIONS = [
     "Кожен закритий чат — з позначкою якості й причиною; жодного чату, закритого без відповіді клієнту",
     "Дожими за правилом: 1-й через 2 дні особисто, 2-й теплим через 4–5 днів",
     "З 3-го тижня: прорахунок по площі кожному, хто назвав площу або надіслав фото — не менше 20 на тиждень",
-    "2-й місяць: продажі не менше 50% плану новачка",
+    "2-й місяць: гарантія залежить від плану новачка — план виконано: повністю; ні: пропорційно, але не менше 50% гарантії",
     "Перевірка на 4-му тижні: не виконано 2 умови і більше — з наступного місяця гарантія не діє, платимо за схемою",
 ]
 
@@ -602,13 +602,27 @@ def calc(user, period, scheme=None, purpose="official", _nested=False):
         s, e = max(d1, g_start), min(d2, g_end)
         k = workdays(s, e) / (workdays(d1, d2) or 1)
         target = g_amt * k
+        # 16.09.2026 (Олег): «поддерживающие на два месяца при выполнении плана для новичка, если не выполняет — меньше».
+        # 1-й місяць (навчання) — гарантія повністю; з 2-го — × % виконання плану новачка, не менше plan_floor_pct.
+        plan_note = ""
+        month_no = (d1.year - g_start.year) * 12 + d1.month - g_start.month + 1
+        if month_no >= 2 and user:
+            plan = _plan(user, period)
+            if plan:
+                rev = (sum(float(t.amount_uah or 0) for t in _income(d1, d2, deal__owner=user))
+                       - sum(float(t.amount_uah or 0) for t in _refunds(d1, d2, deal__owner=user)))
+                floor = float(pol["guarantee"].get("plan_floor_pct", 50)) / 100
+                share = min(1.0, max(floor, rev / plan))
+                target = target * share
+                plan_note = (f" · {month_no}-й місяць: план {round(plan):,} ₴, продано {round(rev):,} ₴ ({round(rev / plan * 100)}%)"
+                             f" → гарантія {round(share * 100)}%").replace(",", " ")
         topup = max(0.0, target - subtotal)
         chk = (c.params.get("checks") or {}).get(period) or {}
         if chk.get("ok"):
-            lines.append(_line(c, topup, round(target), None, f"доплата до гарантії {round(target):,} ₴ (умови виконано)".replace(",", " ")))
+            lines.append(_line(c, topup, round(target), None, f"доплата до гарантії {round(target):,} ₴ (умови виконано)".replace(",", " ") + plan_note))
         else:
             lines.append(_line(c, 0, round(target), None,
-                               f"доплата до гарантії: +{round(topup):,} ₴ — лише після підтвердження умов".replace(",", " "),
+                               f"доплата до гарантії: +{round(topup):,} ₴ — лише після підтвердження умов".replace(",", " ") + plan_note,
                                warn="умови гарантії за місяць не підтверджено" if topup > 0 else ""))
     total = sum(l["amount"] for l in lines)
     legacy = None
@@ -793,7 +807,7 @@ def breakeven_atm(extra_ids=(), without_ids=(), today=None):
     art_by_id = {a.id: a for a in arts}
     by_fund, pct_rev = {}, 0.0
     for s in staff_on(today, entity="breakeven"):  # staffvis 15.09: звільнені — лише з дозволом «Точка беззбитковості»
-        c = scheme_cost(s, pol, sh, today, with_guarantee=False)  # 16.09.2026 (Олег): у ТБ — ставка, гарантія новачку не входить
+        c = scheme_cost(s, pol, sh, today)  # 16.09.2026 (Олег, вечір): у ТБ — як було, з гарантією новачку на її 2 місяці
         f = fund_of(s)
         r = by_fund.setdefault(f, {"sum": 0.0, "people": []})
         r["sum"] += c["fixed_cost"]
@@ -831,7 +845,7 @@ def breakeven_atm(extra_ids=(), without_ids=(), today=None):
     # вакансії «що якщо»: тверда частина з податками → у свій фонд → ТБ зростає на суму × k
     vac, add = [], 0.0
     for v in PayScheme.objects.filter(is_vacancy=True, status="active", purpose="official").order_by("planned_start", "id"):
-        c = scheme_cost(v, pol, sh, today, with_guarantee=False)
+        c = scheme_cost(v, pol, sh, today)  # вакансія: гарантія новачку на перші 2 місяці
         included = (v.in_plan or v.id in extra_ids) and v.id not in without_ids
         delta = round(c["fixed_cost"] * k) if k else None
         if included and delta:
