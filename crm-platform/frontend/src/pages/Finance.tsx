@@ -3575,11 +3575,25 @@ function MPlans() {
               <span className="muted" style={{ fontSize: 12 }}>{t("факт","факт")}: {money(r.revenue)} · {r.deals} {t("сделок","угод")}</span>
               <button className="btn btn-light" style={{ fontSize: 12 }} title={t("Поставить уровни автоматически от факта","Поставити рівні автоматично від факту")} onClick={() => recommend(r)}><Icon n="🎁" size={13} /> {t("Авто","Авто")}</button>
             </div>
-            <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-              <label style={{ fontSize: 12 }} title={t("Минимум — ниже не падать","Мінімум — нижче не падати")}>🟥 {t("Минимум","Мінімум")} <input type="number" defaultValue={p.min_revenue || 0} onBlur={(e) => save(r.user_id, { min_revenue: Number(e.target.value) })} style={inp} /></label>
-              <label style={{ fontSize: 12 }} title={t("Норма — главная цель месяца","Норма — головна ціль місяця")}>🟩 {t("Норма","Норма")} <input type="number" defaultValue={p.target_revenue || 0} onBlur={(e) => save(r.user_id, { target_revenue: Number(e.target.value) })} style={inp} /></label>
-              <label style={{ fontSize: 12 }} title={t("Амбиция — сверх-результат","Амбіція — надрезультат")}>🟦 {t("Амбиция","Амбіція")} <input type="number" defaultValue={p.ambition_revenue || 0} onBlur={(e) => save(r.user_id, { ambition_revenue: Number(e.target.value) })} style={inp} /></label>
-            </div>
+            {(() => {
+              // 16.09.2026 (Олег): план онлайн і офлайн окремо (напр. Ковальчук: інтернет + салон/алмазне). Загальний = сума.
+              const split = [p.online_min, p.online_target, p.online_ambition, p.offline_min, p.offline_target, p.offline_ambition].some((x: any) => Number(x) > 0);
+              const row = (label: string, keys: [string, string, string], disabled?: boolean) => (
+                <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
+                  <span className="muted" style={{ fontSize: 12, width: 150 }}>{label}</span>
+                  {([["🟥", t("Минимум","Мінімум"), keys[0]], ["🟩", t("Норма","Норма"), keys[1]], ["🟦", t("Амбиция","Амбіція"), keys[2]]] as any[]).map(([e, lbl, k]) => (
+                    <label key={k} style={{ fontSize: 12 }}>{e} {lbl} <input key={k + "-" + (p[k] || 0)} type="number" disabled={disabled} defaultValue={Number(p[k] || 0)} onBlur={(ev) => Number(ev.target.value) !== Number(p[k] || 0) && save(r.user_id, { [k]: Number(ev.target.value) || 0 })} style={{ ...inp, background: disabled ? "#f1f5f9" : "#fff" }} /></label>))}
+                </div>);
+              return (<>
+                {row(split ? t("Итого (онлайн + офлайн)","Разом (онлайн + офлайн)") : t("Общий план","Загальний план"), ["min_revenue", "target_revenue", "ambition_revenue"], split)}
+                <details style={{ marginTop: 6 }} open={split}>
+                  <summary className="muted" style={{ fontSize: 12, cursor: "pointer" }}>{t("Разделить: онлайн и офлайн (салон, алмазное)","Розділити: онлайн і офлайн (салон, алмазне)")}</summary>
+                  {row("🌐 " + t("Онлайн","Онлайн"), ["online_min", "online_target", "online_ambition"])}
+                  {row("🏪 " + t("Офлайн","Офлайн"), ["offline_min", "offline_target", "offline_ambition"])}
+                  <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>{t("Бонус «сверх плана» с маржи онлайн считается от онлайн-плана.","Бонус «понад план» з маржі онлайн рахується від онлайн-плану.")}</div>
+                </details>
+              </>);
+            })()}
           </div>
         );
       })}

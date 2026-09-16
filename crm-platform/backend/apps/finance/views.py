@@ -3008,7 +3008,8 @@ class ManagerPlanSerializer(_sz.ModelSerializer):
 
     class Meta:
         model = ManagerPlan
-        fields = ["id", "user", "user_name", "period", "min_revenue", "target_revenue", "ambition_revenue"]
+        fields = ["id", "user", "user_name", "period", "min_revenue", "target_revenue", "ambition_revenue",
+                  "online_min", "online_target", "online_ambition", "offline_min", "offline_target", "offline_ambition"]
 
 
 class ManagerPlanViewSet(viewsets.ModelViewSet):

@@ -436,8 +436,11 @@ def _c_standard(comp, period, sc_scheme=None, d1=None, d2=None):
 
 
 def _plan(user, period):
+    """План продажів на місяць. % з маржі рахується з ОНЛАЙН-воронок, тому якщо план розбито — беремо онлайн-частину."""
     from apps.finance.models import ManagerPlan
     p = ManagerPlan.objects.filter(user=user, period=period).first()
+    if p and p.online_target:
+        return float(p.online_target)  # 16.09.2026 (Олег): план онлайн і офлайн окремо
     return float(p.target_revenue) if p and p.target_revenue else 0.0
 
 

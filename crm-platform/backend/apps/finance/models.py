@@ -237,6 +237,24 @@ class ManagerPlan(models.Model):
     min_revenue = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="Мінімум (поріг)")
     target_revenue = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="Норма / ціль")
     ambition_revenue = models.DecimalField(max_digits=14, decimal_places=2, default=0, help_text="Амбіція (stretch)")
+    # 16.09.2026 (Олег): у Ковальчук план онлайн і офлайн окремо. Заповнено хоч одне — загальний = онлайн + офлайн.
+    online_min = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    online_target = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    online_ambition = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    offline_min = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    offline_target = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    offline_ambition = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
+    @property
+    def is_split(self):
+        return any([self.online_min, self.online_target, self.online_ambition, self.offline_min, self.offline_target, self.offline_ambition])
+
+    def save(self, *args, **kwargs):
+        if self.is_split:
+            self.min_revenue = (self.online_min or 0) + (self.offline_min or 0)
+            self.target_revenue = (self.online_target or 0) + (self.offline_target or 0)
+            self.ambition_revenue = (self.online_ambition or 0) + (self.offline_ambition or 0)
+        super().save(*args, **kwargs)
 
     class Meta:
         unique_together = [("user", "period")]
