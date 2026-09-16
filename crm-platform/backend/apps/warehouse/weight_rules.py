@@ -15,8 +15,9 @@
 УПАКОВКА (лише якщо склад пакував сам і це не видача в салоні без ТТН)
   • цілі заводські відра не пакуємо; кожна розфасована порція — одна тара, рівень за кг у ній (до 5 / до 10 / до 20;
     важче 20 — кілька місць);
-  • пляшка / банка — окрема тара за її вагою (зазвичай до 5 кг);
-  • інструменти / дрібниці — одна коробка до 5 кг на угоду;
+  • пляшка / банка (до 2 кг) — їде в коробці з інструментами, якщо вони є; без інструментів — окреме місце (16.09.2026);
+  • інструменти / дрібниці — одна коробка на угоду (до 5 кг; з пляшкою — за вагою);
+  • тест-набір з дощечкою АБО тест-набір + інструменти — одна коробка до 10 кг (16.09.2026, #66012);
   • тест-набори / викраски без іншої упаковки — одна посилка до 5 кг на угоду;
   • великі штучні — місця за вагою рядка.
 Лише розрахунок, у БД нічого не пише."""
@@ -27,6 +28,7 @@ KIT_KG = Decimal("0.25")
 TOOLS_MIN = Decimal("0.5")
 TOOLS_MAX = Decimal("5")
 PLAUSIBLE_TOOL_KG = Decimal("2")
+BOTTLE_MAX_KG = Decimal("2")   # 16.09.2026: тара до 2 кг (пляшка 1 л, банка) може їхати в коробці з інструментами
 _EPS = Decimal("0.0001")
 
 DENS = [(r"піщин|пищин|eleganti|sirena|шовк|silk|galateya|mio|iridis|mermi", "1.2"),
@@ -162,6 +164,8 @@ def plan(items, salon=False, packing=True):
     tiers = {"T5": 0, "T10": 0, "T20": 0}
     how, weightless = [], []
     tools_kg = Decimal("0")
+    small_kg = Decimal("0")
+    bottles = []   # 16.09.2026 (Олег): пляшки/банки до 2 кг — їдуть у коробці з інструментами, якщо вона є
     n_tools = n_small = n_kits = n_samples = n_board = containers = 0
     do_pack = packing and not salon
 
@@ -189,6 +193,7 @@ def plan(items, salon=False, packing=True):
         kg += c["kg"]
         if c["cls"] == "small":
             n_small += 1
+            small_kg += c["kg"]
         elif c["cls"] == "kit":
             n_kits += 1
             low = (it.get("name") or "").lower()
@@ -212,8 +217,11 @@ def plan(items, salon=False, packing=True):
             n_ = max(1, int(round(float(_dec(it.get("qty")))))) if c["cls"] == "piece" else 1
             per = c["kg"] / n_ if n_ else c["kg"]
             for _ in range(n_):
-                for t in split_tiers(per) or ["T5"]:
-                    add(t, f"тара {_g(per)} кг")
+                if per <= BOTTLE_MAX_KG:
+                    bottles.append(per)   # пляшка/банка: вирішимо після циклу — з інструментами чи окремо
+                else:
+                    for t in split_tiers(per) or ["T5"]:
+                        add(t, f"тара {_g(per)} кг")
         elif c["cls"] == "large" and c["kg"] > 0:
             for t in split_tiers(c["kg"]):
                 add(t, f"великий товар {_g(c['kg'])} кг")
@@ -222,16 +230,31 @@ def plan(items, salon=False, packing=True):
         kg += clamped
         how.append(f"  інструменти/дрібниці разом {_g(tools_kg)} кг → рахуємо {_g(clamped)} кг (не менше 0,5, не більше 5)")
     if do_pack:
+        box_goods = bool(n_tools or n_small)
+        ride = bool(bottles) and box_goods          # пляшки їдуть разом з інструментами — клієнт платить за менше місць
+        bottles_kg = sum(bottles, Decimal("0"))
+        with_bottle = f" + пляшки {_g(bottles_kg)} кг у тій же коробці" if ride else ""
         if n_board:
             # 16.09.2026 (Олег): тест-набір з дощечкою — коробка до 10 кг; інструменти й дрібниці — в ній же
             tiers["T10"] += 1
-            how.append("  тест-набір з дощечкою — коробка до 10 кг" + (" (інструменти/дрібниці — в ній же)" if (n_tools or n_small) else ""))
-        elif n_tools or n_small:
-            tiers["T5"] += 1
-            how.append("  інструменти/дрібниці — одна коробка до 5 кг")
-        elif (n_kits or n_samples) and not containers:
+            how.append("  тест-набір з дощечкою — коробка до 10 кг" + (" (інструменти/дрібниці — в ній же)" if box_goods else "") + with_bottle)
+        elif n_kits and box_goods:
+            # 16.09.2026 (Олег, #66012): тест-набір без дощечки разом з інструментами — теж одна коробка до 10 кг
+            tiers["T10"] += 1
+            how.append("  тест-набір без дощечки + інструменти — одна коробка до 10 кг" + with_bottle)
+        elif box_goods:
+            box = (min(max(tools_kg, TOOLS_MIN), TOOLS_MAX) if n_tools else Decimal("0")) + small_kg + (bottles_kg if ride else Decimal("0"))
+            t = tier(box) if box > 0 else "T5"
+            tiers[t] += 1
+            how.append(f"  інструменти/дрібниці — одна коробка {TIER_LABEL[t]}" + with_bottle)
+        elif (n_kits or n_samples) and not (containers or bottles):
             tiers["T5"] += 1
             how.append("  тест-набори/викраски — одна посилка до 5 кг")
+        if bottles and not ride:
+            # 16.09.2026 (Олег): пляшка без інструментів — окреме місце за її вагою (зазвичай до 5 кг)
+            for per in bottles:
+                for t in split_tiers(per) or ["T5"]:
+                    add(t, f"пляшка/банка {_g(per)} кг — окреме місце")
     elif salon:
         how.append("  видача в салоні без ТТН — упаковка не оплачується")
     return {"weight": kg.quantize(Decimal("0.001")), "tiers": tiers, "how": how, "weightless": weightless}

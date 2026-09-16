@@ -1,6 +1,6 @@
 /* Склад · Робота — модуль кладовщика. Вкладки: Черга (спільна, весь відділ) · Мої задачі (в роботі) ·
    Зміна (день+обід+ЗП, звʼязано з головною кнопкою «Почати робочий день») · Зарплата (період) · Контроль (керівник). */
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
@@ -366,6 +366,7 @@ function TaskCard({ t, jobId, onBack }: any) {
   const [packedLocal, setPackedLocal] = useState(false);
   const [msg, setMsg] = useState("");
   const [weightAsk, setWeightAsk] = useState(false);
+  const [packAsk, setPackAsk] = useState(false);
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2600); };
   const load = () => api.get<any>(`/api/warehouse/jobs/${jobId}/`).then(setJ).catch(() => {});
   const { can: canFn } = useAuth();
@@ -382,7 +383,9 @@ function TaskCard({ t, jobId, onBack }: any) {
   const upload = (kind: string, file: File) => { (api as any).upload(`/api/warehouse/jobs/${jobId}/photo/?kind=${kind}`, file).then(load).catch(() => {}); };
   const doShip = () => { setWeightAsk(false); setBusy(true); api.post<any>(`/api/warehouse/jobs/${jobId}/ship/`, {}).then((r: any) => { const s = ((r && r.accrued) || []).reduce((a: number, e: any) => a + Number(e.amount || 0), 0); alert(t("Готово — отправлено!", "Готово — відправлено!") + (s ? " " + t("Начислено", "Нараховано") + ": " + f(s) + " ₴" : "")); onBack(); }).catch((e: any) => { alert(e?.response?.data?.detail || t("Сделай 2 фото", "Зроби 2 фото")); load(); }).finally(() => setBusy(false)); };
   // 14.09 (wh-accrual): товари без ваги → попередження перед відправкою (відправку НЕ блокуємо)
-  const ship = () => { if ((j.weightless || []).length > 0) { setWeightAsk(true); return; } doShip(); };
+  const shipAfterPack = () => { setPackAsk(false); if ((j.weightless || []).length > 0) { setWeightAsk(true); return; } doShip(); };
+  // 16.09.2026 (Олег, #65998): перед відправкою — перепитати, як пакували (контейнер НП упаковку не оплачує)
+  const ship = () => { if (j.channel !== "offline") { setPackAsk(true); return; } shipAfterPack(); };
 
   const tinted = new Set(j.tinted_kits || []);
   const kits = j.kits || [];
@@ -392,7 +395,11 @@ function TaskCard({ t, jobId, onBack }: any) {
   const rcp = (deal && deal.np_data && deal.np_data.recipient) || {};
   const npDone = j.channel === "offline" ? packDone : !!(deal && (deal.ttn || (rcp.name && (rcp.wh_number || rcp.street_ref))));
   const pk = new Set((j.photos || []).map((p: any) => p.kind));
-  const photosDone = pk.has("buckets") && pk.has("parcel");
+  // 16.09.2026 (Олег): обовʼязкові фото дає сервер — відерця, коробка, накладна (+ архів тонування, якщо є тонування)
+  const reqPhotos: { kind: string; label: string }[] = (j.required_photos && j.required_photos.length) ? j.required_photos
+    : [{ kind: "buckets", label: t("Ведёрки с наклейкой", "Відерця з наклейкою") }, { kind: "parcel", label: t("Готовая коробка", "Готова коробка") }];
+  const photoLabel = (k: string) => (reqPhotos.find((r) => r.kind === k) || { label: k }).label;
+  const photosDone = reqPhotos.every((r) => pk.has(r.kind));
 
   const badge = (state: string) => ({ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 24, height: 24, borderRadius: "50%", fontSize: 13, fontWeight: 700, color: "#fff", background: state === "done" ? C.green : state === "lock" ? "#cbd5e1" : C.terra, padding: "0 4px" });
   const Step = ({ n, title, done, locked, hint, children }: any) => (
@@ -492,9 +499,16 @@ function TaskCard({ t, jobId, onBack }: any) {
       <Step n="2" title={t("Пакування", "Пакування")} done={packDone} locked={!tintDone} hint={t("Сначала затонируй все наборы", "Спочатку затонуй усі набори")}>
         <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>{t("Вес считается сам.", "Вага рахується сама.")} {t("Вес", "Вага")}: <b>{j.weight_kg} кг</b></div>
         {(j.weightless || []).length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "6px 9px", marginBottom: 8 }}><Icon n="warn" size={14} /> {t("Без веса товаров", "Товарів без ваги")}: <b>{j.weightless.length}</b> — {t("оплата за кг/упаковку по ним не начислится", "оплата за кг/упаковку за них не нарахується")}</div>}
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn" onClick={() => setPacked(true)} style={{ flex: 1, height: 46, background: (packDone && j.packed) ? C.green : "#f1f5f9", color: (packDone && j.packed) ? "#fff" : C.slate, fontWeight: 600 }}>{t("Ручная упаковка", "Ручне пакування")}</button>
-          <button className="btn" onClick={() => setPacked(false)} style={{ flex: 1, height: 46, background: (packDone && !j.packed) ? C.amber : "#f1f5f9", color: (packDone && !j.packed) ? "#fff" : C.slate, fontWeight: 600 }}>{t("НП контейнер", "НП контейнер")}</button>
+        {/* 16.09.2026 (Олег): вибір одна під одною, з поясненням — щоб не плутали ручне пакування і контейнер НП */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button className="btn" onClick={() => setPacked(true)} style={{ width: "100%", minHeight: 56, textAlign: "left", padding: "8px 14px", background: (packDone && j.packed) ? C.green : "#f1f5f9", color: (packDone && j.packed) ? "#fff" : C.slate }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>📦 {t("Ручная упаковка", "Ручне пакування")}</div>
+            <div style={{ fontSize: 12, opacity: .9 }}>{t("Пакуем сами: коробка, плёнка, скотч. Упаковка оплачивается.", "Пакуємо самі: коробка, плівка, скотч. Упаковка оплачується.")}</div>
+          </button>
+          <button className="btn" onClick={() => setPacked(false)} style={{ width: "100%", minHeight: 56, textAlign: "left", padding: "8px 14px", background: (packDone && !j.packed) ? C.amber : "#f1f5f9", color: (packDone && !j.packed) ? "#fff" : C.slate }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>🚚 {t("Контейнер Новой Почты", "Контейнер Нової Пошти")}</div>
+            <div style={{ fontSize: 12, opacity: .9 }}>{t("Пакует Новая Почта в свой контейнер. Упаковка НЕ оплачивается.", "Пакує Нова Пошта у свій контейнер. Упаковка НЕ оплачується.")}</div>
+          </button>
         </div>
       </Step>
 
@@ -505,9 +519,10 @@ function TaskCard({ t, jobId, onBack }: any) {
       {j.channel === "offline" && (
       <div className="panel" style={{ borderLeft: "4px solid #16a34a", opacity: 0.85 }}><div className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 24, height: 24, borderRadius: "50%", fontSize: 13, fontWeight: 700, color: "#fff", background: "#16a34a", padding: "0 4px" }}>✓</span> {t("Салон — самовывоз, Нова Пошта не нужна", "Салон — самовивіз, Нова Пошта не потрібна")}</div></div>)}
 
-      <Step n="4" title={t("2 фото — обязательно", "2 фото — обовʼязково")} done={photosDone} locked={!npDone} hint={t("Сначала заполни Новую Почту", "Спочатку заповни Нову Пошту")}>
-        <div style={{ display: "flex", gap: 10 }}>
-          {([["buckets", t("Ведёрки с наклейкой", "Відерця з наклейкою")], ["parcel", t("Готовая коробка", "Готова коробка")]] as any[]).map(([kind, label]) => (
+      <Step n="4" title={t("Фото — обязательно", "Фото — обовʼязково") + ` (${reqPhotos.length})`} done={photosDone} locked={!npDone} hint={t("Сначала заполни Новую Почту", "Спочатку заповни Нову Пошту")}>
+        <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>{t("Накладная — фото распечатанной накладной этой сделки. Архив тонировки — фото записи рецепта цвета.", "Накладна — фото роздрукованої накладної цієї угоди. Архів тонування — фото запису рецепта кольору.")}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+          {reqPhotos.map((r) => [r.kind, r.label] as any[]).map(([kind, label]) => (
             <label key={kind} style={{ flex: 1, textAlign: "center", border: "2px dashed " + (pk.has(kind) ? C.green : "#cbd5e1"), borderRadius: 12, padding: "16px 8px", cursor: "pointer", background: pk.has(kind) ? "#ecfdf5" : "#fff" }}>
               <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => e.target.files && e.target.files[0] && upload(kind, e.target.files[0])} />
               <div style={{ fontSize: 30 }}>{pk.has(kind) ? "✅" : "📷"}</div>
@@ -515,14 +530,36 @@ function TaskCard({ t, jobId, onBack }: any) {
             </label>
           ))}
         </div>
-        {(j.photos || []).length > 0 && <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>{(j.photos || []).map((p: any) => <div key={p.id} style={{ textAlign: "center" }}><PhotoThumb url={p.url} /><div className="muted" style={{ fontSize: 10, marginTop: 2 }}>{p.kind === "buckets" ? t("ведёрки", "відерця") : t("коробка", "коробка")}</div></div>)}</div>}
+        {(j.photos || []).length > 0 && <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>{(j.photos || []).map((p: any) => <div key={p.id} style={{ textAlign: "center" }}><PhotoThumb url={p.url} /><div className="muted" style={{ fontSize: 10, marginTop: 2 }}>{photoLabel(p.kind)}</div></div>)}</div>}
       </Step>
 
       <button className="btn btn-light" style={{ width: "100%", marginBottom: 10, color: C.red }} onClick={() => { const dd = prompt(t("Что не так? (ошибка/брак)", "Що не так? (помилка/брак)")); if (dd) api.post("/api/warehouse/errors/", { job: jobId, deal: j.deal_id, source: "manual_staff", kind: "other", description: dd }).then(() => alert(t("Записано, проверит руководитель", "Записано, перевірить керівник"))).catch(() => {}); }}>⚠ {t("Сообщить об ошибке", "Повідомити про помилку")}</button>
       {weightAsk && <WeightlessWarn j={j} t={t} busy={busy} onCancel={() => setWeightAsk(false)} onConfirm={doShip} />}
+      {packAsk && <PackConfirm packed={!!j.packed} t={t} onChange={(p: boolean) => setPacked(p)} onCancel={() => setPackAsk(false)} onConfirm={shipAfterPack} />}
       <button className="btn" onClick={ship} disabled={busy || !photosDone} style={{ width: "100%", height: 58, fontSize: 17, fontWeight: 700, background: photosDone ? C.green : "#cbd5e1", color: "#fff", marginBottom: 30 }}>{busy ? "…" : "✅ " + t("Готово — отправлено", "Готово — відправлено")}</button>
     </div>
   );
+}
+
+// 16.09.2026 (Олег, #65998): вікно перед відправкою — «як пакували?», бо контейнер НП упаковку не оплачує.
+function PackConfirm({ packed, t, onChange, onCancel, onConfirm }: any) {
+  const opt = (val: boolean, title: string, sub: string, color: string) => (
+    <button type="button" className="btn" onClick={() => onChange(val)} style={{ width: "100%", minHeight: 54, textAlign: "left", padding: "8px 12px", marginBottom: 8, background: packed === val ? color : "#f1f5f9", color: packed === val ? "#fff" : "#334155" }}>
+      <div style={{ fontWeight: 700 }}>{packed === val ? "✓ " : ""}{title}</div><div style={{ fontSize: 12, opacity: .9 }}>{sub}</div>
+    </button>);
+  return createPortal(
+    <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 96, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} className="panel" style={{ maxWidth: 440, width: "100%", margin: 0 }}>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>📦 {t("Проверь упаковку", "Перевір упаковку")}</div>
+        <div style={{ fontSize: 13.5, marginBottom: 10 }}>{t("Как пакували эту посылку? Если выбрать неправильно — оплата за упаковку посчитается неверно.", "Як пакували цю посилку? Якщо обрати неправильно — оплата за упаковку порахується неправильно.")}</div>
+        {opt(true, t("Ручная упаковка", "Ручне пакування"), t("Пакували сами — упаковка оплачивается", "Пакували самі — упаковка оплачується"), "#16a34a")}
+        {opt(false, t("Контейнер Новой Почты", "Контейнер Нової Пошти"), t("Пакует Новая Почта — упаковка не оплачивается", "Пакує Нова Пошта — упаковка не оплачується"), "#d97706")}
+        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+          <button type="button" className="btn btn-light" style={{ flex: 1, height: 46 }} onClick={onCancel}>{t("Назад", "Назад")}</button>
+          <button type="button" className="btn" style={{ flex: 2, height: 46, background: "#16a34a", color: "#fff", fontWeight: 700 }} onClick={onConfirm}>{t("Да, всё верно — отправить", "Так, усе правильно — відправити")}</button>
+        </div>
+      </div>
+    </div>, document.body);
 }
 
 // 14.09 (wh-accrual): попередження перед «Готово — відправлено», якщо в товарів не вказана вага.
@@ -801,7 +838,66 @@ function DashboardView({ t }: any) {
       </div>
       <div className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.45 }}>{t("Только для руководителя. Здесь — только сдельные записи склада (по ставкам ниже); полная ЗП (ставка из схемы + сдельно) и расшифровка каждой записи — Финансы → ЗП/KPI.", "Тільки для керівника. Тут — лише відрядні записи складу (за ставками нижче); повна ЗП (ставка зі схеми + відрядно) і розшифровка кожного запису — Фінанси → ЗП/KPI.")}
         {can("payroll.rates.view") && <> <Link to="/finance" onClick={() => { try { localStorage.setItem("fin_tab", "salary"); } catch (e) { /* noop */ } }}>{t("Открыть ЗП/KPI", "Відкрити ЗП/KPI")}</Link></>}</div>
+      <ShipOwnerReport t={t} d={d} />
       <WhRatesPanel t={t} r={d.rates} />
+    </div>
+  );
+}
+
+// 16.09.2026 (Олег): звіт для власника — по кожному: скільки чого відвантажено і скільки нараховано; кожна відправка з фото.
+function ShipOwnerReport({ t, d }: any) {
+  const [open, setOpen] = useState<number | null>(null);
+  const rows: any[] = d.rows || [];
+  const ships: any[] = d.shipments || [];
+  const line = (label: string, qty: string, sum: number) => (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "5px 0", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
+      <span>{label}</span><span style={{ whiteSpace: "nowrap" }}><span className="muted">{qty}</span> · <b>{f(sum)} ₴</b></span>
+    </div>);
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>📊 {t("Отгрузки и начисления — подробно", "Відвантаження і нарахування — детально")}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,300px),1fr))", gap: 10 }}>
+        {rows.map((r: any) => { const x = r.detail || {}; const pk = x.pack || {}; return (
+          <div key={r.id} className="panel" style={{ margin: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginBottom: 6 }}><span>{r.name}</span><span style={{ color: C.green }}>{f(r.total)} ₴</span></div>
+            {line(t("Отгрузок: тестовых / основных", "Відвантажень: тестових / основних"), `${x.test_orders ?? 0} / ${x.main_orders ?? 0}`, 0)}
+            {line(t("Вес", "Вага"), `${f(r.weight)} кг`, r.by.shipment_weight || 0)}
+            {line(t("Упаковка до 5 / 10 / 20 кг", "Упаковка до 5 / 10 / 20 кг"), `${pk.T5 ?? 0} / ${pk.T10 ?? 0} / ${pk.T20 ?? 0} · ${t("контейнер НП", "контейнер НП")}: ${x.np_container ?? 0}`, r.by.packing || 0)}
+            {line(t("Тонировка (услуга)", "Тонування (послуга)"), `${x.tint_service ?? 0} ${t("шт", "шт")} · ${t("база", "база")} ${f(x.tint_base || 0)} ₴`, r.by.tinting || 0)}
+            {line(t("Сборка тест-наборов", "Збірка тест-наборів"), `${x.test_sets ?? 0} ${t("шт", "шт")}`, r.by.test_set || 0)}
+            {line(t("Тонировка наборов: каталог / индивид.", "Тонування наборів: каталог / індивід."), `${x.kit_tint_cat ?? 0} / ${x.kit_tint_ind ?? 0}`, (r.by.kit_tint_cat || 0) + (r.by.kit_tint_ind || 0))}
+            {line(t("Ставка за день / бонусы", "Ставка за день / бонуси"), "", (r.by.workday || 0) + (r.by.bonus_initiative || 0))}
+            {r.deductions ? line(t("Удержания", "Утримання"), "", -r.deductions) : null}
+          </div>); })}
+      </div>
+      <div style={{ fontSize: 14, fontWeight: 700, margin: "14px 0 6px" }}>🧾 {t("Каждая отгрузка — с фото", "Кожне відвантаження — з фото")} ({ships.length})</div>
+      <div className="panel" style={{ padding: 0, margin: 0, overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead><tr style={{ background: "#f8fafc", textAlign: "left" }}>
+            <th style={{ padding: 8 }}>{t("Дата", "Дата")}</th><th style={{ padding: 8 }}>{t("Сделка", "Угода")}</th><th style={{ padding: 8 }}>{t("Кто", "Хто")}</th>
+            <th style={{ padding: 8 }}>{t("Тип", "Тип")}</th><th style={{ padding: 8, textAlign: "right" }}>{t("Вес", "Вага")}</th>
+            <th style={{ padding: 8 }}>{t("Упаковка", "Упаковка")}</th><th style={{ padding: 8, textAlign: "right" }}>{t("Начислено", "Нараховано")}</th><th style={{ padding: 8 }}>{t("Фото", "Фото")}</th>
+          </tr></thead>
+          <tbody>{ships.map((s: any) => (
+            <Fragment key={s.job}>
+              <tr style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer" }} onClick={() => setOpen(open === s.job ? null : s.job)}>
+                <td style={{ padding: 8, whiteSpace: "nowrap" }}>{s.date}</td>
+                <td style={{ padding: 8 }}><a href={`/deals/${s.deal}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>#{s.deal}</a></td>
+                <td style={{ padding: 8 }}>{s.employee}</td>
+                <td style={{ padding: 8 }}>{s.kind === "test" ? t("тест", "тест") : t("основной", "основне")}</td>
+                <td style={{ padding: 8, textAlign: "right" }}>{f(s.weight)} кг</td>
+                <td style={{ padding: 8, whiteSpace: "nowrap" }}>{s.packed ? `5×${s.pack.T5} 10×${s.pack.T10} 20×${s.pack.T20}` : t("контейнер НП", "контейнер НП")}</td>
+                <td style={{ padding: 8, textAlign: "right", fontWeight: 700 }}>{f(s.accrued)} ₴</td>
+                <td style={{ padding: 8 }}>{s.photos.length} 📷{s.missing.length ? <span style={{ color: C.red }}> · {t("нет", "немає")}: {s.missing.join(", ")}</span> : null}</td>
+              </tr>
+              {open === s.job && <tr><td colSpan={8} style={{ padding: "6px 8px 12px", background: "#f8fafc" }}>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>{s.photos.map((p: any) => <div key={p.id} style={{ textAlign: "center" }}><PhotoThumb url={p.url} /><div className="muted" style={{ fontSize: 10, marginTop: 2 }}>{p.label}</div></div>)}</div>
+              </td></tr>}
+            </Fragment>))}
+            {ships.length === 0 && <tr><td colSpan={8} style={{ padding: 12, color: "#94a3b8" }}>{t("Нет отгрузок за период", "Немає відвантажень за період")}</td></tr>}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

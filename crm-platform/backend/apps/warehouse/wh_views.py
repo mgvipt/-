@@ -90,6 +90,8 @@ def rates_payload(user):
     items, warnings = [], []
     for code in WH_RATE_CODES:
         r = lr[code]
+        if code.startswith("KIT_TINT_PRICE"):
+            continue  # 16.09.2026 (Олег): ціни доплати для клієнта складу не показуємо — лише те, що платимо складу
         if code == "WH_RATE_DAY" and not r["active"]:
             continue  # 15.09.2026 (Олег): ставка комірника — за табелем (блок «Ставка»); вимкнену ставку дня не показуємо
         name, unit, hint = WH_RATE_TEXT[code]
@@ -190,6 +192,27 @@ def _deal_accrual_facts(deal):
             "kit_cat": kit_cat, "kit_ind": kit_ind}
 
 
+PHOTO_LABEL = {"buckets": "Відерця з наклейкою", "parcel": "Готова коробка", "invoice": "Накладна",
+               "tint_archive": "Архів тонування (рецепт кольору)"}
+
+
+def _needs_tint_photo(job):
+    """16.09.2026 (Олег): якщо в угоді є тонування — склад фотографує запис в архіві тонування (рецепт)."""
+    try:
+        fx = _deal_accrual_facts(job.deal)
+        return bool(fx["tint_base"] > 0 or fx.get("kit_cat") or fx.get("kit_ind") or (job.tinted_kits or []))
+    except Exception:
+        return False
+
+
+def _required_photo_kinds(job):
+    """Обовʼязкові фото перед «Готово — відправлено»: відерця, коробка, накладна; + архів тонування, якщо є тонування."""
+    kinds = ["buckets", "parcel", "invoice"]
+    if _needs_tint_photo(job):
+        kinds.append("tint_archive")
+    return kinds
+
+
 def _job_dict(job, full=False):
     deal = job.deal
     q = deal.qualification or {}
@@ -251,6 +274,7 @@ def _job_dict(job, full=False):
         d["weightless"] = _wl
         d["weightless_zero_total"] = bool(_wl) and _w <= 0
         d["photos"] = [{"id": p.id, "kind": p.kind, "url": "/api/warehouse/jobs/%d/photo/?id=%d" % (job.id, p.id)} for p in job.photos.all()]
+        d["required_photos"] = [{"kind": k, "label": PHOTO_LABEL.get(k, k)} for k in _required_photo_kinds(job)]
         d["needs"] = {k: v for k, v in (deal.qualification or {}).items() if k != "kits" and not str(k).startswith("_")}
         d["ref_photos"] = deal.ref_photos or []
         d["phone"] = ((deal.contact.phone if deal.contact_id else "") or "")
@@ -484,7 +508,7 @@ def packing(request, pk):
     try:
         if (job.deal.ttn or "").strip():
             kinds = set(p.kind for p in job.photos.all())
-            if not ({"buckets", "parcel"} <= kinds):
+            if not (set(_required_photo_kinds(job)) <= kinds):
                 job.status = "awaiting_photos"
     except Exception:
         pass
@@ -536,9 +560,10 @@ def ship(request, pk):
         # ідемпотентно: повторний клік/запит НЕ нараховує ЗП вдруге
         return Response(_job_dict(job, full=True))
     kinds = set(p.kind for p in job.photos.all())
-    if not ({"buckets", "parcel"} <= kinds):
+    missing = [k for k in _required_photo_kinds(job) if k not in kinds]
+    if missing:
         job.status = "awaiting_photos"; job.save(update_fields=["status"])
-        return Response({"detail": "Потрібні 2 фото: відерця + посилка"}, status=400)
+        return Response({"detail": "Не вистачає фото: " + ", ".join(PHOTO_LABEL.get(k, k) for k in missing)}, status=400)
     _finalize(job, request.user)
     # каскад: дозамовлення цієї посилки — та сама коробка → списання без подвійної упаковки/фото
     for _sub in WarehouseJob.objects.filter(deal__parent_deal_id=job.deal_id).exclude(status__in=["shipped", "cancelled"]):
@@ -628,7 +653,8 @@ def _finalize(job, user, pay_packing=True):
     for op, amt, kw in rows:
         WarehousePayrollEntry.objects.create(employee=user, work_date=today, job=job, deal=deal,
                                              op_type=op, amount=amt.quantize(Decimal("0.01")), **kw)
-    job.done_snapshot = {"weight": str(weight), "tiers": tiers, "tint_base": str(job.tintings_base),
+    job.done_snapshot = {"required_photos": _required_photo_kinds(job),
+                         "weight": str(weight), "tiers": tiers, "tint_base": str(job.tintings_base),
                          "tint_source": meta["tint_source"], "test_sets": str(meta["test_sets"]),
                          "weightless": [w["product_id"] for w in meta["weightless"]],
                          "rule": "v2", "how": meta.get("how", [])[:40]}
@@ -932,7 +958,8 @@ def dashboard(request):
     U = get_user_model()
     emp_ids = set(WarehousePayrollEntry.objects.filter(work_date__gte=since, work_date__lte=until_q).values_list("employee_id", flat=True))
     emp_ids |= set(WarehouseJob.objects.filter(status="shipped", shipped_at__date__gte=since, shipped_at__date__lte=until_q, assignee__isnull=False).values_list("assignee_id", flat=True))
-    OPS = ["workday", "shipment_weight", "packing", "tinting", "test_set", "bonus_initiative", "error", "wrong_material"]
+    OPS = ["workday", "shipment_weight", "packing", "tinting", "test_set", "kit_tint_cat", "kit_tint_ind",
+           "bonus_initiative", "error", "wrong_material"]
     rows = []
     for uid in emp_ids:
         u = U.objects.filter(id=uid).first()
@@ -942,12 +969,28 @@ def dashboard(request):
         total = pe.aggregate(s=Sum("amount"))["s"] or 0
         by = {op: float(pe.filter(op_type=op).aggregate(s=Sum("amount"))["s"] or 0) for op in OPS}
         ship = WarehouseJob.objects.filter(assignee_id=uid, status="shipped", shipped_at__date__gte=since, shipped_at__date__lte=until_q)
+        # 16.09.2026 (Олег): звіт для власника — скільки чого відвантажено і скільки за це нараховано
+        def _cnt(op):
+            n = Decimal("0")
+            for e in pe.filter(op_type=op):
+                if e.rate_applied:
+                    n += (e.amount or 0) / e.rate_applied
+            return int(round(float(n)))
+        ship_l = list(ship.select_related("deal__funnel"))
+        n_test = sum(1 for j in ship_l if j.deal and j.deal.funnel_id and "тест" in (j.deal.funnel.name or "").lower())
+        detail = {"test_orders": n_test, "main_orders": len(ship_l) - n_test,
+                  "pack": {"T5": sum(j.pack_le5_count or 0 for j in ship_l), "T10": sum(j.pack_le10_count or 0 for j in ship_l),
+                           "T20": sum(j.pack_le20_count or 0 for j in ship_l)},
+                  "packed_manual": sum(1 for j in ship_l if j.packed), "np_container": sum(1 for j in ship_l if not j.packed),
+                  "tint_service": int(sum(j.tintings_count or 0 for j in ship_l)),
+                  "tint_base": float(sum((j.tintings_base or 0) for j in ship_l)),
+                  "test_sets": _cnt("test_set"), "kit_tint_cat": _cnt("kit_tint_cat"), "kit_tint_ind": _cnt("kit_tint_ind")}
         rows.append({"id": uid, "name": u.get_full_name() or u.username,
                      "shipments": ship.count(),
                      "weight": float(ship.aggregate(s=Sum("shipped_weight_kg"))["s"] or 0),
                      "tintings": int(sum(j.tintings_count for j in ship)),
                      "deductions": float(by["error"] + by["wrong_material"]),
-                     "total": float(total), "by": by})
+                     "total": float(total), "by": by, "detail": detail})
     rows.sort(key=lambda r: -r["total"])
     team = {"total": round(sum(r["total"] for r in rows), 2), "shipments": sum(r["shipments"] for r in rows),
             "weight": round(sum(r["weight"] for r in rows), 1), "tintings": sum(r["tintings"] for r in rows),
@@ -959,8 +1002,27 @@ def dashboard(request):
         onoff[ch]["count"] += 1
         onoff[ch]["weight"] += float(j.shipped_weight_kg or 0)
         onoff[ch]["value"] += float(j.deal.amount or 0) if j.deal else 0
+    # 16.09.2026 (Олег): кожне відвантаження періоду з фото (накладна, коробка, архів тонування) і що бракує
+    shipments = []
+    jobs = (WarehouseJob.objects.filter(status="shipped", shipped_at__date__gte=since, shipped_at__date__lte=until_q)
+            .select_related("deal", "deal__funnel", "assignee").prefetch_related("photos").order_by("-shipped_at")[:300])
+    for j in jobs:
+        have = {p.kind for p in j.photos.all()}
+        need = set((j.done_snapshot or {}).get("required_photos") or ["buckets", "parcel"])
+        acc = WarehousePayrollEntry.objects.filter(job=j).aggregate(s=Sum("amount"))["s"] or 0
+        fn = (j.deal.funnel.name if (j.deal and j.deal.funnel_id) else "") or ""
+        shipments.append({
+            "job": j.id, "deal": j.deal_id, "date": timezone.localtime(j.shipped_at).strftime("%d.%m %H:%M"),
+            "employee": (j.assignee.get_full_name() or j.assignee.username) if j.assignee_id else "",
+            "kind": "test" if "тест" in fn.lower() else "main", "weight": float(j.shipped_weight_kg or 0),
+            "pack": {"T5": j.pack_le5_count or 0, "T10": j.pack_le10_count or 0, "T20": j.pack_le20_count or 0},
+            "packed": bool(j.packed), "tint": j.tintings_count or 0, "accrued": float(acc),
+            "photos": [{"id": p.id, "kind": p.kind, "label": PHOTO_LABEL.get(p.kind, p.kind),
+                        "url": "/api/warehouse/jobs/%d/photo/?id=%d" % (j.id, p.id)} for p in j.photos.all()],
+            "missing": [PHOTO_LABEL.get(k, k) for k in sorted(need - have)]})
     return Response({"period": period, "label": label, "from": since.isoformat(),
                      "to": (until or timezone.localdate()).isoformat(), "rows": rows, "team": team, "onoff": onoff, "ops": OPS,
+                     "shipments": shipments,
                      "rates": rates_payload(request.user)})  # 15.09 (whpay)
 
 

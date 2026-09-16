@@ -148,6 +148,8 @@ class WeightlessTests(_Base):
         self.assertFalse(r.data["weightless_zero_total"])  # регламент v2: тест-набір важить 0,25 кг
         WarehousePhoto.objects.create(job=j, deal=d, employee=self.worker, kind="buckets", image="warehouse_photos/t_b.jpg")
         WarehousePhoto.objects.create(job=j, deal=d, employee=self.worker, kind="parcel", image="warehouse_photos/t_p.jpg")
+        WarehousePhoto.objects.create(job=j, deal=d, employee=self.worker, kind="invoice", image="warehouse_photos/t_i.jpg")
+        WarehousePhoto.objects.create(job=j, deal=d, employee=self.worker, kind="tint_archive", image="warehouse_photos/t_t.jpg")  # 16.09: фото накладної й архіву тонування
         r = c.post("/api/warehouse/jobs/%d/ship/" % j.id, {}, format="json")
         self.assertEqual(r.status_code, 200)                                  # НЕ блокується
         self.assertEqual(r.data["status"], "shipped")
@@ -231,6 +233,8 @@ class KitTintTests(_Base):
         c = APIClient(); c.force_authenticate(self.worker)
         WarehousePhoto.objects.create(job=j, deal=d, employee=self.worker, kind="buckets", image="warehouse_photos/t_b.jpg")
         WarehousePhoto.objects.create(job=j, deal=d, employee=self.worker, kind="parcel", image="warehouse_photos/t_p.jpg")
+        WarehousePhoto.objects.create(job=j, deal=d, employee=self.worker, kind="invoice", image="warehouse_photos/t_i.jpg")
+        WarehousePhoto.objects.create(job=j, deal=d, employee=self.worker, kind="tint_archive", image="warehouse_photos/t_t.jpg")  # 16.09: фото накладної й архіву тонування
         r = c.post("/api/warehouse/jobs/%d/ship/" % j.id, {}, format="json")
         self.assertEqual(r.status_code, 200)
         return j, r

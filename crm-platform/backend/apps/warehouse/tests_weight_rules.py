@@ -94,4 +94,22 @@ class WeightRulesV2Tests(SimpleTestCase):
     def test_bottle_and_100ml(self):
         p = WR.plan([it("Protection D MAT +( DC-U 1009)", "л", 2), it("Primer Deep 1 (UPr XZ 1001_100 )", qty=3)])
         self.assertEqual(p["weight"], Decimal("2.300"))   # 2 л × 1,0 + 3 × 0,1
-        self.assertEqual(p["tiers"], {"T5": 2, "T10": 0, "T20": 0})  # пляшка до 5 + коробка дрібниць до 5
+        # 16.09.2026 (Олег): пляшка їде в коробці з дрібницями — одне місце до 5 кг
+        self.assertEqual(p["tiers"], {"T5": 1, "T10": 0, "T20": 0})
+
+    def test_bottle_alone_is_own_place_and_rides_with_tools(self):
+        alone = WR.plan([it("Protection D MAT +( DC-U 1009)", "л", 1)])
+        self.assertEqual(alone["tiers"], {"T5": 1, "T10": 0, "T20": 0})          # лише пляшка — окреме місце
+        withtools = WR.plan([it("Protection D MAT +( DC-U 1009)", "л", 1), it("Валик Velurplus 10 см, ворс 4 мм"),
+                             it("Кельма венец. нерж.сталь з дерев.ручка 200х80")])
+        self.assertEqual(withtools["tiers"], {"T5": 1, "T10": 0, "T20": 0})      # пляшка + інструменти — одна коробка
+        bucket = WR.plan([it("Pattera Micro (FB 0101), 16кг. Декоративна", "кг", 16), it("Protection D MAT +( DC-U 1009)", "л", 1)])
+        self.assertEqual(bucket["tiers"], {"T5": 1, "T10": 0, "T20": 1})         # відро окремо, пляшка без інструментів окремо
+
+    def test_kit_without_board_with_tools_one_box_up_to_10(self):
+        # 16.09.2026 (Олег, #66012): набір без дощечки + інструменти — одна упаковка до 10 кг
+        p = WR.plan([it("Sirena Silk — тестовий набір (без дощечки для нанесення без тонування)", card_w="0.25", is_kit=True),
+                     it("Кельма венец. нерж.сталь з дерев.ручка 200х80"), it("Валик Velurplus 10 см, ворс 4 мм")])
+        self.assertEqual(p["tiers"], {"T5": 0, "T10": 1, "T20": 0})
+        solo = WR.plan([it("Sirena Silk — тестовий набір (без дощечки для нанесення без тонування)", card_w="0.25", is_kit=True)])
+        self.assertEqual(solo["tiers"], {"T5": 1, "T10": 0, "T20": 0})

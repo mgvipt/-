@@ -338,7 +338,8 @@ class WarehousePayrollEntry(models.Model):
 
 class WarehousePhoto(models.Model):
     """Фото регламенту (відерця/посилка/чистота/доказ). FileField — Pillow не потрібен."""
-    KIND = [("buckets", "Відерця"), ("parcel", "Посилка"), ("cleanliness", "Чистота"), ("error_proof", "Доказ помилки")]
+    KIND = [("buckets", "Відерця"), ("parcel", "Посилка"), ("cleanliness", "Чистота"), ("error_proof", "Доказ помилки"),
+            ("invoice", "Накладна"), ("tint_archive", "Архів тонування")]  # 16.09.2026 (Олег): фото накладної і рецепта
     job = models.ForeignKey(WarehouseJob, null=True, blank=True, on_delete=models.CASCADE, related_name="photos")
     deal = models.ForeignKey("crm.Deal", null=True, blank=True, on_delete=models.SET_NULL)
     employee = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
