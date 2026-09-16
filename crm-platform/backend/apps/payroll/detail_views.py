@@ -122,15 +122,18 @@ def _d_fixed(comp, sc, d1, d2):
     return _out(round(amt * k), expl, warnings=["Ставку не задано — Налаштування → Ставки співробітників"] if amt <= 0 else [])
 
 
-def _d_standard(comp, period):
-    """= engine._c_standard: максимум × оцінка стандарту за місяць (немає оцінки — 100%)."""
+def _d_standard(comp, period, sc=None, d1=None, d2=None):
+    """= engine._c_standard: максимум × оцінка стандарту за місяць × частка місяця (16.09: новачок — по днях)."""
     p = comp.params or {}
     mx = float(p.get("max") or 0)
     s = (p.get("scores") or {}).get(period)
     score = float(s) if s is not None else 1.0
-    expl = (f"Стандарт роботи: до {engine._n(mx)} ₴ × оцінка за місяць {round(score * 100)}% = {_n2(mx * score)} ₴."
+    k = engine._prorate(sc, d1, d2) if (sc is not None and d1 and d2) else 1.0
+    expl = (f"Стандарт роботи: до {engine._n(mx)} ₴ × оцінка за місяць {round(score * 100)}%"
+            + (f" × {round(k * 100)}% місяця (схема діє з {sc.valid_from:%d.%m})" if k < 0.999 else "")
+            + f" = {_n2(mx * score * k)} ₴."
             + ("" if s is not None else " Оцінку за місяць не виставлено — узято 100%."))
-    return _out(round(mx * score), expl)
+    return _out(round(mx * score * k), expl)
 
 
 # ─────────────────────────── % з маржі / з обороту ───────────────────────────
@@ -523,7 +526,7 @@ def build(user, period):
     std_score = 1.0
     for c in comps:
         if c.kind == "standard":
-            _l, std_score = engine._c_standard(c, period)
+            _l, std_score = engine._c_standard(c, period, sc, d1, d2)
     subtotal = sum(l["amount"] for l in res["lines"] if l.get("kind") not in AFTER_KINDS)
     lines = []
     for i, l in enumerate(res["lines"]):
@@ -539,7 +542,7 @@ def build(user, period):
             elif k == "fixed_monthly":
                 d = _d_fixed(comp, sc, d1, d2)
             elif k == "standard":
-                d = _d_standard(comp, period)
+                d = _d_standard(comp, period, sc, d1, d2)
             elif k == "margin_share":
                 d = _d_margin(comp, user, period, d1, d2, pol, std_score)
             elif k == "revenue_share":

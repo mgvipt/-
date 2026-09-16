@@ -420,12 +420,18 @@ def _c_fixed(sc, comp, d1, d2):
                  warn="ставку не задано — вкажіть суму" if amt <= 0 else "")
 
 
-def _c_standard(comp, period):
+def _c_standard(comp, period, sc_scheme=None, d1=None, d2=None):
+    """Стандарт = максимум × оцінка місяця × частка місяця, коли схема діяла.
+    16.09.2026 (Олег: «считать по дням»): новачок вийшов серед місяця — стандарт за відпрацьовану частину."""
     mx = float(comp.params.get("max") or 0)
     sc = (comp.params.get("scores") or {}).get(period)
     score = float(sc) if sc is not None else 1.0
-    # 15.09 (whkpi): сума як і раніше = максимум × оцінка; пункти стандарту (params.criteria) — лише в підписі
-    return _line(comp, mx * score, mx, f"{round(score * 100)}%", _std_detail(comp, period),
+    k = _prorate(sc_scheme, d1, d2) if (sc_scheme is not None and d1 and d2) else 1.0
+    rate = f"{round(score * 100)}%" + ("" if k >= 0.999 else f" × {round(k * 100)}% місяця")
+    detail = _std_detail(comp, period)
+    if k < 0.999:
+        detail = (detail + " · " if detail else "") + f"схема діє з {sc_scheme.valid_from:%d.%m} — {round(k * 100)}% робочих днів місяця"
+    return _line(comp, mx * score * k, mx, rate, detail,
                  warn="" if sc is not None else "оцінку стандарту не виставлено — узято 100%"), score
 
 
@@ -574,7 +580,7 @@ def calc(user, period, scheme=None, purpose="official", _nested=False):
         elif c.kind == "fixed_monthly":
             lines.append(_c_fixed(sc, c, d1, d2))
         elif c.kind == "standard":
-            ln, std_score = _c_standard(c, period)
+            ln, std_score = _c_standard(c, period, sc, d1, d2)
             lines.append(ln)
     for c in comps:
         if c.kind == "margin_share" and user:

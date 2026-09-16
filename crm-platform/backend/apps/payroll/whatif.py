@@ -10,7 +10,7 @@ GET /api/payroll/my/whatif/?pay=X&tests=N&avg_order=Y — лише свої да
   тести перевіряють, що база дає рівно рядок engine.calc, а «ще X ₴» — рівно те, що дасть engine.calc після такої оплати;
 - «% з оплат» (basis own_payments) — X × %; бонус «тест → основне» — ступінь зі СВОЄЇ ставки (як engine._c_event);
 - гарантія новачку: доплата = max(0, гарантія − сума інших рядків), як в engine.calc (лише коли умови підтверджено).
-Маржа: хто не має права «маржа угоди» (deal.margin.view), не бачить ні маржі, ні її %; суми округлено до 10 ₴.
+Маржа: хто не має права «маржа угоди» (deal.margin.view), не бачить ні маржі, ні її % — лише свій заробіток (16.09.2026, Олег: без округлення).
 (Округлення не ховає середню маржу повністю: з великої суми X її можна оцінити приблизно — див. README.)
 """
 from datetime import timedelta
@@ -135,7 +135,7 @@ class MyWhatIfView(APIView):
         if not mc and not ev:
             return Response({"available": False, "message": "Калькулятор — для ставок з відсотком від продажів."})
         can_margin = _can(u, "deal.margin.view")
-        rnd = (lambda x: int(round(float(x) / ROUND_TO)) * ROUND_TO) if not can_margin else (lambda x: int(round(float(x))))
+        rnd = lambda x: int(round(float(x)))  # 16.09.2026 (Олег): без округлення — людина бачить точну суму
         base = engine.calc(u, period)
         lines = base["lines"]
         subtotal = sum(l["amount"] for l in lines if l.get("kind") not in ("guarantee", "insurance", "bounty"))
@@ -153,7 +153,7 @@ class MyWhatIfView(APIView):
         if any(l.get("kind") == "insurance" for l in lines):
             notes.append("Цього місяця діє «страховочний місяць» (платимо більшу з двох схем) — прибавка може бути меншою.")
         if not can_margin:
-            notes.append("Маржу угод бачить лише керівник, тому суми округлено до 10 ₴.")
+            notes.append("Маржу угод бачить лише керівник — тут видно ваш заробіток.")
 
         def delta_total(d_lines):
             """Прибавка до «разом» з урахуванням гарантії (як engine.calc)."""
@@ -223,5 +223,5 @@ class MyWhatIfView(APIView):
                                      "якщо ці угоди оплатять цього місяця." if deals else
                                      "На ваших відкритих основних угодах знижок немає — так тримати.")})
         return Response({"available": True, "period": period, "has_plan": has_plan, "can_margin": can_margin,
-                         "rounded": not can_margin, "total": rnd(base["total"]), "scenarios": scen, "notes": notes,
+                         "rounded": False, "total": rnd(base["total"]), "scenarios": scen, "notes": notes,
                          "formula": "Та сама формула, що ЗП: engine.calc. Це прогноз; остаточна сума — у ЗП за місяць."})

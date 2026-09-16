@@ -106,13 +106,14 @@ class WhatIfTests(_Base):
         self.pay(self.deal(10000), 10000)
         self.assertEqual(engine.calc(self.mgr, self.today.strftime("%Y-%m"))["total"], 1750)
 
-    def test_without_margin_right_rounded_to_10_and_no_margin_numbers(self):
+    def test_without_margin_right_exact_sum_and_no_margin_numbers(self):
+        # 16.09.2026 (Олег): без округлення — людина бачить точну суму; маржі й далі не видно
         self.scheme(self.mgr, self.margin_comp())
         self.pay(self.deal(20000), 20000)
         r = self.whatif(self.mgr, "?pay=10333")
         s = self.scen(r, "pay")
-        self.assertEqual(s["delta"], 520)                             # точно 517 → округлено до 10
-        self.assertTrue(r.data["rounded"])
+        self.assertEqual(s["delta"], 517)
+        self.assertFalse(r.data["rounded"])
         text = json.dumps(r.data, ensure_ascii=False)
         self.assertNotIn("маржа 10", text)
         self.assertNotIn("ratio", text)
