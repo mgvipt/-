@@ -314,7 +314,9 @@ class WarehousePayrollEntry(models.Model):
     OP = [("shipment_weight", "Вага відвантаження"), ("packing", "Упаковка"), ("tinting", "Тонування"),
           ("workday", "Робочий день"), ("error", "Помилка"), ("wrong_material", "Невірний матеріал"),
           ("bonus_initiative", "Бонус-ідея"), ("bonus_cleanliness", "Бонус-чистота"),
-          ("test_set", "Збірка тестового набору")]  # 14.09 (wh-accrual); міграція 0023 — лише choices
+          ("test_set", "Збірка тестового набору"),
+          ("kit_tint_cat", "Тонування набору: каталог"),      # 16.09.2026 (Олег): фіксована ставка за набір
+          ("kit_tint_ind", "Тонування набору: індивідуальне")]  # 14.09 (wh-accrual); міграція 0023 — лише choices
     employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="wh_payroll")
     work_date = models.DateField(db_index=True)
     job = models.ForeignKey(WarehouseJob, null=True, blank=True, on_delete=models.SET_NULL, related_name="payroll")

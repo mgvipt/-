@@ -18,7 +18,9 @@ DAY_HOURS = 8
 # ── 15.09.2026 (whpay): ставки складу — ЛИШЕ живі статті Фінмоделі (категорія «Ставки складу»; на проді id 89–95).
 # Ті самі числа показують Налаштування → Ставки співробітників і Фінанси → Фінмодель. Запасних чисел у коді немає:
 # статтю вимкнено або видалено → ставка 0 (не нараховуємо) і попередження у вкладці «ЗП».
-WH_RATE_CODES = ("WH_RATE_KG", "WH_PACK_5", "WH_PACK_10", "WH_PACK_20", "WH_TINT_PCT", "WH_RATE_DAY", "bundle_assembly")
+WH_RATE_CODES = ("WH_RATE_KG", "WH_PACK_5", "WH_PACK_10", "WH_PACK_20", "WH_TINT_PCT", "WH_RATE_DAY", "bundle_assembly",
+                 # 16.09.2026 (Олег): тест-набори — фіксовані суми за тонування + ціна доплати для клієнта
+                 "WH_KIT_TINT_CAT", "WH_KIT_TINT_IND", "KIT_TINT_PRICE_IND", "KIT_TINT_PRICE_RICH")
 WH_RATE_TEXT = {  # code: (назва, якщо статті немає; одиниця; за що)
     "WH_RATE_KG": ("Відвантаження: ставка за кг", "₴/кг", "вага відвантаження: кілограми замовлення × ставка"),
     "WH_PACK_5": ("Упаковка до 5 кг", "₴/місце", "упаковка місця до 5 кг (якщо пакували самі)"),
@@ -28,6 +30,14 @@ WH_RATE_TEXT = {  # code: (назва, якщо статті немає; оди�
     "WH_RATE_DAY": ("Ставка за робочий день", "₴/день", "кнопка «Завершити день»; мінус за обід понад норму"),
     "bundle_assembly": ("Оплата складу за збірку тестового набору", "₴/набір",
                         "збірка тестового набору (ця ж ставка входить у собівартість набору)"),
+    "WH_KIT_TINT_CAT": ("Тонування набору: колір з каталогу", "₴/набір",
+                        "за кожен набір з картки «з тонуванням» (колір за номером каталогу)"),
+    "WH_KIT_TINT_IND": ("Тонування набору: індивідуальний колір", "₴/набір",
+                        "за кожен набір, де менеджер поставив «індивідуальний / насичений колір» в угоді"),
+    "KIT_TINT_PRICE_IND": ("Ціна клієнту: індивідуальний колір набору", "₴/набір",
+                           "доплата в угоді, коли клієнт просить свій колір (не з каталогу)"),
+    "KIT_TINT_PRICE_RICH": ("Ціна клієнту: насичений колір набору", "₴/набір",
+                            "доплата, коли колір насичений — підбір довший"),
 }
 
 
@@ -64,6 +74,7 @@ def rates_short(rates=None):
     v = {c: _dec(_rate(c, lr)) for c in WH_RATE_CODES}
     return (f"Ставки складу зараз (Фінмодель): вага {v['WH_RATE_KG']} ₴/кг · упаковка {v['WH_PACK_5']} / {v['WH_PACK_10']} / "
             f"{v['WH_PACK_20']} ₴ · тонування {v['WH_TINT_PCT']}% · тест-набір {v['bundle_assembly']} ₴"
+            f" · тонування набору {v['WH_KIT_TINT_CAT']} / {v['WH_KIT_TINT_IND']} ₴"
             + (f" · день {v['WH_RATE_DAY']} ₴" if _rate("WH_RATE_DAY", lr) else ""))
 
 
@@ -154,20 +165,29 @@ def _deal_accrual_facts(deal):
     tint_base — сума рядків «Послуга тонування» (зі знижкою рядка); test_sets — к-сть тестових наборів;
     weightless — фізичні товари без ваги (не тест-набори і не послуги): за них не буде оплати за кг/упаковку."""
     tint_base = Decimal("0"); tint_lines = 0; test_sets = Decimal("0"); weightless = {}
+    kit_cat = Decimal("0"); kit_ind = Decimal("0")   # 16.09.2026: набори з тонуванням — каталог / індивідуальне
     for it in deal.items.select_related("product"):
         p = it.product
         if p is None:
             continue  # своя позиція без номенклатури
         if _is_tint_service(p):
+            if str(getattr(it, "tint_mode", "") or "").startswith("auto"):
+                continue  # доплата за тонування набору: складу йде фіксована ставка, а не 20% — двічі не платимо
             tint_base += Decimal(it.total or 0); tint_lines += 1
             continue
         if _is_test_set(p):
-            test_sets += it.quantity or Decimal("0")
+            q = it.quantity or Decimal("0")
+            test_sets += q
+            if str(getattr(it, "tint_mode", "") or "") in ("ind", "rich"):
+                kit_ind += q
+            elif getattr(p, "shop_is_tinted", False):
+                kit_cat += q
             continue
     # 15.09.2026 (регламент v2): «без ваги» — лише те, що правило не може зважити (великий товар без ваги в картці,
     # своя позиція без номенклатури). Кг-товари, тест-набори, інструменти — вага за правилом.
     wl = WR.deal_plan(deal, salon=False, packing=False)["weightless"]
-    return {"tint_base": tint_base, "tint_lines": tint_lines, "test_sets": test_sets, "weightless": wl}
+    return {"tint_base": tint_base, "tint_lines": tint_lines, "test_sets": test_sets, "weightless": wl,
+            "kit_cat": kit_cat, "kit_ind": kit_ind}
 
 
 def _job_dict(job, full=False):
@@ -582,8 +602,17 @@ def _accrual_plan(job, pay_packing=True):
         if r_ts > 0:
             rows.append(("test_set", r_ts * fx["test_sets"],
                          {"rate_applied": r_ts, "note": "%s шт × %s ₴" % (_num(fx["test_sets"]), _num(r_ts))}))
+    # 16.09.2026 (Олег): тонування тест-набору — фіксована сума за набір, окремо каталог і індивідуальний колір
+    for code, cnt, op, label in (("WH_KIT_TINT_CAT", fx.get("kit_cat", 0), "kit_tint_cat", "колір з каталогу"),
+                                 ("WH_KIT_TINT_IND", fx.get("kit_ind", 0), "kit_tint_ind", "індивідуальний колір")):
+        if cnt and cnt > 0:
+            r_kt = _rate(code, _lr)
+            if r_kt > 0:
+                rows.append((op, r_kt * cnt,
+                             {"rate_applied": r_kt, "note": "%s наб. × %s ₴ (%s)" % (_num(cnt), _num(r_kt), label)}))
     meta = {"weight": weight, "tiers": tiers, "tint_base": tint_base, "tint_source": tint_source,
             "tint_count": tint_count, "test_sets": fx["test_sets"], "weightless": fx["weightless"],
+            "kit_cat": fx.get("kit_cat", 0), "kit_ind": fx.get("kit_ind", 0),
             "how": wp["how"], "salon": salon}
     return rows, meta
 

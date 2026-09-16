@@ -15,7 +15,10 @@ from . import wh_views
 from .models import Product, ProductComponent, Warehouse, WarehouseJob, WarehousePayrollEntry, WarehousePhoto
 
 RATES = [("WH_RATE_KG", "1.5"), ("WH_PACK_5", "8"), ("WH_PACK_10", "13"), ("WH_PACK_20", "20"),
-         ("WH_TINT_PCT", "20"), ("WH_RATE_DAY", "300"), ("bundle_assembly", "50")]
+         ("WH_TINT_PCT", "20"), ("WH_RATE_DAY", "300"), ("bundle_assembly", "50"),
+         # 16.09.2026 (Олег): тонування набору — фіксовані суми, і ціна доплати для клієнта
+         ("WH_KIT_TINT_CAT", "50"), ("WH_KIT_TINT_IND", "100"),
+         ("KIT_TINT_PRICE_IND", "200"), ("KIT_TINT_PRICE_RICH", "250")]
 
 
 def set_rate(code, value, active=True):
@@ -41,9 +44,11 @@ class _Base(TestCase):
                                             cost=Decimal("400"))
         # 15.09 (регламент v2): «без ваги» — великий штучний товар без ваги в картці (кг-товари і дрібниці важать за правилом)
         self.noweight = Product.objects.create(name="Люк ревізійний 60×60", price=Decimal("200"), cost=Decimal("50"))
-        comp = Product.objects.create(name="Pattera Fine (FF 0102)", cost=Decimal("100"))
-        self.ts = Product.objects.create(name="Травертин «Набір Pattera» (з тонуванням)", price=Decimal("460"))
-        ProductComponent.objects.create(bundle=self.ts, component=comp, quantity=Decimal("0.8"))  # набір без «тестов» у назві
+        # 16.09.2026 (Олег): вага набору = сума комплектації, тому компонент у кілограмах
+        comp = Product.objects.create(name="Pattera Fine (FF 0102)", unit="кг", cost=Decimal("100"))
+        self.ts = Product.objects.create(name="Травертин «Набір Pattera» (з тонуванням)", price=Decimal("460"),
+                                         shop_is_tinted=True)
+        ProductComponent.objects.create(bundle=self.ts, component=comp, quantity=Decimal("0.25"))  # набір без «тестов» у назві
 
     def deal(self, amount=1000, kits=None):
         return Deal.objects.create(title="T", funnel=self.f, stage=self.st, amount=Decimal(str(amount)),
@@ -149,7 +154,9 @@ class WeightlessTests(_Base):
         self.assertEqual([w["product_id"] for w in r.data["weightless"]], [self.noweight.id])
         self.assertEqual([e.quantity_kg for e in WarehousePayrollEntry.objects.filter(job=j, op_type="shipment_weight")],
                          [Decimal("0.250")])  # регламент v2: лише тест-набір 0,25 кг; люк без ваги — 0
-        self.assertEqual({a["op"] for a in r.data["accrued"]}, {"tinting", "test_set", "shipment_weight", "packing"})  # v2: набір 0,25 кг + посилка до 5 кг
+        # v2: набір 0,25 кг + посилка до 5 кг; 16.09 — ще й тонування набору за каталогом (картка «з тонуванням»)
+        self.assertEqual({a["op"] for a in r.data["accrued"]},
+                         {"tinting", "test_set", "shipment_weight", "packing", "kit_tint_cat"})
 
     def test_partial_weight_is_not_zero_total(self):
         d = self.deal(1000)
@@ -214,3 +221,42 @@ class CalendarMonthTests(_Base):
         self.assertEqual(r.data["period"], "month")
         self.assertEqual([l["op"] for l in r.data["lines"]], ["test_set"])
         self.assertEqual([g["test_set"] for g in r.data["deal_groups"]], [50.0])
+
+
+class KitTintTests(_Base):
+    """16.09.2026 (Олег): тонування тест-набору — фіксовані суми, каталог і індивідуальний колір окремо."""
+
+    def _ship(self, d):
+        j = self.job(d)
+        c = APIClient(); c.force_authenticate(self.worker)
+        WarehousePhoto.objects.create(job=j, deal=d, employee=self.worker, kind="buckets", image="warehouse_photos/t_b.jpg")
+        WarehousePhoto.objects.create(job=j, deal=d, employee=self.worker, kind="parcel", image="warehouse_photos/t_p.jpg")
+        r = c.post("/api/warehouse/jobs/%d/ship/" % j.id, {}, format="json")
+        self.assertEqual(r.status_code, 200)
+        return j, r
+
+    def test_catalog_tint_pays_fixed_per_kit(self):
+        d = self.deal(920)
+        self.item(d, self.ts, qty=2, price=460)          # картка «з тонуванням» → колір з каталогу
+        j, r = self._ship(d)
+        self.assertEqual(self.amounts(j, "kit_tint_cat"), [Decimal("100.00")])   # 2 × 50 ₴
+        self.assertEqual(self.amounts(j, "test_set"), [Decimal("100.00")])       # 2 × 50 ₴ (ставка збірки в тесті)
+        self.assertEqual(self.amounts(j, "kit_tint_ind"), [])
+
+    def test_individual_tint_pays_more_and_not_twice(self):
+        d = self.deal(660)
+        it = self.item(d, self.ts, qty=1, price=460)
+        it.tint_mode = "ind"; it.save(update_fields=["tint_mode"])
+        auto = self.item(d, self.tint, qty=1, price=200)          # доплата, яку додає CRM
+        auto.tint_mode = "auto_ind"; auto.save(update_fields=["tint_mode"])
+        j, r = self._ship(d)
+        self.assertEqual(self.amounts(j, "kit_tint_ind"), [Decimal("100.00")])   # 1 × 100 ₴
+        self.assertEqual(self.amounts(j, "kit_tint_cat"), [])                    # каталог не платимо
+        self.assertEqual(self.amounts(j, "tinting"), [])                         # і 20% з авторядка теж ні
+
+    def test_manual_tint_service_line_still_pays_percent(self):
+        d = self.deal(1000)
+        self.item(d, self.paint, qty=1, price=1000)
+        self.item(d, self.tint, qty=1, price=500)                  # звичайна послуга тонування великого замовлення
+        j, r = self._ship(d)
+        self.assertEqual(self.amounts(j, "tinting"), [Decimal("100.00")])        # 20% від 500 ₴

@@ -11,12 +11,19 @@ def it(name, unit="шт", qty=1, card_w=None, **kw):
 
 
 class WeightRulesV2Tests(SimpleTestCase):
-    def test_test_set_is_quarter_kg_and_one_parcel_up_to_5(self):
-        # #66733 Мокляр: 2 тест-набори з вагою в картці 5 і 3 кг → 0,5 кг і одна посилка до 5 кг (не «до 10»)
-        p = WR.plan([it("Sirena Silk — тестовий набір «Мокрий шовк»", card_w=5, is_kit=True),
-                     it("Sirena Silk — тестовий набір «Мокрий шовк» з тонуванням", card_w=3, is_kit=True)])
+    def test_test_set_weight_comes_from_its_components(self):
+        # 16.09.2026 (Олег): набори різні — вага береться з КОМПЛЕКТАЦІЇ картки (deal_items підставляє її в card_w).
+        # #66733 Мокляр: 2 набори Sirena Silk по 0,25 кг (0,1 + 0,15) → 0,5 кг і одна посилка до 5 кг.
+        p = WR.plan([it("Sirena Silk — тестовий набір «Мокрий шовк»", card_w="0.25", is_kit=True),
+                     it("Sirena Silk — тестовий набір «Мокрий шовк» з тонуванням", card_w="0.25", is_kit=True)])
         self.assertEqual(p["weight"], Decimal("0.500"))
         self.assertEqual(p["tiers"], {"T5": 1, "T10": 0, "T20": 0})
+        # Патера важча: 1,15 кг з комплектації (1,0 + 0,1 + 0,05)
+        pt = WR.plan([it("Матовий марморин «Тестовий набір Pattera Fine»", card_w="1.15", is_kit=True)])
+        self.assertEqual(pt["weight"], Decimal("1.150"))
+        # комплектації немає — запасне значення 0,25 кг
+        pn = WR.plan([it("Травертин «Тестовий набір Pattera Fine»", is_kit=True)])
+        self.assertEqual(pn["weight"], Decimal("0.250"))
 
     def test_kg_unit_weight_is_quantity_and_repacked_portions(self):
         # #66719 Бекшанова: Velvet Luna 0,6 кг + Sirena Silk 5,3 кг + тара + тонування

@@ -267,6 +267,12 @@ class DealItem(models.Model):
                                            help_text="Знижка на позицію фіксованою сумою ₴ (якщо >0 — має пріоритет над %)")
     cost = models.DecimalField(max_digits=12, decimal_places=2, default=0,
                                help_text="Знімок собівартості на момент продажу (для чесної маржі в історії)")
+    # 16.09.2026 (Олег): тонування тест-набору. На рядку набору: "" — колір з каталогу, "ind" — індивідуальний,
+    # "rich" — насичений. На рядку доплати, який CRM додає сама: "auto_ind" / "auto_rich". Див. apps/crm/kit_tint.py
+    TINT_MODE = [("", "Колір з каталогу"), ("ind", "Індивідуальний колір"), ("rich", "Насичений колір"),
+                 ("auto_ind", "Доплата: індивідуальний колір"), ("auto_rich", "Доплата: насичений колір")]
+    tint_mode = models.CharField(max_length=10, blank=True, default="", choices=TINT_MODE,
+                                 help_text="Тонування тест-набору (галочка в угоді)")
 
     @property
     def base_sum(self):

@@ -30,6 +30,8 @@ CHECKS = [
     ("Шовк: бібліотека кольорів", "manager", "/api/inbox/media-library/?view=picker&material=%D0%9C%D0%BE%D0%BA%D1%80%D0%B8%D0%B9%20%D1%88%D0%BE%D0%B2%D0%BA", {200}, ["items"]),
     ("Бібліотека: захист коротких посилань", "manager", "/api/l/not-valid", {404}, []),
     ("Cezar: бібліотека моделей", "manager", "/api/inbox/media-library/?view=picker&material=%D0%9F%D0%BB%D1%96%D0%BD%D1%82%D1%83%D1%81%D0%B8%20Cezar", {200}, ["items"]),
+    # 16.09.2026 (Олег): тест-набори — вага з комплектації, фіксовані ставки за тонування набору
+    ("Склад: ставки (тест-набір, тонування набору)", "owner", "/api/warehouse/my-salary/", {200}, ["rates"]),
     # ── базове ──
     ("Мій профіль (owner)", "owner", "/api/me/", {200}, []),
     ("Мій профіль (менеджер)", "manager", "/api/me/", {200}, []),

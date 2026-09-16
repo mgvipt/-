@@ -7,7 +7,8 @@
   • одиниця «кг» — кількість у угоді і є кілограми (поле «Вага нетто» в такій картці НЕ множиться);
   • «…_100» / «100 мл» — 0,1 кг за шт; одиниця «л» — літри × щільність; пляшка Primer Deep 1 л — 1 кг;
   • штучний товар з «N кг» / «N мл» у назві — N × к-сть (заводська тара);
-  • тест-набір — 0,25 кг за набір (ваги в картках наборів 3 / 5 / 7 кг — помилкові); викраски, тара, послуги — 0;
+  • тест-набір — вага рахується З КОМПЛЕКТАЦІЇ картки (16.09.2026, Олег: набори різні, Патера важча);
+    якщо комплектації немає — 0,25 кг; викраски, тара, послуги — 0;
   • інструменти й дрібниці — вага з картки (якщо правдоподібна, до 2 кг за шт) або за типом; разом на угоду
     не менше 0,5 і не більше 5 кг («одна коробка»);
   • великі штучні (карниз, багет, люк, панель…) — вага з картки × к-сть; без ваги — «перевірити» (0 кг).
@@ -109,7 +110,10 @@ def classify(name, unit, qty, card_w=None, is_kit=False, is_tint=False, own=Fals
     if "викраск" in n:
         return dict(r, cls="sample", note="викраски — вага не рахується")
     if is_kit or "набір" in n or "набор" in n:
-        return dict(r, cls="kit", kg=KIT_KG * q, note=f"тест-набір {_g(KIT_KG)} кг × {_g(q)}")
+        # 16.09.2026 (Олег): набори різні за вагою — беремо вагу з комплектації картки (cw), 0,25 кг лише як запасний варіант
+        w = cw if cw > 0 else KIT_KG
+        note = f"тест-набір {_g(w)} кг × {_g(q)}" + ("" if cw > 0 else " (комплектація не заповнена)")
+        return dict(r, cls="kit", kg=w * q, note=note)
     if "_100" in n or re.search(r"\b100\s*(мл|ml)\b", n):
         # флакон 100 мл (Primer Deep 1 …_100) — 0,1 кг за шт; перевіряємо ДО правила «тонер у мл»
         return dict(r, cls="small", kg=Decimal("0.1") * q, note=f"{_g(q)} × 0,1 кг (100 мл)")
@@ -233,6 +237,23 @@ def plan(items, salon=False, packing=True):
     return {"weight": kg.quantize(Decimal("0.001")), "tiers": tiers, "how": how, "weightless": weightless}
 
 
+def kit_kg(product):
+    """Вага тест-набору = сума ваг його комплектації (16.09.2026, Олег: «всі набори мають рахуватися зі складу»).
+    Кожен компонент зважується тим самим classify(): «кг» — це кілограми, «л» — × щільність, шт — вага картки.
+    Комплектації немає (або нульова) → None, тоді спрацює запасне значення KIT_KG."""
+    try:
+        comps = list(product.components.select_related("component").all())
+    except Exception:
+        return None
+    tot = Decimal("0")
+    for c in comps:
+        cp = c.component
+        if cp is None:
+            continue
+        tot += classify(cp.name, cp.unit, c.quantity, card_w=cp.weight_kg)["kg"]
+    return tot.quantize(Decimal("0.001")) if tot > 0 else None
+
+
 def deal_items(deal):
     """Рядки угоди → вхід для plan(): назва, одиниця, к-сть, вага з картки, чи тест-набір, чи тонування."""
     out = []
@@ -246,7 +267,8 @@ def deal_items(deal):
         low = name.lower()
         is_tint = low.strip().startswith("послуга тонування")
         is_kit = (not is_tint) and ("тестов" in low or (not ("викраск" in low) and p.components.exists()))
-        out.append({"name": name, "unit": p.unit or "", "qty": it.quantity, "card_w": p.weight_kg,
+        cw = kit_kg(p) if is_kit else p.weight_kg  # 16.09.2026: вага набору — сума комплектації, а не цифра в картці
+        out.append({"name": name, "unit": p.unit or "", "qty": it.quantity, "card_w": cw,
                     "is_kit": is_kit, "is_tint": is_tint, "own": False, "product_id": p.id})
     return out
 

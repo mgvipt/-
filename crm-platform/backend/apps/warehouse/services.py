@@ -153,6 +153,18 @@ def bundle_assembly_fee():
         return Decimal("0")
 
 
+def _kit_tint_catalog_fee():
+    """Оплата складу за тонування набору кольором з каталогу — з Фінмоделі (WH_KIT_TINT_CAT).
+    Входить у собівартість наборів, у назві яких «з тонуванням» (галочка «Тонований» у картці)."""
+    from decimal import Decimal
+    try:
+        from apps.finance.models import FinModelArticle
+        art = FinModelArticle.objects.filter(code="WH_KIT_TINT_CAT", active=True).order_by("id").first()
+        return Decimal(art.value or 0) if art else Decimal("0")
+    except Exception:
+        return Decimal("0")
+
+
 def recalc_all_bundle_costs():
     """Перерахувати собівартість УСІХ наборів (після зміни ставки збірки у фінмоделі)."""
     from .models import ProductComponent, Product
@@ -172,10 +184,21 @@ def _recalc_one_bundle(bundle):
         total += (row.component.cost or Decimal("0")) * row.quantity
     if rows:
         total += bundle_assembly_fee()  # + робота складу за збірку (з фінмоделі)
+        if getattr(bundle, "shop_is_tinted", False):
+            total += _kit_tint_catalog_fee()  # 16.09.2026 (Олег): набір «з тонуванням» — ще й робота за тонування
     total = total.quantize(Decimal("0.01"))
     if bundle.cost != total:
         bundle.cost = total
         bundle.save(update_fields=["cost"])
+    # 16.09.2026 (Олег): вага набору в картці = сума комплектації, щоб цифра не розходилась з тим, що рахує склад
+    try:
+        from . import weight_rules as WR
+        w = WR.kit_kg(bundle)
+        if w is not None and bundle.weight_kg != w:
+            bundle.weight_kg = w
+            bundle.save(update_fields=["weight_kg"])
+    except Exception:
+        pass
 
 
 def recalc_bundle_costs(component):

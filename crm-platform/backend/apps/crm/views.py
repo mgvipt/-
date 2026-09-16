@@ -1617,6 +1617,32 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
+    def set_item_tint(self, request, pk=None):
+        """Тонування тест-набору: {item, mode: "" | "ind" | "rich"}.
+        16.09.2026 (Олег): колір з каталогу входить у ціну картки; індивідуальний і насичений — доплата
+        окремим рядком «Послуга тонування» (її додає й веде CRM). Складу за це — фіксована ставка за набір."""
+        from . import kit_tint
+        deal = self.get_object()
+        g = self._guard(deal)
+        if g: return g
+        g2 = self._fiscal_lock(deal)
+        if g2: return g2
+        mode = str(request.data.get("mode") or "")
+        if mode not in ("",) + kit_tint.MODES:
+            return Response({"detail": "Невідомий режим тонування"}, status=status.HTTP_400_BAD_REQUEST)
+        it = DealItem.objects.filter(deal=deal, pk=request.data.get("item")).first()
+        if not it:
+            return Response({"detail": "Позицію не знайдено"}, status=status.HTTP_404_NOT_FOUND)
+        if str(it.tint_mode or "").startswith("auto"):
+            return Response({"detail": "Цей рядок CRM веде сама — знімати галочку треба на самому наборі."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        it.tint_mode = mode
+        it.save(update_fields=["tint_mode"])
+        kit_tint.sync_lines(deal)
+        self._recalc_amount(deal)
+        return Response(DealDetailSerializer(deal, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
     def remove_item(self, request, pk=None):
         deal = self.get_object()
         g = self._guard(deal)
@@ -1624,6 +1650,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         g2 = self._fiscal_lock(deal)
         if g2: return g2
         DealItem.objects.filter(deal=deal, pk=request.data.get("item")).delete()
+        from . import kit_tint
+        kit_tint.sync_lines(deal)  # 16.09: прибрали набір — прибираємо і доплату за його тонування
         self._recalc_amount(deal)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 
@@ -1660,6 +1688,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         if it.quantity <= 0 or it.price < 0 or (it.discount_pct or 0) < 0 or (it.discount_pct or 0) > 100:  # #14
             return Response({"detail": "Кількість > 0, ціна ≥ 0, знижка 0–100%."}, status=status.HTTP_400_BAD_REQUEST)
         it.save()
+        from . import kit_tint
+        kit_tint.sync_lines(deal)  # 16.09: змінили кількість наборів — рядок доплати за тонування їде слідом
         self._recalc_amount(deal)
         return Response(DealDetailSerializer(deal, context={"request": request}).data)
 

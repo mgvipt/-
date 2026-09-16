@@ -480,6 +480,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     try { setDeal(await api.post<Deal>(`/api/deals/${id}/set_reserve/`, { item: it.id, reserved: !it.reserved })); }
     catch (e: any) { alert(e?.response?.data?.detail || t("Не удалось изменить резерв","Не вдалося змінити резерв")); }
   }
+  // 16.09.2026 (Олег): тонування тест-набору — галочка в рядку. Каталог уже в ціні картки,
+  // індивідуальний / насичений колір — доплата окремим рядком, її додає CRM.
+  async function setItemTint(itemId: number, mode: string) {
+    try { setDeal(await api.post<Deal>(`/api/deals/${id}/set_item_tint/`, { item: itemId, mode })); }
+    catch (e: any) { alert(e?.response?.data?.detail || e?.data?.detail || t("Не удалось изменить тонировку","Не вдалося змінити тонування")); }
+  }
   async function updateItem(itemId: number, body: any) {
     try { setDeal(await api.post<Deal>(`/api/deals/${id}/update_item/`, { item: itemId, ...body })); }
     catch (e: any) { alert(e?.response?.data?.detail || t("Изменение заблокировано (проверьте: сделка оплачена / есть чек / нет прав)","Зміну заблоковано (перевірте: сделка оплачена / є чек / немає прав)")); }
@@ -1235,6 +1241,21 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                             <span onClick={(e) => { e.stopPropagation(); setEditProdItem(it.id); setEpq(""); setEpr([]); }} title={t("Удалить и выбрать другой", "Видалити й обрати інший")} style={{ color: "#94a3b8", cursor: "pointer", fontSize: 13, flexShrink: 0, fontWeight: 700, lineHeight: 1 }}>✕</span>
                           </div>
                         )}
+                        {it.is_kit ? (
+                          <div style={{ marginTop: 3, display: "flex", alignItems: "center", gap: 4, fontSize: 11, flexWrap: "wrap" }}>
+                            <span className="muted">{t("Тонировка:", "Тонування:")}</span>
+                            <select value={it.tint_mode || ""} onChange={(e) => setItemTint(it.id, e.target.value)}
+                              title={t("Цвет из каталога уже входит в цену набора. Индивидуальный и насыщенный — доплата отдельной строкой","Колір з каталогу вже входить у ціну набору. Індивідуальний і насичений — доплата окремим рядком")}
+                              style={{ height: 22, border: "1px solid #cbd5e1", borderRadius: 5, fontSize: 11, background: "#fff", color: it.tint_mode ? "#7c3aed" : "#64748b", fontWeight: it.tint_mode ? 700 : 400, maxWidth: 220 }}>
+                              <option value="">{it.tint_catalog ? t("по каталогу (в цене)", "за каталогом (у ціні)") : t("без тонировки", "без тонування")}</option>
+                              <option value="ind">{t("индивидуальный цвет (доплата)", "індивідуальний колір (доплата)")}</option>
+                              <option value="rich">{t("насыщенный цвет (доплата)", "насичений колір (доплата)")}</option>
+                            </select>
+                          </div>
+                        ) : null}
+                        {String(it.tint_mode || "").startsWith("auto") ? (
+                          <div style={{ marginTop: 3, fontSize: 11, color: "#7c3aed" }}>{t("строку добавила CRM по галочке набора","рядок додала CRM за галочкою набору")}</div>
+                        ) : null}
                       </td>
                       <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><input key={"pr-" + it.id + "-" + it.price} defaultValue={Number(it.price)} type="number" min={0} onBlur={(e) => Number(e.target.value) !== Number(it.price) && updateItem(it.id, { price: e.target.value })} style={editInp} /> ₴</td>
                       {can("product.cost.view") && <><td style={{ padding: "6px 4px", color: "#9a3412", whiteSpace: "nowrap" }} title={t("Закупка за единицу (себестоимость товара)","Закупка за одиницю (собівартість товару)")}>{Number(it.cost || 0) > 0 ? fmt(Number(it.cost)) + " ₴" : "—"}</td><td style={{ padding: "6px 4px", color: "#9a3412", whiteSpace: "nowrap", fontWeight: 600 }} title={t("Сумма закупки по строке (себестоимость × кол-во)","Сума закупки по рядку (собівартість × кількість)")}>{Number(it.cost || 0) > 0 ? fmt(Number(it.cost) * Number(it.quantity)) + " ₴" : "—"}</td></>}

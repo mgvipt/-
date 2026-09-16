@@ -9,6 +9,8 @@ class DealItemSerializer(serializers.ModelSerializer):
     room_name = serializers.SerializerMethodField()
     consumption = serializers.SerializerMethodField()
     total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    is_kit = serializers.SerializerMethodField()
+    tint_catalog = serializers.SerializerMethodField()
 
     def get_consumption(self, obj):
         """Витрата товару на 1 м² (щоб у сделці було видно, чому кількість не рахується)."""
@@ -27,6 +29,17 @@ class DealItemSerializer(serializers.ModelSerializer):
             return obj.product.name
         return (obj.custom_name or "Позиція") + " · не зі складу"
 
+    def get_is_kit(self, obj):
+        """Рядок — тест-набір (щоб у картці угоди показати галочку тонування)."""
+        if not obj.product_id:
+            return False
+        low = (obj.product.name or "").lower()
+        return ("тестов" in low) or ("набір" in low) or ("набор" in low)
+
+    def get_tint_catalog(self, obj):
+        """У картці набору стоїть «Тонований» — колір з каталогу вже входить у ціну."""
+        return bool(getattr(obj.product, "shop_is_tinted", False)) if obj.product_id else False
+
     def get_product_stock(self, obj):
         if not obj.product_id:
             return None
@@ -35,7 +48,7 @@ class DealItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DealItem
-        fields = ["consumption", "room", "room_name", "unit", "id", "deal", "product", "custom_name", "product_name", "product_stock", "quantity", "price", "cost", "discount_pct", "discount_amount", "discount_sum", "total", "reserved"]
+        fields = ["consumption", "room", "room_name", "unit", "id", "deal", "product", "custom_name", "product_name", "product_stock", "quantity", "price", "cost", "discount_pct", "discount_amount", "discount_sum", "total", "reserved", "tint_mode", "is_kit", "tint_catalog"]
         read_only_fields = ["deal"]
 
 
