@@ -1507,14 +1507,24 @@ class InventorySheetView(APIView):
             _ctrl_ann["cdelta_%d" % _i] = Coalesce(Sum("quantity",
                 filter=Q(document_id=_d.id)), Decimal("0"))
 
+        _ret_ids = []
+        try:
+            from apps.returns.models import DealReturn
+            _ret_ids = list(DealReturn.objects.exclude(receipt_doc__isnull=True).values_list("receipt_doc_id", flat=True))
+        except Exception:
+            pass
+        _ret_q = Q(document__number__startswith="ПВ-") | Q(document_id__in=_ret_ids)
         agg = (StockMovement.objects.filter(product_id__in=ids, document__posted=True).values("product_id").annotate(
             opening=Coalesce(Sum("quantity", filter=Q(document__created_at__date__lt=df)), Decimal("0")),
             # переоблік, проведений САМЕ в день початку періоду, входить у «Початковий»:
             # тоді Початковий = затверджений ФАКТ останньої інвентаризації, а не «що було до неї»
             opening_inv=Coalesce(Sum("quantity", filter=Q(document__kind="inv",
                 document__created_at__date=df)), Decimal("0")),
+            # 16.09.2026 (Олег): повернення від клієнтів («ПВ-№», створює облік повернень) — окремою колонкою, не в надходженнях
             received=Coalesce(Sum("quantity", filter=Q(document__kind="in", quantity__gt=0,
-                document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
+                document__created_at__date__gte=df, document__created_at__date__lte=dt) & ~_ret_q), Decimal("0")),
+            returned=Coalesce(Sum("quantity", filter=Q(document__kind="in", quantity__gt=0,
+                document__created_at__date__gte=df, document__created_at__date__lte=dt) & _ret_q), Decimal("0")),
             sold_neg=Coalesce(Sum("quantity", filter=Q(document__kind="out", quantity__lt=0,
                 document__created_at__date__gte=df, document__created_at__date__lte=dt)), Decimal("0")),
             # розлив/фасування — це НЕ продаж і НЕ прихід від постачальника, показуємо окремо
@@ -1532,11 +1542,12 @@ class InventorySheetView(APIView):
             a = by_id.get(p.id, {})
             opening = (a.get("opening") or Decimal("0")) + (a.get("opening_inv") or Decimal("0"))
             received = a.get("received") or Decimal("0")
+            returned = a.get("returned") or Decimal("0")
             sold = abs(a.get("sold_neg") or Decimal("0"))
             inv_net = a.get("inv_net") or Decimal("0")
             rp_in = a.get("repack_in") or Decimal("0")
             rp_out = abs(a.get("repack_out") or Decimal("0"))
-            book = opening + received + rp_in - sold - rp_out + inv_net
+            book = opening + received + returned + rp_in - sold - rp_out + inv_net
             _ctrl_rows = []
             for _i, _d in enumerate(_ctrl):
                 _dl = a.get("cdelta_%d" % _i) or Decimal("0")
@@ -1548,11 +1559,11 @@ class InventorySheetView(APIView):
             rows.append({"id": p.id, "name": p.name, "sku": p.sku, "unit": p.unit,
                          "opening": float(opening),
                          "opening_recount": float(a.get("opening_inv") or Decimal("0")),
-                         "received": float(received),
+                         "received": float(received), "returned": float(returned),
                          "sold": float(sold), "recount": float(inv_net),
                          "repack_in": float(rp_in), "repack_out": float(rp_out),
                          "controls": _ctrl_rows,
-                         "calc": float(opening + received + rp_in - sold - rp_out),
+                         "calc": float(opening + received + returned + rp_in - sold - rp_out),
                          "book": float(book)})
         return Response({"from": d_from, "to": d_to, "rows": rows,
                          "count": count, "page": page, "page_size": page_size})

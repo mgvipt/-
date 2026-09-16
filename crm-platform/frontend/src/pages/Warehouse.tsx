@@ -52,7 +52,7 @@ interface Category { id: number; name: string; parent: number | null; order: num
 interface WH { id: number; name: string; is_default: boolean; }
 interface Movement { id: number; kind: string; kind_display: string; quantity: number; price: number; warehouse: string; date: string; posted_at?: string; number: string | number; }
 
-interface SheetRow { id: number; name: string; sku?: string; unit: string; opening: number; opening_recount?: number; received: number; sold: number; repack_in?: number; repack_out?: number; recount?: number; controls?: { date: string; fact: number; delta: number }[]; calc?: number; book: number; }
+interface SheetRow { id: number; name: string; sku?: string; unit: string; opening: number; opening_recount?: number; received: number; returned?: number; sold: number; repack_in?: number; repack_out?: number; recount?: number; controls?: { date: string; fact: number; delta: number }[]; calc?: number; book: number; }
 const PAGE_SIZES = [5, 20, 50, 100, 500];
 const SHOP_CATEGORY_SUGGESTIONS = [
   "Декоративные покрытия",
@@ -1522,7 +1522,7 @@ export default function Warehouse() {
             )}
             <div style={{ overflowY: "auto", flex: 1 }}>
               <table style={{ width: "100%", fontSize: 13 }}>
-                <thead><tr>{[t("Товар","Товар"), t("Ед.","Од."), t("Начальный","Початковий"), t("Поступ.","Надходж."), t("Продано","Продано"), t("Конечный (расчёт)","Кінцевий (розрахунок)"), t("Контрольные пересчёты","Контрольні переобліки"), t("В системе","В системі"), t("Факт","Факт"), t("Расхождение","Розбіжність")].map((h) => <th key={h} style={{ position: "sticky", top: 0, background: h === t("Контрольные пересчёты","Контрольні переобліки") ? "#e0edff" : "#fff", zIndex: 2, boxShadow: "inset 0 -1px 0 #e2e8f0", textAlign: "left" }}>{h}</th>)}</tr></thead>
+                <thead><tr>{[t("Товар","Товар"), t("Ед.","Од."), t("Начальный","Початковий"), t("Поступ.","Надходж."), t("Возврат","Повернення"), t("Продано","Продано"), t("Конечный (расчёт)","Кінцевий (розрахунок)"), t("Контрольные пересчёты","Контрольні переобліки"), t("В системе","В системі"), t("Факт","Факт"), t("Расхождение","Розбіжність")].map((h) => <th key={h} style={{ position: "sticky", top: 0, background: h === t("Контрольные пересчёты","Контрольні переобліки") ? "#e0edff" : "#fff", zIndex: 2, boxShadow: "inset 0 -1px 0 #e2e8f0", textAlign: "left" }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {sheet.map((r) => {
                     const fact = facts[r.id] ?? String(r.book);
@@ -1532,6 +1532,7 @@ export default function Warehouse() {
                         <td>{r.name}</td><td className="muted">{r.unit}</td>
                         <td>{r.opening.toLocaleString("ru")}<div className="muted" style={{ fontSize: 10 }}>{r.opening_recount ? t("факт переучёта","факт переобліку") : t("на","на")} {pFrom.split("-").reverse().slice(0, 2).join(".")}</div></td>
                         <td style={{ color: r.received ? "#16a34a" : "#94a3b8" }}>{r.received ? "+" + r.received.toLocaleString("ru") : (r.repack_in ? "" : "—")}{r.repack_in ? <div style={{ fontSize: 10, color: "#7c3aed" }} title={t("Пришло с розлива/фасовки, а не от поставщика","Прийшло з розливу/фасування, а не від постачальника")}>{t("розлив","розлив")} +{r.repack_in.toLocaleString("ru")}</div> : null}</td>
+                        <td style={{ color: r.returned ? "#ea580c" : "#94a3b8" }} title={t("Возвраты от клиентов (накладная «ПВ-№» из учёта возвратов) — отдельно от поступлений","Повернення від клієнтів (накладна «ПВ-№» з обліку повернень) — окремо від надходжень")}>{r.returned ? "+" + r.returned.toLocaleString("ru") : "—"}</td>
                         <td style={{ color: r.sold ? "#dc2626" : "#94a3b8" }}>{r.sold ? <a onClick={() => openInvDeals(r.id, r.name)} style={{ cursor: "pointer", color: "#fff", background: "#dc2626", fontWeight: 600, borderRadius: 6, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }} title={t("Клик — сделки, которые уехали с этим товаром за период","Клік — сделки, які поїхали з цим товаром за період")}>−{r.sold.toLocaleString("ru")} <span style={{ fontSize: 11 }}>↗ {t("сделки","сделки")}</span></a> : (r.repack_out ? "" : "—")}{r.repack_out ? <div style={{ fontSize: 10, color: "#7c3aed" }} title={t("Ушло на розлив/фасовку, а не продано клиенту","Пішло на розлив/фасування, а не продано клієнту")}>{t("розлив","розлив")} −{r.repack_out.toLocaleString("ru")}</div> : null}</td>
                         <td style={{ fontWeight: 600 }} title={t("Начальный + Поступление − Продано. Сколько ДОЛЖНО быть по документам, без контрольных пересчётов","Початковий + Надходження − Продано. Скільки МАЄ бути за документами, без контрольних переобліків")}>{(r.calc !== undefined ? r.calc : r.book).toLocaleString("ru")}</td>
                         <td style={{ background: "#eff5ff" }} title={t("Контрольные пересчёты ВНУТРИ периода: дата → сколько насчитали, и сколько система дописала","Контрольні переобліки ВСЕРЕДИНІ періоду: дата → скільки нарахували, і скільки система дописала")}>{(r.controls && r.controls.length) ? r.controls.map((c) => (<div key={c.date} style={{ marginBottom: 3 }}><div style={{ whiteSpace: "nowrap", fontSize: 11 }}>{c.date.split("-").reverse().slice(0, 2).join(".")}: <b style={{ color: c.delta > 0 ? "#16a34a" : "#dc2626" }}>{c.delta > 0 ? "+" : ""}{c.delta.toLocaleString("ru")}</b></div><div className="muted" style={{ whiteSpace: "nowrap", fontSize: 10 }}>{t("насчитали","нарахували")} {c.fact.toLocaleString("ru")}</div></div>)) : <span className="muted">—</span>}</td>
@@ -1541,7 +1542,7 @@ export default function Warehouse() {
                       </tr>
                     );
                   })}
-                  {sheet.length === 0 && <tr><td colSpan={10} className="muted" style={{ padding: 12 }}>{invLoading ? t("Загрузка ведомости…","Завантаження відомості…") : t("Нет товаров по этому фильтру.","Немає товарів за цим фільтром.")}</td></tr>}
+                  {sheet.length === 0 && <tr><td colSpan={11} className="muted" style={{ padding: 12 }}>{invLoading ? t("Загрузка ведомости…","Завантаження відомості…") : t("Нет товаров по этому фильтру.","Немає товарів за цим фільтром.")}</td></tr>}
                 </tbody>
               </table>
             </div>

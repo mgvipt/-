@@ -20,7 +20,8 @@ DAY_HOURS = 8
 # статтю вимкнено або видалено → ставка 0 (не нараховуємо) і попередження у вкладці «ЗП».
 WH_RATE_CODES = ("WH_RATE_KG", "WH_PACK_5", "WH_PACK_10", "WH_PACK_20", "WH_TINT_PCT", "WH_RATE_DAY", "bundle_assembly",
                  # 16.09.2026 (Олег): тест-набори — фіксовані суми за тонування + ціна доплати для клієнта
-                 "WH_KIT_TINT_CAT", "WH_KIT_TINT_IND", "KIT_TINT_PRICE_IND", "KIT_TINT_PRICE_RICH")
+                 "WH_KIT_TINT_CAT", "WH_KIT_TINT_IND", "KIT_TINT_PRICE_IND", "KIT_TINT_PRICE_RICH",
+                 "WH_WASHED_PCT", "WH_SAMPLE_SHEET")  # 16.09.2026: мите відро (% від закупки нового), викраски (₴ за аркуш А3)
 WH_RATE_TEXT = {  # code: (назва, якщо статті немає; одиниця; за що)
     "WH_RATE_KG": ("Відвантаження: ставка за кг", "₴/кг", "вага відвантаження: кілограми замовлення × ставка"),
     "WH_PACK_5": ("Упаковка до 5 кг", "₴/місце", "упаковка місця до 5 кг (якщо пакували самі)"),
@@ -38,6 +39,8 @@ WH_RATE_TEXT = {  # code: (назва, якщо статті немає; оди�
                            "доплата в угоді, коли клієнт просить свій колір (не з каталогу)"),
     "KIT_TINT_PRICE_RICH": ("Ціна клієнту: насичений колір набору", "₴/набір",
                             "доплата, коли колір насичений — підбір довший"),
+    "WH_WASHED_PCT": ("Мите відро", "%", "% від закупівельної ціни нового відра — за кожне мите відро, що поїхало до клієнта"),
+    "WH_SAMPLE_SHEET": ("Викраски", "₴/аркуш А3", "за кожен аркуш А3 викрасок (з аркуша — кілька викрасок)"),
 }
 
 
@@ -92,7 +95,7 @@ def rates_payload(user):
         r = lr[code]
         if code.startswith("KIT_TINT_PRICE"):
             continue  # 16.09.2026 (Олег): ціни доплати для клієнта складу не показуємо — лише те, що платимо складу
-        if code == "WH_RATE_DAY" and not r["active"]:
+        if code in ("WH_RATE_DAY", "WH_SAMPLE_SHEET") and not r["active"]:
             continue  # 15.09.2026 (Олег): ставка комірника — за табелем (блок «Ставка»); вимкнену ставку дня не показуємо
         name, unit, hint = WH_RATE_TEXT[code]
         items.append({"code": code, "id": r["id"], "name": r["name"] or name, "value": float(_rate(code, lr)),
@@ -275,6 +278,11 @@ def _job_dict(job, full=False):
         d["weightless_zero_total"] = bool(_wl) and _w <= 0
         d["photos"] = [{"id": p.id, "kind": p.kind, "url": "/api/warehouse/jobs/%d/photo/?id=%d" % (job.id, p.id)} for p in job.photos.all()]
         d["required_photos"] = [{"kind": k, "label": PHOTO_LABEL.get(k, k)} for k in _required_photo_kinds(job)]
+        try:
+            from .tare_samples import tare_lines
+            d["tare_lines"] = tare_lines(job)  # 16.09.2026: тара угоди, яку можна відправити митим відром
+        except Exception:
+            d["tare_lines"] = []
         d["needs"] = {k: v for k, v in (deal.qualification or {}).items() if k != "kits" and not str(k).startswith("_")}
         d["ref_photos"] = deal.ref_photos or []
         d["phone"] = ((deal.contact.phone if deal.contact_id else "") or "")
@@ -661,6 +669,11 @@ def _finalize(job, user, pay_packing=True):
     job.status = "shipped"; job.shipped_at = timezone.now(); job.save()
     from .services import realize_deal
     realize_deal(deal, user)  # спільне списання по собівартості + COGS, ідемпотентно (без подвійного списання)
+    try:
+        from .tare_samples import apply_washed_on_ship  # 16.09.2026: мите відро замість нового + оплата складу
+        apply_washed_on_ship(job, user)
+    except Exception:
+        pass
     if job.task_id:
         job.task.status = "done"; job.task.save(update_fields=["status"])
     return job
@@ -952,6 +965,7 @@ def award_idea(request, pk):
 def dashboard(request):
     """Зведення складу для керівника: по співробітниках + команда + онлайн/офлайн + період."""
     from django.contrib.auth import get_user_model
+    from .models import StockMovement
     from django.db.models import Sum
     since, until, period, label = _req_range(request)  # 15.09 (wh-day): один день / свій проміжок / останні N днів
     until_q = until or _FAR
@@ -959,7 +973,7 @@ def dashboard(request):
     emp_ids = set(WarehousePayrollEntry.objects.filter(work_date__gte=since, work_date__lte=until_q).values_list("employee_id", flat=True))
     emp_ids |= set(WarehouseJob.objects.filter(status="shipped", shipped_at__date__gte=since, shipped_at__date__lte=until_q, assignee__isnull=False).values_list("assignee_id", flat=True))
     OPS = ["workday", "shipment_weight", "packing", "tinting", "test_set", "kit_tint_cat", "kit_tint_ind",
-           "bonus_initiative", "error", "wrong_material"]
+           "washed_bucket", "samples", "bonus_initiative", "error", "wrong_material"]
     rows = []
     for uid in emp_ids:
         u = U.objects.filter(id=uid).first()
@@ -984,7 +998,12 @@ def dashboard(request):
                   "packed_manual": sum(1 for j in ship_l if j.packed), "np_container": sum(1 for j in ship_l if not j.packed),
                   "tint_service": int(sum(j.tintings_count or 0 for j in ship_l)),
                   "tint_base": float(sum((j.tintings_base or 0) for j in ship_l)),
-                  "test_sets": _cnt("test_set"), "kit_tint_cat": _cnt("kit_tint_cat"), "kit_tint_ind": _cnt("kit_tint_ind")}
+                  "test_sets": _cnt("test_set"), "kit_tint_cat": _cnt("kit_tint_cat"), "kit_tint_ind": _cnt("kit_tint_ind"),
+                  "washed_shipped": int(sum(sum(int(v) for v in ((j.done_snapshot or {}).get("washed_applied") or {}).values()) for j in ship_l)),
+                  "washed_made": int(sum(float(m.quantity) for m in StockMovement.objects.filter(
+                      document__kind="repack", document__number__startswith="МВ-", document__author_id=uid, quantity__gt=0,
+                      document__created_at__date__gte=since, document__created_at__date__lte=until_q))),
+                  "sample_sheets": _cnt("samples")}
         rows.append({"id": uid, "name": u.get_full_name() or u.username,
                      "shipments": ship.count(),
                      "weight": float(ship.aggregate(s=Sum("shipped_weight_kg"))["s"] or 0),

@@ -12,6 +12,7 @@ from apps.inbox import tiktok as tiktok_views
 from apps.tiktok_insights import views as tti_views
 from apps.warehouse import views as wh_views
 from apps.warehouse import wh_views as whv
+from apps.warehouse import tare_samples as wh_tare
 from apps.warehouse import shop_import_views
 from apps.warehouse.product_source import ProductReadCatalog, ProductFacts
 from apps.warehouse import shop_site
@@ -201,6 +202,9 @@ urlpatterns = [
     path("api/warehouse/jobs/<int:pk>/cancel/", whv.cancel_job),
     path("api/warehouse/jobs/<int:pk>/tinting/", whv.tinting),
     path("api/warehouse/jobs/<int:pk>/packing/", whv.packing),
+    path("api/warehouse/jobs/<int:pk>/washed/", wh_tare.job_washed),   # 16.09.2026: мите відро при відвантаженні
+    path("api/warehouse/washed/", wh_tare.washed),                     # 16.09.2026: мийка відер у «Фасування»
+    path("api/warehouse/samples/", wh_tare.samples),                   # 16.09.2026: викраски з А3
     path("api/warehouse/jobs/<int:pk>/photo/", whv.photo),
     path("api/warehouse/jobs/<int:pk>/ship/", whv.ship),
     path("api/warehouse/deal/<int:deal_id>/shipment/", whv.deal_shipment),

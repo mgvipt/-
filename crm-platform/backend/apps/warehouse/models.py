@@ -289,6 +289,7 @@ class WarehouseJob(models.Model):
     status = models.CharField(max_length=16, choices=STATUS, default="queued", db_index=True)
     is_shipment = models.BooleanField(default=True)
     tinted_kits = models.JSONField(default=list, blank=True)
+    washed_tare = models.JSONField(default=dict, blank=True)  # 16.09.2026: {id нової тари: скільки з неї — мите відро}
     tintings_count = models.PositiveIntegerField(default=0)
     tintings_base = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     shipped_weight_kg = models.DecimalField(max_digits=10, decimal_places=3, default=0)
@@ -316,7 +317,8 @@ class WarehousePayrollEntry(models.Model):
           ("bonus_initiative", "Бонус-ідея"), ("bonus_cleanliness", "Бонус-чистота"),
           ("test_set", "Збірка тестового набору"),
           ("kit_tint_cat", "Тонування набору: каталог"),      # 16.09.2026 (Олег): фіксована ставка за набір
-          ("kit_tint_ind", "Тонування набору: індивідуальне")]  # 14.09 (wh-accrual); міграція 0023 — лише choices
+          ("kit_tint_ind", "Тонування набору: індивідуальне"),
+          ("washed_bucket", "Мите відро"), ("samples", "Викраски")]  # 14.09 (wh-accrual); міграції 0023/0024/0026 — лише choices
     employee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="wh_payroll")
     work_date = models.DateField(db_index=True)
     job = models.ForeignKey(WarehouseJob, null=True, blank=True, on_delete=models.SET_NULL, related_name="payroll")
@@ -334,6 +336,30 @@ class WarehousePayrollEntry(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class WashedTare(models.Model):
+    """16.09.2026 (Олег): пара «нова тара → мите відро». Окремі картки — окремі залишки нової і митої тари."""
+    new = models.OneToOneField(Product, on_delete=models.CASCADE, related_name="washed_pair")
+    washed = models.OneToOneField(Product, on_delete=models.CASCADE, related_name="washed_of")
+    active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.new} → {self.washed}"
+
+
+class SampleRecipe(models.Model):
+    """16.09.2026 (Олег): викраски з аркуша А3 — що витрачається на 1 аркуш і скільки викрасок виходить.
+    НЕ комплектація товару: при продажу викраски матеріал удруге не списується."""
+    name = models.CharField(max_length=120)
+    target = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="sample_recipes")
+    per_sheet = models.PositiveSmallIntegerField(default=4)
+    lines = models.JSONField(default=list, blank=True, help_text='[{"product": id, "kg": 0.05}] на 1 аркуш А3')
+    paper = models.ForeignKey(Product, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
 
 
 class WarehousePhoto(models.Model):

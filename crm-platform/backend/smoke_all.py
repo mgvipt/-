@@ -34,6 +34,9 @@ CHECKS = [
     ("Склад: ставки (тест-набір, тонування набору)", "owner", "/api/warehouse/my-salary/", {200}, ["rates"]),
     # 16.09.2026 (Олег): звіт власника — кожне відвантаження з фото накладної/коробки/архіву тонування
     ("Склад: звіт відвантажень з фото", "owner", "/api/warehouse/dashboard/?period=week", {200}, ["rows", "shipments"]),
+    ("Склад: мите відро", "owner", "/api/warehouse/washed/", {200}, ["pairs"]),
+    ("Склад: викраски з А3", "owner", "/api/warehouse/samples/", {200}, ["recipes"]),
+    ("Інвентаризація: колонка повернень", "owner", "/api/warehouse/inventory-sheet/?page_size=5", {200}, ["rows"]),
     # ── базове ──
     ("Мій профіль (owner)", "owner", "/api/me/", {200}, []),
     ("Мій профіль (менеджер)", "manager", "/api/me/", {200}, []),

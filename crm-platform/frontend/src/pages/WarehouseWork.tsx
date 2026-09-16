@@ -499,6 +499,19 @@ function TaskCard({ t, jobId, onBack }: any) {
       <Step n="2" title={t("Пакування", "Пакування")} done={packDone} locked={!tintDone} hint={t("Сначала затонируй все наборы", "Спочатку затонуй усі набори")}>
         <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>{t("Вес считается сам.", "Вага рахується сама.")} {t("Вес", "Вага")}: <b>{j.weight_kg} кг</b></div>
         {(j.weightless || []).length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "6px 9px", marginBottom: 8 }}><Icon n="warn" size={14} /> {t("Без веса товаров", "Товарів без ваги")}: <b>{j.weightless.length}</b> — {t("оплата за кг/упаковку по ним не начислится", "оплата за кг/упаковку за них не нарахується")}</div>}
+        {(j.tare_lines || []).length > 0 && (
+          <div style={{ border: "1px solid #bae6fd", background: "#f0f9ff", borderRadius: 10, padding: "8px 10px", marginBottom: 10 }}>
+            <div style={{ fontWeight: 700, fontSize: 13.5 }}>🪣 {t("Тара: сколько из неё — мытое ведро?", "Тара: скільки з неї — мите відро?")}</div>
+            <div className="muted" style={{ fontSize: 11.5, margin: "2px 0 6px" }}>{t("Отметьте, если отправляете в помытом ведре — спишется мытое, а за каждое начислится оплата.", "Позначте, якщо відправляєте в помитому відрі — спишеться мите, а за кожне нарахується оплата.")}</div>
+            {j.tare_lines.map((x: any) => (
+              <div key={x.product_id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginTop: 4 }}>
+                <span style={{ flex: 1, minWidth: 0 }}>{x.name} × {x.qty}</span>
+                <select value={x.washed_qty} onChange={(e) => api.post<any>(`/api/warehouse/jobs/${jobId}/washed/`, { product: x.product_id, qty: Number(e.target.value) }).then(setJ).catch((er: any) => alert(er?.response?.data?.detail || t("Ошибка", "Помилка")))} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 6px" }}>
+                  {Array.from({ length: Math.min(x.qty, Math.max(x.washed_stock, x.washed_qty)) + 1 }, (_, i) => i).map((i) => <option key={i} value={i}>{i === 0 ? t("все новые", "усі нові") : t("мытых", "митих") + ": " + i}</option>)}
+                </select>
+                <span className="muted" style={{ fontSize: 11, whiteSpace: "nowrap" }}>{t("на складе", "на складі")} {x.washed_stock}</span>
+              </div>))}
+          </div>)}
         {/* 16.09.2026 (Олег): вибір одна під одною, з поясненням — щоб не плутали ручне пакування і контейнер НП */}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <button className="btn" onClick={() => setPacked(true)} style={{ width: "100%", minHeight: 56, textAlign: "left", padding: "8px 14px", background: (packDone && j.packed) ? C.green : "#f1f5f9", color: (packDone && j.packed) ? "#fff" : C.slate }}>
@@ -866,6 +879,8 @@ function ShipOwnerReport({ t, d }: any) {
             {line(t("Тонировка (услуга)", "Тонування (послуга)"), `${x.tint_service ?? 0} ${t("шт", "шт")} · ${t("база", "база")} ${f(x.tint_base || 0)} ₴`, r.by.tinting || 0)}
             {line(t("Сборка тест-наборов", "Збірка тест-наборів"), `${x.test_sets ?? 0} ${t("шт", "шт")}`, r.by.test_set || 0)}
             {line(t("Тонировка наборов: каталог / индивид.", "Тонування наборів: каталог / індивід."), `${x.kit_tint_cat ?? 0} / ${x.kit_tint_ind ?? 0}`, (r.by.kit_tint_cat || 0) + (r.by.kit_tint_ind || 0))}
+            {line(t("Мытые вёдра: помыли / уехали", "Миті відра: помили / поїхали"), `${x.washed_made ?? 0} / ${x.washed_shipped ?? 0}`, r.by.washed_bucket || 0)}
+            {line(t("Выкраски", "Викраски"), `${x.sample_sheets ?? 0} ${t("листов А3", "аркушів А3")}`, r.by.samples || 0)}
             {line(t("Ставка за день / бонусы", "Ставка за день / бонуси"), "", (r.by.workday || 0) + (r.by.bonus_initiative || 0))}
             {r.deductions ? line(t("Удержания", "Утримання"), "", -r.deductions) : null}
           </div>); })}
@@ -939,6 +954,74 @@ function ControlView({ t }: any) {
   );
 }
 
+// 16.09.2026 (Олег): мите відро — помили заводське відро → провели → воно на залишку окремою карткою.
+function WashedBlock({ t }: any) {
+  const [d, setD] = useState<any>(null);
+  const [pid, setPid] = useState<number>(0);
+  const [qty, setQty] = useState("1");
+  const [msg, setMsg] = useState("");
+  useEffect(() => { api.get<any>("/api/warehouse/washed/").then((r: any) => { setD(r); if (r.pairs && r.pairs[0]) setPid(r.pairs[0].new_id); }).catch(() => {}); }, []);
+  if (!d || !(d.pairs || []).length) return null;
+  const cur = d.pairs.find((x: any) => x.new_id === pid);
+  const post = () => api.post<any>("/api/warehouse/washed/", { product: pid, qty: Number(qty) }).then((r: any) => { setD(r); setMsg("✓ " + t("Проведено", "Проведено")); setQty("1"); }).catch((e: any) => setMsg(e?.response?.data?.detail || t("Ошибка", "Помилка")));
+  return (
+    <div className="panel" style={{ marginBottom: 12 }}>
+      <div style={{ fontWeight: 700, fontSize: 15 }}>🪣 {t("Мытое ведро", "Мите відро")}</div>
+      <div className="muted" style={{ fontSize: 12, margin: "4px 0 8px", lineHeight: 1.45 }}>{t("Помыли заводское ведро — проведите его здесь. Оплата", "Помили заводське відро — проведіть його тут. Оплата")} {d.pct}% {t("от закупки нового ведра начисляется, когда ведро уедет к клиенту (при отгрузке отметьте, что тара — мытое ведро).", "від закупки нового відра нараховується, коли відро поїде до клієнта (при відвантаженні позначте, що тара — мите відро).")}</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={pid} onChange={(e) => setPid(Number(e.target.value))} style={{ flex: "1 1 200px", height: 42, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }}>
+          {d.pairs.map((x: any) => <option key={x.new_id} value={x.new_id}>{x.new_name} — {t("мытых на складе", "митих на складі")} {x.washed_stock}</option>)}
+        </select>
+        <input type="number" min={1} step={1} value={qty} onChange={(e) => setQty(e.target.value)} style={{ width: 80, height: 42, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }} />
+        <button className="btn" style={{ height: 42, background: C.green, color: "#fff", fontWeight: 700 }} onClick={post}>{t("Провести", "Провести")}</button>
+      </div>
+      {cur && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t("За 1 ведро при отправке", "За 1 відро при відправці")}: <b>{f(cur.pay_per_bucket)} ₴</b></div>}
+      {msg && <div style={{ fontSize: 12.5, marginTop: 6 }}>{msg}</div>}
+    </div>
+  );
+}
+
+// 16.09.2026 (Олег): викраски з аркуша А3 — матеріал і аркуші списуються, викраски зʼявляються на залишку.
+function SamplesBlock({ t }: any) {
+  const [d, setD] = useState<any>(null);
+  const [rid, setRid] = useState<number>(0);
+  const [sheets, setSheets] = useState("1");
+  const [grams, setGrams] = useState<Record<number, string>>({});
+  const [msg, setMsg] = useState("");
+  const load = (keep?: boolean) => api.get<any>("/api/warehouse/samples/").then((r: any) => { setD(r); if (!keep && r.recipes && r.recipes[0]) setRid(r.recipes[0].id); }).catch(() => {});
+  useEffect(() => { load(); }, []);
+  if (!d || !(d.recipes || []).length) return null;
+  const r = d.recipes.find((x: any) => x.id === rid) || d.recipes[0];
+  const n = Math.max(0, Math.floor(Number(sheets) || 0));
+  const g = (l: any) => grams[l.product] ?? String(Math.round(l.kg * 1000));
+  const post = () => api.post<any>("/api/warehouse/samples/", { recipe: r.id, sheets: n, lines: r.lines.map((l: any) => ({ product: l.product, kg: Number(g(l)) / 1000 })) })
+    .then((x: any) => { setD(x); setMsg("✓ " + t("Проведено", "Проведено") + ": " + x.made.qty + " " + t("выкрасок", "викрасок")); setGrams({}); }).catch((e: any) => setMsg(e?.response?.data?.detail || t("Ошибка", "Помилка")));
+  return (
+    <div className="panel" style={{ marginBottom: 12 }}>
+      <div style={{ fontWeight: 700, fontSize: 15 }}>🎨 {t("Выкраски из А3", "Викраски з А3")}</div>
+      <div className="muted" style={{ fontSize: 12, margin: "4px 0 8px", lineHeight: 1.45 }}>{t("Выберите материал и сколько листов А3 сделали. Граммы на 1 лист можно поправить. Материал и бумага спишутся, выкраски появятся на остатке.", "Оберіть матеріал і скільки аркушів А3 зробили. Грами на 1 аркуш можна поправити. Матеріал і папір спишуться, викраски зʼявляться на залишку.")}{d.rate_sheet ? " " + t("Оплата", "Оплата") + `: ${f(d.rate_sheet)} ₴ ` + t("за лист", "за аркуш") + "." : ""}</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={r.id} onChange={(e) => { setRid(Number(e.target.value)); setGrams({}); }} style={{ flex: "1 1 200px", height: 42, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }}>
+          {d.recipes.map((x: any) => <option key={x.id} value={x.id}>{x.name} — {t("на складе", "на складі")} {x.target_stock}</option>)}
+        </select>
+        <input type="number" min={1} step={1} value={sheets} onChange={(e) => setSheets(e.target.value)} style={{ width: 80, height: 42, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }} title={t("Листов А3", "Аркушів А3")} />
+        <span className="muted" style={{ fontSize: 12.5 }}>{t("листов", "аркушів")} → <b>{n * r.per_sheet}</b> {t("выкрасок", "викрасок")}</span>
+      </div>
+      <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+        {r.lines.map((l: any) => (
+          <div key={l.product} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+            <span style={{ flex: 1, minWidth: 0 }}>{l.name}</span>
+            <input type="number" min={0} value={g(l)} onChange={(e) => setGrams({ ...grams, [l.product]: e.target.value })} style={{ width: 70, height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
+            <span className="muted" style={{ whiteSpace: "nowrap" }}>{t("г на лист", "г на аркуш")} · {t("всего", "всього")} {Math.round(Number(g(l)) * n)} г</span>
+          </div>))}
+        {r.paper && <div className="muted" style={{ fontSize: 12.5 }}>{r.paper.name}: {n} {t("шт", "шт")}</div>}
+      </div>
+      <button className="btn" disabled={!n} style={{ marginTop: 10, height: 42, width: "100%", background: n ? C.green : "#cbd5e1", color: "#fff", fontWeight: 700 }} onClick={post}>{t("Провести выкраски", "Провести викраски")}</button>
+      {msg && <div style={{ fontSize: 12.5, marginTop: 6 }}>{msg}</div>}
+    </div>
+  );
+}
+
 // ── Кабінет складу: форма розливу + список останніх розливів/списань (з відміною/видаленням) ──
 function RepackPage({ t }: { t: any }) {
   const [docs, setDocs] = useState<any[]>([]);
@@ -957,6 +1040,8 @@ function RepackPage({ t }: { t: any }) {
   };
   return (
     <div style={{ maxWidth: 720 }}>
+      <WashedBlock t={t} />
+      <SamplesBlock t={t} />
       <RepackForm onDone={load} />
       <div style={{ marginTop: 18 }}>
         <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>{t("Последние розливы и списания", "Останні розливи та списання")}</div>
