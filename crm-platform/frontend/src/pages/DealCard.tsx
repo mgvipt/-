@@ -1241,16 +1241,16 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                             <span onClick={(e) => { e.stopPropagation(); setEditProdItem(it.id); setEpq(""); setEpr([]); }} title={t("Удалить и выбрать другой", "Видалити й обрати інший")} style={{ color: "#94a3b8", cursor: "pointer", fontSize: 13, flexShrink: 0, fontWeight: 700, lineHeight: 1 }}>✕</span>
                           </div>
                         )}
-                        {it.is_kit ? (
+                        {(it.is_kit || (it as any).is_sample) && ((it as any).tint_options || []).length ? (
                           <div style={{ marginTop: 3, display: "flex", alignItems: "center", gap: 4, fontSize: 11, flexWrap: "wrap" }}>
                             <span className="muted">{t("Тонировка:", "Тонування:")}</span>
+                            {/* 17.09.2026 (Олег): варіанти й ціни — з сервера (Налаштування → Ставки): набір — каталог / +150 / насичений від 200; викраска — 150 / +100 (разом 250) */}
                             <select value={it.tint_mode || ""} onChange={(e) => setItemTint(it.id, e.target.value)}
-                              title={t("Цвет из каталога уже входит в цену набора. Индивидуальный и насыщенный — доплата отдельной строкой","Колір з каталогу вже входить у ціну набору. Індивідуальний і насичений — доплата окремим рядком")}
-                              style={{ height: 22, border: "1px solid #cbd5e1", borderRadius: 5, fontSize: 11, background: "#fff", color: it.tint_mode ? "#7c3aed" : "#64748b", fontWeight: it.tint_mode ? 700 : 400, maxWidth: 220 }}>
-                              <option value="">{it.tint_catalog ? t("по каталогу (в цене набора)", "за каталогом (у ціні набору)") : t("без тонировки / по каталогу", "без тонування / за каталогом")}</option>
-                              <option value="ind">{t("индивидуальный (доплата клиента)", "індивідуальний (доплата клієнта)")}</option>
-                              <option value="rich">{t("индивидуальный насыщенный (доплата клиента)", "індивідуальний насичений (доплата клієнта)")}</option>
+                              title={((it as any).tint_options || []).map((o: any) => o.hint).filter(Boolean).join(" ") || t("Цвет из каталога — в цене. Индивидуальный — доплата отдельной строкой","Колір з каталогу — у ціні. Індивідуальний — доплата окремим рядком")}
+                              style={{ height: 22, border: "1px solid #cbd5e1", borderRadius: 5, fontSize: 11, background: "#fff", color: it.tint_mode ? "#7c3aed" : "#64748b", fontWeight: it.tint_mode ? 700 : 400, maxWidth: 260 }}>
+                              {((it as any).tint_options || []).map((o: any) => <option key={o.mode} value={o.mode}>{o.label}</option>)}
                             </select>
+                            {it.tint_mode === "rich" ? <span style={{ color: "#7c3aed" }} title={((it as any).tint_options || []).find((o: any) => o.mode === "rich")?.hint || ""}>ⓘ {t("насыщенный — от 20 мл колоранта на 250 г; сумму доплаты можно поднять в строке","насичений — від 20 мл колоранту на 250 г; суму доплати можна підняти в рядку")}</span> : null}
                           </div>
                         ) : null}
                         {String(it.tint_mode || "").startsWith("auto") ? (

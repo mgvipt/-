@@ -1630,9 +1630,12 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         mode = str(request.data.get("mode") or "")
         if mode not in ("",) + kit_tint.MODES:
             return Response({"detail": "Невідомий режим тонування"}, status=status.HTTP_400_BAD_REQUEST)
-        it = DealItem.objects.filter(deal=deal, pk=request.data.get("item")).first()
+        it = DealItem.objects.filter(deal=deal, pk=request.data.get("item")).select_related("product").first()
         if not it:
             return Response({"detail": "Позицію не знайдено"}, status=status.HTTP_404_NOT_FOUND)
+        # 17.09.2026: викраска — лише «каталог / індивідуальний»; тест-набір — «каталог / індивідуальний / насичений»
+        if mode and not any(o["mode"] == mode for o in kit_tint.options(it)):
+            return Response({"detail": "Для цього товару такий вибір тонування недоступний"}, status=status.HTTP_400_BAD_REQUEST)
         if str(it.tint_mode or "").startswith("auto"):
             return Response({"detail": "Цей рядок CRM веде сама — знімати галочку треба на самому наборі."},
                             status=status.HTTP_400_BAD_REQUEST)

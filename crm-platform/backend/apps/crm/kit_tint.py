@@ -1,28 +1,77 @@
-"""Тонування тест-наборів (16.09.2026, Олег).
+"""Тонування тест-наборів і викрасок (16.09.2026, оновлено 17.09.2026 — Олег).
 
-Галочка на рядку тест-набору в угоді:
+Вибір на рядку ТЕСТ-НАБОРУ в угоді:
   порожньо  — колір з каталогу (він уже входить у ціну картки «з тонуванням»);
-  ind       — індивідуальний колір, доплата клієнту KIT_TINT_PRICE_IND;
-  rich      — насичений колір (довгий підбір), доплата KIT_TINT_PRICE_RICH.
-Доплата стає ОКРЕМИМ рядком «Послуга тонування» в угоді (позначка tint_mode = auto_ind / auto_rich),
-щоб гроші йшли звичним шляхом: сума угоди, маржа, реалізація. Цей рядок веде CRM — руками не чіпаємо.
-Складу за таке тонування платимо фіксовану ставку за набір (wh_views), а не 20% від рядка.
+  ind       — індивідуальний колір, доплата клієнту KIT_TINT_PRICE_IND (150 ₴);
+  rich      — індивідуальний НАСИЧЕНИЙ колір, доплата KIT_TINT_PRICE_RICH (від 200 ₴).
+Вибір на рядку ВИКРАСКИ (викраски готуються вручну під клієнта завжди):
+  порожньо  — колір з каталогу, ціна картки (150 ₴);
+  s_ind     — індивідуальний колір, доплата SAMPLE_TINT_PRICE_IND (100 ₴ → разом 250 ₴).
+Доплата стає ОКРЕМИМ рядком «Послуга тонування» (tint_mode = auto_ind / auto_rich / auto_s_ind),
+щоб гроші йшли звичним шляхом: сума угоди, маржа, реалізація. Кількість рядка CRM веде сама; ціну рядка
+менеджер може підняти вручну (насичений колір «від 200 ₴») — CRM її більше не перезаписує.
+Складу за тонування набору платимо фіксовану ставку за набір (wh_views), а не 20% від рядка.
+
+НАСИЧЕНИЙ КОЛІР (для менеджерів): рецепт колеровки від 20 мл колоранту на 250 г матеріалу — темні й яскраві
+кольори (графіт, шоколад, темно-синій, смарагдовий, бордо, насичений теракотовий) або колір, який підбирають
+кількома колорантами «в око» за зразком клієнта в кілька підходів. Сумніваєтесь — питайте склад: там видно рецепт.
 """
 from decimal import Decimal
 
-MODES = ("ind", "rich")
-PRICE_CODE = {"ind": "KIT_TINT_PRICE_IND", "rich": "KIT_TINT_PRICE_RICH"}
-LABEL = {"ind": "індивідуальний колір", "rich": "насичений колір"}
+KIT_MODES = ("ind", "rich")
+SAMPLE_MODES = ("s_ind",)
+MODES = KIT_MODES + SAMPLE_MODES
+PRICE_CODE = {"ind": "KIT_TINT_PRICE_IND", "rich": "KIT_TINT_PRICE_RICH", "s_ind": "SAMPLE_TINT_PRICE_IND"}
+LABEL = {"ind": "індивідуальний колір", "rich": "індивідуальний насичений колір", "s_ind": "індивідуальний колір викраски"}
+RICH_HINT = ("Насичений — від 20 мл колоранту на 250 г матеріалу: темні й яскраві кольори (графіт, шоколад, темно-синій, "
+             "смарагд, бордо) або підбір кількома колорантами за зразком клієнта.")
+
+
+def is_kit_product(product):
+    low = ((product.name if product else "") or "").lower()
+    return bool(product) and ("тестов" in low or "набір" in low or "набор" in low)
+
+
+def is_sample_product(product):
+    low = ((product.name if product else "") or "").lower()
+    return bool(product) and ("викраск" in low or "выкраск" in low)
+
+
+def prices():
+    """Ціни доплат для клієнта — живі цифри з Налаштування → Ставки співробітників (Фінмодель), одним запитом."""
+    from apps.finance.models import FinModelArticle
+    out = {m: Decimal("0") for m in MODES}
+    for a in FinModelArticle.objects.filter(code__in=list(PRICE_CODE.values()), active=True).order_by("-id"):
+        for m, code in PRICE_CODE.items():
+            if a.code == code:
+                try:
+                    out[m] = Decimal(str(a.value or 0))
+                except Exception:
+                    pass
+    return out
 
 
 def price(mode):
-    """Ціна доплати для клієнта — жива цифра з Налаштування → Ставки співробітників (Фінмодель)."""
-    from apps.finance.models import FinModelArticle
-    a = FinModelArticle.objects.filter(code=PRICE_CODE.get(mode, ""), active=True).order_by("id").first()
-    try:
-        return Decimal(str(a.value or 0)) if a else Decimal("0")
-    except Exception:
-        return Decimal("0")
+    return prices().get(mode, Decimal("0"))
+
+
+def options(item, pr=None):
+    """Варіанти для випадайки на рядку угоди: [{"mode", "label"}] або [] (не набір і не викраска)."""
+    p = item.product if item.product_id else None
+    if p is None or str(item.tint_mode or "").startswith("auto"):
+        return []
+    pr = pr if pr is not None else prices()
+    f = lambda x: ("%g" % float(x or 0))
+    if is_sample_product(p):
+        base = Decimal(item.price or p.price or 0)
+        return [{"mode": "", "label": "колір за каталогом (%s ₴)" % f(base)},
+                {"mode": "s_ind", "label": "індивідуальний колір (+%s ₴, разом %s ₴)" % (f(pr["s_ind"]), f(base + pr["s_ind"]))}]
+    if is_kit_product(p):
+        cat = bool(getattr(p, "shop_is_tinted", False))
+        return [{"mode": "", "label": "за каталогом (у ціні набору)" if cat else "без тонування / за каталогом"},
+                {"mode": "ind", "label": "індивідуальний (+%s ₴)" % f(pr["ind"])},
+                {"mode": "rich", "label": "індивідуальний насичений (від %s ₴)" % f(pr["rich"]), "hint": RICH_HINT}]
+    return []
 
 
 def service_product():
@@ -31,7 +80,7 @@ def service_product():
 
 
 def sync_lines(deal):
-    """Привести рядки-доплати у відповідність до галочок на наборах. Повертає True, якщо щось змінилось."""
+    """Привести рядки-доплати у відповідність до вибору на наборах/викрасках. Повертає True, якщо щось змінилось."""
     from .models import DealItem
     svc = service_product()
     changed = False
@@ -40,6 +89,7 @@ def sync_lines(deal):
         m = str(it.tint_mode or "")
         if m in MODES:
             want[m] = want.get(m, Decimal("0")) + (it.quantity or Decimal("0"))
+    pr = None
     for mode in MODES:
         auto = "auto_" + mode
         line = deal.items.filter(tint_mode=auto).first()
@@ -48,12 +98,14 @@ def sync_lines(deal):
             if line is not None:
                 line.delete(); changed = True
             continue
-        p = price(mode)
         if line is None:
-            DealItem.objects.create(deal=deal, product=svc, quantity=qty, price=p, cost=Decimal("0"), tint_mode=auto)
+            pr = pr or prices()
+            DealItem.objects.create(deal=deal, product=svc, quantity=qty, price=pr[mode], cost=Decimal("0"), tint_mode=auto)
             changed = True
-        elif line.quantity != qty or line.price != p:
-            line.quantity = qty; line.price = p
-            line.save(update_fields=["quantity", "price"])
+        elif line.quantity != qty:
+            # 17.09.2026: ціну не перезаписуємо — менеджер міг поставити більшу (насичений «від 200 ₴»),
+            # а нова ставка в налаштуваннях не має міняти вже озвучену клієнту суму
+            line.quantity = qty
+            line.save(update_fields=["quantity"])
             changed = True
     return changed

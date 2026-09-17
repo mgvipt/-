@@ -126,6 +126,9 @@ CHECKS = [
     ("Біржа задач: усі задачі — менеджеру без права закрито", "manager", "/api/bounty/claims/?scope=all", {403}, []),
     ("Біржа задач: підсумки місяця (власник)", "owner", "/api/bounty/summary/", {200}, ["people", "categories", "fund"]),
     ("Ставки співробітників (власник)", "owner", "/api/payroll/schemes/", {200}, ["schemes"]),
+    # 17.09.2026 (Олег): ціни тонування наборів/викрасок у ставках складу; продажі з сайтів — онлайн у ЗП
+    ("Ставки: ціни тонування наборів і викрасок", "owner", "/api/payroll/schemes/", {200}, ["warehouse_rates"]),
+    ("Угода: варіанти тонування рядків", "owner", "DEAL_DETAIL", {200}, ["items"]),
     ("Ставки співробітників (менеджер — ні)", "manager", "/api/payroll/schemes/", {403}, []),
     ("ЗП за ставками", "owner", "/api/payroll/calc/?period=2026-08", {200}, ["rows"]),
     ("Точка беззбитковості: розшифровка фондів, ФОТ, вакансії", "owner", "/api/payroll/breakeven/", {200}, ["breakeven", "levels", "fot", "vacancies", "breakeven_with"]),

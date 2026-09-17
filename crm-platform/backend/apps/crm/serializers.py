@@ -11,6 +11,8 @@ class DealItemSerializer(serializers.ModelSerializer):
     total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     is_kit = serializers.SerializerMethodField()
     tint_catalog = serializers.SerializerMethodField()
+    is_sample = serializers.SerializerMethodField()
+    tint_options = serializers.SerializerMethodField()
 
     def get_consumption(self, obj):
         """Витрата товару на 1 м² (щоб у сделці було видно, чому кількість не рахується)."""
@@ -36,6 +38,23 @@ class DealItemSerializer(serializers.ModelSerializer):
         low = (obj.product.name or "").lower()
         return ("тестов" in low) or ("набір" in low) or ("набор" in low)
 
+    def get_is_sample(self, obj):
+        """17.09.2026: рядок — викраска (вибір «за каталогом / індивідуальний»)."""
+        from .kit_tint import is_sample_product
+        return is_sample_product(obj.product) if obj.product_id else False
+
+    def get_tint_options(self, obj):
+        """Варіанти тонування з живими цінами (набір: каталог / +150 / від 200; викраска: 150 / +100)."""
+        from . import kit_tint
+        if not obj.product_id:
+            return []
+        pr = self.context.get("_tint_prices") if isinstance(self.context, dict) else None
+        if pr is None:
+            pr = kit_tint.prices()
+            if isinstance(self.context, dict):
+                self.context["_tint_prices"] = pr
+        return kit_tint.options(obj, pr)
+
     def get_tint_catalog(self, obj):
         """У картці набору стоїть «Тонований» — колір з каталогу вже входить у ціну."""
         return bool(getattr(obj.product, "shop_is_tinted", False)) if obj.product_id else False
@@ -48,7 +67,7 @@ class DealItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DealItem
-        fields = ["consumption", "room", "room_name", "unit", "id", "deal", "product", "custom_name", "product_name", "product_stock", "quantity", "price", "cost", "discount_pct", "discount_amount", "discount_sum", "total", "reserved", "tint_mode", "is_kit", "tint_catalog"]
+        fields = ["consumption", "room", "room_name", "unit", "id", "deal", "product", "custom_name", "product_name", "product_stock", "quantity", "price", "cost", "discount_pct", "discount_amount", "discount_sum", "total", "reserved", "tint_mode", "is_kit", "tint_catalog", "is_sample", "tint_options"]
         read_only_fields = ["deal"]
 
 
