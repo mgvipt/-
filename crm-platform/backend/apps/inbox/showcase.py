@@ -166,6 +166,8 @@ h1{font-size:22px;margin:4px 0 6px;line-height:1.25}p.lead{color:var(--muted);ma
 .card .s{padding:0 10px 9px;font-size:12px;color:var(--muted)}
 .big img,.big video{width:100%%;border-radius:12px;border:1px solid var(--line);display:block;background:#eef2f7}
 .row{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px}
+.vids{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:12px}
+.vids video{max-height:70vh;max-width:100%%;width:auto;border-radius:12px;background:#0f172a;display:block}
 .note{background:#eef5fc;border-radius:10px;padding:10px 12px;font-size:14px;color:#1e3a5f;margin:14px 0}
 .foot{color:var(--muted);font-size:13px;margin-top:28px;text-align:center}
 .pick{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin:16px 0}
@@ -298,8 +300,9 @@ class ShowcaseColorView(APIView):
                                      'style="width:100%%;border-radius:12px;border:1px solid var(--line)"></a>'
                                      % (escape(file_url(p)), escape(file_url(p)), escape(file_url(p))) for p in photos))
         if videos:
-            body += '<h2 style="font-size:17px;margin:18px 0 6px">Відео</h2><div class="row">%s</div>' % "".join(
-                '<video controls preload="metadata" src="%s"></video>' % escape(file_url(v)) for v in videos)
+            # 18.09.2026 (Олег): вертикальне відео не розтягуємо на всю ширину — інакше півекрана порожнечі
+            body += '<h2 style="font-size:17px;margin:18px 0 6px">Відео</h2><div class="vids">%s</div>' % "".join(
+                '<video controls playsinline preload="metadata" src="%s"></video>' % escape(file_url(v)) for v in videos)
         # 17.09.2026 (Олег): «щоб клієнт кнопкою обирав колір і потрапляв у чат з менеджером»
         w = words(m["name"])
         msg = ("Обрав модель %s · %s. Порахуйте, будь ласка." % (m["name"], code) if is_model(m["name"])

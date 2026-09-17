@@ -22,9 +22,22 @@ from datetime import timedelta
 from django.core.cache import cache
 from django.utils import timezone
 
-MAX_PER_DAY = 15
+MAX_PER_DAY = 15          # запасні значення, якщо налаштування AI ЦЕНТРУ недоступні
+SILENCE_HOURS = 12
 MIN_SECONDS = 20
 NOTE_PREFIX = "ІІ у каналі"
+
+
+def _limits():
+    """Налаштування з AI ЦЕНТРУ (База знань → Команда агентів): пауза після менеджера і ліміт на добу."""
+    try:
+        from apps.knowledge.models import KnowledgeSettings
+        row = KnowledgeSettings.objects.filter(id=1).values("ai_silence_hours", "ai_max_per_day").first()
+        if row:
+            return int(row["ai_silence_hours"]), int(row["ai_max_per_day"])
+    except Exception:
+        pass
+    return SILENCE_HOURS, MAX_PER_DAY
 
 
 def channel_on(channel):
@@ -39,15 +52,18 @@ def _allowed_chat(channel, conv):
     return str(conv.external_chat_id) in {str(x) for x in only}
 
 
-def _manager_active(conv):
+def _manager_active(conv, hours):
+    """Менеджер веде цей чат: призначений або писав клієнту за останні N годин (N — з AI ЦЕНТРУ)."""
     from .models import Message
     if conv.assigned_to_id:
         return True
+    if hours <= 0:
+        return False
     return Message.objects.filter(conversation=conv, direction="out", sender__isnull=False,
-                                  created_at__gte=timezone.now() - timedelta(hours=12)).exists()
+                                  created_at__gte=timezone.now() - timedelta(hours=hours)).exists()
 
 
-def _throttled(conv):
+def _throttled(conv, max_per_day):
     from .models import Message
     key = "ai_reply_%s" % conv.id
     if not cache.add(key, 1, MIN_SECONDS):
@@ -55,7 +71,7 @@ def _throttled(conv):
     day = Message.objects.filter(conversation=conv, direction="out", internal=False,
                                  sender_name__startswith=NOTE_PREFIX,
                                  created_at__gte=timezone.now() - timedelta(days=1)).count()
-    return day >= MAX_PER_DAY
+    return day >= max_per_day
 
 
 def should_reply(conv, incoming):
@@ -69,9 +85,10 @@ def should_reply(conv, incoming):
         return False
     if conv.status != "open" or str(conv.external_chat_id or "").startswith("comment:"):
         return False
-    if _manager_active(conv):
+    hours, max_per_day = _limits()
+    if _manager_active(conv, hours):
         return False
-    return not _throttled(conv)
+    return not _throttled(conv, max_per_day)
 
 
 def _note(conv, text):

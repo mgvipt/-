@@ -12,9 +12,12 @@ export type Run = {
   total: number; done: number; est_cost_usd: number; cost_usd: number; result: Record<string, any>; error: string;
   created_by_name: string; created_at: string; finished_at: string | null; backup_count: number;
 };
+export type ChannelAi = { id: number; name: string; kind: string; dialogs30: number; ai_reply: boolean; only_chats: string[]; chatplace: boolean };
 export type WebSettings = {
   webchat_ai_enabled: boolean; webchat_model: string; webchat_items: number; reviewer_models: string[];
   webchat_estimate?: { model: string; per_reply_usd: number; models: string[] };
+  // 17.09.2026 (Олег): усі налаштування ІІ — тут, в AI ЦЕНТРІ
+  ai_silence_hours?: number; ai_max_per_day?: number; channels?: ChannelAi[];
 };
 
 const card: React.CSSProperties = { border: "1px solid #eef2f7", borderRadius: 10, padding: "10px 12px", background: "#fff" };
@@ -415,6 +418,82 @@ export function PublishPanel({ isOwner }: { isOwner: boolean }) {
 }
 
 /* ───────────────────────── ІІ у веб-чаті ───────────────────────── */
+
+export function ChannelsAiCard({ s, isOwner, onSaved }: { s: WebSettings; isOwner: boolean; onSaved: (s: WebSettings) => void }) {
+  /* 17.09.2026 (Олег): «ІІ має працювати як Юля: якщо менеджер написав — агент у цьому чаті мовчить,
+     і час цієї паузи налаштовується в AI ЦЕНТРІ». Тут же вмикаємо ІІ по кожному каналу. */
+  const [busy, setBusy] = useState(false);
+  const [hours, setHours] = useState<number>(s.ai_silence_hours ?? 12);
+  const [perDay, setPerDay] = useState<number>(s.ai_max_per_day ?? 15);
+  const [edit, setEdit] = useState<number | null>(null);
+  const [chats, setChats] = useState("");
+  const channels = s.channels || [];
+  async function patch(body: Record<string, unknown>) {
+    setBusy(true);
+    try { onSaved(await api.patch<WebSettings>(`/api/knowledge/settings/`, body)); } catch (e) { window.alert(errText(e)); } finally { setBusy(false); }
+  }
+  function toggle(c: ChannelAi, on: boolean) {
+    if (on && !window.confirm(`Увімкнути відповіді ІІ у каналі «${c.name}»?\n` +
+      `Клієнтам почне відповідати ІІ з ${s.webchat_items} затверджених записів бази знань. Якщо менеджер уже пише в чаті — ІІ мовчить ${hours} год.\n` +
+      `Спершу краще вказати «лише ці чати» і перевірити на своєму номері.`)) return;
+    patch({ channel: c.id, ai_reply: on });
+  }
+  const th: React.CSSProperties = { textAlign: "left", padding: "6px 8px", fontSize: 12, color: "#475569", borderBottom: "1px solid #e2e8f0" };
+  const td: React.CSSProperties = { padding: "6px 8px", fontSize: 12.5, borderBottom: "1px solid #f1f5f9", verticalAlign: "middle" };
+  const on = channels.filter((c) => c.ai_reply).length;
+  return (
+    <div style={{ ...card, marginTop: 12, borderLeft: `4px solid ${on ? "#10b981" : "#94a3b8"}` }}>
+      <b>ІІ відповідає у каналах</b> — зараз увімкнено в <b>{on}</b> з {channels.length}.
+      <div style={{ fontSize: 12.5, color: "#475569", margin: "4px 0 8px" }}>
+        Працює як Юля: відповідає з <b>затверджених</b> записів бази знань і цін каталогу; замовлення, оплата чи сумнів — «передала менеджеру».
+        <b> Якщо менеджер написав клієнту — ІІ в цьому чаті мовчить</b> (час нижче). Instagram і TikTok веде Юля в ChatPlace — їх тут вмикати не треба.
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+        <label style={{ fontSize: 12.5 }}>Пауза після менеджера, годин:&nbsp;
+          <input type="number" min={0} max={168} value={hours} disabled={!isOwner || busy}
+            onChange={(e) => setHours(Number(e.target.value))} style={{ ...inp, width: 80 }} /></label>
+        <label style={{ fontSize: 12.5 }}>Відповідей на добу в чаті:&nbsp;
+          <input type="number" min={1} max={100} value={perDay} disabled={!isOwner || busy}
+            onChange={(e) => setPerDay(Number(e.target.value))} style={{ ...inp, width: 80 }} /></label>
+        {isOwner && <button className="btn btn-light" disabled={busy} onClick={() => patch({ ai_silence_hours: hours, ai_max_per_day: perDay })}>Зберегти</button>}
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr><th style={th}>Канал</th><th style={th}>Діалогів за 30 днів</th><th style={th}>ІІ відповідає</th><th style={th}>Лише ці чати (перевірка)</th></tr></thead>
+          <tbody>{channels.map((c) => (
+            <tr key={c.id}>
+              <td style={{ ...td, fontWeight: 600 }}>{c.name} <span style={{ color: "#94a3b8", fontWeight: 400 }}>{c.kind}</span></td>
+              <td style={td}>{c.dialogs30}</td>
+              <td style={td}>
+                <button className={c.ai_reply ? "btn btn-primary" : "btn btn-light"} disabled={!isOwner || busy}
+                  style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => toggle(c, !c.ai_reply)}>
+                  {c.ai_reply ? "увімкнено" : "вимкнено"}</button>
+              </td>
+              <td style={td}>
+                {edit === c.id ? (
+                  <span style={{ display: "inline-flex", gap: 6 }}>
+                    <input value={chats} onChange={(e) => setChats(e.target.value)} placeholder="380971112233, 380980001122"
+                      style={{ ...inp, width: 240 }} />
+                    <button className="btn btn-primary" disabled={busy} style={{ padding: "3px 10px", fontSize: 12 }}
+                      onClick={() => { patch({ channel: c.id, only_chats: chats }); setEdit(null); }}>OK</button>
+                    <button className="btn btn-light" style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => setEdit(null)}>×</button>
+                  </span>
+                ) : (
+                  <span>
+                    {c.only_chats.length ? c.only_chats.join(", ") : <span style={{ color: "#94a3b8" }}>усі чати каналу</span>}
+                    {isOwner && <button className="btn btn-light" style={{ padding: "2px 8px", fontSize: 11.5, marginLeft: 6 }}
+                      onClick={() => { setEdit(c.id); setChats(c.only_chats.join(", ")); }}>змінити</button>}
+                  </span>
+                )}
+              </td>
+            </tr>))}
+          </tbody>
+        </table>
+      </div>
+      {!isOwner && <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 6 }}>Вмикає лише власник.</div>}
+    </div>
+  );
+}
 
 export function WebchatCard({ s, isOwner, onSaved }: { s: WebSettings; isOwner: boolean; onSaved: (s: WebSettings) => void }) {
   const [busy, setBusy] = useState(false);

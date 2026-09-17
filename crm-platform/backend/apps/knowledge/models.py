@@ -134,6 +134,11 @@ class KnowledgeSettings(models.Model):
     # 14.09 (ai-kb2): веб-чат на сайті відповідає з бази знань. ВИМКНЕНО, вмикає лише власник.
     webchat_ai_enabled = models.BooleanField(default=False, help_text="ІІ відповідає у веб-чаті (лише затверджене «Сайт»)")
     webchat_model = models.CharField(max_length=40, default="claude-haiku-4-5")
+    # 17.09.2026 (Олег): ІІ у каналах CRM (Viber, Telegram, WhatsApp, Facebook) — налаштування тут, в AI ЦЕНТРІ.
+    ai_silence_hours = models.PositiveSmallIntegerField(default=12,
+        help_text="Скільки годин ІІ мовчить у чаті після повідомлення менеджера")
+    ai_max_per_day = models.PositiveSmallIntegerField(default=15,
+        help_text="Скільки відповідей ІІ може дати в одному чаті за добу")
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
                                    related_name="+")
     updated_at = models.DateTimeField(auto_now=True)

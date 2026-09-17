@@ -250,7 +250,30 @@ def settings_dict(cfg):
             "reviewer_sample": cfg.reviewer_sample, "reviewer_models": REVIEWER_MODELS,
             "controller_scheduled": False, "webchat_ai_enabled": cfg.webchat_ai_enabled,
             "webchat_model": cfg.webchat_model, "webchat_items": len(approved_for("yulia_web")),
-            "webchat_estimate": webchat_estimate()}
+            "webchat_estimate": webchat_estimate(),
+            # 17.09.2026 (Олег): ІІ у каналах — вмикач по кожному каналу і пауза після менеджера, усе тут
+            "ai_silence_hours": cfg.ai_silence_hours, "ai_max_per_day": cfg.ai_max_per_day,
+            "channels": channels_ai()}
+
+
+def channels_ai():
+    """Канали CRM: чи відповідає в них ІІ, для яких чатів і скільки там клієнтів за 30 днів."""
+    import datetime
+    from django.db.models import Count, Q
+    from django.utils import timezone as _tz
+    from apps.inbox.models import Channel
+    since = _tz.now() - datetime.timedelta(days=30)
+    rows = (Channel.objects.filter(is_active=True)
+            .annotate(dialogs=Count("conversations", filter=Q(conversations__last_message_at__gte=since), distinct=True))
+            .order_by("kind", "name"))
+    out = []
+    for ch in rows:
+        cfg = ch.config or {}
+        out.append({"id": ch.id, "name": ch.name, "kind": ch.kind, "dialogs30": ch.dialogs,
+                    "ai_reply": bool(cfg.get("ai_reply")),
+                    "only_chats": [str(x) for x in (cfg.get("ai_reply_only_chats") or [])],
+                    "chatplace": bool(cfg.get("chatplace"))})
+    return out
 
 
 class MetaView(APIView):
@@ -342,6 +365,31 @@ class SettingsView(APIView):
             if d.get("webchat_model") not in REVIEWER_MODELS:
                 return Response({"detail": "Модель: " + ", ".join(REVIEWER_MODELS)}, status=400)
             cfg.webchat_model = d["webchat_model"]
+        if "ai_silence_hours" in d:      # 17.09.2026: пауза ІІ після повідомлення менеджера
+            try:
+                cfg.ai_silence_hours = max(0, min(168, int(d.get("ai_silence_hours"))))
+            except (TypeError, ValueError):
+                return Response({"detail": "Години — число 0–168"}, status=400)
+        if "ai_max_per_day" in d:
+            try:
+                cfg.ai_max_per_day = max(1, min(100, int(d.get("ai_max_per_day"))))
+            except (TypeError, ValueError):
+                return Response({"detail": "Відповідей на добу — число 1–100"}, status=400)
+        if "channel" in d:               # вмикач ІІ у конкретному каналі (+ перелік чатів для перевірки)
+            from apps.inbox.models import Channel
+            ch = Channel.objects.filter(id=d.get("channel")).first()
+            if not ch:
+                return Response({"detail": "Канал не знайдено"}, status=404)
+            cfg_ch = dict(ch.config or {})
+            if "ai_reply" in d:
+                cfg_ch["ai_reply"] = bool(d.get("ai_reply"))
+            if "only_chats" in d:
+                raw = d.get("only_chats") or []
+                if isinstance(raw, str):
+                    raw = [x.strip() for x in raw.replace(",", " ").split() if x.strip()]
+                cfg_ch["ai_reply_only_chats"] = [str(x)[:128] for x in raw][:50]
+            ch.config = cfg_ch
+            ch.save(update_fields=["config"])
         cfg.updated_by = request.user
         cfg.save()
         return Response(settings_dict(cfg))

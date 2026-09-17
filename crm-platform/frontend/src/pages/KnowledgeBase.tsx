@@ -7,7 +7,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { Icon } from "../Icon";
 import KnowledgeTestChat from "./KnowledgeTestChat";
-import { CheckChip, ControllerPanel, LABEL_FILTERS, PrecheckPanel, PublishPanel, WebchatCard, type Precheck } from "./KnowledgeTools";
+import { ChannelsAiCard, CheckChip, ControllerPanel, LABEL_FILTERS, PrecheckPanel, PublishPanel, WebchatCard, type Precheck } from "./KnowledgeTools";
 
 type Choice = { value: string; label: string };
 type Role = { agent: string; name: string; does: string; reads: string; checked_by: string };
@@ -285,6 +285,7 @@ function Team({ meta, reloadMeta }: { meta: Meta; reloadMeta: () => void }) {
         </table>
       </div>
       <WebchatCard s={s} isOwner={meta.is_owner} onSaved={(ns) => { setS({ ...s, ...ns }); reloadMeta(); }} />
+      <ChannelsAiCard s={s} isOwner={meta.is_owner} onSaved={(ns) => { setS({ ...s, ...ns }); reloadMeta(); }} />
       <div style={{ ...card, marginTop: 12 }}>
         <b>Контролер закритих чатів — лише за запуском.</b> Розкладу немає: перевірка з ІІ запускається тільки кнопкою
         «Запустити перевірку» у вкладці «Контролер» (власник), з оцінкою вартості до запуску. Знахідки падають сюди
