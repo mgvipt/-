@@ -155,6 +155,14 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
             on_outgoing(contact)
     except Exception:
         pass
+    # 17.09.2026 (Олег): ІІ може відповідати і в інших каналах (Viber, Telegram, WhatsApp, Facebook).
+    # Вимкнено, поки в каналі не увімкнено config["ai_reply"]; менеджер у діалозі — ІІ мовчить.
+    if _dir == "in":
+        try:
+            from .ai_reply import maybe_reply
+            maybe_reply(conv, msg)
+        except Exception:
+            pass
     return msg
 
 
