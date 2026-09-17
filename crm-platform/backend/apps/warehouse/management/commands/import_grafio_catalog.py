@@ -138,6 +138,8 @@ class Command(BaseCommand):
                 if len(candidates) > 1 or (mapping and candidates and mapping.product_id != candidates[0].pk):
                     raise CommandError(f'{sid}: identity conflict')
                 product = mapping.product if mapping else (candidates[0] if candidates else None)
+                if product and apply:
+                    product = Product.objects.select_for_update().get(pk=product.pk)
                 if product and (product.shop_specs or {}).get('supplier', {}).get('sourceID') != row['sourceID']:
                     raise CommandError(f'{sid}: existing SKU lacks exact source identity')
                 if product and product.unit != row['unit']:
