@@ -5,6 +5,7 @@ from rest_framework.routers import DefaultRouter
 from apps.crm import views as crm_views
 from apps.accounts import views as acc_views
 from apps.inbox import views as inbox_views
+from apps.inbox import showcase
 from apps.inbox.webchat import WebChatView
 from apps.inbox.site_leads import ShopLeadWebhookView
 from apps.reviews import api_shop as review_shop, views as review_views
@@ -132,6 +133,10 @@ urlpatterns = [
     path("api/telephony/line-status/", tel_views.LineStatusView.as_view()),
     path("api/team-chat/contacts/", inbox_views.TeamContactsView.as_view()),
     path("api/team-chat/<int:user_id>/", inbox_views.TeamThreadView.as_view()),
+    # 17.09.2026 (Олег): публічні сторінки матеріалів і кольорів — їх шле ІІ замість телеграм-бота палітри
+    path("p/", showcase.ShowcaseIndexView.as_view()),
+    path("p/<slug:slug>/", showcase.ShowcaseMaterialView.as_view()),
+    path("p/<slug:slug>/<path:code>/", showcase.ShowcaseColorView.as_view()),
     path("api/l/<str:code>", inbox_views.LibraryShortFileView.as_view()),
     path("api/f/<str:token>/", inbox_views.SharedFileView.as_view()),
     path("api/f/<str:token>/<path:name>", inbox_views.SharedFileView.as_view()),
