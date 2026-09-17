@@ -2,14 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { api, ChatMessage } from "../api";
 import { ProductLibrary } from "./ProductLibrary";
 import { CezarLibrary } from "./CezarLibrary";
-import { QuickRepliesScript } from "./QuickRepliesScript";
+import { QuickRepliesScript, type Reply } from "./QuickRepliesScript";
 import { silkColorName, formatSilkColor, matchesSilkColor } from "../silk-color-names";
 
 type Asset = {
   id: number; title: string; kind: "image" | "video" | "catalog"; section: "colors" | "quick";
   material: string; color_code: string; tags: string; url: string; preview_url?: string;
 };
-type Reply = { id: number; title: string; text: string; asset_ids: number[]; category?: string; when_to_use?: string };
 type MaterialSummary = { name: string; codes: number; catalog_pages: number; preview_url: string };
 type Screen = "materials" | "material" | "color";
 const SAND_EFFECTS = ["Galateya", "Eleganti", "Gaia Gloss", "Mio Gloss"] as const;
@@ -19,7 +18,7 @@ const effectFor = (asset: Asset) => {
   return match?.[1]?.trim() || "";
 };
 
-export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertText, clientName }: { conversationId: number; onSent: (m: ChatMessage) => void; onClose: () => void; onInsertText?: (t: string) => void; clientName?: string }) {
+export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertText, clientName, initialTab }: { conversationId: number; onSent: (m: ChatMessage) => void; onClose: () => void; onInsertText?: (t: string) => void; clientName?: string; initialTab?: "colors" | "quick" }) {
   // Підставляє імʼя клієнта замість {Ім'я}/{Имя} у шаблоні швидкої відповіді.
   const fillName = (txt: string) => {
     const raw = (clientName || "").trim();
@@ -30,9 +29,9 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
       .replace(/^([a-zа-яіїєґ])/u, (m0) => (name ? m0 : m0.toUpperCase()));
   };
   const [items, setItems] = useState<Asset[]>([]); const [replies, setReplies] = useState<Reply[]>([]); const [materialSummaries, setMaterialSummaries] = useState<MaterialSummary[]>([]);
-  const [query, setQuery] = useState(""); const [tab, setTab] = useState<"colors" | "quick">("colors");
+  const [query, setQuery] = useState(""); const [tab, setTab] = useState<"colors" | "quick">(initialTab || "colors");
   const [screen, setScreen] = useState<Screen>("materials"); const [material, setMaterial] = useState(""); const [color, setColor] = useState("");
-  const [picked, setPicked] = useState<number[]>([]); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  const [picked, setPicked] = useState<number[]>([]); const [loaded, setLoaded] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const loadPicker = async (nextMaterial = "", nextColor = "") => {
     setError("");
     const params = new URLSearchParams({ view: "picker" });
@@ -40,7 +39,7 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
     if (nextColor) params.set("color", nextColor);
     try {
       const d = await api.get<any>(`/api/inbox/media-library/?${params.toString()}`);
-      setItems(d.items || []); setReplies(d.replies || []); setMaterialSummaries(d.materials || []);
+      setItems(d.items || []); setReplies(d.replies || []); setMaterialSummaries(d.materials || []); setLoaded(true);
     } catch { setError("Не вдалося завантажити бібліотеку"); }
   };
   useEffect(() => { loadPicker(); }, []);
@@ -81,7 +80,7 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
   const back = () => { if (screen === "color") { setScreen("material"); setColor(""); loadPicker(material); } else { setScreen("materials"); setMaterial(""); loadPicker(); } setQuery(""); };
 
   // Швидкі відповіді — велике вікно-«скрипт продажів» з етапами розмови (14.09).
-  if (tab === "quick") return <QuickRepliesScript replies={replies} fillName={fillName} busy={busy} error={error}
+  if (tab === "quick") return <QuickRepliesScript replies={replies} loading={!loaded} fillName={fillName} busy={busy} error={error}
     onClose={onClose} onBack={() => setTab("colors")}
     onInsert={onInsertText ? (txt) => { onInsertText(txt); onClose(); } : undefined}
     onSend={(id) => send(id)} />;

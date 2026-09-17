@@ -37,6 +37,19 @@ def is_sample_product(product):
     return bool(product) and ("викраск" in low or "выкраск" in low)
 
 
+def in_test_folder(product):
+    """Товар у папці тест-наборів — у самій «Тестові набори та викраски» або в її підпапці («Викраски», 17.09.2026).
+    Потрібно, щоб угода лише з викрасок, як і раніше, вважалась тест-набором (воронка 22, допродаж, ЗП сайтів)."""
+    cat = getattr(product, "category", None) if product is not None else None
+    for _ in range(3):
+        if cat is None:
+            return False
+        if "тестов" in (cat.name or "").lower():
+            return True
+        cat = cat.parent if cat.parent_id else None
+    return False
+
+
 def prices():
     """Ціни доплат для клієнта — живі цифри з Налаштування → Ставки співробітників (Фінмодель), одним запитом."""
     from apps.finance.models import FinModelArticle

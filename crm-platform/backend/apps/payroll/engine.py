@@ -93,10 +93,11 @@ def _site_test_ids(pol):
     site = pol["funnels"].get("site") or []
     if site:
         from apps.crm.models import Deal
-        for d in Deal.objects.filter(funnel_id__in=site).prefetch_related("items__product__category"):
+        from apps.crm.kit_tint import in_test_folder  # 17.09.2026: і підпапка «Викраски»
+        for d in Deal.objects.filter(funnel_id__in=site).prefetch_related("items__product__category__parent"):
             its = list(d.items.all())
             if its:
-                ok = all(i.product_id and ("тестов" in ((i.product.category.name if i.product.category_id else "") or "").lower()
+                ok = all(i.product_id and (in_test_folder(i.product)
                                            or "тест-наб" in i.product.name.lower() or "тестовий набір" in i.product.name.lower())
                          for i in its)
             else:

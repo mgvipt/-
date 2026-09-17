@@ -27,6 +27,9 @@ export default function Settings() {
   const [edit, setEdit] = useState<Record<string, Record<string, string>>>({});
   const [saved, setSaved] = useState("");
   const [library, setLibrary] = useState<any[]>([]); const [quickReplies, setQuickReplies] = useState<any[]>([]);
+  // 17.09.2026: папки номенклатури → розділи швидких відповідей (описи з цінами)
+  const [replyFolders, setReplyFolders] = useState<any[]>([]); const [productFolders, setProductFolders] = useState<any[]>([]);
+  const [rfFolder, setRfFolder] = useState(""); const [rfCat, setRfCat] = useState(""); const [rfKind, setRfKind] = useState("product"); const [rfMsg, setRfMsg] = useState("");
   const [assetFile, setAssetFile] = useState<File | null>(null); const [assetTitle, setAssetTitle] = useState(""); const [assetMaterial, setAssetMaterial] = useState("Мокрий шовк"); const [assetCode, setAssetCode] = useState(""); const [assetSection, setAssetSection] = useState("colors"); const [assetEditId, setAssetEditId] = useState<number | null>(null);
   const [replyTitle, setReplyTitle] = useState(""); const [replyText, setReplyText] = useState(""); const [replyAssets, setReplyAssets] = useState<number[]>([]); const [replyEditId, setReplyEditId] = useState<number | null>(null);
   const [replyCat, setReplyCat] = useState(""); const [replyWhen, setReplyWhen] = useState("");
@@ -48,7 +51,9 @@ export default function Settings() {
 
   function load() { if (canIntegr) api.get<Prov[]>("/api/integrations/settings/").then(setProvs).catch(() => { /* немає доступу — тихо */ }); }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
-  function loadLibrary() { api.get<any>("/api/inbox/media-library/").then((d) => { setLibrary(d.items || []); setQuickReplies(d.replies || []); }).catch(() => {}); }
+  function loadLibrary() { api.get<any>("/api/inbox/media-library/").then((d) => { setLibrary(d.items || []); setQuickReplies(d.replies || []); setReplyFolders(d.reply_folders || []); setProductFolders(d.product_folders || []); }).catch(() => {}); }
+  async function linkFolder() { setRfMsg(""); try { const r = await api.post<any>("/api/inbox/media-library/", { action: "reply_folder", folder_id: Number(rfFolder), category: rfCat, kind: rfKind }); setRfMsg(t(`Готово: новых ответов ${r.created}`, `Готово: нових відповідей ${r.created}`)); setRfFolder(""); setRfCat(""); loadLibrary(); } catch (e: any) { setRfMsg(e?.response?.data?.detail || t("Не удалось", "Не вдалося")); } }
+  async function syncFolders() { setRfMsg(""); try { const r = await api.post<any>("/api/inbox/media-library/", { action: "sync_reply_folders" }); setRfMsg(t(`Обновлено: изменений ${r.changes}, новых ${r.created}`, `Оновлено: змін ${r.changes}, нових ${r.created}`)); loadLibrary(); } catch { setRfMsg(t("Не удалось", "Не вдалося")); } }
   useEffect(() => { if (tab === "open-lines") loadLibrary(); }, [tab]);
   async function addAsset() {
     let content_b64 = ""; let filename = "";
@@ -102,11 +107,29 @@ export default function Settings() {
           <input value={replyCat} onChange={(e) => setReplyCat(e.target.value)} list="qr-cats" placeholder={t("Категория, например «Дожимы и возврат из игнора»", "Категорія, наприклад «Дожими і повернення з ігнору»")} style={{ width: "100%", boxSizing: "border-box", marginBottom: 7 }} />
           <datalist id="qr-cats">{Array.from(new Set(quickReplies.map((q: any) => q.category).filter(Boolean))).map((c: any) => <option key={c} value={c} />)}</datalist>
           <input value={replyTitle} onChange={(e) => setReplyTitle(e.target.value)} placeholder={t("Название, например «Каталог шелка»", "Назва, наприклад «Каталог шовку»")} style={{ width: "100%", boxSizing: "border-box", marginBottom: 7 }} />
-          <textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder={t("Текст ответа", "Текст відповіді")} style={{ width: "100%", boxSizing: "border-box", minHeight: 72, marginBottom: 7 }} />
+          <textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder={t("Текст ответа", "Текст відповіді")} style={{ width: "100%", boxSizing: "border-box", minHeight: replyText.includes("{ціни}") ? 180 : 72, marginBottom: 7 }} />
+          {replyText.includes("{ціни}") && <div className="muted" style={{ fontSize: 11.5, margin: "-3px 0 7px" }}>{t("{ціни} — сюда CRM подставит актуальные цены из номенклатуры при показе и отправке.", "{ціни} — сюди CRM підставить актуальні ціни з номенклатури при показі й відправці.")}</div>}
           <textarea value={replyWhen} onChange={(e) => setReplyWhen(e.target.value)} placeholder={t("Когда использовать (подсказка менеджеру)", "Коли використовувати (підказка менеджеру)")} style={{ width: "100%", boxSizing: "border-box", minHeight: 44, marginBottom: 7, fontSize: 12 }} />
           <div style={{ maxHeight: 140, overflow: "auto", fontSize: 12, marginBottom: 7 }}>{library.map((a) => <label key={a.id} style={{ display: "block", padding: "3px 0" }}><input type="checkbox" checked={replyAssets.includes(a.id)} onChange={() => setReplyAssets((ids) => ids.includes(a.id) ? ids.filter((x) => x !== a.id) : [...ids, a.id])} /> {a.color_code ? a.color_code + " · " : ""}{a.title}</label>)}</div>
           <button className="btn btn-primary" disabled={!replyTitle} onClick={addReply}>{replyEditId ? t("Сохранить изменения", "Зберегти зміни") : t("Сохранить быстрый ответ", "Зберегти швидку відповідь")}</button>{replyEditId && <button className="btn" style={{ marginLeft: 6 }} onClick={() => { setReplyEditId(null); setReplyTitle(""); setReplyText(""); setReplyAssets([]); }}>{t("Отмена", "Скасувати")}</button>}
-          <div style={{ marginTop: 12, display: "grid", gap: 5 }}>{quickReplies.map((q) => <div key={q.id} style={{ borderTop: "1px solid #e2e8f0", paddingTop: 6, fontSize: 12, display: "flex", gap: 7, alignItems: "center" }}><span style={{ flex: 1 }}>{q.category ? <span className="muted" style={{ fontSize: 11 }}>{q.category} · </span> : null}<b>{q.title}</b><br /><span className="muted">{q.text}</span>{q.when_to_use ? <><br /><span style={{ fontSize: 11, color: "#0369a1" }}>💡 {q.when_to_use}</span></> : null}</span><button className="btn" onClick={() => { setReplyEditId(q.id); setReplyTitle(q.title); setReplyText(q.text); setReplyCat(q.category || ""); setReplyWhen(q.when_to_use || ""); setReplyAssets(q.assets.map((a: any) => a.id)); }}>{t("Изменить", "Змінити")}</button><button className="btn" onClick={async () => { await api.post("/api/inbox/media-library/", { action: "delete_reply", id: q.id }); loadLibrary(); }}>×</button></div>)}</div>
+          <div style={{ marginTop: 14, padding: "10px 11px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 9 }}>
+            <b style={{ fontSize: 13 }}>🔗 {t("Описания товаров из номенклатуры", "Описи товарів з номенклатури")}</b>
+            <div className="muted" style={{ fontSize: 11.5, margin: "3px 0 8px" }}>{t("Папка номенклатуры → раздел быстрых ответов. Новая позиция в папке — новый ответ-описание; цены подставляются актуальные.", "Папка номенклатури → розділ швидких відповідей. Нова позиція в папці — нова відповідь-опис; ціни підставляються актуальні.")}</div>
+            {replyFolders.map((l: any) => <div key={l.id} style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 12, padding: "4px 0", borderTop: "1px solid #eef2f7" }}>
+              <span style={{ flex: 1, minWidth: 0 }}><b>{l.category}</b> <span className="muted">← {l.folder} · {l.replies} {t("отв.", "відп.")}</span></span>
+              <button className="btn" onClick={async () => { await api.post("/api/inbox/media-library/", { action: "reply_folder_delete", id: l.id }); loadLibrary(); }} title={t("Отвязать (ответы останутся)", "Відвʼязати (відповіді лишаться)")}>×</button></div>)}
+            <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
+              <select value={rfFolder} onChange={(e) => setRfFolder(e.target.value)} style={{ width: "100%" }}><option value="">{t("Папка номенклатуры…", "Папка номенклатури…")}</option>{productFolders.map((f: any) => <option key={f.id} value={f.id}>{f.path}</option>)}</select>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <input value={rfCat} onChange={(e) => setRfCat(e.target.value)} placeholder={t("Раздел, напр. «Тест-наборы с ценами»", "Розділ, напр. «Тест-набори з цінами»")} style={{ flex: "1 1 180px" }} />
+                <select value={rfKind} onChange={(e) => setRfKind(e.target.value)}><option value="test_set">{t("тест-наборы", "тест-набори")}</option><option value="sample">{t("выкраски", "викраски")}</option><option value="product">{t("товары", "товари")}</option></select>
+                <button className="btn btn-primary" disabled={!rfFolder || !rfCat.trim()} onClick={linkFolder}>{t("Привязать", "Привʼязати")}</button>
+                <button className="btn" onClick={syncFolders}>{t("Обновить сейчас", "Оновити зараз")}</button>
+              </div>
+              {rfMsg && <div style={{ fontSize: 12 }}>{rfMsg}</div>}
+            </div>
+          </div>
+          <div style={{ marginTop: 12, display: "grid", gap: 5 }}>{quickReplies.map((q) => <div key={q.id} style={{ borderTop: "1px solid #e2e8f0", paddingTop: 6, fontSize: 12, display: "flex", gap: 7, alignItems: "center" }}><span style={{ flex: 1 }}>{q.category ? <span className="muted" style={{ fontSize: 11 }}>{q.category} · </span> : null}<b>{q.title}</b>{q.kind ? <span style={{ fontSize: 11, color: "#166534", marginLeft: 6 }}>🔗 {t("из номенклатуры", "з номенклатури")}{q.price_range ? " · " + q.price_range : ""}</span> : null}<br /><span className="muted" style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{q.text}</span>{q.when_to_use ? <><br /><span style={{ fontSize: 11, color: "#0369a1" }}>💡 {q.when_to_use}</span></> : null}</span><button className="btn" onClick={() => { setReplyEditId(q.id); setReplyTitle(q.title); setReplyText(q.raw_text ?? q.text); setReplyCat(q.category || ""); setReplyWhen(q.when_to_use || ""); setReplyAssets(q.asset_ids || []); }}>{t("Изменить", "Змінити")}</button><button className="btn" onClick={async () => { await api.post("/api/inbox/media-library/", { action: "delete_reply", id: q.id }); loadLibrary(); }}>×</button></div>)}</div>
         </div>
       </div>}
 

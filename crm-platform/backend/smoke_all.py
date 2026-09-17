@@ -29,6 +29,8 @@ CHECKS = [
     ("Товари: характеристики та спільна бібліотека", "manager", "/api/products/1653/facts/", {200}, ["shop_specs", "media", "price"]),
     ("Шовк: бібліотека кольорів", "manager", "/api/inbox/media-library/?view=picker&material=%D0%9C%D0%BE%D0%BA%D1%80%D0%B8%D0%B9%20%D1%88%D0%BE%D0%B2%D0%BA", {200}, ["items"]),
     ("Бібліотека: захист коротких посилань", "manager", "/api/l/not-valid", {404}, []),
+    ("Швидкі відповіді: з номенклатури (17.09)", "manager", "/api/inbox/media-library/?view=picker", {200}, ["replies", "materials"]),
+    ("Швидкі відповіді: привʼязки папок (17.09)", "owner", "/api/inbox/media-library/", {200}, ["replies", "reply_folders", "product_folders"]),
     ("Cezar: бібліотека моделей", "manager", "/api/inbox/media-library/?view=picker&material=%D0%9F%D0%BB%D1%96%D0%BD%D1%82%D1%83%D1%81%D0%B8%20Cezar", {200}, ["items"]),
     # 16.09.2026 (Олег): тест-набори — вага з комплектації, фіксовані ставки за тонування набору
     ("Склад: ставки (тест-набір, тонування набору)", "owner", "/api/warehouse/my-salary/", {200}, ["rates"]),

@@ -162,9 +162,37 @@ class QuickReply(models.Model):
                                 help_text="Група в списку: «Дожими і повернення з ігнору», «Заперечення»…")
     when_to_use = models.TextField(blank=True, default="", help_text="Коли використовувати — підказка менеджеру")
     created_at = models.DateTimeField(auto_now_add=True)
+    # 17.09.2026 (Олег): відповідь-опис товару привʼязана до номенклатури. {ціни} у тексті — актуальні ціни
+    # привʼязаних позицій (рахуються при показі й відправці). Нова позиція в папці → нова відповідь (product_replies.py).
+    products = models.ManyToManyField("warehouse.Product", blank=True, related_name="quick_replies")
+    product_folder = models.ForeignKey("warehouse.ProductCategory", null=True, blank=True, on_delete=models.SET_NULL,
+                                       related_name="quick_replies", help_text="Папка номенклатури, з якої створено відповідь")
+    product_key = models.CharField(max_length=80, blank=True, default="",
+                                   help_text="Сімʼя товару в папці: група варіантів магазину або p<id>")
+    auto_hidden = models.BooleanField(default=False, help_text="Сховано автоматично: у папці не лишилось активних позицій")
 
     class Meta:
         ordering = ["sort", "title"]
+        constraints = [models.UniqueConstraint(fields=["product_folder", "product_key"], condition=~models.Q(product_key=""),
+                                               name="quickreply_folder_product_key_uniq")]
+
+
+class QuickReplyFolder(models.Model):
+    """17.09.2026 (Олег): папка номенклатури → розділ швидких відповідей. Додали позицію в папку —
+    у розділі зʼявляється опис з цінами; вимкнули всі позиції сімʼї — відповідь ховається."""
+    KIND = [("test_set", "Тест-набори (варіанти з дощечкою / тонуванням)"), ("sample", "Викраски"), ("product", "Товари")]
+    folder = models.OneToOneField("warehouse.ProductCategory", on_delete=models.CASCADE, related_name="quick_reply_link")
+    category = models.CharField(max_length=60, help_text="Розділ у швидких відповідях: «Тест-набори з цінами»")
+    kind = models.CharField(max_length=10, choices=KIND, default="product")
+    when_to_use = models.TextField(blank=True, default="", help_text="Підказка «коли» для нових відповідей")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return "%s → %s" % (self.folder, self.category)
 
 
 

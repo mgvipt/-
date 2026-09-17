@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal
 
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
@@ -44,6 +45,54 @@ def _library_item_data(request, item):
             "url": url, "preview_url": preview_url, "sort": item.sort, "product": library_product(request, item)}
 
 
+def _replies_payload(full=False):
+    """17.09.2026: швидкі відповіді для вікна чату й Налаштувань. Відповіді з номенклатури — з актуальними цінами
+    ({ціни} → ціни привʼязаних позицій), діапазоном цін і списком позицій. Перед цим — тиха синхронізація папок
+    (нова позиція в папці → нова відповідь), не частіше ніж раз на 2 хв."""
+    from .models import QuickReplyFolder
+    from . import product_replies as PR
+    try:
+        PR.sync_all()
+    except Exception:
+        pass
+    links = {l.folder_id: l for l in QuickReplyFolder.objects.all()}
+    out = []
+    for q in (QuickReply.objects.filter(is_active=True).select_related("product_folder")
+              .prefetch_related("products", "assets")):
+        prods = [p for p in q.products.all()]
+        link = links.get(q.product_folder_id)
+        kind = link.kind if link else ("product" if q.product_folder_id else "")
+        d = {"id": q.id, "title": q.title, "text": PR.render_text(q, prods, kind), "category": q.category,
+             "when_to_use": q.when_to_use, "asset_ids": [a.id for a in q.assets.all()], "sort": q.sort,
+             "kind": kind, "folder": q.product_folder.name if q.product_folder_id else "",
+             "price_range": PR.price_range(prods),
+             "products": [{"id": p.id, "name": p.name, "price": str(p.price or 0)}
+                          for p in sorted(prods, key=lambda x: (Decimal(str(x.price or 0)), x.id)) if p.is_active]}
+        if full:
+            d["raw_text"] = q.text
+        out.append(d)
+    return out
+
+
+def _reply_folders_payload():
+    from apps.warehouse.models import ProductCategory
+    from .models import QuickReplyFolder
+    cats = {c.id: c for c in ProductCategory.objects.all()}
+
+    def path(c):
+        names, seen = [], set()
+        while c is not None and c.id not in seen:
+            seen.add(c.id); names.append(c.name)
+            c = cats.get(c.parent_id)
+        return " / ".join(reversed(names))
+    links = [{"id": l.id, "folder_id": l.folder_id, "folder": path(cats.get(l.folder_id)), "category": l.category, "kind": l.kind,
+              "when_to_use": l.when_to_use, "is_active": l.is_active,
+              "replies": QuickReply.objects.filter(product_folder_id=l.folder_id, is_active=True).count()}
+             for l in QuickReplyFolder.objects.all()]
+    folders = sorted(({"id": c.id, "path": path(c)} for c in cats.values()), key=lambda x: x["path"])
+    return links, folders
+
+
 def _is_color_swatch(item):
     return item.kind == "image" and bool(re.search(r"(каталог|зразок|sample)", "%s %s" % (item.title, item.tags), re.I))
 
@@ -55,16 +104,13 @@ class MediaLibraryView(APIView):
         # The picker only needs the token to build a URL, so never read binaries here.
         items = MediaLibraryItem.objects.filter(is_active=True).select_related("file", "preview_file").defer(
             "file__data", "preview_file__data")
-        replies = QuickReply.objects.filter(is_active=True)
         # The chat picker does not need metadata for every photo before a manager has
         # selected a material and a code.  Returning it in three small stages keeps
         # the panel responsive as the catalogue grows.
         if request.query_params.get("view") == "picker":
             material = (request.query_params.get("material") or "").strip()
             color = (request.query_params.get("color") or "").strip()
-            reply_data = [{"id": q.id, "title": q.title, "text": q.text, "category": q.category,
-                           "when_to_use": q.when_to_use,
-                           "asset_ids": list(q.assets.values_list("id", flat=True))} for q in replies]
+            reply_data = _replies_payload()
             if not material:
                 summaries = []
                 for row in items.filter(section="colors").values("material").annotate(
@@ -92,11 +138,11 @@ class MediaLibraryView(APIView):
                     selected.append(item); seen_codes.add(item.color_code)
             return Response({"items": [_library_item_data(request, x) for x in selected],
                              "materials": [], "replies": reply_data})
+        folder_links, product_folders = _reply_folders_payload()
         return Response({
             "items": [_library_item_data(request, x) for x in items],
-            "replies": [{"id": q.id, "title": q.title, "text": q.text, "category": q.category,
-                         "when_to_use": q.when_to_use,
-                         "asset_ids": list(q.assets.values_list("id", flat=True))} for q in replies],
+            "replies": _replies_payload(full=True),
+            "reply_folders": folder_links, "product_folders": product_folders,
         })
 
     def post(self, request):
@@ -129,6 +175,29 @@ class MediaLibraryView(APIView):
             q.assets.set(MediaLibraryItem.objects.filter(id__in=request.data.get("asset_ids", []), is_active=True))
             return Response({"id": q.id, "title": q.title, "text": q.text,
                              "asset_ids": list(q.assets.values_list("id", flat=True))}, status=status.HTTP_201_CREATED)
+        if action_name == "reply_folder":
+            # 17.09.2026: папка номенклатури → розділ швидких відповідей (нові позиції папки — нові відповіді з цінами)
+            from apps.warehouse.models import ProductCategory
+            from .models import QuickReplyFolder
+            from . import product_replies as PR
+            folder = ProductCategory.objects.filter(id=request.data.get("folder_id") or 0).first()
+            category = (request.data.get("category") or "").strip()[:60]
+            kind = request.data.get("kind") if request.data.get("kind") in dict(QuickReplyFolder.KIND) else "product"
+            if not folder or not category:
+                return Response({"detail": "Оберіть папку номенклатури і назву розділу"}, status=status.HTTP_400_BAD_REQUEST)
+            link, _new = QuickReplyFolder.objects.update_or_create(folder=folder, defaults={
+                "category": category, "kind": kind, "when_to_use": request.data.get("when_to_use") or "",
+                "is_active": bool(request.data.get("is_active", True))})
+            acts = PR.sync_folder(link) if link.is_active else []
+            return Response({"id": link.id, "created": sum(1 for a in acts if a[0] == "create"), "changes": len(acts)})
+        if action_name == "reply_folder_delete":
+            from .models import QuickReplyFolder
+            QuickReplyFolder.objects.filter(id=request.data.get("id")).delete()  # відповіді лишаються, лише без автооновлення
+            return Response({"ok": True})
+        if action_name == "sync_reply_folders":
+            from . import product_replies as PR
+            acts = PR.sync_all(force=True)
+            return Response({"changes": len(acts), "created": sum(1 for a in acts if a[1] == "create")})
         if action_name == "delete_asset":
             MediaLibraryItem.objects.filter(id=request.data.get("id")).update(is_active=False)
             return Response({"ok": True})
@@ -1533,7 +1602,9 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             reply = QuickReply.objects.filter(id=reply_id, is_active=True).prefetch_related("assets__file").first()
             if not reply:
                 return Response({"detail": "Швидку відповідь не знайдено"}, status=status.HTTP_404_NOT_FOUND)
-            text = text or reply.text
+            if not text:
+                from . import product_replies as PR
+                text = PR.render_text(reply)  # 17.09.2026: {ціни} → актуальні ціни з номенклатури
             _ph = _unfilled_placeholder(text)
             if _ph:
                 return Response({"detail": "У шаблоні є незаповнене поле %s — вставте відповідь у поле вводу й заповніть" % _ph},

@@ -831,9 +831,9 @@ def _is_test_kit_item(it):
     """Товар — тестовий набір? (за категорією або назвою)"""
     if not it.product_id:
         return False
-    cat = (it.product.category.name if it.product.category_id else "") or ""
+    from .kit_tint import in_test_folder  # 17.09.2026: папка тест-наборів або її підпапка «Викраски»
     nm = it.product.name.lower()
-    return "тестов" in cat.lower() or "тест-наб" in nm or "тестовий набір" in nm
+    return in_test_folder(it.product) or "тест-наб" in nm or "тестовий набір" in nm
 
 
 def _route_deal_funnel(deal, user=None):
@@ -5617,8 +5617,8 @@ def _upsell_test_kit(deal):
     for it in items:
         if not it.product_id:
             return  # своя позиція — точно не тест-набір
-        cat = (it.product.category.name if it.product.category_id else "") or ""
-        if "тестов" not in cat.lower() and "тест-наб" not in it.product.name.lower() and "тестовий набір" not in it.product.name.lower():
+        from .kit_tint import in_test_folder  # 17.09.2026: і підпапка «Викраски»
+        if not in_test_folder(it.product) and "тест-наб" not in it.product.name.lower() and "тестовий набір" not in it.product.name.lower():
             return  # у сделці не тільки тест-набори — допродаж не шлемо
     st = IntegrationSettings.objects.filter(provider="upsell_test_kit").first()
     cfg = (st.config or {}) if st else {}
