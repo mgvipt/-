@@ -86,8 +86,24 @@ SELLER_SYSTEM = (
     "https://wallcov.com.ua/p/pattera/ ; перламутрові піщинки Galateya і Eleganti — https://wallcov.com.ua/p/pisochky/ ; "
     "плінтуси Cezar — https://wallcov.com.ua/p/cezar/ ; ліпнина Orac Decor — https://wallcov.com.ua/p/orac/. "
     "Клієнт питає кольори, палітру, відтінки або «покажіть» — дай саме це посилання і попроси код кольору.\n"
-    'Поверни СТРОГО JSON: {"reply": "текст клієнту", "handoff": true або false, "reason": "чому передаєш менеджеру"}. '
-    "handoff=true — якщо не впевнена, потрібних фактів у базі немає або клієнт хоче замовити/оплатити."
+    # 18.09.2026 (Олег): «щоб ІІ писала структурно, а не полотном»
+    "15. ФОРМАТ ПОВІДОМЛЕННЯ — короткими рядками, не суцільним текстом:\n"
+    "   • перший рядок — суть (1 речення);\n"
+    "   • варіанти, ціни чи склад — кожен з нового рядка, через «• »;\n"
+    "   • посилання — окремим рядком;\n"
+    "   • останній рядок — одне коротке питання.\n"
+    "   Разом до 5–6 рядків, у рядку до 12 слів. Порожній рядок між блоками. Не склеюй ціни й питання в одне речення, "
+    "не повторюй те саме двічі, не пиши абзаців на 3+ речення.\n"
+    "16. ОФОРМЛЕННЯ ТЕСТ-НАБОРУ: коли клієнт ЯВНО погодився на конкретний варіант («так», «давайте», «беру», "
+    "«оформлюйте», назвав варіант) — поверни поле order з ТОЧНОЮ назвою зі списку «ТЕСТ-НАБОРИ В КАТАЛОЗІ». "
+    "CRM сама додасть товар у сделку і надішле клієнту прорахунок і посилання на оплату. У reply тоді напиши коротко, "
+    "що оформлюєш і зараз надішлеш посилання на оплату, і НЕ питай площу — про весь обʼєм спитаємо після оплати набору. "
+    "Якщо варіант ще не обраний (з дощечкою чи без, з тонуванням чи без) — спершу уточни це, order не повертай.\n"
+    'Поверни СТРОГО JSON: {"reply": "текст клієнту", "handoff": true або false, "reason": "чому передаєш менеджеру", '
+    '"order": {"product": "точна назва тест-набору", "qty": 1} або null}. '
+    "handoff=true — якщо не впевнена або потрібних фактів у базі немає. Коли клієнт хоче саме ТЕСТ-НАБІР і варіант "
+    "зрозумілий — не передавай менеджеру, а поверни order (п.16). Великі замовлення, оплата іншим способом, "
+    "реквізити, дзвінок — менеджеру."
 )
 
 _W = r"(?<![а-яіїєґa-z])"
@@ -225,12 +241,27 @@ def rop_master_rules():
     return ""
 
 
+def test_kits_block():
+    """Точні назви тест-наборів з каталогу — щоб ІІ міг одразу оформити замовлення (18.09.2026, Олег)."""
+    try:
+        from apps.warehouse.models import Product
+        rows = list(Product.objects.filter(is_active=True, name__iregex=r"тестов|пробни")
+                    .order_by("name").values_list("name", "price")[:120])
+    except Exception:
+        rows = []
+    if not rows:
+        return ""
+    return ("\nТЕСТ-НАБОРИ В КАТАЛОЗІ (точні назви для поля order):\n"
+            + "\n".join("- %s — %s грн" % (n, ("%g" % float(p or 0))) for n, p in rows) + "\n")
+
+
 def _spec_seller(agent, msgs, model):
     q = _query(msgs)
     items = reader.select(agent, q, 15)
     kb = reader.context_for(agent, q, limit=15, max_chars=6000)
-    user = ("БАЗА ЗНАНЬ WALLCOV (затверджено Олегом):\n%s\n\nДІАЛОГ:\n%s\n\nОстаннє повідомлення клієнта: «%s». "
-            "Дай відповідь і поверни JSON." % (kb or "(порожньо)", _dialog(msgs), msgs[-1]["text"]))
+    kits = test_kits_block()
+    user = ("БАЗА ЗНАНЬ WALLCOV (затверджено Олегом):\n%s\n%s\nДІАЛОГ:\n%s\n\nОстаннє повідомлення клієнта: «%s». "
+            "Дай відповідь і поверни JSON." % (kb or "(порожньо)", kits, _dialog(msgs), msgs[-1]["text"]))
     allowed = kb + "\n" + "\n".join(m["text"] for m in msgs if m["role"] == "client")
     spec = {"system": SELLER_SYSTEM % CHANNEL[agent], "user": user, "model": model or HAIKU, "max_tokens": 600,
             "mode": "seller", "cache": False, "allowed": allowed}
@@ -384,14 +415,22 @@ def _finish_seller(res, resp, msgs, spec, used):
     txt = resp_text(resp)
     data = parse_json(txt)
     reply = str(data.get("reply") or ("" if data else txt)).strip()
+    order = data.get("order") if isinstance(data.get("order"), dict) else None
     problems = guard(reply, spec["allowed"], used, msgs[-1]["text"])
-    if data.get("handoff"):
+    if order and order.get("product"):
+        # 18.09.2026 (Олег): клієнт погодився на тест-набір — не передаємо менеджеру, а оформлюємо самі.
+        # Лишаємо тільки справді небезпечні причини (чужі суми, знижки), решту прибираємо.
+        problems = [p for p in problems if "не з каталогу" in p or "знижк" in p]
+    if data.get("handoff") and not (order and order.get("product")):
         reason = str(data.get("reason") or "").strip()
         problems.insert(0, "ІІ сам вирішив передати менеджеру" + (": " + reason if reason else ""))
     if not reply:
         problems.append("порожня відповідь")
+    if order and order.get("product"):
+        res["order"] = {"product": str(order.get("product"))[:200], "qty": order.get("qty") or 1}
     if problems:
         res.update(text=HANDOFF_TEXT, handoff=True, handoff_reason="; ".join(problems)[:600], draft_reply=reply[:2000])
+        res.pop("order", None)
     else:
         res["text"] = reply[:1200]
 

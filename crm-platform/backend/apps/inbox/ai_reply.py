@@ -130,6 +130,65 @@ def reply_now(conv_id):
         _note(conv, "%s: не вдалося надіслати (%s). Текст: «%s»" % (NOTE_PREFIX, str(e)[:200], text[:600]))
         return
     _note(conv, note)
+    if r.get("order"):
+        _make_kit_offer(conv, r["order"])
+
+
+MAX_AUTO_ORDER = 2000        # ₴ — вище цієї суми оформлює менеджер
+
+
+def _make_kit_offer(conv, order):
+    """18.09.2026 (Олег): «клієнт погодився — скидай посилання на тест-набір, а про обʼєм питай потім».
+    Створюємо сделку з обраним тест-набором і CRM сама надсилає прорахунок + посилання LiqPay (make_offer)."""
+    from apps.crm.models import Deal, Funnel
+    from apps.crm.views import _find_product, make_offer
+    name = (order.get("product") or "").strip()
+    prod = _find_product(name)
+    if not prod:
+        _note(conv, "%s: хотів оформити «%s» — такого товару немає в номенклатурі, оформіть, будь ласка, вручну."
+              % (NOTE_PREFIX, name[:80]))
+        return
+    if float(prod.price or 0) <= 0 or float(prod.price or 0) > MAX_AUTO_ORDER:
+        _note(conv, "%s: «%s» — %s ₴, це поза автоматичним оформленням, зробіть вручну."
+              % (NOTE_PREFIX, prod.name[:60], prod.price))
+        return
+    if not conv.contact_id:
+        _note(conv, "%s: немає картки клієнта — оформіть замовлення вручну." % NOTE_PREFIX)
+        return
+    from apps.crm.models import PayLink
+    recent = (Deal.objects.filter(contact_id=conv.contact_id, stage__is_won=False, stage__is_lost=False,
+                                  created_at__gte=timezone.now() - timedelta(hours=24))
+              .filter(items__isnull=False).order_by("-created_at").first())
+    if recent is not None:
+        paid = sum(float(p.amount) for p in recent.payments.all() if p.is_paid)
+        if paid <= 0:
+            # 18.09.2026 (Олег: «продублювались повідомлення на оплату»): друге посилання не створюємо
+            pl = PayLink.objects.filter(deal=recent).order_by("-id").first()
+            _note(conv, "%s: замовлення вже оформлене — сделка #%s на %s ₴%s. Нового посилання не створюю."
+                  % (NOTE_PREFIX, recent.id, recent.amount,
+                     (", посилання https://crm.wallcovdec.com.ua/p/%s/" % pl.code) if pl else ""))
+            return
+    deal = (Deal.objects.filter(contact_id=conv.contact_id, stage__is_won=False, stage__is_lost=False)
+            .order_by("-created_at").first())
+    if deal is None or deal.items.exists():
+        f = Funnel.objects.filter(name__istartswith="22 Тестовий набір").first() or Funnel.objects.order_by("id").first()
+        st = f.stages.order_by("order").first() if f else None
+        if not (f and st):
+            _note(conv, "%s: немає воронки для тест-наборів — оформіть вручну." % NOTE_PREFIX)
+            return
+        deal = Deal.objects.create(title="Тест-набір · %s" % str(conv.contact)[:40], funnel=f, stage=st,
+                                   contact_id=conv.contact_id, owner=conv.assigned_to)
+    try:
+        res = make_offer(deal, [{"name": prod.name, "qty": order.get("qty") or 1}])
+    except Exception as e:
+        _note(conv, "%s: не вдалося оформити (%s) — зробіть вручну." % (NOTE_PREFIX, str(e)[:200]))
+        return
+    if res.get("ok"):
+        _note(conv, "%s: оформив сделку #%s на %s ₴ (%s) і надіслав посилання на оплату %s"
+              % (NOTE_PREFIX, deal.id, res.get("amount"), prod.name[:50], res.get("url") or "—"))
+    else:
+        _note(conv, "%s: сделка #%s — оффер не створено (%s), перевірте вручну."
+              % (NOTE_PREFIX, deal.id, res.get("msg") or "—"))
 
 
 def maybe_reply(conv, incoming):
