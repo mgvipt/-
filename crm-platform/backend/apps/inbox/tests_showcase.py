@@ -38,7 +38,9 @@ class ShowcaseTests(TestCase):
         html = r.content.decode()
         self.assertIn("У інтерʼєрі", html)
         self.assertIn("<video", html)
-        self.assertIn("Код кольору", html)
+        self.assertIn("Обрати цей колір", html)      # кнопка: код іде менеджеру в чат
+        self.assertIn("wa.me/380973282283", html)
+        self.assertIn("viber://chat?number=", html)
 
     def test_unknown_material_and_color(self):
         self.assertEqual(self.client.get("/p/nema-takogo/").status_code, 404)

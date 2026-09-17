@@ -11,8 +11,10 @@
 бібліотеки; самі байти віддає вже наявний публічний лінк /api/f/<token>/ (той самий, що менеджер шле в чат).
 Нічого не пишемо в БД: лише читання.
 """
+import json
 import re
 from html import escape
+from urllib.parse import quote
 
 from django.http import Http404, HttpResponse
 from rest_framework.permissions import AllowAny
@@ -21,6 +23,9 @@ from rest_framework.views import APIView
 from .models import MediaLibraryItem
 
 PUBLIC_HOST = "https://wallcov.com.ua"          # той самий домен, що для /f/<код> (проксі на CRM)
+MANAGER_PHONE = "380973282283"                  # той самий номер, що Юля дає клієнту (Viber / Telegram / WhatsApp)
+MANAGER_TG = "https://t.me/wallcov_pidtrimka"
+MANAGER_VIBER = "https://msng.link/o?380973282283=vi"
 SECTION = "colors"
 SWATCH_RE = re.compile(r"(каталог|зразок|sample)", re.I)
 
@@ -37,6 +42,11 @@ SLUG_MAP = {
     "мокрий шовк": "mokryi-shovk", "вельвет луна": "velvet-luna", "патера": "pattera",
     "песочки": "pisochky", "плінтуси cezar": "cezar", "orac decor": "orac",
 }
+
+
+def json_dumps(text):
+    """Текст для JS-рядка (кнопка «Обрати цей колір» копіює його у буфер)."""
+    return json.dumps(text, ensure_ascii=False)
 
 
 def slug_of(material):
@@ -110,6 +120,12 @@ h1{font-size:22px;margin:4px 0 6px;line-height:1.25}p.lead{color:var(--muted);ma
 .row{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px}
 .note{background:#eef5fc;border-radius:10px;padding:10px 12px;font-size:14px;color:#1e3a5f;margin:14px 0}
 .foot{color:var(--muted);font-size:13px;margin-top:28px;text-align:center}
+.pick{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin:16px 0}
+.pick b{font-size:16px}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.btn{display:inline-flex;align-items:center;gap:6px;border-radius:10px;padding:10px 14px;font-size:15px;font-weight:600;text-decoration:none;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+.ok{color:#2F8F5B;font-size:14px;margin-top:8px;display:none}
 </style></head><body><div class="wrap">%s<h1>%s</h1>%s%s
 <div class="foot">Wallcov · декоративні покриття</div></div></body></html>""" % (
         escape(title), nav, escape(title),
@@ -187,7 +203,22 @@ class ShowcaseColorView(APIView):
         if videos:
             body += '<h2 style="font-size:17px;margin:18px 0 6px">Відео</h2><div class="row">%s</div>' % "".join(
                 '<video controls preload="metadata" src="%s"></video>' % escape(file_url(v)) for v in videos)
-        body += ('<div class="note">Код кольору — <b>%s</b>. Напишіть його менеджеру: порахуємо матеріал на Вашу площу '
-                 'або зробимо викраску 10×30 см саме в цьому кольорі.</div>' % escape(code))
+        # 17.09.2026 (Олег): «щоб клієнт кнопкою обирав колір і потрапляв у чат з менеджером»
+        msg = "Обрав колір %s · %s. Порахуйте, будь ласка, матеріал (або викраску 10×30 см у цьому кольорі)." % (m["name"], code)
+        q = quote(msg)
+        body += ('<div class="pick"><b>Сподобався цей колір?</b>'
+                 '<div style="color:var(--muted);font-size:14px;margin-top:4px">Натисніть — код %s піде менеджеру, '
+                 'і ми порахуємо матеріал на Вашу площу або зробимо викраску 10×30 см у цьому кольорі.</div>'
+                 '<div class="btns">'
+                 '<button class="btn primary" type="button" onclick="pick()">🎨 Обрати цей колір</button>'
+                 '<a class="btn" href="viber://chat?number=%%2B%s&amp;draft=%s" rel="noopener">Viber</a>'
+                 '<a class="btn" href="%s" target="_blank" rel="noopener">Telegram</a>'
+                 '<a class="btn" href="https://wa.me/%s?text=%s" target="_blank" rel="noopener">WhatsApp</a>'
+                 '</div><div class="ok" id="ok">Код скопійовано — вставте його у ваш чат з менеджером 👍</div></div>'
+                 '<script>function pick(){var t=%s;try{navigator.clipboard.writeText(t);}catch(e){}'
+                 'var o=document.getElementById("ok");o.style.display="block";'
+                 'setTimeout(function(){location.href="%s";},900);}</script>'
+                 % (escape(code), MANAGER_PHONE, q, escape(MANAGER_TG + "?text=" + q), MANAGER_PHONE, q,
+                    json_dumps(msg), escape(MANAGER_TG + "?text=" + q)))
         return _page("%s · %s" % (m["name"], code), body, BLURB.get(m["name"], ""),
                      back=("/p/%s/" % slug, m["name"]))
