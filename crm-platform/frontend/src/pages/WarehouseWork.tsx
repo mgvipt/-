@@ -966,15 +966,15 @@ function WashedBlock({ t }: any) {
   const cur = d.pairs.find((x: any) => x.new_id === pid);
   const post = () => api.post<any>("/api/warehouse/washed/", { product: pid, qty: Number(qty) }).then((r: any) => { setD(r); setMsg("✓ " + t("Проведено", "Проведено")); setQty("1"); }).catch((e: any) => setMsg(e?.response?.data?.detail || t("Ошибка", "Помилка")));
   return (
-    <div className="panel" style={{ marginBottom: 12 }}>
-      <div style={{ fontWeight: 700, fontSize: 15 }}>🪣 {t("Мытое ведро", "Мите відро")}</div>
-      <div className="muted" style={{ fontSize: 12, margin: "4px 0 8px", lineHeight: 1.45 }}>{t("Помыли заводское ведро — проведите его здесь. Оплата", "Помили заводське відро — проведіть його тут. Оплата")} {d.pct}% {t("от закупки нового ведра начисляется, когда ведро уедет к клиенту (при отгрузке отметьте, что тара — мытое ведро).", "від закупки нового відра нараховується, коли відро поїде до клієнта (при відвантаженні позначте, що тара — мите відро).")}</div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <select value={pid} onChange={(e) => setPid(Number(e.target.value))} style={{ flex: "1 1 200px", height: 42, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }}>
+    <div className="panel" style={{ margin: 0, padding: 12 }}>
+      <div style={{ fontWeight: 700, fontSize: 14 }}>🪣 {t("Мытое ведро", "Мите відро")}</div>
+      <div className="muted" style={{ fontSize: 11.5, margin: "2px 0 8px", lineHeight: 1.4 }}>{t("Помыли — провели. Оплата", "Помили — провели. Оплата")} {d.pct}% {t("— когда ведро уедет клиенту.", "— коли відро поїде клієнту.")}</div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={pid} onChange={(e) => setPid(Number(e.target.value))} style={{ flex: "1 1 160px", minWidth: 0, height: 38, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }}>
           {d.pairs.map((x: any) => <option key={x.new_id} value={x.new_id}>{x.new_name} — {t("мытых на складе", "митих на складі")} {x.washed_stock}</option>)}
         </select>
-        <input type="number" min={1} step={1} value={qty} onChange={(e) => setQty(e.target.value)} style={{ width: 80, height: 42, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }} />
-        <button className="btn" style={{ height: 42, background: C.green, color: "#fff", fontWeight: 700 }} onClick={post}>{t("Провести", "Провести")}</button>
+        <input type="number" min={1} step={1} value={qty} onChange={(e) => setQty(e.target.value)} style={{ width: 64, height: 38, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }} />
+        <button className="btn" style={{ height: 38, background: C.green, color: "#fff", fontWeight: 700 }} onClick={post}>{t("Провести", "Провести")}</button>
       </div>
       {cur && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t("За 1 ведро при отправке", "За 1 відро при відправці")}: <b>{f(cur.pay_per_bucket)} ₴</b></div>}
       {msg && <div style={{ fontSize: 12.5, marginTop: 6 }}>{msg}</div>}
@@ -998,26 +998,26 @@ function SamplesBlock({ t }: any) {
   const post = () => api.post<any>("/api/warehouse/samples/", { recipe: r.id, sheets: n, lines: r.lines.map((l: any) => ({ product: l.product, kg: Number(g(l)) / 1000 })) })
     .then((x: any) => { setD(x); setMsg("✓ " + t("Проведено", "Проведено") + ": " + x.made.qty + " " + t("выкрасок", "викрасок")); setGrams({}); }).catch((e: any) => setMsg(e?.response?.data?.detail || t("Ошибка", "Помилка")));
   return (
-    <div className="panel" style={{ marginBottom: 12 }}>
-      <div style={{ fontWeight: 700, fontSize: 15 }}>🎨 {t("Выкраски из А3", "Викраски з А3")}</div>
-      <div className="muted" style={{ fontSize: 12, margin: "4px 0 8px", lineHeight: 1.45 }}>{t("Выберите материал и сколько листов А3 сделали. Граммы на 1 лист можно поправить. Материал и бумага спишутся, выкраски появятся на остатке.", "Оберіть матеріал і скільки аркушів А3 зробили. Грами на 1 аркуш можна поправити. Матеріал і папір спишуться, викраски зʼявляться на залишку.")}{d.rate_sheet ? " " + t("Оплата", "Оплата") + `: ${f(d.rate_sheet)} ₴ ` + t("за лист", "за аркуш") + "." : ""}</div>
+    <div className="panel" style={{ margin: 0, padding: 12 }}>
+      <div style={{ fontWeight: 700, fontSize: 14 }}>🎨 {t("Выкраски из А3", "Викраски з А3")}</div>
+      <div className="muted" style={{ fontSize: 11.5, margin: "2px 0 8px", lineHeight: 1.4 }}>{t("Материал и бумага спишутся, выкраски придут на остаток.", "Матеріал і папір спишуться, викраски прийдуть на залишок.")}{d.rate_sheet ? " " + t("Оплата", "Оплата") + `: ${f(d.rate_sheet)} ₴ ` + t("за лист", "за аркуш") + "." : ""}</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <select value={r.id} onChange={(e) => { setRid(Number(e.target.value)); setGrams({}); }} style={{ flex: "1 1 200px", height: 42, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }}>
+        <select value={r.id} onChange={(e) => { setRid(Number(e.target.value)); setGrams({}); }} style={{ flex: "1 1 160px", minWidth: 0, height: 38, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }}>
           {d.recipes.map((x: any) => <option key={x.id} value={x.id}>{x.name} — {t("на складе", "на складі")} {x.target_stock}</option>)}
         </select>
-        <input type="number" min={1} step={1} value={sheets} onChange={(e) => setSheets(e.target.value)} style={{ width: 80, height: 42, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }} title={t("Листов А3", "Аркушів А3")} />
+        <input type="number" min={1} step={1} value={sheets} onChange={(e) => setSheets(e.target.value)} style={{ width: 64, height: 38, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 8px" }} title={t("Листов А3", "Аркушів А3")} />
         <span className="muted" style={{ fontSize: 12.5 }}>{t("листов", "аркушів")} → <b>{n * r.per_sheet}</b> {t("выкрасок", "викрасок")}</span>
       </div>
       <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
         {r.lines.map((l: any) => (
-          <div key={l.product} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-            <span style={{ flex: 1, minWidth: 0 }}>{l.name}</span>
-            <input type="number" min={0} value={g(l)} onChange={(e) => setGrams({ ...grams, [l.product]: e.target.value })} style={{ width: 70, height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
-            <span className="muted" style={{ whiteSpace: "nowrap" }}>{t("г на лист", "г на аркуш")} · {t("всего", "всього")} {Math.round(Number(g(l)) * n)} г</span>
+          <div key={l.product} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.name}>{l.name}</span>
+            <input type="number" min={0} value={g(l)} onChange={(e) => setGrams({ ...grams, [l.product]: e.target.value })} style={{ width: 58, height: 30, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 6px" }} />
+            <span className="muted" style={{ whiteSpace: "nowrap" }}>{t("г/лист", "г/арк.")} · {Math.round(Number(g(l)) * n)} г</span>
           </div>))}
         {r.paper && <div className="muted" style={{ fontSize: 12.5 }}>{r.paper.name}: {n} {t("шт", "шт")}</div>}
       </div>
-      <button className="btn" disabled={!n} style={{ marginTop: 10, height: 42, width: "100%", background: n ? C.green : "#cbd5e1", color: "#fff", fontWeight: 700 }} onClick={post}>{t("Провести выкраски", "Провести викраски")}</button>
+      <button className="btn" disabled={!n} style={{ marginTop: 8, height: 38, width: "100%", background: n ? C.green : "#cbd5e1", color: "#fff", fontWeight: 700 }} onClick={post}>{t("Провести выкраски", "Провести викраски")}</button>
       {msg && <div style={{ fontSize: 12.5, marginTop: 6 }}>{msg}</div>}
     </div>
   );
@@ -1040,11 +1040,16 @@ function RepackPage({ t }: { t: any }) {
     try { await api.post(`/api/stock-documents/${id}/${post ? "post" : "unpost"}/`, {}); load(); } catch { alert(t("Нет доступа (нужно «Редактировать склад»)", "Немає доступу (потрібне «Редагувати склад»)")); }
   };
   return (
-    <div style={{ maxWidth: 720 }}>
-      <WashedBlock t={t} />
-      <SamplesBlock t={t} />
-      <RepackForm onDone={load} />
-      <div style={{ marginTop: 18 }}>
+    <div style={{ maxWidth: 1180 }}>
+      {/* 17.09.2026 (Олег): компактно — розлив (частіше за все) ліворуч, праворуч викраски і мите відро; мите відро не вгорі */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))", gap: 12, alignItems: "start" }}>
+        <RepackForm onDone={load} />
+        <div style={{ display: "grid", gap: 12 }}>
+          <SamplesBlock t={t} />
+          <WashedBlock t={t} />
+        </div>
+      </div>
+      <div style={{ marginTop: 16 }}>
         <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>{t("Последние розливы и списания", "Останні розливи та списання")}</div>
         {busy ? <div className="muted">{t("Загрузка…", "Завантаження…")}</div> : docs.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>{t("Пока пусто", "Поки порожньо")}</div> : (
           <div style={{ overflowX: "auto" }}>

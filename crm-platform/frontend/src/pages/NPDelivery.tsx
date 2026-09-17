@@ -118,7 +118,11 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
   const delSeat = (i: number) => setSeats((p) => p.length > 1 ? p.filter((_, j) => j !== i) : p);
   const applyPreset = (key: string) => { const pr = PRESETS[key]; setSeats((p) => [...p, { l: pr.l, w: pr.w, h: pr.h, kg: pr.kg }]); };
 
-  const collect = () => ({ sender: snd, recipient: rec, parcel: par, cargo_type: cargo, seats, pack, note, cargo_details: items, backward: bw, time_interval: timeInterval });
+  // 17.09.2026 (#66748): усе оплачено → галочку «Контроль оплати» не видно, але збережене «увімкнено» йшло на сервер
+  // і ТТН не створювалась («зніміть галочку», якої немає). Тепер при повній оплаті наложка завжди вимкнена.
+  const _allPaidNow = (_remain + _linked.filter((x: any) => incl.includes(x.id)).reduce((a: number, x: any) => a + (Number(x.remaining) || 0), 0)) <= 0;
+  const _bwEff = _allPaidNow ? { ...bw, on: false } : bw;
+  const collect = () => ({ sender: snd, recipient: rec, parcel: par, cargo_type: cargo, seats, pack, note, cargo_details: items, backward: _bwEff, time_interval: timeInterval });
 
   const [ttnErr, setTtnErr] = useState("");
   const save = (silent?: boolean) => {
@@ -130,7 +134,7 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
   const estimate = () => {
     setBusy("est");
     const props: any = { CityRecipient: rec.city_ref || "", Weight: String(chargeW || totW || 1), ServiceType: rec.service, Cost: par.declared, CargoType: cargo, SeatsAmount: String(seats.length) };
-    if (bw.on) props.RedeliveryCalculate = { CargoType: "Money", Amount: bw.amount || par.declared };
+    if (_bwEff.on) props.RedeliveryCalculate = { CargoType: "Money", Amount: bw.amount || par.declared };
     if (pack.ref) { props.PackCount = "1"; props.PackRef = pack.ref; }
     api.post<any>(`/api/deals/${deal.id}/np_estimate/`, { props }).then(setPrice).catch(() => flash && flash(t("Не удалось оценить", "Не вдалося оцінити"))).finally(() => setBusy(""));
   };
@@ -146,7 +150,7 @@ export default function NPDelivery({ deal, onReload, flash, readOnly, defaultWei
       weight: String(chargeW || totW || 1), seats: String(seats.length), cost: par.declared, service_type: rec.service,
       cargo_type: cargo, description: par.descr, cargo_details: items, additional: note, pack_ref: pack.ref, time_interval: timeInterval,
       saturday: pack.saturday, return_docs: pack.return_docs, payer: par.payer, payment_method: par.method,
-      cod_amount: bw.on ? (bw.amount || par.declared) : 0, include_deals: incl, delivery_date: date,
+      cod_amount: _bwEff.on ? (bw.amount || par.declared) : 0, include_deals: incl, delivery_date: date,
     }).then((r) => { flash && flash(t(`✓ ТТН ${r.ttn} создана`, `✓ ТТН ${r.ttn} створена`)); onReload && onReload(); })
       .catch((e: any) => {
         const d = e?.response?.data?.detail; const st = e?.response?.status;
