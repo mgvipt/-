@@ -11,21 +11,27 @@
 бібліотеки; самі байти віддає вже наявний публічний лінк /api/f/<token>/ (той самий, що менеджер шле в чат).
 Нічого не пишемо в БД: лише читання.
 """
+import datetime
 import json
 import re
 from html import escape
 from urllib.parse import quote
 
+from django.core import signing
 from django.http import Http404, HttpResponse
+from django.utils import timezone
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import MediaLibraryItem
+from .models import Conversation, MediaLibraryItem, Message
 
 PUBLIC_HOST = "https://wallcov.com.ua"          # той самий домен, що для /f/<код> (проксі на CRM)
 MANAGER_PHONE = "380973282283"                  # той самий номер, що Юля дає клієнту (Viber / Telegram / WhatsApp)
 MANAGER_TG = "https://t.me/wallcov_pidtrimka"
-MANAGER_VIBER = "https://msng.link/o?380973282283=vi"
+MANAGER_VIBER = "https://msng.link/o?380973282283=vi"   # той самий лінк, що дає Юля (viber://chat відкривається не в усіх)
+# Ліпнина і плінтуси — це моделі, а не кольори (Олег 17.09)
+MODEL_MATERIALS = {"Orac Decor", "Плінтуси Cezar"}
 SECTION = "colors"
 SWATCH_RE = re.compile(r"(каталог|зразок|sample)", re.I)
 
@@ -42,6 +48,35 @@ SLUG_MAP = {
     "мокрий шовк": "mokryi-shovk", "вельвет луна": "velvet-luna", "патера": "pattera",
     "песочки": "pisochky", "плінтуси cezar": "cezar", "orac decor": "orac",
 }
+
+
+TOKEN_SALT = "showcase-pick"
+TOKEN_MAX_AGE = 60 * 60 * 24 * 60        # 60 днів — стільки живе персональне посилання
+PICK_SENDER = "Клієнт · сторінка кольорів"
+PICK_RE = re.compile(r"\{(?:кольори|кольори|colors)(?::([a-z0-9\-]+))?(?:/([^}]+))?\}")
+
+
+def conv_token(conv_id):
+    return signing.dumps({"c": int(conv_id)}, salt=TOKEN_SALT)
+
+
+def page_link(slug="", code="", conv_id=None):
+    """Посилання клієнту. З conv_id — персональне: кнопка «Обрати» напише в ЦЕЙ чат CRM."""
+    url = PUBLIC_HOST + "/p/"
+    if slug:
+        url += "%s/" % slug
+        if code:
+            url += "%s/" % quote(str(code).replace(" ", "+"), safe="+/")
+    if conv_id:
+        url += "?c=%s" % conv_token(conv_id)
+    return url
+
+
+def personalize(text, conv):
+    """{кольори} або {кольори:velvet-luna} у тексті → персональне посилання на сторінку кольорів."""
+    if not text or "{кольори" not in text:
+        return text
+    return PICK_RE.sub(lambda m: page_link(m.group(1) or "", m.group(2) or "", getattr(conv, "id", None)), text)
 
 
 def json_dumps(text):
@@ -77,6 +112,19 @@ def materials():
             row["codes"].add(code)
     out = [{"name": r["name"], "slug": slug_of(r["name"]), "codes": len(r["codes"])} for r in seen.values()]
     return sorted(out, key=lambda r: (-r["codes"], r["name"]))
+
+
+def is_model(material):
+    return material in MODEL_MATERIALS
+
+
+def words(material):
+    """Кольори чи моделі — щоб на ліпнині й плінтусах не писати «оберіть колір»."""
+    if is_model(material):
+        return {"many": "Моделі", "code": "артикул", "liked": "Сподобалась ця модель?",
+                "pick": "📐 Обрати цю модель", "open": "Подивитись фото →"}
+    return {"many": "Кольори", "code": "код кольору", "liked": "Сподобався цей колір?",
+            "pick": "🎨 Обрати цей колір", "open": "Подивитись у інтерʼєрі →"}
 
 
 def material_by_slug(slug):
@@ -126,10 +174,53 @@ h1{font-size:22px;margin:4px 0 6px;line-height:1.25}p.lead{color:var(--muted);ma
 .btn{display:inline-flex;align-items:center;gap:6px;border-radius:10px;padding:10px 14px;font-size:15px;font-weight:600;text-decoration:none;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer}
 .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
 .ok{color:#2F8F5B;font-size:14px;margin-top:8px;display:none}
+.lb{position:fixed;inset:0;background:rgba(15,23,42,.94);display:none;align-items:center;justify-content:center;padding:14px;z-index:60}
+.lb.on{display:flex}
+.lb img{max-width:100%%;max-height:84vh;border-radius:10px;display:block}
+.lb .x{position:absolute;top:12px;right:12px;background:#fff;color:var(--ink);border:0;border-radius:999px;padding:9px 16px;font-size:15px;font-weight:700;cursor:pointer}
+.lb .hint{position:absolute;bottom:16px;left:0;right:0;text-align:center;color:#e7ebf2;font-size:13px}
 </style></head><body><div class="wrap">%s<h1>%s</h1>%s%s
-<div class="foot">Wallcov · декоративні покриття</div></div></body></html>""" % (
+<div class="foot">Wallcov · декоративні покриття</div></div>
+<div class="lb" id="lb" role="dialog" aria-label="Фото"><button class="x" type="button" id="lbx">✕ Закрити</button>
+<img id="lbi" src="" alt=""><div class="hint">Натисніть будь-де, щоб повернутись</div></div>
+<script>(function(){var lb=document.getElementById("lb"),im=document.getElementById("lbi");
+function open(src){im.src=src;lb.classList.add("on");document.body.style.overflow="hidden";
+ try{history.pushState({lb:1},"");}catch(e){}}
+function close(){lb.classList.remove("on");im.src="";document.body.style.overflow="";}
+document.addEventListener("click",function(e){var a=e.target.closest("[data-full]");
+ if(a){e.preventDefault();open(a.getAttribute("data-full"));return;}
+ if(lb.classList.contains("on")){close();}});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&lb.classList.contains("on")){close();}});
+window.addEventListener("popstate",function(){if(lb.classList.contains("on")){close();}});})();</script>
+</body></html>""" % (
         escape(title), nav, escape(title),
         ('<p class="lead">%s</p>' % escape(subtitle)) if subtitle else "", body))
+
+
+class ShowcasePickView(APIView):
+    """Клієнт натиснув «Обрати цей колір» на персональному посиланні — пишемо вибір у ТОЙ САМИЙ чат CRM,
+    звідки клієнт прийшов (17.09.2026, Олег). Посилання підписане: підробити чи підставити чужий чат не можна."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        token = (request.data.get("c") or "").strip()
+        text = (request.data.get("text") or "").strip()[:300]
+        try:
+            data = signing.loads(token, salt=TOKEN_SALT, max_age=TOKEN_MAX_AGE)
+        except Exception:
+            return Response({"ok": False, "detail": "посилання застаріле"}, status=400)
+        conv = Conversation.objects.filter(id=data.get("c")).select_related("channel").first()
+        if not conv or not text:
+            return Response({"ok": False}, status=400)
+        recent = Message.objects.filter(conversation=conv, sender_name=PICK_SENDER,
+                                        created_at__gte=timezone.now() - datetime.timedelta(hours=1)).count()
+        if recent >= 10:
+            return Response({"ok": False, "detail": "забагато натискань"}, status=429)
+        Message.objects.create(conversation=conv, direction="in", text=text, sender_name=PICK_SENDER)
+        Conversation.objects.filter(id=conv.id).update(unread=(conv.unread or 0) + 1, last_message_at=timezone.now(),
+                                                       status="open")
+        return Response({"ok": True})
 
 
 class ShowcaseIndexView(APIView):
@@ -155,6 +246,7 @@ class ShowcaseMaterialView(APIView):
         m = material_by_slug(slug)
         if not m:
             raise Http404
+        w = words(m["name"])
         items = list(_items().filter(material=m["name"]).order_by("sort", "id"))
         seen, cards, catalog = set(), [], []
         for it in items:
@@ -165,15 +257,19 @@ class ShowcaseMaterialView(APIView):
                 continue
             seen.add(it.color_code)
             cards.append('<a class="card" href="/p/%s/%s/"><img loading="lazy" src="%s" alt=""><div class="t">%s</div>'
-                         '<div class="s">Подивитись у інтерʼєрі →</div></a>' % (
-                             slug, escape(it.color_code.replace(" ", "+")), escape(file_url(it)), escape(it.color_code)))
+                         '<div class="s">%s</div></a>' % (
+                             slug, escape(it.color_code.replace(" ", "+")), escape(file_url(it)), escape(it.color_code),
+                             w["open"]))
         body = ""
         if catalog:
             body += '<h2 style="font-size:17px;margin:14px 0 6px">Каталог</h2><div class="grid">%s</div>' % "".join(
-                '<a class="card" href="%s" target="_blank" rel="noopener"><img loading="lazy" src="%s" alt="">'
-                '<div class="t">%s</div></a>' % (escape(file_url(c)), escape(file_url(c)), escape(c.title[:60])) for c in catalog)
-        body += '<h2 style="font-size:17px;margin:18px 0 6px">Кольори (%d)</h2><div class="grid">%s</div>' % (len(cards), "".join(cards))
-        body += '<div class="note">Сподобався колір — напишіть менеджеру його код, і ми підготуємо розрахунок або викраску 10×30 см у цьому кольорі.</div>'
+                '<a class="card" href="%s" data-full="%s"><img loading="lazy" src="%s" alt="">'
+                '<div class="t">%s</div></a>' % (escape(file_url(c)), escape(file_url(c)), escape(file_url(c)),
+                                                 escape(c.title[:60])) for c in catalog)
+        body += '<h2 style="font-size:17px;margin:18px 0 6px">%s (%d)</h2><div class="grid">%s</div>' % (
+            w["many"], len(cards), "".join(cards))
+        body += ('<div class="note">Сподобалось — напишіть менеджеру %s, і ми підготуємо розрахунок%s.</div>'
+                 % (w["code"], "" if is_model(m["name"]) else " або викраску 10×30 см у цьому кольорі"))
         return _page(m["name"], body, BLURB.get(m["name"], ""), back=("/p/", "усі матеріали"))
 
 
@@ -194,31 +290,42 @@ class ShowcaseColorView(APIView):
         photos = [i for i in items if i.kind == "image" and i is not swatch and not is_swatch(i)]
         body = ""
         if swatch:
-            body += '<div class="big"><img src="%s" alt=""></div>' % escape(file_url(swatch))
+            body += ('<div class="big"><a href="%s" data-full="%s"><img src="%s" alt=""></a></div>'
+                     % (escape(file_url(swatch)), escape(file_url(swatch)), escape(file_url(swatch))))
         if photos:
             body += '<h2 style="font-size:17px;margin:18px 0 6px">У інтерʼєрі (%d)</h2><div class="row">%s</div>' % (
-                len(photos), "".join('<a href="%s" target="_blank" rel="noopener"><img loading="lazy" src="%s" alt="" '
+                len(photos), "".join('<a href="%s" data-full="%s"><img loading="lazy" src="%s" alt="" '
                                      'style="width:100%%;border-radius:12px;border:1px solid var(--line)"></a>'
-                                     % (escape(file_url(p)), escape(file_url(p))) for p in photos))
+                                     % (escape(file_url(p)), escape(file_url(p)), escape(file_url(p))) for p in photos))
         if videos:
             body += '<h2 style="font-size:17px;margin:18px 0 6px">Відео</h2><div class="row">%s</div>' % "".join(
                 '<video controls preload="metadata" src="%s"></video>' % escape(file_url(v)) for v in videos)
         # 17.09.2026 (Олег): «щоб клієнт кнопкою обирав колір і потрапляв у чат з менеджером»
-        msg = "Обрав колір %s · %s. Порахуйте, будь ласка, матеріал (або викраску 10×30 см у цьому кольорі)." % (m["name"], code)
+        w = words(m["name"])
+        msg = ("Обрав модель %s · %s. Порахуйте, будь ласка." % (m["name"], code) if is_model(m["name"])
+               else "Обрав колір %s · %s. Порахуйте, будь ласка, матеріал (або викраску 10×30 см у цьому кольорі)." % (m["name"], code))
         q = quote(msg)
-        body += ('<div class="pick"><b>Сподобався цей колір?</b>'
-                 '<div style="color:var(--muted);font-size:14px;margin-top:4px">Натисніть — код %s піде менеджеру, '
-                 'і ми порахуємо матеріал на Вашу площу або зробимо викраску 10×30 см у цьому кольорі.</div>'
+        body += ('<div class="pick"><b>%s</b>'
+                 '<div style="color:var(--muted);font-size:14px;margin-top:4px">Натисніть — %s піде менеджеру, '
+                 'і ми все порахуємо під Вас.</div>'
                  '<div class="btns">'
-                 '<button class="btn primary" type="button" onclick="pick()">🎨 Обрати цей колір</button>'
-                 '<a class="btn" href="viber://chat?number=%%2B%s&amp;draft=%s" rel="noopener">Viber</a>'
+                 '<button class="btn primary" type="button" onclick="pick()">%s</button>'
+                 '<a class="btn" href="%s" target="_blank" rel="noopener">Viber</a>'
                  '<a class="btn" href="%s" target="_blank" rel="noopener">Telegram</a>'
                  '<a class="btn" href="https://wa.me/%s?text=%s" target="_blank" rel="noopener">WhatsApp</a>'
-                 '</div><div class="ok" id="ok">Код скопійовано — вставте його у ваш чат з менеджером 👍</div></div>'
-                 '<script>function pick(){var t=%s;try{navigator.clipboard.writeText(t);}catch(e){}'
-                 'var o=document.getElementById("ok");o.style.display="block";'
-                 'setTimeout(function(){location.href="%s";},900);}</script>'
-                 % (escape(code), MANAGER_PHONE, q, escape(MANAGER_TG + "?text=" + q), MANAGER_PHONE, q,
-                    json_dumps(msg), escape(MANAGER_TG + "?text=" + q)))
+                 '</div><div class="ok" id="ok">Скопійовано — вставте у ваш чат з менеджером 👍</div></div>'
+                 '<script>if(new URLSearchParams(location.search).get("c")){'
+                 'document.querySelectorAll(".pick .btn:not(.primary)").forEach(function(b){b.style.display="none";});}</script>'
+                 '<script>function pick(){var t=%s;var o=document.getElementById("ok");'
+                 'var c=new URLSearchParams(location.search).get("c");'
+                 'if(c){fetch("/p/pick/",{method:"POST",headers:{"Content-Type":"application/json"},'
+                 'body:JSON.stringify({c:c,text:t})}).then(function(r){return r.json();}).then(function(d){'
+                 'o.textContent=d && d.ok ? "Готово — менеджер уже бачить Ваш вибір у чаті ✅" : '
+                 '"Не вдалось надіслати — напишіть код менеджеру, будь ласка";o.style.display="block";})'
+                 '.catch(function(){o.textContent="Не вдалось надіслати — напишіть код менеджеру";o.style.display="block";});return;}'
+                 'try{navigator.clipboard.writeText(t);}catch(e){}'
+                 'o.style.display="block";setTimeout(function(){location.href="%s";},900);}</script>'
+                 % (w["liked"], escape(code), w["pick"], escape(MANAGER_VIBER), escape(MANAGER_TG + "?text=" + q),
+                    MANAGER_PHONE, q, json_dumps(msg), escape(MANAGER_TG + "?text=" + q)))
         return _page("%s · %s" % (m["name"], code), body, BLURB.get(m["name"], ""),
                      back=("/p/%s/" % slug, m["name"]))

@@ -134,6 +134,7 @@ urlpatterns = [
     path("api/team-chat/contacts/", inbox_views.TeamContactsView.as_view()),
     path("api/team-chat/<int:user_id>/", inbox_views.TeamThreadView.as_view()),
     # 17.09.2026 (Олег): публічні сторінки матеріалів і кольорів — їх шле ІІ замість телеграм-бота палітри
+    path("p/pick/", showcase.ShowcasePickView.as_view()),   # клієнт обрав колір → повідомлення в його чат
     path("p/", showcase.ShowcaseIndexView.as_view()),
     path("p/<slug:slug>/", showcase.ShowcaseMaterialView.as_view()),
     path("p/<slug:slug>/<path:code>/", showcase.ShowcaseColorView.as_view()),

@@ -243,6 +243,11 @@ def _resolve_chatplace_chat_id(conv):
 def send_message(conv: Conversation, text: str, user=None, comment_mode=None) -> Message:
     """Отправить исходящее сообщение через адаптер канала и записать его.
     comment_mode (лише чати-коментарі Meta): "public" — у гілку (типово), "private" — приватно в Messenger (FB)."""
+    # 17.09.2026 (Олег): {кольори} або {кольори:velvet-luna} → персональне посилання на сторінку кольорів,
+    # де кнопка «Обрати колір» пише вибір назад у ЦЕЙ чат.
+    if text and "{кольори" in text:
+        from .showcase import personalize
+        text = personalize(text, conv)
     cfg = conv.config or {}
     route = cfg.get("outbound_chatplace") or {}
     is_meta_instagram_direct = bool(
