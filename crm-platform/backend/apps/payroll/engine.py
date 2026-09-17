@@ -52,7 +52,84 @@ def policy():
     from .models import PayPolicy
     out = copy.deepcopy(DEFAULT_POLICY)
     p = PayPolicy.objects.filter(pk=1).first()
-    return _merge(out, p.params if p else {})
+    out = _merge(out, p.params if p else {})
+    # 17.09.2026 (Олег): продажі з сайтів (воронки «Лендинг · …», «Інтернет-магазин») — ОНЛАЙН, зеркально як
+    # «21 Основний продукт» / «22 Тестовий набір»: у % з маржі, план, бонус «тест → основне», «Моя ЗП».
+    try:
+        site = site_funnel_ids()
+    except Exception:
+        site = []
+    out["funnels"]["site"] = site  # рахується щоразу з назв воронок (збережене в PayPolicy не використовуємо)
+    out["funnels"]["online"] = list(out["funnels"]["online"]) + [f for f in site if f not in out["funnels"]["online"]]
+    for f in site:
+        out["margin_estimate_pct"].setdefault(str(f), out["margin_estimate_pct"].get("15", 50))
+    return out
+
+
+def site_funnel_ids():
+    """Воронки сайтів — ті самі, що вирівнює `manage.py mirror_site_funnels`."""
+    from apps.crm.models import Funnel
+    return list(Funnel.objects.filter(Q(name__startswith="Лендинг ·") | Q(name__icontains="Інтернет-магазин"))
+                .order_by("id").values_list("id", flat=True))
+
+
+def online_funnels(p, pol):
+    """Воронки компонента ставки (% з маржі, план). Ставки зберігають список [15, 16] явно — якщо це онлайн-ставка,
+    додаємо воронки сайтів (17.09.2026), щоб продажі з сайтів рахувались так само."""
+    fl = list((p or {}).get("funnels") or pol["funnels"]["online"])
+    site = pol["funnels"].get("site") or []
+    base = set(pol["funnels"]["online"]) - set(site)
+    if site and set(fl) & base:
+        fl += [f for f in site if f not in fl]
+    return fl
+
+
+def _site_test_ids(pol):
+    """Угоди у воронках сайтів, що є тест-набором (як «22 Тестовий набір»): усі товари — тест-набори;
+    без товарів — за назвою («Пробний набір …»). Решта угод сайтів — «основне»."""
+    if "_site_test_ids" in pol:
+        return pol["_site_test_ids"]
+    ids = set()
+    site = pol["funnels"].get("site") or []
+    if site:
+        from apps.crm.models import Deal
+        for d in Deal.objects.filter(funnel_id__in=site).prefetch_related("items__product__category"):
+            its = list(d.items.all())
+            if its:
+                ok = all(i.product_id and ("тестов" in ((i.product.category.name if i.product.category_id else "") or "").lower()
+                                           or "тест-наб" in i.product.name.lower() or "тестовий набір" in i.product.name.lower())
+                         for i in its)
+            else:
+                t = (d.title or "").lower()
+                ok = "пробний набір" in t or "тестовий набір" in t or "тест-набір" in t
+            if ok:
+                ids.add(d.id)
+    pol["_site_test_ids"] = ids
+    return ids
+
+
+def kind_q(kind, pol, prefix=""):
+    """Q угод «test» / «main» з урахуванням воронок сайтів. prefix="deal__" — для фільтрів оплат."""
+    base = Q(**{prefix + "funnel_id__in": list(pol["funnels"][kind])})
+    site = pol["funnels"].get("site") or []
+    if not site:
+        return base
+    tids = list(_site_test_ids(pol))
+    if kind == "test":
+        return base | Q(**{prefix + "id__in": tids})
+    return base | (Q(**{prefix + "funnel_id__in": site}) & ~Q(**{prefix + "id__in": tids}))
+
+
+def deal_kind(deal_id, funnel_id, pol):
+    """"test" / "main" / None для однієї угоди (та сама логіка, що kind_q)."""
+    site = pol["funnels"].get("site") or []
+    if funnel_id in site:
+        return "test" if deal_id in _site_test_ids(pol) else "main"
+    if funnel_id in pol["funnels"]["test"]:
+        return "test"
+    if funnel_id in pol["funnels"]["main"]:
+        return "main"
+    return None
 
 
 def period_bounds(period):
@@ -452,7 +529,7 @@ def _plan(user, period):
 
 def _c_margin(comp, user, period, d1, d2, pol, std_score):
     p = comp.params
-    funnels = p.get("funnels") or pol["funnels"]["online"]
+    funnels = online_funnels(p, pol)
     rev = margin = 0.0
     est, cache, deals = 0, {}, set()
     txs = list(_income(d1, d2, deal__owner=user, deal__funnel_id__in=funnels))
@@ -529,20 +606,18 @@ def _c_event(comp, user, d1, d2, pol):
     from apps.crm.models import Deal
     p = comp.params
     tiers = p.get("tiers") or {"fast_days": 30, "min_order": 3000, "fast": 300, "slow": 200, "small": 100}
-    test_f = pol["funnels"]["test"]
-    main_f = pol["funnels"]["main"]
     fp = {r["deal_id"]: r for r in _first_pay()}
-    mine = Deal.objects.filter(owner=user, funnel_id__in=main_f, id__in=[i for i, r in fp.items() if d1 <= r["first"] <= d2])
+    mine = Deal.objects.filter(kind_q("main", pol), owner=user, id__in=[i for i, r in fp.items() if d1 <= r["first"] <= d2])
     total, n, rows = 0, 0, []
     for d in mine.select_related("contact"):
         if not d.contact_id:
             continue
         first_main = fp[d.id]["first"]
-        tests = [fp[x]["first"] for x in Deal.objects.filter(contact_id=d.contact_id, funnel_id__in=test_f).values_list("id", flat=True)
+        tests = [fp[x]["first"] for x in Deal.objects.filter(kind_q("test", pol), contact_id=d.contact_id).values_list("id", flat=True)
                  if x in fp and fp[x]["first"] <= first_main]
         if not tests:
             continue
-        earlier_main = [x for x in Deal.objects.filter(contact_id=d.contact_id, funnel_id__in=main_f).exclude(id=d.id)
+        earlier_main = [x for x in Deal.objects.filter(kind_q("main", pol), contact_id=d.contact_id).exclude(id=d.id)
                         .values_list("id", flat=True) if x in fp and min(tests) <= fp[x]["first"] < first_main]
         if earlier_main:
             continue
@@ -719,7 +794,7 @@ def scheme_cost(sc, pol=None, sh=None, on=None, with_guarantee=True):
             if sc.is_vacancy or (g_start and g_start <= ref <= g_end):
                 guarantee = float(p.get("amount") or pol["guarantee"]["amount"])
         elif c.kind == "margin_share":
-            funnels = p.get("funnels") or pol["funnels"]["online"]
+            funnels = online_funnels(p, pol)
             # % продавця — лише з маржі ЙОГО угод (частка за останні N днів); нова людина / вакансія = 0:
             # її % платиться з нових продажів, у точці беззбитковості — лише тверда частина
             own = sum(sh["by_owner_margin"].get((sc.user_id, f), 0) for f in funnels) if sc.user_id else 0.0
@@ -889,7 +964,7 @@ def deal_bonus_preview(deal):
     m_pct = r_pct = 0.0
     for c in sc.components.filter(active=True, kind__in=["margin_share", "revenue_share"]):
         p = c.params or {}
-        if c.kind == "margin_share" and deal.funnel_id in (p.get("funnels") or pol["funnels"]["online"]):
+        if c.kind == "margin_share" and deal.funnel_id in online_funnels(p, pol):
             m_pct += float(p.get("pct_to_plan", 10))
         if c.kind == "revenue_share" and p.get("basis", "funnels") == "funnels" and deal.funnel_id in (p.get("funnels") or []):
             r_pct += float(p.get("pct") or 0)

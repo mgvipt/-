@@ -40,7 +40,7 @@ def _num(v, default, lo, hi):
 def margin_state(user, comp, period, pol, std_score):
     """Оплати, маржа і параметри ставки — рівно як їх бере engine._c_margin."""
     p = comp.params or {}
-    funnels = p.get("funnels") or pol["funnels"]["online"]
+    funnels = engine.online_funnels(p, pol)
     d1, d2 = engine.period_bounds(period)
     txs = list(engine._income(d1, d2, deal__owner=user, deal__funnel_id__in=funnels))
     # якщо в engine вже є повернення клієнтам (пакет returns, 16.09: engine._refunds) — мінусуємо рівно як _c_margin
@@ -55,7 +55,8 @@ def margin_state(user, comp, period, pol, std_score):
         margin += amt * r
     to_pct = float(p.get("pct_to_plan", 10))
     over_pct = float(p.get("pct_over_plan", to_pct))
-    est = [float(pol["margin_estimate_pct"].get(str(f), 50)) / 100.0 for f in funnels]
+    _site = set(pol["funnels"].get("site") or [])  # 17.09: воронки сайтів не міняють норматив (оцінка — як у 21/22)
+    est = [float(pol["margin_estimate_pct"].get(str(f), 50)) / 100.0 for f in funnels if f not in _site or not (set(funnels) - _site)]
     return {"rev": rev, "margin": margin, "to": to_pct, "over": over_pct, "plan": engine._plan(user, period),
             "gate": std_score >= float(p.get("gate_standard_min", 0.75)), "funnels": list(funnels),
             "ratio": (margin / rev) if rev > 0 else (sum(est) / len(est) if est else 0.5), "ratio_est": rev <= 0}
@@ -86,7 +87,7 @@ def _guarantee(sc, period, pol):
 def _avg_main_order(user, pol, today):
     from apps.finance.models import Transaction
     rows = (Transaction.objects.filter(direction="in", transfer_account__isnull=True, deal__owner=user,
-                                       deal__funnel_id__in=pol["funnels"]["main"])
+                                       ).filter(engine.kind_q("main", pol, "deal__"))
             .values("deal_id").annotate(first=Min("date"), total=Sum("amount_uah")))
     vals = [float(r["total"] or 0) for r in rows if r["first"] >= today - timedelta(days=90) and r["total"]]
     return (sum(vals) / len(vals)) if vals else None
@@ -100,7 +101,7 @@ def _open_discounts(user, pol):
     from apps.crm.models import Deal
     out = []
     since = timezone.now() - timedelta(days=OPEN_DAYS)
-    for d in (Deal.objects.filter(owner=user, funnel_id__in=pol["funnels"]["main"], stage__is_lost=False, stage__is_won=False,
+    for d in (Deal.objects.filter(engine.kind_q("main", pol), owner=user, stage__is_lost=False, stage__is_won=False,
                                   created_at__gte=since)
               .prefetch_related("items__product").order_by("-id")[:300]):
         disc = sum(float(i.discount_sum or 0) for i in d.items.all())

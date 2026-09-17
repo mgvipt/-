@@ -77,18 +77,17 @@ def collect(since, until, user_ids=None):
     """Події нових правил (крім quality — її дає сигнал розбору) з датою події since..until. Лише читання."""
     from apps.crm.models import Deal
     pol = engine.policy()
-    test_f, main_f = list(pol["funnels"]["test"]), list(pol["funnels"]["main"])
     fp = {r["deal_id"]: r for r in engine._first_pay()}
     ids = [i for i, r in fp.items() if since <= r["first"] <= until]
-    mains = Deal.objects.filter(funnel_id__in=main_f, owner__isnull=False, id__in=ids)
+    mains = Deal.objects.filter(engine.kind_q("main", pol), owner__isnull=False, id__in=ids)  # 17.09: + воронки сайтів
     if user_ids is not None:
         mains = mains.filter(owner_id__in=list(user_ids))
     mains = list(mains.prefetch_related("items__product"))
     contacts = {d.contact_id for d in mains if d.contact_id}
     tests_by, mains_by = defaultdict(list), defaultdict(list)
-    for did, cid, fid in Deal.objects.filter(contact_id__in=contacts, funnel_id__in=test_f + main_f).values_list("id", "contact_id", "funnel_id"):
+    for did, cid, fid in Deal.objects.filter(engine.kind_q("test", pol) | engine.kind_q("main", pol), contact_id__in=contacts).values_list("id", "contact_id", "funnel_id"):
         if did in fp:
-            (tests_by if fid in test_f else mains_by)[cid].append((fp[did]["first"], did))
+            (tests_by if engine.deal_kind(did, fid, pol) == "test" else mains_by)[cid].append((fp[did]["first"], did))
     out, tcache = [], {}
     for d in mains:
         first_main = fp[d.id]["first"]

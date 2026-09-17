@@ -71,7 +71,7 @@ def _plan_part(user, months):
         mc = sc.components.filter(active=True, kind="margin_share").first() if sc else None
         flt = {"deal__owner": user}
         if mc is not None:
-            flt["deal__funnel_id__in"] = (mc.params or {}).get("funnels") or engine.policy()["funnels"]["online"]
+            flt["deal__funnel_id__in"] = engine.online_funnels(mc.params, engine.policy())
         fact = float(engine._income(d1, d2, **flt).aggregate(s=Sum("amount_uah"))["s"] or 0)
         _refunds = getattr(engine, "_refunds", None)   # як «Моя ЗП → План» (пакет returns): мінус повернення клієнтам
         if _refunds:

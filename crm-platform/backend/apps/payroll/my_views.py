@@ -129,7 +129,7 @@ def _tiers(p):
 def _margin_params(p, pol):
     p = p or {}
     to = _n(p.get("pct_to_plan", 10))
-    return {"funnels": p.get("funnels") or pol["funnels"]["online"], "to": to,
+    return {"funnels": engine.online_funnels(p, pol), "to": to,
             "over": _n(p.get("pct_over_plan", to)), "gate": round(_n(p.get("gate_standard_min", 0.75)) * 100)}
 
 
@@ -397,7 +397,7 @@ def _test_opportunities(u, ev, pol, today):
     """Мої тест-набори, оплачені за останні 30 днів, клієнт яких ще не оплатив основне замовлення."""
     from apps.crm.models import Contact, Deal
     t = _tiers(ev.params)
-    mine = list(Deal.objects.filter(owner=u, funnel_id__in=pol["funnels"]["test"], contact__isnull=False)
+    mine = list(Deal.objects.filter(engine.kind_q("test", pol), owner=u, contact__isnull=False)
                 .values_list("id", "contact_id", "title"))
     fp = _first_pays([m[0] for m in mine])
     by_contact = {}
@@ -407,7 +407,7 @@ def _test_opportunities(u, ev, pol, today):
             by_contact[cid] = (did, r["first"], title)
     if not by_contact:
         return [], 0
-    mains = list(Deal.objects.filter(contact_id__in=list(by_contact), funnel_id__in=pol["funnels"]["main"])
+    mains = list(Deal.objects.filter(engine.kind_q("main", pol), contact_id__in=list(by_contact))
                  .values_list("id", "contact_id"))
     mfp = _first_pays([m[0] for m in mains])
     bought = {cid for did, cid in mains if did in mfp and mfp[did]["first"] >= by_contact[cid][1]}
@@ -689,7 +689,7 @@ def _test_ctx(deal, pol, tiers):
     first = fp["first"] if fp else None
     main_paid = None
     if deal.contact_id and first:
-        mids = list(Deal.objects.filter(contact_id=deal.contact_id, funnel_id__in=pol["funnels"]["main"]).values_list("id", flat=True))
+        mids = list(Deal.objects.filter(engine.kind_q("main", pol), contact_id=deal.contact_id).values_list("id", flat=True))
         firsts = [r["first"] for r in _first_pays(mids).values() if r["first"] >= first]
         main_paid = min(firsts) if firsts else None
     return {"first": first, "main_paid": main_paid,
@@ -979,7 +979,7 @@ class DealKpiView(APIView):
             return Response({"detail": "Немає доступу до цієї угоди"}, status=403)
         pol = engine.policy()
         today = timezone.localdate()
-        kind = ("test" if deal.funnel_id in (pol["funnels"].get("test") or [])
+        kind = ("test" if engine.deal_kind(deal.id, deal.funnel_id, pol) == "test"
                 else "other" if deal.funnel_id in (pol["funnels"].get("diamond") or []) else "main")
         is_owner_view = bool(deal.owner_id) and deal.owner_id == u.id
         show_money = is_owner_view or _can(u, "payroll.rates.view")

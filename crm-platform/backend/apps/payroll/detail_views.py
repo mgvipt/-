@@ -166,7 +166,7 @@ def _d_margin(comp, user, period, d1, d2, pol, std_score):
     """= engine._c_margin: оплати місяця по угодах людини у воронках × маржа угоди; частина понад план — за ставкою
     понад план (якщо стандарт не нижче порогу). План ділить маржу пропорційно, як у рушії."""
     p = comp.params or {}
-    funnels = p.get("funnels") or pol["funnels"]["online"]
+    funnels = engine.online_funnels(p, pol)
     txs = list(engine._income(d1, d2, deal__owner=user, deal__funnel_id__in=funnels)
                .select_related("deal", "deal__contact", "deal__funnel").order_by("date", "id"))
     # 16.09 (returns): повернення клієнтам — рядки з мінусом, у тому ж порядку, що engine._c_margin (сума = рядку ЗП)
@@ -288,14 +288,13 @@ def _d_event(comp, user, d1, d2, pol):
     from apps.crm.models import Deal
     p = comp.params or {}
     tiers = p.get("tiers") or {"fast_days": 30, "min_order": 3000, "fast": 300, "slow": 200, "small": 100}
-    test_f = {int(x) for x in pol["funnels"]["test"]}
-    main_f = {int(x) for x in pol["funnels"]["main"]}
     fp = {r["deal_id"]: r for r in engine._first_pay()}
-    mine = list(Deal.objects.filter(owner=user, funnel_id__in=list(main_f),
+    mine = list(Deal.objects.filter(engine.kind_q("main", pol), owner=user,
                                     id__in=[i for i, r in fp.items() if d1 <= r["first"] <= d2]).select_related("contact"))
     cids = {d.contact_id for d in mine if d.contact_id}
     by_c = {}
-    for x in Deal.objects.filter(contact_id__in=cids, funnel_id__in=list(test_f | main_f)).values("id", "contact_id", "funnel_id"):
+    for x in Deal.objects.filter(engine.kind_q("test", pol) | engine.kind_q("main", pol), contact_id__in=cids).values("id", "contact_id", "funnel_id"):
+        x["kind"] = engine.deal_kind(x["id"], x["funnel_id"], pol)  # 17.09: воронки сайтів — тест/основне за товарами
         by_c.setdefault(x["contact_id"], []).append(x)
     total, rows, no_contact, no_test, had_main = 0, [], [], [], []
     for d in sorted(mine, key=lambda z: (fp[z.id]["first"], z.id)):
@@ -305,12 +304,12 @@ def _d_event(comp, user, d1, d2, pol):
         first_main = fp[d.id]["first"]
         cd = by_c.get(d.contact_id, [])
         tests = [(fp[x["id"]]["first"], x["id"]) for x in cd
-                 if x["funnel_id"] in test_f and x["id"] in fp and fp[x["id"]]["first"] <= first_main]
+                 if x["kind"] == "test" and x["id"] in fp and fp[x["id"]]["first"] <= first_main]
         if not tests:
             no_test.append(d.id)
             continue
         t_first, t_id = min(tests)
-        earlier = [x["id"] for x in cd if x["funnel_id"] in main_f and x["id"] != d.id and x["id"] in fp
+        earlier = [x["id"] for x in cd if x["kind"] == "main" and x["id"] != d.id and x["id"] in fp
                    and t_first <= fp[x["id"]]["first"] < first_main]
         if earlier:
             had_main.append(d.id)
