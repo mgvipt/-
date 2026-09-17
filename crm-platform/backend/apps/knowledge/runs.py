@@ -161,7 +161,7 @@ def run_controller(run, progress):
             row["error"] = "уже перевірено раніше — не оплачуємо вдруге"
         else:
             try:
-                findings, _n = reviewer.ai_review(conv, msgs, model)
+                findings, _n, _score = reviewer.ai_review(conv, msgs, model)
                 row["findings"] = [{"type": str(f.get("type") or ""), "problem": str(f.get("problem") or "")[:300],
                                     "quote": str(f.get("quote") or "")[:200]} for f in findings]
                 log.ai_findings = len(findings)

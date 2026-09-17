@@ -24,6 +24,8 @@ class Command(BaseCommand):
         p.add_argument("--date", default="")
         p.add_argument("--sample", type=int, default=0)
         p.add_argument("--conversation", type=int, default=0)
+        p.add_argument("--ai-only", action="store_true", dest="ai_only",
+                       help="Перевіряти діалоги, де відповідав наш ІІ-продавець (а не лише закриті чати)")
 
     def handle(self, *a, **o):
         cfg = KnowledgeSettings.get()
@@ -35,7 +37,8 @@ class Command(BaseCommand):
                               "(База знань ✓ → Контролер). Нічого не зроблено, $0. Безкоштовна перевірка кодом: --dry")
             return
         day = date.fromisoformat(o["date"]) if o["date"] else None
-        r = run(day=day, sample=o["sample"] or None, dry=dry, conversation_id=o["conversation"] or None)
+        r = run(day=day, sample=o["sample"] or None, dry=dry, conversation_id=o["conversation"] or None,
+                ai_only=o.get("ai_only", False))
         w = self.stdout.write
         w("РЕЦЕНЗЕНТ %s [%s] модель %s" % (r["day"], "ПРОБНИЙ ЗАПУСК — без ІІ, нічого не записано" if dry else "ЗАПИС", r["model"]))
         w("Закритих чатів у вибірці: %d %s" % (len(r["picked"]), r["picked"][:30]))

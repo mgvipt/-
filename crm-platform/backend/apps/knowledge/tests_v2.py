@@ -194,11 +194,16 @@ class SellerGuardTests(TestCase):
             r = answer("yulia_web", self.q)
         self.assertFalse(r["handoff"], r["handoff_reason"])
 
-    def test_client_wants_to_pay_goes_to_manager(self):
-        with patch(CC, return_value=seller("Чудово! Для якої кімнати?")):
+    def test_client_wants_to_pay_is_served_by_ai(self):
+        """18.09.2026 (Олег): «хочу замовити» більше не передається менеджеру — ІІ оформлює сам,
+        реквізити надсилає CRM. Менеджеру лишився тільки прямий запит на дзвінок."""
+        with patch(CC, return_value=seller("Оформлюю набір — зараз надішлю посилання на оплату.")):
             r = answer("yulia_web", [{"role": "client", "text": "Скільки коштує Галатея? Хочу оплатити, скиньте реквізити"}])
-        self.assertTrue(r["handoff"])
-        self.assertIn("замовити / оплатити", r["handoff_reason"])
+        self.assertFalse(r["handoff"], r["handoff_reason"])
+        with patch(CC, return_value=seller("Добре, передаю менеджеру.")):
+            r2 = answer("yulia_web", [{"role": "client", "text": "Скільки коштує Галатея? Передзвоніть мені, будь ласка"}])
+        self.assertTrue(r2["handoff"])
+        self.assertIn("дзвінок", r2["handoff_reason"])
 
     def test_discount_only_with_approved_rule(self):
         with patch(CC, return_value=seller("Зараз діє знижка на Галатею! Для якої кімнати?")):
@@ -323,7 +328,7 @@ class WebchatAiTests(Users, TestCase):
             m = self.reply()
         self.assertEqual(m.text, HANDOFF_TEXT)
         self.assertIn("не з каталогу", Message.objects.get(conversation=self.conv, internal=True).text)
-        m2 = Message.objects.create(conversation=self.conv, direction="in", text="Хочу оплатити, дайте реквізити",
+        m2 = Message.objects.create(conversation=self.conv, direction="in", text="Передзвоніть мені, будь ласка",
                                     external_id="web-in:kb2-2")
         with patch(CC, return_value=seller("Звісно! Для якої кімнати?")):
             self.assertEqual(self.reply(m2).text, HANDOFF_TEXT)

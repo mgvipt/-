@@ -33,9 +33,24 @@ LINT_OUT = [
     (r"знижк\w*\s*(до\s*)?(1[5-9]|[2-9]\d)\s*%|(1[5-9]|[2-9]\d)\s*%\s*знижк", "Пообіцяли знижку понад 10%", "discounts",
      "Знижки — тільки менеджер і в межах єдиного правила знижок."),
 ]
+# 18.09.2026 (Олег: «щоб усі агенти перевіряли й навчали одне одного») — перевірки за МАЙСТЕР-ПРОМТОМ.
+LINT_OUT += [
+    (r"витрат\w*[^.]{0,20}грн\s*/?\s*м²", "Сплутали витрату і ціну (витрата — кг/м²)", "pricing",
+     "ВИТРАТА — кілограми на 1 м². ЦІНА — гривні за кг, за набір або за м². Не змішувати в одному рядку."),
+    (r"\[(палітр|посиланн|ссылк)", "Замість адреси написали «[палітра]»", "tone",
+     "Посилання вставляти повною адресою: https://wallcov.com.ua/p/<матеріал>/"),
+    (r"тест\W*набір\s*(чи|або)\s*(розрахун|прорахун)|(розрахун|прорахун)\w*\s*(чи|або)\s*тест",
+     "Дали меню «тест чи розрахунок» — клієнт зупиняється", "tone",
+     "Один наступний крок на повідомлення: назвати доречний варіант і спитати, чи готувати його."),
+    (r"^\s*(розумію|понимаю)[,!. ]", "Порожній вступ «Розумію» без заперечення клієнта", "tone",
+     "Починати з суті. «Розумію» доречне лише у відповідь на сумнів або заперечення."),
+]
+
 LINT_LAST = (r"(оформлюємо|надіслати|підходить|цікавить|хочете|зручно|підготувати)\?\s*\W*$",
              "Останнє наше повідомлення — закрите питання «так/ні», клієнт замовк", "tone",
              "Закінчувати відкритим питанням, що звужує вибір: «Яку кімнату рахуємо першою?»")
+
+from .seller_prompt import MASTER as _MASTER
 
 REVIEWER_SYSTEM = (
     "Ти — рецензент відділу продажів Wallcov (декоративні покриття для стін). Перевіряєш ЗАКРИТИЙ діалог з клієнтом.\n"
@@ -50,7 +65,8 @@ REVIEWER_SYSTEM = (
     '"quote": "точна цитата з діалогу", "problem": "1 речення", "topic": "payment|delivery|test_sets|pricing|materials|'
     'application|tinting|contacts|discounts|objections|company|tone|process|other", '
     '"suggested_title": "питання клієнта або назва правила", "suggested_text": "як правильно відповідати"}]}\n'
-    "Максимум 3 знахідки."
+    "Максимум 3 знахідки. Додай поле \"score\" 0-100 — наскільки наші повідомлення відповідають стандарту нижче.\n\n"
+    "СТАНДАРТ ПРОДАВЦЯ (за ним пише наш ІІ — суди саме за ним):\n" + _MASTER.replace("{канал}", "каналі")
 )
 
 
@@ -75,9 +91,26 @@ def dialog_text(msgs):
     return "\n".join("%s: %s" % (w, t) for w, t in msgs)
 
 
+def style_problems(text):
+    """Структура повідомлення за майстер-промтом: без полотна і без двох питань підряд."""
+    out = []
+    body = text.strip()
+    lines = [l for l in body.splitlines() if l.strip()]
+    if len(body) > 700 or (len(lines) <= 2 and len(body) > 450):
+        out.append(("Повідомлення полотном, без коротких рядків", "tone",
+                    "До 5–6 коротких рядків: суть, варіанти через «• », посилання окремо, одне питання в кінці."))
+    if body.count("?") > 1:
+        out.append(("Два і більше питань в одному повідомленні", "tone",
+                    "Правило одного питання: спитати одне, дочекатись відповіді, потім наступне."))
+    return out
+
+
 def lint_dialog(msgs):
     found = []
     ours = [(w, t) for w, t in msgs if w != "Клієнт"]
+    for who, text in ours:
+        for problem, topic, correct in style_problems(text):
+            found.append({"problem": problem, "topic": topic, "correct": correct, "who": who, "quote": text[:200]})
     for who, text in ours:
         low = text.lower()
         for rx, problem, topic, correct in LINT_OUT:
@@ -89,13 +122,20 @@ def lint_dialog(msgs):
     return found
 
 
-def pick_conversations(day, sample, conversation_id=None):
-    from apps.inbox.models import Conversation
+def pick_conversations(day, sample, conversation_id=None, ai_only=False):
+    from apps.inbox.models import Conversation, Message
     if conversation_id:
         return list(Conversation.objects.filter(pk=conversation_id))
     done = set(KnowledgeReviewLog.objects.filter(day=day).values_list("conversation_id", flat=True))
-    qs = (Conversation.objects.filter(status="closed", last_message_at__date=day)
-          .exclude(pk__in=done).order_by("id"))
+    if ai_only:
+        # 18.09.2026: перевіряємо саме роботу нашого ІІ-продавця за день (а не лише закриті чати)
+        ids = set(Message.objects.filter(created_at__date=day, direction="out", internal=False,
+                                         sender_name__startswith="ІІ у каналі")
+                  .values_list("conversation_id", flat=True))
+        qs = Conversation.objects.filter(pk__in=ids).exclude(pk__in=done).order_by("id")
+    else:
+        qs = (Conversation.objects.filter(status="closed", last_message_at__date=day)
+              .exclude(pk__in=done).order_by("id"))
     good = []
     for conv in qs[:600]:
         dirs = set(conv.messages.filter(internal=False).exclude(text="").values_list("direction", flat=True)[:50])
@@ -128,7 +168,8 @@ def ai_review(conv, msgs, model, ai=None):
                                                    conv.channel.name if conv.channel_id else "-", text[-9000:]))
     r = ai(prompt, model=model, max_tokens=900, system=REVIEWER_SYSTEM, cache=True, source=SOURCE_LABEL)
     rows = (r or {}).get("findings") if isinstance(r, dict) else None
-    return [f for f in (rows or []) if isinstance(f, dict)][:MAX_FINDINGS], len(prompt)
+    score = (r or {}).get("score") if isinstance(r, dict) else None
+    return [f for f in (rows or []) if isinstance(f, dict)][:MAX_FINDINGS], len(prompt), (score if isinstance(score, int) else None)
 
 
 def create_suggestions(conv, findings, day):
@@ -180,11 +221,11 @@ def create_lint_summary(day, lint_by_problem):
     return created
 
 
-def run(day=None, sample=None, dry=True, conversation_id=None, ai=None):
+def run(day=None, sample=None, dry=True, conversation_id=None, ai=None, ai_only=False):
     cfg = KnowledgeSettings.get()
     day = day or (timezone.localdate() - timedelta(days=1))
     sample = int(sample or cfg.reviewer_sample or 20)
-    convs = pick_conversations(day, sample, conversation_id)
+    convs = pick_conversations(day, sample, conversation_id, ai_only=ai_only)
     report = {"day": day.isoformat(), "dry": dry, "model": cfg.reviewer_model, "picked": [c.id for c in convs],
               "lint": [], "ai_calls": 0, "ai_findings": 0, "items_created": 0, "errors": [], "chars_in": 0}
     lint_by_problem = {}
@@ -200,7 +241,9 @@ def run(day=None, sample=None, dry=True, conversation_id=None, ai=None):
             continue
         log = KnowledgeReviewLog(conversation_id=conv.id, day=day, lint_findings=len(lint), model=cfg.reviewer_model)
         try:
-            findings, _n = ai_review(conv, msgs, cfg.reviewer_model, ai=ai)
+            findings, _n, score = ai_review(conv, msgs, cfg.reviewer_model, ai=ai)
+            if score is not None:
+                report.setdefault("scores", []).append(score)
             report["ai_calls"] += 1
             report["ai_findings"] += len(findings)
             log.ai_findings = len(findings)
@@ -212,5 +255,7 @@ def run(day=None, sample=None, dry=True, conversation_id=None, ai=None):
         log.save()
     if not dry:
         report["items_created"] += create_lint_summary(day, lint_by_problem)
+    sc = report.get("scores") or []
+    report["score_avg"] = round(sum(sc) / len(sc)) if sc else None
     report["est_cost_usd"] = estimate_cost(report["chars_in"], cfg.reviewer_model, len(convs))
     return report
