@@ -122,6 +122,46 @@ def _send(conv, text):
     return msg
 
 
+PAGE_RX = re.compile(r"https://wallcov\.com\.ua/p/([a-z0-9-]+)/")
+
+
+def _maybe_effect_photos(conv, text):
+    """18.09.2026 (Олег): «коли запит на Патеру — відправляй фото ефектів, а не просто слова».
+    Якщо ІІ дав посилання на сторінку матеріалу — одразу показуємо фото кожного ефекту з бібліотеки."""
+    from .models import Message
+    from .showcase import effect_photos, file_url, material_by_slug
+    m = PAGE_RX.search(text or "")
+    if not m:
+        return
+    slug = m.group(1)
+    mat = material_by_slug(slug)
+    if not mat:
+        return
+    mark = "фото ефектів %s" % slug
+    if Message.objects.filter(conversation=conv, internal=True, text__contains=mark).exists():
+        return                                    # у цьому діалозі вже показували
+    rows = effect_photos(mat["name"], limit=3)
+    if len(rows) < 2:
+        return
+    lines = ["Ось як %s виглядає в різних ефектах 👇" % mat["name"]]
+    atts = []
+    for eff, it in rows:
+        url = file_url(it)
+        if not url:
+            continue
+        lines.append("📷 %s\n%s" % (eff, url))
+        atts.append({"type": "image", "url": url, "name": eff, "library_asset_id": it.id,
+                     "color_code": it.color_code})
+    if not atts:
+        return
+    try:
+        msg = _send(conv, "\n\n".join(lines))
+        Message.objects.filter(id=msg.id).update(attachments=atts)
+        _note(conv, "%s: надіслав %s (%s)." % (NOTE_PREFIX, mark, ", ".join(a["name"] for a in atts)))
+    except Exception as e:
+        _note(conv, "%s: не вдалося надіслати фото ефектів (%s)." % (NOTE_PREFIX, str(e)[:150]))
+
+
 def _requisites_text():
     """Затверджений запис бази знань з реквізитами ФОП (редагується в AI ЦЕНТРІ)."""
     from apps.knowledge.models import KnowledgeItem
@@ -137,14 +177,27 @@ def _maybe_requisites(conv, incoming):
     text_in = (incoming.text or "")
     if not REQ_ASK.search(text_in) or REQ_PAID.search(text_in):
         return False
-    body = _requisites_text()
-    if not body:
-        return False
     deal, amount = None, None
     if conv.contact_id:
         from apps.crm.models import Deal
         deal = (Deal.objects.filter(contact_id=conv.contact_id, stage__is_won=False, stage__is_lost=False)
                 .filter(items__isnull=False).order_by("-created_at").first())
+    if deal is not None:
+        # штатна механіка CRM (та сама, що кнопка менеджера «Прийняти оплату → За реквізитами»):
+        # текст + IBAN + призначення окремо, стадія «Домовились про оплату», оплата підтягнеться з банку
+        from apps.crm.views import send_requisites
+        r = send_requisites(deal, conv=conv, sender_name="%s · %s" % (NOTE_PREFIX, conv.channel.name))
+        if r.get("ok"):
+            _note(conv, "%s: клієнт попросив реквізити — надіслав рахунок ФОП по сделці #%s на %s ₴ "
+                        "(оплата підтягнеться з банку за призначенням платежу)."
+                  % (NOTE_PREFIX, deal.id, _money(r.get("amount"))))
+        else:
+            _note(conv, "%s: клієнт просить реквізити (сделка #%s), надіслати не вдалося — зробіть вручну."
+                  % (NOTE_PREFIX, deal.id))
+        return True
+    body = _requisites_text()
+    if not body:
+        return False
     if deal is not None:
         paid = sum(float(p.amount) for p in deal.payments.all() if p.is_paid)
         left = float(deal.amount or 0) - paid
@@ -207,6 +260,7 @@ def reply_now(conv_id):
         _note(conv, "%s: не вдалося надіслати (%s). Текст: «%s»" % (NOTE_PREFIX, str(e)[:200], text[:600]))
         return
     _note(conv, note)
+    _maybe_effect_photos(conv, text)
     if r.get("order"):
         _make_kit_offer(conv, r["order"])
 

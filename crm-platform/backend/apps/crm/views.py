@@ -864,6 +864,73 @@ def _route_deal_funnel(deal, user=None):
     return True
 
 
+def requisites_text(deal, amount=None):
+    """Текст «Оплата за реквізитами» — ОДИН на всю CRM: кнопка менеджера і ІІ у каналах
+    беруть його звідси, тому клієнт завжди бачить однакові реквізити і призначення платежу
+    (по ньому банківська виписка сама знаходить оплату)."""
+    from django.conf import settings as _s
+    iban = getattr(_s, "WALLCOV_IBAN", "") or "(вкажіть IBAN у Налаштуваннях)"
+    payee = getattr(_s, "WALLCOV_PAYEE", "") or "ФОП"
+    ipn = getattr(_s, "WALLCOV_IPN", "")
+    amount = deal.amount if amount is None else amount
+    text = ("\u2757\ufe0f \u0412\u0410\u0416\u041b\u0418\u0412\u041e \u043f\u0435\u0440\u0435\u0434 \u043e\u043f\u043b\u0430\u0442\u043e\u044e\n\n"
+            "\u0423 \u0434\u043e\u0434\u0430\u0442\u043a\u0443 \u0431\u0430\u043d\u043a\u0443 \u0454 \u043f\u043e\u043b\u0435 \u00ab\u041f\u0440\u0438\u0437\u043d\u0430\u0447\u0435\u043d\u043d\u044f \u043f\u043b\u0430\u0442\u0435\u0436\u0443\u00bb.\n"
+            "\u0412\u043f\u0438\u0448\u0456\u0442\u044c \u0442\u0443\u0434\u0438 \u0441\u0430\u043c\u0435 \u0446\u0435\u0439 \u0442\u0435\u043a\u0441\u0442 \U0001f447\n\n"
+            "\u041e\u043f\u043b\u0430\u0442\u0430 \u0437\u0433\u0456\u0434\u043d\u043e \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f \u2116%s\n\n"
+            "\u0411\u0435\u0437 \u043d\u044c\u043e\u0433\u043e \u0431\u0430\u043d\u043a \u043d\u0435 \u043f\u043e\u043a\u0430\u0436\u0435, \u0449\u043e \u043f\u043b\u0430\u0442\u0456\u0436 \u0432\u0456\u0434 \u0412\u0430\u0441 \u2014 \u0456 \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f \u0437\u0430\u0442\u0440\u0438\u043c\u0430\u0454\u0442\u044c\u0441\u044f, \u0434\u043e\u043a\u0438 \u043c\u0438 \u0448\u0443\u043a\u0430\u0442\u0438\u043c\u0435\u043c\u043e \u043e\u043f\u043b\u0430\u0442\u0443 \u0432\u0440\u0443\u0447\u043d\u0443 \U0001f64f\n"
+            "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+            "\U0001f4b3 \u0420\u0435\u043a\u0432\u0456\u0437\u0438\u0442\u0438:\n"
+            "\u041e\u0442\u0440\u0438\u043c\u0443\u0432\u0430\u0447: %s\n"
+            "IBAN: %s\n"
+            "\u0406\u041f\u041d/\u0404\u0414\u0420\u041f\u041e\u0423: %s\n"
+            "\u0421\u0443\u043c\u0430: %s \u0433\u0440\u043d\n"
+            "\u041f\u0440\u0438\u0437\u043d\u0430\u0447\u0435\u043d\u043d\u044f: \u041e\u043f\u043b\u0430\u0442\u0430 \u0437\u0433\u0456\u0434\u043d\u043e \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f \u2116%s\n\n"
+            "\u2705 \u0429\u043e\u0439\u043d\u043e \u0433\u0440\u043e\u0448\u0456 \u043d\u0430\u0434\u0456\u0439\u0434\u0443\u0442\u044c \u2014 \u043e\u043f\u043b\u0430\u0442\u0430 \u0437\u0430\u0444\u0456\u043a\u0441\u0443\u0454\u0442\u044c\u0441\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u043d\u043e, \u0456 \u043c\u0438 \u043e\u0434\u0440\u0430\u0437\u0443 \u0431\u0435\u0440\u0435\u043c\u043e\u0441\u044c \u0437\u0430 \u0412\u0430\u0448\u0435 \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f \U0001f60a") % (deal.id, payee, iban, ipn, amount, deal.id)
+    return iban, text
+
+
+def send_requisites(deal, conv=None, user=None, sender_name=""):
+    """Надіслати реквізити ФОП у чат — та сама механіка, що й кнопка менеджера
+    «Прийняти оплату → За реквізитами»: текст + IBAN + призначення окремими повідомленнями,
+    стадія «Домовились про оплату», запис в історії сделки. Оплата підтягнеться з банку."""
+    from apps.inbox.models import Conversation
+    from apps.inbox.services import send_message
+    from .models import log_activity
+    paid = sum(float(p.amount) for p in deal.payments.all() if p.is_paid)
+    amount = float(deal.amount or 0) - paid
+    if amount <= 0:
+        amount = float(deal.amount or 0)
+    iban, text = requisites_text(deal, (("%.0f" % amount) if abs(amount - round(amount)) < 0.01 else ("%.2f" % amount)))
+    convs = [conv] if conv is not None else list(
+        Conversation.objects.filter(contact_id=deal.contact_id, status="open").select_related("channel").order_by("-last_message_at"))
+    sent = False
+    for c in convs:
+        if c is None:
+            continue
+        try:
+            _m = send_message(c, text, user=user)
+            sent = True
+            if sender_name:
+                from apps.inbox.models import Message as _Msg
+                _Msg.objects.filter(id=_m.id).update(sender_name=sender_name)
+        except Exception:
+            continue
+        for extra in (iban, "\u041e\u043f\u043b\u0430\u0442\u0430 \u0437\u0433\u0456\u0434\u043d\u043e \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f \u2116%s" % deal.id):
+            try:
+                _e = send_message(c, extra, user=user)
+                if sender_name:
+                    from apps.inbox.models import Message as _Msg
+                    _Msg.objects.filter(id=_e.id).update(sender_name=sender_name)
+            except Exception:
+                pass
+        break
+    if sent:
+        _advance_deal_stage(deal, 2, "\u043d\u0430\u0434\u0456\u0441\u043b\u0430\u043d\u043e \u0440\u0435\u043a\u0432\u0456\u0437\u0438\u0442\u0438")
+        log_activity("deal", deal.id, "\u041e\u043f\u043b\u0430\u0442\u0430 \u0437\u0430 \u0440\u0435\u043a\u0432\u0456\u0437\u0438\u0442\u0430\u043c\u0438",
+                     "%s \u0433\u0440\u043d \u00b7 \u043d\u0430\u0434\u0456\u0441\u043b\u0430\u043d\u043e \u043a\u043b\u0456\u0454\u043d\u0442\u0443" % amount, user, "\u0406\u0406" if user is None else "\u041c\u0435\u043d\u0435\u0434\u0436\u0435\u0440")
+    return {"ok": sent, "amount": amount, "text": text}
+
+
 def make_offer(deal, items_spec, user=None, send_pay=True):
     """АВТО-оффер тест-набору: товари з номенклатури -> прорахунок + LiqPay -> стадії «Розрахунок здійснено» → «Домовились про оплату»."""
     from django.conf import settings as _s
@@ -2057,22 +2124,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         base = "https://crm.wallcovdec.com.ua"
         url = ""
         if kind == "requisites":
-            iban = getattr(_s, "WALLCOV_IBAN", "") or "(вкажіть IBAN у Налаштуваннях)"
-            payee = getattr(_s, "WALLCOV_PAYEE", "") or "ФОП"
-            ipn = getattr(_s, "WALLCOV_IPN", "")
-            text = ("❗️ ВАЖЛИВО перед оплатою\n\n"
-                    "У додатку банку є поле «Призначення платежу».\n"
-                    "Впишіть туди саме цей текст 👇\n\n"
-                    "Оплата згідно замовлення №%s\n\n"
-                    "Без нього банк не покаже, що платіж від Вас — і замовлення затримається, доки ми шукатимемо оплату вручну 🙏\n"
-                    "━━━━━━━━━━━━━━━\n"
-                    "💳 Реквізити:\n"
-                    "Отримувач: %s\n"
-                    "IBAN: %s\n"
-                    "ІПН/ЄДРПОУ: %s\n"
-                    "Сума: %s грн\n"
-                    "Призначення: Оплата згідно замовлення №%s\n\n"
-                    "✅ Щойно гроші надійдуть — оплата зафіксується автоматично, і ми одразу беремось за Ваше замовлення 😊") % (deal.id, payee, iban, ipn, amount, deal.id)
+            iban, text = requisites_text(deal, amount)
         else:
             pub = getattr(_s, "LIQPAY_PUBLIC_KEY", ""); prv = getattr(_s, "LIQPAY_PRIVATE_KEY", "")
             if not (pub and prv):

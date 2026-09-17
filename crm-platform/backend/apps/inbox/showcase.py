@@ -152,6 +152,29 @@ def material_by_slug(slug):
     return None
 
 
+def effect_photos(material, code=None, limit=3):
+    """По одному фото на КОЖЕН ефект матеріалу (Патера: травертин, марморин, фактура) —
+    18.09.2026 (Олег): «коли запит на Патеру, треба відправляти фото ефектів, а не просто слова»."""
+    rows = []
+    for it in _items():
+        if (it.material or "") != material or it.kind != "image" or is_swatch(it):
+            continue
+        m = re.search(r"effect:([^|]+)", it.tags or "")
+        if not m:
+            continue
+        rows.append((m.group(1).split(",")[0].strip()[:40], it))
+    out, seen = [], set()
+    for want in ([code] if code else []) + [None]:
+        for eff, it in rows:
+            if eff in seen or (want and (it.color_code or "") != want):
+                continue
+            seen.add(eff)
+            out.append((eff, it))
+            if len(out) >= limit:
+                return out
+    return out[:limit]
+
+
 def file_url(item):
     """Публічне посилання на файл — те саме, що бачить клієнт у чаті."""
     if item.public_url:
@@ -338,7 +361,7 @@ class ShowcaseColorView(APIView):
         w = words(m["name"])
         # 18.09.2026 (Олег): продаємо насамперед ТЕСТ-НАБІР; викраска — виняток, коли навіть набір дорогий
         msg = ("Обрав модель %s · %s. Порахуйте, будь ласка." % (m["name"], code) if is_model(m["name"])
-               else "Обрав колір %s · %s. Порахуйте, будь ласка, матеріал і тест-набір у цьому кольорі." % (m["name"], code))
+               else "Обрав колір %s · %s. Оформіть, будь ласка, тест-набір у цьому кольорі." % (m["name"], code))
         q = quote(msg)
         body += ('<div class="pick"><b>%s</b>'
                  '<div style="color:var(--muted);font-size:14px;margin-top:4px">Натисніть — %s піде менеджеру, '
