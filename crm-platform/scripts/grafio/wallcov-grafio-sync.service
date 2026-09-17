@@ -1,0 +1,15 @@
+[Unit]
+Description=Verify Grafio public prices and synchronize dealer catalogue
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/gmideas/crm-platform/scripts/grafio
+ExecStart=/bin/bash /root/gmideas/crm-platform/scripts/grafio/run-sync.sh --apply
+TimeoutStartSec=15min
+UMask=0077
+StandardOutput=journal
+StandardError=journal

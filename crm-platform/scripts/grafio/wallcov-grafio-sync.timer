@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Grafio dealer prices every six hours Kyiv time
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:00:00 Europe/Kyiv
+Persistent=true
+AccuracySec=1min
+Unit=wallcov-grafio-sync.service
+
+[Install]
+WantedBy=timers.target
