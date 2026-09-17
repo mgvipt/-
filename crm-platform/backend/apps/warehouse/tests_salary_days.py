@@ -38,6 +38,40 @@ class SalaryDaysTests(_Base):
         g = [x for x in r.data["deal_groups"] if x["tint"]]
         self.assertTrue(g and float(g[0]["tint"]) == 50.0)   # тонування набору — у колонці «Тонування»
 
+    def test_day_mode_has_rate_kpi_and_all_piece_lines(self):
+        """17.09.2026 (Олег): за день — ставка за вихід, KPI і всі рядки (тонування наборів не губиться)."""
+        today = timezone.localdate()
+        first = today.replace(day=1)
+        last = first.replace(day=28) + datetime.timedelta(days=4)
+        last = last - datetime.timedelta(days=last.day)
+        E = WarehousePayrollEntry.objects
+        E.create(employee=self.worker, work_date=today, op_type="kit_tint_cat", amount=Decimal("200"))
+        E.create(employee=self.worker, work_date=today, op_type="shipment_weight", amount=Decimal("7.68"))
+        WorkDay.objects.create(user=self.worker, date=today, status="worked")
+        sc = PayScheme.objects.create(user=self.worker, position="Комірник", valid_from=first, valid_to=last)
+        PayComponent.objects.create(scheme=sc, kind="base_by_days", title="За вихід", params={"amount": 8000})
+        PayComponent.objects.create(scheme=sc, kind="piece_rate", title="Відрядно")
+        nxt = PayScheme.objects.create(user=self.worker, position="Комірник", valid_from=last + datetime.timedelta(days=1))
+        PayComponent.objects.create(scheme=nxt, kind="standard", title="Стандарт складу (до 3 000 ₴)", params={"max": 3000})
+        c = APIClient(); c.force_authenticate(self.worker)
+        r = c.get("/api/warehouse/my-salary/?date=%s" % today.isoformat())
+        self.assertEqual(r.status_code, 200)
+        ops = {l["op"]: l for l in r.data["lines"]}
+        self.assertIn("kit_tint_cat", ops)
+        self.assertEqual(sum(float(l["amount"]) for l in r.data["lines"]), float(r.data["total"]))
+        day = r.data["day"]
+        self.assertGreater(day["base"], 0)
+        self.assertEqual(day["piece"], 207.68)
+        self.assertAlmostEqual(day["total"], day["base"] + day["kpi"] + day["piece"], places=2)
+        kinds = [l["op"] for l in day["lines"]]
+        self.assertEqual(kinds[:2], ["base", "kpi"])
+        self.assertIn("kit_tint_cat", kinds)
+        self.assertFalse(r.data["kpi"]["active"])
+        self.assertEqual(r.data["kpi"]["max"], 3000)
+        m = c.get("/api/warehouse/my-salary/?period=calendar&which=current")
+        self.assertIn("kpi", m.data)
+        self.assertTrue(all("lines" in x for x in m.data["days"]))
+
     def test_warehouse_work_permission_in_catalog(self):
         from apps.accounts.models import PERMISSION_CHOICES
         self.assertIn("warehouse.work", dict(PERMISSION_CHOICES))

@@ -721,22 +721,32 @@ function MonthSalaryView({ t, which, onPickDay }: any) {
               : l.detail ? <span className="muted"> · {l.detail}</span> : null}</span><b style={{ whiteSpace: "nowrap" }}>{f(l.amount)} ₴</b></div>
           ))}
           {(d.base_lines || []).length === 0 && <div className="muted" style={{ fontSize: 13, padding: "6px 0" }}>{t("Ставка не задана", "Ставку не задано")}</div>}
+          {/* 17.09.2026 (Олег: «за KPI теж немає пункту»): KPI, який ще не діє, — окремим рядком з датою старту */}
+          {d.kpi && !d.kpi.active && <div style={row}><span style={{ fontSize: 13.5 }}>{d.kpi.title}
+            <div className="muted" style={{ fontSize: 12 }}>{d.kpi.note}</div>
+            {d.kpi.preview && <div style={{ fontSize: 12, color: "#2E6FB0" }}>{d.kpi.preview}</div>}</span>
+            <b style={{ whiteSpace: "nowrap", color: "#94a3b8" }}>0 ₴</b></div>}
           {(d.days || []).length > 0 && <>
-            {/* 17.09.2026 (Олег): ставка по днях обраного місяця — прокрутка, кожен день окремо; клік — відкрити день */}
-            <div className="muted" style={{ fontSize: 12, margin: "10px 0 6px" }}>{t("По дням (прокрутите). Ставка за день — ставка за выход ÷ рабочие дни месяца, ориентировочно; точная сумма за месяц — строкой выше. Нажмите день — откроется подробно.", "По днях (прокрутіть). Ставка за день — ставка за вихід ÷ робочі дні місяця, орієнтовно; точна сума за місяць — рядком вище. Натисніть день — відкриється детально.")}</div>
-            <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8, scrollSnapType: "x proximity" }}>
+            {/* 17.09.2026 (Олег): ставка по днях обраного місяця — прокрутка, кожен день окремо; у картці — кожен рядок дня; клік — відкрити день */}
+            <div className="muted" style={{ fontSize: 12, margin: "10px 0 6px" }}>{t("По дням (прокрутите). В карточке — каждая строка дня: ставка за выход (ставка ÷ рабочие дни месяца, ориентировочно), KPI и сдельно по видам. Точная сумма за месяц — строками выше. Нажмите день — откроется подробно.", "По днях (прокрутіть). У картці — кожен рядок дня: ставка за вихід (ставка ÷ робочі дні місяця, орієнтовно), KPI і відрядно за видами. Точна сума за місяць — рядками вище. Натисніть день — відкриється детально.")}</div>
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8, scrollSnapType: "x proximity", alignItems: "stretch" }}>
               {[...(d.days || [])].reverse().map((x: any) => {
                 const worked = x.status === "worked" || x.status === "overtime";
                 const WDN = ["пн", "вт", "ср", "чт", "пт", "сб", "нд"];
                 return (
                   <button key={x.date} type="button" onClick={() => onPickDay && onPickDay(x.date)} className="btn btn-light" title={x.status_label}
-                    style={{ flex: "0 0 112px", scrollSnapAlign: "start", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 2, padding: "7px 8px", textAlign: "left", background: worked ? "#f0fdf4" : (x.status ? "#fff7ed" : "#fff"), border: "1px solid " + (worked ? "#bbf7d0" : "#e2e8f0"), height: "auto" }}>
-                    <span style={{ fontWeight: 700, fontSize: 13 }}>{x.date.slice(8, 10)}.{x.date.slice(5, 7)} <span className="muted" style={{ fontWeight: 400 }}>{WDN[x.weekday]}</span></span>
-                    <span style={{ fontSize: 10.5, color: worked ? "#166534" : "#92400e" }}>{x.status_label}</span>
-                    <span style={{ fontSize: 11.5 }}>{t("ставка", "ставка")} {f(x.base)} ₴</span>
-                    <span style={{ fontSize: 11.5 }}>{t("сдельно", "відрядно")} {f(x.piece)} ₴</span>
+                    style={{ flex: "0 0 188px", scrollSnapAlign: "start", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 2, padding: "7px 9px", textAlign: "left", background: worked ? "#f0fdf4" : (x.status ? "#fff7ed" : "#fff"), border: "1px solid " + (worked ? "#bbf7d0" : "#e2e8f0"), height: "auto", justifyContent: "flex-start" }}>
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>{x.date.slice(8, 10)}.{x.date.slice(5, 7)} <span className="muted" style={{ fontWeight: 400 }}>{WDN[x.weekday]}</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 500, marginLeft: 6, color: worked ? "#166534" : "#92400e" }}>{x.status_label}</span></span>
+                    {(x.lines || []).map((l: any) => (
+                      <span key={l.op} style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: 11.5, lineHeight: 1.35, color: l.amount ? (l.deduction ? C.red : "#0f172a") : "#94a3b8" }}>
+                        <span style={{ minWidth: 0 }}>{l.label}{l.count > 1 ? <span className="muted"> ×{l.count}</span> : null}{l.op === "kpi" && !l.amount && l.note ? <span className="muted"> · {l.note}</span> : null}</span>
+                        <span style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{f(l.amount)} ₴</span>
+                      </span>
+                    ))}
                     {x.shipments ? <span className="muted" style={{ fontSize: 10.5 }}>{t("отправлено", "відправлено")}: {x.shipments}</span> : null}
-                    <b style={{ fontSize: 13, marginTop: 2 }}>{f(x.total)} ₴</b>
+                    <span style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid " + (worked ? "#bbf7d0" : "#e2e8f0"), marginTop: "auto", paddingTop: 3 }}>
+                      <span style={{ fontSize: 11.5 }}>{t("Итого", "Разом")}</span><b style={{ fontSize: 13 }}>{f(x.total)} ₴</b></span>
                   </button>
                 );
               })}
@@ -781,32 +791,50 @@ function SalaryView({ t }: any) {
   const [day, setDay] = useState(() => isoLocal(new Date()));  // 15.09 (wh-day)
   const [mode, setMode] = useState<"current" | "prev" | "day">("current");
   useEffect(() => { api.get<any>(period === "day" ? `/api/warehouse/my-salary/?date=${day}` : `/api/warehouse/my-salary/?period=${period}`).then(setD).catch(() => {}); }, [period, day]);
-  const LBL: any = { workday: ["Дни (ставка)", "Дні (ставка)"], shipment_weight: ["Вес отгрузки", "Вага відвантаження"], packing: ["Пакування", "Пакування"], tinting: ["Тонировка", "Тонування"], test_set: ["Сборка тест-наборов", "Збірка тест-наборів"], bonus_initiative: ["Бонус-идея", "Бонус-ідея"], bonus_cleanliness: ["Бонус-чистота", "Бонус-чистота"], error: ["Ошибки", "Помилки"], wrong_material: ["Не тот материал", "Не той матеріал"] };
   if (mode !== "day") return <div><SalaryModeSwitch t={t} mode={mode} setMode={setMode} /><MonthSalaryView t={t} which={mode} onPickDay={(x: string) => { setDay(x); setMode("day"); }} /></div>;
   if (!d) return <div className="spin">…</div>;
+  // 17.09.2026 (Олег): за день — ставка за вихід + KPI + відрядно; рядки відрядних — ті самі назви, що в місяці (без «загублених» типів)
+  const dd = d.day;
+  const baseLn = dd ? (dd.lines || []).filter((l: any) => l.op === "base" || l.op === "kpi") : [];
+  const rowSt = { display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 0", borderBottom: "1px solid #f1f5f9" };
   return (
     <div>
       <SalaryModeSwitch t={t} mode={mode} setMode={setMode} />
       <DayPicker t={t} day={day} setDay={setDay} />
       <div className="panel" style={{ textAlign: "center", padding: "22px", background: "linear-gradient(135deg,#ecfdf5,#fff)" }}>
-        <div className="muted" style={{ fontSize: 13 }}>{period === "day" ? t("Заработано за", "Зароблено за") + " " + (d.label || day) : t("Заработано за период", "Зароблено за період")}</div>
-        <div style={{ fontSize: 48, fontWeight: 800, color: C.green }}>{f(d.total)} ₴</div>
+        <div className="muted" style={{ fontSize: 13 }}>{t("Заработано за", "Зароблено за") + " " + (d.label || day)}</div>
+        <div style={{ fontSize: 48, fontWeight: 800, color: C.green }}>{f(dd ? dd.total : d.total)} ₴</div>
+        {dd && <div className="muted" style={{ fontSize: 12.5 }}>{t("ставка", "ставка")} {f(dd.base)} ₴ · KPI {f(dd.kpi)} ₴ · {t("сдельно", "відрядно")} {f(dd.piece)} ₴ · {dd.status_label}</div>}
       </div>
       <div className="panel">
+        {baseLn.length > 0 && <>
+          <div className="label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Icon n="wallet" size={15} /> {t("Ставка за день", "Ставка за день")}</div>
+          {baseLn.map((l: any) => (
+            <div key={l.op} style={rowSt}>
+              <span style={{ fontSize: 13.5 }}>{l.label}
+                {l.note && <div className="muted" style={{ fontSize: 12 }}>{l.note}</div>}
+                {l.op === "kpi" && d.kpi?.preview && !d.kpi?.active && <div style={{ fontSize: 12, color: "#2E6FB0" }}>{d.kpi.note}; {d.kpi.preview}</div>}</span>
+              <b style={{ whiteSpace: "nowrap", color: l.amount ? "#0f172a" : "#94a3b8" }}>{f(l.amount)} ₴</b>
+            </div>
+          ))}
+          <div className="label" style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 6 }}><Icon n="package" size={15} /> {t("Сдельно (склад)", "Відрядно (склад)")}</div>
+        </>}
         {(d.lines || []).map((l: any) => (
-          <div key={l.op} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #f1f5f9" }}>
-            <span style={{ fontSize: 13.5 }}>{t(...(LBL[l.op] || [l.op, l.op]))} <span className="muted">×{l.count}</span></span>
+          <div key={l.op} style={rowSt}>
+            <span style={{ fontSize: 13.5 }}>{l.label || l.op} <span className="muted">×{l.count}</span></span>
             <b style={{ color: Number(l.amount) < 0 ? C.red : "#0f172a" }}>{f(l.amount)} ₴</b>
           </div>
         ))}
-        {(d.lines || []).length === 0 && <div className="muted" style={{ fontSize: 13 }}>{t("Пока пусто", "Поки порожньо")}</div>}
+        {(d.lines || []).length === 0 && <div className="muted" style={{ fontSize: 13, padding: "6px 0" }}>{t("Пока пусто", "Поки порожньо")}</div>}
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0 0", fontWeight: 700 }}><span>{t("Сдельно всего", "Відрядно разом")}</span><span>{f(d.total)} ₴</span></div>
+        {dd && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0 0", fontWeight: 800, fontSize: 15 }}><span>{t("Итого за день", "Разом за день")}</span><span>{f(dd.total)} ₴</span></div>}
       </div>
       <DealsPanel t={t} d={d} />
       <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
         <div className="panel" style={{ flex: 1, textAlign: "center", margin: 0 }}><div style={{ fontSize: 24, fontWeight: 800 }}>{d.shipments}</div><div className="muted" style={{ fontSize: 11 }}>{t("отгрузок", "відвантажень")}</div></div>
         <div className="panel" style={{ flex: 1, textAlign: "center", margin: 0 }}><div style={{ fontSize: 24, fontWeight: 800 }}>{d.tintings}</div><div className="muted" style={{ fontSize: 11 }}>{t("тонировок", "тонувань")}</div></div>
       </div>
-      <div className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.45 }}>{t("Здесь — только сдельные записи склада за выбранный день (по ставкам ниже). Ставка по табелю и полная сумма за месяц — «Календарный месяц».", "Тут — лише відрядні записи складу за обраний день (за ставками нижче). Ставка за табелем і повна сума за місяць — «Календарний місяць».")}</div>
+      <div className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.45 }}>{t("Ставка за день — ставка за выход ÷ рабочие дни месяца, если день отмечен в табеле (ориентировочно: лишний день ×2 и точная сумма — в «Текущий месяц»). Сдельно — записи склада за день по ставкам ниже.", "Ставка за день — ставка за вихід ÷ робочі дні місяця, якщо день відмічено в табелі (орієнтовно: лишній день ×2 і точна сума — у «Поточний місяць»). Відрядно — записи складу за день за ставками нижче.")}</div>
       <WhRatesPanel t={t} r={d.rates} />
     </div>
   );

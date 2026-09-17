@@ -716,15 +716,23 @@ def my_salary(request):
     since, until, period, label = _req_range(request)  # 15.09 (wh-day): один день / свій проміжок / останні N днів
     qs = WarehousePayrollEntry.objects.filter(employee=request.user, work_date__gte=since, work_date__lte=until or _FAR, status="confirmed")
     total = qs.aggregate(s=Sum("amount"))["s"] or 0
-    lines = []
-    for op in ["workday", "shipment_weight", "packing", "tinting", "test_set", "bonus_initiative", "bonus_cleanliness", "error", "wrong_material"]:
-        r = qs.filter(op_type=op).aggregate(s=Sum("amount"), n=Count("id"))
-        if r["n"]:
-            lines.append({"op": op, "amount": str(r["s"] or 0), "count": r["n"]})
+    # 17.09.2026 (Олег: на 17.09 рядки давали 204,68 з 404,68): список типів був старий — без тонування наборів,
+    # мийки відер і викрасок. Тепер ті самі типи й назви, що в місяці (PIECE_OPS), решта — «Інше».
+    lines = _piece_lines(qs)
     shipments = WarehouseJob.objects.filter(assignee=request.user, status="shipped", shipped_at__date__gte=since, shipped_at__date__lte=until or _FAR).count()
     tintings = qs.filter(op_type="tinting").count()
     dg, dg_cut = _deal_groups_for(qs)
+    day = kpi = None
+    if period == "day":
+        # 17.09.2026 (Олег): «за день із ставки скільки і за KPI теж немає пункту» — день = ставка за вихід + KPI + відрядно
+        first = since.replace(day=1)
+        last = first.replace(day=calendar.monthrange(first.year, first.month)[1])
+        _sc, base_lines, _w, _t, _pis = _scheme_lines(request.user, "%04d-%02d" % (first.year, first.month))
+        kpi = _kpi_info(request.user, first, last, base_lines)
+        month_qs = WarehousePayrollEntry.objects.filter(employee=request.user, work_date__gte=first, work_date__lte=last, status="confirmed")
+        day = next((x for x in _month_days(request.user, first, last, month_qs, base_lines, kpi) if x["date"] == since.isoformat()), None)
     return Response({"total": str(total), "lines": lines, "period": period, "label": label,
+                     "day": day, "kpi": kpi,
                      "deal_groups": dg, "deal_groups_truncated": dg_cut,
                      "from": since.isoformat(), "to": (until or timezone.localdate()).isoformat(),
                      "shipments": shipments, "tintings": tintings,
@@ -743,6 +751,87 @@ PIECE_OPS = [("workday", "Робочі дні (ставка за день)"), ("
              ("kit_tint_ind", "Тонування тест-наборів (індивідуальний колір)"),
              ("washed_bucket", "Мите відро"), ("samples", "Викраски")]
 DEDUCTION_OPS = ("error", "wrong_material")
+# Короткі назви для карток днів (17.09.2026: «у блоках по днях — кожен рядок, що і скільки пораховано»)
+PIECE_SHORT = {"workday": "Робочий день", "shipment_weight": "Вага", "packing": "Упаковка", "tinting": "Тонування",
+               "test_set": "Збірка наборів", "kit_tint_cat": "Тонування наборів (каталог)",
+               "kit_tint_ind": "Тонування наборів (індивід.)", "washed_bucket": "Мите відро", "samples": "Викраски",
+               "bonus_initiative": "Бонус за ідеї", "bonus_cleanliness": "Бонус за чистоту",
+               "error": "Утримання: помилки", "wrong_material": "Утримання: матеріал"}
+
+
+def _piece_lines(qs):
+    """Відрядні рядки за типами (однакові для дня і місяця); невідомі типи — одним рядком «Інше»."""
+    lines = []
+    for op, label in PIECE_OPS:
+        r = qs.filter(op_type=op).aggregate(s=Sum("amount"), n=Count("id"))
+        if r["n"]:
+            lines.append({"op": op, "label": label, "amount": str(r["s"] or 0), "count": r["n"],
+                          "deduction": op in DEDUCTION_OPS})
+    rest = qs.exclude(op_type__in=[op for op, _l in PIECE_OPS]).aggregate(s=Sum("amount"), n=Count("id"))
+    if rest["n"]:
+        lines.append({"op": "other", "label": "Інше", "amount": str(rest["s"] or 0), "count": rest["n"], "deduction": False})
+    return lines
+
+
+def _money(x):
+    """8000 → «8 000», 363.64 → «363,64» (як у картках)."""
+    x = round(float(x or 0), 2)
+    s = ("{:,.2f}".format(x)).replace(",", " ").replace(".", ",")
+    return s[:-3] if s.endswith(",00") else s
+
+
+def _scheme_lines(u, period):
+    """Рядки схеми ЗП за місяць (без відрядної частини — вона = записи складу). Лише читання engine.calc."""
+    scheme, base_lines, warnings, total, piece_in_scheme = None, [], [], None, False
+    try:
+        from apps.payroll import engine
+        res = engine.calc(u, period)
+        sc = res.get("scheme")
+        if sc:
+            scheme = {"title": sc.get("title") or "", "position": sc.get("position") or ""}
+            total = res.get("total")
+        for ln in res.get("lines") or []:
+            if ln.get("kind") == "piece_rate":
+                piece_in_scheme = True  # = сума записів складу нижче; окремо не показуємо (без подвійного)
+                continue
+            base_lines.append({"title": ln.get("title") or "", "amount": ln.get("amount") or 0,
+                               "detail": ln.get("detail") or "", "kind": ln.get("kind") or "", "basis": ln.get("basis"),
+                               "rate": ln.get("rate") or ""})
+        warnings = [w for w in (res.get("warnings") or []) if w]
+    except Exception:
+        warnings.append("Ставку зі схеми ЗП не вдалося прочитати — показано лише відрядні записи складу")
+    return scheme, base_lines, warnings, total, piece_in_scheme
+
+
+def _kpi_info(u, first, last, base_lines):
+    """17.09.2026 (Олег: «за KPI теж немає пункту»). Стандарт складу (KPI) цього місяця:
+    діє — сума рядка стандарту (максимум × оцінка); ще не діє — з якої дати, скільки максимум
+    і скільки було б зараз за підказкою CRM (лише довідка, у суму не входить)."""
+    std = [l for l in base_lines if l.get("kind") == "standard"]
+    if std:
+        amt = sum(float(l.get("amount") or 0) for l in std)
+        mx = sum(float(l.get("basis") or 0) for l in std)
+        return {"active": True, "title": std[0]["title"] or "Стандарт складу (KPI)", "amount": round(amt, 2), "max": mx,
+                "note": "до %s ₴ × оцінка місяця %s" % (_money(mx), std[0].get("rate") or "")}
+    from apps.payroll.models import PayComponent
+    comp = (PayComponent.objects.filter(scheme__user=u, scheme__purpose="official", scheme__status="active", kind="standard",
+                                        active=True, scheme__valid_from__gt=last)
+            .select_related("scheme").order_by("scheme__valid_from").first())
+    if not comp:
+        return {"active": False, "title": "KPI (стандарт складу)", "amount": 0, "max": 0,
+                "note": "у вашій схемі ЗП цього місяця KPI немає"}
+    mx = float((comp.params or {}).get("max") or 0)
+    info = {"active": False, "title": comp.title or "Стандарт складу (KPI)", "amount": 0, "max": mx,
+            "from": comp.scheme.valid_from.isoformat(),
+            "note": "з %s: до %s ₴ × оцінка місяця; у цьому місяці не нараховується" % (comp.scheme.valid_from.strftime("%d.%m.%Y"), _money(mx))}
+    try:
+        from apps.payroll.wh_kpi import suggest_wh_standard
+        s = suggest_wh_standard(u, "%04d-%02d" % (first.year, first.month), comp)
+        info["preview"] = "якби діяло зараз: %s з %s пунктів (%s%%) → %s ₴" % (
+            s["good"], len(s["points"]), s["suggested_pct"], _money(mx * float(s["suggested_score"])))
+    except Exception:
+        pass
+    return info
 
 
 def _deal_groups_for(qs, limit=300):
@@ -760,28 +849,52 @@ DAY_STATUS_UK = {"worked": "вихід", "overtime": "вихід у вихідн
                  "vacation": "відпустка", "absent": "прогул"}
 
 
-def _month_days(u, first, last, qs, base_lines):
+def _month_days(u, first, last, qs, base_lines, kpi=None):
     """17.09.2026 (Олег): «у блоці Ставка — по днях, з прокруткою». Кожен день місяця до сьогодні:
     табель, ставка за день (ставка за вихід ÷ робочі дні місяця — орієнтовно; точна сума за місяць — у рядку ставки,
-    бо там норма і лишній день ×2), відрядно за день (записи складу) і скільки відправлено."""
+    бо там норма і лишній день ×2), KPI за день (сума стандарту ÷ робочі дні, якщо діє), відрядно за день
+    (записи складу) і скільки відправлено. lines — кожен рядок дня: що і скільки пораховано."""
+    from collections import defaultdict
     from apps.finance.models import WorkDay
     from apps.payroll import engine as _eng
     try:
         norm = _eng.workdays(first, last) or 1
-        daily = sum(float(l.get("basis") or 0) for l in base_lines if l.get("kind") == "base_by_days") / norm
+        basis = sum(float(l.get("basis") or 0) for l in base_lines if l.get("kind") == "base_by_days")
+        daily = basis / norm
+        kpi_daily = (float(kpi.get("amount") or 0) / norm) if (kpi and kpi.get("active")) else 0.0
         st = dict(WorkDay.objects.filter(user=u, date__gte=first, date__lte=last).values_list("date", "status"))
-        piece = {r["work_date"]: r for r in qs.values("work_date").annotate(s=Sum("amount"), n=Count("id"))}
+        per = defaultdict(list)
+        for r in qs.values("work_date", "op_type").annotate(s=Sum("amount"), n=Count("id")):
+            per[r["work_date"]].append((r["op_type"], float(r["s"] or 0), r["n"]))
+        order = {op: i for i, (op, _l) in enumerate(PIECE_OPS)}
         ships = {r["d"]: r["n"] for r in WarehouseJob.objects.filter(assignee=u, status="shipped", shipped_at__date__gte=first,
                                                                      shipped_at__date__lte=last)
                  .annotate(d=models_TruncDate("shipped_at")).values("d").annotate(n=Count("id"))}
         out, d, end = [], first, min(last, timezone.localdate())
         while d <= end:
             s = st.get(d, "")
-            base = round(daily, 2) if s in ("worked", "overtime") else 0.0
-            p = float((piece.get(d) or {}).get("s") or 0)
+            worked = s in ("worked", "overtime")
+            base = round(daily, 2) if worked else 0.0
+            kd = round(kpi_daily, 2) if worked else 0.0
+            rows = sorted(per.get(d, []), key=lambda x: order.get(x[0], 99))
+            p = sum(x[1] for x in rows)
+            if not basis:
+                base_note = "ставки за вихід у схемі немає"
+            elif worked:
+                base_note = "%s ₴ ÷ %s роб. днів місяця" % (_money(basis), norm)
+            else:
+                base_note = "день не відмічено в табелі" if not s else "%s — ставка не нараховується" % DAY_STATUS_UK.get(s, s)
+            lines = [{"op": "base", "label": "Ставка за вихід", "amount": base, "note": base_note}]
+            if kpi and (kpi.get("active") or kpi.get("max")):
+                lines.append({"op": "kpi", "label": "KPI (стандарт)", "amount": kd,
+                              "note": ("%s ₴ за місяць ÷ %s роб. днів" % (_money(kpi.get("amount")), norm)) if kpi.get("active")
+                              else ("з %s" % datetime.date.fromisoformat(kpi["from"]).strftime("%d.%m") if kpi.get("from") else kpi.get("note", ""))})
+            for op, amt, n in rows:
+                lines.append({"op": op, "label": PIECE_SHORT.get(op, "Інше"), "full_label": dict(PIECE_OPS).get(op, "Інше"),
+                              "amount": round(amt, 2), "count": n, "deduction": op in DEDUCTION_OPS})
             out.append({"date": d.isoformat(), "weekday": d.weekday(), "status": s, "status_label": DAY_STATUS_UK.get(s, "не відмічено"),
-                        "base": base, "piece": round(p, 2), "entries": (piece.get(d) or {}).get("n", 0),
-                        "shipments": ships.get(d, 0), "total": round(base + p, 2)})
+                        "base": base, "kpi": kd, "piece": round(p, 2), "entries": sum(x[2] for x in rows),
+                        "shipments": ships.get(d, 0), "total": round(base + kd + p, 2), "lines": lines})
             d += datetime.timedelta(days=1)
         return out
     except Exception:
@@ -807,33 +920,9 @@ def _my_calendar_month(request):
     last = first.replace(day=calendar.monthrange(first.year, first.month)[1])
     period = "%04d-%02d" % (first.year, first.month)
     qs = WarehousePayrollEntry.objects.filter(employee=u, work_date__gte=first, work_date__lte=last, status="confirmed")
-    piece = []
-    for op, label in PIECE_OPS:
-        r = qs.filter(op_type=op).aggregate(s=Sum("amount"), n=Count("id"))
-        if r["n"]:
-            piece.append({"op": op, "label": label, "amount": str(r["s"] or 0), "count": r["n"],
-                          "deduction": op in DEDUCTION_OPS})
-    rest = qs.exclude(op_type__in=[op for op, _l in PIECE_OPS]).aggregate(s=Sum("amount"), n=Count("id"))
-    if rest["n"]:
-        piece.append({"op": "other", "label": "Інше", "amount": str(rest["s"] or 0), "count": rest["n"], "deduction": False})
+    piece = _piece_lines(qs)
     piece_total = qs.aggregate(s=Sum("amount"))["s"] or Decimal("0")
-    scheme, base_lines, warnings, total, piece_in_scheme = None, [], [], None, False
-    try:
-        from apps.payroll import engine
-        res = engine.calc(u, period)
-        sc = res.get("scheme")
-        if sc:
-            scheme = {"title": sc.get("title") or "", "position": sc.get("position") or ""}
-            total = res.get("total")
-        for ln in res.get("lines") or []:
-            if ln.get("kind") == "piece_rate":
-                piece_in_scheme = True  # = сума записів складу нижче; окремо не показуємо (без подвійного)
-                continue
-            base_lines.append({"title": ln.get("title") or "", "amount": ln.get("amount") or 0,
-                               "detail": ln.get("detail") or "", "kind": ln.get("kind") or "", "basis": ln.get("basis")})
-        warnings = [w for w in (res.get("warnings") or []) if w]
-    except Exception:
-        warnings.append("Ставку зі схеми ЗП не вдалося прочитати — показано лише відрядні записи складу")
+    scheme, base_lines, warnings, total, piece_in_scheme = _scheme_lines(u, period)
     if scheme and not piece_in_scheme and piece:
         warnings.append("У вашій схемі ЗП немає відрядної частини — записи складу показано довідково, у «Разом» не входять")
     if total is None:
@@ -844,8 +933,10 @@ def _my_calendar_month(request):
     dg, dg_cut = _deal_groups_for(qs)
     shipments = WarehouseJob.objects.filter(assignee=u, status="shipped", shipped_at__date__gte=first,
                                             shipped_at__date__lte=last).count()
-    days = _month_days(u, first, last, qs, base_lines)
+    kpi = _kpi_info(u, first, last, base_lines)  # 17.09.2026: пункт KPI — і коли вже діє, і коли почнеться
+    days = _month_days(u, first, last, qs, base_lines, kpi)
     return Response({"which": which, "period": period, "label": "%s %d" % (MONTHS_UK[first.month - 1], first.year), "days": days,
+                     "kpi": kpi,
                      "from": first.isoformat(), "to": last.isoformat(), "scheme": scheme,
                      "base_lines": base_lines, "base_total": sum(float(l["amount"] or 0) for l in base_lines),
                      "piece": piece, "piece_total": str(piece_total), "piece_in_scheme": piece_in_scheme,
