@@ -20,7 +20,7 @@ def enabled():
         return False
 
 
-def history(conv, incoming, limit=12):
+def history(conv, incoming, limit=20):
     rows = list(conv.messages.filter(internal=False, id__lte=incoming.id).order_by("-id").values("direction", "text")[:limit])
     return [{"role": "client" if r["direction"] == "in" else "agent", "text": r["text"] or ""}
             for r in rows[::-1] if (r["text"] or "").strip()]

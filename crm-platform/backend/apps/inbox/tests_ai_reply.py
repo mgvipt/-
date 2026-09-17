@@ -1,5 +1,6 @@
 """ІІ у каналах CRM (17.09.2026): за замовчуванням мовчить, вмикається по каналу, не заважає менеджеру."""
 from datetime import timedelta
+from unittest import mock
 
 from django.core.cache import cache
 from django.test import TestCase
@@ -98,9 +99,19 @@ class AiOrderTests(TestCase):
         from apps.crm.models import Deal
         ai_reply._make_kit_offer(self.conv, {"product": self.prod.name, "qty": 1})
         ai_reply._make_kit_offer(self.conv, {"product": self.prod.name, "qty": 1})   # друге «так» клієнта
-        self.assertEqual(Deal.objects.filter(contact=self.contact).count(), 1)       # без дублів
+        self.assertEqual(Deal.objects.filter(contact=self.contact).count(), 1)       # другої сделки немає
         note = Message.objects.filter(conversation=self.conv, internal=True).last()
         self.assertIn("вже оформлене", note.text)
+
+    def test_repeat_resends_same_link(self):
+        """18.09 (Олег, WhatsApp): вибір той самий — ІІ надсилає клієнту ТЕ САМЕ посилання, а не мовчить."""
+        from apps.crm.models import PayLink
+        ai_reply._make_kit_offer(self.conv, {"product": self.prod.name, "qty": 1})
+        pl = PayLink.objects.order_by("-id").first()
+        with mock.patch.object(ai_reply, "_send") as send:
+            ai_reply._make_kit_offer(self.conv, {"product": self.prod.name, "qty": 1})
+        self.assertEqual(send.call_count, 1)
+        self.assertIn(pl.code, send.call_args[0][1])
 
     def test_unknown_product_only_note(self):
         from apps.crm.models import Deal
@@ -115,3 +126,34 @@ class AiOrderTests(TestCase):
         big = Product.objects.create(name="Великий тестовий набір", price=5000, cost=1000, unit="шт")
         ai_reply._make_kit_offer(self.conv, {"product": big.name, "qty": 1})
         self.assertEqual(Deal.objects.count(), 0)
+
+
+class AiRequisitesTests(TestCase):
+    """18.09.2026 (Олег): «якщо клієнт скаже — може, у вас є реквізити, — надсилаємо реквізити,
+    щоб клієнт не пропав»."""
+
+    def setUp(self):
+        cache.clear()
+        from apps.knowledge.models import KnowledgeItem
+        self.ch = Channel.objects.create(kind="echat", name="Viber (e-chat)", config={"ai_reply": True})
+        self.conv = Conversation.objects.create(channel=self.ch, external_chat_id="380971112233")
+        KnowledgeItem.objects.create(title="Реквізити для оплати (рахунок ФОП)", status="approved", kind="template",
+                                     topic="Оплата", audience=["yulia_web"], source="manual",
+                                     text="Ось реквізити 👇\nIBAN: UA98\nПризначення: Оплата замовлення №{номер}\nСума: {сума} грн")
+
+    def _ask(self, text):
+        msg = Message.objects.create(conversation=self.conv, direction="in", text=text)
+        return ai_reply._maybe_requisites(self.conv, msg)
+
+    def test_sends_requisites_on_request(self):
+        self.assertTrue(self._ask("а може у вас є реквізити?"))
+        out = Message.objects.filter(conversation=self.conv, direction="out", internal=False).last()
+        self.assertIn("IBAN", out.text)
+        self.assertNotIn("{номер}", out.text)          # рядки без сделки прибрані
+
+    def test_ignores_payment_confirmation(self):
+        self.assertFalse(self._ask("я вже оплатив на рахунок, ось квитанція"))
+        self.assertFalse(Message.objects.filter(conversation=self.conv, direction="out").exists())
+
+    def test_ignores_prorahunok(self):
+        self.assertFalse(self._ask("зробіть, будь ласка, прорахунок на 20 м2"))

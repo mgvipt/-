@@ -16,6 +16,7 @@
   • відповідь іде окремим потоком: вебхук каналу не чекає ІІ і не відпадає по таймауту;
   • будь-яка помилка → клієнту нічого, менеджер бачить нотатку.
 """
+import re
 import threading
 from datetime import timedelta
 
@@ -97,6 +98,77 @@ def _note(conv, text):
                            sender_name="%s · службова нотатка" % NOTE_PREFIX)
 
 
+
+# 18.09.2026 (Олег): «якщо клієнт скаже — може, у вас є реквізити, — тоді надсилаємо реквізити,
+# щоб клієнт не пропав і не передумав». Текст реквізитів лежить у базі знань (AI ЦЕНТР), щоб Олег
+# міг їх виправити без програміста: запис із назвою «Реквізити для оплати».
+REQ_TITLE = "Реквізити для оплати"
+REQ_ASK = re.compile(r"реквізит|реквизит|\bрахунок\b|\bрахунки\b|\bсчет\b|\bсчёт\b|iban|безготівк|безнал", re.I)
+REQ_PAID = re.compile(r"оплат(ив|ила|ила ж|или)|сплат(ив|ила)|перекину[вл]|перерахув|квитанц|чек надісл", re.I)
+
+
+
+def _money(v):
+    v = float(v or 0)
+    return ("%.0f" % v) if abs(v - round(v)) < 0.01 else ("%.2f" % v)
+
+
+def _send(conv, text):
+    """Повідомлення клієнту від імені ІІ (позначене в переписці)."""
+    from .models import Message
+    from .services import send_message
+    msg = send_message(conv, text)
+    Message.objects.filter(id=msg.id).update(sender_name="%s · %s" % (NOTE_PREFIX, conv.channel.name))
+    return msg
+
+
+def _requisites_text():
+    """Затверджений запис бази знань з реквізитами ФОП (редагується в AI ЦЕНТРІ)."""
+    from apps.knowledge.models import KnowledgeItem
+    it = (KnowledgeItem.objects.filter(status="approved", title__istartswith=REQ_TITLE)
+          .order_by("-updated_at").first())
+    return (it.text or "").strip() if it else ""
+
+
+def _maybe_requisites(conv, incoming):
+    """Клієнт просить рахунок/реквізити — надсилаємо їх самі, а не передаємо менеджеру."""
+    from .services import send_message
+    from .models import Message
+    text_in = (incoming.text or "")
+    if not REQ_ASK.search(text_in) or REQ_PAID.search(text_in):
+        return False
+    body = _requisites_text()
+    if not body:
+        return False
+    deal, amount = None, None
+    if conv.contact_id:
+        from apps.crm.models import Deal
+        deal = (Deal.objects.filter(contact_id=conv.contact_id, stage__is_won=False, stage__is_lost=False)
+                .filter(items__isnull=False).order_by("-created_at").first())
+    if deal is not None:
+        paid = sum(float(p.amount) for p in deal.payments.all() if p.is_paid)
+        left = float(deal.amount or 0) - paid
+        if left > 0:
+            amount = ("%.0f" % left) if abs(left - round(left)) < 0.01 else ("%.2f" % left)
+    lines = []
+    for ln in body.splitlines():
+        if "{номер}" in ln or "{сума}" in ln:
+            if deal is None or ("{сума}" in ln and amount is None):
+                continue
+            ln = ln.replace("{номер}", str(deal.id)).replace("{сума}", amount or "")
+        lines.append(ln)
+    text = "\n".join(lines).strip()
+    try:
+        msg = send_message(conv, text)
+        Message.objects.filter(id=msg.id).update(sender_name="%s · %s" % (NOTE_PREFIX, conv.channel.name))
+    except Exception as e:
+        _note(conv, "%s: не вдалося надіслати реквізити (%s)." % (NOTE_PREFIX, str(e)[:200]))
+        return True
+    _note(conv, "%s: клієнт попросив реквізити — надіслав рахунок ФОП%s."
+          % (NOTE_PREFIX, (" по сделці #%s" % deal.id) if deal else ""))
+    return True
+
+
 def reply_now(conv_id):
     """Відповідь клієнту (виконується у окремому потоці)."""
     from apps.knowledge.answer import HANDOFF_TEXT, answer
@@ -110,6 +182,11 @@ def reply_now(conv_id):
     incoming = conv.messages.filter(direction="in", internal=False).order_by("-id").first()
     if incoming is None:
         return
+    try:
+        if _maybe_requisites(conv, incoming):
+            return
+    except Exception as e:
+        _note(conv, "%s: реквізити не надіслані (%s)." % (NOTE_PREFIX, str(e)[:200]))
     try:
         cfg = KnowledgeSettings.get()
         r = answer("yulia_web", history(conv, incoming), include_drafts=False, model=cfg.webchat_model or None,
@@ -161,13 +238,27 @@ def _make_kit_offer(conv, order):
               .filter(items__isnull=False).order_by("-created_at").first())
     if recent is not None:
         paid = sum(float(p.amount) for p in recent.payments.all() if p.is_paid)
-        if paid <= 0:
-            # 18.09.2026 (Олег: «продублювались повідомлення на оплату»): друге посилання не створюємо
+        same = recent.items.filter(product_id=prod.id).exists()
+        if paid <= 0 and same:
+            # 18.09.2026 (Олег): другої сделки не створюємо, але клієнту надсилаємо ТЕ САМЕ посилання ще раз —
+            # «якщо це продовження діалогу і вибір збігається, ІІ може просто продублювати».
             pl = PayLink.objects.filter(deal=recent).order_by("-id").first()
-            _note(conv, "%s: замовлення вже оформлене — сделка #%s на %s ₴%s. Нового посилання не створюю."
-                  % (NOTE_PREFIX, recent.id, recent.amount,
-                     (", посилання https://crm.wallcovdec.com.ua/p/%s/" % pl.code) if pl else ""))
+            if pl is None:
+                _note(conv, "%s: сделка #%s вже є, але посилання на оплату немає — надішліть вручну."
+                      % (NOTE_PREFIX, recent.id))
+                return
+            url = "https://crm.wallcovdec.com.ua/p/%s/" % pl.code
+            try:
+                _send(conv, "%s — %s грн\n💳 Оплатити онлайн 👉 %s" % (prod.name, _money(recent.amount), url))
+                _note(conv, "%s: замовлення вже оформлене (сделка #%s) — надіслав те саме посилання %s"
+                      % (NOTE_PREFIX, recent.id, url))
+            except Exception as e:
+                _note(conv, "%s: замовлення вже оформлене (сделка #%s), посилання %s — надіслати не вдалося (%s)."
+                      % (NOTE_PREFIX, recent.id, url, str(e)[:150]))
             return
+        if paid <= 0 and not same:
+            _note(conv, "%s: у клієнта вже є неоплачена сделка #%s на %s ₴, а тепер просить «%s» — оформлюю окремо."
+                  % (NOTE_PREFIX, recent.id, recent.amount, prod.name[:50]))
     deal = (Deal.objects.filter(contact_id=conv.contact_id, stage__is_won=False, stage__is_lost=False)
             .order_by("-created_at").first())
     if deal is None or deal.items.exists():
