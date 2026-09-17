@@ -231,7 +231,9 @@ def samples(request):
         total_cost = sum(((p.cost or Decimal("0")) * q for p, q in lines), Decimal("0"))
         if r.paper_id:
             total_cost += (r.paper.cost or Decimal("0")) * sheets
-        unit_cost = (total_cost / out_qty).quantize(Decimal("0.01"))
+        # 17.09.2026 (Олег): робота складу за викраску входить у собівартість (як збірка тест-набору),
+        # щоб маржа й відсоток менеджера були чесні. Саму оплату нараховуємо, коли викраска поїхала клієнту.
+        unit_cost = (total_cost / out_qty + _rate("WH_SAMPLE_CAT")).quantize(Decimal("0.01"))
         before = _stock(r.target)
         doc = StockDocument.objects.create(
             kind="repack", warehouse=_wh(), number=("ВИК-%s" % r.target_id)[:40], author=u, posted=True, doc_date=timezone.localdate(),
@@ -245,7 +247,7 @@ def samples(request):
         r.target.cost = _new_cost_avg(r.target.cost or Decimal("0"), max(before, Decimal("0")), unit_cost, out_qty).quantize(Decimal("0.01"))
         r.target.save(update_fields=["cost", "track_stock"])
         rate = _rate("WH_SAMPLE_SHEET")
-        if rate > 0:
+        if rate > 0 and _rate("WH_SAMPLE_CAT") <= 0:  # або за аркуш при виготовленні, або за відправлену викраску — не двічі
             WarehousePayrollEntry.objects.create(employee=u, work_date=timezone.localdate(), op_type="samples",
                                                  amount=(rate * sheets).quantize(Decimal("0.01")), rate_applied=rate,
                                                  note=("викраски %s: %s арк. × %s ₴" % (r.name[:30], int(sheets), rate.normalize()))[:255])

@@ -21,7 +21,9 @@ DAY_HOURS = 8
 WH_RATE_CODES = ("WH_RATE_KG", "WH_PACK_5", "WH_PACK_10", "WH_PACK_20", "WH_TINT_PCT", "WH_RATE_DAY", "bundle_assembly",
                  # 16.09.2026 (Олег): тест-набори — фіксовані суми за тонування + ціна доплати для клієнта
                  "WH_KIT_TINT_CAT", "WH_KIT_TINT_IND", "KIT_TINT_PRICE_IND", "KIT_TINT_PRICE_RICH",
-                 "WH_WASHED_PCT", "WH_SAMPLE_SHEET", "SAMPLE_TINT_PRICE_IND")  # 16.09.2026: мите відро (% від закупки нового), викраски (₴ за аркуш А3)
+                 "WH_WASHED_PCT", "WH_SAMPLE_SHEET", "SAMPLE_TINT_PRICE_IND",
+                 # 17.09.2026 (Олег): за викраску платимо, коли вона поїхала клієнту — окремо каталог і індивідуальний колір
+                 "WH_SAMPLE_CAT", "WH_SAMPLE_IND")  # 16.09.2026: мите відро (% від закупки нового), викраски (₴ за аркуш А3)
 WH_RATE_TEXT = {  # code: (назва, якщо статті немає; одиниця; за що)
     "WH_RATE_KG": ("Відвантаження: ставка за кг", "₴/кг", "вага відвантаження: кілограми замовлення × ставка"),
     "WH_PACK_5": ("Упаковка до 5 кг", "₴/місце", "упаковка місця до 5 кг (якщо пакували самі)"),
@@ -43,6 +45,10 @@ WH_RATE_TEXT = {  # code: (назва, якщо статті немає; оди�
                               "доплата до ціни викраски (за каталогом 150 ₴ → індивідуальна 250 ₴)"),
     "WH_WASHED_PCT": ("Мите відро", "%", "% від закупівельної ціни нового відра — за кожне мите відро, що поїхало до клієнта"),
     "WH_SAMPLE_SHEET": ("Викраски", "₴/аркуш А3", "за кожен аркуш А3 викрасок (з аркуша — кілька викрасок)"),
+    "WH_SAMPLE_CAT": ("Викраска: колір з каталогу", "₴/викраска",
+                      "за кожну відправлену викраску в кольорі з каталогу (ця ж ставка входить у собівартість викраски)"),
+    "WH_SAMPLE_IND": ("Викраска: індивідуальний колір", "₴/викраска",
+                      "за кожну відправлену викраску, де менеджер поставив «індивідуальний колір»"),
 }
 
 
@@ -153,6 +159,12 @@ def _is_tint_service(p):
     return bool(p is not None and (p.name or "").strip().lower().startswith(TINT_SERVICE_PREFIX))
 
 
+def _is_sample(p):
+    """Викраска 10×30 см (готовий зразок) — не набір і не послуга."""
+    from apps.crm.kit_tint import is_sample_product
+    return bool(p is not None and is_sample_product(p))
+
+
 def _is_test_set(p):
     """Тестовий набір = товар-НАБІР (має компоненти, розділ «НАБОРИ») або «тестов…» у назві."""
     if p is None or _is_tint_service(p):
@@ -173,6 +185,7 @@ def _deal_accrual_facts(deal):
     weightless — фізичні товари без ваги (не тест-набори і не послуги): за них не буде оплати за кг/упаковку."""
     tint_base = Decimal("0"); tint_lines = 0; test_sets = Decimal("0"); weightless = {}
     kit_cat = Decimal("0"); kit_ind = Decimal("0")   # 16.09.2026: набори з тонуванням — каталог / індивідуальне
+    sample_cat = Decimal("0"); sample_ind = Decimal("0")  # 17.09.2026: викраски — колір з каталогу / індивідуальний
     for it in deal.items.select_related("product"):
         p = it.product
         if p is None:
@@ -181,6 +194,15 @@ def _deal_accrual_facts(deal):
             if str(getattr(it, "tint_mode", "") or "").startswith("auto"):
                 continue  # доплата за тонування набору: складу йде фіксована ставка, а не 20% — двічі не платимо
             tint_base += Decimal(it.total or 0); tint_lines += 1
+            continue
+        if _is_sample(p):
+            # 17.09.2026 (Олег): викраски роблять аркушем (4 шт), решта лишається на складі;
+            # складу платимо за кожну ВІДПРАВЛЕНУ викраску: з каталогу — одна ставка, індивідуальний колір — більша.
+            q = it.quantity or Decimal("0")
+            if str(getattr(it, "tint_mode", "") or "") == "s_ind":
+                sample_ind += q
+            else:
+                sample_cat += q
             continue
         if _is_test_set(p):
             q = it.quantity or Decimal("0")
@@ -194,7 +216,7 @@ def _deal_accrual_facts(deal):
     # своя позиція без номенклатури). Кг-товари, тест-набори, інструменти — вага за правилом.
     wl = WR.deal_plan(deal, salon=False, packing=False)["weightless"]
     return {"tint_base": tint_base, "tint_lines": tint_lines, "test_sets": test_sets, "weightless": wl,
-            "kit_cat": kit_cat, "kit_ind": kit_ind}
+            "kit_cat": kit_cat, "kit_ind": kit_ind, "sample_cat": sample_cat, "sample_ind": sample_ind}
 
 
 PHOTO_LABEL = {"buckets": "Відерця з наклейкою", "parcel": "Готова коробка", "invoice": "Накладна",
@@ -604,7 +626,8 @@ def _accrual_plan(job, pay_packing=True):
       упаковка    — місця ≤5/≤10/≤20 кг × WH_PACK_* (як і раніше; лише ручне пакування основної посилки);
       тонування   — WH_TINT_PCT % від суми рядка «Послуга тонування» (позначка не потрібна); якщо такого
                     рядка немає — як раніше, за ручною позначкою наборів. Обидва разом НІКОЛИ не рахуються;
-      тест-набори — ставка bundle_assembly × кількість тестових наборів в угоді."""
+      тест-набори — ставка bundle_assembly × кількість тестових наборів в угоді;
+      викраски    — WH_SAMPLE_CAT / WH_SAMPLE_IND × кількість відправлених викрасок (17.09.2026)."""
     deal = job.deal
     salon = WR.is_salon(deal)
     wp = WR.deal_plan(deal, salon=salon, packing=bool(job.packed and pay_packing))  # 15.09.2026: регламент v2
@@ -645,9 +668,17 @@ def _accrual_plan(job, pay_packing=True):
             if r_kt > 0:
                 rows.append((op, r_kt * cnt,
                              {"rate_applied": r_kt, "note": "%s наб. × %s ₴ (%s)" % (_num(cnt), _num(r_kt), label)}))
+    for code, cnt, label in (("WH_SAMPLE_CAT", fx.get("sample_cat", 0), "колір з каталогу"),
+                             ("WH_SAMPLE_IND", fx.get("sample_ind", 0), "індивідуальний колір")):
+        if cnt and cnt > 0:
+            r_s = _rate(code, _lr)
+            if r_s > 0:
+                rows.append(("samples", r_s * cnt,
+                             {"rate_applied": r_s, "note": "%s викр. × %s ₴ (%s)" % (_num(cnt), _num(r_s), label)}))
     meta = {"weight": weight, "tiers": tiers, "tint_base": tint_base, "tint_source": tint_source,
             "tint_count": tint_count, "test_sets": fx["test_sets"], "weightless": fx["weightless"],
             "kit_cat": fx.get("kit_cat", 0), "kit_ind": fx.get("kit_ind", 0),
+            "sample_cat": fx.get("sample_cat", 0), "sample_ind": fx.get("sample_ind", 0),
             "how": wp["how"], "salon": salon}
     return rows, meta
 

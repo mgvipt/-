@@ -9,7 +9,8 @@ from rest_framework.test import APIClient
 from apps.finance.models import WorkDay
 from apps.payroll.models import PayComponent, PayScheme
 
-from .models import WarehousePayrollEntry
+from .models import Product, WarehousePayrollEntry
+from . import wh_views
 from .tests_wh_accrual import _Base
 
 
@@ -75,3 +76,31 @@ class SalaryDaysTests(_Base):
     def test_warehouse_work_permission_in_catalog(self):
         from apps.accounts.models import PERMISSION_CHOICES
         self.assertIn("warehouse.work", dict(PERMISSION_CHOICES))
+
+
+class SamplePayTests(_Base):
+    """17.09.2026 (Олег): за відправлену викраску складу 50 ₴ (колір з каталогу) і 100 ₴ (індивідуальний)."""
+
+    def test_samples_accrued_on_shipment(self):
+        from .tests_wh_accrual import set_rate
+        set_rate("WH_SAMPLE_CAT", "50")
+        set_rate("WH_SAMPLE_IND", "100")
+        sample = Product.objects.create(name="Викраска 10×30 см · Sirena Silk", price=Decimal("150"),
+                                        cost=Decimal("59"), weight_kg=Decimal("0.02"))
+        d = self.deal(550)
+        self.item(d, sample, qty=3, price=150)                       # 3 з каталогу
+        ind = self.item(d, sample, qty=1, price=150)
+        ind.tint_mode = "s_ind"; ind.save(update_fields=["tint_mode"])
+        j = self.job(d)
+        wh_views._finalize(j, self.worker)
+        self.assertEqual(sorted(self.amounts(j, "samples")), [Decimal("100.00"), Decimal("150.00")])  # 3×50 і 1×100
+        self.assertEqual(self.amounts(j, "test_set"), [])            # викраска — не тест-набір
+        rows = {e.op_type: e.note for e in WarehousePayrollEntry.objects.filter(job=j)}
+        self.assertIn("викр.", rows["samples"])
+
+    def test_sheet_rate_ignored_when_per_sample_rate_set(self):
+        from .tests_wh_accrual import set_rate
+        from . import tare_samples
+        set_rate("WH_SAMPLE_SHEET", "40")
+        set_rate("WH_SAMPLE_CAT", "50")
+        self.assertEqual(tare_samples._rate("WH_SAMPLE_CAT"), Decimal("50"))
