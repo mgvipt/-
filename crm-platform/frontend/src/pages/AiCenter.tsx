@@ -164,8 +164,9 @@ export default function AiCenter() {
   const [tab, setTab] = useState<string>(() => localStorage.getItem("aiCenterTab") || "costs");
   useEffect(() => { localStorage.setItem("aiCenterTab", tab); }, [tab]);
   return (
-    <div style={{ padding: "12px 8px" }}>
-      <div style={{ maxWidth: 1100, margin: "0 auto 6px" }}>
+    // 18.09.2026 (Олег): у AI ЦЕНТРІ не було вертикальної прокрутки — область вкладок має свій скрол
+    <div style={{ height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "12px 8px" }}>
+      <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto 6px", flex: "0 0 auto" }}>
         <h2 style={{ margin: "0 0 10px", fontSize: 20, fontWeight: 800, color: "#0f172a" }}><Icon n="🧠" size={20} /> AI ЦЕНТР</h2>
         <div style={{ display: "flex", gap: 6, borderBottom: "1px solid #e2e8f0", flexWrap: "wrap" }}>
           {TABS.map(([k, ru, ua]) => (
@@ -173,11 +174,13 @@ export default function AiCenter() {
           ))}
         </div>
       </div>
-      {tab === "costs" && <AiCosts />}
-      {tab === "knowledge" && <KnowledgeBase />}
-      {tab === "kb" && <KbBase />}
-      {tab === "q" && <KbQuestions />}
-      {tab === "settings" && <SettingsAgent />}
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 24 }}>
+        {tab === "costs" && <AiCosts />}
+        {tab === "knowledge" && <KnowledgeBase />}
+        {tab === "kb" && <KbBase />}
+        {tab === "q" && <KbQuestions />}
+        {tab === "settings" && <SettingsAgent />}
+      </div>
     </div>
   );
 }

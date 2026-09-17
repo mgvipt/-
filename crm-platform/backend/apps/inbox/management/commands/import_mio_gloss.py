@@ -91,7 +91,7 @@ class Command(BaseCommand):
                     skipped += 1
                     continue
                 key = "source:%s" % relative
-                if MediaLibraryItem.objects.filter(material="Песочки", tags__contains=key).exists():
+                if MediaLibraryItem.objects.filter(material="Перламутрові піщинки", tags__contains=key).exists():
                     skipped += 1
                     continue
                 room = next((label for fragment, label in ROOMS.items() if fragment in path.stem.lower()), "showcase")
@@ -105,8 +105,8 @@ class Command(BaseCommand):
                 thumb = shared_file("preview-mio-%s-%s.webp" % (code.replace("/", "-"), version), preview)
                 MediaLibraryItem.objects.create(
                     title="Mio Gloss · %s · %s" % (code, room), kind="image", section="colors",
-                    material="Песочки", color_code=code,
-                    tags="песочки інтер'єр effect:Mio Gloss room:%s revision:mio-approved-v2 %s" % (room, key),
+                    material="Перламутрові піщинки", color_code=code,
+                    tags="піщинки інтер'єр effect:Mio Gloss room:%s revision:mio-approved-v2 %s" % (room, key),
                     file=original, preview_file=thumb,
                 )
                 imported += 1

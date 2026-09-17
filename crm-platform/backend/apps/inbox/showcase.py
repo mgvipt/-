@@ -40,13 +40,14 @@ BLURB = {
     "Мокрий шовк": "Ефект «мокрого шовку»: стіна мʼяко переливається, як шовкова тканина, і змінює відтінок залежно від світла.",
     "Вельвет Луна": "Сатиново-шовковий перламутровий перелив: мʼяка глибока фактура, яка грає при денному й вечірньому світлі.",
     "Патера": "Фактурні покриття Pattera: травертин, матовий марморин і арт-бетон — фактура природного каменю й бетону.",
-    "Песочки": "Перламутрові піщинки: делікатне сяйво, яке по-різному виглядає вдень і ввечері.",
+    "Перламутрові піщинки": "Делікатне сяйво перламутрових піщинок, яке по-різному виглядає вдень і ввечері.",
     "Плінтуси Cezar": "Плінтуси та молдинги Cezar — моделі й розміри.",
     "Orac Decor": "Ліпнина Orac Decor: карнизи, молдинги, розетки, панелі.",
 }
 SLUG_MAP = {
     "мокрий шовк": "mokryi-shovk", "вельвет луна": "velvet-luna", "патера": "pattera",
-    "песочки": "pisochky", "плінтуси cezar": "cezar", "orac decor": "orac",
+    "песочки": "pisochky", "перламутрові піщинки": "pisochky",   # 18.09.2026: стара назва була російською; адреса лишилась
+    "плінтуси cezar": "cezar", "orac decor": "orac",
 }
 
 
@@ -72,11 +73,28 @@ def page_link(slug="", code="", conv_id=None):
     return url
 
 
+PLAIN_LINK_RE = re.compile(r"https://wallcov\.com\.ua/p/[^\s<>\"\'\)\]]*", re.I)
+
+
 def personalize(text, conv):
-    """{кольори} або {кольори:velvet-luna} у тексті → персональне посилання на сторінку кольорів."""
-    if not text or "{кольори" not in text:
+    """Готуємо посилання для клієнта у вихідному повідомленні:
+    • {кольори} / {кольори:velvet-luna} → посилання на сторінку кольорів;
+    • будь-яке посилання wallcov.com.ua/p/… (його міг написати менеджер або ІІ) робимо ПЕРСОНАЛЬНИМ —
+      додаємо мітку цього чату, щоб кнопка «Обрати цей колір» прилетіла назад саме сюди (18.09.2026, Олег)."""
+    if not text:
         return text
-    return PICK_RE.sub(lambda m: page_link(m.group(1) or "", m.group(2) or "", getattr(conv, "id", None)), text)
+    conv_id = getattr(conv, "id", None)
+    out = PICK_RE.sub(lambda m: page_link(m.group(1) or "", m.group(2) or "", conv_id), text) if "{кольори" in text else text
+    if not conv_id or "wallcov.com.ua/p/" not in out:
+        return out
+
+    def _mark(m):
+        url = m.group(0)
+        if "c=" in url.split("?", 1)[-1] and "?" in url:
+            return url
+        tail = "" if url.endswith("/") or url.endswith("=") else ""
+        return "%s%s%sc=%s" % (url, tail, "&" if "?" in url else "?", conv_token(conv_id))
+    return PLAIN_LINK_RE.sub(_mark, out)
 
 
 def json_dumps(text):
@@ -207,12 +225,22 @@ class ShowcasePickView(APIView):
 
     def post(self, request):
         token = (request.data.get("c") or "").strip()
+        cp = str(request.data.get("cp") or "").strip()[:128]
         text = (request.data.get("text") or "").strip()[:300]
-        try:
-            data = signing.loads(token, salt=TOKEN_SALT, max_age=TOKEN_MAX_AGE)
-        except Exception:
-            return Response({"ok": False, "detail": "посилання застаріле"}, status=400)
-        conv = Conversation.objects.filter(id=data.get("c")).select_related("channel").first()
+        conv = None
+        if token:
+            try:
+                data = signing.loads(token, salt=TOKEN_SALT, max_age=TOKEN_MAX_AGE)
+            except Exception:
+                return Response({"ok": False, "detail": "посилання застаріле"}, status=400)
+            conv = Conversation.objects.filter(id=data.get("c")).select_related("channel").first()
+        elif cp:
+            # 18.09.2026 (Олег): «незалежно, де клієнт — Instagram чи інший месенджер».
+            # Юля (ChatPlace) підставляє у посилання свій ідентифікатор чату — шукаємо ту саму розмову в CRM.
+            conv = (Conversation.objects.filter(external_chat_id=cp, status="open")
+                    .select_related("channel").order_by("-last_message_at").first()
+                    or Conversation.objects.filter(external_chat_id=cp)
+                    .select_related("channel").order_by("-last_message_at").first())
         if not conv or not text:
             return Response({"ok": False}, status=400)
         recent = Message.objects.filter(conversation=conv, sender_name=PICK_SENDER,
@@ -247,7 +275,10 @@ class ShowcaseMaterialView(APIView):
     def get(self, request, slug):
         m = material_by_slug(slug)
         if not m:
-            raise Http404
+            # 18.09.2026: за цією ж адресою живуть ПОСИЛАННЯ НА ОПЛАТУ (/p/<код>/) — якщо це не матеріал,
+            # віддаємо керування їм, інакше клієнт бачив би 404 замість сторінки оплати.
+            from apps.crm.views import paylink_redirect
+            return paylink_redirect(request, slug)
         w = words(m["name"])
         items = list(_items().filter(material=m["name"]).order_by("sort", "id"))
         seen, cards, catalog = set(), [], []
@@ -270,8 +301,8 @@ class ShowcaseMaterialView(APIView):
                                                  escape(c.title[:60])) for c in catalog)
         body += '<h2 style="font-size:17px;margin:18px 0 6px">%s (%d)</h2><div class="grid">%s</div>' % (
             w["many"], len(cards), "".join(cards))
-        body += ('<div class="note">Сподобалось — напишіть менеджеру %s, і ми підготуємо розрахунок%s.</div>'
-                 % (w["code"], "" if is_model(m["name"]) else " або викраску 10×30 см у цьому кольорі"))
+        body += ('<div class="note">Сподобалось — напишіть менеджеру %s: порахуємо матеріал на Вашу площу%s.</div>'
+                 % (w["code"], "" if is_model(m["name"]) else " і підготуємо тест-набір саме в цьому кольорі"))
         return _page(m["name"], body, BLURB.get(m["name"], ""), back=("/p/", "усі матеріали"))
 
 
@@ -305,8 +336,9 @@ class ShowcaseColorView(APIView):
                 '<video controls playsinline preload="metadata" src="%s"></video>' % escape(file_url(v)) for v in videos)
         # 17.09.2026 (Олег): «щоб клієнт кнопкою обирав колір і потрапляв у чат з менеджером»
         w = words(m["name"])
+        # 18.09.2026 (Олег): продаємо насамперед ТЕСТ-НАБІР; викраска — виняток, коли навіть набір дорогий
         msg = ("Обрав модель %s · %s. Порахуйте, будь ласка." % (m["name"], code) if is_model(m["name"])
-               else "Обрав колір %s · %s. Порахуйте, будь ласка, матеріал (або викраску 10×30 см у цьому кольорі)." % (m["name"], code))
+               else "Обрав колір %s · %s. Порахуйте, будь ласка, матеріал і тест-набір у цьому кольорі." % (m["name"], code))
         q = quote(msg)
         body += ('<div class="pick"><b>%s</b>'
                  '<div style="color:var(--muted);font-size:14px;margin-top:4px">Натисніть — %s піде менеджеру, '
@@ -317,18 +349,19 @@ class ShowcaseColorView(APIView):
                  '<a class="btn" href="%s" target="_blank" rel="noopener">Telegram</a>'
                  '<a class="btn" href="https://wa.me/%s?text=%s" target="_blank" rel="noopener">WhatsApp</a>'
                  '</div><div class="ok" id="ok">Скопійовано — вставте у ваш чат з менеджером 👍</div></div>'
-                 '<script>if(new URLSearchParams(location.search).get("c")){'
+                 '<script>if(new URLSearchParams(location.search).get("c")||new URLSearchParams(location.search).get("cp")){'
                  'document.querySelectorAll(".pick .btn:not(.primary)").forEach(function(b){b.style.display="none";});}</script>'
                  '<script>function pick(){var t=%s;var o=document.getElementById("ok");'
-                 'var c=new URLSearchParams(location.search).get("c");'
+                 'var q=new URLSearchParams(location.search);var c=q.get("c")||q.get("cp");'
                  'if(c){fetch("/p/pick/",{method:"POST",headers:{"Content-Type":"application/json"},'
-                 'body:JSON.stringify({c:c,text:t})}).then(function(r){return r.json();}).then(function(d){'
+                 'body:JSON.stringify(q.get("c")?{c:c,text:t}:{cp:c,text:t})}).then(function(r){return r.json();}).then(function(d){'
                  'o.textContent=d && d.ok ? "Готово — менеджер уже бачить Ваш вибір у чаті ✅" : '
                  '"Не вдалось надіслати — напишіть код менеджеру, будь ласка";o.style.display="block";})'
                  '.catch(function(){o.textContent="Не вдалось надіслати — напишіть код менеджеру";o.style.display="block";});return;}'
                  'try{navigator.clipboard.writeText(t);}catch(e){}'
-                 'o.style.display="block";setTimeout(function(){location.href="%s";},900);}</script>'
+                 'o.textContent="Код скопійовано — поверніться у чат, де ми спілкуємось, і надішліть його 👍";'
+                 'o.style.display="block";}</script>'
                  % (w["liked"], escape(code), w["pick"], escape(MANAGER_VIBER), escape(MANAGER_TG + "?text=" + q),
-                    MANAGER_PHONE, q, json_dumps(msg), escape(MANAGER_TG + "?text=" + q)))
+                    MANAGER_PHONE, q, json_dumps(msg)))
         return _page("%s · %s" % (m["name"], code), body, BLURB.get(m["name"], ""),
                      back=("/p/%s/" % slug, m["name"]))

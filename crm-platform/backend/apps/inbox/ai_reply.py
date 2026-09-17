@@ -53,10 +53,10 @@ def _allowed_chat(channel, conv):
 
 
 def _manager_active(conv, hours):
-    """Менеджер веде цей чат: призначений або писав клієнту за останні N годин (N — з AI ЦЕНТРУ)."""
+    """Менеджер веде цей чат: САМ ПИСАВ клієнту за останні N годин (N — з AI ЦЕНТРУ).
+    18.09.2026 (Олег): «якщо менеджер написав клієнту — агент у цьому чаті не пише». Саме написав:
+    закріплений за чатом менеджер, який ще нічого не відповів, ІІ не блокує."""
     from .models import Message
-    if conv.assigned_to_id:
-        return True
     if hours <= 0:
         return False
     return Message.objects.filter(conversation=conv, direction="out", sender__isnull=False,
@@ -120,7 +120,8 @@ def reply_now(conv_id):
                 if r.get("handoff") else
                 "%s відповів з бази знань. Записи: %s. ≈ $%s" % (NOTE_PREFIX, used, (r.get("cost") or {}).get("usd", 0)))
     except Exception as e:
-        _note(conv, "%s: помилка (%s) — відповідає менеджер." % (NOTE_PREFIX, str(e)[:200]))
+        _note(conv, "%s: не зміг відповісти (%s). Клієнту нічого не надіслано — дайте відповідь вручну."
+              % (NOTE_PREFIX, str(e)[:200]))
         return
     try:
         msg = send_message(conv, text)

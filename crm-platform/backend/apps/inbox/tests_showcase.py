@@ -83,3 +83,18 @@ class ShowcasePickTests(TestCase):
         out = showcase.personalize("Ось кольори: {кольори:velvet-luna}", self.conv)
         self.assertIn("https://wallcov.com.ua/p/velvet-luna/?c=", out)
         self.assertEqual(showcase.personalize("без плейсхолдера", self.conv), "без плейсхолдера")
+
+
+class PayLinkNotBrokenTests(TestCase):
+    """18.09.2026: сторінки /p/<матеріал>/ не повинні перехоплювати ПОСИЛАННЯ НА ОПЛАТУ /p/<код>/."""
+
+    def test_paylink_still_works(self):
+        from apps.crm.models import Deal, Funnel, PayLink, Stage
+        f = Funnel.objects.create(name="22 Тестовий набір")
+        st = Stage.objects.create(funnel=f, name="Домовились про оплату", order=2)
+        d = Deal.objects.create(title="T", funnel=f, stage=st)
+        PayLink.objects.create(code="YwOhyDY", deal=d, target="https://www.liqpay.ua/api/3/checkout?data=x")
+        r = self.client.get("/p/YwOhyDY/")
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("liqpay", r["Location"])
+        self.assertEqual(self.client.get("/p/nemaje-takogo-kodu/").status_code, 404)
