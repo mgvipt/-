@@ -34,6 +34,7 @@ export default function WarehouseWork() {
   if (job) return <TaskCard t={t} jobId={job} onBack={() => setJob(null)} />;
   const { can } = useAuth();
   const mgr = can("warehouse.view.all") || can("roles.manage");
+  if (!can("warehouse.work")) return <div className="scroll pad"><div className="note">{t("Нет доступа к «Отгрузке». Права выдаёт руководитель: Сотрудники и права → «Меню Відвантаження».", "Немає доступу до «Відвантаження». Права видає керівник: Співробітники і права → «Меню Відвантаження».")}</div></div>;
   const TABS: any[] = [["shift", "🏠", "Смена", "Зміна"], ["queue", "📋", "Общий список", "Загальний список"], ["kanban", "🗂", "Мои задачи", "Мої задачі"], ["salary", "💰", "Зарплата", "ЗП"], ["repack", "🧪", "Розлив", "Розлив"]].concat(mgr ? [["control", "🛡", "Контроль", "Контроль"], ["dashboard", "📊", "Дашборд", "Дашборд"]] : []);
   return (
     <div className="scroll pad fade" style={{ width: "100%" }}>
@@ -197,7 +198,8 @@ function QueueView({ t, onOpen, mgr }: any) {
             </select></div>} />)}
         </div>
       )}
-      {mgr && <ShippedFilter staff={staff} onOpen={onOpen} t={t} />}
+      {/* 17.09.2026 (Олег): знайти вже відправлену задачу за № угоди може кожен працівник складу, не лише керівник */}
+      <ShippedFilter staff={mgr ? staff : []} onOpen={onOpen} t={t} />
       {(d.queue || []).length === 0 && <div className="note">{t("Очередь пуста — все задачи разобраны 👍", "Черга порожня — всі задачі розібрані 👍")}</div>}
       {sal.length > 0 && <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: "10px 12px", marginBottom: 12 }}><div className="label" style={{ margin: "0 0 8px", color: C.terra }}>🔥 {t("Покрытия для стен — приоритет", "Покриття для стін — пріоритет")} <span className="muted" style={{ fontWeight: 400 }}>· {sal.length}</span></div><div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{sal.map(row)}</div></div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{rest.map(row)}</div>
@@ -277,12 +279,25 @@ function KanbanView({ t, onOpen }: any) {
     { k: "arrived", icon: "🏤", title: t("НП · Прибыло", "НП · Прибуло"), color: "#7c3aed", items: shipped.filter((j: any) => npc(j) === "arrived") },
     { k: "got", icon: "🎉", title: t("Получено клиентом", "Отримано клієнтом"), color: "#16a34a", items: shipped.filter((j: any) => npc(j) === "got") },
   ];
+  // 17.09.2026 (Олег: «немає прокрутки по горизонталі, видно лише кілька статусів»): чіпи всіх статусів + стрілки
+  const scrollBy = (dx: number) => { const el = document.getElementById("wh-kanban-row"); if (el) el.scrollBy({ left: dx, behavior: "smooth" }); };
+  const goCol = (k: string) => { const el = document.getElementById("wh-col-" + k); if (el) el.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" }); };
   return (
-    <div className="scroll pad fade" style={{ width: "100%" }}>
-      <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>{t("Только ТВОИ задачи (взятые в работу). Новые бери в «Общем списке». Жми карточку, чтобы продолжить.", "Тільки ТВОЇ задачі (взяті в роботу). Нові бери у «Загальному списку». Тисни картку, щоб продовжити.")}</div>
-      <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 12 }}>
+    <div className="fade" style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}>
+      <ShippedFilter staff={[]} onOpen={onOpen} t={t} />
+      <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>{t("Только ТВОИ задачи (взятые в работу). Новые бери в «Общем списке». Жми карточку, чтобы продолжить.", "Тільки ТВОЇ задачі (взяті в роботу). Нові бери у «Загальному списку». Тисни картку, щоб продовжити.")}</div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+        <button className="btn btn-light" style={{ height: 30, padding: "0 10px" }} onClick={() => scrollBy(-320)} aria-label={t("Влево", "Ліворуч")}>‹</button>
         {COLS.map((col) => (
-          <div key={col.k} style={{ flex: "0 0 300px", minWidth: 300 }}>
+          <button key={"chip" + col.k} className="btn btn-light" onClick={() => goCol(col.k)} style={{ height: 30, fontSize: 12, padding: "0 9px", color: col.color, border: "1px solid " + col.color + "44", background: col.items.length ? col.color + "12" : "#fff", whiteSpace: "nowrap" }}>
+            {col.icon} {col.title} <b style={{ marginLeft: 4 }}>{col.items.length}</b>
+          </button>
+        ))}
+        <button className="btn btn-light" style={{ height: 30, padding: "0 10px" }} onClick={() => scrollBy(320)} aria-label={t("Вправо", "Праворуч")}>›</button>
+      </div>
+      <div id="wh-kanban-row" style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 12, maxWidth: "100%", scrollSnapType: "x proximity" }}>
+        {COLS.map((col) => (
+          <div key={col.k} id={"wh-col-" + col.k} style={{ flex: "0 0 280px", minWidth: 280, scrollSnapAlign: "start" }}>
             <div style={{ fontWeight: 700, fontSize: 13, color: col.color, padding: "6px 4px 8px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid " + col.color + "33" }}>
               <span>{col.icon} {col.title}</span>
               <span style={{ background: col.color + "1f", color: col.color, borderRadius: 20, padding: "1px 9px", fontSize: 12, fontWeight: 700 }}>{col.items.length}</span>
@@ -637,12 +652,35 @@ function WhRatesPanel({ t, r }: any) {
 // 15.09.2026 (Олег): «по яких угодах як нараховано» — та сама таблиця, що у Фінанси → ЗП/KPI → «Як прорахувалось»
 function DealsPanel({ t, d }: any) {
   const g = d.deal_groups || [];
+  const [openDay, setOpenDay] = useState<Record<string, boolean>>({});
   if (!g.length) return null;
+  // 17.09.2026 (Олег): угоди — по днях: розгорнути день → угоди → угоду → «як пораховано»
+  const byDay: Record<string, any[]> = {};
+  g.forEach((x: any) => { (byDay[x.date] = byDay[x.date] || []).push(x); });
+  const days = Object.keys(byDay).sort().reverse();
+  const WD = [t("пн", "пн"), t("вт", "вт"), t("ср", "ср"), t("чт", "чт"), t("пт", "пт"), t("сб", "сб"), t("вс", "нд")];
+  const dmy = (s: string) => `${s.slice(8, 10)}.${s.slice(5, 7)}`;
   return (
     <div className="panel" style={{ marginTop: 10 }}>
       <div className="label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Icon n="package" size={15} /> {t("По сделкам — как начислено", "По угодах — як нараховано")} <span className="muted" style={{ fontWeight: 400 }}>({g.length})</span></div>
-      <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>{t("Нажмите на строку — откроется, как посчитано по каждому товару.", "Натисніть на рядок — відкриється, як пораховано по кожному товару.")}</div>
-      <DealGroups groups={g} />
+      <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>{t("Нажмите на день — появятся сделки; на сделку — как посчитано по каждому товару.", "Натисніть на день — зʼявляться угоди; на угоду — як пораховано по кожному товару.")}</div>
+      {days.map((day) => {
+        const rows = byDay[day];
+        const sum = rows.reduce((s: number, x: any) => s + Number(x.total || 0), 0);
+        const wd = WD[(new Date(day + "T12:00:00").getDay() + 6) % 7];
+        const on = !!openDay[day];
+        return (
+          <div key={day} style={{ borderTop: "1px solid #f1f5f9" }}>
+            <div onClick={() => setOpenDay((o) => ({ ...o, [day]: !o[day] }))} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 2px", cursor: "pointer", background: on ? "#f8fafc" : undefined }}>
+              <Icon n="chevron-down" size={14} style={{ transform: on ? "none" : "rotate(-90deg)", color: "#64748b" }} />
+              <b style={{ minWidth: 64 }}>{dmy(day)} <span className="muted" style={{ fontWeight: 400 }}>{wd}</span></b>
+              <span className="muted" style={{ fontSize: 12.5, flex: 1 }}>{rows.length} {t("сделок", "угод")}</span>
+              <b style={{ whiteSpace: "nowrap" }}>{f(sum)} ₴</b>
+            </div>
+            {on && <div style={{ padding: "0 0 10px" }}><DealGroups groups={rows} /></div>}
+          </div>
+        );
+      })}
       {d.deal_groups_truncated && <div className="muted" style={{ fontSize: 11.5 }}>{t("Показаны последние 300 сделок", "Показано останні 300 угод")}</div>}
     </div>
   );
@@ -660,7 +698,7 @@ function SalaryModeSwitch({ t, mode, setMode }: any) {
 }
 
 // 14.09 (wh-accrual): календарний місяць (поточний / минулий) — ставка зі схеми ЗП + відрядні записи складу. Лише свої дані.
-function MonthSalaryView({ t, which }: any) {
+function MonthSalaryView({ t, which, onPickDay }: any) {
   const [d, setD] = useState<any>(null);
   const [err, setErr] = useState("");
   useEffect(() => { setD(null); setErr(""); api.get<any>(`/api/warehouse/my-salary/?period=calendar&which=${which}`).then(setD).catch((e: any) => setErr(e?.response?.data?.detail || t("Не удалось загрузить", "Не вдалося завантажити"))); /* eslint-disable-next-line */ }, [which]);
@@ -683,6 +721,27 @@ function MonthSalaryView({ t, which }: any) {
               : l.detail ? <span className="muted"> · {l.detail}</span> : null}</span><b style={{ whiteSpace: "nowrap" }}>{f(l.amount)} ₴</b></div>
           ))}
           {(d.base_lines || []).length === 0 && <div className="muted" style={{ fontSize: 13, padding: "6px 0" }}>{t("Ставка не задана", "Ставку не задано")}</div>}
+          {(d.days || []).length > 0 && <>
+            {/* 17.09.2026 (Олег): ставка по днях обраного місяця — прокрутка, кожен день окремо; клік — відкрити день */}
+            <div className="muted" style={{ fontSize: 12, margin: "10px 0 6px" }}>{t("По дням (прокрутите). Ставка за день — ставка за выход ÷ рабочие дни месяца, ориентировочно; точная сумма за месяц — строкой выше. Нажмите день — откроется подробно.", "По днях (прокрутіть). Ставка за день — ставка за вихід ÷ робочі дні місяця, орієнтовно; точна сума за місяць — рядком вище. Натисніть день — відкриється детально.")}</div>
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8, scrollSnapType: "x proximity" }}>
+              {[...(d.days || [])].reverse().map((x: any) => {
+                const worked = x.status === "worked" || x.status === "overtime";
+                const WDN = ["пн", "вт", "ср", "чт", "пт", "сб", "нд"];
+                return (
+                  <button key={x.date} type="button" onClick={() => onPickDay && onPickDay(x.date)} className="btn btn-light" title={x.status_label}
+                    style={{ flex: "0 0 112px", scrollSnapAlign: "start", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 2, padding: "7px 8px", textAlign: "left", background: worked ? "#f0fdf4" : (x.status ? "#fff7ed" : "#fff"), border: "1px solid " + (worked ? "#bbf7d0" : "#e2e8f0"), height: "auto" }}>
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>{x.date.slice(8, 10)}.{x.date.slice(5, 7)} <span className="muted" style={{ fontWeight: 400 }}>{WDN[x.weekday]}</span></span>
+                    <span style={{ fontSize: 10.5, color: worked ? "#166534" : "#92400e" }}>{x.status_label}</span>
+                    <span style={{ fontSize: 11.5 }}>{t("ставка", "ставка")} {f(x.base)} ₴</span>
+                    <span style={{ fontSize: 11.5 }}>{t("сдельно", "відрядно")} {f(x.piece)} ₴</span>
+                    {x.shipments ? <span className="muted" style={{ fontSize: 10.5 }}>{t("отправлено", "відправлено")}: {x.shipments}</span> : null}
+                    <b style={{ fontSize: 13, marginTop: 2 }}>{f(x.total)} ₴</b>
+                  </button>
+                );
+              })}
+            </div>
+          </>}
           <div className="label" style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 6 }}><Icon n="package" size={15} /> {t("Сдельно (склад)", "Відрядно (склад)")}</div>
           {(d.piece || []).map((p: any) => (
             <div key={p.op} style={row}><span style={{ fontSize: 13.5 }}>{p.label} <span className="muted">×{p.count}</span></span><b style={{ color: Number(p.amount) < 0 ? C.red : "#0f172a" }}>{f(p.amount)} ₴</b></div>
@@ -723,7 +782,7 @@ function SalaryView({ t }: any) {
   const [mode, setMode] = useState<"current" | "prev" | "day">("current");
   useEffect(() => { api.get<any>(period === "day" ? `/api/warehouse/my-salary/?date=${day}` : `/api/warehouse/my-salary/?period=${period}`).then(setD).catch(() => {}); }, [period, day]);
   const LBL: any = { workday: ["Дни (ставка)", "Дні (ставка)"], shipment_weight: ["Вес отгрузки", "Вага відвантаження"], packing: ["Пакування", "Пакування"], tinting: ["Тонировка", "Тонування"], test_set: ["Сборка тест-наборов", "Збірка тест-наборів"], bonus_initiative: ["Бонус-идея", "Бонус-ідея"], bonus_cleanliness: ["Бонус-чистота", "Бонус-чистота"], error: ["Ошибки", "Помилки"], wrong_material: ["Не тот материал", "Не той матеріал"] };
-  if (mode !== "day") return <div><SalaryModeSwitch t={t} mode={mode} setMode={setMode} /><MonthSalaryView t={t} which={mode} /></div>;
+  if (mode !== "day") return <div><SalaryModeSwitch t={t} mode={mode} setMode={setMode} /><MonthSalaryView t={t} which={mode} onPickDay={(x: string) => { setDay(x); setMode("day"); }} /></div>;
   if (!d) return <div className="spin">…</div>;
   return (
     <div>
@@ -772,10 +831,10 @@ function ShippedFilter({ staff, onOpen, t }: any) {
   useEffect(() => { if (opened && rows === null) load(); /* eslint-disable-next-line */ }, [opened]);
   return (
     <details style={{ marginBottom: 14 }} onToggle={(e: any) => setOpened(e.currentTarget.open)}>
-      <summary style={{ cursor: "pointer", fontSize: 13.5, fontWeight: 700 }}>🔎 {t("Отгрузки — поиск и период", "Відвантаження — пошук і період")}</summary>
+      <summary style={{ cursor: "pointer", fontSize: 13.5, fontWeight: 700 }}>🔎 {t("Найти задачу (и отправленные) — № сделки, клиент, ТТН, период", "Знайти задачу (і відправлені) — № угоди, клієнт, ТТН, період")}</summary>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "10px 0" }}>
         <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder={t("🔎 № сделки / клиент", "🔎 № угоди / клієнт")} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13, flex: 1, minWidth: 150 }} />
-        <select value={emp} onChange={(e) => setEmp(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 12.5 }}><option value="">{t("Все сотрудники", "Усі співробітники")}</option>{(staff || []).map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
+        {(staff || []).length > 0 && <select value={emp} onChange={(e) => setEmp(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 12.5 }}><option value="">{t("Все сотрудники", "Усі співробітники")}</option>{(staff || []).map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select>}
         <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 6px", fontSize: 12 }} />
         <span className="muted">—</span>
         <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ height: 32, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 6px", fontSize: 12 }} />

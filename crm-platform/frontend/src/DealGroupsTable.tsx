@@ -27,7 +27,7 @@ export function DealGroups({ groups }: { groups: any[] }) {
           <th style={TH}>Дата</th><th style={TH}>Угода</th><th style={TH}>Клієнт</th>
           <th style={{ ...TH, textAlign: "right" }}>Кг</th><th style={{ ...TH, textAlign: "right" }}>Вага</th>
           <th style={{ ...TH, textAlign: "right" }}>Упаковка</th><th style={{ ...TH, textAlign: "right" }}>Тонування</th>
-          <th style={{ ...TH, textAlign: "right" }}>Тест-набори</th><th style={{ ...TH, textAlign: "right" }}>Інше</th>
+          <th style={{ ...TH, textAlign: "right" }}>Тест-набори</th><th style={{ ...TH, textAlign: "right" }} title="Мите відро, викраски, бонуси, утримання">Інше</th>
           <th style={{ ...TH, textAlign: "right" }}>Разом</th>
         </tr></thead>
         <tbody>{groups.map((g: any) => {

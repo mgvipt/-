@@ -382,7 +382,8 @@ def _piece_qty(e):
 def _piece_deal_groups(entries, labels):
     """15.09.2026: відрядно по угодах — колонки за кожним пунктом оплати; рядок розкривається («як пораховано» + записи)."""
     from apps.warehouse import weight_rules as WR
-    col_of = {"shipment_weight": "weight", "packing": "pack", "tinting": "tint", "test_set": "test_set"}
+    col_of = {"shipment_weight": "weight", "packing": "pack", "tinting": "tint", "test_set": "test_set",
+              "kit_tint_cat": "tint", "kit_tint_ind": "tint"}  # 17.09.2026: тонування наборів — у колонці «Тонування», не «Інше»
     dg = {}
     for e in entries:
         key = ("j%s" % e.job_id) if e.job_id else ("e%s" % e.id)

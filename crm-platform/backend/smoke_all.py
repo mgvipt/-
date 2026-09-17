@@ -188,6 +188,7 @@ CHECKS = [
     # ── Склад ──
     ("Склад: товари", "owner", "/api/products/?page_size=5", {200}, []),
     ("Склад: дашборд", "owner", "/api/warehouse/dashboard/", {200}, []),
+    ("Склад: ЗП місяця по днях (17.09)", "owner", "/api/warehouse/my-salary/?period=calendar&which=current", {200}, ["days", "base_lines"]),
     ("Склад: моя ЗП за календарний місяць", "owner", "/api/warehouse/my-salary/?period=calendar&which=current", {200}, ["total", "piece", "base_lines"]),
     ("Склад: черга робіт", "owner", "/api/warehouse/queue/", {200}, []),
     ("Склад: інвентаризаційна відомість", "owner",

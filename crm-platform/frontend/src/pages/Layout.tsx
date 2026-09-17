@@ -20,7 +20,7 @@ const NAV: [string, string, string, string, string | null][] = [
   ["/contact-center", "Контакт-центр", "Контакт-центр", "🎛️", "roles.manage"],
   ["/phone", "Телефония", "Телефонія", "phone", "telephony.view"],
   ["/warehouse", "Складской учёт", "Складський облік", "package", "warehouse.view"],
-  ["/wh", "Отгрузка", "Відвантаження", "truck", "warehouse.view"],
+  ["/wh", "Отгрузка", "Відвантаження", "truck", "warehouse.work"],  // 17.09.2026: окреме право (менеджерам продажів — ні)
   ["/clients", "Клиенты", "Клієнти", "users", "contact.view"],
   ["/reviews", "Отзывы", "Відгуки", "⭐", "reviews.view"],
   ["/partners", "Партнеры", "Партнери", "💼", "partners.view"],

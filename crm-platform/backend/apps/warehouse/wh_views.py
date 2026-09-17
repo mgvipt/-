@@ -737,7 +737,11 @@ MONTHS_UK = ["січень", "лютий", "березень", "квітень",
 PIECE_OPS = [("workday", "Робочі дні (ставка за день)"), ("shipment_weight", "Вага відвантаження"),
              ("packing", "Упаковка"), ("tinting", "Тонування"), ("test_set", "Збірка тестових наборів"),
              ("bonus_initiative", "Бонус за ідеї"), ("bonus_cleanliness", "Бонус за чистоту"),
-             ("error", "Утримання: помилки"), ("wrong_material", "Утримання: невірний матеріал")]
+             ("error", "Утримання: помилки"), ("wrong_material", "Утримання: невірний матеріал"),
+             # 17.09.2026 (Олег: «у ставці є пункт Інше — що це?»): це були тонування наборів — тепер окремими рядками
+             ("kit_tint_cat", "Тонування тест-наборів (колір з каталогу)"),
+             ("kit_tint_ind", "Тонування тест-наборів (індивідуальний колір)"),
+             ("washed_bucket", "Мите відро"), ("samples", "Викраски")]
 DEDUCTION_OPS = ("error", "wrong_material")
 
 
@@ -750,6 +754,43 @@ def _deal_groups_for(qs, limit=300):
     groups = _piece_deal_groups(entries, labels)
     groups.reverse()  # свіжі зверху
     return groups[:limit], len(groups) > limit
+
+
+DAY_STATUS_UK = {"worked": "вихід", "overtime": "вихід у вихідний", "dayoff": "вихідний", "sick": "лікарняний",
+                 "vacation": "відпустка", "absent": "прогул"}
+
+
+def _month_days(u, first, last, qs, base_lines):
+    """17.09.2026 (Олег): «у блоці Ставка — по днях, з прокруткою». Кожен день місяця до сьогодні:
+    табель, ставка за день (ставка за вихід ÷ робочі дні місяця — орієнтовно; точна сума за місяць — у рядку ставки,
+    бо там норма і лишній день ×2), відрядно за день (записи складу) і скільки відправлено."""
+    from apps.finance.models import WorkDay
+    from apps.payroll import engine as _eng
+    try:
+        norm = _eng.workdays(first, last) or 1
+        daily = sum(float(l.get("basis") or 0) for l in base_lines if l.get("kind") == "base_by_days") / norm
+        st = dict(WorkDay.objects.filter(user=u, date__gte=first, date__lte=last).values_list("date", "status"))
+        piece = {r["work_date"]: r for r in qs.values("work_date").annotate(s=Sum("amount"), n=Count("id"))}
+        ships = {r["d"]: r["n"] for r in WarehouseJob.objects.filter(assignee=u, status="shipped", shipped_at__date__gte=first,
+                                                                     shipped_at__date__lte=last)
+                 .annotate(d=models_TruncDate("shipped_at")).values("d").annotate(n=Count("id"))}
+        out, d, end = [], first, min(last, timezone.localdate())
+        while d <= end:
+            s = st.get(d, "")
+            base = round(daily, 2) if s in ("worked", "overtime") else 0.0
+            p = float((piece.get(d) or {}).get("s") or 0)
+            out.append({"date": d.isoformat(), "weekday": d.weekday(), "status": s, "status_label": DAY_STATUS_UK.get(s, "не відмічено"),
+                        "base": base, "piece": round(p, 2), "entries": (piece.get(d) or {}).get("n", 0),
+                        "shipments": ships.get(d, 0), "total": round(base + p, 2)})
+            d += datetime.timedelta(days=1)
+        return out
+    except Exception:
+        return []
+
+
+def models_TruncDate(field):
+    from django.db.models.functions import TruncDate
+    return TruncDate(field)
 
 
 def _my_calendar_month(request):
@@ -803,7 +844,8 @@ def _my_calendar_month(request):
     dg, dg_cut = _deal_groups_for(qs)
     shipments = WarehouseJob.objects.filter(assignee=u, status="shipped", shipped_at__date__gte=first,
                                             shipped_at__date__lte=last).count()
-    return Response({"which": which, "period": period, "label": "%s %d" % (MONTHS_UK[first.month - 1], first.year),
+    days = _month_days(u, first, last, qs, base_lines)
+    return Response({"which": which, "period": period, "label": "%s %d" % (MONTHS_UK[first.month - 1], first.year), "days": days,
                      "from": first.isoformat(), "to": last.isoformat(), "scheme": scheme,
                      "base_lines": base_lines, "base_total": sum(float(l["amount"] or 0) for l in base_lines),
                      "piece": piece, "piece_total": str(piece_total), "piece_in_scheme": piece_in_scheme,
