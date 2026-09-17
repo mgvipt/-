@@ -80,7 +80,7 @@ def fields(row, checked):
         values = [strip_tags(v) for v in terms if v]
         if not values:
             values = [strip_tags(unquote(v).replace('-', ' ')) for v in node.get('options', []) if v]
-        if label and values and label != 'Розмір':
+        if label and values and (label != 'Розмір' or not dimensions):
             description += '\n' + label + ': ' + ', '.join(values)
 
     return dict(name=row['name'], sku=f'GRAFIO-{sid}', unit=row['unit'],
