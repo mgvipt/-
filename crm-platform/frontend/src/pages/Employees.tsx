@@ -198,8 +198,8 @@ export default function Employees() {
   async function moveEmp(empId: number, deptId: number | null) { await api.patch(`/api/users/${empId}/`, { department: deptId }); flash(t("Перемещено", "Переміщено")); load(); }
   async function dismissEmp(e: Emp) {
     if (!confirm(t(
-      `Уволить «${e.full_name}»?\n\nАккаунт деактивируется (НЕ удаляется), доступ пропадёт. Его клиенты / лиды / сделки / чаты / задачи автоматически перейдут другим сотрудникам.`,
-      `Звільнити «${e.full_name}»?\n\nАкаунт деактивується (НЕ видаляється), доступ зникне. Його клієнти / ліди / угоди / чати / задачі автоматично перейдуть іншим співробітникам.`))) return;
+      `Уволить «${e.full_name}»?\n\nАккаунт деактивируется (НЕ удаляется), доступ пропадёт. Его клиенты, ОТКРЫТЫЕ лиды / сделки, незакрытые чаты и задачи перейдут другим сотрудникам (выигранные и проигранные сделки остаются за ним в истории).\n\nОшиблись? Верните его в «Активные» в течение 7 дней — всё, что коллеги ещё не меняли, вернётся обратно.`,
+      `Звільнити «${e.full_name}»?\n\nАкаунт деактивується (НЕ видаляється), доступ зникне. Його клієнти, ВІДКРИТІ ліди / угоди, незакриті чати і задачі автоматично перейдуть іншим співробітникам (виграні й програні угоди лишаються за ним в історії).\n\nПомилилися? Поверніть його в «Активні» протягом 7 днів — усе, що колеги ще не змінили, повернеться назад.`))) return;
     try {
       const r = await api.post<any>(`/api/users/${e.id}/dismiss/`, {});
       const m = r.moved || {}; const sum = Object.entries(m).map(([k, v]) => `${k}: ${v}`).join(", ");
@@ -218,8 +218,10 @@ export default function Employees() {
     if (newStatus === "dismissed") { dismissEmp(e); return; }
     if (!confirm(t(`Точно ${labels[newStatus]} «${e.full_name}»?`, `Точно ${labels[newStatus]} «${e.full_name}»?`))) return;
     try {
-      await api.post(`/api/users/${e.id}/set_status/`, { status: newStatus });
-      flash(t("Статус изменён", "Статус змінено")); load(); loadList();
+      const r = await api.post<any>(`/api/users/${e.id}/set_status/`, { status: newStatus });
+      // 17.09.2026: помилково звільнили і повернули → CRM сама повертає передане колегам (до 7 днів)
+      const back = Object.entries((r && r.restored) || {}).map(([k, v]) => `${k}: ${v}`).join(", ");
+      flash(back ? t(`Статус изменён. Возвращено: ${back}`, `Статус змінено. Повернуто: ${back}`) : t("Статус изменён", "Статус змінено")); load(); loadList();
     } catch (err: any) { flash(err?.response?.data?.detail || t("Ошибка", "Помилка")); }
   }
   async function setParent(childId: number, parentId: number | null) {

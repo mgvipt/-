@@ -27,6 +27,9 @@ import { MediaLibraryPicker } from "./MediaLibraryPicker";
 
 export default function Inbox() {
   const { can, me } = useAuth();
+  // 17.09.2026: вкладка «Всі співробітники» і «забрати чужий чат» — окремі права (менеджерам за замовчуванням вимкнено)
+  const canStaff = can("conversation.staff_filter") || can("conversation.supervise");
+  const canTakeover = can("conversation.takeover");
   const { t } = useLang();
   const [params] = useSearchParams();
   const nav = useNavigate();
@@ -123,7 +126,7 @@ export default function Inbox() {
     const sq = search.trim();
     if (!sq && period && period !== "all") sp.set("period", period);
     if (!sq && prio) sp.set("priority", prio);
-    if (mgrFilter) sp.set("manager", mgrFilter);
+    if (mgrFilter && canStaff) sp.set("manager", mgrFilter);
     if (sq) sp.set("search", sq);
     return "?" + sp.toString();
   }
@@ -320,7 +323,7 @@ export default function Inbox() {
       const c = await api.post<Conversation>(`/api/conversations/${active.id}/${ep}/`, { user_id: uid });
       setActive(c);
       setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, ...c } : x)));
-    } catch { setErr(t("Не удалось","Не вдалося")); }
+    } catch (e: any) { const d = e?.data?.detail || e?.response?.data?.detail; if (d) alert(d); else setErr(t("Не удалось","Не вдалося")); }
     setPicker(null);
   }
 
@@ -430,7 +433,7 @@ export default function Inbox() {
                 {can("conversation.view.all") && <option value="all">{t("Все","Всі")}</option>}
                 {can("conversation.view.all") && <option value="unassigned">{t("Не назначены","Не призначені")}</option>}
               </select>
-              {(can("conversation.view.all") || can("conversation.supervise")) && (
+              {canStaff && (
                 <select value={mgrFilter} onChange={(e) => setMgrFilter(e.target.value)} title={t("Чаты сотрудника — проверка качества обслуживания","Чати співробітника — перевірка якості обслуговування")} style={{ flex: 1, minWidth: 104, height: 28, fontSize: 12, border: "1px solid " + (mgrFilter ? "var(--brand)" : "#e2e8f0"), borderRadius: 7, padding: "0 6px", background: "#fff", color: mgrFilter ? "var(--brand)" : "#475569", fontWeight: mgrFilter ? 600 : 400 }}>
                   <option value="">{t("Все сотрудники","Всі співробітники")}</option>
                   {emps.map((e) => <option key={e.id} value={String(e.id)}>{e.full_name}</option>)}
@@ -573,7 +576,7 @@ export default function Inbox() {
               {(() => { const w = metaWindow(active, msgs); return w ? <span title={w.closed ? t("Окно Instagram (24ч) закрыто — клиент может НЕ получить обычное сообщение","Вікно Instagram (24г) закрите — клієнт може НЕ отримати звичайне повідомлення") : t("Окно открыто — клиент получит сообщение","Вікно відкрите — клієнт отримає повідомлення")} style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, whiteSpace: "nowrap", color: w.closed ? "#b91c1c" : "#15803d", background: w.closed ? "#fee2e2" : "#dcfce7" }}>{w.closed ? t("Окно закрыто","Вікно закрите") + " · " + w.hrs + t("ч","г") : t("Окно 24ч","Вікно 24 год")}</span> : null; })()}
               <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                 <button className="btn" style={{ height: 30, padding: "0 8px", fontSize: 12, flexShrink: 0, whiteSpace: "nowrap", background: "#fef3c7", color: "#92400e" }} title={t("Поставить задачу по клиенту","Поставити задачу по клієнту")} onClick={() => setTaskOpen(true)}><Icon n="check" size={15} />{!compact && <> {t("Задача","Задача")}</>}</button>
-                {(active.assigned_to && active.assigned_to !== (me as any)?.id && !can("conversation.view.all"))
+                {(active.assigned_to && active.assigned_to !== (me as any)?.id && !canTakeover)
                   ? <span title={t("Взято","Взято") + ": " + (active.assigned_to_name || "")} style={{ height: 30, width: 30, padding: 0, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "#fffbeb", color: "#b45309", borderRadius: 7, border: "1px solid #fde68a" }}><Icon n="pin" size={15} /></span>
                   : <button className="btn" style={{ height: 30, width: 30, padding: 0, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: active.assigned_to ? "#dbeafe" : "#f1f5f9", color: active.assigned_to ? "#1d4ed8" : "#475569" }} title={active.assigned_to ? t("Закреплено за вами","Закріплено за вами") : t("Закрепить чат за мной — вы становитесь ответственным","Закріпити чат за мною — ви стаєте відповідальним")} onClick={takeConv}><Icon n="pin" size={15} /></button>}
                                 <button className="btn" style={{ height: 30, width: 30, padding: 0, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "#fee2e2", color: "#b91c1c" }} title={t("Завершить диалог (закрыть неактуальный чат)","Завершити діалог (закрити неактуальний чат)")} onClick={closeConv}><Icon n="x" size={16} /></button>
@@ -585,7 +588,7 @@ export default function Inbox() {
               <div onClick={() => setMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
               <div style={{ position: "fixed", top: 104, right: 360, width: 260, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 14px 36px rgba(0,0,0,.18)", zIndex: 41, overflow: "hidden" }}>
                 <div onClick={() => { setMenu(false); setTaskOpen(true); }} style={mItem}><Icon n="check" size={15} /> {t("+ Задача","+ Задача")}</div>
-                {(active.assigned_to && active.assigned_to !== (me as any)?.id && !can("conversation.view.all"))
+                {(active.assigned_to && active.assigned_to !== (me as any)?.id && !canTakeover)
                   ? <div style={{ ...mItem, color: "#b45309", cursor: "default", background: "#fffbeb" }}><Icon n="pin" size={15} /> {t("Взято","Взято")}: {active.assigned_to_name}</div>
                   : <div onClick={takeConv} style={mItem}><Icon n="pin" size={15} /> {t("Закрепить за мной","Закріпити за мною")}</div>}
                 <div onClick={() => { setMenu(false); setPicker("transfer"); }} style={mItem}><Icon n="forward" size={15} /> {t("Переадресовать","Переадресувати")}</div>

@@ -24,17 +24,68 @@ class RoleViewSet(viewsets.ModelViewSet):
     required_perm = "roles.manage"
 
 
-def _rr_reassign(qs, field, pool):
-    """Round-robin: розподілити записи qs рівномірно між pool (список юзерів). Повертає к-сть."""
+def _rr_reassign(qs, field, pool, snap=None):
+    """Round-robin: розподілити записи qs рівномірно між pool (список юзерів). Повертає к-сть.
+    snap (dict) — запамʼятати, КОМУ які id передали (для скасування помилкового звільнення, 17.09.2026)."""
     ids = list(qs.values_list("id", flat=True))
     if not pool or not ids:
         return 0
     nn = len(pool)
+    key = "%s.%s:%s" % (qs.model._meta.app_label, qs.model.__name__, field)
     for i, p in enumerate(pool):
         chunk = ids[i::nn]
         if chunk:
             qs.model.objects.filter(id__in=chunk).update(**{field: p})
+            if snap is not None:
+                snap.setdefault(key, {})[str(p.id)] = chunk
     return len(ids)
+
+
+UNDO_DISMISS_DAYS = 7
+_UNDO_LABELS = {"crm.Contact:owner": "клієнти", "crm.Lead:owner": "ліди", "crm.Deal:owner": "сделки",
+                "inbox.Conversation:assigned_to": "чати", "crm.Task:assignee": "задачі",
+                "warehouse.WarehouseJob:assignee": "склад_задачі"}
+
+
+def restore_staff_transfer(tr, user, actor=None):
+    """Скасувати передачу при звільненні: повернути співробітнику ЛИШЕ ті записи, які досі лежать у того,
+    кому їх передали (якщо колега вже змінив відповідального — не чіпаємо). Ставку, закриту звільненням,
+    відкриваємо знову (якщо з того часу її ніхто не міняв). Повертає {назва: к-сть}."""
+    from django.apps import apps as _apps
+    from django.utils import timezone
+    res = {}
+    for key, per_target in (tr.data or {}).items():
+        if key == "payroll" or not isinstance(per_target, dict):
+            continue
+        label, field = key.split(":")
+        model = _apps.get_model(label)
+        n = 0
+        for to_id, ids in per_target.items():
+            n += model.objects.filter(id__in=ids, **{field + "_id": int(to_id)}).update(**{field: user})
+        res[_UNDO_LABELS.get(key, key)] = n
+    try:
+        from apps.payroll.models import PayScheme, PayRateLog
+        for p in (tr.data or {}).get("payroll", []):
+            sc = PayScheme.objects.filter(id=p.get("scheme"), user=user).first()
+            if not sc:
+                continue
+            aft, bef = p.get("after") or {}, p.get("before") or {}
+            now_vt = sc.valid_to.isoformat() if sc.valid_to else None
+            if now_vt != aft.get("valid_to") or sc.status != aft.get("status"):
+                continue  # ставку вже змінили вручну — не перетираємо
+            from datetime import date as _d
+            sc.valid_to = _d.fromisoformat(bef["valid_to"]) if bef.get("valid_to") else None
+            sc.status = bef.get("status") or sc.status
+            sc.save(update_fields=["valid_to", "status", "updated_at"])
+            PayRateLog.objects.create(scheme=sc, action="update", before=aft, after=bef, user=actor,
+                                      note="Звільнення скасовано (повернули в активні): ставку відкрито знову")
+            res["ставки"] = res.get("ставки", 0) + 1
+    except Exception:
+        pass
+    tr.restored_at = timezone.now()
+    tr.restored = res
+    tr.save(update_fields=["restored_at", "restored"])
+    return res
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -206,8 +257,28 @@ class UserViewSet(viewsets.ModelViewSet):
                          "%s: %s → %s" % (u.get_full_name() or u.username, old, new_status), actor, "Адмін")
         except Exception:
             pass
+        # 17.09.2026: помилково звільнили і одразу повернули → віддаємо назад клієнтів/ліди/сделки/чати і ставку
+        restored = {}
+        if old == "dismissed" and new_status == "active":
+            from datetime import timedelta
+            from django.utils import timezone
+            from .models import StaffTransfer
+            tr = (StaffTransfer.objects.filter(user=u, restored_at__isnull=True,
+                                               at__gte=timezone.now() - timedelta(days=UNDO_DISMISS_DAYS))
+                  .order_by("-at").first())
+            if tr:
+                restored = restore_staff_transfer(tr, u, actor)
+                try:
+                    from apps.crm.models import log_activity
+                    log_activity("contact", 0, "Скасування звільнення",
+                                 "%s: повернуто %s" % (u.get_full_name() or u.username,
+                                                       ", ".join("%s %s" % (k, v) for k, v in restored.items() if v) or "нічого"),
+                                 actor, "Адмін")
+                except Exception:
+                    pass
         return Response({"ok": True, "employment_status": u.employment_status,
-                         "is_active": u.is_active, "dismissed_at": u.dismissed_at})
+                         "is_active": u.is_active, "dismissed_at": u.dismissed_at,
+                         "restored": {k: v for k, v in restored.items() if v}})
 
     @action(detail=False, methods=["get", "post"])
     def visibility(self, request):
@@ -272,14 +343,19 @@ class UserViewSet(viewsets.ModelViewSet):
         dept = u.department
         is_sales = bool(dept and "продаж" in (dept.name or "").lower())
         moved = {}
+        snap = {}
+        # 17.09.2026: передаємо лише ВІДКРИТІ ліди/сделки і незакриті чати. Виграні/програні лишаються за тим,
+        # хто їх вів — інакше історія продажів і аналітика «переїжджають» на колег.
+        _open = lambda q: q.exclude(stage__is_won=True).exclude(stage__is_lost=True)
         if is_sales:
             pool = [p for p in lead_owner_pool() if p.id != u.id]
             if not pool:
                 pool = list(User.objects.filter(is_active=True, is_superuser=False).exclude(id=u.id)[:10])
-            moved["клиенты"] = _rr_reassign(Contact.objects.filter(owner=u), "owner", pool)
-            moved["лиды"] = _rr_reassign(Lead.objects.filter(owner=u), "owner", pool)
-            moved["сделки"] = _rr_reassign(Deal.objects.filter(owner=u), "owner", pool)
-            moved["чаты"] = _rr_reassign(Conversation.objects.filter(assigned_to=u), "assigned_to", pool)
+            moved["клиенты"] = _rr_reassign(Contact.objects.filter(owner=u), "owner", pool, snap)
+            moved["лиды"] = _rr_reassign(_open(Lead.objects.filter(owner=u)), "owner", pool, snap)
+            moved["сделки"] = _rr_reassign(_open(Deal.objects.filter(owner=u)), "owner", pool, snap)
+            moved["чаты"] = _rr_reassign(Conversation.objects.filter(assigned_to=u).exclude(status="closed"),
+                                         "assigned_to", pool, snap)
         else:
             head = dept.head if (dept and dept.head_id and dept.head_id != u.id and getattr(dept.head, "is_active", False)) else None
             if head:
@@ -290,10 +366,10 @@ class UserViewSet(viewsets.ModelViewSet):
                 pool = []
             if not pool:
                 pool = list(User.objects.filter(is_active=True, is_superuser=True).exclude(id=u.id)[:1])
-            moved["задачи"] = _rr_reassign(Task.objects.filter(assignee=u), "assignee", pool)
-            moved["склад_задачи"] = _rr_reassign(WarehouseJob.objects.filter(assignee=u), "assignee", pool)
-            moved["сделки"] = _rr_reassign(Deal.objects.filter(owner=u), "owner", pool)
-            moved["лиды"] = _rr_reassign(Lead.objects.filter(owner=u), "owner", pool)
+            moved["задачи"] = _rr_reassign(Task.objects.filter(assignee=u), "assignee", pool, snap)
+            moved["склад_задачи"] = _rr_reassign(WarehouseJob.objects.filter(assignee=u), "assignee", pool, snap)
+            moved["сделки"] = _rr_reassign(_open(Deal.objects.filter(owner=u)), "owner", pool, snap)
+            moved["лиды"] = _rr_reassign(_open(Lead.objects.filter(owner=u)), "owner", pool, snap)
         u.apply_employment_status("dismissed")  # → is_active=False, is_superuser=False, dismissed_at=сьогодні
         # 15.09.2026 (Олег): «Звільнити» закриває ставку з дати звільнення — ЗП лише за відпрацьований період
         # (payroll._prorate рахує до valid_to включно); майбутні версії ставки — в архів. Затверджені місяці не змінюються.
@@ -311,13 +387,19 @@ class UserViewSet(viewsets.ModelViewSet):
                         sc.valid_to = d_end
                         sc.save(update_fields=["valid_to", "updated_at"])
                         note = "Звільнення: ставку закрито з %s" % d_end.strftime("%d.%m.%Y")
+                    _after = {"valid_to": sc.valid_to.isoformat() if sc.valid_to else None, "status": sc.status}
                     PayRateLog.objects.create(scheme=sc, action="update", before=before,
-                                              after={"valid_to": sc.valid_to.isoformat() if sc.valid_to else None, "status": sc.status},
-                                              user=actor, note=note[:255])
+                                              after=_after, user=actor, note=note[:255])
+                    snap.setdefault("payroll", []).append({"scheme": sc.id, "before": before, "after": _after})
                     moved["ставки"] = moved.get("ставки", 0) + 1
         except Exception:
             pass
         targets = [p.get_full_name() or p.username for p in pool]
+        try:  # що кому передали — щоб помилкове звільнення можна було скасувати поверненням в «Активні»
+            from .models import StaffTransfer
+            StaffTransfer.objects.create(user=u, by=actor, data=snap)
+        except Exception:
+            pass
         try:
             from apps.crm.models import log_activity
             log_activity("contact", 0, "Звільнення співробітника",

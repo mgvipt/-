@@ -5940,18 +5940,19 @@ class ManagerActionsView(APIView):
                 r["followups"] += m["n"]
             else:
                 r["replies"] += m["n"]
-        acts = (ActivityLog.objects.filter(user__isnull=False,
-                                           action__in=["Взяв чат", "Призначено відповідального", "Завершив чат"],
+        acts = (ActivityLog.objects.filter(user__isnull=False, action="Завершив чат",
                                            created_at__date__gte=d_from, created_at__date__lte=d_to)
-                .values("user", "action").annotate(n=Count("id")))
+                .values("user").annotate(n=Count("id")))
         for a in acts:
             r = _row(a["user"])
-            if not r:
-                continue
-            if a["action"] == "Завершив чат":
+            if r:
                 r["closed"] += a["n"]
-            else:
-                r["taken"] += a["n"]
+        # «узяв у роботу» — без повторів того самого клієнта за 30 днів (17.09.2026, take_stats)
+        from apps.crm.take_stats import taken_by_user
+        for _uid, _n in taken_by_user(d_from, d_to).items():
+            r = _row(_uid)
+            if r:
+                r["taken"] += _n
         # ChatPlace-ответы живых операторов (sender пуст, side operator/manager/admin) раньше
         # терялись из статистики — привязываем к ответственному за диалог.
         unassigned_cp = 0
@@ -6084,12 +6085,13 @@ class WeeklyReviewView(APIView):
                   .values("sender", "is_followup").annotate(n=Count("id"))):
             r = agg.setdefault(m["sender"], _blank())
             r["followups" if m["is_followup"] else "replies"] += m["n"]
-        for a in (ActivityLog.objects.filter(user__isnull=False,
-                                             action__in=["Взяв чат", "Призначено відповідального", "Завершив чат"],
+        for a in (ActivityLog.objects.filter(user__isnull=False, action="Завершив чат",
                                              created_at__date__gte=d_from, created_at__date__lte=d_to)
-                  .values("user", "action").annotate(n=Count("id"))):
-            r = agg.setdefault(a["user"], _blank())
-            r["closed" if a["action"] == "Завершив чат" else "taken"] += a["n"]
+                  .values("user").annotate(n=Count("id"))):
+            agg.setdefault(a["user"], _blank())["closed"] += a["n"]
+        from apps.crm.take_stats import taken_by_user  # без повторів (17.09.2026)
+        for _uid, _n in taken_by_user(d_from, d_to).items():
+            agg.setdefault(_uid, _blank())["taken"] += _n
         for da in (DialogAnalysis.objects.filter(manager__isnull=False, created_at__date__gte=d_from,
                                                  created_at__date__lte=d_to)
                    .values("manager", "overall_score", "why_not_selling")[:500]):

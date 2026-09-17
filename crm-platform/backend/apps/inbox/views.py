@@ -562,6 +562,20 @@ def _bg_chatplace_sync(conv_id):
             pass
 
 
+def can_view_staff_chats(user):
+    """Вкладка «Всі співробітники» у Відкритих лініях (17.09.2026): обрати колегу і дивитись його чати.
+    Окреме право — «бачити всі чати» (командна черга) його більше НЕ дає."""
+    return bool(user.is_superuser or user.has_perm_code("conversation.staff_filter")
+                or user.has_perm_code("conversation.supervise"))
+
+
+def can_take_over_chats(user):
+    """Забрати / переадресувати чат, який уже закріплений за ІНШИМ співробітником (17.09.2026).
+    Лише керівник / РОП — щоб менеджери не забирали клієнтів і сделки одне в одного."""
+    return bool(user.is_superuser or user.has_perm_code("roles.manage")
+                or user.has_perm_code("conversation.takeover"))
+
+
 def conversations_visible_to(user, qs=None):
     """БАЗОВИЙ ДОСТУП до чатів — ОДНЕ місце для списку «Чатів», відкриття чату (retrieve/messages/send)
     і глобального пошуку в шапці (15.09 chatsearch). Повертає (qs, can_all).
@@ -576,7 +590,7 @@ def conversations_visible_to(user, qs=None):
     # RBAC: менеджер без права «все чаты» видит только свои —
     # по ответственному чата ИЛИ по ответственному контакта.
     # РОП з правом «перевіряти чати» теж бачить чужі чати (для фільтра по співробітнику).
-    can_all = user.can_see_all_conversations() or user.has_perm_code("conversation.supervise")
+    can_all = user.can_see_all_conversations() or can_view_staff_chats(user)
     # БАЗОВИЙ ДОСТУП (для retrieve/messages/send/відкриття через картку):
     # «бачити всі чати» (право відділу) → доступ до будь-якого; інакше — лише свої звʼязки
     # (призначений / контакт мій / учасник / у контакта є мій лід чи сделка).
@@ -636,7 +650,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         if _searching:
             qs = qs.filter(_sq).distinct()
         _mgr_view = self.request.query_params.get("manager")
-        if _mgr_view and _mgr_view.isdigit() and can_all:
+        if _mgr_view and _mgr_view.isdigit() and can_view_staff_chats(user):
             # РОП/керівник: чати ПІД ВІДПОВІДАЛЬНІСТЮ конкретного співробітника (перевірка
             # якості обслуговування): або ЗАКРІПЛЕНІ за ним (assigned_to), або де він РЕАЛЬНО
             # відповідав (автор вихідного повідомлення) — навіть якщо чат закріплений за іншим.
@@ -797,10 +811,25 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         """Переброс чата на ответственного (только руководитель)."""
         u = request.user
         conv = self.get_object()
-        if not (u.can_see_all_conversations() or u.has_perm_code("roles.manage") or conv.assigned_to_id == u.id):
+        # 17.09.2026: чат уже закріплений за ІНШИМ → переадресувати може лише керівник (право «Забирати чужий чат»).
+        if conv.assigned_to_id and conv.assigned_to_id != u.id and not can_take_over_chats(u):
+            _who = conv.assigned_to.get_full_name() or conv.assigned_to.username
+            return Response({"detail": "Чат закріплений за %s. Переадресувати чужий чат може лише керівник." % _who},
+                            status=status.HTTP_403_FORBIDDEN)
+        if not (u.can_see_all_conversations() or u.has_perm_code("roles.manage") or conv.assigned_to_id == u.id
+                or can_take_over_chats(u)):
             return Response({"detail": "Нет прав на переброс чата"}, status=status.HTTP_403_FORBIDDEN)
+        _old = conv.assigned_to
         conv.assigned_to_id = request.data.get("user_id") or None
         conv.save(update_fields=["assigned_to"])
+        try:  # раніше переадресація не лишала сліду — тепер видно в історії клієнта, хто і кому передав
+            from apps.crm.models import log_activity as _la_as
+            conv.refresh_from_db(fields=["assigned_to"])
+            _nm = lambda x: (x.get_full_name() or x.username) if x else "вільні"
+            _la_as("contact", conv.contact_id or 0, "Переадресував чат", "%s → %s" % (_nm(_old), _nm(conv.assigned_to)),
+                   u, (u.get_full_name() or u.username))
+        except Exception:
+            pass
         # Переадресація НЕ передає відповідальність за сделку/контакт — власник
         # змінюється ЛИШЕ коли менеджер САМ привʼязав чат до себе (take). Тут — лише
         # хто зараз відповідає в діалозі (assigned_to), права не чіпаємо.
@@ -841,7 +870,9 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         # ── ЗАМОК ЧЕРГИ ── діалог уже взяв ІНШИЙ менеджер → перехопити НЕ можна,
         # навіть якщо сторінка не оновилась і чат ще видно як «вільний».
         # Перепризначити може лише керівник (через «Переадресувати»).
-        is_boss = u.can_see_all_conversations() or u.has_perm_code("roles.manage")
+        # 17.09.2026: «бачити всі чати» більше НЕ дає права забрати чужий (так менеджери перехоплювали одне в одного).
+        is_boss = can_take_over_chats(u)
+        _already_mine = conv.assigned_to_id == u.id
         if conv.assigned_to_id and conv.assigned_to_id != u.id and not is_boss:
             _who = (conv.assigned_to.get_full_name() or conv.assigned_to.username) if conv.assigned_to else "інший менеджер"
             return Response(
@@ -851,8 +882,9 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         conv.assigned_to = u
         conv.save(update_fields=["assigned_to"])
         from apps.crm.models import log_activity as _la_take
-        _la_take("contact", conv.contact_id or 0, "Взяв чат", "закріпив діалог за собою",
-                 u, (u.get_full_name() or u.username))
+        if not _already_mine:  # чат уже мій → повторний клік не рахується як «взяв у роботу» ще раз
+            _la_take("contact", conv.contact_id or 0, "Взяв чат", "закріпив діалог за собою",
+                     u, (u.get_full_name() or u.username))
         if conv.contact_id:
             from apps.crm.models import Deal, Lead, Contact
             # Беручи чат — стаємо відповідальним за клієнта і його ВІДКРИТІ сделки/ліди,

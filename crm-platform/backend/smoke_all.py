@@ -37,6 +37,10 @@ CHECKS = [
     ("Склад: мите відро", "owner", "/api/warehouse/washed/", {200}, ["pairs"]),
     ("Розвиток: подяки від керівника", "manager", "/api/gamification/thanks/?user=me", {200}, ["items"]),
     ("Склад: викраски з А3", "owner", "/api/warehouse/samples/", {200}, ["recipes"]),
+    # 17.09.2026 (Олег): вкладка «Всі співробітники» / забрати чужий чат — окремі права; «взяв» без повторів
+    ("Права: каталог (Всі співробітники, чужий чат)", "owner", "/api/permissions/", {200}, ["groups"]),
+    ("Відкриті лінії: фільтр співробітника (менеджер)", "manager", "/api/conversations/?page_size=5&manager=3", {200}, ["results"]),
+    ("Аналітика: дії менеджерів (взяв без повторів)", "owner", "/api/analytics/manager-actions/", {200}, []),
     ("Інвентаризація: колонка повернень", "owner", "/api/warehouse/inventory-sheet/?page_size=5", {200}, ["rows"]),
     # ── базове ──
     ("Мій профіль (owner)", "owner", "/api/me/", {200}, []),

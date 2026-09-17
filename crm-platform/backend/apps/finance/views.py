@@ -3121,14 +3121,18 @@ class ManagerDealsView(APIView):
             return _by_day.setdefault(ds, {"date": ds, "amount": 0.0, "deals": set(), "fee": 0.0})
 
         # 1) дії у чатах з журналу активності (узяв у роботу / закрив чат / повернув з ігнору)
-        _ACT = {"Взяв чат": "taken", "Призначено відповідального": "taken",
-                "Завершив чат": "closed", "Повернувся з ігнору": "ignores"}
+        # «узяв у роботу» рахуємо окремо — без повторів того самого клієнта за 30 днів (17.09.2026, take_stats)
+        _ACT = {"Завершив чат": "closed", "Повернувся з ігнору": "ignores"}
         for _a in (_AL.objects.filter(user=u, action__in=list(_ACT.keys()),
                                       created_at__date__gte=_dstart, created_at__date__lte=_dend)
                    .values("action", "created_at__date").annotate(n=_Cnt("id"))):
             _d0 = _day(_a["created_at__date"].isoformat())
             _k = _ACT[_a["action"]]
             _d0[_k] = _d0.get(_k, 0) + _a["n"]
+        from apps.crm.take_stats import take_events as _take_events
+        for _tu, _td in _take_events(_dstart, _dend, [u.id]):
+            _d0 = _day(_td.isoformat())
+            _d0["taken"] = _d0.get("taken", 0) + 1
         # 2) написані повідомлення (свої в CRM + як оператор ChatPlace на своїх діалогах)
         for _m in (_Msg.objects.filter(direction="out", internal=False, sender=u,
                                        created_at__date__gte=_dstart, created_at__date__lte=_dend)

@@ -28,7 +28,7 @@ export default function ChatActions({ convId, onClosed, onChanged }: { convId: n
     catch { flashNote("\u26A0 \u041D\u0435 \u0432\u0434\u0430\u043B\u043E\u0441\u044F \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u0442\u0438", 3500); }
     setPicker(null);
   }
-  async function pick(uid: number) { try { const c = await api.post<any>(`/api/conversations/${convId}/${picker === "transfer" ? "assign" : "add_member"}/`, { user_id: uid }); onChanged?.(c); } catch { /* ignore */ } setPicker(null); }
+  async function pick(uid: number) { try { const c = await api.post<any>(`/api/conversations/${convId}/${picker === "transfer" ? "assign" : "add_member"}/`, { user_id: uid }); onChanged?.(c); } catch (e: any) { const d = e?.data?.detail || e?.response?.data?.detail; flashNote("\u26A0 " + (d || "\u041D\u0435 \u0432\u0434\u0430\u043B\u043E\u0441\u044F"), 4200); } setPicker(null); }
   const btn: any = { flex: "1 1 0", minWidth: 0, fontSize: "clamp(8px, 3cqi, 11.5px)", fontWeight: 600, padding: "5px 4px", borderRadius: 7, cursor: "pointer", border: "1px solid #e2e8f0", background: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" };
   return (
     <>

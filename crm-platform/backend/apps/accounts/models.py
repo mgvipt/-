@@ -37,6 +37,8 @@ PERMISSION_GROUPS = [
         ("conversation.view.all", "Бачити ВСІ чати (командна черга)", "Інакше — лише свої чати"),
         ("conversation.assign", "Переадресовувати та призначати чати", ""),
         ("conversation.supervise", "Перевіряти чати співробітників (РОП)", "Керівник/РОП може обрати співробітника і переглянути ЙОГО чати з клієнтами — для контролю якості обслуговування. Не дає участі в загальній черзі."),
+        ("conversation.staff_filter", "Вкладка «Всі співробітники» — дивитися чати колег", "Список співробітників у Відкритих лініях: обрати колегу і переглянути його чати. Вимкнено — менеджер бачить лише свої чати і вільні. Забрати чужий чат це право НЕ дає."),
+        ("conversation.takeover", "Забирати чат, який уже взяв інший співробітник", "«Закріпити за мною» і «Переадресувати» на ЧУЖОМУ чаті. Менеджерам не давати — щоб не забирали клієнтів і сделки одне в одного. Керівнику / РОП — так."),
         ("deal.stage.move", "Пересувати сделки по стадіях вручну", "Без цього права стадію рухає лише автоматика (оплата, склад, ТТН)"),
         ("team.broadcast", "Писати ВСІМ у загальний чат співробітників", "Повідомлення зʼявиться на екрані кожного співробітника"),
         ("inbox.notify.unassigned", "Сповіщення про нові незакріплені чати", "Кому дзвенять чати БЕЗ відповідального. Закріплений чат дзвенить тільки тому, хто його взяв. Складу вимкнути."),
@@ -564,3 +566,19 @@ PERMISSION_GROUPS.append((
 ))
 PERMISSION_CHOICES.extend(
     (c, l) for c, l, _h in PERMISSION_GROUPS[-1][1] if c not in {x for x, _ in PERMISSION_CHOICES})
+
+
+class StaffTransfer(models.Model):
+    """Що саме передали іншим співробітникам при «Звільнити» (17.09.2026).
+    Помилкове звільнення можна відкотити: при поверненні в «Активні» протягом 7 днів записи, які ДОСІ
+    лежать у того, кому їх передали, повертаються назад, а ставку, закриту звільненням, відкриваємо знову."""
+    user = models.ForeignKey("User", on_delete=models.CASCADE, related_name="transfers_out")
+    by = models.ForeignKey("User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    at = models.DateTimeField(auto_now_add=True)
+    # {"crm.Contact:owner": {"<кому id>": [id, ...]}, ..., "payroll": [{"scheme": id, "before": {...}, "after": {...}}]}
+    data = models.JSONField(default=dict, blank=True)
+    restored_at = models.DateTimeField(null=True, blank=True)
+    restored = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-at"]
