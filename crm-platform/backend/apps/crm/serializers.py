@@ -276,6 +276,22 @@ class DealDetailSerializer(DealSerializer):
     conversation_id = serializers.SerializerMethodField()
     responsible_display = serializers.SerializerMethodField()
     pay_method = serializers.SerializerMethodField()
+    pay_problem = serializers.SerializerMethodField()
+
+    def get_pay_problem(self, obj):
+        """18.09.2026: остання відмова LiqPay, після якої ще не було оплати — червона плашка в картці."""
+        from .models import PayLink
+        pl = (PayLink.objects.filter(deal=obj, status__in=("failure", "error"))
+              .order_by("-status_at").first())
+        if pl is None or pl.status_at is None:
+            return None
+        paid = [p for p in obj.payments.all() if p.is_paid]
+        if any(p.created_at >= pl.status_at for p in paid):
+            return None
+        if obj.amount and sum(float(p.amount) for p in paid) >= float(obj.amount):
+            return None
+        return {"code": pl.code, "status": pl.status, "reason": pl.error or "банк відхилив платіж",
+                "at": pl.status_at}
 
     def get_responsible_display(self, obj):
         # Ответственный для карточки: имя менеджера, иначе «ІІ (Юля)» если вёл только ИИ.
@@ -335,7 +351,7 @@ class DealDetailSerializer(DealSerializer):
     class Meta(DealSerializer.Meta):
         fields = DealSerializer.Meta.fields + ["responsible_display", 
             "items", "payments", "paid", "margin", "bonus",
-            "days_in_stage", "contact_loyalty", "contact_id", "conversation_id", "b24_id", "pay_method",
+            "days_in_stage", "contact_loyalty", "contact_id", "conversation_id", "b24_id", "pay_method", "pay_problem",
             "np_data", "np_delivery_date", "ref_photos", "kp_history", "realization", "linked_orders",
         ]
 

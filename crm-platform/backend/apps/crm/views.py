@@ -5703,6 +5703,78 @@ def _upsell_test_kit(deal):
         pass
 
 
+LIQPAY_FAIL = ("failure", "error")
+LIQPAY_REASON = {
+    "limit": "перевищено ліміт картки", "9859": "недостатньо коштів на картці",
+    "cancel": "клієнт скасував оплату", "user_cancel": "клієнт скасував оплату",
+    "expired": "час на оплату вичерпано", "payment_expired": "час на оплату вичерпано",
+    "err_card": "проблема з карткою", "err_payment": "банк відхилив платіж",
+    "3ds_verify": "клієнт не підтвердив оплату в банку (3-D Secure)",
+}
+
+
+def liqpay_reason(d):
+    """Зрозуміла причина відмови LiqPay (для менеджера)."""
+    code = str(d.get("err_code") or "").strip()
+    desc = str(d.get("err_description") or "").strip()
+    human = LIQPAY_REASON.get(code.lower(), "")
+    text = human or desc or code or "банк відхилив платіж"
+    if human and desc and desc.lower() != human:
+        text = "%s (%s)" % (human, desc)
+    return text[:250]
+
+
+def liqpay_not_paid(order_id, st, d):
+    """LiqPay повідомив, що оплата НЕ пройшла (failure/error).
+    18.09.2026 (Олег): «щоб у картці сделки відображалась помилка платежу і менеджеру приходило
+    сповіщення — він одразу скине реквізити». Робимо три речі:
+      1) статус і причина — на посиланні оплати (картка сделки показує червону плашку);
+      2) запис в історії сделки;
+      3) службова нотатка в чаті клієнта (діалог стає непрочитаним) + сповіщення у дзвіночок менеджеру.
+    Повтор тієї ж відмови протягом 30 хв не дублює сповіщення."""
+    from datetime import timedelta as _td
+    from django.contrib.auth import get_user_model
+    from django.utils import timezone as _tz
+    from apps.inbox.models import Conversation, Message, Notification
+    from .models import PayLink, log_activity
+    parts = str(order_id or "").split("-")
+    if len(parts) < 3 or parts[0] != "WCCRM" or not parts[1].isdigit():
+        return None
+    deal = Deal.objects.filter(id=int(parts[1])).select_related("owner").first()
+    if deal is None:
+        return None
+    now = _tz.now()
+    reason = liqpay_reason(d) if st in LIQPAY_FAIL else ""
+    pl = PayLink.objects.filter(code=parts[2], deal=deal).first()
+    if pl is not None:
+        repeat = (pl.status == st and pl.error == reason and pl.status_at and now - pl.status_at < _td(minutes=30))
+        PayLink.objects.filter(id=pl.id).update(status=st[:20], error=reason, status_at=now)
+        if repeat:
+            return None
+    if st not in LIQPAY_FAIL:
+        return None
+    _a = float(d.get("amount") or deal.amount or 0)
+    amount = ("%.0f" % _a) if abs(_a - round(_a)) < 0.01 else ("%.2f" % _a)
+    who = str(deal.contact) if deal.contact_id else "клієнт"
+    log_activity("deal", deal.id, "❌ Оплата LiqPay не пройшла", "%s грн · %s" % (amount, reason), None, "LiqPay")
+    conv = (Conversation.objects.filter(contact_id=deal.contact_id, status="open").order_by("-last_message_at").first()
+            if deal.contact_id else None)
+    if conv is not None:
+        Message.objects.create(conversation=conv, direction="out", internal=True, sender_name="LiqPay · службова нотатка",
+                               text=("❌ Оплата %s грн через LiqPay не пройшла — %s.\n"
+                                     "Запропонуйте клієнту оплату за реквізитами: картка сделки #%s → «Надіслати реквізити»."
+                                     % (amount, reason, deal.id)))
+        Conversation.objects.filter(id=conv.id).update(unread=(conv.unread or 0) + 1)
+    targets = [u for u in (deal.owner_id, conv.assigned_to_id if conv else None) if u]
+    if not targets:
+        targets = list(get_user_model().objects.filter(is_superuser=True, is_active=True).values_list("id", flat=True))
+    text = "❌ Сделка #%s · %s: оплата %s грн через LiqPay не пройшла (%s). Надішліть реквізити." % (
+        deal.id, who[:40], amount, reason[:80])
+    for uid in dict.fromkeys(targets):
+        Notification.objects.create(user_id=uid, kind="system", text=text[:300], conversation=conv)
+    return {"deal": deal.id, "reason": reason, "notified": len(set(targets))}
+
+
 class LiqPayCallbackView(APIView):
     """Callback LiqPay: підтвердження реальної оплати → Payment(paid) → стадія Оплату отримано."""
     authentication_classes = []
@@ -5723,6 +5795,11 @@ class LiqPayCallbackView(APIView):
         order_id = str(d.get("order_id") or "")
         amount = Decimal(str(d.get("amount") or 0))
         if st not in ("success", "sandbox", "subscribed"):  # #6 wait_accept НЕ вважати оплатою
+            # 18.09.2026 (Олег): відмову LiqPay більше не ігноруємо мовчки — картка сделки + сповіщення менеджеру
+            try:
+                liqpay_not_paid(order_id, st, d)
+            except Exception:
+                pass
             return Response({"ok": True, "ignored": st})
         parts = order_id.split("-")
         if len(parts) < 2 or parts[0] != "WCCRM":
@@ -5784,6 +5861,13 @@ class LiqPayCallbackView(APIView):
                     pass
             deal = dlock
         log_activity("deal", deal.id, "Оплата LiqPay", "%s грн отримано (callback, txn %s)" % (amount, pay_id[:12]), None, "LiqPay")
+        try:  # 18.09.2026: успішна оплата знімає червону плашку «оплата не пройшла» з картки
+            from django.utils import timezone as _tzs
+            from .models import PayLink as _PL
+            if len(parts) >= 3:
+                _PL.objects.filter(code=parts[2], deal=deal).update(status="success", error="", status_at=_tzs.now())
+        except Exception:
+            pass
         try:
             _issue_checkbox_for_deal(deal, user=None)
         except Exception:

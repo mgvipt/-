@@ -738,6 +738,10 @@ class PayLink(models.Model):
     target = models.TextField()
     clicks = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+    # 18.09.2026 (Олег): «щоб у картці сделки відображалась помилка платежу LiqPay і менеджер одразу бачив»
+    status = models.CharField("Статус LiqPay", max_length=20, blank=True, default="")
+    error = models.CharField("Причина відмови", max_length=255, blank=True, default="")
+    status_at = models.DateTimeField(null=True, blank=True)
 
 
 class DialogAnalysis(models.Model):

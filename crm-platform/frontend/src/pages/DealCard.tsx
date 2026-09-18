@@ -575,6 +575,17 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     } catch (e: any) { flash(e?.response?.data?.detail || t("Не удалось провести","Не вдалося провести")); }
     finally { setSending(false); }
   }
+  // 18.09.2026 (Олег): LiqPay відхилив оплату → одна кнопка «Надіслати реквізити» прямо з плашки
+  async function sendRequisitesNow() {
+    setSending(true);
+    try {
+      const r = await api.post<any>(`/api/deals/${id}/send_pay_link/`, { kind: "requisites", amount: deal?.amount });
+      setDeal(await api.get<Deal>(`/api/deals/${id}/`));
+      flash(r.sent ? t("✓ Реквизиты отправлены клиенту в чат","✓ Реквізити надіслано клієнту в чат")
+                   : t("⚠ Чата нет — реквизиты не отправлены, свяжитесь с клиентом","⚠ Чату немає — реквізити не надіслано, звʼяжіться з клієнтом"));
+    } catch (e: any) { flash(e?.response?.data?.detail || t("Не удалось отправить реквизиты","Не вдалося надіслати реквізити")); }
+    finally { setSending(false); }
+  }
   async function acceptPayment() {
     if (salonFunnel && (payType === "cash" || payType === "terminal" || payType === "credit")) { await openVerify(); return; }
     setSending(true);
@@ -974,6 +985,22 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
               </select>
               <div className="muted" style={{ fontSize: 10.5, marginTop: 3 }}>{deal.pay_type === "prepay_np" ? t("Аванс → Оплату отримано + чек, остаток собирает НП","Аванс → Оплату отримано + чек, решту збере НП") : t("Полная сумма → Оплату отримано; частично → остаётся Домовились","Повна сума → Оплату отримано; частково → лишається Домовились")}</div>
             </div>
+            {(deal as any).pay_problem && (
+              <div role="alert" style={{ marginTop: 8, border: "1px solid #fecaca", background: "#fef2f2", color: "#991b1b", borderRadius: 10, padding: "9px 11px" }}>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>❌ {t("Оплата LiqPay не прошла","Оплата LiqPay не пройшла")}</div>
+                <div style={{ fontSize: 12.5, marginTop: 2 }}>
+                  {(deal as any).pay_problem.reason} · {new Date((deal as any).pay_problem.at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 7 }}>
+                  {payMethodOk("requisites") && (
+                    <button className="btn btn-primary" style={{ padding: "5px 12px", fontSize: 12.5 }} onClick={sendRequisitesNow} disabled={sending}>
+                      🏦 {sending ? t("Отправляю…","Надсилаю…") : t("Отправить реквизиты","Надіслати реквізити")}
+                    </button>
+                  )}
+                  <span style={{ fontSize: 11.5, color: "#7f1d1d" }}>{t("Клиенту уйдут реквизиты ФОП и назначение платежа — оплата подтянется из банка","Клієнту підуть реквізити ФОП і призначення платежу — оплата підтягнеться з банку")}</span>
+                </div>
+              </div>
+            )}
             <div style={{ marginTop: 8 }}>
               <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{t("Способ оплаты","Спосіб оплати")}</div>
               {((deal.payments || []).length > 0)
