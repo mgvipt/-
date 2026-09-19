@@ -398,9 +398,21 @@ class IncomingDocDetailView(APIView):
             m = _re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", d.sender or "")
             skey = (m.group(0).lower() if m else (d.sender or "").lower())
             lrows = []
+            # 19.09.2026: постачальник — за ІПН / поштою (як при проведенні); правила шукаємо через find_rules
+            from apps.crm.models import Contact as _Ct
+            from django.db.models import Q as _Qf
+            from .models import find_rules
+            _sup = (p.get("supplier") or {})
+            _ct = None
+            _ipn = (_sup.get("ipn") or _sup.get("edrpou") or "").strip()
+            if _ipn:
+                _ct = _Ct.objects.filter(edrpou=_ipn).first()
+            if _ct is None and "@" in (skey or ""):
+                _ct = _Ct.objects.filter(_Qf(doc_email__iexact=skey) | _Qf(email__iexact=skey)).first()
+            _found = find_rules([(ln.get("name") or "").strip() for ln in (p.get("lines") or [])], _ct, skey)
             for ln in (p.get("lines") or []):
                 tn = (ln.get("name") or "").strip()
-                rule = SupplierProductMap.objects.filter(supplier_key=skey, their_name=tn).select_related("product").first()
+                rule = _found.get(tn)
                 lrows.append({"their_name": tn, "qty": ln.get("qty"), "price": ln.get("price"), "sum": ln.get("sum"),
                               "product_id": (rule.product_id if rule else None),
                               "product_name": (rule.product.name if rule else ""),
@@ -573,7 +585,9 @@ def _confirm_supplier(d, request):
         tn = (ln.get("their_name") or "").strip()
         if tn and not request.data.get("combine"):
             from decimal import Decimal as _Df
-            SupplierProductMap.objects.update_or_create(supplier_key=skey, their_name=tn,
+            from .models import supplier_key_for
+            # 19.09.2026: правило — за ПОСТАЧАЛЬНИКОМ (а не за іменем файлу ручного завантаження)
+            SupplierProductMap.objects.update_or_create(supplier_key=supplier_key_for(contact), their_name=tn,
                                                         defaults={"product": prod, "qty_factor": _Df(str(factor))})
             rules += 1
     # ── ПЕРЕРАХУНОК СОБІВАРТОСТІ: документ створюється одразу проведеним (posted=True),

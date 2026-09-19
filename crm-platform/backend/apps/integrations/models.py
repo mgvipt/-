@@ -76,6 +76,46 @@ class SupplierProductMap(models.Model):
 
 import re as _re_asm
 
+# 19.09.2026 (Олег: «зробив прихід Prana — товар не підставився, хоча приходи вже були»).
+# Причина: для ручного завантаження ключем постачальника ставало ІМʼЯ ФАЙЛУ рахунку («ручне завантаження ·
+# рахунок_№_555…pdf») — у кожного рахунку воно своє, тож правило більше ніколи не знаходилось.
+# Тепер ключ — сам постачальник (contact:<id>), а пошук іде: цей постачальник → старий ключ (пошта) →
+# та сама назва в будь-якого постачальника. Назви порівнюються без регістру, зайвих пробілів і лапок.
+SKIP_CROSS_KEYS = ("grafio-catalog-source-id",)   # службові правила іншого імпорту — у загальний пошук не беремо
+
+
+def supplier_key_for(contact):
+    return "contact:%s" % contact.id if contact is not None else ""
+
+
+def norm_name(s):
+    s = (s or "").lower().replace("«", "\"").replace("»", "\"").replace("“", "\"").replace("”", "\"")
+    s = _re_asm.sub(r"\s+", " ", s).strip(" .,;:\"'")
+    return s
+
+
+def find_rules(names, contact=None, legacy_key=""):
+    """{назва постачальника: правило} для рядків накладної. Порядок: постачальник → старий ключ → будь-хто."""
+    keys = [k for k in (supplier_key_for(contact), legacy_key) if k]
+    wanted = {norm_name(n): n for n in names if (n or "").strip()}
+    out = {}
+    if not wanted:
+        return out
+    rules = list(SupplierProductMap.objects.select_related("product").order_by("-id"))
+    for key in keys:
+        for r in rules:
+            if r.supplier_key == key:
+                orig = wanted.get(norm_name(r.their_name))
+                if orig and orig not in out and r.product.is_active:
+                    out[orig] = r
+    for r in rules:   # та сама назва в іншого постачальника / ручне завантаження — найсвіжіше правило
+        if r.supplier_key in SKIP_CROSS_KEYS:
+            continue
+        orig = wanted.get(norm_name(r.their_name))
+        if orig and orig not in out and r.product.is_active:
+            out[orig] = r
+    return out
+
 
 def assembly_signature(names):
     """Підпис набору компонентів: нормалізовані назви, відсортовані.
