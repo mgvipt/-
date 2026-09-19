@@ -222,6 +222,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const PAY_METHOD_CODES: Record<string, string> = { cash: "payment.method.cash", liqpay: "payment.method.liqpay", requisites: "payment.method.requisites", np: "payment.method.np", installment: "payment.method.installment", terminal: "payment.method.terminal", credit: "payment.method.credit", advance: "payment.method.advance" };
   const payMethodsLimited = Object.values(PAY_METHOD_CODES).some((c) => can(c));
   const payMethodOk = (k: string) => !payMethodsLimited || !PAY_METHOD_CODES[k] || can(PAY_METHOD_CODES[k]);
+  const journalOk = can("payment.method.journal");
   const [taskOpen, setTaskOpen] = useState(false);
   const [gearOpen, setGearOpen] = useState(false);
   const gItem: any = { display: "flex", alignItems: "center", gap: 8, padding: "9px 13px", fontSize: 13.5, cursor: "pointer", borderBottom: "1px solid #f6f8fb" };
@@ -251,6 +252,9 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [ci, setCi] = useState<any>({ name: "", qty: 1, price: "" });
   const [payAmount, setPayAmount] = useState("");
   const [payType, setPayType] = useState("cash");
+  // 19.09.2026: «З журналу» — привʼязати прихід, що вже є у фінансовому журналі (лише за явним правом)
+  const [jRows, setJRows] = useState<any[] | null>(null);
+  const [jPick, setJPick] = useState<number | null>(null);
   const [cashReceipt, setCashReceipt] = useState(false);
   const [advAvail, setAdvAvail] = useState<number | null>(null);
   useEffect(() => {
@@ -590,6 +594,13 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     if (salonFunnel && (payType === "cash" || payType === "terminal" || payType === "credit")) { await openVerify(); return; }
     setSending(true);
     try {
+      if (payType === "journal") {
+        if (!jPick) { flash(t("Выберите приход из журнала","Оберіть прихід із журналу")); setSending(false); return; }
+        setDeal(await api.post<Deal>(`/api/deals/${id}/link_journal/`, { tx_id: jPick }));
+        setPayOpen(false); setJRows(null); setJPick(null);
+        flash(t("✓ Оплата привязана из журнала — новая операция и чек не создавались","✓ Оплату привʼязано з журналу — нова операція і чек не створювались"));
+        return;
+      }
       if (payType === "liqpay" || payType === "requisites" || payType === "installment") {
         const r = await api.post<any>(`/api/deals/${id}/send_pay_link/`, { kind: payType, amount: payAmount || deal?.amount });
         const d = await api.get<Deal>(`/api/deals/${id}/`); setDeal(d);
@@ -1535,8 +1546,8 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             <h3 style={{ marginTop: 0 }}>{t("Принять оплату","Прийняти оплату")}</h3>
             <label className="label" style={{ marginBottom: 6 }}>{t("Способ оплаты","Спосіб оплати")}</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 14 }}>
-              {([["cash", t("💵 Наличные","💵 Готівка")], ["liqpay", t("💳 LiqPay (оплата картой онлайн)","💳 LiqPay (оплата картою онлайн)")], ["terminal", t("💳 Терминал · карта/телефон NFC","💳 Термінал · картка/телефон NFC")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]].concat(salonFunnel ? [["credit", t("🤝 Товарный кредит (отгрузка в долг)","🤝 Товарний кредит (відвантаження в борг)")]] : []).concat(deal.contact_id ? [["advance", t("🏦 Из аванса клиента","🏦 З авансу клієнта")]] : []) as [string,string][]).filter(([k]) => payMethodOk(k)).map(([k, label]) => (
-                <button key={k} onClick={() => setPayType(k)} style={{ fontSize: 12, padding: "8px 8px", borderRadius: 8, cursor: "pointer", textAlign: "left", border: "1px solid " + (payType === k ? "var(--brand,#2563eb)" : "#e2e8f0"), background: payType === k ? "#eff6ff" : "#fff", color: payType === k ? "#1d4ed8" : "#475569", fontWeight: payType === k ? 600 : 400 }}>{label}</button>
+              {([["cash", t("💵 Наличные","💵 Готівка")], ["liqpay", t("💳 LiqPay (оплата картой онлайн)","💳 LiqPay (оплата картою онлайн)")], ["terminal", t("💳 Терминал · карта/телефон NFC","💳 Термінал · картка/телефон NFC")], ["requisites", t("🏦 Реквизиты IBAN","🏦 Реквізити IBAN")], ["np", t("📦 Наложенный платёж","📦 Накладений платіж")], ["installment", t("📅 Рассрочка Приват","📅 Розстрочка Приват")]].concat(salonFunnel ? [["credit", t("🤝 Товарный кредит (отгрузка в долг)","🤝 Товарний кредит (відвантаження в борг)")]] : []).concat(deal.contact_id ? [["advance", t("🏦 Из аванса клиента","🏦 З авансу клієнта")]] : []).concat(journalOk ? [["journal", t("📒 Из журнала (деньги уже пришли)","📒 З журналу (гроші вже прийшли)")]] : []) as [string,string][]).filter(([k]) => k === "journal" || payMethodOk(k)).map(([k, label]) => (
+                <button key={k} onClick={() => { setPayType(k); if (k === "journal" && jRows === null) { api.get<any>(`/api/deals/${id}/journal_candidates/`).then((r) => { setJRows(r.rows || []); const s0 = (r.rows || []).find((x: any) => x.suggested); setJPick(s0 ? s0.id : null); }).catch(() => setJRows([])); } }} style={{ fontSize: 12, padding: "8px 8px", borderRadius: 8, cursor: "pointer", textAlign: "left", border: "1px solid " + (payType === k ? "var(--brand,#2563eb)" : "#e2e8f0"), background: payType === k ? "#eff6ff" : "#fff", color: payType === k ? "#1d4ed8" : "#475569", fontWeight: payType === k ? 600 : 400 }}>{label}</button>
               ))}
             </div>
             {payType === "cash" && (
@@ -1564,8 +1575,27 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
                 )}
               </div>
             )}
-            <label className="label">{t("Сумма, ₴","Сума, ₴")}</label>
-            <input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} style={{ width: "100%", height: 38, marginBottom: 14, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} />
+            {payType === "journal" && (
+              <div style={{ marginBottom: 12 }}>
+                <div className="muted" style={{ fontSize: 11.5, marginBottom: 6 }}>{t("Приходы без сделки за 60 дней. Похожие на эту сделку — сверху.","Приходи без сделки за 60 днів. Схожі на цю сделку — зверху.")}</div>
+                {jRows === null && <div className="muted" style={{ fontSize: 12 }}>{t("Загружаю…","Завантажую…")}</div>}
+                {jRows !== null && jRows.length === 0 && <div className="muted" style={{ fontSize: 12 }}>{t("Приходов без сделки нет.","Приходів без сделки немає.")}</div>}
+                <div style={{ maxHeight: 240, overflowY: "auto", display: "grid", gap: 6 }}>
+                  {(jRows || []).map((r: any) => (
+                    <label key={r.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer", border: "1px solid " + (jPick === r.id ? "#2563eb" : "#e2e8f0"), background: jPick === r.id ? "#eff6ff" : "#fff", borderRadius: 8, padding: "7px 9px", fontSize: 12 }}>
+                      <input type="radio" checked={jPick === r.id} onChange={() => setJPick(r.id)} style={{ marginTop: 2 }} />
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <b>{fmt(Number(r.amount))} ₴</b> · {String(r.date).split("-").reverse().join(".")} · <span className="muted">{r.account}</span>
+                        {r.suggested && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: "#166534", background: "#dcfce7", borderRadius: 6, padding: "1px 6px" }}>{r.why}</span>}
+                        <div className="muted" style={{ fontSize: 11, marginTop: 2, overflowWrap: "anywhere" }}>{r.comment || r.category || "—"}</div>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            {payType !== "journal" && <label className="label">{t("Сумма, ₴","Сума, ₴")}</label>}
+            {payType !== "journal" && <input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} style={{ width: "100%", height: 38, marginBottom: 14, borderRadius: 8, border: "1px solid #cbd5e1", padding: "0 10px" }} />}
             {payType === "advance" && advAvail !== null && Number(payAmount || 0) > advAvail + 0.01 && (
               <div style={{ marginTop: -10, marginBottom: 12, color: "#dc2626", fontSize: 11.5, fontWeight: 700 }}>
                 {t(`Сумма больше доступного аванса (${Math.round(advAvail).toLocaleString("ru")} ₴) — оплата не пройдёт. Уменьши сумму или проведи остаток другим способом.`,`Сума більша за доступний аванс (${Math.round(advAvail).toLocaleString("ru")} ₴) — оплата не пройде. Зменш суму або проведи решту іншим способом.`)}
@@ -1585,10 +1615,12 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
             )}
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-light" style={{ flex: 1 }} onClick={() => setPayOpen(false)}>{t("Отмена","Скасувати")}</button>
-              <button className="btn btn-primary" style={{ flex: 2 }} onClick={acceptPayment} disabled={sending}>{sending ? t("Отправляю…","Надсилаю…") : ((payType === "liqpay" || payType === "requisites" || payType === "installment") ? t("Создать ссылку и отправить","Створити посилання і надіслати") : t("Провести оплату","Провести оплату"))}</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} onClick={acceptPayment} disabled={sending}>{sending ? t("Отправляю…","Надсилаю…") : (payType === "journal" ? t("Привязать оплату","Привʼязати оплату") : (payType === "liqpay" || payType === "requisites" || payType === "installment") ? t("Создать ссылку и отправить","Створити посилання і надіслати") : t("Провести оплату","Провести оплату"))}</button>
             </div>
             {payType === "credit" && <div className="muted" style={{ fontSize: 11.5, marginBottom: 10, background: "#fef9c3", padding: "8px 10px", borderRadius: 8 }}>{t("Товар отдаём СЕЙЧАС, деньги — потом. Создастся долг клиента (дебиторка) + стадия «Выдано в товарный кредит».","Товар віддаємо ЗАРАЗ, гроші — потім. Створиться борг клієнта (дебіторка) + стадія «Выдано в товарный кредит».")}</div>}
-            <div className="muted" style={{ fontSize: 11, marginTop: 10 }}>{payType === "terminal"
+            <div className="muted" style={{ fontSize: 11, marginTop: 10 }}>{payType === "journal"
+              ? t("Деньги уже в журнале: оплата появится в сделке, стадия сдвинется, складу придёт задача. Новая операция и чек не создаются.","Гроші вже в журналі: оплата зʼявиться в сделці, стадія рушить, складу прийде задача. Нова операція і чек не створюються.")
+              : payType === "terminal"
               ? t("Прими оплату в приложении Checkbox (Tap to Pay) — телефон читает карту/телефон клиента и сразу бьёт чек + печать. Потом «Провести оплату» — CRM проведёт доход и закроет сделку.","Прийми оплату в застосунку Checkbox (Tap to Pay) — телефон читає картку/телефон клієнта і одразу б'є чек + друк. Потім «Провести оплату» — CRM проведе дохід і закриє угоду.")
               : (payType === "liqpay" || payType === "requisites")
               ? t("Создаст ссылку LiqPay и отправит клиенту в чат. Статус сменится только после реальной оплаты.","Створить посилання LiqPay і надішле клієнту в чат. Статус зміниться лише після реальної оплати.")

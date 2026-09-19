@@ -2103,6 +2103,67 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         log_activity("deal", deal.id, "\u041f\u0440\u043e\u0440\u0430\u0445\u0443\u043d\u043e\u043a", "%s \u0433\u0440\u043d" % total, getattr(request, "user", None), "\u041c\u0435\u043d\u0435\u0434\u0436\u0435\u0440")
         return Response({"ok": True, "sent": sent, "amount": str(total), "text": text})
 
+    # 19.09.2026 (Олег: «у мене пропала вкладка вибрати з журналу — і в Ілони теж має бути, в інших за правами»).
+    # Гроші вже прийшли (банк/каса), а сделка «не знає» — як #66537. Показуємо приходи без сделки за 60 днів,
+    # схожі — першими, і привʼязуємо тим самим механізмом, що й правка операції в Фінанси → Журнал
+    # (sync_deal_payment_from_tx): оплата в сделці, рух стадії, задача складу. Нової операції і чека НЕ створюємо.
+    def _journal_denied(self, request):
+        u = request.user
+        return not (u.is_superuser or (hasattr(u, "has_perm_code") and u.has_perm_code("payment.method.journal")))
+
+    @action(detail=True, methods=["get"])
+    def journal_candidates(self, request, pk=None):
+        from datetime import timedelta as _td
+        from django.utils import timezone as _tz
+        from apps.finance.models import Transaction
+        from apps.finance.unlinked import _candidates
+        deal = self.get_object()
+        if self._journal_denied(request):
+            return Response({"detail": "Спосіб «З журналу» вам недоступний (права ролі)."}, status=status.HTTP_403_FORBIDDEN)
+        paid = sum(float(p.amount) for p in deal.payments.all() if p.is_paid)
+        left = float(deal.amount or 0) - paid
+        rows = []
+        qs = (Transaction.objects.filter(direction="in", deal__isnull=True, payment__isnull=True, transfer_account__isnull=True,
+                                         date__gte=_tz.localdate() - _td(days=60))
+              .select_related("account", "category").order_by("-date", "-id")[:150])
+        for tx in qs:
+            amt = float(tx.amount_uah or tx.amount or 0)
+            why = next((w for d, w in _candidates(tx) if d.id == deal.id), "")
+            if not why and left > 0 and abs(amt - left) < 5:
+                why = "сума = залишок до оплати"
+            rows.append({"id": tx.id, "date": tx.date, "amount": amt,
+                         "account": tx.account.name if tx.account_id else "",
+                         "category": tx.category.name if tx.category_id else "",
+                         "comment": (tx.comment or "")[:160], "suggested": bool(why), "why": why})
+        rows = [r for r in rows if r["suggested"]] + [r for r in rows if not r["suggested"]]   # схожі — першими
+        return Response({"rows": rows[:40], "left": round(left, 2)})
+
+    @action(detail=True, methods=["post"])
+    def link_journal(self, request, pk=None):
+        from django.db import transaction as _txn
+        from apps.finance.models import Transaction
+        from .models import log_activity
+        deal = self.get_object()
+        g = self._guard(deal, money=True)
+        if g:
+            return g
+        if self._journal_denied(request):
+            return Response({"detail": "Спосіб «З журналу» вам недоступний (права ролі)."}, status=status.HTTP_403_FORBIDDEN)
+        with _txn.atomic():
+            tx = Transaction.objects.select_for_update().filter(id=request.data.get("tx_id"), direction="in").first()
+            if tx is None:
+                return Response({"detail": "Операцію не знайдено"}, status=status.HTTP_404_NOT_FOUND)
+            if tx.deal_id or tx.payment_id:
+                return Response({"detail": "Цей прихід уже привʼязаний до сделки #%s" % (tx.deal_id or "—")},
+                                status=status.HTTP_409_CONFLICT)
+            tx.deal = deal
+            tx.save(update_fields=["deal"])
+        sync_deal_payment_from_tx(tx)
+        log_activity("deal", deal.id, "Оплату привʼязано з журналу",
+                     "%s грн · %s · журнал #%s" % (tx.amount_uah, tx.date.strftime("%d.%m.%Y"), tx.id), request.user)
+        deal.refresh_from_db()
+        return Response(DealDetailSerializer(deal, context={"request": request}).data)
+
     @action(detail=True, methods=["post"])
     def send_pay_link(self, request, pk=None):
         """LiqPay/Реквізити: згенерувати посилання + надіслати клієнту в чат + стадія Домовились про оплату.
