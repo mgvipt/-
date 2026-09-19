@@ -28,9 +28,6 @@ export default function Login() {
         <input placeholder={t("Пароль","Пароль")} type="password" value={p} onChange={(e) => setP(e.target.value)} />
         {err && <div className="err">{err}</div>}
         <button className="btn btn-primary" disabled={busy}>{busy ? t("Вход…","Вхід…") : t("Войти","Увійти")}</button>
-        <div className="muted" style={{ fontSize: 11, marginTop: 12 }}>
-          {t("Демо: kirill / demo12345 (менеджер), head / demo12345 (руководитель)","Демо: kirill / demo12345 (менеджер), head / demo12345 (керівник)")}
-        </div>
       </form>
     </div>
   );
