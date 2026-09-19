@@ -81,6 +81,13 @@ class Product(models.Model):
     description = models.TextField("Опис", blank=True, default="")
     track_stock = models.BooleanField("Кількісний облік", default=True,
         help_text="Вимкни для послуг/робіт/номенклатури без залишку — не списується зі складу, залишок не рахується")
+    # 19.09.2026 (Олег): контроль наявності — що завжди тримаємо на складі; заявка на дозамовлення зі складу
+    min_stock = models.DecimalField("Мінімальний залишок", max_digits=12, decimal_places=3, default=0,
+        help_text="Коли залишок менший — товар сам зʼявляється складу у «Замовити». 0 = не контролюємо")
+    reorder_qty = models.DecimalField("Замовляти по", max_digits=12, decimal_places=3, default=0,
+        help_text="Кратність замовлення (відро, мішок, упаковка). 0 = довести до мінімуму ×2")
+    supplier = models.ForeignKey("crm.Contact", null=True, blank=True, on_delete=models.SET_NULL, related_name="supplied_products",
+        help_text="Постачальник для заявок. Порожньо — з останнього приходу цього товару")
     is_drop = models.BooleanField("Дроп (докупаємо під замовлення)", default=False,
         help_text="Товар, який ми продаємо ПІД замовлення і закуповуємо ПІСЛЯ продажу. Коли робиш прихід — закупівельна ціна автоматично оновлюється в УСІХ угодах з цим товаром (навіть у закритих) і в русі товару. Для звичайних складських товарів вимкнено — там історія собівартості на момент продажу не змінюється.")
     SHOP_STATUSES = [
@@ -424,3 +431,16 @@ class InventoryFactDraft(models.Model):
     quantity = models.DecimalField(max_digits=12, decimal_places=2)
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     updated_at = models.DateTimeField(auto_now=True)
+
+
+
+class ReorderRequest(models.Model):
+    """19.09.2026: заявка складу на дозамовлення (товари без постачальників; задачі — по постачальниках)."""
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="reorder_requests")
+    created_at = models.DateTimeField(auto_now_add=True)
+    lines = models.JSONField(default=list, blank=True)
+    comment = models.CharField(max_length=500, blank=True, default="")
+    task_ids = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["-id"]

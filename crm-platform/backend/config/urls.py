@@ -13,6 +13,7 @@ from apps.inbox import tiktok as tiktok_views
 from apps.tiktok_insights import views as tti_views
 from apps.warehouse import views as wh_views
 from apps.warehouse import wh_views as whv
+from apps.warehouse import reorder as wh_reorder  # 19.09.2026: дозамовлення
 from apps.warehouse import tare_samples as wh_tare
 from apps.warehouse import shop_import_views
 from apps.warehouse.product_source import ProductReadCatalog, ProductFacts
@@ -204,6 +205,7 @@ urlpatterns = [
     path("api/warehouse/inventory-draft/", wh_views.InventoryDraftView.as_view()),
     path("api/warehouse/product-shipments/", wh_views.ProductShipmentsView.as_view()),
     path("api/warehouse/queue/", whv.queue),
+    path("api/warehouse/reorder/", wh_reorder.reorder),                 # 19.09.2026: заявка на дозамовлення
     path("api/warehouse/jobs/<int:pk>/", whv.job_detail),
     path("api/warehouse/jobs/<int:pk>/take/", whv.take),
     path("api/warehouse/jobs/<int:pk>/reassign/", whv.reassign),

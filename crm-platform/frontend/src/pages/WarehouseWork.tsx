@@ -14,6 +14,7 @@ import RepackForm, { RepackDocModal } from "../RepackForm";
 import NPDelivery from "./NPDelivery";
 import ClientChat from "../ClientChat";
 import { DealGroups } from "../DealGroupsTable";
+import WhReorder from "../WhReorder";  // 19.09.2026: перевірка наявності і дозамовлення
 
 const C = { terra: "#C67D5F", green: "#16a34a", amber: "#ca8a04", red: "#dc2626", blue: "#2563eb", slate: "#475569" };
 // 15.09.2026: копійки через кому («229,06»), тисячі — пробілом; раніше кома замінювалась пробілом і «229 06» читалось як тисячі
@@ -23,19 +24,19 @@ const ST: any = { queued: ["#eff6ff", "#1d4ed8", "У черзі"], taken: ["#fff
 
 export default function WarehouseWork() {
   const { t } = useLang();
-  const [view, setView] = useState<"queue" | "mine" | "kanban" | "shift" | "salary" | "control" | "dashboard" | "repack">(() => (localStorage.getItem("wh_view") as any) || "shift");
+  const [view, setView] = useState<"queue" | "mine" | "kanban" | "shift" | "salary" | "control" | "dashboard" | "repack" | "reorder">(() => (localStorage.getItem("wh_view") as any) || "shift");
   useEffect(() => { try { localStorage.setItem("wh_view", view); } catch (e) { /* noop */ } }, [view]);
   const [sp] = useSearchParams();
   const [job, setJob] = useState<number | null>(null);
   useEffect(() => {
     const tb = sp.get("tab");
-    if (tb && ["queue", "mine", "kanban", "shift", "salary", "control", "dashboard", "repack"].includes(tb)) { setView(tb as any); setJob(null); }
+    if (tb && ["queue", "mine", "kanban", "shift", "salary", "control", "dashboard", "repack", "reorder"].includes(tb)) { setView(tb as any); setJob(null); }
   }, [sp]);
   if (job) return <TaskCard t={t} jobId={job} onBack={() => setJob(null)} />;
   const { can } = useAuth();
   const mgr = can("warehouse.view.all") || can("roles.manage");
   if (!can("warehouse.work")) return <div className="scroll pad"><div className="note">{t("Нет доступа к «Отгрузке». Права выдаёт руководитель: Сотрудники и права → «Меню Відвантаження».", "Немає доступу до «Відвантаження». Права видає керівник: Співробітники і права → «Меню Відвантаження».")}</div></div>;
-  const TABS: any[] = [["shift", "🏠", "Смена", "Зміна"], ["queue", "📋", "Общий список", "Загальний список"], ["kanban", "🗂", "Мои задачи", "Мої задачі"], ["salary", "💰", "Зарплата", "ЗП"], ["repack", "🧪", "Розлив", "Розлив"]].concat(mgr ? [["control", "🛡", "Контроль", "Контроль"], ["dashboard", "📊", "Дашборд", "Дашборд"]] : []);
+  const TABS: any[] = [["shift", "🏠", "Смена", "Зміна"], ["queue", "📋", "Общий список", "Загальний список"], ["kanban", "🗂", "Мои задачи", "Мої задачі"], ["salary", "💰", "Зарплата", "ЗП"], ["repack", "🧪", "Розлив", "Розлив"], ["reorder", "🛒", "Заказать", "Замовити"]].concat(mgr ? [["control", "🛡", "Контроль", "Контроль"], ["dashboard", "📊", "Дашборд", "Дашборд"]] : []);
   return (
     <div className="scroll pad fade" style={{ width: "100%" }}>
       <h2 style={{ margin: "0 0 12px", fontSize: 22, display: "flex", alignItems: "center", gap: 8 }}><Icon n="truck" size={20} /> {t("Отгрузка", "Відвантаження")}</h2>
@@ -50,6 +51,7 @@ export default function WarehouseWork() {
       {view === "shift" && <ShiftView t={t} />}
       {view === "salary" && <SalaryView t={t} />}
       {view === "repack" && <RepackPage t={t} />}
+      {view === "reorder" && <WhReorder />}
       {view === "control" && <ControlView t={t} />}
       {view === "dashboard" && <DashboardView t={t} />}
     </div>

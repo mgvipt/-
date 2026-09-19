@@ -26,6 +26,10 @@ class ProductSerializer(serializers.ModelSerializer):
 
     stock = serializers.SerializerMethodField()
     category_name = serializers.CharField(source="category.name", read_only=True, default="")
+    supplier_name = serializers.SerializerMethodField()  # 19.09.2026: дозамовлення
+
+    def get_supplier_name(self, obj):
+        return str(obj.supplier) if obj.supplier_id else ""
     shop_validation_errors = serializers.SerializerMethodField()
     shop_group_variants = serializers.SerializerMethodField()
     shop_sync_history = serializers.SerializerMethodField()
@@ -36,7 +40,7 @@ class ProductSerializer(serializers.ModelSerializer):
                   "is_active", "category", "category_name", "stock", "margin", "consumption_per_m2",
                   "description", "b24_created_by", "b24_modified_by",
                   "b24_created_at", "b24_modified_at", "created_at", "updated_at", "images", "is_bundle",
-                  "track_stock", "reserved_qty", "is_drop",
+                  "track_stock", "reserved_qty", "is_drop", "min_stock", "reorder_qty", "supplier", "supplier_name",
                   "shop_managed", "shop_enabled", "shop_category_path", "shop_status", "shop_group_key", "shop_parent_name",
                   "shop_slug", "shop_short_description", "shop_full_description", "shop_benefits",
                   "shop_effect", "shop_rooms", "shop_beginner", "shop_video_url", "shop_instruction_url",
