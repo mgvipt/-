@@ -379,7 +379,12 @@ class WarehouseError(models.Model):
     SOURCE = [("manual_staff", "Сам визнав"), ("manager", "Менеджер/РОП"), ("ai_suggested", "AI")]
     KIND = [("wrong_material", "Невірний матеріал"), ("wrong_tint", "Невірна тонировка"),
             ("wrong_qty", "Невірна кількість"), ("damaged", "Пошкоджено"),
-            ("lost_np", "Втрачено в НП"), ("other", "Інше")]
+            ("lost_np", "Втрачено в НП"),
+            # 19.09.2026 (Олег): типові помилки складу — окремо, щоб рахувались у KPI і було видно, що саме
+            ("no_board", "Не поклали дощечку в тест-набір"), ("sticker_bad", "Наклейка нечитабельна або з помилкою"),
+            ("sticker_miss", "Не наклеєна наклейка"), ("lid_tape", "Кришка відра не проклеєна скотчем по колу"),
+            ("inv_short", "Недостача після інвентаризації"),
+            ("other", "Інше")]
     STATUS = [("suggested", "На розгляді"), ("confirmed", "Підтверджено"), ("rejected", "Відхилено")]
     job = models.ForeignKey(WarehouseJob, null=True, blank=True, on_delete=models.SET_NULL, related_name="errors")
     deal = models.ForeignKey("crm.Deal", null=True, blank=True, on_delete=models.SET_NULL)

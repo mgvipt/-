@@ -383,6 +383,11 @@ function TaskCard({ t, jobId, onBack }: any) {
   const [msg, setMsg] = useState("");
   const [weightAsk, setWeightAsk] = useState(false);
   const [packAsk, setPackAsk] = useState(false);
+  // 19.09.2026 (Олег): тип помилки обирається зі списку (дощечка, наклейка, скотч…), а не завжди «Інше»
+  const [errOpen, setErrOpen] = useState(false);
+  const [errKind, setErrKind] = useState("other");
+  const [errText, setErrText] = useState("");
+  const [errKinds, setErrKinds] = useState<any[]>([]);
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2600); };
   const load = () => api.get<any>(`/api/warehouse/jobs/${jobId}/`).then(setJ).catch(() => {});
   const { can: canFn } = useAuth();
@@ -562,7 +567,15 @@ function TaskCard({ t, jobId, onBack }: any) {
         {(j.photos || []).length > 0 && <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>{(j.photos || []).map((p: any) => <div key={p.id} style={{ textAlign: "center" }}><PhotoThumb url={p.url} /><div className="muted" style={{ fontSize: 10, marginTop: 2 }}>{photoLabel(p.kind)}</div></div>)}</div>}
       </Step>
 
-      <button className="btn btn-light" style={{ width: "100%", marginBottom: 10, color: C.red }} onClick={() => { const dd = prompt(t("Что не так? (ошибка/брак)", "Що не так? (помилка/брак)")); if (dd) api.post("/api/warehouse/errors/", { job: jobId, deal: j.deal_id, source: "manual_staff", kind: "other", description: dd }).then(() => alert(t("Записано, проверит руководитель", "Записано, перевірить керівник"))).catch(() => {}); }}>⚠ {t("Сообщить об ошибке", "Повідомити про помилку")}</button>
+      <button className="btn btn-light" style={{ width: "100%", marginBottom: errOpen ? 6 : 10, color: C.red }} onClick={() => { setErrOpen((v) => !v); if (!errKinds.length) api.get<any[]>("/api/warehouse/errors/?kinds=1").then(setErrKinds).catch(() => {}); }}>⚠ {t("Сообщить об ошибке", "Повідомити про помилку")}</button>
+      {errOpen && <div className="panel" style={{ marginBottom: 10, border: "1px solid #fecaca", background: "#fff7f7" }}>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{t("Что не так?", "Що не так?")}</div>
+        <select value={errKind} onChange={(e) => setErrKind(e.target.value)} style={{ width: "100%", height: 36, borderRadius: 8, border: "1px solid #cbd5e1", marginBottom: 6 }}>
+          {errKinds.map((k: any) => <option key={k.code} value={k.code}>{k.label}</option>)}
+        </select>
+        <textarea value={errText} onChange={(e) => setErrText(e.target.value)} rows={2} placeholder={t("Коротко: что именно", "Коротко: що саме")} style={{ width: "100%", borderRadius: 8, border: "1px solid #cbd5e1", padding: 8, marginBottom: 6 }} />
+        <button className="btn" style={{ width: "100%", background: C.red, color: "#fff" }} onClick={() => { api.post("/api/warehouse/errors/", { job: jobId, deal: j.deal_id, source: "manual_staff", kind: errKind, description: errText }).then(() => { setErrOpen(false); setErrText(""); setErrKind("other"); flash(t("Записано, проверит руководитель", "Записано, перевірить керівник")); }).catch(() => flash(t("Не удалось записать", "Не вдалося записати"))); }}>{t("Записать", "Записати")}</button>
+      </div>}
       {weightAsk && <WeightlessWarn j={j} t={t} busy={busy} onCancel={() => setWeightAsk(false)} onConfirm={doShip} />}
       {packAsk && <PackConfirm packed={!!j.packed} t={t} onChange={(p: boolean) => setPacked(p)} onCancel={() => setPackAsk(false)} onConfirm={shipAfterPack} />}
       <button className="btn" onClick={ship} disabled={busy || !photosDone} style={{ width: "100%", height: 58, fontSize: 17, fontWeight: 700, background: photosDone ? C.green : "#cbd5e1", color: "#fff", marginBottom: 30 }}>{busy ? "…" : "✅ " + t("Готово — отправлено", "Готово — відправлено")}</button>

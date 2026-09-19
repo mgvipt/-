@@ -1058,14 +1058,25 @@ def errors(request):
     from .models import WarehouseError
     if request.method == "POST":
         src = request.data.get("source", "manual_staff")
+        _kind = str(request.data.get("kind") or "other")
+        if _kind not in dict(WarehouseError.KIND):
+            _kind = "other"
         e = WarehouseError.objects.create(
             job_id=request.data.get("job") or None, deal_id=request.data.get("deal") or None,
-            reported_by=request.user, source=src, kind=request.data.get("kind", "other"),
+            reported_by=request.user, source=src, kind=_kind,
             description=(request.data.get("description") or "")[:1000],
             deduction_uah=Decimal(str(request.data.get("deduction") or 0)),
             blamed_user_id=request.data.get("blamed") or (request.user.id if src == "manual_staff" else None))
         return Response({"ok": True, "id": e.id})
-    qs = WarehouseError.objects.select_related("blamed_user", "deal")[:100]
+    # 19.09.2026: список з іменами й сумами утримань — лише керівнику; співробітник бачить свої
+    u = request.user
+    qs = WarehouseError.objects.select_related("blamed_user", "deal")
+    if not (u.is_superuser or u.has_perm_code("roles.manage") or u.has_perm_code("warehouse.view.all")):
+        from django.db.models import Q as _Qe
+        qs = qs.filter(_Qe(blamed_user=u) | _Qe(reported_by=u))
+    if request.query_params.get("kinds"):
+        return Response([{"code": c, "label": l} for c, l in WarehouseError.KIND])
+    qs = qs[:100]
     return Response([{"id": e.id, "deal": e.deal_id, "kind": e.get_kind_display(),
                       "desc": e.description, "deduction": str(e.deduction_uah), "status": e.status,
                       "blamed": (e.blamed_user.get_full_name() if e.blamed_user_id else ""),
