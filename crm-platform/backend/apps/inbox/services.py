@@ -90,6 +90,12 @@ def ingest(channel: Channel, inc: IncomingMessage) -> Message:
     if created:
         conv = Conversation.objects.create(channel=channel, external_chat_id=inc.external_chat_id,
                                            title=inc.sender_name or "")
+        if contact is not None:
+            try:  # 19.09.2026: клієнт повернувся після «ігнору» — сделки, закриті разом із чатом, оживають
+                from apps.crm.revive import revive_on_return
+                revive_on_return(contact.id, "клієнт знову написав (%s)" % channel.name)
+            except Exception:
+                pass
     contact_created = False
     if contact is None:
         contact = _find_contact(inc)

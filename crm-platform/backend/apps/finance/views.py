@@ -1625,7 +1625,10 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                 if _dc.created_at < _tzn.now() - _tdn(days=180):
                     continue
                 if _dc.stage_id and getattr(_dc.stage, "is_lost", False):
-                    continue
+                    # 19.09.2026 (#66537: «Оплата згідно замовлення #66537» лежала без сделки): програну сделку
+                    # приймаємо лише коли в призначенні ЯВНО номер замовлення — випадковий збіг цифр не пройде
+                    if not _re.search(r"замовлен\w*\s*(?:№|#|N|No\.?)?\s*%d(?!\d)" % num, osnd or "", _re.I):
+                        continue
                 if not _dc.amount or float(amt) > float(_dc.amount) * 1.05 + 100:
                     continue
                 found.append(num)

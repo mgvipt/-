@@ -980,6 +980,11 @@ def handle_webhook(payload: dict):
                           "клієнт написав у закритий діалог", None, "Система")
                 except Exception:
                     pass
+                try:  # 19.09.2026: разом із діалогом повертаємо й сделку, закриту «в ігнор» разом із чатом
+                    from apps.crm.revive import revive_on_return
+                    revive_on_return(conv.contact_id, "клієнт написав у закритий діалог")
+                except Exception:
+                    pass
             from django.utils import timezone
             conv.last_message_at = timezone.now()
             conv.save()

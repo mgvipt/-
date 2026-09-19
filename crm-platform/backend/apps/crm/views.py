@@ -5180,6 +5180,19 @@ class _RolesManageOrRead(BasePermission):
 def _advance_after_payment(deal, reason, actor="Автоматизація", create_wh=True):
     """Після оплати: тип оплати «Бронь» → стадія «Заброньовано»,
     інакше → «Оплату отримано» (пошук стадії ЗА НАЗВОЮ у воронці сделки)."""
+    if deal.stage_id and getattr(deal.stage, "is_lost", False):
+        # 19.09.2026 (Олег, #66537): клієнт з «Игнор» повернувся і оплатив — повертаємо сделку на
+        # «Оплату отримано». Раніше _advance_deal_stage рухав лише ВПЕРЕД, а «Игнор» — у кінці воронки.
+        from .revive import paid_stage_for, revive
+        st = paid_stage_for(deal)
+        if st and revive(deal, st, "оплата: " + reason, actor):
+            if create_wh and _is_pay_stage(st.name):
+                try:
+                    from apps.warehouse.services import create_warehouse_job
+                    create_warehouse_job(deal)
+                except Exception:
+                    pass
+            return True
     is_bron = "брон" in (deal.pay_type or "").lower()
     names = ["заброньов"] if is_bron else ["оплату отримано", "оплата отримано", "оплата отримана", "оплата/предоплата"]
     target = None
@@ -6134,7 +6147,22 @@ class ManagerActionsView(APIView):
         summary = {"ai": _ai, "human_crm": _h_crm, "human_cp": _h_cp, "human_total": _htot,
                    "human_pct": round(_htot * 100.0 / max(_ai + _htot, 1)),
                    "unassigned_cp": unassigned_cp}
-        return Response({"rows": rows, "reactivations": reactivations,
+        # 19.09.2026 (Олег, #66537): «клієнт з ігнору повернувся і оплатив — показувати в статистиці».
+        # Джерела ті самі, що всюди: подія повернення — історія сделки (ActivityLog), гроші — Payment(is_paid).
+        from .revive import REVIVE_ACTION
+        from datetime import timedelta as _tdr
+        _rv_at = {}
+        for _oid, _at in (ActivityLog.objects.filter(kind="deal", action=REVIVE_ACTION,
+                                                      created_at__date__gte=d_from, created_at__date__lte=d_to)
+                          .values_list("object_id", "created_at")):
+            _rv_at[_oid] = min(_at, _rv_at.get(_oid, _at))
+        _rv_paid, _rv_sum = set(), 0.0
+        for _p in Payment.objects.filter(deal_id__in=list(_rv_at), is_paid=True):
+            if _p.created_at >= _rv_at[_p.deal_id] - _tdr(hours=1):
+                _rv_paid.add(_p.deal_id)
+                _rv_sum += float(_p.amount)
+        revived = {"deals": len(_rv_at), "paid": len(_rv_paid), "paid_sum": round(_rv_sum, 2)}
+        return Response({"rows": rows, "reactivations": reactivations, "revived": revived,
                          "close_reasons": close_reasons, "summary": summary})
 
 

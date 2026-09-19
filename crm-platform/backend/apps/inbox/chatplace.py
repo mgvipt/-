@@ -438,6 +438,11 @@ def sync_chats(max_chats=40, per_chat=40):
                           "клієнт написав у закритий діалог", None, "Система")
                 except Exception:
                     pass
+                try:  # 19.09.2026: разом із діалогом повертаємо й сделку, закриту «в ігнор» разом із чатом
+                    from apps.crm.revive import revive_on_return
+                    revive_on_return(conv.contact_id, "клієнт написав у закритий діалог")
+                except Exception:
+                    pass
                 # Повернення відкриває діалог того самого контакту, але не створює новий лід.
             # інакше лишаємо закритим — у списку не зʼявиться (status-фільтр)
         if conv.contact_id:

@@ -100,9 +100,16 @@ export default function ManagerAnalytics() {
                   </tr>
                 ))}</tbody>
               </table>
-              {typeof acts.reactivations === "number" && acts.reactivations > 0 && (
+              {((typeof acts.reactivations === "number" && acts.reactivations > 0) || (acts.revived && acts.revived.deals > 0)) && (
                 <div style={{ marginTop: 10, fontSize: 12.5, color: "#166534", fontWeight: 600 }}>
                   <Icon n="refresh" size={13} /> {t("Вернулись из игнора (команда):", "Повернулись з ігнору (команда):")} <b>{acts.reactivations}</b>
+                {acts.revived && acts.revived.deals > 0 && (
+                  <span style={{ marginLeft: 10 }}>
+                    · {t("сделок возвращено:", "сделок повернуто:")} <b>{acts.revived.deals}</b>
+                    {" "}· {t("из них оплатили:", "з них оплатили:")} <b>{acts.revived.paid}</b>
+                    {acts.revived.paid > 0 && <> {t("на", "на")} <b>{Number(acts.revived.paid_sum).toLocaleString("uk-UA")} ₴</b></>}
+                  </span>
+                )}
                 </div>
               )}
               {acts.close_reasons && acts.close_reasons.length > 0 && (
