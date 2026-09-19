@@ -258,7 +258,7 @@ function SalesTab() {
   const maxCount = Math.max(...d.stages.map((s) => s.count), 1);
   const cards: [string, string][] = [
     [t("Лидов всего","Лідів усього"), fmt(d.leads_total)], [t("Сделок","Угод"), fmt(d.deals_total)],
-    [t("Конверсия","Конверсія"), d.conversion + "%"], [t("Выручка (won)","Виручка (won)"), fmt(d.revenue) + " ₴"],
+    [t("Конверсия","Конверсія"), d.conversion + "%"], [t("Выручка (деньги)","Виручка (гроші)"), fmt(d.revenue) + " ₴"],
     [t("Средний чек","Середній чек"), fmt(d.avg_check) + " ₴"],
   ];
   return (
@@ -276,6 +276,7 @@ function SalesTab() {
           {d.funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
         </select>
       </div>
+      {(d as any).revenue_note && <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>{(d as any).revenue_note}</div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 12, marginBottom: 14 }}>
         {cards.map(([lbl, v]) => <div key={lbl} className="panel" style={{ margin: 0 }}><div className="muted" style={{ fontSize: 12 }}>{lbl}</div><div style={{ fontSize: 22, fontWeight: 700 }}>{v}</div></div>)}
       </div>

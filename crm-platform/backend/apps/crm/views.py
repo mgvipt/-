@@ -2947,11 +2947,17 @@ class AnalyticsView(APIView):
         if funnel:
             deals = deals.filter(funnel=funnel)
         deals_total = deals.count()
-        won = deals.filter(stage__is_won=True)
-        revenue = won.aggregate(s=Sum("amount"))["s"] or 0
-        avg_check = won.aggregate(a=Avg("amount"))["a"] or 0
-        won_c = deals.filter(stage__is_won=True).count()
-        lost_c = deals.filter(stage__is_lost=True).count()
+        # 19.09.2026 (Олег: «дані з одного джерела всюди»): виручка = отримані гроші (apps.finance.money),
+        # а не сума сделок на «Успішна угода» — та стадія остання, оплачені «в роботі» туди не потрапляли.
+        from apps.finance.money import NOTE as _MNOTE, paid_deal_ids, revenue_by_deal
+        _rev_all = revenue_by_deal(deal_ids=_deals_base.values("id"))
+        _in_scope = set(deals.values_list("id", flat=True))
+        rev_map = {k: v for k, v in _rev_all.items() if k in _in_scope}
+        paid_ids = paid_deal_ids(rev_map)
+        revenue = round(sum(rev_map.values()), 2)
+        won_c = len(paid_ids)
+        avg_check = round(revenue / won_c, 2) if won_c else 0
+        lost_c = deals.filter(stage__is_lost=True).exclude(id__in=paid_ids).count()
         conv = round(won_c / (won_c + lost_c) * 100, 1) if (won_c + lost_c) else 0
 
         stages = []
@@ -2969,11 +2975,17 @@ class AnalyticsView(APIView):
                 "google_business": "Google", "other": "Інше"}
         _lead_src = dict(_leads_base.values_list("source").annotate(n=Count("id")))
         _channels = []
-        for _d in _deals_base.values("source").annotate(
-                deals=Count("id"),
-                won=Count("id", filter=_Q(stage__is_won=True)),
-                lost=Count("id", filter=_Q(stage__is_lost=True)),
-                rev=Sum("amount", filter=_Q(stage__is_won=True))):
+        _paid_all = paid_deal_ids(_rev_all)
+        _by_src = {}
+        for _did, _src, _lost in _deals_base.values_list("id", "source", "stage__is_lost"):
+            _b = _by_src.setdefault(_src, {"source": _src, "deals": 0, "won": 0, "lost": 0, "rev": 0.0})
+            _b["deals"] += 1
+            if _did in _paid_all:
+                _b["won"] += 1
+                _b["rev"] += _rev_all.get(_did, 0.0)
+            elif _lost:
+                _b["lost"] += 1
+        for _d in _by_src.values():
             _s = _d["source"]; _wc = _d["won"] or 0; _lc = _d["lost"] or 0
             _channels.append({
                 "source": _s, "label": _LBL.get(_s, _s or "—"),
@@ -2992,11 +3004,19 @@ class AnalyticsView(APIView):
         # топ менеджеров
         # staffvis 15.09: звільнених без дозволу «Аналітика продажів» у топі менеджерів не показуємо (цифри вище — без змін)
         from apps.accounts.visibility import hidden_ids as _vis_hidden
-        managers = list(deals.exclude(owner_id__in=_vis_hidden("sales_analytics")).values("owner__first_name", "owner__last_name")
-                        .annotate(deals=Count("id"), sum=Sum("amount")).order_by("-sum")[:5])
+        # топ — за отриманими грошима по сделках менеджера (раніше сумувались УСІ сделки, навіть програні)
+        _hidden = set(_vis_hidden("sales_analytics"))
+        _mg = {}
+        for _did, _oid, _fn, _ln in deals.filter(id__in=paid_ids).values_list("id", "owner_id", "owner__first_name", "owner__last_name"):
+            if _oid in _hidden:
+                continue
+            _r = _mg.setdefault(_oid, {"owner__first_name": _fn, "owner__last_name": _ln, "deals": 0, "sum": 0.0})
+            _r["deals"] += 1
+            _r["sum"] += rev_map.get(_did, 0.0)
+        managers = sorted(_mg.values(), key=lambda r: -r["sum"])[:5]
         return Response({
             "leads_total": leads_total, "deals_total": deals_total,
-            "conversion": conv, "revenue": float(revenue), "avg_check": float(avg_check),
+            "conversion": conv, "revenue": float(revenue), "avg_check": float(avg_check), "revenue_note": _MNOTE,
             "funnel": funnel.name if funnel else "", "stages": stages,
             "managers": [{"name": (m["owner__first_name"] or "") + " " + (m["owner__last_name"] or ""),
                           "deals": m["deals"], "sum": float(m["sum"] or 0)} for m in managers],

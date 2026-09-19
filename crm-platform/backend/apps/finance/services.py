@@ -201,9 +201,18 @@ def compute_channels(d_from, d_to):
     from django.db.models import Sum, Count
     arts = _fin_articles()
     margin_pct = max(0.0, 100.0 - sum(float(a.value) for a in arts if a.category == "revenue_fund"))
-    won = Deal.objects.filter(stage__is_won=True,
-                              created_at__date__gte=d_from, created_at__date__lte=d_to)
-    rows = list(won.values("source").annotate(revenue=Sum("amount"), deals=Count("id")).order_by("-revenue"))
+    # 19.09.2026: виручка каналу = отримані гроші за період (apps.finance.money — те саме правило, що ЗП
+    # і Аналітика), а не сума «успішних» сделок, створених у період.
+    from .money import paid_deal_ids, revenue_by_deal
+    _rev = revenue_by_deal(d_from, d_to)
+    _paid = paid_deal_ids(_rev)
+    _agg = {}
+    for _did, _src in Deal.objects.filter(id__in=list(_rev)).values_list("id", "source"):
+        _r = _agg.setdefault(_src, {"source": _src, "revenue": 0.0, "deals": 0})
+        _r["revenue"] += _rev.get(_did, 0.0)
+        if _did in _paid:
+            _r["deals"] += 1
+    rows = sorted(_agg.values(), key=lambda r: -r["revenue"])
     total = sum(float(r["revenue"] or 0) for r in rows) or 1
     period = d_from.strftime("%Y-%m")
     spend_map = {c.channel: float(c.spend) for c in ChannelSpend.objects.filter(period=period)}
