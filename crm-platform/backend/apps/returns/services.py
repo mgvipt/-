@@ -209,6 +209,45 @@ def _pick_blamed(reason, deal, data):
     return bid, (job if reason == "wh_error" else None)
 
 
+def _settle_credit_and_job(deal, returned, ret_no):
+    """19.09.2026 (Олег, сделка #66787): клієнт повернув товар, взятий у товарний кредит, — а борг у Дт/Кт
+    лишився, і задача складу на відвантаження висіла в черзі. Тепер повернення:
+      • зменшує відкритий борг товарного кредиту по цій сделці на суму повернення (погашена частина
+        не чіпається; закрито повністю → «Оплачено», якщо щось платили, інакше «Скасовано»);
+      • скасовує задачу складу, яку ще НЕ взяли в роботу, якщо відвантажувати більше нічого.
+    Повертає примітки для stock_note."""
+    from apps.finance.models import PlannedPayment
+    from apps.warehouse.models import WarehouseJob
+    notes = []
+    left = returned
+    for pp in (PlannedPayment.objects.select_for_update()
+               .filter(deal=deal, kind="receivable", status="planned", comment__startswith="Товарний кредит")
+               .order_by("-id")):
+        if left <= 0:
+            break
+        open_part = _d(pp.amount) - _d(pp.paid_amount)
+        cut = min(left, open_part)
+        if cut <= 0:
+            continue
+        pp.amount = _q(_d(pp.amount) - cut)
+        if _d(pp.amount) - _d(pp.paid_amount) <= Decimal("0.005"):
+            pp.status = "paid" if _d(pp.paid_amount) > 0 else "canceled"
+        pp.comment = ((pp.comment or "") + " · повернення №%s: −%s" % (ret_no, fmt(cut)))[:255]
+        pp.save(update_fields=["amount", "status", "comment"])
+        left -= cut
+        notes.append("борг товарного кредиту Дт/Кт #%s −%s ₴%s" % (
+            pp.pk, fmt(cut), " (закрито)" if pp.status != "planned" else ""))
+    if not deal.items.filter(quantity__gt=0).exists():
+        for job in WarehouseJob.objects.select_related("task").filter(deal=deal, status="queued"):
+            job.status = "cancelled"
+            job.save(update_fields=["status"])
+            if job.task_id and job.task.status in ("proposed", "open", "in_progress"):
+                job.task.status = "canceled"
+                job.task.save(update_fields=["status"])
+            notes.append("задачу складу #%s скасовано — відвантажувати нічого" % job.pk)
+    return notes
+
+
 # ───────────────────────── 1. повернення товару ─────────────────────────
 def register_return(deal, user, data):
     """Оформити повернення товару. Повертає (DealReturn, created). Усе в одній транзакції: або все, або нічого.
@@ -330,6 +369,7 @@ def register_return(deal, user, data):
                 ret.receipt_doc = doc
         if capped:
             notes.append("не оприбутковано (реалізація цього не списувала): " + "; ".join(capped))
+        notes += _settle_credit_and_job(deal, _q(total), ret.pk)
 
         over = deal_paid(deal) - _money_taken(deal.pk, exclude_id=ret.pk) - _d(deal.amount)
         due = _q(min(total, over)) if over > 0 else D0
