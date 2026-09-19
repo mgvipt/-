@@ -3141,11 +3141,23 @@ class SalesFunnelView(APIView):
             })
             prev = through
 
-        lost_cnt = sum(1 for oid in obj_ids if cur_stage.get(oid) in lost_ids)
-        won_cnt = sum(1 for oid in obj_ids if cur_stage.get(oid) in won_ids)
-        won_amt = sum(amount_of.get(oid, 0) for oid in obj_ids if cur_stage.get(oid) in won_ids)
-        lost_amt = sum(amount_of.get(oid, 0) for oid in obj_ids if cur_stage.get(oid) in lost_ids)
-        won_names = [st.name for st in stages if st.is_won]
+        if kind == "deal":
+            # 19.09.2026 (одне джерело): «оплачено» = є отримані гроші (apps.finance.money), а не стадія
+            # «Успішна угода» — вона остання, оплачені сделки «в роботі» туди не потрапляли.
+            from apps.finance.money import paid_deal_ids, revenue_by_deal
+            _rv = revenue_by_deal(deal_ids=obj_ids)
+            _pd = paid_deal_ids(_rv)
+            won_set = {oid for oid in obj_ids if oid in _pd}
+            won_amt = sum(_rv.get(oid, 0.0) for oid in won_set)
+            won_names = ["Оплачено (гроші отримано)"]
+        else:
+            won_set = {oid for oid in obj_ids if cur_stage.get(oid) in won_ids}
+            won_amt = sum(amount_of.get(oid, 0) for oid in won_set)
+            won_names = [st.name for st in stages if st.is_won]
+        won_cnt = len(won_set)
+        lost_set = {oid for oid in obj_ids if cur_stage.get(oid) in lost_ids and oid not in won_set}
+        lost_cnt = len(lost_set)
+        lost_amt = sum(amount_of.get(oid, 0) for oid in lost_set)
         man_any = len(set().union(*[into[i]["man"] for i in into])) if into else 0
 
         src_list = [{"key": "all", "label": "Все", "n": len(base_rows)}]
@@ -3239,7 +3251,9 @@ class SalesJourneyView(APIView):
                 return set()
             q = Deal.objects.filter(funnel=funnel, contact_id__in=cohort)
             if won_only:
-                q = q.filter(stage__is_won=True)
+                # 19.09.2026: «купив» = є отримані гроші по сделці (apps.finance.money), не стадія «Успішна угода»
+                from apps.finance.money import paid_deal_ids, revenue_by_deal
+                q = q.filter(id__in=list(paid_deal_ids(revenue_by_deal(deal_ids=q.values("id")))))
             return set(q.values_list("contact_id", flat=True))
         test_c = _with_deal(test_f)
         main_c = _with_deal(main_f)
@@ -3812,12 +3826,17 @@ class MetaFunnelView(APIView):
                 return set()
             q = Deal.objects.filter(funnel=funnel, contact_id__in=cohort)
             if won:
-                q = q.filter(stage__is_won=True)
+                # 19.09.2026: «оплатив» = є отримані гроші по сделці (apps.finance.money)
+                from apps.finance.money import paid_deal_ids, revenue_by_deal
+                q = q.filter(id__in=list(paid_deal_ids(revenue_by_deal(deal_ids=q.values("id")))))
             return set(q.values_list("contact_id", flat=True))
         test_c = _cset(test_f)
         won_c = _cset(test_f, True) | _cset(main_f, True)
-        revenue = float(Deal.objects.filter(contact_id__in=cohort, stage__is_won=True,
-                        funnel__in=[f for f in [test_f, main_f] if f]).aggregate(s=Sum("amount"))["s"] or 0) if cohort else 0.0
+        # 19.09.2026: виручка когорти = отримані гроші по її сделках (те саме правило, що ЗП, Канали, Аналітика)
+        from apps.finance.money import revenue_by_deal as _rbd
+        revenue = (round(sum(_rbd(deal_ids=Deal.objects.filter(
+            contact_id__in=cohort, funnel__in=[f for f in [test_f, main_f] if f]).values("id")).values()), 2)
+            if cohort else 0.0)
 
         raw = [
             ("impressions", "Показы", impressions),
@@ -3919,6 +3938,11 @@ class MetaMarketingView(APIView):
         deals = [item for item in all_deals if has_verified_meta_attribution(item)]
         deal_ids = [item.pk for item in deals]
         payments = Payment.objects.filter(deal_id__in=deal_ids, is_paid=True)
+        # 19.09.2026 (одне джерело): «оплачено» і виручка сделки = отримані гроші (apps.finance.money —
+        # те саме правило, що ЗП, Аналітика, Канали), а не стадія «Успішна угода» і сума сделки.
+        from apps.finance.money import paid_deal_ids as _pdi, revenue_by_deal as _rbd
+        _deal_rev = _rbd(deal_ids=deal_ids)
+        _deal_paid = _pdi(_deal_rev)
 
         by_platform = defaultdict(lambda: {"leads": 0, "deals": 0, "won": 0, "revenue": 0.0})
         by_source = defaultdict(lambda: {"leads": 0, "deals": 0})
@@ -3964,8 +3988,8 @@ class MetaMarketingView(APIView):
             source_kind = attr.get("source_kind", "unknown")
             by_platform[platform][kind] += 1
             by_source[source_kind][kind] += 1
-            won = kind == "deals" and bool(item.stage and item.stage.is_won)
-            revenue = float(item.amount or 0) if won else 0.0
+            won = kind == "deals" and item.pk in _deal_paid
+            revenue = _deal_rev.get(item.pk, 0.0) if won else 0.0
             if won:
                 by_platform[platform]["won"] += 1
                 by_platform[platform]["revenue"] += revenue
@@ -4111,9 +4135,9 @@ class MetaMarketingView(APIView):
                     continue
                 target = collection[key]
                 target[f"crm_{kind}"].add(item.pk)
-                if kind == "deals" and item.stage and item.stage.is_won:
+                if kind == "deals" and item.pk in _deal_paid:
                     target["crm_won"].add(item.pk)
-                    target["crm_revenue"] += float(item.amount or 0)
+                    target["crm_revenue"] += _deal_rev.get(item.pk, 0.0)
 
         for item in leads:
             attach_crm(item, "leads")
@@ -4789,7 +4813,7 @@ class MetaMarketingView(APIView):
                 "created_at": item.created_at,
             })
 
-        won_deals = [item for item in deals if item.stage and item.stage.is_won]
+        won_deals = [item for item in deals if item.pk in _deal_paid]
         latest_ads_sync = MetaAdDailyStat.objects.aggregate(value=Max("synced_at"))["value"]
         latest_content_sync = MetaContentStat.objects.aggregate(value=Max("synced_at"))["value"]
         latest_account_sync = MetaAccountDailyStat.objects.aggregate(value=Max("synced_at"))["value"]
@@ -4814,7 +4838,7 @@ class MetaMarketingView(APIView):
             "summary": {
                 "attributed_leads": len(leads), "attributed_deals": len(deals),
                 "won_deals": len(won_deals),
-                "won_revenue": round(sum(float(x.amount or 0) for x in won_deals), 2),
+                "won_revenue": round(sum(_deal_rev.get(x.pk, 0.0) for x in won_deals), 2),
                 "paid_revenue": float(payments.aggregate(s=Sum("amount"))["s"] or 0),
                 "manual_or_organic_leads": len(all_leads) - len(leads),
                 "manual_or_organic_deals": len(all_deals) - len(deals),
