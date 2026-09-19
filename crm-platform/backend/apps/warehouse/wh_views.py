@@ -675,6 +675,8 @@ def _accrual_plan(job, pay_packing=True):
             if r_s > 0:
                 rows.append(("samples", r_s * cnt,
                              {"rate_applied": r_s, "note": "%s викр. × %s ₴ (%s)" % (_num(cnt), _num(r_s), label)}))
+    # 19.09.2026 (Олег): «кожне тонування і кожен тестовий набір з тонуванням вписувати в кількість тонувань»
+    tint_count = int(tint_count) + int(fx.get("kit_cat", 0) or 0) + int(fx.get("kit_ind", 0) or 0)
     meta = {"weight": weight, "tiers": tiers, "tint_base": tint_base, "tint_source": tint_source,
             "tint_count": tint_count, "test_sets": fx["test_sets"], "weightless": fx["weightless"],
             "kit_cat": fx.get("kit_cat", 0), "kit_ind": fx.get("kit_ind", 0),

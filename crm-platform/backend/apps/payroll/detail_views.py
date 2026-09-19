@@ -379,11 +379,36 @@ def _piece_qty(e):
     return None
 
 
+def how_rows(how):
+    """19.09.2026 (Олег: «при відкритті угоди — таблицею, а не полотном тексту»): рядки «як пораховано» →
+    [{kind: item|place|note, what, detail}]. item — товар і як його зважили; place — місце упаковки."""
+    out = []
+    for raw in how or []:
+        line = str(raw or "")
+        s = line.strip()
+        if not s:
+            continue
+        if line.startswith("  ") and "→ упаковка" in s:
+            what, _, tier = s.partition("→ упаковка")
+            out.append({"kind": "place", "what": what.strip(), "detail": "місце " + tier.strip()})
+        elif line.startswith("  "):
+            if " — " in s:
+                what, _, det = s.partition(" — ")
+            else:
+                what, det = s, ""
+            out.append({"kind": "note", "what": what.strip(), "detail": det.strip()})
+        else:
+            what, _, det = s.partition(" — ")
+            out.append({"kind": "item", "what": what.strip(), "detail": det.strip()})
+    return out
+
+
 def _piece_deal_groups(entries, labels):
     """15.09.2026: відрядно по угодах — колонки за кожним пунктом оплати; рядок розкривається («як пораховано» + записи)."""
     from apps.warehouse import weight_rules as WR
     col_of = {"shipment_weight": "weight", "packing": "pack", "tinting": "tint", "test_set": "test_set",
-              "kit_tint_cat": "tint", "kit_tint_ind": "tint"}  # 17.09.2026: тонування наборів — у колонці «Тонування», не «Інше»
+              "kit_tint_cat": "tint", "kit_tint_ind": "tint",  # 17.09.2026: тонування наборів — у колонці «Тонування»
+              "samples": "samples"}  # 19.09.2026 (Олег: «Інше — незрозуміло що це»): викраски — своя колонка
     dg = {}
     for e in entries:
         key = ("j%s" % e.job_id) if e.job_id else ("e%s" % e.id)
@@ -392,10 +417,15 @@ def _piece_deal_groups(entries, labels):
         if g is None:
             g = dg[key] = {"key": key, "date": e.work_date.isoformat(), "deal_id": deal.id if deal else None,
                            "client": _client(deal), "kg": 0.0, "weight": 0.0, "pack": 0.0, "pack_txt": [], "tint": 0.0,
-                           "test_set": 0.0, "other": 0.0, "total": 0.0, "entries": [], "how": [], "how_note": "",
+                           "test_set": 0.0, "samples": 0.0, "other": 0.0, "other_txt": [], "total": 0.0,
+                           "entries": [], "how": [], "how_note": "", "np": None,
                            "_job": e.job if e.job_id else None}
         a = float(e.amount or 0)
         g[col_of.get(e.op_type, "other")] += a
+        if col_of.get(e.op_type, "other") == "other":
+            _lbl = labels.get(e.op_type, e.op_type)
+            if _lbl not in g["other_txt"]:
+                g["other_txt"].append(_lbl)
         g["total"] += a
         if e.op_type == "shipment_weight":
             g["kg"] += float(e.quantity_kg or 0)
@@ -407,6 +437,8 @@ def _piece_deal_groups(entries, labels):
     out = []
     for g in dg.values():
         job = g.pop("_job")
+        if job is not None and (job.done_snapshot or {}).get("np"):
+            g["np"] = job.done_snapshot["np"]   # 19.09.2026: місця і вага з Нової Пошти
         if job is not None:
             how = (job.done_snapshot or {}).get("how")
             if how:
@@ -417,8 +449,10 @@ def _piece_deal_groups(entries, labels):
                     g["how_note"] = "Запис зроблено за старим правилом; пояснення — як це рахується за регламентом v2."
                 except Exception:
                     g["how"] = []
-        for k in ("weight", "pack", "tint", "test_set", "other", "total"):
+        for k in ("weight", "pack", "tint", "test_set", "samples", "other", "total"):
             g[k] = _f(g[k])
+        g["other_txt"] = ", ".join(g["other_txt"])
+        g["how_rows"] = how_rows(g["how"])
         g["kg"] = _f(g["kg"], 3)
         g["pack_txt"] = ", ".join(g["pack_txt"])
         out.append(g)
