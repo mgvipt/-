@@ -11,7 +11,7 @@ import ChatActions from "./ChatActions";
 import ConversationSourceCard from "./ConversationSourceCard";
 import { CommentReplyBar, CommentSendError, useCommentTarget } from "./CommentReplyBar";
 import type { CommentMode } from "./CommentReplyBar";
-import { ReplyContext, ReactionBadges, MessageStatusLine, CorrectionAction, messagesHaveSameVisibleState, isContextAttachment } from "./MessageContext";
+import { ReplyContext, ReactionBadges, MessageStatusLine, CorrectionAction, ReplyAction, bubbleText, messagesHaveSameVisibleState, isContextAttachment } from "./MessageContext";
 import { dayLabel, timeLabel, isNewDay, linkify, metaWindow } from "./chatUtils";
 
 const tt = (_r: string, ua: string) => ua;  // ClientChat україномовний
@@ -44,6 +44,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [correctionTarget, setCorrectionTarget] = useState<{ id: number; text: string } | null>(null);
+  const [replyTarget, setReplyTarget] = useState<{ id: number; text: string } | null>(null);
   const [internal, setInternal] = useState(false);
   const [followup, setFollowup] = useState(false);
   const [pending, setPending] = useState<any[]>([]);
@@ -119,7 +120,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   }
   async function switchConv(c: Conversation) {
     if (!c || c.id === conv?.id) return;
-    setConv(c); setMsgs([]); setAi(null); setErr(""); setCorrectionTarget(null);
+    setConv(c); setMsgs([]); setAi(null); setErr(""); setCorrectionTarget(null); setReplyTarget(null);
     await Promise.all([loadMsgs(c.id), loadReplyChannels(c.id)]);
   }
 
@@ -134,7 +135,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
     try { setCinfo(await api.get<any>(`/api/contacts/${contact}/`)); } catch { setCinfo(null); }
   }
   useEffect(() => {
-    setLoaded(false); setConv(null); setMsgs([]); setFirstText(""); setErr(""); setAllConvs([]); setCinfo(null); setCorrectionTarget(null);
+    setLoaded(false); setConv(null); setMsgs([]); setFirstText(""); setErr(""); setAllConvs([]); setCinfo(null); setCorrectionTarget(null); setReplyTarget(null);
     loadConv(); loadContactInfo();
     /* eslint-disable-next-line */
   }, [contact]);
@@ -160,8 +161,8 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
       }
       setPending([]);
       if (text.trim()) {
-        const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send/`, { text, internal, followup, ...(commentInfo?.is_comment && !internal ? { comment_mode: cMode } : {}) });
-        setMsgs((p) => [...p, m]); setText(""); setCorrectionTarget(null); setFollowup(false);
+        const m = await api.post<ChatMessage>(`/api/conversations/${conv.id}/send/`, { text, internal, followup, ...(commentInfo?.is_comment && !internal ? { comment_mode: cMode } : {}), ...(replyTarget && !internal ? { reply_to: replyTarget.id } : {}) });
+        setMsgs((p) => [...p, m]); setText(""); setCorrectionTarget(null); setReplyTarget(null); setFollowup(false);
       }
     } catch (e: any) { setErr(e?.response?.data?.detail || "Не вдалося надіслати — чат має бути відкритий оператором"); setErrCanPublic(!!e?.response?.data?.can_public && !!commentInfo?.is_comment); }
     setBusy(false);
@@ -349,7 +350,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
               <div style={{ background: (m as any).internal ? "#fef9c3" : (m.direction === "in" ? "#ffffff" : "#dbeafe"), padding: "7px 11px", borderRadius: 12, fontSize: 13, whiteSpace: "pre-wrap", border: (m as any).internal ? "1px dashed #d4a017" : (m.direction === "in" ? "1px solid #eef2f7" : "none") }}>
                 {(m as any).internal && <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", marginBottom: 2 }}><Icon n="📝" size={12} /> Нотатка (тільки команда)</div>}
                 <ReplyContext attachments={(m as any).attachments} idPrefix="client-message-" />
-                <span style={{ wordBreak: "break-word" }}>{linkify(m.text, m.direction !== "in")}</span>
+                <span style={{ wordBreak: "break-word" }}>{linkify(bubbleText(m), m.direction !== "in")}</span>
                 {(m as any).attachments?.map((a: any, j: number) => (
                   isContextAttachment(a) ? null
                   : (a.url && a.type === "photo") ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 6 }}><img src={a.thumb || a.url} alt="" loading="lazy" decoding="async" style={{ maxWidth: 220, maxHeight: 240, borderRadius: 8, display: "block", objectFit: "cover" }} /></a>
@@ -367,6 +368,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
                 <ReactionBadges attachments={(m as any).attachments} />
               </div>
               <MessageStatusLine message={m} time={timeLabel((m as any).created_at)} />
+              <ReplyAction message={m} label="Відповісти" title="Відповісти саме на це повідомлення клієнта" onStart={(message) => setReplyTarget({ id: message.id, text: String(message.text || "фото / файл") })} />
               <CorrectionAction message={m} label="Виправити" title="Надіслати клієнту нове уточнення, не змінюючи історію" onStart={(message) => {
                 setCorrectionTarget({ id: message.id, text: String(message.text || "") });
                 setText("Уточнення: ");
@@ -399,7 +401,7 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
                   </div>
                   <div style={{ background: (m as any).internal ? "#fef9c3" : (m.direction === "in" ? "#fff" : "#dbeafe"), padding: "6px 10px", borderRadius: 10, fontSize: 12.5, whiteSpace: "pre-wrap", border: m.direction === "in" ? "1px solid #eef2f7" : "none" }}>
                     <ReplyContext attachments={(m as any).attachments} idPrefix="client-peek-message-" />
-                    <span style={{ wordBreak: "break-word" }}>{linkify(m.text, m.direction !== "in")}</span>
+                    <span style={{ wordBreak: "break-word" }}>{linkify(bubbleText(m), m.direction !== "in")}</span>
                     {(m as any).attachments?.map((a: any, j: number) => (
                       isContextAttachment(a) ? null
                       : (a.url && a.type === "photo") ? <a key={j} href={a.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 4 }}><img src={a.thumb || a.url} alt="" loading="lazy" decoding="async" style={{ maxWidth: 160, borderRadius: 6, display: "block" }} /></a>
@@ -445,7 +447,11 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
         ))}
       </div>}
       {internal && pending.length > 0 && <div style={{ fontSize: 11, color: "#92400e", marginTop: 4 }}><Icon n="📝" size={12} /> Файл піде у ВНУТРІШНЮ нотатку — клієнт НЕ побачить</div>}
-      {correctionTarget && <div style={{ marginTop: 8, padding: "7px 10px", borderRadius: 8, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e3a8a", fontSize: 11.5, lineHeight: 1.35, display: "flex", gap: 8, alignItems: "flex-start" }}>
+      {replyTarget && !internal && <div style={{ marginBottom: 6, marginTop: 8, padding: "7px 10px", borderRadius: 8, background: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3", fontSize: 11.5, lineHeight: 1.35, display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <div style={{ minWidth: 0, flex: 1 }}><b>↪ Відповідь на:</b> {replyTarget.text.slice(0, 120)}{replyTarget.text.length > 120 ? "…" : ""}<br /><span style={{ color: "#475569" }}>У Telegram-боті — справжня цитата; у Viber, WhatsApp та Instagram клієнт побачить першим рядком «↪ «…»».</span></div>
+                <button type="button" onClick={() => setReplyTarget(null)} title="Скасувати відповідь" style={{ border: 0, background: "transparent", color: "#64748b", cursor: "pointer", padding: 0, fontWeight: 800 }}>✕</button>
+              </div>}
+              {correctionTarget && <div style={{ marginTop: 8, padding: "7px 10px", borderRadius: 8, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e3a8a", fontSize: 11.5, lineHeight: 1.35, display: "flex", gap: 8, alignItems: "flex-start" }}>
         <div style={{ minWidth: 0, flex: 1 }}><b>Виправлення до:</b> {correctionTarget.text.slice(0, 120)}{correctionTarget.text.length > 120 ? "…" : ""}<br /><span style={{ color: "#475569" }}>Старе повідомлення залишиться в історії. Клієнту піде нове уточнення.</span></div>
         <button type="button" onClick={() => setCorrectionTarget(null)} title="Скасувати виправлення" style={{ border: 0, background: "transparent", color: "#64748b", cursor: "pointer", padding: 0, fontWeight: 800 }}>✕</button>
       </div>}

@@ -254,9 +254,42 @@ def _resolve_chatplace_chat_id(conv):
         return ""
 
 
-def send_message(conv: Conversation, text: str, user=None, comment_mode=None) -> Message:
+REPLY_NATIVE_KINDS = ("telegram",)   # канали, де цитата — справжня (Telegram-бот)
+
+
+def reply_ref_for(conv, reply_to):
+    """19.09.2026 (Олег: «відповісти на одне з повідомлень вище, щоб клієнт бачив, на що ми відповіли»).
+    Повертає (ref для CRM, повідомлення-ціль) або (None, None). Ціль — лише з ЦЬОГО діалогу, не нотатка."""
+    try:
+        rid = int(reply_to)
+    except (TypeError, ValueError):
+        return None, None
+    target = Message.objects.filter(id=rid, conversation=conv, internal=False).first()
+    if target is None:
+        return None, None
+    media = next((dict(a) for a in (target.attachments or [])
+                  if (a or {}).get("type") in ("photo", "video", "voice", "file", "document")), None)
+    ref = {"type": "reply_ref", "external_id": target.external_id or "", "target_id": target.id,
+           "direction": target.direction, "sender_name": target.sender_name, "text": (target.text or "")[:500],
+           "attachment": media, "outgoing": True}
+    return ref, target
+
+
+def quote_line(target):
+    """Рядок-цитата для каналів без справжньої цитати (Viber, WhatsApp, Instagram через ChatPlace)."""
+    txt = " ".join((target.text or "").split())
+    if txt:
+        return "↪ «%s»" % (txt[:60] + ("…" if len(txt) > 60 else ""))
+    kinds = {(a or {}).get("type") for a in (target.attachments or [])}
+    what = ("фото" if "photo" in kinds else "відео" if "video" in kinds else
+            "голосове" if "voice" in kinds else "файл" if kinds & {"file", "document"} else "повідомлення")
+    return "↪ на Ваше %s" % what
+
+
+def send_message(conv: Conversation, text: str, user=None, comment_mode=None, reply_to=None) -> Message:
     """Отправить исходящее сообщение через адаптер канала и записать его.
-    comment_mode (лише чати-коментарі Meta): "public" — у гілку (типово), "private" — приватно в Messenger (FB)."""
+    comment_mode (лише чати-коментарі Meta): "public" — у гілку (типово), "private" — приватно в Messenger (FB).
+    reply_to (id повідомлення цього діалогу): Telegram-бот — справжня цитата; інші канали — перший рядок «↪ «…»»."""
     # 17.09.2026 (Олег): {кольори} або {кольори:velvet-luna} → персональне посилання на сторінку кольорів,
     # де кнопка «Обрати колір» пише вибір назад у ЦЕЙ чат.
     if text and "{кольори" in text:
@@ -273,6 +306,17 @@ def send_message(conv: Conversation, text: str, user=None, comment_mode=None) ->
     # запису (друга приватна відповідь / видалений коментар / нема коментаря клієнта → зрозуміла помилка, нічого не створюємо).
     from . import meta_comments as _mc
     comment_plan = _mc.plan(conv, comment_mode) if _mc.is_meta_comment(conv) else None
+    reply_ref, reply_target, native_reply = None, None, None
+    if reply_to and comment_plan is None:
+        reply_ref, reply_target = reply_ref_for(conv, reply_to)
+        if reply_target is not None:
+            ext = str(reply_target.external_id or "")
+            if conv.channel.kind in REPLY_NATIVE_KINDS and ext.isdigit():
+                native_reply = ext
+                reply_ref["native"] = True
+            else:
+                # текст із цитатою зберігаємо як є — саме його бачить клієнт (і дедуп Meta-echo по тексту працює)
+                text = quote_line(reply_target) + "\n" + text
     status = "sent"
     if conv.channel.kind in ("instagram", "facebook") and comment_plan is None:  # 24г-вікно — не для гілки коментарів
         last_in = Message.objects.filter(conversation=conv, direction="in").order_by("-created_at").first()
@@ -285,11 +329,12 @@ def send_message(conv: Conversation, text: str, user=None, comment_mode=None) ->
         conversation=conv, direction="out", text=text,
         external_id="", sender=user,
         sender_name=(user.get_full_name() if user else "") or "", status=status,
+        attachments=([reply_ref] if reply_ref else []),
     )
     try:
         if comment_plan is not None:
             ext_id, _cmark = _mc.deliver(conv, text, comment_plan, since=msg.created_at)
-            msg.attachments = [_cmark]  # куди пішло (публічно/приватно, на який коментар) — видно під повідомленням
+            msg.attachments = list(msg.attachments or []) + [_cmark]  # куди пішло (публічно/приватно, на який коментар)
             msg.save(update_fields=["attachments"])
         elif is_meta_instagram_direct:
             chat_id = str(route.get("chat_id") or "").strip()
@@ -309,6 +354,8 @@ def send_message(conv: Conversation, text: str, user=None, comment_mode=None) ->
                 ext_id = adapter.send(conv.external_chat_id, text)
         else:
             adapter = get_adapter(conv.channel)
+            if native_reply:
+                adapter.reply_to_message_id = native_reply
             ext_id = adapter.send(conv.external_chat_id, text)
     except Exception as _send_err:
         msg.status = "failed"

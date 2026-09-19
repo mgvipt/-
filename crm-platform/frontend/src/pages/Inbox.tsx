@@ -18,7 +18,7 @@ import LeadQuality from "../LeadQuality";
 import MetaAttrBadge from "../MetaAttrBadge";
 import { AskReviewButton } from "../ReviewButtons";
 import { CLOSE_REASONS, GROUP_HDR } from "../closeReasons";
-import { ReplyContext, ReactionBadges, MessageStatusLine, CorrectionAction, messagesHaveSameVisibleState, isContextAttachment } from "../MessageContext";
+import { ReplyContext, ReactionBadges, MessageStatusLine, CorrectionAction, ReplyAction, bubbleText, messagesHaveSameVisibleState, isContextAttachment } from "../MessageContext";
 import { msgSoundOn, setMsgSoundOn, teamSoundOn, setTeamSoundOn } from "../sounds";
 import { MediaLibraryPicker } from "./MediaLibraryPicker";
 
@@ -54,6 +54,7 @@ export default function Inbox() {
   const [adCtx, setAdCtx] = useState<any>(null);  // контент реклами, з якого прийшов клієнт
   const [text, setText] = useState("");
   const [correctionTarget, setCorrectionTarget] = useState<{ id: number; text: string } | null>(null);
+  const [replyTarget, setReplyTarget] = useState<{ id: number; text: string } | null>(null);
   const [sending, setSending] = useState(false);
   const [internalNote, setInternalNote] = useState(false);
   // fbcomment 15.09: чат-коментар Meta — публічно в гілці (типово) або приватно в Messenger (FB, на вибір менеджера)
@@ -250,7 +251,7 @@ export default function Inbox() {
   }
 
   async function openConv(c: Conversation) {
-    setActive(c); setErr(""); setAi(null); setCorrectionTarget(null); setAdCtx(null);
+    setActive(c); setErr(""); setAi(null); setCorrectionTarget(null); setReplyTarget(null); setAdCtx(null);
     api.get<any>(`/api/conversations/${c.id}/ad_context/`).then((a) => setAdCtx(a && (a.ad_title || a.ad_thumb) ? a : null)).catch(() => setAdCtx(null));
     const m = await api.get<ChatMessage[]>(`/api/conversations/${c.id}/messages/?seen=1`);
     setMsgs(m);
@@ -294,8 +295,8 @@ export default function Inbox() {
       }
       setPending([]);
       if (text.trim()) {
-        const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send/`, { text, internal: internalNote, ...(commentInfo?.is_comment && !internalNote ? { comment_mode: cMode } : {}) });
-        setMsgs((ms) => [...ms, m]); setText(""); setCorrectionTarget(null);
+        const m = await api.post<ChatMessage>(`/api/conversations/${active.id}/send/`, { text, internal: internalNote, ...(commentInfo?.is_comment && !internalNote ? { comment_mode: cMode } : {}), ...(replyTarget && !internalNote ? { reply_to: replyTarget.id } : {}) });
+        setMsgs((ms) => [...ms, m]); setText(""); setCorrectionTarget(null); setReplyTarget(null);
         if (commentInfo?.is_comment && cMode !== commentMode) setCommentMode(cMode);
       }
     } catch (e: any) {
@@ -658,7 +659,7 @@ export default function Inbox() {
                     reaction: t("Реакция клиента", "Реакція клієнта"),
                   }} />
                   <span onClick={() => { if (m.direction === "in") setMsgMenu(msgMenu === m.id ? null : m.id); }}
-                    style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", cursor: m.direction === "in" ? "pointer" : "default" }}>{linkify(m.text, m.direction === "out")}</span>
+                    style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", cursor: m.direction === "in" ? "pointer" : "default" }}>{linkify(bubbleText(m), m.direction === "out")}</span>
                   {msgMenu === m.id && m.direction === "in" && active && (
                     <div style={{ marginTop: 6 }}>
                       <button className="btn btn-light" style={{ height: 26, fontSize: 11.5 }}
@@ -686,6 +687,9 @@ export default function Inbox() {
                       edited: t("изменено", "змінено"), previousVersion: t("Предыдущая версия", "Попередня версія"),
                     }}
                   />
+                  <ReplyAction message={m} label={t("Ответить", "Відповісти")} title={t("Ответить именно на это сообщение клиента", "Відповісти саме на це повідомлення клієнта")} onStart={(message) => {
+                    setReplyTarget({ id: message.id, text: String(message.text || "фото / файл") });
+                  }} />
                   <CorrectionAction message={m} label={t("Исправить", "Виправити")} title={t("Отправить новое уточнение, не меняя историю", "Надіслати нове уточнення, не змінюючи історію")} onStart={(message) => {
                     setCorrectionTarget({ id: message.id, text: String(message.text || "") });
                     setText(t("Уточнение: ", "Уточнення: "));
@@ -709,6 +713,10 @@ export default function Inbox() {
                 ))}
               </div>}
               {internalNote && <div style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11.5, fontWeight: 600, padding: "5px 10px", borderRadius: 6, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}><Icon n="eye" size={14} /> {t("Режим заметки — клиент НЕ увидит, видят только менеджеры","Режим нотатки — клієнт НЕ побачить, бачать лише менеджери")}</div>}
+              {replyTarget && !internalNote && <div style={{ marginBottom: 6, marginTop: 0, padding: "7px 10px", borderRadius: 8, background: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3", fontSize: 11.5, lineHeight: 1.35, display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <div style={{ minWidth: 0, flex: 1 }}><b>↪ {t("Ответ на:", "Відповідь на:")}</b> {replyTarget.text.slice(0, 120)}{replyTarget.text.length > 120 ? "…" : ""}<br /><span style={{ color: "#475569" }}>{t("В Telegram-боте — настоящая цитата; в Viber, WhatsApp и Instagram клиент увидит первой строкой «↪ «…»».", "У Telegram-боті — справжня цитата; у Viber, WhatsApp та Instagram клієнт побачить першим рядком «↪ «…»».")}</span></div>
+                <button type="button" onClick={() => setReplyTarget(null)} title={t("Отменить ответ", "Скасувати відповідь")} style={{ border: 0, background: "transparent", color: "#64748b", cursor: "pointer", padding: 0, fontWeight: 800 }}>✕</button>
+              </div>}
               {correctionTarget && <div style={{ marginBottom: 6, padding: "7px 10px", borderRadius: 8, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e3a8a", fontSize: 11.5, lineHeight: 1.35, display: "flex", gap: 8, alignItems: "flex-start" }}>
                 <div style={{ minWidth: 0, flex: 1 }}><b>{t("Исправление к:", "Виправлення до:")}</b> {correctionTarget.text.slice(0, 120)}{correctionTarget.text.length > 120 ? "…" : ""}<br /><span style={{ color: "#475569" }}>{t("Старое сообщение останется в истории. Клиенту уйдёт новое уточнение.", "Старе повідомлення залишиться в історії. Клієнту піде нове уточнення.")}</span></div>
                 <button type="button" onClick={() => setCorrectionTarget(null)} title={t("Отменить исправление", "Скасувати виправлення")} style={{ border: 0, background: "transparent", color: "#64748b", cursor: "pointer", padding: 0, fontWeight: 800 }}>✕</button>

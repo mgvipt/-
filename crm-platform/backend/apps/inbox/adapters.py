@@ -121,6 +121,9 @@ class TelegramAdapter(ChannelAdapter):
             raise RuntimeError("В канале не задан bot_token")
         url = self.API.format(token=token, method="sendMessage")
         body = {"chat_id": external_chat_id, "text": text}
+        _rt = getattr(self, "reply_to_message_id", None)
+        if _rt:  # 19.09.2026: «↪ Відповісти» — справжня цитата повідомлення клієнта в Telegram
+            body["reply_parameters"] = {"message_id": int(_rt), "allow_sending_without_reply": True}
         bcid = (self.config.get("business_chats") or {}).get(str(external_chat_id))
         if bcid:
             body["business_connection_id"] = bcid  # відповідь від імені особистого акаунту

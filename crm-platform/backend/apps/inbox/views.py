@@ -1328,7 +1328,8 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         from .meta_comments import CommentReplyError
         _cmode = str(request.data.get("comment_mode") or "").strip() or None  # fbcomment: лише чати-коментарі Meta
         try:
-            msg = send_message(conv, text, user=request.user, comment_mode=_cmode)
+            msg = send_message(conv, text, user=request.user, comment_mode=_cmode,
+                               reply_to=request.data.get("reply_to") or None)
         except CommentReplyError as e:  # fbcomment 15.09: зрозуміла причина + чи можна відповісти публічно в гілці
             return Response({"detail": str(e), "code": e.code, "can_public": bool(e.can_public)},
                             status=(status.HTTP_409_CONFLICT if e.blocked else status.HTTP_502_BAD_GATEWAY))

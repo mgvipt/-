@@ -204,6 +204,32 @@ export function CorrectionAction({ message, onStart, label, title }: {
   );
 }
 
+// 19.09.2026 (Олег): «відповісти на одне з повідомлень клієнта вище — щоб він бачив, на що ми відповіли».
+export function ReplyAction({ message, onStart, label, title }: {
+  message: any;
+  onStart: (message: any) => void;
+  label: string;
+  title: string;
+}) {
+  if (message?.direction !== "in" || message?.internal || !message?.id) return null;
+  return (
+    <button type="button" onClick={() => onStart(message)} title={title} style={{
+      border: 0, background: "transparent", color: "#4f46e5", padding: "1px 4px",
+      marginTop: 1, fontSize: 10.5, cursor: "pointer", textDecoration: "underline",
+      textUnderlineOffset: 2,
+    }}>↪ {label}</button>
+  );
+}
+
+// Наш ответ із цитатою: перший рядок «↪ «…»» бачить клієнт, а в CRM замість нього — картка ReplyContext.
+export function bubbleText(message: any): string {
+  const text = String(message?.text || "");
+  const hasRef = (message?.attachments || []).some((a: any) => a?.type === "reply_ref" && a?.outgoing);
+  if (message?.direction !== "out" || !hasRef || !text.startsWith("↪ ")) return text;
+  const nl = text.indexOf("\n");
+  return nl >= 0 ? text.slice(nl + 1) : text;
+}
+
 export function isContextAttachment(attachment: any): boolean {
   return attachment?.type === "reply_ref"
     || attachment?.type === "message_reaction"
