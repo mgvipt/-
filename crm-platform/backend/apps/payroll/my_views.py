@@ -333,12 +333,16 @@ def _plan_out(u, period, comps, pol):
     fact = _n(engine._income(d1, d2, **flt).aggregate(s=Sum("amount_uah"))["s"])
     fact -= _n(engine._refunds(d1, d2, **flt).aggregate(s=Sum("amount_uah"))["s"])  # 16.09 (returns): мінус повернення клієнтам
     target = _n(p.target_revenue) if p else 0.0
+    split_online = bool(p and m and p.is_split)
+    if split_online:  # 19.09.2026: факт тут — онлайн-воронки, тож порівнюємо з ОНЛАЙН-планом (як engine._plan для ЗП)
+        target = _n(p.online_target)
     out = {"fact": round(fact), "target": round(target),
            "min": round(_n(p.min_revenue)) if p else 0, "ambition": round(_n(p.ambition_revenue)) if p else 0,
            "pct": round(fact / target * 100) if target else None,
            "left": round(max(0.0, target - fact)) if target else None,
            "over": round(max(0.0, fact - target)) if target else 0,
-           "basis": "оплати по ваших угодах" + (f" (воронки: {_funnel_names(m['funnels'])})" if m else "")}
+           "basis": ("онлайн-план · " if split_online else "") + "оплати по ваших угодах"
+                    + (f" (воронки: {_funnel_names(m['funnels'])})" if m else "")}
     if m:
         out.update({"to_pct": m["to"], "over_pct": m["over"], "gate_pct": m["gate"]})
     if not target:

@@ -5,6 +5,7 @@ from .fund_link import FundLinksView  # 14.09 фонди «Автоматичн�
 from .detail_views import CalcDetailView  # 15.09 «Як прорахувалась ЗП»
 from .wh_kpi import WhKpiView  # 15.09 підказка CRM і позначки стандарту складу
 from .whatif import MyWhatIfView  # 16.09 Розвиток v2: «Що буде, якщо» у «Моя ЗП»
+from .plan_grid import PlanGridView, PlanTeamView  # 19.09 план по тижнях і днях + зведена
 
 urlpatterns = [
     path("schemes/", views.SchemesView.as_view()),
@@ -23,6 +24,8 @@ urlpatterns = [
     path("my/", my_views.MyPayrollView.as_view()),
     path("my/detail/", my_views.MyDetailView.as_view()),
     path("my/whatif/", MyWhatIfView.as_view()),
+    path("my/plan-grid/", PlanGridView.as_view()),
+    path("plan-team/", PlanTeamView.as_view()),
     path("deal-kpi/<int:deal_id>/", my_views.DealKpiView.as_view()),
     path("runs/approve/", views.RunApproveView.as_view()),
     path("calc-detail/", CalcDetailView.as_view()),

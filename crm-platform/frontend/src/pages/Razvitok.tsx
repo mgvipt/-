@@ -11,6 +11,7 @@ import { Icon } from "../Icon";
 import InfoTip from "../InfoTip";
 import MyPayroll, { PlanRules } from "../MyPayroll";
 import MyStats from "../MyStats";  // 16.09 (Олег): статистика місяця — у кожного
+import PlanGrid, { PlanTeam } from "../PlanGrid";  // 19.09 (Олег): план по тижнях і днях + зведена
 import { ThanksList } from "../ThanksBlock";  // 16.09.2026 (Олег): подяки від керівника
 
 type T = (ru: string, uk: string) => string;
@@ -165,11 +166,14 @@ export default function Razvitok() {
 
       {mode === "me" && <ThanksList />}
       {mode === "me" && <MyStats period={period} />}
+      {mode === "me" && period && <PlanGrid period={period} />}
+      {mode === "other" && period && other && <PlanGrid period={period} userId={other.id} />}
       {mode === "me" && period && <MyPayroll period={period} hidePeriods />}
       {mode === "other" && <div className="note" style={{ marginBottom: 12 }}>{t("Зарплату этого человека смотрите в «Финансы → ЗП/KPI».", "Зарплату цієї людини дивіться у «Фінанси → ЗП/KPI».")}</div>}
 
       {mode === "team" && mine?.is_team_viewer && (
         <>
+          {period && <PlanTeam period={period} />}
           {team && <TeamBoard team={team} t={t} onOpen={openManager} />}
           <ContestAdmin t={t} />
           <OwnerSettings t={t} />
