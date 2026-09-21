@@ -4,6 +4,8 @@
 ЗА ЗАМОВЧУВАННЯМ ВИМКНЕНО для всіх каналів. Вмикається по одному каналу:
     Channel.config["ai_reply"] = True                       — відповідати всім у цьому каналі
     Channel.config["ai_reply_only_chats"] = ["<chat_id>"]   — спочатку лише цим чатам (перевірка на своєму акаунті)
+    Channel.config["ai_reply_after_handoff"] = True         — канал веде Юля ChatPlace, продавець CRM
+                                                              підхоплює на оформленні (Instagram, 21.09.2026)
 
 Мозок — той самий, що у веб-чата сайту: ЗАТВЕРДЖЕНІ записи бази знань CRM (apps.knowledge.answer,
 агент «yulia_web»), ціни з каталогу, посилання на сторінки кольорів. Замовлення, оплата, сумнів →
@@ -44,6 +46,80 @@ def _limits():
 def channel_on(channel):
     cfg = (channel.config or {}) if channel else {}
     return bool(cfg.get("ai_reply"))
+
+
+# ── 21.09.2026 (Олег): КОМАНДА «Юля ChatPlace → продавець CRM» ─────────────────
+# «у нас була механіка, яка працювала як команда: далі вела діалог від Юлі ChatPlace
+# до ІІ-продавця з CRM. Коли відповість ІІ-агент із CRM — у цьому чаті Юля з ChatPlace
+# на паузі 10 годин, ніби менеджер включився. А якщо включається менеджер — тоді вже
+# і в CRM у цьому чаті зупиняється ІІ-агент».
+#
+# Як це працює:
+#   • Instagram веде Юля з ChatPlace — вона консультує (ефекти, ціни, підбір).
+#   • Дійшло до оформлення (вона сказала «передала менеджеру» / «оформлюю замовлення»
+#     АБО клієнт сам написав «беру / куди оплатити / реквізити») — чат підхоплює
+#     продавець CRM: він уміє створити сделку, надіслати посилання на оплату і реквізити.
+#   • Перша ж його відповідь іде через ChatPlace як повідомлення оператора (chats_open),
+#     тому ChatPlace ставить свою Юлю на паузу (silenceAfterHumanReply = 600 хв = 10 год).
+#   • Далі продавець CRM веде цей чат 10 годин (вікно продовжується з кожною відповіддю).
+#   • Написав живий менеджер — продавець CRM замовкає (_manager_active, старе правило).
+TAKEOVER_HOURS = 10
+
+# фрази Юлі з ChatPlace, після яких продовжувати має продавець CRM
+HANDOFF_RX = re.compile(
+    r"передал[аи]\s+(дан[іи]|замовлен|питанн|інформац)?\s*менеджер|передаю\s+менеджер|"
+    r"менеджер\s+(надішле|підтвердить|зв|підключ|оформ)|зв.?яж[уе]\s+(вас\s+)?з\s+менеджер|"
+    r"оформлюю\s+(ваше\s+)?замовлення|передам\s+менеджер|передати\s+менеджер", re.I)
+# клієнт сам показав готовність купити
+BUY_RX = re.compile(
+    r"\bберу\b|беремо|оформ(ляйте|люйте|ляємо|ити|ляти)|готов[аий]*\s+(купити|оплатити|замовити)|"
+    r"куди\s+(оплат|перекаж|скинути|платити)|як\s+оплатити|как\s+оплатить|реквізит|реквизит|"
+    r"рахунок\s+на\s+оплат|остаточно|окончательно|давайте\s+оформ|хочу\s+(замовити|купити|оплатити)", re.I)
+
+
+def _takeover_channel(channel):
+    """Канал, де першим відповідає ChatPlace, а продавець CRM підхоплює на оформленні."""
+    return bool(((channel.config or {}) if channel else {}).get("ai_reply_after_handoff"))
+
+
+def _takeover_until(conv):
+    raw = (conv.config or {}).get("ai_takeover_until") or ""
+    if not raw:
+        return None
+    try:
+        from django.utils.dateparse import parse_datetime
+        return parse_datetime(raw)
+    except Exception:
+        return None
+
+
+def hold_chat(conv, hours=TAKEOVER_HOURS):
+    """Продавець CRM бере чат на себе на N годин (вікно продовжується з кожною відповіддю)."""
+    cfg = dict(conv.config or {})
+    cfg["ai_takeover_until"] = (timezone.now() + timedelta(hours=hours)).isoformat()
+    conv.config = cfg
+    conv.save(update_fields=["config"])
+
+
+def _took_over(conv, incoming):
+    """Чи вже час продавцю CRM вести цей чат (і фіксуємо момент передачі)."""
+    until = _takeover_until(conv)
+    if until and until > timezone.now():
+        return True
+    from .models import Message
+    last_out = (Message.objects.filter(conversation=conv, direction="out", internal=False)
+                .order_by("-id").first())
+    why = ""
+    if last_out and HANDOFF_RX.search(last_out.text or ""):
+        why = "Юля ChatPlace передала на оформлення"
+    elif BUY_RX.search(incoming.text or ""):
+        why = "клієнт готовий оформлювати"
+    if not why:
+        return False
+    hold_chat(conv)
+    _note(conv, "%s: беру чат на себе на %d год — %s. Юля ChatPlace у цьому чаті на паузі."
+           % (NOTE_PREFIX, TAKEOVER_HOURS, why))
+    return True
 
 
 def _allowed_chat(channel, conv):
@@ -88,7 +164,9 @@ def should_reply(conv, incoming):
         return False
     hours, max_per_day = _limits()
     if _manager_active(conv, hours):
-        return False
+        return False          # живий менеджер у чаті — ІІ мовчить (і в CRM, і далі)
+    if _takeover_channel(ch) and not _took_over(conv, incoming):
+        return False          # діалог поки веде Юля з ChatPlace — не заважаємо
     return not _throttled(conv, max_per_day)
 
 
@@ -237,6 +315,8 @@ def reply_now(conv_id):
         return
     try:
         if _maybe_requisites(conv, incoming):
+            if _takeover_channel(conv.channel):
+                hold_chat(conv)
             return
     except Exception as e:
         _note(conv, "%s: реквізити не надіслані (%s)." % (NOTE_PREFIX, str(e)[:200]))
@@ -260,6 +340,8 @@ def reply_now(conv_id):
         _note(conv, "%s: не вдалося надіслати (%s). Текст: «%s»" % (NOTE_PREFIX, str(e)[:200], text[:600]))
         return
     _note(conv, note)
+    if _takeover_channel(conv.channel):
+        hold_chat(conv)       # чат лишається за продавцем CRM ще 10 год
     _maybe_effect_photos(conv, text)
     if r.get("order"):
         _make_kit_offer(conv, r["order"])

@@ -25,6 +25,8 @@ HOST = "crm.wallcovdec.com.ua"
 
 # (назва, роль, url, допустимі статуси, обов'язкові ключі верхнього рівня)
 CHECKS = [
+    # 21.09.2026 (Олег): Instagram веде Юля ChatPlace, продавець CRM підхоплює на оформленні
+    ("Канали: Instagram для продавця CRM", "owner", "/api/channels/", {200}, []),
     ("Повідомлення клієнту: живе дзеркало", "manager", "/api/inbox/media-library/?view=automations", {200}, ["cards", "updated_at", "help"]),
     ("Майстер-класи: бібліотека після оплати", "manager", "/api/inbox/media-library/?view=picker", {200}, ["replies"]),
     ("Товари: джерело ШІ потребує окремого ключа", "manager", "/api/product-source/", {403}, []),
