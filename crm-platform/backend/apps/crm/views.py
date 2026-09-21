@@ -1,3 +1,4 @@
+from .customer_messages import (payment_thanks, online_intro, online_payment, compact_payment, shipping_details, shipping_term, tools_offer, tools_products, tools_lines, receipt_message, ttn_created)
 from decimal import Decimal
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -990,7 +991,7 @@ def make_offer(deal, items_spec, user=None, send_pay=True):
             full = build_checkout_url(pub, prv, total, order_id, "Wallcov #%s" % deal.id, server_url=base + "/api/crm/liqpay/callback/", result_url=base, paytypes="card,apay,gpay,privat24")
             PayLink.objects.create(code=code, deal=deal, target=full)
             url = "%s/p/%s/" % (base, code)
-            paytext = "\U0001f4b3 \u041e\u043f\u043b\u0430\u0442\u0438\u0442\u0438 \u043e\u043d\u043b\u0430\u0439\u043d \U0001f449 %s\n\u0421\u0443\u043c\u0430: %s \u0433\u0440\u043d" % (url, _g(total))
+            paytext = compact_payment(url, _g(total))
             if conv:
                 try:
                     send_message(conv, paytext, user=user); sent_p = True
@@ -1088,8 +1089,7 @@ def _issue_checkbox_for_deal(deal, user=None, notify=True):
         conv = Conversation.objects.filter(contact_id=deal.contact_id, status="open").order_by("-last_message_at").first()
         if conv:
             # РОП пише тепле живе повідомлення (без слова "фіскальний")
-            body = ("Дякуємо за оплату! 😊 Вже почали готувати ваше замовлення." if closes
-                    else "Дякуємо за передоплату! 😊 Бронюємо замовлення за вами.")
+            body = (payment_thanks(closes))
             try:
                 from .ai import claude_json
                 dmsgs = list(conv.messages.order_by("id").values("direction", "text"))[-12:]
@@ -1105,7 +1105,7 @@ def _issue_checkbox_for_deal(deal, user=None, notify=True):
             except Exception:
                 pass
             try:
-                send_message(conv, "%s\n\n🧾 %s" % (body, r["url"]), user=user)
+                send_message(conv, receipt_message(body, r["url"]), user=user)
                 sent = True
             except Exception:
                 pass
@@ -2206,10 +2206,8 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             url = "%s/p/%s/" % (base, code)
             # шаблонне повідомлення (БЕЗ Claude — економія токенів; текст стабільний)
             items_txt = ", ".join(((i.product.name if i.product_id else i.custom_name) or "Позиція")[:40] for i in deal.items.all()[:3])
-            body = ("Дякуємо за замовлення! 💚 %s готовий(і) до оплати — "
-                    "щойно надійде оплата, одразу готуємо та відправляємо. Чекаємо на Вас! 😊"
-                    % (items_txt or "Ваше замовлення"))
-            text = "%s\n\n💳 Оплатити онлайн 👉 %s\nСума: %s грн" % (body, url, amount)
+            body = (online_intro(items_txt))
+            text = online_payment(body, url, amount)
         sent = False
         _err = ""
         if deal.contact_id:
@@ -2239,15 +2237,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                 # + попередження що НП приймає товар ТІЛЬКИ на вантажне відділення (Олег 29.08:
                 # раніше це слалось, при переїзді з Бітрікса загубилось).
                 _ship_msg = (
-                    "📦 Дані для відправлення\n\n"
-                    "Щоб підготувати відправку Новою Поштою, надішліть, будь ласка:\n"
-                    "• ПІБ отримувача\n"
-                    "• Номер телефону\n"
-                    "• Місто\n"
-                    "• Номер відділення\n\n"
-                    "❗️ Зверніть увагу: наш товар (декоративні матеріали у відрах) Нова Пошта "
-                    "приймає ТІЛЬКИ на ВАНТАЖНЕ відділення. Тож вкажіть, будь ласка, номер саме "
-                    "вантажного відділення 🙏"
+                    shipping_details()
                 )
                 try:
                     send_message(conv, _ship_msg, user=request.user)
@@ -2255,8 +2245,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
                     pass
                 # ТРЕТЄ повідомлення (окремо): строк відправлення після оплати (Олег 29.08).
                 _term_msg = (
-                    "🚚 Після оплати відправляємо Ваше замовлення протягом 2–3 робочих днів. "
-                    "Одразу після відправлення надішлемо Вам ТТН для відстеження 😊"
+                    shipping_term()
                 )
                 try:
                     send_message(conv, _term_msg, user=request.user)
@@ -2453,7 +2442,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             # поллер НП вважав, що не відправляв, і слав клієнту одне й те саме по колу
             # (кейс Анна Омельченко: 105 повідомлень «прибуло у відділення» за 2 дні).
             _keep = {k: v for k, v in (deal.np_data or {}).items()
-                     if k.startswith("msg_") or k in ("upsell_sent", "cancelled")}
+                     if k.startswith("msg_") or k in ("upsell_sent", "cancelled", "pattera_travertine_masterclass_v1")}
             nd = {**_keep, **(nd or {})}
             deal.np_data = nd
         dd = request.data.get("delivery_date")
@@ -2686,9 +2675,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
             conv = Conversation.objects.filter(contact_id=deal.contact_id, status="open").order_by("-last_message_at").first()
             if conv:
                 try:
-                    txt = "Ваше замовлення відправлено Новою Поштою! 📦\nНомер ТТН: %s\nВідстежити: https://novaposhta.ua/tracking/?cargo_number=%s" % (ttn, ttn)
-                    if cod:
-                        txt += "\nДо сплати при отриманні: %s грн" % int(cod)
+                    txt = ttn_created(ttn, cod)
                     send_message(conv, txt, user=request.user)
                     sent = True
                 except Exception:
@@ -5790,24 +5777,11 @@ def _upsell_test_kit(deal):
         from .kit_tint import in_test_folder  # 17.09.2026: і підпапка «Викраски»
         if not in_test_folder(it.product) and "тест-наб" not in it.product.name.lower() and "тестовий набір" not in it.product.name.lower():
             return  # у сделці не тільки тест-набори — допродаж не шлемо
-    st = IntegrationSettings.objects.filter(provider="upsell_test_kit").first()
-    cfg = (st.config or {}) if st else {}
-    if st and not st.is_active:
-        return
-    ids = cfg.get("product_ids") or []
-    prods = list(Product.objects.filter(id__in=ids, is_active=True)) if ids else []
+    prods = tools_products()
     if not prods:
         return
-    order = {pid: i for i, pid in enumerate(ids)}
-    prods.sort(key=lambda p: order.get(p.id, 99))
-    lines = "\n".join("%d. %s — %d грн" % (i + 1, p.name, round(float(p.price)))
-                       for i, p in enumerate(prods))
-    msg = ("Дякуємо за оплату! 💚 Ваш тест-набір вже готуємо.\n\n"
-           "Підкажіть, чи є у вас інструменти для нанесення? Для Galateya та шовків потрібні "
-           "пензель-макловиця і пензель для декору — з ними малюнок виходить як у дизайнерських "
-           "інтерʼєрах, і вони знадобляться для основного обʼєму.\n\n"
-           "Можемо додати до вашої відправки, щоб все приїхало разом:\n" + lines +
-           "\n\nНапишіть номери — додамо 😊")
+    lines = tools_lines(prods)
+    msg = (tools_offer(lines))
     conv = Conversation.objects.filter(contact_id=deal.contact_id, status="open").order_by("-last_message_at").first() if deal.contact_id else None
     if conv is None:
         return

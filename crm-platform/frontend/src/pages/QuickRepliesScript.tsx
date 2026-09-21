@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../Icon";
+import { AutomationMessages } from "./AutomationMessages";
 
 /* Швидкі відповіді — «скрипт продажів» (14.09; структура переписана 17.09.2026, запит Олега «зараз заплутано»).
  * Як у CRM з готовими скриптами (HubSpot playbooks, Salesforce Quick Text, amoCRM «/»):
@@ -27,7 +28,7 @@ const FLOW: Stage[] = [
   { key: "Закриття на оплату", label: "Закриття на оплату", icon: "✅", next: "Після оплати", group: "flow", step: 4,
     goal: "Реквізити або посилання, резерв товару. Наступного дня — нагадування: після посилання за тиждень платить лише половина." },
   { key: "Після оплати", label: "Після оплати", icon: "📦", next: "Тест → основне замовлення", group: "flow", step: 5,
-    goal: "ТТН, інструкція з нанесення, прохання про відгук." },
+    goal: "Перевірте автоматичні повідомлення про оплату, майстер-клас і доставку кнопкою вгорі. Перед ручною відповіддю перегляньте чат, щоб не дублювати відправку." },
   { key: "Тест → основне замовлення", label: "Тест → основне", icon: "🔁", next: "", group: "flow", step: 6,
     goal: "Після тест-набору спитати площу і зробити розрахунок: так основне замовлення роблять у 22% випадків замість 7–11%." },
 ];
@@ -72,6 +73,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
   onClose: () => void; onBack: () => void; onInsert?: (t: string) => void; onSend: (replyId: number) => void;
 }) {
   const [q, setQ] = useState("");
+  const [automations, setAutomations] = useState(false);
   const [stage, setStage] = useState<string>(() => { try { return localStorage.getItem(LS_STAGE) ?? FLOW[0].key; } catch { return FLOW[0].key; } });
   const [selId, setSelId] = useState<number | null>(null);
   const [fav, setFav] = useState<number[]>(() => readIds(LS_FAV));
@@ -124,6 +126,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+      if (automations) return;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         if (!list.length) return;
         e.preventDefault();
@@ -142,12 +145,15 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
   const side = (items: Stage[]) => items.map((s) => <SideItem key={s.key || "_other"} s={s} on={!q && s.key === cur.key} count={count(s.key)} onPick={pick} />);
   const productStage = cur.group === "products" && !q;
 
+  if (automations) return <AutomationMessages onBack={() => setAutomations(false)} onClose={onClose} />;
+
   return <div role="dialog" aria-label="Швидкі відповіді — скрипт продажів" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,.38)", display: "flex", alignItems: "center", justifyContent: "center", padding: narrow ? 6 : 16 }}>
     <div style={{ width: "min(1180px, 100%)", height: narrow ? "96vh" : "min(760px, 92vh)", background: "#fff", borderRadius: 14, boxShadow: "0 24px 64px rgba(15,23,42,.3)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* шапка */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "1px solid #e2e8f0", flexWrap: "wrap" }}>
         <b style={{ fontSize: 15 }}><Icon n="⚡" size={15} /> Швидкі відповіді</b>
+        <button className="btn" type="button" onClick={() => setAutomations(true)} style={{ background: "#e5f2e9", fontSize: 12 }}>Оплата, доставка, майстер-класи · автоматичні повідомлення</button>
         <input value={q} onChange={(e) => { setQ(e.target.value); setSelId(null); }} autoFocus placeholder="Пошук по всіх розділах: «дорого», «галатея», «доставка»…"
           style={{ flex: "1 1 240px", minWidth: 180, height: 34, border: "1px solid #cbd5e1", borderRadius: 8, padding: "0 10px", fontSize: 13 }} />
         <button className="btn btn-light" type="button" onClick={onBack} style={{ fontSize: 12 }}><Icon n="🎨" size={13} /> Кольори й каталоги</button>
@@ -166,7 +172,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
           {(fav.length > 0 || recent.length > 0) && <><GroupLabel>Мої</GroupLabel>{side([FAV, RECENT].filter((s) => count(s.key) > 0))}</>}
           <GroupLabel>Хід розмови</GroupLabel>{side(FLOW)}
           <GroupLabel>Ситуації</GroupLabel>{side(SITUATIONS)}
-          {products.length > 0 && <><GroupLabel>Товари з цінами</GroupLabel>{side(products)}</>}
+          {products.length > 0 && <><GroupLabel>Матеріали та майстер-класи</GroupLabel>{side(products)}</>}
           {others.length > 0 && <><GroupLabel>Без розділу</GroupLabel>{side(others)}</>}
         </nav>}
         {/* список */}

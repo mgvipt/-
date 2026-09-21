@@ -25,6 +25,7 @@ HOST = "crm.wallcovdec.com.ua"
 
 # (назва, роль, url, допустимі статуси, обов'язкові ключі верхнього рівня)
 CHECKS = [
+    ("Повідомлення клієнту: живе дзеркало", "manager", "/api/inbox/media-library/?view=automations", {200}, ["cards", "updated_at", "help"]),
     ("Майстер-класи: бібліотека після оплати", "manager", "/api/inbox/media-library/?view=picker", {200}, ["replies"]),
     ("Товари: джерело ШІ потребує окремого ключа", "manager", "/api/product-source/", {403}, []),
     ("Товари: характеристики та спільна бібліотека", "manager", "/api/products/1653/facts/", {200}, ["shop_specs", "media", "price"]),

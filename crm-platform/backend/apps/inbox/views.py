@@ -100,6 +100,11 @@ def _is_color_swatch(item):
 class MediaLibraryView(APIView):
     """Settings data for reusable Open Lines media and quick replies."""
     def get(self, request):
+        if request.query_params.get("view") == "automations":
+            from apps.crm.customer_messages import reference
+            response = Response(reference())
+            response["Cache-Control"] = "no-store"
+            return response
         # SharedLink.data stores the original binary (the library is several GB).
         # The picker only needs the token to build a URL, so never read binaries here.
         items = MediaLibraryItem.objects.filter(is_active=True).select_related("file", "preview_file").defer(
