@@ -1340,6 +1340,11 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                             status=(status.HTTP_409_CONFLICT if e.blocked else status.HTTP_502_BAD_GATEWAY))
         except Exception as e:  # сеть/токен недоступны
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+        from apps.content_library.services import record_shared
+        try:
+            record_shared(msg, conv, request.user)
+        except Exception:
+            __import__("logging").getLogger(__name__).exception("Instruction analytics failed after successful send")
         if request.data.get("followup") and msg and not getattr(msg, "is_followup", False):
             msg.is_followup = True
             msg.save(update_fields=["is_followup"])
@@ -1596,6 +1601,17 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
                                      external_id=str(msg_id or ""), attachments=[{"type": kind, "name": filename}])
         return Response(MessageSerializer(msg).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["post"], url_path="prepare-instruction")
+    def prepare_instruction(self, request, pk=None):
+        from apps.content_library.services import prepare_share
+        from apps.content_library.models import Instruction
+        conv = self.get_object()
+        try:
+            share, text = prepare_share(request.data.get("instruction_slug"), conv, request.user)
+        except Instruction.DoesNotExist:
+            return Response({"detail": "Інструкцію не знайдено"}, status=404)
+        return Response({"text": text, "url": share.instruction.public_url + "?s=" + share.token})
+
     @action(detail=True, methods=["post"], url_path="send-library")
     def send_library(self, request, pk=None):
         """Send saved catalog/quick-reply assets without re-uploading or duplicating their bytes."""
@@ -1638,6 +1654,11 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
             msg = send_message(conv, "\n\n".join(lines), user=request.user)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+        from apps.content_library.services import record_shared
+        try:
+            record_shared(msg, conv, request.user)
+        except Exception:
+            __import__("logging").getLogger(__name__).exception("Instruction analytics failed after successful send")
         if attachments:
             msg.attachments = attachments
             msg.save(update_fields=["attachments"])

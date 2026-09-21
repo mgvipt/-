@@ -28,6 +28,7 @@ const NAV: [string, string, string, string, string | null][] = [
   // 16.09 (Олег): окремого пункту «Моя ЗП» немає — зарплата і статистика живуть у «Розвитку» (складу видано право development.view)
   ["/development", "Развитие", "Розвиток", "trophy", "development.view"],
   ["/finance", "Финансы", "Фінанси", "wallet", "finance.view"],
+  ["/content-audience", "База контент-лидов", "База контент-лідів", "chart", "marketing.view"],
   ["/analytics", "Аналитика", "Аналітика", "chart", "analytics.view"],
   ["/ai-costs", "AI ЦЕНТР", "AI ЦЕНТР", "brain", "settings.agent"],
   ["/employees", "Сотрудники и права", "Співробітники і права", "🛡️", "roles.manage"],

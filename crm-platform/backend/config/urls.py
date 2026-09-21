@@ -68,6 +68,7 @@ router.register("workdays", fin_views.WorkDayViewSet)
 router.register("calls", tel_views.CallViewSet)
 
 urlpatterns = [
+    path("", include("apps.content_library.urls")),
     path("api/deal-economics/", include("apps.dealecon.urls")),  # економіка угоди (14.09.2026)
     path("api/product-source/", ProductReadCatalog.as_view()),
     path("api/products/<int:pk>/facts/", ProductFacts.as_view()),

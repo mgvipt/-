@@ -9,6 +9,9 @@
     handle /api/* {
         reverse_proxy web:8000
     }
+    handle /instructions/* {
+        reverse_proxy web:8000
+    }
     handle /admin/* {
         reverse_proxy web:8000
     }

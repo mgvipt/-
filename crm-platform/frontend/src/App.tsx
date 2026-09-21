@@ -20,6 +20,7 @@ import Clients from "./pages/Clients";
 import ClientCard from "./pages/ClientCard";
 import Settings from "./pages/Settings";
 import Analytics from "./pages/Analytics";
+import ContentAudience from "./pages/ContentAudience";
 import MetaMarketing from "./pages/MetaMarketing";
 import AiCosts from "./pages/AiCosts";
 import AiCenter from "./pages/AiCenter";
@@ -79,6 +80,7 @@ function Shell() {
           <Route path="/my-pay" element={<MyPay />} />
           <Route path="/finance" element={<Finance />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/content-audience" element={<Guard perm="marketing.view"><ContentAudience /></Guard>} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/tiktok" element={<Navigate to="/analytics" replace />} />
           <Route path="/marketing/meta" element={<MetaMarketing />} />

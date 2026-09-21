@@ -55,6 +55,24 @@ class ShopLeadWebhookView(APIView):
             return _error("bad_json", "Некоректний JSON", 400)
         if not isinstance(body, dict):
             return _error("bad_json", "Очікується JSON-обʼєкт", 400)
+        if body.get("form") == "content_event":
+            from apps.content_library.services import receive_event
+            from apps.content_library.models import Instruction
+            try:
+                event, duplicate = receive_event(body)
+            except (ValueError, TypeError, Instruction.DoesNotExist):
+                return _error("validation", "Некоректна подія", 400)
+            return Response({"ok": True, "duplicate": duplicate})
+        if body.get("form") == "lead_magnet":
+            from apps.content_library.services import receive_guide, IdentityConflict
+            try:
+                receipt, duplicate = receive_guide(body)
+            except IdentityConflict as exc:
+                return _error("conflict", str(exc), 409)
+            except (ValueError, TypeError, AttributeError) as exc:
+                return _error("validation", str(exc), 400)
+            return Response({"ok": True, "duplicate": duplicate, "contact_id": receipt.profile.contact_id,
+                             "guide_token": receipt.token}, status=200 if duplicate else 201)
         submission = str(body.get("submission_id") or "").strip()
         if not re.fullmatch(r"[a-zA-Z0-9_-]{8,64}", submission):
             return _error("validation", "submission_id: 8–64 символи a-z, A-Z, 0-9, _ або -", 400, "submission_id")
@@ -81,5 +99,13 @@ class ShopLeadWebhookView(APIView):
             return _error("conflict", str(exc), 409, "submission_id")
         except ValueError as exc:
             return _error("validation", str(exc), 400)
+        if body.get("article") == "microcement-shower" and not result["duplicate"]:
+            from apps.content_library.models import AudienceProfile, Instruction, InstructionEvent
+            from apps.crm.models import Deal
+            profile = AudienceProfile.objects.filter(contact_id=Deal.objects.get(pk=result["deal_id"]).contact_id).first()
+            instruction = Instruction.objects.filter(slug="microcement", status="published").first()
+            if profile and instruction:
+                InstructionEvent.objects.create(instruction=instruction, version=instruction.version, profile=profile,
+                    name="calculation_request", context={"deal_id": result["deal_id"]})
         return Response({"ok": True, "api_version": 1, "deal_id": result["deal_id"],
                          "duplicate": result["duplicate"]}, status=200 if result["duplicate"] else 201)

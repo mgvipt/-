@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     # local
     "apps.accounts",
     "apps.crm",
+    "apps.content_library",
     "apps.inbox",
     "apps.warehouse",
     "apps.finance",
