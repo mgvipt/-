@@ -7,3 +7,4 @@ class CrmConfig(AppConfig):
 
     def ready(self):
         from . import signals  # noqa: F401
+        from . import pattera_masterclass  # noqa: F401
