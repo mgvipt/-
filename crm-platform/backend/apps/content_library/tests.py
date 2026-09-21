@@ -1,4 +1,6 @@
 import hashlib, hmac, json, secrets, time, uuid
+from io import StringIO
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from apps.accounts.models import User
 from apps.crm.models import Contact, Deal
@@ -40,6 +42,14 @@ class ContentLibraryTests(TestCase):
         self.assertNotContains(r,'Завантажити PDF');self.assertContains(r,'AI-візуалізація')
         self.assertEqual(self.client.get('/instructions/missing/').status_code,404)
         self.assertEqual(self.client.get('/api/content-library/public/microcement/').status_code,200)
+    def test_reviewed_instruction_update_increments_version(self):
+        dry=StringIO();call_command('publish_microcement',stdout=dry)
+        self.assertIn('DRY_RUN: update instruction',dry.getvalue())
+        out=StringIO();call_command('publish_microcement','--apply',stdout=out)
+        self.i.refresh_from_db();self.assertEqual(self.i.version,2)
+        titles=[step['title'] for step in self.i.content['steps']]
+        self.assertEqual(titles[:3],['Primer Deep 1','Quartz Primer 2','Microcement FINE + сітка 2×2 мм'])
+        self.assertNotIn('склохолст',' '.join(titles).lower())
     def test_signed_webhook(self):
         body=json.dumps({**self.body,'form':'lead_magnet'}).encode();ts=str(int(time.time()))
         self.assertEqual(self.client.post('/api/integrations/shop/leads/',body,content_type='application/json').status_code,403)

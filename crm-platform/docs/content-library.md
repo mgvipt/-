@@ -2,7 +2,9 @@
 
 Scope approved 21 September 2026: article, CRM library insertion, web capture and audience analytics. PDF is explicitly excluded. Telegram bot flows remain outside this release.
 
-CRM owns Instruction.content and product relations. publish_microcement first runs dry, then creates one reviewed record with --apply; it refuses to overwrite different content. Article uses the existing shop editorial collection and retrieves step titles from the published CRM record. Public full guide is stable /instructions/microcement on the shop, redirecting to the CRM backend; no login or expiry is required. Tracking tokens do not grant account access and do not gate the guide.
+CRM owns Instruction.content and product relations. publish_microcement first runs dry, then creates or versions one reviewed record with --apply. A changed reviewed source increments Instruction.version inside a transaction. Article uses the existing shop editorial collection and retrieves step titles from the published CRM record. Public full guide is stable /instructions/microcement on the shop, redirecting to the CRM backend; no login or expiry is required. Tracking tokens do not grant account access and do not gate the guide.
+
+The Microcement layer order is sourced only from the Notion page «Мікроцемент технічна карта»: ready rough plaster → Primer Deep 1 → Quartz Primer 2 → first FINE with 2×2 mm plaster mesh → second FINE → two BASE layers → final sanding → Protection D Fasad M → 2–3 DL coats. Fiberglass preparation, separate levelling, intermediate sanding and a repeated Primer Deep step are excluded. The content-audience page scrolls vertically inside the fixed CRM shell; each wide table scrolls horizontally when required.
 
 Library uses the existing chat composer: prepare-instruction creates an opaque share token, then onInsertText inserts the message. Only successful ordinary send marks instruction_shared. No second outbound sender or automated client messaging is introduced.
 
