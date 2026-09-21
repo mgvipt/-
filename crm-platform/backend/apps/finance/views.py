@@ -1509,40 +1509,58 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                 from .services import novapay_account as _npacc
                 from datetime import timedelta as _tdnp
 
-                def _np_pick_set(target, cands, max_fee=0.03, tol=1.5, max_n=6):
+                def _np_pick_set(target, cands, fee=0.013, tol=2.0, max_n=6):
                     """Підбір набору наложок під суму виплати НоваПей.
-                    Комісія НоваПей НЕ фіксована (1,3%–~1,9% залежно від суми) — тому матчимо
-                    по ДІАПАЗОНУ: виплата = Σномінал − комісія, де 0 ≤ комісія ≤ max_fee×Σномінал
-                    (+допуск на округлення). Реальна комісія береться ФАКТОМ (Σномінал − виплата),
-                    а не вгадується фіксованим %. Менший набір і менша комісія — пріоритетніші.
-                    target — нетто з банку; cands — [(id, Decimal номінал)]. Повертає list ids або None."""
+
+                    21.09.2026 (Олег, розбір #66531/#66546/#66731): комісія НоваПей — РІВНО 1,3%.
+                    Перевірено на трьох виплатах вересня: номінал = виплата ÷ 0,987
+                    (07.09 → 1 031, 14.09 → 10 334, 21.09 → 1 028). Раніше тут була «вилка»
+                    0–3% і бравcя НАЙМЕНШИЙ набір — через це виплата 21.09 лягла на #66648
+                    (уже оплачений реквізитами) замість #66731 + #66743.
+
+                    Крок 1 — точний збіг: Σномінал × 0,987 = виплата ±2 грн (НП округлює до гривні).
+                    Крок 2 (лише якщо точного немає) — клієнт міг внести менше: беремо набір із
+                    розбіжністю до 2% від номіналу, але ТІЛЬКИ якщо він явно кращий за наступний
+                    (інакше не вгадуємо). Другий крок позначається у журналі як «⚠ звірити».
+                    Повертає (list ids, gap) або (None, 0)."""
                     import itertools
                     t = float(target)
                     items = [(cid, float(a)) for cid, a in cands]
-                    n = len(items)
-                    if n == 0:
-                        return None
-                    best = None  # ((r, abs(comm)), ids)
-                    for r in range(1, min(max_n, n) + 1):
+                    if not items:
+                        return None, 0.0
+                    scored = []
+                    for r in range(1, min(max_n, len(items)) + 1):
                         for combo in itertools.combinations(items, r):
                             S = round(sum(x[1] for x in combo), 2)
-                            comm = round(S - t, 2)               # утримана комісія НоваПей (факт)
-                            if comm < -tol * r:                  # виплата більша за номінал — це не наложка
+                            if S <= 0:
                                 continue
-                            if comm <= S * max_fee + tol * r:    # комісія в межах 0..max_fee — правдоподібно
-                                key = (r, abs(comm))
-                                if best is None or key < best[0]:
-                                    best = (key, [x[0] for x in combo])
-                        if best is not None:
-                            break  # менший набір завжди кращий
-                    return best[1] if best else None
+                            gap = round(S * (1 - fee) - t, 2)     # + = внесли менше, ніж очікували
+                            scored.append((abs(gap), r, gap, S, [x[0] for x in combo]))
+                    scored.sort()
+                    exact = [x for x in scored if x[0] <= tol]
+                    if exact:
+                        return exact[0][4], 0.0
+                    near = [x for x in scored if 0 < x[2] <= x[3] * 0.02]
+                    if near and (len(near) == 1 or near[0][0] + 1.0 < near[1][0]):
+                        return near[0][4], near[0][2]
+                    return None, 0.0
 
                 _win = dte - _tdnp(days=45)
                 waiting = list(_PayNP.objects.filter(
                     provider="np_cod", is_paid=False,
                     created_at__date__gte=_win, created_at__date__lte=dte,
                 ).select_related("deal", "deal__contact").order_by("created_at"))
-                _ids = _np_pick_set(amt, [(w.id, w.amount) for w in waiting])
+                # наложка на сделці, яку вже оплатили інакше (реквізити/LiqPay) — не кандидат:
+                # саме через це 21.09 виплата лягла на #66648, оплачений реквізитами ще 09.09
+                def _still_owed(w):
+                    d = w.deal
+                    if d is None:
+                        return False
+                    other = sum((float(p.amount) for p in d.payments.all()
+                                 if p.is_paid and p.provider != "np_cod"), 0.0)
+                    return other <= 0 or float(d.amount or 0) - other > 0.5
+                waiting = [w for w in waiting if _still_owed(w)]
+                _ids, _gap = _np_pick_set(amt, [(w.id, w.amount) for w in waiting])
                 matched = [w for w in waiting if _ids and w.id in _ids]
                 _npfee = Category.objects.filter(name__icontains="новапей", direction="out").first() or _fee_category()
                 from django.db import transaction as _atx
@@ -1564,7 +1582,9 @@ def privat_pull(days=4, d_from=None, d_to=None, batch=None, acc=None):
                                 deal=_dnp, contact=(_dnp.contact if (_dnp and _dnp.contact_id) else None),
                                 channel=((_dnp.source or "")[:24] if _dnp else ""),
                                 counterparty=(_cli or cp or "НоваПей")[:160],
-                                comment=(reftag + " · наложка по сделці #%s (ТТН %s)" % (w.deal_id or "?", (w.external_id or "")[:18]))[:255])
+                                comment=(reftag + " · наложка по сделці #%s (ТТН %s)%s" % (
+                                    w.deal_id or "?", (w.external_id or "").split("#")[0][:18],
+                                    (" ⚠ звірити: внесено на %.2f грн менше" % _gap) if _gap else ""))[:255])
                             created += 1
                             # комісія НоваПей пропорційно, з рахунку НоваПей — маржа сделки чесна
                             if _comm_total > 0.009 and sum_nom > 0:

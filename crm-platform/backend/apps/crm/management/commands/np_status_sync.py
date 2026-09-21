@@ -187,7 +187,14 @@ class Command(BaseCommand):
 
 def _record_cod_payment(deal, cod_hint=None):
     """Клієнт отримав посилку з наложкою → Payment(np_cod) + дохід у фінанси.
-    Ідемпотентно: один np_cod-платіж на угоду (external_id=ТТН)."""
+
+    21.09.2026 (Олег, розбір #66531+#66546): посилка з ДОЗАМОВЛЕННЯМ — це одна ТТН
+    на кілька сделок. Раніше номером платежу була сама ТТН, а вона може бути лише в
+    ОДНОГО платежу — тому по другій сделці платіж мовчки не створювався, і виплата
+    НоваПей (1 017,60 ₴ від 07.09) не розкладалась ні на одну з них.
+    Тепер номер = «ТТН#номер сделки», а сума — БОРГ саме цієї сделки (а не округлене
+    до гривні число НП). Сума боргів усіх сделок посилки = наложка НП.
+    Ідемпотентно: один np_cod-платіж на сделку."""
     from decimal import Decimal
     from apps.crm.models import Payment
     try:
@@ -211,10 +218,18 @@ def _record_cod_payment(deal, cod_hint=None):
             return
         if Payment.objects.filter(deal=deal, provider="np_cod").exists():
             return
+        # сума наложки = БОРГ сделки (сплачене іншим способом не дублюємо):
+        # у посилці з дозамовленням кожна сделка отримує свою частину.
+        paid_other = sum((p.amount for p in deal.payments.filter(is_paid=True)), Decimal("0"))
+        debt = (deal.amount or Decimal("0")) - paid_other
+        if debt > 0:
+            cod = debt
+        elif paid_other > 0:
+            return          # сделка вже оплачена (реквізити/LiqPay) — наложки немає
         # клієнт ОПЛАТИВ на відділенні (фіскальний чек бʼється зараз), але ГРОШІ ще у НоваПей:
         # у сделці «оплачено» стане True лише коли виплата надійде на рахунок банку
-        pay = Payment.objects.create(deal=deal, provider="np_cod", amount=cod,
-                                     is_paid=False, external_id=deal.ttn or "")
+        pay = Payment.objects.create(deal=deal, provider="np_cod", amount=cod, is_paid=False,
+                                     external_id=("%s#%s" % (deal.ttn, deal.id)) if deal.ttn else "")
         # ГРОШІ В ЖУРНАЛ НЕ ПИШЕМО: дохід зʼявиться автоматично, коли виплата від
         # НоваПей реально надійде на рахунок ПриватБанку (банківська синхронізація).
         # Payment вище — лише для сделки: «оплачено», стадії, фінальний чек.
@@ -227,5 +242,12 @@ def _record_cod_payment(deal, cod_hint=None):
             _issue_checkbox_for_deal(deal, user=None)
         except Exception:
             pass
-    except Exception:
-        pass
+    except Exception as e:
+        # 21.09.2026: раніше помилка тут губилась мовчки і наложка зникала. Тепер видно в картці.
+        try:
+            from apps.crm.models import log_activity
+            log_activity("deal", deal.id, "Наложка не записана",
+                         "Не вдалося створити платіж по наложці: %s — перевірте вручну" % str(e)[:160],
+                         None, "Нова Пошта")
+        except Exception:
+            pass
