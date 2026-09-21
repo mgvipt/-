@@ -126,7 +126,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
-      if (automations) return;
+      if (automations || (e.target as HTMLElement)?.closest("button")) return;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         if (!list.length) return;
         e.preventDefault();
