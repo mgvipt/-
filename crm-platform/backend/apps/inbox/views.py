@@ -2326,6 +2326,11 @@ class ChatPlaceWebhookView(APIView):
         msg = Message.objects.create(conversation=conv, direction="in",
                                      text=(text or ("📷 Фото від клієнта" if photo_url else ""))[:5000],
                                      attachments=atts, external_id="")
+        try:
+            from apps.content_library.keyword_automation import process_keyword_message
+            process_keyword_message(msg)
+        except Exception:
+            pass
         conv.last_message_at = msg.created_at
         conv.unread = (conv.unread or 0) + 1
         conv.save(update_fields=["last_message_at", "unread"])

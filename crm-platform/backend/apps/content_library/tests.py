@@ -1,12 +1,15 @@
 import hashlib, hmac, json, secrets, time, uuid
 from io import StringIO
+from unittest.mock import patch
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from apps.accounts.models import User
 from apps.crm.models import Contact, Deal
 from apps.inbox.models import Channel, Conversation, Message
-from .models import Instruction, InstructionEvent, ConsentEvent, GuideRequest
+from .models import (Instruction, InstructionEvent, ConsentEvent, GuideRequest,
+                     LeadForm, KeywordAutomation, KeywordAutomationRun, AudienceProfile)
 from .services import receive_guide, receive_event, IdentityConflict, prepare_share, record_shared
+from .keyword_automation import process_keyword_message
 
 @override_settings(CACHES={'default':{'BACKEND':'django.core.cache.backends.locmem.LocMemCache'}},SHOP_WEBHOOK_SECRET='test-secret')
 class ContentLibraryTests(TestCase):
@@ -45,6 +48,12 @@ class ContentLibraryTests(TestCase):
         self.assertNotContains(r,'Завантажити PDF');self.assertContains(r,'AI-візуалізація')
         self.assertEqual(self.client.get('/instructions/missing/').status_code,404)
         self.assertEqual(self.client.get('/api/content-library/public/microcement/').status_code,200)
+    def test_editable_form_and_public_configuration(self):
+        form=LeadForm.objects.create(slug='microcement',name='Форма',title='Заголовок',intro='Вступ',instruction=self.i,fields=['name','phone'],channels=['viber'],consent_text='Згода',submit_text='Відкрити')
+        r=self.client.get('/api/content-library/forms/microcement/');self.assertEqual(r.status_code,200,r.content);self.assertEqual(r.json()['channels'],['viber'])
+        user=User.objects.create_user(username='automation-owner',is_superuser=True);self.client.force_login(user)
+        r=self.client.post('/api/content-library/automations/',data=json.dumps({'action':'save_form','id':form.id,'slug':'microcement','name':'Нова назва','title':'Новий заголовок','intro':'Текст','instruction_id':self.i.id,'fields':['name','phone','email'],'channels':['viber','whatsapp','telegram','email'],'consent_text':'Окрема згода','submit_text':'Отримати','enabled':True}),content_type='application/json')
+        self.assertEqual(r.status_code,200,r.content);form.refresh_from_db();self.assertEqual(form.name,'Нова назва');self.assertNotIn('sms',form.channels)
     def test_reviewed_instruction_update_increments_version(self):
         dry=StringIO();call_command('publish_microcement',stdout=dry)
         self.assertIn('DRY_RUN: update instruction',dry.getvalue())
@@ -78,3 +87,25 @@ class ContentLibraryTests(TestCase):
         msg=Message.objects.create(conversation=conv,direction='out',text=text,status='sent')
         record_shared(msg,conv,user);record_shared(msg,conv,user)
         self.assertEqual(InstructionEvent.objects.filter(name='instruction_shared').count(),1)
+    def test_keyword_from_direct_and_comment_is_captured_without_crm_reply(self):
+        form=LeadForm.objects.create(slug='microcement',name='Форма',title='Заголовок',instruction=self.i,fields=['name','phone'],channels=['viber'])
+        rule=KeywordAutomation.objects.create(title='МІКРО',keywords=['МІКРО'],match_mode='exact',platforms=['instagram'],form=form,reply_text='Текст {form_url}',public_replies=['Відправили в Direct'],enabled=True)
+        contact=Contact.objects.create(first_name='Client',nickname='@client')
+        channel=Channel.objects.create(name='Meta · Instagram',kind='instagram')
+        direct=Conversation.objects.create(channel=channel,external_chat_id='ig-1',contact=contact)
+        msg=Message.objects.create(conversation=direct,direction='in',text='мікро')
+        run=process_keyword_message(msg);self.assertEqual(run.status,'captured');self.assertEqual(direct.messages.filter(direction='out').count(),0)
+        comment=Conversation.objects.create(channel=channel,external_chat_id='comment:instagram:post:client',contact=contact,config={'source_card':{'media_id':'post'}})
+        cmsg=Message.objects.create(conversation=comment,direction='in',text='МІКРО')
+        duplicate=process_keyword_message(cmsg);self.assertEqual(duplicate.status,'duplicate')
+        self.assertEqual(AudienceProfile.objects.count(),1);self.assertEqual(InstructionEvent.objects.filter(name='keyword_triggered').count(),1)
+    @patch('apps.content_library.chatplace_automation._mcp')
+    def test_chatplace_sync_combines_comment_and_direct(self,mcp):
+        from .chatplace_automation import sync_to_chatplace
+        form=LeadForm.objects.create(slug='microcement',name='Форма',title='Заголовок',instruction=self.i,fields=['name','phone'],channels=['viber'])
+        rule=KeywordAutomation.objects.create(title='МІКРО',keywords=['МІКРО'],match_mode='exact',platforms=['instagram'],form=form,reply_text='Техкарта: {form_url}',public_replies=['Надіслали в Direct'],enabled=True)
+        mcp.side_effect=['created',[{'id':'11111111-1111-4111-8111-111111111111','startMessages':['МІКРО']}],{'ok':True}]
+        sync_to_chatplace(rule)
+        args=mcp.call_args_list[0].args;self.assertEqual(args[0],'automations_quick_setup')
+        self.assertEqual(args[1]['triggerType'],['messageEquals','commentEquals']);self.assertEqual(args[1]['autoAnswers'],['Надіслали в Direct']);self.assertIn('/get/microcement?',args[1]['buttonLink'])
+        rule.refresh_from_db();self.assertEqual(rule.chatplace_status,'active')

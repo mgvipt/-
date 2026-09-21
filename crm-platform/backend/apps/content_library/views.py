@@ -1,4 +1,5 @@
 import json
+import re
 import uuid
 from datetime import timedelta
 from urllib.parse import urlencode
@@ -12,7 +13,9 @@ from django.views.decorators.http import require_POST
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .models import Instruction, AudienceProfile, GuideRequest, InstructionShare, InstructionEvent, ConsentEvent
+from .models import (Instruction, AudienceProfile, GuideRequest, InstructionShare,
+                     InstructionEvent, ConsentEvent, LeadForm, KeywordAutomation,
+                     KeywordAutomationRun)
 
 
 def permitted(user, code):
@@ -156,3 +159,158 @@ def public_instruction(request,slug):
     data=serialize(i)
     data['steps']=[{'title':s['title']} for s in i.content.get('steps',[])]
     return JsonResponse(data)
+
+
+def serialize_form(form):
+    return {
+        'id': form.id, 'slug': form.slug, 'name': form.name, 'title': form.title,
+        'intro': form.intro, 'instruction_id': form.instruction_id,
+        'instruction_slug': form.instruction.slug, 'fields': form.fields,
+        'channels': form.channels, 'consent_text': form.consent_text,
+        'submit_text': form.submit_text, 'enabled': form.enabled,
+        'updated_at': form.updated_at,
+    }
+
+
+def serialize_keyword_automation(rule):
+    return {
+        'id': rule.id, 'title': rule.title, 'keywords': rule.keywords,
+        'match_mode': rule.match_mode, 'platforms': rule.platforms,
+        'form_id': rule.form_id, 'reply_text': rule.reply_text,
+        'public_replies': rule.public_replies, 'direct_enabled': rule.direct_enabled,
+        'comment_enabled': rule.comment_enabled, 'enabled': rule.enabled,
+        'chatplace_bot_id': rule.chatplace_bot_id,
+        'chatplace_automation_id': rule.chatplace_automation_id,
+        'chatplace_status': rule.chatplace_status,
+        'chatplace_error': rule.chatplace_error,
+        'synced_at': rule.synced_at, 'last_triggered_at': rule.last_triggered_at,
+    }
+
+
+def public_form(request, slug):
+    form = get_object_or_404(LeadForm.objects.select_related('instruction'), slug=slug,
+                             enabled=True, instruction__status='published')
+    response = JsonResponse(serialize_form(form))
+    response['Cache-Control'] = 'public, max-age=60'
+    return response
+
+
+class ContentAutomationView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _allowed(self, request):
+        return permitted(request.user, 'settings.automations') or permitted(request.user, 'roles.manage')
+
+    def get(self, request):
+        if not self._allowed(request):
+            return Response(status=403)
+        forms = LeadForm.objects.select_related('instruction').all()
+        rules = KeywordAutomation.objects.select_related('form__instruction').all()
+        return Response({
+            'forms': [serialize_form(x) for x in forms],
+            'automations': [serialize_keyword_automation(x) for x in rules],
+            'instructions': list(Instruction.objects.filter(status='published').values('id', 'slug', 'title')),
+            'recent': {
+                'captured_30d': KeywordAutomationRun.objects.filter(
+                    status='captured', created_at__gte=timezone.now()-timedelta(days=30)).count(),
+                'failed_30d': KeywordAutomationRun.objects.filter(
+                    status='failed', created_at__gte=timezone.now()-timedelta(days=30)).count(),
+            },
+        })
+
+    def post(self, request):
+        if not self._allowed(request):
+            return Response(status=403)
+        action = str(request.data.get('action') or '')
+        try:
+            if action == 'save_form':
+                return self._save_form(request)
+            if action == 'save_automation':
+                return self._save_automation(request)
+            if action == 'sync_automation':
+                rule = get_object_or_404(KeywordAutomation.objects.select_related('form__instruction'),
+                                         pk=request.data.get('id'))
+                if not rule.enabled:
+                    return Response({'detail': 'Спочатку увімкніть правило'}, status=400)
+                from .chatplace_automation import sync_to_chatplace
+                result = sync_to_chatplace(rule)
+                rule.refresh_from_db()
+                return Response({'automation': serialize_keyword_automation(rule), 'result': result})
+            if action == 'pause_automation':
+                rule = get_object_or_404(KeywordAutomation, pk=request.data.get('id'))
+                from .chatplace_automation import pause_in_chatplace
+                pause_in_chatplace(rule)
+                rule.enabled = False
+                rule.updated_by = request.user
+                rule.save(update_fields=['enabled', 'updated_by', 'updated_at'])
+                return Response({'automation': serialize_keyword_automation(rule)})
+        except (ValueError, TypeError) as exc:
+            return Response({'detail': str(exc)}, status=400)
+        except Exception as exc:
+            rule = locals().get('rule')
+            if rule:
+                rule.chatplace_error = str(exc)[:500]
+                rule.save(update_fields=['chatplace_error', 'updated_at'])
+            return Response({'detail': str(exc)}, status=502)
+        return Response({'detail': 'Невідома дія'}, status=400)
+
+    def _save_form(self, request):
+        data = request.data
+        instruction = get_object_or_404(Instruction, pk=data.get('instruction_id'), status='published')
+        slug = str(data.get('slug') or '').strip().lower()
+        if not slug or not re.match(r'^[a-z0-9-]+$', slug):
+            raise ValueError('Slug: лише латинські літери, цифри та дефіс')
+        fields = [x for x in data.get('fields', []) if x in ('name', 'phone', 'email')]
+        channels = [x for x in data.get('channels', []) if x in ('viber', 'whatsapp', 'telegram', 'email')]
+        if 'name' not in fields or not ({'phone', 'email'} & set(fields)):
+            raise ValueError('Форма має містити ім’я і хоча б телефон або email')
+        if not channels:
+            raise ValueError('Оберіть хоча б один канал')
+        if 'email' in channels and 'email' not in fields:
+            raise ValueError('Для каналу Email увімкніть поле Email')
+        if ({'viber', 'whatsapp', 'telegram'} & set(channels)) and 'phone' not in fields:
+            raise ValueError('Для месенджерів увімкніть поле Телефон')
+        form = LeadForm.objects.filter(pk=data.get('id')).first() if data.get('id') else LeadForm()
+        form.slug = slug
+        form.name = str(data.get('name') or '').strip()[:160]
+        form.title = str(data.get('title') or '').strip()[:240]
+        form.intro = str(data.get('intro') or '').strip()
+        form.instruction = instruction
+        form.fields = fields
+        form.channels = channels
+        form.consent_text = str(data.get('consent_text') or '').strip()[:300]
+        form.submit_text = str(data.get('submit_text') or '').strip()[:120]
+        form.enabled = bool(data.get('enabled', True))
+        form.updated_by = request.user
+        if not form.name or not form.title or not form.submit_text:
+            raise ValueError('Заповніть назву, заголовок і текст кнопки')
+        form.save()
+        return Response({'form': serialize_form(form)})
+
+    def _save_automation(self, request):
+        data = request.data
+        form = get_object_or_404(LeadForm, pk=data.get('form_id'))
+        rule = KeywordAutomation.objects.filter(pk=data.get('id')).first() if data.get('id') else KeywordAutomation()
+        keywords = [str(x).strip()[:120] for x in data.get('keywords', []) if str(x).strip()]
+        public_replies = [str(x).strip()[:300] for x in data.get('public_replies', []) if str(x).strip()]
+        if not keywords:
+            raise ValueError('Додайте кодове слово')
+        rule.title = str(data.get('title') or '').strip()[:180]
+        rule.keywords = keywords
+        rule.match_mode = data.get('match_mode') if data.get('match_mode') in ('exact', 'contains') else 'exact'
+        rule.platforms = ['instagram']
+        rule.form = form
+        rule.reply_text = str(data.get('reply_text') or '').strip()
+        rule.public_replies = public_replies
+        rule.direct_enabled = bool(data.get('direct_enabled', True))
+        rule.comment_enabled = bool(data.get('comment_enabled', True))
+        rule.enabled = bool(data.get('enabled', False))
+        rule.updated_by = request.user
+        if not rule.title or not rule.reply_text:
+            raise ValueError('Заповніть назву і повідомлення в Direct')
+        if not rule.direct_enabled and not rule.comment_enabled:
+            raise ValueError('Увімкніть Direct або коментарі')
+        if rule.comment_enabled and not public_replies:
+            raise ValueError('Додайте публічну відповідь під коментарем')
+        rule.save()
+        return Response({'automation': serialize_keyword_automation(rule)})

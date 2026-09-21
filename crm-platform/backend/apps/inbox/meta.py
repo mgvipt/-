@@ -950,10 +950,17 @@ def handle_webhook(payload: dict):
             # echo = надіслане з нашого акаунту. Якщо менеджер відповів через CRM — те саме mid
             # вже записане з sender=менеджер і дедуплікується вище. Значить echo, що дійшло сюди,
             # надіслала ШІ Юля через ChatPlace → позначаємо «ai_assistant» (щоб менеджер бачив ХТО відповів).
-            Message.objects.create(conversation=conv, direction=("out" if is_echo else "in"),
-                                   text=(msg.get("text") or ("📷 Фото" if atts else ""))[:5000],
-                                   attachments=atts, external_id=mid,
-                                   sender_name=("ai_assistant" if is_echo else ""))
+            created_message = Message.objects.create(
+                conversation=conv, direction=("out" if is_echo else "in"),
+                text=(msg.get("text") or ("📷 Фото" if atts else ""))[:5000],
+                attachments=atts, external_id=mid,
+                sender_name=("ai_assistant" if is_echo else ""))
+            if not is_echo:
+                try:
+                    from apps.content_library.keyword_automation import process_keyword_message
+                    process_keyword_message(created_message)
+                except Exception:
+                    pass
             # Клієнт написав телефон/пошту в чаті → у картку клієнта (Олег 31.08:
             # для Meta-каналів цього не було, тому контакти перестали додаватись).
             if (not is_echo) and conv.contact_id:
@@ -1083,8 +1090,15 @@ def handle_webhook(payload: dict):
                 conv.save(update_fields=["config"])
             if Message.objects.filter(conversation=conv, external_id=str(cid)[:128]).exists():
                 continue
-            Message.objects.create(conversation=conv, direction=direction, text=text[:5000],
-                                   external_id=str(cid)[:128], sender_name=sname)
+            created_message = Message.objects.create(
+                conversation=conv, direction=direction, text=text[:5000],
+                external_id=str(cid)[:128], sender_name=sname)
+            if not ours:
+                try:
+                    from apps.content_library.keyword_automation import process_keyword_message
+                    process_keyword_message(created_message)
+                except Exception:
+                    pass
             conv.unread = (conv.unread or 0) + (0 if ours else 1)  # наша відповідь не додає «непрочитане»
             from django.utils import timezone
             conv.last_message_at = timezone.now()

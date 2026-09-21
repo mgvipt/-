@@ -86,3 +86,74 @@ class InstructionEvent(models.Model):
     name = models.CharField(max_length=40, db_index=True)
     context = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+
+class LeadForm(models.Model):
+    """Редагована форма видачі інструкції. CRM є джерелом конфігурації для сайту."""
+    slug = models.SlugField(unique=True)
+    name = models.CharField(max_length=160)
+    title = models.CharField(max_length=240)
+    intro = models.TextField(blank=True)
+    instruction = models.ForeignKey(Instruction, on_delete=models.PROTECT, related_name='lead_forms')
+    fields = models.JSONField(default=list, blank=True)
+    channels = models.JSONField(default=list, blank=True)
+    consent_text = models.CharField(max_length=300, blank=True)
+    submit_text = models.CharField(max_length=120, default='Відкрити повну інструкцію')
+    enabled = models.BooleanField(default=True)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                   on_delete=models.SET_NULL, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name', 'id']
+
+    def __str__(self):
+        return self.name
+
+
+class KeywordAutomation(models.Model):
+    MATCH = [('exact', 'Точний збіг'), ('contains', 'Містить фразу')]
+    title = models.CharField(max_length=180)
+    keywords = models.JSONField(default=list)
+    match_mode = models.CharField(max_length=16, choices=MATCH, default='exact')
+    platforms = models.JSONField(default=list)
+    form = models.ForeignKey(LeadForm, on_delete=models.PROTECT, related_name='automations')
+    reply_text = models.TextField()
+    public_replies = models.JSONField(default=list, blank=True)
+    direct_enabled = models.BooleanField(default=True)
+    comment_enabled = models.BooleanField(default=True)
+    chatplace_bot_id = models.CharField(max_length=64, blank=True)
+    chatplace_automation_id = models.CharField(max_length=64, blank=True)
+    chatplace_status = models.CharField(max_length=24, blank=True)
+    chatplace_error = models.CharField(max_length=500, blank=True)
+    synced_at = models.DateTimeField(null=True, blank=True)
+    enabled = models.BooleanField(default=False)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                   on_delete=models.SET_NULL, related_name='+')
+    last_triggered_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['title', 'id']
+
+    def __str__(self):
+        return self.title
+
+
+class KeywordAutomationRun(models.Model):
+    STATUS = [('processing', 'Обробка'), ('captured', 'Зафіксовано'), ('sent', 'Надіслано'),
+              ('duplicate', 'Повтор'), ('failed', 'Помилка')]
+    message = models.OneToOneField('inbox.Message', on_delete=models.CASCADE,
+                                   related_name='keyword_automation_run')
+    automation = models.ForeignKey(KeywordAutomation, on_delete=models.PROTECT, related_name='runs')
+    profile = models.ForeignKey(AudienceProfile, null=True, blank=True,
+                                on_delete=models.SET_NULL, related_name='keyword_runs')
+    reply_message = models.ForeignKey('inbox.Message', null=True, blank=True,
+                                      on_delete=models.SET_NULL, related_name='+')
+    keyword = models.CharField(max_length=120)
+    status = models.CharField(max_length=16, choices=STATUS, default='processing')
+    error = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
