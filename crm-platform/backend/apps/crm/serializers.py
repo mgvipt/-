@@ -116,9 +116,33 @@ class ContactDetailSerializer(ContactSerializer):
     deals = serializers.SerializerMethodField()
     total_spent = serializers.SerializerMethodField()
     zamer_projects = serializers.SerializerMethodField()
+    content_subscription = serializers.SerializerMethodField()
 
     class Meta(ContactSerializer.Meta):
-        fields = ContactSerializer.Meta.fields + ["deals", "total_spent", "zamer_projects"]
+        fields = ContactSerializer.Meta.fields + ["deals", "total_spent", "zamer_projects", "content_subscription"]
+
+    def get_content_subscription(self, obj):
+        """Єдиний статус контент-підписки в картці того самого Contact."""
+        from apps.content_library.models import AudienceProfile
+        profile = (AudienceProfile.objects.filter(contact=obj)
+                   .prefetch_related("identities", "requests__instruction").first())
+        if not profile:
+            return None
+        return {
+            "preferred_channel": profile.preferred_channel,
+            "marketing_consent": profile.marketing_consent,
+            "consent_at": profile.consent_at,
+            "status": profile.status,
+            "tags": profile.tags or [],
+            "first_touch_at": profile.first_touch_at,
+            "last_touch_at": profile.last_touch_at,
+            "source": profile.first_touch.get("source_platform", ""),
+            "campaign": profile.first_touch.get("utm_campaign", ""),
+            "content": profile.first_touch.get("source_content_id") or profile.first_touch.get("utm_content", ""),
+            "identities": [{"kind": identity.kind, "value": identity.value,
+                            "verified": bool(identity.verified_at)} for identity in profile.identities.all()],
+            "instructions": sorted({request.instruction.title for request in profile.requests.all()}),
+        }
 
     def get_zamer_projects(self, obj):
         """Только проекты замера выбранного клиента, без данных других клиентов."""

@@ -16,6 +16,9 @@ class IdentityConflict(ValueError):
     pass
 
 
+PREFERRED_CHANNELS = {'viber', 'whatsapp', 'telegram', 'instagram', 'email'}
+
+
 def normalize_phone(value):
     raw = str(value or '').strip()
     if not raw:
@@ -53,6 +56,16 @@ def receive_guide(body):
     if not name or len(name)>120: raise ValueError('Вкажіть ім’я, до 120 символів')
     phone, email = normalize_phone(body.get('phone')), normalize_email(body.get('email'))
     if not phone and not email: raise ValueError('Вкажіть телефон або email')
+    preferred = str(body.get('preferred_channel') or '').strip().lower()
+    if not preferred:
+        # Backwards compatibility for requests created before the channel chooser.
+        preferred = 'email' if email and not phone else 'viber'
+    if preferred not in PREFERRED_CHANNELS:
+        raise ValueError('Оберіть зручний канал зв’язку')
+    if preferred == 'email' and not email:
+        raise ValueError('Для зв’язку через email вкажіть email')
+    if preferred != 'email' and not phone:
+        raise ValueError('Для зв’язку через месенджер вкажіть телефон')
     consent=body.get('marketing_consent',False)
     if type(consent) is not bool: raise ValueError('Некоректна згода')
     submission=str(body.get('submission_id') or '')
@@ -65,7 +78,8 @@ def receive_guide(body):
     if re.fullmatch(r'[a-f0-9]{64}',visitor): context['visitor_id']=visitor
     request_token=str(body.get('guide_token') or '')
     if not re.fullmatch(r'[a-f0-9]{64}',request_token): raise ValueError('Некоректний ключ запиту')
-    canonical={'name':name,'phone':phone,'email':email,'consent':consent,'slug':slug,'context':context}
+    canonical={'name':name,'phone':phone,'email':email,'preferred_channel':preferred,
+               'consent':consent,'slug':slug,'context':context}
     digest=hashlib.sha256(json.dumps(canonical,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     lock('guide-request:'+submission)
     receipt=GuideRequest.objects.filter(submission_id=submission).first()
@@ -90,15 +104,19 @@ def receive_guide(body):
     # Do not overwrite existing identity data, portal account, name or permissions.
     profile,created=AudienceProfile.objects.get_or_create(contact=contact,defaults={'first_touch':context})
     profile.last_touch=context
-    profile.preferred_channel='email' if email and not phone else 'phone'
+    profile.preferred_channel=preferred
     profile.tags=sorted(set(profile.tags+['microcement_lead' if slug=='microcement' else slug+'_lead']))
     if consent:
         profile.marketing_consent=True;profile.consent_at=timezone.now()
-        if profile.status=='unsubscribed': profile.status='new'
+        profile.status='subscribed'
     profile.save()
     for kind,value in identities: AudienceIdentity.objects.get_or_create(kind=kind,value=value,defaults={'profile':profile})
+    # The chosen messenger is an addressable preference, but stays unverified until
+    # a delivery/incoming reply proves that this number is available in the channel.
+    if phone and preferred in {'viber','whatsapp','telegram'}:
+        AudienceIdentity.objects.get_or_create(kind=preferred,value=phone,defaults={'profile':profile})
     if consent or created:
-        ConsentEvent.objects.create(profile=profile,granted=consent,source='website:'+slug)
+        ConsentEvent.objects.create(profile=profile,granted=consent,source='website:'+slug+':'+preferred)
     receipt=GuideRequest.objects.create(submission_id=submission,payload_hash=digest,instruction=instruction,profile=profile,context=context,token=request_token)
     InstructionEvent.objects.create(instruction=instruction,version=instruction.version,profile=profile,name='lead_created' if created else 'guide_requested',context=context)
     if visitor:

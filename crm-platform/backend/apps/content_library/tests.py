@@ -12,18 +12,21 @@ from .services import receive_guide, receive_event, IdentityConflict, prepare_sh
 class ContentLibraryTests(TestCase):
     def setUp(self):
         self.i=Instruction.objects.create(slug='microcement',title='Техкарта',status='published',content={'steps':[]})
-        self.body={'submission_id':'request-123456','lead_magnet_slug':'microcement','name':'Тест','phone':'067 000 00 31','email':'TEST@example.test','marketing_consent':False,'guide_token':secrets.token_hex(32),'visitor_id':secrets.token_hex(32),'source_platform':'website'}
+        self.body={'submission_id':'request-123456','lead_magnet_slug':'microcement','name':'Тест','phone':'067 000 00 31','email':'TEST@example.test','preferred_channel':'whatsapp','marketing_consent':False,'guide_token':secrets.token_hex(32),'visitor_id':secrets.token_hex(32),'source_platform':'website'}
     def test_dedup_and_retry_without_deal(self):
         r,dup=receive_guide(self.body);self.assertFalse(dup)
         self.assertEqual(r.profile.contact.phone,'+380670000031');self.assertEqual(r.profile.contact.email,'test@example.test')
+        self.assertEqual(r.profile.preferred_channel,'whatsapp')
+        self.assertTrue(r.profile.identities.filter(kind='whatsapp',value='+380670000031',verified_at__isnull=True).exists())
         again,dup=receive_guide(self.body);self.assertTrue(dup);self.assertEqual(r.pk,again.pk)
         second,_=receive_guide({**self.body,'submission_id':'request-second','phone':'+380670000031','guide_token':secrets.token_hex(32)})
         self.assertEqual(r.profile_id,second.profile_id);self.assertEqual(Contact.objects.count(),1);self.assertEqual(Deal.objects.count(),0)
     def test_email_only_conflict_and_validation(self):
-        r,_=receive_guide({**self.body,'phone':''});self.assertEqual(r.profile.contact.email,'test@example.test')
+        r,_=receive_guide({**self.body,'phone':'','preferred_channel':'email'});self.assertEqual(r.profile.contact.email,'test@example.test')
         Contact.objects.create(first_name='Other',phone='+380670000031')
         with self.assertRaises(IdentityConflict):receive_guide({**self.body,'submission_id':'conflict-1234'})
         with self.assertRaises(ValueError):receive_guide({**self.body,'phone':'','email':''})
+        with self.assertRaises(ValueError):receive_guide({**self.body,'submission_id':'bad-channel','preferred_channel':'sms'})
         self.assertEqual(GuideRequest.objects.count(),1)
     def test_same_key_changed_data_rejected(self):
         receive_guide(self.body)
@@ -61,6 +64,10 @@ class ContentLibraryTests(TestCase):
         r=self.client.get('/api/content-library/audience/');self.assertEqual(r.status_code,200,r.content);self.assertEqual(r.json()['total'],0)
         receive_guide(self.body)
         r=self.client.get('/api/content-library/audience/?instruction=microcement');self.assertEqual(r.status_code,200,r.content);self.assertEqual(r.json()['total'],1)
+        self.assertEqual(r.json()['contacts'][0]['preferred_channel'],'whatsapp')
+        detail=self.client.get('/api/contacts/%d/' % r.json()['contacts'][0]['id'])
+        self.assertEqual(detail.status_code,200,detail.content)
+        self.assertEqual(detail.json()['content_subscription']['preferred_channel'],'whatsapp')
         self.client.logout();self.assertIn(self.client.get('/api/content-library/audience/').status_code,[401,403])
     def test_insert_not_counted_send_once(self):
         user=User.objects.create_user(username='manager',is_superuser=True)

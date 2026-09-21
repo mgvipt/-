@@ -90,11 +90,18 @@ class AudienceView(APIView):
     def get(self,request):
         if not permitted(request.user,'marketing.view'): return Response(status=403)
         req=GuideRequest.objects.all()
-        for query,key in [('instruction','instruction__slug'),('source','context__source_platform'),('campaign','context__utm_campaign'),('content','context__source_content_id')]:
-            if request.GET.get(query): req=req.filter(**{key:request.GET[query][:200]})
-        profiles=AudienceProfile.objects.filter(pk__in=req.values('profile_id'))
+        if request.GET.get('instruction'):
+            req=req.filter(instruction__slug=request.GET['instruction'][:200])
+        if request.GET.get('source'):
+            req=req.filter(context__source_platform=request.GET['source'][:200])
+        if request.GET.get('campaign'):
+            req=req.filter(context__utm_campaign__icontains=request.GET['campaign'][:200])
+        if request.GET.get('content'):
+            value=request.GET['content'][:200]
+            req=req.filter(Q(context__source_content_id__icontains=value)|Q(context__utm_content__icontains=value))
+        profiles=AudienceProfile.objects.filter(pk__in=req.values('profile_id')).distinct()
         total=profiles.count();now=timezone.now()
-        kinds={kind:profiles.filter(identities__kind=kind).distinct().count() for kind in ['phone','email','telegram','instagram']}
+        kinds={kind:profiles.filter(identities__kind=kind).distinct().count() for kind in ['phone','email','viber','whatsapp','telegram','instagram']}
         reachable=profiles.exclude(status__in=['invalid','unsubscribed']).filter(identities__isnull=False).distinct().count()
         events=InstructionEvent.objects.filter(profile__in=profiles)
         if request.GET.get('instruction'): events=events.filter(instruction__slug=request.GET['instruction'])
@@ -116,13 +123,20 @@ class AudienceView(APIView):
         anonymous_counts={r['name']:r['n'] for r in anonymous.values('name').annotate(n=Count('id'))}
         rows=[]
         if permitted(request.user,'contact.view'):
-            for p in profiles.select_related('contact').order_by('-last_touch_at')[:100]:
+            for p in profiles.select_related('contact').prefetch_related('identities','requests__instruction').order_by('-last_touch_at')[:100]:
+                identities=[{'kind':identity.kind,'value':identity.value,'verified':bool(identity.verified_at)}
+                            for identity in p.identities.all()]
                 rows.append({'id':p.contact_id,'name':str(p.contact),'phone':p.contact.phone,'email':p.contact.email,
                     'source':p.first_touch.get('source_platform',''),'campaign':p.first_touch.get('utm_campaign',''),
-                    'consent':p.marketing_consent,'status':p.status,'last_touch_at':p.last_touch_at})
+                    'content':p.first_touch.get('source_content_id') or p.first_touch.get('utm_content',''),
+                    'preferred_channel':p.preferred_channel,'identities':identities,
+                    'interests':sorted(set(p.tags or [])),
+                    'instructions':sorted(set(request.instruction.title for request in p.requests.all())),
+                    'consent':p.marketing_consent,'consent_at':p.consent_at,
+                    'status':p.status,'last_touch_at':p.last_touch_at})
         shared=InstructionEvent.objects.filter(name='instruction_shared')
         if request.GET.get('instruction'): shared=shared.filter(instruction__slug=request.GET['instruction'])
-        return Response({'total':total,'contactable':reachable,'contact_verification':'Контакти вказані, доставка не перевірена',
+        return Response({'total':total,'contactable':reachable,'contact_verification':'Контакти вказані клієнтом; доставка підтверджується після першого повідомлення або відповіді',
           'channels':kinds,'multichannel':multi,'marketing_consent':profiles.filter(marketing_consent=True).exclude(status__in=['unsubscribed','invalid']).count(),
           'no_contact':profiles.filter(identities__isnull=True).count(),'no_consent':profiles.filter(marketing_consent=False).count(),
           'unsubscribed':profiles.filter(status='unsubscribed').count(),'invalid':profiles.filter(status='invalid').count(),

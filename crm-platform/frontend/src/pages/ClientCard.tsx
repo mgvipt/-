@@ -19,6 +19,11 @@ import ClientChat from "../ClientChat";
 
 interface Deal { id: number; title: string; amount: number; stage: string; is_won: boolean; created_at: string; }
 interface ZamerProject { project_uuid: string; title: string; payload: any; updated_at: string; }
+interface ContentSubscription {
+  preferred_channel: string; marketing_consent: boolean; consent_at: string | null; status: string;
+  tags: string[]; first_touch_at: string; last_touch_at: string; source: string; campaign: string; content: string;
+  identities: { kind: string; value: string; verified: boolean }[]; instructions: string[];
+}
 interface Contact {
   id: number; first_name: string; last_name: string; middle_name?: string; display_name: string; phone: string; email: string; social_link: string; messengers?: string[];
   source: string; address: string; comment: string; loyalty_tag: string; birthday: string | null;
@@ -26,6 +31,7 @@ interface Contact {
   emails_extra?: any[]; phones_extra?: any[]; links_extra?: any[]; accounts?: any[]; monitor_emails?: string[];
   channels: string[]; owner?: number | null; owner_name?: string; deals: Deal[]; total_spent: number;
   zamer_projects?: ZamerProject[];
+  content_subscription?: ContentSubscription | null;
 }
 const money = (n: number) => Math.round(n || 0).toLocaleString("ru") + " ₴";
 // борги показуємо з копійками: накладна на 321,50 не має виглядати як 322
@@ -35,6 +41,8 @@ const KINDS: [string, string][] = [
   ["client", "Клієнт"], ["supplier", "Постачальник"], ["master", "Майстер"],
   ["staff", "Співробітник"], ["partner", "Партнер"], ["designer", "Дизайнер"], ["builder", "Будівельник / прораб"],
 ];
+const CONTENT_CHANNELS: Record<string, string> = { viber: "Viber", whatsapp: "WhatsApp", telegram: "Telegram", instagram: "Instagram", email: "Email", phone: "Телефон" };
+const CONTENT_SOURCES: Record<string, string> = { website: "Сайт Wallcov", instagram: "Instagram", tiktok: "TikTok", youtube: "YouTube", manager: "Менеджер", ads: "Реклама" };
 
 // Список полів {label,value} з власними назвами (email/телефони)
 function LabeledList({ title, items, onChange, ph }: { title: string; items: any; onChange: (v: any[]) => void; ph: string }) {
@@ -191,6 +199,24 @@ export default function ClientCard() {
       <div style={{ margin: "4px 0 6px" }}><LeadQuality contactId={c.id} /></div>
       <div style={{ margin: "0 0 6px" }}><MetaAttrBadge contactId={c.id} /></div>
       <div style={{ margin: "0 0 8px" }}><ReviewOptOutToggle contactId={c.id} /></div>
+      {c.content_subscription && (() => {
+        const subscription = c.content_subscription;
+        const preferred = CONTENT_CHANNELS[subscription.preferred_channel] || subscription.preferred_channel || t("Не выбран", "Не обрано");
+        const preferredIdentity = subscription.identities.find((identity) => identity.kind === subscription.preferred_channel);
+        return <div className="panel" data-testid="client-content-subscription" style={{ margin: "0 0 8px", padding: 12, borderColor: subscription.marketing_consent ? "#86efac" : "#e2e8f0", background: subscription.marketing_consent ? "#f0fdf4" : "#f8fafc" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ minWidth: 190 }}>
+              <div className="label">{t("Подписка на материалы Wallcov", "Підписка на матеріали Wallcov")}</div>
+              <b style={{ color: subscription.marketing_consent ? "#15803d" : "#92400e" }}>{subscription.marketing_consent ? t("Сообщения разрешены", "Повідомлення дозволені") : t("Только текущий запрос", "Лише поточний запит")}</b>
+            </div>
+            <div><small className="muted">{t("Удобный канал", "Зручний канал")}</small><br /><b>{preferred}</b> <small>{preferredIdentity?.verified ? "· " + t("подтверждён", "підтверджено") : "· " + t("выбран клиентом", "обрано клієнтом")}</small></div>
+            <div><small className="muted">{t("Запросил", "Запитував")}</small><br /><b>{subscription.instructions.join(", ") || "—"}</b></div>
+            <div><small className="muted">{t("Источник", "Джерело")}</small><br /><b>{CONTENT_SOURCES[subscription.source] || subscription.source || "—"}</b></div>
+            <button className="btn btn-primary" style={{ marginLeft: "auto", height: 32 }} onClick={() => setChatOpen(true)}>{t("Написать клиенту", "Написати клієнту")}</button>
+          </div>
+          {(subscription.campaign || subscription.content) && <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{[subscription.campaign && `${t("Кампания", "Кампанія")}: ${subscription.campaign}`, subscription.content && `${t("Публикация", "Публікація")}: ${subscription.content}`].filter(Boolean).join(" · ")}</div>}
+        </div>;
+      })()}
       <div style={{ margin: "0 0 8px" }}><PartnerBlock contactId={c.id} /></div>
       <div style={{ margin: "0 0 8px" }}><ObjectActsBlock contactId={c.id} /></div>
 
