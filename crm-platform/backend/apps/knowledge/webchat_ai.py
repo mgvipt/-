@@ -1,6 +1,6 @@
 """Веб-чат на сайті відповідає з єдиної бази знань (14.09.2026, ai-kb2). ЗА ЗАМОВЧУВАННЯМ ВИМКНЕНО.
 
-Вмикає лише власник: AI ЦЕНТР → База знань ✓ → Команда агентів → «ІІ відповідає у веб-чаті».
+Вмикає лише власник: AI ЦЕНТР → База знань ✓ → Команда агентів → «ШІ відповідає у веб-чаті».
 Вимкнено → inbox/webchat.py працює рівно як раніше (одразу «передала менеджеру» або WEBCHAT_SELLER_URL).
 Увімкнено → answer("yulia_web", …): лише ЗАТВЕРДЖЕНІ записи з позначкою «Сайт (веб-чат)»; ціни — лише з каталогу CRM;
 знижки — лише за затвердженим правилом; замовлення / оплата / невпевненість → «передала менеджеру».
@@ -9,7 +9,7 @@
 from .answer import HANDOFF_TEXT, answer
 from .models import KnowledgeSettings
 
-SOURCE = "Веб-чат: ІІ з бази знань"
+SOURCE = "Веб-чат: ШІ з бази знань"
 
 
 def enabled():
@@ -35,18 +35,18 @@ def reply(conv, incoming):
         text = (r.get("text") or "").strip() or HANDOFF_TEXT
         used = ", ".join("#%d" % u["id"] for u in r.get("used_items") or []) or "—"
         if r.get("handoff"):
-            note = "ІІ веб-чату передав менеджеру: %s. Записи бази: %s." % (r.get("handoff_reason") or "—", used)
+            note = "ШІ веб-чату передав менеджеру: %s. Записи бази: %s." % (r.get("handoff_reason") or "—", used)
             if r.get("draft_reply"):
                 note += " Хотів відповісти: «%s»" % r["draft_reply"][:600]
         else:
-            note = "ІІ веб-чату відповів з бази знань. Записи: %s. ≈ $%s" % (used, (r.get("cost") or {}).get("usd", 0))
+            note = "ШІ веб-чату відповів з бази знань. Записи: %s. ≈ $%s" % (used, (r.get("cost") or {}).get("usd", 0))
     except Exception as e:  # ключ / мережа / будь-що — клієнт не чекає, веде менеджер
-        text, note = HANDOFF_TEXT, "ІІ веб-чату: помилка (%s) — передано менеджеру." % str(e)[:200]
+        text, note = HANDOFF_TEXT, "ШІ веб-чату: помилка (%s) — передано менеджеру." % str(e)[:200]
     msg = Message.objects.create(conversation=conv, direction="out", text=text[:4000],
                                  external_id="web-ai:%s" % incoming.id, sender_name="Юля · Wallcov")
     try:
         Message.objects.create(conversation=conv, direction="out", internal=True, text=note[:2000],
-                               external_id="web-ai-note:%s" % incoming.id, sender_name="ІІ веб-чату")
+                               external_id="web-ai-note:%s" % incoming.id, sender_name="ШІ веб-чату")
     except Exception:
         pass
     return msg

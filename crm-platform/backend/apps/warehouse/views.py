@@ -986,7 +986,7 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="import-inventory")
     def import_inventory(self, request):
-        """Імпорт інвентаризації: файл (xlsx/csv), вставлений текст АБО фото (ІІ розпізнає рукописний факт).
+        """Імпорт інвентаризації: файл (xlsx/csv), вставлений текст АБО фото (ШІ розпізнає рукописний факт).
         Прев'ю: commit=false + джерело (data / xlsx_b64 / images) → {matched, changed, not_found, preview}.
         Провести: commit=true + items=[{product, fact}] (відредагований список) → документ інвентаризації.
         Право — warehouse.tab.inventory."""
@@ -1059,7 +1059,7 @@ class StockDocumentViewSet(viewsets.ModelViewSet):
                     part = claude_vision(batch, "Розпізнай відомість і поверни JSON-масив рядків з рукописним фактом.",
                                          system=system, source="inv_photo")
                 except Exception as e:
-                    return Response({"detail": "ІІ не зміг обробити фото: %s" % str(e)[:150]}, status=502)
+                    return Response({"detail": "ШІ не зміг обробити фото: %s" % str(e)[:150]}, status=502)
                 if isinstance(part, dict):
                     part = part.get("rows") or part.get("items") or []
                 if isinstance(part, list):

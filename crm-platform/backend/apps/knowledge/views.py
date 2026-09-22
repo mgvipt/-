@@ -4,7 +4,7 @@
   читати            — власник, knowledge.view / knowledge.edit / knowledge.approve або settings.agent (хто бачить AI ЦЕНТР);
   додавати/правити ЧЕРНЕТКИ, пропонувати правку — knowledge.edit (або knowledge.approve);
   затверджувати, змінювати затверджене, архів — knowledge.approve (за замовчуванням — лише власник);
-  вмикати рецензента (витрачає гроші на ІІ) — лише власник (superuser).
+  вмикати рецензента (витрачає гроші на ШІ) — лише власник (superuser).
 """
 from django.db import connection, transaction
 from django.db.models import Count, F, Q
@@ -30,7 +30,7 @@ ROLES = [
      "checked_by": "Контролер (за запуском Олега) · Олег при кожній публікації · «Тестовий чат»"},
     {"agent": "yulia_tiktok", "name": "Юля TikTok (ChatPlace)", "does": "Те саме в TikTok",
      "reads": "Той самий набір, що IG (позначка «Юля TikTok»)", "checked_by": "Контролер · Олег при публікації"},
-    {"agent": "yulia_web", "name": "Сайт — веб-чат (ІІ CRM)", "does": "Відповідає відвідувачам сайту; замовлення, оплата, сумнів → менеджер. ВИМКНЕНО, поки Олег не ввімкне",
+    {"agent": "yulia_web", "name": "Сайт — веб-чат (ШІ CRM)", "does": "Відповідає відвідувачам сайту; замовлення, оплата, сумнів → менеджер. ВИМКНЕНО, поки Олег не ввімкне",
      "reads": "Лише затверджене з позначкою «Сайт» + ціни каталогу CRM; знижки — лише за затвердженим правилом",
      "checked_by": "Запобіжник цифр і знижок (кодом) · «Тестовий чат» · менеджер бачить нотатку з причиною"},
     {"agent": "funnel_agent", "name": "Агент воронки CRM", "does": "Анкета, стадія (максимум «Розрахунок здійснено»), тест-набір + LiqPay",
@@ -251,13 +251,13 @@ def settings_dict(cfg):
             "controller_scheduled": False, "webchat_ai_enabled": cfg.webchat_ai_enabled,
             "webchat_model": cfg.webchat_model, "webchat_items": len(approved_for("yulia_web")),
             "webchat_estimate": webchat_estimate(),
-            # 17.09.2026 (Олег): ІІ у каналах — вмикач по кожному каналу і пауза після менеджера, усе тут
+            # 17.09.2026 (Олег): ШІ у каналах — вмикач по кожному каналу і пауза після менеджера, усе тут
             "ai_silence_hours": cfg.ai_silence_hours, "ai_max_per_day": cfg.ai_max_per_day,
             "channels": channels_ai()}
 
 
 def channels_ai():
-    """Канали CRM: чи відповідає в них ІІ, для яких чатів і скільки там клієнтів за 30 днів."""
+    """Канали CRM: чи відповідає в них ШІ, для яких чатів і скільки там клієнтів за 30 днів."""
     import datetime
     from django.db.models import Count, Q
     from django.utils import timezone as _tz
@@ -345,7 +345,7 @@ class SettingsView(APIView):
 
     def patch(self, request):
         if not request.user.is_superuser:
-            return Response({"detail": "Вмикати ІІ, що витрачає гроші, може лише власник"}, status=403)
+            return Response({"detail": "Вмикати ШІ, що витрачає гроші, може лише власник"}, status=403)
         cfg = KnowledgeSettings.get()
         d = request.data
         if "reviewer_enabled" in d:
@@ -365,7 +365,7 @@ class SettingsView(APIView):
             if d.get("webchat_model") not in REVIEWER_MODELS:
                 return Response({"detail": "Модель: " + ", ".join(REVIEWER_MODELS)}, status=400)
             cfg.webchat_model = d["webchat_model"]
-        if "ai_silence_hours" in d:      # 17.09.2026: пауза ІІ після повідомлення менеджера
+        if "ai_silence_hours" in d:      # 17.09.2026: пауза ШІ після повідомлення менеджера
             try:
                 cfg.ai_silence_hours = max(0, min(168, int(d.get("ai_silence_hours"))))
             except (TypeError, ValueError):
@@ -375,7 +375,7 @@ class SettingsView(APIView):
                 cfg.ai_max_per_day = max(1, min(100, int(d.get("ai_max_per_day"))))
             except (TypeError, ValueError):
                 return Response({"detail": "Відповідей на добу — число 1–100"}, status=400)
-        if "channel" in d:               # вмикач ІІ у конкретному каналі (+ перелік чатів для перевірки)
+        if "channel" in d:               # вмикач ШІ у конкретному каналі (+ перелік чатів для перевірки)
             from apps.inbox.models import Channel
             ch = Channel.objects.filter(id=d.get("channel")).first()
             if not ch:

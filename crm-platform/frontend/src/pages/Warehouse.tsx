@@ -1691,7 +1691,7 @@ export default function Warehouse() {
         <div onClick={() => !invImportBusy && setInvImportOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 24, width: 820, maxWidth: "95vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
             <h3 style={{ marginTop: 0 }}>{t("Импорт инвентаризации","Імпорт інвентаризації")}</h3>
-            <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>{t("Загрузите ФОТО распечатанных листов (ИИ распознает рукописный «Факт») или файл Excel/CSV (колонки Артикул, Факт). Дальше проверите и поправите позиции — и проведёте.","Завантажте ФОТО роздрукованих листів (ІІ розпізнає рукописний «Факт») або файл Excel/CSV (колонки Артикул, Факт). Далі перевірите й поправите позиції — і проведете.")}</div>
+            <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>{t("Загрузите ФОТО распечатанных листов (ИИ распознает рукописный «Факт») или файл Excel/CSV (колонки Артикул, Факт). Дальше проверите и поправите позиции — и проведёте.","Завантажте ФОТО роздрукованих листів (ШІ розпізнає рукописний «Факт») або файл Excel/CSV (колонки Артикул, Факт). Далі перевірите й поправите позиції — і проведете.")}</div>
 
             {/* Источник: фото */}
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
@@ -1784,7 +1784,7 @@ export default function Warehouse() {
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-light" style={{ flex: 1 }} disabled={invImportBusy} onClick={() => setInvImportOpen(false)}>{t("Отмена","Скасувати")}</button>
               <button className="btn btn-light" style={{ flex: 1 }} disabled={invImportBusy || (invImportImages.length === 0 && !invImportText.trim() && !invImportXlsx)} onClick={invImportPreview}>
-                {invImportBusy ? t("Обработка…","Обробка…") : (invImportImages.length ? t("Распознать фото (ИИ)","Розпізнати фото (ІІ)") : t("Проверить","Перевірити"))}
+                {invImportBusy ? t("Обработка…","Обробка…") : (invImportImages.length ? t("Распознать фото (ИИ)","Розпізнати фото (ШІ)") : t("Проверить","Перевірити"))}
               </button>
               <button className="btn btn-primary" style={{ flex: 1 }} disabled={invImportBusy || invImportChanged === 0} onClick={invImportCommit}>
                 {invImportBusy ? t("Проводим…","Проводимо…") : t(`Провести${invImportChanged ? " (" + invImportChanged + ")" : ""}`,`Провести${invImportChanged ? " (" + invImportChanged + ")" : ""}`)}

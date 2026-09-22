@@ -2,7 +2,7 @@
 
 Права:
   тестовий чат і «як відповість зараз у ChatPlace» — knowledge.edit / knowledge.approve / власник
-      (ІІ коштує центи; розмова НІДЕ не зберігається і нікому не надсилається);
+      (ШІ коштує центи; розмова НІДЕ не зберігається і нікому не надсилається);
   оцінка перевірки чернеток — ті самі; запуск перевірки — knowledge.approve (за замовчуванням лише власник);
   «Затвердити всі «готово» у темі», контролер, публікація в Юлю, веб-чат — ЛИШЕ власник (superuser).
 Нічого не запускається за розкладом — лише ці кнопки.
@@ -83,7 +83,7 @@ class TestChatView(APIView):
         except ValueError as e:
             return Response({"detail": str(e)}, status=400)
         except Exception as e:  # ключ / мережа
-            return Response({"detail": "ІІ недоступний: %s" % str(e)[:300]}, status=502)
+            return Response({"detail": "ШІ недоступний: %s" % str(e)[:300]}, status=502)
         return Response(r)
 
 

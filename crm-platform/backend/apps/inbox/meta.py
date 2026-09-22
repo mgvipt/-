@@ -973,7 +973,7 @@ def handle_webhook(payload: dict):
             if (not is_echo) and was_closed:
                 # Клієнт написав у ЗАКРИТИЙ діалог → відкриваємо. В ПЕРШУ ЧЕРГУ віддаємо
                 # відповідальному за клієнта менеджеру (contact.owner) — щоб чат зʼявився
-                # у нього в «Мої», а не в загальному списку. Якщо власника нема (вів ІІ /
+                # у нього в «Мої», а не в загальному списку. Якщо власника нема (вів ШІ /
                 # новий клієнт) → вільний пул (assigned_to=None).
                 conv.status = "open"
                 from apps.crm.models import Contact as _Ct_reopen

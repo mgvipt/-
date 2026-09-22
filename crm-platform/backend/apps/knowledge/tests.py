@@ -1,4 +1,4 @@
-"""Єдина база знань ІІ (14.09.2026). Лише ізольована тестова БД; Claude, ChatPlace і мережа підмінені —
+"""Єдина база знань ШІ (14.09.2026). Лише ізольована тестова БД; Claude, ChatPlace і мережа підмінені —
 жодних зовнішніх запитів, жодних повідомлень клієнтам."""
 import io
 import json
@@ -58,7 +58,7 @@ class ReaderTests(TestCase):
     def test_rules_do_not_crowd_out_topic_matches_when_limit_equals_rule_count(self):
         """22.09.2026: якщо кількість правил == limit — тематичні записи (адреса, ціни тощо)
         мусять ЛИШИТИСЬ видимими. Раніше (rules + rest)[:limit] обрізав усе під правила — 15 правил
-        rop_hint/yulia_web при типовому limit=15 повністю ховали адресу компанії від ІІ-РОПа."""
+        rop_hint/yulia_web при типовому limit=15 повністю ховали адресу компанії від ШІ-РОПа."""
         for n in range(14):  # разом з self.rule у setUp — рівно 15 правил
             item(kind="rule", title="Правило %s" % n, text="МАРКЕР-ПРАВИЛО-%s" % n, topic="tone")
         addr = item(title="Де знаходиться магазин?", text="МАРКЕР-АДРЕСА Вірменська 15/1", topic="contacts")
@@ -70,7 +70,7 @@ class ReaderTests(TestCase):
         """22.09.2026 (реальний інцидент): у темі "contacts" з ROP_CHUNKS раніше бралися перших 12
         затверджених записів ЗА ПРІОРИТЕТОМ/ID, а не за релевантністю питанню — тому серед 20+ записів
         теми "contacts" адреса компанії (низький пріоритет/новий id) програвала старим випадковим Q&A
-        і НІКОЛИ не потрапляла в підказку ІІ-РОПу, хоч і була найрелевантнішою."""
+        і НІКОЛИ не потрапляла в підказку ШІ-РОПу, хоч і була найрелевантнішою."""
         chunks = [("contacts", "старий вбудований текст про контакти")]
         for n in range(20):
             item(title="Старе питання %s" % n, text="МАРКЕР-СТАРЕ-%s" % n, topic="contacts", priority=1, popularity=0)
@@ -333,7 +333,7 @@ class ReviewerTests(TestCase):
         self.assertFalse(KnowledgeItem.objects.filter(source="reviewer").exists())
 
     def test_enabled_creates_only_drafts_with_dialog_link(self):
-        # 14.09 (ai-kb2): ІІ-перевірка — лише ручний запуск Олега (runs.run_controller), команда ІІ не викликає.
+        # 14.09 (ai-kb2): ШІ-перевірка — лише ручний запуск Олега (runs.run_controller), команда ШІ не викликає.
         from . import runs
         from .models import KnowledgeRun
         fake = {"findings": [{"type": "contradiction", "who": "ai", "quote": "вже є все потрібне",

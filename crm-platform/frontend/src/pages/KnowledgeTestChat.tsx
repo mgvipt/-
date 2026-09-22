@@ -1,5 +1,5 @@
 /* AI ЦЕНТР → База знань ✓ → «Тестовий чат» (14.09.2026, ai-kb2).
-   Олег пише як клієнт — ІІ відповідає тими самими промптами, що справжній агент (apps/knowledge/answer.py).
+   Олег пише як клієнт — ШІ відповідає тими самими промптами, що справжній агент (apps/knowledge/answer.py).
    Під кожною відповіддю: які записи бази використано (клік — відкрити запис) і які ціни каталогу підставлено.
    Розмова живе лише в цій вкладці: не зберігається як чат і нікому не надсилається. «Почати заново» — очищає. */
 import { useEffect, useRef, useState } from "react";
@@ -86,7 +86,7 @@ function AgentBubble({ m, onPeek }: { m: Msg; onPeek: (id: number) => void }) {
           {r.handoff && (
             <div style={{ fontSize: 12, color: "#b45309", marginTop: 2 }}>
               <Icon n="user" size={12} /> Передала б менеджеру: {r.handoff_reason}
-              {r.draft_reply && <div style={{ color: "#64748b", whiteSpace: "pre-wrap" }}>ІІ хотів відповісти: «{r.draft_reply}»</div>}
+              {r.draft_reply && <div style={{ color: "#64748b", whiteSpace: "pre-wrap" }}>ШІ хотів відповісти: «{r.draft_reply}»</div>}
             </div>
           )}
           {r.extra?.context && <div style={{ fontSize: 12, color: "#334155" }}><Icon n="🎯" size={12} /> {r.extra.context}</div>}
@@ -137,7 +137,7 @@ export default function KnowledgeTestChat({ topics }: { topics: Choice[] }) {
   useEffect(() => { try { localStorage.setItem("kbTestAgent", agent); } catch { /* немає сховища */ } }, [agent]);
   useEffect(() => { const b = boxRef.current; if (b) b.scrollTop = b.scrollHeight; }, [msgs, busy]);
   const history = (list: Msg[]) => list.filter((m) => !m.error).map((m) => ({ role: m.role, text: m.text }));
-  useEffect(() => {  // оцінка вартості наступної відповіді — ІІ не викликається, $0
+  useEffect(() => {  // оцінка вартості наступної відповіді — ШІ не викликається, $0
     if (!canTest) return;
     const id = window.setTimeout(() => {
       api.post<Reply>("/api/knowledge/test-chat/", { agent, include_drafts: drafts, topic, messages: history(msgs), estimate_only: true })

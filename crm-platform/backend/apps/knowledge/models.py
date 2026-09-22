@@ -1,6 +1,6 @@
-"""Єдина база знань ІІ-агентів Wallcov (AI ЦЕНТР), 14.09.2026.
+"""Єдина база знань ШІ-агентів Wallcov (AI ЦЕНТР), 14.09.2026.
 
-Одна правда для всіх ІІ: агент воронки, AI-РОП підказка, помічник ✨, рецензент,
+Одна правда для всіх ШІ: агент воронки, AI-РОП підказка, помічник ✨, рецензент,
 а Юля IG/TikTok отримує копію через kb_publish_chatplace.
 
 Правила (рішення Олега 14.09):
@@ -40,7 +40,7 @@ class KnowledgeItem(models.Model):
     AGENTS = [
         ("yulia_ig", "Юля Instagram (ChatPlace)"),
         ("yulia_tiktok", "Юля TikTok (ChatPlace)"),
-        ("yulia_web", "Сайт — веб-чат (ІІ CRM)"),
+        ("yulia_web", "Сайт — веб-чат (ШІ CRM)"),
         ("funnel_agent", "Агент воронки CRM"),
         ("rop_hint", "AI-РОП підказка"),
         ("compose_assist", "Помічник ✨"),
@@ -127,18 +127,18 @@ class KnowledgeVersion(models.Model):
 
 
 class KnowledgeSettings(models.Model):
-    """Налаштування команди агентів (один рядок, id=1). Усе, що витрачає гроші на ІІ, — ВИМКНЕНО."""
+    """Налаштування команди агентів (один рядок, id=1). Усе, що витрачає гроші на ШІ, — ВИМКНЕНО."""
     reviewer_enabled = models.BooleanField(default=False, help_text="Щоденний рецензент закритих чатів (Claude)")
     reviewer_model = models.CharField(max_length=40, default="claude-haiku-4-5")
     reviewer_sample = models.PositiveIntegerField(default=20, help_text="Скільки закритих чатів за день перевіряти")
     # 14.09 (ai-kb2): веб-чат на сайті відповідає з бази знань. ВИМКНЕНО, вмикає лише власник.
-    webchat_ai_enabled = models.BooleanField(default=False, help_text="ІІ відповідає у веб-чаті (лише затверджене «Сайт»)")
+    webchat_ai_enabled = models.BooleanField(default=False, help_text="ШІ відповідає у веб-чаті (лише затверджене «Сайт»)")
     webchat_model = models.CharField(max_length=40, default="claude-haiku-4-5")
-    # 17.09.2026 (Олег): ІІ у каналах CRM (Viber, Telegram, WhatsApp, Facebook) — налаштування тут, в AI ЦЕНТРІ.
+    # 17.09.2026 (Олег): ШІ у каналах CRM (Viber, Telegram, WhatsApp, Facebook) — налаштування тут, в AI ЦЕНТРІ.
     ai_silence_hours = models.PositiveSmallIntegerField(default=12,
-        help_text="Скільки годин ІІ мовчить у чаті після повідомлення менеджера")
+        help_text="Скільки годин ШІ мовчить у чаті після повідомлення менеджера")
     ai_max_per_day = models.PositiveSmallIntegerField(default=15,
-        help_text="Скільки відповідей ІІ може дати в одному чаті за добу")
+        help_text="Скільки відповідей ШІ може дати в одному чаті за добу")
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
                                    related_name="+")
     updated_at = models.DateTimeField(auto_now=True)

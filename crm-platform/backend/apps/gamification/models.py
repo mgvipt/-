@@ -43,7 +43,7 @@ class GamSettings(models.Model):
     """Налаштування «Розвитку» — один рядок (pk=1). Усе, що коштує грошей або платить призи, ВИМКНЕНО за замовчуванням.
     Читання без запису: GamSettings.get() повертає незбережений рядок зі значеннями за замовчуванням, якщо його ще немає."""
     chat_sampling = models.BooleanField(default=False,
-                                        help_text="Раз на тиждень ІІ розбирає випадкову вибірку чатів кожного менеджера (коштує грошей)")
+                                        help_text="Раз на тиждень ШІ розбирає випадкову вибірку чатів кожного менеджера (коштує грошей)")
     chat_sample_per_week = models.PositiveSmallIntegerField(default=3, help_text="Скільки чатів одного менеджера за тиждень")
     contests = models.JSONField(default=dict, blank=True,
                                 help_text="Змагання тижня: {код: {offer_id, enabled}} — заводить команда rozvytok_contests_seed")

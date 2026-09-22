@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""ІІ-РОП: пряме питання менеджера по діалогу — заземлене в базу знань (22.09.2026).
+"""ШІ-РОП: пряме питання менеджера по діалогу — заземлене в базу знань (22.09.2026).
 
-Олег: «менеджери зможуть спитати конкретно, не лише після аналізу діалогу» + «ІІ-РОП сказав
+Олег: «менеджери зможуть спитати конкретно, не лише після аналізу діалогу» + «ШІ-РОП сказав
 що інформації про адресу немає, хоча вона є в базі знань — має відповідати спираючись на KB,
 а не тільки на сам діалог». Тепер і /api/deals/<id>/ask_analyst/, і /api/leads/<id>/ask_analyst/,
 і /api/conversations/<id>/ai_reply/ (з полем question) ведуть до однієї KB-заземленої функції
@@ -45,7 +45,7 @@ class AskRopUnitTests(TestCase):
     @patch("apps.crm.ai.claude_json")
     def test_prompt_includes_knowledge_block(self, mock_cj):
         """Ключовий фікс 22.09: питання менеджера мусить іти в KB-пошук (knowledge_block),
-        а не лише в діалог — інакше ІІ-РОП каже «інформації немає», хоча вона є в базі."""
+        а не лише в діалог — інакше ШІ-РОП каже «інформації немає», хоча вона є в базі."""
         mock_cj.return_value = {"answer": "ок"}
         ask_rop(self.conv, "Де знаходиться наш магазин?")
         prompt = mock_cj.call_args[0][0]
@@ -87,7 +87,7 @@ class AskRopEndpointTests(TestCase):
 
     @patch("apps.crm.ai.claude_json")
     def test_conversation_ai_reply_question_mode(self, mock_cj):
-        """Нове: /api/conversations/<id>/ai_reply/ з полем question — для «Запитати ІІ-РОП» у Відкритих лініях."""
+        """Нове: /api/conversations/<id>/ai_reply/ з полем question — для «Запитати ШІ-РОП» у Відкритих лініях."""
         mock_cj.return_value = {"answer": "Вірменська 15/1, Могилів-Подільський — і ми переважно онлайн."}
         r = self.client.post("/api/conversations/%s/ai_reply/" % self.conv.id, {"question": "Де наш магазин?"}, format="json")
         self.assertEqual(r.status_code, 200)

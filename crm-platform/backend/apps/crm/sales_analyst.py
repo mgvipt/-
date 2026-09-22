@@ -53,7 +53,7 @@ def analyze_dialog(messages, context="", kind="чат"):
 
 
 def ask_analyst(messages, question, context=""):
-    """22.09.2026 (Олег: «додати можливість задавати ІІ-РОП питання, менеджери зможуть питати
+    """22.09.2026 (Олег: «додати можливість задавати ШІ-РОП питання, менеджери зможуть питати
     конкретно, не лише після аналізу діалогу»). Швидка відповідь на конкретне питання менеджера
     по ЦЬОМУ діалогу — не повний коучинг-розбір (analyze_dialog), а пряма відповідь.
     Повертає dict {"answer": "..."} або {"error": "..."}."""
@@ -72,9 +72,9 @@ def ask_analyst(messages, question, context=""):
     try:
         from apps.crm.models import AgentConfig
         _am = AgentConfig.get().analyst_model or "claude-sonnet-4-6"
-        r = claude_json(prompt, model=_am, max_tokens=900, source="ІІ-РОП: питання менеджера")
+        r = claude_json(prompt, model=_am, max_tokens=900, source="ШІ-РОП: питання менеджера")
     except Exception:
-        r = claude_json(prompt, model="claude-sonnet-4-6", max_tokens=800, source="ІІ-РОП: питання менеджера")
+        r = claude_json(prompt, model="claude-sonnet-4-6", max_tokens=800, source="ШІ-РОП: питання менеджера")
     if not isinstance(r, dict) or not r.get("answer"):
         return {"error": "Не вдалося отримати відповідь"}
     return {"answer": r["answer"], "question": q}

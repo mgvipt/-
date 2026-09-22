@@ -1,4 +1,4 @@
-"""ОДИН рушій відповіді для ІІ, що говорять з клієнтом або радять менеджеру (14.09.2026, ai-kb2).
+"""ОДИН рушій відповіді для ШІ, що говорять з клієнтом або радять менеджеру (14.09.2026, ai-kb2).
 
     answer(agent, messages, include_drafts=False, topic=None) -> {text, used_items, prices, cost, …}
 
@@ -11,7 +11,7 @@
 
 include_drafts=True / topic — ЛИШЕ «Тестовий чат»: у межах цього виклику (thread-local, reader.test_pool)
 читач бачить «затверджене + чернетки» або одну тему. Справжні агенти в інших запитах цього не бачать.
-Нічого не зберігає як чат і нікому не надсилає. Витрати пишуться в «Витрати ІІ» (crm_aiusage).
+Нічого не зберігає як чат і нікому не надсилає. Витрати пишуться в «Витрати ШІ» (crm_aiusage).
 """
 import json
 import os
@@ -201,7 +201,7 @@ def rop_master_rules():
 
 
 def test_kits_block():
-    """Точні назви тест-наборів з каталогу — щоб ІІ міг одразу оформити замовлення (18.09.2026, Олег)."""
+    """Точні назви тест-наборів з каталогу — щоб ШІ міг одразу оформити замовлення (18.09.2026, Олег)."""
     try:
         from apps.warehouse.models import Product
         rows = list(Product.objects.filter(is_active=True, name__iregex=r"тестов|пробни")
@@ -225,7 +225,7 @@ def _spec_seller(agent, msgs, model):
     spec = {"system": seller_system(CHANNEL[agent]), "user": user, "model": model or HAIKU, "max_tokens": 600,
             "mode": "seller", "cache": False, "allowed": allowed}
     if not items:
-        spec["empty"] = "для цього агента немає %s записів — ІІ не викликається, $0" % (
+        spec["empty"] = "для цього агента немає %s записів — ШІ не викликається, $0" % (
             "жодних" if reader.approved_for(agent) == [] else "підхожих")
     return spec
 
@@ -385,7 +385,7 @@ def _finish_seller(res, resp, msgs, spec, used):
         problems = [p for p in problems if "не з каталогу" in p or "знижк" in p]
     if data.get("handoff") and not (order and order.get("product")):
         reason = str(data.get("reason") or "").strip()
-        problems.insert(0, "ІІ сам вирішив передати менеджеру" + (": " + reason if reason else ""))
+        problems.insert(0, "ШІ сам вирішив передати менеджеру" + (": " + reason if reason else ""))
     if not reply:
         problems.append("порожня відповідь")
     if order and order.get("product"):
@@ -446,7 +446,7 @@ FINISH = {"seller": _finish_seller, "rop": _finish_rop, "compose": _finish_compo
 def answer(agent, messages, include_drafts=False, topic=None, *, model=None, estimate_only=False,
            source=SOURCE_TEST, timeout=45):
     """Відповідь агента на діалог. messages = [{"role": "client"|"agent", "text": …}], останнє — клієнта.
-    estimate_only=True — лише зібрати промпт і порахувати оцінку ($0, ІІ не викликається)."""
+    estimate_only=True — лише зібрати промпт і порахувати оцінку ($0, ШІ не викликається)."""
     if agent not in SPECS:
         raise ValueError("Невідомий агент: %s" % agent)
     msgs = _norm_messages(messages)

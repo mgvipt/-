@@ -1,6 +1,6 @@
 /* AI ЦЕНТР → База знань ✓ — інструменти ЗА КНОПКОЮ (14.09.2026, ai-kb2):
-   «Перевірка чернеток», «Контролер» (лише за запуском), «Публікація в Юлю», картка «ІІ у веб-чаті».
-   Нічого не працює за розкладом. Усе, що витрачає гроші на ІІ, показує оцінку ДО запуску. */
+   «Перевірка чернеток», «Контролер» (лише за запуском), «Публікація в Юлю», картка «ШІ у веб-чаті».
+   Нічого не працює за розкладом. Усе, що витрачає гроші на ШІ, показує оцінку ДО запуску. */
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
@@ -16,7 +16,7 @@ export type ChannelAi = { id: number; name: string; kind: string; dialogs30: num
 export type WebSettings = {
   webchat_ai_enabled: boolean; webchat_model: string; webchat_items: number; reviewer_models: string[];
   webchat_estimate?: { model: string; per_reply_usd: number; models: string[] };
-  // 17.09.2026 (Олег): усі налаштування ІІ — тут, в AI ЦЕНТРІ
+  // 17.09.2026 (Олег): усі налаштування ШІ — тут, в AI ЦЕНТРІ
   ai_silence_hours?: number; ai_max_per_day?: number; channels?: ChannelAi[];
 };
 
@@ -139,7 +139,7 @@ export function PrecheckPanel({ topics, canApprove }: { topics: Choice[]; canApp
   async function start() {
     if (!est) return;
     if (!window.confirm(`Перевірити ${est.drafts} чернеток${topic ? ` теми «${topicLabel(topic)}»` : ""}?\n` +
-      `Кодом ($0): ${est.code_only}. ІІ (${est.model}): ${est.ai_items} у ${est.calls} викликах ≈ ${usd(est.est_usd)}.\n` +
+      `Кодом ($0): ${est.code_only}. ШІ (${est.model}): ${est.ai_items} у ${est.calls} викликах ≈ ${usd(est.est_usd)}.\n` +
       `Нічого не затверджується — лише мітки.`)) return;
     setBusy(true);
     try { setRun(await api.post<Run>(`/api/knowledge/precheck/`, { topic, recheck })); setEst(null); } catch (e) { window.alert(errText(e)); } finally { setBusy(false); }
@@ -177,7 +177,7 @@ export function PrecheckPanel({ topics, canApprove }: { topics: Choice[]; canApp
         <button className="btn btn-light" disabled={busy} onClick={estimate}>Порахувати вартість ($0)</button>
         {est && (
           <span style={{ fontSize: 12.5, color: "#334155" }}>
-            Чернеток <b>{est.drafts}</b>: кодом {est.code_only} ($0), ІІ — {est.ai_items} у {est.calls} викликах ≈ <b>{usd(est.est_usd)}</b> ({est.model})
+            Чернеток <b>{est.drafts}</b>: кодом {est.code_only} ($0), ШІ — {est.ai_items} у {est.calls} викликах ≈ <b>{usd(est.est_usd)}</b> ({est.model})
           </span>
         )}
         {est && sum?.can_run && est.drafts > 0 && <button className="btn btn-primary" disabled={busy || run?.status === "running"} onClick={start}>Запустити перевірку</button>}
@@ -309,7 +309,7 @@ export function ControllerPanel() {
               <div key={r.conversation_id} style={{ borderTop: "1px dashed #e2e8f0", paddingTop: 6, fontSize: 12.5 }}>
                 <Link to={r.link}>Діалог №{r.conversation_id}</Link> {r.title} <span style={{ color: "#94a3b8" }}>{r.channel}</span>
                 {r.lint.map((x, i) => <div key={"l" + i} style={{ color: "#92400e" }}>• кодом: {x}</div>)}
-                {r.findings.map((f, i) => <div key={"f" + i} style={{ color: "#1e293b" }}>• ІІ, {FTYPE[f.type] || f.type}: {f.problem}{f.quote ? ` — «${f.quote}»` : ""}</div>)}
+                {r.findings.map((f, i) => <div key={"f" + i} style={{ color: "#1e293b" }}>• ШІ, {FTYPE[f.type] || f.type}: {f.problem}{f.quote ? ` — «${f.quote}»` : ""}</div>)}
                 {r.items.length > 0 && <div style={{ color: "#15803d" }}>Чернетки: {r.items.map((i) => "#" + i).join(", ")}</div>}
                 {r.error && <div style={{ color: "#94a3b8" }}>{r.error}</div>}
                 {!r.lint.length && !r.findings.length && !r.error && <div style={{ color: "#94a3b8" }}>зауважень немає</div>}
@@ -417,11 +417,11 @@ export function PublishPanel({ isOwner }: { isOwner: boolean }) {
   );
 }
 
-/* ───────────────────────── ІІ у веб-чаті ───────────────────────── */
+/* ───────────────────────── ШІ у веб-чаті ───────────────────────── */
 
 export function ChannelsAiCard({ s, isOwner, onSaved }: { s: WebSettings; isOwner: boolean; onSaved: (s: WebSettings) => void }) {
-  /* 17.09.2026 (Олег): «ІІ має працювати як Юля: якщо менеджер написав — агент у цьому чаті мовчить,
-     і час цієї паузи налаштовується в AI ЦЕНТРІ». Тут же вмикаємо ІІ по кожному каналу. */
+  /* 17.09.2026 (Олег): «ШІ має працювати як Юля: якщо менеджер написав — агент у цьому чаті мовчить,
+     і час цієї паузи налаштовується в AI ЦЕНТРІ». Тут же вмикаємо ШІ по кожному каналу. */
   const [busy, setBusy] = useState(false);
   const [hours, setHours] = useState<number>(s.ai_silence_hours ?? 12);
   const [perDay, setPerDay] = useState<number>(s.ai_max_per_day ?? 15);
@@ -433,8 +433,8 @@ export function ChannelsAiCard({ s, isOwner, onSaved }: { s: WebSettings; isOwne
     try { onSaved(await api.patch<WebSettings>(`/api/knowledge/settings/`, body)); } catch (e) { window.alert(errText(e)); } finally { setBusy(false); }
   }
   function toggle(c: ChannelAi, on: boolean) {
-    if (on && !window.confirm(`Увімкнути відповіді ІІ у каналі «${c.name}»?\n` +
-      `Клієнтам почне відповідати ІІ з ${s.webchat_items} затверджених записів бази знань. Якщо менеджер уже пише в чаті — ІІ мовчить ${hours} год.\n` +
+    if (on && !window.confirm(`Увімкнути відповіді ШІ у каналі «${c.name}»?\n` +
+      `Клієнтам почне відповідати ШІ з ${s.webchat_items} затверджених записів бази знань. Якщо менеджер уже пише в чаті — ШІ мовчить ${hours} год.\n` +
       `Спершу краще вказати «лише ці чати» і перевірити на своєму номері.`)) return;
     patch({ channel: c.id, ai_reply: on });
   }
@@ -443,10 +443,10 @@ export function ChannelsAiCard({ s, isOwner, onSaved }: { s: WebSettings; isOwne
   const on = channels.filter((c) => c.ai_reply).length;
   return (
     <div style={{ ...card, marginTop: 12, borderLeft: `4px solid ${on ? "#10b981" : "#94a3b8"}` }}>
-      <b>ІІ відповідає у каналах</b> — зараз увімкнено в <b>{on}</b> з {channels.length}.
+      <b>ШІ відповідає у каналах</b> — зараз увімкнено в <b>{on}</b> з {channels.length}.
       <div style={{ fontSize: 12.5, color: "#475569", margin: "4px 0 8px" }}>
         Працює як Юля: відповідає з <b>затверджених</b> записів бази знань і цін каталогу; замовлення, оплата чи сумнів — «передала менеджеру».
-        <b> Якщо менеджер написав клієнту — ІІ в цьому чаті мовчить</b> (час нижче). Instagram і TikTok веде Юля в ChatPlace — їх тут вмикати не треба.
+        <b> Якщо менеджер написав клієнту — ШІ в цьому чаті мовчить</b> (час нижче). Instagram і TikTok веде Юля в ChatPlace — їх тут вмикати не треба.
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
         <label style={{ fontSize: 12.5 }}>Пауза після менеджера, годин:&nbsp;
@@ -459,7 +459,7 @@ export function ChannelsAiCard({ s, isOwner, onSaved }: { s: WebSettings; isOwne
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><th style={th}>Канал</th><th style={th}>Діалогів за 30 днів</th><th style={th}>ІІ відповідає</th><th style={th}>Лише ці чати (перевірка)</th></tr></thead>
+          <thead><tr><th style={th}>Канал</th><th style={th}>Діалогів за 30 днів</th><th style={th}>ШІ відповідає</th><th style={th}>Лише ці чати (перевірка)</th></tr></thead>
           <tbody>{channels.map((c) => (
             <tr key={c.id}>
               <td style={{ ...td, fontWeight: 600 }}>{c.name} <span style={{ color: "#94a3b8", fontWeight: 400 }}>{c.kind}</span></td>
@@ -502,7 +502,7 @@ export function WebchatCard({ s, isOwner, onSaved }: { s: WebSettings; isOwner: 
     try { onSaved(await api.patch<WebSettings>(`/api/knowledge/settings/`, body)); } catch (e) { window.alert(errText(e)); } finally { setBusy(false); }
   }
   function toggle(v: boolean) {
-    if (v && !window.confirm(`Увімкнути ІІ у веб-чаті на сайті?\nВідповідатиме лише з ${s.webchat_items} затверджених записів з позначкою «Сайт». ` +
+    if (v && !window.confirm(`Увімкнути ШІ у веб-чаті на сайті?\nВідповідатиме лише з ${s.webchat_items} затверджених записів з позначкою «Сайт». ` +
       `Ціни — лише з каталогу, знижки — лише за затвердженим правилом; замовлення, оплата або сумнів — одразу менеджер.\n` +
       `Орієнтовно ${usd(s.webchat_estimate?.per_reply_usd)} за відповідь.`)) return;
     patch({ webchat_ai_enabled: v });
@@ -519,7 +519,7 @@ export function WebchatCard({ s, isOwner, onSaved }: { s: WebSettings; isOwner: 
   }
   return (
     <div style={{ ...card, marginTop: 12, borderLeft: `4px solid ${s.webchat_ai_enabled ? "#10b981" : "#94a3b8"}` }}>
-      <b>ІІ відповідає у веб-чаті на сайті</b> — зараз <b>{s.webchat_ai_enabled ? "УВІМКНЕНО" : "вимкнено"}</b>.
+      <b>ШІ відповідає у веб-чаті на сайті</b> — зараз <b>{s.webchat_ai_enabled ? "УВІМКНЕНО" : "вимкнено"}</b>.
       <div style={{ fontSize: 12.5, color: "#475569", marginTop: 4 }}>
         Вимкнено — усе як раніше: відвідувач одразу отримує «передала менеджеру». Увімкнено — Юля відповідає лише з
         <b> затверджених</b> записів з позначкою «Сайт» ({s.webchat_items} зараз) і цін каталогу CRM; знижки — лише за затвердженим правилом;
@@ -529,7 +529,7 @@ export function WebchatCard({ s, isOwner, onSaved }: { s: WebSettings; isOwner: 
       {isOwner ? (
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
           <label style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 13 }}>
-            <input type="checkbox" disabled={busy} checked={s.webchat_ai_enabled} onChange={(e) => toggle(e.target.checked)} /> ІІ відповідає у веб-чаті
+            <input type="checkbox" disabled={busy} checked={s.webchat_ai_enabled} onChange={(e) => toggle(e.target.checked)} /> ШІ відповідає у веб-чаті
           </label>
           <select value={s.webchat_model} disabled={busy} onChange={(e) => patch({ webchat_model: e.target.value })} style={sel}>
             {(s.webchat_estimate?.models || s.reviewer_models || []).map((m) => <option key={m} value={m}>{m}</option>)}

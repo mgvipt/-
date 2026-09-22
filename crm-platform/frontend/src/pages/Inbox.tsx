@@ -84,7 +84,7 @@ export default function Inbox() {
   const [emps, setEmps] = useState<{ id: number; full_name: string }[]>([]);
   const [aiMode, setAiMode] = useState("");      // режим підказки AI-РОП
   const [aiHint, setAiHint] = useState("");      // навідна думка менеджера
-  const [ropQ, setRopQ] = useState("");           // 22.09.2026: «Запитати ІІ-РОП про цей діалог»
+  const [ropQ, setRopQ] = useState("");           // 22.09.2026: «Запитати ШІ-РОП про цей діалог»
   const [ropAsking, setRopAsking] = useState(false);
   const [ropQa, setRopQa] = useState<{ question: string; answer?: string; error?: string } | null>(null);
   const [menu, setMenu] = useState(false);
@@ -527,7 +527,7 @@ export default function Inbox() {
                   const cnt = (((c as any).unhandled_in as number) || 0) || (c.unread || 0);
                   const ai = !!(c as any).ai_answered;
                   if (!cnt && !ai) return null;
-                  // ІІ-іконка (bot, як у всій CRM) — база; червоний лічильник — маленьким бейджем у куті
+                  // ШІ-іконка (bot, як у всій CRM) — база; червоний лічильник — маленьким бейджем у куті
                   return (
                     <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", alignSelf: "center", flexShrink: 0, width: ai ? 20 : undefined, height: 20 }}>
                       {ai && <span title={t("Ответил ИИ-агент, менеджер не смотрел", "Відповів ШІ-агент, менеджер не дивився")} style={{ color: "#7c3aed", display: "inline-flex" }}><Icon n="bot" size={16} /></span>}
@@ -767,6 +767,32 @@ export default function Inbox() {
           {active && <button className="btn" style={{ fontSize: 12, padding: "3px 10px" }} onClick={() => analyzeAI(active.id)} disabled={aiLoad}>{aiLoad ? "…" : <><Icon n="refresh" size={14} /> {t("Обновить","Оновити")}</>}</button>}
         </div>
         {active && (
+          <div style={{ padding: "10px 12px", borderBottom: "1px solid #e2e8f0", flexShrink: 0, background: "#f8fafc" }}>
+            <div style={{ fontSize: 11.5, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+              <Icon n="💭" size={13} /> {t("Спросить ИИ-РОП об этом диалоге", "Запитати ШІ-РОП про цей діалог")}
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                value={ropQ}
+                onChange={(e) => setRopQ(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") askRop(); }}
+                placeholder={t("Например: где находится наш магазин?", "Наприклад: де знаходиться наш магазин?")}
+                style={{ flex: 1, fontSize: 12.5, padding: "6px 9px", borderRadius: 7, border: "0.5px solid #cbd5e1" }}
+              />
+              <button className="btn" style={{ padding: "5px 12px", fontSize: 12 }} onClick={askRop} disabled={ropAsking || !ropQ.trim()}>
+                {ropAsking ? "…" : t("Спросить", "Запитати")}
+              </button>
+            </div>
+            {ropQa && (
+              <div style={{ marginTop: 8, background: ropQa.error ? "#FCEBEB" : "#E6F1FB", borderRadius: 8, padding: "8px 10px", maxHeight: 240, overflowY: "auto" }}>
+                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 3 }}>«{ropQa.question}»</div>
+                <div style={{ fontSize: 12.5, color: ropQa.error ? "#791F1F" : "#042C53", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{ropQa.error || ropQa.answer}</div>
+                {ropQa.answer && <button className="btn" style={{ marginTop: 6, padding: "3px 10px", fontSize: 11.5 }} onClick={() => setText(ropQa.answer || "")}>{t("Вставить в ответ", "Вставити у відповідь")}</button>}
+              </div>
+            )}
+          </div>
+        )}
+        {active && (
           <div style={{ padding: "0 12px 8px" }}>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
               {([["", t("Сам вирішить","Сам вирішить")], ["dozhim", t("Дожим","Дожим")], ["objection", t("Возражение","Заперечення")], ["calc", t("Просчёт","Прорахунок")], ["close", t("Закрытие","Закриття")], ["negative", t("Негатив","Негатив")], ["first", t("Первый контакт","Перший контакт")]] as [string,string][]).map(([k, lbl]) => (
@@ -775,8 +801,8 @@ export default function Inbox() {
             </div>
             <input value={aiHint} onChange={(e) => setAiHint(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && active) analyzeAI(active.id); }}
-              placeholder={t("Подсказка ИИ-РОПу: что учесть…","Підказка ІІ-РОПу: що врахувати…")}
-              title={t("Напиши свою мысль — ИИ учтёт её в первую очередь. Enter — обновить подсказку.","Напиши свою думку — ІІ врахує її в першу чергу. Enter — оновити підказку.")}
+              placeholder={t("Подсказка ИИ-РОПу: что учесть…","Підказка ШІ-РОПу: що врахувати…")}
+              title={t("Напиши свою мысль — ИИ учтёт её в первую очередь. Enter — обновить подсказку.","Напиши свою думку — ШІ врахує її в першу чергу. Enter — оновити підказку.")}
               style={{ width: "100%", boxSizing: "border-box", height: 30, fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, padding: "0 8px" }} />
           </div>
         )}
@@ -806,32 +832,6 @@ export default function Inbox() {
             </div>
           )}
         </div>
-        {active && (
-          <div style={{ padding: "10px 12px", borderTop: "1px solid #e2e8f0", flexShrink: 0 }}>
-            <div style={{ fontSize: 11.5, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
-              <Icon n="💭" size={13} /> {t("Спросить ИИ-РОП об этом диалоге", "Запитати ІІ-РОП про цей діалог")}
-            </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <input
-                value={ropQ}
-                onChange={(e) => setRopQ(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") askRop(); }}
-                placeholder={t("Например: где находится наш магазин?", "Наприклад: де знаходиться наш магазин?")}
-                style={{ flex: 1, fontSize: 12.5, padding: "6px 9px", borderRadius: 7, border: "0.5px solid #cbd5e1" }}
-              />
-              <button className="btn" style={{ padding: "5px 12px", fontSize: 12 }} onClick={askRop} disabled={ropAsking || !ropQ.trim()}>
-                {ropAsking ? "…" : t("Спросить", "Запитати")}
-              </button>
-            </div>
-            {ropQa && (
-              <div style={{ marginTop: 8, background: ropQa.error ? "#FCEBEB" : "#E6F1FB", borderRadius: 8, padding: "8px 10px" }}>
-                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 3 }}>«{ropQa.question}»</div>
-                <div style={{ fontSize: 12.5, color: ropQa.error ? "#791F1F" : "#042C53", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{ropQa.error || ropQa.answer}</div>
-                {ropQa.answer && <button className="btn" style={{ marginTop: 6, padding: "3px 10px", fontSize: 11.5 }} onClick={() => setText(ropQa.answer || "")}>{t("Вставить в ответ", "Вставити у відповідь")}</button>}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
       }

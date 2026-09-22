@@ -5,7 +5,7 @@
 - /api/gamification/manager/<id>/ — те саме про іншу людину: лише власник / право «Бачити якість/коучинг команди (РОП)».
 - /api/gamification/leaderboard/ — порівняння команди: ЛИШЕ власник / РОП (раніше бачили всі; для інших — 403).
 - /api/gamification/practice/ — відмітки «маленьких справ на тиждень» (зберігаються; лише свої).
-- /api/gamification/settings/ — вибірка чатів для ІІ (вимк. за замовчуванням), змагання: читати — РОП/власник, змінювати — власник.
+- /api/gamification/settings/ — вибірка чатів для ШІ (вимк. за замовчуванням), змагання: читати — РОП/власник, змінювати — власник.
 - /api/gamification/contests/?week=РРРР-Wтт — результати змагання тижня (власник/РОП); POST {code, week} — нарахувати приз.
 """
 import datetime
@@ -203,7 +203,7 @@ def _quality(uid, period):
     label = quality_label()
     if agg["n"]:
         explain = (f"Середнє з {agg['n']} розборів за {_label(period)}: сума балів {agg['s']} ÷ {agg['n']} = {a}. "
-                   "Бал 0–100 ставить ІІ-аналітик за 6 навичками; ціль — 70.")
+                   "Бал 0–100 ставить ШІ-аналітик за 6 навичками; ціль — 70.")
     else:
         explain = f"За {_label(period)} розборів дзвінків ще немає — бал зʼявиться після першого розбору."
     note = ""
@@ -403,7 +403,7 @@ def _settings_json(s):
     from . import contests
     return {"chat_sampling": s.chat_sampling, "chat_sample_per_week": s.chat_sample_per_week,
             "quality_label": quality_label(s), "contests": contests.state(),
-            "cost_note": "Один ІІ-розбір коштує ≈ $0,02 (факт CRM: 338 розборів за 60 днів = $5,54). "
+            "cost_note": "Один ШІ-розбір коштує ≈ $0,02 (факт CRM: 338 розборів за 60 днів = $5,54). "
                          "3 чати × 3 менеджери × 4,3 тижня ≈ 39 розборів ≈ $0,8 на місяць."}
 
 
@@ -421,7 +421,7 @@ class SettingsView(APIView):
         d = request.data or {}
         wants_ai = any(k in d for k in ("chat_sampling", "chat_sample_per_week"))
         if wants_ai and not u.is_superuser:
-            return Response({"detail": "Вибірку чатів (платний ІІ) вмикає лише власник"}, status=403)
+            return Response({"detail": "Вибірку чатів (платний ШІ) вмикає лише власник"}, status=403)
         if "contests" in d and not (u.is_superuser or (is_team_viewer(u) and can_manage(u))):
             return Response({"detail": "Змагання вмикає власник / хто керує біржею задач"}, status=403)
         s = GamSettings.get()

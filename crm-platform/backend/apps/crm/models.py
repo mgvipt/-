@@ -986,9 +986,9 @@ class MetaSyncSettings(models.Model):
 
 
 class KbEntry(models.Model):
-    """База знань ІІ-продавця Wallcov (незалежна від ChatPlace).
+    """База знань ШІ-продавця Wallcov (незалежна від ChatPlace).
     Імпорт із ChatPlace + ручне поповнення + додавання з невідомих питань.
-    ІІ-продавець підтягує сюди точні відповіді (без вигадування)."""
+    ШІ-продавець підтягує сюди точні відповіді (без вигадування)."""
     SOURCE = [("chatplace", "ChatPlace-імпорт"), ("manual", "Додано вручну"), ("dialog", "З діалогу")]
     ext_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
     question = models.TextField()
@@ -1009,7 +1009,7 @@ class KbEntry(models.Model):
 
 
 class KbUnknownQuestion(models.Model):
-    """Питання, на які ІІ не знав відповіді (як «невідомі» у ChatPlace).
+    """Питання, на які ШІ не знав відповіді (як «невідомі» у ChatPlace).
     На розгляд менеджера → додати відповідь у KbEntry."""
     STATUS = [("new", "Нове"), ("answered", "Додано в базу"), ("ignored", "Ігнор")]
     SOURCE = [("chatplace", "ChatPlace"), ("dialog", "З діалогу CRM")]

@@ -136,7 +136,7 @@ def _ai_reply(conv: Conversation, incoming: Message, client_name: str = ""):
     ).exists()
     if manager_active:
         return None
-    # 14.09 (ai-kb2): «ІІ відповідає у веб-чаті» з єдиної бази знань (AI ЦЕНТР → База знань ✓; вмикає лише власник).
+    # 14.09 (ai-kb2): «ШІ відповідає у веб-чаті» з єдиної бази знань (AI ЦЕНТР → База знань ✓; вмикає лише власник).
     # Вимкнено (за замовчуванням) або будь-яка помилка → усе нижче рівно як раніше.
     try:
         from apps.knowledge.webchat_ai import enabled as _kb_web_on, reply as _kb_web_reply

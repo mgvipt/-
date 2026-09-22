@@ -1,6 +1,6 @@
 """Рецензент (команда агентів, фаза 1): щодня перевіряє вибірку закритих чатів.
 
-1) Безкоштовна перевірка кодом (без ІІ): відомі заборонені фрази у НАШИХ повідомленнях.
+1) Безкоштовна перевірка кодом (без ШІ): відомі заборонені фрази у НАШИХ повідомленнях.
 2) Claude (Haiku, лише коли Олег увімкнув): суперечності із затвердженою базою, пропущені кроки продажу,
    питання клієнтів, яких немає в базі.
 Результат — ЧЕРНЕТКИ в базі знань з посиланням на діалог. Затверджені записи рецензент НЕ змінює,
@@ -55,7 +55,7 @@ from .seller_prompt import MASTER as _MASTER
 REVIEWER_SYSTEM = (
     "Ти — рецензент відділу продажів Wallcov (декоративні покриття для стін). Перевіряєш ЗАКРИТИЙ діалог з клієнтом.\n"
     "Знайди лише важливе для продажу:\n"
-    "1) contradiction — відповідь НАШОЇ сторони (Юля-ІІ або менеджер) суперечить базі знань або цінам каталогу нижче;\n"
+    "1) contradiction — відповідь НАШОЇ сторони (Юля-ШІ або менеджер) суперечить базі знань або цінам каталогу нижче;\n"
     "2) missed_step — пропущений крок продажу: на цінове питання не назвали ціну; не запропонували тест-набір; "
     "не спитали площу/кімнату; немає наступного кроку; наприкінці закрите питання «так/ні»;\n"
     "3) unknown_question — клієнт спитав те, чого немає в базі знань. Запропонуй коротку відповідь для бази; "
@@ -66,7 +66,7 @@ REVIEWER_SYSTEM = (
     'application|tinting|contacts|discounts|objections|company|tone|process|other", '
     '"suggested_title": "питання клієнта або назва правила", "suggested_text": "як правильно відповідати"}]}\n'
     "Максимум 3 знахідки. Додай поле \"score\" 0-100 — наскільки наші повідомлення відповідають стандарту нижче.\n\n"
-    "СТАНДАРТ ПРОДАВЦЯ (за ним пише наш ІІ — суди саме за ним):\n" + _MASTER.replace("{канал}", "каналі")
+    "СТАНДАРТ ПРОДАВЦЯ (за ним пише наш ШІ — суди саме за ним):\n" + _MASTER.replace("{канал}", "каналі")
 )
 
 
@@ -128,9 +128,13 @@ def pick_conversations(day, sample, conversation_id=None, ai_only=False):
         return list(Conversation.objects.filter(pk=conversation_id))
     done = set(KnowledgeReviewLog.objects.filter(day=day).values_list("conversation_id", flat=True))
     if ai_only:
-        # 18.09.2026: перевіряємо саме роботу нашого ІІ-продавця за день (а не лише закриті чати)
-        ids = set(Message.objects.filter(created_at__date=day, direction="out", internal=False,
-                                         sender_name__startswith="ІІ у каналі")
+        # 18.09.2026: перевіряємо саме роботу нашого ШІ-продавця за день (а не лише закриті чати)
+        from django.db.models import Q
+        from apps.inbox.ai_reply import NOTE_PREFIXES
+        by_ai = Q()
+        for pref in NOTE_PREFIXES:
+            by_ai |= Q(sender_name__startswith=pref)
+        ids = set(Message.objects.filter(by_ai, created_at__date=day, direction="out", internal=False)
                   .values_list("conversation_id", flat=True))
         qs = Conversation.objects.filter(pk__in=ids).exclude(pk__in=done).order_by("id")
     else:
@@ -213,7 +217,7 @@ def create_lint_summary(day, lint_by_problem):
             kind="rule", topic=rows[0]["topic"], audience=list(AUDIENCE), status="draft", title=title[:300],
             text="Правильно: " + rows[0]["correct"], source="reviewer",
             source_ref="lint:%s:%s" % (day.isoformat(), rows[0]["topic"]),
-            internal_note="Перевірка кодом (без ІІ). Діалоги: " + ", ".join(conv_link(c) for c in convs[:20]),
+            internal_note="Перевірка кодом (без ШІ). Діалоги: " + ", ".join(conv_link(c) for c in convs[:20]),
             evidence={"conversation_ids": convs, "links": [conv_link(c) for c in convs[:20]], "type": "lint",
                       "quote": rows[0]["quote"], "day": day.isoformat()})
         log_version(item, "create", None, "повторна помилка (перевірка кодом)")

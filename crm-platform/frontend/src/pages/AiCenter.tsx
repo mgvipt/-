@@ -57,7 +57,7 @@ function KbBase() {
       {adding && (
         <div style={{ border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 10, padding: 12, marginBottom: 12 }}>
           <input value={nq} onChange={(e) => setNq(e.target.value)} placeholder={t("Вопрос клиента", "Питання клієнта")} style={{ ...inp, marginBottom: 8 }} />
-          <textarea value={na} onChange={(e) => setNa(e.target.value)} placeholder={t("Ответ, который даст ИИ", "Відповідь, яку дасть ІІ")} style={{ ...inp, minHeight: 80, resize: "vertical" }} />
+          <textarea value={na} onChange={(e) => setNa(e.target.value)} placeholder={t("Ответ, который даст ИИ", "Відповідь, яку дасть ШІ")} style={{ ...inp, minHeight: 80, resize: "vertical" }} />
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}><button className="btn btn-primary" onClick={add}>{t("Сохранить", "Зберегти")}</button><button className="btn" onClick={() => setAdding(false)}>{t("Отмена", "Скасувати")}</button></div>
         </div>
       )}
@@ -116,7 +116,7 @@ function KbQuestions() {
   return (
     <div style={wrap}>
       <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, color: "#78350f", margin: "10px 0" }}>
-        {t("Это вопросы клиентов, на которые ИИ не знал ответа. Впишите ответ — он попадёт в базу знаний, и дальше ИИ будет отвечать сам.", "Це питання клієнтів, на які ІІ не знав відповіді. Впишіть відповідь — вона потрапить у базу знань, і далі ІІ відповідатиме сам.")}
+        {t("Это вопросы клиентов, на которые ИИ не знал ответа. Впишите ответ — он попадёт в базу знаний, и дальше ИИ будет отвечать сам.", "Це питання клієнтів, на які ШІ не знав відповіді. Впишіть відповідь — вона потрапить у базу знань, і далі ШІ відповідатиме сам.")}
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("Поиск по вопросу…", "Пошук за питанням…")} style={{ ...inp, flex: 1 }} />
@@ -136,7 +136,7 @@ function KbQuestions() {
             </div>
             {st === "new" && (
               <div style={{ marginTop: 6 }}>
-                <textarea value={ans[r.id] || ""} onChange={(e) => setAns((a) => ({ ...a, [r.id]: e.target.value }))} placeholder={t("Ответ, который даст ИИ…", "Відповідь, яку дасть ІІ…")} style={{ ...inp, minHeight: 70, resize: "vertical" }} />
+                <textarea value={ans[r.id] || ""} onChange={(e) => setAns((a) => ({ ...a, [r.id]: e.target.value }))} placeholder={t("Ответ, который даст ИИ…", "Відповідь, яку дасть ШІ…")} style={{ ...inp, minHeight: 70, resize: "vertical" }} />
                 <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
                   <button className="btn btn-primary" style={{ padding: "4px 12px" }} onClick={() => toKb(r.id)}><Icon n="plus" size={13} /> {t("В базу знаний", "В базу знань")}</button>
                   <button className="btn" style={{ padding: "4px 12px" }} onClick={() => ignore(r.id)}>{t("Игнор", "Ігнор")}</button>

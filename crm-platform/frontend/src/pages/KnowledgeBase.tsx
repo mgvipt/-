@@ -1,7 +1,7 @@
-/* AI ЦЕНТР → «База знань ✓» — ЄДИНА база знань для всіх ІІ-агентів CRM (14.09.2026).
+/* AI ЦЕНТР → «База знань ✓» — ЄДИНА база знань для всіх ШІ-агентів CRM (14.09.2026).
    Агенти читають лише «Затверджено». Нове додається чернеткою → затверджує власник (право knowledge.approve).
    Вкладки: Записи · Тестовий чат (+ «Що бачить агент») · Перевірка чернеток · Контролер · Публікація в Юлю · Команда агентів
-   (ai-kb2, 14.09: усе, що витрачає гроші на ІІ, — лише за кнопкою, з оцінкою вартості). */
+   (ai-kb2, 14.09: усе, що витрачає гроші на ШІ, — лише за кнопкою, з оцінкою вартості). */
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
@@ -250,7 +250,7 @@ function Preview({ meta }: { meta: Meta }) {
   }
   return (
     <div style={{ marginTop: 10 }}>
-      <div style={{ fontSize: 12.5, color: "#475569", marginBottom: 8 }}>Точно той блок знань, який агент отримає зараз на таке повідомлення клієнта (ІІ не викликається, $0).</div>
+      <div style={{ fontSize: 12.5, color: "#475569", marginBottom: 8 }}>Точно той блок знань, який агент отримає зараз на таке повідомлення клієнта (ШІ не викликається, $0).</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <select value={agent} onChange={(e) => setAgent(e.target.value)} style={sel}>{meta.audiences.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}</select>
         <input value={q} onChange={(e) => setQ(e.target.value)} style={{ ...inp, flex: 1, minWidth: 240 }} />
@@ -287,7 +287,7 @@ function Team({ meta, reloadMeta }: { meta: Meta; reloadMeta: () => void }) {
       <WebchatCard s={s} isOwner={meta.is_owner} onSaved={(ns) => { setS({ ...s, ...ns }); reloadMeta(); }} />
       <ChannelsAiCard s={s} isOwner={meta.is_owner} onSaved={(ns) => { setS({ ...s, ...ns }); reloadMeta(); }} />
       <div style={{ ...card, marginTop: 12 }}>
-        <b>Контролер закритих чатів — лише за запуском.</b> Розкладу немає: перевірка з ІІ запускається тільки кнопкою
+        <b>Контролер закритих чатів — лише за запуском.</b> Розкладу немає: перевірка з ШІ запускається тільки кнопкою
         «Запустити перевірку» у вкладці «Контролер» (власник), з оцінкою вартості до запуску. Знахідки падають сюди
         чернетками з посиланням на діалог — затверджуєте ви. Пропозицій зараз: <b>{meta.reviewer_drafts}</b>.
       </div>
@@ -309,7 +309,7 @@ export default function KnowledgeBase() {
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 4px" }}>
       <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, color: "#14532d", margin: "10px 0" }}>
-        Одна база для всіх ІІ-агентів CRM. Агенти читають <b>лише «Затверджено»</b>. Нове (вручну, з імпорту, від рецензента) заходить чернеткою —
+        Одна база для всіх ШІ-агентів CRM. Агенти читають <b>лише «Затверджено»</b>. Нове (вручну, з імпорту, від рецензента) заходить чернеткою —
         затверджує власник. Ціни не пишіть цифрами: <code>{"{price:ID}"}</code> або <code>{"{m2:ID}"}</code> — агент отримає актуальну ціну з каталогу.
         Затверджено: <b>{meta.counts.approved || 0}</b> · чернеток: <b>{meta.counts.draft || 0}</b> · архів: <b>{meta.counts.archived || 0}</b>
       </div>
@@ -322,7 +322,7 @@ export default function KnowledgeBase() {
         <div>
           <KnowledgeTestChat topics={meta.topics} />
           <details style={{ marginTop: 14 }}>
-            <summary style={{ cursor: "pointer", fontSize: 13, color: "#475569" }}>Що бачить агент — точний блок знань без виклику ІІ ($0)</summary>
+            <summary style={{ cursor: "pointer", fontSize: 13, color: "#475569" }}>Що бачить агент — точний блок знань без виклику ШІ ($0)</summary>
             <Preview meta={meta} />
           </details>
         </div>

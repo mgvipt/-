@@ -1,4 +1,4 @@
-"""ІІ у каналах CRM (17.09.2026): за замовчуванням мовчить, вмикається по каналу, не заважає менеджеру."""
+"""ШІ у каналах CRM (17.09.2026): за замовчуванням мовчить, вмикається по каналу, не заважає менеджеру."""
 from datetime import timedelta
 from unittest import mock
 
@@ -104,7 +104,7 @@ class AiOrderTests(TestCase):
         self.assertIn("вже оформлене", note.text)
 
     def test_repeat_resends_same_link(self):
-        """18.09 (Олег, WhatsApp): вибір той самий — ІІ надсилає клієнту ТЕ САМЕ посилання, а не мовчить."""
+        """18.09 (Олег, WhatsApp): вибір той самий — ШІ надсилає клієнту ТЕ САМЕ посилання, а не мовчить."""
         from apps.crm.models import PayLink
         ai_reply._make_kit_offer(self.conv, {"product": self.prod.name, "qty": 1})
         pl = PayLink.objects.order_by("-id").first()
@@ -192,7 +192,7 @@ class AiRequisitesDealTests(TestCase):
         from apps.crm.views import send_requisites
         with mock.patch("apps.inbox.services.send_message") as sm:
             sm.return_value = Message.objects.create(conversation=self.conv, direction="out", text="…")
-            r = send_requisites(self.deal, conv=self.conv, sender_name="ІІ")
+            r = send_requisites(self.deal, conv=self.conv, sender_name="ШІ")
         self.assertTrue(r["ok"])
         self.assertEqual(sm.call_count, 3)                      # текст + IBAN + призначення
         self.deal.refresh_from_db()

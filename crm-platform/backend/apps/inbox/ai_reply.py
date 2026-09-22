@@ -1,4 +1,4 @@
-"""ІІ відповідає клієнту в каналах CRM — Viber, Telegram, WhatsApp, Facebook (17.09.2026, Олег:
+"""ШІ відповідає клієнту в каналах CRM — Viber, Telegram, WhatsApp, Facebook (17.09.2026, Олег:
 «а в вайбері й телеграмі теж агент буде відповідати? і в ватсапі»).
 
 ЗА ЗАМОВЧУВАННЯМ ВИМКНЕНО для всіх каналів. Вмикається по одному каналу:
@@ -11,11 +11,11 @@
 агент «yulia_web»), ціни з каталогу, посилання на сторінки кольорів. Замовлення, оплата, сумнів →
 «передала менеджеру» + внутрішня нотатка, клієнту нічого не вигадуємо.
 
-Запобіжники (щоб ІІ не заважав людям і не спамив):
-  • менеджер у діалозі (призначений або писав останні 12 год) — ІІ мовчить;
+Запобіжники (щоб ШІ не заважав людям і не спамив):
+  • менеджер у діалозі (призначений або писав останні 12 год) — ШІ мовчить;
   • не більше 1 відповіді на 20 секунд і 15 на добу в одному чаті;
   • тільки вхідні від клієнта у відкритому діалозі, не коментарі Meta, не внутрішні нотатки;
-  • відповідь іде окремим потоком: вебхук каналу не чекає ІІ і не відпадає по таймауту;
+  • відповідь іде окремим потоком: вебхук каналу не чекає ШІ і не відпадає по таймауту;
   • будь-яка помилка → клієнту нічого, менеджер бачить нотатку.
 """
 import re
@@ -28,7 +28,9 @@ from django.utils import timezone
 MAX_PER_DAY = 15          # запасні значення, якщо налаштування AI ЦЕНТРУ недоступні
 SILENCE_HOURS = 12
 MIN_SECONDS = 20
-NOTE_PREFIX = "ІІ у каналі"
+NOTE_PREFIX = "ШІ у каналі"
+# 22.09.2026: до перейменування ІІ→ШІ позначка була інша — старі повідомлення теж рахуємо (ліміт на добу, рецензент)
+NOTE_PREFIXES = (NOTE_PREFIX, "\u0406\u0406 у каналі")
 
 
 def _limits():
@@ -50,9 +52,9 @@ def channel_on(channel):
 
 # ── 21.09.2026 (Олег): КОМАНДА «Юля ChatPlace → продавець CRM» ─────────────────
 # «у нас була механіка, яка працювала як команда: далі вела діалог від Юлі ChatPlace
-# до ІІ-продавця з CRM. Коли відповість ІІ-агент із CRM — у цьому чаті Юля з ChatPlace
+# до ШІ-продавця з CRM. Коли відповість ШІ-агент із CRM — у цьому чаті Юля з ChatPlace
 # на паузі 10 годин, ніби менеджер включився. А якщо включається менеджер — тоді вже
-# і в CRM у цьому чаті зупиняється ІІ-агент».
+# і в CRM у цьому чаті зупиняється ШІ-агент».
 #
 # Як це працює:
 #   • Instagram веде Юля з ChatPlace — вона консультує (ефекти, ціни, підбір).
@@ -132,7 +134,7 @@ def _allowed_chat(channel, conv):
 def _manager_active(conv, hours):
     """Менеджер веде цей чат: САМ ПИСАВ клієнту за останні N годин (N — з AI ЦЕНТРУ).
     18.09.2026 (Олег): «якщо менеджер написав клієнту — агент у цьому чаті не пише». Саме написав:
-    закріплений за чатом менеджер, який ще нічого не відповів, ІІ не блокує."""
+    закріплений за чатом менеджер, який ще нічого не відповів, ШІ не блокує."""
     from .models import Message
     if hours <= 0:
         return False
@@ -145,14 +147,17 @@ def _throttled(conv, max_per_day):
     key = "ai_reply_%s" % conv.id
     if not cache.add(key, 1, MIN_SECONDS):
         return True
-    day = Message.objects.filter(conversation=conv, direction="out", internal=False,
-                                 sender_name__startswith=NOTE_PREFIX,
+    from django.db.models import Q
+    by_ai = Q()
+    for pref in NOTE_PREFIXES:
+        by_ai |= Q(sender_name__startswith=pref)
+    day = Message.objects.filter(by_ai, conversation=conv, direction="out", internal=False,
                                  created_at__gte=timezone.now() - timedelta(days=1)).count()
     return day >= max_per_day
 
 
 def should_reply(conv, incoming):
-    """Чи має ІІ відповісти на це повідомлення (лише читання, без мережі)."""
+    """Чи має ШІ відповісти на це повідомлення (лише читання, без мережі)."""
     if incoming is None or incoming.direction != "in" or incoming.internal:
         return False
     if not (incoming.text or "").strip():
@@ -164,7 +169,7 @@ def should_reply(conv, incoming):
         return False
     hours, max_per_day = _limits()
     if _manager_active(conv, hours):
-        return False          # живий менеджер у чаті — ІІ мовчить (і в CRM, і далі)
+        return False          # живий менеджер у чаті — ШІ мовчить (і в CRM, і далі)
     if _takeover_channel(ch) and not _took_over(conv, incoming):
         return False          # діалог поки веде Юля з ChatPlace — не заважаємо
     return not _throttled(conv, max_per_day)
@@ -192,7 +197,7 @@ def _money(v):
 
 
 def _send(conv, text):
-    """Повідомлення клієнту від імені ІІ (позначене в переписці)."""
+    """Повідомлення клієнту від імені ШІ (позначене в переписці)."""
     from .models import Message
     from .services import send_message
     msg = send_message(conv, text)
@@ -205,7 +210,7 @@ PAGE_RX = re.compile(r"https://wallcov\.com\.ua/p/([a-z0-9-]+)/")
 
 def _maybe_effect_photos(conv, text):
     """18.09.2026 (Олег): «коли запит на Патеру — відправляй фото ефектів, а не просто слова».
-    Якщо ІІ дав посилання на сторінку матеріалу — одразу показуємо фото кожного ефекту з бібліотеки."""
+    Якщо ШІ дав посилання на сторінку матеріалу — одразу показуємо фото кожного ефекту з бібліотеки."""
     from .models import Message
     from .showcase import effect_photos, file_url, material_by_slug
     m = PAGE_RX.search(text or "")
@@ -377,7 +382,7 @@ def _make_kit_offer(conv, order):
         same = recent.items.filter(product_id=prod.id).exists()
         if paid <= 0 and same:
             # 18.09.2026 (Олег): другої сделки не створюємо, але клієнту надсилаємо ТЕ САМЕ посилання ще раз —
-            # «якщо це продовження діалогу і вибір збігається, ІІ може просто продублювати».
+            # «якщо це продовження діалогу і вибір збігається, ШІ може просто продублювати».
             pl = PayLink.objects.filter(deal=recent).order_by("-id").first()
             if pl is None:
                 _note(conv, "%s: сделка #%s вже є, але посилання на оплату немає — надішліть вручну."

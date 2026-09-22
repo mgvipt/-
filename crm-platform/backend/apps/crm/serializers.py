@@ -318,7 +318,7 @@ class DealDetailSerializer(DealSerializer):
                 "at": pl.status_at}
 
     def get_responsible_display(self, obj):
-        # Ответственный для карточки: имя менеджера, иначе «ІІ (Юля)» если вёл только ИИ.
+        # Ответственный для карточки: имя менеджера, иначе «ШІ (Юля)» если вёл только ИИ.
         if obj.owner_id:
             return obj.owner.get_full_name() or obj.owner.username
         if obj.contact_id:
@@ -326,7 +326,7 @@ class DealDetailSerializer(DealSerializer):
             if Conversation.objects.filter(contact_id=obj.contact_id, assigned_to__isnull=False).exists():
                 return ""
             if Message.objects.filter(conversation__contact_id=obj.contact_id, sender_name="ai_assistant").exists():
-                return "ІІ (Юля)"
+                return "ШІ (Юля)"
         return ""
     realization = serializers.SerializerMethodField()
     linked_orders = serializers.SerializerMethodField()

@@ -631,10 +631,10 @@ function ManagersTab() {
 
       <div className="panel" style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-          <div className="label" style={{ margin: 0 }}>{t("По статусам: кто провёл лидов (менеджер vs ИИ)", "По статусах: хто провів лідів (менеджер vs ІІ)")}</div>
+          <div className="label" style={{ margin: 0 }}>{t("По статусам: кто провёл лидов (менеджер vs ИИ)", "По статусах: хто провів лідів (менеджер vs ШІ)")}</div>
           {ms && <select value={msFunnel} onChange={(e) => setMsFunnel(e.target.value)} style={_selSt}>{(ms.funnels || []).map((f: any) => <option key={f.id} value={f.id}>{f.name}{f.is_lead ? " \u2605" : ""}</option>)}</select>}
         </div>
-        <div className="muted" style={{ fontSize: 11.5, marginBottom: 10, lineHeight: 1.5 }}>{t("Сколько лидов каждый провёл В статус за период. Строка «ИІ / автоматика» — сколько сделала автоматика/ИИ. Внизу — % работы ИИ по каждому статусу (чтобы видеть, где работает ИИ, а где менеджер).", "Скільки лідів кожен провів У статус. Рядок «ІІ / автоматика» — скільки зробила автоматика. Внизу — % роботи ІІ по кожному статусу.")}</div>
+        <div className="muted" style={{ fontSize: 11.5, marginBottom: 10, lineHeight: 1.5 }}>{t("Сколько лидов каждый провёл В статус за период. Строка «ИІ / автоматика» — сколько сделала автоматика/ИИ. Внизу — % работы ИИ по каждому статусу (чтобы видеть, где работает ИИ, а где менеджер).", "Скільки лідів кожен провів У статус. Рядок «ШІ / автоматика» — скільки зробила автоматика. Внизу — % роботи ШІ по кожному статусу.")}</div>
         {!ms ? <div className="muted">…</div> : (ms.rows || []).length === 0 ? <div className="muted" style={{ fontSize: 12.5 }}>{t("Нет переходов за период", "Немає переходів за період")}</div> : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ borderCollapse: "collapse", minWidth: 640 }}>
@@ -652,7 +652,7 @@ function ManagersTab() {
                   </tr>
                 ))}
                 <tr style={{ borderTop: "2px solid #eef2f7" }}>
-                  <td style={{ ..._td, fontWeight: 700, color: "#7c3aed" }}>{t("% работы ИИ", "% роботи ІІ")}</td>
+                  <td style={{ ..._td, fontWeight: 700, color: "#7c3aed" }}>{t("% работы ИИ", "% роботи ШІ")}</td>
                   {(ms.stages || []).map((st: any) => { const p = ms.ai_pct ? ms.ai_pct[String(st.id)] : null; return <td key={st.id} style={{ ..._td, textAlign: "center", color: (p == null ? "#cbd5e1" : (p >= 80 ? "#b91c1c" : "#7c3aed")), fontWeight: 700 }}>{p == null ? "·" : p + "%"}</td>; })}
                   <td style={_td}></td>
                 </tr>

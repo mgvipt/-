@@ -754,7 +754,7 @@ class LeadViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def ask_analyst(self, request, pk=None):
-        """22.09.2026: пряме питання ІІ-РОП по діалогу ліда. body: {"question": "..."}"""
+        """22.09.2026: пряме питання ШІ-РОП по діалогу ліда. body: {"question": "..."}"""
         lead = self.get_object()
         q = (request.data.get("question") or "").strip()
         if not q:
@@ -875,7 +875,7 @@ def _route_deal_funnel(deal, user=None):
 
 
 def requisites_text(deal, amount=None):
-    """Текст «Оплата за реквізитами» — ОДИН на всю CRM: кнопка менеджера і ІІ у каналах
+    """Текст «Оплата за реквізитами» — ОДИН на всю CRM: кнопка менеджера і ШІ у каналах
     беруть його звідси, тому клієнт завжди бачить однакові реквізити і призначення платежу
     (по ньому банківська виписка сама знаходить оплату)."""
     from django.conf import settings as _s
@@ -1132,9 +1132,9 @@ def _ser_analysis(da):
 
 
 def _ask_sales_analyst(entity, field, question, user=None):
-    """22.09.2026 (оновлено): пряма відповідь ІІ-РОП на питання менеджера — та сама KB-заземлена
+    """22.09.2026 (оновлено): пряма відповідь ШІ-РОП на питання менеджера — та сама KB-заземлена
     персона ask_rop, що й у чаті (раніше тут була окрема, не заземлена в базу знань функція —
-    через це ІІ-РОП казав «інформації немає», хоча вона є у базі знань)."""
+    через це ШІ-РОП казав «інформації немає», хоча вона є у базі знань)."""
     from .coach_prompt import ask_rop
     from apps.inbox.models import Conversation
     conv = None
@@ -2302,7 +2302,7 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def ask_analyst(self, request, pk=None):
-        """22.09.2026: пряме питання ІІ-РОП по діалогу сделки. body: {"question": "..."}"""
+        """22.09.2026: пряме питання ШІ-РОП по діалогу сделки. body: {"question": "..."}"""
         deal = self.get_object()
         q = (request.data.get("question") or "").strip()
         if not q:
@@ -6228,7 +6228,7 @@ class ManagerActionsView(APIView):
                     r["replies_cp"] += c["n"]
             else:
                 unassigned_cp += c["n"]
-        # staffvis 15.09: рядки звільнених — лише з дозволом «Аналітика продажів» (зведення «ІІ / люди» рахує всіх)
+        # staffvis 15.09: рядки звільнених — лише з дозволом «Аналітика продажів» (зведення «ШІ / люди» рахує всіх)
         from apps.accounts.visibility import hidden_ids as _vis_hidden
         for _h in _vis_hidden("sales_analytics", d_from) & set(agg):
             agg.pop(_h, None)
@@ -6414,9 +6414,9 @@ class WeeklyReviewView(APIView):
 
 class ManagerStagesView(APIView):
     """Матриця «менеджер × статус»: скільки лідів кожен провів У статус (з журналу
-    переходів) + окремий рядок ІІ/автоматика. Дає розклад «хто на яких статусах
-    працював» і % ІІ vs менеджер. Ручний хід = action «Зміна стадії»+user;
-    авто/ІІ = «Авто-стадія» (без user)."""
+    переходів) + окремий рядок ШІ/автоматика. Дає розклад «хто на яких статусах
+    працював» і % ШІ vs менеджер. Ручний хід = action «Зміна стадії»+user;
+    авто/ШІ = «Авто-стадія» (без user)."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -6463,8 +6463,8 @@ class ManagerStagesView(APIView):
         uids = [int(k[1:]) for k in agg.keys() if k.startswith("u")]
         for x in User.objects.filter(id__in=uids):
             names[x.id] = x.get_full_name() or x.username
-        # рядки: менеджери (за активністю) + ІІ
-        # staffvis 15.09: рядки звільнених — лише з дозволом «Аналітика продажів» (% ІІ по статусах рахує всіх)
+        # рядки: менеджери (за активністю) + ШІ
+        # staffvis 15.09: рядки звільнених — лише з дозволом «Аналітика продажів» (% ШІ по статусах рахує всіх)
         from apps.accounts.visibility import hidden_ids as _vis_hidden
         _vis_hid = _vis_hidden("sales_analytics", d_from)
         out_rows = []
@@ -6476,12 +6476,12 @@ class ManagerStagesView(APIView):
             total = sum(len(v) for v in per.values())
             out_rows.append({
                 "key": wk, "is_ai": is_ai,
-                "name": ("ІІ / автоматика" if is_ai else names.get(uid, "#%s" % uid)),
+                "name": ("ШІ / автоматика" if is_ai else names.get(uid, "#%s" % uid)),
                 "total": total,
                 "stages": {str(sid): len(v) for sid, v in per.items()},
             })
         out_rows.sort(key=lambda r: (r["is_ai"], -r["total"]))
-        # % ІІ по кожному статусу
+        # % ШІ по кожному статусу
         stage_pct = {}
         for st in stages:
             ai = len((agg.get(AI_KEY, {}) or {}).get(st.id, set()) or set())
@@ -6516,7 +6516,7 @@ def render_kp_public(request, code):
 
 
 class KbEntryViewSet(viewsets.ModelViewSet):
-    """База знань ІІ-продавця (AI ЦЕНТР). Пошук ?search= по питанню/відповіді."""
+    """База знань ШІ-продавця (AI ЦЕНТР). Пошук ?search= по питанню/відповіді."""
     queryset = __import__("apps.crm.models", fromlist=["KbEntry"]).KbEntry.objects.all()
     serializer_class = __import__("apps.crm.serializers", fromlist=["KbEntrySerializer"]).KbEntrySerializer
     permission_classes = [_manage_or_read("settings.rules")]
@@ -6535,7 +6535,7 @@ class KbEntryViewSet(viewsets.ModelViewSet):
 
 
 class KbUnknownQuestionViewSet(viewsets.ModelViewSet):
-    """Невідомі питання (ІІ не знав відповіді). Дія to_kb → додати в базу."""
+    """Невідомі питання (ШІ не знав відповіді). Дія to_kb → додати в базу."""
     queryset = __import__("apps.crm.models", fromlist=["KbUnknownQuestion"]).KbUnknownQuestion.objects.select_related("answer_entry").all()
     serializer_class = __import__("apps.crm.serializers", fromlist=["KbUnknownQuestionSerializer"]).KbUnknownQuestionSerializer
     permission_classes = [_manage_or_read("settings.rules")]
