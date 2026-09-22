@@ -17,7 +17,7 @@ def material_article(instruction,lang='uk'):
  localized=product_texts(p,lang)
  text=localized['full_description'].strip()
  if not text:return None
- images=list(p.images.all());images.sort(key=lambda im:(not im.is_primary,im.order,im.id))
+ images=[im for im in p.images.all() if im.is_approved];images.sort(key=lambda im:(not im.is_primary,im.order,im.id))
  cover=('https://crm.wallcovdec.com.ua/api/products/%d/image/%d/'%(p.id,images[0].id)) if images else ''
  title=(p.shop_specs.get('translations',{}).get('ru',{}).get('article_title') if lang=='ru' else None) or p.seo_h1 or instruction.title
  paragraphs=text.split('\n\n')

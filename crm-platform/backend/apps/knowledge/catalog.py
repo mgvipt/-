@@ -126,8 +126,40 @@ def prices_block(items=None, query=None, max_lines=24, per_family=10):
                 if p.id not in seen:
                     seen.add(p.id)
                     lines.append(_line(p))
-        if not lines:
-            return ""
-        return "Ціни з каталогу CRM (актуальні зараз; інших цифр не називай):\n" + "\n".join(lines[:max_lines])
+        prices = ("Ціни з каталогу CRM (актуальні зараз; інших цифр не називай):\n" + "\n".join(lines[:max_lines])) if lines else ""
+        facts = current_product_facts(items, query)
+        return "\n\n".join(x for x in [prices, facts] if x)
     except Exception:
         return ""
+
+
+def current_product_facts(items=None, query=None, limit=6):
+    """Resolve current descriptions by Product IDs; never copy them into KnowledgeItem."""
+    from apps.warehouse.models import Product
+    from apps.content_library.models import Instruction
+    from django.db.models import Q
+    from django.utils.html import strip_tags
+    linked={p.id for item in items or [] for p in item.products.all()}
+    taught=Instruction.objects.filter(content__kind='staff_training').values('products__id')
+    query=(query or '').lower()
+    aliases={'мікроцемент':'microcement','микроцемент':'microcement','топцемент':'topciment','топ цемент':'topciment','міо':'mio','мио':'mio','сірена':'sirena','сирена':'sirena','паттера':'pattera','патера':'pattera','праймер':'primer','антикатура':'anticatura'}
+    for key,value in aliases.items():query=query.replace(key,value)
+    words=set(re.findall(r'[a-zа-яіїєґ]+',query))
+    selected=[]
+    generic={'paint','primer','topciment','anticatura','silver','gold','bianco','pearl','perl','мат','фарба','лак','клей','шпаклівка'}
+    for p in Product.objects.filter(Q(id__in=linked)|Q(id__in=taught),is_active=True).only('id','name','description','price','currency','unit','consumption_per_m2','shop_specs'):
+        tokens={w for w in re.findall(r'[a-z]+',p.name.lower()) if len(w)>=3}
+        overlap=(tokens-generic)&words
+        score=1000 if p.id in linked else sum(len(w) for w in overlap)
+        if not score:continue
+        selected.append((score,p))
+    if not selected:return ''
+    blocks=[]
+    for _,p in sorted(selected,key=lambda item:(-item[0],item[1].id))[:limit]:
+        text=strip_tags(p.description or '').strip()[:2600]
+        price=(str(p.price)+' '+p.currency+'/'+p.unit) if p.price>0 else 'ціну потрібно уточнити'
+        block=p.name+'\nЦіна: '+price
+        if p.consumption_per_m2 is not None:block+='\nВитрата на всі шари: '+str(p.consumption_per_m2)+' '+p.unit+'/м²'
+        if text:block+='\n'+text
+        blocks.append(block)
+    return 'Поточні властивості матеріалів. Якщо старий текст суперечить цим даним, використовуй ці дані; не додавай непідтверджених характеристик. Не пояснюй клієнту внутрішнє зберігання даних.\n\n'+'\n\n'.join(blocks)

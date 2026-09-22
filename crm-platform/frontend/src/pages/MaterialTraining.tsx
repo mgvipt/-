@@ -7,12 +7,22 @@ export interface Entry {
 }
 
 interface MaterialProduct { id:number;name:string;price:string;currency:string;unit:string;description:string;short_description:string;full_description:string;benefits:string[];consumption:string|null;instruction_url:string;video_url:string;images:{id:number;url:string;alt_text:string;is_primary:boolean}[]; }
+function materialPrice(p:MaterialProduct,lang:string) {
+ return Number(p.price)>0?`${Number(p.price).toLocaleString(lang==="uk"?"uk-UA":"ru-RU")} ${p.currency==="UAH"?"грн":p.currency} / ${p.unit}`:(lang==="uk"?"Ціну уточнюємо":"Цену уточняем");
+}
+function MaterialVariant({p,lang}:{p:MaterialProduct;lang:string}) {
+ const [open,setOpen]=useState(false);
+ return <details onToggle={e=>setOpen(e.currentTarget.open)} style={{border:"1px solid #e2e8f0",borderRadius:8,padding:"10px 12px",marginTop:8}}>
+   <summary style={{cursor:"pointer"}}><span style={{display:"inline-flex",flexWrap:"wrap",justifyContent:"space-between",gap:"4px 12px",width:"calc(100% - 20px)",verticalAlign:"top"}}><b>{p.name}</b><span style={{fontWeight:700,color:"#166534"}}>{materialPrice(p,lang)}</span></span></summary>
+   {open&&<ProductLearning p={p} lang={lang}/>}
+ </details>;
+}
 function ProductLearning({p,lang}:{p:MaterialProduct;lang:string}) {
  const uk=lang==="uk";
  const texts=[p.description || p.full_description || p.short_description].filter(Boolean);
  return <article style={{borderTop:"1px solid #e2e8f0",paddingTop:12,marginTop:12}}>
  <h4 style={{margin:"0 0 8px"}}>{p.name}</h4>
- <p style={{fontWeight:700,fontSize:17}}>{Number(p.price)>0?`${Number(p.price).toLocaleString("uk-UA")} ${p.currency==="UAH"?"грн":p.currency} / ${p.unit}`:(uk?"Ціну уточнюємо":"Цену уточняем")}</p>
+ <p style={{fontWeight:700,fontSize:17}}>{materialPrice(p,lang)}</p>
  {p.consumption&&<p>{uk?"Витрата":"Расход"}: {Number(p.consumption).toLocaleString("uk-UA")} {p.unit}/м²</p>}
  {!!p.images.length&&<div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:8}}>{[...p.images].sort((a,b)=>Number(b.is_primary)-Number(a.is_primary)).map(im=><a key={im.id} href={im.url} target="_blank" rel="noreferrer"><img src={im.url} alt={im.alt_text||p.name} loading="lazy" style={{width:210,height:160,objectFit:"contain",borderRadius:8,background:"#f8fafc"}}/></a>)}</div>}
  {texts.map((v,j)=><div key={j} style={{fontSize:14,color:"#475569"}}>{v.split("\n").map((ln,i)=>renderLine(ln,i))}</div>)}
@@ -103,7 +113,11 @@ export function MaterialTraining({ items, lang }: { items: Entry[]; lang: string
         if (!entries.length) return null;
         return <div key={b}>{b && <h4>{c.key === "topciment" ? topLabels[b] : b === "anticatura" ? "ANTICATURA" : "WALLCOV"}</h4>}{entries.map(e => <details key={e.id} style={{ padding: "12px 14px", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 8 }}>
           <summary style={{ cursor: "pointer", fontWeight: 700 }}>{titleOf(e)}</summary>
-          {(e.products||[]).map(p=><ProductLearning key={p.id} p={p} lang={lang}/>)}
+          {(e.products?.length||0)>1?<>
+            {e.products?.[0].short_description?.trim()&&<div style={{fontSize:14,color:"#475569",margin:"10px 0"}}>{e.products[0].short_description.split("\n").map((line,i)=>renderLine(line,i))}</div>}
+            <p className="muted" style={{fontSize:13,margin:"10px 0 6px"}}>{uk?"Оберіть варіант, щоб переглянути опис і фото.":"Выберите вариант, чтобы посмотреть описание и фото."}</p>
+            {e.products?.map(p=><MaterialVariant key={p.id} p={p} lang={lang}/>)}
+          </>:(e.products||[]).map(p=><ProductLearning key={p.id} p={p} lang={lang}/>)}
           {!e.products?.length&&<p>{uk?"Активних позицій поки немає.":"Активных позиций пока нет."}</p>}
           <div style={{ padding: 12, marginTop: 14, background: "#f8fafc", borderRadius: 8 }}>
             <b>{uk ? "Самоперевірка" : "Самопроверка"}</b>

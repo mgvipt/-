@@ -232,3 +232,16 @@ class CanonicalClientArticleTests(TestCase):
   response=ProductViewSet.as_view({'patch':'partial_update'})(request,pk=self.p.id)
   self.assertEqual(response.status_code,409)
   self.p.refresh_from_db();self.assertEqual(self.p.name,'Матеріал')
+
+class CanonicalAIMaterialTests(TestCase):
+ def test_ai_facts_follow_card_without_kb_copy(self):
+  from apps.knowledge.catalog import current_product_facts
+  p=Product.objects.create(name='Sirena Silk',price=100,unit='кг',description='Перший опис')
+  i=Instruction.objects.create(slug='ai-source-test',title='Sirena',content={'kind':'staff_training'})
+  i.products.add(p)
+  self.assertIn('Перший опис',current_product_facts(query='Sirena Silk'))
+  Product.objects.filter(pk=p.pk).update(description='Змінений опис',price=150)
+  text=current_product_facts(query='Sirena Silk')
+  self.assertIn('Змінений опис',text);self.assertIn('150.00',text);self.assertNotIn('Перший опис',text)
+  Product.objects.filter(pk=p.pk).update(is_active=False)
+  self.assertEqual(current_product_facts(query='Sirena Silk'),'')
