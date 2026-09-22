@@ -1,8 +1,23 @@
 import { useState } from "react";
 export interface Entry {
+  products?: MaterialProduct[];
   id: number; date: string; section_key?: string; section?: string;
   title_uk?: string; title_ru?: string; body_uk?: string; body_ru?: string;
   title?: string; body?: string; // legacy fallback
+}
+
+interface MaterialProduct { id:number;name:string;price:string;currency:string;unit:string;description:string;short_description:string;full_description:string;benefits:string[];consumption:string|null;instruction_url:string;video_url:string;images:{id:number;url:string;alt_text:string;is_primary:boolean}[]; }
+function ProductLearning({p}:{p:MaterialProduct}) {
+ const texts=[p.description,p.short_description,p.full_description].filter((v,i,a)=>v?.trim()&&a.indexOf(v)===i);
+ return <article style={{borderTop:"1px solid #e2e8f0",paddingTop:12,marginTop:12}}>
+ <h4 style={{margin:"0 0 8px"}}>{p.name}</h4>
+ <p style={{fontWeight:700,fontSize:17}}>{Number(p.price)>0?`${Number(p.price).toLocaleString("uk-UA")} ${p.currency==="UAH"?"грн":p.currency} / ${p.unit}`:"Ціну уточнюємо"}</p>
+ {p.consumption&&<p>Витрата: {Number(p.consumption).toLocaleString("uk-UA")} {p.unit}/м²</p>}
+ {!!p.images.length&&<div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:8}}>{[...p.images].sort((a,b)=>Number(b.is_primary)-Number(a.is_primary)).map(im=><a key={im.id} href={im.url} target="_blank" rel="noreferrer"><img src={im.url} alt={im.alt_text||p.name} loading="lazy" style={{width:210,height:160,objectFit:"contain",borderRadius:8,background:"#f8fafc"}}/></a>)}</div>}
+ {texts.map((v,j)=><div key={j} style={{fontSize:14,color:"#475569"}}>{v.split("\n").map((ln,i)=>renderLine(ln,i))}</div>)}
+ {!!p.benefits?.length&&<ul>{p.benefits.map((b,i)=><li key={i}>{b}</li>)}</ul>}
+ <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:10}}><a href={`/warehouse?product=${p.id}`} target="_blank" rel="noreferrer">Картка товару</a>{p.instruction_url&&/^https?:/.test(p.instruction_url)&&<a href={p.instruction_url} target="_blank" rel="noreferrer">Інструкція</a>}{p.video_url&&/^https?:/.test(p.video_url)&&<a href={p.video_url} target="_blank" rel="noreferrer">Відео нанесення</a>}</div>
+ </article>;
 }
 
 function renderLine(line: string, key: number) {
@@ -47,9 +62,8 @@ export function MaterialTraining({ items, lang }: { items: Entry[]; lang: string
   ];
   const typeOf = (e: Entry) => e.section_key === "materials_anticatura" ? "decor" : (e.section_key || "").replace("materials_", "");
   const titleOf = (e: Entry) => (uk ? e.title_uk : e.title_ru) || e.title || "";
-  const bodyOf = (e: Entry) => (uk ? e.body_uk : e.body_ru) || e.body || "";
   const search = query.trim().toLocaleLowerCase();
-  const matches = items.filter(e => (!category || typeOf(e) === category) && (!brand || (brand === "anticatura" ? e.section_key === "materials_anticatura" : e.section_key !== "materials_anticatura")) && (!search || (titleOf(e) + " " + bodyOf(e)).toLocaleLowerCase().includes(search)));
+  const matches = items.filter(e => (!category || typeOf(e) === category) && (!brand || (brand === "anticatura" ? e.section_key === "materials_anticatura" : e.section_key !== "materials_anticatura")) && (!search || (titleOf(e) + " " + (e.products||[]).map(p=>p.name+" "+p.description+" "+p.full_description).join(" ")).toLocaleLowerCase().includes(search)));
   return <section className="panel" aria-label={uk ? "Навчання матеріалам" : "Обучение материалам"} style={{ marginBottom: 26 }}>
     <h2 style={{ marginTop: 0 }}>🎨 {uk ? "Матеріали · адаптація та навчання" : "Материалы · адаптация и обучение"}</h2>
     <p>{uk ? "Знайдіть матеріал, вивчіть його застосування та потренуйтеся пояснювати користь клієнту." : "Найдите материал, изучите его применение и потренируйтесь объяснять пользу клиенту."}</p>
@@ -78,7 +92,8 @@ export function MaterialTraining({ items, lang }: { items: Entry[]; lang: string
         if (!entries.length) return null;
         return <div key={b}>{b && <h4>{b === "anticatura" ? "ANTICATURA" : "WALLCOV"}</h4>}{entries.map(e => <details key={e.id} style={{ padding: "12px 14px", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 8 }}>
           <summary style={{ cursor: "pointer", fontWeight: 700 }}>{titleOf(e)}</summary>
-          <div style={{ fontSize: 14, color: "#475569", marginTop: 12 }}>{bodyOf(e).split("\n").map((ln, i) => renderLine(ln, i))}</div>
+          {(e.products||[]).map(p=><ProductLearning key={p.id} p={p}/>)}
+          {!e.products?.length&&<p>Активних позицій поки немає.</p>}
           <div style={{ padding: 12, marginTop: 14, background: "#f8fafc", borderRadius: 8 }}>
             <b>{uk ? "Самоперевірка" : "Самопроверка"}</b>
             <ol style={{ paddingLeft: 20, lineHeight: 1.6 }}>

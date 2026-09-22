@@ -33,11 +33,26 @@ class LibraryView(APIView):
     def get(self,request):
         if not permitted(request.user,'inbox.view'): return Response(status=403)
         training = []
-        for i in Instruction.objects.filter(status='draft', content__kind='staff_training').order_by('title'):
+        for i in Instruction.objects.filter(status='draft', content__kind='staff_training').prefetch_related('products__images').order_by('title'):
+            products = []
+            for p in i.products.all():
+                if not p.is_active:
+                    continue
+                products.append({'id': p.id, 'name': p.name, 'price': str(p.price),
+                    'currency': p.currency, 'unit': p.unit, 'description': p.description,
+                    'short_description': p.shop_short_description,
+                    'full_description': p.shop_full_description,
+                    'benefits': p.shop_benefits, 'consumption': str(p.consumption_per_m2) if p.consumption_per_m2 else None,
+                    'instruction_url': p.shop_instruction_url, 'video_url': p.shop_video_url,
+                    'updated_at': p.updated_at.isoformat(),
+                    'images': [{'id': im.id, 'url': '/api/products/%d/image/%d/' % (p.id, im.id),
+                        'alt_text': im.alt_text, 'is_primary': im.is_primary} for im in p.images.all()]})
             training.append({'id': i.id, 'date': i.updated_at.date().isoformat(),
-                'title': i.title, 'body': i.content.get('body', ''),
+                'title': i.title, 'products': products,
                 'section_key': i.content.get('section_key', 'materials_prep')})
-        return Response({'items':[serialize(i) for i in Instruction.objects.filter(status='published').prefetch_related('products')], 'training': training})
+        response = Response({'items':[serialize(i) for i in Instruction.objects.filter(status='published').prefetch_related('products')], 'training': training})
+        response['Cache-Control'] = 'private, no-store'
+        return response
 
 
 @ensure_csrf_cookie
