@@ -410,8 +410,11 @@ def _make_volume_offer(conv, calc, order):
         deal = Deal.objects.create(title="Обʼєм %s м² · %s" % (_money(calc["area"]), str(conv.contact)[:40]),
                                    funnel=f, stage=st, contact_id=conv.contact_id, owner=conv.assigned_to)
     tint = order.get("tint", True)
+    from apps.knowledge.volume_calc import TINT_PRODUCT, tint_estimate
+    items = [{"name": l["name"], "qty": l["qty"]} for l in calc["lines"]]
+    t = tint_estimate(calc) if tint else None
     try:
-        res = make_offer(deal, [{"name": l["name"], "qty": l["qty"]} for l in calc["lines"]], send_pay=not tint)
+        res = make_offer(deal, items, send_pay=True)
     except Exception as e:
         _note(conv, "%s: не вдалося оформити обʼєм (%s) — зробіть вручну." % (NOTE_PREFIX, str(e)[:200]))
         return
@@ -420,13 +423,22 @@ def _make_volume_offer(conv, calc, order):
               % (NOTE_PREFIX, deal.id, res.get("msg") or "—"))
         return
     miss = (" Без витрати в картці (не пораховано): %s." % "; ".join(calc["missing"])[:300]) if calc["missing"] else ""
-    if tint:
-        _note(conv, "%s: оформив обʼєм %s м² — сделка #%s на %s ₴, прорахунок клієнту надіслано. "
-              "ДОДАЙТЕ ТОНУВАННЯ в колір клієнта і надішліть посилання на оплату.%s"
-              % (NOTE_PREFIX, _money(calc["area"]), deal.id, res.get("amount"), miss))
-    else:
-        _note(conv, "%s: оформив обʼєм %s м² без тонування — сделка #%s на %s ₴, надіслав посилання на оплату %s.%s"
-              % (NOTE_PREFIX, _money(calc["area"]), deal.id, res.get("amount"), res.get("url") or "—", miss))
+    tnote = ""
+    if t:   # тонування за регламентом: послуга + тонер (обʼєм тонера орієнтовний — до підбору кольору)
+        try:
+            from apps.crm.models import DealItem
+            from apps.warehouse.models import Product
+            p = Product.objects.filter(id=TINT_PRODUCT).first()
+            if p:
+                DealItem.objects.create(deal=deal, product=p, quantity=1, price=t["total"], cost=0)
+                deal.amount = sum((i.total for i in deal.items.all()), 0)
+                deal.save(update_fields=["amount"])
+                tnote = (" Тонування ≈ %s ₴ (послуга %s + тонер ≈ %s мл): ПЕРЕВІРТЕ після підбору кольору."
+                         % (t["total"], t["service"], t["ml"]))
+        except Exception as e:
+            tnote = " Тонування не додано (%s) — додайте вручну." % str(e)[:120]
+    _note(conv, "%s: оформив обʼєм %s м² — сделка #%s на %s ₴, прорахунок і посилання на оплату %s надіслано.%s%s"
+          % (NOTE_PREFIX, _money(calc["area"]), deal.id, res.get("amount"), res.get("url") or "—", tnote, miss))
 
 
 MAX_AUTO_ORDER = 2000        # ₴ — вище цієї суми оформлює менеджер

@@ -120,8 +120,9 @@ def estimate(material_id, base, area):
     total = sum((l["total"] for l in lines), Decimal("0"))
     mat = next((l for l in lines if l["is_material"]), None)
     colors = COLORS_BY_ID.get(material_id, COLORS.get(base, ""))
-    return {"area": area, "material_id": material_id, "lines": lines, "missing": missing, "total": total,
-            "material": mat, "ok": bool(mat), "colors": colors}
+    # base потрібен для тонування (фактурні рахуються інакше, ніж тонкошарові)
+    return {"area": area, "material_id": material_id, "base": base, "lines": lines, "missing": missing,
+            "total": total, "material": mat, "ok": bool(mat), "colors": colors}
 
 
 def short_name(name):
@@ -141,16 +142,63 @@ def prompt_block(calc):
            "Разом: %s грн (≈ %s грн за 1 м² з усіма шарами). Лише декоративний матеріал: %s грн. "
            "Ґрунти й основа разом: %s грн.\n"
            "Жодних інших сум не складай і не рахуй — називай лише цифри з цього блоку.\n"
-           "Тонування в колір клієнта сюди НЕ входить — його додає менеджер після вибору кольору. "
            "Захисного покриття в розрахунку НЕМАЄ — не називай ґрунти «захистом»."
            % (_g(calc["area"]), "\n".join(rows), _g(calc["total"]), _g(calc["total"] / Decimal(str(calc["area"]))),
               _g(mat["total"]), _g(calc["total"] - mat["total"])))
+    t = tint_estimate(calc)
+    if t:
+        out += ("\nТОНУВАННЯ у колір клієнта (за нашим регламентом, орієнтовно): послуга %s грн + тонер ≈ %s грн "
+                "(≈ %s мл × 6 грн) = ≈ %s грн. Назви це ОРІЄНТОВНО і скажи, що точну суму тонування "
+                "порахуємо після вибору кольору (на темний/насичений колір тонера йде більше)."
+                % (_g(t["service"]), _g(t["toner"]), _g(t["ml"]), _g(t["total"])))
+        out += "\nРазом з тонуванням ≈ %s грн." % _g(calc["total"] + t["total"])
+    else:
+        out += "\nТонування у цьому розрахунку немає — його порахує менеджер."
     if calc.get("colors"):
         out += "\nСторінка кольорів САМЕ цього матеріалу: %s (іншу не давай)." % calc["colors"]
     if calc["missing"]:
         out += "\nНе пораховано (у картці немає витрати): %s — скажи, що це менеджер додасть окремо." % (
             "; ".join(short_name(n) for n in calc["missing"]))
     return out
+
+
+
+
+# ───────── тонування: регламент Wallcov (Notion «Як розрахувати вартість тонування», 27.07.2025) ─────────
+# Фактурні: <5 кг — 100 грн за тару; ≥5 кг — вага × 20 грн/кг.
+# Тонкошарові й фарби: 100 грн за КОЖНУ тару. Тонер: 6 грн/мл у всіх випадках.
+# Обʼєм тонера точно відомий лише після підбору кольору → беремо норму з прикладів регламенту
+# (3 кг — 12 мл, 8 кг — 20 мл, 6,5 кг — 24 мл) ≈ 4 мл/кг; насичений колір — більше.
+TINT_SERVICE_MIN = Decimal("100")     # мінімальна послуга за тару
+TINT_PER_KG = Decimal("20")           # фактурні від 5 кг
+TINT_MIN_KG = Decimal("5")
+TONER_UAH_ML = Decimal("6")
+TONER_ML_PER_KG = Decimal("4")        # звичайний колір
+TONER_ML_PER_KG_RICH = Decimal("10")  # насичений (темний, яскравий)
+TARA_KG = Decimal("5")                # тонкошарові: одна тара ≈ 5 кг
+TINT_PRODUCT = 1311                   # картка «Послуга тонування» (ціну ставить менеджер)
+
+
+def tint_estimate(calc, rich=False):
+    """Орієнтовна вартість тонування обʼєму за регламентом. Точний обʼєм тонера — після підбору кольору."""
+    if not calc or not calc.get("ok"):
+        return None
+    mat = calc["material"]
+    if (mat.get("unit") or "").strip(". ").lower() not in ("кг", "л"):
+        return None
+    kg = Decimal(str(mat["qty"]))
+    facture = calc.get("base") == "facture"
+    if facture:
+        service = TINT_SERVICE_MIN if kg < TINT_MIN_KG else (kg * TINT_PER_KG)
+        tara = 1
+    else:
+        tara = int(math.ceil(kg / TARA_KG)) or 1
+        service = TINT_SERVICE_MIN * tara
+    ml = (kg * (TONER_ML_PER_KG_RICH if rich else TONER_ML_PER_KG)).quantize(Decimal("1"), rounding=ROUND_CEILING)
+    toner = ml * TONER_UAH_ML
+    total = (service + toner).quantize(Decimal("0.01"))
+    return {"kg": kg, "service": service.quantize(Decimal("0.01")), "ml": ml, "toner": toner, "total": total,
+            "tara": tara, "rich": bool(rich)}
 
 
 _RU = re.compile(r"[ыэъё]|\b(что|сколько|нужно|давайте|сразу|цвет|хочу|мне|можно|спасибо|пожалуйста|как)\b", re.I)

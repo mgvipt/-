@@ -56,7 +56,8 @@ class EstimateTests(TestCase):
         self.assertEqual(c["total"], Decimal("2520") + Decimal("160") + Decimal("400"))
         block = vc.prompt_block(c)
         self.assertIn("Разом: 3080 грн", block)
-        self.assertIn("Тонування", block)
+        self.assertIn("ТОНУВАННЯ", block)
+        self.assertIn("Разом з тонуванням", block)
 
     def test_missing_consumption_not_invented(self):
         self._p(1649, "Velvet Luna (Str 0501) Silver. Мілкозерниста", "710", "кг", "0.33")
@@ -100,3 +101,30 @@ class GuardsTests(TestCase):
         self.assertFalse(vc.shown_to_client(before, calc))
         after = [{"role": "agent", "text": "Разом: 3080 грн"}, {"role": "client", "text": "оформляйте"}]
         self.assertTrue(vc.shown_to_client(after, calc))
+
+
+class TintTests(TestCase):
+    """Регламент Wallcov (Notion, 27.07.2025): фактурні <5 кг — 100 грн, ≥5 кг — кг×20;
+    тонкошарові — 100 грн за тару; тонер 6 грн/мл."""
+    def _calc(self, base, qty, unit="кг"):
+        return {"ok": True, "base": base, "material": {"qty": Decimal(qty), "unit": unit}}
+
+    def test_facture_small_and_big(self):
+        t = vc.tint_estimate(self._calc("facture", "3"))
+        self.assertEqual(t["service"], Decimal("100.00"))
+        self.assertEqual(t["ml"], Decimal("12"))          # 3 кг × 4 мл
+        self.assertEqual(t["total"], Decimal("172.00"))   # приклад із регламенту
+        t2 = vc.tint_estimate(self._calc("facture", "8"))
+        self.assertEqual(t2["service"], Decimal("160.00"))
+        self.assertEqual(t2["total"], Decimal("352.00"))  # 160 + 32 мл × 6
+
+    def test_thin_per_tara(self):
+        t = vc.tint_estimate(self._calc("thin", "6.5"))
+        self.assertEqual(t["tara"], 2)
+        self.assertEqual(t["service"], Decimal("200.00"))
+
+    def test_rich_color_more_toner(self):
+        self.assertEqual(vc.tint_estimate(self._calc("facture", "10"), rich=True)["ml"], Decimal("100"))
+
+    def test_pieces_not_tinted(self):
+        self.assertIsNone(vc.tint_estimate(self._calc("facture", "2", "шт")))
