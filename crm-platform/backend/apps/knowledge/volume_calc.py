@@ -145,15 +145,20 @@ def prompt_block(calc):
            "Захисного покриття в розрахунку НЕМАЄ — не називай ґрунти «захистом»."
            % (_g(calc["area"]), "\n".join(rows), _g(calc["total"]), _g(calc["total"] / Decimal(str(calc["area"]))),
               _g(mat["total"]), _g(calc["total"] - mat["total"])))
-    t = tint_estimate(calc)
-    if t:
-        out += ("\nТОНУВАННЯ у колір клієнта (за нашим регламентом, орієнтовно): послуга %s грн + тонер ≈ %s грн "
-                "(≈ %s мл × 6 грн) = ≈ %s грн. Назви це ОРІЄНТОВНО і скажи, що точну суму тонування "
-                "порахуємо після вибору кольору (на темний/насичений колір тонера йде більше)."
-                % (_g(t["service"]), _g(t["toner"]), _g(t["ml"]), _g(t["total"])))
-        out += "\nРазом з тонуванням ≈ %s грн." % _g(calc["total"] + t["total"])
-    else:
-        out += "\nТонування у цьому розрахунку немає — його порахує менеджер."
+    t = calc.get("tint") or tint_estimate(calc, None)
+    if t and not t["need_color"]:
+        out += ("\nТОНУВАННЯ у колір %s%s: послуга %s грн + колорант %s мл × 6 грн = %s грн. Разом з тонуванням: %s грн."
+                % (calc.get("color") or "—", "" if calc.get("color_in_library") else " (цього коду немає в бібліотеці —"
+                   " рахую за кодом, який назвав клієнт)", _g(t["service"]), _g(t["ml"]), _g(t["toner"]),
+                   _g(calc["total"] + t["total"])))
+    elif t and calc.get("color"):
+        out += ("\nТОНУВАННЯ у колір %s: послуга %s грн; у цього кольору формула на два шари, тому точну суму "
+                "колоранта порахує менеджер — так і скажи клієнту, суму не вигадуй."
+                % (calc["color"], _g(t["service"])))
+    elif t:
+        out += ("\nТОНУВАННЯ: послуга %s грн; колорант рахується ЗА КОДОМ КОЛЬОРУ з нашої палітри "
+                "(друга частина коду — мл колоранта на 250 г, напр. FBK03-12), тому спитай код кольору — "
+                "тоді назвеш точну суму. Свою цифру за колорант НЕ вигадуй." % _g(t["service"]))
     if calc.get("colors"):
         out += "\nСторінка кольорів САМЕ цього матеріалу: %s (іншу не давай)." % calc["colors"]
     if calc["missing"]:
@@ -172,33 +177,108 @@ def prompt_block(calc):
 TINT_SERVICE_MIN = Decimal("100")     # мінімальна послуга за тару
 TINT_PER_KG = Decimal("20")           # фактурні від 5 кг
 TINT_MIN_KG = Decimal("5")
+# Кількість колоранта — З КОДУ КОЛЬОРУ (Олег, 22.09.2026): у коді «03-1» друга цифра — мл колоранта
+# на 250 г матеріалу. На 1 кг множимо на 4: «03-1» → 4 мл/кг, «03-20» → 80 мл/кг, «03-05» (це 0,5) → 2 мл/кг.
 TONER_UAH_ML = Decimal("6")
-TONER_ML_PER_KG = Decimal("4")        # звичайний колір
-TONER_ML_PER_KG_RICH = Decimal("10")  # насичений (темний, яскравий)
+ML_PER_250G_TO_KG = Decimal("4")
 TARA_KG = Decimal("5")                # тонкошарові: одна тара ≈ 5 кг
 TINT_PRODUCT = 1311                   # картка «Послуга тонування» (ціну ставить менеджер)
 
+# Код кольору з бібліотеки CRM: «FBK16-1,5», «CSK 01-21», «MSK03-5», «SLK12-0,1» —
+# друга частина = мл колоранта на 250 г матеріалу (Олег 22.09.2026). На 1 кг множимо на 4.
+COLOR_RX = re.compile(r"(?<![\wА-Яа-яЇїІіЄєҐґ])([A-ZА-Я]{2,4})?\s?(\d{1,3})\s*[-–—]\s*(\d{1,3}(?:[.,]\d{1,3})?)(?!\s*\d)",
+                      re.I)
+_COLOR_WORDS = re.compile(r"колір|кольор|цвет|відтін|оттен|палітр|палитр|код", re.I)
+# складений код на два шари: FBK20/08-0,15/2,5 — суму колоранта рахує менеджер
+COMPOUND_RX = re.compile(r"([A-ZА-Я]{0,4}\s?\d{1,3}(?:/\d{1,3})+\s*[-–—]\s*[\d.,]+(?:/[\d.,]+)+)", re.I)
+# матеріал у бібліотеці кольорів (розділ «Кольори») за «пирогом» і карткою товару
+LIB_MATERIAL = {1639: "Патера", 1640: "Патера", 1641: "Патера", 1650: "Патера",
+                1649: "Вельвет Луна", 1648: "Вельвет Луна", 1647: "Вельвет Луна",
+                1623: "Перламутрові піщинки", 1617: "Перламутрові піщинки", 1618: "Перламутрові піщинки",
+                1619: "Перламутрові піщинки", 1620: "Перламутрові піщинки",
+                1610: "Мокрий шовк", 1611: "Мокрий шовк", 1642: "Мокрий шовк", 1643: "Мокрий шовк",
+                1630: "Мокрий шовк", 1631: "Мокрий шовк", 1614: "Мокрий шовк", 1615: "Мокрий шовк"}
 
-def tint_estimate(calc, rich=False):
-    """Орієнтовна вартість тонування обʼєму за регламентом. Точний обʼєм тонера — після підбору кольору."""
+
+def color_dose(tail):
+    """Друга частина коду → мл колоранта на 250 г. «1»→1 · «20»→20 · «1,5»→1,5 · «0,05»→0,05 · «05»→0,5."""
+    t = str(tail or "").strip().replace(",", ".")
+    try:
+        if "." not in t and t.startswith("0") and len(t) > 1:
+            t = "0." + t[1:]
+        d = Decimal(t)
+    except Exception:
+        return None
+    return d if 0 < d <= 100 else None
+
+
+def lib_color(num, tail, material_id=None):
+    """Звіряємо код з бібліотекою кольорів CRM: повертає (код з бібліотеки, доза) або None."""
+    try:
+        from apps.inbox.models import MediaLibraryItem
+        rx = r"(^|[^0-9])0*%s[[:space:]]*-[[:space:]]*%s$" % (str(num).lstrip("0") or "0",
+                                                             re.escape(str(tail)).replace(",", "[.,]"))
+        qs = MediaLibraryItem.objects.filter(section="colors", is_active=True, color_code__iregex=rx)
+        mat = LIB_MATERIAL.get(material_id)
+        item = (qs.filter(material__iexact=mat).first() if mat else None) or qs.first()
+        if item is None:
+            return None
+        code = item.color_code or ""
+        if "/" in code:      # складений код на два шари (FBK20/08-0,15/2,5) — рахує менеджер
+            return (code, None)
+        d = color_dose(code.split("-")[-1])
+        return (code, d) if d is not None else None
+    except Exception:
+        return None
+
+
+def find_color(msgs, material_id=None):
+    """Код кольору з повідомлень КЛІЄНТА (найсвіжіший) → (код, доза на 250 г, чи знайдено в бібліотеці)."""
+    for m in reversed(msgs or []):
+        if m.get("role") != "client":
+            continue
+        t = m.get("text") or ""
+        mc = COMPOUND_RX.search(t)
+        if mc:
+            return mc.group(1).strip(), None, True
+        for mt in COLOR_RX.finditer(t):
+            if not (_COLOR_WORDS.search(t) or mt.group(1) or len(t.strip()) <= 24):
+                continue
+            dose = color_dose(mt.group(3))
+            if dose is None:
+                continue
+            found = lib_color(mt.group(2), mt.group(3), material_id)
+            if found:
+                return found[0], found[1], True      # доза None = складений код (два шари)
+            code = "%s%s-%s" % ((mt.group(1) or "").upper(), mt.group(2), mt.group(3))
+            return code, dose, False
+    return None
+
+
+def tint_estimate(calc, dose250=None):
+    """Тонування обʼєму. Послуга — за регламентом; тонер — за формулою кольору (dose250 мл на 250 г).
+    Без коду кольору тонер не рахуємо (need_color=True) — питаємо код у клієнта."""
     if not calc or not calc.get("ok"):
         return None
     mat = calc["material"]
     if (mat.get("unit") or "").strip(". ").lower() not in ("кг", "л"):
         return None
     kg = Decimal(str(mat["qty"]))
-    facture = calc.get("base") == "facture"
-    if facture:
+    if calc.get("base") == "facture":
         service = TINT_SERVICE_MIN if kg < TINT_MIN_KG else (kg * TINT_PER_KG)
         tara = 1
     else:
         tara = int(math.ceil(kg / TARA_KG)) or 1
         service = TINT_SERVICE_MIN * tara
-    ml = (kg * (TONER_ML_PER_KG_RICH if rich else TONER_ML_PER_KG)).quantize(Decimal("1"), rounding=ROUND_CEILING)
-    toner = ml * TONER_UAH_ML
-    total = (service + toner).quantize(Decimal("0.01"))
-    return {"kg": kg, "service": service.quantize(Decimal("0.01")), "ml": ml, "toner": toner, "total": total,
-            "tara": tara, "rich": bool(rich)}
+    service = service.quantize(Decimal("0.01"))
+    out = {"kg": kg, "service": service, "tara": tara, "need_color": dose250 is None,
+           "ml": None, "toner": None, "total": None, "dose250": dose250}
+    if dose250 is not None:
+        ml = (kg * Decimal(dose250) * ML_PER_250G_TO_KG).quantize(Decimal("0.1"), rounding=ROUND_CEILING)
+        out["ml"] = ml
+        out["toner"] = (ml * TONER_UAH_ML).quantize(Decimal("0.01"))
+        out["total"] = (service + out["toner"]).quantize(Decimal("0.01"))
+    return out
 
 
 _RU = re.compile(r"[ыэъё]|\b(что|сколько|нужно|давайте|сразу|цвет|хочу|мне|можно|спасибо|пожалуйста|как)\b", re.I)
@@ -230,4 +310,9 @@ def for_dialog(msgs, extra=""):
     mat = find_material([m["text"] for m in msgs], extra)
     if not mat:
         return None
-    return estimate(mat[0], mat[1], area)
+    calc = estimate(mat[0], mat[1], area)
+    col = find_color(msgs, mat[0])
+    calc["color"], dose = (col[0], col[1]) if col else ("", None)
+    calc["color_in_library"] = bool(col and col[2])
+    calc["tint"] = tint_estimate(calc, dose)
+    return calc

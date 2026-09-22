@@ -410,11 +410,16 @@ def _make_volume_offer(conv, calc, order):
         deal = Deal.objects.create(title="Обʼєм %s м² · %s" % (_money(calc["area"]), str(conv.contact)[:40]),
                                    funnel=f, stage=st, contact_id=conv.contact_id, owner=conv.assigned_to)
     tint = order.get("tint", True)
-    from apps.knowledge.volume_calc import TINT_PRODUCT, tint_estimate
+    from apps.knowledge.volume_calc import TINT_PRODUCT
     items = [{"name": l["name"], "qty": l["qty"]} for l in calc["lines"]]
-    t = tint_estimate(calc) if tint else None
+    t = calc.get("tint") if tint else None
+    if t and t.get("need_color"):
+        # 22.09.2026: колорант рахується за кодом кольору — без коду суму не вигадуємо
+        _note(conv, "%s: клієнт хоче тонування, але коду кольору ще немає — сделку роблю без тонування, "
+              "посилання на оплату НЕ надсилаю." % NOTE_PREFIX)
+        t = None
     try:
-        res = make_offer(deal, items, send_pay=True)
+        res = make_offer(deal, items, send_pay=bool(t) or not tint)
     except Exception as e:
         _note(conv, "%s: не вдалося оформити обʼєм (%s) — зробіть вручну." % (NOTE_PREFIX, str(e)[:200]))
         return
@@ -433,8 +438,8 @@ def _make_volume_offer(conv, calc, order):
                 DealItem.objects.create(deal=deal, product=p, quantity=1, price=t["total"], cost=0)
                 deal.amount = sum((i.total for i in deal.items.all()), 0)
                 deal.save(update_fields=["amount"])
-                tnote = (" Тонування ≈ %s ₴ (послуга %s + тонер ≈ %s мл): ПЕРЕВІРТЕ після підбору кольору."
-                         % (t["total"], t["service"], t["ml"]))
+                tnote = (" Тонування %s ₴ (колір %s: послуга %s + колорант %s мл)."
+                         % (t["total"], calc.get("color") or "—", t["service"], t["ml"]))
         except Exception as e:
             tnote = " Тонування не додано (%s) — додайте вручну." % str(e)[:120]
     _note(conv, "%s: оформив обʼєм %s м² — сделка #%s на %s ₴, прорахунок і посилання на оплату %s надіслано.%s%s"

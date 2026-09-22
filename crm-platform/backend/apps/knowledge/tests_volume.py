@@ -57,7 +57,7 @@ class EstimateTests(TestCase):
         block = vc.prompt_block(c)
         self.assertIn("Разом: 3080 грн", block)
         self.assertIn("ТОНУВАННЯ", block)
-        self.assertIn("Разом з тонуванням", block)
+        self.assertIn("КОДОМ КОЛЬОРУ", block)
 
     def test_missing_consumption_not_invented(self):
         self._p(1649, "Velvet Luna (Str 0501) Silver. Мілкозерниста", "710", "кг", "0.33")
@@ -104,27 +104,56 @@ class GuardsTests(TestCase):
 
 
 class TintTests(TestCase):
-    """Регламент Wallcov (Notion, 27.07.2025): фактурні <5 кг — 100 грн, ≥5 кг — кг×20;
-    тонкошарові — 100 грн за тару; тонер 6 грн/мл."""
+    """Регламент Wallcov (Notion 27.07.2025) + формула кольору (Олег 22.09.2026):
+    друга цифра коду — мл колоранта на 250 г; на 1 кг ×4."""
     def _calc(self, base, qty, unit="кг"):
         return {"ok": True, "base": base, "material": {"qty": Decimal(qty), "unit": unit}}
 
-    def test_facture_small_and_big(self):
-        t = vc.tint_estimate(self._calc("facture", "3"))
-        self.assertEqual(t["service"], Decimal("100.00"))
-        self.assertEqual(t["ml"], Decimal("12"))          # 3 кг × 4 мл
-        self.assertEqual(t["total"], Decimal("172.00"))   # приклад із регламенту
-        t2 = vc.tint_estimate(self._calc("facture", "8"))
-        self.assertEqual(t2["service"], Decimal("160.00"))
-        self.assertEqual(t2["total"], Decimal("352.00"))  # 160 + 32 мл × 6
+    def test_dose_from_color_code(self):
+        self.assertEqual(vc.color_dose("1"), Decimal("1"))
+        self.assertEqual(vc.color_dose("20"), Decimal("20"))
+        self.assertEqual(vc.color_dose("05"), Decimal("0.5"))
+        self.assertEqual(vc.color_dose("1,5"), Decimal("1.5"))     # як у бібліотеці: FBK16-1,5
+        self.assertEqual(vc.color_dose("0,05"), Decimal("0.05"))
+
+    def test_toner_by_color(self):
+        c = self._calc("facture", "10")
+        t1 = vc.tint_estimate(c, Decimal("1"))       # 03-1 → 4 мл/кг
+        self.assertEqual(t1["ml"], Decimal("40.0"))
+        self.assertEqual(t1["toner"], Decimal("240.00"))
+        self.assertEqual(t1["service"], Decimal("200.00"))
+        self.assertEqual(t1["total"], Decimal("440.00"))
+        t2 = vc.tint_estimate(c, Decimal("20"))      # 03-20 → 80 мл/кг
+        self.assertEqual(t2["ml"], Decimal("800.0"))
+        t3 = vc.tint_estimate(c, Decimal("0.5"))     # 03-05 → 2 мл/кг
+        self.assertEqual(t3["ml"], Decimal("20.0"))
+
+    def test_without_color_no_toner_sum(self):
+        t = vc.tint_estimate(self._calc("facture", "10"))
+        self.assertTrue(t["need_color"])
+        self.assertIsNone(t["toner"])
 
     def test_thin_per_tara(self):
-        t = vc.tint_estimate(self._calc("thin", "6.5"))
+        t = vc.tint_estimate(self._calc("thin", "6.5"), Decimal("1"))
         self.assertEqual(t["tara"], 2)
         self.assertEqual(t["service"], Decimal("200.00"))
 
-    def test_rich_color_more_toner(self):
-        self.assertEqual(vc.tint_estimate(self._calc("facture", "10"), rich=True)["ml"], Decimal("100"))
+    def test_find_color_in_dialog(self):
+        msgs = [{"role": "client", "text": "на 10 м2 патера"}, {"role": "agent", "text": "палітра 01-21"},
+                {"role": "client", "text": "колір 03-12, оформляйте"}]
+        self.assertEqual(vc.find_color(msgs), ("03-12", Decimal("12"), False))   # немає в бібліотеці — код клієнта
+        self.assertIsNone(vc.find_color([{"role": "client", "text": "дощечка 40-40 см це багато тексту про розмір"}]))
+
+    def test_compound_color_code_goes_to_manager(self):
+        c = vc.find_color([{"role": "client", "text": "колір FBK20/08-0,15/2,5"}])
+        self.assertEqual(c[0], "FBK20/08-0,15/2,5")
+        self.assertIsNone(c[1])      # два шари — суму рахує менеджер
+
+    def test_color_from_library(self):
+        from apps.inbox.models import MediaLibraryItem
+        MediaLibraryItem.objects.create(title="Травертин", section="colors", material="Патера", color_code="FBK16-1,5")
+        self.assertEqual(vc.find_color([{"role": "client", "text": "колір 16-1,5"}], 1639),
+                         ("FBK16-1,5", Decimal("1.5"), True))
 
     def test_pieces_not_tinted(self):
-        self.assertIsNone(vc.tint_estimate(self._calc("facture", "2", "шт")))
+        self.assertIsNone(vc.tint_estimate(self._calc("facture", "2", "шт"), Decimal("1")))
