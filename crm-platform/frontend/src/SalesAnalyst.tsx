@@ -20,8 +20,23 @@ export function SalesAnalystPanel({ kind, id, onInsert }: { kind: "deals" | "lea
   const { t } = useLang();
   const [a, setA] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [q, setQ] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [qa, setQa] = useState<{ question: string; answer?: string; error?: string } | null>(null);
   useEffect(() => { api.get<any>(`/api/${kind}/${id}/sales_analysis/`).then(setA).catch(() => {}); }, [kind, id]);
   async function refresh() { setLoading(true); try { setA(await api.post<any>(`/api/${kind}/${id}/sales_analysis/`, {})); } catch { /* */ } setLoading(false); }
+  async function ask() {
+    const question = q.trim();
+    if (!question || asking) return;
+    setAsking(true); setQa(null);
+    try {
+      const r = await api.post<any>(`/api/${kind}/${id}/ask_analyst/`, { question });
+      setQa({ question, answer: r.answer, error: r.error });
+    } catch (e: any) {
+      setQa({ question, error: e?.response?.data?.detail || t("Не удалось получить ответ", "Не вдалося отримати відповідь") });
+    }
+    setAsking(false); setQ("");
+  }
 
   const score = a?.overall ?? null;
   return (
@@ -74,6 +89,30 @@ export function SalesAnalystPanel({ kind, id, onInsert }: { kind: "deals" | "lea
 
         {a.created_at && <div className="muted" style={{ fontSize: 10, marginTop: 7, textAlign: "right" }}>{t("разбор от", "розбір від")} {new Date(a.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>}
       </>)}
+
+      <div style={{ marginTop: 10, paddingTop: 10, borderTop: "0.5px solid #e2e8f0" }}>
+        <div style={{ fontSize: 11.5, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+          <Icon n="💭" size={13} /> {t("Спросить ИИ-РОП об этом диалоге", "Запитати ІІ-РОП про цей діалог")}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") ask(); }}
+            placeholder={t("Например: почему клиент не отвечает?", "Наприклад: чому клієнт не відповідає?")}
+            style={{ flex: 1, fontSize: 12.5, padding: "6px 9px", borderRadius: 7, border: "0.5px solid #cbd5e1" }}
+          />
+          <button className="btn" style={{ padding: "5px 12px", fontSize: 12 }} onClick={ask} disabled={asking || !q.trim()}>
+            {asking ? "…" : t("Спросить", "Запитати")}
+          </button>
+        </div>
+        {qa && (
+          <div style={{ marginTop: 8, background: qa.error ? "#FCEBEB" : "#E6F1FB", borderRadius: 8, padding: "8px 10px" }}>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 3 }}>«{qa.question}»</div>
+            <div style={{ fontSize: 12.5, color: qa.error ? "#791F1F" : "#042C53", lineHeight: 1.5 }}>{qa.error || qa.answer}</div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

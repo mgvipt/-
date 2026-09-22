@@ -753,6 +753,15 @@ class LeadViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         return Response(_run_sales_analysis(lead, "lead", user=request.user, refresh=(request.method == "POST")))
 
     @action(detail=True, methods=["post"])
+    def ask_analyst(self, request, pk=None):
+        """22.09.2026: пряме питання ІІ-РОП по діалогу ліда. body: {"question": "..."}"""
+        lead = self.get_object()
+        q = (request.data.get("question") or "").strip()
+        if not q:
+            return Response({"detail": "Питання порожнє"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(_ask_sales_analyst(lead, "lead", q, user=request.user))
+
+    @action(detail=True, methods=["post"])
     def convert_to(self, request, pk=None):
         """Конвертація ліда у сделку в конкретну воронку за вибором продукту (для AI-продавця).
         body: {"product": "test"|"main"} або {"funnel": <id>}. Тест→«Тестовий набір», основний→«Основний продукт»."""
@@ -1120,6 +1129,19 @@ def _ser_analysis(da):
             "strengths": da.strengths, "why_not_selling": da.why_not_selling,
             "recommended_reply": da.recommended_reply, "coaching": da.coaching,
             "kind": da.kind, "created_at": da.created_at.isoformat()}
+
+
+def _ask_sales_analyst(entity, field, question, user=None):
+    """22.09.2026: пряма відповідь ІІ-РОП на питання менеджера по діалогу цього ліда/сделки."""
+    from .sales_analyst import ask_analyst
+    from apps.inbox.models import Conversation
+    conv = None
+    if entity.contact_id:
+        conv = Conversation.objects.filter(contact_id=entity.contact_id).order_by("-last_message_at").first()
+    msgs = list(conv.messages.order_by("id").values("direction", "text"))[-40:] if conv else []
+    stage_name = entity.stage.name if entity.stage_id else ""
+    ctx = "Сума %s грн, стадія: %s" % (getattr(entity, "amount", "") or "—", stage_name)
+    return ask_analyst(msgs, question, context=ctx)
 
 
 def _run_sales_analysis(entity, field, user=None, refresh=False):
@@ -2278,6 +2300,15 @@ class DealViewSet(ActivityLogMixin, ScopedByRoleMixin, viewsets.ModelViewSet):
         """Аналітик-коуч: глибокий розбір діалогу сделки. GET=кеш, POST=новий розбір."""
         deal = self.get_object()
         return Response(_run_sales_analysis(deal, "deal", user=request.user, refresh=(request.method == "POST")))
+
+    @action(detail=True, methods=["post"])
+    def ask_analyst(self, request, pk=None):
+        """22.09.2026: пряме питання ІІ-РОП по діалогу сделки. body: {"question": "..."}"""
+        deal = self.get_object()
+        q = (request.data.get("question") or "").strip()
+        if not q:
+            return Response({"detail": "Питання порожнє"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(_ask_sales_analyst(deal, "deal", q, user=request.user))
 
     @action(detail=False, methods=["get"])
     def kit_materials(self, request):

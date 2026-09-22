@@ -30,6 +30,8 @@ CHECKS = [
     ("Інструкції: неопублікована закрита", "owner", "/instructions/not-published/", {404}, []),
     # 21.09.2026 (Олег): Instagram веде Юля ChatPlace, продавець CRM підхоплює на оформленні
     ("Канали: Instagram для продавця CRM", "owner", "/api/channels/", {200}, []),
+    # 22.09.2026 (Олег): менеджер може спитати ІІ-РОП напряму по діалогу сделки
+    ("ІІ-РОП: питання по угоді (маршрут підключено)", "owner", "/api/deals/999999999/ask_analyst/", {404, 405}, []),
     ("Повідомлення клієнту: живе дзеркало", "manager", "/api/inbox/media-library/?view=automations", {200}, ["cards", "updated_at", "help"]),
     ("Майстер-класи: бібліотека після оплати", "manager", "/api/inbox/media-library/?view=picker", {200}, ["replies"]),
     ("Товари: джерело ШІ потребує окремого ключа", "manager", "/api/product-source/", {403}, []),
