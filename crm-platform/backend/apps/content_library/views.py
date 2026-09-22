@@ -32,7 +32,12 @@ class LibraryView(APIView):
     permission_classes=[IsAuthenticated]
     def get(self,request):
         if not permitted(request.user,'inbox.view'): return Response(status=403)
-        return Response({'items':[serialize(i) for i in Instruction.objects.filter(status='published').prefetch_related('products')]})
+        training = []
+        for i in Instruction.objects.filter(status='draft', content__kind='staff_training').order_by('title'):
+            training.append({'id': i.id, 'date': i.updated_at.date().isoformat(),
+                'title': i.title, 'body': i.content.get('body', ''),
+                'section_key': i.content.get('section_key', 'materials_prep')})
+        return Response({'items':[serialize(i) for i in Instruction.objects.filter(status='published').prefetch_related('products')], 'training': training})
 
 
 @ensure_csrf_cookie
