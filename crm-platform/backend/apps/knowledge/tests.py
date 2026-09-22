@@ -462,3 +462,14 @@ class TopicGuessLocationTests(TestCase):
         from .topics import guess_topics
         for q in ("Де знаходиться наш магазин?", "Де ви розташовані?", "Де ваш шоурум?", "Де ваш шоу-рум?"):
             self.assertIn("contacts", guess_topics(q), q)
+
+
+class TopicGuessRussianLocationTests(TestCase):
+    """22.09.2026 (реальний інцидент, Олег писав російською): «находится/магазин» теж мають
+    впізнаватись як тема «contacts» — українська і російська фрази про адресу не діляться
+    жодним спільним коренем для стем-пошуку, тому саме тема-бонус мусить це компенсувати."""
+
+    def test_russian_phrasings_map_to_contacts(self):
+        from .topics import guess_topics
+        for q in ("где находится салон", "где находится наш магазин", "где находится ваш офис Wallcov"):
+            self.assertIn("contacts", guess_topics(q), q)
