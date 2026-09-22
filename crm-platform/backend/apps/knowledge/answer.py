@@ -214,13 +214,16 @@ def test_kits_block():
             + "\n".join("- %s — %s грн" % (n, ("%g" % float(p or 0))) for n, p in rows) + "\n")
 
 
-def _spec_seller(agent, msgs, model):
-    q = _query(msgs)
+def _spec_seller(agent, msgs, model, context="", context_query=""):
+    # 22.09.2026: context — напр. реклама, з якої прийшов клієнт (apps/inbox/ad_context.py);
+    # context_query — матеріал реклами, щоб база знань підтягнула каталог/ціни саме його
+    q = (_query(msgs) + " " + (context_query or "")).strip()
     items = reader.select(agent, q, 15)
     kb = reader.context_for(agent, q, limit=15, max_chars=6000)
     kits = test_kits_block()
-    user = ("БАЗА ЗНАНЬ WALLCOV (затверджено Олегом):\n%s\n%s\nДІАЛОГ:\n%s\n\nОстаннє повідомлення клієнта: «%s». "
-            "Дай відповідь і поверни JSON." % (kb or "(порожньо)", kits, _dialog(msgs), msgs[-1]["text"]))
+    user = ("БАЗА ЗНАНЬ WALLCOV (затверджено Олегом):\n%s\n%s\n%sДІАЛОГ:\n%s\n\nОстаннє повідомлення клієнта: «%s». "
+            "Дай відповідь і поверни JSON." % (kb or "(порожньо)", kits, (context + "\n\n") if context else "",
+                                               _dialog(msgs), msgs[-1]["text"]))
     allowed = kb + "\n" + "\n".join(m["text"] for m in msgs if m["role"] == "client")
     spec = {"system": seller_system(CHANNEL[agent]), "user": user, "model": model or HAIKU, "max_tokens": 600,
             "mode": "seller", "cache": False, "allowed": allowed}
@@ -444,7 +447,7 @@ FINISH = {"seller": _finish_seller, "rop": _finish_rop, "compose": _finish_compo
 
 
 def answer(agent, messages, include_drafts=False, topic=None, *, model=None, estimate_only=False,
-           source=SOURCE_TEST, timeout=45):
+           source=SOURCE_TEST, timeout=45, context="", context_query=""):
     """Відповідь агента на діалог. messages = [{"role": "client"|"agent", "text": …}], останнє — клієнта.
     estimate_only=True — лише зібрати промпт і порахувати оцінку ($0, ШІ не викликається)."""
     if agent not in SPECS:
@@ -456,7 +459,10 @@ def answer(agent, messages, include_drafts=False, topic=None, *, model=None, est
         msgs = msgs + [{"role": "client", "text": "Скільки коштує і як оплатити?"}]
     pool = test_items(include_drafts, topic)
     with (reader.test_pool(pool) if pool is not None else nullcontext()):
-        spec = SPECS[agent](agent, msgs, model)
+        if agent in SELLER_AGENTS and (context or context_query):
+            spec = _spec_seller(agent, msgs, model, context, context_query)
+        else:
+            spec = SPECS[agent](agent, msgs, model)
         agent_items = reader.approved_for(agent)
         raw = spec["system"] + "\n" + spec["user"]
         hay = _ws(raw)

@@ -27,6 +27,11 @@ def ask_rop(conv, question):
     # 22.09.2026: питання БЕЗ хвоста діалогу — раніше діалог (напр. про кольори/каталог)
     # тягнув пошук у свій топік і ховав факт по темі самого питання менеджера (адреса тощо).
     kb = knowledge_block(q)
+    try:  # 22.09.2026: з якої реклами клієнт — ШІ-РОП теж це знає
+        from apps.inbox.ad_context import ad_prompt
+        ad_line = ad_prompt(conv)
+    except Exception:
+        ad_line = ""
     prompt = (
         "Клієнт: %s\nКанал: %s\n\nПереписка:\n%s\n\n"
         "\u2753 ПИТАННЯ МЕНЕДЖЕРА (відповідай САМЕ на нього): «%s»\n\n"
@@ -44,6 +49,8 @@ def ask_rop(conv, question):
     ) % (str(conv.contact) if (conv and conv.contact_id) else "невідомий",
          conv.channel.name if (conv and conv.channel_id) else "-",
          dialog or "(переписки ще немає)", q, kb or "(база знань порожня по цій темі)")
+    if ad_line:
+        prompt = prompt.replace("\n\nПереписка:\n", "\n" + ad_line + "\n\nПереписка:\n", 1)
     try:
         # 22.09.2026: НЕ COACH_SYSTEM — той величезний промпт заточений під тактику продажу і на
         # простому фактичному питанні (напр. «де наш магазин») відволікає модель від чіткого факту,

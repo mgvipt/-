@@ -327,8 +327,11 @@ def reply_now(conv_id):
         _note(conv, "%s: реквізити не надіслані (%s)." % (NOTE_PREFIX, str(e)[:200]))
     try:
         cfg = KnowledgeSettings.get()
+        from .ad_context import ad_info, ad_prompt, ad_topic
+        ad_ctx = ad_prompt(conv)   # 22.09.2026: продавець знає, з якої реклами клієнт
         r = answer("yulia_web", history(conv, incoming), include_drafts=False, model=cfg.webchat_model or None,
-                   source="%s: %s" % (NOTE_PREFIX, conv.channel.name), timeout=25)
+                   source="%s: %s" % (NOTE_PREFIX, conv.channel.name), timeout=25,
+                   context=ad_ctx, context_query=ad_topic(ad_info(conv).get("ad_title")) if ad_ctx else "")
         text = (r.get("text") or "").strip() or HANDOFF_TEXT
         used = ", ".join("#%d" % u["id"] for u in r.get("used_items") or []) or "—"
         note = ("%s передав менеджеру: %s. Записи: %s." % (NOTE_PREFIX, r.get("handoff_reason") or "—", used)

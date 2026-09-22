@@ -840,28 +840,10 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["get"])
     def ad_context(self, request, pk=None):
         """Контент, з якого прийшов клієнт (реклама/рілс/пост) — з атрибуції ліда контакту.
-        Тільки читання вже збережених даних (ad_title/ad_thumb/content_id). ChatPlace не чіпає."""
-        conv = self.get_object()
-        if not conv.contact_id:
-            return Response({})
-        from apps.crm.models import Lead, Deal
-        from itertools import chain
-        # 14.09.2026 (meta-attr): сконвертований лід видаляється, мітка живе на угоді → читаємо і угоди
-        for l in chain(
-                Lead.objects.filter(contact_id=conv.contact_id)
-                .exclude(meta_attribution={}).exclude(meta_attribution__isnull=True).order_by("-id")[:8],
-                Deal.objects.filter(contact_id=conv.contact_id)
-                .exclude(meta_attribution={}).exclude(meta_attribution__isnull=True).order_by("-id")[:8]):
-            a = l.meta_attribution or {}
-            if a.get("source_kind") == "paid_ad" and (a.get("ad_title") or a.get("ad_thumb")):
-                return Response({
-                    "ad_title": a.get("ad_title") or "",
-                    "ad_thumb": a.get("ad_thumb") or "",
-                    "content_id": a.get("content_id") or "",
-                    "ad_id": a.get("ad_id") or "",
-                    "campaign_name": a.get("campaign_name") or "",
-                })
-        return Response({})
+        Тільки читання вже збережених даних (ad_title/ad_thumb/content_id). ChatPlace не чіпає.
+        22.09.2026: логіка в apps/inbox/ad_context.py — те саме бачать продавець CRM і ШІ-РОП."""
+        from .ad_context import ad_info
+        return Response(ad_info(self.get_object()))
 
     @action(detail=False, methods=["post"])
     def bulk_close(self, request):
