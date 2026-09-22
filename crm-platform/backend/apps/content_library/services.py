@@ -125,11 +125,16 @@ def receive_guide(body):
     return receipt,False
 
 
-def prepare_share(instruction_slug,conversation,user):
+def prepare_share(instruction_slug,conversation,user,lang="uk"):
     from .models import InstructionShare
     instruction=Instruction.objects.get(slug=instruction_slug,status='published')
     share=InstructionShare.objects.create(instruction=instruction,conversation=conversation,manager=user,contact=conversation.contact)
-    text=f'{instruction.title} 👇\n{instruction.description}\n\n{instruction.public_url}?s={share.token}'
+    from .client_materials import material_article
+    lang='ru' if lang=='ru' else 'uk'
+    article=material_article(instruction,lang)
+    title=article['title'] if article else instruction.title
+    description=article['intro'] if article else instruction.description
+    text=f'{title} 👇\n{description}\n\n{instruction.public_url}?s={share.token}&lang={lang}'
     return share,text
 
 

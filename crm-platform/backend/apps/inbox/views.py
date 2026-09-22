@@ -1595,7 +1595,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         from apps.content_library.models import Instruction
         conv = self.get_object()
         try:
-            share, text = prepare_share(request.data.get("instruction_slug"), conv, request.user)
+            share, text = prepare_share(request.data.get("instruction_slug"), conv, request.user, lang=request.data.get("lang", "uk"))
         except Instruction.DoesNotExist:
             return Response({"detail": "Інструкцію не знайдено"}, status=404)
         return Response({"text": text, "url": share.instruction.public_url + "?s=" + share.token})

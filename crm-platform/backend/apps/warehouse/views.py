@@ -124,6 +124,21 @@ class ProductViewSet(viewsets.ModelViewSet):
     ordering_fields = ["name", "price", "id", "sku", "cost", "stock"]
     ordering = ["name", "id"]  # id — запасной ключ: 623 тёзки не дублируются при листании
 
+    def update(self, request, *args, **kwargs):
+        from django.db import transaction
+        from rest_framework.response import Response
+        from django.utils.dateparse import parse_datetime
+        with transaction.atomic():
+            original = self.get_object()
+            instance = Product.objects.select_for_update().get(pk=original.pk)
+            expected = request.data.get('expected_updated_at')
+            if expected is not None and parse_datetime(str(expected)) != instance.updated_at:
+                return Response({'detail':'Картку вже змінили. Оновіть її перед збереженням.'},status=409)
+            serializer = self.get_serializer(instance, data=request.data, partial=kwargs.pop('partial', False))
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+            return Response(serializer.data)
+
     def get_queryset(self):
         from django.db.models import Exists, OuterRef
         from .models import ProductComponent

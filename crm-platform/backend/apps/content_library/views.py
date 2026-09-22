@@ -22,42 +22,74 @@ def permitted(user, code):
     return user.is_authenticated and (user.is_superuser or user.has_perm_code(code))
 
 
-def serialize(i):
+def serialize(i,lang="uk"):
+    from .client_materials import material_article
+    article = material_article(i,lang)
+    if article:
+        return {'slug':i.slug,'title':article['title'],'description':article['intro'],'cover_url':article['cover_url'],
+            'article_url':i.article_url,'public_url':i.public_url+('?lang=ru' if lang=='ru' else ''),'version':i.version,'status':i.status,
+            'updated_at':article['updated_at'],'product_ids':[p.id for p in i.products.all()]}
     return {'slug':i.slug,'title':i.title,'description':i.description,'cover_url':i.cover_url,
             'article_url':i.article_url,'public_url':i.public_url,'version':i.version,
-            'status':i.status,'updated_at':i.updated_at,'product_ids':list(i.products.values_list('id',flat=True))}
+            'status':i.status,'updated_at':i.updated_at,'product_ids':[p.id for p in i.products.all()]}
 
 
 class LibraryView(APIView):
     permission_classes=[IsAuthenticated]
     def get(self,request):
         if not permitted(request.user,'inbox.view'): return Response(status=403)
+        if request.GET.get('calculator') == 'topciment':
+            from .topciment import SYSTEMS, calculate
+            try:
+                data = calculate(request.GET.get('system', SYSTEMS[0]['id']), request.GET.get('area', '25'), request.GET.get('reserve', '10'), request.GET.get('basis', 'sale'))
+            except (ValueError, ArithmeticError):
+                return Response({'error': 'Перевірте систему, площу та запас (0–50%).'}, status=400)
+            data['systems'] = [{'id':s['id'],'name':s['name']} for s in SYSTEMS]
+            response = Response(data)
+            response['Cache-Control'] = 'private, no-store'
+            return response
+        lang='ru' if request.GET.get('lang')=='ru' else 'uk'
+        from .client_materials import product_texts
         training = []
         for i in Instruction.objects.filter(status='draft', content__kind='staff_training').prefetch_related('products__images').order_by('title'):
             products = []
             for p in i.products.all():
                 if not p.is_active:
                     continue
-                products.append({'id': p.id, 'name': p.name, 'price': str(p.price),
-                    'currency': p.currency, 'unit': p.unit, 'description': p.description,
-                    'short_description': p.shop_short_description,
-                    'full_description': p.shop_full_description,
+                localized=product_texts(p,lang)
+                products.append({'id': p.id, 'name': localized['name'], 'price': str(p.price),
+                    'currency': p.currency, 'unit': p.unit, 'description': localized['description'],
+                    'short_description': localized['short_description'],
+                    'full_description': localized['full_description'],
                     'benefits': p.shop_benefits, 'consumption': str(p.consumption_per_m2) if p.consumption_per_m2 else None,
                     'instruction_url': p.shop_instruction_url, 'video_url': p.shop_video_url,
                     'updated_at': p.updated_at.isoformat(),
                     'images': [{'id': im.id, 'url': '/api/products/%d/image/%d/' % (p.id, im.id),
                         'alt_text': im.alt_text, 'is_primary': im.is_primary} for im in p.images.all()]})
             training.append({'id': i.id, 'date': i.updated_at.date().isoformat(),
-                'title': i.title, 'products': products,
-                'section_key': i.content.get('section_key', 'materials_prep')})
-        response = Response({'items':[serialize(i) for i in Instruction.objects.filter(status='published').prefetch_related('products')], 'training': training})
+                'title': (products[0]['name'] if lang=='ru' and products else i.title), 'products': products,
+                'category': i.content.get('category', ''), 'section_key': i.content.get('section_key', 'materials_prep')})
+        data={'items':[serialize(i,lang) for i in Instruction.objects.filter(status='published').prefetch_related('products__images')], 'training': training}
+        import hashlib
+        from django.core.serializers.json import DjangoJSONEncoder
+        version=hashlib.sha256(json.dumps(data,cls=DjangoJSONEncoder,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+        response = Response({'unchanged':True,'version':version} if request.GET.get('version')==version else {**data,'version':version})
         response['Cache-Control'] = 'private, no-store'
         return response
 
 
 @ensure_csrf_cookie
 def guide(request,slug):
+    lang='ru' if request.GET.get('lang')=='ru' else 'uk'
     i=get_object_or_404(Instruction,slug=slug,status='published')
+    if i.content.get('kind') == 'client_material':
+        from .client_materials import material_article
+        article = material_article(i,lang)
+        if not article: return HttpResponse(status=404)
+        response = render(request, 'content_library/material.html', {'article':article})
+        response['Cache-Control'] = 'private, no-store'
+        response['X-Robots-Tag'] = 'noindex, follow'
+        return response
     # Stable public document. Tracking tokens never gate reading it.
     params={k:request.GET[k][:300] for k in ['r','s','utm_source','utm_medium','utm_campaign','utm_content'] if k in request.GET}
     response=render(request,'content_library/guide.html',{'instruction':i,'content':i.content,
@@ -175,10 +207,21 @@ class AudienceView(APIView):
 
 
 def public_instruction(request,slug):
+    lang='ru' if request.GET.get('lang')=='ru' else 'uk'
+    if slug == 'material-index':
+        entries=Instruction.objects.filter(status='published',content__kind='client_material').prefetch_related('products__images')
+        response=JsonResponse({'items':[serialize(i,lang) for i in entries]})
+        response['Cache-Control']='no-store'
+        return response
     i=get_object_or_404(Instruction,slug=slug,status='published')
-    data=serialize(i)
+    data=serialize(i,lang)
+    from .client_materials import material_article
+    article=material_article(i,lang)
+    if article:data['article']=article
     data['steps']=[{'title':s['title']} for s in i.content.get('steps',[])]
-    return JsonResponse(data)
+    response=JsonResponse(data)
+    response['Cache-Control']='no-store'
+    return response
 
 
 def serialize_form(form):

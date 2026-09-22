@@ -32,6 +32,7 @@ import DupsPanel from "./DupsPanel";
 /* ─── [1] ТИПЫ ─────────────────────────────────────────────────────────── */
 interface Product {
   id: number; name: string; sku: string; unit: string;
+  shop_specs?: Record<string, any>; pack_factor?: string | number; updated_at?: string;
   price: string; cost: string; cost_pct?: string; min_price?: string; consumption_per_m2?: string; currency: string; margin: number;
   category: number | null; category_name: string; stock: number;
   is_active?: boolean; description?: string; track_stock?: boolean; is_drop?: boolean;
@@ -47,6 +48,27 @@ interface Product {
   seo_title?: string; seo_description?: string; seo_h1?: string; seo_categories?: string[]; seo_faqs?: any[]; seo_index?: boolean;
   shop_last_sync_at?: string; shop_sync_error?: string; shop_remote_url?: string;
   shop_validation_errors?: string[]; shop_group_variants?: any[]; shop_sync_history?: any[];
+}
+function ProductCalculationFields({unit,pack,specs,lang,onChange}:{unit:string;pack?:string|number;specs:Record<string,any>;lang:"uk"|"ru";onChange?:(specs:Record<string,any>,pack:string|number|undefined)=>void}) {
+  const uk=lang==="uk", edit=!!onChange;
+  const names:Record<string,string>={"microdeck-dsv":"Microdeck M + DSV","microfino-dsv":"Microfino S + DSV","microdeck-wt":"Microdeck M + WT","microfino-wt":"Microfino S + WT","efectto-floor":uk?"Efectto Quartz · підлога":"Efectto Quartz · пол", "efectto-wall":uk?"Efectto Quartz · стіни":"Efectto Quartz · стены"};
+  const numeric=(v:string)=>v.trim()===""?null:Number(v);
+  const fields:[string,string][]=[["primer_rate_l_m2",uk?"Acricem для ґрунтування, л/м²":"Acricem для грунтования, л/м²"],["acricem_l_per_kg",uk?"Acricem на 1 кг сухої суміші, л":"Acricem на 1 кг сухой смеси, л"]];
+  const mixFields:[string,string][]=[["a_to_b_mass",uk?"Частин A на 1 частину B за масою":"Частей A на 1 часть B по массе"],["density_a_kg_l",uk?"Густина компонента A, кг/л":"Плотность компонента A, кг/л"],["density_b_kg_l",uk?"Густина компонента B, кг/л":"Плотность компонента B, кг/л"],["b_pack_count",uk?"Упаковок B на одну упаковку A":"Упаковок B на одну упаковку A"]];
+  const shownFields=fields.filter(([key])=>Object.prototype.hasOwnProperty.call(specs,key));
+  const shownMix=mixFields.filter(([key])=>Object.prototype.hasOwnProperty.call(specs.mixing||{},key));
+  const rates=Object.entries(specs.calculator_rates||{});
+  if(!edit&&pack==null&&!rates.length&&!shownFields.length&&!shownMix.length)return null;
+  const control=(label:string,value:any,change:(value:string)=>void,integer=false)=><label key={label} style={{fontSize:12,display:"block"}}>{label}{edit?<input type="number" min="0" step={integer?"1":"any"} inputMode="decimal" value={value??""} onChange={e=>change(e.target.value)} placeholder={uk?"Уточнити":"Уточнить"} style={{display:"block",width:"100%",height:36,boxSizing:"border-box",border:"1px solid #cbd5e1",borderRadius:7,padding:"0 8px",marginTop:4}}/>:<b style={{display:"block",marginTop:4}}>{value==null||value===""?(uk?"Уточнити":"Уточнить"):Number(value).toLocaleString(uk?"uk-UA":"ru-RU",{maximumFractionDigits:6})}</b>}</label>;
+  return <section className="panel" style={{margin:"0 0 14px"}}><h4 style={{margin:"0 0 10px"}}>{uk?"Фасування та норми матеріалу":"Фасовка и нормы материала"}</h4>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>
+      {control(`${uk?"В одній упаковці":"В одной упаковке"}, ${unit}`,pack,v=>onChange?.(specs,v))}
+      {rates.map(([key,value])=>control(`${names[key]||key} — ${specs.mixing?.b_key?(uk?"витрата готової суміші A+B":"расход готовой смеси A+B"):(uk?"витрата":"расход")}, ${unit}/м²`,value,v=>onChange?.({...specs,calculator_rates:{...specs.calculator_rates,[key]:numeric(v)}},pack)))}
+      {shownFields.map(([key,label])=>control(label,specs[key],v=>onChange?.({...specs,[key]:numeric(v)},pack)))}
+      {shownMix.map(([key,label])=>control(label,specs.mixing[key],v=>onChange?.({...specs,mixing:{...specs.mixing,[key]:numeric(v)}},pack),key==="b_pack_count"))}
+    </div>
+    {!!(rates.length||shownFields.length||shownMix.length)&&<p className="muted" style={{fontSize:12,marginBottom:0}}>{uk?"Витрата — на всі шари для 1 м² без додаткового запасу. Змінюйте норму після звірки з техкартою. Порожнє значення означає: норму потрібно уточнити.":"Расход — на все слои для 1 м² без дополнительного запаса. Меняйте норму после сверки с техкартой. Пустое значение означает: норму нужно уточнить."}</p>}
+  </section>;
 }
 interface Category { id: number; name: string; parent: number | null; order: number; products_count: number; }
 interface WH { id: number; name: string; is_default: boolean; }
@@ -321,6 +343,22 @@ export default function Warehouse() {
   }
   // редагування картки
   const [cardEdit, setCardEdit] = useState<any>(null);
+  const [cardLang, setCardLang] = useState<"uk"|"ru">("uk");
+  useEffect(() => { setCardLang("uk"); }, [card?.id]);
+  const translationKey = (field: string) => field === "shop_short_description" ? "short_description" : field === "shop_full_description" ? "full_description" : field;
+  const cardText = (field: string, editing = false): string => {
+    const source = editing ? cardEdit : card;
+    if (!source) return "";
+    const translated = source.shop_specs?.translations?.ru?.[translationKey(field)];
+    return cardLang === "ru" ? (editing ? translated || "" : translated || (source as any)[field] || "") : (source as any)[field] || "";
+  };
+  const setCardText = (field: string, value: string) => setCardEdit((prev: any) => {
+    if (cardLang === "uk") return { ...prev, [field]: value };
+    const specs = prev.shop_specs || {}, translations = specs.translations || {};
+    return { ...prev, shop_specs: { ...specs, translations: { ...translations, ru: { ...(translations.ru || {}), [translationKey(field)]: value } } } };
+  });
+  const needsRu = (field: string) => cardLang === "ru" && !(card?.shop_specs?.translations?.ru?.[translationKey(field)] || "").trim() && !!((card as any)?.[field] || "").trim();
+  const fallbackNote = (field: string) => needsRu(field) ? <small style={{display:"block",color:"#92400e",fontWeight:400,margin:"4px 0"}}>Русский перевод ещё не заполнен — показан украинский текст.</small> : null;
   // склад набору (комплект)
   const [bundle, setBundle] = useState<any>(null);
   const [bundleQ, setBundleQ] = useState("");
@@ -348,7 +386,28 @@ export default function Warehouse() {
   async function saveCard() {
     if (!card || !cardEdit) return;
     try {
+      const fresh = await api.get<Product>(`/api/products/${card.id}/`);
+      const sourceVersion = cardEdit._source_updated_at || card.updated_at;
+      if (!sourceVersion || fresh.updated_at !== sourceVersion) {
+        alert(t("Карточку изменили. Откройте её заново и повторите изменения. Ваш текст пока остаётся в форме.","Картку змінили. Відкрийте її знову та повторіть зміни. Ваш текст поки залишається у формі.")); return;
+      }
+      const original = cardEdit._source_specs || {}, edited = cardEdit.shop_specs || {};
+      const changed = (before:Record<string,any>,after:Record<string,any>,current:Record<string,any>) => {
+        const next={...current}; Object.keys(after).forEach(key=>{if(JSON.stringify(before[key])!==JSON.stringify(after[key]))next[key]=after[key];}); return next;
+      };
+      const specs = {...(fresh.shop_specs || {})};
+      for(const key of ["primer_rate_l_m2","acricem_l_per_kg"]){if(JSON.stringify(original[key])!==JSON.stringify(edited[key]))specs[key]=edited[key];}
+      for(const key of ["calculator_rates","mixing"]){if(JSON.stringify(original[key])!==JSON.stringify(edited[key]))specs[key]=changed(original[key]||{},edited[key]||{},specs[key]||{});}
+      if(JSON.stringify(original.translations?.ru)!==JSON.stringify(edited.translations?.ru))specs.translations={...(specs.translations||{}),ru:changed(original.translations?.ru||{},edited.translations?.ru||{},specs.translations?.ru||{})};
+      const values = [...Object.values(specs.calculator_rates || {}), ...["primer_rate_l_m2","acricem_l_per_kg"].filter(k=>specs[k]!=null).map(k=>specs[k]), ...["a_to_b_mass","density_a_kg_l","density_b_kg_l","b_pack_count"].filter(k=>specs.mixing?.[k]!=null).map(k=>specs.mixing[k])];
+      if(values.some(v=>v!==null&&v!==""&&(!Number.isFinite(Number(v))||Number(v)<0))) { alert(t("Нормы должны быть неотрицательными числами.","Норми мають бути невід’ємними числами.")); return; }
+      if(specs.mixing?.b_pack_count!=null&&(!Number.isInteger(Number(specs.mixing.b_pack_count))||Number(specs.mixing.b_pack_count)<=0)){alert(t("Количество упаковок B должно быть целым и больше нуля.","Кількість упаковок B має бути цілою та більшою за нуль."));return;}
+      const packChanged=String(cardEdit.pack_factor ?? "")!==String(card.pack_factor ?? "");
+      if(packChanged&&(String(cardEdit.pack_factor ?? "").trim()===""||!Number.isFinite(Number(cardEdit.pack_factor))||Number(cardEdit.pack_factor)<=0)){alert(t("Фасовка должна быть больше нуля.","Фасування має бути більше нуля."));return;}
       const upd: any = await api.patch(`/api/products/${card.id}/`, {
+        expected_updated_at: sourceVersion,
+        ...(JSON.stringify(specs)!==JSON.stringify(fresh.shop_specs||{}) ? {shop_specs:specs} : {}),
+        ...(String(cardEdit.pack_factor ?? "").trim()!=="" && Number(cardEdit.pack_factor)!==Number(fresh.pack_factor) ? {pack_factor:Number(cardEdit.pack_factor)} : {}),
         name: cardEdit.name, description: cardEdit.description, category: cardEdit.category || null,
         price: Number(cardEdit.price) || 0, cost: Number(cardEdit.cost) || 0, cost_pct: Number(cardEdit.cost_pct) || 0, min_price: Number(cardEdit.min_price) || 0, consumption_per_m2: (String(cardEdit.consumption_per_m2 ?? "").trim() === "" ? null : Number(cardEdit.consumption_per_m2)), unit: cardEdit.unit,
         sku: cardEdit.sku, is_active: cardEdit.is_active, track_stock: cardEdit.track_stock, is_drop: cardEdit.is_drop,
@@ -366,7 +425,7 @@ export default function Warehouse() {
         seo_h1: cardEdit.seo_h1, seo_index: cardEdit.seo_index });
       setCard(upd); setCardEdit(null); loadProducts();
       api.get<Category[]>("/api/product-categories/").then(setCats).catch(() => {});
-    } catch { alert(t("Не удалось сохранить","Не вдалося зберегти")); }
+    } catch (e:any) { alert(e?.response?.data?.detail || t("Не удалось сохранить. Проверьте, не изменил ли карточку другой сотрудник.","Не вдалося зберегти. Перевірте, чи не змінив картку інший співробітник.")); }
   }
   // инвентаризация
   // введённые вручную «Факт» — с автосохранением в браузере (не теряются при перезагрузке)
@@ -1261,17 +1320,19 @@ export default function Warehouse() {
           <div onClick={(e) => e.stopPropagation()} style={{ width: "min(640px,94vw)", height: "100%", background: "#fff", overflow: "auto", padding: "18px 22px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
               {cardEdit
-                ? <input value={cardEdit.name} onChange={(e) => setCardEdit({ ...cardEdit, name: e.target.value })} style={{ flex: 1, fontSize: 17, fontWeight: 700, border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 10px" }} />
-                : <h3 style={{ margin: 0 }}>{card.name} {card.is_active === false && <span style={{ fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "#fee2e2", color: "#b91c1c", verticalAlign: "middle" }}>{t("скрыт","приховано")}</span>}</h3>}
+                ? <input aria-label={cardLang === "uk" ? "Назва українською" : "Название на русском"} placeholder={cardLang === "ru" ? "Название на русском" : "Назва українською"} value={cardText("name",true)} onChange={(e) => setCardText("name",e.target.value)} style={{ flex: 1, fontSize: 17, fontWeight: 700, border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 10px" }} />
+                : <h3 style={{ margin: 0 }}>{cardText("name")}{fallbackNote("name")} {card.is_active === false && <span style={{ fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "#fee2e2", color: "#b91c1c", verticalAlign: "middle" }}>{t("скрыт","приховано")}</span>}</h3>}
               <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                 <button className="btn btn-light" title={t("Скопировать ссылку на товар","Скопіювати посилання на товар")} onClick={() => { navigator.clipboard?.writeText(window.location.origin + "/warehouse?product=" + card.id); alert(t("Ссылка скопирована ✓","Посилання скопійовано ✓")); }}><Icon n="🔗" size={14} /></button>
                 {canEdit && (cardEdit
                   ? <><button className="btn btn-primary" onClick={saveCard}>{t("Сохранить","Зберегти")}</button><button className="btn btn-light" onClick={() => setCardEdit(null)}>✕</button></>
-                  : <button className="btn btn-light" onClick={() => setCardEdit({ name: card.name, sku: card.sku, unit: card.unit, price: card.price, cost: card.cost, cost_pct: card.cost_pct || 0, min_price: card.min_price || 0, min_stock: (card as any).min_stock ?? 0, reorder_qty: (card as any).reorder_qty ?? 0, supplier: (card as any).supplier || null, consumption_per_m2: (card as any).consumption_per_m2 ?? "", category: card.category || 0, description: card.description || "", is_active: card.is_active !== false, track_stock: card.track_stock !== false, is_drop: (card as any).is_drop === true,
+                  : <button className="btn btn-light" onClick={() => setCardEdit({ _source_updated_at: card.updated_at, _source_specs: JSON.parse(JSON.stringify(card.shop_specs || {})), shop_specs: JSON.parse(JSON.stringify(card.shop_specs || {})), pack_factor: card.pack_factor ?? "", name: card.name, sku: card.sku, unit: card.unit, price: card.price, cost: card.cost, cost_pct: card.cost_pct || 0, min_price: card.min_price || 0, min_stock: (card as any).min_stock ?? 0, reorder_qty: (card as any).reorder_qty ?? 0, supplier: (card as any).supplier || null, consumption_per_m2: (card as any).consumption_per_m2 ?? "", category: card.category || 0, description: card.description || "", is_active: card.is_active !== false, track_stock: card.track_stock !== false, is_drop: (card as any).is_drop === true,
                       shop_enabled: !!card.shop_enabled, shop_category_path: card.shop_category_path?.length ? card.shop_category_path : (card.category === 59 ? ["Пробники"] : []), shop_group_key: card.shop_group_key || "", shop_parent_name: card.shop_parent_name || "", shop_slug: card.shop_slug || "", shop_short_description: card.shop_short_description || "", shop_full_description: card.shop_full_description || "", shop_effect: card.shop_effect || "", shop_rooms: card.shop_rooms || [], shop_beginner: !!card.shop_beginner, shop_video_url: card.shop_video_url || "", shop_instruction_url: card.shop_instruction_url || "", shop_sort: card.shop_sort || 0, shop_variant_type: card.shop_variant_type || (card.category === 59 ? "sample" : "product"), shop_has_board: card.shop_has_board ?? null, shop_is_tinted: card.shop_is_tinted ?? null, shop_variant_order: card.shop_variant_order || (card.category === 59 ? 0 : 1), shop_variant_name: card.shop_variant_name || (card.category === 59 ? "" : t("Основной товар", "Основний товар")), shop_contents: card.shop_contents || "", seo_title: card.seo_title || "", seo_description: card.seo_description || "", seo_h1: card.seo_h1 || "", seo_index: !!card.seo_index })}><Icon n="✏️" size={14} /> {t("Изменить","Змінити")}</button>)}
                 <button className="btn btn-light" onClick={() => setCard(null)}>✕</button>
               </div>
             </div>
+            <div role="group" aria-label="Мова опису товару" style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>{(["uk","ru"] as const).map(l=><button key={l} aria-pressed={cardLang===l} className={cardLang===l?"btn btn-primary":"btn btn-light"} onClick={()=>setCardLang(l)}>{l==="uk"?"Українська":"Русский"}</button>)}</div>
+            {cardEdit&&<p className="muted" style={{fontSize:12}}>{cardLang==="uk"?"Редагуєте український опис. Ціна, фасування та норми спільні для обох мов.":"Редактируете русский перевод. Цена, фасовка и нормы общие для обоих языков."}</p>}
             <div style={{ display: "flex", gap: 6, margin: "14px 0 10px", borderBottom: "1px solid #e2e8f0", paddingBottom: 8 }}>
               {([['main', t('Карточка','Картка')], ['shop', t('На сайте','На сайті')], ['media', t('Фото','Фото')], ['sync', t('Проверка','Перевірка')]] as const).map(([key, label]) =>
                 <button key={key} className={cardTab === key ? "btn btn-primary" : "btn btn-light"} onClick={() => setCardTab(key)}>{label}</button>)}
@@ -1291,15 +1352,16 @@ export default function Warehouse() {
                 <label className="muted" style={{ fontSize: 12 }}>{t("Тонировка","Тонування")}<select value={cardEdit.shop_is_tinted === null ? '' : String(cardEdit.shop_is_tinted)} onChange={e => setCardEdit({...cardEdit, shop_is_tinted:e.target.value === '' ? null : e.target.value === 'true'})} style={{width:'100%',height:34}}><option value="">—</option><option value="false">{t('Без тонировки','Без тонування')}</option><option value="true">{t('С тонировкой','З тонуванням')}</option></select></label>
                 </>}
                 <label className="muted" style={{ fontSize: 12 }}>{t("Эффект","Ефект")}<input value={cardEdit.shop_effect} onChange={e => setCardEdit({...cardEdit, shop_effect:e.target.value})} style={{width:'100%',height:34}} /></label>
-                <label className="muted" style={{ fontSize: 12, gridColumn:'1 / -1' }}>{t("Коротко и простыми словами","Коротко і простими словами")}<textarea rows={2} value={cardEdit.shop_short_description} onChange={e => setCardEdit({...cardEdit, shop_short_description:e.target.value})} style={{width:'100%'}} /></label>
-                <label className="muted" style={{ fontSize: 12, gridColumn:'1 / -1' }}>{t("Полное описание","Повний опис")}<textarea rows={4} value={cardEdit.shop_full_description} onChange={e => setCardEdit({...cardEdit, shop_full_description:e.target.value})} style={{width:'100%'}} /></label>
+                <label className="muted" style={{ fontSize: 12, gridColumn:'1 / -1' }}>{t("Коротко и простыми словами","Коротко і простими словами")}<textarea rows={2} value={cardText("shop_short_description",true)} onChange={e => setCardText("shop_short_description",e.target.value)} style={{width:'100%'}} /></label>
+                <label className="muted" style={{ fontSize: 12, gridColumn:'1 / -1' }}>{t("Полное описание","Повний опис")}<textarea rows={4} value={cardText("shop_full_description",true)} onChange={e => setCardText("shop_full_description",e.target.value)} style={{width:'100%'}} /></label>
                 <label style={{fontSize:12}}><input type="checkbox" checked={cardEdit.shop_beginner} onChange={e => setCardEdit({...cardEdit,shop_beginner:e.target.checked})}/> {t('Подходит новичку','Підходить новачку')}</label>
               </> : <>
                 <div style={{gridColumn:'1 / -1'}}><span className="muted">{t('Показывать в магазине','Показувати в магазині')}</span><br/><b style={{color:card.shop_enabled?'#15803d':'#64748b'}}>{card.shop_enabled?t('Да','Так'):t('Нет','Ні')}</b></div>
                 <div style={{gridColumn:'1 / -1'}}><span className="muted">{t('Категория на сайте','Категорія на сайті')}</span><br/><b>{categoryPathText(card.shop_category_path?.length ? card.shop_category_path : (card.category === 59 ? ['Пробники'] : [])) || '—'}</b></div>
                 <div><span className="muted">{t('Покрытие','Покриття')}</span><br/><b>{card.shop_parent_name || '—'}</b></div><div><span className="muted">URL</span><br/>{card.shop_slug || '—'}</div>
                 <div><span className="muted">{t('Комплектация','Комплектація')}</span><br/>{card.shop_variant_name || '—'}</div><div><span className="muted">{t('Группа','Група')}</span><br/>{card.shop_group_key || '—'}</div>
-                <div style={{gridColumn:'1 / -1'}}>{card.shop_short_description || t('Описание ещё не заполнено','Опис ще не заповнений')}</div>
+                <div style={{gridColumn:'1 / -1'}}>{cardText("shop_short_description") || t('Описание ещё не заполнено','Опис ще не заповнений')}{fallbackNote("shop_short_description")}</div>
+                {cardText("shop_full_description")&&<div style={{gridColumn:'1 / -1',whiteSpace:'pre-wrap'}}>{cardText("shop_full_description")}{fallbackNote("shop_full_description")}</div>}
                 <div style={{gridColumn:'1 / -1'}}><b>{t('Варианты в этой группе','Варіанти у цій групі')}: {card.shop_group_variants?.length || 0}/4</b>{card.shop_group_variants?.map((v:any)=><div key={v.id}>#{v.id} · {v.sku} · {v.shop_variant_name || v.name} · {v.shop_status}</div>)}</div>
               </>}
             </div>}
@@ -1335,7 +1397,7 @@ export default function Warehouse() {
                 <label style={{ fontSize: 12, display: "flex", alignItems: "flex-end", gap: 6, paddingBottom: 8 }}><input type="checkbox" checked={cardEdit.is_active} onChange={(e) => setCardEdit({ ...cardEdit, is_active: e.target.checked })} /> {t("Активен (виден в каталоге)","Активний (видно у каталозі)")}</label>
                 <label style={{ fontSize: 12, display: "flex", alignItems: "flex-end", gap: 6, paddingBottom: 8 }} title={t("Выключи для услуг/работ — не списывается со склада, остаток не считается","Вимкни для послуг/робіт — не списується зі складу, залишок не рахується")}><input type="checkbox" checked={cardEdit.track_stock} onChange={(e) => setCardEdit({ ...cardEdit, track_stock: e.target.checked })} /> {t("Количественный учёт склада","Кількісний облік складу")}</label>
                 <label style={{ fontSize: 12, display: "flex", alignItems: "flex-end", gap: 6, paddingBottom: 8 }} title={t("Товар под заказ: закупаем ПОСЛЕ продажи. При приходе закупочная цена автоматически обновится во ВСЕХ сделках с этим товаром (в т.ч. закрытых) и в движении товара.","Товар під замовлення: закуповуємо ПІСЛЯ продажу. При приході закупівельна ціна автоматично оновиться в УСІХ угодах з цим товаром (в т.ч. закритих) і в русі товару.")}><input type="checkbox" checked={cardEdit.is_drop} onChange={(e) => setCardEdit({ ...cardEdit, is_drop: e.target.checked })} /> {t("Дроп (докупаем под заказ)","Дроп (докуповуємо під замовлення)")}</label>
-                <label style={{ fontSize: 12, gridColumn: "1 / -1" }} className="muted">{t("Описание","Опис")}<textarea value={cardEdit.description} onChange={(e) => setCardEdit({ ...cardEdit, description: e.target.value })} rows={5} style={{ width: "100%", border: "1px solid #cbd5e1", borderRadius: 7, padding: 8, marginTop: 2, fontFamily: "inherit", fontSize: 13 }} /></label>
+                <label style={{ fontSize: 12, gridColumn: "1 / -1" }} className="muted">{t("Описание","Опис")}<textarea value={cardText("description",true)} onChange={(e) => setCardText("description",e.target.value)} rows={5} style={{ width: "100%", border: "1px solid #cbd5e1", borderRadius: 7, padding: 8, marginTop: 2, fontFamily: "inherit", fontSize: 13 }} /></label>
               </div>
             ) : (
             <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>Артикул: {card.sku || "—"} · {card.category_name || t("Без категории","Без категорії")}</div>
@@ -1345,9 +1407,10 @@ export default function Warehouse() {
                 {card.images.map((im) => <a key={im.id} href={im.url} target="_blank" rel="noreferrer"><img src={im.url} alt="" style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0" }} /></a>)}
               </div>
             )}
+            {cardTab === "main" && <ProductCalculationFields unit={cardEdit?.unit || card.unit} pack={cardEdit ? cardEdit.pack_factor : card.pack_factor} specs={cardEdit ? cardEdit.shop_specs || {} : card.shop_specs || {}} lang={cardLang} onChange={cardEdit ? ((specs, pack) => setCardEdit((prev:any)=>({...prev,shop_specs:specs,pack_factor:pack}))) : undefined} />}
             {!cardEdit && <ProductFacts key={card.id} id={card.id} canEdit={canEdit} onSaved={() => { api.get<Product>(`/api/products/${card.id}/`).then(setCard); loadProducts(); }} />}
-            {!cardEdit && (card.description || "").trim() !== "" && (
-              <div className="panel" style={{ margin: "0 0 14px", fontSize: 13, whiteSpace: "pre-wrap" }}>{card.description}</div>
+            {!cardEdit && cardText("description").trim() !== "" && (
+              <div className="panel" style={{ margin: "0 0 14px", fontSize: 13, whiteSpace: "pre-wrap" }}>{cardText("description")}{fallbackNote("description")}</div>
             )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
               {[[t("Розничная цена","Роздрібна ціна"), Number(card.price).toLocaleString("ru") + " " + (card.currency || "грн")],

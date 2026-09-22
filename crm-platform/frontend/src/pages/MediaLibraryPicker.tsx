@@ -30,6 +30,7 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
       .replace(/^([a-zа-яіїєґ])/u, (m0) => (name ? m0 : m0.toUpperCase()));
   };
   const [items, setItems] = useState<Asset[]>([]); const [replies, setReplies] = useState<Reply[]>([]); const [materialSummaries, setMaterialSummaries] = useState<MaterialSummary[]>([]);
+  const [quickRefreshing, setQuickRefreshing] = useState(false);
   const [query, setQuery] = useState(""); const [tab, setTab] = useState<"colors" | "quick" | "instructions">(initialTab || "colors");
   const [screen, setScreen] = useState<Screen>("materials"); const [material, setMaterial] = useState(""); const [color, setColor] = useState("");
   const [picked, setPicked] = useState<number[]>([]); const [loaded, setLoaded] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
@@ -44,6 +45,25 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
     } catch { setError("Не вдалося завантажити бібліотеку"); }
   };
   useEffect(() => { loadPicker(); }, []);
+  useEffect(() => {
+    if (tab !== "quick") return;
+    let alive = true, pending = false;
+    setQuickRefreshing(true);
+    const refreshReplies = async () => {
+      if (!alive || pending || document.visibilityState !== "visible") return;
+      pending = true;
+      try {
+        const d = await api.get<any>("/api/inbox/media-library/?view=picker");
+        if (alive) { setReplies(d.replies || []); setLoaded(true); setError(""); }
+      } catch { if (alive) setError("Не вдалося оновити ціни. Перевірте з’єднання перед використанням відповіді."); }
+      finally { pending = false; if (alive) setQuickRefreshing(false); }
+    };
+    refreshReplies();
+    const timer = window.setInterval(refreshReplies, 15000);
+    window.addEventListener("focus", refreshReplies);
+    document.addEventListener("visibilitychange", refreshReplies);
+    return () => { alive = false; window.clearInterval(timer); window.removeEventListener("focus", refreshReplies); document.removeEventListener("visibilitychange", refreshReplies); };
+  }, [tab]);
   const colorItems = useMemo(() => items.filter((x) => x.section === "colors"), [items]);
   const materials = useMemo(() => materialSummaries.filter((x) => x.name.toLowerCase().includes(query.toLowerCase())), [materialSummaries, query]);
   const materialItems = useMemo(() => colorItems.filter((x) => (x.material || "Матеріал без назви") === material), [colorItems, material]);
@@ -83,7 +103,7 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
   // Швидкі відповіді — велике вікно-«скрипт продажів» з етапами розмови (14.09).
   if (tab === "instructions") return <InstructionLibrary conversationId={conversationId} onInsertText={onInsertText} onClose={onClose} onBack={() => setTab("colors")} />;
 
-  if (tab === "quick") return <QuickRepliesScript replies={replies} loading={!loaded} fillName={fillName} busy={busy} error={error}
+  if (tab === "quick") return <QuickRepliesScript replies={replies} loading={!loaded || quickRefreshing} fillName={fillName} busy={busy || quickRefreshing} error={error}
     onClose={onClose} onBack={() => setTab("colors")}
     onInsert={onInsertText ? (txt) => { onInsertText(txt); onClose(); } : undefined}
     onSend={(id) => send(id)} />;
@@ -94,7 +114,7 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
 
   return <div style={{ position: "absolute", zIndex: 50, left: 0, bottom: 46, width: 390, maxWidth: "calc(100vw - 24px)", maxHeight: 470, display: "flex", flexDirection: "column", overflow: "hidden", background: "#fff", border: "1px solid #cbd5e1", borderRadius: 12, padding: 10, boxShadow: "0 12px 32px rgba(15,23,42,.2)" }}>
     <div style={{ display: "flex", gap: 6, marginBottom: 8 }}><b style={{ fontSize: 13 }}>Бібліотека</b><span style={{ flex: 1 }} /><button className="btn" style={{ padding: "1px 7px" }} onClick={onClose}>×</button></div>
-    <div style={{ display: "flex", gap: 6, marginBottom: 8 }}><button className="btn" onClick={() => { setTab("colors"); setScreen("materials"); setMaterial(""); setColor(""); setQuery(""); loadPicker(); }} style={{ fontSize: 12, background: tab === "colors" ? "#e0edff" : undefined }}>🎨 Матеріали</button><button className="btn" onClick={() => { setTab("quick"); setQuery(""); }} style={{ fontSize: 12 }}>⚡ Швидкі відповіді</button><button className="btn" style={{fontSize:12}} onClick={() => setTab("instructions")}>Інструкції</button></div>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}><button className="btn" onClick={() => { setTab("colors"); setScreen("materials"); setMaterial(""); setColor(""); setQuery(""); loadPicker(); }} style={{ fontSize: 12, background: tab === "colors" ? "#e0edff" : undefined }}>🎨 Матеріали</button><button className="btn" onClick={() => { setTab("quick"); setQuery(""); }} style={{ fontSize: 12 }}>⚡ Швидкі відповіді</button><button className="btn" style={{fontSize:12}} onClick={() => setTab("instructions")}>Інструкції</button></div>
     <input value={query} onChange={(e) => setQuery(e.target.value)} autoFocus
       placeholder={screen === "materials" ? "Пошук матеріалу" : "Знайти назву або код кольору"}
       style={{ width: "100%", boxSizing: "border-box", padding: "7px 9px", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 13, marginBottom: 8, flexShrink: 0 }} />

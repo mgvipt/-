@@ -1,22 +1,23 @@
 import { useState } from "react";
 export interface Entry {
   products?: MaterialProduct[];
-  id: number; date: string; section_key?: string; section?: string;
+  id: number; date: string; category?: string; section_key?: string; section?: string;
   title_uk?: string; title_ru?: string; body_uk?: string; body_ru?: string;
   title?: string; body?: string; // legacy fallback
 }
 
 interface MaterialProduct { id:number;name:string;price:string;currency:string;unit:string;description:string;short_description:string;full_description:string;benefits:string[];consumption:string|null;instruction_url:string;video_url:string;images:{id:number;url:string;alt_text:string;is_primary:boolean}[]; }
-function ProductLearning({p}:{p:MaterialProduct}) {
- const texts=[p.description,p.short_description,p.full_description].filter((v,i,a)=>v?.trim()&&a.indexOf(v)===i);
+function ProductLearning({p,lang}:{p:MaterialProduct;lang:string}) {
+ const uk=lang==="uk";
+ const texts=[p.description || p.full_description || p.short_description].filter(Boolean);
  return <article style={{borderTop:"1px solid #e2e8f0",paddingTop:12,marginTop:12}}>
  <h4 style={{margin:"0 0 8px"}}>{p.name}</h4>
- <p style={{fontWeight:700,fontSize:17}}>{Number(p.price)>0?`${Number(p.price).toLocaleString("uk-UA")} ${p.currency==="UAH"?"грн":p.currency} / ${p.unit}`:"Ціну уточнюємо"}</p>
- {p.consumption&&<p>Витрата: {Number(p.consumption).toLocaleString("uk-UA")} {p.unit}/м²</p>}
+ <p style={{fontWeight:700,fontSize:17}}>{Number(p.price)>0?`${Number(p.price).toLocaleString("uk-UA")} ${p.currency==="UAH"?"грн":p.currency} / ${p.unit}`:(uk?"Ціну уточнюємо":"Цену уточняем")}</p>
+ {p.consumption&&<p>{uk?"Витрата":"Расход"}: {Number(p.consumption).toLocaleString("uk-UA")} {p.unit}/м²</p>}
  {!!p.images.length&&<div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:8}}>{[...p.images].sort((a,b)=>Number(b.is_primary)-Number(a.is_primary)).map(im=><a key={im.id} href={im.url} target="_blank" rel="noreferrer"><img src={im.url} alt={im.alt_text||p.name} loading="lazy" style={{width:210,height:160,objectFit:"contain",borderRadius:8,background:"#f8fafc"}}/></a>)}</div>}
  {texts.map((v,j)=><div key={j} style={{fontSize:14,color:"#475569"}}>{v.split("\n").map((ln,i)=>renderLine(ln,i))}</div>)}
  {!!p.benefits?.length&&<ul>{p.benefits.map((b,i)=><li key={i}>{b}</li>)}</ul>}
- <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:10}}><a href={`/warehouse?product=${p.id}`} target="_blank" rel="noreferrer">Картка товару</a>{p.instruction_url&&/^https?:/.test(p.instruction_url)&&<a href={p.instruction_url} target="_blank" rel="noreferrer">Інструкція</a>}{p.video_url&&/^https?:/.test(p.video_url)&&<a href={p.video_url} target="_blank" rel="noreferrer">Відео нанесення</a>}</div>
+ <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:10}}><a href={`/warehouse?product=${p.id}`} target="_blank" rel="noreferrer">{uk?"Картка товару":"Карточка товара"}</a>{p.instruction_url&&/^https?:/.test(p.instruction_url)&&<a href={p.instruction_url} target="_blank" rel="noreferrer">{uk?"Інструкція":"Инструкция"}</a>}{p.video_url&&/^https?:/.test(p.video_url)&&<a href={p.video_url} target="_blank" rel="noreferrer">{uk?"Відео нанесення":"Видео нанесения"}</a>}</div>
  </article>;
 }
 
@@ -52,9 +53,11 @@ function renderLine(line: string, key: number) {
 export function MaterialTraining({ items, lang }: { items: Entry[]; lang: string }) {
   const [category, setCategory] = useState("");
   const [brand, setBrand] = useState("");
+  const [topCategory, setTopCategory] = useState("");
   const [query, setQuery] = useState("");
   const uk = lang === "uk";
   const categories = [
+    { key: "topciment", label: "TOPCIMENT" },
     { key: "decor", label: uk ? "Декоративні покриття" : "Декоративные покрытия" },
     { key: "paints", label: uk ? "Фарби" : "Краски" },
     { key: "protection", label: uk ? "Захисні покриття" : "Защитные покрытия" },
@@ -62,8 +65,11 @@ export function MaterialTraining({ items, lang }: { items: Entry[]; lang: string
   ];
   const typeOf = (e: Entry) => e.section_key === "materials_anticatura" ? "decor" : (e.section_key || "").replace("materials_", "");
   const titleOf = (e: Entry) => (uk ? e.title_uk : e.title_ru) || e.title || "";
-  const search = query.trim().toLocaleLowerCase();
-  const matches = items.filter(e => (!category || typeOf(e) === category) && (!brand || (brand === "anticatura" ? e.section_key === "materials_anticatura" : e.section_key !== "materials_anticatura")) && (!search || (titleOf(e) + " " + (e.products||[]).map(p=>p.name+" "+p.description+" "+p.full_description).join(" ")).toLocaleLowerCase().includes(search)));
+  const normalize = (v: string) => v.toLocaleLowerCase().replace(/[’`ʼ]/g, "'");
+  const search = normalize(query.trim()).split(/\s+/).filter(Boolean);
+  const topLabels: Record<string,string> = {decor: uk ? "Декоративні покриття" : "Декоративные покрытия", prep: uk ? "Ґрунти та підготовка" : "Грунты и подготовка", protection: uk ? "Захисні покриття" : "Защитные покрытия", other: uk ? "Інші матеріали" : "Другие материалы"};
+  const topType = (e:Entry) => e.category && topLabels[e.category] ? e.category : "other";
+  const matches = items.filter(e => (!category || typeOf(e) === category) && (!brand || (brand === "anticatura" ? e.section_key === "materials_anticatura" : e.section_key !== "materials_anticatura")) && (category !== "topciment" || !topCategory || topType(e) === topCategory) && search.every(word => normalize(titleOf(e) + " " + (e.products||[]).map(p=>[p.name,p.description,p.short_description,p.full_description,...(p.benefits||[])].join(" ")).join(" ")).includes(word)));
   return <section className="panel" aria-label={uk ? "Навчання матеріалам" : "Обучение материалам"} style={{ marginBottom: 26 }}>
     <h2 style={{ marginTop: 0 }}>🎨 {uk ? "Матеріали · адаптація та навчання" : "Материалы · адаптация и обучение"}</h2>
     <p>{uk ? "Знайдіть матеріал, вивчіть його застосування та потренуйтеся пояснювати користь клієнту." : "Найдите материал, изучите его применение и потренируйтесь объяснять пользу клиенту."}</p>
@@ -74,26 +80,31 @@ export function MaterialTraining({ items, lang }: { items: Entry[]; lang: string
     </ol>
     <input aria-label={uk ? "Пошук матеріалів" : "Поиск материалов"} placeholder={uk ? "Назва матеріалу, ефект або застосування…" : "Название материала, эффект или применение…"} value={query} onChange={e => setQuery(e.target.value)} style={{ width: "100%", boxSizing: "border-box", padding: 12, border: "1px solid #cbd5e1", borderRadius: 10, marginBottom: 12 }} />
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-      <button style={chip(!category)} onClick={() => { setCategory(""); setBrand(""); }}>{uk ? "Усі матеріали" : "Все материалы"} · {items.length}</button>
-      {categories.map(c => <button key={c.key} style={chip(category === c.key)} onClick={() => { setCategory(c.key); setBrand(""); }}>{c.label} · {items.filter(e => typeOf(e) === c.key).length}</button>)}
+      <button aria-pressed={!category} style={chip(!category)} onClick={() => { setCategory(""); setBrand(""); setTopCategory(""); }}>{uk ? "Усі матеріали" : "Все материалы"} · {items.length}</button>
+      {categories.map(c => <button key={c.key} aria-pressed={category === c.key} style={chip(category === c.key)} onClick={() => { setCategory(c.key); setBrand(""); setTopCategory(""); }}>{c.label} · {items.filter(e => typeOf(e) === c.key).length}</button>)}
     </div>
     {category === "decor" && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
       <button style={chip(!brand)} onClick={() => setBrand("")}>{uk ? "Усі декоративні" : "Все декоративные"}</button>
       <button style={chip(brand === "wallcov")} onClick={() => setBrand("wallcov")}>WALLCOV</button>
       <button style={chip(brand === "anticatura")} onClick={() => setBrand("anticatura")}>ANTICATURA</button>
     </div>}
+    {category === "topciment" && <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
+      <button aria-pressed={!topCategory} style={chip(!topCategory)} onClick={()=>setTopCategory("")}>{uk ? "Усі TOPCIMENT" : "Все TOPCIMENT"}</button>
+      {Object.entries(topLabels).filter(([key])=>items.some(e=>typeOf(e)==="topciment"&&topType(e)===key)).map(([key,label])=><button key={key} aria-pressed={topCategory===key} style={chip(topCategory===key)} onClick={()=>setTopCategory(key)}>{label}</button>)}
+    </div>}
+    {!matches.length&&<p>{uk ? "Матеріалів за цим запитом не знайдено." : "Материалов по этому запросу не найдено."} <button className="btn" onClick={()=>{setQuery("");setCategory("");setBrand("");setTopCategory("");}}>{uk ? "Скинути фільтри" : "Сбросить фильтры"}</button></p>}
     <p className="muted">{uk ? "Знайдено" : "Найдено"}: {matches.length}</p>
     {categories.filter(c => !category || category === c.key).map(c => {
       const list = matches.filter(e => typeOf(e) === c.key);
       if (!list.length) return null;
-      const sections = c.key === "decor" ? ["wallcov", "anticatura"] : [""];
+      const sections = c.key === "decor" ? ["wallcov", "anticatura"] : c.key === "topciment" ? Object.keys(topLabels) : [""];
       return <div key={c.key}><h3>{c.label}</h3>{sections.map(b => {
-        const entries = list.filter(e => !b || (b === "anticatura" ? e.section_key === "materials_anticatura" : e.section_key !== "materials_anticatura")).sort((a, z) => titleOf(a).localeCompare(titleOf(z), "uk"));
+        const entries = list.filter(e => !b || (c.key === "topciment" ? topType(e) === b : (b === "anticatura" ? e.section_key === "materials_anticatura" : e.section_key !== "materials_anticatura"))).sort((a, z) => titleOf(a).localeCompare(titleOf(z), "uk"));
         if (!entries.length) return null;
-        return <div key={b}>{b && <h4>{b === "anticatura" ? "ANTICATURA" : "WALLCOV"}</h4>}{entries.map(e => <details key={e.id} style={{ padding: "12px 14px", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 8 }}>
+        return <div key={b}>{b && <h4>{c.key === "topciment" ? topLabels[b] : b === "anticatura" ? "ANTICATURA" : "WALLCOV"}</h4>}{entries.map(e => <details key={e.id} style={{ padding: "12px 14px", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 8 }}>
           <summary style={{ cursor: "pointer", fontWeight: 700 }}>{titleOf(e)}</summary>
-          {(e.products||[]).map(p=><ProductLearning key={p.id} p={p}/>)}
-          {!e.products?.length&&<p>Активних позицій поки немає.</p>}
+          {(e.products||[]).map(p=><ProductLearning key={p.id} p={p} lang={lang}/>)}
+          {!e.products?.length&&<p>{uk?"Активних позицій поки немає.":"Активных позиций пока нет."}</p>}
           <div style={{ padding: 12, marginTop: 14, background: "#f8fafc", borderRadius: 8 }}>
             <b>{uk ? "Самоперевірка" : "Самопроверка"}</b>
             <ol style={{ paddingLeft: 20, lineHeight: 1.6 }}>

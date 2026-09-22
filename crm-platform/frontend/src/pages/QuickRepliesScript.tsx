@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { TopcimentCalculator } from "./TopcimentCalculator";
 import { Icon } from "../Icon";
 import { AutomationMessages } from "./AutomationMessages";
 
@@ -73,6 +74,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
   onClose: () => void; onBack: () => void; onInsert?: (t: string) => void; onSend: (replyId: number) => void;
 }) {
   const [q, setQ] = useState("");
+  const [calculator, setCalculator] = useState(false);
   const [automations, setAutomations] = useState(false);
   const [stage, setStage] = useState<string>(() => { try { return localStorage.getItem(LS_STAGE) ?? FLOW[0].key; } catch { return FLOW[0].key; } });
   const [selId, setSelId] = useState<number | null>(null);
@@ -118,7 +120,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
 
   function toggleFav(id: number) { setFav((v) => { const n = v.includes(id) ? v.filter((x) => x !== id) : [id, ...v]; writeIds(LS_FAV, n); return n; }); }
   function use(r: Reply | null) {
-    if (!r || busy) return;
+    if (!r || busy || error) return;
     setRecent((v) => { const n = [r.id, ...v.filter((x) => x !== r.id)].slice(0, 10); writeIds(LS_RECENT, n); return n; });
     if ((r.asset_ids || []).length > 0 || !onInsert) { onSend(r.id); return; }
     onInsert(fillName(r.text || ""));
@@ -126,7 +128,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
-      if (automations || (e.target as HTMLElement)?.closest("button")) return;
+      if (calculator || automations || (e.target as HTMLElement)?.closest("button, select, input[type=number]")) return;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         if (!list.length) return;
         e.preventDefault();
@@ -135,6 +137,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
         setSelId(list[n].id);
         listRef.current?.querySelector<HTMLElement>(`[data-rid="${list[n].id}"]`)?.scrollIntoView({ block: "nearest" });
       }
+      if (calculator || automations) return;
       if (e.key === "Enter" && !e.shiftKey && (e.target as HTMLElement)?.tagName !== "TEXTAREA") { e.preventDefault(); use(sel); }
     };
     window.addEventListener("keydown", h);
@@ -145,6 +148,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
   const side = (items: Stage[]) => items.map((s) => <SideItem key={s.key || "_other"} s={s} on={!q && s.key === cur.key} count={count(s.key)} onPick={pick} />);
   const productStage = cur.group === "products" && !q;
 
+  if (calculator) return <TopcimentCalculator onBack={() => setCalculator(false)} onClose={onClose} />;
   if (automations) return <AutomationMessages onBack={() => setAutomations(false)} onClose={onClose} />;
 
   return <div role="dialog" aria-label="Швидкі відповіді — скрипт продажів" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
@@ -152,6 +156,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
     <div style={{ width: "min(1180px, 100%)", height: narrow ? "96vh" : "min(760px, 92vh)", background: "#fff", borderRadius: 14, boxShadow: "0 24px 64px rgba(15,23,42,.3)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* шапка */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "1px solid #e2e8f0", flexWrap: "wrap" }}>
+        <button className="btn" type="button" onClick={() => setCalculator(true)}>Калькулятор TOPCIMENT</button>
         <b style={{ fontSize: 15 }}><Icon n="⚡" size={15} /> Швидкі відповіді</b>
         <button className="btn" type="button" onClick={() => setAutomations(true)} style={{ background: "#e5f2e9", fontSize: 12 }}>Оплата, доставка, майстер-класи · автоматичні повідомлення</button>
         <input value={q} onChange={(e) => { setQ(e.target.value); setSelId(null); }} autoFocus placeholder="Пошук по всіх розділах: «дорого», «галатея», «доставка»…"
@@ -224,7 +229,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
             {/\[[^\]\n]{1,40}\]|\{[^}\n]{1,30}\}/.test(fillName(sel.text || "")) && <div style={{ fontSize: 11.5, color: "#92400e", marginTop: 5 }}>Жовті поля заповніть перед відправкою: поля в [дужках] сервер не відправить, а поля у {"{фігурних}"} дужках клієнт побачить як є.</div>}
             {error && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 5 }}>{error}</div>}
             <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <button className="btn btn-primary" type="button" disabled={busy} onClick={() => use(sel)}>
+              <button className="btn btn-primary" type="button" disabled={busy || !!error} onClick={() => use(sel)}>
                 {busy ? "…" : hasAssets || !onInsert ? "Надіслати з фото/відео" : "Вставити в поле ⏎"}
               </button>
               <span className="muted" style={{ fontSize: 11.5 }}>{hasAssets ? "Фото/відео підуть разом із текстом." : "Текст зʼявиться в полі вводу — перевірте і надішліть самі."} ↑↓ — вибір, Enter — вставити, Esc — закрити, «/» у порожньому полі чату — відкрити це вікно.</span>
