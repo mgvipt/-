@@ -151,7 +151,11 @@ function ItemCard({ it, meta, selected, onSelect, onAct, onEdit, onPropose, hist
 }
 
 function Cards({ meta, reloadMeta }: { meta: Meta; reloadMeta: () => void }) {
-  const [f, setF] = useState({ status: "draft", kind: "", topic: "", audience: "", search: "", flagged: false, source: "", label: "" });
+  // 22.09.2026: /ai-costs?kb=916 — одразу цей запис (у будь-якому статусі)
+  const [f, setF] = useState(() => {
+    const kb = new URLSearchParams(window.location.search).get("kb") || "";
+    return { status: kb ? "" : "draft", kind: "", topic: "", audience: "", search: kb, flagged: false, source: "", label: "" };
+  });
   const [rows, setRows] = useState<Item[]>([]);
   const [count, setCount] = useState(0);
   const [page, setPage] = useState(1);
@@ -298,7 +302,10 @@ function Team({ meta, reloadMeta }: { meta: Meta; reloadMeta: () => void }) {
 export default function KnowledgeBase() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [err, setErr] = useState("");
-  const [sub, setSub] = useState<"cards" | "preview" | "precheck" | "controller" | "publish" | "team">("cards");
+  const [sub, setSub] = useState<"cards" | "preview" | "precheck" | "controller" | "publish" | "team">(() => {
+    const s = new URLSearchParams(window.location.search).get("kbsub") || "";
+    return (["preview", "precheck", "controller", "publish", "team"].includes(s) ? s : "cards") as "cards";
+  });
   const reloadMeta = useCallback(() => { api.get<Meta>("/api/knowledge/meta/").then(setMeta).catch((e) => setErr(errText(e))); }, []);
   useEffect(() => { reloadMeta(); }, [reloadMeta]);
   if (err && !meta) return <div style={{ maxWidth: 1100, margin: "12px auto", color: "#b91c1c", fontSize: 13 }}>Немає доступу до бази знань: {err}</div>;

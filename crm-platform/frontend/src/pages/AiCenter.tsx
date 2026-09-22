@@ -161,7 +161,11 @@ const TABS: [string, string, string][] = [
 
 export default function AiCenter() {
   const { t } = useLang();
-  const [tab, setTab] = useState<string>(() => localStorage.getItem("aiCenterTab") || "costs");
+  // 22.09.2026: посилання на запис бази знань (/ai-costs?kb=916) чи контролер (?kbsub=controller)
+  const [tab, setTab] = useState<string>(() => {
+    const u = new URLSearchParams(window.location.search);
+    return (u.get("kb") || u.get("kbsub")) ? "knowledge" : (localStorage.getItem("aiCenterTab") || "costs");
+  });
   useEffect(() => { localStorage.setItem("aiCenterTab", tab); }, [tab]);
   return (
     // 18.09.2026 (Олег): у AI ЦЕНТРІ не було вертикальної прокрутки — область вкладок має свій скрол

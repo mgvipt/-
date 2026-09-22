@@ -2,7 +2,6 @@
    «Перевірка чернеток», «Контролер» (лише за запуском), «Публікація в Юлю», картка «ШІ у веб-чаті».
    Нічого не працює за розкладом. Усе, що витрачає гроші на ШІ, показує оцінку ДО запуску. */
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { api } from "../api";
 
 type Choice = { value: string; label: string };
@@ -279,7 +278,16 @@ export function ControllerPanel() {
     setBusy(true);
     try { setRun(await api.post<Run>(`/api/knowledge/controller/`, { period, n })); setEst(null); } catch (e) { window.alert(errText(e)); } finally { setBusy(false); }
   }
+  const [onlyIssues, setOnlyIssues] = useState(true);
   const rows: CRow[] = (run?.result?.rows as CRow[]) || [];
+  const hasIssue = (r: CRow) => r.lint.length > 0 || r.findings.length > 0 || r.items.length > 0;
+  const shown = onlyIssues ? rows.filter(hasIssue) : rows;
+  // 22.09.2026: підсумок рахуємо з рядків — у перерваного запуску result.drafts_created немає
+  const runStats = (r: Run) => {
+    const rr: CRow[] = (r.result?.rows as CRow[]) || [];
+    return { checked: rr.length, issues: rr.filter(hasIssue).length,
+      drafts: r.result?.drafts_created ?? rr.reduce((a, x) => a + x.items.length, 0) };
+  };
   return (
     <div>
       <div style={note}>
@@ -303,14 +311,20 @@ export function ControllerPanel() {
       )}
       {run && (
         <RunBox run={run} onUpdate={onRun}>
-          {run.result?.drafts_created !== undefined && <div style={{ fontSize: 12.5, marginTop: 6 }}>Перевірено чатів: <b>{run.result.checked}</b> · нових чернеток: <b>{run.result.drafts_created}</b> (у «Записи», джерело «Рецензент»)</div>}
+          {rows.length > 0 && (
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 12.5, marginTop: 6 }}>
+              <span>Перевірено чатів: <b>{runStats(run).checked}</b> · із зауваженнями: <b>{runStats(run).issues}</b> · нових чернеток: <b>{runStats(run).drafts}</b> (у «Записи», джерело «Рецензент»)</span>
+              <label style={{ display: "flex", gap: 4, alignItems: "center" }}><input type="checkbox" checked={onlyIssues} onChange={(e) => setOnlyIssues(e.target.checked)} /> лише із зауваженнями</label>
+              <button className="btn btn-light" style={{ padding: "1px 8px", fontSize: 12 }} onClick={() => setRun(null)}>Закрити</button>
+            </div>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
-            {rows.map((r) => (
+            {shown.map((r) => (
               <div key={r.conversation_id} style={{ borderTop: "1px dashed #e2e8f0", paddingTop: 6, fontSize: 12.5 }}>
-                <Link to={r.link}>Діалог №{r.conversation_id}</Link> {r.title} <span style={{ color: "#94a3b8" }}>{r.channel}</span>
+                <a href={r.link} target="_blank" rel="noreferrer">Діалог №{r.conversation_id} ↗</a> {r.title} <span style={{ color: "#94a3b8" }}>{r.channel}</span>
                 {r.lint.map((x, i) => <div key={"l" + i} style={{ color: "#92400e" }}>• кодом: {x}</div>)}
                 {r.findings.map((f, i) => <div key={"f" + i} style={{ color: "#1e293b" }}>• ШІ, {FTYPE[f.type] || f.type}: {f.problem}{f.quote ? ` — «${f.quote}»` : ""}</div>)}
-                {r.items.length > 0 && <div style={{ color: "#15803d" }}>Чернетки: {r.items.map((i) => "#" + i).join(", ")}</div>}
+                {r.items.length > 0 && <div style={{ color: "#15803d" }}>Чернетки: {r.items.map((i, k) => <span key={i}>{k > 0 && ", "}<a href={`/ai-costs?kb=${i}`} target="_blank" rel="noreferrer">#{i} ↗</a></span>)}</div>}
                 {r.error && <div style={{ color: "#94a3b8" }}>{r.error}</div>}
                 {!r.lint.length && !r.findings.length && !r.error && <div style={{ color: "#94a3b8" }}>зауважень немає</div>}
               </div>
@@ -323,8 +337,8 @@ export function ControllerPanel() {
           <b>Попередні запуски:</b>
           {info.runs.map((r) => (
             <div key={r.id}>
-              <button className="btn btn-light" style={{ padding: "1px 8px", fontSize: 12 }} onClick={() => setRun(r)}>№{r.id}</button>{" "}
-              {fmtDate(r.created_at)} · {r.status_display} · чатів {r.total} · чернеток {r.result?.drafts_created ?? "—"} · {usd(r.cost_usd)}
+              <b>№{r.id}</b> {fmtDate(r.created_at)} · {r.status_display} · перевірено {runStats(r).checked} з {r.total} · із зауваженнями {runStats(r).issues} · чернеток {runStats(r).drafts} · {usd(r.cost_usd)}{" "}
+              {runStats(r).checked > 0 && <button className="btn btn-primary" style={{ padding: "1px 10px", fontSize: 12 }} onClick={() => { setRun(r); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Відкрити результати</button>}
             </div>
           ))}
         </div>
