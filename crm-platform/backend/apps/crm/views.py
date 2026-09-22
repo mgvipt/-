@@ -1132,16 +1132,15 @@ def _ser_analysis(da):
 
 
 def _ask_sales_analyst(entity, field, question, user=None):
-    """22.09.2026: пряма відповідь ІІ-РОП на питання менеджера по діалогу цього ліда/сделки."""
-    from .sales_analyst import ask_analyst
+    """22.09.2026 (оновлено): пряма відповідь ІІ-РОП на питання менеджера — та сама KB-заземлена
+    персона ask_rop, що й у чаті (раніше тут була окрема, не заземлена в базу знань функція —
+    через це ІІ-РОП казав «інформації немає», хоча вона є у базі знань)."""
+    from .coach_prompt import ask_rop
     from apps.inbox.models import Conversation
     conv = None
     if entity.contact_id:
         conv = Conversation.objects.filter(contact_id=entity.contact_id).order_by("-last_message_at").first()
-    msgs = list(conv.messages.order_by("id").values("direction", "text"))[-40:] if conv else []
-    stage_name = entity.stage.name if entity.stage_id else ""
-    ctx = "Сума %s грн, стадія: %s" % (getattr(entity, "amount", "") or "—", stage_name)
-    return ask_analyst(msgs, question, context=ctx)
+    return ask_rop(conv, question)
 
 
 def _run_sales_analysis(entity, field, user=None, refresh=False):

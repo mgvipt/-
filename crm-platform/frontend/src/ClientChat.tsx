@@ -13,6 +13,7 @@ import { CommentReplyBar, CommentSendError, useCommentTarget } from "./CommentRe
 import type { CommentMode } from "./CommentReplyBar";
 import { ReplyContext, ReactionBadges, MessageStatusLine, CorrectionAction, ReplyAction, bubbleText, messagesHaveSameVisibleState, isContextAttachment } from "./MessageContext";
 import { dayLabel, timeLabel, isNewDay, linkify, metaWindow } from "./chatUtils";
+import { MediaLibraryPicker } from "./pages/MediaLibraryPicker";
 
 const tt = (_r: string, ua: string) => ua;  // ClientChat україномовний
 const CH_META: Record<string, { i: string; l: string }> = {
@@ -71,6 +72,8 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
   const [peekMsgs, setPeekMsgs] = useState<ChatMessage[]>([]);
   const [peekOpen, setPeekOpen] = useState(true);
   const [cinfo, setCinfo] = useState<any>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [libraryQuick, setLibraryQuick] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -462,6 +465,10 @@ export default function ClientChat({ contact, markSeen = true, channelPickerTarg
         <button className="btn" type="button" style={{ background: internal ? "#fde68a" : "#f1f5f9", color: internal ? "#92400e" : "#475569", flex: "0 0 auto", fontWeight: internal ? 700 : 400 }} title="Прихована нотатка для менеджерів (клієнт не побачить)" onClick={() => setInternal((v) => !v)}><Icon n="eye" size={17} /></button>
         <button className="btn" type="button" style={{ background: followup ? "#fed7aa" : "#f1f5f9", color: followup ? "#c2410c" : "#475569", flex: "0 0 auto", fontWeight: followup ? 700 : 400 }} title="Позначити як дожим — нагадування клієнту, який замовк (для аналітики)" onClick={() => setFollowup((v) => !v)}><Icon n="bell" size={17} /></button>
         <EmojiButton onPick={(e) => setText((t) => t + e)} />
+        <div style={{ position: "relative", flex: "0 0 auto" }}>
+          <button className="btn" type="button" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title="Бібліотека: кольори, каталоги і швидкі відповіді" onClick={() => { setLibraryQuick(false); setLibraryOpen((v) => !v); }} disabled={busy}><Icon n="grid" size={17} /></button>
+          {libraryOpen && conv && <MediaLibraryPicker initialTab={libraryQuick ? "quick" : "colors"} conversationId={conv.id} onSent={(m: any) => setMsgs((ms) => [...ms, m])} onClose={() => { setLibraryOpen(false); setLibraryQuick(false); }} onInsertText={(t: string) => setText((prev) => (prev ? prev + "\n" : "") + t)} clientName={cinfo?.display_name || cinfo?.nickname || ""} />}
+        </div>
         <button className="btn" style={{ background: "#f1f5f9", flex: "0 0 auto" }} title="Надіслати фото / відео" onClick={() => fileRef.current?.click()} disabled={busy}><Icon n="paperclip" size={17} /></button>
         <AiComposeAssist draft={text} convId={conv.id} onApply={setText} compact />
         <button className="btn" style={{ flex: "1 1 150px", minWidth: 0, background: "#fef3c7", color: "#92400e", fontSize: "clamp(10px, 3cqi, 13px)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", padding: "6px 6px", minHeight: 34 }} onClick={analyze} disabled={aiLoad} title="AI-РОП підказати відповідь">{aiLoad ? "AI аналізує…" : <><Icon n="🧠" size={13} /> AI-РОП підказати відповідь</>}</button>

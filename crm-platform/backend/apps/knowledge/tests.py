@@ -22,7 +22,7 @@ from apps.warehouse.models import Product
 from . import catalog
 from .fallbacks import compose_style
 from .models import KnowledgeItem, KnowledgeReviewLog, KnowledgeSettings, KnowledgeVersion
-from .reader import context_for, select
+from .reader import context_for, merge_with_fallback, select
 
 
 def item(**kw):
@@ -54,6 +54,31 @@ class ReaderTests(TestCase):
         got = [i.id for i in select("rop_hint", query="а доставка скільки коштує?", limit=5)]
         self.assertEqual(got[:2], [self.rule.id, self.ok.id])
         self.assertNotIn(other.id, got)
+
+    def test_rules_do_not_crowd_out_topic_matches_when_limit_equals_rule_count(self):
+        """22.09.2026: якщо кількість правил == limit — тематичні записи (адреса, ціни тощо)
+        мусять ЛИШИТИСЬ видимими. Раніше (rules + rest)[:limit] обрізав усе під правила — 15 правил
+        rop_hint/yulia_web при типовому limit=15 повністю ховали адресу компанії від ІІ-РОПа."""
+        for n in range(14):  # разом з self.rule у setUp — рівно 15 правил
+            item(kind="rule", title="Правило %s" % n, text="МАРКЕР-ПРАВИЛО-%s" % n, topic="tone")
+        addr = item(title="Де знаходиться магазин?", text="МАРКЕР-АДРЕСА Вірменська 15/1", topic="contacts")
+        got = select("rop_hint", query="Де знаходиться наш магазин?", limit=15)
+        self.assertEqual(len([i for i in got if i.kind == "rule"]), 15)
+        self.assertIn(addr.id, [i.id for i in got])
+
+    def test_merge_with_fallback_picks_most_relevant_item_of_covered_topic(self):
+        """22.09.2026 (реальний інцидент): у темі "contacts" з ROP_CHUNKS раніше бралися перших 12
+        затверджених записів ЗА ПРІОРИТЕТОМ/ID, а не за релевантністю питанню — тому серед 20+ записів
+        теми "contacts" адреса компанії (низький пріоритет/новий id) програвала старим випадковим Q&A
+        і НІКОЛИ не потрапляла в підказку ІІ-РОПу, хоч і була найрелевантнішою."""
+        chunks = [("contacts", "старий вбудований текст про контакти")]
+        for n in range(20):
+            item(title="Старе питання %s" % n, text="МАРКЕР-СТАРЕ-%s" % n, topic="contacts", priority=1, popularity=0)
+        addr = item(title="Де знаходиться магазин? Де ви розташовані?",
+                    text="МАРКЕР-АДРЕСА Вірменська 15/1 Могилів-Подільський", topic="contacts",
+                    priority=100, popularity=0)  # низький пріоритет/новий — програвав би за старою логікою
+        txt = merge_with_fallback("rop_hint", chunks, query="Де знаходиться наш магазин?", limit=12)
+        self.assertIn("МАРКЕР-АДРЕСА", txt)
 
     def test_prices_injected_from_catalog_at_read_time(self):
         item(title="Ціна Галатеї", text="Галатея {price:%d}, на стіну {m2:%d}, інша {price:999999}" % (self.p.id, self.p.id))
@@ -427,3 +452,13 @@ class WebchatSellerUrlTests(TestCase):
         self.assertEqual(req.full_url, "http://10.8.0.1:8001/seller")
         self.assertEqual(req.get_header("X-api-token"), "t-test")
         self.assertEqual(m.text, "Шовк від 162 грн/м²")
+
+
+class TopicGuessLocationTests(TestCase):
+    """22.09.2026: «де знаходиться/розташовані/шоурум» мусить розпізнаватись як тема «contacts» —
+    інакше запис з адресою компанії програє пошук за релевантністю всім іншим темам."""
+
+    def test_location_questions_map_to_contacts(self):
+        from .topics import guess_topics
+        for q in ("Де знаходиться наш магазин?", "Де ви розташовані?", "Де ваш шоурум?", "Де ваш шоу-рум?"):
+            self.assertIn("contacts", guess_topics(q), q)

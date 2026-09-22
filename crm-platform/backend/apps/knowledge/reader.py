@@ -65,6 +65,13 @@ def approved_for(agent):
 
 
 def select(agent, query=None, limit=20, items=None):
+    """22.09.2026 (критичний фікс, Олег: ІІ-РОП сказав «інформації про адресу немає», хоча вона
+    затверджена в базі знань). Причина: правила (kind="rule") ЗАВЖДИ йдуть першими, а результат
+    обрізався до limit СПІЛЬНО з ними. У rop_hint/yulia_web рівно 15 правил — при limit=15 (типове
+    значення по коду) під тематичні записи не лишалось МІСЦЯ ВЗАГАЛІ: жоден запит ніколи не бачив
+    жодного тематичного запису бази знань (адресу, ціни, все) — тільки самі правила. Тепер правила
+    завжди включені ПОВНІСТЮ (їх мало, це і є їхнє призначення — універсальні обмеження), а limit
+    діє лише на тематичні/пошукові записи ДОДАТКОВО до них."""
     items = approved_for(agent) if items is None else items
     rules = [i for i in items if i.kind == "rule"]
     rest = [i for i in items if i.kind != "rule"]
@@ -79,7 +86,7 @@ def select(agent, query=None, limit=20, items=None):
         rest = [t[-1] for t in sorted(scored, key=lambda t: t[:4])]
     else:
         rest = sorted(rest, key=lambda i: (i.priority, -i.popularity, i.id))
-    return (rules + rest)[:max(0, int(limit))]
+    return rules + rest[:max(0, int(limit))]
 
 
 def render_items(items, max_chars=6000):
@@ -167,7 +174,13 @@ def merge_with_fallback(agent, chunks, query=None, limit=12, max_chars=7000, wit
         if topic and topic in covered:
             if topic not in done:
                 done.add(topic)
-                group = [i for i in approved if i.topic == topic][:12]
+                # 22.09.2026 (критичний фікс, Олег: ІІ-РОП не знав адресу компанії, хоча вона
+                # затверджена в базі знань): раніше тема з ROP_CHUNKS бралась перших 12 записів
+                # ЗА ПРІОРИТЕТОМ/ID, БЕЗ УВАГИ до самого питання — у великих темах (contacts
+                # під 50 записів) релевантний запис (адреса) програвав випадковим старим Q&A.
+                # Тепер, якщо є запит, сортуємо ТАК САМО, як і решту — за релевантністю питанню.
+                pool = [i for i in approved if i.topic == topic]
+                group = select(agent, query, 12, items=pool) if query else pool[:12]
                 parts.append("[З бази знань, затверджено Олегом]\n" + render_items(group, 3000))
         else:
             parts.append(catalog.render(chunk).strip())

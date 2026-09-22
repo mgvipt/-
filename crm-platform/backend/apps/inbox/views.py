@@ -1424,6 +1424,12 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
 
 
         conv = self.get_object()
+        # 22.09.2026 (Олег): «Запитати ІІ-РОП» у Відкритих лініях — той самий ask_rop, що в
+        # картці ліда/сделки і в чаті клієнта: одна база знань, своя роль (rop_hint).
+        _question = (request.data.get("question") or "").strip()
+        if _question:
+            from apps.crm.coach_prompt import ask_rop
+            return Response(ask_rop(conv, _question))
         msgs = list(conv.messages.order_by("id").values("direction", "text", "created_at"))[-30:]
         dialog = "\n".join(
             ("Клієнт: " if m["direction"] == "in" else "Менеджер/AI: ") + (m["text"] or "")

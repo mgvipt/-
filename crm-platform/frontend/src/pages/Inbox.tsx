@@ -84,6 +84,9 @@ export default function Inbox() {
   const [emps, setEmps] = useState<{ id: number; full_name: string }[]>([]);
   const [aiMode, setAiMode] = useState("");      // режим підказки AI-РОП
   const [aiHint, setAiHint] = useState("");      // навідна думка менеджера
+  const [ropQ, setRopQ] = useState("");           // 22.09.2026: «Запитати ІІ-РОП про цей діалог»
+  const [ropAsking, setRopAsking] = useState(false);
+  const [ropQa, setRopQa] = useState<{ question: string; answer?: string; error?: string } | null>(null);
   const [menu, setMenu] = useState(false);
   const headRef = useRef<HTMLDivElement | null>(null);
   const [compact, setCompact] = useState(false);
@@ -250,8 +253,21 @@ export default function Inbox() {
     setAiLoad(false);
   }
 
+  async function askRop() {
+    const question = ropQ.trim();
+    if (!question || !active || ropAsking) return;
+    setRopAsking(true); setRopQa(null);
+    try {
+      const r = await api.post<any>(`/api/conversations/${active.id}/ai_reply/`, { question });
+      setRopQa({ question, answer: r.answer, error: r.error });
+    } catch (e: any) {
+      setRopQa({ question, error: e?.response?.data?.detail || t("Не удалось получить ответ", "Не вдалося отримати відповідь") });
+    }
+    setRopAsking(false); setRopQ("");
+  }
+
   async function openConv(c: Conversation) {
-    setActive(c); setErr(""); setAi(null); setCorrectionTarget(null); setReplyTarget(null); setAdCtx(null);
+    setActive(c); setErr(""); setAi(null); setRopQa(null); setRopQ(""); setCorrectionTarget(null); setReplyTarget(null); setAdCtx(null);
     api.get<any>(`/api/conversations/${c.id}/ad_context/`).then((a) => setAdCtx(a && (a.ad_title || a.ad_thumb) ? a : null)).catch(() => setAdCtx(null));
     const m = await api.get<ChatMessage[]>(`/api/conversations/${c.id}/messages/?seen=1`);
     setMsgs(m);
@@ -790,6 +806,32 @@ export default function Inbox() {
             </div>
           )}
         </div>
+        {active && (
+          <div style={{ padding: "10px 12px", borderTop: "1px solid #e2e8f0", flexShrink: 0 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+              <Icon n="💭" size={13} /> {t("Спросить ИИ-РОП об этом диалоге", "Запитати ІІ-РОП про цей діалог")}
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                value={ropQ}
+                onChange={(e) => setRopQ(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") askRop(); }}
+                placeholder={t("Например: где находится наш магазин?", "Наприклад: де знаходиться наш магазин?")}
+                style={{ flex: 1, fontSize: 12.5, padding: "6px 9px", borderRadius: 7, border: "0.5px solid #cbd5e1" }}
+              />
+              <button className="btn" style={{ padding: "5px 12px", fontSize: 12 }} onClick={askRop} disabled={ropAsking || !ropQ.trim()}>
+                {ropAsking ? "…" : t("Спросить", "Запитати")}
+              </button>
+            </div>
+            {ropQa && (
+              <div style={{ marginTop: 8, background: ropQa.error ? "#FCEBEB" : "#E6F1FB", borderRadius: 8, padding: "8px 10px" }}>
+                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 3 }}>«{ropQa.question}»</div>
+                <div style={{ fontSize: 12.5, color: ropQa.error ? "#791F1F" : "#042C53", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{ropQa.error || ropQa.answer}</div>
+                {ropQa.answer && <button className="btn" style={{ marginTop: 6, padding: "3px 10px", fontSize: 11.5 }} onClick={() => setText(ropQa.answer || "")}>{t("Вставить в ответ", "Вставити у відповідь")}</button>}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
       }
