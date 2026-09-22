@@ -53,10 +53,11 @@ from .seller_prompt import system_for as _seller_system_for
 
 SELLER_CONTRACT = (
     'Поверни СТРОГО JSON: {"reply": "текст клієнту", "handoff": true або false, "reason": "чому передаєш менеджеру", '
-    '"order": {"product": "точна назва тест-набору", "qty": 1} або null}. '
+    '"order": {"product": "точна назва тест-набору", "qty": 1} або {"volume": true, "tint": true} або null}. '
     "handoff=true — якщо не впевнена або потрібних фактів у базі немає. Коли клієнт хоче саме ТЕСТ-НАБІР і варіант "
-    "зрозумілий — не передавай менеджеру, а поверни order. Великі замовлення, оплата іншим способом, "
-    "дзвінок — менеджеру."
+    "зрозумілий — не передавай менеджеру, а поверни order. Клієнт погодився оформити ОБʼЄМ за «РОЗРАХУНКОМ CRM» — "
+    "поверни order {\"volume\": true, \"tint\": true} (tint=false лише якщо клієнт хоче без тонування / білий). "
+    "Оплата іншим способом, дзвінок — менеджеру."
 )
 
 
@@ -224,7 +225,7 @@ def _spec_seller(agent, msgs, model, context="", context_query=""):
     user = ("БАЗА ЗНАНЬ WALLCOV (затверджено Олегом):\n%s\n%s\n%sДІАЛОГ:\n%s\n\nОстаннє повідомлення клієнта: «%s». "
             "Дай відповідь і поверни JSON." % (kb or "(порожньо)", kits, (context + "\n\n") if context else "",
                                                _dialog(msgs), msgs[-1]["text"]))
-    allowed = kb + "\n" + "\n".join(m["text"] for m in msgs if m["role"] == "client")
+    allowed = kb + "\n" + (context or "") + "\n" + "\n".join(m["text"] for m in msgs if m["role"] == "client")
     spec = {"system": seller_system(CHANNEL[agent]), "user": user, "model": model or HAIKU, "max_tokens": 600,
             "mode": "seller", "cache": False, "allowed": allowed}
     if not items:
@@ -382,16 +383,20 @@ def _finish_seller(res, resp, msgs, spec, used):
     reply = str(data.get("reply") or ("" if data else txt)).strip()
     order = data.get("order") if isinstance(data.get("order"), dict) else None
     problems = guard(reply, spec["allowed"], used, msgs[-1]["text"])
-    if order and order.get("product"):
+    if order and order.get("volume") and "РОЗРАХУНОК CRM" not in (spec.get("allowed") or ""):
+        order = None      # 22.09.2026: обʼєм оформлюємо лише за розрахунком CRM, не «з голови»
+    if order and (order.get("product") or order.get("volume")):
         # 18.09.2026 (Олег): клієнт погодився на тест-набір — не передаємо менеджеру, а оформлюємо самі.
         # Лишаємо тільки справді небезпечні причини (чужі суми, знижки), решту прибираємо.
         problems = [p for p in problems if "не з каталогу" in p or "знижк" in p]
-    if data.get("handoff") and not (order and order.get("product")):
+    if data.get("handoff") and not (order and (order.get("product") or order.get("volume"))):
         reason = str(data.get("reason") or "").strip()
         problems.insert(0, "ШІ сам вирішив передати менеджеру" + (": " + reason if reason else ""))
     if not reply:
         problems.append("порожня відповідь")
-    if order and order.get("product"):
+    if order and order.get("volume"):
+        res["order"] = {"volume": True, "tint": order.get("tint") is not False}
+    elif order and order.get("product"):
         res["order"] = {"product": str(order.get("product"))[:200], "qty": order.get("qty") or 1}
     if problems:
         res.update(text=HANDOFF_TEXT, handoff=True, handoff_reason="; ".join(problems)[:600], draft_reply=reply[:2000])

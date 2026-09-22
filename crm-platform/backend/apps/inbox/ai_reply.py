@@ -68,15 +68,20 @@ def channel_on(channel):
 TAKEOVER_HOURS = 10
 
 # фрази Юлі з ChatPlace, після яких продовжувати має продавець CRM
+# 22.09.2026: + російською і з кількома словами між («Передала Ваш запрос менеджеру», «менеджеры свяжутся»)
 HANDOFF_RX = re.compile(
-    r"передал[аи]\s+(дан[іи]|замовлен|питанн|інформац)?\s*менеджер|передаю\s+менеджер|"
-    r"менеджер\s+(надішле|підтвердить|зв|підключ|оформ)|зв.?яж[уе]\s+(вас\s+)?з\s+менеджер|"
-    r"оформлюю\s+(ваше\s+)?замовлення|передам\s+менеджер|передати\s+менеджер", re.I)
+    r"передал\w*\s+(?:\S+\s+){0,4}менеджер|переда[юм]\w*\s+(?:\S+\s+){0,3}менеджер|передати\s+менеджер|"
+    r"менеджер\w*\s+(?:\S+\s+){0,2}(надішл|пришл|отправ|підтверд|подтверд|зв|свяж|подключ|підключ|оформ|"
+    r"підготу|подготов)|зв.?яж[уе]\s+(вас\s+)?з\s+менеджер|свяж\w*\s+(вас\s+)?с\s+менеджер|"
+    r"оформлюю\s+(ваше\s+)?замовлення|оформля\w*\s+(ваш\s+)?заказ", re.I)
 # клієнт сам показав готовність купити
 BUY_RX = re.compile(
     r"\bберу\b|беремо|оформ(ляйте|люйте|ляємо|ити|ляти)|готов[аий]*\s+(купити|оплатити|замовити)|"
     r"куди\s+(оплат|перекаж|скинути|платити)|як\s+оплатити|как\s+оплатить|реквізит|реквизит|"
-    r"рахунок\s+на\s+оплат|остаточно|окончательно|давайте\s+оформ|хочу\s+(замовити|купити|оплатити)", re.I)
+    r"рахунок\s+на\s+оплат|остаточно|окончательно|давайте\s+оформ|хочу\s+(замовити|купити|оплатити)|"
+    # 22.09.2026: російською і «одразу на обʼєм» («На 10 м давайте сразу»)
+    r"оформите|оформляйте|хочу\s+(заказать|купить)|куда\s+(оплат|перевест|платить)|готов\w*\s+(купить|оплатить|заказать)|"
+    r"давайте\s+(сразу|одразу|відразу|на\s+\d)|\d+\s*(м2|м²|м|кв\w*)\s+давайте", re.I)
 
 
 def _takeover_channel(channel):
@@ -329,9 +334,14 @@ def reply_now(conv_id):
         cfg = KnowledgeSettings.get()
         from .ad_context import ad_info, ad_prompt, ad_topic
         ad_ctx = ad_prompt(conv)   # 22.09.2026: продавець знає, з якої реклами клієнт
-        r = answer("yulia_web", history(conv, incoming), include_drafts=False, model=cfg.webchat_model or None,
+        ad_q = ad_topic(ad_info(conv).get("ad_title")) if ad_ctx else ""
+        msgs = history(conv, incoming)
+        calc = _volume_calc(msgs, ad_q)   # 22.09.2026: обʼєм рахує CRM з карток каталогу
+        from apps.knowledge.volume_calc import language_hint, prompt_block
+        ctx = "\n\n".join(x for x in (ad_ctx, prompt_block(calc), language_hint(incoming.text)) if x)
+        r = answer("yulia_web", msgs, include_drafts=False, model=cfg.webchat_model or None,
                    source="%s: %s" % (NOTE_PREFIX, conv.channel.name), timeout=25,
-                   context=ad_ctx, context_query=ad_topic(ad_info(conv).get("ad_title")) if ad_ctx else "")
+                   context=ctx, context_query=ad_q)
         text = (r.get("text") or "").strip() or HANDOFF_TEXT
         used = ", ".join("#%d" % u["id"] for u in r.get("used_items") or []) or "—"
         note = ("%s передав менеджеру: %s. Записи: %s." % (NOTE_PREFIX, r.get("handoff_reason") or "—", used)
@@ -351,8 +361,72 @@ def reply_now(conv_id):
     if _takeover_channel(conv.channel):
         hold_chat(conv)       # чат лишається за продавцем CRM ще 10 год
     _maybe_effect_photos(conv, text)
-    if r.get("order"):
+    if r.get("order") and r["order"].get("volume"):
+        from apps.knowledge.volume_calc import shown_to_client
+        if shown_to_client(msgs, calc):
+            _make_volume_offer(conv, calc, r["order"])
+        # інакше клієнт суми ще не бачив — лише показали розрахунок, оформлюємо після його «так»
+    elif r.get("order"):
         _make_kit_offer(conv, r["order"])
+
+
+def _volume_calc(msgs, extra=""):
+    try:
+        from apps.knowledge.volume_calc import for_dialog
+        return for_dialog(msgs, extra)
+    except Exception:
+        return None
+
+
+def _make_volume_offer(conv, calc, order):
+    """22.09.2026 (Олег): «ШІ сам рахує всі обʼєми — вчимо його працювати автономно».
+    Сделка «21 Основний продукт» з позиціями РОЗРАХУНКУ CRM (площа × витрата з картки). Прорахунок клієнту
+    надсилає make_offer. Тонування обʼєму в каталозі ціни не має → з тонуванням посилання на оплату НЕ шлемо,
+    менеджер додає тонування і надсилає посилання; без тонування — посилання LiqPay одразу."""
+    from apps.crm.models import Deal, Funnel
+    from apps.crm.views import make_offer
+    if not calc or not calc.get("ok"):
+        _note(conv, "%s: клієнт погодився на обʼєм, але розрахунку немає (площа чи матеріал невідомі) — оформіть вручну."
+              % NOTE_PREFIX)
+        return
+    if not conv.contact_id:
+        _note(conv, "%s: немає картки клієнта — оформіть обʼєм вручну." % NOTE_PREFIX)
+        return
+    mat_id = calc["material"]["product_id"]
+    dup = (Deal.objects.filter(contact_id=conv.contact_id, stage__is_won=False, stage__is_lost=False,
+                               created_at__gte=timezone.now() - timedelta(hours=24), items__product_id=mat_id)
+           .order_by("-id").first())
+    if dup is not None:
+        _note(conv, "%s: обʼєм уже оформлено в сделці #%s — другу не створюю, перевірте." % (NOTE_PREFIX, dup.id))
+        return
+    deal = (Deal.objects.filter(contact_id=conv.contact_id, stage__is_won=False, stage__is_lost=False)
+            .order_by("-created_at").first())
+    if deal is None or deal.items.exists():
+        f = Funnel.objects.filter(name__istartswith="21 Основний").first()
+        st = f.stages.order_by("order").first() if f else None
+        if not (f and st):
+            _note(conv, "%s: немає воронки «21 Основний продукт» — оформіть обʼєм вручну." % NOTE_PREFIX)
+            return
+        deal = Deal.objects.create(title="Обʼєм %s м² · %s" % (_money(calc["area"]), str(conv.contact)[:40]),
+                                   funnel=f, stage=st, contact_id=conv.contact_id, owner=conv.assigned_to)
+    tint = order.get("tint", True)
+    try:
+        res = make_offer(deal, [{"name": l["name"], "qty": l["qty"]} for l in calc["lines"]], send_pay=not tint)
+    except Exception as e:
+        _note(conv, "%s: не вдалося оформити обʼєм (%s) — зробіть вручну." % (NOTE_PREFIX, str(e)[:200]))
+        return
+    if not res.get("ok"):
+        _note(conv, "%s: сделка #%s — прорахунок обʼєму не створено (%s), перевірте вручну."
+              % (NOTE_PREFIX, deal.id, res.get("msg") or "—"))
+        return
+    miss = (" Без витрати в картці (не пораховано): %s." % "; ".join(calc["missing"])[:300]) if calc["missing"] else ""
+    if tint:
+        _note(conv, "%s: оформив обʼєм %s м² — сделка #%s на %s ₴, прорахунок клієнту надіслано. "
+              "ДОДАЙТЕ ТОНУВАННЯ в колір клієнта і надішліть посилання на оплату.%s"
+              % (NOTE_PREFIX, _money(calc["area"]), deal.id, res.get("amount"), miss))
+    else:
+        _note(conv, "%s: оформив обʼєм %s м² без тонування — сделка #%s на %s ₴, надіслав посилання на оплату %s.%s"
+              % (NOTE_PREFIX, _money(calc["area"]), deal.id, res.get("amount"), res.get("url") or "—", miss))
 
 
 MAX_AUTO_ORDER = 2000        # ₴ — вище цієї суми оформлює менеджер

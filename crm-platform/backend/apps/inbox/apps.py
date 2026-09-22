@@ -10,3 +10,5 @@ class InboxConfig(AppConfig):
         # Імпорт тут, а не в adapters.py, щоб не чіпати спільний файл адаптерів.
         from . import tiktok  # noqa: F401
         from . import landing_signals  # noqa: F401
+        # 22.09.2026: Юля ChatPlace написала «передала менеджеру» — продавець CRM підхоплює одразу
+        from . import ai_handoff  # noqa: F401
