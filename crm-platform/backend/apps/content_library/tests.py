@@ -2,7 +2,7 @@ import hashlib, hmac, json, secrets, time, uuid
 from io import StringIO
 from unittest.mock import patch
 from django.core.management import call_command
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from apps.accounts.models import User
 from apps.crm.models import Contact, Deal
 from apps.inbox.models import Channel, Conversation, Message
@@ -59,7 +59,8 @@ class ContentLibraryTests(TestCase):
         raw=json.dumps({'guide_token':receipt.token,'article':'microcement-shower'}).encode();ts=str(int(time.time()))
         self.assertEqual(self.client.post('/api/content-library/guide-contact/',raw,content_type='application/json').status_code,403)
         sig=hmac.new(b'test-secret',ts.encode()+b'.'+raw,hashlib.sha256).hexdigest()
-        response=self.client.post('/api/content-library/guide-contact/',raw,content_type='application/json',HTTP_X_WALLCOV_TIMESTAMP=ts,HTTP_X_WALLCOV_SIGNATURE=sig)
+        csrf_client=Client(enforce_csrf_checks=True)
+        response=csrf_client.post('/api/content-library/guide-contact/',raw,content_type='application/json',HTTP_X_WALLCOV_TIMESTAMP=ts,HTTP_X_WALLCOV_SIGNATURE=sig)
         self.assertEqual(response.status_code,200,response.content);self.assertEqual(response.json()['display_name'],'Тест')
         self.assertEqual(response.json()['preferred_channel'],'whatsapp')
     def test_editable_form_and_public_configuration(self):

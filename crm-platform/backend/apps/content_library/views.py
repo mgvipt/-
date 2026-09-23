@@ -12,7 +12,7 @@ from django.db.models import Count, Q, Sum
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
-from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -163,6 +163,7 @@ def guide(request,slug):
     return response
 
 
+@csrf_exempt
 @require_POST
 def guide_contact(request):
     """Resolve an opaque guide receipt for the shop without exposing contact data in URLs."""
