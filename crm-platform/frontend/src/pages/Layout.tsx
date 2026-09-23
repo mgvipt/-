@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
 import { api } from "../api";
@@ -307,15 +307,25 @@ export default function Layout() {
       <aside className={"sidebar" + (navOpen ? " open" : "")}>
         <div className="logo"><div className="logo-badge">W</div><b>Wallcov</b></div>
         <nav className="nav">
-          {items.map(([path, ru, uk, icon]) => (
-            <NavLink key={path} to={path} className="nav-item" onClick={() => setNavOpen(false)}>
+          {items.map(([path, ru, uk, icon]) => {
+            if (path === "/content-audience" || path === "/duplicates") return null;
+            return <Fragment key={path}><NavLink to={path} className="nav-item" onClick={() => setNavOpen(false)}>
               <span style={{ width: 18, textAlign: "center", display: "inline-flex", justifyContent: "center" }}><Icon n={icon as string} size={17} /></span>
               <span style={{ flex: 1 }}>{t(ru, uk)}</span>
               {path === "/tasks" && tasksToday > 0 && (
                 <span style={{ marginLeft: "auto", background: "#dc2626", color: "#fff", borderRadius: 10, padding: "1px 7px", fontSize: 11, fontWeight: 700, minWidth: 18, textAlign: "center", boxShadow: "0 0 0 2px rgba(220,38,38,.18)" }}>{tasksToday}</span>
               )}
             </NavLink>
-          ))}
+            {path === "/clients" && <div aria-label={t("Разделы клиентов", "Розділи клієнтів")}>
+              {can("marketing.view") && <NavLink to="/content-audience" className="nav-item" onClick={() => setNavOpen(false)} style={{ paddingLeft: 42, fontSize: 13 }}>
+                <span style={{ width: 18, textAlign: "center" }}>↳</span><span>{t("Контент-лиды", "Контент-ліди")}</span>
+              </NavLink>}
+              {can("roles.manage") && <NavLink to="/duplicates" className="nav-item" onClick={() => setNavOpen(false)} style={{ paddingLeft: 42, fontSize: 13 }}>
+                <span style={{ width: 18, textAlign: "center" }}>↳</span><span>{t("Дубли", "Дублі")}</span>
+              </NavLink>}
+            </div>}
+            </Fragment>;
+          })}
         </nav>
         <WebPhone />
         <div className="me">

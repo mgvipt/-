@@ -19,10 +19,15 @@ import ClientChat from "../ClientChat";
 
 interface Deal { id: number; title: string; amount: number; stage: string; is_won: boolean; created_at: string; }
 interface ZamerProject { project_uuid: string; title: string; payload: any; updated_at: string; }
+interface ContentHistory {
+  event: string; action: string; title: string; slug: string; url: string;
+  document_url: string; article_url: string; source_url: string; keyword: string; created_at: string;
+}
 interface ContentSubscription {
   preferred_channel: string; marketing_consent: boolean; consent_at: string | null; status: string;
   tags: string[]; first_touch_at: string; last_touch_at: string; source: string; campaign: string; content: string;
   identities: { kind: string; value: string; verified: boolean }[]; instructions: string[];
+  history: ContentHistory[];
 }
 interface Contact {
   id: number; first_name: string; last_name: string; middle_name?: string; display_name: string; phone: string; email: string; social_link: string; messengers?: string[];
@@ -215,6 +220,18 @@ export default function ClientCard() {
             <button className="btn btn-primary" style={{ marginLeft: "auto", height: 32 }} onClick={() => setChatOpen(true)}>{t("Написать клиенту", "Написати клієнту")}</button>
           </div>
           {(subscription.campaign || subscription.content) && <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{[subscription.campaign && `${t("Кампания", "Кампанія")}: ${subscription.campaign}`, subscription.content && `${t("Публикация", "Публікація")}: ${subscription.content}`].filter(Boolean).join(" · ")}</div>}
+          {subscription.history?.length > 0 && <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #dbe4dc" }}>
+            <div className="label" style={{ marginBottom: 6 }}>{t("История статей и документов", "Історія статей і документів")}</div>
+            <div style={{ display: "grid", gap: 7 }}>
+              {subscription.history.slice(0, 10).map((item, index) => <div key={`${item.created_at}-${index}`} style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                <small className="muted" style={{ minWidth: 118 }}>{new Date(item.created_at).toLocaleString("uk-UA")}</small>
+                <span>{item.action}: {item.url ? <a href={item.url} target="_blank" rel="noreferrer"><b>{item.title}</b> ↗</a> : <b>{item.title}</b>}{item.keyword ? ` · «${item.keyword}»` : ""}</span>
+                {item.article_url && item.article_url !== item.url && <a href={item.article_url} target="_blank" rel="noreferrer"><small>{t("Статья", "Стаття")} ↗</small></a>}
+                {item.document_url && item.document_url !== item.url && <a href={item.document_url} target="_blank" rel="noreferrer"><small>{t("Техкарта", "Техкарта")} ↗</small></a>}
+                {item.source_url && item.source_url !== item.url && <a href={item.source_url} target="_blank" rel="noreferrer"><small>{t("Источник", "Джерело")} ↗</small></a>}
+              </div>)}
+            </div>
+          </div>}
         </div>;
       })()}
       <div style={{ margin: "0 0 8px" }}><PartnerBlock contactId={c.id} /></div>

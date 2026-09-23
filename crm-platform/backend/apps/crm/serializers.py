@@ -124,6 +124,7 @@ class ContactDetailSerializer(ContactSerializer):
     def get_content_subscription(self, obj):
         """Єдиний статус контент-підписки в картці того самого Contact."""
         from apps.content_library.models import AudienceProfile
+        from apps.content_library.services import profile_content_history
         profile = (AudienceProfile.objects.filter(contact=obj)
                    .prefetch_related("identities", "requests__instruction").first())
         if not profile:
@@ -142,6 +143,7 @@ class ContactDetailSerializer(ContactSerializer):
             "identities": [{"kind": identity.kind, "value": identity.value,
                             "verified": bool(identity.verified_at)} for identity in profile.identities.all()],
             "instructions": sorted({request.instruction.title for request in profile.requests.all()}),
+            "history": profile_content_history(profile, limit=40),
         }
 
     def get_zamer_projects(self, obj):

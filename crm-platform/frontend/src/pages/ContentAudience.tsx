@@ -3,9 +3,14 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 
 type Identity = { kind: string; value: string; verified: boolean };
+type ContentHistory = {
+  event: string; action: string; title: string; slug: string; url: string;
+  document_url: string; article_url: string; source_url: string; keyword: string; created_at: string;
+};
 type ContactRow = {
   id: number; name: string; phone: string; email: string; source: string; campaign: string; content: string;
   preferred_channel: string; identities: Identity[]; interests: string[]; instructions: string[];
+  content_history: ContentHistory[];
   consent: boolean; consent_at: string | null; status: string; last_touch_at: string;
 };
 type Report = {
@@ -15,6 +20,8 @@ type Report = {
   events: Record<string, number>; anonymous_events: Record<string, number>; customers: number; orders: number;
   repeat_customers: number; paid_amount: string | null; attribution_note: string;
   manager_shares: number; manager_opened: number; contacts: ContactRow[];
+  instructions: { instruction__slug: string; instruction__title: string; contacts: number }[];
+  instruction_options: { instruction__slug: string; instruction__title: string; contacts: number }[];
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -30,9 +37,10 @@ export default function ContentAudience() {
   const [data, setData] = useState<Report | null>(null);
   const [error, setError] = useState("");
   const [source, setSource] = useState("");
+  const [instruction, setInstruction] = useState("");
   const [campaign, setCampaign] = useState("");
   const [content, setContent] = useState("");
-  const [query, setQuery] = useState("instruction=microcement");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -43,15 +51,21 @@ export default function ContentAudience() {
     return () => { active = false; };
   }, [query]);
 
-  const apply = () => setQuery(new URLSearchParams({ instruction: "microcement", source, campaign, content }).toString());
+  const apply = () => setQuery(new URLSearchParams({ instruction, source, campaign, content }).toString());
   const pct = (n: number, d: number) => d ? `${(100 * n / d).toFixed(1)}%` : "—";
   const channel = (value: string) => CHANNEL_LABELS[value] || value || "Не обрано";
 
   return <main style={{ padding: 24, maxWidth: 1350, width: "100%", height: "100%", margin: "auto", overflow: "auto", boxSizing: "border-box", minWidth: 0 }}>
     <h1>База контент-лідів</h1>
-    <p>Люди, які отримали онлайн-інструкцію Wallcov. Повторні запити об’єднуються за контактом.</p>
+    <p>Люди, які отримали інструкцію або статтю Wallcov. Тут видно, що саме вони обрали, відкрили та за яким посиланням перейшли.</p>
 
     <form onSubmit={(event) => { event.preventDefault(); apply(); }} style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "end", margin: "24px 0" }}>
+      <label style={{ display: "grid", gap: 5 }}><span>Документ або стаття</span>
+        <select value={instruction} onChange={(event) => setInstruction(event.target.value)} style={{ minWidth: 240 }}>
+          <option value="">Усі матеріали</option>
+          {(data?.instruction_options || []).map((item) => <option key={item.instruction__slug} value={item.instruction__slug}>{item.instruction__title} · {item.contacts}</option>)}
+        </select>
+      </label>
       <label style={{ display: "grid", gap: 5 }}><span>Звідки прийшов клієнт</span>
         <select value={source} onChange={(event) => setSource(event.target.value)} style={{ minWidth: 180 }}>
           <option value="">Усі джерела</option>
@@ -65,7 +79,7 @@ export default function ContentAudience() {
         <input value={content} onChange={(event) => setContent(event.target.value)} placeholder="Назва або ID Reels / допису" style={{ minWidth: 260 }} />
       </label>
       <button className="btn btn-primary">Показати</button>
-      {(source || campaign || content) && <button type="button" className="btn btn-light" onClick={() => { setSource(""); setCampaign(""); setContent(""); setQuery("instruction=microcement"); }}>Скинути</button>}
+      {(instruction || source || campaign || content) && <button type="button" className="btn btn-light" onClick={() => { setInstruction(""); setSource(""); setCampaign(""); setContent(""); setQuery(""); }}>Скинути</button>}
     </form>
     <p className="muted" style={{ marginTop: -14 }}>Два останні поля потрібні лише для пошуку людей з конкретної реклами чи публікації. Їх можна залишити порожніми.</p>
 
@@ -109,14 +123,22 @@ export default function ContentAudience() {
         {(["article_view", "article_scroll_50", "article_scroll_90", "lead_cta_click", "lead_form_start", "lead_form_submit", "product_click"] as const).map((key) => <tr key={key}><td>{{ article_view: "Перегляд статті", article_scroll_50: "Прочитано 50%", article_scroll_90: "Прочитано 90%", lead_cta_click: "Перехід до техкарти", lead_form_start: "Початок форми", lead_form_submit: "Надіслана форма", product_click: "Перехід до товару" }[key]}</td><td>{data.events[key] || 0}</td><td>{data.anonymous_events[key] || 0}</td></tr>)}
       </tbody></table></div>
 
-      <h2>Останні контакти</h2>
+      <h2>Клієнти та історія матеріалів</h2>
       {data.contacts.length === 0 ? <p>Контактів поки немає або немає права перегляду клієнтів.</p> :
-        <div style={{ overflowX: "auto", maxWidth: "100%" }}><table className="table" style={{ minWidth: 980 }}><thead><tr><th>Клієнт</th><th>Телефон / email</th><th>Зручний канал</th><th>Що запитував</th><th>Звідки прийшов</th><th>Повідомлення</th></tr></thead><tbody>
+        <div style={{ overflowX: "auto", maxWidth: "100%" }}><table className="table" style={{ minWidth: 1120 }}><thead><tr><th>Клієнт</th><th>Телефон / email</th><th>Зручний канал</th><th>Що дивився або обрав</th><th>Звідки прийшов</th><th>Повідомлення</th></tr></thead><tbody>
           {data.contacts.map((person) => <tr key={person.id}>
             <td><Link to={`/clients/${person.id}`}>{person.name}</Link></td>
             <td>{person.phone || "—"}<br />{person.email || "—"}</td>
             <td><b>{channel(person.preferred_channel)}</b><br /><small>{person.identities.some((identity) => identity.kind === person.preferred_channel && identity.verified) ? "Підтверджено" : "Обрано клієнтом"}</small></td>
-            <td>{person.instructions.join(", ") || "—"}</td>
+            <td style={{ minWidth: 300 }}>{person.content_history?.length ? person.content_history.slice(0, 4).map((item, index) => <div key={`${item.created_at}-${index}`} style={{ marginBottom: 8 }}>
+              {item.url ? <a href={item.url} target="_blank" rel="noreferrer"><b>{item.title}</b> ↗</a> : <b>{item.title}</b>}
+              <br /><small>{item.action}{item.keyword ? ` · слово «${item.keyword}»` : ""} · {new Date(item.created_at).toLocaleString("uk-UA")}</small>
+              {(item.article_url || item.document_url || item.source_url) && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
+                {item.article_url && item.article_url !== item.url && <a href={item.article_url} target="_blank" rel="noreferrer"><small>Стаття ↗</small></a>}
+                {item.document_url && item.document_url !== item.url && <a href={item.document_url} target="_blank" rel="noreferrer"><small>Техкарта ↗</small></a>}
+                {item.source_url && item.source_url !== item.url && <a href={item.source_url} target="_blank" rel="noreferrer"><small>Джерело ↗</small></a>}
+              </div>}
+            </div>) : (person.instructions.join(", ") || "—")}</td>
             <td>{SOURCE_LABELS[person.source] || person.source || "—"}{person.campaign && <><br /><small>{person.campaign}</small></>}</td>
             <td>{person.consent ? "Дозволив" : "Не дозволяв"}</td>
           </tr>)}

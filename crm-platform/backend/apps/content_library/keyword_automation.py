@@ -34,6 +34,7 @@ def _platform(conversation):
 def _context(conversation, rule, keyword):
     card = (conversation.config or {}).get('source_card') or {}
     is_comment = str(conversation.external_chat_id or '').startswith('comment:')
+    instruction = rule.form.instruction
     return {
         'source_platform': _platform(conversation),
         'source_content_id': str(card.get('media_id') or ''),
@@ -44,6 +45,8 @@ def _context(conversation, rule, keyword):
         'utm_content': 'keyword_' + _normal(keyword),
         'keyword': keyword,
         'conversation_id': conversation.id,
+        'document_url': instruction.public_url,
+        'article_url': instruction.article_url,
     }
 
 

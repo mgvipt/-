@@ -3,6 +3,7 @@ import hashlib
 import json
 import re
 import uuid
+from urllib.parse import urlsplit, urlunsplit
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import connection, transaction
@@ -17,6 +18,79 @@ class IdentityConflict(ValueError):
 
 
 PREFERRED_CHANNELS = {'viber', 'whatsapp', 'telegram', 'instagram', 'email'}
+
+CONTENT_EVENT_LABELS = {
+    'article_view': 'Переглянув статтю',
+    'article_scroll_50': 'Прочитав 50% статті',
+    'article_scroll_90': 'Прочитав 90% статті',
+    'lead_cta_view': 'Побачив кнопку техкарти',
+    'lead_cta_click': 'Перейшов до техкарти',
+    'web_option_click': 'Обрав отримання техкарти',
+    'lead_form_start': 'Почав заповнювати форму',
+    'lead_form_submit': 'Надіслав форму',
+    'lead_created': 'Отримав матеріал уперше',
+    'guide_requested': 'Повторно запросив матеріал',
+    'keyword_triggered': 'Обрав матеріал за кодовим словом',
+    'instruction_shared': 'Менеджер надіслав матеріал',
+    'instruction_open': 'Відкрив техкарту',
+    'calculation_click': 'Перейшов до розрахунку',
+    'calculation_request': 'Запросив розрахунок',
+    'product_click': 'Перейшов до товару',
+    'product_view': 'Переглянув товар',
+}
+ARTICLE_EVENTS = {'article_view', 'article_scroll_50', 'article_scroll_90', 'lead_cta_view'}
+
+
+def safe_content_url(value):
+    """Return only a browser-safe http(s) content URL."""
+    raw = str(value or '').strip()
+    if not raw:
+        return ''
+    if raw.startswith('/'):
+        raw = 'https://wallcov.com.ua' + raw
+    try:
+        parts = urlsplit(raw)
+    except ValueError:
+        return ''
+    if parts.scheme not in {'http', 'https'} or not parts.netloc:
+        return ''
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, parts.fragment))[:1000]
+
+
+def serialize_content_history(event):
+    """One chronological customer-content action with exact usable links."""
+    instruction = event.instruction
+    context = event.context if isinstance(event.context, dict) else {}
+    document_url = safe_content_url(context.get('document_url')) or safe_content_url(instruction.public_url)
+    article_url = safe_content_url(context.get('article_url')) or safe_content_url(instruction.article_url)
+    page_url = safe_content_url(context.get('page_url'))
+    target_url = safe_content_url(context.get('target_url'))
+    if event.name == 'product_click':
+        url = target_url or page_url or document_url
+    elif event.name in ARTICLE_EVENTS or event.name == 'keyword_triggered':
+        url = page_url or article_url or document_url
+    else:
+        url = target_url or page_url or document_url or article_url
+    return {
+        'event': event.name,
+        'action': CONTENT_EVENT_LABELS.get(event.name, event.name.replace('_', ' ')),
+        'title': instruction.title,
+        'slug': instruction.slug,
+        'url': url,
+        'document_url': document_url,
+        'article_url': article_url,
+        'source_url': safe_content_url(context.get('source_url')),
+        'keyword': str(context.get('keyword') or '')[:120],
+        'created_at': event.created_at,
+    }
+
+
+def profile_content_history(profile, limit=30, events=None):
+    rows = events
+    if rows is None:
+        rows = (InstructionEvent.objects.filter(profile=profile)
+                .select_related('instruction').order_by('-created_at')[:limit])
+    return [serialize_content_history(event) for event in list(rows)[:limit]]
 
 
 def normalize_phone(value):
@@ -71,7 +145,9 @@ def receive_guide(body):
     submission=str(body.get('submission_id') or '')
     if not re.fullmatch(r'[A-Za-z0-9_-]{8,64}',submission): raise ValueError('Некоректний номер запиту')
     # Only bounded, non-personal attribution. Never accept caller supplied CRM IDs.
-    context={k:str(body.get(k) or '')[:500] for k in ['source_platform','source_content_id','source_url','utm_source','utm_medium','utm_campaign','utm_content']}
+    context={k:str(body.get(k) or '')[:500] for k in ['source_platform','source_content_id','source_url','page_url','document_url','article_url','utm_source','utm_medium','utm_campaign','utm_content']}
+    context['document_url'] = context.get('document_url') or instruction.public_url
+    context['article_url'] = context.get('article_url') or instruction.article_url
     for touch in ['first_touch','last_touch']:
         context[touch]={k:str(v)[:300] for k,v in (body.get(touch) if isinstance(body.get(touch),dict) else {}).items() if k in ['utm_source','utm_medium','utm_campaign','utm_content','landing_path','path']}
     visitor=str(body.get('visitor_id') or '')
@@ -151,11 +227,17 @@ def record_shared(message,conversation,user):
                 share.message=message;share.save(update_fields=['message'])
                 profile=None
                 if share.contact_id:
-                    context={'source_platform':'manager','manager_id':user.pk}
+                    context={'source_platform':'manager','manager_id':user.pk,
+                             'document_url':share.instruction.public_url,
+                             'article_url':share.instruction.article_url}
                     profile,_=AudienceProfile.objects.get_or_create(contact_id=share.contact_id,defaults={'first_touch':context,'last_touch':context})
                     GuideRequest.objects.get_or_create(submission_id='manager-share-'+str(share.pk),defaults={'payload_hash':'manager-share','instruction':share.instruction,'profile':profile,'context':context})
                 InstructionEvent.objects.create(instruction=share.instruction,version=share.instruction.version,share=share,
-                    profile=profile,name='instruction_shared')
+                    profile=profile,name='instruction_shared',context={
+                        'source_platform':'manager','manager_id':user.pk,
+                        'document_url':share.instruction.public_url,
+                        'article_url':share.instruction.article_url,
+                    })
 
 
 EVENTS = {'article_view','article_scroll_50','article_scroll_90','lead_cta_view','lead_cta_click','web_option_click','lead_form_start','lead_form_submit','instruction_open','calculation_click','product_click','product_view','calculation_request'}
@@ -169,6 +251,10 @@ def receive_event(body):
     visitor = str(body.get('visitor_id') or '')
     if not re.fullmatch(r'[a-f0-9]{64}', visitor): raise ValueError('Некоректний відвідувач')
     profile = AudienceProfile.objects.filter(requests__context__visitor_id=visitor).order_by('-last_touch_at').first()
-    context = {k:str(body.get(k) or '')[:300] for k in ['visitor_id','source_platform','source_content_id','utm_source','utm_medium','utm_campaign','utm_content']}
+    context = {k:str(body.get(k) or '')[:500] for k in [
+        'visitor_id','source_platform','source_content_id','source_url','page_url','target_url',
+        'document_url','article_url','path','utm_source','utm_medium','utm_campaign','utm_content']}
+    context['document_url'] = context.get('document_url') or i.public_url
+    context['article_url'] = context.get('article_url') or i.article_url
     event, created = InstructionEvent.objects.get_or_create(event_id=event_id,defaults={'instruction':i,'version':i.version,'name':name,'profile':profile,'context':context})
     return event, not created

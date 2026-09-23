@@ -14,7 +14,7 @@ from .keyword_automation import process_keyword_message
 @override_settings(CACHES={'default':{'BACKEND':'django.core.cache.backends.locmem.LocMemCache'}},SHOP_WEBHOOK_SECRET='test-secret')
 class ContentLibraryTests(TestCase):
     def setUp(self):
-        self.i=Instruction.objects.create(slug='microcement',title='Техкарта',status='published',content={'steps':[]})
+        self.i=Instruction.objects.create(slug='microcement',title='Техкарта',status='published',article_url='https://wallcov.com.ua/articles/microcement-shower',content={'steps':[]})
         self.body={'submission_id':'request-123456','lead_magnet_slug':'microcement','name':'Тест','phone':'067 000 00 31','email':'TEST@example.test','preferred_channel':'whatsapp','marketing_consent':False,'guide_token':secrets.token_hex(32),'visitor_id':secrets.token_hex(32),'source_platform':'website'}
     def test_dedup_and_retry_without_deal(self):
         r,dup=receive_guide(self.body);self.assertFalse(dup)
@@ -39,8 +39,9 @@ class ContentLibraryTests(TestCase):
         receive_guide({**self.body,'submission_id':'request-next','guide_token':secrets.token_hex(32)})
         r.profile.refresh_from_db();self.assertTrue(r.profile.marketing_consent);self.assertEqual(ConsentEvent.objects.count(),1)
     def test_anonymous_events_linked_once(self):
-        event={'event_id':str(uuid.uuid4()),'lead_magnet_slug':'microcement','event':'article_view','visitor_id':self.body['visitor_id']}
+        event={'event_id':str(uuid.uuid4()),'lead_magnet_slug':'microcement','event':'article_view','visitor_id':self.body['visitor_id'],'page_url':'https://wallcov.com.ua/articles/microcement-shower','target_url':'https://wallcov.com.ua/get/microcement'}
         e,_=receive_event(event);receive_event(event);self.assertIsNone(e.profile_id)
+        self.assertEqual(e.context['page_url'],event['page_url']);self.assertEqual(e.context['target_url'],event['target_url'])
         r,_=receive_guide(self.body);e.refresh_from_db();self.assertEqual(e.profile_id,r.profile_id)
         self.assertEqual(InstructionEvent.objects.filter(name='article_view').count(),1)
     def test_public_guide_no_pdf_and_published_only(self):
@@ -90,9 +91,13 @@ class ContentLibraryTests(TestCase):
         receive_guide(self.body)
         r=self.client.get('/api/content-library/audience/?instruction=microcement');self.assertEqual(r.status_code,200,r.content);self.assertEqual(r.json()['total'],1)
         self.assertEqual(r.json()['contacts'][0]['preferred_channel'],'whatsapp')
+        self.assertEqual(r.json()['contacts'][0]['content_history'][0]['document_url'],'https://wallcov.com.ua/instructions/microcement')
+        self.assertEqual(r.json()['contacts'][0]['content_history'][0]['article_url'],self.i.article_url)
+        self.assertEqual(r.json()['instruction_options'][0]['instruction__slug'],'microcement')
         detail=self.client.get('/api/contacts/%d/' % r.json()['contacts'][0]['id'])
         self.assertEqual(detail.status_code,200,detail.content)
         self.assertEqual(detail.json()['content_subscription']['preferred_channel'],'whatsapp')
+        self.assertEqual(detail.json()['content_subscription']['history'][0]['document_url'],'https://wallcov.com.ua/instructions/microcement')
         self.client.logout();self.assertIn(self.client.get('/api/content-library/audience/').status_code,[401,403])
     def test_insert_not_counted_send_once(self):
         user=User.objects.create_user(username='manager',is_superuser=True)
@@ -108,13 +113,17 @@ class ContentLibraryTests(TestCase):
         rule=KeywordAutomation.objects.create(title='МІКРО',keywords=['МІКРО'],match_mode='exact',platforms=['instagram'],form=form,reply_text='Текст {form_url}',public_replies=['Відправили в Direct'],enabled=True)
         contact=Contact.objects.create(first_name='Client',nickname='@client')
         channel=Channel.objects.create(name='Meta · Instagram',kind='instagram')
-        direct=Conversation.objects.create(channel=channel,external_chat_id='ig-1',contact=contact)
+        direct=Conversation.objects.create(channel=channel,external_chat_id='ig-1',contact=contact,config={'source_card':{'media_id':'post-1','permalink':'https://www.instagram.com/p/test/'}})
         msg=Message.objects.create(conversation=direct,direction='in',text='мікро')
         run=process_keyword_message(msg);self.assertEqual(run.status,'captured');self.assertEqual(direct.messages.filter(direction='out').count(),0)
         comment=Conversation.objects.create(channel=channel,external_chat_id='comment:instagram:post:client',contact=contact,config={'source_card':{'media_id':'post'}})
         cmsg=Message.objects.create(conversation=comment,direction='in',text='МІКРО')
         duplicate=process_keyword_message(cmsg);self.assertEqual(duplicate.status,'duplicate')
         self.assertEqual(AudienceProfile.objects.count(),1);self.assertEqual(InstructionEvent.objects.filter(name='keyword_triggered').count(),1)
+        event=InstructionEvent.objects.get(name='keyword_triggered');self.assertEqual(event.context['document_url'],'https://wallcov.com.ua/instructions/microcement');self.assertEqual(event.context['article_url'],self.i.article_url)
+        user=User.objects.create_user(username='keyword-report',is_superuser=True);self.client.force_login(user)
+        report=self.client.get('/api/content-library/audience/?instruction=microcement').json()
+        self.assertEqual(report['total'],1);self.assertEqual(report['contacts'][0]['content_history'][0]['source_url'],'https://www.instagram.com/p/test/')
     @patch('apps.content_library.chatplace_automation._mcp')
     def test_chatplace_sync_combines_comment_and_direct(self,mcp):
         from .chatplace_automation import sync_to_chatplace

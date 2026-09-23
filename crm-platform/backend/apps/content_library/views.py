@@ -20,6 +20,7 @@ from rest_framework.views import APIView
 from .models import (Instruction, AudienceProfile, GuideRequest, InstructionShare,
                      InstructionEvent, ConsentEvent, LeadForm, KeywordAutomation,
                      KeywordAutomationRun)
+from .services import profile_content_history
 
 
 def permitted(user, code):
@@ -240,16 +241,22 @@ class AudienceView(APIView):
     def get(self,request):
         if not permitted(request.user,'marketing.view'): return Response(status=403)
         req=GuideRequest.objects.all()
+        tracked=InstructionEvent.objects.filter(profile__isnull=False)
         if request.GET.get('instruction'):
             req=req.filter(instruction__slug=request.GET['instruction'][:200])
+            tracked=tracked.filter(instruction__slug=request.GET['instruction'][:200])
         if request.GET.get('source'):
             req=req.filter(context__source_platform=request.GET['source'][:200])
+            tracked=tracked.filter(context__source_platform=request.GET['source'][:200])
         if request.GET.get('campaign'):
             req=req.filter(context__utm_campaign__icontains=request.GET['campaign'][:200])
+            tracked=tracked.filter(context__utm_campaign__icontains=request.GET['campaign'][:200])
         if request.GET.get('content'):
             value=request.GET['content'][:200]
             req=req.filter(Q(context__source_content_id__icontains=value)|Q(context__utm_content__icontains=value))
-        profiles=AudienceProfile.objects.filter(pk__in=req.values('profile_id')).distinct()
+            tracked=tracked.filter(Q(context__source_content_id__icontains=value)|Q(context__utm_content__icontains=value))
+        profiles=AudienceProfile.objects.filter(
+            Q(pk__in=req.values('profile_id'))|Q(pk__in=tracked.values('profile_id'))).distinct()
         total=profiles.count();now=timezone.now()
         kinds={kind:profiles.filter(identities__kind=kind).distinct().count() for kind in ['phone','email','viber','whatsapp','telegram','instagram']}
         reachable=profiles.exclude(status__in=['invalid','unsubscribed']).filter(identities__isnull=False).distinct().count()
@@ -273,7 +280,15 @@ class AudienceView(APIView):
         anonymous_counts={r['name']:r['n'] for r in anonymous.values('name').annotate(n=Count('id'))}
         rows=[]
         if permitted(request.user,'contact.view'):
-            for p in profiles.select_related('contact').prefetch_related('identities','requests__instruction').order_by('-last_touch_at')[:100]:
+            row_profiles=list(profiles.select_related('contact').prefetch_related('identities','requests__instruction').order_by('-last_touch_at')[:100])
+            history_by_profile={p.pk:[] for p in row_profiles}
+            history_events=(InstructionEvent.objects.filter(profile_id__in=history_by_profile)
+                            .select_related('instruction').order_by('-created_at'))
+            for event in history_events:
+                bucket=history_by_profile.get(event.profile_id)
+                if bucket is not None and len(bucket)<30:
+                    bucket.append(event)
+            for p in row_profiles:
                 identities=[{'kind':identity.kind,'value':identity.value,'verified':bool(identity.verified_at)}
                             for identity in p.identities.all()]
                 rows.append({'id':p.contact_id,'name':str(p.contact),'phone':p.contact.phone,'email':p.contact.email,
@@ -282,10 +297,18 @@ class AudienceView(APIView):
                     'preferred_channel':p.preferred_channel,'identities':identities,
                     'interests':sorted(set(p.tags or [])),
                     'instructions':sorted(set(request.instruction.title for request in p.requests.all())),
+                    'content_history':profile_content_history(p,events=history_by_profile[p.pk]),
                     'consent':p.marketing_consent,'consent_at':p.consent_at,
                     'status':p.status,'last_touch_at':p.last_touch_at})
         shared=InstructionEvent.objects.filter(name='instruction_shared')
         if request.GET.get('instruction'): shared=shared.filter(instruction__slug=request.GET['instruction'])
+        instruction_options={}
+        for item in GuideRequest.objects.values('instruction__slug','instruction__title').annotate(contacts=Count('profile_id',distinct=True)):
+            instruction_options[item['instruction__slug']]=item
+        for item in InstructionEvent.objects.filter(profile__isnull=False).values('instruction__slug','instruction__title').annotate(contacts=Count('profile_id',distinct=True)):
+            old=instruction_options.get(item['instruction__slug'])
+            if not old or item['contacts']>old['contacts']:
+                instruction_options[item['instruction__slug']]=item
         return Response({'total':total,'contactable':reachable,'contact_verification':'Контакти вказані клієнтом; доставка підтверджується після першого повідомлення або відповіді',
           'channels':kinds,'multichannel':multi,'marketing_consent':profiles.filter(marketing_consent=True).exclude(status__in=['unsubscribed','invalid']).count(),
           'no_contact':profiles.filter(identities__isnull=True).count(),'no_consent':profiles.filter(marketing_consent=False).count(),
@@ -298,7 +321,8 @@ class AudienceView(APIView):
           'paid_amount':revenue,'attribution_note':'Оплати за угодами, створеними після першого контент-запиту. Не доводить вплив гайда; платежі з позначкою повернення виключені.',
           'external_events_available':False,
           'sources':list(req.values('context__source_platform').annotate(contacts=Count('profile_id',distinct=True))),
-          'instructions':list(req.values('instruction__slug').annotate(contacts=Count('profile_id',distinct=True)))})
+          'instructions':list(req.values('instruction__slug','instruction__title').annotate(contacts=Count('profile_id',distinct=True)).order_by('instruction__title')),
+          'instruction_options':sorted(instruction_options.values(),key=lambda item:item['instruction__title'])})
 
 
 def public_instruction(request,slug):
