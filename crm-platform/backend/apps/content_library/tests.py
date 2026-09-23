@@ -103,9 +103,14 @@ class ContentLibraryTests(TestCase):
     def test_chatplace_sync_combines_comment_and_direct(self,mcp):
         from .chatplace_automation import sync_to_chatplace
         form=LeadForm.objects.create(slug='microcement',name='Форма',title='Заголовок',instruction=self.i,fields=['name','phone'],channels=['viber'])
-        rule=KeywordAutomation.objects.create(title='МІКРО',keywords=['МІКРО'],match_mode='exact',platforms=['instagram'],form=form,reply_text='Техкарта: {form_url}',public_replies=['Надіслали в Direct'],enabled=True)
-        mcp.side_effect=['created',[{'id':'11111111-1111-4111-8111-111111111111','startMessages':['МІКРО']}],{'ok':True}]
+        rule=KeywordAutomation.objects.create(title='МІКРО',keywords=['МІКРО'],match_mode='exact',platforms=['instagram'],form=form,reply_text='Техкарта готова.\n\n{form_url}\n\nНатисніть кнопку нижче.',public_replies=['Надіслали в Direct'],enabled=True)
+        detail={'steps':[{'messages':[{'isFirstMessage':True,'inlineButtons':[{'id':'button-1'}]}]}]}
+        mcp.side_effect=['created',[{'id':'11111111-1111-4111-8111-111111111111','startMessages':['МІКРО']}],detail,{'ok':True},{'ok':True},{'ok':True}]
         sync_to_chatplace(rule)
-        args=mcp.call_args_list[0].args;self.assertEqual(args[0],'automations_quick_setup')
-        self.assertEqual(args[1]['triggerType'],['messageEquals','commentEquals']);self.assertEqual(args[1]['autoAnswers'],['Надіслали в Direct']);self.assertIn('/get/microcement?',args[1]['buttonLink'])
+        setup=mcp.call_args_list[0].args;self.assertEqual(setup[0],'automations_quick_setup')
+        self.assertEqual(setup[1]['triggerType'],['messageEquals','commentEquals']);self.assertEqual(setup[1]['autoAnswers'],['Надіслали в Direct']);self.assertIn('/get/microcement?',setup[1]['buttonLink'])
+        self.assertNotIn('https://',setup[1]['welcomeMessage']);self.assertNotIn('{form_url}',setup[1]['welcomeMessage']);self.assertEqual(setup[1]['welcomeButton'],'Отримати техкарту')
+        calls={call.args[0]:call.args[1] for call in mcp.call_args_list if len(call.args)>1}
+        self.assertEqual(calls['automations_inline_buttons_update']['buttonId'],'button-1');self.assertIn('/get/microcement?',calls['automations_inline_buttons_update']['url'])
+        self.assertEqual(calls['automations_buttons_connect'],{'buttonId':'button-1'})
         rule.refresh_from_db();self.assertEqual(rule.chatplace_status,'active')

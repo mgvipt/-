@@ -51,8 +51,13 @@ def sync_to_chatplace(rule):
         raise ValueError('Додайте хоча б одну публічну відповідь на коментар')
 
     link = form_url(rule)
-    direct_text = (rule.reply_text or '').replace('{form_url}', link).replace(
+    # Адреса вже є в кнопці. Маркер лишається сумісним зі старими текстами,
+    # але ніколи не розгортається у довгий URL всередині Direct-повідомлення.
+    direct_text = (rule.reply_text or '').replace('{form_url}', '').replace(
         '{instruction_title}', rule.form.instruction.title).strip()
+    direct_text = '\n'.join(line.rstrip() for line in direct_text.splitlines())
+    while '\n\n\n' in direct_text:
+        direct_text = direct_text.replace('\n\n\n', '\n\n')
     if not direct_text:
         raise ValueError('Додайте текст повідомлення в Direct')
     args = {
@@ -61,8 +66,8 @@ def sync_to_chatplace(rule):
         'startMessages': keywords,
         'templateType': 'base',
         'welcomeMessage': direct_text,
-        'welcomeButton': 'Отримати інструкцію',
-        'messageWithLink': 'Заповніть коротку форму — інструкція відкриється одразу.',
+        'welcomeButton': 'Отримати техкарту',
+        'messageWithLink': 'Оберіть канал і залиште один контакт — техкарта відкриється одразу.',
         'buttonText': 'Відкрити форму',
         'buttonLink': link,
     }
@@ -83,6 +88,27 @@ def sync_to_chatplace(rule):
             new_id = str(sorted(matches, key=lambda x: str(x.get('id') or ''))[-1].get('id') or '')
     if not new_id:
         raise RuntimeError('ChatPlace не повернув ID створеної автоматизації')
+
+    # Quick Setup створює зайвий проміжний крок. Перша кнопка має одразу
+    # відкривати коротку форму, тому перетворюємо її на URL-кнопку і
+    # від'єднуємо друге повідомлення. Публічна відповідь на коментар,
+    # створена Quick Setup через autoAnswers, при цьому зберігається.
+    try:
+        detail = _mcp('automations_get_detail', {'automationId': new_id}) or {}
+        first = next((m for step in (detail.get('steps') or [])
+                      for m in (step.get('messages') or []) if m.get('isFirstMessage')), None)
+        button = (first.get('inlineButtons') or [None])[0] if first else None
+        if not button or not button.get('id'):
+            raise RuntimeError('ChatPlace не повернув першу кнопку автоматизації')
+        _mcp('automations_inline_buttons_update', {
+            'buttonId': button['id'], 'text': 'Отримати техкарту', 'url': link})
+        _mcp('automations_buttons_connect', {'buttonId': button['id']})
+    except Exception:
+        try:
+            _mcp('automations_change_status', {'automationId': new_id, 'status': 'paused'})
+        except Exception:
+            pass
+        raise
 
     old_paused = False
     try:
