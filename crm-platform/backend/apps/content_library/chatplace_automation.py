@@ -98,8 +98,10 @@ def sync_to_chatplace(rule):
         first = next((m for step in (detail.get('steps') or [])
                       for m in (step.get('messages') or []) if m.get('isFirstMessage')), None)
         button = (first.get('inlineButtons') or [None])[0] if first else None
-        if not button or not button.get('id'):
-            raise RuntimeError('ChatPlace не повернув першу кнопку автоматизації')
+        if not first or not first.get('id') or not button or not button.get('id'):
+            raise RuntimeError('ChatPlace не повернув перше повідомлення або кнопку автоматизації')
+        _mcp('automations_messages_update', {
+            'messageId': first['id'], 'text': direct_text})
         _mcp('automations_inline_buttons_update', {
             'buttonId': button['id'], 'text': 'Отримати техкарту', 'url': link})
         _mcp('automations_buttons_connect', {'buttonId': button['id']})
