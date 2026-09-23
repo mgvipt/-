@@ -1410,9 +1410,9 @@ export default function Warehouse() {
                 {card.images.map((im) => <a key={im.id} href={im.url} target="_blank" rel="noreferrer"><img src={im.url} alt="" style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0" }} /></a>)}
               </div>
             )}
-            {cardTab === "main" && !cardEdit && <InternalMaterialDocuments key={`${card.id}:${cardLang}`} productId={card.id} lang={cardLang} />}
+            {cardTab === "main" && !cardEdit && <InternalMaterialDocuments key={`documents:${card.id}:${cardLang}`} productId={card.id} lang={cardLang} />}
             {cardTab === "main" && <ProductCalculationFields unit={cardEdit?.unit || card.unit} pack={cardEdit ? cardEdit.pack_factor : card.pack_factor} specs={cardEdit ? cardEdit.shop_specs || {} : card.shop_specs || {}} lang={cardLang} onChange={cardEdit ? ((specs, pack) => setCardEdit((prev:any)=>({...prev,shop_specs:specs,pack_factor:pack}))) : undefined} />}
-            {!cardEdit && cardTab === "main" && <ProductFacts key={`${card.id}:${cardLang}`} id={card.id} lang={cardLang} canEdit={canEdit} onSaved={() => { api.get<Product>(`/api/products/${card.id}/`).then(updated => setCard(previous => previous?.id === updated.id ? updated : previous)); loadProducts(); }} />}
+            {!cardEdit && cardTab === "main" && <ProductFacts key={`facts:${card.id}:${cardLang}`} id={card.id} lang={cardLang} canEdit={canEdit} onSaved={() => { api.get<Product>(`/api/products/${card.id}/`).then(updated => setCard(previous => previous?.id === updated.id ? updated : previous)); loadProducts(); }} />}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
               {[[t("Розничная цена","Роздрібна ціна"), Number(card.price).toLocaleString("ru") + " " + (card.currency || "грн")],
