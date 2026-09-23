@@ -152,9 +152,40 @@ def material_by_slug(slug):
     return None
 
 
-def effect_photos(material, code=None, limit=3):
+REAL_TAG = "реальне фото"
+
+
+def _effect_label(it, material):
+    m = re.search(r"effect:([^|]+)", it.tags or "")
+    lab = (m.group(1) if m else material)
+    lab = re.split(r"\s*source:|\s*·\s*реальний", lab)[0]
+    return lab.split(",")[0].strip()[:40] or material
+
+
+def real_photos(material, limit=3, prefer=""):
+    """23.09.2026 (Олег): «ШІ шле Mio Gloss — це наші згенеровані; треба реальні».
+    Беремо фото з реальних обʼєктів (позначка «реальне фото»). prefer — назва конкретного матеріалу
+    («Galateya», «Eleganti»), щоб на запит про Галатею не йшли фото Елеганті."""
+    mine, other = [], []
+    for it in _items():
+        if (it.material or "") != material or it.kind != "image" or is_swatch(it):
+            continue
+        if REAL_TAG not in (it.tags or ""):
+            continue
+        row = (_effect_label(it, material), it)
+        low = ("%s %s" % (it.title, it.tags)).lower()
+        (mine if (prefer and prefer.lower() in low) else other).append(row)
+    rows = mine if (prefer and len(mine) >= 2) else (mine + other)
+    return rows[:limit]
+
+
+def effect_photos(material, code=None, limit=3, prefer=""):
     """По одному фото на КОЖЕН ефект матеріалу (Патера: травертин, марморин, фактура) —
-    18.09.2026 (Олег): «коли запит на Патеру, треба відправляти фото ефектів, а не просто слова»."""
+    18.09.2026 (Олег): «коли запит на Патеру, треба відправляти фото ефектів, а не просто слова».
+    23.09.2026: якщо для матеріалу є РЕАЛЬНІ фото обʼєктів — надсилаємо їх, а не згенеровані візуалізації."""
+    real = real_photos(material, limit, prefer)
+    if len(real) >= 2:
+        return real
     rows = []
     for it in _items():
         if (it.material or "") != material or it.kind != "image" or is_swatch(it):

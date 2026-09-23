@@ -228,7 +228,11 @@ def _maybe_effect_photos(conv, text):
     mark = "фото ефектів %s" % slug
     if Message.objects.filter(conversation=conv, internal=True, text__contains=mark).exists():
         return                                    # у цьому діалозі вже показували
-    rows = effect_photos(mat["name"], limit=3)
+    # 23.09.2026: на запит про Галатею — фото Галатеї, про Елеганті — Елеганті (обидва «піщинки»)
+    low = (text or "").lower()
+    prefer = ("Galateya" if ("галате" in low or "galate" in low) else
+              "Eleganti" if ("елеганті" in low or "eleganti" in low or "элеганти" in low) else "")
+    rows = effect_photos(mat["name"], limit=3, prefer=prefer)
     if len(rows) < 2:
         return
     lines = ["Ось як %s виглядає в різних ефектах 👇" % mat["name"]]
