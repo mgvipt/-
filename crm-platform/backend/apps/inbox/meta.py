@@ -122,6 +122,16 @@ def send_attachment(recipient_id: str, url: str, atype: str = "image", platform:
     })
 
 
+def private_reply(comment_id: str, text: str):
+    """23.09.2026 (Олег): відповідь коментатору В DIRECT. Instagram дозволяє один приватний лист
+    у відповідь на коментар — саме так клієнт отримує обіцяну інформацію, а не порожню обіцянку."""
+    payload = {"recipient": json.dumps({"comment_id": str(comment_id)}),
+               "message": json.dumps({"text": text})}
+    if IG_TOKEN:
+        return _ig_post("me/messages", payload)
+    return _graph("POST", "me/messages", dict(payload, messaging_type="RESPONSE"))
+
+
 def reply_comment(comment_id: str, text: str):
     """Відповісти на коментар IG/FB (публічно)."""
     return _graph("POST", f"{comment_id}/comments", {"message": text})
@@ -1109,6 +1119,11 @@ def handle_webhook(payload: dict):
                 try:
                     from apps.content_library.keyword_automation import process_keyword_message
                     process_keyword_message(created_message)
+                except Exception:
+                    pass
+                try:    # 23.09.2026 (Олег): обіцяне в Direct має реально прийти — пишемо коментатору в Direct
+                    from .comment_reply import maybe_send as _dm_after_comment
+                    _dm_after_comment(conv, cid, text)
                 except Exception:
                     pass
             conv.unread = (conv.unread or 0) + (0 if ours else 1)  # наша відповідь не додає «непрочитане»
