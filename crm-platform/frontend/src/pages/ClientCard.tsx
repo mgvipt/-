@@ -211,7 +211,7 @@ export default function ClientCard() {
         const historyCount = subscription.history?.length || 0;
         const summaryItem = (label: string, value: string, color?: string) => <span style={{ display: "inline-flex", alignItems: "baseline", gap: 3, whiteSpace: "nowrap", fontSize: 11.5 }}><small className="muted">{label}</small><b style={{ color, fontSize: 12.5 }}>{value}</b></span>;
         return <details className="panel" data-testid="client-content-subscription" style={{ margin: "0 0 8px", padding: 0, borderColor: subscription.marketing_consent ? "#86efac" : "#e2e8f0", background: subscription.marketing_consent ? "#f0fdf4" : "#f8fafc", overflow: "hidden" }}>
-          <summary style={{ minHeight: 46, padding: "8px 10px", display: "flex", alignItems: "center", gap: 8, cursor: "pointer", listStyle: "none", flexWrap: "nowrap", overflowX: "hidden" }}>
+          <summary style={{ minHeight: 46, padding: "8px 10px", display: "flex", alignItems: "center", gap: 8, cursor: "pointer", listStyle: "none", flexWrap: "nowrap", overflowX: "auto" }}>
             <span aria-hidden="true" style={{ fontSize: 14 }}>▸</span>
             <b style={{ whiteSpace: "nowrap", fontSize: 14 }}>{t("Подписка и материалы", "Підписка та матеріали")}</b>
             {summaryItem(t("Статус", "Статус"), subscription.marketing_consent ? t("Сообщения разрешены", "Повідомлення дозволені") : t("Только текущий запрос", "Лише поточний запит"), subscription.marketing_consent ? "#15803d" : "#92400e")}
