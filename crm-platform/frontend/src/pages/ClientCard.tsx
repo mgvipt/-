@@ -209,17 +209,17 @@ export default function ClientCard() {
         const preferred = CONTENT_CHANNELS[subscription.preferred_channel] || subscription.preferred_channel || t("Не выбран", "Не обрано");
         const preferredIdentity = subscription.identities.find((identity) => identity.kind === subscription.preferred_channel);
         const historyCount = subscription.history?.length || 0;
-        const summaryItem = (label: string, value: string, color?: string) => <span style={{ display: "inline-flex", alignItems: "baseline", gap: 5, whiteSpace: "nowrap" }}><small className="muted">{label}</small><b style={{ color }}>{value}</b></span>;
+        const summaryItem = (label: string, value: string, color?: string) => <span style={{ display: "inline-flex", alignItems: "baseline", gap: 3, whiteSpace: "nowrap", fontSize: 11.5 }}><small className="muted">{label}</small><b style={{ color, fontSize: 12.5 }}>{value}</b></span>;
         return <details className="panel" data-testid="client-content-subscription" style={{ margin: "0 0 8px", padding: 0, borderColor: subscription.marketing_consent ? "#86efac" : "#e2e8f0", background: subscription.marketing_consent ? "#f0fdf4" : "#f8fafc", overflow: "hidden" }}>
-          <summary style={{ minHeight: 46, padding: "8px 10px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer", listStyle: "none", flexWrap: "nowrap", overflowX: "auto" }}>
+          <summary style={{ minHeight: 46, padding: "8px 10px", display: "flex", alignItems: "center", gap: 8, cursor: "pointer", listStyle: "none", flexWrap: "nowrap", overflowX: "hidden" }}>
             <span aria-hidden="true" style={{ fontSize: 14 }}>▸</span>
-            <b style={{ whiteSpace: "nowrap" }}>{t("Подписка и материалы", "Підписка та матеріали")}</b>
+            <b style={{ whiteSpace: "nowrap", fontSize: 14 }}>{t("Подписка и материалы", "Підписка та матеріали")}</b>
             {summaryItem(t("Статус", "Статус"), subscription.marketing_consent ? t("Сообщения разрешены", "Повідомлення дозволені") : t("Только текущий запрос", "Лише поточний запит"), subscription.marketing_consent ? "#15803d" : "#92400e")}
             {summaryItem(t("Канал", "Канал"), `${preferred}${preferredIdentity?.verified ? " · " + t("подтверждён", "підтверджено") : ""}`)}
             {summaryItem(t("Запросил", "Запитував"), subscription.instructions.join(", ") || "—")}
             {summaryItem(t("Источник", "Джерело"), CONTENT_SOURCES[subscription.source] || subscription.source || "—")}
-            <button className="btn btn-primary" style={{ marginLeft: "auto", height: 30, whiteSpace: "nowrap" }} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setChatOpen(true); }}>{t("Написать клиенту", "Написати клієнту")}</button>
-            <span className="btn btn-light" style={{ height: 28, padding: "4px 10px", whiteSpace: "nowrap" }}>{t("История", "Історія")} · {historyCount}</span>
+            <button className="btn btn-primary" style={{ marginLeft: "auto", height: 28, padding: "0 8px", fontSize: 12, whiteSpace: "nowrap" }} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setChatOpen(true); }}>{t("Написать клиенту", "Написати клієнту")}</button>
+            <span className="btn btn-light" style={{ height: 28, padding: "4px 8px", fontSize: 12, whiteSpace: "nowrap" }}>{t("История", "Історія")} · {historyCount}</span>
           </summary>
           <div style={{ borderTop: "1px solid #dbe4dc", padding: 12 }}>
             {(subscription.campaign || subscription.content) && <div className="muted" style={{ fontSize: 11, marginBottom: historyCount > 0 ? 9 : 0 }}>{[subscription.campaign && `${t("Кампания", "Кампанія")}: ${subscription.campaign}`, subscription.content && `${t("Публикация", "Публікація")}: ${subscription.content}`].filter(Boolean).join(" · ")}</div>}
