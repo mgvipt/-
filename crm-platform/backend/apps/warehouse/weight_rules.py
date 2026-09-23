@@ -94,10 +94,13 @@ def split_tiers(w):
 # «6.С/ОПТ_Дилеры» — раніше правило ловило лише слова «салон»/«покриття», тому алмазне й вентиляція
 # потрапляли в онлайн і склад не міг закрити задачу без ТТН.
 SALON_FUNNEL_RX = __import__("re").compile(r"(^|[^\w])\d+\.\s?[сc]/|салон|покрит|покрыт", __import__("re").I)
+# ОПТ і дилери теж «N.С/», але їм ми ВІДПРАВЛЯЄМО — це не видача в салоні
+NOT_SALON_RX = __import__("re").compile(r"опт|дилер|dealer", __import__("re").I)
 
 
 def is_salon_funnel(name):
-    return bool(SALON_FUNNEL_RX.search(name or ""))
+    n = name or ""
+    return bool(SALON_FUNNEL_RX.search(n)) and not NOT_SALON_RX.search(n)
 
 
 def is_pickup(deal):
@@ -106,13 +109,15 @@ def is_pickup(deal):
 
 
 def is_salon(deal):
-    """Видача в салоні без ТТН — без упаковки (як у таблиці Інни). Салонна угода з ТТН — посилка, пакуємо.
-    23.09.2026 (Олег): менеджер може позначити самовивіз і в онлайн-угоді («Забирає в салоні») —
-    тоді посилка нікуди не їде: склад не пакує, ТТН не потрібна."""
-    if is_pickup(deal):
-        return True
+    """САЛОННА угода (воронка салону, без ТТН). 23.09.2026 (Олег): онлайн-угода, яку клієнт забирає
+    в салоні, салонною НЕ стає — вона лишається онлайн, просто без відправки (див. no_packing)."""
     fn = (deal.funnel.name if getattr(deal, "funnel_id", None) else "") or ""
     return is_salon_funnel(fn) and not (getattr(deal, "ttn", "") or "").strip()
+
+
+def no_packing(deal):
+    """Пакувати не треба: салонна видача АБО онлайн-угода з позначкою «клієнт забирає в салоні»."""
+    return is_salon(deal) or is_pickup(deal)
 
 
 def classify(name, unit, qty, card_w=None, is_kit=False, is_tint=False, own=False):

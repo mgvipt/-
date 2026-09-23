@@ -17,7 +17,7 @@ class SalonFunnelTests(TestCase):
         return Deal.objects.create(title="Угода", funnel=f, stage=st, contact=c, ttn=ttn, qualification=qual or {})
 
     def test_salon_funnels_are_offline(self):
-        for name in ("4.С/Алмазне + Вентиляція", "1.С/Покрытия для стен", "6.С/ОПТ_Дилеры"):
+        for name in ("4.С/Алмазне + Вентиляція", "1.С/Покрытия для стен"):
             job = WarehouseJob.objects.create(deal=self._deal(name))
             self.assertEqual(_job_dict(job)["channel"], "offline", name)
 
@@ -35,6 +35,17 @@ class SalonFunnelTests(TestCase):
         self.assertIn("parcel", _required_photo_kinds(job))
         self.assertFalse(WR.is_salon(job.deal))
 
-    def test_pickup_flag_still_offline(self):
+    def test_pickup_stays_online_channel(self):
+        """23.09.2026 (Олег): «забирає в салоні» — це ОНЛАЙН-угода без відправки, салонною вона не стає."""
         job = WarehouseJob.objects.create(deal=self._deal("21 Основний продукт", qual={"pickup_salon": True}))
-        self.assertEqual(_job_dict(job)["channel"], "offline")
+        d = _job_dict(job)
+        self.assertEqual(d["channel"], "online")
+        self.assertTrue(d["pickup_salon"])
+        self.assertFalse(WR.is_salon(job.deal))      # не салонна
+        self.assertTrue(WR.no_packing(job.deal))     # але не пакуємо
+        self.assertEqual(_required_photo_kinds(job), ["buckets", "invoice"])
+
+    def test_opt_funnel_is_not_salon(self):
+        """ОПТ/дилерам ми відправляємо Новою поштою — це не видача в салоні."""
+        job = WarehouseJob.objects.create(deal=self._deal("6.С/ОПТ_Дилеры"))
+        self.assertEqual(_job_dict(job)["channel"], "online")

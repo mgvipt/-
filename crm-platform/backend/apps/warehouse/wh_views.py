@@ -272,7 +272,8 @@ def _job_dict(job, full=False):
     d["pickup_salon"] = bool(q.get("pickup_salon"))   # 23.09.2026: не їде НП, не пакувати
     d["kind_type"] = "test" if "\u0442\u0435\u0441\u0442\u043e\u0432" in fn.lower() else "main"
     # 23.09.2026: салон — це і воронки «N.С/…» (алмазне, вентиляція, опт), і позначка «забирає в салоні»
-    d["channel"] = "offline" if (WR.is_salon_funnel(fn) or q.get("pickup_salon")) else "online"
+    # канал лишається онлайн навіть із самовивозом (Олег 23.09): це онлайн-продаж, просто без відправки
+    d["channel"] = "offline" if WR.is_salon_funnel(fn) else "online"
     try:
         d["np_stage"] = (job.deal.stage.name if (job.deal_id and getattr(job.deal, "stage_id", None)) else "")
     except Exception:
@@ -648,7 +649,8 @@ def _accrual_plan(job, pay_packing=True):
       викраски    — WH_SAMPLE_CAT / WH_SAMPLE_IND × кількість відправлених викрасок (17.09.2026)."""
     deal = job.deal
     salon = WR.is_salon(deal)
-    wp = WR.deal_plan(deal, salon=salon, packing=bool(job.packed and pay_packing))  # 15.09.2026: регламент v2
+    # 23.09.2026: самовивіз не робить угоду салонною, але пакування теж не оплачується
+    wp = WR.deal_plan(deal, salon=WR.no_packing(deal), packing=bool(job.packed and pay_packing))
     weight = wp["weight"]
     fx = _deal_accrual_facts(deal)
     kits = (deal.qualification or {}).get("kits", []) or []

@@ -414,7 +414,9 @@ function TaskCard({ t, jobId, onBack }: any) {
   // 14.09 (wh-accrual): товари без ваги → попередження перед відправкою (відправку НЕ блокуємо)
   const shipAfterPack = () => { setPackAsk(false); if ((j.weightless || []).length > 0) { setWeightAsk(true); return; } doShip(); };
   // 16.09.2026 (Олег, #65998): перед відправкою — перепитати, як пакували (контейнер НП упаковку не оплачує)
-  const ship = () => { if (j.channel !== "offline") { setPackAsk(true); return; } shipAfterPack(); };
+  // 23.09.2026: самовивіз із салону — як офлайн (не пакуємо, ТТН не треба), але угода лишається онлайн
+  const noShip = j.channel === "offline" || j.pickup_salon;
+  const ship = () => { if (!noShip) { setPackAsk(true); return; } shipAfterPack(); };
 
   const tinted = new Set(j.tinted_kits || []);
   const kits = j.kits || [];
@@ -422,7 +424,7 @@ function TaskCard({ t, jobId, onBack }: any) {
   const tintDone = kits.every((k: any, i: number) => !k.tint || tinted.has(i));
   const packDone = packedLocal || ["packing", "awaiting_photos", "shipped"].includes(j.status);
   const rcp = (deal && deal.np_data && deal.np_data.recipient) || {};
-  const npDone = j.channel === "offline" ? packDone : !!(deal && (deal.ttn || (rcp.name && (rcp.wh_number || rcp.street_ref))));
+  const npDone = noShip ? packDone : !!(deal && (deal.ttn || (rcp.name && (rcp.wh_number || rcp.street_ref))));
   const pk = new Set((j.photos || []).map((p: any) => p.kind));
   // 16.09.2026 (Олег): обовʼязкові фото дає сервер — відерця, коробка, накладна (+ архів тонування, якщо є тонування)
   const reqPhotos: { kind: string; label: string }[] = (j.required_photos && j.required_photos.length) ? j.required_photos
@@ -554,11 +556,11 @@ function TaskCard({ t, jobId, onBack }: any) {
         </div>
       </Step>
 
-      {j.channel !== "offline" && (
+      {!noShip && (
       <Step n="3" title={t("Новая Почта — заполни все данные", "Нова Пошта — заповни всі дані")} done={npDone} locked={!packDone} hint={t("Сначала упакуй посылку", "Спочатку спакуй посилку")}>
         {deal ? <NPDelivery deal={deal} flash={flash} defaultWeight={j.weight_kg} codReadOnly onReload={() => { loadDeal(j.deal_id); load(); }} /> : <div className="muted">…</div>}
       </Step>)}
-      {j.channel === "offline" && (
+      {noShip && (
       <div className="panel" style={{ borderLeft: "4px solid #16a34a", opacity: 0.85 }}><div className="label" style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 24, height: 24, borderRadius: "50%", fontSize: 13, fontWeight: 700, color: "#fff", background: "#16a34a", padding: "0 4px" }}>✓</span> {t("Салон — самовывоз, Нова Пошта не нужна", "Салон — самовивіз, Нова Пошта не потрібна")}</div></div>)}
 
       <Step n="4" title={t("Фото — обязательно", "Фото — обовʼязково") + ` (${reqPhotos.length})`} done={photosDone} locked={!npDone} hint={t("Сначала заполни Новую Почту", "Спочатку заповни Нову Пошту")}>

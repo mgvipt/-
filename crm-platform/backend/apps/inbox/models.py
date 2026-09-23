@@ -246,9 +246,9 @@ class ManagerHoldSettings(models.Model):
     work_from = models.TimeField("Пишемо з", default=datetime.time(9, 0))
     work_to = models.TimeField("Пишемо до", default=datetime.time(20, 0))
     text_take = models.TextField("Текст, коли менеджер узяв чат",
-        default="Вітаю! Мене звати {менеджер} 😊 Вже дивлюсь ваш запит — повернусь із відповіддю до {час}.")
+        default="Вітаю! Мене звати {менеджер} 😊 Вже дивлюсь ваш запит і скоро повернусь із відповіддю.")
     text_waiting = models.TextField("Текст, коли клієнт чекає",
-        default="Я з вашим запитом, {менеджер} на звʼязку 😊 Збираю для вас точну інформацію — відповім до {час}.")
+        default="Я з вашим запитом, {менеджер} на звʼязку 😊 Збираю для вас точну інформацію і повернусь з відповіддю.")
     updated_at = models.DateTimeField(auto_now=True)
 
     @classmethod

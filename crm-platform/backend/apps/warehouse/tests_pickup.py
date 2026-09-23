@@ -24,9 +24,13 @@ class PickupSalonTests(TestCase):
         return Deal.objects.create(title="Замовлення", funnel=self.f, stage=self.s0, contact=self.c,
                                    amount=Decimal("1000"), qualification={"pickup_salon": True} if pickup else {})
 
-    def test_pickup_is_like_salon_no_packing(self):
-        self.assertTrue(WR.is_salon(self._deal(True)))
-        self.assertFalse(WR.is_salon(self._deal(False)))
+    def test_pickup_is_not_salon_but_without_packing(self):
+        """23.09.2026 (Олег): «забирає в салоні» ставиться на ОНЛАЙН-угоду — салонною вона не стає,
+        але пакування складу не оплачується, бо пакувати нічого не треба."""
+        d = self._deal(True)
+        self.assertFalse(WR.is_salon(d))
+        self.assertTrue(WR.no_packing(d))
+        self.assertFalse(WR.no_packing(self._deal(False)))
 
     def test_no_parcel_photo_for_pickup(self):
         job = WarehouseJob.objects.create(deal=self._deal(True))
