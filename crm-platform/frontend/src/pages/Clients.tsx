@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Paginated } from "../api";
 import { SourceChip } from "../ui";
@@ -40,17 +40,53 @@ function MultiSelect({ label, options, values, onChange, searchable = false }: {
   searchable?: boolean;
 }) {
   const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDetailsElement>(null);
   const visible = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
     return needle ? options.filter((option) => option.label.toLocaleLowerCase().includes(needle)) : options;
   }, [options, search]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function closeWhenOutside(event: PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+        setSearch("");
+      }
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+        setSearch("");
+      }
+    }
+
+    document.addEventListener("pointerdown", closeWhenOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeWhenOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
 
   function toggle(value: string) {
     onChange(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
   }
 
   return (
-    <details style={{ position: "relative" }}>
+    <details
+      ref={rootRef}
+      open={open}
+      onToggle={(event) => {
+        const nextOpen = event.currentTarget.open;
+        setOpen(nextOpen);
+        if (!nextOpen) setSearch("");
+      }}
+      style={{ position: "relative" }}
+    >
       <summary style={{
         listStyle: "none", height: 34, minWidth: 138, padding: "0 10px", border: "1px solid #cbd5e1",
         borderRadius: 7, background: values.length ? "#eff6ff" : "#fff", color: "#334155",
