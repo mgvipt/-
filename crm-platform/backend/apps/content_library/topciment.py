@@ -33,7 +33,7 @@ def calculate(system_id,area,reserve,basis='sale'):
  if not system:raise ValueError('Оберіть систему.')
  products=catalog();rows=[];total=D(0);missing=[]
  def unit_price(p):
-  if basis=='sale':return p.price if p.price>0 and p.currency=='UAH' else None
+  if basis=='sale':return p.price if p.price>0 and p.currency=='UAH' and p.shop_specs.get('price_status')!='quote_required' else None
   ref=p.shop_specs.get('reference_price') or {}
   return D(str(ref['uah_pack']))/p.pack_factor if ref.get('uah_pack') and p.pack_factor>0 else None
  for key in system['materials']:
@@ -92,4 +92,26 @@ def calculate(system_id,area,reserve,basis='sale'):
   if subtotal is None:missing.append(name)
   else:total+=subtotal
   rows.append({'key':key,'name':name,'unit':unit,'rate':float(rate),'quantity':num(quantity),'pack':num(pack) if pack else None,'packs':packs,'purchase_quantity':num(pack*packs) if pack else None,'pack_price':round(float(price),2) if price is not None else None,'subtotal':round(float(subtotal),2) if subtotal is not None else None,'products':links})
- return {'system':system['name'],'area':float(area),'reserve':float(reserve),'basis':basis,'rows':rows,'known_total':round(float(total),2),'complete':not missing,'missing':missing,'notes':NOTES,'reference_date':'2026-09-22','eur_uah':'51.3671'}
+ # Review dependencies affect confidence only, never quantities or historical formulas.
+ technical_unverified=[]
+ for row in rows:
+  key=row['key']
+  keys=([('wt-mate' if key=='wt-kit' else 'dsv-a'),('wt-b' if key=='wt-kit' else 'dsv-b')]
+        if key.endswith('-kit') else [key])
+  if key=='acricem':keys += [k for k in ('microbase','microdeck','microfino') if k in system['materials']]
+  linked=[]
+  for dependency in keys:
+   product=products.get(dependency)
+   if not product:continue
+   facts=product.shop_specs.get('technical_facts') or {}
+   review=facts.get('technical_review') or {}
+   revisions=sorted({str(source['revision']) for group in ('density','consumption')
+                     for fact in facts.get(group,[]) if isinstance(fact,dict)
+                     for source in [fact.get('source') or {}] if source.get('revision')})
+   linked.append({'id':product.id,'name':product.name,'updated_at':product.updated_at.isoformat(),
+                  'source_revisions':revisions,'needs_review':bool(review.get('required'))})
+  row['products']=linked
+  row['needs_review']=any(p['needs_review'] for p in linked)
+  if row['needs_review']:
+   technical_unverified.append({'key':key,'name':row['name'],'products':[p for p in linked if p['needs_review']]})
+ return {'system':system['name'],'area':float(area),'reserve':float(reserve),'basis':basis,'rows':rows,'known_total':round(float(total),2),'complete':not missing and not technical_unverified,'technical_unverified':technical_unverified,'missing':missing,'notes':NOTES,'reference_date':'2026-09-22','eur_uah':'51.3671'}

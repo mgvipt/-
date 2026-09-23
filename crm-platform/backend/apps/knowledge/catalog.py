@@ -161,5 +161,10 @@ def current_product_facts(items=None, query=None, limit=6):
         block=p.name+'\nЦіна: '+price
         if p.consumption_per_m2 is not None:block+='\nВитрата на всі шари: '+str(p.consumption_per_m2)+' '+p.unit+'/м²'
         if text:block+='\n'+text
+        from apps.warehouse.technical_facts import technical_data
+        import json
+        technical = technical_data(p)
+        if technical['density'] or technical.get('technical_review', {}).get('required'):
+            block += '\nВнутрішні технічні дані (не цитуй службові позначки клієнту; за technical_review потрібне уточнення, не перераховуй дозування): ' + json.dumps(technical, ensure_ascii=False)
         blocks.append(block)
     return 'Поточні властивості матеріалів. Якщо старий текст суперечить цим даним, використовуй ці дані; не додавай непідтверджених характеристик. Не пояснюй клієнту внутрішнє зберігання даних.\n\n'+'\n\n'.join(blocks)

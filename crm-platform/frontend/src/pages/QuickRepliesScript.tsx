@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { SalesPlaybook } from "./SalesPlaybook";
 import { TopcimentCalculator } from "./TopcimentCalculator";
 import { Icon } from "../Icon";
 import { AutomationMessages } from "./AutomationMessages";
@@ -74,6 +75,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
   onClose: () => void; onBack: () => void; onInsert?: (t: string) => void; onSend: (replyId: number) => void;
 }) {
   const [q, setQ] = useState("");
+  const [salesScope, setSalesScope] = useState<"wholesale" | "calls" | null>(null);
   const [calculator, setCalculator] = useState(false);
   const [automations, setAutomations] = useState(false);
   const [stage, setStage] = useState<string>(() => { try { return localStorage.getItem(LS_STAGE) ?? FLOW[0].key; } catch { return FLOW[0].key; } });
@@ -128,7 +130,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
-      if (calculator || automations || (e.target as HTMLElement)?.closest("button, select, input[type=number]")) return;
+      if (salesScope || calculator || automations || (e.target as HTMLElement)?.closest("button, select, input[type=number]")) return;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         if (!list.length) return;
         e.preventDefault();
@@ -137,7 +139,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
         setSelId(list[n].id);
         listRef.current?.querySelector<HTMLElement>(`[data-rid="${list[n].id}"]`)?.scrollIntoView({ block: "nearest" });
       }
-      if (calculator || automations) return;
+      if (salesScope || calculator || automations) return;
       if (e.key === "Enter" && !e.shiftKey && (e.target as HTMLElement)?.tagName !== "TEXTAREA") { e.preventDefault(); use(sel); }
     };
     window.addEventListener("keydown", h);
@@ -148,6 +150,7 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
   const side = (items: Stage[]) => items.map((s) => <SideItem key={s.key || "_other"} s={s} on={!q && s.key === cur.key} count={count(s.key)} onPick={pick} />);
   const productStage = cur.group === "products" && !q;
 
+  if (salesScope) return <SalesPlaybook scope={salesScope} onBack={() => setSalesScope(null)} onClose={onClose} onInsert={onInsert} disabled={busy || !!error} />;
   if (calculator) return <TopcimentCalculator onBack={() => setCalculator(false)} onClose={onClose} />;
   if (automations) return <AutomationMessages onBack={() => setAutomations(false)} onClose={onClose} />;
 
@@ -156,6 +159,8 @@ export function QuickRepliesScript({ replies, loading, fillName, busy, error, on
     <div style={{ width: "min(1180px, 100%)", height: narrow ? "96vh" : "min(760px, 92vh)", background: "#fff", borderRadius: 14, boxShadow: "0 24px 64px rgba(15,23,42,.3)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* шапка */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "1px solid #e2e8f0", flexWrap: "wrap" }}>
+        <button className="btn" type="button" onClick={() => setSalesScope("wholesale")}>Опт</button>
+        <button className="btn" type="button" onClick={() => setSalesScope("calls")}>Дзвінки</button>
         <button className="btn" type="button" onClick={() => setCalculator(true)}>Калькулятор TOPCIMENT</button>
         <b style={{ fontSize: 15 }}><Icon n="⚡" size={15} /> Швидкі відповіді</b>
         <button className="btn" type="button" onClick={() => setAutomations(true)} style={{ background: "#e5f2e9", fontSize: 12 }}>Оплата, доставка, майстер-класи · автоматичні повідомлення</button>

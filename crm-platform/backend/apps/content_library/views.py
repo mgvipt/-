@@ -50,6 +50,7 @@ class LibraryView(APIView):
             return response
         lang='ru' if request.GET.get('lang')=='ru' else 'uk'
         from .client_materials import product_texts
+        from apps.warehouse.technical_facts import technical_data
         training = []
         for i in Instruction.objects.filter(status='draft', content__kind='staff_training').prefetch_related('products__images').order_by('title'):
             products = []
@@ -59,6 +60,7 @@ class LibraryView(APIView):
                 localized=product_texts(p,lang)
                 products.append({'id': p.id, 'name': localized['name'], 'price': str(p.price),
                     'currency': p.currency, 'unit': p.unit, 'description': localized['description'],
+                    'technical': technical_data(p),
                     'short_description': localized['short_description'],
                     'full_description': localized['full_description'],
                     'benefits': p.shop_benefits, 'consumption': str(p.consumption_per_m2) if p.consumption_per_m2 else None,

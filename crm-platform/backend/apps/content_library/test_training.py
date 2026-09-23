@@ -245,3 +245,57 @@ class CanonicalAIMaterialTests(TestCase):
   self.assertIn('Змінений опис',text);self.assertIn('150.00',text);self.assertNotIn('Перший опис',text)
   Product.objects.filter(pk=p.pk).update(is_active=False)
   self.assertEqual(current_product_facts(query='Sirena Silk'),'')
+
+
+class TopcimentTechnicalReviewTests(TestCase):
+ setUp=TopcimentCalculationTests.setUp
+ product=TopcimentCalculationTests.product
+ row=TopcimentCalculationTests.row
+ update_specs=TopcimentCalculationTests.update_specs
+ def flag(self,product,required=True):
+  self.update_specs(product,technical_facts={'schema_version':1,'technical_review':{'required':required,'codes':['internal-code-not-for-ui']},'density':[{'source':{'revision':'2026-05'}}]})
+ def test_review_blocks_complete_without_changing_calculation(self):
+  from .topciment import calculate
+  system={'id':'efectto-wall','name':'Test','materials':['eq-small']}
+  with patch('apps.content_library.topciment.SYSTEMS',[system]):
+   before=calculate('efectto-wall',25,0)
+   self.assertTrue(before['complete'])
+   self.flag(self.p)
+   after=calculate('efectto-wall',25,0)
+   self.assertFalse(after['complete']);self.assertEqual(after['missing'],[])
+   self.assertEqual(after['known_total'],before['known_total'])
+   row=after['rows'][0]
+   for field in ('rate','quantity','packs','pack_price','subtotal'):
+    self.assertEqual(row[field],before['rows'][0][field])
+   self.assertTrue(row['needs_review'])
+   self.assertEqual(after['technical_unverified'][0]['products'][0]['id'],self.p.id)
+   self.assertEqual(row['products'][0]['source_revisions'],['2026-05'])
+   self.assertTrue(row['products'][0]['updated_at'])
+   self.assertNotIn('internal-code-not-for-ui',str(after))
+   self.flag(self.p,False)
+   self.assertTrue(calculate('efectto-wall',25,0)['complete'])
+ def test_component_b_review_marks_kit(self):
+  before=self.row('wt-kit');self.flag(self.wt_b)
+  after=self.row('wt-kit')
+  self.assertTrue(after['needs_review'])
+  self.assertEqual(after['quantity'],before['quantity']);self.assertEqual(after['subtotal'],before['subtotal'])
+  self.assertIn(self.wt_b.id,[p['id'] for p in after['products'] if p['needs_review']])
+ def test_powder_review_propagates_to_derived_acricem(self):
+  self.product('acricem',unit='л',pack=25,primer_rate_l_m2='0.1')
+  self.product('microbase',rates={'microdeck-dsv':'2.1'},acricem_l_per_kg='0.3')
+  deck=self.product('microdeck',rates={'microdeck-dsv':'1'},acricem_l_per_kg='0.3')
+  self.flag(deck)
+  row=self.row('acricem',system='microdeck-dsv')
+  self.assertTrue(row['needs_review']);self.assertEqual(row['rate'],1.03)
+  self.assertIn(deck.id,[p['id'] for p in row['products'] if p['needs_review']])
+ def test_unknown_norm_keeps_review_and_card_link(self):
+  self.flag(self.p);self.update_specs(self.p,calculator_rates={})
+  row=self.row('eq-small')
+  self.assertIsNone(row['quantity']);self.assertTrue(row['needs_review'])
+  self.assertEqual(row['products'][0]['id'],self.p.id)
+ def test_quote_required_hides_positive_sale_price_only(self):
+  self.update_specs(self.p,price_status='quote_required')
+  self.assertIsNone(self.row('eq-small')['subtotal'])
+  self.assertEqual(self.row('eq-small',basis='reference')['subtotal'],2400)
+  self.update_specs(self.wt_b,price_status='quote_required')
+  self.assertIsNone(self.row('wt-kit')['subtotal'])

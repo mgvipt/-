@@ -58,9 +58,11 @@ def product_media(request, product, index=None):
 
 
 def product_data(p):
+    from .technical_facts import technical_data
     specs = p.shop_specs or {}
     return {
         'id': p.id, 'name': p.name, 'sku': p.sku, 'unit': p.unit,
+        'technical': technical_data(p),
         'price': str(p.price), 'currency': p.currency, 'is_active': p.is_active,
         'updated_at': p.updated_at.isoformat(),
         'consumption_per_m2': str(p.consumption_per_m2) if p.consumption_per_m2 is not None else None,

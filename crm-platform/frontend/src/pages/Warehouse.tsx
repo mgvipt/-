@@ -27,6 +27,7 @@ import { useLang } from "../i18n";
 import { useAuth } from "../auth";
 import { Icon } from "../Icon";
 import { ProductFacts } from "./ProductFacts";
+import ProductTechnicalSheet from "./ProductTechnicalSheet";
 import ReceiptModal from "../ReceiptModal";
 import DupsPanel from "./DupsPanel";
 
@@ -94,7 +95,7 @@ const weekStart = () => { const d = new Date(); const back = (d.getDay() + 1) % 
 
 export default function Warehouse() {
   /* ─── [2] STATE ──────────────────────────────────────────────────────── */
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { can } = useAuth();
   const nav = useNavigate();
   const showCost = can("product.cost.view");
@@ -906,6 +907,7 @@ export default function Warehouse() {
 
   return (
     <div className="scroll pad fade">
+      {view === "goods" && <ProductTechnicalSheet ids={products.map(p=>p.id)} lang={lang==="uk"?"uk":"ru"} />}
       {/* ── ВКЛАДКИ: Товари / Реалізації ── */}
       <div style={{ display: "flex", gap: 6, marginBottom: 10, borderBottom: "2px solid #e2e8f0", paddingBottom: 8 }}>
         <button className={"btn" + (view === "goods" ? " btn-primary" : " btn-light")} onClick={() => setView("goods")}><Icon n="📦" size={15} /> {t("Товары и остатки","Товари та залишки")}</button>
@@ -1410,7 +1412,7 @@ export default function Warehouse() {
             )}
             {cardTab === "main" && !cardEdit && <InternalMaterialDocuments key={`${card.id}:${cardLang}`} productId={card.id} lang={cardLang} />}
             {cardTab === "main" && <ProductCalculationFields unit={cardEdit?.unit || card.unit} pack={cardEdit ? cardEdit.pack_factor : card.pack_factor} specs={cardEdit ? cardEdit.shop_specs || {} : card.shop_specs || {}} lang={cardLang} onChange={cardEdit ? ((specs, pack) => setCardEdit((prev:any)=>({...prev,shop_specs:specs,pack_factor:pack}))) : undefined} />}
-            {!cardEdit && <ProductFacts key={card.id} id={card.id} canEdit={canEdit} onSaved={() => { api.get<Product>(`/api/products/${card.id}/`).then(setCard); loadProducts(); }} />}
+            {!cardEdit && <ProductFacts key={card.id} id={card.id} lang={cardLang} canEdit={canEdit} onSaved={() => { api.get<Product>(`/api/products/${card.id}/`).then(setCard); loadProducts(); }} />}
             {!cardEdit && cardText("description").trim() !== "" && (
               <div className="panel" style={{ margin: "0 0 14px", fontSize: 13, whiteSpace: "pre-wrap" }}>{cardText("description")}{fallbackNote("description")}</div>
             )}

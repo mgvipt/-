@@ -1,4 +1,5 @@
 import { useState } from "react";
+import ProductTechnicalFacts, {type Technical} from "./ProductTechnicalFacts";
 export interface Entry {
   products?: MaterialProduct[];
   id: number; date: string; category?: string; section_key?: string; section?: string;
@@ -6,7 +7,7 @@ export interface Entry {
   title?: string; body?: string; // legacy fallback
 }
 
-interface MaterialProduct { id:number;name:string;price:string;currency:string;unit:string;description:string;short_description:string;full_description:string;benefits:string[];consumption:string|null;instruction_url:string;video_url:string;images:{id:number;url:string;alt_text:string;is_primary:boolean}[]; }
+interface MaterialProduct { technical?:Technical; id:number;name:string;price:string;currency:string;unit:string;description:string;short_description:string;full_description:string;benefits:string[];consumption:string|null;instruction_url:string;video_url:string;images:{id:number;url:string;alt_text:string;is_primary:boolean}[]; }
 function materialPrice(p:MaterialProduct,lang:string) {
  return Number(p.price)>0?`${Number(p.price).toLocaleString(lang==="uk"?"uk-UA":"ru-RU")} ${p.currency==="UAH"?"грн":p.currency} / ${p.unit}`:(lang==="uk"?"Ціну уточнюємо":"Цену уточняем");
 }
@@ -22,10 +23,12 @@ function ProductLearning({p,lang}:{p:MaterialProduct;lang:string}) {
  const texts=[p.description || p.full_description || p.short_description].filter(Boolean);
  return <article style={{borderTop:"1px solid #e2e8f0",paddingTop:12,marginTop:12}}>
  <h4 style={{margin:"0 0 8px"}}>{p.name}</h4>
+ <ProductTechnicalFacts data={p.technical} lang={uk?"uk":"ru"}/>
  <p style={{fontWeight:700,fontSize:17}}>{materialPrice(p,lang)}</p>
  {p.consumption&&<p>{uk?"Витрата":"Расход"}: {Number(p.consumption).toLocaleString("uk-UA")} {p.unit}/м²</p>}
  {!!p.images.length&&<div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:8}}>{[...p.images].sort((a,b)=>Number(b.is_primary)-Number(a.is_primary)).map(im=><a key={im.id} href={im.url} target="_blank" rel="noreferrer"><img src={im.url} alt={im.alt_text||p.name} loading="lazy" style={{width:210,height:160,objectFit:"contain",borderRadius:8,background:"#f8fafc"}}/></a>)}</div>}
  {texts.map((v,j)=><div key={j} style={{fontSize:14,color:"#475569"}}>{v.split("\n").map((ln,i)=>renderLine(ln,i))}</div>)}
+ {p.full_description && p.full_description !== texts[0] && <details style={{marginTop:12}}><summary style={{cursor:"pointer",fontWeight:700}}>{uk?"Як пояснити матеріал клієнту · запитання та відповіді":"Как объяснить материал клиенту · вопросы и ответы"}</summary><div>{p.full_description.split("\n").map((line,i)=>renderLine(line,i))}</div></details>}
  {!!p.benefits?.length&&<ul>{p.benefits.map((b,i)=><li key={i}>{b}</li>)}</ul>}
  <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:10}}><a href={`/warehouse?product=${p.id}`} target="_blank" rel="noreferrer">{uk?"Картка товару":"Карточка товара"}</a>{p.instruction_url&&/^https?:/.test(p.instruction_url)&&<a href={p.instruction_url} target="_blank" rel="noreferrer">{uk?"Інструкція":"Инструкция"}</a>}{p.video_url&&/^https?:/.test(p.video_url)&&<a href={p.video_url} target="_blank" rel="noreferrer">{uk?"Відео нанесення":"Видео нанесения"}</a>}</div>
  </article>;

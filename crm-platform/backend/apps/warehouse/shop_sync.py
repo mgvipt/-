@@ -148,6 +148,8 @@ def catalog_validation_errors(product):
 
 def normalized_shop_specs(specs):
     specs = dict(specs or {})
+    # Staff-only source provenance/review must never enter the public shop contract.
+    specs.pop("technical_facts", None)
     columns = specs.get("source_columns") or {}
     mapping = {
         "Цена: модель": "price_model", "Цена за кг, грн": "price_per_kg",

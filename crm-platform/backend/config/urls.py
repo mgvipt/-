@@ -17,6 +17,8 @@ from apps.warehouse import reorder as wh_reorder  # 19.09.2026: дозамовл
 from apps.warehouse import tare_samples as wh_tare
 from apps.warehouse import shop_import_views
 from apps.warehouse.product_source import ProductReadCatalog, ProductFacts
+from apps.warehouse.technical_facts import ProductTechnicalSheet
+from apps.inbox.sales_scripts import SalesScripts
 from apps.warehouse.material_documents import ProductInternalDocuments, ProductInternalDocumentFile
 from apps.warehouse import shop_site
 from apps.finance import views as fin_views
@@ -72,6 +74,8 @@ urlpatterns = [
     path("", include("apps.content_library.urls")),
     path("api/deal-economics/", include("apps.dealecon.urls")),  # економіка угоди (14.09.2026)
     path("api/product-source/", ProductReadCatalog.as_view()),
+    path("api/products/technical-sheet/", ProductTechnicalSheet.as_view()),
+    path("api/inbox/sales-scripts/", SalesScripts.as_view()),
     path("api/products/<int:pk>/facts/", ProductFacts.as_view()),
     path("api/products/<int:pk>/internal-documents/", ProductInternalDocuments.as_view()),
     path("api/products/<int:pk>/internal-documents/<int:docid>/file/", ProductInternalDocumentFile.as_view()),

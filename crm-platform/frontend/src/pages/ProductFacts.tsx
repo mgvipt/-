@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import ProductTechnicalFacts, {type Lang} from './ProductTechnicalFacts';
 
 const labels: Record<string, string> = {
   packaging: 'Фасовка / відвантаження', finish: 'Фініш', washable: 'Догляд / миття',
@@ -13,7 +14,7 @@ const texts: Record<string, string> = {
   shop_full_description: 'Повний опис', shop_effect: 'Ефект', shop_contents: 'Що входить у набір',
 };
 
-export function ProductFacts({ id, canEdit, onSaved }: { id: number; canEdit: boolean; onSaved: () => void }) {
+export function ProductFacts({ id, canEdit, onSaved, lang = "uk" }: { lang?: Lang; id: number; canEdit: boolean; onSaved: () => void }) {
   const [data, setData] = useState<any>(null);
   const [draft, setDraft] = useState<any>(null);
   const [error, setError] = useState('');
@@ -48,6 +49,7 @@ export function ProductFacts({ id, canEdit, onSaved }: { id: number; canEdit: bo
     {error && <p role="alert" style={{ color: '#b91c1c' }}>{error}</p>}
     {!data && !error && <p>Завантаження…</p>}
     {data && <>
+      <ProductTechnicalFacts data={data.technical} lang={lang} />
       {canEdit && !draft && <button className="btn btn-light" onClick={() => setDraft(JSON.parse(JSON.stringify(data)))}>Редагувати характеристики</button>}
       {Object.entries(texts).map(([key, label]) => draft
         ? <label key={key} style={{ display: 'block', marginTop: 10 }}>{label}<textarea rows={3} style={{ width: '100%' }} value={draft[key] || ''} onChange={e => setDraft({ ...draft, [key]: e.target.value })} /></label>
