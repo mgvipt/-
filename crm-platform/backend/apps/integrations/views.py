@@ -180,7 +180,11 @@ class ShopOrderWebhookView(APIView):
                 return Response({"ok": True, "duplicate": True, "deal_id": imported.deal_id})
 
             phone = self._normalise_phone(str(order.get("phone") or ""))
-            contact = Contact.objects.filter(phone=phone).order_by("id").first()
+            # Один український номер часто вже збережений як 097…, 38097… або +38097….
+            # Точне порівняння створювало нову картку при замовленні з іншого формату.
+            from apps.inbox.services import _phone_variants
+            contact = (Contact.objects.select_for_update()
+                       .filter(phone__in=_phone_variants(phone)).order_by("id").first())
             name_parts = str(order.get("customer_name") or "").strip().split(maxsplit=1)
             if contact is None:
                 contact = Contact.objects.create(

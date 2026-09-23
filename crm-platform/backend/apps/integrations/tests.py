@@ -44,6 +44,31 @@ class ShopOrderWebhookTest(TestCase):
         self.assertEqual(Deal.objects.get().items.count(), 1)
         self.assertEqual(Deal.objects.get().funnel.name, "23 Інтернет-магазин wallcov.com.ua")
 
+    def test_order_reuses_existing_contact_with_local_phone_format(self):
+        contact = Contact.objects.create(
+            first_name="Олег", phone="0972382295", email="owner@example.test",
+            channels=["instagram"], source="site",
+        )
+        payload = {
+            "event_uuid": str(uuid.uuid4()),
+            "order": {
+                "number": "WV-PHONE-FORMAT-1", "customer_name": "Олег Кріжевські",
+                "phone": "+380972382295", "email": "owner@example.test",
+                "total": "1250.00", "payment_method": "after_confirmation",
+                "city": "Могилів-Подільський", "delivery_branch": "Відділення 1",
+                "items": [{"product_name": "Galateya", "type": "kit", "area": 12,
+                           "quantity": 1, "unit_price": "1250.00"}],
+            },
+        }
+
+        response = self._post(payload)
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(Contact.objects.count(), 1)
+        self.assertEqual(Deal.objects.get().contact_id, contact.id)
+        contact.refresh_from_db()
+        self.assertIn("site", contact.channels)
+
     def test_sample_order_also_uses_only_shop_funnel(self):
         Product.objects.create(name="Galateya — повний тест-набір", sku="B24-38486", price=430, cost=180)
         payload = {
