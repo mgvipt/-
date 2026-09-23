@@ -20,15 +20,21 @@ function MaterialVariant({p,lang}:{p:MaterialProduct;lang:string}) {
 }
 function ProductLearning({p,lang}:{p:MaterialProduct;lang:string}) {
  const uk=lang==="uk";
- const texts=[p.description || p.full_description || p.short_description].filter(Boolean);
+ const mainText = p.full_description?.trim() || p.description?.trim() || p.short_description?.trim() || "";
+ const legacyText = p.description?.trim() && p.description.trim() !== mainText ? p.description.trim() : "";
  return <article style={{borderTop:"1px solid #e2e8f0",paddingTop:12,marginTop:12}}>
  <h4 style={{margin:"0 0 8px"}}>{p.name}</h4>
  <ProductTechnicalFacts data={p.technical} lang={uk?"uk":"ru"}/>
  <p style={{fontWeight:700,fontSize:17}}>{materialPrice(p,lang)}</p>
  {p.consumption&&<p>{uk?"Витрата":"Расход"}: {Number(p.consumption).toLocaleString("uk-UA")} {p.unit}/м²</p>}
  {!!p.images.length&&<div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:8}}>{[...p.images].sort((a,b)=>Number(b.is_primary)-Number(a.is_primary)).map(im=><a key={im.id} href={im.url} target="_blank" rel="noreferrer"><img src={im.url} alt={im.alt_text||p.name} loading="lazy" style={{width:210,height:160,objectFit:"contain",borderRadius:8,background:"#f8fafc"}}/></a>)}</div>}
- {texts.map((v,j)=><div key={j} style={{fontSize:14,color:"#475569"}}>{v.split("\n").map((ln,i)=>renderLine(ln,i))}</div>)}
- {p.full_description && p.full_description !== texts[0] && <details style={{marginTop:12}}><summary style={{cursor:"pointer",fontWeight:700}}>{uk?"Як пояснити матеріал клієнту · запитання та відповіді":"Как объяснить материал клиенту · вопросы и ответы"}</summary><div>{p.full_description.split("\n").map((line,i)=>renderLine(line,i))}</div></details>}
+ {mainText && <div style={{fontSize:14,color:"#475569"}}>{mainText.split(/\n\s*\n/).filter(Boolean).map((section,index)=>{
+   const lines=section.split("\n");
+   const title=lines[0].trim();
+   const hasHeading=lines.length>1 && title.length<=110 && !/[.!?;]$/.test(title) && !/^[-•]/.test(title);
+   return <section key={index} style={{marginTop:14}}>{hasHeading?<><h5 style={{fontSize:16,color:"#0f172a",margin:"0 0 8px"}}>{title}</h5>{lines.slice(1).map((line,i)=>renderLine(line,i))}</>:lines.map((line,i)=>renderLine(line,i))}</section>;
+ })}</div>}
+ {legacyText && <details style={{marginTop:12}}><summary style={{cursor:"pointer",fontWeight:700}}>{uk?"Додаткові відомості про матеріал":"Дополнительные сведения о материале"}</summary><div>{legacyText.split("\n").map((line,i)=>renderLine(line,i))}</div></details>}
  {!!p.benefits?.length&&<ul>{p.benefits.map((b,i)=><li key={i}>{b}</li>)}</ul>}
  <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:10}}><a href={`/warehouse?product=${p.id}`} target="_blank" rel="noreferrer">{uk?"Картка товару":"Карточка товара"}</a>{p.instruction_url&&/^https?:/.test(p.instruction_url)&&<a href={p.instruction_url} target="_blank" rel="noreferrer">{uk?"Інструкція":"Инструкция"}</a>}{p.video_url&&/^https?:/.test(p.video_url)&&<a href={p.video_url} target="_blank" rel="noreferrer">{uk?"Відео нанесення":"Видео нанесения"}</a>}</div>
  </article>;
