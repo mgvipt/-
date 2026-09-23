@@ -67,3 +67,42 @@ class ProductSourceTests(TestCase):
 
     def test_anonymous_cannot_read_facts(self):
         self.assertIn(self.client.get(self.facts()).status_code, (401,403))
+
+    def test_russian_facts_edit_preserves_ukrainian_and_unrelated_specs(self):
+        self.client.force_authenticate(self.owner)
+        self.product.shop_full_description = 'Українська повна інструкція'
+        self.product.shop_specs = {'custom': 'keep', 'application': 'Стіни', 'translations': {'ru': {'full_description': 'Русская инструкция', 'name': 'Название'}, 'en': {'description': 'Keep'}}}
+        self.product.save()
+        url = self.facts() + '?lang=ru'
+        old = self.client.get(url).json()
+        self.assertEqual(old['shop_full_description'], 'Русская инструкция')
+        payload = {'updated_at': old['updated_at'], 'shop_full_description': 'Подробная русская инструкция', 'shop_specs': {'application': 'Стены', 'finish': 'Финиш по образцу'}}
+        response = self.client.patch(url, payload, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['shop_specs']['finish'], 'Финиш по образцу')
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.shop_full_description, 'Українська повна інструкція')
+        self.assertEqual(self.product.shop_specs['application'], 'Стіни')
+        self.assertEqual(self.product.shop_specs['translations']['ru']['full_description'], 'Подробная русская инструкция')
+        self.assertEqual(self.product.shop_specs['translations']['ru']['name'], 'Название')
+        self.assertEqual(self.product.shop_specs['translations']['en']['description'], 'Keep')
+        self.assertEqual(self.product.shop_specs['custom'], 'keep')
+        self.assertEqual(self.client.get(self.facts()).json()['shop_full_description'], 'Українська повна інструкція')
+        self.assertEqual(self.client.patch(url, payload, format='json').status_code, 409)
+
+    def test_consumption_is_shared_when_editing_russian(self):
+        self.client.force_authenticate(self.owner)
+        url = self.facts() + '?lang=ru'
+        old = self.client.get(url).json()
+        value = {'min': '0.2', 'max': '0.25', 'unit': 'кг/м²'}
+        self.assertEqual(self.client.patch(url, {'updated_at': old['updated_at'], 'shop_specs': {'consumption_range': value}}, format='json').status_code, 200)
+        self.assertEqual(self.client.get(self.facts()).json()['shop_specs']['consumption_range'], value)
+
+    def test_blank_translation_has_visible_fallback_metadata(self):
+        self.client.force_authenticate(self.owner)
+        self.product.shop_full_description = 'Повна інструкція'
+        self.product.shop_specs = {'translations': {'ru': {'full_description': '   '}}}
+        self.product.save()
+        data = self.client.get(self.facts() + '?lang=ru').json()
+        self.assertEqual(data['shop_full_description'], 'Повна інструкція')
+        self.assertIn('shop_full_description', data['fallback_fields'])

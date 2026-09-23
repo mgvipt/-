@@ -7,6 +7,7 @@
 Товар не знайдено / неактивний / ціна 0 → «(ціну уточнює менеджер)» — агент не вигадає цифру.
 """
 import re
+import json
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 PLACEHOLDER = re.compile(r"\{(price|m2):(\d+)(?::(\d+(?:[.,]\d+)?))?\}")
@@ -147,7 +148,7 @@ def current_product_facts(items=None, query=None, limit=6):
     words=set(re.findall(r'[a-zа-яіїєґ]+',query))
     selected=[]
     generic={'paint','primer','topciment','anticatura','silver','gold','bianco','pearl','perl','мат','фарба','лак','клей','шпаклівка'}
-    for p in Product.objects.filter(Q(id__in=linked)|Q(id__in=taught),is_active=True).only('id','name','description','price','currency','unit','consumption_per_m2','shop_specs'):
+    for p in Product.objects.filter(Q(id__in=linked)|Q(id__in=taught),is_active=True).only('id','name','description','price','currency','unit','consumption_per_m2','shop_specs','shop_full_description'):
         tokens={w for w in re.findall(r'[a-z]+',p.name.lower()) if len(w)>=3}
         overlap=(tokens-generic)&words
         score=1000 if p.id in linked else sum(len(w) for w in overlap)
@@ -156,15 +157,21 @@ def current_product_facts(items=None, query=None, limit=6):
     if not selected:return ''
     blocks=[]
     for _,p in sorted(selected,key=lambda item:(-item[0],item[1].id))[:limit]:
-        text=strip_tags(p.description or '').strip()[:2600]
-        price=(str(p.price)+' '+p.currency+'/'+p.unit) if p.price>0 else 'ціну потрібно уточнити'
+        text=strip_tags(p.description or '').strip()
+        article=strip_tags(p.shop_full_description or '').strip()
+        price=(str(p.price)+' '+p.currency+'/'+p.unit) if p.price>0 and (p.shop_specs or {}).get('price_status') != 'quote_required' else 'ціну потрібно уточнити'
         block=p.name+'\nЦіна: '+price
-        if p.consumption_per_m2 is not None:block+='\nВитрата на всі шари: '+str(p.consumption_per_m2)+' '+p.unit+'/м²'
-        if text:block+='\n'+text
+        if p.consumption_per_m2 is not None:block+='\nВитрата у картці (кількість шарів та умови звіряй з інструкцією): '+str(p.consumption_per_m2)+' '+p.unit+'/м²'
+        if article:block+='\nДокладний опис і застосування:\n'+article
+        if text and text != article:block+='\nДодаткові відомості про матеріал:\n'+text
+        specs = p.shop_specs or {}
+        for field, label in [('application', 'Де застосовувати'), ('finish', 'Фініш'), ('limitations', 'Обмеження'), ('consumption_range', 'Діапазон витрати'), ('drying', 'Висихання'), ('drying_time', 'Час висихання')]:
+            value = specs.get(field)
+            if value:
+                block += '\n' + label + ': ' + (str(value) if not isinstance(value, dict) else json.dumps(value, ensure_ascii=False))
         from apps.warehouse.technical_facts import technical_data
-        import json
         technical = technical_data(p)
         if technical['density'] or technical.get('technical_review', {}).get('required'):
             block += '\nВнутрішні технічні дані (не цитуй службові позначки клієнту; за technical_review потрібне уточнення, не перераховуй дозування): ' + json.dumps(technical, ensure_ascii=False)
         blocks.append(block)
-    return 'Поточні властивості матеріалів. Якщо старий текст суперечить цим даним, використовуй ці дані; не додавай непідтверджених характеристик. Не пояснюй клієнту внутрішнє зберігання даних.\n\n'+'\n\n'.join(blocks)
+    return 'Поточні властивості матеріалів. Якщо старий текст суперечить цим даним, використовуй ці дані; не додавай непідтверджених характеристик. Не пояснюй клієнту внутрішнє зберігання даних. Час на відлип, міжшарову паузу, повне висихання і набуття міцності не ототожнюй. У відповіді про нанесення збережи умови та обмеження з докладної інструкції. За суперечності всередині поточних даних не обирай значення навмання, уточни конкретну систему.\n\n'+'\n\n'.join(blocks)

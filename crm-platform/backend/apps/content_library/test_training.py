@@ -299,3 +299,72 @@ class TopcimentTechnicalReviewTests(TestCase):
   self.assertEqual(self.row('eq-small',basis='reference')['subtotal'],2400)
   self.update_specs(self.wt_b,price_status='quote_required')
   self.assertIsNone(self.row('wt-kit')['subtotal'])
+
+
+class DetailedMaterialContextTests(TestCase):
+ def test_full_article_and_last_drying_section_follow_current_card(self):
+  from apps.knowledge.catalog import current_product_facts
+  body = ('Підготовка поверхні. ' * 250) + '\n\nВисихання\nМіж шарами 60 хв при +20 °C і вологості до 60%; повне висихання 6–7 годин.'
+  p=Product.objects.create(name='Second Layer', price=100, unit='кг', description='Короткі додаткові дані', shop_full_description=body, shop_specs={'price_status':'quote_required'})
+  i=Instruction.objects.create(slug='detail-source-test', title='Second Layer', content={'kind':'staff_training'})
+  i.products.add(p)
+  text=current_product_facts(query='Second Layer висихання')
+  self.assertIn(body, text)
+  self.assertIn('до 60%', text)
+  self.assertNotIn('100.00 UAH', text)
+  Product.objects.filter(pk=p.pk).update(shop_full_description='Новий докладний текст; висихання залежить від умов')
+  fresh=current_product_facts(query='Second Layer')
+  self.assertIn('Новий докладний текст', fresh)
+  self.assertNotIn('Між шарами 60 хв', fresh)
+ def test_identical_article_and_description_are_not_repeated(self):
+  from apps.knowledge.catalog import current_product_facts
+  p=Product.objects.create(name='Sirena Silk', description='Одна повна інструкція', shop_full_description='Одна повна інструкція')
+  i=Instruction.objects.create(slug='same-source-test',title='Sirena',content={'kind':'staff_training'});i.products.add(p)
+  self.assertEqual(current_product_facts(query='Sirena Silk').count('Одна повна інструкція'),1)
+
+
+class TopcimentReferenceMetadataTests(TestCase):
+ setUp=TopcimentCalculationTests.setUp
+ product=TopcimentCalculationTests.product
+ row=TopcimentCalculationTests.row
+ update_specs=TopcimentCalculationTests.update_specs
+ def test_common_reference_dates_and_rates_are_from_cards(self):
+  from .topciment import calculate
+  self.update_specs(self.p,reference_price={'uah_pack':1200,'date':'2026-09-23','eur_uah':'51.3345'})
+  with patch('apps.content_library.topciment.SYSTEMS',[{'id':'efectto-wall','name':'Test','materials':['eq-small']}]):
+   result=calculate('efectto-wall',25,0,'reference')
+  self.assertEqual(result['reference_date'],'2026-09-23');self.assertEqual(result['eur_uah'],'51.3345')
+  self.assertEqual(result['reference_metadata']['status'],'consistent')
+  self.assertEqual(result['known_total'],2400)
+  row=result['rows'][0];self.assertEqual((row['quantity'],row['packs'],row['purchase_quantity']),(6.25,2,12))
+ def test_mixed_kit_reference_sources_have_no_false_common_date(self):
+  from .topciment import calculate
+  self.update_specs(self.wt_a,reference_price={'uah_pack':500,'date':'2026-09-22','eur_uah':'51.3671'})
+  self.update_specs(self.wt_b,reference_price={'uah_pack':100,'date':'2026-09-23','eur_uah':'51.3345'})
+  with patch('apps.content_library.topciment.SYSTEMS',[{'id':'efectto-wall','name':'Test','materials':['wt-kit']}]):
+   result=calculate('efectto-wall',100,0,'reference')
+  self.assertEqual(result['reference_metadata']['status'],'mixed')
+  self.assertIsNone(result['reference_date']);self.assertIsNone(result['eur_uah'])
+  self.assertEqual(len(result['rows'][0]['reference_prices']),2)
+  self.assertEqual((result['known_total'],result['rows'][0]['pack'],result['rows'][0]['packs']),(2400,5.904,4))
+ def test_same_date_different_fx_is_also_mixed(self):
+  from .topciment import reference_summary
+  value=reference_summary([{'product_id':1,'date':'2026-09-23','eur_uah':'51.3'},{'product_id':2,'date':'2026-09-23','eur_uah':'51.4'}])
+  self.assertEqual(value['status'],'mixed');self.assertIsNone(value['date']);self.assertIsNone(value['eur_uah'])
+ def test_missing_or_invalid_reference_metadata_remains_unknown(self):
+  from .topciment import calculate
+  for date_value,fx in [(None,None),('invalid','NaN'),('2026-99-99',0)]:
+   self.update_specs(self.p,reference_price={'uah_pack':1200,'date':date_value,'eur_uah':fx})
+   with patch('apps.content_library.topciment.SYSTEMS',[{'id':'efectto-wall','name':'Test','materials':['eq-small']}]):
+    result=calculate('efectto-wall',25,0,'reference')
+   self.assertEqual(result['reference_metadata']['status'],'incomplete')
+   self.assertIsNone(result['reference_date']);self.assertIsNone(result['eur_uah'])
+   self.assertEqual(result['known_total'],2400)
+ def test_no_reference_price_does_not_invent_metadata_or_total(self):
+  from .topciment import calculate
+  self.update_specs(self.p,reference_price=None)
+  with patch('apps.content_library.topciment.SYSTEMS',[{'id':'efectto-wall','name':'Test','materials':['eq-small']}]):
+   result=calculate('efectto-wall',25,0,'reference')
+  self.assertEqual(result['reference_metadata']['status'],'unknown')
+  self.assertIsNone(result['reference_date']);self.assertIsNone(result['eur_uah'])
+  self.assertIsNone(result['rows'][0]['subtotal']);self.assertFalse(result['complete'])

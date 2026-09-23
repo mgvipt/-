@@ -57,18 +57,25 @@ def product_media(request, product, index=None):
     return [_library_item_data(request, item) for item in items]
 
 
-def product_data(p):
+def product_data(p, lang="uk"):
     from .technical_facts import technical_data
     specs = p.shop_specs or {}
+    translated = ((specs.get("translations") or {}).get("ru") or {}) if lang == "ru" else {}
+    text_keys = {"shop_short_description": "short_description", "shop_full_description": "full_description"}
+    def localized(key, fallback):
+        value = translated.get(key)
+        return value if isinstance(value, str) and value.strip() else fallback
+    fallback_fields = [key for key in TEXT_FIELDS if lang == 'ru' and not str(translated.get(text_keys.get(key, key)) or '').strip() and getattr(p, key)]
     return {
+        'language': lang, 'fallback_fields': fallback_fields,
         'id': p.id, 'name': p.name, 'sku': p.sku, 'unit': p.unit,
         'technical': technical_data(p),
         'price': str(p.price), 'currency': p.currency, 'is_active': p.is_active,
         'updated_at': p.updated_at.isoformat(),
         'consumption_per_m2': str(p.consumption_per_m2) if p.consumption_per_m2 is not None else None,
         'consumption_per_m2_unit': p.unit + '/м²',
-        **{key: getattr(p, key) for key in TEXT_FIELDS},
-        'shop_specs': {key: specs[key] for key in SPEC_FIELDS if key in specs},
+        **{key: localized(text_keys.get(key, key), getattr(p, key)) for key in TEXT_FIELDS},
+        'shop_specs': {key: (localized(key, specs.get(key)) if key != 'consumption_range' else specs.get(key)) for key in SPEC_FIELDS if key in specs or (lang == "ru" and key in translated)},
         'card_url': 'https://crm.wallcovdec.com.ua/warehouse?product=%d' % p.id,
     }
 
@@ -106,7 +113,7 @@ class ProductFacts(APIView):
 
     def get(self, request, pk):
         p = get_object_or_404(Product, pk=pk)
-        return Response({**product_data(p), 'media': product_media(request, p)})
+        return Response({**product_data(p, 'ru' if request.GET.get('lang') == 'ru' else 'uk'), 'media': product_media(request, p)})
 
     @transaction.atomic
     def patch(self, request, pk):
@@ -117,12 +124,18 @@ class ProductFacts(APIView):
         if set(request.data) - allowed:
             raise serializers.ValidationError('Дозволено змінювати лише характеристики та описи.')
         changes = {}
+        translated_changes = {}
+        ru = request.GET.get("lang") == "ru"
+        text_keys = {"shop_short_description": "short_description", "shop_full_description": "full_description"}
         for key in TEXT_FIELDS:
             if key in request.data:
                 value = request.data[key]
                 if not isinstance(value, str) or len(value) > 20000:
                     raise serializers.ValidationError({key: 'Некоректний текст.'})
-                changes[key] = value
+                if ru:
+                    translated_changes[text_keys.get(key, key)] = value
+                else:
+                    changes[key] = value
         if 'shop_specs' in request.data:
             patch = request.data['shop_specs']
             if not isinstance(patch, dict) or set(patch) - set(SPEC_FIELDS):
@@ -130,11 +143,20 @@ class ProductFacts(APIView):
             for key, value in patch.items():
                 if key != 'consumption_range' and (not isinstance(value, str) or len(value) > 5000):
                     raise serializers.ValidationError({key: 'Некоректний текст.'})
+            if ru:
+                translated_changes.update({key: value for key, value in patch.items() if key != 'consumption_range'})
+                patch = {key: value for key, value in patch.items() if key == 'consumption_range'}
             merged = {**(p.shop_specs or {}), **patch}
             validate_specs(merged)
+            changes['shop_specs'] = merged
+        if translated_changes:
+            merged = changes.get('shop_specs', dict(p.shop_specs or {}))
+            translations = dict(merged.get('translations') or {})
+            translations['ru'] = {**(translations.get('ru') or {}), **translated_changes}
+            merged['translations'] = translations
             changes['shop_specs'] = merged
         changes['updated_at'] = timezone.now()
         # Explicit update avoids site queues and any unrelated model save hooks.
         Product.objects.filter(pk=p.pk).update(**changes)
         p.refresh_from_db()
-        return Response({**product_data(p), 'media': product_media(request, p)})
+        return Response({**product_data(p, 'ru' if request.GET.get('lang') == 'ru' else 'uk'), 'media': product_media(request, p)})

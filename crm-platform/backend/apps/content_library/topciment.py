@@ -1,5 +1,6 @@
 """Area calculator. Product prices are read on every request; no cached price copies."""
 from decimal import Decimal, ROUND_CEILING
+from datetime import date
 from apps.warehouse.models import Product
 D=Decimal
 MATERIALS={'acricem': {'name': 'TOPCIMENT Acricem resina', 'unit': 'л'}, 'abs': {'name': 'TOPCIMENT Primacem ABS', 'unit': 'л'}, 'plus': {'name': 'TOPCIMENT Primacem PLUS', 'unit': 'л'}, 'microbase': {'name': 'TOPCIMENT Sttandard Microbase L', 'unit': 'кг'}, 'microstone': {'name': 'TOPCIMENT Sttandard Microstone L', 'unit': 'кг'}, 'microdeck': {'name': 'TOPCIMENT Unlimitted Microdeck M', 'unit': 'кг'}, 'microfino-old': {'name': 'TOPCIMENT Microfino', 'unit': 'кг'}, 'presealer': {'name': 'TOPCIMENT Presealer', 'unit': 'л'}, 'dsv-b': {'name': 'TOPCIMENT Topsealer DSV · компонент B', 'unit': 'л'}, 'dsv-a': {'name': 'TOPCIMENT Topsealer DSV Mate · компонент A', 'unit': 'л'}, 'wt-b': {'name': 'TOPCIMENT Topsealer WT One Coat · компонент B', 'unit': 'л'}, 'wt-mate': {'name': 'TOPCIMENT Topsealer WT One Coat Mate · компонент A', 'unit': 'л'}, 'wt-kit-old': {'name': 'TOPCIMENT Topsealer WT One Coat Mate A+B', 'unit': 'кг'}, 'microfino': {'name': 'TOPCIMENT Sttandard Microfino S', 'unit': 'кг'}, 'grip': {'name': 'TOPCIMENT Primacem GRIP', 'unit': 'кг'}, 'eq-super': {'name': 'TOPCIMENT Efectto Quartz Super Grain', 'unit': 'кг'}, 'eq-medium': {'name': 'TOPCIMENT Efectto Quartz Medium Grain', 'unit': 'кг'}, 'eq-big': {'name': 'TOPCIMENT Efectto Quartz Big Grain', 'unit': 'кг'}, 'eq-small': {'name': 'TOPCIMENT Efectto Quartz Small Grain', 'unit': 'кг'}, 'wt-super': {'name': 'TOPCIMENT Topsealer WT One Coat Supermate · компонент A', 'unit': 'л'}, 'pigment-yellow': {'name': 'TOPCIMENT Arcocem BASIC Amarillo', 'unit': 'г'}, 'pigment-blue': {'name': 'TOPCIMENT Arcocem BASIC Azul', 'unit': 'г'}, 'pigment-black': {'name': 'TOPCIMENT Arcocem BASIC Negro', 'unit': 'г'}, 'pigment-orange': {'name': 'TOPCIMENT Arcocem BASIC Rojo Naranja', 'unit': 'г'}, 'pigment-green': {'name': 'TOPCIMENT Arcocem BASIC Verde', 'unit': 'г'}, 'mesh': {'name': 'Армувальна сітка', 'unit': 'м²'}, 'xz': {'name': 'Ґрунт XZ · уточнити марку', 'unit': 'кг'}}
@@ -23,6 +24,28 @@ def positive(value,allow_zero=False):
  if not number.is_finite() or number<0 or (number==0 and not allow_zero):raise ValueError('Норма, густина та пропорції мають бути додатними.')
  return number
 def num(v):return float(v.quantize(D('0.001')))
+def reference_source(product):
+ ref=product.shop_specs.get('reference_price') or {}
+ verified_date=None;fx=None
+ try:
+  value=ref.get('date')
+  if isinstance(value,str) and date.fromisoformat(value).isoformat()==value:verified_date=value
+ except ValueError:pass
+ try:
+  number=D(str(ref.get('eur_uah')))
+  if number.is_finite() and number>0:fx=format(number.normalize(),'f')
+ except (ValueError,ArithmeticError):pass
+ return {'product_id':product.id,'name':product.name,'date':verified_date,'eur_uah':fx}
+
+def reference_summary(sources):
+ # Only actual contributors to known_total; unpriced materials remain separately unknown.
+ sources=list({source['product_id']:source for source in sources}.values())
+ complete=bool(sources) and all(s['date'] and s['eur_uah'] for s in sources)
+ pairs={(s['date'],s['eur_uah']) for s in sources}
+ status='unknown' if not sources else 'incomplete' if not complete else 'consistent' if len(pairs)==1 else 'mixed'
+ common=next(iter(pairs)) if status=='consistent' else (None,None)
+ return {'status':status,'date':common[0],'eur_uah':common[1],'sources':sources}
+
 def catalog():
  return {p.shop_specs['topciment_key']:p for p in Product.objects.filter(sku__startswith='TC-20260922-',is_active=True) if p.shop_specs.get('topciment_key')}
 def calculate(system_id,area,reserve,basis='sale'):
@@ -93,11 +116,13 @@ def calculate(system_id,area,reserve,basis='sale'):
   else:total+=subtotal
   rows.append({'key':key,'name':name,'unit':unit,'rate':float(rate),'quantity':num(quantity),'pack':num(pack) if pack else None,'packs':packs,'purchase_quantity':num(pack*packs) if pack else None,'pack_price':round(float(price),2) if price is not None else None,'subtotal':round(float(subtotal),2) if subtotal is not None else None,'products':links})
  # Review dependencies affect confidence only, never quantities or historical formulas.
- technical_unverified=[]
+ technical_unverified=[];reference_sources=[]
  for row in rows:
   key=row['key']
   keys=([('wt-mate' if key=='wt-kit' else 'dsv-a'),('wt-b' if key=='wt-kit' else 'dsv-b')]
         if key.endswith('-kit') else [key])
+  row['reference_prices']=[reference_source(products[k]) for k in keys if k in products]
+  if basis=='reference' and row['subtotal'] is not None:reference_sources.extend(row['reference_prices'])
   if key=='acricem':keys += [k for k in ('microbase','microdeck','microfino') if k in system['materials']]
   linked=[]
   for dependency in keys:
@@ -114,4 +139,5 @@ def calculate(system_id,area,reserve,basis='sale'):
   row['needs_review']=any(p['needs_review'] for p in linked)
   if row['needs_review']:
    technical_unverified.append({'key':key,'name':row['name'],'products':[p for p in linked if p['needs_review']]})
- return {'system':system['name'],'area':float(area),'reserve':float(reserve),'basis':basis,'rows':rows,'known_total':round(float(total),2),'complete':not missing and not technical_unverified,'technical_unverified':technical_unverified,'missing':missing,'notes':NOTES,'reference_date':'2026-09-22','eur_uah':'51.3671'}
+ reference=reference_summary(reference_sources)
+ return {'system':system['name'],'area':float(area),'reserve':float(reserve),'basis':basis,'rows':rows,'known_total':round(float(total),2),'complete':not missing and not technical_unverified,'technical_unverified':technical_unverified,'missing':missing,'notes':NOTES,'reference_metadata':reference,'reference_date':reference['date'],'eur_uah':reference['eur_uah']}

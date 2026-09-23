@@ -1412,10 +1412,8 @@ export default function Warehouse() {
             )}
             {cardTab === "main" && !cardEdit && <InternalMaterialDocuments key={`${card.id}:${cardLang}`} productId={card.id} lang={cardLang} />}
             {cardTab === "main" && <ProductCalculationFields unit={cardEdit?.unit || card.unit} pack={cardEdit ? cardEdit.pack_factor : card.pack_factor} specs={cardEdit ? cardEdit.shop_specs || {} : card.shop_specs || {}} lang={cardLang} onChange={cardEdit ? ((specs, pack) => setCardEdit((prev:any)=>({...prev,shop_specs:specs,pack_factor:pack}))) : undefined} />}
-            {!cardEdit && <ProductFacts key={card.id} id={card.id} lang={cardLang} canEdit={canEdit} onSaved={() => { api.get<Product>(`/api/products/${card.id}/`).then(setCard); loadProducts(); }} />}
-            {!cardEdit && cardText("description").trim() !== "" && (
-              <div className="panel" style={{ margin: "0 0 14px", fontSize: 13, whiteSpace: "pre-wrap" }}>{cardText("description")}{fallbackNote("description")}</div>
-            )}
+            {!cardEdit && cardTab === "main" && <ProductFacts key={`${card.id}:${cardLang}`} id={card.id} lang={cardLang} canEdit={canEdit} onSaved={() => { api.get<Product>(`/api/products/${card.id}/`).then(updated => setCard(previous => previous?.id === updated.id ? updated : previous)); loadProducts(); }} />}
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
               {[[t("Розничная цена","Роздрібна ціна"), Number(card.price).toLocaleString("ru") + " " + (card.currency || "грн")],
                 ...(Number(card.min_price) > 0 ? [[t("Минималка за позицию","Мінімалка за позицію"), Number(card.min_price).toLocaleString("ru") + " " + (card.currency || "грн")]] : []),
