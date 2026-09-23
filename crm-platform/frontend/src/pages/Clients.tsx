@@ -1,14 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Paginated } from "../api";
 import { SourceChip } from "../ui";
 import { useLang } from "../i18n";
 import { useAuth } from "../auth";
 
+interface MaterialOption { id: number; name: string; }
+interface SelectOption { value: string; label: string; }
+interface FilterOptions {
+  sources: SelectOption[];
+  statuses: string[];
+  materials: MaterialOption[];
+}
 interface Contact {
   id: number; display_name: string; phone: string; email: string; channels: string[];
   source?: string; loyalty_tag?: string; owner_name?: string; created_at?: string;
   kinds?: string[]; gender?: string; monitor_docs?: boolean;
+  purchased_materials?: MaterialOption[];
 }
 
 // сегменти контрагентів: [код, назва, колір фону, колір тексту]
@@ -23,6 +31,64 @@ const KINDS: [string, string, string, string][] = [
 ];
 
 const LOY_COLOR: Record<string, string> = { VIP: "#7c3aed", Активний: "#16a34a", Новий: "#2563eb", Сплячий: "#d97706", Активный: "#16a34a", Новый: "#2563eb", Спящий: "#d97706" };
+
+function MultiSelect({ label, options, values, onChange, searchable = false }: {
+  label: string;
+  options: SelectOption[];
+  values: string[];
+  onChange: (next: string[]) => void;
+  searchable?: boolean;
+}) {
+  const [search, setSearch] = useState("");
+  const visible = useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase();
+    return needle ? options.filter((option) => option.label.toLocaleLowerCase().includes(needle)) : options;
+  }, [options, search]);
+
+  function toggle(value: string) {
+    onChange(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+  }
+
+  return (
+    <details style={{ position: "relative" }}>
+      <summary style={{
+        listStyle: "none", height: 34, minWidth: 138, padding: "0 10px", border: "1px solid #cbd5e1",
+        borderRadius: 7, background: values.length ? "#eff6ff" : "#fff", color: "#334155",
+        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+        cursor: "pointer", fontSize: 13, fontWeight: values.length ? 700 : 500, whiteSpace: "nowrap",
+      }}>
+        <span>{label}{values.length ? ` · ${values.length}` : ""}</span><span style={{ fontSize: 10 }}>▼</span>
+      </summary>
+      <div style={{
+        position: "absolute", top: 38, left: 0, zIndex: 50, width: 280, maxWidth: "min(280px, calc(100vw - 32px))",
+        background: "#fff", border: "1px solid #cbd5e1", borderRadius: 10, padding: 8,
+        boxShadow: "0 12px 30px rgba(15,23,42,.18)",
+      }}>
+        {searchable && (
+          <input
+            autoFocus value={search} onChange={(event) => setSearch(event.target.value)}
+            placeholder="Пошук…"
+            style={{ width: "100%", height: 32, border: "1px solid #cbd5e1", borderRadius: 6, padding: "0 8px", marginBottom: 6 }}
+          />
+        )}
+        <div style={{ maxHeight: 260, overflowY: "auto" }}>
+          {visible.map((option) => (
+            <label key={option.value} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "6px 4px", cursor: "pointer", fontSize: 13 }}>
+              <input type="checkbox" checked={values.includes(option.value)} onChange={() => toggle(option.value)} />
+              <span>{option.label}</span>
+            </label>
+          ))}
+          {!visible.length && <div className="muted" style={{ padding: 8, fontSize: 12 }}>Немає варіантів</div>}
+        </div>
+        {values.length > 0 && (
+          <button type="button" className="btn btn-light" onClick={() => onChange([])} style={{ width: "100%", marginTop: 6, height: 30 }}>
+            Очистити вибір
+          </button>
+        )}
+      </div>
+    </details>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────
 // Додати постачальника: одна форма — картка + реквізити + моніторинг накладних
@@ -152,8 +218,10 @@ export default function Clients() {
   const [count, setCount] = useState(0);
   const [q, setQ] = useState("");
   const [loys, setLoys] = useState<string[]>([]);
-  const [src, setSrc] = useState("");
-  const [withPhone, setWithPhone] = useState(false);
+  const [sources, setSources] = useState<string[]>([]);
+  const [contactMethods, setContactMethods] = useState<string[]>([]);
+  const [materialIds, setMaterialIds] = useState<string[]>([]);
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({ sources: [], statuses: [], materials: [] });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [ordering, setOrdering] = useState("-created_at");
@@ -164,15 +232,27 @@ export default function Clients() {
     const qp = new URLSearchParams({ page: String(p), page_size: String(pageSize), ordering });
     if (q.trim()) qp.set("search", q.trim());
     if (loys.length) qp.set("loyalty_in", loys.join(","));
-    if (withPhone) qp.set("has_phone", "1");
-    if (src) qp.set("source", src);
+    if (sources.length) qp.set("source_in", sources.join(","));
+    if (contactMethods.length) qp.set("contact_in", contactMethods.join(","));
+    if (materialIds.length) qp.set("material_ids", materialIds.join(","));
     if (kind) qp.set("kind", kind);
     api.get<Paginated<Contact>>(`/api/contacts/?${qp.toString()}`).then((d) => {
       setRows(d.results); setCount(d.count ?? d.results.length);
     });
   }
-  useEffect(() => { load(1); setPage(1); /* eslint-disable-next-line */ }, [pageSize, loys, src, ordering, withPhone, kind]);
+  useEffect(() => {
+    api.get<FilterOptions>("/api/contacts/filter-options/").then(setFilterOptions);
+  }, []);
+  useEffect(() => { load(1); setPage(1); /* eslint-disable-next-line */ }, [pageSize, loys, sources, contactMethods, materialIds, ordering, kind]);
   const totalPages = Math.max(1, Math.ceil(count / pageSize));
+  const statusOptions = useMemo<SelectOption[]>(() => {
+    const defaults = ["VIP", "Активний", "Новий", "Сплячий"];
+    return Array.from(new Set([...defaults, ...filterOptions.statuses])).map((value) => ({ value, label: value }));
+  }, [filterOptions.statuses]);
+  const materialOptions = useMemo<SelectOption[]>(
+    () => filterOptions.materials.map((material) => ({ value: String(material.id), label: material.name })),
+    [filterOptions.materials],
+  );
   function apply() { setPage(1); load(1); }
   function go(p: number) { setPage(p); load(p); }
 
@@ -205,18 +285,16 @@ export default function Clients() {
       {/* фільтри */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10, background: "#fff", padding: 10, borderRadius: 8, border: "1px solid #e2e8f0" }}>
         <input placeholder={t("🔍 Имя / телефон / email","🔍 Імʼя / телефон / email")} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && apply()} style={{ flex: "1 1 220px", height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 10px" }} />
-        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-          <span className="muted" style={{ fontSize: 12 }}>{t("Статус","Статус")}:</span>
-          {["VIP", "Активний", "Новий", "Сплячий"].map((x) => {
-            const on = loys.includes(x);
-            return <span key={x} onClick={() => setLoys((c) => on ? c.filter((y) => y !== x) : [...c, x])} style={{ cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 14, border: "1px solid " + (on ? "#2563eb" : "#cbd5e1"), background: on ? "#2563eb" : "#fff", color: on ? "#fff" : "#475569" }}>{x}</span>;
-          })}
-        </div>
-        <input placeholder={t("Источник","Джерело")} value={src} onChange={(e) => setSrc(e.target.value)} onKeyDown={(e) => e.key === "Enter" && apply()} style={{ width: 130, height: 34, border: "1px solid #cbd5e1", borderRadius: 7, padding: "0 8px" }} />
+        <MultiSelect label={t("Статусы", "Статуси")} options={statusOptions} values={loys} onChange={setLoys} />
+        <MultiSelect label={t("Контакты", "Контакти")} options={[
+          { value: "phone", label: t("Есть телефон", "Є телефон") },
+          { value: "email", label: t("Есть email", "Є email") },
+        ]} values={contactMethods} onChange={setContactMethods} />
+        <MultiSelect label={t("Источники", "Джерела")} options={filterOptions.sources} values={sources} onChange={setSources} searchable />
+        <MultiSelect label={t("Покупали", "Купували")} options={materialOptions} values={materialIds} onChange={setMaterialIds} searchable />
         <select value={ordering} onChange={(e) => setOrdering(e.target.value)} style={{ height: 34, border: "1px solid #cbd5e1", borderRadius: 7 }}>
           <option value="-created_at">{t("Сначала новые","Спершу нові")}</option><option value="created_at">{t("Сначала старые","Спершу старі")}</option><option value="first_name">{t("По имени А-Я","За імʼям А-Я")}</option>
         </select>
-        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13 }}><input type="checkbox" checked={withPhone} onChange={(e) => setWithPhone(e.target.checked)} />{t("только с телефоном","лише з телефоном")}</label>
         <button className="btn btn-primary" onClick={apply}>{t("Найти","Знайти")}</button>
       </div>
       {/* пагінація */}
@@ -231,14 +309,26 @@ export default function Clients() {
       </div>
       <div className="tablewrap">
         <table>
-          <thead><tr><th>{t("Имя","Імʼя")}</th><th>{t("Телефон","Телефон")}</th><th>{t("Email","Email")}</th><th>{t("Источник","Джерело")}</th><th>{t("Лояльность","Лояльність")}</th><th>{t("Ответственный","Відповідальний")}</th><th>{t("Создано","Створено")}</th></tr></thead>
+          <thead><tr><th>{t("Имя","Імʼя")}</th><th>{t("Телефон","Телефон")}</th><th>{t("Email","Email")}</th><th>{t("Покупали","Купували")}</th><th>{t("Источник","Джерело")}</th><th>{t("Лояльность","Лояльність")}</th><th>{t("Ответственный","Відповідальний")}</th><th>{t("Создано","Створено")}</th></tr></thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 14 }}>{t("Ничего не найдено.","Нічого не знайдено.")}</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 14 }}>{t("Ничего не найдено.","Нічого не знайдено.")}</td></tr>}
             {rows.map((c) => (
               <tr key={c.id} onClick={() => nav(`/clients/${c.id}`)} style={{ cursor: "pointer" }}>
                 <td style={{ fontWeight: 500, color: "#1d4ed8" }}>{c.display_name}</td>
                 <td className="muted">{c.phone || "—"}</td>
                 <td className="muted">{c.email || "—"}</td>
+                <td title={(c.purchased_materials || []).map((material) => material.name).join(", ")} style={{ minWidth: 190 }}>
+                  {(c.purchased_materials || []).length ? (
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {(c.purchased_materials || []).slice(0, 2).map((material) => (
+                        <span key={material.id} style={{ fontSize: 11, padding: "2px 7px", borderRadius: 12, background: "#ecfdf5", color: "#047857", whiteSpace: "nowrap" }}>
+                          {material.name}
+                        </span>
+                      ))}
+                      {(c.purchased_materials || []).length > 2 && <span className="muted" style={{ fontSize: 11 }}>+{(c.purchased_materials || []).length - 2}</span>}
+                    </div>
+                  ) : <span className="muted">—</span>}
+                </td>
                 <td>{c.source ? <SourceChip source={c.source} /> : <span className="muted">—</span>}</td>
                 <td>{c.loyalty_tag ? <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: (LOY_COLOR[c.loyalty_tag] || "#64748b") + "22", color: LOY_COLOR[c.loyalty_tag] || "#64748b" }}>{c.loyalty_tag}</span> : <span className="muted">—</span>}</td>
                 <td className="muted">{c.owner_name || "—"}</td>

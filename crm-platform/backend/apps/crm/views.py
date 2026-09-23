@@ -377,6 +377,39 @@ class ContactViewSet(viewsets.ModelViewSet):
     filterset_fields = ["loyalty_tag", "source", "owner"]
     ordering_fields = ["created_at", "first_name", "last_touch_at"]
 
+    @action(detail=False, methods=["get"], url_path="filter-options")
+    def filter_options(self, request):
+        """Варіанти компактних фільтрів у списку клієнтів."""
+        from django.db.models import Q
+        visible_contacts = self.get_queryset().order_by()
+        actual_sources = set(
+            visible_contacts.exclude(source="").values_list("source", flat=True).distinct()
+        )
+        source_labels = dict(Lead.SOURCES)
+        ordered_sources = [
+            {"value": value, "label": label}
+            for value, label in Lead.SOURCES if value in actual_sources
+        ]
+        known_values = {item["value"] for item in ordered_sources}
+        ordered_sources.extend(
+            {"value": value, "label": source_labels.get(value, value)}
+            for value in sorted(actual_sources - known_values)
+        )
+        statuses = list(
+            visible_contacts.exclude(loyalty_tag="")
+            .values_list("loyalty_tag", flat=True).distinct().order_by("loyalty_tag")
+        )
+        materials = list(
+            DealItem.objects.filter(deal__contact__in=visible_contacts, product__isnull=False)
+            .filter(Q(deal__stage__is_won=True) | Q(deal__payments__is_paid=True))
+            .values("product_id", "product__name").distinct().order_by("product__name")
+        )
+        return Response({
+            "sources": ordered_sources,
+            "statuses": statuses,
+            "materials": [{"id": row["product_id"], "name": row["product__name"]} for row in materials],
+        })
+
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user
@@ -386,6 +419,33 @@ class ContactViewSet(viewsets.ModelViewSet):
         li = self.request.query_params.get("loyalty_in")
         if li:
             qs = qs.filter(loyalty_tag__in=[x for x in li.split(",") if x])
+
+        source_in = self.request.query_params.get("source_in")
+        if source_in:
+            qs = qs.filter(source__in=[x for x in source_in.split(",") if x])
+
+        contact_in = {x for x in (self.request.query_params.get("contact_in") or "").split(",") if x}
+        if contact_in:
+            from django.db.models import Q as _Qc
+            contact_q = _Qc(pk__in=[])
+            if "phone" in contact_in:
+                contact_q |= (_Qc(phone__isnull=False) & ~_Qc(phone=""))
+            if "email" in contact_in:
+                contact_q |= (_Qc(email__isnull=False) & ~_Qc(email=""))
+            qs = qs.filter(contact_q)
+
+        material_ids = []
+        for raw_id in (self.request.query_params.get("material_ids") or "").split(","):
+            if raw_id.strip().isdigit():
+                material_ids.append(int(raw_id))
+        if material_ids:
+            from django.db.models import Q as _Qm
+            qs = qs.filter(
+                _Qm(deals__items__product_id__in=material_ids)
+                & (_Qm(deals__stage__is_won=True) | _Qm(deals__payments__is_paid=True))
+            ).distinct()
+
+        # Зворотна сумісність зі старим посиланням списку.
         if self.request.query_params.get("has_phone") == "1":
             qs = qs.exclude(phone="")
         # ── ПРАВА ПО СЕГМЕНТАХ: видно лише дозволені типи (порожньо = всі) ──
@@ -400,7 +460,19 @@ class ContactViewSet(viewsets.ModelViewSet):
         _kf = (self.request.query_params.get("kind") or "").strip()
         if _kf:
             qs = qs.filter(kinds__contains=[_kf])
-        return qs
+
+        # Список покупок без N+1: лише товари з оплачених або успішно закритих угод.
+        from django.db.models import Prefetch, Q as _Qp
+        purchased_deals = (
+            Deal.objects.filter(_Qp(stage__is_won=True) | _Qp(payments__is_paid=True))
+            .distinct()
+            .prefetch_related(Prefetch(
+                "items",
+                queryset=DealItem.objects.filter(product__isnull=False).select_related("product"),
+                to_attr="_purchased_items",
+            ))
+        )
+        return qs.prefetch_related(Prefetch("deals", queryset=purchased_deals, to_attr="_purchased_deals"))
 
     def get_serializer_class(self):
         return ContactDetailSerializer if self.action == "retrieve" else ContactSerializer
