@@ -74,6 +74,11 @@ class Product(models.Model):
         "Витрата на 1 м²", max_digits=10, decimal_places=4, null=True, blank=True,
         help_text="Скільки одиниць товару треба на 1 м² для ФІНІШНОГО результату (з усіма шарами). "
                   "Якщо заповнено — у сделці кількість рахується автоматично: площа × витрата.")
+    # 23.09.2026 (Олег): тару під тонування і відвантаження підбираємо за обʼємом → потрібна щільність.
+    density_kg_l = models.DecimalField(
+        "Щільність, кг/л", max_digits=6, decimal_places=3, null=True, blank=True,
+        help_text="Скільки кілограмів у 1 літрі (з техлиста, напр. 1,5). Потрібна, щоб порахувати обʼєм "
+                  "і підібрати тару: літри = вага ÷ щільність.")
     is_active = models.BooleanField(default=True)
     category = models.ForeignKey("ProductCategory", null=True, blank=True, on_delete=models.SET_NULL, related_name="products")
     currency = models.CharField(max_length=8, default="UAH")

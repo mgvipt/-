@@ -116,7 +116,7 @@ def estimate(material_id, base, area):
         lines.append({"product_id": p.id, "name": p.name, "short": short_name(p.name), "qty": q, "unit": p.unit,
                       "role": "декоративний матеріал" if i == 0 else ROLE.get(p.id, "ґрунт"),
                       "price": Decimal(p.price), "total": (q * Decimal(p.price)).quantize(Decimal("0.01")),
-                      "consumption": cons, "is_material": i == 0})
+                      "consumption": cons, "density": p.density_kg_l, "is_material": i == 0})
     total = sum((l["total"] for l in lines), Decimal("0"))
     mat = next((l for l in lines if l["is_material"]), None)
     colors = COLORS_BY_ID.get(material_id, COLORS.get(base, ""))
@@ -147,10 +147,11 @@ def prompt_block(calc):
               _g(mat["total"]), _g(calc["total"] - mat["total"])))
     t = calc.get("tint") or tint_estimate(calc, None)
     if t and not t["need_color"]:
-        out += ("\nТОНУВАННЯ у колір %s%s (тонуємо %s — разом %s кг): послуга %s грн + колорант %s мл × 6 грн = %s грн. "
+        out += ("\nТОНУВАННЯ у колір %s%s (тонуємо %s — разом %s кг, тара: %s): послуга %s грн + колорант %s мл × 6 грн = %s грн. "
                 "Разом з тонуванням: %s грн."
                 % (calc.get("color") or "—", "" if calc.get("color_in_library") else " (цього коду немає в бібліотеці —"
-                   " рахую за кодом, який назвав клієнт)", t["what"], _g(t["kg"]), _g(t["service"]), _g(t["ml"]),
+                   " рахую за кодом, який назвав клієнт)", t["what"], _g(t["kg"]), t["tara_parts"],
+                   _g(t["service"]), _g(t["ml"]),
                    _g(t["toner"]), _g(calc["total"] + t["total"])))
     elif t and calc.get("color"):
         out += ("\nТОНУВАННЯ у колір %s: послуга %s грн; у цього кольору формула на два шари, тому точну суму "
@@ -182,7 +183,8 @@ TINT_MIN_KG = Decimal("5")
 # на 250 г матеріалу. На 1 кг множимо на 4: «03-1» → 4 мл/кг, «03-20» → 80 мл/кг, «03-05» (це 0,5) → 2 мл/кг.
 TONER_UAH_ML = Decimal("6")
 ML_PER_250G_TO_KG = Decimal("4")
-TARA_KG = Decimal("5")                # тонкошарові: одна тара ≈ 5 кг
+TARA_KG = Decimal("5")                # запасний варіант, якщо в картці немає щільності
+TARA_RX = re.compile(r"тара\s*([\d.,]+)\s*(?:л\b|л\.|$|·)", re.I)   # «Тара 3.4л», «ТАРА 2,2»
 TINT_PRODUCT = 1311                   # картка «Послуга тонування» (ціну ставить менеджер)
 
 # Код кольору з бібліотеки CRM: «FBK16-1,5», «CSK 01-21», «MSK03-5», «SLK12-0,1» —
@@ -256,6 +258,40 @@ def find_color(msgs, material_id=None):
     return None
 
 
+def tara_sizes():
+    """Обʼєми тар з каталогу (Тара 1л, 2,2, 3.4л, 5,5л…) — у літрах, за зростанням."""
+    from apps.warehouse.models import Product
+    out = set()
+    for name in Product.objects.filter(is_active=True, name__istartswith="тара").values_list("name", flat=True):
+        m = TARA_RX.search(name or "")
+        if m:
+            try:
+                v = Decimal(m.group(1).replace(",", "."))
+            except Exception:
+                continue
+            if v > 0:
+                out.add(v)
+    return sorted(out)
+
+
+def tara_for(kg, density, sizes=None):
+    """Скільки тар і яких треба на цю вагу: літри = вага ÷ щільність, беремо найменшу тару, в яку влазить.
+    Без щільності в картці рахуємо запасним способом — одна тара на кожні 5 кг."""
+    kg = Decimal(str(kg))
+    if not density or Decimal(str(density)) <= 0:
+        return int(math.ceil(kg / TARA_KG)) or 1, "", False
+    litres = (kg / Decimal(str(density))).quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+    sizes = sizes if sizes is not None else tara_sizes()
+    if not sizes:
+        return int(math.ceil(kg / TARA_KG)) or 1, "", False
+    for v in sizes:
+        if litres <= v:
+            return 1, "%s л" % _g(v), True
+    big = sizes[-1]
+    n = int(math.ceil(litres / big)) or 1
+    return n, "%s × %s л" % (n, _g(big)), True
+
+
 def tinted_lines(calc):
     """Що саме тонуємо (Олег 22.09.2026): декоративний матеріал І підкладка — Quartz Primer / Fondo Decoro /
     Second Layer. Primer Deep (ґрунт-концентрат глибокого проникнення) НЕ тонується."""
@@ -280,16 +316,22 @@ def tint_estimate(calc, dose250=None):
     if not lines:
         return None
     kg = sum((Decimal(str(l["qty"])) for l in lines), Decimal("0"))
+    sizes = tara_sizes()
+    tara, by_density, parts = 0, True, []
+    for l in lines:
+        n, label, ok = tara_for(l["qty"], l.get("density"), sizes)
+        tara += n
+        by_density = by_density and ok
+        parts.append("%s — %s" % (l["short"], label or ("%s тар" % n)))
     if calc.get("base") == "facture":
         service = TINT_SERVICE_MIN if kg < TINT_MIN_KG else (kg * TINT_PER_KG)
-        tara = len(lines)
     else:
-        tara = sum(int(math.ceil(Decimal(str(l["qty"])) / TARA_KG)) or 1 for l in lines)
         service = TINT_SERVICE_MIN * tara
     service = service.quantize(Decimal("0.01"))
     out = {"kg": kg, "service": service, "tara": tara, "need_color": dose250 is None,
            "ml": None, "toner": None, "total": None, "dose250": dose250,
-           "what": ", ".join(l["short"] for l in lines)}
+           "what": ", ".join(l["short"] for l in lines),
+           "tara_parts": "; ".join(parts), "tara_by_density": by_density}
     if dose250 is not None:
         ml = (kg * Decimal(dose250) * ML_PER_250G_TO_KG).quantize(Decimal("0.1"), rounding=ROUND_CEILING)
         out["ml"] = ml

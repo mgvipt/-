@@ -176,3 +176,21 @@ class TintTests(TestCase):
 
     def test_pieces_not_tinted(self):
         self.assertIsNone(vc.tint_estimate(self._calc("facture", "2", "шт"), Decimal("1")))
+
+
+class TaraTests(TestCase):
+    """23.09.2026 (Олег): «тару рахувати за щільністю» — літри = вага ÷ щільність,
+    беремо найменшу тару з каталогу, в яку влазить."""
+    def setUp(self):
+        from apps.warehouse.models import Product
+        for n, name in ((1, "Тара 1л"), (2.2, "ТАРА 2,2"), (3.4, "Тара 3.4л"), (5.5, "Тара 5,5л"), (10, "Тара 10л")):
+            Product.objects.create(name=name, price=Decimal("10"), unit="шт")
+
+    def test_tara_by_density(self):
+        self.assertEqual(vc.tara_for(Decimal("2.3"), Decimal("1.2"))[:2], (1, "2.2 л"))   # 1,92 л
+        self.assertEqual(vc.tara_for(Decimal("8.5"), Decimal("1.5"))[:2], (1, "10 л"))    # 5,67 л
+        self.assertEqual(vc.tara_for(Decimal("40"), Decimal("1.5"))[0], 3)                 # 26,7 л → 3 × 10 л
+
+    def test_without_density_fallback(self):
+        n, label, by_density = vc.tara_for(Decimal("12"), None)
+        self.assertEqual((n, by_density), (3, False))   # запасний варіант: 5 кг на тару
