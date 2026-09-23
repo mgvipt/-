@@ -48,13 +48,22 @@ def reference_summary(sources):
 
 def catalog():
  return {p.shop_specs['topciment_key']:p for p in Product.objects.filter(sku__startswith='TC-20260922-',is_active=True) if p.shop_specs.get('topciment_key')}
+def append_product_note(notes, product, field, system_id):
+ if product is None:return
+ specs=product.shop_specs
+ values=specs.get(field) if isinstance(specs,dict) else None
+ value=values.get(system_id) if isinstance(values,dict) else None
+ if not isinstance(value,str) or not value.strip():return
+ note=str(product.name)+': '+value.strip()[:500]
+ if note not in notes:notes.append(note)
+
 def calculate(system_id,area,reserve,basis='sale'):
  area=D(str(area));reserve=D(str(reserve))
  if not area.is_finite() or not reserve.is_finite() or not D('0')<area<=D('100000') or not D('0')<=reserve<=D('50'):raise ValueError('Вкажіть площу від 0 до 100 000 м² та запас 0–50%.')
  if basis not in ('sale','reference'):raise ValueError('Невідомий тип ціни.')
  system=next((s for s in SYSTEMS if s['id']==system_id),None)
  if not system:raise ValueError('Оберіть систему.')
- products=catalog();rows=[];total=D(0);missing=[]
+ products=catalog();rows=[];total=D(0);missing=[];notes=list(dict.fromkeys(NOTES))
  def unit_price(p):
   if basis=='sale':return p.price if p.price>0 and p.currency=='UAH' and p.shop_specs.get('price_status')!='quote_required' else None
   ref=p.shop_specs.get('reference_price') or {}
@@ -62,6 +71,7 @@ def calculate(system_id,area,reserve,basis='sale'):
  for key in system['materials']:
   p=products.get(key)
   owner=products.get('wt-mate' if key=='wt-kit' else 'dsv-a' if key=='dsv-kit' else key)
+  append_product_note(notes,owner,'calculator_rate_notes',system_id)
   rate=(owner.shop_specs.get('calculator_rates',{}).get(system_id) if owner else None)
   if key=='acricem' and owner:
    rate=positive(owner.shop_specs.get('primer_rate_l_m2'),allow_zero=True) if owner.unit=='л' else None
@@ -128,6 +138,8 @@ def calculate(system_id,area,reserve,basis='sale'):
   for dependency in keys:
    product=products.get(dependency)
    if not product:continue
+   if key=='acricem' and dependency in ('microbase','microdeck','microfino'):
+    append_product_note(notes,product,'calculator_resin_notes',system_id)
    facts=product.shop_specs.get('technical_facts') or {}
    review=facts.get('technical_review') or {}
    revisions=sorted({str(source['revision']) for group in ('density','consumption')
@@ -140,4 +152,4 @@ def calculate(system_id,area,reserve,basis='sale'):
   if row['needs_review']:
    technical_unverified.append({'key':key,'name':row['name'],'products':[p for p in linked if p['needs_review']]})
  reference=reference_summary(reference_sources)
- return {'system':system['name'],'area':float(area),'reserve':float(reserve),'basis':basis,'rows':rows,'known_total':round(float(total),2),'complete':not missing and not technical_unverified,'technical_unverified':technical_unverified,'missing':missing,'notes':NOTES,'reference_metadata':reference,'reference_date':reference['date'],'eur_uah':reference['eur_uah']}
+ return {'system':system['name'],'area':float(area),'reserve':float(reserve),'basis':basis,'rows':rows,'known_total':round(float(total),2),'complete':not missing and not technical_unverified,'technical_unverified':technical_unverified,'missing':missing,'notes':notes,'reference_metadata':reference,'reference_date':reference['date'],'eur_uah':reference['eur_uah']}
