@@ -147,7 +147,7 @@ class TopcimentCalculationTests(TestCase):
   self.assertIsNone(self.row('wt-kit')['pack'])
   self.assertIsNone(self.row('wt-kit')['subtotal'])
  def test_dsv_two_b_packs_are_included_in_price_and_yield(self):
-  self.product('dsv-a',unit='л',pack=4,rates={'microdeck-dsv':'0.2'},mixing={'b_pack_count':2})
+  self.product('dsv-a',unit='л',pack=4,rates={'microdeck-dsv':'0.2'},mixing={'b_pack_count':2,'a_to_b_mass':'2','density_a_kg_l':'1','density_b_kg_l':'1'})
   self.product('dsv-b',unit='л',pack=1)
   row=self.row('dsv-kit',system='microdeck-dsv',area=100)
   self.assertEqual(row['quantity'],20);self.assertEqual(row['pack'],6)

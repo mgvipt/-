@@ -14,7 +14,7 @@ NOTES=[
  'Витрата, фасування та пропорції беруться з карток матеріалів. Серії та фракції не взаємозамінні.',
  'Кількість Acricem враховує ґрунтування та смолу для кожного порошкового матеріалу обраної системи.',
  'Калькулятор рахує закупівельні комплекти захисту, а не дозування для замішування. Перевірте склад комплекту та технічну карту.',
- 'Вихід WT обмежений кількістю компонентів з урахуванням густини та пропорції за масою. Для DSV показаний номінальний обсяг закупівельного комплекту; комплектність звірте з постачальником.',
+ 'Вихід комплектів WT і DSV визначається пропорцією за масою та густиною обох компонентів. Якщо цих даних немає, кількість комплектів і вартість не розраховуються.',
  'Ґрунт XZ у схемі Efectto: точну марку й сумісність потрібно підтвердити. Позиції без підтвердженої номенклатури або норми не входять у підсумок вартості.',
 ]
 def positive(value,allow_zero=False):
@@ -100,12 +100,13 @@ def calculate(system_id,area,reserve,basis='sale'):
    if count is not None and count!=count.to_integral_value():raise ValueError('Кількість упаковок компонента B має бути цілою.')
    valid=a and b and a.pack_factor>0 and b.pack_factor>0 and a.unit=='л' and b.unit=='л' and count is not None
    parts=[(a.shop_specs['topciment_key'],a.pack_factor),(b.shop_specs['topciment_key'],b.pack_factor*count)] if valid else []
-   if valid and key=='wt-kit':
+   if valid:
     ratio=positive(mix.get('a_to_b_mass'));da=positive(mix.get('density_a_kg_l'));db=positive(mix.get('density_b_kg_l'))
     if all(v is not None for v in (ratio,da,db)):
      av=a.pack_factor;bv=b.pack_factor*count
      usable_a=min(av,bv*db*ratio/da);pack=usable_a+usable_a*da/ratio/db
-   elif valid and key=='dsv-kit':pack=a.pack_factor+b.pack_factor*count
+   if key=='dsv-kit' and pack is None:
+    notes.append('Topsealer DSV: потребу в суміші показано; для розрахунку комплектів потрібні підтверджені фасування, пропорція за масою та густина компонентів A і B.')
    name=MATERIALS[key]['name']
    unit='л суміші';prices=[]
    for part,q in parts:
@@ -142,11 +143,14 @@ def calculate(system_id,area,reserve,basis='sale'):
     append_product_note(notes,product,'calculator_resin_notes',system_id)
    facts=product.shop_specs.get('technical_facts') or {}
    review=facts.get('technical_review') or {}
+   system_reviews=product.shop_specs.get('calculator_system_review')
+   system_review=system_reviews.get(system_id) if isinstance(system_reviews,dict) else None
+   system_needs_review=isinstance(system_review,dict) and system_review.get('required') is True
    revisions=sorted({str(source['revision']) for group in ('density','consumption')
                      for fact in facts.get(group,[]) if isinstance(fact,dict)
                      for source in [fact.get('source') or {}] if source.get('revision')})
    linked.append({'id':product.id,'name':product.name,'updated_at':product.updated_at.isoformat(),
-                  'source_revisions':revisions,'needs_review':bool(review.get('required'))})
+                  'source_revisions':revisions,'needs_review':bool(review.get('required')) or system_needs_review})
   row['products']=linked
   row['needs_review']=any(p['needs_review'] for p in linked)
   if row['needs_review']:
