@@ -106,8 +106,14 @@ class GuardsTests(TestCase):
 class TintTests(TestCase):
     """Регламент Wallcov (Notion 27.07.2025) + формула кольору (Олег 22.09.2026):
     друга цифра коду — мл колоранта на 250 г; на 1 кг ×4."""
-    def _calc(self, base, qty, unit="кг"):
-        return {"ok": True, "base": base, "material": {"qty": Decimal(qty), "unit": unit}}
+    def _calc(self, base, qty, unit="кг", podkl=None):
+        """Тонуємо матеріал І підкладку (Quartz / Fondo / Second Layer); Primer Deep — ні."""
+        lines = [{"product_id": 1639, "short": "Матеріал", "qty": Decimal(qty), "unit": unit},
+                 {"product_id": vc.PRIMER_DEEP, "short": "Primer Deep 1", "qty": Decimal("2"), "unit": "шт"}]
+        if podkl:
+            lines.append({"product_id": 1582, "short": "Підкладка", "qty": Decimal(podkl), "unit": "кг"})
+        return {"ok": True, "base": base, "lines": lines,
+                "material": {"qty": Decimal(qty), "unit": unit}}
 
     def test_dose_from_color_code(self):
         self.assertEqual(vc.color_dose("1"), Decimal("1"))
@@ -128,14 +134,27 @@ class TintTests(TestCase):
         t3 = vc.tint_estimate(c, Decimal("0.5"))     # 03-05 → 2 мл/кг
         self.assertEqual(t3["ml"], Decimal("20.0"))
 
+    def test_podkladka_tinted_too(self):
+        """Олег 22.09.2026: «так само тонується і підкладка (кварц-ґрунт, фондо або секонд)»."""
+        t = vc.tint_estimate(self._calc("facture", "10", podkl="4"), Decimal("1"))
+        self.assertEqual(t["kg"], Decimal("14"))         # 10 матеріалу + 4 підкладки
+        self.assertEqual(t["ml"], Decimal("56.0"))       # 14 кг × 4 мл
+        self.assertEqual(t["service"], Decimal("280.00"))
+        self.assertNotIn("Primer Deep", t["what"])       # ґрунт-концентрат не тонується
+
+    def test_thin_tara_per_position(self):
+        t = vc.tint_estimate(self._calc("thin", "2.3", podkl="3"), Decimal("1"))
+        self.assertEqual(t["tara"], 2)                    # матеріал + підкладка
+        self.assertEqual(t["service"], Decimal("200.00"))
+
     def test_without_color_no_toner_sum(self):
         t = vc.tint_estimate(self._calc("facture", "10"))
         self.assertTrue(t["need_color"])
         self.assertIsNone(t["toner"])
 
-    def test_thin_per_tara(self):
+    def test_thin_big_volume_two_tara(self):
         t = vc.tint_estimate(self._calc("thin", "6.5"), Decimal("1"))
-        self.assertEqual(t["tara"], 2)
+        self.assertEqual(t["tara"], 2)                    # 6,5 кг матеріалу = дві тари
         self.assertEqual(t["service"], Decimal("200.00"))
 
     def test_find_color_in_dialog(self):

@@ -147,10 +147,11 @@ def prompt_block(calc):
               _g(mat["total"]), _g(calc["total"] - mat["total"])))
     t = calc.get("tint") or tint_estimate(calc, None)
     if t and not t["need_color"]:
-        out += ("\nТОНУВАННЯ у колір %s%s: послуга %s грн + колорант %s мл × 6 грн = %s грн. Разом з тонуванням: %s грн."
+        out += ("\nТОНУВАННЯ у колір %s%s (тонуємо %s — разом %s кг): послуга %s грн + колорант %s мл × 6 грн = %s грн. "
+                "Разом з тонуванням: %s грн."
                 % (calc.get("color") or "—", "" if calc.get("color_in_library") else " (цього коду немає в бібліотеці —"
-                   " рахую за кодом, який назвав клієнт)", _g(t["service"]), _g(t["ml"]), _g(t["toner"]),
-                   _g(calc["total"] + t["total"])))
+                   " рахую за кодом, який назвав клієнт)", t["what"], _g(t["kg"]), _g(t["service"]), _g(t["ml"]),
+                   _g(t["toner"]), _g(calc["total"] + t["total"])))
     elif t and calc.get("color"):
         out += ("\nТОНУВАННЯ у колір %s: послуга %s грн; у цього кольору формула на два шари, тому точну суму "
                 "колоранта порахує менеджер — так і скажи клієнту, суму не вигадуй."
@@ -255,24 +256,40 @@ def find_color(msgs, material_id=None):
     return None
 
 
+def tinted_lines(calc):
+    """Що саме тонуємо (Олег 22.09.2026): декоративний матеріал І підкладка — Quartz Primer / Fondo Decoro /
+    Second Layer. Primer Deep (ґрунт-концентрат глибокого проникнення) НЕ тонується."""
+    out = []
+    for l in (calc.get("lines") or []):
+        if l.get("product_id") == PRIMER_DEEP:
+            continue
+        if (l.get("unit") or "").strip(". ").lower() not in ("кг", "л"):
+            continue
+        out.append(l)
+    return out
+
+
 def tint_estimate(calc, dose250=None):
-    """Тонування обʼєму. Послуга — за регламентом; тонер — за формулою кольору (dose250 мл на 250 г).
-    Без коду кольору тонер не рахуємо (need_color=True) — питаємо код у клієнта."""
+    """Тонування обʼєму. Тонуємо матеріал + підкладку.
+    Послуга: фактурні — до 5 кг 100 грн, від 5 кг вага × 20 грн/кг; тонкошарові — 100 грн за КОЖНУ тару (≈5 кг).
+    Колорант: доза з коду кольору (мл на 250 г) × 4 × вага, ціна 6 грн/мл.
+    Без коду кольору суму колоранта не рахуємо (need_color=True)."""
     if not calc or not calc.get("ok"):
         return None
-    mat = calc["material"]
-    if (mat.get("unit") or "").strip(". ").lower() not in ("кг", "л"):
+    lines = tinted_lines(calc)
+    if not lines:
         return None
-    kg = Decimal(str(mat["qty"]))
+    kg = sum((Decimal(str(l["qty"])) for l in lines), Decimal("0"))
     if calc.get("base") == "facture":
         service = TINT_SERVICE_MIN if kg < TINT_MIN_KG else (kg * TINT_PER_KG)
-        tara = 1
+        tara = len(lines)
     else:
-        tara = int(math.ceil(kg / TARA_KG)) or 1
+        tara = sum(int(math.ceil(Decimal(str(l["qty"])) / TARA_KG)) or 1 for l in lines)
         service = TINT_SERVICE_MIN * tara
     service = service.quantize(Decimal("0.01"))
     out = {"kg": kg, "service": service, "tara": tara, "need_color": dose250 is None,
-           "ml": None, "toner": None, "total": None, "dose250": dose250}
+           "ml": None, "toner": None, "total": None, "dose250": dose250,
+           "what": ", ".join(l["short"] for l in lines)}
     if dose250 is not None:
         ml = (kg * Decimal(dose250) * ML_PER_250G_TO_KG).quantize(Decimal("0.1"), rounding=ROUND_CEILING)
         out["ml"] = ml
