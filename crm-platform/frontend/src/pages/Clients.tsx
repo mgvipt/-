@@ -308,7 +308,7 @@ export default function Clients() {
         <button className="btn btn-light" disabled={page >= totalPages} onClick={() => go(page + 1)}>→</button>
       </div>
       <div className="tablewrap">
-        <table>
+        <table style={{ minWidth: 1120 }}>
           <thead><tr><th>{t("Имя","Імʼя")}</th><th>{t("Телефон","Телефон")}</th><th>{t("Email","Email")}</th><th>{t("Покупали","Купували")}</th><th>{t("Источник","Джерело")}</th><th>{t("Лояльность","Лояльність")}</th><th>{t("Ответственный","Відповідальний")}</th><th>{t("Создано","Створено")}</th></tr></thead>
           <tbody>
             {rows.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 14 }}>{t("Ничего не найдено.","Нічого не знайдено.")}</td></tr>}
