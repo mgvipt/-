@@ -38,17 +38,43 @@ def after_yulia_handoff(sender, instance, created, **kwargs):
         pass
 
 
+PROMISE_RX = __import__("re").compile(
+    r"покажу[^.\n]{0,40}інтер|виглядає[^.\n]{0,20}інтер|надішлю[^.\n]{0,20}фото|скину[^.\n]{0,20}фото|"
+    r"фото[^.\n]{0,20}інтерʼєр|фото[^.\n]{0,20}інтер'єр", __import__("re").I)
+
+
 def _photos_after_link(msg):
-    """Юля дала посилання на сторінку матеріалу → CRM надсилає 2-3 фото цього матеріалу в інтерʼєрі.
-    Те саме, що робить продавець CRM у своїх відповідях (одне фото на ефект, один раз на діалог)."""
+    """Юля пообіцяла показати матеріал → CRM надсилає 2-3 фото цього матеріалу в інтерʼєрі.
+    23.09.2026 (Олег): «якщо каже, що скине фото в директ — фото має прийти». Працює і коли вона дала
+    посилання на сторінку матеріалу, і коли просто написала «покажу, як виглядає в інтерʼєрі»."""
     from django.db import transaction
-    from .ai_reply import _maybe_effect_photos, _manager_active, _limits
+    from .ai_reply import PAGE_RX, _maybe_effect_photos, _manager_active, _limits, _send
     try:
         conv = msg.conversation
         hours, _max = _limits()
         if _manager_active(conv, hours):
             return                      # менеджер у чаті — нічого не докидаємо
         text = msg.text or ""
-        transaction.on_commit(lambda: _maybe_effect_photos(conv, text))
+        if PAGE_RX.search(text):
+            transaction.on_commit(lambda: _maybe_effect_photos(conv, text))
+            return
+        if not PROMISE_RX.search(text):
+            return
+        from apps.knowledge.volume_calc import COLORS, COLORS_BY_ID, find_material
+        mat = find_material([m.text for m in conv.messages.filter(internal=False).order_by("-id")[:12]])
+        if not mat:
+            return
+        url = COLORS_BY_ID.get(mat[0], COLORS.get(mat[1], ""))
+        if not url:
+            return
+        follow = "Ось уся палітра, фото і відео: %s\n\nНапишіть код кольору, який сподобався 🎨" % url
+
+        def _go():
+            _maybe_effect_photos(conv, follow)      # спершу фото
+            try:
+                _send(conv, follow)                 # потім сторінка кольорів
+            except Exception:
+                pass
+        transaction.on_commit(_go)
     except Exception:
         pass
