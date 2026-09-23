@@ -2,10 +2,10 @@ import json
 import re
 import uuid
 from datetime import timedelta
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 from django.db import transaction
 from django.db.models import Count, Q, Sum
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -22,7 +22,50 @@ def permitted(user, code):
     return user.is_authenticated and (user.is_superuser or user.has_perm_code(code))
 
 
+def staff_training_access(user):
+    return (user.is_authenticated and user.is_active
+            and getattr(user, 'account_kind', None) == 'staff'
+            and permitted(user, 'inbox.view'))
+
+
+def localized_article_url(instruction, lang):
+    candidate = instruction.article_url or ''
+    try:
+        parts = urlsplit(candidate)
+        safe = (parts.scheme == 'https' and parts.netloc == 'wallcov.com.ua'
+                and parts.path.startswith('/porady-ta-idei/'))
+    except ValueError:
+        safe = False
+    parts = urlsplit(candidate if safe else instruction.public_url)
+    query = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True) if key != 'lang']
+    if lang == 'ru':
+        query.append(('lang', 'ru'))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def localized_sales_guide(content, lang):
+    """Internal editorial fields only; no prices, product facts or arbitrary keys."""
+    guides = content.get('sales_guide', {})
+    raw = guides.get(lang) if isinstance(guides, dict) else None
+    if not isinstance(raw, dict):
+        return None
+    def text(value, limit):
+        return value.strip()[:limit] if isinstance(value, str) else ''
+    sections = raw.get('sections', [])
+    sections = sections if isinstance(sections, list) else []
+    result = {'title': text(raw.get('title'), 160), 'intro': text(raw.get('intro'), 2000),
+              'sections': [{'title': text(x.get('title'), 160), 'body': text(x.get('body'), 6000)}
+                           for x in sections[:16] if isinstance(x, dict) and text(x.get('body'), 6000)]}
+    return result if result['intro'] or result['sections'] else None
+
+
+def reject_staff_instruction(instruction):
+    if instruction.content.get('kind') == 'staff_training':
+        raise Http404
+
+
 def serialize(i,lang="uk"):
+    reject_staff_instruction(i)
     from .client_materials import material_article
     article = material_article(i,lang)
     if article:
@@ -51,8 +94,14 @@ class LibraryView(APIView):
         lang='ru' if request.GET.get('lang')=='ru' else 'uk'
         from .client_materials import product_texts
         from apps.warehouse.technical_facts import technical_data
+        article_links = {}
+        for article_instruction in Instruction.objects.filter(status='published', content__kind='client_material').prefetch_related('products'):
+            primary_id = article_instruction.content.get('primary_product_id')
+            if any(p.pk == primary_id and p.is_active for p in article_instruction.products.all()):
+                article_links[primary_id] = localized_article_url(article_instruction, lang)
         training = []
-        for i in Instruction.objects.filter(status='draft', content__kind='staff_training').prefetch_related('products__images').order_by('title'):
+        training_entries = Instruction.objects.filter(status='draft', content__kind='staff_training').prefetch_related('products__images').order_by('title') if staff_training_access(request.user) else []
+        for i in training_entries:
             products = []
             for p in i.products.all():
                 if not p.is_active:
@@ -65,13 +114,14 @@ class LibraryView(APIView):
                     'full_description': localized['full_description'],
                     'benefits': p.shop_benefits, 'consumption': str(p.consumption_per_m2) if p.consumption_per_m2 else None,
                     'instruction_url': p.shop_instruction_url, 'video_url': p.shop_video_url,
+                    'article_url': article_links.get(p.id, ''),
                     'updated_at': p.updated_at.isoformat(),
                     'images': [{'id': im.id, 'url': '/api/products/%d/image/%d/' % (p.id, im.id),
                         'alt_text': im.alt_text, 'is_primary': im.is_primary} for im in p.images.all()]})
-            training.append({'id': i.id, 'date': i.updated_at.date().isoformat(),
+            training.append({'id': i.id, 'sales_guide': localized_sales_guide(i.content, lang), 'date': i.updated_at.date().isoformat(),
                 'title': (products[0]['name'] if lang=='ru' and products else i.title), 'products': products,
                 'category': i.content.get('category', ''), 'section_key': i.content.get('section_key', 'materials_prep')})
-        data={'items':[serialize(i,lang) for i in Instruction.objects.filter(status='published').prefetch_related('products__images')], 'training': training}
+        data={'items':[serialize(i,lang) for i in Instruction.objects.filter(status='published').exclude(content__kind='staff_training').prefetch_related('products__images')], 'training': training}
         import hashlib
         from django.core.serializers.json import DjangoJSONEncoder
         version=hashlib.sha256(json.dumps(data,cls=DjangoJSONEncoder,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
@@ -84,6 +134,7 @@ class LibraryView(APIView):
 def guide(request,slug):
     lang='ru' if request.GET.get('lang')=='ru' else 'uk'
     i=get_object_or_404(Instruction,slug=slug,status='published')
+    reject_staff_instruction(i)
     if i.content.get('kind') == 'client_material':
         from .client_materials import material_article
         article = material_article(i,lang)
@@ -114,6 +165,7 @@ def resolve_tracking(i,params):
 @require_POST
 def track(request,slug):
     i=get_object_or_404(Instruction,slug=slug,status='published')
+    reject_staff_instruction(i)
     from django.core.cache import cache
     import hashlib
     key='guide-track:'+hashlib.sha256(request.META.get('REMOTE_ADDR','').encode()).hexdigest()
@@ -216,6 +268,7 @@ def public_instruction(request,slug):
         response['Cache-Control']='no-store'
         return response
     i=get_object_or_404(Instruction,slug=slug,status='published')
+    reject_staff_instruction(i)
     data=serialize(i,lang)
     from .client_materials import material_article
     article=material_article(i,lang)
@@ -255,6 +308,7 @@ def serialize_keyword_automation(rule):
 def public_form(request, slug):
     form = get_object_or_404(LeadForm.objects.select_related('instruction'), slug=slug,
                              enabled=True, instruction__status='published')
+    reject_staff_instruction(form.instruction)
     response = JsonResponse(serialize_form(form))
     response['Cache-Control'] = 'public, max-age=60'
     return response

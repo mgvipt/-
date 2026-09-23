@@ -368,3 +368,80 @@ class TopcimentReferenceMetadataTests(TestCase):
   self.assertEqual(result['reference_metadata']['status'],'unknown')
   self.assertIsNone(result['reference_date']);self.assertIsNone(result['eur_uah'])
   self.assertIsNone(result['rows'][0]['subtotal']);self.assertFalse(result['complete'])
+
+
+class InternalSalesGuideTests(ProductTrainingMirrorTests):
+ def setUp(self):
+  super().setUp()
+  self.user.account_kind='staff'; self.user.save(update_fields=['account_kind'])
+  self.entry.content['sales_guide']={
+   'uk':{'title':'Продаж','intro':'STAFF_ONLY_UK','sections':[{'title':'Запитання','body':'Що важливо?','secret':'omit'}],'price':'stale'},
+   'ru':{'title':'Продажа','intro':'STAFF_ONLY_RU','sections':[]}}
+  self.entry.save()
+ def test_staff_locales_and_allowlist(self):
+  for lang,sentinel in [('uk','STAFF_ONLY_UK'),('ru','STAFF_ONLY_RU')]:
+   req=APIRequestFactory().get('/api/content-library/instructions/',{'lang':lang}); force_authenticate(req,user=self.user)
+   entry=LibraryView.as_view()(req).data['training'][0]
+   self.assertEqual(entry['sales_guide']['intro'],sentinel)
+   self.assertEqual(set(entry['sales_guide']),{'title','intro','sections'})
+   for section in entry['sales_guide']['sections']:self.assertEqual(set(section),{'title','body'})
+ def test_nonstaff_and_inactive_have_no_training(self):
+  for kind,active in [('client',True),('staff',False)]:
+   self.user.account_kind=kind;self.user.is_active=active
+   result=self.read()
+   self.assertNotIn('STAFF_ONLY',str(result.data))
+   if result.status_code==200:self.assertEqual(result.data['training'],[])
+ def test_staff_without_inbox_permission_is_denied(self):
+  self.user.is_superuser=False
+  with patch.object(User,'has_perm_code',return_value=False):
+   self.assertEqual(self.read().status_code,403)
+ def test_staff_instruction_never_public_even_published(self):
+  from .views import serialize
+  from django.http import Http404
+  for status in ['draft','published']:
+   self.entry.status=status;self.entry.save()
+   for url in [f'/api/content-library/public/{self.entry.slug}/',f'/instructions/{self.entry.slug}/']:
+    self.assertEqual(self.client.get(url).status_code,404)
+   with self.assertRaises(Http404):serialize(self.entry)
+   self.assertEqual(self.read().data['items'],[])
+ def test_guide_version_and_price_are_current(self):
+  first=self.read().data
+  self.entry.content['sales_guide']['uk']['intro']='Changed';self.entry.save()
+  second=self.read().data
+  self.assertNotEqual(first['version'],second['version'])
+  Product.objects.filter(pk=self.product.pk).update(price='333.00')
+  second=self.read().data
+  self.assertNotEqual(first['version'],second['version'])
+  self.assertEqual(second['training'][0]['products'][0]['price'],'333.00')
+  self.assertEqual(second['training'][0]['sales_guide']['intro'],'Changed')
+ def test_article_link_exact_primary_and_localized(self):
+  article=Instruction.objects.create(slug='client-exact',status='published',content={'kind':'client_material','primary_product_id':self.product.pk})
+  article.products.add(self.product)
+  self.assertEqual(self.read().data['training'][0]['products'][0]['article_url'],article.public_url)
+  article.content['primary_product_id']=self.product.pk+99;article.save()
+  self.assertEqual(self.read().data['training'][0]['products'][0]['article_url'],'')
+ def test_invalid_types_and_limits(self):
+  from .views import localized_sales_guide
+  self.assertIsNone(localized_sales_guide({'sales_guide':[]},'uk'))
+  self.assertIsNone(localized_sales_guide({'sales_guide':{'uk':{'intro':42,'sections':'bad'}}},'uk'))
+  out=localized_sales_guide({'sales_guide':{'uk':{'title':'t'*200,'intro':'i'*3000,'sections':[{'title':'t'*200,'body':'b'*7000}]*20}}},'uk')
+  self.assertEqual(len(out['title']),160);self.assertEqual(len(out['intro']),2000)
+  self.assertEqual(len(out['sections']),16);self.assertEqual(len(out['sections'][0]['body']),6000)
+
+ def test_exact_canonical_article_url_ru_and_unsafe_fallback(self):
+  from .views import localized_article_url
+  article=Instruction.objects.create(slug='canonical-url',status='published',article_url='https://wallcov.com.ua/porady-ta-idei/material-123',content={'kind':'client_material','primary_product_id':self.product.pk})
+  article.products.add(self.product)
+  req=APIRequestFactory().get('/api/content-library/instructions/',{'lang':'ru'});force_authenticate(req,user=self.user)
+  self.assertEqual(LibraryView.as_view()(req).data['training'][0]['products'][0]['article_url'],'https://wallcov.com.ua/porady-ta-idei/material-123?lang=ru')
+  article.article_url='https://wallcov.com.ua/porady-ta-idei/material-123?lang=uk&ref=guide'
+  self.assertEqual(localized_article_url(article,'ru'),'https://wallcov.com.ua/porady-ta-idei/material-123?ref=guide&lang=ru')
+  for url in ['', 'https://wallcov.com.ua.evil.test/porady-ta-idei/x','https://wallcov.com.ua@evil.test/porady-ta-idei/x','https://wallcov.com.ua/private/x']:
+   article.article_url=url
+   self.assertEqual(localized_article_url(article,'ru'),article.public_url+'?lang=ru')
+ def test_public_material_index_excludes_published_staff(self):
+  self.entry.status='published';self.entry.save()
+  response=self.client.get('/api/content-library/public/material-index/')
+  self.assertEqual(response.status_code,200)
+  self.assertNotIn('STAFF_ONLY',response.content.decode())
+  self.assertNotIn(self.entry.slug,response.content.decode())

@@ -1,13 +1,16 @@
 import { useState } from "react";
+import InternalMaterialDocuments from "../InternalMaterialDocuments";
 import ProductTechnicalFacts, {type Technical} from "./ProductTechnicalFacts";
+interface SalesGuide { title: string; intro: string; sections: {title:string;body:string}[]; }
 export interface Entry {
+  sales_guide?: SalesGuide | null;
   products?: MaterialProduct[];
   id: number; date: string; category?: string; section_key?: string; section?: string;
   title_uk?: string; title_ru?: string; body_uk?: string; body_ru?: string;
   title?: string; body?: string; // legacy fallback
 }
 
-interface MaterialProduct { technical?:Technical; id:number;name:string;price:string;currency:string;unit:string;description:string;short_description:string;full_description:string;benefits:string[];consumption:string|null;instruction_url:string;video_url:string;images:{id:number;url:string;alt_text:string;is_primary:boolean}[]; }
+interface MaterialProduct { article_url?:string; technical?:Technical; id:number;name:string;price:string;currency:string;unit:string;description:string;short_description:string;full_description:string;benefits:string[];consumption:string|null;instruction_url:string;video_url:string;images:{id:number;url:string;alt_text:string;is_primary:boolean}[]; }
 function materialPrice(p:MaterialProduct,lang:string) {
  return Number(p.price)>0?`${Number(p.price).toLocaleString(lang==="uk"?"uk-UA":"ru-RU")} ${p.currency==="UAH"?"грн":p.currency} / ${p.unit}`:(lang==="uk"?"Ціну уточнюємо":"Цену уточняем");
 }
@@ -20,10 +23,12 @@ function MaterialVariant({p,lang}:{p:MaterialProduct;lang:string}) {
 }
 function ProductLearning({p,lang}:{p:MaterialProduct;lang:string}) {
  const uk=lang==="uk";
+ const [documentsOpen,setDocumentsOpen]=useState(false);
  const mainText = p.full_description?.trim() || p.description?.trim() || p.short_description?.trim() || "";
  const legacyText = p.description?.trim() && p.description.trim() !== mainText ? p.description.trim() : "";
  return <article style={{borderTop:"1px solid #e2e8f0",paddingTop:12,marginTop:12}}>
  <h4 style={{margin:"0 0 8px"}}>{p.name}</h4>
+ <details onToggle={e=>setDocumentsOpen(e.currentTarget.open)} style={{margin:"12px 0"}}><summary style={{cursor:"pointer",fontWeight:700}}>{uk?"Техлисти та документи матеріалу":"Техлисты и документы материала"}</summary>{documentsOpen&&<InternalMaterialDocuments key={`documents:${p.id}:${lang}`} productId={p.id} lang={uk?"uk":"ru"}/>}</details>
  <ProductTechnicalFacts data={p.technical} lang={uk?"uk":"ru"}/>
  <p style={{fontWeight:700,fontSize:17}}>{materialPrice(p,lang)}</p>
  {p.consumption&&<p>{uk?"Витрата":"Расход"}: {Number(p.consumption).toLocaleString("uk-UA")} {p.unit}/м²</p>}
@@ -36,7 +41,7 @@ function ProductLearning({p,lang}:{p:MaterialProduct;lang:string}) {
  })}</div>}
  {legacyText && <details style={{marginTop:12}}><summary style={{cursor:"pointer",fontWeight:700}}>{uk?"Додаткові відомості про матеріал":"Дополнительные сведения о материале"}</summary><div>{legacyText.split("\n").map((line,i)=>renderLine(line,i))}</div></details>}
  {!!p.benefits?.length&&<ul>{p.benefits.map((b,i)=><li key={i}>{b}</li>)}</ul>}
- <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:10}}><a href={`/warehouse?product=${p.id}`} target="_blank" rel="noreferrer">{uk?"Картка товару":"Карточка товара"}</a>{p.instruction_url&&/^https?:/.test(p.instruction_url)&&<a href={p.instruction_url} target="_blank" rel="noreferrer">{uk?"Інструкція":"Инструкция"}</a>}{p.video_url&&/^https?:/.test(p.video_url)&&<a href={p.video_url} target="_blank" rel="noreferrer">{uk?"Відео нанесення":"Видео нанесения"}</a>}</div>
+ <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:10}}><a href={`/warehouse?product=${p.id}`} target="_blank" rel="noreferrer">{uk?"Картка товару":"Карточка товара"}</a>{p.article_url&&/^https:\/\/wallcov\.com\.ua\//.test(p.article_url)&&<a href={p.article_url} target="_blank" rel="noreferrer">{uk?"Стаття для клієнта":"Статья для клиента"}</a>}{p.instruction_url&&/^https?:/.test(p.instruction_url)&&<a href={p.instruction_url} target="_blank" rel="noreferrer">{uk?"Інструкція":"Инструкция"}</a>}{p.video_url&&/^https?:/.test(p.video_url)&&<a href={p.video_url} target="_blank" rel="noreferrer">{uk?"Відео нанесення":"Видео нанесения"}</a>}</div>
  </article>;
 }
 
@@ -122,6 +127,15 @@ export function MaterialTraining({ items, lang }: { items: Entry[]; lang: string
         if (!entries.length) return null;
         return <div key={b}>{b && <h4>{c.key === "topciment" ? topLabels[b] : b === "anticatura" ? "ANTICATURA" : "WALLCOV"}</h4>}{entries.map(e => <details key={e.id} style={{ padding: "12px 14px", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 8 }}>
           <summary style={{ cursor: "pointer", fontWeight: 700 }}>{titleOf(e)}</summary>
+          {e.sales_guide && <section aria-label={uk?"Як продати матеріал":"Как продать материал"} style={{padding:16,marginTop:16,border:"1px solid #b9d8c5",borderRadius:10,background:"#f5faf7"}}>
+            <h4 style={{margin:"0 0 8px"}}>{e.sales_guide.title || (uk?"Як продати матеріал":"Как продать материал")}</h4>
+            <p style={{fontSize:13,color:"#475569"}}>{uk?"Для менеджера: підготуйте консультацію. Клієнту надсилайте статтю з бібліотеки.":"Для менеджера: подготовьте консультацию. Клиенту отправляйте статью из библиотеки."}</p>
+            {e.sales_guide.intro&&<p>{e.sales_guide.intro}</p>}
+            {e.sales_guide.sections.map((section,index)=><details key={index} open={index===0} style={{borderTop:"1px solid #d5e5da",padding:"10px 0"}}>
+              <summary style={{cursor:"pointer",fontWeight:700}}>{section.title}</summary>
+              <div style={{fontSize:14,lineHeight:1.6}}>{section.body.split("\n").map((line,i)=>renderLine(line,i))}</div>
+            </details>)}
+          </section>}
           {(e.products?.length||0)>1?<>
             {e.products?.[0].short_description?.trim()&&<div style={{fontSize:14,color:"#475569",margin:"10px 0"}}>{e.products[0].short_description.split("\n").map((line,i)=>renderLine(line,i))}</div>}
             <p className="muted" style={{fontSize:13,margin:"10px 0 6px"}}>{uk?"Оберіть варіант, щоб переглянути опис і фото.":"Выберите вариант, чтобы посмотреть описание и фото."}</p>
