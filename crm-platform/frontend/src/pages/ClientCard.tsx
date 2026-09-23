@@ -208,31 +208,43 @@ export default function ClientCard() {
         const subscription = c.content_subscription;
         const preferred = CONTENT_CHANNELS[subscription.preferred_channel] || subscription.preferred_channel || t("Не выбран", "Не обрано");
         const preferredIdentity = subscription.identities.find((identity) => identity.kind === subscription.preferred_channel);
-        return <div className="panel" data-testid="client-content-subscription" style={{ margin: "0 0 8px", padding: 12, borderColor: subscription.marketing_consent ? "#86efac" : "#e2e8f0", background: subscription.marketing_consent ? "#f0fdf4" : "#f8fafc" }}>
-          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ minWidth: 190 }}>
-              <div className="label">{t("Подписка на материалы Wallcov", "Підписка на матеріали Wallcov")}</div>
-              <b style={{ color: subscription.marketing_consent ? "#15803d" : "#92400e" }}>{subscription.marketing_consent ? t("Сообщения разрешены", "Повідомлення дозволені") : t("Только текущий запрос", "Лише поточний запит")}</b>
+        const historyCount = subscription.history?.length || 0;
+        return <details className="panel" data-testid="client-content-subscription" style={{ margin: "0 0 8px", padding: 0, borderColor: subscription.marketing_consent ? "#86efac" : "#e2e8f0", background: subscription.marketing_consent ? "#f0fdf4" : "#f8fafc", overflow: "hidden" }}>
+          <summary style={{ minHeight: 46, padding: "9px 12px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", listStyle: "none" }}>
+            <span aria-hidden="true" style={{ fontSize: 16 }}>▸</span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <b>{t("Подписка и материалы", "Підписка та матеріали")}</b>
+              <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>
+                {subscription.marketing_consent ? t("рассылка разрешена", "розсилку дозволено") : t("только текущий запрос", "лише поточний запит")}
+                {historyCount > 0 ? ` · ${historyCount} ${t("событий", "подій")}` : ""}
+                {preferred ? ` · ${preferred}` : ""}
+              </span>
             </div>
-            <div><small className="muted">{t("Удобный канал", "Зручний канал")}</small><br /><b>{preferred}</b> <small>{preferredIdentity?.verified ? "· " + t("подтверждён", "підтверджено") : "· " + t("выбран клиентом", "обрано клієнтом")}</small></div>
-            <div><small className="muted">{t("Запросил", "Запитував")}</small><br /><b>{subscription.instructions.join(", ") || "—"}</b></div>
-            <div><small className="muted">{t("Источник", "Джерело")}</small><br /><b>{CONTENT_SOURCES[subscription.source] || subscription.source || "—"}</b></div>
-            <button className="btn btn-primary" style={{ marginLeft: "auto", height: 32 }} onClick={() => setChatOpen(true)}>{t("Написать клиенту", "Написати клієнту")}</button>
+            <span className="btn btn-light" style={{ height: 28, padding: "4px 10px", whiteSpace: "nowrap" }}>{t("Открыть", "Відкрити")}</span>
+          </summary>
+          <div style={{ borderTop: "1px solid #dbe4dc", padding: 12 }}>
+            <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+              <div><small className="muted">{t("Статус", "Статус")}</small><br /><b style={{ color: subscription.marketing_consent ? "#15803d" : "#92400e" }}>{subscription.marketing_consent ? t("Сообщения разрешены", "Повідомлення дозволені") : t("Только текущий запрос", "Лише поточний запит")}</b></div>
+              <div><small className="muted">{t("Удобный канал", "Зручний канал")}</small><br /><b>{preferred}</b> <small>{preferredIdentity?.verified ? "· " + t("подтверждён", "підтверджено") : "· " + t("выбран клиентом", "обрано клієнтом")}</small></div>
+              <div><small className="muted">{t("Запросил", "Запитував")}</small><br /><b>{subscription.instructions.join(", ") || "—"}</b></div>
+              <div><small className="muted">{t("Источник", "Джерело")}</small><br /><b>{CONTENT_SOURCES[subscription.source] || subscription.source || "—"}</b></div>
+              <button className="btn btn-primary" style={{ marginLeft: "auto", height: 32 }} onClick={() => setChatOpen(true)}>{t("Написать клиенту", "Написати клієнту")}</button>
+            </div>
+            {(subscription.campaign || subscription.content) && <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{[subscription.campaign && `${t("Кампания", "Кампанія")}: ${subscription.campaign}`, subscription.content && `${t("Публикация", "Публікація")}: ${subscription.content}`].filter(Boolean).join(" · ")}</div>}
+            {historyCount > 0 && <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #dbe4dc" }}>
+              <div className="label" style={{ marginBottom: 6 }}>{t("История статей и документов", "Історія статей і документів")}</div>
+              <div style={{ display: "grid", gap: 7, maxHeight: 310, overflowY: "auto" }}>
+                {subscription.history.map((item, index) => <div key={`${item.created_at}-${index}`} style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                  <small className="muted" style={{ minWidth: 118 }}>{new Date(item.created_at).toLocaleString("uk-UA")}</small>
+                  <span>{item.action}: {item.url ? <a href={item.url} target="_blank" rel="noreferrer"><b>{item.title}</b> ↗</a> : <b>{item.title}</b>}{item.keyword ? ` · «${item.keyword}»` : ""}</span>
+                  {item.article_url && item.article_url !== item.url && <a href={item.article_url} target="_blank" rel="noreferrer"><small>{t("Статья", "Стаття")} ↗</small></a>}
+                  {item.document_url && item.document_url !== item.url && <a href={item.document_url} target="_blank" rel="noreferrer"><small>{t("Техкарта", "Техкарта")} ↗</small></a>}
+                  {item.source_url && item.source_url !== item.url && <a href={item.source_url} target="_blank" rel="noreferrer"><small>{t("Источник", "Джерело")} ↗</small></a>}
+                </div>)}
+              </div>
+            </div>}
           </div>
-          {(subscription.campaign || subscription.content) && <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{[subscription.campaign && `${t("Кампания", "Кампанія")}: ${subscription.campaign}`, subscription.content && `${t("Публикация", "Публікація")}: ${subscription.content}`].filter(Boolean).join(" · ")}</div>}
-          {subscription.history?.length > 0 && <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #dbe4dc" }}>
-            <div className="label" style={{ marginBottom: 6 }}>{t("История статей и документов", "Історія статей і документів")}</div>
-            <div style={{ display: "grid", gap: 7 }}>
-              {subscription.history.slice(0, 10).map((item, index) => <div key={`${item.created_at}-${index}`} style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
-                <small className="muted" style={{ minWidth: 118 }}>{new Date(item.created_at).toLocaleString("uk-UA")}</small>
-                <span>{item.action}: {item.url ? <a href={item.url} target="_blank" rel="noreferrer"><b>{item.title}</b> ↗</a> : <b>{item.title}</b>}{item.keyword ? ` · «${item.keyword}»` : ""}</span>
-                {item.article_url && item.article_url !== item.url && <a href={item.article_url} target="_blank" rel="noreferrer"><small>{t("Статья", "Стаття")} ↗</small></a>}
-                {item.document_url && item.document_url !== item.url && <a href={item.document_url} target="_blank" rel="noreferrer"><small>{t("Техкарта", "Техкарта")} ↗</small></a>}
-                {item.source_url && item.source_url !== item.url && <a href={item.source_url} target="_blank" rel="noreferrer"><small>{t("Источник", "Джерело")} ↗</small></a>}
-              </div>)}
-            </div>
-          </div>}
-        </div>;
+        </details>;
       })()}
       <div style={{ margin: "0 0 8px" }}><PartnerBlock contactId={c.id} /></div>
       <div style={{ margin: "0 0 8px" }}><ObjectActsBlock contactId={c.id} /></div>
