@@ -339,8 +339,12 @@ def reply_now(conv_id):
         calc = _volume_calc(msgs, ad_q)   # 22.09.2026: обʼєм рахує CRM з карток каталогу
         from apps.knowledge.volume_calc import language_hint, prompt_block
         first = not Message.objects.filter(conversation=conv, direction="out", internal=False).exists()
-        hello = ("ПЕРШИЙ КОНТАКТ у цьому чаті: почни з привітання і назви себе — «Вітаю! Мене звати Юля, "
-                 "консультантка Wallcov» — і одразу по суті питання клієнта. Далі в діалозі вітатися не треба.")
+        # 23.09.2026 (Олег): «просто, без зайвого пафосу» — тільки імʼя, без посади й компанії;
+        # у першому повідомленні одразу орієнтир ціни, презентація йде другим повідомленням.
+        hello = ("ПЕРШИЙ КОНТАКТ у цьому чаті: почни просто — «Вітаю! Мене звати Юля 😊» (без посади і назви "
+                 "компанії), далі коротко по суті запиту і ОРІЄНТИР ЦІНИ (ціна тест-набору або за 1 м², "
+                 "залежно від питання) + одне відкрите питання. Фото матеріалу і сторінку кольорів CRM "
+                 "надішле окремим повідомленням — не дублюй їх у своєму тексті. Далі в діалозі не вітайся.")
         ctx = "\n\n".join(x for x in (ad_ctx, prompt_block(calc), language_hint(incoming.text),
                                       hello if first else "") if x)
         r = answer("yulia_web", msgs, include_drafts=False, model=cfg.webchat_model or None,
@@ -365,6 +369,8 @@ def reply_now(conv_id):
         _note(conv, "%s: не вдалося надіслати (%s). Текст: «%s»" % (NOTE_PREFIX, str(e)[:200], text[:600]))
         return
     _note(conv, note)
+    if first:
+        _first_presentation(conv, msgs, ad_q, text)
     if _takeover_channel(conv.channel):
         hold_chat(conv)       # чат лишається за продавцем CRM ще 10 год
     if r.get("order") and r["order"].get("volume"):
@@ -374,6 +380,27 @@ def reply_now(conv_id):
         # інакше клієнт суми ще не бачив — лише показали розрахунок, оформлюємо після його «так»
     elif r.get("order"):
         _make_kit_offer(conv, r["order"])
+
+
+def _first_presentation(conv, msgs, ad_topic_name="", sent_text=""):
+    """23.09.2026 (Олег): у вітальному повідомленні — орієнтир ціни, а ДРУГИМ повідомленням одразу презентація:
+    фото матеріалу в інтерʼєрі + сторінка кольорів. Матеріал беремо з розмови або з реклами, з якої прийшов клієнт."""
+    try:
+        from apps.knowledge.volume_calc import COLORS, COLORS_BY_ID, find_material
+        if PAGE_RX.search(sent_text or ""):
+            return                       # агент уже дав сторінку — другого повідомлення не треба
+        mat = find_material([m["text"] for m in msgs], ad_topic_name)
+        if not mat:
+            return
+        url = COLORS_BY_ID.get(mat[0], COLORS.get(mat[1], ""))
+        if not url:
+            return
+        text = "Покажу, як це виглядає в інтерʼєрі 👇\n\nТут уся палітра, фото і відео: %s\n\nНапишіть код кольору, який сподобався 🎨" % url
+        _maybe_effect_photos(conv, text)     # спершу фото
+        _send(conv, text)                    # потім посилання
+        _note(conv, "%s: перший контакт — надіслав презентацію (%s)." % (NOTE_PREFIX, url))
+    except Exception as e:
+        _note(conv, "%s: презентацію не надіслав (%s)." % (NOTE_PREFIX, str(e)[:150]))
 
 
 def _volume_calc(msgs, extra=""):
