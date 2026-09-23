@@ -81,6 +81,7 @@ class ContactSerializer(serializers.ModelSerializer):
     display_name = serializers.SerializerMethodField()
     owner_name = serializers.CharField(source="owner.get_full_name", read_only=True, default="")
     meta_ad = serializers.SerializerMethodField()   # з якого оголошення прийшов клієнт (для чату)
+    purchased_materials = serializers.SerializerMethodField()
 
     class Meta:
         model = Contact
@@ -88,10 +89,27 @@ class ContactSerializer(serializers.ModelSerializer):
                   "email", "social_link", "messengers", "company", "channels", "loyalty_tag", "birthday",
                   "source", "address", "comment", "edrpou", "iban", "owner", "owner_name", "created_at",
                   "kinds", "gender", "monitor_docs", "doc_email", "default_purchase_category", "payment_purpose",
-                  "emails_extra", "phones_extra", "links_extra", "accounts", "monitor_emails", "meta_ad", "advance_adjust", "advance_adjust_note", "expense_adjust", "expense_adjust_note"]
+                  "emails_extra", "phones_extra", "links_extra", "accounts", "monitor_emails", "meta_ad",
+                  "purchased_materials", "advance_adjust", "advance_adjust_note", "expense_adjust", "expense_adjust_note"]
 
     def get_display_name(self, obj):
         return str(obj)
+
+    def get_purchased_materials(self, obj):
+        """Унікальні товари лише з оплачених або успішно закритих угод."""
+        materials = {}
+        deals = getattr(obj, "_purchased_deals", None)
+        if deals is None:
+            from django.db.models import Q
+            deals = (obj.deals.filter(Q(stage__is_won=True) | Q(payments__is_paid=True))
+                     .distinct().prefetch_related("items__product"))
+        for deal in deals:
+            items = getattr(deal, "_purchased_items", deal.items.all())
+            for item in items:
+                if item.product_id and item.product:
+                    materials[item.product_id] = item.product.name
+        return [{"id": product_id, "name": materials[product_id]}
+                for product_id in sorted(materials, key=lambda key: materials[key].lower())]
 
     def get_meta_ad(self, obj):
         """Реклама, з якої прийшов цей клієнт — беремо з його ліда або сделки.
