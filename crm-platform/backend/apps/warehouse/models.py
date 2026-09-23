@@ -444,3 +444,60 @@ class ReorderRequest(models.Model):
 
     class Meta:
         ordering = ["-id"]
+
+
+# Append to apps/warehouse/models.py. This model is intentionally outside Product.shop_specs.
+class InternalMaterialDocument(models.Model):
+    KIND = [("certificate", "Сертифікат"), ("protocol", "Протокол"), ("technical", "Технічний лист"), ("safety", "Паспорт безпеки"), ("other", "Інший документ")]
+    title_uk = models.CharField(max_length=240)
+    title_ru = models.CharField(max_length=240, blank=True, default="")
+    kind = models.CharField(max_length=24, choices=KIND, default="protocol")
+    source_url = models.URLField(max_length=500)
+    source_key = models.CharField(max_length=240, unique=True, editable=False)
+    content_sha256 = models.CharField(max_length=64, blank=True, default="")
+    original_filename = models.CharField(max_length=255, blank=True, default="")
+    document_number = models.CharField(max_length=120, blank=True, default="")
+    original_language = models.CharField(max_length=16, blank=True, default="")
+    issued_at = models.DateField(null=True, blank=True)
+    valid_until = models.DateField(null=True, blank=True)
+    is_archived = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    notes_internal = models.TextField(blank=True, default="")
+    notes_ru = models.TextField(blank=True, default="")
+    team_access_verified = models.BooleanField(default=False)
+    products = models.ManyToManyField("Product", related_name="internal_documents", blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @staticmethod
+    def canonical_source(value):
+        import re
+        from urllib.parse import urlsplit, parse_qs
+        from django.core.exceptions import ValidationError
+        try:
+            url = urlsplit(str(value).strip())
+            match = re.fullmatch(r"/file/d/([A-Za-z0-9_-]{10,200})/(?:view|preview)/?", url.path)
+            valid = (url.scheme == "https" and url.netloc == "drive.google.com" and not url.username and not url.password and not url.fragment and match and set(parse_qs(url.query, keep_blank_values=True)) <= {"usp"})
+        except ValueError:
+            valid = False
+        if not valid:
+            raise ValidationError({"source_url": "Вкажіть посилання https://drive.google.com/file/d/ID/view без параметрів доступу."})
+        file_id = match.group(1)
+        return "drive:" + file_id, "https://drive.google.com/file/d/" + file_id + "/view"
+
+    def clean(self):
+        super().clean()
+        self.source_key, self.source_url = self.canonical_source(self.source_url)
+
+    def save(self, *args, **kwargs):
+        self.source_key, self.source_url = self.canonical_source(self.source_url)
+        self.full_clean()
+        if kwargs.get("update_fields") is not None:
+            kwargs["update_fields"] = set(kwargs["update_fields"]) | {"source_key", "source_url"}
+        return super().save(*args, **kwargs)
+
+    class Meta:
+        ordering = ["is_archived", "title_uk", "id"]
+
+    def __str__(self):
+        return self.title_uk

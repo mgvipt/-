@@ -20,6 +20,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { StockTab } from "./Analytics";
+import InternalMaterialDocuments from "../InternalMaterialDocuments";
 import { api, Paginated } from "../api";
 import RepackForm, { RepackDocModal } from "../RepackForm";
 import { useLang } from "../i18n";
@@ -1407,6 +1408,7 @@ export default function Warehouse() {
                 {card.images.map((im) => <a key={im.id} href={im.url} target="_blank" rel="noreferrer"><img src={im.url} alt="" style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 8, border: "1px solid #e2e8f0" }} /></a>)}
               </div>
             )}
+            {cardTab === "main" && !cardEdit && <InternalMaterialDocuments key={`${card.id}:${cardLang}`} productId={card.id} lang={cardLang} />}
             {cardTab === "main" && <ProductCalculationFields unit={cardEdit?.unit || card.unit} pack={cardEdit ? cardEdit.pack_factor : card.pack_factor} specs={cardEdit ? cardEdit.shop_specs || {} : card.shop_specs || {}} lang={cardLang} onChange={cardEdit ? ((specs, pack) => setCardEdit((prev:any)=>({...prev,shop_specs:specs,pack_factor:pack}))) : undefined} />}
             {!cardEdit && <ProductFacts key={card.id} id={card.id} canEdit={canEdit} onSaved={() => { api.get<Product>(`/api/products/${card.id}/`).then(setCard); loadProducts(); }} />}
             {!cardEdit && cardText("description").trim() !== "" && (
