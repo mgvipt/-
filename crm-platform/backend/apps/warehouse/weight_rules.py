@@ -90,15 +90,29 @@ def split_tiers(w):
     return out
 
 
+# 23.09.2026 (інцидент #66361): салонні воронки названі «1.С/Покрытия», «4.С/Алмазне + Вентиляція»,
+# «6.С/ОПТ_Дилеры» — раніше правило ловило лише слова «салон»/«покриття», тому алмазне й вентиляція
+# потрапляли в онлайн і склад не міг закрити задачу без ТТН.
+SALON_FUNNEL_RX = __import__("re").compile(r"(^|[^\w])\d+\.\s?[сc]/|салон|покрит|покрыт", __import__("re").I)
+
+
+def is_salon_funnel(name):
+    return bool(SALON_FUNNEL_RX.search(name or ""))
+
+
+def is_pickup(deal):
+    """Менеджер позначив «клієнт забирає в салоні» (qualification.pickup_salon)."""
+    return bool((getattr(deal, "qualification", None) or {}).get("pickup_salon"))
+
+
 def is_salon(deal):
     """Видача в салоні без ТТН — без упаковки (як у таблиці Інни). Салонна угода з ТТН — посилка, пакуємо.
     23.09.2026 (Олег): менеджер може позначити самовивіз і в онлайн-угоді («Забирає в салоні») —
     тоді посилка нікуди не їде: склад не пакує, ТТН не потрібна."""
-    if (getattr(deal, "qualification", None) or {}).get("pickup_salon"):
+    if is_pickup(deal):
         return True
-    fn = ((deal.funnel.name if getattr(deal, "funnel_id", None) else "") or "").lower()
-    salon = any(x in fn for x in ("салон", "покрит", "покрыт"))
-    return salon and not (getattr(deal, "ttn", "") or "").strip()
+    fn = (deal.funnel.name if getattr(deal, "funnel_id", None) else "") or ""
+    return is_salon_funnel(fn) and not (getattr(deal, "ttn", "") or "").strip()
 
 
 def classify(name, unit, qty, card_w=None, is_kit=False, is_tint=False, own=False):

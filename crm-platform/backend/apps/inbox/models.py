@@ -1,4 +1,6 @@
 from django.conf import settings
+import datetime
+
 from django.db import models
 from apps.crm.models import Contact
 
@@ -226,3 +228,33 @@ class SoundLibrary(models.Model):
 
     class Meta:
         ordering = ["-id"]
+
+
+class ManagerHoldSettings(models.Model):
+    """23.09.2026 (Олег): коли менеджер бере діалог — клієнту одразу йде повідомлення, що з його запитом
+    працюють. Тексти й таймінги тут, щоб міняти без програміста (рядок один, id=1)."""
+    enabled = models.BooleanField("Увімкнено", default=True)
+    delay_sec = models.PositiveIntegerField("Пауза після «взяв чат», сек", default=90,
+        help_text="Якщо менеджер за цей час сам написав клієнту — нічого не надсилаємо")
+    take_window_sec = models.PositiveIntegerField("Вікно після «взяв чат», сек", default=900)
+    wait_minutes = models.PositiveIntegerField("Клієнт чекає, хв", default=15,
+        help_text="Чат уже закріплений, клієнт написав і чекає довше цього часу — теж пишемо один раз")
+    per_dialog_hours = models.PositiveIntegerField("Не частіше ніж раз на, год", default=24)
+    max_wait_hours = models.PositiveIntegerField("Не пишемо, якщо клієнт чекає довше, год", default=2,
+        help_text="Захист від масової розсилки по старих діалогах: пишемо лише поки очікування свіже")
+    promise_minutes = models.PositiveIntegerField("Обіцяємо відповідь протягом, хв", default=30)
+    work_from = models.TimeField("Пишемо з", default=datetime.time(9, 0))
+    work_to = models.TimeField("Пишемо до", default=datetime.time(20, 0))
+    text_take = models.TextField("Текст, коли менеджер узяв чат",
+        default="Вітаю! Мене звати {менеджер} 😊 Вже дивлюсь ваш запит — повернусь із відповіддю до {час}.")
+    text_waiting = models.TextField("Текст, коли клієнт чекає",
+        default="Я з вашим запитом, {менеджер} на звʼязку 😊 Збираю для вас точну інформацію — відповім до {час}.")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(id=1)
+        return obj
+
+    def __str__(self):
+        return "Повідомлення «менеджер узяв діалог»"

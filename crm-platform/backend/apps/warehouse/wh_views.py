@@ -232,6 +232,13 @@ def _needs_tint_photo(job):
         return False
 
 
+def _no_parcel(job):
+    """Коробки немає: самовивіз із салону або салонна угода без ТТН (алмазне, вентиляція, покриття, опт)."""
+    deal = job.deal
+    return bool(_is_pickup(deal) or (WR.is_salon_funnel(deal.funnel.name if deal.funnel_id else "")
+                                     and not (deal.ttn or "").strip()))
+
+
 def _is_pickup(job_or_deal):
     """23.09.2026 (Олег): клієнт забирає в салоні — посилка не їде, пакувати не треба."""
     deal = getattr(job_or_deal, "deal", job_or_deal)
@@ -241,7 +248,7 @@ def _is_pickup(job_or_deal):
 def _required_photo_kinds(job):
     """Обовʼязкові фото перед «Готово — відправлено»: відерця, коробка, накладна; + архів тонування, якщо є тонування.
     Самовивіз із салону — коробки немає, решта документів як завжди."""
-    kinds = ["buckets", "invoice"] if _is_pickup(job) else ["buckets", "parcel", "invoice"]
+    kinds = ["buckets", "invoice"] if _no_parcel(job) else ["buckets", "parcel", "invoice"]
     if _needs_tint_photo(job):
         kinds.append("tint_archive")
     return kinds
@@ -264,7 +271,8 @@ def _job_dict(job, full=False):
     d["ship_offreg"] = bool(q.get("ship_offreg") or q.get("ship_offreg_note"))
     d["pickup_salon"] = bool(q.get("pickup_salon"))   # 23.09.2026: не їде НП, не пакувати
     d["kind_type"] = "test" if "\u0442\u0435\u0441\u0442\u043e\u0432" in fn.lower() else "main"
-    d["channel"] = "offline" if any(x in fn.lower() for x in ["салон", "покрыт", "покритт"]) else "online"
+    # 23.09.2026: салон — це і воронки «N.С/…» (алмазне, вентиляція, опт), і позначка «забирає в салоні»
+    d["channel"] = "offline" if (WR.is_salon_funnel(fn) or q.get("pickup_salon")) else "online"
     try:
         d["np_stage"] = (job.deal.stage.name if (job.deal_id and getattr(job.deal, "stage_id", None)) else "")
     except Exception:
