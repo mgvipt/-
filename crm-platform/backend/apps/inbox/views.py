@@ -917,6 +917,28 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(ConversationSerializer(conv).data)
 
     @action(detail=True, methods=["post"])
+    def release(self, request, pk=None):
+        """23.09.2026 (Олег): «щоб можна було і відкріпити від себе».
+        Менеджер знімає з себе свій чат — він повертається у вільні. Чужий чат може відкріпити лише керівник."""
+        conv = self.get_object()
+        u = request.user
+        if not conv.assigned_to_id:
+            return Response(self.get_serializer(conv).data)      # вже вільний — нічого не робимо
+        if conv.assigned_to_id != u.id and not can_take_over_chats(u):
+            _who = conv.assigned_to.get_full_name() or conv.assigned_to.username
+            return Response({"detail": "Чат закріплений за %s. Відкріпити чужий чат може лише керівник." % _who},
+                            status=status.HTTP_403_FORBIDDEN)
+        _was = conv.assigned_to
+        conv.assigned_to = None
+        conv.save(update_fields=["assigned_to"])
+        from apps.crm.models import log_activity as _la_rel
+        _la_rel("contact", conv.contact_id or 0, "Відкріпив чат",
+                ("зняв із себе — чат вільний" if _was.id == u.id else
+                 "зняв з %s — чат вільний" % (_was.get_full_name() or _was.username)),
+                u, (u.get_full_name() or u.username))
+        return Response(self.get_serializer(conv).data)
+
+    @action(detail=True, methods=["post"])
     def take(self, request, pk=None):
         """Закріпити діалог за собою + стати відповідальним за контакт і його ВІДКРИТІ сделки.
 

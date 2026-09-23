@@ -65,3 +65,33 @@ class TakeoverTests(TestCase):
 
     def test_window_is_ten_hours(self):
         self.assertEqual(TAKEOVER_HOURS, 10)
+
+
+class ReleaseChatTests(TestCase):
+    """23.09.2026 (Олег): менеджер може відкріпити чат від себе — він повертається у вільні."""
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        from apps.inbox.models import Channel, Conversation
+        U = get_user_model()
+        self.u1 = U.objects.create(username="m1")
+        self.u2 = U.objects.create(username="m2")
+        ch = Channel.objects.create(kind="instagram", name="IG")
+        self.conv = Conversation.objects.create(channel=ch, external_chat_id="rel-1", assigned_to=self.u1)
+
+    def _post(self, user):
+        from django.test import Client
+        c = Client(); c.force_login(user)
+        return c.post("/api/conversations/%d/release/" % self.conv.id, HTTP_HOST="crm.wallcovdec.com.ua", secure=True)
+
+    def test_owner_can_release(self):
+        r = self._post(self.u1)
+        self.conv.refresh_from_db()
+        self.assertEqual(r.status_code, 200)
+        self.assertIsNone(self.conv.assigned_to_id)
+
+    def test_other_manager_cannot_release(self):
+        r = self._post(self.u2)
+        self.conv.refresh_from_db()
+        # чужий чат менеджер навіть не бачить у списку (404) або отримує відмову (403) — головне, не відкріплює
+        self.assertIn(r.status_code, (403, 404))
+        self.assertEqual(self.conv.assigned_to_id, self.u1.id)

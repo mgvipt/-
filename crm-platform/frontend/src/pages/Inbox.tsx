@@ -360,6 +360,14 @@ export default function Inbox() {
   }
 
   const mItem: any = { padding: "10px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f8fafc" };
+  // 23.09.2026 (Олег): «щоб можна було і відкріпити від себе» — чат повертається у вільні
+  async function releaseConv() {
+    if (!active) return;
+    if (!window.confirm(t("Открепить чат от себя? Он вернётся в свободные.","Відкріпити чат від себе? Він повернеться у вільні."))) return;
+    try { const c = await api.post<Conversation>(`/api/conversations/${active.id}/release/`, {}); setActive(c); setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, ...c } : x))); }
+    catch (e: any) { alert(e?.data?.detail || t("Не удалось открепить","Не вдалося відкріпити")); }
+  }
+
   async function takeConv() {
     if (!active) return;
     try { const c = await api.post<Conversation>(`/api/conversations/${active.id}/take/`, {}); setActive(c); setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, ...c } : x))); }
@@ -596,7 +604,7 @@ export default function Inbox() {
                 <button className="btn" style={{ height: 30, padding: "0 8px", fontSize: 12, flexShrink: 0, whiteSpace: "nowrap", background: "#fef3c7", color: "#92400e" }} title={t("Поставить задачу по клиенту","Поставити задачу по клієнту")} onClick={() => setTaskOpen(true)}><Icon n="check" size={15} />{!compact && <> {t("Задача","Задача")}</>}</button>
                 {(active.assigned_to && active.assigned_to !== (me as any)?.id && !canTakeover)
                   ? <span title={t("Взято","Взято") + ": " + (active.assigned_to_name || "")} style={{ height: 30, width: 30, padding: 0, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "#fffbeb", color: "#b45309", borderRadius: 7, border: "1px solid #fde68a" }}><Icon n="pin" size={15} /></span>
-                  : <button className="btn" style={{ height: 30, width: 30, padding: 0, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: active.assigned_to ? "#dbeafe" : "#f1f5f9", color: active.assigned_to ? "#1d4ed8" : "#475569" }} title={active.assigned_to ? t("Закреплено за вами","Закріплено за вами") : t("Закрепить чат за мной — вы становитесь ответственным","Закріпити чат за мною — ви стаєте відповідальним")} onClick={takeConv}><Icon n="pin" size={15} /></button>}
+                  : <button className="btn" style={{ height: 30, width: 30, padding: 0, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: active.assigned_to ? "#dbeafe" : "#f1f5f9", color: active.assigned_to ? "#1d4ed8" : "#475569" }} title={active.assigned_to ? t("Открепить чат от себя — вернётся в свободные","Відкріпити чат від себе — повернеться у вільні") : t("Закрепить чат за мной — вы становитесь ответственным","Закріпити чат за мною — ви стаєте відповідальним")} onClick={active.assigned_to ? releaseConv : takeConv}><Icon n="pin" size={15} /></button>}
                                 <button className="btn" style={{ height: 30, width: 30, padding: 0, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "#fee2e2", color: "#b91c1c" }} title={t("Завершить диалог (закрыть неактуальный чат)","Завершити діалог (закрити неактуальний чат)")} onClick={closeConv}><Icon n="x" size={16} /></button>
                 <button className="btn" style={{ background: "#f1f5f9", height: 30, width: 30, padding: 0, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }} onClick={() => setMenu((m) => !m)} title={t("Ещё","Ще")}><Icon n="more" size={16} /></button>
               </div>
