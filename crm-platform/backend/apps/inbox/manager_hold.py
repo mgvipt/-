@@ -85,6 +85,8 @@ def candidates(now=None):
     qs = (Conversation.objects.filter(status="open", assigned_to__isnull=False)
           .select_related("assigned_to", "channel", "contact").order_by("-last_message_at")[:400])
     for conv in qs:
+        if str(conv.external_chat_id or "").startswith("comment:"):
+            continue                                   # коментарі під постами — не особистий чат, туди не пишемо
         inc = _last_in(conv)
         if inc is None:
             continue                                   # клієнт нічого не писав — нічого й не тримаємо
