@@ -47,6 +47,7 @@ class ContentLibraryTests(TestCase):
         r=self.client.get('/instructions/microcement/?r=invalid');self.assertEqual(r.status_code,200)
         self.assertNotContains(r,'Завантажити PDF');self.assertNotContains(r,'Друкувати чек-лист');self.assertContains(r,'AI-візуалізація')
         self.assertContains(r,'https://wallcov.com.ua/rozrakhunok?article=microcement-shower')
+        self.assertContains(r,'Розрахувати матеріали та замовити',count=2)
         user=User.objects.create_user(username='guide-manager',is_superuser=True);self.client.force_login(user)
         self.assertContains(self.client.get('/instructions/microcement/'),'Друкувати чек-лист')
         self.client.logout()
