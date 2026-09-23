@@ -947,12 +947,24 @@ def handle_webhook(payload: dict):
             rref = _reply_ref(msg, conv)
             if rref:
                 atts.insert(0, rref)
+            message_text=(msg.get("text") or "").strip()
+            if is_echo and not message_text and not atts:
+                try:
+                    from .chatplace import enrich_meta_echo
+                    card=enrich_meta_echo(conv,ev.get("timestamp"))
+                except Exception:
+                    card=None
+                if card:
+                    message_text=card["text"]
+                    atts.extend(card["attachments"])
+                else:
+                    message_text="Автоматизація надіслала інтерактивний блок в Instagram Direct."
             # echo = надіслане з нашого акаунту. Якщо менеджер відповів через CRM — те саме mid
             # вже записане з sender=менеджер і дедуплікується вище. Значить echo, що дійшло сюди,
             # надіслала ШІ Юля через ChatPlace → позначаємо «ai_assistant» (щоб менеджер бачив ХТО відповів).
             created_message = Message.objects.create(
                 conversation=conv, direction=("out" if is_echo else "in"),
-                text=(msg.get("text") or ("📷 Фото" if atts else ""))[:5000],
+                text=(message_text or ("📷 Фото" if atts else ""))[:5000],
                 attachments=atts, external_id=mid,
                 sender_name=("ai_assistant" if is_echo else ""))
             if not is_echo:

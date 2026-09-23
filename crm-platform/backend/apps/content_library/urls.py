@@ -3,6 +3,7 @@ from . import views
 urlpatterns=[
  path('api/content-library/public/<slug:slug>/',views.public_instruction),
  path('api/content-library/forms/<slug:slug>/',views.public_form),
+ path('api/content-library/guide-contact/',views.guide_contact),
  path('api/content-library/automations/',views.ContentAutomationView.as_view()),
  path('api/content-library/instructions/',views.LibraryView.as_view()),
  path('api/content-library/audience/',views.AudienceView.as_view()),

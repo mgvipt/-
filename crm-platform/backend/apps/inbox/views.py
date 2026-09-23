@@ -621,12 +621,14 @@ def _bg_chatplace_sync(conv_id):
     from django.db import connection as _conn
     try:
         from .models import Conversation
-        from .chatplace import sync_one_chat, configured
+        from .chatplace import sync_one_chat, repair_meta_automation_messages, configured
         if not configured():
             return
         cv = Conversation.objects.filter(id=conv_id).select_related("channel").first()
-        if cv:
+        if cv and (cv.channel.config or {}).get("chatplace"):
             sync_one_chat(cv)
+        elif cv and (cv.config or {}).get("outbound_chatplace",{}).get("chat_id"):
+            repair_meta_automation_messages(cv)
     except Exception:
         pass
     finally:
@@ -1268,7 +1270,8 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["get"])
     def messages(self, request, pk=None):
         conv = self.get_object()
-        if (conv.channel.config or {}).get("chatplace"):
+        if ((conv.channel.config or {}).get("chatplace")
+                or (conv.config or {}).get("outbound_chatplace",{}).get("chat_id")):
             # Троттл: живий запит у ChatPlace не частіше ніж раз на 30с на чат.
             # ⚡ Синк ChatPlace робимо У ФОНІ (daemon-потік) — щоб відкриття діалогу
             # НЕ блокувалось повільним/битим ChatPlace. Кеш ставимо ДО запуску, щоб

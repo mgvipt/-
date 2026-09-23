@@ -12,7 +12,8 @@ from django.core.management import call_command
 from django.test import TestCase, override_settings
 
 from apps.accounts.models import Department, Role, User
-from apps.crm.models import Deal, Funnel, Stage, Task
+from apps.crm.models import Contact, Deal, Funnel, Stage, Task
+from apps.content_library.models import AudienceProfile, GuideRequest, Instruction
 from .models import Conversation, LandingSubmission, Message
 
 SECRET = "test-only-secret"
@@ -145,6 +146,25 @@ class SiteLeadTests(TestCase):
         changed = _signed(self.client, {**self.shop_payload, "area": 40})
         self.assertEqual(changed.status_code, 409)
         self.assertEqual(changed.json()["code"], "conflict")
+
+    def test_microcement_calculation_reuses_guide_contact_without_browser_pii(self):
+        instruction = Instruction.objects.create(slug="microcement", title="Техкарта", status="published")
+        contact = Contact.objects.create(first_name="Олег", phone="+380970000099", source="site")
+        profile = AudienceProfile.objects.create(contact=contact, preferred_channel="whatsapp")
+        token = "a" * 64
+        GuideRequest.objects.create(submission_id="guide-source-1", payload_hash="b" * 64,
+                                    instruction=instruction, profile=profile, token=token)
+        payload = {
+            "submission_id": "microcalc-0001", "form": "article_calc",
+            "article": "microcement-shower", "guide_token": token,
+            "area": 12, "room": "Ванна",
+        }
+        response = _signed(self.client, payload)
+        self.assertEqual(response.status_code, 201, response.content)
+        deal = Deal.objects.get(pk=response.json()["deal_id"])
+        self.assertEqual(deal.contact, contact)
+        self.assertEqual(deal.qualification["preferred_channel"], "whatsapp")
+        self.assertEqual(Contact.objects.count(), 1)
 
     def test_shop_lead_requires_signature_consent_and_valid_id(self):
         body = json.dumps(self.shop_payload)

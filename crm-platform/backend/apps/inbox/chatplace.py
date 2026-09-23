@@ -1,7 +1,8 @@
 """Незалежна інтеграція з ChatPlace через MCP-протокол (https://mcp.chatplace.io/).
 БЕЗ Бітрикса. Тягне живі IG-чати (Direct) у inbox CRM і вміє відповідати.
 Ключ у .env: CHATPLACE_API_KEY (cpk_...)."""
-import os, json, datetime, urllib.request
+import os, json, datetime, html, urllib.request
+from html.parser import HTMLParser
 
 MCP_URL = os.environ.get("CHATPLACE_MCP_URL", "https://mcp.chatplace.io/")
 # 2026-07-31: ChatPlace flip-flop між /mcp і / (обидва можуть 404). Тримаємо ОБИДВА
@@ -147,6 +148,91 @@ def send(chat_id, text):
         import logging as _lg
         _lg.getLogger(__name__).warning(f"chats_open failed for {chat_id}: {e}")
     return _mcp("chats_send_message", {"chatId": chat_id, "text": text})
+
+
+class _TextOnly(HTMLParser):
+    def __init__(self):
+        super().__init__(); self.parts=[]
+    def handle_data(self,data):
+        self.parts.append(data)
+
+
+def _plain_chatplace_text(value):
+    parser=_TextOnly()
+    try: parser.feed(str(value or ''))
+    except Exception: return str(value or '').strip()
+    return html.unescape(''.join(parser.parts)).strip()
+
+
+def _automation_attachments(text):
+    """Describe the active CRM automation card without relying on Meta's empty echo."""
+    try:
+        from apps.content_library.models import KeywordAutomation
+        from apps.content_library.chatplace_automation import direct_message, form_url
+        wanted=' '.join(str(text or '').split())
+        for rule in KeywordAutomation.objects.filter(enabled=True,chatplace_status='active').select_related('form__instruction'):
+            if wanted and wanted==' '.join(direct_message(rule).split()):
+                return [{'type':'button','name':'Отримати техкарту','url':form_url(rule)}]
+    except Exception:
+        pass
+    return []
+
+
+def _chatplace_card_near(conv,event_timestamp,items=None):
+    route=(conv.config or {}).get('outbound_chatplace') or {}
+    chat_id=str(route.get('chat_id') or '')
+    if not chat_id: return None
+    if items is None:
+        data=_mcp('chats_messages',{'chatId':chat_id,'limit':40})
+        items=(data.get('items') or data.get('messages') or []) if isinstance(data,dict) else (data or [])
+    try:
+        target=float(event_timestamp or 0)
+        if target>1e11: target/=1000.0
+    except (TypeError,ValueError):
+        return None
+    candidates=[]
+    for item in items or []:
+        if str(item.get('side') or '').lower() not in _STAFF_SIDES: continue
+        raw=str(item.get('message') or item.get('text') or '').strip()
+        text=_plain_chatplace_text(raw)
+        if not text or text in _SYSTEM_MARKERS or _SYS_LABEL.match(text): continue
+        try: created=float(item.get('createdAt') or 0)
+        except (TypeError,ValueError): continue
+        delta=abs(created-target)
+        if delta<=30: candidates.append((delta,created,text,item))
+    if not candidates: return None
+    _,_,text,item=min(candidates,key=lambda x:(x[0],-x[1]))
+    return {'text':text[:5000],'attachments':_automation_attachments(text),
+            'sender_name':str(item.get('side') or 'ai_assistant')[:160]}
+
+
+def enrich_meta_echo(conv,event_timestamp):
+    """Best-effort lookup for a rich ChatPlace card whose Meta echo has no text."""
+    try: return _chatplace_card_near(conv,event_timestamp)
+    except Exception: return None
+
+
+def repair_meta_automation_messages(conv,limit=40):
+    """Fill historical empty Meta bubbles from the exact mapped ChatPlace chat."""
+    route=(conv.config or {}).get('outbound_chatplace') or {}
+    chat_id=str(route.get('chat_id') or '')
+    if not chat_id: return 0
+    from .models import Message
+    data=_mcp('chats_messages',{'chatId':chat_id,'limit':limit})
+    items=(data.get('items') or data.get('messages') or []) if isinstance(data,dict) else (data or [])
+    repaired=0;used=set()
+    for message in Message.objects.filter(conversation=conv,direction='out',text='').order_by('-created_at')[:limit]:
+        card=_chatplace_card_near(conv,message.created_at.timestamp(),items=items)
+        if not card: continue
+        key=(card['text'],round(message.created_at.timestamp()))
+        # Same text may legitimately repeat; timestamp keeps repeated triggers distinct.
+        if key in used: continue
+        used.add(key)
+        message.text=card['text'];message.attachments=card['attachments']
+        if not message.sender_name: message.sender_name=card['sender_name']
+        message.save(update_fields=['text','attachments','sender_name'])
+        repaired+=1
+    return repaired
 
 
 def close_chat(chat_id):

@@ -21,7 +21,7 @@ from .landing_intake import SubmissionConflict, receive
 from .models import Channel, Conversation, LandingSubmission
 
 SHOP_LANDING = "wallcov.com.ua"
-FIELDS = ("name", "phone", "consent", "preferred", "intent", "product", "product_label", "area",
+FIELDS = ("name", "phone", "email", "consent", "preferred", "intent", "product", "product_label", "area",
           "room", "installer", "message", "article", "form", "page_url", "quiz", "first_touch", "last_touch")
 
 
@@ -77,6 +77,17 @@ class ShopLeadWebhookView(APIView):
         if not re.fullmatch(r"[a-zA-Z0-9_-]{8,64}", submission):
             return _error("validation", "submission_id: 8–64 символи a-z, A-Z, 0-9, _ або -", 400, "submission_id")
         request_id = "shop-" + submission
+        guide_token = str(body.get("guide_token") or "").strip()
+        if guide_token:
+            from apps.content_library.models import GuideRequest
+            receipt = (GuideRequest.objects.select_related("profile__contact", "instruction")
+                       .filter(token=guide_token, instruction__slug="microcement").first())
+            if not receipt or body.get("article") != "microcement-shower":
+                return _error("validation", "Посилання на техкарту застаріло. Вкажіть контакт ще раз.", 400, "guide_token")
+            contact = receipt.profile.contact
+            preferred = receipt.profile.preferred_channel or ("email" if contact.email and not contact.phone else "phone")
+            body = {**body, "name": str(contact)[:120], "phone": contact.phone or "",
+                    "email": contact.email or "", "preferred": preferred, "consent": True}
         data = {key: body.get(key) for key in FIELDS if key in body}
         data["submission_id"] = request_id
         try:

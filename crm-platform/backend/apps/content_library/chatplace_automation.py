@@ -34,6 +34,16 @@ def form_url(rule):
     return 'https://wallcov.com.ua/get/%s?%s' % (rule.form.slug, query)
 
 
+def direct_message(rule):
+    """Text shown in the first Direct card. The URL lives only in its button."""
+    text = (rule.reply_text or '').replace('{form_url}', '').replace(
+        '{instruction_title}', rule.form.instruction.title).strip()
+    text = '\n'.join(line.rstrip() for line in text.splitlines())
+    while '\n\n\n' in text:
+        text = text.replace('\n\n\n', '\n\n')
+    return text
+
+
 def sync_to_chatplace(rule):
     """Створити нову версію сценарію та безпечно замінити попередню."""
     triggers = []
@@ -53,11 +63,7 @@ def sync_to_chatplace(rule):
     link = form_url(rule)
     # Адреса вже є в кнопці. Маркер лишається сумісним зі старими текстами,
     # але ніколи не розгортається у довгий URL всередині Direct-повідомлення.
-    direct_text = (rule.reply_text or '').replace('{form_url}', '').replace(
-        '{instruction_title}', rule.form.instruction.title).strip()
-    direct_text = '\n'.join(line.rstrip() for line in direct_text.splitlines())
-    while '\n\n\n' in direct_text:
-        direct_text = direct_text.replace('\n\n\n', '\n\n')
+    direct_text = direct_message(rule)
     if not direct_text:
         raise ValueError('Додайте текст повідомлення в Direct')
     args = {

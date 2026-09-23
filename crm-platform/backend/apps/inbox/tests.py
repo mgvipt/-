@@ -703,6 +703,45 @@ class MetaChatPlaceOutboundTests(TestCase):
         own.refresh_from_db()
         self.assertEqual(own.status, "read")
 
+    @patch("apps.inbox.chatplace.enrich_meta_echo")
+    def test_blank_meta_echo_keeps_chatplace_card_and_button(self, enrich):
+        from .meta import handle_webhook
+
+        conv = Conversation.objects.create(
+            channel=self.channel, contact=self.contact, external_chat_id="client-rich-card",
+            config={"outbound_chatplace": {"chat_id": "cp-rich", "username": "povitrya_"}},
+        )
+        enrich.return_value = {
+            "text": "Повна техкарта Microcement Wallcov готова",
+            "attachments": [{"type": "button", "name": "Отримати техкарту", "url": "https://wallcov.com.ua/get/microcement"}],
+        }
+        payload = {"object": "instagram", "entry": [{"messaging": [{
+            "sender": {"id": "our-instagram"}, "recipient": {"id": "client-rich-card"},
+            "timestamp": int(timezone.now().timestamp() * 1000),
+            "message": {"mid": "rich-echo", "is_echo": True},
+        }]}]}
+        self.assertEqual(handle_webhook(payload), 1)
+        message = conv.messages.get()
+        self.assertEqual(message.text, "Повна техкарта Microcement Wallcov готова")
+        self.assertEqual(message.attachments[0]["type"], "button")
+
+    @patch("apps.inbox.chatplace._automation_attachments", return_value=[{"type":"button","name":"Отримати техкарту","url":"https://wallcov.com.ua/get/microcement"}])
+    @patch("apps.inbox.chatplace._mcp")
+    def test_opening_meta_chat_repairs_old_empty_automation_bubble(self, mcp, _attachments):
+        from .chatplace import repair_meta_automation_messages
+
+        conv = Conversation.objects.create(
+            channel=self.channel, contact=self.contact, external_chat_id="client-old-card",
+            config={"outbound_chatplace": {"chat_id": "cp-old", "username": "povitrya_"}},
+        )
+        message = Message.objects.create(conversation=conv, direction="out", text="", sender_name="ai_assistant")
+        created = int(message.created_at.timestamp())
+        mcp.return_value = {"items": [{"id":"cp-message","side":"bot","createdAt":created,
+                                      "message":"<p>Техкарта готова</p>"}]}
+        self.assertEqual(repair_meta_automation_messages(conv), 1)
+        message.refresh_from_db();self.assertEqual(message.text,"Техкарта готова")
+        self.assertEqual(message.attachments[0]["type"],"button")
+
     @patch("apps.inbox.management.commands.backfill_meta_chatplace_routes._mcp")
     def test_route_backfill_requires_exact_username_and_defaults_to_dry_run(self, mcp):
         conv = Conversation.objects.create(

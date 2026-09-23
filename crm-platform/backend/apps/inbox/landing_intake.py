@@ -7,6 +7,8 @@ import re
 import secrets
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.db import connection, transaction
 from django.db.models import F
 from django.utils import timezone
@@ -33,7 +35,7 @@ class SubmissionConflict(ValueError):
 
 
 PREFERRED = {"phone", "telegram", "viber"}
-PREFERRED_EXTRA = {"whatsapp"}  # тільки для нових сайтів — поведінка wallcovdliastin не змінюється
+PREFERRED_EXTRA = {"whatsapp", "email"}  # тільки для нових сайтів — поведінка wallcovdliastin не змінюється
 PRICES ={"sirena": ("Шовк · Сирена", "0.15", "1265"),
           "luna": ("Вельвет · Луна", "0.25", "780"),
           "mermi": ("Шовк · Мерми", "0.15", "1078")}
@@ -43,12 +45,25 @@ TOUCH_KEYS = {"utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_te
 
 def normalize_phone(value):
     raw = str(value or "").strip()[:32]
+    if not raw:
+        return ""
     digits = re.sub(r"\D", "", raw)
     if len(digits) == 10 and digits.startswith("0"):
         digits = "38" + digits
     if not (10 <= len(digits) <= 15) or (digits.startswith("380") and len(digits) != 12):
         raise ValueError("Вкажіть коректний номер телефону, наприклад +380 67 123 45 67")
     return "+" + digits
+
+
+def normalize_email(value):
+    email = str(value or "").strip().lower()[:254]
+    if not email:
+        return ""
+    try:
+        validate_email(email)
+    except ValidationError:
+        raise ValueError("Вкажіть коректний email")
+    return email
 
 
 def clean_touch(value):
@@ -243,6 +258,9 @@ def receive(conv, data, landing_id=LANDING_ID, notify_client=True):
     if data.get("consent") is not True:
         raise ValueError("Потрібна згода на зв’язок і обробку контактних даних")
     phone = normalize_phone(data.get("phone"))
+    email = normalize_email(data.get("email"))
+    if not phone and not email:
+        raise ValueError("Вкажіть телефон або email")
     intent = "sample" if data.get("intent") == "sample" else "selection"
     area = (_decimal_area(data["area"]) if intent != "sample" and data.get("area_mode") != "help"
             and data.get("area") not in (None, "") else None)
@@ -257,12 +275,16 @@ def receive(conv, data, landing_id=LANDING_ID, notify_client=True):
     area, details = selection_details(data, area, product_key, intent)
     allowed_preferred = PREFERRED if legacy else PREFERRED | PREFERRED_EXTRA
     preferred = data.get("preferred") if data.get("preferred") in allowed_preferred else "phone"
+    if preferred == "email" and not email:
+        raise ValueError("Для зв’язку через email вкажіть email")
+    if preferred != "email" and not phone:
+        raise ValueError("Для зв’язку через месенджер або дзвінок вкажіть телефон")
     request_id = str(data.get("submission_id") or secrets.token_urlsafe(24))
     if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", request_id):
         raise ValueError("Некоректний номер звернення")
     snapshot = {key: str(data.get(key) or "")[:300] for key in
                 ("name", "room", "velvet_color", "velvet_formula", "mood", "installer", "reference", "flow_id", "silk_base")}
-    snapshot.update(phone=phone, area=str(area) if area is not None else "", product=product_key, intent=intent, preferred=preferred)
+    snapshot.update(phone=phone, email=email, area=str(area) if area is not None else "", product=product_key, intent=intent, preferred=preferred)
     snapshot.update(details)
     site = {}
     if not legacy:
@@ -273,7 +295,7 @@ def receive(conv, data, landing_id=LANDING_ID, notify_client=True):
         snapshot.update(landing_id=landing_id, **{k: (json.dumps(v, sort_keys=True, ensure_ascii=False) if k == "quiz" else v)
                                                   for k, v in site.items()})
     digest = hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
-    phone_hash = hashlib.sha256(phone.encode()).hexdigest()
+    phone_hash = hashlib.sha256(("phone:"+phone if phone else "email:"+email).encode()).hexdigest()
     receipt, _ = LandingSubmission.objects.get_or_create(request_id=request_id,
         defaults={"phone_hash": phone_hash, "payload_hash": digest, "conversation": conv})
     receipt = LandingSubmission.objects.select_for_update(of=("self",)).select_related("deal", "conversation").get(pk=receipt.pk)
@@ -287,10 +309,22 @@ def receive(conv, data, landing_id=LANDING_ID, notify_client=True):
     if connection.vendor == "postgresql":
         with connection.cursor() as cursor:
             cursor.execute("SELECT pg_advisory_xact_lock(%s)", [int(phone_hash[:15], 16)])
-    contact = Contact.objects.select_for_update().filter(phone__in=_phone_variants(phone)).order_by("id").first()
+    contact_ids = set()
+    if phone:
+        contact_ids.update(Contact.objects.filter(phone__in=_phone_variants(phone)).values_list("id",flat=True))
+    if email:
+        contact_ids.update(Contact.objects.filter(email__iexact=email).values_list("id",flat=True))
+    if len(contact_ids)>1:
+        raise ValueError("Телефон та email пов’язані з різними картками. Потрібна перевірка менеджера")
+    contact = Contact.objects.select_for_update().filter(id=next(iter(contact_ids))).first() if contact_ids else None
     if not contact:
-        contact = Contact.objects.create(first_name=snapshot["name"][:120] or "Клієнт із сайту", phone=phone, source="site", channels=[] if preferred == "phone" else [preferred])
-    elif preferred != "phone" and preferred not in (contact.channels or []):
+        contact = Contact.objects.create(first_name=snapshot["name"][:120] or "Клієнт із сайту", phone=phone, email=email, source="site", channels=[] if preferred == "phone" else [preferred])
+    else:
+        changed=[]
+        if phone and not contact.phone: contact.phone=phone;changed.append("phone")
+        if email and not contact.email: contact.email=email;changed.append("email")
+        if changed: contact.save(update_fields=changed)
+    if preferred != "phone" and preferred not in (contact.channels or []):
         contact.channels = list(contact.channels or []) + [preferred]
         contact.save(update_fields=["channels"])
     funnel = Funnel.objects.filter(name=landing["funnel"]).first()
@@ -326,7 +360,7 @@ def receive(conv, data, landing_id=LANDING_ID, notify_client=True):
         receipt.deal = deal
         receipt.save(update_fields=["deal"])
         return response_data(receipt, True)
-    deal = Deal.objects.create(title=("Пробний набір" if intent == "sample" else "Підбір покриття") + " · " + (snapshot["name"][:80] or phone),
+    deal = Deal.objects.create(title=("Пробний набір" if intent == "sample" else "Підбір покриття") + " · " + (snapshot["name"][:80] or phone or email),
         contact=contact, funnel=funnel, stage=stage, owner=owner, source="site", amount=Decimal(qualification["estimate_from"]),
         area_m2=area, qualification=qualification, is_seen=False)
     from apps.meta_attr.services import inherit_meta_attribution

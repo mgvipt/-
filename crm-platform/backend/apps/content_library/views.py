@@ -1,8 +1,12 @@
+import hashlib
+import hmac
 import json
 import re
+import time
 import uuid
 from datetime import timedelta
 from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.http import Http404, HttpResponse, JsonResponse
@@ -145,12 +149,48 @@ def guide(request,slug):
         return response
     # Stable public document. Tracking tokens never gate reading it.
     params={k:request.GET[k][:300] for k in ['r','s','utm_source','utm_medium','utm_campaign','utm_content'] if k in request.GET}
+    receipt=GuideRequest.objects.filter(token=params.get('r',''),instruction=i).first()
+    calculation_params={'article':'microcement-shower'}
+    if receipt:
+        calculation_params['r']=receipt.token
     response=render(request,'content_library/guide.html',{'instruction':i,'content':i.content,
-      'version':i.version,'tracking':json.dumps(params)})
+      'version':i.version,'tracking':json.dumps(params),
+      'calculation_url':'https://wallcov.com.ua/rozrakhunok?'+urlencode(calculation_params),
+      'show_print':permitted(request.user,'inbox.view')})
     response['X-Robots-Tag']='noindex, follow'
-    response['Referrer-Policy']='strict-origin-when-cross-origin'
+    response['Referrer-Policy']='no-referrer'
     response['Cache-Control']='private, no-store'
     return response
+
+
+@require_POST
+def guide_contact(request):
+    """Resolve an opaque guide receipt for the shop without exposing contact data in URLs."""
+    timestamp=request.headers.get('X-Wallcov-Timestamp','')
+    signature=request.headers.get('X-Wallcov-Signature','')
+    secret=settings.SHOP_WEBHOOK_SECRET
+    if (not secret or not timestamp.isdigit()
+            or abs(int(time.time())-int(timestamp))>300):
+        return JsonResponse({'detail':'Підпис недійсний'},status=403)
+    expected=hmac.new(secret.encode(),timestamp.encode()+b'.'+request.body,hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected,signature):
+        return JsonResponse({'detail':'Підпис недійсний'},status=403)
+    try:
+        data=json.loads(request.body)
+        token=str(data.get('guide_token') or '')
+        article=str(data.get('article') or '')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{40,64}',token): raise ValueError()
+        receipt=(GuideRequest.objects.select_related('profile__contact','instruction')
+                 .filter(token=token,instruction__slug='microcement').first())
+        if not receipt or article not in ('','microcement-shower'):
+            return JsonResponse({'found':False},status=404)
+    except (ValueError,TypeError,json.JSONDecodeError):
+        return JsonResponse({'found':False},status=404)
+    contact=receipt.profile.contact
+    display_name=(contact.first_name or str(contact) or 'Клієнт').strip()[:120]
+    preferred=receipt.profile.preferred_channel or ('email' if contact.email and not contact.phone else 'phone')
+    return JsonResponse({'found':True,'display_name':display_name,
+                         'preferred_channel':preferred,'guide_token':receipt.token})
 
 
 def resolve_tracking(i,params):
