@@ -96,6 +96,7 @@ function JobCard({ j, t, onClick, action }: any) {
               ? <span title={t("К заказу есть допродажа — посылка не одна, пакуется вместе","До замовлення є допродаж — посилка не одна, пакується разом")} style={{ fontSize: 10, fontWeight: 700, background: "#fef3c7", color: "#92400e", borderRadius: 20, padding: "2px 8px" }}>📦 +{(j.subtasks && j.subtasks.length) || (j.parcel_orders && j.parcel_orders.length) || 0} {t("допродажа","допродаж")}</span>
               : null}
             {j.ship_offreg && <span title={t("Доставка не по регламенту — под ответственность клиента","Доставка не за регламентом — під відповідальність клієнта")} style={{ fontSize: 10, fontWeight: 700, background: "#fee2e2", color: "#b91c1c", borderRadius: 20, padding: "2px 8px" }}>⚠ {t("доставка","доставка")}</span>}
+            {j.pickup_salon && <span title={t("Клиент забирает в салоне — посылка не едет, паковать не нужно","Клієнт забирає в салоні — посилка не їде, пакувати не треба")} style={{ fontSize: 10, fontWeight: 700, background: "#fef3c7", color: "#92400e", borderRadius: 20, padding: "2px 8px" }}>🏬 {t("самовывоз","самовивіз")}</span>}
           </div>
           <div className="muted" style={{ fontSize: 12.5, marginTop: 3, display: "flex", gap: 10, flexWrap: "wrap" }}>
             <span>📍 {j.city || "—"}</span>
@@ -227,6 +228,11 @@ function JobPreview({ jobId, t, onClose, onTake }: any) {
             <div style={{ background: "#ecfeff", border: "1px solid #a5f3fc", borderRadius: 10, padding: "8px 11px", marginBottom: 12, fontSize: 12.5, color: "#0e7490" }}>
               📦 <b>{t("Одна посылка.","Одна посилка.")}</b> {j.is_dozakaz ? t("Это дозаказ — упаковать вместе с основной сделкой.","Це дозамовлення — пакувати разом з основною сделкою.") : t("К этой сделке едут дозаказы — упаковать в одну коробку.","До цієї сделки їдуть дозамовлення — пакувати в одну коробку.")}
               {((j.parcel_orders && j.parcel_orders.length > 0) || (j.subtasks && j.subtasks.length > 0)) ? <> {t("Вместе:","Разом:")} {((j.parcel_orders && j.parcel_orders.length > 0) ? j.parcel_orders.map((p: any) => "#" + p.id) : (j.subtasks || []).map((s: any) => "#" + s.deal_id)).join(", ")}.</> : null}{" "}{j.is_dozakaz ? <>{t("ТТН — на основной","ТТН — на основній")} #{j.parcel_main}.</> : <>{t("Склад создаёт ОДНУ ТТН здесь (внизу, «Нова Пошта»).","Склад створює ОДНУ ТТН тут (внизу, «Нова Пошта»).")}</>}
+            </div>
+          )}
+          {j.pickup_salon && (
+            <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 10, padding: "9px 12px", marginBottom: 10, fontSize: 13, color: "#92400e", fontWeight: 600 }}>
+              🏬 {t("Клиент забирает в салоне","Клієнт забирає в салоні")} — {t("посылка не едет Новой почтой, паковать не нужно. Документы как всегда: расходная, фото вёдер, бланк тонировки. После «Готово» сделка закроется.","посилка не їде Новою поштою, пакувати не треба. Документи як завжди: видаткова, фото відер, бланк тонування. Після «Готово» сделка закриється.")}
             </div>
           )}
           {j.needs && (j.needs.ship_offreg || j.needs.ship_offreg_note) && (

@@ -247,6 +247,8 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
   const [psearch, setPsearch] = useState(""); const [presults, setPresults] = useState<Product[]>([]); const [psel, setPsel] = useState<Product | null>(null); const [addReserve, setAddReserve] = useState(false); const [showList, setShowList] = useState(false);
   const [editProdItem, setEditProdItem] = useState<number>(0); const [epq, setEpq] = useState(""); const [epr, setEpr] = useState<Product[]>([]);
   const epBoxRef = useRef<HTMLDivElement>(null);
+  const [pickupSalon, setPickupSalon] = useState(false);
+  const [pickupBusy, setPickupBusy] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [ciOpen, setCiOpen] = useState(false);
   const [ci, setCi] = useState<any>({ name: "", qty: 1, price: "" });
@@ -321,6 +323,7 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
     try {
       const d = await api.get<Deal>(`/api/deals/${id}/`);
       setDeal(d);
+      setPickupSalon(!!((d as any).qualification || {}).pickup_salon);   // 23.09.2026: самовивіз із салону
       loadRooms();
       if (!funnel || funnel.id !== d.funnel) setFunnel(await api.get<Funnel>(`/api/funnels/${d.funnel}/`));
     } catch { setNotFound(true); }
@@ -1040,6 +1043,23 @@ export default function DealCard({ dealId, onClose }: { dealId?: number; onClose
               return <div style={{ textAlign: "center", fontSize: 12.5, fontWeight: 600, padding: "6px", borderRadius: 8, background: st.bg, color: st.c, marginBottom: 8 }}>{st.txt}</div>;
             })()}
             <button className="btn btn-primary" style={{ width: "100%", height: 36 }} onClick={() => { setPayAmount(String(remaining > 0 ? remaining : deal.amount)); setPayOpen(true); }}>{t("💳 Принять оплату","💳 Прийняти оплату")}</button>
+            {/* 23.09.2026 (Олег): клієнт забирає в салоні — посилка не їде, склад не пакує, після видачі сделка закривається */}
+            <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, fontSize: 12.5, fontWeight: 600,
+                            background: pickupSalon ? "#fef3c7" : "#f8fafc", color: pickupSalon ? "#92400e" : "#475569",
+                            border: "1px solid " + (pickupSalon ? "#fcd34d" : "#e2e8f0"), borderRadius: 8, padding: "7px 10px", cursor: "pointer" }}
+                   title={t("Клиент заберёт материалы в салоне. Новой почтой не отправляем: склад не пакует, после выдачи сделка закрывается.","Клієнт забере матеріали в салоні. Новою поштою не відправляємо: склад не пакує, після видачі сделка закривається.")}>
+              <input type="checkbox" checked={pickupSalon} disabled={pickupBusy}
+                     onChange={async (e) => {
+                       const v = e.target.checked;
+                       setPickupBusy(true);
+                       try {
+                         await api.patch(`/api/deals/${deal.id}/`, { qualification: { ...((deal as any).qualification || {}), pickup_salon: v } });
+                         setPickupSalon(v); load();
+                       } catch { /* ignore */ }
+                       setPickupBusy(false);
+                     }} />
+              🏬 {t("Клиент забирает в салоне (без отправки)","Клієнт забирає в салоні (без відправки)")}
+            </label>
             {(deal.payments || []).some((p: any) => p.is_paid && p.provider === "liqpay") && (can("payment.process") || can("roles.manage")) && (
               <button className="btn" style={{ width: "100%", height: 32, marginTop: 6, background: "#fff7ed", border: "1px solid #fed7aa", color: "#c2410c", fontWeight: 700, fontSize: 12.5 }}
                 title={t("Вернуть деньги клиенту на карту через LiqPay — по той же ссылке, которой он платил","Повернути гроші клієнту на карту через LiqPay — по тому самому посиланню, яким платив")}

@@ -91,7 +91,11 @@ def split_tiers(w):
 
 
 def is_salon(deal):
-    """Видача в салоні без ТТН — без упаковки (як у таблиці Інни). Салонна угода з ТТН — посилка, пакуємо."""
+    """Видача в салоні без ТТН — без упаковки (як у таблиці Інни). Салонна угода з ТТН — посилка, пакуємо.
+    23.09.2026 (Олег): менеджер може позначити самовивіз і в онлайн-угоді («Забирає в салоні») —
+    тоді посилка нікуди не їде: склад не пакує, ТТН не потрібна."""
+    if (getattr(deal, "qualification", None) or {}).get("pickup_salon"):
+        return True
     fn = ((deal.funnel.name if getattr(deal, "funnel_id", None) else "") or "").lower()
     salon = any(x in fn for x in ("салон", "покрит", "покрыт"))
     return salon and not (getattr(deal, "ttn", "") or "").strip()

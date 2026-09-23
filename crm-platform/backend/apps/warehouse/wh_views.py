@@ -232,9 +232,16 @@ def _needs_tint_photo(job):
         return False
 
 
+def _is_pickup(job_or_deal):
+    """23.09.2026 (Олег): клієнт забирає в салоні — посилка не їде, пакувати не треба."""
+    deal = getattr(job_or_deal, "deal", job_or_deal)
+    return bool((getattr(deal, "qualification", None) or {}).get("pickup_salon"))
+
+
 def _required_photo_kinds(job):
-    """Обовʼязкові фото перед «Готово — відправлено»: відерця, коробка, накладна; + архів тонування, якщо є тонування."""
-    kinds = ["buckets", "parcel", "invoice"]
+    """Обовʼязкові фото перед «Готово — відправлено»: відерця, коробка, накладна; + архів тонування, якщо є тонування.
+    Самовивіз із салону — коробки немає, решта документів як завжди."""
+    kinds = ["buckets", "invoice"] if _is_pickup(job) else ["buckets", "parcel", "invoice"]
     if _needs_tint_photo(job):
         kinds.append("tint_archive")
     return kinds
@@ -255,6 +262,7 @@ def _job_dict(job, full=False):
     fn = (deal.funnel.name if deal.funnel_id else "") or ""
     d["funnel"] = fn
     d["ship_offreg"] = bool(q.get("ship_offreg") or q.get("ship_offreg_note"))
+    d["pickup_salon"] = bool(q.get("pickup_salon"))   # 23.09.2026: не їде НП, не пакувати
     d["kind_type"] = "test" if "\u0442\u0435\u0441\u0442\u043e\u0432" in fn.lower() else "main"
     d["channel"] = "offline" if any(x in fn.lower() for x in ["салон", "покрыт", "покритт"]) else "online"
     try:
@@ -597,6 +605,8 @@ def ship(request, pk):
         job.status = "awaiting_photos"; job.save(update_fields=["status"])
         return Response({"detail": "Не вистачає фото: " + ", ".join(PHOTO_LABEL.get(k, k) for k in missing)}, status=400)
     _finalize(job, request.user)
+    if _is_pickup(job):
+        _close_pickup_deal(job.deal, request.user)   # видали в салоні → сделка закрита, НП не чекаємо
     # каскад: дозамовлення цієї посилки — та сама коробка → списання без подвійної упаковки/фото
     for _sub in WarehouseJob.objects.filter(deal__parent_deal_id=job.deal_id).exclude(status__in=["shipped", "cancelled"]):
         try:
@@ -683,6 +693,26 @@ def _accrual_plan(job, pay_packing=True):
             "sample_cat": fx.get("sample_cat", 0), "sample_ind": fx.get("sample_ind", 0),
             "how": wp["how"], "salon": salon}
     return rows, meta
+
+
+def _close_pickup_deal(deal, user):
+    """23.09.2026 (Олег): «склад закрив задачу, додав документи — сделка теж вважається закритою».
+    Самовивіз: ТТН і статусів Нової пошти не буде, тому одразу ставимо виграшну стадію воронки."""
+    from apps.crm.models import Stage, log_activity
+    try:
+        if not deal.funnel_id or (deal.stage_id and (deal.stage.is_won or deal.stage.is_lost)):
+            return
+        st = Stage.objects.filter(funnel_id=deal.funnel_id, is_won=True).order_by("order").first()
+        if not st:
+            return
+        old = deal.stage.name if deal.stage_id else "—"
+        deal.stage = st
+        deal.save(update_fields=["stage"])
+        log_activity("deal", deal.id, "Видано в салоні",
+                     "%s → %s (самовивіз, Новою поштою не відправляємо)" % (old, st.name), user,
+                     (user.get_full_name() or user.username) if user else "Склад")
+    except Exception:
+        pass
 
 
 def _finalize(job, user, pay_packing=True):
