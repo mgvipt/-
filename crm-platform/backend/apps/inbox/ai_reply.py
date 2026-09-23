@@ -338,7 +338,11 @@ def reply_now(conv_id):
         msgs = history(conv, incoming)
         calc = _volume_calc(msgs, ad_q)   # 22.09.2026: обʼєм рахує CRM з карток каталогу
         from apps.knowledge.volume_calc import language_hint, prompt_block
-        ctx = "\n\n".join(x for x in (ad_ctx, prompt_block(calc), language_hint(incoming.text)) if x)
+        first = not Message.objects.filter(conversation=conv, direction="out", internal=False).exists()
+        hello = ("ПЕРШИЙ КОНТАКТ у цьому чаті: почни з привітання і назви себе — «Вітаю! Мене звати Юля, "
+                 "консультантка Wallcov» — і одразу по суті питання клієнта. Далі в діалозі вітатися не треба.")
+        ctx = "\n\n".join(x for x in (ad_ctx, prompt_block(calc), language_hint(incoming.text),
+                                      hello if first else "") if x)
         r = answer("yulia_web", msgs, include_drafts=False, model=cfg.webchat_model or None,
                    source="%s: %s" % (NOTE_PREFIX, conv.channel.name), timeout=25,
                    context=ctx, context_query=ad_q)
@@ -351,6 +355,9 @@ def reply_now(conv_id):
         _note(conv, "%s: не зміг відповісти (%s). Клієнту нічого не надіслано — дайте відповідь вручну."
               % (NOTE_PREFIX, str(e)[:200]))
         return
+    # 23.09.2026 (Олег): «якщо мова про вибір кольору — спершу кілька фото, як це виглядає в інтерʼєрі,
+    # і вже потім посилання на каталог матеріалу» — щоб у клієнта одразу була презентація.
+    _maybe_effect_photos(conv, text)
     try:
         msg = send_message(conv, text)
         Message.objects.filter(id=msg.id).update(sender_name="%s · %s" % (NOTE_PREFIX, conv.channel.name))
@@ -360,7 +367,6 @@ def reply_now(conv_id):
     _note(conv, note)
     if _takeover_channel(conv.channel):
         hold_chat(conv)       # чат лишається за продавцем CRM ще 10 год
-    _maybe_effect_photos(conv, text)
     if r.get("order") and r["order"].get("volume"):
         from apps.knowledge.volume_calc import shown_to_client
         if shown_to_client(msgs, calc):
