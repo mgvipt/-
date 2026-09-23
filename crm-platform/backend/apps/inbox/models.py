@@ -248,7 +248,7 @@ class ManagerHoldSettings(models.Model):
     text_take = models.TextField("Текст, коли менеджер узяв чат",
         default="Вітаю! Мене звати {менеджер} 😊 Вже дивлюсь ваш запит і скоро повернусь із відповіддю.")
     text_waiting = models.TextField("Текст, коли клієнт чекає",
-        default="Я з вашим запитом, {менеджер} на звʼязку 😊 Збираю для вас точну інформацію і повернусь з відповіддю.")
+        default="Ознайомлююсь з вашим запитом, {менеджер} на звʼязку 😊 Збираю для вас точну інформацію і повернусь з відповіддю.")
     updated_at = models.DateTimeField(auto_now=True)
 
     @classmethod
