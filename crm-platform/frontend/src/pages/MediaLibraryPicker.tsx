@@ -10,7 +10,7 @@ type Asset = {
   id: number; title: string; kind: "image" | "video" | "catalog"; section: "colors" | "quick";
   material: string; color_code: string; tags: string; url: string; preview_url?: string;
 };
-type MaterialSummary = { name: string; codes: number; catalog_pages: number; preview_url: string };
+type MaterialSummary = { name: string; codes: number; catalog_pages: number; preview_url: string; photos?: number };
 type Screen = "materials" | "material" | "color";
 const SAND_EFFECTS = ["Galateya", "Eleganti", "Gaia Gloss", "Mio Gloss"] as const;
 const isColorSwatch = (asset: Asset) => asset.kind === "image" && /(каталог|зразок|sample)/i.test(`${asset.title} ${asset.tags}`);
@@ -34,6 +34,7 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
   const [query, setQuery] = useState(""); const [tab, setTab] = useState<"colors" | "quick" | "instructions">(initialTab || "colors");
   const [screen, setScreen] = useState<Screen>("materials"); const [material, setMaterial] = useState(""); const [color, setColor] = useState("");
   const [zoom, setZoom] = useState<Asset | null>(null);
+  const [photosOpen, setPhotosOpen] = useState(false);
   const [picked, setPicked] = useState<number[]>([]); const [loaded, setLoaded] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const loadPicker = async (nextMaterial = "", nextColor = "") => {
     setError("");
@@ -69,17 +70,22 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
   const materials = useMemo(() => materialSummaries.filter((x) => x.name.toLowerCase().includes(query.toLowerCase())), [materialSummaries, query]);
   const materialItems = useMemo(() => colorItems.filter((x) => (x.material || "Матеріал без назви") === material), [colorItems, material]);
   const catalogPages = useMemo(() => materialItems.filter((x) => x.kind === "catalog"), [materialItems]);
-  // Реальні фото обʼєктів: без коду кольору, згруповані за фактурою («Галатея (Galateya)» тощо).
-  const realGroups = useMemo(() => {
+  // Реальні фото обʼєктів: окремо інтерʼєри (видно кімнату) і окремо образці (стіна крупно).
+  const realPhotos = useMemo(() => materialItems.filter((x) => /реальне фото/i.test(x.tags || "")), [materialItems]);
+  const realByKind = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const groups = new Map<string, Asset[]>();
-    materialItems.filter((x) => /реальне фото/i.test(x.tags || "")).forEach((a) => {
-      const name = (effectFor(a) || "Реальні обʼєкти").replace(/ · реальний об.єкт$/i, "");
-      if (q && !`${name} ${a.title}`.toLowerCase().includes(q)) return;
-      groups.set(name, [...(groups.get(name) || []), a]);
-    });
-    return Array.from(groups.entries()).sort((a, b) => b[1].length - a[1].length);
-  }, [materialItems, query]);
+    const mk = (kind: "інтерʼєр" | "образець") => {
+      const groups = new Map<string, Asset[]>();
+      realPhotos.filter((a) => (kind === "інтерʼєр") === /вид:інтерʼєр/.test(a.tags || "")).forEach((a) => {
+        const name = (effectFor(a) || "Реальні обʼєкти").replace(/ · реальний об.єкт$/i, "");
+        if (q && !`${name} ${a.title}`.toLowerCase().includes(q)) return;
+        groups.set(name, [...(groups.get(name) || []), a]);
+      });
+      return Array.from(groups.entries()).sort((a, b) => b[1].length - a[1].length);
+    };
+    return { interiors: mk("інтерʼєр"), samples: mk("образець") };
+  }, [realPhotos, query]);
+  const realCount = realByKind.interiors.reduce((n, g) => n + g[1].length, 0) + realByKind.samples.reduce((n, g) => n + g[1].length, 0);
   const colors = useMemo(() => Array.from(new Set(materialItems.filter(isColorSwatch).map((x) => x.color_code).filter(Boolean))).filter((x) => material === "Мокрий шовк" ? matchesSilkColor(x, query) : x.toLowerCase().includes(query.toLowerCase())), [materialItems, query, material]);
   const colorAssets = useMemo(() => materialItems.filter((x) => x.color_code === color), [materialItems, color]);
   const colorGroups = useMemo(() => {
@@ -139,14 +145,40 @@ export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertTe
     <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
     {tab === "colors" && <>
       {screen !== "materials" && <button className="btn" onClick={back} style={{ fontSize: 12, marginBottom: 8 }}>← {screen === "color" ? material : "Усі матеріали"}</button>}
-      {screen === "materials" && <><div className="muted" style={{ fontSize: 12, marginBottom: 7 }}>Спочатку оберіть матеріал — далі побачите лише кольори-образки. Відео та інтер'єри відкриваються всередині кольору.</div><div style={{ display: "grid", gap: 7 }}>{materials.map((entry) => <button key={entry.name} onClick={() => openMaterial(entry.name)} className="btn" style={{ display: "flex", alignItems: "center", gap: 8, textAlign: "left" }}>{entry.preview_url && <img src={entry.preview_url} loading="lazy" decoding="async" style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 6 }} />}<span><b>{entry.name}</b><br /><span className="muted" style={{ fontSize: 11 }}>{["Фарби", "Підготовка та витратні матеріали"].includes(entry.name) ? `${entry.codes} товарів · фото й актуальна ціна` : entry.name === "Плінтуси Cezar" ? `${entry.codes} моделей і довжин` : `${entry.codes} кольорів · ${entry.catalog_pages} сторінок каталогу`}</span></span><span style={{ marginLeft: "auto" }}>›</span></button>)}</div></>}
-      {screen === "material" && <><b style={{ fontSize: 13 }}>{material}</b><div className="muted" style={{ fontSize: 12, margin: "3px 0 8px" }}>Сторінки каталогу та кольори-образки. Інтер'єри — після вибору кольору.</div>{catalogPages.length > 0 && <div style={{ marginBottom: 10 }}><b style={{ fontSize: 12 }}>📖 Каталог</b><div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 5 }}>{catalogPages.map(card)}</div></div>}{realGroups.length > 0 && <div style={{ marginBottom: 14, padding: "9px 9px 11px", border: "1px solid #dbe3ee", borderRadius: 11, background: "#f8fafc" }}><div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 2 }}><b style={{ fontSize: 12.5 }}>📸 Реальні обʼєкти</b><span className="muted" style={{ fontSize: 11 }}>{realGroups.reduce((n, g) => n + g[1].length, 0)} фото · наші роботи</span></div>{realGroups.map(([name, assets]) => <section key={name} style={{ marginTop: 8 }}><div style={{ fontSize: 11.5, fontWeight: 700, color: "#334155" }}>{name} <span className="muted" style={{ fontWeight: 500 }}>· {assets.length}</span></div><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, marginTop: 5 }}>{assets.map(photoCard)}</div></section>)}</div>}<div style={{ borderTop: "1px dashed #dbe3ee", marginBottom: 9 }} /><b style={{ fontSize: 12 }}>🎨 Кольори ({colors.length})</b><div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 5 }}>{colors.map((code) => { const sample = materialItems.find((x) => x.color_code === code && isColorSwatch(x)); return <button key={code} onClick={() => openColor(code)} style={{ border: "1px solid #dbe3ee", background: "#fff", padding: 5, borderRadius: 8, textAlign: "left", cursor: "pointer" }}>{(sample?.preview_url || sample?.url) && <img src={sample?.preview_url || sample?.url} loading="lazy" decoding="async" style={{ width: "100%", height: 65, objectFit: "cover", borderRadius: 5 }} />}<div style={{ fontSize: 11, marginTop: 3 }}>{material === "Мокрий шовк" && silkColorName(code) && <b style={{ display: "block", fontSize: 13, lineHeight: 1.3, marginBottom: 3 }}>{silkColorName(code)}</b>}<b>{code}</b><br /><span className="muted">Відкрити добірку ›</span></div></button>; })}</div></>}
+      {screen === "materials" && <><div className="muted" style={{ fontSize: 12, marginBottom: 7 }}>Спочатку оберіть матеріал — далі побачите лише кольори-образки. Відео та інтер'єри відкриваються всередині кольору.</div><div style={{ display: "grid", gap: 7 }}>{materials.map((entry) => <button key={entry.name} onClick={() => openMaterial(entry.name)} className="btn" style={{ display: "flex", alignItems: "center", gap: 8, textAlign: "left" }}>{entry.preview_url && <img src={entry.preview_url} loading="lazy" decoding="async" style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 6 }} />}<span><b>{entry.name}</b><br /><span className="muted" style={{ fontSize: 11 }}>{["Фарби", "Підготовка та витратні матеріали"].includes(entry.name) ? `${entry.codes} товарів · фото й актуальна ціна` : entry.name === "Плінтуси Cezar" ? `${entry.codes} моделей і довжин` : entry.codes === 0 && entry.photos ? `${entry.photos} фото наших обʼєктів` : `${entry.codes} кольорів · ${entry.catalog_pages} сторінок каталогу${entry.photos ? ` · ${entry.photos} фото обʼєктів` : ""}`}</span></span><span style={{ marginLeft: "auto" }}>›</span></button>)}</div></>}
+      {screen === "material" && <><b style={{ fontSize: 13 }}>{material}</b><div className="muted" style={{ fontSize: 12, margin: "3px 0 8px" }}>Сторінки каталогу та кольори-образки. Інтер'єри — після вибору кольору.</div>{catalogPages.length > 0 && <div style={{ marginBottom: 10 }}><b style={{ fontSize: 12 }}>📖 Каталог</b><div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 5 }}>{catalogPages.map(card)}</div></div>}{realCount > 0 && <button type="button" onClick={() => setPhotosOpen((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, marginBottom: 11, padding: "9px 11px", cursor: "pointer", border: photosOpen ? "1px solid var(--brand)" : "1px solid #dbe3ee", borderRadius: 11, background: photosOpen ? "#e6eef8" : "#f8fafc", textAlign: "left" }}><span style={{ fontSize: 17 }}>📸</span><span style={{ minWidth: 0 }}><b style={{ fontSize: 12.5 }}>Реальні обʼєкти</b><br /><span className="muted" style={{ fontSize: 11 }}>{realByKind.interiors.reduce((n, g) => n + g[1].length, 0)} інтерʼєрів · {realByKind.samples.reduce((n, g) => n + g[1].length, 0)} образців</span></span><span style={{ marginLeft: "auto", fontSize: 15 }}>{photosOpen ? "×" : "›"}</span></button>}<b style={{ fontSize: 12 }}>🎨 Кольори ({colors.length})</b><div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 5 }}>{colors.map((code) => { const sample = materialItems.find((x) => x.color_code === code && isColorSwatch(x)); return <button key={code} onClick={() => openColor(code)} style={{ border: "1px solid #dbe3ee", background: "#fff", padding: 5, borderRadius: 8, textAlign: "left", cursor: "pointer" }}>{(sample?.preview_url || sample?.url) && <img src={sample?.preview_url || sample?.url} loading="lazy" decoding="async" style={{ width: "100%", height: 65, objectFit: "cover", borderRadius: 5 }} />}<div style={{ fontSize: 11, marginTop: 3 }}>{material === "Мокрий шовк" && silkColorName(code) && <b style={{ display: "block", fontSize: 13, lineHeight: 1.3, marginBottom: 3 }}>{silkColorName(code)}</b>}<b>{code}</b><br /><span className="muted">Відкрити добірку ›</span></div></button>; })}</div></>}
       {screen === "color" && <><b style={{ fontSize: 13 }}>{material} · {material === "Мокрий шовк" ? formatSilkColor(color) : color}</b><div className="muted" style={{ fontSize: 12, margin: "3px 0 8px" }}>{material === "Патера" ? "Оберіть ефект: усередині — інтер'єри та світло." : material === "Перламутрові піщинки" ? "Оберіть вид піщинок — інтер'єри додамо після затвердження фактури." : "Еталон, відео та інтер'єри цього кольору"}</div>{visibleColorGroups.map(([name, assets]) => <section key={name} style={{ marginTop: 10 }}><b style={{ fontSize: 12 }}>{name === "Еталон і відео" ? "◈ " : "✦ "}{name}</b>{assets.length > 0 ? <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 5 }}>{assets.map(card)}</div> : <div className="muted" style={{ fontSize: 11, marginTop: 4, padding: "7px 8px", border: "1px dashed #dbe3ee", borderRadius: 7 }}>Інтер'єри додамо після затвердження фактури.</div>}</section>)}</>}
       {screen === "materials" && !materials.length && <div className="muted" style={{ fontSize: 12 }}>Матеріалів поки немає — додайте їх у Налаштування → Відкриті лінії.</div>}
     </>}
     </div>
     {error && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 6 }}>{error}</div>}
     {picked.length > 0 && <button className="btn btn-primary" disabled={busy} onClick={() => { if (onStage) { onStage(items.filter((x) => picked.includes(x.id))); setPicked([]); onClose(); } else { send(); } }} style={{ marginTop: 9, width: "100%", flexShrink: 0, position: "sticky", bottom: 0 }}>{busy ? "…" : onStage ? `Додати в повідомлення (${picked.length})` : `Надіслати (${picked.length})`}</button>}
+    {photosOpen && screen === "material" && realCount > 0 && <div style={{ position: "absolute", left: "calc(100% + 8px)", bottom: 0, width: 360,
+      maxWidth: "calc(100vw - 24px)", maxHeight: 470, display: "flex", flexDirection: "column", overflow: "hidden", background: "#fff",
+      border: "1px solid #cbd5e1", borderRadius: 12, padding: 10, boxShadow: "0 12px 32px rgba(15,23,42,.2)" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 8 }}>
+        <b style={{ fontSize: 13 }}>📸 Реальні обʼєкти</b>
+        <span className="muted" style={{ fontSize: 11 }}>{material} · {realCount}</span>
+        <span style={{ flex: 1 }} />
+        <button className="btn" style={{ padding: "1px 7px" }} onClick={() => setPhotosOpen(false)}>×</button>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+        {([["Інтерʼєри", "видно кімнату", realByKind.interiors], ["Образці", "стіна крупним планом", realByKind.samples]] as [string, string, [string, Asset[]][]][])
+          .filter(([, , groups]) => groups.length > 0).map(([label, hint, groups]) => <div key={label} style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6, padding: "4px 0 2px", borderBottom: "1px solid #eef2f7", marginBottom: 7 }}>
+            <b style={{ fontSize: 12 }}>{label}</b>
+            <span className="muted" style={{ fontSize: 10.5 }}>{hint} · {groups.reduce((n, g) => n + g[1].length, 0)}</span>
+          </div>
+          {groups.map(([name, assets]) => <section key={name} style={{ marginBottom: 9 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#334155" }}>{name} <span className="muted" style={{ fontWeight: 500 }}>· {assets.length}</span></div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, marginTop: 5 }}>{assets.map(photoCard)}</div>
+          </section>)}
+        </div>)}
+      </div>
+      {picked.length > 0 && <button className="btn btn-primary" disabled={busy} style={{ marginTop: 8, width: "100%", flexShrink: 0 }}
+        onClick={() => { if (onStage) { onStage(items.filter((x) => picked.includes(x.id))); setPicked([]); onClose(); } else { send(); } }}>
+        {busy ? "…" : onStage ? `Додати в повідомлення (${picked.length})` : `Надіслати (${picked.length})`}</button>}
+    </div>}
     {zoom && <div onClick={() => setZoom(null)} style={{ position: "fixed", inset: 0, zIndex: 3000, background: "rgba(8,12,20,.9)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 16 }}>
       <img src={zoom.url || zoom.preview_url} alt="" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "min(900px, 92vw)", maxHeight: "calc(100vh - 150px)", objectFit: "contain", borderRadius: 10, background: "#000" }} />
       <div style={{ color: "#e8edf5", fontSize: 13, textAlign: "center", maxWidth: "90vw" }}>{zoom.title}</div>

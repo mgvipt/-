@@ -125,8 +125,10 @@ class MediaLibraryView(APIView):
                     sample = items.filter(section="colors", material=row["material"]).filter(
                         Q(kind="catalog") | Q(kind="image")
                     ).order_by("sort", "id").first()
+                    photos = items.filter(section="colors", material=row["material"],
+                                         tags__icontains="реальне фото").count()
                     summaries.append({"name": row["material"], "codes": row["code_count"],
-                                      "catalog_pages": row["catalog_count"],
+                                      "catalog_pages": row["catalog_count"], "photos": photos,
                                       "preview_url": _library_item_data(request, sample)["preview_url"] if sample else ""})
                 return Response({"items": [], "materials": summaries, "replies": reply_data})
             scoped = items.filter(section="colors", material=material)
