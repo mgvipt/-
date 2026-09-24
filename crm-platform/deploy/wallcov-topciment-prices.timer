@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily TOPCIMENT reference price check without AI
+
+[Timer]
+OnCalendar=*-*-* 07:10:00 Europe/Kyiv
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target

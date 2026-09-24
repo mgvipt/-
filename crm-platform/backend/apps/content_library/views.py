@@ -89,10 +89,10 @@ class LibraryView(APIView):
         if request.GET.get('calculator') == 'topciment':
             from .topciment import SYSTEMS, calculate
             try:
-                data = calculate(request.GET.get('system', SYSTEMS[0]['id']), request.GET.get('area', '25'), request.GET.get('reserve', '10'), request.GET.get('basis', 'sale'))
+                data = calculate(request.GET.get('system', SYSTEMS[0]['id']), request.GET.get('area', '25'), request.GET.get('reserve', '10'), request.GET.get('basis', 'sale'), request.GET.get('substrate'))
             except (ValueError, ArithmeticError):
                 return Response({'error': 'Перевірте систему, площу та запас (0–50%).'}, status=400)
-            data['systems'] = [{'id':s['id'],'name':s['name']} for s in SYSTEMS]
+            data['systems'] = [{key: s.get(key) for key in ('id', 'name', 'area_type', 'historical')} for s in SYSTEMS]
             response = Response(data)
             response['Cache-Control'] = 'private, no-store'
             return response

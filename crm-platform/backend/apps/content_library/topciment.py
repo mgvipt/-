@@ -9,6 +9,27 @@ MATERIALS.update({
  'wt-kit': {'name': 'Topsealer WT · комплект A + B', 'unit': 'л суміші'},
  'dsv-kit': {'name': 'Topsealer DSV · комплект A + B', 'unit': 'л суміші'},
 })
+POWDERS=('microbase','microdeck','microfino','sttandard-microdeck','microstone')
+KITS={'wt-kit':('wt-mate','wt-b'),'dsv-kit':('dsv-a','dsv-b'),'dragon-kit':('dragon-mate-a','dragon-b')}
+MATERIALS.update({
+ 'sttandard-microdeck':{'name':'TOPCIMENT Sttandard Microdeck M','unit':'кг'},
+ 'builtex-gr50':{'name':'TOPCIMENT Builtex GR50','unit':'м²'},
+ 'primer-choice':{'name':'Оберіть ґрунт для основи: ABS або PLUS','unit':'л'},
+ 'dragon-kit':{'name':'Topsealer WT Dragon · компоненти A + B','unit':'л суміші'},
+})
+for historical_system in SYSTEMS:
+ historical_system.update(historical=True,area_type='historical')
+SYSTEMS += [
+ {'id':'sttandard-wall','name':'Sttandard · внутрішні стіни · Microfino S + WT One Coat','area_type':'wall','historical':False,'materials':['primer-choice','microbase','microfino','acricem','presealer','wt-kit']},
+ {'id':'sttandard-floor','name':'Sttandard · внутрішня підлога · Microdeck M + Dragon A+B','area_type':'floor','historical':False,'materials':['primer-choice','builtex-gr50','microbase','sttandard-microdeck','acricem','presealer','dragon-kit']},
+ {'id':'sttandard-exterior','name':'Sttandard · зовнішня підлога · Microstone L + Dragon A+B','area_type':'exterior','historical':False,'materials':['primer-choice','builtex-gr50','microbase','microstone','acricem','presealer','dragon-kit']},
+]
+AREA_NOTES=[
+ 'Ґрунт обирають за основою: ABS для поглинальної, PLUS для непоглинальної. Перед розрахунком перевірте міцність, вологість і підготовку основи.',
+ 'Схема передбачає два базові та два фінішні шари. Для стін виробник допускає один або два базові шари: тут обрано два. Acricem тут лише для замішування порошків; ґрунт рахується окремо.',
+ 'Для підлоги потрібне армування Builtex. Нетто: 1 м² сітки на 1 м² площі; обраний запас додається на розкрій і стики. Достатність запасу перевіряють за розкладкою полотен.',
+ 'Офіційна система Sttandard: https://www.topciment.com/sheets/STTANDARD_SISTEMA_EN.pdf',
+]
 NOTES=[
  'Це попередній розрахунок матеріалів. Основа, кількість шарів і реальна витрата потребують перевірки майстром. Роботи, доставка й тонування не включені.',
  'Витрата, фасування та пропорції беруться з карток матеріалів. Серії та фракції не взаємозамінні.',
@@ -57,25 +78,66 @@ def append_product_note(notes, product, field, system_id):
  note=str(product.name)+': '+value.strip()[:500]
  if note not in notes:notes.append(note)
 
-def calculate(system_id,area,reserve,basis='sale'):
+REVIEW_LABELS={
+ 'wt_b_density_version_conflict':'Густина компонента B відрізняється на сторінці продажу та в технічному листі. Перед замішуванням перевірте редакцію документа для придбаної упаковки.',
+ 'wt_family_substitution':'Сумісність саме цього лаку з обраною системою ще не підтверджена.',
+ 'efectto_protective_kit_not_confirmed':'Захисний комплект для Efectto не підтверджено.',
+ 'medium_layer_count_and_base_generation':'Потрібно узгодити кількість шарів Medium та версію базового матеріалу.',
+ 'quartz_coat_count':'У документах відрізняється кількість шарів Efectto Quartz.',
+ 'efectto_layer_thickness_revision':'Товщина шару залежить від редакції технічного листа.',
+ 'dsv_density_unit':'Одиниця густини DSV B у документі потребує уточнення.',
+}
+def review_details(product,facts,review,system_review):
+ from urllib.parse import urlsplit
+ reasons=[];urls=[]
+ for entry in (review,system_review):
+  if not isinstance(entry,dict) or not entry.get('required'):continue
+  values=entry.get('reasons',[])
+  if isinstance(values,str):values=[values]
+  if not isinstance(values,list):values=[]
+  values=values+[entry.get('reason')]+(entry.get('codes',[]) if isinstance(entry.get('codes'),list) else [])
+  for value in values:
+   if isinstance(value,str) and value.strip():
+    reason=REVIEW_LABELS.get(value,value if ' ' in value else 'Потрібне уточнення технічних даних у картці матеріалу.')[:500]
+    if reason not in reasons:reasons.append(reason)
+ for group in ('density','consumption'):
+  for fact in facts.get(group,[]) if isinstance(facts.get(group),list) else []:
+   source=fact.get('source') if isinstance(fact,dict) else None
+   value=source.get('url') if isinstance(source,dict) else None
+   if isinstance(value,str):
+    try:
+     parsed=urlsplit(value)
+     if parsed.scheme=='https' and parsed.hostname and not parsed.username and not parsed.password and value not in urls:urls.append(value)
+    except ValueError:pass
+ return {'review_reasons':reasons,'source_urls':urls}
+
+def calculate(system_id,area,reserve,basis='sale',substrate=None):
  area=D(str(area));reserve=D(str(reserve))
  if not area.is_finite() or not reserve.is_finite() or not D('0')<area<=D('100000') or not D('0')<=reserve<=D('50'):raise ValueError('Вкажіть площу від 0 до 100 000 м² та запас 0–50%.')
  if basis not in ('sale','reference'):raise ValueError('Невідомий тип ціни.')
  system=next((s for s in SYSTEMS if s['id']==system_id),None)
  if not system:raise ValueError('Оберіть систему.')
+ is_current=not system.get('historical',True)
+ if is_current:
+  if substrate not in (None,'','abs','plus'):raise ValueError('Оберіть ABS або PLUS.')
+  system=dict(system,materials=[substrate or 'primer-choice' if k=='primer-choice' else k for k in system['materials']])
  products=catalog();rows=[];total=D(0);missing=[];notes=list(dict.fromkeys(NOTES))
+ if is_current:
+  notes=[n for n in notes if 'ґрунтування та смолу' not in n and 'Ґрунт XZ' not in n]+AREA_NOTES
+  if system['area_type']=='exterior':notes.append('Зовнішня схема призначена для підлоги зі справним водовідведенням; не для басейнів або застійної води. Погодні умови, шви та основу перевіряє майстер.')
+  if 'dragon-kit' in system['materials']:notes.append('Dragon A+B: пропорцію за масою та густини читати у картках компонентів. Без підтверджених обох компонентів комплект і ціна невідомі. Офіційний документ: https://www.topciment.com/sheets/TopSealer-WT-Dragon-EN.pdf')
  def unit_price(p):
   if basis=='sale':return p.price if p.price>0 and p.currency=='UAH' and p.shop_specs.get('price_status')!='quote_required' else None
   ref=p.shop_specs.get('reference_price') or {}
   return D(str(ref['uah_pack']))/p.pack_factor if ref.get('uah_pack') and p.pack_factor>0 else None
  for key in system['materials']:
   p=products.get(key)
-  owner=products.get('wt-mate' if key=='wt-kit' else 'dsv-a' if key=='dsv-kit' else key)
+  owner=products.get(KITS[key][0] if key in KITS else key)
   append_product_note(notes,owner,'calculator_rate_notes',system_id)
   rate=(owner.shop_specs.get('calculator_rates',{}).get(system_id) if owner else None)
   if key=='acricem' and owner:
-   rate=positive(owner.shop_specs.get('primer_rate_l_m2'),allow_zero=True) if owner.unit=='л' else None
-   for powder_key in ('microbase','microdeck','microfino'):
+   rate=(D(0) if is_current else positive(owner.shop_specs.get('primer_rate_l_m2'),allow_zero=True)) if owner.unit=='л' else None
+   for powder_key in POWDERS:
     if powder_key not in system['materials']:continue
     powder=products.get(powder_key)
     spec=powder.shop_specs if powder else {}
@@ -93,8 +155,8 @@ def calculate(system_id,area,reserve,basis='sale'):
   if not rate.is_finite() or rate<=0:raise ValueError('Некоректна норма витрати у картці товару.')
   quantity=area*rate*(1+reserve/100);pack=None;price=None;links=[]
   if key.endswith('-kit'):
-   a=products.get('wt-mate' if key=='wt-kit' else 'dsv-a')
-   b=products.get('wt-b' if key=='wt-kit' else 'dsv-b')
+   a=products.get(KITS[key][0])
+   b=products.get(KITS[key][1])
    mix=a.shop_specs.get('mixing',{}) if a else {}
    count=positive(mix.get('b_pack_count'))
    if count is not None and count!=count.to_integral_value():raise ValueError('Кількість упаковок компонента B має бути цілою.')
@@ -130,16 +192,16 @@ def calculate(system_id,area,reserve,basis='sale'):
  technical_unverified=[];reference_sources=[]
  for row in rows:
   key=row['key']
-  keys=([('wt-mate' if key=='wt-kit' else 'dsv-a'),('wt-b' if key=='wt-kit' else 'dsv-b')]
+  keys=(list(KITS[key])
         if key.endswith('-kit') else [key])
   row['reference_prices']=[reference_source(products[k]) for k in keys if k in products]
   if basis=='reference' and row['subtotal'] is not None:reference_sources.extend(row['reference_prices'])
-  if key=='acricem':keys += [k for k in ('microbase','microdeck','microfino') if k in system['materials']]
+  if key=='acricem':keys += [k for k in POWDERS if k in system['materials']]
   linked=[]
   for dependency in keys:
    product=products.get(dependency)
    if not product:continue
-   if key=='acricem' and dependency in ('microbase','microdeck','microfino'):
+   if key=='acricem' and dependency in POWDERS:
     append_product_note(notes,product,'calculator_resin_notes',system_id)
    facts=product.shop_specs.get('technical_facts') or {}
    review=facts.get('technical_review') or {}
@@ -150,7 +212,7 @@ def calculate(system_id,area,reserve,basis='sale'):
                      for fact in facts.get(group,[]) if isinstance(fact,dict)
                      for source in [fact.get('source') or {}] if source.get('revision')})
    linked.append({'id':product.id,'name':product.name,'updated_at':product.updated_at.isoformat(),
-                  'source_revisions':revisions,'needs_review':bool(review.get('required')) or system_needs_review})
+                  'source_revisions':revisions,'needs_review':bool(review.get('required')) or system_needs_review,**review_details(product,facts,review,system_review)})
   row['products']=linked
   row['needs_review']=any(p['needs_review'] for p in linked)
   if row['needs_review']:
