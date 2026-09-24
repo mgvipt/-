@@ -12,6 +12,7 @@ import statistics
 import time
 from datetime import timedelta
 
+from django.db import DataError
 from django.db.models import Count, Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -40,6 +41,18 @@ def own_usernames():
                                .values_list("handle", flat=True))
 
 
+def _save_item(v, acc, own):
+    FeedItem.objects.update_or_create(external_id=v["id"], defaults={
+        "username": v.get("username") or acc.get("username", ""), "platform": v.get("platform", ""),
+        "url": v.get("url", ""), "preview_url": v.get("previewUrl") or "", "caption": v.get("caption") or "",
+        "media_type": v.get("mediaType", ""), "duration": v.get("duration"), "views": v.get("viewsCount"),
+        "likes": v.get("likeCount"), "comments": v.get("commentsCount"), "engagement": v.get("engagementRate"),
+        "viral_score": v.get("viralScore"), "is_own": (v.get("username") or "") in own,
+        "published_at": parse_datetime((v.get("publishedAt") or "").replace(" ", "T") + "+00:00")
+        if v.get("publishedAt") else None,
+    })
+
+
 def sync_feed(per_account=20):
     """Оновити стрічку з Virale. Повертає {"accounts": n, "items": m} або піднімає RuntimeError ChatPlace."""
     s = AnalystSettings.get()
@@ -55,16 +68,11 @@ def sync_feed(per_account=20):
         except RuntimeError:
             continue
         for v in data.get("data", []):
-            FeedItem.objects.update_or_create(external_id=v["id"], defaults={
-                "username": v.get("username") or acc.get("username", ""), "platform": v.get("platform", ""),
-                "url": v.get("url", ""), "preview_url": v.get("previewUrl") or "", "caption": v.get("caption") or "",
-                "media_type": v.get("mediaType", ""), "duration": v.get("duration"), "views": v.get("viewsCount"),
-                "likes": v.get("likeCount"), "comments": v.get("commentsCount"), "engagement": v.get("engagementRate"),
-                "viral_score": v.get("viralScore"), "is_own": (v.get("username") or "") in own,
-                "published_at": parse_datetime((v.get("publishedAt") or "").replace(" ", "T") + "+00:00")
-                if v.get("publishedAt") else None,
-            })
-            items += 1
+            try:
+                _save_item(v, acc, own)
+                items += 1
+            except (DataError, KeyError, ValueError):  # один «кривий» ролик не зупиняє всю стрічку
+                continue
     s.last_feed_sync_at = timezone.now()
     s.last_feed_note = f"{len(accounts)} сторінок, {items} роликів"
     s.save(update_fields=["last_feed_sync_at", "last_feed_note"])
