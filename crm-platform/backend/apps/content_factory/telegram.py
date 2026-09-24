@@ -9,9 +9,15 @@
 CTA від імені команди. Публікація з CRM поки вимкнена — лише чернетка на схвалення Олегом.
 Витрати: ліміт на місяць, кожен виклик — AiUsage source=SOURCE («AI ЦЕНТР»). Заміна фото — без ШІ.
 """
+import json
+import os
 import random
+import urllib.error
+import urllib.request
+import uuid
 from datetime import timedelta
 
+from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 
@@ -132,3 +138,153 @@ def generate(topic=None, call=None):
         topic=topic, title=str(r.get("title") or topic.title)[:200], text=text.rstrip() + "\n\n" + CTA,
         material=material, photo_ids=pick_photos(material) if material else [], facts=fact_titles,
         checks=[str(c)[:200] for c in (r.get("checks") or [])][:8], model=s.model)
+
+
+# ── Публікація і план (24.09.2026) ─────────────────────────────────────────────────────────────
+# Бот @wallcov_smm_bot (адмін @wallcovpro). Токен лише в .env CRM: TG_CONTENT_BOT_TOKEN / _CHANNEL_ID / _OWNER_CHAT_ID.
+# Публікуються ЛИШЕ схвалені пости: кнопкою «Опублікувати зараз» або за scheduled_at (крон кожні 5 хв).
+# «Надіслати мені» шле точну копію в особистий чат Олега з ботом — перевірка без каналу.
+CAPTION_LIMIT = 1024
+MAX_MEDIA = 10
+
+
+class PublishError(Exception):
+    pass
+
+
+def tg_config():
+    return (os.environ.get("TG_CONTENT_BOT_TOKEN", ""), os.environ.get("TG_CONTENT_CHANNEL_ID", ""),
+            os.environ.get("TG_CONTENT_OWNER_CHAT_ID", ""))
+
+
+def publish_ready():
+    token, channel, _owner = tg_config()
+    return bool(token and channel)
+
+
+def _multipart(fields, files):
+    boundary = uuid.uuid4().hex
+    out = []
+    for k, v in fields.items():
+        out += [f"--{boundary}".encode(), f'Content-Disposition: form-data; name="{k}"'.encode(), b"", str(v).encode()]
+    for name, (filename, data, ctype) in files.items():
+        out += [f"--{boundary}".encode(),
+                f'Content-Disposition: form-data; name="{name}"; filename="{filename}"'.encode(),
+                f"Content-Type: {ctype}".encode(), b"", data]
+    out += [f"--{boundary}--".encode(), b""]
+    return b"\r\n".join(out), f"multipart/form-data; boundary={boundary}"
+
+
+def _tg(method, fields, files=None):
+    token = tg_config()[0]
+    if not token:
+        raise PublishError("Бот для публікації не налаштований (TG_CONTENT_BOT_TOKEN).")
+    body, ctype = _multipart(fields, files or {})
+    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/{method}", data=body,
+                                 headers={"Content-Type": ctype})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            resp = json.load(r)
+    except urllib.error.HTTPError as e:
+        try:
+            resp = json.load(e)
+        except Exception:
+            raise PublishError(f"Telegram HTTP {e.code}") from None
+    except (urllib.error.URLError, TimeoutError) as e:
+        raise PublishError(f"Telegram недоступний: {e}") from None
+    if not resp.get("ok"):
+        raise PublishError("Telegram: " + str(resp.get("description") or resp)[:200])
+    return resp["result"]
+
+
+def _media(post):
+    """(kind, filename, bytes, content_type) для фото й відео поста, у порядку: відео, потім фото."""
+    from apps.inbox.models import MediaLibraryItem
+    ids = list(post.video_ids or []) + list(post.photo_ids or [])
+    items = {m.id: m for m in MediaLibraryItem.objects.filter(id__in=ids).select_related("file")}
+    out = []
+    for i in ids[:MAX_MEDIA]:
+        m = items.get(i)
+        if not m or not m.file_id or not m.file.data:
+            continue
+        kind = "video" if m.kind == "video" else "photo"
+        out.append((kind, m.file.filename or f"{kind}-{i}", bytes(m.file.data), m.file.content_type))
+    return out
+
+
+def send(post, chat_id):
+    """Надіслати пост у чат. Довгий текст (>1024) — окремим повідомленням після медіа. Повертає id повідомлень."""
+    text = post.text.strip()
+    media = _media(post)
+    ids = []
+    caption = text if len(text) <= CAPTION_LIMIT else ""
+    if not media:
+        r = _tg("sendMessage", {"chat_id": chat_id, "text": text, "disable_web_page_preview": "true"})
+        return [r["message_id"]]
+    if len(media) == 1:
+        kind, fn, data, ct = media[0]
+        method, field = ("sendVideo", "video") if kind == "video" else ("sendPhoto", "photo")
+        fields = {"chat_id": chat_id}
+        if caption:
+            fields["caption"] = caption
+        r = _tg(method, fields, {field: (fn, data, ct)})
+        ids.append(r["message_id"])
+    else:
+        group, files = [], {}
+        for n, (kind, fn, data, ct) in enumerate(media):
+            entry = {"type": kind, "media": f"attach://m{n}"}
+            if n == 0 and caption:
+                entry["caption"] = caption
+            group.append(entry)
+            files[f"m{n}"] = (fn, data, ct)
+        r = _tg("sendMediaGroup", {"chat_id": chat_id, "media": json.dumps(group, ensure_ascii=False)}, files)
+        ids += [m["message_id"] for m in r]
+    if not caption:
+        r = _tg("sendMessage", {"chat_id": chat_id, "text": text, "disable_web_page_preview": "true"})
+        ids.append(r["message_id"])
+    return ids
+
+
+def send_test(post):
+    owner = tg_config()[2]
+    if not owner:
+        raise PublishError("Не вказано особистий чат для перевірки (TG_CONTENT_OWNER_CHAT_ID).")
+    return send(post, owner)
+
+
+def publish(post_id):
+    """Опублікувати схвалений пост у канал. Один раз: повторний виклик нічого не шле."""
+    channel = tg_config()[1]
+    error = None
+    with transaction.atomic():
+        post = TgPost.objects.select_for_update().get(pk=post_id)
+        if post.status == TgPost.Status.PUBLISHED:
+            return post
+        if post.status != TgPost.Status.APPROVED:
+            raise PublishError("Публікуються лише схвалені пости.")
+        try:
+            ids = send(post, channel)
+        except PublishError as e:
+            error = e
+        else:
+            post.status, post.published_at = TgPost.Status.PUBLISHED, timezone.now()
+            post.tg_message_id, post.publish_error = ",".join(str(i) for i in ids), ""
+            post.save(update_fields=["status", "published_at", "tg_message_id", "publish_error", "updated_at"])
+    if error:
+        # поза транзакцією, щоб текст помилки не відкотився разом з нею
+        TgPost.objects.filter(pk=post_id).update(publish_error=str(error)[:300], updated_at=timezone.now())
+        raise error
+    return post
+
+
+def publish_due():
+    """Крон: схвалені пости, у яких настав scheduled_at. Помилка одного не зупиняє інші."""
+    done, failed = [], []
+    due = TgPost.objects.filter(status=TgPost.Status.APPROVED, scheduled_at__lte=timezone.now()).values_list("id", flat=True)
+    for pid in list(due):
+        try:
+            publish(pid)
+            done.append(pid)
+        except PublishError as e:
+            failed.append((pid, str(e)))
+    return done, failed

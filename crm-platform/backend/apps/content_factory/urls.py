@@ -20,3 +20,9 @@ urlpatterns += [
     path("api/content-factory/telegram/posts/<int:pk>/", views.TelegramPostView.as_view()),
     path("api/content-factory/telegram/posts/<int:pk>/photos/", views.TelegramPhotosView.as_view()),
 ]
+urlpatterns += [
+    path("api/content-factory/telegram/posts/", views.TelegramManualPostView.as_view()),
+    path("api/content-factory/telegram/media/", views.TelegramMediaView.as_view()),
+    path("api/content-factory/telegram/posts/<int:pk>/test/", views.TelegramSendView.as_view(), {"action": "test"}),
+    path("api/content-factory/telegram/posts/<int:pk>/publish/", views.TelegramSendView.as_view(), {"action": "publish"}),
+]

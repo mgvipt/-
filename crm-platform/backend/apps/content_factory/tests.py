@@ -1,4 +1,7 @@
 """Контент-завод: етап 0 (посилання, доступ) і етап 1 (питання клієнтів). ШІ підмінено — жодних зовнішніх запитів."""
+from datetime import timedelta
+from unittest.mock import patch
+
 from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -6,7 +9,7 @@ from rest_framework.test import APIClient
 from apps.accounts.models import User
 from apps.crm.models import AiUsage, Contact
 from apps.inbox.models import Channel, Conversation, Message
-from apps.inbox.models import MediaLibraryItem
+from apps.inbox.models import MediaLibraryItem, SharedLink
 from . import questions as qsvc
 from . import telegram as tgsvc
 from .models import (ChannelLinkError, ContentChannel, QuestionMention, QuestionSettings, QuestionTopic, TgPost,
@@ -237,6 +240,104 @@ class TelegramTests(TestCase):
         self.assertEqual(c.patch(f"/api/content-factory/telegram/posts/{p.id}/", {"status": "published"},
                                  format="json").status_code, 400)
         c.force_authenticate(self.owner)
-        r = c.get("/api/content-factory/telegram/").json()
-        self.assertFalse(r["settings"]["publish_enabled"])
+        with patch.dict("os.environ", {"TG_CONTENT_BOT_TOKEN": ""}):
+            r = c.get("/api/content-factory/telegram/").json()
+        self.assertFalse(r["settings"]["publish_enabled"])  # без токена бота публікація недоступна
         self.assertEqual(r["next_topic"]["id"], self.cold.id)
+
+
+# ── Публікація і план (Telegram підмінено — жодних реальних повідомлень) ─────────────────────────
+
+class PublishTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="pb-owner", password="x", is_superuser=True, is_staff=True)
+        self.trusted = User.objects.create_user(username="pb-trusted", password="x",
+                                                extra_permissions=["content_factory.access"])
+        self.photos = []
+        for i in range(3):
+            f = SharedLink.objects.create(token=f"tok{i}xxxxxxxxxxxx", filename=f"p{i}.jpg", content_type="image/jpeg", data=b"img")
+            self.photos.append(MediaLibraryItem.objects.create(title=f"p{i}", material="Галатея", kind="image",
+                                                               tags="реальне фото", file=f).id)
+        self.calls = []
+        self.env = patch.dict("os.environ", {"TG_CONTENT_BOT_TOKEN": "t", "TG_CONTENT_CHANNEL_ID": "@chan",
+                                             "TG_CONTENT_OWNER_CHAT_ID": "42"})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def _fake_tg(self, method, fields, files=None):
+        self.calls.append((method, fields.get("chat_id"), fields.get("caption"), sorted((files or {}).keys())))
+        if method == "sendMediaGroup":
+            return [{"message_id": 10 + n} for n in range(len(files))]
+        return {"message_id": 99}
+
+    def _post(self, text="Короткий текст", status=TgPost.Status.APPROVED):
+        return TgPost.objects.create(title="t", text=text, photo_ids=self.photos, status=status)
+
+    def test_short_text_is_caption_of_album(self):
+        p = self._post()
+        with patch.object(tgsvc, "_tg", side_effect=self._fake_tg):
+            tgsvc.publish(p.id)
+        self.assertEqual([c[0] for c in self.calls], ["sendMediaGroup"])
+        self.assertEqual(self.calls[0][1], "@chan")
+        p.refresh_from_db()
+        self.assertEqual((p.status, p.tg_message_id), (TgPost.Status.PUBLISHED, "10,11,12"))
+
+    def test_long_text_separate_message_and_once_only(self):
+        p = self._post(text="а" * 1500)
+        with patch.object(tgsvc, "_tg", side_effect=self._fake_tg):
+            tgsvc.publish(p.id)
+            tgsvc.publish(p.id)  # повторно нічого не шле
+        self.assertEqual([c[0] for c in self.calls], ["sendMediaGroup", "sendMessage"])
+
+    def test_only_approved_and_error_saved(self):
+        p = self._post(status=TgPost.Status.DRAFT)
+        with self.assertRaises(tgsvc.PublishError):
+            tgsvc.publish(p.id)
+        p.status = TgPost.Status.APPROVED
+        p.save()
+        with patch.object(tgsvc, "_tg", side_effect=tgsvc.PublishError("Telegram: chat not found")):
+            with self.assertRaises(tgsvc.PublishError):
+                tgsvc.publish(p.id)
+        p.refresh_from_db()
+        self.assertEqual(p.status, TgPost.Status.APPROVED)
+        self.assertIn("chat not found", p.publish_error)
+
+    def test_schedule_publishes_only_due(self):
+        due = self._post()
+        due.scheduled_at = timezone.now() - timedelta(minutes=1)
+        due.save()
+        later = self._post()
+        later.scheduled_at = timezone.now() + timedelta(days=1)
+        later.save()
+        draft = self._post(status=TgPost.Status.DRAFT)
+        draft.scheduled_at = timezone.now() - timedelta(minutes=1)
+        draft.save()
+        with patch.object(tgsvc, "_tg", side_effect=self._fake_tg):
+            done, failed = tgsvc.publish_due()
+        self.assertEqual((done, failed), ([due.id], []))
+
+    def test_api_rights_and_test_goes_to_owner_chat(self):
+        p = self._post()
+        c = APIClient()
+        c.force_authenticate(self.trusted)
+        self.assertEqual(c.post(f"/api/content-factory/telegram/posts/{p.id}/publish/").status_code, 403)
+        self.assertEqual(c.patch(f"/api/content-factory/telegram/posts/{p.id}/", {"scheduled_at": "2026-10-01T10:00"},
+                                 format="json").status_code, 403)
+        self.assertEqual(c.post(f"/api/content-factory/telegram/posts/{p.id}/delete/").status_code, 404)
+        c.force_authenticate(self.owner)
+        with patch.object(tgsvc, "_tg", side_effect=self._fake_tg):
+            self.assertEqual(c.post(f"/api/content-factory/telegram/posts/{p.id}/test/").status_code, 200)
+        self.assertEqual(self.calls[0][1], "42")
+        p.refresh_from_db()
+        self.assertEqual(p.status, TgPost.Status.APPROVED)  # перевірка не публікує
+        r = c.patch(f"/api/content-factory/telegram/posts/{p.id}/", {"scheduled_at": "2026-10-01T10:00"}, format="json")
+        self.assertTrue(r.json()["scheduled_at"].startswith("2026-10-01T10:00"))
+        with patch.object(tgsvc, "_tg", side_effect=self._fake_tg):
+            self.assertEqual(c.post(f"/api/content-factory/telegram/posts/{p.id}/publish/").json()["status"], "published")
+        self.assertEqual(c.patch(f"/api/content-factory/telegram/posts/{p.id}/", {"text": "x"}, format="json").status_code, 400)
+
+    def test_manual_post_free(self):
+        c = APIClient()
+        c.force_authenticate(self.trusted)
+        r = c.post("/api/content-factory/telegram/posts/", {"text": "Анонс майстер-класу\nу суботу"}, format="json")
+        self.assertEqual((r.status_code, r.json()["title"]), (201, "Анонс майстер-класу"))

@@ -2,7 +2,8 @@
  * Працює: «Студія» (план і лічильники) і «Сторінки» (наші сторінки, конкуренти, натхнення в IG / TikTok / YouTube / Telegram).
  * Етап 1 (24.09): «Питання клієнтів» — нічний розбір питань у теми, з лімітом витрат (вмикає лише власник).
  * Етап 2 (24.09): «Telegram-автопілот» — чернетки постів з найчастіших питань: факти з бази знань, реальні фото,
- *   попередній перегляд як у Telegram. Публікація з CRM поки вимкнена.
+ *   попередній перегляд як у Telegram. 24.09: публікація через @wallcov_smm_bot — зараз / за планом / «Надіслати мені»;
+ *   календар 7 днів, фото й відео з бібліотеки, пост вручну.
  * Прокрутка: .view у Layout має overflow:hidden, тому сторінка гортає САМА — .cf на всю висоту, .cf-main overflow:auto (вниз і вбік).
  * Інші вкладки — наступні етапи; показують, що там буде. Дані: /api/content-factory/*.
  * Усі компоненти — на рівні модуля (не всередині інших), щоб поля вводу не втрачали фокус. */
@@ -30,7 +31,9 @@ type QData = { days: number; topics: Topic[]; statuses: [string, string][]; sett
 type TgPhoto = { id: number; title: string; url: string; preview_url: string };
 type TgPostT = {
   id: number; title: string; text: string; material: string; status: string; status_display: string; photos: TgPhoto[];
+  videos: TgPhoto[]; photo_ids: number[]; video_ids: number[];
   facts: string[]; checks: string[]; model: string; topic: { id: number; title: string } | null; created_at: string;
+  scheduled_at: string | null; published_at: string | null; publish_error: string;
 };
 type TgData = {
   settings: { daily_drafts: boolean; model: string; models: [string, string][]; monthly_budget_usd: number;
@@ -193,6 +196,27 @@ const CSS = `
 .cf-list.warn{color:var(--cf-gold)}
 .cf-ta{box-sizing:border-box;width:100%;min-height:260px;background:var(--cf-bg);border:1px solid var(--cf-line);border-radius:8px;color:var(--cf-ink);padding:10px 12px;font:inherit;font-size:13.5px;line-height:1.5;resize:vertical}
 .cf-ta:focus{outline:none;border-color:var(--cf-blue)}
+.tg-album img:first-child,.tg-album .tg-vid:first-child{grid-column:1/-1}
+.tg-vid{position:relative}
+.tg-vid img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
+.tg-vid span{position:absolute;inset:0;display:grid;place-items:center;font-size:30px;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.6)}
+.cf-media{display:flex;gap:6px;flex-wrap:wrap}
+.cf-thumb{position:relative;width:64px;height:64px;border-radius:7px;overflow:hidden;border:1px solid var(--cf-line);background:#0b1118}
+.cf-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.cf-thumb button{all:unset;cursor:pointer;position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.7);color:#fff;font-size:11px;display:grid;place-items:center}
+.cf-thumb em{position:absolute;left:3px;bottom:2px;font-style:normal;font-size:10px;color:#fff;text-shadow:0 1px 3px #000}
+.cf-picker{border:1px dashed var(--cf-line);border-radius:9px;padding:10px;display:grid;gap:8px}
+.cf-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:6px;max-height:260px;overflow:auto}
+.cf-pick-grid button{all:unset;cursor:pointer;position:relative;aspect-ratio:1/1;border-radius:6px;overflow:hidden;border:2px solid transparent;background:#0b1118}
+.cf-pick-grid button.on{border-color:var(--cf-gold)}
+.cf-pick-grid img{width:100%;height:100%;object-fit:cover;display:block}
+.cf-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.cf-day{background:var(--cf-panel);border:1px solid var(--cf-line);border-radius:9px;padding:8px;min-height:92px;display:grid;gap:5px;align-content:start}
+.cf-day.today{border-color:var(--cf-gold)}
+.cf-day b{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--cf-ink2)}
+.cf-slot{font-size:11.5px;line-height:1.3;background:var(--cf-panel2);border-radius:6px;padding:5px 6px}
+.cf-slot i{font-style:normal;color:var(--cf-gold);font-variant-numeric:tabular-nums;margin-right:4px}
+.cf-slot.pub{opacity:.6}
 .cf-soon ul{margin:0;padding-left:18px;display:grid;gap:8px;color:var(--cf-ink);font-size:14px;line-height:1.5}
 @media (max-width:900px){
   .cf-q-top{grid-template-columns:1fr}
@@ -516,25 +540,121 @@ function TgPreview({ post, channel }: { post: TgPostT; channel: string }) {
     <div className="tg-chat" aria-label="Попередній перегляд поста в Telegram">
       <div className="tg-head"><span className="tg-ava">W</span><div><b>Wallcov · рішення для інтерʼєру</b><span>{channel} · канал</span></div></div>
       <div className="tg-bubble">
-        {post.photos.length > 0 && (
-          <div className="tg-album">{post.photos.map((ph) => <img key={ph.id} src={ph.preview_url || ph.url} alt={ph.title} loading="lazy" />)}</div>
+        {(post.videos.length + post.photos.length) > 0 && (
+          <div className="tg-album">
+            {post.videos.map((v) => <div key={"v" + v.id} className="tg-vid"><img src={v.preview_url || v.url} alt={v.title} loading="lazy" /><span>▶</span></div>)}
+            {post.photos.map((ph) => <img key={ph.id} src={ph.preview_url || ph.url} alt={ph.title} loading="lazy" />)}
+          </div>
         )}
         <TgText text={post.text} />
-        <div className="tg-meta"><span>👁 —</span><span>{time}</span></div>
+        <div className="tg-meta"><span>👁 —</span><span>{post.published_at ? new Date(post.published_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : time}</span></div>
       </div>
     </div>
   );
 }
 
-function TgPostCard({ post, channel, onChanged }: { post: TgPostT; channel: string; onChanged: () => void }) {
+const localInput = (iso: string | null) => {
+  if (!iso) return "";
+  const d = new Date(iso); const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+const dayTime = (iso: string) => new Date(iso).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
+
+function MediaPicker({ post, onSave }: { post: TgPostT; onSave: (b: Record<string, unknown>) => void }) {
+  const [kind, setKind] = useState<"image" | "video">("image");
+  const [material, setMaterial] = useState(post.material || "");
+  const [data, setData] = useState<{ items: TgPhoto[]; materials: string[] } | null>(null);
+  useEffect(() => {
+    api.get<{ items: TgPhoto[]; materials: string[] }>(`/api/content-factory/telegram/media/?kind=${kind}&material=${encodeURIComponent(material)}`)
+      .then(setData).catch(() => setData({ items: [], materials: [] }));
+  }, [kind, material]);
+  const field = kind === "video" ? "video_ids" : "photo_ids";
+  const chosen: number[] = kind === "video" ? post.video_ids : post.photo_ids;
+  const toggle = (id: number) => onSave({ [field]: chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id] });
+  return (
+    <div className="cf-picker">
+      <div className="cf-set">
+        <div className="cf-chips">
+          <button type="button" className={"cf-chip" + (kind === "image" ? " on" : "")} onClick={() => setKind("image")}>Реальні фото</button>
+          <button type="button" className={"cf-chip" + (kind === "video" ? " on" : "")} onClick={() => setKind("video")}>Відео</button>
+        </div>
+        <select className="cf-in" value={material} onChange={(e) => setMaterial(e.target.value)} aria-label="Матеріал">
+          <option value="">Усі матеріали</option>
+          {(data?.materials || []).map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </div>
+      <div className="cf-pick-grid">
+        {!data ? <span className="cf-kv">Завантажую…</span> : data.items.length === 0 ? <span className="cf-kv">Нічого немає</span>
+          : data.items.map((m) => (
+            <button key={m.id} type="button" className={chosen.includes(m.id) ? "on" : ""} title={m.title} onClick={() => toggle(m.id)}>
+              <img src={m.preview_url || m.url} alt={m.title} loading="lazy" />
+            </button>))}
+      </div>
+    </div>
+  );
+}
+
+function Calendar({ posts }: { posts: TgPostT[] }) {
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+  const planned = posts.filter((p) => p.scheduled_at || p.published_at);
+  const unplanned = posts.filter((p) => p.status === "approved" && !p.scheduled_at);
+  return (
+    <div className="cf-card">
+      <h3>План публікацій · 7 днів</h3>
+      <div className="cf-week">
+        {days.map((d, i) => {
+          const items = planned.filter((p) => { const w = new Date((p.published_at || p.scheduled_at) as string); return w.toDateString() === d.toDateString(); });
+          return (
+            <div key={i} className={"cf-day" + (i === 0 ? " today" : "")}>
+              <b>{d.toLocaleDateString("uk-UA", { weekday: "short", day: "2-digit", month: "2-digit" })}</b>
+              {items.map((p) => <div key={p.id} className={"cf-slot" + (p.published_at ? " pub" : "")}><i>{dayTime((p.published_at || p.scheduled_at) as string)}</i>{p.title}{p.published_at ? " ✓" : ""}</div>)}
+            </div>);
+        })}
+      </div>
+      {unplanned.length > 0 && <div className="cf-kv"><span>Схвалені без дати: {unplanned.map((p) => p.title).join(" · ")}</span></div>}
+    </div>
+  );
+}
+
+function NewPost({ onDone }: { onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [err, setErr] = useState("");
+  const create = async () => {
+    try { await api.post("/api/content-factory/telegram/posts/", { text }); setText(""); setOpen(false); onDone(); }
+    catch (e: any) { setErr(e?.data?.error || "Не вдалося створити."); }
+  };
+  if (!open) return <button type="button" className="cf-btn ghost" onClick={() => setOpen(true)}>+ Пост вручну (без ШІ)</button>;
+  return (
+    <div className="cf-card">
+      <h3>Новий пост вручну</h3>
+      <textarea id="cf-new-post" className="cf-ta" style={{ minHeight: 140 }} value={text} onChange={(e) => setText(e.target.value)}
+        placeholder="Перший рядок стане назвою. Фото й відео додасте після створення." aria-label="Текст нового поста" />
+      <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+        <button type="button" className="cf-btn gold" style={{ height: 32 }} disabled={!text.trim()} onClick={create}>Створити чернетку</button>
+        <button type="button" className="cf-btn ghost" onClick={() => setOpen(false)}>Скасувати</button>
+      </div>
+      {err && <div className="cf-msg err">{err}</div>}
+    </div>
+  );
+}
+
+function TgPostCard({ post, channel, canPublish, onChanged }: { post: TgPostT; channel: string; canPublish: boolean; onChanged: () => void }) {
   const [edit, setEdit] = useState(false);
   const [text, setText] = useState(post.text);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [note, setNote] = useState("");
+  const [picker, setPicker] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const [when, setWhen] = useState(localInput(post.scheduled_at));
+  useEffect(() => { setWhen(localInput(post.scheduled_at)); }, [post.scheduled_at]);
+  const published = post.status === "published";
   useEffect(() => { setText(post.text); }, [post.text]);
-  const act = async (fn: () => Promise<unknown>) => {
-    setBusy(true); setMsg("");
-    try { await fn(); onChanged(); } catch (e: any) { setMsg(e?.data?.error || "Не вдалося."); } finally { setBusy(false); }
+  const act = async (fn: () => Promise<unknown>, ok?: string) => {
+    setBusy(true); setMsg(""); setNote("");
+    try { await fn(); if (ok) setNote(ok); onChanged(); } catch (e: any) { setMsg(e?.data?.error || "Не вдалося."); } finally { setBusy(false); }
   };
   const patch = (b: Record<string, unknown>) => act(() => api.patch(`/api/content-factory/telegram/posts/${post.id}/`, b));
   const caption = post.text.length;
@@ -547,14 +667,25 @@ function TgPostCard({ post, channel, onChanged }: { post: TgPostT; channel: stri
           <span className={"cf-pill " + (post.status === "approved" ? "now" : "next")}>{post.status_display}</span>
         </div>
         {post.topic && <div className="cf-kv"><span>Питання клієнток</span><b style={{ fontWeight: 500 }}>{post.topic.title}</b></div>}
-        <div className="cf-kv"><span>Фото</span><b style={{ fontWeight: 500 }}>{post.photos.length ? `${post.photos.length} реальні · ${post.material}` : "немає реальних фото цього матеріалу"}</b></div>
+        <div className="cf-kv"><span>Медіа</span><b style={{ fontWeight: 500 }}>{post.videos.length ? `${post.videos.length} відео · ` : ""}{post.photos.length} фото{post.material ? " · " + post.material : ""}</b></div>
+        {!published && (<>
+          <div className="cf-media">
+            {[...post.videos.map((m) => ({ ...m, v: true })), ...post.photos.map((m) => ({ ...m, v: false }))].map((m) => (
+              <div key={(m.v ? "v" : "p") + m.id} className="cf-thumb"><img src={m.preview_url || m.url} alt={m.title} />{m.v && <em>▶ відео</em>}
+                <button type="button" aria-label="Прибрати" onClick={() => patch(m.v ? { video_ids: post.video_ids.filter((x) => x !== m.id) } : { photo_ids: post.photo_ids.filter((x) => x !== m.id) })}>✕</button></div>))}
+            <button type="button" className="cf-btn ghost" style={{ height: 64 }} onClick={() => setPicker(!picker)}>{picker ? "Готово" : "+ Фото / відео"}</button>
+          </div>
+          {picker && <MediaPicker post={post} onSave={(b) => patch(b)} />}
+        </>)}
+        {published && <div className="cf-kv"><span>Опубліковано</span><b>{new Date(post.published_at as string).toLocaleString("uk-UA")}</b></div>}
+        {post.publish_error && <div className="cf-msg err">Остання спроба: {post.publish_error}</div>}
         <div className="cf-kv"><span>Довжина</span><b style={{ fontWeight: 500 }}>{caption} симв.{caption > 1024 ? " · довше підпису до фото — текст піде окремим повідомленням" : ""}</b></div>
         {post.checks.length > 0 && (<div><div className="cf-kv"><span>Перевірте перед публікацією</span></div>
           <ul className="cf-list warn">{post.checks.map((c, i) => <li key={i}>{c}</li>)}</ul></div>)}
         {post.facts.length > 0 && (<div><div className="cf-kv"><span>Звідки факти (база знань)</span></div>
           <ul className="cf-list">{post.facts.map((f, i) => <li key={i}>{f}</li>)}</ul></div>)}
         {edit && <textarea id={`cf-tg-text-${post.id}`} className="cf-ta" value={text} onChange={(e) => setText(e.target.value)} aria-label="Текст поста" />}
-        <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+        {!published && <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
           {edit ? (<>
             <button type="button" className="cf-btn gold" style={{ height: 32 }} disabled={busy} onClick={() => patch({ text }).then(() => setEdit(false))}>Зберегти текст</button>
             <button type="button" className="cf-btn ghost" onClick={() => { setText(post.text); setEdit(false); }}>Скасувати</button>
@@ -565,9 +696,23 @@ function TgPostCard({ post, channel, onChanged }: { post: TgPostT; channel: stri
               ? <button type="button" className="cf-btn gold" style={{ height: 32 }} disabled={busy} onClick={() => patch({ status: "approved" })}>Схвалити</button>
               : <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => patch({ status: "draft" })}>Повернути в чернетки</button>}
             <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => patch({ status: "rejected" })}>Відхилити</button>
-            <button type="button" className="cf-btn ghost" disabled title="Публікацію з CRM увімкнемо після вашого рішення щодо старого бота @wallcov_smm_bot">Опублікувати в {channel}</button>
           </>)}
-        </div>
+        </div>}
+        {post.status === "approved" && canPublish && (
+          <div className="cf-set">
+            <input id={`cf-when-${post.id}`} type="datetime-local" className="cf-in" value={when} onChange={(e) => setWhen(e.target.value)} aria-label="Дата і час публікації" />
+            <button type="button" className="cf-btn ghost" disabled={busy || !when} onClick={() => act(() => api.patch(`/api/content-factory/telegram/posts/${post.id}/`, { scheduled_at: when }), "Заплановано")}>
+              {post.scheduled_at ? "Змінити час" : "Запланувати"}</button>
+            {post.scheduled_at && <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => act(() => api.patch(`/api/content-factory/telegram/posts/${post.id}/`, { scheduled_at: null }))}>Прибрати з плану</button>}
+            <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => act(() => api.post(`/api/content-factory/telegram/posts/${post.id}/test/`), "Надіслано вам у Telegram — перевірте, як виглядає")}>Надіслати мені</button>
+            {confirm ? (<>
+              <button type="button" className="cf-btn gold" style={{ height: 32 }} disabled={busy} onClick={() => { setConfirm(false); act(() => api.post(`/api/content-factory/telegram/posts/${post.id}/publish/`), "Опубліковано в " + channel); }}>Так, опублікувати в {channel}</button>
+              <button type="button" className="cf-btn ghost" onClick={() => setConfirm(false)}>Ні</button>
+            </>) : <button type="button" className="cf-btn gold" style={{ height: 32 }} disabled={busy} onClick={() => setConfirm(true)}>Опублікувати зараз</button>}
+          </div>
+        )}
+        {post.status !== "approved" && !published && <div className="cf-kv"><span>Щоб запланувати чи опублікувати — спершу «Схвалити».</span></div>}
+        {note && <div className="cf-msg ok" role="status">{note}</div>}
         {msg && <div className="cf-msg err" role="alert">{msg}</div>}
       </div>
     </div>
@@ -602,7 +747,7 @@ function Telegram() {
       <div>
         <h1 className="cf-h1">Telegram-автопілот</h1>
         <p className="cf-sub">Щоранку — чернетка поста для {s.channel} з питання, яке клієнтки ставлять найчастіше. Факти лише з бази знань,
-          фото — лише реальні обʼєкти з бібліотеки. Ви дивитесь, правите й схвалюєте. Публікація з CRM поки вимкнена.</p>
+          фото — лише реальні обʼєкти з бібліотеки. Ви правите, схвалюєте й публікуєте одразу або за планом через @wallcov_smm_bot.</p>
       </div>
       <div className="cf-q-top">
         <div className="cf-card">
@@ -631,7 +776,10 @@ function Telegram() {
           {msg && <div className={"cf-msg " + (msg.ok ? "ok" : "err")} role="status">{msg.text}</div>}
         </div>
       </div>
-      {data.posts.length ? data.posts.map((p) => <TgPostCard key={p.id} post={p} channel={s.channel} onChanged={load} />)
+      <Calendar posts={data.posts} />
+      {!s.publish_enabled && <div className="cf-msg err">Бот для публікації не підключений — публікація недоступна.</div>}
+      <NewPost onDone={load} />
+      {data.posts.length ? data.posts.map((p) => <TgPostCard key={p.id} post={p} channel={s.channel} canPublish={s.publish_enabled} onChanged={load} />)
         : <div className="cf-empty">Чернеток ще немає — натисніть «Створити чернетку».</div>}
     </>
   );

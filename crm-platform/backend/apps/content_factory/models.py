@@ -197,6 +197,10 @@ class TgPost(models.Model):
     text = models.TextField()
     material = models.CharField(max_length=80, blank=True)
     photo_ids = models.JSONField(default=list, blank=True, help_text="inbox.MediaLibraryItem — лише реальні фото обʼєктів")
+    video_ids = models.JSONField(default=list, blank=True, help_text="inbox.MediaLibraryItem kind=video (24.09, публікація)")
+    scheduled_at = models.DateTimeField(null=True, blank=True, db_index=True,
+                                        help_text="Коли опублікувати (лише схвалені). Порожньо — вручну")
+    publish_error = models.CharField(max_length=300, blank=True)
     facts = models.JSONField(default=list, blank=True, help_text="Назви записів бази знань, з яких узято факти")
     checks = models.JSONField(default=list, blank=True, help_text="Що перевірити людині перед публікацією")
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT, db_index=True)

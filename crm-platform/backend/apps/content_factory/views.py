@@ -7,12 +7,14 @@ POST /api/content-factory/channels/        — {link, platform?, role, title?, n
 PATCH/DELETE /api/content-factory/channels/<id>/
 Етап 1: GET /questions/, PATCH /questions/settings/, POST /questions/run/, PATCH /questions/<id>/
 Етап 2: GET /telegram/, PATCH /telegram/settings/, POST /telegram/draft/, PATCH /telegram/posts/<id>/, POST /telegram/posts/<id>/photos/
+Публікація (24.09): POST /telegram/posts/ (вручну), POST /telegram/posts/<id>/test|publish/, GET /telegram/media/
 """
 from datetime import timedelta
 
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -214,26 +216,33 @@ def _photos(request, ids):
     return out
 
 
+def _iso(v):
+    return timezone.localtime(v).isoformat() if v else None
+
+
 def _post(request, p):
     return {
         "id": p.id, "title": p.title, "text": p.text, "material": p.material, "status": p.status,
         "status_display": p.get_status_display(), "photos": _photos(request, p.photo_ids or []),
+        "videos": _photos(request, p.video_ids or []), "photo_ids": p.photo_ids or [], "video_ids": p.video_ids or [],
         "facts": p.facts or [], "checks": p.checks or [], "model": p.model,
         "topic": {"id": p.topic_id, "title": p.topic.title} if p.topic_id else None,
-        "created_at": timezone.localtime(p.created_at).isoformat(),
+        "created_at": _iso(p.created_at), "scheduled_at": _iso(p.scheduled_at), "published_at": _iso(p.published_at),
+        "publish_error": p.publish_error,
     }
 
 
 def _tg_settings(s):
     return {"daily_drafts": s.daily_drafts, "model": s.model, "models": QuestionSettings.MODELS,
             "monthly_budget_usd": float(s.monthly_budget_usd), "spent_month_usd": round(tgsvc.month_spent(), 4),
-            "estimate_usd": tgsvc.estimate_usd(s.model), "channel": s.channel, "publish_enabled": False}
+            "estimate_usd": tgsvc.estimate_usd(s.model), "channel": s.channel, "publish_enabled": tgsvc.publish_ready()}
 
 
 class TelegramView(_Base):
     def get(self, request):
         nt = tgsvc.next_topic()
-        posts = TgPost.objects.select_related("topic").exclude(status=TgPost.Status.REJECTED)[:30]
+        posts = TgPost.objects.select_related("topic").exclude(status=TgPost.Status.REJECTED).order_by(
+            "status", "scheduled_at", "-created_at")[:40]
         return Response({
             "settings": _tg_settings(TgSettings.get()),
             "next_topic": {"id": nt.id, "title": nt.title, "count_7d": nt.n} if nt else None,
@@ -264,6 +273,49 @@ class TelegramSettingsView(_Base):
         return Response(_tg_settings(s))
 
 
+class TelegramManualPostView(_Base):
+    """POST {title, text} — пост вручну, без ШІ (безкоштовно)."""
+    def post(self, request):
+        data = request.data or {}
+        text = str(data.get("text") or "").strip()
+        if not text:
+            return Response({"error": "Напишіть текст поста."}, status=400)
+        p = TgPost.objects.create(title=str(data.get("title") or text.split("\n")[0])[:200], text=text[:4000])
+        return Response(_post(request, p), status=201)
+
+
+class TelegramMediaView(_Base):
+    """GET ?kind=image|video&material= — фото/відео з бібліотеки для поста (реальні фото й усі відео)."""
+    def get(self, request):
+        from apps.inbox.models import MediaLibraryItem
+        kind = "video" if request.GET.get("kind") == "video" else "image"
+        qs = MediaLibraryItem.objects.filter(is_active=True, kind=kind)
+        if kind == "image":
+            qs = qs.filter(tags__icontains=tgsvc.REAL_TAG)
+        if request.GET.get("material"):
+            qs = qs.filter(material__iexact=request.GET["material"])
+        ids = list(qs.order_by("material", "sort", "id").values_list("id", flat=True)[:120])
+        materials = sorted(set(MediaLibraryItem.objects.filter(is_active=True, kind=kind).filter(
+            **({"tags__icontains": tgsvc.REAL_TAG} if kind == "image" else {})).values_list("material", flat=True)))
+        return Response({"items": _photos(request, ids), "materials": materials})
+
+
+class TelegramSendView(_Base):
+    """POST /test/ — у особистий чат Олега; POST /publish/ — у канал зараз. Лише власник."""
+    def post(self, request, pk, action):
+        if not request.user.is_superuser:
+            return Response({"error": "Публікувати може лише власник."}, status=403)
+        p = get_object_or_404(TgPost, pk=pk)
+        try:
+            if action == "test":
+                tgsvc.send_test(p)
+                return Response({"ok": True, "note": "Надіслано вам у Telegram (@wallcov_smm_bot)."})
+            p = tgsvc.publish(p.id)
+        except tgsvc.PublishError as e:
+            return Response({"error": str(e)}, status=400)
+        return Response(_post(request, p))
+
+
 class TelegramDraftView(_Base):
     """POST {topic_id?} — нова чернетка (платно, в межах ліміту). Лише власник."""
     def post(self, request):
@@ -282,10 +334,31 @@ class TelegramDraftView(_Base):
 
 
 class TelegramPostView(_Base):
-    """PATCH {title?, text?, status?} — правка тексту й схвалення. «Опубліковано» через API не ставиться."""
+    """PATCH {title?, text?, status?, scheduled_at?, photo_ids?, video_ids?} — правка, схвалення, план.
+    «Опубліковано» через API не ставиться; опублікований пост не змінюється."""
     def patch(self, request, pk):
         p = get_object_or_404(TgPost, pk=pk)
         data = request.data or {}
+        if p.status == TgPost.Status.PUBLISHED:
+            return Response({"error": "Пост уже в каналі — змінити його тут не можна."}, status=400)
+        if "scheduled_at" in data:
+            if not request.user.is_superuser:
+                return Response({"error": "Планувати публікацію може лише власник."}, status=403)
+            if data["scheduled_at"]:
+                when = parse_datetime(str(data["scheduled_at"]))
+                if when is None:
+                    return Response({"error": "Невірна дата."}, status=400)
+                if timezone.is_naive(when):
+                    when = timezone.make_aware(when)
+                p.scheduled_at = when
+            else:
+                p.scheduled_at = None
+        for field in ("photo_ids", "video_ids"):
+            if field in data:
+                ids = [int(i) for i in (data[field] or []) if str(i).isdigit()]
+                setattr(p, field, ids[:tgsvc.MAX_MEDIA])
+        if len((p.photo_ids or [])) + len((p.video_ids or [])) > tgsvc.MAX_MEDIA:
+            return Response({"error": f"У пості максимум {tgsvc.MAX_MEDIA} фото й відео разом."}, status=400)
         if "text" in data:
             text = str(data["text"] or "").strip()
             if not text:
