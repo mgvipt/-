@@ -33,3 +33,11 @@ urlpatterns += [
     path("api/content-factory/sources/chats/<int:pk>/", views.SourceChatView.as_view()),
     path("api/content-factory/sources/<int:pk>/", views.SourceAssetView.as_view()),
 ]
+urlpatterns += [
+    path("api/content-factory/sources/drive/", views.DriveFoldersView.as_view()),
+    path("api/content-factory/sources/drive/sync/", views.DriveSyncView.as_view()),
+    path("api/content-factory/sources/drive/<int:pk>/", views.DriveFolderView.as_view()),
+]
+urlpatterns += [
+    path("api/content-factory/telegram/published/", views.TelegramPublishedView.as_view()),
+]

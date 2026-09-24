@@ -9,9 +9,11 @@
 CTA від імені команди. Публікація з CRM поки вимкнена — лише чернетка на схвалення Олегом.
 Витрати: ліміт на місяць, кожен виклик — AiUsage source=SOURCE («AI ЦЕНТР»). Заміна фото — без ШІ.
 """
+import html
 import json
 import os
 import random
+import re
 import urllib.error
 import urllib.request
 import uuid
@@ -205,8 +207,17 @@ def _media(post):
     out = []
     by_src = {a.id: a for a in SourceAsset.objects.filter(id__in=post.source_ids or [], kind__in=["photo", "video"])}
     for i in post.source_ids or []:
-        if i in by_src:
-            out.append((by_src[i].kind, "", None, "", by_src[i].file_id))
+        a = by_src.get(i)
+        if not a:
+            continue
+        if a.origin == SourceAsset.Origin.DRIVE:  # з Drive — качаємо лише зараз, у момент відправки
+            from .drive import DriveError, download
+            try:
+                out.append((a.kind, a.file_name or f"drive-{a.id}", download(a), a.mime, ""))
+            except DriveError as e:
+                raise PublishError(str(e)) from None
+        else:
+            out.append((a.kind, "", None, "", a.file_id))
     ids = list(post.video_ids or []) + list(post.photo_ids or [])
     items = {m.id: m for m in MediaLibraryItem.objects.filter(id__in=ids).select_related("file")}
     for i in ids:
@@ -299,3 +310,67 @@ def publish_due():
         except PublishError as e:
             failed.append((pid, str(e)))
     return done, failed
+
+
+# ── Аналітика опублікованих (24.09.2026) ────────────────────────────────────────────────────────
+# Bot API не віддає перегляди постів. Беремо їх з офіційного публічного віджета нашого ж каналу
+# (t.me/<канал>/<id>?embed=1) — відкриті дані. Знімки: у перший тиждень щогодини, далі раз на добу до 30 днів.
+_VIEWS_RX = re.compile(r'tgme_widget_message_views">([^<]+)<')
+_REACT_RX = re.compile(r'<span class="tgme_reaction[^"]*">(?:<i[^>]*>(?:<b>)?([^<]*)(?:</b>)?</i>)?([\d.,KM]+)</span>')
+
+
+def _num(s):
+    s = (s or "").strip().replace(",", ".").upper()
+    mult = 1000 if s.endswith("K") else 1_000_000 if s.endswith("M") else 1
+    try:
+        return int(float(s.rstrip("KM")) * mult)
+    except ValueError:
+        return None
+
+
+def public_stats(channel_username, message_id):
+    """(views, reactions_total, {emoji: n}) з віджета, або None, якщо не вдалося."""
+    url = f"https://t.me/{channel_username}/{message_id}?embed=1&mode=tme"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (WallcovCRM stats)"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            page = r.read().decode("utf-8", "replace")
+    except (urllib.error.URLError, TimeoutError):
+        return None
+    m = _VIEWS_RX.search(page)
+    if not m:
+        return None
+    detail = {}
+    for emoji, count in _REACT_RX.findall(page):
+        n = _num(count)
+        if n:
+            key = html.unescape(emoji).strip() or "⭐"
+            detail[key] = detail.get(key, 0) + n
+    return _num(m.group(1)), sum(detail.values()), detail
+
+
+def channel_username():
+    ch = tg_config()[1]
+    return ch.lstrip("@") if ch.startswith("@") else TgSettings.get().channel.lstrip("@")
+
+
+def collect_stats(force=False):
+    """Крон щогодини: оновити перегляди/реакції опублікованих постів (тиждень — щогодини, до 30 днів — раз на добу)."""
+    from .models import TgPostStat
+    now = timezone.now()
+    done = 0
+    for p in TgPost.objects.filter(status=TgPost.Status.PUBLISHED, published_at__gte=now - timedelta(days=30)):
+        age = now - p.published_at
+        if not force and p.stats_at and age > timedelta(days=7) and now - p.stats_at < timedelta(hours=23):
+            continue
+        first = (p.tg_message_id or "").split(",")[0]
+        if not first.isdigit():
+            continue
+        got = public_stats(channel_username(), first)
+        if not got:
+            continue
+        p.views, p.reactions, p.reactions_detail, p.stats_at = got[0], got[1], got[2], now
+        p.save(update_fields=["views", "reactions", "reactions_detail", "stats_at"])
+        TgPostStat.objects.create(post=p, views=got[0], reactions=got[1])
+        done += 1
+    return done

@@ -12,8 +12,8 @@ from apps.inbox.models import Channel, Conversation, Message
 from apps.inbox.models import MediaLibraryItem, SharedLink
 from . import questions as qsvc
 from . import telegram as tgsvc
-from .models import (ChannelLinkError, ContentChannel, QuestionMention, QuestionSettings, QuestionTopic, SourceAsset,
-                     SourceChat, TgPost, TgSettings, parse_channel_link)
+from .models import (ChannelLinkError, ContentChannel, DriveFolder, QuestionMention, QuestionSettings, QuestionTopic,
+                     SourceAsset, SourceChat, TgPost, TgSettings, parse_channel_link)
 
 
 class ParseLinkTests(SimpleTestCase):
@@ -407,3 +407,51 @@ class SourceTests(TestCase):
             tgsvc.publish(post.id)
         method, fields, files = calls[0]
         self.assertEqual((method, fields["photo"], files), ("sendPhoto", "bigp5", None))  # без завантаження файлу
+
+
+# ── Google Drive і аналітика опублікованих (мережа підмінена) ─────────────────────────────────────
+class DriveAndStatsTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="dr-owner", password="x", is_superuser=True, is_staff=True)
+
+    def test_drive_sync_indexes_links_only(self):
+        from . import drive
+        tree = {
+            "ROOT": [{"id": "F1", "name": "ВЕЛЬВЕТ Луна", "mimeType": drive.FOLDER_MIME},
+                     {"id": "doc", "name": "кошторис.pdf", "mimeType": "application/pdf"}],
+            "F1": [{"id": "IMG1", "name": "спальня.jpg", "mimeType": "image/jpeg", "size": "1000",
+                    "webViewLink": "https://drive.google.com/file/d/IMG1/view"},
+                   {"id": "VID1", "name": "нанесення.mp4", "mimeType": "video/mp4", "size": "5000",
+                    "videoMediaMetadata": {"durationMillis": 12000}}],
+        }
+        folder = DriveFolder.objects.create(folder_id="ROOT", title="А 2025")
+        with patch.object(drive, "children", side_effect=lambda fid: iter(tree.get(fid, []))):
+            self.assertEqual(drive.sync_folder(folder), 2)
+            self.assertEqual(drive.sync_folder(folder), 2)  # повторно — без дублів
+        self.assertEqual(SourceAsset.objects.count(), 2)
+        img = SourceAsset.objects.get(file_id="IMG1")
+        self.assertEqual((img.origin, img.material, img.caption), ("drive", "Вельвет Луна", "А 2025 / ВЕЛЬВЕТ Луна"))
+        self.assertIn("спальня", img.tags)
+        self.assertEqual(SourceAsset.objects.get(file_id="VID1").duration, 12)
+        self.assertEqual(drive.parse_folder_link("https://drive.google.com/drive/folders/1abcDEF?usp=sharing"), "1abcDEF")
+
+    def test_stats_snapshot_and_published_tab(self):
+        from .models import TgPostStat
+        p = TgPost.objects.create(title="Шовк", text="т", status=TgPost.Status.PUBLISHED, tg_message_id="1022,1023",
+                                  published_at=timezone.now() - timedelta(hours=2))
+        TgPost.objects.create(title="Чернетка", text="т")
+        with patch.dict("os.environ", {"TG_CONTENT_CHANNEL_ID": "@wallcovpro"}), \
+                patch.object(tgsvc, "public_stats", return_value=(1300, 5, {"🔥": 4, "❤": 1})) as ps:
+            self.assertEqual(tgsvc.collect_stats(), 1)
+            ps.assert_called_with("wallcovpro", "1022")
+        p.refresh_from_db()
+        self.assertEqual((p.views, p.reactions), (1300, 5))
+        self.assertEqual(TgPostStat.objects.count(), 1)
+        c = APIClient()
+        c.force_authenticate(self.owner)
+        with patch.dict("os.environ", {"TG_CONTENT_CHANNEL_ID": "@wallcovpro"}):
+            r = c.get("/api/content-factory/telegram/published/").json()
+            drafts = c.get("/api/content-factory/telegram/").json()["posts"]
+        self.assertEqual((r["summary"]["count"], r["summary"]["avg_views"]), (1, 1300))
+        self.assertEqual(r["posts"][0]["tg_link"], "https://t.me/wallcovpro/1022")
+        self.assertEqual([x["title"] for x in drafts], ["Чернетка"])  # опубліковані — лише у своїй вкладці

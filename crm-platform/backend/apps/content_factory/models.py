@@ -202,6 +202,10 @@ class TgPost(models.Model):
                                         help_text="Коли опублікувати (лише схвалені). Порожньо — вручну")
     publish_error = models.CharField(max_length=300, blank=True)
     source_ids = models.JSONField(default=list, blank=True, help_text="SourceAsset з TG — шлються за file_id, без завантаження")
+    views = models.IntegerField(null=True, blank=True, help_text="Перегляди з публічного віджета каналу")
+    reactions = models.IntegerField(null=True, blank=True)
+    reactions_detail = models.JSONField(default=dict, blank=True, help_text="{емодзі: кількість}")
+    stats_at = models.DateTimeField(null=True, blank=True)
     facts = models.JSONField(default=list, blank=True, help_text="Назви записів бази знань, з яких узято факти")
     checks = models.JSONField(default=list, blank=True, help_text="Що перевірити людині перед публікацією")
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT, db_index=True)
@@ -265,3 +269,29 @@ class SourceAsset(models.Model):
 
     class Meta:
         ordering = ["-posted_at", "-id"]
+
+
+class DriveFolder(models.Model):
+    """Папка Google Drive, яку CRM раз на добу обходить і заносить у «Джерела» лише посилання й назви файлів.
+    Доступ — сервісний акаунт GA4 (ads-bot@…): папка має бути відкрита йому або «всім, у кого є посилання»."""
+    folder_id = models.CharField(max_length=80, unique=True)
+    title = models.CharField(max_length=200, blank=True)
+    enabled = models.BooleanField(default=True)
+    last_sync_at = models.DateTimeField(null=True, blank=True)
+    files_count = models.IntegerField(default=0)
+    last_error = models.CharField(max_length=300, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title or self.folder_id
+
+
+class TgPostStat(models.Model):
+    """Знімок переглядів/реакцій опублікованого поста — щоб бачити ріст (1 год, доба, 3 дні, тиждень)."""
+    post = models.ForeignKey(TgPost, on_delete=models.CASCADE, related_name="stats")
+    views = models.IntegerField(null=True, blank=True)
+    reactions = models.IntegerField(null=True, blank=True)
+    taken_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["taken_at"]

@@ -4,7 +4,8 @@
  * Етап 2 (24.09): «Telegram-автопілот» — чернетки постів з найчастіших питань: факти з бази знань, реальні фото,
  *   попередній перегляд як у Telegram. 24.09: публікація через @wallcov_smm_bot — зараз / за планом / «Надіслати мені»;
  *   календар 7 днів, фото й відео з бібліотеки, пост вручну.
- * «Джерела контенту» (24.09): файли з TG-груп і каналу за file_id (без завантаження), мітки з підпису; їх можна додати в пост.
+ * «Джерела контенту» (24.09): файли з TG-груп, каналу й Google Drive лише за посиланням, мітки з підпису/шляху папок.
+ * Telegram-автопілот: підвкладка «Опубліковані й аналітика» — перегляди/реакції з публічного віджета каналу, знімки в часі.
  * Прокрутка: .view у Layout має overflow:hidden, тому сторінка гортає САМА — .cf на всю висоту, .cf-main overflow:auto (вниз і вбік).
  * Інші вкладки — наступні етапи; показують, що там буде. Дані: /api/content-factory/*.
  * Усі компоненти — на рівні модуля (не всередині інших), щоб поля вводу не втрачали фокус. */
@@ -38,13 +39,21 @@ type SrcData = {
   total: number; items: SrcItem[]; ingest_ready: boolean;
   chats: { id: number; title: string; username: string; kind: string; enabled: boolean; count: number }[];
   materials: { name: string; count: number }[];
+  drive_folders: DriveFolderT[]; drive_email: string;
 };
 type TgPostT = {
   id: number; title: string; text: string; material: string; status: string; status_display: string; photos: TgPhoto[];
   videos: TgPhoto[]; photo_ids: number[]; video_ids: number[]; sources: SrcItem[]; source_ids: number[];
   facts: string[]; checks: string[]; model: string; topic: { id: number; title: string } | null; created_at: string;
   scheduled_at: string | null; published_at: string | null; publish_error: string;
+  views?: number | null; reactions?: number | null; reactions_detail?: Record<string, number>; tg_link?: string; stats_at?: string | null;
+  history?: { at: string; views: number | null; reactions: number | null }[]; views_24h?: number | null;
 };
+type PubData = {
+  posts: TgPostT[];
+  summary: { count: number; avg_views: number | null; total_reactions: number; best: { id: number; title: string; views: number } | null };
+};
+type DriveFolderT = { id: number; folder_id: string; title: string; enabled: boolean; files_count: number; last_error: string; last_sync_at: string | null; link: string };
 type TgData = {
   settings: { daily_drafts: boolean; model: string; models: [string, string][]; monthly_budget_usd: number;
     spent_month_usd: number; estimate_usd: number; channel: string; publish_enabled: boolean };
@@ -238,6 +247,13 @@ const CSS = `
 .cf-chatrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--cf-line);font-size:13px}
 .cf-chatrow:first-of-type{border-top:0}
 .cf-steps{margin:0;padding-left:18px;display:grid;gap:5px;font-size:13px;color:var(--cf-ink2)}
+.cf-sub-tabs{display:flex;gap:6px;border-bottom:1px solid var(--cf-line);padding-bottom:10px}
+.cf-pub{display:grid;grid-template-columns:64px minmax(0,1fr) 110px 150px 120px;gap:14px;align-items:center;background:var(--cf-panel);border:1px solid var(--cf-line);border-radius:10px;padding:10px 12px}
+.cf-pub img{width:64px;height:64px;object-fit:cover;border-radius:7px;display:block;background:#0b1118}
+.cf-pub .big{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+.cf-pub .big small{display:block;font-size:10.5px;font-weight:600;color:var(--cf-ink3)}
+.cf-pub a{color:var(--cf-blue);text-decoration:none;font-size:12px}
+.cf-spark{width:120px;height:34px;display:block}
 .cf-soon ul{margin:0;padding-left:18px;display:grid;gap:8px;color:var(--cf-ink);font-size:14px;line-height:1.5}
 @media (max-width:900px){
   .cf-q-top{grid-template-columns:1fr}
@@ -761,6 +777,7 @@ function TgPostCard({ post, channel, canPublish, onChanged }: { post: TgPostT; c
 
 function Telegram() {
   const [data, setData] = useState<TgData | null>(null);
+  const [sub, setSub] = useState<"work" | "pub">("work");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [budget, setBudget] = useState("");
@@ -782,6 +799,12 @@ function Telegram() {
   if (!data) return <div className="cf-empty">Завантажую…</div>;
   const s = data.settings;
   const pct = s.monthly_budget_usd > 0 ? Math.min(100, (s.spent_month_usd / s.monthly_budget_usd) * 100) : 100;
+  const tabs = (
+    <div className="cf-sub-tabs" role="tablist">
+      <button type="button" role="tab" aria-selected={sub === "work"} className={"cf-chip" + (sub === "work" ? " on" : "")} onClick={() => setSub("work")}>Чернетки і план</button>
+      <button type="button" role="tab" aria-selected={sub === "pub"} className={"cf-chip" + (sub === "pub" ? " on" : "")} onClick={() => setSub("pub")}>Опубліковані й аналітика</button>
+    </div>);
+  if (sub === "pub") return (<><div><h1 className="cf-h1">Telegram-автопілот</h1></div>{tabs}<Published /></>);
   return (
     <>
       <div>
@@ -789,6 +812,7 @@ function Telegram() {
         <p className="cf-sub">Щоранку — чернетка поста для {s.channel} з питання, яке клієнтки ставлять найчастіше. Факти лише з бази знань,
           фото — лише реальні обʼєкти з бібліотеки. Ви правите, схвалюєте й публікуєте одразу або за планом через @wallcov_smm_bot.</p>
       </div>
+      {tabs}
       <div className="cf-q-top">
         <div className="cf-card">
           <h3>Автопілот · витрати</h3>
@@ -825,9 +849,112 @@ function Telegram() {
   );
 }
 
+function Spark({ points }: { points: (number | null)[] }) {
+  const v = points.filter((x): x is number => x != null);
+  if (v.length < 2) return <span className="cf-kv">ще мало даних</span>;
+  const max = Math.max(...v), min = Math.min(...v), w = 120, h = 34;
+  const xy = v.map((y, i) => `${(i / (v.length - 1)) * (w - 4) + 2},${h - 3 - ((y - min) / (max - min || 1)) * (h - 8)}`);
+  return (
+    <svg className="cf-spark" viewBox={`0 0 ${w} ${h}`} aria-label="Ріст переглядів">
+      <polyline points={xy.join(" ")} fill="none" stroke="#e3b85f" strokeWidth="2" strokeLinejoin="round" />
+      <circle cx={xy[xy.length - 1].split(",")[0]} cy={xy[xy.length - 1].split(",")[1]} r="3" fill="#e3b85f" />
+    </svg>
+  );
+}
+
+function Published() {
+  const [data, setData] = useState<PubData | null>(null);
+  const [open, setOpen] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => { try { setData(await api.get<PubData>("/api/content-factory/telegram/published/")); } catch { setData({ posts: [], summary: { count: 0, avg_views: null, total_reactions: 0, best: null } }); } }, []);
+  useEffect(() => { load(); }, [load]);
+  const refresh = async () => { setBusy(true); try { await api.post("/api/content-factory/telegram/published/"); await load(); } finally { setBusy(false); } };
+  if (!data) return <div className="cf-empty">Завантажую…</div>;
+  const s = data.summary;
+  return (
+    <>
+      <div className="cf-kpis">
+        <div className="cf-kpi"><span>Опубліковано з CRM</span><b>{s.count}</b></div>
+        <div className="cf-kpi"><span>Середньо переглядів</span><b>{s.avg_views ?? "—"}</b></div>
+        <div className="cf-kpi"><span>Реакцій разом</span><b>{s.total_reactions}</b></div>
+        <div className="cf-kpi"><span>Найкращий</span><b style={{ fontSize: 13 }}>{s.best ? `${s.best.title} · ${s.best.views}` : "—"}</b></div>
+      </div>
+      <div className="cf-set">
+        <button type="button" className="cf-btn ghost" disabled={busy} onClick={refresh}>{busy ? "Оновлюю…" : "Оновити цифри зараз"}</button>
+        <span className="cf-kv">Перегляди й реакції — з публічної сторінки каналу: перший тиждень щогодини, далі раз на добу.</span>
+      </div>
+      {data.posts.length === 0 ? <div className="cf-empty">Опублікованих з CRM постів ще немає.</div> : data.posts.map((p) => {
+        const thumb = p.sources[0]?.thumb_url || p.photos[0]?.preview_url || p.videos[0]?.preview_url || "";
+        return (
+          <div key={p.id}>
+            <div className="cf-pub">
+              {thumb ? <img src={thumb} alt="" /> : <div className="cf-thumb" />}
+              <div style={{ minWidth: 0 }}>
+                <b>{p.title}</b>
+                <div className="cf-kv"><span>{p.published_at ? new Date(p.published_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}
+                  {p.topic ? ` · питання: ${p.topic.title}` : ""}</span></div>
+                <div className="cf-acts" style={{ justifyContent: "flex-start" }}>
+                  {p.tg_link && <a href={p.tg_link} target="_blank" rel="noreferrer">Відкрити в Telegram ↗</a>}
+                  <button type="button" className="cf-btn ghost" style={{ height: 24, fontSize: 11 }} onClick={() => setOpen(open === p.id ? null : p.id)}>{open === p.id ? "Сховати" : "Деталі"}</button>
+                </div>
+              </div>
+              <div className="big">{p.views ?? "—"}<small>переглядів{p.views_24h != null ? ` · ${p.views_24h} за добу` : ""}</small></div>
+              <div className="big" style={{ fontSize: 15 }}>{Object.entries(p.reactions_detail || {}).map(([e, n]) => `${e} ${n}`).join("  ") || "—"}<small>реакції</small></div>
+              <Spark points={(p.history || []).map((h) => h.views)} />
+            </div>
+            {open === p.id && (
+              <div className="cf-tg" style={{ marginTop: 6 }}>
+                <TgPreview post={p} channel="@wallcovpro" />
+                <div className="cf-side">
+                  <div className="cf-kv"><span>Медіа</span><b>{p.sources.length + p.photos.length + p.videos.length}</b></div>
+                  <div className="cf-kv"><span>Останнє оновлення цифр</span><b>{p.stats_at ? new Date(p.stats_at).toLocaleString("uk-UA") : "ще не було"}</b></div>
+                  {p.facts.length > 0 && <ul className="cf-list">{p.facts.map((f, i) => <li key={i}>{f}</li>)}</ul>}
+                  <div className="cf-kv"><span>Знімки</span></div>
+                  <ul className="cf-list">{(p.history || []).slice(-8).map((h, i) => <li key={i}>{new Date(h.at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} — {h.views ?? "—"} переглядів, {h.reactions ?? 0} реакцій</li>)}</ul>
+                </div>
+              </div>)}
+          </div>);
+      })}
+    </>
+  );
+}
+
+function DriveBlock({ data, reload }: { data: SrcData; reload: () => void }) {
+  const [link, setLink] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const add = async () => {
+    setMsg(null);
+    try { await api.post("/api/content-factory/sources/drive/", { link }); setLink(""); setMsg({ ok: true, text: "Папку додано" }); reload(); }
+    catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося додати." }); }
+  };
+  const sync = async () => {
+    try { const r: any = await api.post("/api/content-factory/sources/drive/sync/"); setMsg({ ok: true, text: r.note }); }
+    catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося запустити." }); }
+  };
+  const toggle = async (f: DriveFolderT) => { await api.patch(`/api/content-factory/sources/drive/${f.id}/`, { enabled: !f.enabled }); reload(); };
+  return (
+    <div className="cf-card">
+      <h3>Google Drive</h3>
+      {data.drive_folders.map((f) => (
+        <div key={f.id} className="cf-chatrow">
+          <span><a href={f.link} target="_blank" rel="noreferrer" style={{ color: "var(--cf-blue)" }}>{f.title}</a>
+            <span style={{ color: "var(--cf-ink3)" }}> · {f.files_count} файлів{f.last_sync_at ? "" : " · ще не оновлювалась"}{f.last_error ? " · " + f.last_error : ""}</span></span>
+          <button type="button" className="cf-btn ghost" style={{ height: 28 }} onClick={() => toggle(f)}>{f.enabled ? "Вимкнути" : "Увімкнути"}</button>
+        </div>))}
+      <div className="cf-set">
+        <input id="cf-drive-link" className="cf-in" style={{ flex: 1, minWidth: 260 }} placeholder="Посилання на папку Google Drive" value={link} onChange={(e) => setLink(e.target.value)} />
+        <button type="button" className="cf-btn gold" style={{ height: 32 }} disabled={!link.trim()} onClick={add}>Додати</button>
+        <button type="button" className="cf-btn ghost" onClick={sync}>Оновити зараз</button>
+      </div>
+      <div className="cf-kv"><span>Папку потрібно відкрити (Поділитися → Читач) для <b style={{ userSelect: "all" }}>{data.drive_email || "—"}</b>. Файли не копіюються — лише посилання.</span></div>
+      {msg && <div className={"cf-msg " + (msg.ok ? "ok" : "err")}>{msg.text}</div>}
+    </div>
+  );
+}
+
 function Sources() {
   const [data, setData] = useState<SrcData | null>(null);
-  const [f, setF] = useState({ chat: "", material: "", kind: "", q: "" });
+  const [f, setF] = useState({ origin: "", chat: "", material: "", kind: "", q: "" });
   const [err, setErr] = useState("");
   const load = useCallback(async () => {
     const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v) as [string, string][]).toString();
@@ -844,7 +971,7 @@ function Sources() {
     <>
       <div>
         <h1 className="cf-h1">Джерела контенту</h1>
-        <p className="cf-sub">Фото й відео з ваших Telegram-груп і каналу. Файли лишаються в Telegram — CRM зберігає лише посилання й підпис,
+        <p className="cf-sub">Фото й відео з ваших Telegram-груп, каналу й папок Google Drive. Файли лишаються там — CRM зберігає лише посилання й підпис,
           тож сервер не навантажується. Що ви пишете під фото, стає мітками: матеріал, кімната, етап, #хештеги.</p>
       </div>
       {err && <div className="cf-msg err" role="alert">{err}</div>}
@@ -871,7 +998,11 @@ function Sources() {
           {data && !data.ingest_ready && <div className="cf-msg err">Приймання ще не підключене на сервері.</div>}
         </div>
       </div>
+      {data && <DriveBlock data={data} reload={load} />}
       <div className="cf-set">
+        <select className="cf-in" value={f.origin} onChange={(e) => setF({ ...f, origin: e.target.value, chat: "" })} aria-label="Джерело">
+          <option value="">Telegram і Drive</option><option value="telegram">Лише Telegram</option><option value="drive">Лише Google Drive</option>
+        </select>
         <select className="cf-in" value={f.chat} onChange={(e) => setF({ ...f, chat: e.target.value })} aria-label="Чат">
           <option value="">Усі чати</option>{(data?.chats || []).map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
         </select>

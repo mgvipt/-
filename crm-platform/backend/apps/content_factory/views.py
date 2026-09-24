@@ -26,10 +26,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import questions as qsvc
+from . import drive as drivesvc
 from . import sources as srcsvc
 from . import telegram as tgsvc
-from .models import (ChannelLinkError, ContentChannel, QuestionMention, QuestionSettings, QuestionTopic, SourceAsset,
-                     SourceChat, TgPost, TgSettings, parse_channel_link)
+from .models import (ChannelLinkError, ContentChannel, DriveFolder, QuestionMention, QuestionSettings, QuestionTopic,
+                     SourceAsset, SourceChat, TgPost, TgSettings, parse_channel_link)
 
 PERM = "content_factory.access"
 
@@ -237,7 +238,10 @@ def _post(request, p):
         "facts": p.facts or [], "checks": p.checks or [], "model": p.model,
         "topic": {"id": p.topic_id, "title": p.topic.title} if p.topic_id else None,
         "created_at": _iso(p.created_at), "scheduled_at": _iso(p.scheduled_at), "published_at": _iso(p.published_at),
-        "publish_error": p.publish_error,
+        "publish_error": p.publish_error, "views": p.views, "reactions": p.reactions,
+        "reactions_detail": p.reactions_detail or {}, "stats_at": _iso(p.stats_at),
+        "tg_link": (f"https://t.me/{tgsvc.channel_username()}/{p.tg_message_id.split(',')[0]}"
+                    if p.tg_message_id else ""),
     }
 
 
@@ -250,8 +254,8 @@ def _tg_settings(s):
 class TelegramView(_Base):
     def get(self, request):
         nt = tgsvc.next_topic()
-        posts = TgPost.objects.select_related("topic").exclude(status=TgPost.Status.REJECTED).order_by(
-            "status", "scheduled_at", "-created_at")[:40]
+        posts = TgPost.objects.select_related("topic").exclude(
+            status__in=[TgPost.Status.REJECTED, TgPost.Status.PUBLISHED]).order_by("status", "scheduled_at", "-created_at")[:40]
         return Response({
             "settings": _tg_settings(TgSettings.get()),
             "next_topic": {"id": nt.id, "title": nt.title, "count_7d": nt.n} if nt else None,
@@ -400,9 +404,11 @@ class TelegramPhotosView(_Base):
 def _source_rows(qs):
     return [{
         "id": a.id, "kind": a.kind, "kind_display": a.get_kind_display(), "caption": a.caption, "material": a.material,
-        "tags": a.tags or [], "link": a.link, "chat": a.chat.title if a.chat_id else "", "hidden": a.hidden,
+        "tags": a.tags or [], "link": a.link, "hidden": a.hidden,
+        "chat": a.chat.title if a.chat_id else ("Google Drive" if a.origin == SourceAsset.Origin.DRIVE else ""),
+        "origin": a.origin, "file_name": a.file_name,
         "thumb_url": f"/api/content-factory/sources/thumb/{srcsvc.thumb_token(a.id)}/"
-        if (a.thumb_file_id or a.kind == "photo") else "",
+        if (a.thumb_file_id or a.kind == "photo" or a.origin == SourceAsset.Origin.DRIVE) else "",
         "duration": a.duration, "posted_at": _iso(a.posted_at),
     } for a in qs.select_related("chat")]
 
@@ -443,7 +449,7 @@ class SourcesView(_Base):
         qs = SourceAsset.objects.all()
         if request.GET.get("hidden") != "1":
             qs = qs.filter(hidden=False)
-        for key, field in (("chat", "chat_id"), ("material", "material"), ("kind", "kind")):
+        for key, field in (("chat", "chat_id"), ("material", "material"), ("kind", "kind"), ("origin", "origin")):
             if request.GET.get(key):
                 qs = qs.filter(**{field: request.GET[key]})
         if request.GET.get("q"):
@@ -452,7 +458,11 @@ class SourcesView(_Base):
         chats = [{"id": c.id, "title": c.title or str(c.chat_id), "username": c.username, "kind": c.kind,
                   "enabled": c.enabled, "count": c.n} for c in SourceChat.objects.annotate(n=Count("assets"))]
         mats = list(SourceAsset.objects.exclude(material="").values_list("material").annotate(n=Count("id")).order_by("-n"))
-        return Response({"total": total, "items": _source_rows(qs[:120]), "chats": chats,
+        folders = [{"id": f.id, "folder_id": f.folder_id, "title": f.title or f.folder_id, "enabled": f.enabled,
+                    "files_count": f.files_count, "last_error": f.last_error, "last_sync_at": _iso(f.last_sync_at),
+                    "link": f"https://drive.google.com/drive/folders/{f.folder_id}"} for f in DriveFolder.objects.all()]
+        return Response({"total": total, "items": _source_rows(qs[:120]), "chats": chats, "drive_folders": folders,
+                         "drive_email": drivesvc.service_email(),
                          "materials": [{"name": m, "count": n} for m, n in mats],
                          "ingest_ready": bool(os.environ.get("CF_INGEST_SECRET"))})
 
@@ -480,3 +490,77 @@ class SourceAssetView(_Base):
             a.hidden = bool(data["hidden"])
         a.save()
         return Response(_source_rows(SourceAsset.objects.filter(pk=a.pk))[0])
+
+
+class DriveFoldersView(_Base):
+    """POST {link} — додати папку Google Drive; PATCH /<id>/ {enabled}; POST /sync/ — обійти зараз (у фоні)."""
+    def post(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Додавати папки може лише власник."}, status=403)
+        fid = drivesvc.parse_folder_link((request.data or {}).get("link", ""))
+        if len(fid) < 10:
+            return Response({"error": "Вставте посилання на папку Google Drive."}, status=400)
+        try:
+            title = drivesvc.folder_meta(fid).get("name", "")
+        except drivesvc.DriveError:
+            return Response({"error": f"CRM не бачить цю папку. Відкрийте її для {drivesvc.service_email()} (Читач)."},
+                            status=400)
+        f, _ = DriveFolder.objects.update_or_create(folder_id=fid, defaults={"title": title[:200], "enabled": True})
+        return Response({"id": f.id, "title": f.title}, status=201)
+
+
+class DriveFolderView(_Base):
+    def patch(self, request, pk):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        f = get_object_or_404(DriveFolder, pk=pk)
+        f.enabled = bool((request.data or {}).get("enabled"))
+        f.save(update_fields=["enabled"])
+        return Response({"id": f.id, "enabled": f.enabled})
+
+
+class DriveSyncView(_Base):
+    def post(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        import threading
+        from django.db import connection
+
+        def work():
+            try:
+                drivesvc.sync_all()
+            finally:
+                connection.close()
+        threading.Thread(target=work, daemon=True).start()
+        return Response({"ok": True, "note": "Оновлення запущено — великі папки обходяться кілька хвилин."})
+
+
+class TelegramPublishedView(_Base):
+    """GET — опубліковані з CRM пости: перегляди, реакції, історія знімків, підсумок. POST /refresh/ — оновити цифри."""
+    def get(self, request):
+        from .models import TgPostStat
+        posts = list(TgPost.objects.select_related("topic").filter(status=TgPost.Status.PUBLISHED)
+                     .order_by("-published_at")[:100])
+        hist = {}
+        for s in TgPostStat.objects.filter(post__in=posts).order_by("taken_at"):
+            hist.setdefault(s.post_id, []).append({"at": _iso(s.taken_at), "views": s.views, "reactions": s.reactions})
+        rows = []
+        for p in posts:
+            r = _post(request, p)
+            h = hist.get(p.id, [])
+            day = [x for x in h if x["at"] and p.published_at and
+                   parse_datetime(x["at"]) - p.published_at <= timedelta(hours=25)]
+            r["history"] = h
+            r["views_24h"] = day[-1]["views"] if day else None
+            rows.append(r)
+        seen = [p.views for p in posts if p.views is not None]
+        best = max(posts, key=lambda p: p.views or -1) if seen else None
+        return Response({
+            "posts": rows,
+            "summary": {"count": len(posts), "avg_views": round(sum(seen) / len(seen)) if seen else None,
+                        "total_reactions": sum(p.reactions or 0 for p in posts),
+                        "best": {"id": best.id, "title": best.title, "views": best.views} if best else None},
+        })
+
+    def post(self, request):
+        return Response({"updated": tgsvc.collect_stats(force=True)})

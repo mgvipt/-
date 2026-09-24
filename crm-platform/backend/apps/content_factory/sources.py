@@ -1,4 +1,4 @@
-"""Контент-завод: джерела контенту (24.09.2026) — Telegram-групи, канал, згодом Google Drive.
+"""Контент-завод: джерела контенту (24.09.2026) — Telegram-групи, канал і Google Drive (drive.py).
 
 Файли НЕ завантажуються на сервер CRM: зберігаємо Telegram file_id, підпис, посилання на повідомлення.
 Бот @wallcov_smm_bot (сервіс wallcov-content-bot на Hetzner) пересилає сюди апдейти груп і каналу
@@ -134,6 +134,12 @@ def thumb_bytes(token):
     a = SourceAsset.objects.filter(pk=asset_id).first()
     if not a:
         return None
+    if a.origin == SourceAsset.Origin.DRIVE:
+        from .drive import DriveError, thumbnail
+        try:
+            return thumbnail(a.file_id)
+        except DriveError:
+            return None
     fid = a.thumb_file_id or (a.file_id if a.kind == "photo" else "")
     if not fid:
         return None
