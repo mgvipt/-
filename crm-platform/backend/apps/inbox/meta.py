@@ -90,19 +90,55 @@ def _ig_post(path, params):
         raise RuntimeError(_friendly_meta_err(e.code, _d))
 
 
+WINDOW_CLOSED = ("outside of allowed window", "outside the allowed window", "erlaubten fensters",
+                 "24 hour", "24-hour", "messaging window")
+
+
+def _window_closed(err) -> bool:
+    """Meta відмовила через закрите вікно відповіді (код 10), а не через щось інше."""
+    t = str(err).lower()
+    return any(w in t for w in WINDOW_CLOSED) or '"code":10' in t
+
+
+def _post_message(recipient_id: str, message: str, platform: str, tag: str = ""):
+    extra = {"messaging_type": "MESSAGE_TAG", "tag": tag} if tag else {}
+    if platform == "instagram" and IG_TOKEN:
+        return _ig_post("me/messages", dict({
+            "recipient": json.dumps({"id": recipient_id}),
+            "message": message,
+        }, **extra))
+    return _graph("POST", "me/messages", dict({
+        "recipient": json.dumps({"id": recipient_id}),
+        "message": message,
+        "messaging_type": "RESPONSE",
+    }, **extra))
+
+
+def _send_with_window(recipient_id: str, message: str, platform: str):
+    """24.09.2026 (Олег): після приватної відповіді на коментар Instagram дає надіслати лише
+    ОДНЕ повідомлення — решта відлітає з «поза дозволеним вікном». Meta відкриває 7 днів для
+    відповіді живого менеджера (мітка HUMAN_AGENT), тому пробуємо ще раз саме так. Якщо доступу
+    на це в застосунку немає — повертаємо зрозумілу помилку, а не мовчимо."""
+    try:
+        return _post_message(recipient_id, message, platform)
+    except Exception as e:
+        if not _window_closed(e):
+            raise
+        try:
+            r = _post_message(recipient_id, message, platform, tag="HUMAN_AGENT")
+            if isinstance(r, dict):
+                r["human_agent"] = True
+            return r
+        except Exception as e2:
+            raise RuntimeError(
+                "Instagram закрив вікно відповіді (клієнт ще не написав у Direct), і 7-денна "
+                "відповідь менеджера теж не пройшла: %s" % str(e2)[:200])
+
+
 def send_message(recipient_id: str, text: str, platform: str = "instagram"):
     """Відповісти клієнту в Direct/Messenger. recipient_id = PSID/IGSID.
     Instagram-личка йде через graph.instagram.com + IG-токен; Facebook — через Page."""
-    if platform == "instagram" and IG_TOKEN:
-        return _ig_post("me/messages", {
-            "recipient": json.dumps({"id": recipient_id}),
-            "message": json.dumps({"text": text}),
-        })
-    return _graph("POST", "me/messages", {
-        "recipient": json.dumps({"id": recipient_id}),
-        "message": json.dumps({"text": text}),
-        "messaging_type": "RESPONSE",
-    })
+    return _send_with_window(recipient_id, json.dumps({"text": text}), platform)
 
 
 def send_attachment(recipient_id: str, url: str, atype: str = "image", platform: str = "instagram"):
@@ -110,16 +146,7 @@ def send_attachment(recipient_id: str, url: str, atype: str = "image", platform:
     atype: image|video|audio|file. Клієнт бачить картинку/відео у переписці, а не текстове посилання."""
     mtype = atype if atype in ("image", "video", "audio", "file") else "file"
     att_msg = json.dumps({"attachment": {"type": mtype, "payload": {"url": url, "is_reusable": False}}})
-    if platform == "instagram" and IG_TOKEN:
-        return _ig_post("me/messages", {
-            "recipient": json.dumps({"id": recipient_id}),
-            "message": att_msg,
-        })
-    return _graph("POST", "me/messages", {
-        "recipient": json.dumps({"id": recipient_id}),
-        "message": att_msg,
-        "messaging_type": "RESPONSE",
-    })
+    return _send_with_window(recipient_id, att_msg, platform)
 
 
 def private_reply(comment_id: str, text: str):
