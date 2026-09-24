@@ -8,6 +8,7 @@ import json
 from datetime import datetime, timezone as dt_tz
 
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 
 from apps.assistant.models import AssistantChat, AssistantMessage, AssistantSettings
 
@@ -47,11 +48,15 @@ class Command(BaseCommand):
         made = 0
         for r in rows:
             k = KINDS.get(r.get("media_type") or "", "text" if r.get("text") else "other")
+            fid = (r.get("media_file_id") or "") if k in ("voice", "video_note", "photo", "document") else ""
             _, created = AssistantMessage.objects.get_or_create(chat=chat, message_id=r["msg_id"], defaults={
                 "from_owner": bool(r.get("role") == "oleg" or (owner and r.get("user_id") == owner)),
                 "author": (r.get("first_name") or r.get("username") or "")[:160], "sender_id": r.get("user_id"),
                 "kind": k, "text": (r.get("text") or "")[:8000],
-                "file_id": r.get("media_file_id") or "" if k in ("voice", "video_note", "photo", "document") else "",
+                "file_id": fid,
+                # готова розшифровка з експорту або файлу немає → не чекати крона розшифровки
+                "transcript": (r.get("transcript") or "")[:20000],
+                "transcribed_at": timezone.now() if k in ("voice", "video_note") and not fid else None,
                 "sent_at": datetime.fromtimestamp(r["ts"], tz=dt_tz.utc)})
             made += created
         self.stdout.write(f"записано нових {made}")

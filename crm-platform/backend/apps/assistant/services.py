@@ -21,6 +21,7 @@ EXTRACT_SOURCE = "assistant.extract"
 GEMINI_MODEL = "gemini-3.6-flash"
 GEMINI_PRICE = (0.50, 3.00)  # ОЦІНКА $/1M, як у контент-заводі
 BATCH = 150
+BATCH_CHARS = 9000  # ~3 тис. токенів тексту на порцію: відповідь вміщається, нічого не обрізається
 
 
 class BudgetError(Exception):
@@ -104,7 +105,7 @@ def _gemini_transcribe(audio, mime):
     key = os.environ.get("GEMINI_API_KEY", "")
     body = {"contents": [{"role": "user", "parts": [
         {"inlineData": {"mimeType": mime, "data": base64.b64encode(audio).decode()}},
-        {"text": "Дослівно розшифруй мовлення (українська або російська — як говорять). Лише текст, без коментарів."}]}],
+        {"text": "Дослівно розшифруй мовлення (українська або російська — як говорять). Лише сказані слова: без таймкодів, описів звуків і коментарів."}]}],
         "generationConfig": {"maxOutputTokens": 4000, "thinkingConfig": {"thinkingLevel": "low"}}}
     req = urllib.request.Request(
         f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
@@ -117,7 +118,8 @@ def _gemini_transcribe(audio, mime):
     from apps.crm.models import AiUsage
     AiUsage.objects.create(source=TRANSCRIBE_SOURCE, model=GEMINI_MODEL, in_tok=tin, out_tok=tout,
                            cost_usd=(tin * GEMINI_PRICE[0] + tout * GEMINI_PRICE[1]) / 1_000_000)
-    return "".join(p.get("text", "") for p in ((resp.get("candidates") or [{}])[0].get("content") or {}).get("parts", []))
+    parts = ((resp.get("candidates") or [{}])[0].get("content") or {}).get("parts", [])
+    return "".join(p.get("text", "") for p in parts if not p.get("thought"))  # без «думок» моделі
 
 
 def _bot_token():
@@ -187,6 +189,13 @@ def extract(call=None, max_chats=20):
     for chat in chats:
         msgs = list(chat.messages.filter(processed_at=None).exclude(kind__in=["voice", "video_note"], transcribed_at=None)
                     .order_by("sent_at")[:BATCH])
+        size, cut = 0, len(msgs)
+        for n, m in enumerate(msgs):  # порція за обсягом тексту, а не лише за кількістю
+            size += min(len(m.body), 600) + 40
+            if size > BATCH_CHARS and n:
+                cut = n
+                break
+        msgs = msgs[:cut]
         text = _dialog(msgs)
         if not msgs:
             continue
@@ -196,8 +205,10 @@ def extract(call=None, max_chats=20):
         _check_budget()
         if call is None:
             from apps.crm.ai import claude_json
-            call = lambda p: claude_json(p, model=s.model, max_tokens=3000, system=SYSTEM, source=EXTRACT_SOURCE)
+            call = lambda p: claude_json(p, model=s.model, max_tokens=6000, system=SYSTEM, source=EXTRACT_SOURCE)
         r = call(f"Чат: {chat.title}\n\n{text}") or {}
+        if not isinstance(r.get("items"), list):  # відповідь не розібралась — НЕ позначаємо повідомлення розібраними
+            raise RuntimeError(f"Асистент: відповідь ШІ не розібрана (чат {chat.id}), повідомлення лишились у черзі.")
         by_id = {m.id: m for m in msgs}
         for it in (r.get("items") or [])[:30]:
             if not isinstance(it, dict) or not it.get("title"):

@@ -72,7 +72,52 @@ class OverviewView(_Base):
             "channels_total": qs.count(),
             "by_role": {r: by_role.get(r, 0) for r in ContentChannel.Role.values},
             "by_platform": {p: by_platform.get(p, 0) for p in ContentChannel.Platform.values},
+            "today": _today(),
         })
+
+
+def _today():
+    """Панель «Сьогодні» (редизайн 24.09): що робити зараз, що заплановано, скільки витрачено. Без ШІ."""
+    from apps.assistant.services import month_spent as assist_spent
+    from apps.assistant.models import AssistantSettings
+    now = timezone.now()
+    week = now - timedelta(days=7)
+    topics = (QuestionTopic.objects.exclude(status=QuestionTopic.Status.IGNORED)
+              .annotate(n7=Count("mentions", filter=Q(mentions__asked_at__gte=week)))
+              .filter(n7__gt=0).order_by("-n7")[:4])
+    posts = TgPost.objects
+    pub7 = posts.filter(status=TgPost.Status.PUBLISHED, published_at__gte=week)
+    sched = posts.filter(status=TgPost.Status.APPROVED, scheduled_at__gte=now).order_by("scheduled_at")[:4]
+    try:
+        hot = [(i, x) for i, x in ansvc.feed(days=7, limit=3) if x]
+    except Exception:
+        hot = []
+    spend = [
+        {"key": "questions", "label": "Питання клієнтів", "spent": qsvc.month_spent(),
+         "budget": float(QuestionSettings.get().monthly_budget_usd)},
+        {"key": "telegram", "label": "Telegram-пости", "spent": tgsvc.month_spent(),
+         "budget": float(TgSettings.get().monthly_budget_usd)},
+        {"key": "analyst", "label": "Аналітик", "spent": qsvc.month_spent(ansvc.SOURCE),
+         "budget": float(AnalystSettings.get().monthly_budget_usd)},
+        {"key": "reels", "label": "Рилси", "spent": reelsvc.spent_month(), "budget": None},
+        {"key": "assistant", "label": "Асистент", "spent": assist_spent(),
+         "budget": float(AssistantSettings.get().monthly_budget_usd)},
+    ]
+    return {
+        "topics": [{"id": t.id, "title": t.title, "material": t.material, "n7": t.n7, "has_kb": bool(t.kb_item_id)}
+                   for t in topics],
+        "drafts": posts.filter(status=TgPost.Status.DRAFT).count(),
+        "scheduled": [{"id": p.id, "title": p.title, "at": p.scheduled_at} for p in sched],
+        "published_7d": pub7.count(),
+        "views_7d": sum(v or 0 for v in pub7.values_list("views", flat=True)),
+        "reels_draft": ReelDraft.objects.filter(status=ReelDraft.Status.DRAFT).count(),
+        "reels_ready": ReelDraft.objects.filter(status=ReelDraft.Status.APPROVED).count(),
+        "sources_24h": SourceAsset.objects.filter(created_at__gte=now - timedelta(days=1)).count(),
+        "sources_total": SourceAsset.objects.filter(hidden=False).count(),
+        "hot": [{"id": i.id, "username": i.username, "x": x, "url": i.url, "preview_url": i.preview_url,
+                 "caption": (i.caption or "")[:140]} for i, x in hot],
+        "spend": [{**r, "spent": round(r["spent"], 3)} for r in spend],
+    }
 
 
 class ChannelListView(_Base):
