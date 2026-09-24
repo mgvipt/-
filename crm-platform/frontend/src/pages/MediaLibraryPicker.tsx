@@ -16,7 +16,8 @@ const SAND_EFFECTS = ["Galateya", "Eleganti", "Gaia Gloss", "Mio Gloss"] as cons
 const isColorSwatch = (asset: Asset) => asset.kind === "image" && /(каталог|зразок|sample)/i.test(`${asset.title} ${asset.tags}`);
 const effectFor = (asset: Asset) => {
   const match = (asset.tags || "").match(/(?:^|[,;\s])effect:([^,;]+)/i);
-  return match?.[1]?.trim() || "";
+  // у мітці після назви фактури йдуть службові хвости (source:…, вид:…) — показуємо лише назву
+  return (match?.[1] || "").split(/ · реальний об/i)[0].replace(/\s+(source|вид):\S+/g, "").trim();
 };
 
 export function MediaLibraryPicker({ conversationId, onSent, onClose, onInsertText, onStage, clientName, initialTab }: { conversationId: number; onSent: (m: ChatMessage) => void; onClose: () => void; onInsertText?: (t: string) => void; onStage?: (items: Asset[]) => void; clientName?: string; initialTab?: "colors" | "quick" }) {
