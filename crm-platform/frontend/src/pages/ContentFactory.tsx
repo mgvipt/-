@@ -426,6 +426,8 @@ const CSS = `
 .cf-when-own{width:84px;height:28px;box-sizing:border-box;background:var(--cf-bg);border:1px solid var(--cf-line);border-radius:7px;color:var(--cf-ink);padding:0 8px;font:inherit;font-size:12px}
 .cf-when-own:focus{outline:none;border-color:var(--cf-blue)}
 @media (max-width:900px){
+  .cf-page{min-width:0}
+  .cf-page > *{min-width:0}
   .cf-board{grid-template-columns:1fr}
   .cf-tile.wide{grid-column:auto}
   .cf-flow{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -449,6 +451,124 @@ const CSS = `
   .cf-add .cf-in:first-child{grid-column:1/-1}
   .cf-row{grid-template-columns:38px minmax(0,1fr)}
   .cf-acts{grid-column:1/-1;justify-content:flex-start}
+}
+/* ── Телефон (≤760px, 24.09): шапка-перемикач і шторка замість меню; усе в одну колонку; зручні пальцем кнопки ── */
+.cf-mbar,.cf-pk-back,.cf-pk-title{display:none}
+@media (max-width:760px){
+  .cf{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);border-radius:10px}
+  .cf .cf-rail{display:none}
+  .cf-mbar{display:block;position:relative;z-index:5;padding:10px 12px;border-bottom:1px solid var(--cf-line);
+    background:linear-gradient(180deg,#1a1f22,var(--cf-bg))}
+  .cf-mbar-cur{all:unset;box-sizing:border-box;cursor:pointer;width:100%;display:flex;align-items:center;gap:10px;min-height:44px;position:relative}
+  .cf-mbar-cur:focus-visible{outline:2px solid var(--cf-blue);border-radius:8px}
+  .cf-mbar-cur .cf-logo{width:26px;height:26px;border-radius:7px;margin:0;flex:0 0 auto}
+  .cf-mbar-cur .t{display:grid;flex:1;min-width:0}
+  .cf-mbar-cur .t small{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--cf-gold)}
+  .cf-mbar-cur .t b{font-size:17px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cf-mbar-menu{width:40px;height:40px;border-radius:10px;border:1px solid var(--cf-line);display:grid;align-content:center;justify-items:center;gap:4px;background:var(--cf-panel)}
+  .cf-mbar-menu i{display:block;width:16px;height:2px;border-radius:1px;background:var(--cf-ink)}
+  .cf-mbar-menu i:nth-child(2){width:11px;justify-self:center}
+  .cf-mbar-dot{position:absolute;right:-4px;top:-2px;font-style:normal;min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:9px;background:var(--cf-gold);color:#1b1608;font-size:10.5px;font-weight:800;display:grid;place-items:center}
+  .cf-sheet-wrap{position:fixed;inset:0;z-index:1200;display:flex;align-items:flex-end}
+  .cf-sheet-back{position:absolute;inset:0;background:rgba(5,7,8,.62);animation:cfFade .18s ease}
+  .cf-sheet{position:relative;width:100%;max-height:86vh;overflow:auto;background:#181d20;color:var(--cf-ink);border-radius:18px 18px 0 0;
+    padding:8px 14px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -18px 40px rgba(0,0,0,.5);animation:cfUp .22s cubic-bezier(.2,.8,.2,1)}
+  .cf-sheet-grip{width:40px;height:4px;border-radius:2px;background:var(--cf-line);margin:4px auto 12px}
+  .cf-sheet-top{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}
+  .cf-sheet-big{all:unset;box-sizing:border-box;cursor:pointer;display:grid;gap:3px;padding:14px;border-radius:12px;background:var(--cf-panel);border:1px solid var(--cf-line)}
+  .cf-sheet-big.on{border-color:var(--cf-gold)}
+  .cf-sheet-big b{font-size:15px}
+  .cf-sheet-big small{font-size:11.5px;color:var(--cf-ink2)}
+  .cf-sheet-grp .cf-grp{display:flex;padding:14px 4px 6px}
+  .cf-main::-webkit-scrollbar{width:0;height:0}
+  .cf-sheet-row{all:unset;box-sizing:border-box;cursor:pointer;width:100%;min-height:48px;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:0 12px;border-radius:10px;font-size:15px;color:var(--cf-ink)}
+  .cf-sheet-row.on{background:var(--cf-panel2);box-shadow:inset 3px 0 0 var(--cf-gold)}
+  .cf-sheet-row.later span{color:var(--cf-ink3)}
+  .cf-sheet-row em{font-style:normal;min-width:22px;height:22px;padding:0 6px;box-sizing:border-box;border-radius:11px;background:var(--cf-panel2);color:var(--cf-ink2);font-size:11.5px;font-weight:700;display:grid;place-items:center}
+  .cf-sheet-row em.hot{background:var(--cf-gold);color:#1b1608}
+  .cf-sheet-row em.soon{background:none;color:var(--cf-ink3);font-weight:600}
+  .cf-sheet-row i{width:7px;height:7px;border-right:1.5px solid var(--cf-ink3);border-top:1.5px solid var(--cf-ink3);transform:rotate(45deg)}
+  .cf-sheet-row:focus-visible,.cf-sheet-big:focus-visible{outline:2px solid var(--cf-blue)}
+  @keyframes cfUp{from{transform:translateY(100%)}to{transform:none}}
+  @keyframes cfFade{from{opacity:0}to{opacity:1}}
+
+  .cf-main{padding:14px 12px calc(40px + env(safe-area-inset-bottom));overflow-x:hidden}
+  .cf-page{min-width:0;gap:16px}
+  .cf-page > *,.cf-fcard,.cf-src,.cf-tile,.cf-card{min-width:0;max-width:100%}
+  .cf-fcard,.cf-src{grid-template-columns:minmax(0,1fr)}
+  :where(.cf-page) :where(div){min-width:0}
+  .cf-set > .cf-in{min-width:0 !important;flex:1 1 100% !important;width:100%}
+  .cf-set > .cf-pk{width:100% !important;flex:1 1 100%}
+  .cf-set > .cf-btn.gold{flex:1 1 100%}
+  .cf-edit .cf-in{max-width:100%}
+  .cf-styles{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .cf-fcard .bd .cf-acts{flex-wrap:wrap}
+  .cf-h1{font-size:24px}
+  .cf-sub{font-size:13.5px}
+  .cf-mast{display:none}
+  .cf-acts .cf-pk.sm{flex:1 1 130px;min-width:0}
+  .cf-acts{gap:6px}
+  .cf-today-h,.cf-hero{grid-template-columns:1fr;gap:12px}
+  .cf-sw{height:40px}
+  .cf-flow{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:8px;border:0;border-radius:0;background:none;margin:0 -12px;padding:0 12px;scrollbar-width:none}
+  .cf-flow::-webkit-scrollbar{display:none}
+  .cf-flow li{flex:0 0 44%;scroll-snap-align:start;border:1px solid var(--cf-line);border-radius:12px;background:var(--cf-panel);overflow:hidden}
+  .cf-flow li+li{border-left:1px solid var(--cf-line)}
+  .cf-flow li+li::before{display:none}
+  .cf-flow button{padding:12px 14px}
+  .cf-board{grid-template-columns:1fr;gap:10px}
+  .cf-tile.wide{grid-column:auto}
+  .cf-asks li{grid-template-columns:32px minmax(0,1fr);row-gap:8px}
+  .cf-asks .cf-acts{grid-column:2;justify-content:flex-start}
+  .cf-hot{grid-template-columns:1fr}
+  .cf-sched li{grid-template-columns:1fr;gap:2px}
+  .cf-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+
+  .cf-btn{height:42px}
+  .cf-btn.ghost,.cf-btn.danger{height:36px;padding:0 12px;font-size:12.5px}
+  .cf-in,.cf-ta,.cf-when-own,.cf-pk-btn{font-size:16px}
+  .cf-set{gap:8px}
+  .cf-set > .cf-pk{flex:1 1 160px}
+  .cf-add{grid-template-columns:1fr}
+  .cf-row{grid-template-columns:38px minmax(0,1fr)}
+  .cf-row .cf-acts,.cf-acts{grid-column:1/-1;justify-content:flex-start}
+  .cf-q-top{grid-template-columns:1fr}
+  .cf-topic{grid-template-columns:44px minmax(0,1fr);padding:12px}
+  .cf-topic .cf-acts{grid-column:1/-1}
+  .cf-tg{grid-template-columns:1fr;padding:10px;gap:14px}
+  .cf-week{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -12px;padding:0 12px 4px}
+  .cf-day{flex:0 0 132px;scroll-snap-align:start}
+  .cf-pub{grid-template-columns:56px minmax(0,1fr) minmax(0,1fr);gap:10px 12px;align-items:start}
+  .cf-pub img,.cf-pub > .cf-thumb{width:56px;height:56px}
+  .cf-pub > :nth-child(2){grid-column:2/-1}
+  .cf-pub > :nth-child(3){grid-column:1/3}
+  .cf-pub > :nth-child(4){grid-column:3}
+  .cf-pub > :nth-child(5){grid-column:1/-1;width:100%}
+  .cf-reel{grid-template-columns:1fr;padding:10px}
+  .cf-reel video{width:100%;max-width:300px;justify-self:center}
+  .cf-edit{grid-template-columns:72px minmax(0,1fr)}
+  .cf-edit img{width:72px;height:96px}
+  .cf-tl{overflow-x:auto;scrollbar-width:thin}
+  .cf-tl button{min-width:56px}
+  .cf-feed{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .cf-src-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .cf-styles{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .cf-scenes{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .cf-pick-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .cf-seg{max-width:100%;overflow-x:auto;scrollbar-width:none}
+  .cf-seg::-webkit-scrollbar{display:none}
+  .cf-seg button{padding:8px 12px}
+  .cf-when-days{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .cf-when-days button{flex:0 0 auto;min-height:44px}
+  .cf-when-times button{min-height:36px}
+  .cf-idea{grid-template-columns:24px minmax(0,1fr)}
+  .cf-rep{font-size:14px}
+  /* список-вибір → шторка знизу */
+  .cf-pk-back{display:block;position:fixed;inset:0;z-index:1200;background:rgba(5,7,8,.55)}
+  .cf-pk-list{position:fixed;z-index:1201;left:0;right:0;bottom:0;top:auto;max-width:none;max-height:70vh;border-radius:18px 18px 0 0;
+    padding:8px 10px calc(14px + env(safe-area-inset-bottom));animation:cfUp .2s cubic-bezier(.2,.8,.2,1)}
+  .cf-pk-title{display:block;padding:10px 12px 8px;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--cf-ink2);border-bottom:1px solid var(--cf-line);margin-bottom:4px}
+  .cf-pk-list li[role=option]{padding:13px 12px;font-size:15px}
 }
 `;
 
@@ -495,8 +615,10 @@ function Pick({ value, opts, onChange, label, disabled, small, width, placeholde
         {cur?.hint && <small>{cur.hint}</small>}
         <i aria-hidden="true" />
       </button>
+      {open && <div className="cf-pk-back" aria-hidden="true" onClick={() => setOpen(false)} />}
       {open && (
         <ul className="cf-pk-list" role="listbox" aria-label={label}>
+          <li className="cf-pk-title" role="presentation">{label}</li>
           {opts.map((o, n) => (
             <Fragment key={o.v + n}>
               {o.g && o.g !== opts[n - 1]?.g && <li className="cf-pk-g" role="presentation">{o.g}</li>}
@@ -590,6 +712,61 @@ function Rail({ tab, setTab, today }: { tab: string; setTab: (t: string) => void
         );
       })}
     </nav>
+  );
+}
+
+/** Телефон: замість бічного меню — шапка з поточним розділом і шторка з усіма кроками. */
+function MobileNav({ s, go, today }: { s: Section; go: (t: string) => void; today: Today | null }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const esc = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [open]);
+  const count: Record<string, number> = today ? { telegram: today.drafts, reels: today.reels_draft, sources: today.sources_24h,
+    feed: today.hot.length, questions: today.topics.length } : {};
+  const waiting = (today?.drafts || 0) + (today?.reels_draft || 0);
+  const groups = Array.from(new Set(SECTIONS.filter((x) => x.group).map((x) => x.group as string)));
+  const stepOf = (g?: string) => (g ? groups.indexOf(g) + 1 : 0);
+  const pickTab = (id: string) => { go(id); setOpen(false); };
+  return (
+    <>
+      <div className="cf-mbar">
+        <button type="button" className="cf-mbar-cur" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open}>
+          <span className="cf-logo" aria-hidden="true" />
+          <span className="t"><small>{s.group ? `${stepOf(s.group)} · ${s.group}` : "Контент-завод"}</small><b>{s.label}</b></span>
+          <span className="cf-mbar-menu" aria-hidden="true"><i /><i /><i /></span>
+          {waiting > 0 && <em className="cf-mbar-dot">{waiting}</em>}
+        </button>
+      </div>
+      {open && (
+        <div className="cf-sheet-wrap" role="dialog" aria-modal="true" aria-label="Розділи контент-заводу">
+          <div className="cf-sheet-back" onClick={() => setOpen(false)} />
+          <nav className="cf-sheet">
+            <div className="cf-sheet-grip" aria-hidden="true" />
+            <div className="cf-sheet-top">
+              {SECTIONS.filter((x) => !x.group).map((x) => (
+                <button key={x.id} type="button" className={"cf-sheet-big" + (x.id === s.id ? " on" : "")} onClick={() => pickTab(x.id)}>
+                  <b>{x.label}</b><small>{x.id === "studio" ? (waiting ? `${waiting} чекають рішення` : "що робити зараз") : "що аналізуємо"}</small>
+                </button>
+              ))}
+            </div>
+            {groups.map((g, gi) => (
+              <div key={g} className="cf-sheet-grp">
+                <div className="cf-grp"><i>{gi + 1}</i>{g}</div>
+                {SECTIONS.filter((x) => x.group === g).map((x) => (
+                  <button key={x.id} type="button" className={"cf-sheet-row" + (x.id === s.id ? " on" : "") + (x.live ? "" : " later")} onClick={() => pickTab(x.id)}>
+                    <span>{x.label}</span>
+                    {count[x.id] ? <em className={x.id === "telegram" || x.id === "reels" ? "hot" : ""}>{count[x.id]}</em> : !x.live ? <em className="soon">скоро</em> : <i aria-hidden="true" />}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1331,7 +1508,7 @@ function Sources() {
           <h3>Як підключити групу</h3>
           <ol className="cf-steps">
             <li>Відкрийте групу в Telegram → Керування → Адміністратори → Додати → @wallcov_smm_bot.</li>
-            <li>Надішліть у групу будь-яке фото — група зʼявиться зліва.</li>
+            <li>Надішліть у групу будь-яке фото — група зʼявиться в списку «Чати».</li>
             <li>Натисніть «Приймати файли». Далі кожне нове фото чи відео потрапляє сюди саме.</li>
           </ol>
           <div className="cf-kv"><span>Бот бачить лише нові повідомлення — старі файли групи підтягнемо окремо.</span></div>
@@ -1723,6 +1900,7 @@ export default function ContentFactory() {
     <div className="cf">
       <style>{CSS}</style>
       <Rail tab={section.id} setTab={go} today={ov?.today ?? null} />
+      <MobileNav s={section} go={go} today={ov?.today ?? null} />
       <main className="cf-main">
         <div className="cf-page">
         {err && <div className="cf-msg err" role="alert">{err}</div>}
