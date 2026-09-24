@@ -30,12 +30,13 @@ from rest_framework.views import APIView
 from . import questions as qsvc
 from . import analyst as ansvc
 from . import reels as reelsvc
+from . import styles as stylesvc
 from . import drive as drivesvc
 from . import sources as srcsvc
 from . import telegram as tgsvc
 from .models import (AnalystReport, AnalystSettings, ChannelLinkError, ContentChannel, DriveFolder, FeedItem,
-                     QuestionMention, QuestionSettings, QuestionTopic, ReelDraft, SourceAsset, SourceChat, TgPost,
-                     TgSettings, VideoScene, parse_channel_link)
+                     QuestionMention, QuestionSettings, QuestionTopic, ReelDraft, ReelStyle, SourceAsset, SourceChat,
+                     TgPost, TgSettings, VideoScene, parse_channel_link)
 
 PERM = "content_factory.access"
 
@@ -686,7 +687,8 @@ def _reel(request, r):
     return {
         "id": r.id, "title": r.title, "topic": r.topic, "material": r.material, "caption": r.caption,
         "status": r.status, "status_display": r.get_status_display(), "duration": r.duration, "error": r.error,
-        "facts": r.facts, "created_at": _iso(r.created_at),
+        "facts": r.facts, "created_at": _iso(r.created_at), "style_id": r.style_id,
+        "style_name": r.style.name if r.style_id else "Класичний",
         "video_url": request.build_absolute_uri(f"/api/f/{r.file.token}/").replace("http://", "https://", 1) if r.file_id else "",
         "beats": [dict(b, what=scenes[b["scene_id"]].what if b.get("scene_id") in scenes else "",
                        source=scenes[b["scene_id"]].asset.link if b.get("scene_id") in scenes else "",
@@ -717,10 +719,11 @@ class ReelsView(_Base):
         material = str((request.data or {}).get("material") or "").strip()
         if not topic or not material:
             return Response({"error": "Вкажіть тему й матеріал."}, status=400)
+        style = ReelStyle.objects.filter(pk=(request.data or {}).get("style_id") or 0).first()
 
         def work():
             try:
-                reelsvc.make_reel(topic, material)
+                reelsvc.make_reel(topic, material, style=style)
             except Exception as e:
                 ReelDraft.objects.create(title=topic[:200], topic=topic, material=material,
                                          status=ReelDraft.Status.REJECTED, error=str(e)[:300])
@@ -774,6 +777,8 @@ class ReelView(_Base):
             r.status = data["status"]
         if "caption" in data:
             r.caption = str(data["caption"] or "")[:2200]
+        if "style_id" in data:
+            r.style = ReelStyle.objects.filter(pk=data["style_id"] or 0).first()
         r.save()
         return Response(_reel(request, r))
 
@@ -803,3 +808,40 @@ class ReelView(_Base):
         except tgsvc.PublishError as e:
             return Response({"error": str(e)}, status=400)
         return Response({"ok": True, "note": "Надіслано вам у Telegram (@wallcov_smm_bot)."})
+
+
+class ReelStylesView(_Base):
+    """GET — стилі тексту (пресети, з референсів, «наш блог») і з чого можна зняти стиль.
+    POST {source: "feed"|"asset"|"blog", id?} — зняти стиль з референсу (Gemini, ≈$0.001–0.01, лише власник)."""
+    def get(self, request):
+        stylesvc.ensure_presets()
+        return Response({
+            "styles": [{"id": s.id, "name": s.name, "origin": s.origin, "origin_display": s.get_origin_display(),
+                        "font": s.font, "weight": s.weight, "size": s.size, "color": s.color, "stroke": s.stroke,
+                        "stroke_color": s.stroke_color, "box": s.box, "box_color": s.box_color, "box_opacity": s.box_opacity,
+                        "position": s.position, "upper": s.upper, "notes": s.notes, "source_url": s.source_url,
+                        "has_structure": bool(s.structure), "structure": s.structure} for s in ReelStyle.objects.all()],
+            "feed_refs": [{"id": i.id, "title": f"@{i.username}: {(i.caption or '').splitlines()[0][:60] if i.caption else ''}",
+                           "preview_url": i.preview_url} for i in FeedItem.objects.filter(status=FeedItem.Status.SAVED)[:30]],
+            "video_refs": [{"id": a.id, "title": (a.caption or a.file_name or f"відео {a.id}")[:80], "chat": a.chat.title if a.chat_id else "Drive"}
+                           for a in SourceAsset.objects.filter(kind="video", origin="telegram", hidden=False).select_related("chat")[:30]],
+        })
+
+    def post(self, request):
+        if not request.user.is_superuser:
+            return Response({"error": "Лише власник."}, status=403)
+        src, pk = (request.data or {}).get("source"), (request.data or {}).get("id")
+        try:
+            if src == "feed":
+                st = stylesvc.from_feed_item(get_object_or_404(FeedItem, pk=pk))
+            elif src == "asset":
+                st = stylesvc.from_video_asset(get_object_or_404(SourceAsset, pk=pk, kind="video"))
+            elif src == "blog":
+                st = stylesvc.our_blog()
+            else:
+                return Response({"error": "Невідоме джерело."}, status=400)
+        except (ValueError, reelsvc.ReelError) as e:
+            return Response({"error": str(e)}, status=400)
+        if not st:
+            return Response({"error": "На цьому кадрі немає тексту — візьміть інший референс."}, status=400)
+        return Response({"id": st.id, "name": st.name}, status=201)

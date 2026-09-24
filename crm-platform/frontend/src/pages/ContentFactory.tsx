@@ -64,9 +64,15 @@ type ReportT = { id: number; created_at: string; period_days: number; summary: s
   ideas: { title: string; hook: string; why: string; format: string; material: string }[]; inputs: Record<string, any> };
 type ReelT = {
   id: number; title: string; topic: string; material: string; caption: string; status: string; status_display: string;
-  duration: number | null; error: string; facts: string[]; created_at: string; video_url: string;
+  duration: number | null; error: string; facts: string[]; created_at: string; video_url: string; style_id: number | null; style_name: string;
   beats: { text: string; scene_id: number; seconds: number; what: string; source: string; thumb_url?: string }[];
 };
+type StyleT = {
+  id: number; name: string; origin: string; origin_display: string; font: string; weight: string; size: number; color: string;
+  stroke: number; stroke_color: string; box: boolean; box_color: string; box_opacity: number; position: number; upper: boolean;
+  notes: string; source_url: string; has_structure: boolean; structure: Record<string, any>;
+};
+type StylesData = { styles: StyleT[]; feed_refs: { id: number; title: string; preview_url: string }[]; video_refs: { id: number; title: string; chat: string }[] };
 type SceneT = { id: number; what: string; shot: string; quality: number; seconds: number; thumb_url: string; source: string };
 type DriveFolderT = { id: number; folder_id: string; title: string; enabled: boolean; files_count: number; last_error: string; last_sync_at: string | null; link: string };
 type TgData = {
@@ -302,6 +308,13 @@ const CSS = `
 .cf-scenes button.on{border-color:var(--cf-gold)}
 .cf-scenes img{width:100%;height:100%;object-fit:cover;display:block}
 .cf-scenes span{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);color:#fff;font-size:10px;padding:3px 4px;line-height:1.2}
+.cf-styles{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
+.cf-sty{all:unset;cursor:pointer;display:grid;gap:4px;font-size:11px;color:var(--cf-ink2)}
+.cf-sty .frame{position:relative;aspect-ratio:9/16;border-radius:8px;overflow:hidden;border:2px solid var(--cf-line);
+  background:linear-gradient(135deg,#c9ccd0,#eef0f2 18%,#b9bec4 35%,#e6e9ec 52%,#aeb4ba 70%,#dfe3e7)}
+.cf-sty.on .frame{border-color:var(--cf-gold)}
+.cf-sty .frame span{position:absolute;left:6%;right:6%;text-align:center;transform:translateY(-50%);line-height:1.15;padding:3px 4px;border-radius:3px}
+.cf-sty em{font-style:normal;font-size:10px;color:var(--cf-gold)}
 .cf-soon ul{margin:0;padding-left:18px;display:grid;gap:8px;color:var(--cf-ink);font-size:14px;line-height:1.5}
 @media (max-width:900px){
   .cf-q-top{grid-template-columns:1fr}
@@ -1290,16 +1303,68 @@ function ReelEditor({ r, onChanged }: { r: ReelT; onChanged: () => void }) {
   );
 }
 
+const FONT_CSS: Record<string, string> = { "Montserrat": "'Montserrat', sans-serif", "Inter": "'Inter', sans-serif", "Roboto": "'Roboto', sans-serif", "Open Sans": "'Open Sans', sans-serif", "DejaVu Sans": "'DejaVu Sans', Verdana, sans-serif" };
+const WEIGHT_CSS: Record<string, number> = { Regular: 400, Medium: 500, SemiBold: 600, Bold: 700, ExtraBold: 800, Black: 900 };
+const rgba = (hex: string, a: number) => { const h = (hex || "#000").replace("#", ""); const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h.slice(0, 6), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; };
+
+function StyleSwatch({ s, on, onPick }: { s: StyleT; on: boolean; onPick: () => void }) {
+  const text = s.upper ? "СКІЛЬКИ ГАЛАТЕЇ НА КІМНАТУ?" : "Скільки Галатеї на кімнату?";
+  return (
+    <button type="button" className={"cf-sty" + (on ? " on" : "")} onClick={onPick} title={s.notes || s.name}>
+      <div className="frame">
+        <span style={{ top: `${s.position * 100}%`, fontFamily: FONT_CSS[s.font] || "sans-serif", fontWeight: WEIGHT_CSS[s.weight] || 700,
+          fontSize: Math.max(8, s.size / 7), color: s.color, background: s.box ? rgba(s.box_color, s.box_opacity) : "transparent",
+          WebkitTextStroke: s.stroke ? `${Math.max(0.5, s.stroke / 6)}px ${s.stroke_color}` : undefined }}>{text}</span>
+      </div>
+      <span>{s.name}</span>{s.has_structure && <em>+ будова ролика</em>}
+    </button>
+  );
+}
+
+function StylePicker({ value, onChange }: { value: number | null; onChange: (id: number | null) => void }) {
+  const [data, setData] = useState<StylesData | null>(null);
+  const [ref, setRef] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => { try { setData(await api.get("/api/content-factory/reels/styles/")); } catch { /* */ } }, []);
+  useEffect(() => { load(); }, [load]);
+  const take = async (source: string, id?: number) => {
+    setBusy(true); setMsg(null);
+    try { const r: any = await api.post("/api/content-factory/reels/styles/", { source, id }); setMsg({ ok: true, text: `Стиль «${r.name}» готовий` }); await load(); onChange(r.id); }
+    catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося зняти стиль." }); } finally { setBusy(false); }
+  };
+  if (!data) return null;
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <style>{"@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;800;900&family=Inter:wght@500;700;800&family=Roboto:wght@500;700&family=Open+Sans:wght@600;700&display=swap');"}</style>
+      <div className="cf-styles">{data.styles.map((s) => <StyleSwatch key={s.id} s={s} on={s.id === value} onPick={() => onChange(s.id === value ? null : s.id)} />)}</div>
+      <div className="cf-set">
+        <select className="cf-in" value={ref} onChange={(e) => setRef(e.target.value)} aria-label="Референс для стилю">
+          <option value="">Зняти стиль з референсу…</option>
+          {data.feed_refs.length > 0 && <optgroup label="Збережені в «Натхненні» (обкладинка)">{data.feed_refs.map((f) => <option key={"f" + f.id} value={"feed:" + f.id}>{f.title}</option>)}</optgroup>}
+          {data.video_refs.length > 0 && <optgroup label="Відео з Telegram-груп (стиль + будова)">{data.video_refs.map((v) => <option key={"a" + v.id} value={"asset:" + v.id}>{v.chat}: {v.title}</option>)}</optgroup>}
+        </select>
+        <button type="button" className="cf-btn ghost" disabled={busy || !ref} onClick={() => { const [s, id] = ref.split(":"); take(s, Number(id)); }}>Зняти стиль</button>
+        <button type="button" className="cf-btn ghost" disabled={busy} onClick={() => take("blog")}>Наш блог</button>
+        {busy && <span className="cf-kv">аналізую…</span>}
+      </div>
+      {data.feed_refs.length === 0 && data.video_refs.length === 0 && <div className="cf-kv"><span>Референси: збережіть ролик «В ідеї» у «Стрічці» або киньте відео в підключену Telegram-групу.</span></div>}
+      {msg && <div className={"cf-msg " + (msg.ok ? "ok" : "err")}>{msg.text}</div>}
+    </div>
+  );
+}
+
 function Reels() {
   const [data, setData] = useState<{ reels: ReelT[]; materials: { name: string; videos: number }[]; marked: Record<string, number>; scenes: number; spent_month_usd: number; ideas: { title: string; material: string }[] } | null>(null);
   const [topic, setTopic] = useState("");
   const [material, setMaterial] = useState("Галатея");
+  const [styleId, setStyleId] = useState<number | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const load = useCallback(async () => { try { setData(await api.get("/api/content-factory/reels/")); } catch { setMsg({ ok: false, text: "Не вдалося завантажити." }); } }, []);
   useEffect(() => { load(); }, [load]);
   const make = async () => {
     setMsg(null);
-    try { const r: any = await api.post("/api/content-factory/reels/", { topic, material }); setMsg({ ok: true, text: r.note + " Оновіть сторінку за кілька хвилин." }); }
+    try { const r: any = await api.post("/api/content-factory/reels/", { topic, material, style_id: styleId }); setMsg({ ok: true, text: r.note + " Оновіть сторінку за кілька хвилин." }); }
     catch (e: any) { setMsg({ ok: false, text: e?.data?.error || "Не вдалося." }); }
   };
   const act = async (r: ReelT, b: Record<string, unknown>) => { await api.patch(`/api/content-factory/reels/${r.id}/`, b); load(); };
@@ -1325,6 +1390,8 @@ function Reels() {
           <button type="button" className="cf-btn gold" style={{ height: 38 }} disabled={!topic.trim()} onClick={make}>Зробити рилс</button>
         </div>
         {data.ideas.length > 0 && <div className="cf-chips">{data.ideas.map((i) => <button key={i.title} type="button" className="cf-chip" onClick={() => { setTopic(i.title); if (i.material) setMaterial(i.material); }}>💡 {i.title}</button>)}</div>}
+        <h3 style={{ marginTop: 6 }}>Стиль тексту</h3>
+        <StylePicker value={styleId} onChange={setStyleId} />
         <div className="cf-kv"><span>Розмічено сцен: {data.scenes} · витрачено цього місяця {usd(data.spent_month_usd)} · один рилс ≈ $0.05–0.15 (перший раз по матеріалу — дорожче через розмітку)</span></div>
         {msg && <div className={"cf-msg " + (msg.ok ? "ok" : "err")}>{msg.text}</div>}
       </div>
@@ -1333,7 +1400,7 @@ function Reels() {
           {r.video_url ? <video src={r.video_url} controls playsInline preload="metadata" /> : <div className="cf-empty">{r.error || "без відео"}</div>}
           <div className="cf-side">
             <div className="cf-role-h"><h4>{r.title}</h4><span className={"cf-pill " + (r.status === "approved" ? "now" : "next")}>{r.status_display}</span></div>
-            <div className="cf-kv"><span>{r.material} · {r.duration ? `${r.duration} с` : ""} · {new Date(r.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span></div>
+            <div className="cf-kv"><span>{r.material} · стиль: {r.style_name} · {r.duration ? `${r.duration} с` : ""} · {new Date(r.created_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span></div>
             {r.error && <div className="cf-msg err">{r.error}</div>}
             {r.beats.length > 0 && <ReelEditor r={r} onChanged={load} />}
             {r.caption && <div className="cf-card" style={{ padding: 10 }}><h3>Підпис</h3><div className="cf-rep" style={{ fontSize: 13 }}>{r.caption}</div></div>}

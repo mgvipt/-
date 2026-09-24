@@ -52,4 +52,5 @@ urlpatterns += [
     path("api/content-factory/reels/<int:pk>/test/", views.ReelView.as_view(), {"action": "test"}),
     path("api/content-factory/reels/<int:pk>/render/", views.ReelView.as_view(), {"action": "render"}),
     path("api/content-factory/reels/scenes/", views.ReelScenesView.as_view()),
+    path("api/content-factory/reels/styles/", views.ReelStylesView.as_view()),
 ]

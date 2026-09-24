@@ -389,7 +389,37 @@ class ReelDraft(models.Model):
     duration = models.FloatField(null=True, blank=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT)
     error = models.CharField(max_length=300, blank=True)
+    style = models.ForeignKey("ReelStyle", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class ReelStyle(models.Model):
+    """Стиль тексту на рилсі: пресет, знятий з референсу (обкладинка/відео) або «наш блог»."""
+    class Origin(models.TextChoices):
+        PRESET = "preset", "Пресет"
+        REFERENCE = "reference", "З референсу"
+        BLOG = "blog", "Наш блог"
+
+    name = models.CharField(max_length=120)
+    origin = models.CharField(max_length=12, choices=Origin.choices, default=Origin.PRESET)
+    source_url = models.URLField(max_length=2000, blank=True)
+    font = models.CharField(max_length=40, default="DejaVu Sans")
+    weight = models.CharField(max_length=20, default="Bold")
+    size = models.PositiveSmallIntegerField(default=68, help_text="px при ширині 1080")
+    color = models.CharField(max_length=9, default="#FFFFFF")
+    stroke_color = models.CharField(max_length=9, default="#000000")
+    stroke = models.PositiveSmallIntegerField(default=0)
+    box = models.BooleanField(default=True)
+    box_color = models.CharField(max_length=9, default="#000000")
+    box_opacity = models.FloatField(default=0.45)
+    position = models.FloatField(default=0.70, help_text="Вертикаль центру тексту: 0 — верх, 1 — низ")
+    upper = models.BooleanField(default=False)
+    notes = models.CharField(max_length=300, blank=True)
+    structure = models.JSONField(default=dict, blank=True, help_text="Темп і будова ролика-референсу (якщо було відео)")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["origin", "name"]

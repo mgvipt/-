@@ -31,7 +31,6 @@ MARKUP_MODEL = "gemini-3.6-flash"  # 24.09: gemini-2.5-flash закрита дл
 MARKUP_PRICE = (0.50, 3.00)  # $/1M вхід/вихід — ОЦІНКА з запасом (точна ціна 3.6-flash не перевірена)
 MARKUP_SOURCE = "content_factory.markup"
 PLAN_SOURCE = "content_factory.reels"
-FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 WORK = "/tmp/cf_reels"
 MAX_SRC_BYTES = 250 * 1024 * 1024
 
@@ -173,10 +172,13 @@ checks — ЛИШЕ факти з тексту/підпису, які людин
 Відповідай ЛИШЕ JSON: {"title":"...","caption":"...","beats":[{"text":"...","scene_id":123,"seconds":2.5}],"checks":["що перевірити людині"]}"""
 
 
-def plan(topic, material, scenes, call=None):
+def plan(topic, material, scenes, call=None, structure=None):
     facts_text, fact_titles = kb_facts(f"{topic} {material}")
     catalog = "\n".join(f"{s.id} | {s.end - s.start:.1f}с | {s.shot} | {s.what} | q{s.quality}" for s in scenes)
     prompt = f"Тема: {topic}\nМатеріал: {material}\n\nКаталог сцен:\n{catalog}\n\nБаза знань:\n{facts_text or '(немає)'}"
+    if structure:  # повторити будову й темп референсу — але наші кадри, наші факти, свої слова
+        prompt += ("\n\nПовтори БУДОВУ й ТЕМП ролика-референсу (кількість кадрів, їх тривалість і призначення, прийом гачка), "
+                   "не копіюючи його текст:\n" + json.dumps(structure, ensure_ascii=False))
     if call is None:
         from apps.crm.ai import claude_json
         call = lambda p: claude_json(p, model="claude-sonnet-4-6", max_tokens=1500, system=PLAN_SYSTEM, source=PLAN_SOURCE)
@@ -215,19 +217,20 @@ def _wrap(text, width=18):
     return "\n".join(textwrap.wrap(text, width=width)) or " "
 
 
-def render(p, folder):
-    """Змонтувати ролик за планом. Повертає (bytes mp4, тривалість)."""
+def render(p, folder, style=None):
+    """Змонтувати ролик за планом у заданому стилі тексту. Повертає (bytes mp4, тривалість)."""
+    from .styles import drawtext
+    width = max(10, int(1000 / ((style.size if style else 68) * 0.56)))
     segs = []
     for n, b in enumerate(p["beats"]):
         sc = VideoScene.objects.select_related("asset").get(pk=b["scene_id"])
         src = fetch_original(sc.asset, folder)
         tf = os.path.join(folder, f"t{n}.txt")
         with open(tf, "w") as f:
-            f.write(_wrap(b["text"]))
+            text = b["text"].upper() if style and style.upper else b["text"]
+            f.write(_wrap(text, width))
         out = os.path.join(folder, f"seg{n}.mp4")
-        vf = ("scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,"
-              f"drawtext=fontfile={FONT}:textfile={tf}:fontcolor=white:fontsize=68:line_spacing=14:"
-              "box=1:boxcolor=black@0.45:boxborderw=26:x=(w-text_w)/2:y=h*0.70")
+        vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30," + drawtext(style, tf)
         _run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{sc.start:.2f}", "-i", src, "-t", f"{b['seconds']:.2f}",
               "-an", "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", out])
         segs.append(out)
@@ -244,7 +247,7 @@ def render(p, folder):
         return f.read(), dur
 
 
-def make_reel(topic, material, markup_limit=15, call=None):
+def make_reel(topic, material, markup_limit=15, call=None, style=None):
     """Повний цикл: розмітка (лише нове) → сценарій → монтаж → ReelDraft з файлом у CRM."""
     from secrets import token_urlsafe
     from apps.inbox.models import SharedLink
@@ -258,13 +261,13 @@ def make_reel(topic, material, markup_limit=15, call=None):
                 continue
         scenes = list(VideoScene.objects.filter(asset__material=material, quality__gte=3, asset__hidden=False)
                       .select_related("asset").order_by("-quality")[:80])
-        p = plan(topic, material, scenes, call=call)
-        data, dur = render(p, folder)
+        p = plan(topic, material, scenes, call=call, structure=(style.structure if style else None) or None)
+        data, dur = render(p, folder, style=style)
         link = SharedLink.objects.create(token=token_urlsafe(24), filename=f"reel-{material}.mp4",
                                          content_type="video/mp4", data=data)
         return ReelDraft.objects.create(title=p["title"], topic=topic, material=material, caption=p["caption"],
                                         beats=p["beats"], facts=p["facts"] + [f"Перевірити: {clean_text(str(c))}" for c in p["checks"]][:10],
-                                        file=link, duration=round(dur, 1))
+                                        file=link, duration=round(dur, 1), style=style)
     finally:
         shutil.rmtree(folder, ignore_errors=True)
 
@@ -298,7 +301,7 @@ def rerender(reel):
     os.makedirs(WORK, exist_ok=True)
     folder = tempfile.mkdtemp(dir=WORK)
     try:
-        data, dur = render({"beats": reel.beats}, folder)
+        data, dur = render({"beats": reel.beats}, folder, style=reel.style)
         old = reel.file
         reel.file = SharedLink.objects.create(token=token_urlsafe(24), filename=f"reel-{reel.material}.mp4",
                                               content_type="video/mp4", data=data)

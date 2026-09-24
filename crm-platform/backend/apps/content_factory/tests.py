@@ -13,6 +13,7 @@ from apps.inbox.models import MediaLibraryItem, SharedLink
 from . import questions as qsvc
 from . import telegram as tgsvc
 from . import analyst as ansvc
+from .models import ReelStyle as ReelStyleModel
 from .models import (AnalystReport, AnalystSettings, ChannelLinkError, ContentChannel, DriveFolder, FeedItem,
                      QuestionMention, QuestionSettings, QuestionTopic, SourceAsset, SourceChat, TgPost, TgSettings,
                      parse_channel_link)
@@ -512,3 +513,29 @@ class FeedAnalystTests(TestCase):
         c.force_authenticate(self.owner)
         data = c.get("/api/content-factory/analyst/").json()
         self.assertEqual((len(data["reports"]), data["settings"]["weekly_enabled"]), (1, False))
+
+
+class StyleTests(TestCase):
+    def test_presets_drawtext_and_reference(self):
+        from . import styles
+        styles.ensure_presets()
+        styles.ensure_presets()  # без дублів
+        self.assertEqual(ReelStyleModel.objects.filter(origin="preset").count(), len(styles.PRESETS))
+        big = ReelStyleModel.objects.get(name__startswith="Великий")
+        vf = styles.drawtext(big, "/tmp/t.txt")
+        self.assertIn("borderw=7", vf)
+        self.assertNotIn("box=1", vf)
+        item = FeedItem.objects.create(external_id="x1", username="sk_tanos", url="https://x", preview_url="https://img/x.jpg")
+
+        class R:
+            headers = {"Content-Type": "image/jpeg"}
+            def read(self): return b"img"
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        fake = {"font_kind": "geometric", "weight": "Black", "color": "#FFE600", "stroke": 4, "box": False,
+                "position": 0.3, "upper": True, "size_rel": "huge", "notes": "жовтий капс зверху"}
+        with patch("urllib.request.urlopen", return_value=R()), patch.object(styles, "_gemini", return_value=fake):
+            st = styles.from_feed_item(item)
+        self.assertEqual((st.font, st.weight, st.size, st.upper, st.origin), ("Montserrat", "Black", 92, True, "reference"))
+        with patch("urllib.request.urlopen", return_value=R()), patch.object(styles, "_gemini", return_value={"no_text": True}):
+            self.assertIsNone(styles.from_feed_item(item))
