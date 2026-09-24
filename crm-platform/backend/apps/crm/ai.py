@@ -1,12 +1,16 @@
 """Виклик Claude (Anthropic) для AI-помічника у картці сделки."""
 import json, os, re, urllib.request
 
-PRICING = {  # $/1M: in, out, cache_read, cache_write
-    "claude-haiku-4-5": (0.80, 4.0, 0.08, 1.0),
+# $/1M: in, out, cache_read, cache_write (5-хв кеш). Звірено з platform.claude.com/docs/en/about-claude/pricing 24.09.2026
+PRICING = {
+    "claude-haiku-4-5": (1.0, 5.0, 0.10, 1.25),
+    "claude-sonnet-5": (2.0, 10.0, 0.20, 2.50),
     "claude-sonnet-4-6": (3.0, 15.0, 0.30, 3.75),
     "claude-sonnet-4-5": (3.0, 15.0, 0.30, 3.75),
-    "claude-opus-4-8": (15.0, 75.0, 1.50, 18.75),
-    "claude-opus-4-7": (15.0, 75.0, 1.50, 18.75),
+    "claude-opus-5": (5.0, 25.0, 0.50, 6.25),
+    "claude-opus-4-8": (5.0, 25.0, 0.50, 6.25),
+    "claude-opus-4-7": (5.0, 25.0, 0.50, 6.25),
+    "claude-opus-4-6": (5.0, 25.0, 0.50, 6.25),
 }
 
 
