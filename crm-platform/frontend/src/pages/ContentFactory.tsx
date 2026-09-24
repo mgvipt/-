@@ -1059,11 +1059,11 @@ function Sources() {
 const fmtN = (n: number | null | undefined) => n == null ? "—" : n >= 1e6 ? (n / 1e6).toFixed(1) + " млн" : n >= 1e3 ? Math.round(n / 1e3) + " тис" : String(n);
 
 function Feed() {
-  const [q, setQ] = useState({ days: 7, sort: "outlier", status: "" });
-  const [data, setData] = useState<{ items: FeedT[]; total: number; last_sync_at: string | null; last_note: string } | null>(null);
+  const [q, setQ] = useState({ days: 7, sort: "outlier", status: "", all: false });
+  const [data, setData] = useState<{ items: FeedT[]; total: number; tracked: number; last_sync_at: string | null; last_note: string } | null>(null);
   const [msg, setMsg] = useState("");
   const load = useCallback(async () => {
-    try { setData(await api.get(`/api/content-factory/feed/?days=${q.days}&sort=${q.sort}&status=${q.status}`)); } catch { setMsg("Не вдалося завантажити стрічку."); }
+    try { setData(await api.get(`/api/content-factory/feed/?days=${q.days}&sort=${q.sort}&status=${q.status}${q.all ? "&all=1" : ""}`)); } catch { setMsg("Не вдалося завантажити стрічку."); }
   }, [q]);
   useEffect(() => { load(); }, [load]);
   const sync = async () => { try { const r: any = await api.post("/api/content-factory/feed/"); setMsg(r.note); } catch (e: any) { setMsg(e?.data?.error || "Не вдалося."); } };
@@ -1083,6 +1083,10 @@ function Feed() {
         <select className="cf-in" value={q.status} onChange={(e) => setQ({ ...q, status: e.target.value })} aria-label="Статус">
           <option value="">Усі</option><option value="saved">В ідеях</option><option value="used">Зроблено з наших</option><option value="hidden">Сховані</option>
         </select>
+        <div className="cf-chips">
+          <button type="button" className={"cf-chip" + (!q.all ? " on" : "")} onClick={() => setQ({ ...q, all: false })}>Мої сторінки{data ? ` · ${data.tracked}` : ""}</button>
+          <button type="button" className={"cf-chip" + (q.all ? " on" : "")} onClick={() => setQ({ ...q, all: true })}>Усі з Virale</button>
+        </div>
         <button type="button" className="cf-btn ghost" onClick={sync}>Оновити з Virale</button>
         <span className="cf-kv">{data ? `${data.total} роликів у базі${data.last_sync_at ? " · оновлено " + new Date(data.last_sync_at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : " · ще не оновлювалась"}` : ""}</span>
       </div>

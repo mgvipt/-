@@ -594,7 +594,7 @@ class FeedView(_Base):
         except ValueError:
             days = 7
         rows = ansvc.feed(days=days, sort=request.GET.get("sort", "outlier"), status=request.GET.get("status", ""),
-                          include_own=request.GET.get("own") == "1")
+                          include_own=request.GET.get("own") == "1", only_tracked=request.GET.get("all") != "1")
         s = AnalystSettings.get()
         return Response({
             "items": [{"id": i.id, "username": i.username, "platform": i.platform, "url": i.url,
@@ -603,6 +603,7 @@ class FeedView(_Base):
                        "engagement": i.engagement, "x": x, "status": i.status, "is_own": i.is_own,
                        "published_at": _iso(i.published_at)} for i, x in rows],
             "total": FeedItem.objects.count(), "last_sync_at": _iso(s.last_feed_sync_at), "last_note": s.last_feed_note,
+            "tracked": len(ansvc.tracked_handles()),
         })
 
     def post(self, request):

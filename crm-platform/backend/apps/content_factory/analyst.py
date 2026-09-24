@@ -92,9 +92,18 @@ def outlier(item, med):
     return round(item.views / m, 1) if m and item.views else None
 
 
-def feed(days=7, sort="outlier", status="", include_own=False, limit=60):
+def tracked_handles():
+    """Сторінки з розділу «Сторінки» (конкуренти й натхнення). Порожньо — показуємо все з Virale."""
+    return set(ContentChannel.objects.filter(is_active=True).exclude(role=ContentChannel.Role.OWN)
+               .values_list("handle", flat=True))
+
+
+def feed(days=7, sort="outlier", status="", include_own=False, limit=60, only_tracked=True):
     since = timezone.now() - timedelta(days=days)
     qs = FeedItem.objects.filter(published_at__gte=since)
+    handles = tracked_handles() if only_tracked else set()
+    if handles:
+        qs = qs.filter(username__in=handles)
     if status:
         qs = qs.filter(status=status)
     else:
