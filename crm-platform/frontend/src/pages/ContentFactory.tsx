@@ -2,7 +2,8 @@
  * Працює: «Студія» (план і лічильники) і «Сторінки» (наші сторінки, конкуренти, натхнення в IG / TikTok / YouTube / Telegram).
  * Етап 1 (24.09): «Питання клієнтів» — нічний розбір питань у теми, з лімітом витрат (вмикає лише власник).
  * Етап 2 (24.09): «Telegram-автопілот» — чернетки постів з найчастіших питань: факти з бази знань, реальні фото,
- *   попередній перегляд як у Telegram. Публікація з CRM поки вимкнена. Кожна сторінка прокручується горизонтально.
+ *   попередній перегляд як у Telegram. Публікація з CRM поки вимкнена.
+ * Прокрутка: .view у Layout має overflow:hidden, тому сторінка гортає САМА — .cf на всю висоту, .cf-main overflow:auto (вниз і вбік).
  * Інші вкладки — наступні етапи; показують, що там буде. Дані: /api/content-factory/*.
  * Усі компоненти — на рівні модуля (не всередині інших), щоб поля вводу не втрачали фокус. */
 import { useCallback, useEffect, useState } from "react";
@@ -85,8 +86,9 @@ const ROLE_HINT: Record<string, string> = {
 const CSS = `
 .cf{--cf-bg:#14181b;--cf-panel:#1c2225;--cf-panel2:#232a2e;--cf-line:#2d363b;--cf-ink:#e7ecee;--cf-ink2:#9aa6ab;--cf-ink3:#6c787d;
   --cf-gold:#e3b85f;--cf-blue:#7fb0d4;--cf-good:#6cc08f;--cf-bad:#e07a6e;
-  background:var(--cf-bg);color:var(--cf-ink);border-radius:12px;display:grid;grid-template-columns:220px minmax(0,1fr);min-height:calc(100vh - 110px);overflow:hidden}
-.cf-rail{border-right:1px solid var(--cf-line);padding:18px 12px;display:flex;flex-direction:column;gap:2px}
+  background:var(--cf-bg);color:var(--cf-ink);border-radius:12px;display:grid;grid-template-columns:220px minmax(0,1fr);
+  grid-template-rows:minmax(0,1fr);height:100%;min-height:0;overflow:hidden}
+.cf-rail{border-right:1px solid var(--cf-line);padding:18px 12px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;min-height:0}
 .cf-brand{font-weight:800;letter-spacing:.08em;font-size:13px;padding:2px 10px 4px}
 .cf-brand small{display:block;font-weight:500;letter-spacing:.02em;color:var(--cf-ink3);font-size:11px;margin-top:3px}
 .cf-grp{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--cf-ink3);padding:16px 10px 6px}
@@ -96,9 +98,9 @@ const CSS = `
 .cf-nav.on{background:var(--cf-panel2);color:var(--cf-ink)}
 .cf-nav em{font-style:normal;font-size:10px;font-weight:700;color:var(--cf-ink3);font-variant-numeric:tabular-nums}
 .cf-nav.on em,.cf-nav em.live{color:var(--cf-gold)}
-.cf-main{padding:24px clamp(16px,2.4vw,32px) 40px;min-width:0;overflow-x:auto;overscroll-behavior-x:contain}
+.cf-main{padding:24px clamp(16px,2.4vw,32px) 40px;min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain}
 .cf-page{display:grid;gap:22px;align-content:start;min-width:880px}
-.cf-main::-webkit-scrollbar{height:10px}
+.cf-main::-webkit-scrollbar{height:10px;width:10px}
 .cf-main::-webkit-scrollbar-thumb{background:var(--cf-line);border-radius:5px}
 .cf-h1{font-size:clamp(24px,2.6vw,32px);font-weight:800;letter-spacing:-.01em;margin:0;line-height:1.15}
 .cf-sub{color:var(--cf-ink2);max-width:64ch;font-size:14px;line-height:1.55;margin:6px 0 0}
@@ -197,7 +199,7 @@ const CSS = `
   .cf-topic{grid-template-columns:44px minmax(0,1fr)}
   .cf-tg{grid-template-columns:340px minmax(0,1fr)}
   .cf-topic .cf-acts{grid-column:1/-1}
-  .cf{grid-template-columns:1fr}
+  .cf{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
   .cf-rail{border-right:0;border-bottom:1px solid var(--cf-line);flex-direction:row;flex-wrap:nowrap;gap:4px;padding:12px;overflow-x:auto}
   .cf-nav{flex:0 0 auto}
   .cf-brand,.cf-grp{display:none}
