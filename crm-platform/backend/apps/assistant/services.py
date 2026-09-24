@@ -120,14 +120,32 @@ def _gemini_transcribe(audio, mime):
     return "".join(p.get("text", "") for p in ((resp.get("candidates") or [{}])[0].get("content") or {}).get("parts", []))
 
 
+def _bot_token():
+    '''Файли з Business і робочої групи належать РОП-боту (@wallcov_rop_bot) — file_id чинний лише для нього.
+    Без його токена — старий шлях через бот контент-заводу.'''
+    tok = os.environ.get("ASSIST_TG_BOT_TOKEN", "")
+    if tok:
+        return tok
+    from apps.content_factory.telegram import tg_config
+    return tg_config()[0]
+
+
+def _get_file_path(token, file_id):
+    with urllib.request.urlopen(f"https://api.telegram.org/bot{token}/getFile?file_id={file_id}", timeout=30) as r:
+        resp = json.load(r)
+    if not resp.get("ok"):
+        raise RuntimeError(resp.get("description", "getFile"))
+    return resp["result"]["file_path"]
+
+
 def transcribe_pending(limit=30):
-    from apps.content_factory.telegram import _tg, tg_config
+    token = _bot_token()
     done = 0
     for m in AssistantMessage.objects.filter(kind__in=["voice", "video_note"], transcribed_at=None).exclude(file_id="")[:limit]:
         _check_budget()
         try:
-            path = _tg("getFile", {"file_id": m.file_id})["file_path"]
-            with urllib.request.urlopen(f"https://api.telegram.org/file/bot{tg_config()[0]}/{path}", timeout=120) as r:
+            path = _get_file_path(token, m.file_id)
+            with urllib.request.urlopen(f"https://api.telegram.org/file/bot{token}/{path}", timeout=120) as r:
                 audio = r.read()
             mime = "video/mp4" if m.kind == "video_note" else "audio/ogg"
             m.transcript = _gemini_transcribe(audio, mime).strip()[:20000]
