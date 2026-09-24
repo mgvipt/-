@@ -571,6 +571,18 @@ PERMISSION_GROUPS.append((
 PERMISSION_CHOICES.extend(
     (c, l) for c, l, _h in PERMISSION_GROUPS[-1][1] if c not in {x for x, _ in PERMISSION_CHOICES})
 
+# ── Контент-завод (додано 2026-09-24, content_factory) ──
+PERMISSION_GROUPS.append((
+    "Контент-завод",
+    [
+        ("content_factory.access", "Розділ «Контент-завод»",
+         "Рилси, каруселі, пости Telegram, аналітика сторінок і конкурентів. "
+         "Рішення Олега 24.09: поки лише власник; згодом — одному довіреному співробітнику"),
+    ],
+))
+PERMISSION_CHOICES.extend(
+    (c, l) for c, l, _h in PERMISSION_GROUPS[-1][1] if c not in {x for x, _ in PERMISSION_CHOICES})
+
 
 class StaffTransfer(models.Model):
     """Що саме передали іншим співробітникам при «Звільнити» (17.09.2026).

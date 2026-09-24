@@ -26,6 +26,7 @@ import AiCosts from "./pages/AiCosts";
 import AiCenter from "./pages/AiCenter";
 import WhatsNew from "./pages/WhatsNew";
 import Reviews from "./pages/Reviews";
+import ContentFactory from "./pages/ContentFactory";
 import Partners from "./pages/Partners";
 import Bounty from "./pages/Bounty";
 import Phone from "./pages/Phone";
@@ -87,6 +88,7 @@ function Shell() {
           <Route path="/ai-costs" element={<AiCenter />} />
           <Route path="/whats-new" element={<WhatsNew />} />
           <Route path="/reviews" element={<Reviews />} />
+          <Route path="/content-factory" element={<Guard perm="content_factory.access"><ContentFactory /></Guard>} />
           <Route path="/partners" element={<Guard perm="partners.view"><Partners /></Guard>} />
           <Route path="/bounty" element={<Bounty />} />
           <Route path="*" element={<Navigate to="/leads" replace />} />
