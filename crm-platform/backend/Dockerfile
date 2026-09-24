@@ -3,8 +3,9 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 
+# ffmpeg + шрифт з кирилицею — монтаж рилсів контент-заводу (24.09.2026)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
+    build-essential libpq-dev ffmpeg fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
